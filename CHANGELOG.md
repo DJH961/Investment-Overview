@@ -16,6 +16,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
+## [0.4.0] — 2026-05-26
+
+### Added — CSV importers
+- `adapters/importer_types.py`: shared `ParsedTransactionRow` dataclass
+  and `UnknownActionError`.
+- `adapters/fidelity/`:
+  - `action_map.py` mapping Fidelity Action substrings to ledger kinds
+    (spec §5.1).
+  - `parser.py` reading the Fidelity activity-download CSV, skipping
+    disclaimer preamble, recomputing prices to handle the May-2024
+    2-decimal change, generating sha256 `external_id` for dedup.
+- `adapters/vanguard/`:
+  - `action_map.py` mapping Vanguard transaction types, including the
+    explicit drop of `Sweep In`/`Sweep Out` rows (spec §5.2).
+  - `parser.py` with sweep counting and sign-convention enforcement
+    (sells get negated quantity).
+- `services/importer_service.py`: parser-agnostic glue that resolves
+  symbols via `instruments_repo.get_or_create`, looks up FX with
+  forward-fill, and writes via savepoint-aware
+  `transactions_repo.insert_transaction` for idempotent re-import.
+- `repositories/transactions_repo.insert_transaction` now uses a
+  SAVEPOINT so duplicate inserts don't roll back the surrounding
+  transaction.
+- 36 new tests, two sample CSV fixtures, 132 total tests pass.
+
 ## [0.3.0] — 2026-05-26
 
 ### Added — repositories + services

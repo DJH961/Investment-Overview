@@ -48,13 +48,19 @@ def get_transaction(session: Session, txn_id: int) -> Transaction | None:
 def insert_transaction(session: Session, txn: Transaction) -> Transaction | None:
     """Insert ``txn``; return it on success, or ``None`` if it duplicates an
     existing ``(account_id, external_id)`` pair (dedup, spec §5.1).
+
+    Uses a SAVEPOINT (``session.begin_nested``) so a duplicate row's
+    constraint violation does **not** roll back the caller's transaction —
+    only the failed insert is reverted.
     """
+    nested = session.begin_nested()
     session.add(txn)
     try:
         session.flush()
     except IntegrityError:
-        session.rollback()
+        nested.rollback()
         return None
+    nested.commit()
     return txn
 
 

@@ -8,6 +8,7 @@ take a SQLAlchemy :class:`Session`.
 
 from investment_dashboard.services import (
     fx_service,
+    importer_service,
     metrics_service,
     positions_service,
     prices_service,
@@ -15,6 +16,7 @@ from investment_dashboard.services import (
 
 __all__ = [
     "fx_service",
+    "importer_service",
     "metrics_service",
     "positions_service",
     "prices_service",

@@ -1,0 +1,8 @@
+Account Number,Trade Date,Settlement Date,Transaction Type,Transaction Description,Investment Name,Symbol,Shares,Share Price,Principal Amount,Commission Fees,Net Amount,Accrued Interest,Account Type
+12345678,01/05/2024,01/07/2024,Buy,Buy of VTI,Vanguard Total Stock Market ETF,VTI,5,220.00,1100.00,0.00,-1100.00,0.00,Brokerage
+12345678,01/05/2024,01/07/2024,Sweep Out,Sweep from settlement fund,Vanguard Federal Money Market,VMFXX,1100,1.00,1100.00,0.00,1100.00,0.00,Brokerage
+12345678,02/15/2024,02/15/2024,Dividend,Dividend on VTI,Vanguard Total Stock Market ETF,VTI,0,0,15.00,0.00,15.00,0.00,Brokerage
+12345678,02/15/2024,02/15/2024,Reinvestment,Reinvestment of dividend,Vanguard Total Stock Market ETF,VTI,0.068,220.59,15.00,0.00,-15.00,0.00,Brokerage
+12345678,02/15/2024,02/15/2024,Sweep In,Sweep into settlement,Vanguard Federal Money Market,VMFXX,15,1.00,15.00,0.00,-15.00,0.00,Brokerage
+12345678,03/01/2024,03/01/2024,Funds Received,Wire from external bank,,,,,2000.00,0.00,2000.00,0.00,Brokerage
+12345678,04/01/2024,04/03/2024,Sell,Sell of VTI,Vanguard Total Stock Market ETF,VTI,2,225.00,450.00,0.00,450.00,0.00,Brokerage
