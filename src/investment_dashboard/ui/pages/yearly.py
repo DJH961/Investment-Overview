@@ -23,9 +23,27 @@ PATH = "/yearly"
 
 
 def _convert(amount_eur: Decimal, target: str, fx_rate: Decimal | None) -> Decimal:
+    target = target.upper()
     if target == "EUR" or fx_rate is None or fx_rate == 0:
         return amount_eur
     return amount_eur * fx_rate
+
+
+def _money_columns(label: str, field: str, primary: str) -> list[dict[str, str]]:
+    primary = primary.upper()
+    secondary = "EUR" if primary == "USD" else "USD"
+    return [
+        {
+            "headerName": f"{label} ({primary})",
+            "field": f"{field}_{primary.lower()}",
+            "type": "rightAligned",
+        },
+        {
+            "headerName": f"{label} ({secondary})",
+            "field": f"{field}_{secondary.lower()}",
+            "type": "rightAligned",
+        },
+    ]
 
 
 def _figure(rows, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no-untyped-def]
@@ -76,31 +94,11 @@ def register() -> None:
                 {
                     "columnDefs": [
                         {"headerName": "Year", "field": "label", "sortable": True},
-                        {
-                            "headerName": f"Contributions ({display_ccy})",
-                            "field": "contributions",
-                            "type": "rightAligned",
-                        },
-                        {
-                            "headerName": f"Dividends ({display_ccy})",
-                            "field": "dividends",
-                            "type": "rightAligned",
-                        },
-                        {
-                            "headerName": f"Interest ({display_ccy})",
-                            "field": "interest",
-                            "type": "rightAligned",
-                        },
-                        {
-                            "headerName": f"Net flow ({display_ccy})",
-                            "field": "net_flow",
-                            "type": "rightAligned",
-                        },
-                        {
-                            "headerName": f"Closing value ({display_ccy})",
-                            "field": "closing_value",
-                            "type": "rightAligned",
-                        },
+                        *_money_columns("Contributions", "contributions", display_ccy),
+                        *_money_columns("Dividends", "dividends", display_ccy),
+                        *_money_columns("Interest", "interest", display_ccy),
+                        *_money_columns("Net flow", "net_flow", display_ccy),
+                        *_money_columns("Closing value", "closing_value", display_ccy),
                         {
                             "headerName": "Growth %",
                             "field": "growth_pct",
@@ -121,18 +119,13 @@ def register() -> None:
                 {
                     "columnDefs": [
                         {"headerName": "Year", "field": "year"},
-                        {
-                            "headerName": f"Cumulative contribution ({display_ccy})",
-                            "field": "contributed",
-                            "type": "rightAligned",
-                        },
+                        *_money_columns("Cumulative contribution", "contributed", display_ccy),
                         *[
-                            {
-                                "headerName": _scenario_label(rate),
-                                "field": f"rate_{rate}",
-                                "type": "rightAligned",
-                            }
+                            col
                             for rate in DEFAULT_SCENARIOS
+                            for col in _money_columns(
+                                _scenario_label(rate), f"rate_{rate}", display_ccy
+                            )
                         ],
                     ],
                     "rowData": projection_table_rows(
