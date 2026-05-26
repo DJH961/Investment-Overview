@@ -16,6 +16,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
+## [0.9.0] — 2026-05-26
+
+### Added — Monthly, Yearly, Calculator, Settings pages
+- `ui/pages/_period_query.py`: shared monthly/yearly aggregation
+  (`aggregate(session, monthly=…)`) bucketing cashflow ledger rows into
+  contributions, dividends, interest, and net-flow. Used by both
+  `/monthly` and `/yearly`.
+- `ui/pages/monthly.py`: contributions bar chart (Plotly, colorblind
+  template) + paginated AG-Grid of monthly buckets.
+- `ui/pages/yearly.py`: stacked-bar chart (contributions + dividends +
+  interest) + AG-Grid of yearly buckets.
+- `ui/pages/calculator.py`: investment calculator using
+  `domain.allocation.plan_rebalance`. Reads the **active** target
+  allocation, pulls current per-instrument EUR values from
+  `compute_positions`, looks up latest prices, supports fractional-share
+  toggle, and renders a per-instrument buy plan + residual cash.
+- `ui/pages/settings.py`: read-only listing of accounts, instruments and
+  target allocations; **Refresh FX** / **Refresh prices** buttons wired
+  to the service layer.
+- 2 new aggregation tests. 155 total pass.
+
 ## [0.8.0] — 2026-05-26
 
 ### Added — `/overview` page (the v1.0-critical page)
@@ -194,7 +215,8 @@ _Nothing yet._
 - Docs: `README.md` (quickstart + architecture diagram), `CONTRIBUTING.md`,
   `docs/architecture.md`.
 
-[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/DJH961/Investment-Overview/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/DJH961/Investment-Overview/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/DJH961/Investment-Overview/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/DJH961/Investment-Overview/compare/v0.4.0...v0.5.0
