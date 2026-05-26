@@ -37,25 +37,48 @@ def get_positions(session: Session, *, as_of: date | None = None) -> list[Positi
     return compute_positions(session, as_of=as_of)
 
 
-def position_rows(positions: list[Position]) -> list[dict[str, Any]]:
-    """Shape positions for the AG-Grid table on the overview page."""
-    return [
-        {
-            "symbol": p.instrument.symbol,
-            "name": p.instrument.name or "",
-            "category": p.instrument.category or "",
-            "shares": f"{p.shares:,.4f}",
-            "avg_price": (f"{(p.cost_basis_native / p.shares):,.4f}" if p.shares else ""),
-            "current_price": (
-                f"{p.current_price_native:,.4f}" if p.current_price_native is not None else ""
-            ),
-            "cost_basis_native": f"{p.cost_basis_native:,.2f}",
-            "current_value_native": f"{p.current_value_native:,.2f}",
-            "current_value_eur": f"{p.current_value_eur:,.2f}",
-            "total_growth_pct": _growth_pct(p),
-        }
-        for p in positions
-    ]
+def position_rows(
+    positions: list[Position],
+    *,
+    display_currency: str = "EUR",
+    fx_rate: Decimal | None = None,
+) -> list[dict[str, Any]]:
+    """Shape positions for the AG-Grid table on the overview page.
+
+    ``display_currency`` selects the secondary "Value" column the page
+    highlights. The native and EUR columns are always present; a USD
+    column is added so a single render carries both currencies (spec §1
+    "simultaneous USD and EUR views"). ``fx_rate`` is EUR→USD; pass
+    ``None`` to leave the USD column blank.
+    """
+    rows: list[dict[str, Any]] = []
+    for p in positions:
+        if p.current_value_eur is not None and fx_rate is not None and fx_rate != 0:
+            value_usd = p.current_value_eur * fx_rate
+            value_usd_str = f"{value_usd:,.2f}"
+        elif p.account.native_currency == "USD":
+            value_usd_str = f"{p.current_value_native:,.2f}"
+        else:
+            value_usd_str = ""
+        rows.append(
+            {
+                "symbol": p.instrument.symbol,
+                "name": p.instrument.name or "",
+                "category": p.instrument.category or "",
+                "shares": f"{p.shares:,.4f}",
+                "avg_price": (f"{(p.cost_basis_native / p.shares):,.4f}" if p.shares else ""),
+                "current_price": (
+                    f"{p.current_price_native:,.4f}" if p.current_price_native is not None else ""
+                ),
+                "cost_basis_native": f"{p.cost_basis_native:,.2f}",
+                "current_value_native": f"{p.current_value_native:,.2f}",
+                "current_value_usd": value_usd_str,
+                "current_value_eur": f"{p.current_value_eur:,.2f}",
+                "total_growth_pct": _growth_pct(p),
+                "display_currency": display_currency,
+            }
+        )
+    return rows
 
 
 def _growth_pct(p: Position) -> str:

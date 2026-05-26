@@ -20,7 +20,6 @@ import sys
 import traceback
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent
 MIN_PYTHON = (3, 12)
 MIN_NICEGUI = (2, 10, 0)
@@ -38,6 +37,7 @@ REQUIRED_MODULES = (
     "pydantic",
     "pydantic_settings",
     "scipy",
+    "pytest",
     "sqlalchemy",
     "yfinance",
 )
@@ -64,7 +64,10 @@ def _is_running_from_venv() -> bool:
 
 
 def _current_python_has_dependencies() -> bool:
-    return all(importlib.util.find_spec(module) is not None for module in REQUIRED_MODULES) and _nicegui_is_supported()
+    return (
+        all(importlib.util.find_spec(module) is not None for module in REQUIRED_MODULES)
+        and _nicegui_is_supported()
+    )
 
 
 def _version_tuple(version: str) -> tuple[int, int, int]:
@@ -115,9 +118,16 @@ def _ensure_venv_ready() -> None:
         _run_checked([sys.executable, "-m", "venv", str(VENV_DIR)], "Virtual environment creation")
 
     if not _venv_has_dependencies():
-        print("Installing investment-dashboard and dependencies (one-time, about a minute) ...", flush=True)
+        print(
+            "Installing investment-dashboard and dependencies (one-time, about a minute) ...",
+            flush=True,
+        )
         _run_checked([str(VENV_PYTHON), "-m", "pip", "install", "--upgrade", "pip"], "pip upgrade")
         _run_checked([str(VENV_PYTHON), "-m", "pip", "install", "-e", "."], "Dependency install")
+        _run_checked(
+            [str(VENV_PYTHON), "-m", "pip", "install", "pytest"],
+            "Pytest install",
+        )
 
 
 def _relaunch_from_venv_if_needed() -> None:
@@ -128,7 +138,9 @@ def _relaunch_from_venv_if_needed() -> None:
     if not _venv_has_dependencies():
         raise RuntimeError("The virtual environment is missing required dependencies after setup.")
     if not _is_running_from_venv() or not _current_python_has_dependencies():
-        os.execv(str(VENV_PYTHON), [str(VENV_PYTHON), str(ROOT / "run_dashboard.py"), *sys.argv[1:]])
+        os.execv(
+            str(VENV_PYTHON), [str(VENV_PYTHON), str(ROOT / "run_dashboard.py"), *sys.argv[1:]]
+        )
 
 
 def main() -> int:

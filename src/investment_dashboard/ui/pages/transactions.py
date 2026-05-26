@@ -17,6 +17,7 @@ from investment_dashboard.repositories import (
     instruments_repo,
     transactions_repo,
 )
+from investment_dashboard.services import display_currency_service
 from investment_dashboard.services.importer_service import Broker, import_csv
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.pages._ledger_query import LedgerFilters, list_ledger_rows
@@ -94,6 +95,7 @@ def register() -> None:
                         {"headerName": "Fees", "field": "fees", "type": "rightAligned"},
                         {"headerName": "Net", "field": "net", "type": "rightAligned"},
                         {"headerName": "Net EUR", "field": "net_eur", "type": "rightAligned"},
+                        {"headerName": "Net USD", "field": "net_usd", "type": "rightAligned"},
                         {"headerName": "Source", "field": "source"},
                     ],
                     "rowData": [],
@@ -105,6 +107,7 @@ def register() -> None:
 
             def _refresh() -> None:
                 with session_scope() as session:
+                    fx_rate = display_currency_service.current_rate(session, quote="USD")
                     rows = list_ledger_rows(
                         session,
                         LedgerFilters(
@@ -112,6 +115,7 @@ def register() -> None:
                             kind=filters["kind"],
                             instrument_symbol=filters["symbol"],
                         ),
+                        fx_rate=fx_rate,
                     )
                 grid.options["rowData"] = rows
                 grid.update()

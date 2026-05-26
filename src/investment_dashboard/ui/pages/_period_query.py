@@ -164,15 +164,31 @@ def aggregate(
     return rows
 
 
-def to_table_rows(rows: list[PeriodRow]) -> list[dict[str, str]]:
+def to_table_rows(
+    rows: list[PeriodRow],
+    *,
+    currency: str = "EUR",
+    fx_rate: Decimal | None = None,
+) -> list[dict[str, str]]:
+    """Format aggregation rows into the dict shape the AG-Grid wants.
+
+    Numbers are converted from their stored EUR value into ``currency``
+    using ``fx_rate`` (EUR→quote). EUR pass-through requires no rate.
+    """
+
+    def conv(value: Decimal) -> Decimal:
+        if currency == "EUR" or fx_rate is None or fx_rate == 0:
+            return value
+        return value * fx_rate
+
     return [
         {
             "label": r.label,
-            "contributions": f"{r.contributions:,.2f}",
-            "dividends": f"{r.dividends:,.2f}",
-            "interest": f"{r.interest:,.2f}",
-            "net_flow": f"{r.net_flow:,.2f}",
-            "closing_value": f"{r.closing_value_eur:,.2f}",
+            "contributions": f"{conv(r.contributions):,.2f}",
+            "dividends": f"{conv(r.dividends):,.2f}",
+            "interest": f"{conv(r.interest):,.2f}",
+            "net_flow": f"{conv(r.net_flow):,.2f}",
+            "closing_value": f"{conv(r.closing_value_eur):,.2f}",
             "growth_pct": (
                 f"{r.growth_pct * Decimal(100):,.2f} %" if r.growth_pct is not None else "—"
             ),

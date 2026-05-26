@@ -39,9 +39,17 @@ def _fmt_decimal(value: Decimal | None, places: int = 2) -> str:
 
 
 def list_ledger_rows(
-    session: Session, filters: LedgerFilters | None = None
+    session: Session,
+    filters: LedgerFilters | None = None,
+    *,
+    fx_rate: Decimal | None = None,
 ) -> list[dict[str, Any]]:
-    """Return ledger rows in newest-first order, ready to hand to AG-Grid."""
+    """Return ledger rows in newest-first order, ready to hand to AG-Grid.
+
+    ``fx_rate`` is the current EUR→USD conversion factor (USD per 1 EUR).
+    When provided, an extra ``net_usd`` column is populated alongside
+    ``net_eur`` so the transactions page can show both currencies.
+    """
     f = filters or LedgerFilters()
     stmt = (
         select(Transaction)
@@ -62,12 +70,15 @@ def list_ledger_rows(
         stmt = stmt.join(Transaction.instrument).where(Instrument.symbol == f.instrument_symbol)
 
     txns = session.scalars(stmt).all()
-    return [_to_row(t) for t in txns]
+    return [_to_row(t, fx_rate=fx_rate) for t in txns]
 
 
-def _to_row(t: Transaction) -> dict[str, Any]:
+def _to_row(t: Transaction, *, fx_rate: Decimal | None = None) -> dict[str, Any]:
     account: Account | None = t.account  # type: ignore[assignment]
     instrument: Instrument | None = t.instrument  # type: ignore[assignment]
+    net_usd: Decimal | None = None
+    if fx_rate is not None and t.net_eur is not None:
+        net_usd = t.net_eur * fx_rate
     return {
         "id": t.id,
         "date": t.date.isoformat(),
@@ -80,5 +91,6 @@ def _to_row(t: Transaction) -> dict[str, Any]:
         "gross": _fmt_decimal(t.gross_native),
         "net": _fmt_decimal(t.net_native),
         "net_eur": _fmt_decimal(t.net_eur),
+        "net_usd": _fmt_decimal(net_usd),
         "source": t.source,
     }

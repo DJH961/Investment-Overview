@@ -16,6 +16,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
+## [1.3.0] — 2026-05-27
+
+### Added
+
+- **Onboarding wizard.** First-run users now land on `/onboarding`, which
+  detects an empty database and offers a one-click "Seed default setup"
+  action — creating the Vanguard, Fidelity and Savings Bank accounts and the
+  19 default instruments from the spec — or a "Set up manually" jump to
+  Settings.
+- **Display-currency toggle (EUR / USD) on every page.** A header switch in
+  the layout flips the dashboard's primary display currency; the value is
+  persisted in `app_config` so it survives restarts. Overview, Deposits,
+  Monthly, Yearly, Transactions, Calculator and Settings all honour the
+  toggle and, where space allows, render both EUR and USD side-by-side
+  rather than choosing one.
+- **Settings — accounts, instruments and allocations are now creatable
+  from the UI.** New "+ Add account", "+ Add instrument" and
+  "+ New allocation" dialogs cover the onboarding gap when a user wants to
+  add things outside the seed; a "Seed default setup" button re-runs the
+  spec defaults idempotently.
+- **Calculator currency selector.** The cash-to-invest input accepts EUR
+  or USD; the buy plan is shown in both currencies side-by-side.
+
+### Changed
+
+- Transactions page exposes both `Net EUR` and `Net USD` columns.
+- `run_dashboard.py` also installs `pytest` into the launcher's virtualenv
+  and gates the re-launch check on it, so the project test suite can be run
+  straight from the bootstrapped `.venv` without an extra install step.
+
 ## [1.2.1] — 2026-05-27
 
 ### Fixed

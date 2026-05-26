@@ -7,6 +7,7 @@ from decimal import Decimal
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
+from investment_dashboard.services import display_currency_service
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.pages._period_query import aggregate, to_table_rows
 from investment_dashboard.ui.pages._projection_query import (
@@ -21,24 +22,32 @@ from investment_dashboard.ui.theme import GAIN_COLOR
 PATH = "/yearly"
 
 
-def _figure(rows):  # type: ignore[no-untyped-def]
+def _convert(amount_eur: Decimal, target: str, fx_rate: Decimal | None) -> Decimal:
+    if target == "EUR" or fx_rate is None or fx_rate == 0:
+        return amount_eur
+    return amount_eur * fx_rate
+
+
+def _figure(rows, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no-untyped-def]
     import plotly.graph_objects as go  # noqa: PLC0415
 
     fig = go.Figure()
     if rows:
+        contribs = [float(_convert(r.contributions, currency, fx_rate)) for r in rows]
+        divs = [float(_convert(r.dividends + r.interest, currency, fx_rate)) for r in rows]
         fig.add_bar(
             x=[r.label for r in rows],
-            y=[float(r.contributions) for r in rows],
+            y=contribs,
             name="Contributions",
             marker_color=GAIN_COLOR,
         )
         fig.add_bar(
             x=[r.label for r in rows],
-            y=[float(r.dividends + r.interest) for r in rows],
+            y=divs,
             name="Dividends + Interest",
         )
     fig.update_layout(
-        title="Yearly cashflows (EUR)",
+        title=f"Yearly cashflows ({currency})",
         template="colorblind",
         barmode="stack",
         margin={"l": 40, "r": 20, "t": 40, "b": 40},
@@ -58,33 +67,37 @@ def register() -> None:
             with session_scope() as session:
                 rows = aggregate(session, monthly=False)
                 projection_rows = project_from_session(session, years=10)
-            ui.plotly(_figure(rows)).classes("w-full h-[40vh]")
+                display_ccy = display_currency_service.get_display_currency(session)
+                fx_rate = display_currency_service.current_rate(session, quote="USD")
+            ui.plotly(_figure(rows, currency=display_ccy, fx_rate=fx_rate)).classes(
+                "w-full h-[40vh]",
+            )
             ui.aggrid(
                 {
                     "columnDefs": [
                         {"headerName": "Year", "field": "label", "sortable": True},
                         {
-                            "headerName": "Contributions (EUR)",
+                            "headerName": f"Contributions ({display_ccy})",
                             "field": "contributions",
                             "type": "rightAligned",
                         },
                         {
-                            "headerName": "Dividends (EUR)",
+                            "headerName": f"Dividends ({display_ccy})",
                             "field": "dividends",
                             "type": "rightAligned",
                         },
                         {
-                            "headerName": "Interest (EUR)",
+                            "headerName": f"Interest ({display_ccy})",
                             "field": "interest",
                             "type": "rightAligned",
                         },
                         {
-                            "headerName": "Net flow (EUR)",
+                            "headerName": f"Net flow ({display_ccy})",
                             "field": "net_flow",
                             "type": "rightAligned",
                         },
                         {
-                            "headerName": "Closing value (EUR)",
+                            "headerName": f"Closing value ({display_ccy})",
                             "field": "closing_value",
                             "type": "rightAligned",
                         },
@@ -94,7 +107,7 @@ def register() -> None:
                             "type": "rightAligned",
                         },
                     ],
-                    "rowData": to_table_rows(rows),
+                    "rowData": to_table_rows(rows, currency=display_ccy, fx_rate=fx_rate),
                     "defaultColDef": {"resizable": True, "sortable": True},
                 }
             ).classes("w-full h-[35vh]")
@@ -109,7 +122,7 @@ def register() -> None:
                     "columnDefs": [
                         {"headerName": "Year", "field": "year"},
                         {
-                            "headerName": "Cumulative contribution (EUR)",
+                            "headerName": f"Cumulative contribution ({display_ccy})",
                             "field": "contributed",
                             "type": "rightAligned",
                         },
@@ -122,7 +135,11 @@ def register() -> None:
                             for rate in DEFAULT_SCENARIOS
                         ],
                     ],
-                    "rowData": projection_table_rows(projection_rows),
+                    "rowData": projection_table_rows(
+                        projection_rows,
+                        currency=display_ccy,
+                        fx_rate=fx_rate,
+                    ),
                     "defaultColDef": {"resizable": True, "sortable": True},
                 }
             ).classes("w-full h-[35vh]")

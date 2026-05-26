@@ -15,9 +15,11 @@ from nicegui import ui
 from investment_dashboard.db import session_scope
 from investment_dashboard.domain.allocation import plan_rebalance
 from investment_dashboard.repositories import allocations_repo, instruments_repo
+from investment_dashboard.services import display_currency_service
 from investment_dashboard.services.positions_service import compute_positions
 from investment_dashboard.services.prices_service import latest_close
 from investment_dashboard.ui.layout import page_frame
+from investment_dashboard.ui.money_format import currency_symbol
 
 PATH = "/calculator"
 
@@ -34,20 +36,51 @@ def register() -> None:
     def _calculator() -> None:  # pragma: no cover - rendered by NiceGUI
         with page_frame("Calculator", current=PATH):
             ui.label("Investment calculator").classes("text-h5")
-            cash_in = ui.input("Cash to invest (EUR)", value="1000").classes("min-w-[14rem]")
-            fractional = ui.checkbox("Allow fractional shares", value=False)
+
+            with session_scope() as session:
+                default_ccy = display_currency_service.get_display_currency(session)
+                fx_rate = display_currency_service.current_rate(session, quote="USD")
+
+            with ui.row().classes("items-end gap-md"):
+                cash_in = ui.input(
+                    "Cash to invest",
+                    value="1000",
+                ).classes("min-w-[14rem]")
+                ccy_in = ui.toggle(
+                    list(display_currency_service.SUPPORTED_CURRENCIES),
+                    value=default_ccy,
+                ).props("dense")
+                fractional = ui.checkbox("Allow fractional shares", value=False)
+            ui.label(
+                "Input the cash amount in your preferred currency; the plan is computed "
+                "internally in EUR (the dashboard's base) and the buy amounts displayed in "
+                "both currencies where an FX rate is available.",
+            ).classes("text-caption opacity-70")
             result_container = ui.column().classes("w-full")
 
+            def _to_eur(amount: Decimal, source_currency: str) -> Decimal:
+                if source_currency == "EUR" or fx_rate is None or fx_rate == 0:
+                    return amount
+                return amount / fx_rate
+
+            def _from_eur(amount_eur: Decimal, target: str) -> Decimal:
+                if target == "EUR" or fx_rate is None or fx_rate == 0:
+                    return amount_eur
+                return amount_eur * fx_rate
+
             def _run() -> None:
-                cash = _decimal_or_zero(cash_in.value or "")
-                if cash <= 0:
+                cash_raw = _decimal_or_zero(cash_in.value or "")
+                source_ccy = ccy_in.value or default_ccy
+                if cash_raw <= 0:
                     ui.notify("Enter a positive cash amount", type="warning")
                     return
+                cash_eur = _to_eur(cash_raw, source_ccy)
                 with session_scope() as session:
                     active = allocations_repo.get_active(session)
                     if active is None:
                         ui.notify(
-                            "No active target allocation — add one in Settings", type="warning"
+                            "No active target allocation — add one in Settings",
+                            type="warning",
                         )
                         return
                     target_pct: dict[int, Decimal] = {
@@ -57,7 +90,6 @@ def register() -> None:
                     current_values: dict[int, Decimal] = {
                         p.instrument.id: p.current_value_eur for p in positions
                     }
-                    # Ensure every targeted instrument has a current value entry.
                     for instrument_id in target_pct:
                         current_values.setdefault(instrument_id, Decimal(0))
                     current_prices = {
@@ -70,7 +102,7 @@ def register() -> None:
                     }
                 try:
                     plan = plan_rebalance(
-                        cash,
+                        cash_eur,
                         target_pct,
                         current_values,
                         current_prices,
@@ -83,17 +115,25 @@ def register() -> None:
                     {
                         "symbol": symbol_by_id.get(r.instrument_id, f"#{r.instrument_id}"),
                         "target_pct": f"{r.target_pct:.2f} %",
-                        "current_value": f"{r.current_value:,.2f}",
-                        "add_value": f"{r.add_value:,.2f}",
+                        "current_value_eur": f"€{r.current_value:,.2f}",
+                        "current_value_usd": f"${_from_eur(r.current_value, 'USD'):,.2f}",
+                        "add_value_eur": f"€{r.add_value:,.2f}",
+                        "add_value_usd": f"${_from_eur(r.add_value, 'USD'):,.2f}",
                         "add_shares": f"{r.add_shares}",
                     }
                     for r in plan.rows
                 ]
                 result_container.clear()
                 with result_container:
-                    ui.label(f"Residual cash after plan: €{plan.residual_cash:,.2f}").classes(
-                        "text-subtitle1"
-                    )
+                    sym_in = currency_symbol(source_ccy)
+                    ui.label(
+                        f"Input: {sym_in}{cash_raw:,.2f} ({source_ccy})  →  "
+                        f"€{cash_eur:,.2f} EUR internally",
+                    ).classes("text-subtitle2 opacity-80")
+                    ui.label(
+                        f"Residual cash after plan: €{plan.residual_cash:,.2f} "
+                        f"(${_from_eur(plan.residual_cash, 'USD'):,.2f})",
+                    ).classes("text-subtitle1")
                     ui.aggrid(
                         {
                             "columnDefs": [
@@ -105,12 +145,22 @@ def register() -> None:
                                 },
                                 {
                                     "headerName": "Current value (EUR)",
-                                    "field": "current_value",
+                                    "field": "current_value_eur",
+                                    "type": "rightAligned",
+                                },
+                                {
+                                    "headerName": "Current value (USD)",
+                                    "field": "current_value_usd",
                                     "type": "rightAligned",
                                 },
                                 {
                                     "headerName": "Add (EUR)",
-                                    "field": "add_value",
+                                    "field": "add_value_eur",
+                                    "type": "rightAligned",
+                                },
+                                {
+                                    "headerName": "Add (USD)",
+                                    "field": "add_value_usd",
                                     "type": "rightAligned",
                                 },
                                 {

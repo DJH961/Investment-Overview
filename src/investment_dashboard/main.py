@@ -14,6 +14,7 @@ from investment_dashboard.ui.pages import (
     calculator,
     deposits,
     monthly,
+    onboarding,
     overview,
     transactions,
     yearly,
@@ -40,6 +41,7 @@ def _register_pages() -> None:
     yearly.register()
     calculator.register()
     settings_page.register()
+    onboarding.register()
 
     @ui.page("/")
     def _root() -> None:  # pragma: no cover - simple redirect

@@ -204,27 +204,51 @@ def project_monthly_from_session(
     )
 
 
-def to_table_rows(rows: list[ProjectionRow]) -> list[dict[str, str]]:
+def to_table_rows(
+    rows: list[ProjectionRow],
+    *,
+    currency: str = "EUR",
+    fx_rate: Decimal | None = None,
+) -> list[dict[str, str]]:
+    """Format yearly-projection rows, converting EUR→``currency`` for display."""
+
+    def conv(value: Decimal) -> Decimal:
+        if currency == "EUR" or fx_rate is None or fx_rate == 0:
+            return value
+        return value * fx_rate
+
     out: list[dict[str, str]] = []
     for r in rows:
         row: dict[str, str] = {
             "year": str(r.year),
-            "contributed": f"{r.contributed:,.2f}",
+            "contributed": f"{conv(r.contributed):,.2f}",
         }
         for rate, value in r.values_by_rate.items():
-            row[f"rate_{rate}"] = f"{value:,.2f}"
+            row[f"rate_{rate}"] = f"{conv(value):,.2f}"
         out.append(row)
     return out
 
 
-def to_monthly_table_rows(rows: list[MonthlyProjectionRow]) -> list[dict[str, str]]:
+def to_monthly_table_rows(
+    rows: list[MonthlyProjectionRow],
+    *,
+    currency: str = "EUR",
+    fx_rate: Decimal | None = None,
+) -> list[dict[str, str]]:
+    """Format monthly-projection rows, converting EUR→``currency`` for display."""
+
+    def conv(value: Decimal) -> Decimal:
+        if currency == "EUR" or fx_rate is None or fx_rate == 0:
+            return value
+        return value * fx_rate
+
     out: list[dict[str, str]] = []
     for r in rows:
         row: dict[str, str] = {
             "label": r.label,
-            "contributed": f"{r.contributed:,.2f}",
+            "contributed": f"{conv(r.contributed):,.2f}",
         }
         for rate, value in r.values_by_rate.items():
-            row[f"rate_{rate}"] = f"{value:,.2f}"
+            row[f"rate_{rate}"] = f"{conv(value):,.2f}"
         out.append(row)
     return out

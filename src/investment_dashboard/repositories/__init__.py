@@ -8,6 +8,7 @@ directly — it only talks to services.
 from investment_dashboard.repositories import (
     accounts_repo,
     allocations_repo,
+    app_config_repo,
     fx_repo,
     instruments_repo,
     price_cache_repo,
@@ -19,6 +20,7 @@ from investment_dashboard.repositories import (
 __all__ = [
     "accounts_repo",
     "allocations_repo",
+    "app_config_repo",
     "fx_repo",
     "instruments_repo",
     "price_cache_repo",
