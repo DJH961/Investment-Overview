@@ -16,6 +16,44 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
+## [1.0.0] — 2026-05-26
+
+### First UI-testable release 🎉
+
+Cumulative result of v0.2–v0.9. The app now boots end-to-end:
+
+```bash
+uv sync
+uv run alembic upgrade head
+uv run investment-dashboard   # NiceGUI on http://0.0.0.0:8080
+```
+
+All seven pages from spec §8 are live (`/overview`, `/deposits`,
+`/transactions`, `/monthly`, `/yearly`, `/calculator`, `/settings`).
+CSV import (Fidelity + Vanguard) round-trips through the importer
+service into the ledger; the Overview page renders portfolio XIRR,
+total gain, YTD growth, per-instrument positions and an allocation
+treemap.
+
+### Added in v1.0.0 specifically
+- `tests/e2e/test_app_smoke.py`: zero-network smoke that runs the same
+  boot + page-registration sequence as `main.run()` so any import-time
+  regression is caught in CI.
+- README updated to reflect the v1.0 status, capabilities, and roadmap
+  position.
+- 157 total tests pass; lint, format, mypy (strict on `domain/`) all
+  clean.
+
+### Known caveats / deferred to v1.1
+- `/monthly` and `/yearly` show contribution/dividend buckets but not
+  end-of-period mark-to-market closing balances.
+- `/yearly` "Hypothetical projection" sub-table is not yet wired.
+- `/settings` is read-only (inline editing of accounts/instruments/
+  allocations comes in v1.1).
+- The `ytd_start_value` used by `compute_portfolio_metrics` requires
+  historical prices on January 1, which may be missing for new
+  portfolios — treated as best-effort.
+
 ## [0.9.0] — 2026-05-26
 
 ### Added — Monthly, Yearly, Calculator, Settings pages
@@ -215,7 +253,9 @@ _Nothing yet._
 - Docs: `README.md` (quickstart + architecture diagram), `CONTRIBUTING.md`,
   `docs/architecture.md`.
 
-[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/DJH961/Investment-Overview/compare/v0.9.0...v1.0.0
+[0.9.0]: https://github.com/DJH961/Investment-Overview/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/DJH961/Investment-Overview/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/DJH961/Investment-Overview/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/DJH961/Investment-Overview/compare/v0.5.0...v0.6.0
