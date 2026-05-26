@@ -16,6 +16,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
+## [0.8.0] — 2026-05-26
+
+### Added — `/overview` page (the v1.0-critical page)
+- `ui/pages/_overview_query.py`: thin layer wrapping
+  `metrics_service.compute_portfolio_metrics` /
+  `positions_service.compute_positions`, plus `position_rows`,
+  `allocation_treemap`, and a `TreemapDatum` dataclass.
+- `ui/pages/overview.py` upgraded from stub to a working dashboard:
+  - 4 KPI cards (Total Value · Total Gain · XIRR · YTD Growth) with the
+    colorblind-safe gain/loss color and ↑/↓ arrow.
+  - Per-instrument AG-Grid (10 columns including category, cost basis,
+    current value EUR, total growth %).
+  - Plotly treemap of allocation by `instrument.category`, using the
+    `colorblind` template.
+  - Helpful empty-state when no positions exist.
+- 3 new tests for the position-row shape and treemap aggregation. 153
+  total pass.
+
 ## [0.7.0] — 2026-05-26
 
 ### Added — `/deposits` page
@@ -176,7 +194,8 @@ _Nothing yet._
 - Docs: `README.md` (quickstart + architecture diagram), `CONTRIBUTING.md`,
   `docs/architecture.md`.
 
-[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/DJH961/Investment-Overview/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/DJH961/Investment-Overview/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/DJH961/Investment-Overview/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/DJH961/Investment-Overview/compare/v0.3.0...v0.4.0
