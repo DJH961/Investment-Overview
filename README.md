@@ -7,11 +7,14 @@ return metrics — XIRR, TWR, CAGR, YTD variants, drawdown, Sharpe, Sortino —
 in both **USD** and **EUR**, and serves them over a NiceGUI web UI accessible
 from the host laptop and any device on the same Wi-Fi network.
 
-> **Status: v0.1.0 — scaffolding (Phase 0 + 1).** Data model, FX/market-data
-> adapters, Alembic migrations, tests, lint, type-check, and CI are in place.
-> No runnable UI yet — the placeholder NiceGUI page just confirms binding works.
-> **v1.0.0 will be the first release with a usable UI** (CSV/manual ingestion
-> through to `/overview` showing real XIRR/TWR numbers).
+> **Status: v1.1.0 — deferred v1.0 items now shipped.** All seven pages
+> registered (`/overview`, `/deposits`, `/transactions`, `/monthly`,
+> `/yearly`, `/calculator`, `/settings`), CSV import for Fidelity and
+> Vanguard, XIRR/TWR/CAGR computed from the live ledger, allocation
+> treemap, colorblind-safe theme, idempotent boot sequence. v1.1 adds
+> end-of-period mark-to-market closing balances on `/monthly` + `/yearly`,
+> a hypothetical 10-year projection block on `/yearly`, and inline
+> editing on `/settings`. 166 tests pass; lint/format/mypy clean.
 
 ## Highlights
 
@@ -134,12 +137,21 @@ docs/                  # architecture notes
 See [`requirements_and_project_overview.md`](requirements_and_project_overview.md)
 §14 for the full phased roadmap. Current status:
 
-- ✅ Phase 0 — scaffolding, CI, hello-world UI.
-- ✅ Phase 1 (partial) — schema, migrations, FX + market-data adapters. CSV
-  importers and `/transactions` CRUD UI are next.
-- ⏳ Phase 2 — `domain/returns.py` (XIRR/TWR/CAGR), `/overview` page.
-- ⏳ Phase 3+ — Vanguard + Savings flows, monthly/yearly/calculator pages,
-  risk metrics, mobile-responsive polish.
+- ✅ Phase 0 — scaffolding, CI.
+- ✅ Phase 1 — schema, migrations, FX + market-data adapters, CSV
+  importers (Fidelity + Vanguard).
+- ✅ Phase 2 — `domain/` pure math: XIRR, TWR, CAGR, returns, risk,
+  rebalance allocation.
+- ✅ Phase 3 — Repositories, services, importer service, UI shell.
+- ✅ Phase 4 — All seven pages wired with live data: `/overview`,
+  `/deposits`, `/transactions`, `/monthly`, `/yearly`, `/calculator`,
+  `/settings`.
+- ✅ Phase 5 (v1.1) — End-of-period mark-to-market closing balances,
+  inline editing for accounts/instruments/allocations, yearly
+  hypothetical projection block.
+- ⏳ Phase 6 (v1.2+) — Snapshots cache (spec §4.1) to avoid recomputing
+  positions on every page render, JAN-1 backfill for `ytd_start_value`,
+  monthly projection rows.
 
 ## License
 
