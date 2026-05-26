@@ -16,6 +16,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
+## [0.7.0] — 2026-05-26
+
+### Added — `/deposits` page
+- `ui/pages/_deposits_query.py`: `DepositSummary` dataclass + helpers
+  `compute_summary` and `list_deposit_rows` (cash-flow filter: only
+  ``deposit`` / ``withdrawal`` / ``interest`` ledger rows).
+- `ui/pages/deposits.py` upgraded from stub to a working page:
+  - 4 KPI cards at the top: Total contributed (EUR), YTD contributions,
+    MTD contributions, Interest YTD.
+  - AG-Grid below with all cash-flow rows (newest first).
+- 3 new tests for the deposit aggregation logic (table filter,
+  summary totals, empty-data safety). 150 total pass.
+
 ## [0.6.0] — 2026-05-26
 
 ### Added — `/transactions` page
@@ -163,7 +176,8 @@ _Nothing yet._
 - Docs: `README.md` (quickstart + architecture diagram), `CONTRIBUTING.md`,
   `docs/architecture.md`.
 
-[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/DJH961/Investment-Overview/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/DJH961/Investment-Overview/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/DJH961/Investment-Overview/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/DJH961/Investment-Overview/compare/v0.2.0...v0.3.0
