@@ -16,6 +16,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
+## [0.2.0] — 2026-05-26
+
+### Added — Phase 2 domain math layer
+- `domain/currency.py`: `native_to_eur`, `eur_to_native`, and
+  `lookup_rate_with_forward_fill` (weekend / holiday inheritance) — all
+  Decimal-based.
+- `domain/returns.py`:
+  - `Cashflow` and `DailyValuation` dataclasses.
+  - `xirr()` via Newton-Raphson with a bisection fallback on
+    `[-0.9999, 100.0]`; handles degenerate same-sign streams (returns
+    `None`) and non-convergence.
+  - `twr()` daily-snapshot time-weighted return (spec §6.3).
+  - `cagr()`, `annualize_return()`, `total_growth_pct()`, `capital_gain()`.
+- `domain/risk.py`: `annualized_volatility`, `sharpe_ratio`,
+  `sortino_ratio`, `max_drawdown`, `best_worst_month`,
+  `monthly_win_rate`, `beta`, `alpha` (spec §6.6).
+- `domain/allocation.py`: `plan_rebalance()` — buy-only rebalance planner
+  with proportional scaling and floored- or fractional-share modes
+  (spec §6.8).
+- 60 new unit tests under `tests/domain/`, including a self-verifying NPV
+  check on an irregular cashflow stream.
+- Ruff config: ignore `RUF002`/`RUF003` (mathematical Unicode in
+  docstrings is intentional), and relax `PLR0911`/`PLR0912` in
+  `domain/returns.py` (XIRR is inherently branchy).
+
 ## [0.1.0] — 2026-05-26
 
 ### Added — Phase 0 + 1 scaffolding
@@ -47,5 +72,6 @@ _Nothing yet._
 - Docs: `README.md` (quickstart + architecture diagram), `CONTRIBUTING.md`,
   `docs/architecture.md`.
 
-[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/DJH961/Investment-Overview/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/DJH961/Investment-Overview/releases/tag/v0.1.0
