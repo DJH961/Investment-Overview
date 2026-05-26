@@ -43,12 +43,18 @@ def _refresh_prices_clicked() -> None:  # pragma: no cover - UI
         ui.notify(f"Price refresh failed: {exc}", type="negative")
 
 
-def _edit_account_dialog(account_id: int, current_label: str, current_type: str | None) -> None:
+def _edit_account_dialog(
+    account_id: int,
+    current_label: str,
+    current_type: str | None,
+    current_active: bool,
+) -> None:
     """Open an inline-edit dialog for an account row."""  # pragma: no cover - UI
     with ui.dialog() as dialog, ui.card():
         ui.label("Edit account").classes("text-h6")
         label_input = ui.input("Label", value=current_label)
         type_input = ui.input("Account type", value=current_type or "")
+        active_input = ui.checkbox("Active", value=current_active)
 
         def _save() -> None:
             try:
@@ -58,6 +64,7 @@ def _edit_account_dialog(account_id: int, current_label: str, current_type: str 
                         account_id,
                         account_label=label_input.value.strip() or None,
                         account_type=type_input.value.strip() or None,
+                        active=bool(active_input.value),
                     )
                 ui.notify("Account updated", type="positive")
                 dialog.close()
@@ -77,14 +84,32 @@ def _edit_instrument_dialog(
     current_name: str,
     current_category: str,
     current_asset_class: str,
+    current_expense_ratio: str,
+    current_active: bool,
 ) -> None:  # pragma: no cover - UI
     with ui.dialog() as dialog, ui.card():
         ui.label("Edit instrument").classes("text-h6")
         name_input = ui.input("Name", value=current_name)
         category_input = ui.input("Category", value=current_category)
         asset_class_input = ui.input("Asset class", value=current_asset_class)
+        expense_input = ui.input(
+            "Expense ratio (e.g. 0.0007 for 0.07 %)", value=current_expense_ratio
+        )
+        active_input = ui.checkbox("Active", value=current_active)
 
         def _save() -> None:
+            from decimal import Decimal, InvalidOperation  # noqa: PLC0415
+
+            raw_expense = expense_input.value.strip()
+            expense_ratio: Decimal | None
+            if raw_expense:
+                try:
+                    expense_ratio = Decimal(raw_expense)
+                except InvalidOperation:
+                    ui.notify(f"Invalid expense ratio: {raw_expense!r}", type="negative")
+                    return
+            else:
+                expense_ratio = None
             try:
                 with session_scope() as session:
                     instruments_repo.update_instrument(
@@ -93,6 +118,8 @@ def _edit_instrument_dialog(
                         name=name_input.value.strip() or None,
                         category=category_input.value.strip() or None,
                         asset_class=asset_class_input.value.strip() or None,
+                        expense_ratio=expense_ratio,
+                        active=bool(active_input.value),
                     )
                 ui.notify("Instrument updated", type="positive")
                 dialog.close()
@@ -147,14 +174,15 @@ def register() -> None:
                 for a in accounts:
                     with ui.row().classes("items-center gap-md w-full"):
                         ui.label(f"{a.broker} · {a.account_label}").classes("text-body1")
-                        ui.label(f"{a.native_currency} · {a.account_type or '—'}").classes(
-                            "text-caption opacity-70"
-                        )
+                        ui.label(
+                            f"{a.native_currency} · {a.account_type or '—'}"
+                            f"{'' if a.active else ' · inactive'}"
+                        ).classes("text-caption opacity-70")
                         ui.space()
                         ui.button(
                             "Edit",
                             on_click=lambda _, a=a: _edit_account_dialog(
-                                a.id, a.account_label, a.account_type
+                                a.id, a.account_label, a.account_type, a.active
                             ),
                         ).props("flat dense")
 
@@ -163,14 +191,23 @@ def register() -> None:
                 for i in instruments:
                     with ui.row().classes("items-center gap-md w-full"):
                         ui.label(f"{i.symbol} · {i.name or ''}").classes("text-body1")
-                        ui.label(f"{i.asset_class} · {i.category or '—'}").classes(
-                            "text-caption opacity-70"
+                        expense_lbl = (
+                            f" · ER {i.expense_ratio}" if i.expense_ratio is not None else ""
                         )
+                        ui.label(
+                            f"{i.asset_class} · {i.category or '—'}{expense_lbl}"
+                            f"{'' if i.active else ' · inactive'}"
+                        ).classes("text-caption opacity-70")
                         ui.space()
                         ui.button(
                             "Edit",
                             on_click=lambda _, i=i: _edit_instrument_dialog(
-                                i.id, i.name or "", i.category or "", i.asset_class
+                                i.id,
+                                i.name or "",
+                                i.category or "",
+                                i.asset_class,
+                                str(i.expense_ratio) if i.expense_ratio is not None else "",
+                                i.active,
                             ),
                         ).props("flat dense")
 

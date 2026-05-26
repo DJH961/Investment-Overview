@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import calendar
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -36,6 +36,8 @@ class PeriodRow:
     interest: Decimal
     net_flow: Decimal
     closing_value_eur: Decimal = ZERO
+    opening_value_eur: Decimal = ZERO
+    growth_pct: Decimal | None = None
 
 
 def _amount_eur(t: Transaction) -> Decimal:
@@ -57,6 +59,32 @@ def _period_end(label: str, *, monthly: bool, today: date) -> date:
     else:
         period_end = date(int(label), 12, 31)
     return min(period_end, today)
+
+
+def _period_start(label: str, *, monthly: bool) -> date:
+    """First-of-period date for a bucket label (uncapped)."""
+    if monthly:
+        year, month = (int(p) for p in label.split("-"))
+        return date(year, month, 1)
+    return date(int(label), 1, 1)
+
+
+def _modified_dietz(
+    opening: Decimal,
+    closing: Decimal,
+    net_external_flow: Decimal,
+) -> Decimal | None:
+    """Modified Dietz period return: ``(V_end - V_start - F) / (V_start + 0.5·F)``.
+
+    ``net_external_flow`` is contributions (positive) minus withdrawals
+    (negative-already-signed) — dividends and interest stay *inside* the
+    portfolio for this calc (they're internal gains, not external cash).
+    Returns ``None`` if the denominator is non-positive.
+    """
+    denom = opening + net_external_flow / Decimal(2)
+    if denom <= 0:
+        return None
+    return (closing - opening - net_external_flow) / denom
 
 
 def aggregate(
@@ -91,20 +119,34 @@ def aggregate(
 
     today = today or date.today()
     closing_by_label: dict[str, Decimal] = {}
+    opening_by_label: dict[str, Decimal] = {}
+    growth_by_label: dict[str, Decimal | None] = {}
     if with_closing_value and buckets:
         # Local import to avoid a cycle: services -> repositories -> models,
         # while this module is imported by the UI layer which also imports
         # services elsewhere.
-        from investment_dashboard.services import positions_service  # noqa: PLC0415
+        from investment_dashboard.services import snapshots_service  # noqa: PLC0415
 
-        for label in buckets:
-            as_of = _period_end(label, monthly=monthly, today=today)
+        for label, agg in buckets.items():
+            period_end = _period_end(label, monthly=monthly, today=today)
+            period_open = _period_start(label, monthly=monthly)
             try:
-                closing_by_label[label] = positions_service.total_portfolio_value(
-                    session, as_of=as_of
-                )
+                closing_by_label[label] = snapshots_service.get_or_compute(session, period_end)
+                # Opening = previous day's close (capped if start > today).
+                if period_open <= today:
+                    opening_by_label[label] = snapshots_service.get_or_compute(
+                        session, period_open - timedelta(days=1)
+                    )
+                else:
+                    opening_by_label[label] = ZERO
             except Exception:  # pragma: no cover - defensive: keep page renderable
                 closing_by_label[label] = ZERO
+                opening_by_label[label] = ZERO
+            growth_by_label[label] = _modified_dietz(
+                opening_by_label[label],
+                closing_by_label[label],
+                agg["contrib"],
+            )
 
     rows = [
         PeriodRow(
@@ -114,6 +156,8 @@ def aggregate(
             interest=v["int"],
             net_flow=v["contrib"] + v["div"] + v["int"],
             closing_value_eur=closing_by_label.get(k, ZERO),
+            opening_value_eur=opening_by_label.get(k, ZERO),
+            growth_pct=growth_by_label.get(k),
         )
         for k, v in sorted(buckets.items())
     ]
@@ -129,6 +173,9 @@ def to_table_rows(rows: list[PeriodRow]) -> list[dict[str, str]]:
             "interest": f"{r.interest:,.2f}",
             "net_flow": f"{r.net_flow:,.2f}",
             "closing_value": f"{r.closing_value_eur:,.2f}",
+            "growth_pct": (
+                f"{r.growth_pct * Decimal(100):,.2f} %" if r.growth_pct is not None else "—"
+            ),
         }
         for r in rows
     ]

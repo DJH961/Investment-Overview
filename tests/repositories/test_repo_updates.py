@@ -64,3 +64,27 @@ def test_update_instrument_changes_display_fields(session: Session) -> None:
 def test_update_instrument_missing_raises(session: Session) -> None:
     with pytest.raises(ValueError, match="not found"):
         instruments_repo.update_instrument(session, 12345, name="x")
+
+
+def test_update_account_can_toggle_active(session: Session) -> None:
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Toggle me",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    assert acct.active is True
+    updated = accounts_repo.update_account(session, acct.id, active=False)
+    assert updated.active is False
+    re_enabled = accounts_repo.update_account(session, acct.id, active=True)
+    assert re_enabled.active is True
+
+
+def test_update_instrument_can_set_expense_ratio(session: Session) -> None:
+    from decimal import Decimal
+
+    instr = instruments_repo.get_or_create(session, symbol="VTI")
+    assert instr.expense_ratio is None
+    updated = instruments_repo.update_instrument(session, instr.id, expense_ratio=Decimal("0.0003"))
+    assert updated.expense_ratio == Decimal("0.0003")

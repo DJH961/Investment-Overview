@@ -9,6 +9,8 @@ from investment_dashboard.models.app_config import AppConfig
 from investment_dashboard.models.base import Base
 from investment_dashboard.models.fx_history import FxHistory
 from investment_dashboard.models.instrument import Instrument
+from investment_dashboard.models.position_snapshot import PositionSnapshot
+from investment_dashboard.models.price_cache_metadata import PriceCacheMetadata
 from investment_dashboard.models.price_history import PriceHistory
 from investment_dashboard.models.target_allocation import (
     TargetAllocation,
@@ -22,6 +24,8 @@ __all__ = [
     "Base",
     "FxHistory",
     "Instrument",
+    "PositionSnapshot",
+    "PriceCacheMetadata",
     "PriceHistory",
     "TargetAllocation",
     "TargetAllocationItem",

@@ -10,7 +10,9 @@ from investment_dashboard.repositories import (
     allocations_repo,
     fx_repo,
     instruments_repo,
+    price_cache_repo,
     prices_repo,
+    snapshots_repo,
     transactions_repo,
 )
 
@@ -19,6 +21,8 @@ __all__ = [
     "allocations_repo",
     "fx_repo",
     "instruments_repo",
+    "price_cache_repo",
     "prices_repo",
+    "snapshots_repo",
     "transactions_repo",
 ]

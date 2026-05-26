@@ -88,6 +88,11 @@ def register() -> None:
                             "field": "closing_value",
                             "type": "rightAligned",
                         },
+                        {
+                            "headerName": "Growth %",
+                            "field": "growth_pct",
+                            "type": "rightAligned",
+                        },
                     ],
                     "rowData": to_table_rows(rows),
                     "defaultColDef": {"resizable": True, "sortable": True},

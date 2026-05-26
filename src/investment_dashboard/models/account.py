@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, Date, String
+from sqlalchemy import Boolean, CheckConstraint, Date, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from investment_dashboard.models.base import Base
@@ -31,6 +31,7 @@ class Account(Base):
     account_type: Mapped[str | None] = mapped_column(String(16))
     opened_on: Mapped[date | None] = mapped_column(Date)
     notes: Mapped[str | None] = mapped_column(String(1024))
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="1")
 
     transactions: Mapped[list[Transaction]] = relationship(
         back_populates="account", cascade="all, delete-orphan"

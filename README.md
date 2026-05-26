@@ -7,14 +7,19 @@ return metrics — XIRR, TWR, CAGR, YTD variants, drawdown, Sharpe, Sortino —
 in both **USD** and **EUR**, and serves them over a NiceGUI web UI accessible
 from the host laptop and any device on the same Wi-Fi network.
 
-> **Status: v1.1.0 — deferred v1.0 items now shipped.** All seven pages
-> registered (`/overview`, `/deposits`, `/transactions`, `/monthly`,
-> `/yearly`, `/calculator`, `/settings`), CSV import for Fidelity and
-> Vanguard, XIRR/TWR/CAGR computed from the live ledger, allocation
-> treemap, colorblind-safe theme, idempotent boot sequence. v1.1 adds
-> end-of-period mark-to-market closing balances on `/monthly` + `/yearly`,
-> a hypothetical 10-year projection block on `/yearly`, and inline
-> editing on `/settings`. 166 tests pass; lint/format/mypy clean.
+> **Status: v1.2.0 — snapshots cache, near-live ETF prices, monthly
+> projection, one-click launcher.** All seven pages registered
+> (`/overview`, `/deposits`, `/transactions`, `/monthly`, `/yearly`,
+> `/calculator`, `/settings`), CSV import for Fidelity and Vanguard,
+> XIRR/TWR/CAGR computed from the live ledger, allocation treemap,
+> colorblind-safe theme, idempotent boot sequence. v1.2 adds a daily
+> `position_snapshots` cache (constant-time period close-outs), a
+> per-instrument TTL refresh that keeps ETFs/stocks updated every
+> ~2 minutes during market hours, a 36-month projection on
+> `/monthly`, a Modified-Dietz growth-% column on both period pages,
+> editable `expense_ratio` / `active` fields in `/settings`, and a
+> double-clickable launcher (`run_dashboard.bat` / `.sh` / `.py`)
+> that needs no command line. 188 tests pass; lint/format/mypy clean.
 
 ## Highlights
 
@@ -47,6 +52,23 @@ Full rationale in [`docs/architecture.md`](docs/architecture.md) and the
 `requirements_and_project_overview.md` spec.
 
 ## Quickstart
+
+### One-click launcher (no command line)
+
+The fastest path — works on a fresh clone without any prior Python
+setup beyond having Python 3.12+ on `PATH`.
+
+- **Windows:** double-click `run_dashboard.bat`. First run bootstraps
+  a local `.venv` and installs dependencies (≈1 minute); subsequent
+  runs are instant.
+- **macOS / Linux:** `./run_dashboard.sh` (already executable).
+- **From any IDE / shell:** `python run_dashboard.py`.
+
+The launcher opens the dashboard in your default browser
+automatically; close the terminal window (or press Ctrl+C in it) to
+stop the server.
+
+### Manual / development install
 
 ```powershell
 # Install uv if you don't have it (Windows):

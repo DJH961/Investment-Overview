@@ -24,6 +24,12 @@ from investment_dashboard.ui.pages import (
 
 log = logging.getLogger(__name__)
 
+#: Background refresh cadence (seconds). Each tick only hits yfinance for
+#: instruments whose per-asset-class TTL has expired (see
+#: ``services.prices_service.REFRESH_TTL_SECONDS``), so this can be aggressive
+#: without spamming the network.
+_LIVE_REFRESH_INTERVAL_SECONDS = 60.0
+
 
 def _register_pages() -> None:
     """Register every page module with NiceGUI."""
@@ -40,6 +46,22 @@ def _register_pages() -> None:
         ui.navigate.to(overview.PATH)
 
 
+def _live_refresh_tick() -> None:  # pragma: no cover - background loop
+    """Refresh due-by-TTL prices once. Logs and swallows any error."""
+    try:
+        from investment_dashboard.db import session_scope  # noqa: PLC0415
+        from investment_dashboard.services.prices_service import (  # noqa: PLC0415
+            refresh_due_prices,
+        )
+
+        with session_scope() as session:
+            refreshed = refresh_due_prices(session)
+        if refreshed:
+            log.debug("live refresh updated %s", list(refreshed.keys()))
+    except Exception:
+        log.warning("live price refresh tick failed", exc_info=True)
+
+
 def run() -> None:
     configure_logging()
     settings = get_settings()
@@ -51,12 +73,13 @@ def run() -> None:
     )
     run_boot_sequence()
     _register_pages()
+    ui.timer(_LIVE_REFRESH_INTERVAL_SECONDS, _live_refresh_tick)
     ui.run(
         host=settings.host,
         port=settings.port,
         title="Investment Dashboard",
         reload=False,
-        show=False,
+        show=True,
     )
 
 
