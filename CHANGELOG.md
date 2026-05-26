@@ -16,6 +16,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
+## [0.6.0] — 2026-05-26
+
+### Added — `/transactions` page
+- `ui/pages/_ledger_query.py`: `LedgerFilters` dataclass + `list_ledger_rows`
+  helper that joins `Transaction → Account → Instrument` and formats
+  Decimals for AG-Grid. Unit-testable without NiceGUI.
+- `ui/pages/transactions.py` upgraded from stub to a functional page:
+  - AG-Grid ledger (10 columns: Date · Account · Kind · Symbol · Qty ·
+    Price · Fees · Net · Net EUR · Source), paginated, resizable.
+  - Filter chips: account dropdown, kind dropdown, symbol text input.
+  - **+ New Transaction** modal — manual entry with account/kind/date/
+    symbol/qty/price/fees/net/description.
+  - **Import CSV** modal — broker dropdown, account picker, file upload
+    that pipes content into `services.importer_service.import_csv` and
+    reports inserted / duplicates / sweeps / unknown actions.
+- 4 new tests covering `list_ledger_rows` filtering + ordering. 147
+  total pass.
+
 ## [0.5.0] — 2026-05-26
 
 ### Added — UI shell
