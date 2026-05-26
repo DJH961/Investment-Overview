@@ -129,4 +129,43 @@ class TestMetrics:
         assert m.total_value_eur == Decimal("1100")
         # Net contributions = 1000 (deposit). XIRR ≈ 10%.
         assert m.xirr is not None
-        assert 0.05 < float(m.xirr) < 0.15
+        assert abs(m.xirr - Decimal("0.10")) < Decimal("0.001")
+
+    def test_cashflows_include_unretained_dividends_and_interest(self, session: Session) -> None:
+        acct_id = _seed_usd_brokerage(session)
+        txns = [
+            Transaction(
+                account_id=acct_id,
+                date=date(2024, 1, 1),
+                kind="deposit",
+                net_native=Decimal("1000"),
+                net_eur=Decimal("900"),
+                source="manual",
+            ),
+            Transaction(
+                account_id=acct_id,
+                date=date(2024, 2, 1),
+                kind="dividend_cash",
+                net_native=Decimal("50"),
+                net_eur=Decimal("45"),
+                source="manual",
+            ),
+            Transaction(
+                account_id=acct_id,
+                date=date(2024, 3, 1),
+                kind="interest",
+                net_native=Decimal("5"),
+                net_eur=Decimal("4.50"),
+                source="manual",
+            ),
+        ]
+        session.add_all(txns)
+        session.flush()
+
+        cashflows = metrics_service.build_portfolio_cashflows(txns)
+
+        assert [(cf.date, cf.amount) for cf in cashflows] == [
+            (date(2024, 1, 1), Decimal("-900")),
+            (date(2024, 2, 1), Decimal("45")),
+            (date(2024, 3, 1), Decimal("4.50")),
+        ]

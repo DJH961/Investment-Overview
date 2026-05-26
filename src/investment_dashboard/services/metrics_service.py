@@ -20,7 +20,7 @@ from investment_dashboard.domain.returns import (
     xirr,
 )
 from investment_dashboard.models import Transaction, TransactionKind
-from investment_dashboard.repositories import transactions_repo
+from investment_dashboard.repositories import accounts_repo, transactions_repo
 from investment_dashboard.services import positions_service
 
 ZERO = Decimal(0)
@@ -29,11 +29,11 @@ ZERO = Decimal(0)
 # Kinds that move *external* cash (the user's bank ↔ portfolio).
 _CONTRIBUTION_KINDS = {TransactionKind.DEPOSIT.value}
 _WITHDRAWAL_KINDS = {TransactionKind.WITHDRAWAL.value}
-# Kinds that *receive* cash inside the portfolio (count toward XIRR positive).
-_INTERNAL_CASH_KINDS = {
+_RETAINED_CASH_ACCOUNT_TYPES = {"savings", "cash"}
+# Kinds that receive cash not represented in the current portfolio value.
+_DISTRIBUTION_KINDS = {
     TransactionKind.DIVIDEND_CASH.value,
     TransactionKind.INTEREST.value,
-    TransactionKind.SELL.value,
 }
 
 
@@ -68,13 +68,16 @@ def _txn_eur_amount(t: Transaction) -> Decimal:
 
 def build_portfolio_cashflows(
     transactions: Sequence[Transaction],
+    *,
+    retained_cash_account_ids: set[int] | frozenset[int] = frozenset(),
 ) -> list[Cashflow]:
     """Translate ledger rows into the signed cashflow stream XIRR needs.
 
     Sign convention (matches :mod:`investment_dashboard.domain.returns`):
         * ``deposit`` ⇒ negative (money in from outside).
         * ``withdrawal`` ⇒ positive (money out).
-        * ``dividend_cash`` / ``interest`` ⇒ positive (cash to the user).
+        * ``dividend_cash`` / ``interest`` ⇒ positive when the cash is not
+          retained in an account included in terminal portfolio value.
         * ``buy`` / ``sell`` / ``dividend_reinvest`` are *internal*
           rebalances — the cash never leaves the portfolio, so they do
           **not** enter the portfolio-level XIRR. Their P&L appears
@@ -90,6 +93,8 @@ def build_portfolio_cashflows(
         elif kind in _WITHDRAWAL_KINDS:
             # Withdrawal: net_native < 0 (cash out of account) ⇒ flow positive.
             flows.append(Cashflow(date=t.date, amount=-net_eur))
+        elif kind in _DISTRIBUTION_KINDS and t.account_id not in retained_cash_account_ids:
+            flows.append(Cashflow(date=t.date, amount=net_eur))
     return flows
 
 
@@ -116,6 +121,11 @@ def compute_portfolio_metrics(
     )
 
     total_value_eur = positions_service.total_portfolio_value(session, as_of=as_of)
+    retained_cash_account_ids = {
+        account.id
+        for account in accounts_repo.list_accounts(session)
+        if account.account_type in _RETAINED_CASH_ACCOUNT_TYPES
+    }
 
     cap_gain = capital_gain(
         contributions=net_contributions_eur,
@@ -124,13 +134,19 @@ def compute_portfolio_metrics(
     )
     growth = total_growth_pct(net_contributions_eur, total_value_eur + dividends_cash_eur)
 
-    cashflows = build_portfolio_cashflows(txns)
+    cashflows = build_portfolio_cashflows(
+        txns,
+        retained_cash_account_ids=retained_cash_account_ids,
+    )
     portfolio_xirr = xirr(cashflows, as_of=as_of, terminal_value=total_value_eur)
 
     # YTD: value at start of year + cashflows from Jan 1 onward.
     year_start = date(as_of.year, 1, 1)
     ytd_txns = [t for t in txns if t.date >= year_start]
-    ytd_cashflows = build_portfolio_cashflows(ytd_txns)
+    ytd_cashflows = build_portfolio_cashflows(
+        ytd_txns,
+        retained_cash_account_ids=retained_cash_account_ids,
+    )
     ytd_start_value = positions_service.total_portfolio_value(session, as_of=year_start)
     # Treat the start-of-year value as a synthetic "contribution" (negative).
     ytd_cashflows.insert(0, Cashflow(date=year_start, amount=-ytd_start_value))
