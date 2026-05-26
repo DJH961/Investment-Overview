@@ -93,7 +93,7 @@ def _display_value(value_eur: Decimal, currency: str, fx_rate: Decimal | None) -
     return value_eur * fx_rate
 
 
-def _usd_equivalent(value_eur: Decimal, fx_rate: Decimal | None) -> Decimal:
+def _convert_to_usd(value_eur: Decimal, fx_rate: Decimal | None) -> Decimal:
     if fx_rate is None or fx_rate == 0:
         return value_eur
     return value_eur * fx_rate
@@ -193,19 +193,19 @@ def to_table_rows(
             "label": r.label,
             "contributions": f"{_display_value(r.contributions, currency, fx_rate):,.2f}",
             "contributions_eur": f"{r.contributions:,.2f}",
-            "contributions_usd": f"{_usd_equivalent(r.contributions, fx_rate):,.2f}",
+            "contributions_usd": f"{_convert_to_usd(r.contributions, fx_rate):,.2f}",
             "dividends": f"{_display_value(r.dividends, currency, fx_rate):,.2f}",
             "dividends_eur": f"{r.dividends:,.2f}",
-            "dividends_usd": f"{_usd_equivalent(r.dividends, fx_rate):,.2f}",
+            "dividends_usd": f"{_convert_to_usd(r.dividends, fx_rate):,.2f}",
             "interest": f"{_display_value(r.interest, currency, fx_rate):,.2f}",
             "interest_eur": f"{r.interest:,.2f}",
-            "interest_usd": f"{_usd_equivalent(r.interest, fx_rate):,.2f}",
+            "interest_usd": f"{_convert_to_usd(r.interest, fx_rate):,.2f}",
             "net_flow": f"{_display_value(r.net_flow, currency, fx_rate):,.2f}",
             "net_flow_eur": f"{r.net_flow:,.2f}",
-            "net_flow_usd": f"{_usd_equivalent(r.net_flow, fx_rate):,.2f}",
+            "net_flow_usd": f"{_convert_to_usd(r.net_flow, fx_rate):,.2f}",
             "closing_value": f"{_display_value(r.closing_value_eur, currency, fx_rate):,.2f}",
             "closing_value_eur": f"{r.closing_value_eur:,.2f}",
-            "closing_value_usd": f"{_usd_equivalent(r.closing_value_eur, fx_rate):,.2f}",
+            "closing_value_usd": f"{_convert_to_usd(r.closing_value_eur, fx_rate):,.2f}",
             "growth_pct": (
                 f"{r.growth_pct * Decimal(100):,.2f} %" if r.growth_pct is not None else "—"
             ),

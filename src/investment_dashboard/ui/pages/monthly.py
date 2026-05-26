@@ -107,8 +107,8 @@ def register() -> None:
             ui.label(
                 f"Values shown in {display_ccy} ({sym}). Closing value is end-of-month "
                 "mark-to-market (best-effort if prices are missing). Growth % is "
-                "Modified Dietz over external flows. EUR/USD columns are ordered by "
-                "the header toggle.",
+                "Modified Dietz over external flows. Use the EUR/USD toggle in the "
+                "header to choose which currency appears first.",
             ).classes("text-caption opacity-70")
 
             ui.label("Hypothetical projection (next 36 months)").classes("text-h6 q-mt-md")
