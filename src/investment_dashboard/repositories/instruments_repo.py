@@ -53,3 +53,33 @@ def get_or_create(
     session.add(instr)
     session.flush()
     return instr
+
+
+def update_instrument(
+    session: Session,
+    instrument_id: int,
+    *,
+    name: str | None = None,
+    category: str | None = None,
+    asset_class: str | None = None,
+    active: bool | None = None,
+) -> Instrument:
+    """Update mutable display/classification fields on an instrument.
+
+    ``symbol`` and ``native_currency`` are intentionally not mutable —
+    they're foreign-keyed by price history and ledger entries.
+    Raises ``ValueError`` if ``instrument_id`` does not exist.
+    """
+    instr = session.get(Instrument, instrument_id)
+    if instr is None:
+        raise ValueError(f"Instrument {instrument_id} not found")
+    if name is not None:
+        instr.name = name
+    if category is not None:
+        instr.category = category
+    if asset_class is not None:
+        instr.asset_class = asset_class
+    if active is not None:
+        instr.active = active
+    session.flush()
+    return instr

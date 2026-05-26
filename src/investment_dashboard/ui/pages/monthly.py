@@ -63,6 +63,11 @@ def register() -> None:
                             "field": "net_flow",
                             "type": "rightAligned",
                         },
+                        {
+                            "headerName": "Closing value (EUR)",
+                            "field": "closing_value",
+                            "type": "rightAligned",
+                        },
                     ],
                     "rowData": to_table_rows(rows),
                     "defaultColDef": {"resizable": True, "sortable": True},
@@ -70,6 +75,7 @@ def register() -> None:
                     "paginationAutoPageSize": True,
                 }
             ).classes("w-full h-[40vh]")
-            ui.label("Closing-balance mark-to-market and projection rows arrive in v1.1.").classes(
-                "text-caption opacity-70"
-            )
+            ui.label(
+                "Closing value is end-of-month mark-to-market in EUR (best-effort if prices "
+                "are missing for that date)."
+            ).classes("text-caption opacity-70")

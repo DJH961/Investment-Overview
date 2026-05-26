@@ -7,12 +7,14 @@ return metrics — XIRR, TWR, CAGR, YTD variants, drawdown, Sharpe, Sortino —
 in both **USD** and **EUR**, and serves them over a NiceGUI web UI accessible
 from the host laptop and any device on the same Wi-Fi network.
 
-> **Status: v1.0.0 — first UI-testable release.** All seven pages
+> **Status: v1.1.0 — deferred v1.0 items now shipped.** All seven pages
 > registered (`/overview`, `/deposits`, `/transactions`, `/monthly`,
 > `/yearly`, `/calculator`, `/settings`), CSV import for Fidelity and
 > Vanguard, XIRR/TWR/CAGR computed from the live ledger, allocation
-> treemap, colorblind-safe theme, idempotent boot sequence. 155
-> tests pass; lint/format/mypy clean.
+> treemap, colorblind-safe theme, idempotent boot sequence. v1.1 adds
+> end-of-period mark-to-market closing balances on `/monthly` + `/yearly`,
+> a hypothetical 10-year projection block on `/yearly`, and inline
+> editing on `/settings`. 166 tests pass; lint/format/mypy clean.
 
 ## Highlights
 
@@ -144,9 +146,12 @@ See [`requirements_and_project_overview.md`](requirements_and_project_overview.m
 - ✅ Phase 4 — All seven pages wired with live data: `/overview`,
   `/deposits`, `/transactions`, `/monthly`, `/yearly`, `/calculator`,
   `/settings`.
-- ⏳ Phase 5 (v1.1+) — End-of-period mark-to-market, inline editing for
-  accounts/instruments/allocations, monthly projection rows,
-  hypothetical-yearly block, snapshots cache.
+- ✅ Phase 5 (v1.1) — End-of-period mark-to-market closing balances,
+  inline editing for accounts/instruments/allocations, yearly
+  hypothetical projection block.
+- ⏳ Phase 6 (v1.2+) — Snapshots cache (spec §4.1) to avoid recomputing
+  positions on every page render, JAN-1 backfill for `ytd_start_value`,
+  monthly projection rows.
 
 ## License
 

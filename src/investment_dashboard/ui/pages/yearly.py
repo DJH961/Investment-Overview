@@ -1,12 +1,21 @@
-"""Yearly page (spec §8.5) — yearly aggregation table + bar chart."""
+"""Yearly page (spec §8.5) — yearly aggregation table + bar chart + projection."""
 
 from __future__ import annotations
+
+from decimal import Decimal
 
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.pages._period_query import aggregate, to_table_rows
+from investment_dashboard.ui.pages._projection_query import (
+    DEFAULT_SCENARIOS,
+    project_from_session,
+)
+from investment_dashboard.ui.pages._projection_query import (
+    to_table_rows as projection_table_rows,
+)
 from investment_dashboard.ui.theme import GAIN_COLOR
 
 PATH = "/yearly"
@@ -37,6 +46,10 @@ def _figure(rows):  # type: ignore[no-untyped-def]
     return fig
 
 
+def _scenario_label(rate: Decimal) -> str:
+    return f"{rate * 100:.1f}% p.a."
+
+
 def register() -> None:
     @ui.page(PATH)
     def _yearly() -> None:  # pragma: no cover
@@ -44,6 +57,7 @@ def register() -> None:
             ui.label("Yearly aggregation").classes("text-h5")
             with session_scope() as session:
                 rows = aggregate(session, monthly=False)
+                projection_rows = project_from_session(session, years=10)
             ui.plotly(_figure(rows)).classes("w-full h-[40vh]")
             ui.aggrid(
                 {
@@ -69,11 +83,41 @@ def register() -> None:
                             "field": "net_flow",
                             "type": "rightAligned",
                         },
+                        {
+                            "headerName": "Closing value (EUR)",
+                            "field": "closing_value",
+                            "type": "rightAligned",
+                        },
                     ],
                     "rowData": to_table_rows(rows),
                     "defaultColDef": {"resizable": True, "sortable": True},
                 }
             ).classes("w-full h-[35vh]")
-            ui.label("Hypothetical projection block lands in v1.1.").classes(
-                "text-caption opacity-70"
-            )
+
+            ui.label("Hypothetical projection (next 10 years)").classes("text-h6 q-mt-md")
+            ui.label(
+                "Assumes the average historical annual contribution continues, compounded "
+                "at the rates below. For planning only — not a forecast."
+            ).classes("text-caption opacity-70")
+            ui.aggrid(
+                {
+                    "columnDefs": [
+                        {"headerName": "Year", "field": "year"},
+                        {
+                            "headerName": "Cumulative contribution (EUR)",
+                            "field": "contributed",
+                            "type": "rightAligned",
+                        },
+                        *[
+                            {
+                                "headerName": _scenario_label(rate),
+                                "field": f"rate_{rate}",
+                                "type": "rightAligned",
+                            }
+                            for rate in DEFAULT_SCENARIOS
+                        ],
+                    ],
+                    "rowData": projection_table_rows(projection_rows),
+                    "defaultColDef": {"resizable": True, "sortable": True},
+                }
+            ).classes("w-full h-[35vh]")

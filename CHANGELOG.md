@@ -16,6 +16,43 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
+## [1.1.0] — 2026-05-26
+
+### Added — deferred items from v1.0
+
+- **Mark-to-market closing balances** on `/monthly` and `/yearly`.
+  `PeriodRow.closing_value_eur` is now computed via
+  `positions_service.total_portfolio_value` evaluated at the last day of
+  each bucket (capped at today). Toggleable via the new
+  `with_closing_value` flag on `aggregate()` so unit tests can opt out
+  of the per-period roll-up.
+- **Hypothetical projection** block on `/yearly`. New
+  `ui/pages/_projection_query.py` exposes `project()` (pure math) and
+  `project_from_session()`. Renders 10 years of compound growth at
+  4 / 7 / 10 % p.a. against the average historical annual contribution,
+  with the cumulative contributed column for reference.
+- **Inline editing in `/settings`**:
+  - Edit account label / type via dialog (broker + currency stay
+    immutable — they're keyed by the ledger).
+  - Edit instrument name / category / asset class via dialog.
+  - Activate a target allocation in one click.
+  - Backed by new `accounts_repo.update_account` and
+    `instruments_repo.update_instrument` helpers.
+- 8 new unit tests (projection math, period closing balance, repo
+  update helpers). All 166 tests pass.
+
+### Changed
+- `/monthly` and `/yearly` tables gained a "Closing value (EUR)" column.
+- `/settings` now renders cards-with-buttons instead of read-only
+  AG-Grids for easier inline mutation.
+
+### Known caveats / deferred to v1.2
+- The `ytd_start_value` in `compute_portfolio_metrics` still relies on
+  having a January-1 price tick; new portfolios may see best-effort
+  values until history is backfilled.
+- No snapshots table yet (spec §4.1) — every metrics page recomputes
+  positions from the full ledger.
+
 ## [1.0.0] — 2026-05-26
 
 ### First UI-testable release 🎉
@@ -253,7 +290,8 @@ treemap.
 - Docs: `README.md` (quickstart + architecture diagram), `CONTRIBUTING.md`,
   `docs/architecture.md`.
 
-[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/DJH961/Investment-Overview/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/DJH961/Investment-Overview/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/DJH961/Investment-Overview/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/DJH961/Investment-Overview/compare/v0.7.0...v0.8.0

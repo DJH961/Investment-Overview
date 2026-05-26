@@ -43,6 +43,86 @@ def _refresh_prices_clicked() -> None:  # pragma: no cover - UI
         ui.notify(f"Price refresh failed: {exc}", type="negative")
 
 
+def _edit_account_dialog(account_id: int, current_label: str, current_type: str | None) -> None:
+    """Open an inline-edit dialog for an account row."""  # pragma: no cover - UI
+    with ui.dialog() as dialog, ui.card():
+        ui.label("Edit account").classes("text-h6")
+        label_input = ui.input("Label", value=current_label)
+        type_input = ui.input("Account type", value=current_type or "")
+
+        def _save() -> None:
+            try:
+                with session_scope() as session:
+                    accounts_repo.update_account(
+                        session,
+                        account_id,
+                        account_label=label_input.value.strip() or None,
+                        account_type=type_input.value.strip() or None,
+                    )
+                ui.notify("Account updated", type="positive")
+                dialog.close()
+                _settings_refresh()
+            except Exception as exc:
+                log.exception("Account update failed")
+                ui.notify(f"Update failed: {exc}", type="negative")
+
+        with ui.row():
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button("Save", on_click=_save).props("color=primary")
+    dialog.open()
+
+
+def _edit_instrument_dialog(
+    instrument_id: int,
+    current_name: str,
+    current_category: str,
+    current_asset_class: str,
+) -> None:  # pragma: no cover - UI
+    with ui.dialog() as dialog, ui.card():
+        ui.label("Edit instrument").classes("text-h6")
+        name_input = ui.input("Name", value=current_name)
+        category_input = ui.input("Category", value=current_category)
+        asset_class_input = ui.input("Asset class", value=current_asset_class)
+
+        def _save() -> None:
+            try:
+                with session_scope() as session:
+                    instruments_repo.update_instrument(
+                        session,
+                        instrument_id,
+                        name=name_input.value.strip() or None,
+                        category=category_input.value.strip() or None,
+                        asset_class=asset_class_input.value.strip() or None,
+                    )
+                ui.notify("Instrument updated", type="positive")
+                dialog.close()
+                _settings_refresh()
+            except Exception as exc:
+                log.exception("Instrument update failed")
+                ui.notify(f"Update failed: {exc}", type="negative")
+
+        with ui.row():
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button("Save", on_click=_save).props("color=primary")
+    dialog.open()
+
+
+def _activate_allocation(allocation_id: int) -> None:  # pragma: no cover - UI
+    try:
+        with session_scope() as session:
+            allocations_repo.set_active(session, allocation_id)
+        ui.notify("Allocation activated", type="positive")
+        _settings_refresh()
+    except Exception as exc:
+        log.exception("Activation failed")
+        ui.notify(f"Activation failed: {exc}", type="negative")
+
+
+def _settings_refresh() -> None:  # pragma: no cover - UI
+    """Reload the settings page after a mutation."""
+    ui.navigate.to(PATH)
+
+
 def register() -> None:
     @ui.page(PATH)
     def _settings() -> None:  # pragma: no cover
@@ -63,61 +143,48 @@ def register() -> None:
 
             ui.separator()
             ui.label("Accounts").classes("text-h6")
-            ui.aggrid(
-                {
-                    "columnDefs": [
-                        {"headerName": "Broker", "field": "broker"},
-                        {"headerName": "Label", "field": "account_label"},
-                        {"headerName": "Currency", "field": "native_currency"},
-                        {"headerName": "Type", "field": "account_type"},
-                    ],
-                    "rowData": [
-                        {
-                            "broker": a.broker,
-                            "account_label": a.account_label,
-                            "native_currency": a.native_currency,
-                            "account_type": a.account_type,
-                        }
-                        for a in accounts
-                    ],
-                }
-            ).classes("w-full h-[20vh]")
+            with ui.column().classes("w-full gap-xs"):
+                for a in accounts:
+                    with ui.row().classes("items-center gap-md w-full"):
+                        ui.label(f"{a.broker} · {a.account_label}").classes("text-body1")
+                        ui.label(f"{a.native_currency} · {a.account_type or '—'}").classes(
+                            "text-caption opacity-70"
+                        )
+                        ui.space()
+                        ui.button(
+                            "Edit",
+                            on_click=lambda _, a=a: _edit_account_dialog(
+                                a.id, a.account_label, a.account_type
+                            ),
+                        ).props("flat dense")
 
             ui.label("Instruments").classes("text-h6 q-mt-md")
-            ui.aggrid(
-                {
-                    "columnDefs": [
-                        {"headerName": "Symbol", "field": "symbol"},
-                        {"headerName": "Name", "field": "name"},
-                        {"headerName": "Asset class", "field": "asset_class"},
-                        {"headerName": "Category", "field": "category"},
-                    ],
-                    "rowData": [
-                        {
-                            "symbol": i.symbol,
-                            "name": i.name or "",
-                            "asset_class": i.asset_class,
-                            "category": i.category or "",
-                        }
-                        for i in instruments
-                    ],
-                }
-            ).classes("w-full h-[25vh]")
+            with ui.column().classes("w-full gap-xs"):
+                for i in instruments:
+                    with ui.row().classes("items-center gap-md w-full"):
+                        ui.label(f"{i.symbol} · {i.name or ''}").classes("text-body1")
+                        ui.label(f"{i.asset_class} · {i.category or '—'}").classes(
+                            "text-caption opacity-70"
+                        )
+                        ui.space()
+                        ui.button(
+                            "Edit",
+                            on_click=lambda _, i=i: _edit_instrument_dialog(
+                                i.id, i.name or "", i.category or "", i.asset_class
+                            ),
+                        ).props("flat dense")
 
             ui.label("Target allocations").classes("text-h6 q-mt-md")
-            ui.aggrid(
-                {
-                    "columnDefs": [
-                        {"headerName": "Name", "field": "name"},
-                        {"headerName": "Active", "field": "active"},
-                        {"headerName": "# Instruments", "field": "n"},
-                    ],
-                    "rowData": [
-                        {"name": a.name, "active": "✓" if a.active else "", "n": len(a.items)}
-                        for a in allocations
-                    ],
-                }
-            ).classes("w-full h-[20vh]")
-            ui.label(
-                "Inline editing for accounts, instruments and allocations lands in v1.1."
-            ).classes("text-caption opacity-70")
+            with ui.column().classes("w-full gap-xs"):
+                for a in allocations:
+                    with ui.row().classes("items-center gap-md w-full"):
+                        ui.label(f"{a.name}").classes("text-body1")
+                        ui.label(f"{len(a.items)} instruments").classes("text-caption opacity-70")
+                        ui.space()
+                        if a.active:
+                            ui.badge("Active", color="primary")
+                        else:
+                            ui.button(
+                                "Activate",
+                                on_click=lambda _, a=a: _activate_allocation(a.id),
+                            ).props("flat dense")
