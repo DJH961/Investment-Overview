@@ -1,9 +1,8 @@
 @echo off
 REM Double-clickable launcher for the Investment Dashboard (Windows).
 REM
-REM First run: detects a missing virtualenv and bootstraps one with
-REM ``python -m venv`` + ``pip install -e .``. Subsequent runs are
-REM near-instant because the venv is reused.
+REM First run setup is handled by run_dashboard.py, which creates .venv and
+REM installs dependencies if needed. Subsequent runs reuse that environment.
 REM
 REM Requires Python 3.12+ on PATH (`py -3.12 --version` will be tried first,
 REM then `python`).
@@ -11,7 +10,6 @@ REM then `python`).
 setlocal enableextensions
 cd /d "%~dp0"
 
-set "VENV_DIR=.venv"
 set "PY_EXE="
 
 REM Prefer the Windows py launcher targeting 3.12+, fall back to plain python.
@@ -30,26 +28,8 @@ exit /b 1
 
 :have_python
 
-if not exist "%VENV_DIR%\Scripts\python.exe" (
-    echo Creating virtual environment in %VENV_DIR% ...
-    %PY_EXE% -m venv "%VENV_DIR%"
-    if errorlevel 1 (
-        echo Failed to create the virtual environment.
-        pause
-        exit /b 1
-    )
-    "%VENV_DIR%\Scripts\python.exe" -m pip install --upgrade pip >nul
-    echo Installing investment-dashboard and dependencies (one-time, ~1 minute) ...
-    "%VENV_DIR%\Scripts\python.exe" -m pip install -e .
-    if errorlevel 1 (
-        echo Dependency install failed.
-        pause
-        exit /b 1
-    )
-)
-
 echo Starting Investment Dashboard ...
-"%VENV_DIR%\Scripts\python.exe" "%~dp0run_dashboard.py"
+%PY_EXE% "%~dp0run_dashboard.py"
 set "EXIT_CODE=%ERRORLEVEL%"
 if not "%EXIT_CODE%"=="0" pause
 exit /b %EXIT_CODE%

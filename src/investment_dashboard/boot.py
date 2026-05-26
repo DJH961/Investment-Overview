@@ -49,6 +49,7 @@ def _run_migrations() -> None:
 
     cfg = Config(str(ini_path))
     settings = get_settings()
+    settings.db_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.set_main_option("sqlalchemy.url", settings.db_url)
     command.upgrade(cfg, "head")
     log.info("Alembic upgrade head applied")

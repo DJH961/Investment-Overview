@@ -16,6 +16,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
+## [1.2.1] — 2026-05-27
+
+### Fixed
+
+- `run_dashboard.py` now owns first-run setup: it creates/repairs `.venv`,
+  installs the app editable, verifies required runtime modules, and re-launches
+  through the virtualenv Python before importing NiceGUI.
+- `run_dashboard.bat` now delegates setup to the Python launcher so both
+  double-click entry points follow the same dependency bootstrap path.
+- Pinned NiceGUI to the compatible 2.x line (`nicegui>=2.10,<3`) so the app's
+  existing multi-page registration works instead of installing incompatible
+  NiceGUI 3.x.
+- Fresh installs now create the SQLite database parent directory before Alembic
+  migrations run, fixing first-run `unable to open database file` errors.
+
 ## [1.2.0] — 2026-05-26
 
 ### Added — items deferred from v1.1
