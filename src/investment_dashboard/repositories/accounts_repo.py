@@ -52,6 +52,7 @@ def update_account(
     *,
     account_label: str | None = None,
     account_type: str | None = None,
+    active: bool | None = None,
 ) -> Account:
     """Update mutable fields on an account. Raises ``ValueError`` if not found.
 
@@ -66,5 +67,7 @@ def update_account(
         account.account_label = account_label
     if account_type is not None:
         account.account_type = account_type
+    if active is not None:
+        account.active = active
     session.flush()
     return account

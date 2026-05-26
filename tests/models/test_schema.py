@@ -31,6 +31,8 @@ EXPECTED_TABLES = {
     "target_allocations",
     "target_allocation_items",
     "app_config",
+    "position_snapshots",
+    "price_cache_metadata",
 }
 
 

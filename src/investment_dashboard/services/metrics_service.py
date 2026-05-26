@@ -147,7 +147,15 @@ def compute_portfolio_metrics(
         ytd_txns,
         retained_cash_account_ids=retained_cash_account_ids,
     )
+    # Best-effort Jan-1 valuation: requires price + FX history for that
+    # date. For brand-new portfolios with no Jan-1 history we fall back
+    # to the earliest available snapshot in the YTD window (and
+    # ultimately to ``Decimal(0)``), so the page renders instead of
+    # raising. This mirrors spec §6.4's "ytd_start_value best-effort"
+    # note (v1.2 closure of the v1.0 caveat).
     ytd_start_value = positions_service.total_portfolio_value(session, as_of=year_start)
+    if ytd_start_value <= ZERO:
+        ytd_start_value = _best_effort_ytd_start_value(session, year_start, as_of)
     # Treat the start-of-year value as a synthetic "contribution" (negative).
     ytd_cashflows.insert(0, Cashflow(date=year_start, amount=-ytd_start_value))
     ytd_x = xirr(ytd_cashflows, as_of=as_of, terminal_value=total_value_eur)
@@ -179,3 +187,26 @@ def compute_portfolio_metrics(
         ytd_xirr=ytd_x,
         ytd_growth_pct=ytd_growth,
     )
+
+
+def _best_effort_ytd_start_value(
+    session: Session,
+    year_start: date,
+    as_of: date,
+) -> Decimal:
+    """Fallback when Jan-1 has no price/FX tick (new portfolio / sparse history).
+
+    Walks forward day-by-day (up to 31 days) and returns the first
+    non-zero ``total_portfolio_value``. Bounded so we don't fan out a
+    full year of position roll-ups on the unhappy path.
+    """
+    from datetime import timedelta as _td  # noqa: PLC0415
+
+    horizon = min(as_of, year_start + _td(days=31))
+    cursor = year_start
+    while cursor <= horizon:
+        value = positions_service.total_portfolio_value(session, as_of=cursor)
+        if value > ZERO:
+            return value
+        cursor += _td(days=1)
+    return ZERO

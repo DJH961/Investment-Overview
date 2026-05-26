@@ -16,6 +16,63 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
+## [1.2.0] — 2026-05-26
+
+### Added — items deferred from v1.1
+
+- **Daily snapshots cache** (`position_snapshots` table). New
+  `snapshots_repo`, `snapshots_service.get_or_compute` reads-through
+  the cache: historical days are returned in O(1); today's row is
+  always recomputed (intraday prices still move). `_period_query`
+  uses it so `/monthly` and `/yearly` close out N periods in O(N)
+  cache hits instead of N full-ledger roll-ups.
+- **Smart per-symbol refresh** (`price_cache_metadata` table). New
+  `prices_service.refresh_due_prices` and
+  `instruments_due_for_refresh` consult per-asset-class TTLs
+  (`REFRESH_TTL_SECONDS`):
+  - `etf` / `stock`: **2 minutes** — near-live during market hours.
+  - `mutual_fund`: 6 hours.
+  - `cash` / `savings`: opt-out (no yfinance ticker).
+  A 60-second `ui.timer` in `main.run()` triggers the refresh; it
+  only hits the network for instruments past their TTL.
+- **Monthly hypothetical projection block** on `/monthly` —
+  `project_monthly` (compound at the per-month equivalent of each
+  annual rate) and `project_monthly_from_session`. 36-month default
+  horizon at 4 / 7 / 10 % p.a.
+- **Per-period growth %** column on `/monthly` and `/yearly` —
+  Modified Dietz computed from opening + closing snapshot values and
+  the period's net external flow.
+- **Settings inline editing expanded**:
+  - Instrument: edit `expense_ratio` and toggle `active`.
+  - Account: toggle `active` (new column, default `True`,
+    migration `0002`).
+- **Best-effort `ytd_start_value` fallback** in
+  `compute_portfolio_metrics`: walks forward up to 31 days from
+  Jan 1 looking for the first non-zero portfolio valuation — closes
+  the v1.1 caveat for portfolios opened mid-year.
+- **One-click launcher** — `run_dashboard.py` /
+  `run_dashboard.bat` / `run_dashboard.sh`. The shell launchers
+  bootstrap a venv on first run, install the package editable, then
+  start the server and open the browser automatically. No command
+  line required.
+- 17 new unit tests (snapshots service, smart-refresh TTL logic,
+  monthly projection, Modified Dietz, repo updates for the new
+  fields). All 188 tests pass.
+
+### Changed
+- `main.run` now uses `ui.run(show=True)` so the launcher pops the
+  default browser straight at the dashboard, and registers a 60-second
+  background `ui.timer` that drives the near-live ETF refresh.
+
+### Known caveats / deferred to v1.3
+- TWR-by-period is exposed as a Modified-Dietz approximation only
+  (the full daily-snapshot TWR in `domain/returns.py` would need
+  daily snapshots — easy follow-up now that the snapshots table
+  exists).
+- Savings Bank CSV importer is *explicitly out of scope* per user
+  request (the broker has no CSV export). Savings deposits remain
+  manual via `/transactions`.
+
 ## [1.1.0] — 2026-05-26
 
 ### Added — deferred items from v1.0

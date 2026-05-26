@@ -62,6 +62,7 @@ def update_instrument(
     name: str | None = None,
     category: str | None = None,
     asset_class: str | None = None,
+    expense_ratio: Decimal | None = None,
     active: bool | None = None,
 ) -> Instrument:
     """Update mutable display/classification fields on an instrument.
@@ -79,6 +80,8 @@ def update_instrument(
         instr.category = category
     if asset_class is not None:
         instr.asset_class = asset_class
+    if expense_ratio is not None:
+        instr.expense_ratio = expense_ratio
     if active is not None:
         instr.active = active
     session.flush()
