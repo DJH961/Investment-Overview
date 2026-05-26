@@ -219,7 +219,7 @@ def to_table_rows(
             return value
         return value * fx_rate
 
-    def to_usd(value: Decimal) -> Decimal:
+    def apply_fx_rate(value: Decimal) -> Decimal:
         if fx_rate is None or fx_rate == 0:
             return value
         return value * fx_rate
@@ -230,12 +230,12 @@ def to_table_rows(
             "year": str(r.year),
             "contributed": f"{conv(r.contributed):,.2f}",
             "contributed_eur": f"{r.contributed:,.2f}",
-            "contributed_usd": f"{to_usd(r.contributed):,.2f}",
+            "contributed_usd": f"{apply_fx_rate(r.contributed):,.2f}",
         }
         for rate, value in r.values_by_rate.items():
             row[f"rate_{rate}"] = f"{conv(value):,.2f}"
             row[f"rate_{rate}_eur"] = f"{value:,.2f}"
-            row[f"rate_{rate}_usd"] = f"{to_usd(value):,.2f}"
+            row[f"rate_{rate}_usd"] = f"{apply_fx_rate(value):,.2f}"
         out.append(row)
     return out
 
@@ -255,7 +255,7 @@ def to_monthly_table_rows(
             return value
         return value * fx_rate
 
-    def to_usd(value: Decimal) -> Decimal:
+    def apply_fx_rate(value: Decimal) -> Decimal:
         if fx_rate is None or fx_rate == 0:
             return value
         return value * fx_rate
@@ -266,11 +266,11 @@ def to_monthly_table_rows(
             "label": r.label,
             "contributed": f"{conv(r.contributed):,.2f}",
             "contributed_eur": f"{r.contributed:,.2f}",
-            "contributed_usd": f"{to_usd(r.contributed):,.2f}",
+            "contributed_usd": f"{apply_fx_rate(r.contributed):,.2f}",
         }
         for rate, value in r.values_by_rate.items():
             row[f"rate_{rate}"] = f"{conv(value):,.2f}"
             row[f"rate_{rate}_eur"] = f"{value:,.2f}"
-            row[f"rate_{rate}_usd"] = f"{to_usd(value):,.2f}"
+            row[f"rate_{rate}_usd"] = f"{apply_fx_rate(value):,.2f}"
         out.append(row)
     return out

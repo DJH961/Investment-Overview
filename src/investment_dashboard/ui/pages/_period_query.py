@@ -183,7 +183,7 @@ def to_table_rows(
             return value
         return value * fx_rate
 
-    def to_usd(value: Decimal) -> Decimal:
+    def apply_fx_rate(value: Decimal) -> Decimal:
         if fx_rate is None or fx_rate == 0:
             return value
         return value * fx_rate
@@ -193,19 +193,19 @@ def to_table_rows(
             "label": r.label,
             "contributions": f"{conv(r.contributions):,.2f}",
             "contributions_eur": f"{r.contributions:,.2f}",
-            "contributions_usd": f"{to_usd(r.contributions):,.2f}",
+            "contributions_usd": f"{apply_fx_rate(r.contributions):,.2f}",
             "dividends": f"{conv(r.dividends):,.2f}",
             "dividends_eur": f"{r.dividends:,.2f}",
-            "dividends_usd": f"{to_usd(r.dividends):,.2f}",
+            "dividends_usd": f"{apply_fx_rate(r.dividends):,.2f}",
             "interest": f"{conv(r.interest):,.2f}",
             "interest_eur": f"{r.interest:,.2f}",
-            "interest_usd": f"{to_usd(r.interest):,.2f}",
+            "interest_usd": f"{apply_fx_rate(r.interest):,.2f}",
             "net_flow": f"{conv(r.net_flow):,.2f}",
             "net_flow_eur": f"{r.net_flow:,.2f}",
-            "net_flow_usd": f"{to_usd(r.net_flow):,.2f}",
+            "net_flow_usd": f"{apply_fx_rate(r.net_flow):,.2f}",
             "closing_value": f"{conv(r.closing_value_eur):,.2f}",
             "closing_value_eur": f"{r.closing_value_eur:,.2f}",
-            "closing_value_usd": f"{to_usd(r.closing_value_eur):,.2f}",
+            "closing_value_usd": f"{apply_fx_rate(r.closing_value_eur):,.2f}",
             "growth_pct": (
                 f"{r.growth_pct * Decimal(100):,.2f} %" if r.growth_pct is not None else "—"
             ),
