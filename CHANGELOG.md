@@ -16,6 +16,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
+## [0.3.0] — 2026-05-26
+
+### Added — repositories + services
+- `repositories/`:
+  - `accounts_repo`: CRUD + filter by broker.
+  - `instruments_repo`: `get_or_create()` for CSV importers.
+  - `transactions_repo`: filtered listing (by account / instrument /
+    kind / date range) + dedup-on-`external_id` insert.
+  - `prices_repo` and `fx_repo`: idempotent SQLite
+    `ON CONFLICT … DO UPDATE` upserts.
+  - `allocations_repo`: target-allocation CRUD with `set_active()` flip.
+- `services/`:
+  - `fx_service`: incremental Frankfurter backfill + EUR→quote lookup
+    with forward-fill on weekends/holidays.
+  - `prices_service`: per-instrument incremental yfinance refresh,
+    skipping synthetic cash/savings tickers.
+  - `positions_service`: rolls up the ledger into per-instrument
+    holdings with cost basis, current price, and EUR-converted value;
+    plus `compute_cash_balance` and `total_portfolio_value`.
+  - `metrics_service`: assembles cashflow streams from the ledger and
+    calls the domain layer for portfolio XIRR, YTD XIRR, total growth
+    %, capital gain, and YTD growth %.
+- 15 new tests across repos and services; 96 tests pass overall.
+
 ## [0.2.0] — 2026-05-26
 
 ### Added — Phase 2 domain math layer
@@ -72,6 +96,7 @@ _Nothing yet._
 - Docs: `README.md` (quickstart + architecture diagram), `CONTRIBUTING.md`,
   `docs/architecture.md`.
 
-[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/DJH961/Investment-Overview/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/DJH961/Investment-Overview/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/DJH961/Investment-Overview/releases/tag/v0.1.0
