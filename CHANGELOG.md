@@ -16,6 +16,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
+## [0.5.0] — 2026-05-26
+
+### Added — UI shell
+- `ui/theme.py`: Wong colorblind-safe palette (gain=blue `#0072B2`,
+  loss=orange `#E69F00`) plus a registered Plotly `colorblind` template
+  set as default. `color_for_signed`/`arrow_for_signed` helpers for
+  redundant directional cues.
+- `ui/layout.py`: `page_frame()` context manager rendering a consistent
+  header + sidebar across every page. `NAV_ITEMS` covers the seven
+  spec'd pages (Overview / Deposits / Transactions / Monthly / Yearly /
+  Calculator / Settings).
+- `ui/copy/tooltips.py`: single source of truth for tooltip wording, all
+  copy ≤ 3 sentences (spec §10).
+- `ui/components/`: `kpi_card` and `tooltip_label` reusable components.
+- `ui/pages/`: scaffolded page modules for all seven routes; each module
+  exposes a `register()` function and a `PATH` constant.
+- `boot.py`: idempotent boot sequence — Alembic upgrade → Plotly template
+  registration → best-effort FX refresh → best-effort price refresh.
+  `skip_network=True` for offline development.
+- `main.py` rewired to run the boot sequence and register all pages
+  before `ui.run()`. `/` redirects to `/overview`.
+- 11 new tests (palette, tooltip copy length budget, boot offline
+  short-circuit, nav coverage). 143 total pass.
+
 ## [0.4.0] — 2026-05-26
 
 ### Added — CSV importers
@@ -121,7 +145,9 @@ _Nothing yet._
 - Docs: `README.md` (quickstart + architecture diagram), `CONTRIBUTING.md`,
   `docs/architecture.md`.
 
-[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/DJH961/Investment-Overview/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/DJH961/Investment-Overview/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/DJH961/Investment-Overview/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/DJH961/Investment-Overview/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/DJH961/Investment-Overview/releases/tag/v0.1.0
