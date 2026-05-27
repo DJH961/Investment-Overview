@@ -15,7 +15,9 @@ uv run pre-commit install
 
 ## Workflow
 
-1. Branch off `main` with a descriptive kebab-case name.
+1. For this personal project, pushing directly to `main` is OK after the
+    local quality gate passes. Use a descriptive kebab-case branch when a
+    change benefits from review, experimentation or a safer staging area.
 2. Make changes; keep commits scoped and meaningful.
 3. Run the full local quality gate before pushing:
 
@@ -26,7 +28,7 @@ uv run pre-commit install
    uv run pytest
    ```
 
-4. CI runs the same gate on push and PR. Don't merge red.
+4. CI runs the same gate on push and PR. Don't leave `main` red.
 
 ## Layering rules (enforced by convention, not tooling — yet)
 
