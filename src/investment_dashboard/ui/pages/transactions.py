@@ -185,7 +185,7 @@ def _open_new_modal(accounts: list[Account]) -> None:  # pragma: no cover - UI
 
 def _open_import_modal(accounts: list[Account]) -> None:  # pragma: no cover - UI
     with ui.dialog() as dlg, ui.card().classes("min-w-[28rem]"):
-        ui.label("Import broker CSV").classes("text-h6")
+        ui.label("Import broker CSV / XLSX").classes("text-h6")
         broker_sel = ui.select(
             {b.value: b.value.title() for b in Broker}, value=Broker.FIDELITY.value, label="Broker"
         ).classes("w-full")
@@ -198,12 +198,21 @@ def _open_import_modal(accounts: list[Account]) -> None:  # pragma: no cover - U
             if account_sel.value is None:
                 ui.notify("Pick an account first", type="warning")
                 return
-            content = e.content.read().decode("utf-8-sig", errors="replace")
+            broker = Broker(broker_sel.value)
+            raw = e.content.read()
+            # Vanguard's Full History export is an .xlsx workbook (ZIP).
+            # For everything else we still decode to text so the existing
+            # CSV parsers stay on their happy path.
+            content: str | bytes
+            if broker == Broker.VANGUARD and raw[:4] == b"PK\x03\x04":
+                content = raw
+            else:
+                content = raw.decode("utf-8-sig", errors="replace")
             try:
                 with session_scope() as session:
                     result = import_csv(
                         session,
-                        broker=Broker(broker_sel.value),
+                        broker=broker,
                         account_id=account_sel.value,
                         content=content,
                     )
@@ -219,7 +228,9 @@ def _open_import_modal(accounts: list[Account]) -> None:  # pragma: no cover - U
                 status.text += f", unknown actions: {sorted(result.unknown_actions)}"
             ui.notify(status.text, type="positive")
 
-        ui.upload(on_upload=_on_upload, auto_upload=True).props("accept=.csv").classes("w-full")
+        ui.upload(on_upload=_on_upload, auto_upload=True).props("accept=.csv,.xlsx").classes(
+            "w-full"
+        )
         with ui.row().classes("justify-end w-full"):
             ui.button("Close", on_click=dlg.close).props("flat")
     dlg.open()

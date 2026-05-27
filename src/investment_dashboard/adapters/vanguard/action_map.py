@@ -17,12 +17,16 @@ _RULES: dict[str, str | None] = {
     "dividend": "dividend_cash",
     "dividend received": "dividend_cash",
     "funds received": "deposit",
+    # Vanguard's Full-History export labels post-settlement corrections to
+    # incoming wires as "Funds Received (adjustment)" — still a deposit.
+    "funds received (adjustment)": "deposit",
     "transfer (incoming)": "deposit",
     "transfer in": "deposit",
     "funds withdrawn": "withdrawal",
     "transfer (outgoing)": "withdrawal",
     "transfer out": "withdrawal",
     "fee": "fee",
+    "stock split": "split",
     "sweep in": None,
     "sweep out": None,
 }

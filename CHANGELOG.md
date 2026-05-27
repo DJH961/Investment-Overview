@@ -16,6 +16,46 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
+## [1.4.0] — 2026-05-27
+
+### Added
+
+- **Vanguard "Full History" XLSX import.** Vanguard's web "Activity →
+  Download" only exposes the last 18 months of transactions; the
+  user-facing workaround is to run an *Activity report* in the Reports
+  area with a custom date range and export to Excel. The importer now
+  accepts that workbook directly — bytes are detected by the standard
+  ZIP magic (`PK\x03\x04`) and routed through a new
+  `adapters/vanguard/xlsx_parser.py`. Headers are located dynamically
+  (the export prepends a "Custom report created on …" banner),
+  `Amount` cells like `-$10,000.0000` and `Commission & fees**`
+  values like `"Free"` are parsed, sells keep the export's already-
+  negative quantity, and sweep rows are dropped with a count.
+- **`Stock split` and `Funds Received (adjustment)`** are now mapped
+  in the Vanguard action map (split → `split`, adjustment →
+  `deposit`); both appear in the Full-History export but are absent
+  from the brokerage CSV.
+- **Fidelity capital-gain distributions** — `LONG-TERM CAP GAIN`,
+  `SHORT-TERM CAP GAIN` and `DISTRIBUTION` Action strings now map to
+  `dividend_cash`. These rows previously aborted real-world Fidelity
+  imports with `UnknownActionError`.
+
+### Changed
+
+- `services.importer_service.import_csv` now accepts `bytes` as well
+  as `str` content so the UI can hand XLSX bytes through unchanged.
+- The Transactions page's *Import* dialog accepts `.xlsx` in addition
+  to `.csv` (Vanguard only — Fidelity remains CSV).
+- `openpyxl` added as a runtime dependency (already a transitive
+  dependency of `pandas`'s Excel support).
+
+### Tests
+
+- 16 new tests covering the XLSX parser (synthetic workbook + real
+  fixture under `docs/Comparison Files/`), the importer dispatch on
+  ZIP magic bytes, the new Fidelity / Vanguard action-map entries,
+  and end-to-end re-import deduping. 222 total pass.
+
 ## [1.3.2] — 2026-05-27
 
 ### Fixed
@@ -410,7 +450,8 @@ treemap.
 - Docs: `README.md` (quickstart + architecture diagram), `CONTRIBUTING.md`,
   `docs/architecture.md`.
 
-[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/DJH961/Investment-Overview/compare/v1.3.2...v1.4.0
 [1.1.0]: https://github.com/DJH961/Investment-Overview/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/DJH961/Investment-Overview/compare/v0.9.0...v1.0.0
 [0.9.0]: https://github.com/DJH961/Investment-Overview/compare/v0.8.0...v0.9.0
