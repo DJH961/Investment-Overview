@@ -17,10 +17,12 @@ import importlib.util
 import os
 import subprocess
 import sys
+import tomllib
 import traceback
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+PROJECT_NAME = "investment-dashboard"
 MIN_PYTHON = (3, 12)
 MIN_NICEGUI = (2, 10, 0)
 MAX_NICEGUI = (3, 0, 0)
@@ -67,7 +69,29 @@ def _current_python_has_dependencies() -> bool:
     return (
         all(importlib.util.find_spec(module) is not None for module in REQUIRED_MODULES)
         and _nicegui_is_supported()
+        and _installed_project_is_current()
     )
+
+
+def _project_version() -> str:
+    pyproject = ROOT / "pyproject.toml"
+    try:
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise RuntimeError(f"Unable to read project version from {pyproject}.") from exc
+
+    version = data.get("project", {}).get("version")
+    if not isinstance(version, str) or not version:
+        raise RuntimeError(f"Unable to read project version from {pyproject}.")
+    return version
+
+
+def _installed_project_is_current() -> bool:
+    try:
+        installed_version = importlib_metadata.version(PROJECT_NAME)
+    except importlib_metadata.PackageNotFoundError:
+        return False
+    return installed_version == _project_version()
 
 
 def _version_tuple(version: str) -> tuple[int, int, int]:
@@ -119,11 +143,14 @@ def _ensure_venv_ready() -> None:
 
     if not _venv_has_dependencies():
         print(
-            "Installing investment-dashboard and dependencies (one-time, about a minute) ...",
+            "Installing/updating investment-dashboard and dependencies (about a minute) ...",
             flush=True,
         )
         _run_checked([str(VENV_PYTHON), "-m", "pip", "install", "--upgrade", "pip"], "pip upgrade")
-        _run_checked([str(VENV_PYTHON), "-m", "pip", "install", "-e", "."], "Dependency install")
+        _run_checked(
+            [str(VENV_PYTHON), "-m", "pip", "install", "--upgrade", "-e", "."],
+            "Dependency install",
+        )
         _run_checked(
             [str(VENV_PYTHON), "-m", "pip", "install", "pytest"],
             "Pytest install",

@@ -9,6 +9,9 @@ NiceGUI route-decorator error is caught by CI.
 
 from __future__ import annotations
 
+import tomllib
+from pathlib import Path
+
 
 def test_boot_and_register_pages_offline() -> None:
     """Apply migrations + register every page without touching the network."""
@@ -19,7 +22,10 @@ def test_boot_and_register_pages_offline() -> None:
     _register_pages()
 
 
-def test_version_is_v1() -> None:
+def test_version_matches_project_metadata() -> None:
     from investment_dashboard import __version__
 
-    assert __version__.startswith("1."), f"expected 1.x, got {__version__}"
+    pyproject = tomllib.loads(
+        (Path(__file__).resolve().parents[2] / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    assert __version__ == pyproject["project"]["version"]
