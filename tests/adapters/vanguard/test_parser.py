@@ -23,7 +23,9 @@ FIXTURE = Path(__file__).parents[1] / "fixtures" / "vanguard_sample.csv"
         ("Reinvestment", "dividend_reinvest"),
         ("Dividend", "dividend_cash"),
         ("Funds Received", "deposit"),
+        ("Funds Received (adjustment)", "deposit"),
         ("Funds Withdrawn", "withdrawal"),
+        ("Stock split", "split"),
         ("Fee", "fee"),
     ],
 )

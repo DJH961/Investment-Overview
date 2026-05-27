@@ -17,6 +17,13 @@ _RULES: tuple[tuple[str, str], ...] = (
     ("YOU SOLD", "sell"),
     ("REINVESTMENT", "dividend_reinvest"),
     ("DIVIDEND RECEIVED", "dividend_cash"),
+    # Fund capital-gain distributions are paid out like dividends — the
+    # short/long-term flavour is purely a tax classification and is not
+    # tracked separately in the ledger.
+    ("LONG-TERM CAP GAIN", "dividend_cash"),
+    ("SHORT-TERM CAP GAIN", "dividend_cash"),
+    # Generic "DISTRIBUTION" on a holding (e.g. SCHD) is also a cash payout.
+    ("DISTRIBUTION", "dividend_cash"),
     ("INTEREST EARNED", "interest"),
     ("ELECTRONIC FUNDS TRANSFER RECEIVED", "deposit"),
     ("EFT FUNDS RECEIVED", "deposit"),

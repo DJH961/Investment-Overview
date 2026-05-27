@@ -24,6 +24,7 @@ from investment_dashboard.adapters.importer_types import (
     UnknownActionError,
 )
 from investment_dashboard.adapters.vanguard.parser import parse_vanguard_csv
+from investment_dashboard.adapters.vanguard.xlsx_parser import parse_vanguard_xlsx
 from investment_dashboard.models import Transaction
 from investment_dashboard.repositories import (
     accounts_repo,
@@ -52,17 +53,37 @@ class ImportResult:
     unknown_actions: list[str]
 
 
-def _parse(broker: Broker, content: str) -> tuple[Sequence[ParsedTransactionRow], int, list[str]]:
+def _parse(
+    broker: Broker, content: str | bytes
+) -> tuple[Sequence[ParsedTransactionRow], int, list[str]]:
     unknowns: list[str] = []
     sweeps = 0
     rows: list[ParsedTransactionRow] = []
     try:
         if broker == Broker.FIDELITY:
-            rows = list(parse_fidelity_csv(content))
+            text = (
+                content.decode("utf-8-sig", errors="replace")
+                if isinstance(content, bytes)
+                else content
+            )
+            rows = list(parse_fidelity_csv(text))
+        # Vanguard supports two formats: the brokerage CSV (last 18
+        # months) and the Excel-formatted Full History report (no
+        # 18-month cap). We detect the workbook by the standard ZIP
+        # magic bytes (``PK\x03\x04``) so the UI can hand us either.
+        elif isinstance(content, bytes) and content[:4] == b"PK\x03\x04":
+            xlsx_result = parse_vanguard_xlsx(content)
+            rows = xlsx_result.rows
+            sweeps = xlsx_result.sweeps_dropped
         else:
-            result = parse_vanguard_csv(content)
-            rows = result.rows
-            sweeps = result.sweeps_dropped
+            text = (
+                content.decode("utf-8-sig", errors="replace")
+                if isinstance(content, bytes)
+                else content
+            )
+            csv_result = parse_vanguard_csv(text)
+            rows = csv_result.rows
+            sweeps = csv_result.sweeps_dropped
     except UnknownActionError as exc:
         # Surface as one entry; the user can fix the action map.
         unknowns.append(str(exc))
@@ -74,11 +95,16 @@ def import_csv(
     *,
     broker: Broker,
     account_id: int,
-    content: str,
+    content: str | bytes,
 ) -> ImportResult:
     """Parse ``content`` and insert rows under ``account_id``.
 
-    Idempotent: re-importing the same CSV writes zero new rows because
+    ``content`` is the raw broker export. For Fidelity this is always a
+    CSV (text or bytes). For Vanguard it may be either the brokerage CSV
+    (text/bytes) or the Full History ``.xlsx`` workbook (bytes); the
+    importer dispatches on the ZIP magic bytes at the head of the file.
+
+    Idempotent: re-importing the same export writes zero new rows because
     the parser's ``external_id`` is a sha256 of the row's stable fields
     and the table has a ``UNIQUE(account_id, external_id)`` constraint.
     """

@@ -86,3 +86,99 @@ class TestImportVanguard:
         # 2 sweep rows dropped.
         assert result.inserted == 5
         assert result.sweeps_dropped == 2
+
+
+class TestImportVanguardXlsx:
+    """v1.4: Vanguard Full-History XLSX import (the >18-month workaround)."""
+
+    @staticmethod
+    def _xlsx_bytes() -> bytes:
+        # Build a tiny in-memory workbook in the Full-History layout.
+        from io import BytesIO
+
+        import openpyxl
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(("Custom report created on: 05/27/2026.",))
+        ws.append(("Settled from 01/01/2024 to 05/27/2026.",))
+        ws.append(())
+        ws.append(
+            (
+                "Settlement date",
+                "Trade date",
+                "Symbol",
+                "Name",
+                "Transaction type",
+                "Account type",
+                "Quantity",
+                "Price",
+                "Commission & fees**",
+                "Amount",
+            )
+        )
+        ws.append(
+            (
+                "01/05/2024",
+                "01/05/2024",
+                "VMFXX",
+                "Vanguard Federal Money Market Fund (Settlement Fund)",
+                "Sweep in",
+                "CASH",
+                "",
+                "",
+                "",
+                "-$1,100.0000",
+            )
+        )
+        ws.append(
+            (
+                "01/05/2024",
+                "01/05/2024",
+                "",
+                "To: SAMPLE BANK, NA",
+                "Funds Received",
+                "CASH",
+                "",
+                "",
+                "",
+                "$1,100.0000",
+            )
+        )
+        ws.append(
+            (
+                "01/05/2024",
+                "01/03/2024",
+                "VTI",
+                "VANGUARD TOTAL STOCK MARKET ETF",
+                "Buy",
+                "CASH",
+                "5.0000",
+                "$220.0000",
+                "Free",
+                "-$1,100.0000",
+            )
+        )
+        buf = BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
+    def test_import_dispatches_on_zip_magic(
+        self, session: Session, usd_account: int, fx_seeded: None
+    ) -> None:
+        result = import_csv(
+            session,
+            broker=Broker.VANGUARD,
+            account_id=usd_account,
+            content=self._xlsx_bytes(),
+        )
+        assert result.inserted == 2  # Buy + Funds Received
+        assert result.sweeps_dropped == 1
+        assert result.unknown_actions == []
+
+    def test_reimport_dedupes(self, session: Session, usd_account: int, fx_seeded: None) -> None:
+        data = self._xlsx_bytes()
+        import_csv(session, broker=Broker.VANGUARD, account_id=usd_account, content=data)
+        result = import_csv(session, broker=Broker.VANGUARD, account_id=usd_account, content=data)
+        assert result.inserted == 0
+        assert result.duplicates == 2
