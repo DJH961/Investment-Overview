@@ -220,7 +220,7 @@ def parse_vanguard_xlsx(content: bytes) -> VanguardXlsxParseResult:
                 net_native=net,
                 description=name,
                 external_id=external_id,
-                source="import_vanguard_csv",
+                source="import_vanguard_xlsx",
             )
         )
 
