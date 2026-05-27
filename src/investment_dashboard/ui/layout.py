@@ -77,8 +77,43 @@ def _on_currency_change(value: str) -> None:  # pragma: no cover - UI callback
     ui.navigate.reload()
 
 
-def _toggle_dark(dark: ui.dark_mode) -> None:  # pragma: no cover - UI callback
-    dark.toggle()
+# Ordered cycle for the header theme button: auto → light → dark → auto …
+# ``None`` means "follow the device/browser preference" (see ``ui.dark_mode``).
+_THEME_CYCLE: tuple[bool | None, ...] = (None, False, True)
+
+
+def _theme_icon(value: bool | None) -> str:
+    """Return the Material icon name for the given dark-mode value."""
+    if value is None:
+        return "brightness_auto"
+    if value:
+        return "light_mode"
+    return "dark_mode"
+
+
+def _theme_tooltip(value: bool | None) -> str:
+    """Return the tooltip describing the *current* theme state."""
+    if value is None:
+        return "Theme: Auto (follow system) — click for Light"
+    if value:
+        return "Theme: Dark — click for Auto"
+    return "Theme: Light — click for Dark"
+
+
+def _cycle_theme(
+    dark: ui.dark_mode,
+    button: ui.button,
+) -> None:  # pragma: no cover - UI callback
+    """Advance dark mode through Auto → Light → Dark and refresh the button."""
+    current = dark.value
+    try:
+        idx = _THEME_CYCLE.index(current)
+    except ValueError:
+        idx = -1
+    nxt = _THEME_CYCLE[(idx + 1) % len(_THEME_CYCLE)]
+    dark.value = nxt
+    button.props(f'icon="{_theme_icon(nxt)}"')
+    button.tooltip(_theme_tooltip(nxt))
 
 
 def _header(title: str, *, current_currency: str, dark: ui.dark_mode) -> None:
@@ -103,10 +138,9 @@ def _header(title: str, *, current_currency: str, dark: ui.dark_mode) -> None:
                 value=current_currency,
                 on_change=lambda e: _on_currency_change(e.value),
             ).props("dense unelevated no-caps")
-            ui.button(
-                icon="dark_mode" if not dark.value else "light_mode",
-                on_click=lambda: _toggle_dark(dark),
-            ).props("flat round dense").tooltip("Toggle light / dark")
+            theme_btn = ui.button(icon=_theme_icon(dark.value)).props("flat round dense")
+            theme_btn.tooltip(_theme_tooltip(dark.value))
+            theme_btn.on_click(lambda: _cycle_theme(dark, theme_btn))
             ui.button(
                 icon="refresh",
                 on_click=ui.navigate.reload,
@@ -161,11 +195,12 @@ def page_frame(title: str, *, current: str) -> Iterator[None]:
     ``current`` must match the registered path of the active page so the
     sidebar can highlight it.
     """
-    # Dark mode controller — value defaults to "auto" so first-load respects
-    # the user's OS preference. ``ui.dark_mode`` is persistent within the
-    # NiceGUI tab session.
+    # Dark mode controller — defaults to ``None`` (auto), so the first load
+    # follows the device/browser preference (``prefers-color-scheme``). The
+    # header button cycles Auto → Light → Dark. ``ui.dark_mode`` is persistent
+    # within the NiceGUI tab session.
     ui_style.apply_per_page()
-    dark = ui.dark_mode()
+    dark = ui.dark_mode(value=None)
 
     if _maybe_redirect_to_onboarding(current):
         with ui.column().classes("w-full q-pa-md"):
