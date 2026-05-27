@@ -7,19 +7,19 @@ return metrics — XIRR, TWR, CAGR, YTD variants, drawdown, Sharpe, Sortino —
 in both **USD** and **EUR**, and serves them over a NiceGUI web UI accessible
 from the host laptop and any device on the same Wi-Fi network.
 
-> **Status: v1.2.0 — snapshots cache, near-live ETF prices, monthly
-> projection, one-click launcher.** All seven pages registered
-> (`/overview`, `/deposits`, `/transactions`, `/monthly`, `/yearly`,
-> `/calculator`, `/settings`), CSV import for Fidelity and Vanguard,
-> XIRR/TWR/CAGR computed from the live ledger, allocation treemap,
-> colorblind-safe theme, idempotent boot sequence. v1.2 adds a daily
-> `position_snapshots` cache (constant-time period close-outs), a
-> per-instrument TTL refresh that keeps ETFs/stocks updated every
-> ~2 minutes during market hours, a 36-month projection on
-> `/monthly`, a Modified-Dietz growth-% column on both period pages,
-> editable `expense_ratio` / `active` fields in `/settings`, and a
-> double-clickable launcher (`run_dashboard.bat` / `.sh` / `.py`)
-> that needs no command line. 188 tests pass; lint/format/mypy clean.
+> **Status: v1.3.0 — onboarding wizard, EUR/USD toggle on every page,
+> creatable accounts/instruments/allocations.** First-run users land on
+> `/onboarding`, which detects an empty database and can one-click seed
+> the spec's three accounts (Vanguard, Fidelity, Savings Bank) and
+> nineteen default instruments. A header EUR/USD switch persisted in
+> `app_config` flips the dashboard's primary display currency; Overview,
+> Deposits, Monthly, Yearly, Transactions and Calculator render both
+> currencies side-by-side wherever space allows so the predominantly-USD
+> activity stays legible. Settings now exposes add-account, add-instrument
+> and new-allocation dialogs plus a re-run "Seed default setup" button.
+> Builds on v1.2 — snapshots cache, near-live ETF prices, monthly
+> projection — and the one-click launcher now also pre-installs `pytest`
+> into `.venv`. Lint/format/mypy clean.
 
 ## Highlights
 

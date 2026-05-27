@@ -20,6 +20,9 @@ from typing import TYPE_CHECKING
 from nicegui import ui
 
 from investment_dashboard import __version__
+from investment_dashboard.db import session_scope
+from investment_dashboard.services import display_currency_service
+from investment_dashboard.services.onboarding_service import is_onboarded
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -46,7 +49,27 @@ NAV_ITEMS: tuple[NavItem, ...] = (
 )
 
 
-def _header(title: str) -> None:
+#: Pages where automatic "no accounts → /onboarding" redirect is skipped.
+#: Onboarding itself, settings (where the user might be hand-adding the
+#: first account), and the welcome page must remain reachable on an
+#: empty DB or the wizard becomes unreachable.
+_ONBOARDING_BYPASS_PATHS: frozenset[str] = frozenset({"/onboarding", "/settings"})
+
+
+def _on_currency_change(value: str) -> None:  # pragma: no cover - UI callback
+    try:
+        with session_scope() as session:
+            display_currency_service.set_display_currency(session, value)
+    except ValueError as exc:
+        ui.notify(str(exc), type="negative")
+        return
+    ui.notify(f"Display currency set to {value}", type="positive")
+    # Reload the current page so every value re-renders in the new
+    # currency without forcing the user to navigate manually.
+    ui.navigate.reload()
+
+
+def _header(title: str, *, current_currency: str) -> None:
     with ui.header(elevated=True).classes(
         "items-center justify-between bg-primary text-white q-px-md"
     ):
@@ -56,6 +79,13 @@ def _header(title: str) -> None:
             ui.label(f"v{__version__}").classes("text-caption opacity-70")
         with ui.row().classes("items-center gap-md"):
             ui.label(title).classes("text-subtitle1")
+            ui.separator().props("vertical inset")
+            ui.label("Display").classes("text-caption opacity-80")
+            ui.toggle(
+                list(display_currency_service.SUPPORTED_CURRENCIES),
+                value=current_currency,
+                on_change=lambda e: _on_currency_change(e.value),
+            ).props("dense color=white text-color=primary toggle-color=white")
             ui.separator().props("vertical inset")
             ui.label(
                 "Last refresh: " + datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M UTC")
@@ -78,6 +108,27 @@ def _sidebar(current: str) -> None:
                         ui.label(item.label)
 
 
+def _maybe_redirect_to_onboarding(current: str) -> bool:
+    """Redirect to ``/onboarding`` when the DB has no accounts.
+
+    Returns ``True`` if a redirect was triggered so callers can short-
+    circuit further rendering. The onboarding and settings pages are
+    bypass-listed so the user can actually reach the wizard / add forms
+    on an empty DB.
+    """
+    if current in _ONBOARDING_BYPASS_PATHS:
+        return False
+    try:
+        with session_scope() as session:
+            already = is_onboarded(session)
+    except Exception:  # pragma: no cover - defensive
+        return False
+    if already:
+        return False
+    ui.navigate.to("/onboarding")
+    return True
+
+
 @contextmanager
 def page_frame(title: str, *, current: str) -> Iterator[None]:
     """Render the header + sidebar and yield a content container.
@@ -85,7 +136,21 @@ def page_frame(title: str, *, current: str) -> Iterator[None]:
     ``current`` must match the registered path of the active page so the
     sidebar can highlight it.
     """
-    _header(title)
+    if _maybe_redirect_to_onboarding(current):
+        # Still render an empty frame so NiceGUI has a body while the
+        # client-side navigation kicks in. Returning early would raise.
+        with ui.column().classes("w-full q-pa-md"):
+            ui.label("Redirecting to setup…").classes("text-caption opacity-60")
+            yield
+        return
+
+    try:
+        with session_scope() as session:
+            current_currency = display_currency_service.get_display_currency(session)
+    except Exception:  # pragma: no cover - defensive
+        current_currency = display_currency_service.DEFAULT_CURRENCY
+
+    _header(title, current_currency=current_currency)
     _sidebar(current)
     with ui.column().classes("w-full q-pa-md gap-md") as col:
         yield

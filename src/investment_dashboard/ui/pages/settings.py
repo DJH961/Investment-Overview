@@ -1,9 +1,19 @@
-"""Settings page (spec §8.7) — accounts/instruments overview + refresh actions."""
+"""Settings page (spec §8.7) — accounts/instruments overview + refresh actions.
+
+v1.3 adds:
+
+* Display-currency selector (EUR/USD) — persisted via ``app_config``.
+* Add-account / add-instrument / add-allocation forms (onboarding without
+  the wizard, or to extend the default seed afterwards).
+* "Seed default setup" button so a user mid-onboarding can pull in the
+  spec defaults without backing out to ``/onboarding``.
+"""
 
 from __future__ import annotations
 
 import logging
 from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
 
 from nicegui import ui
 
@@ -13,7 +23,9 @@ from investment_dashboard.repositories import (
     allocations_repo,
     instruments_repo,
 )
+from investment_dashboard.services import display_currency_service
 from investment_dashboard.services.fx_service import refresh_fx_history
+from investment_dashboard.services.onboarding_service import seed_default_setup
 from investment_dashboard.services.prices_service import refresh_prices
 from investment_dashboard.ui.layout import page_frame
 
@@ -41,6 +53,33 @@ def _refresh_prices_clicked() -> None:  # pragma: no cover - UI
     except Exception as exc:
         log.exception("Price refresh failed")
         ui.notify(f"Price refresh failed: {exc}", type="negative")
+
+
+def _seed_clicked() -> None:  # pragma: no cover - UI
+    try:
+        with session_scope() as session:
+            result = seed_default_setup(session)
+    except Exception as exc:
+        log.exception("Seed default setup failed")
+        ui.notify(f"Seed failed: {exc}", type="negative")
+        return
+    ui.notify(
+        f"Seeded {result.accounts_created} account(s) and "
+        f"{result.instruments_created} instrument(s).",
+        type="positive",
+    )
+    _settings_refresh()
+
+
+def _set_display_currency(value: str) -> None:  # pragma: no cover - UI
+    try:
+        with session_scope() as session:
+            display_currency_service.set_display_currency(session, value)
+    except ValueError as exc:
+        ui.notify(str(exc), type="negative")
+        return
+    ui.notify(f"Display currency set to {value}", type="positive")
+    _settings_refresh()
 
 
 def _edit_account_dialog(
@@ -79,6 +118,178 @@ def _edit_account_dialog(
     dialog.open()
 
 
+def _add_account_dialog() -> None:  # pragma: no cover - UI
+    with ui.dialog() as dialog, ui.card().classes("min-w-[24rem]"):
+        ui.label("Add account").classes("text-h6")
+        broker_in = ui.select(
+            ["vanguard", "fidelity", "savings_bank"],
+            value="vanguard",
+            label="Broker",
+        ).classes("w-full")
+        label_in = ui.input("Label", value="").classes("w-full")
+        currency_in = ui.select(["USD", "EUR"], value="USD", label="Native currency").classes(
+            "w-full",
+        )
+        type_in = ui.select(
+            ["brokerage", "savings", "cash"],
+            value="brokerage",
+            label="Account type",
+        ).classes("w-full")
+
+        def _save() -> None:
+            label = (label_in.value or "").strip()
+            if not label:
+                ui.notify("Label is required", type="warning")
+                return
+            try:
+                with session_scope() as session:
+                    accounts_repo.create_account(
+                        session,
+                        broker=broker_in.value,
+                        account_label=label,
+                        native_currency=currency_in.value,
+                        account_type=type_in.value,
+                    )
+            except Exception as exc:
+                log.exception("Account create failed")
+                ui.notify(f"Create failed: {exc}", type="negative")
+                return
+            ui.notify("Account created", type="positive")
+            dialog.close()
+            _settings_refresh()
+
+        with ui.row().classes("justify-end w-full gap-sm"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button("Add", on_click=_save).props("color=primary")
+    dialog.open()
+
+
+def _add_instrument_dialog() -> None:  # pragma: no cover - UI
+    with ui.dialog() as dialog, ui.card().classes("min-w-[24rem]"):
+        ui.label("Add instrument").classes("text-h6")
+        symbol_in = ui.input("Symbol (e.g. VTI)").classes("w-full")
+        name_in = ui.input("Name").classes("w-full")
+        asset_class_in = ui.select(
+            ["etf", "mutual_fund", "stock", "cash", "savings"],
+            value="etf",
+            label="Asset class",
+        ).classes("w-full")
+        category_in = ui.input("Category (e.g. Total US, Growth, Dividend)").classes("w-full")
+        currency_in = ui.select(["USD", "EUR"], value="USD", label="Native currency").classes(
+            "w-full",
+        )
+        expense_in = ui.input("Expense ratio (optional, e.g. 0.0003)").classes("w-full")
+
+        def _save() -> None:
+            sym = (symbol_in.value or "").strip().upper()
+            if not sym:
+                ui.notify("Symbol is required", type="warning")
+                return
+            expense: Decimal | None = None
+            raw = (expense_in.value or "").strip()
+            if raw:
+                try:
+                    expense = Decimal(raw)
+                except InvalidOperation:
+                    ui.notify(f"Invalid expense ratio: {raw!r}", type="negative")
+                    return
+            try:
+                with session_scope() as session:
+                    if instruments_repo.get_by_symbol(session, sym) is not None:
+                        ui.notify(f"Instrument {sym} already exists", type="warning")
+                        return
+                    instruments_repo.get_or_create(
+                        session,
+                        symbol=sym,
+                        name=(name_in.value or "").strip() or None,
+                        asset_class=asset_class_in.value,
+                        native_currency=currency_in.value,
+                        category=(category_in.value or "").strip() or None,
+                        expense_ratio=expense,
+                    )
+            except Exception as exc:
+                log.exception("Instrument create failed")
+                ui.notify(f"Create failed: {exc}", type="negative")
+                return
+            ui.notify(f"Instrument {sym} added", type="positive")
+            dialog.close()
+            _settings_refresh()
+
+        with ui.row().classes("justify-end w-full gap-sm"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button("Add", on_click=_save).props("color=primary")
+    dialog.open()
+
+
+def _add_allocation_dialog() -> None:  # pragma: no cover - UI
+    with session_scope() as session:
+        instruments = list(instruments_repo.list_instruments(session, only_active=False))
+
+    with ui.dialog() as dialog, ui.card().classes("min-w-[32rem]"):
+        ui.label("Create target allocation").classes("text-h6")
+        name_in = ui.input("Name", value="Default").classes("w-full")
+        activate_in = ui.checkbox("Activate immediately", value=True)
+        ui.label("Weights (%) — must sum to 100. Leave blank to exclude.").classes(
+            "text-caption opacity-70",
+        )
+        weight_inputs: dict[int, ui.input] = {}
+        with ui.column().classes("w-full max-h-[40vh] overflow-auto"):
+            for instr in instruments:
+                with ui.row().classes("items-center gap-sm w-full"):
+                    ui.label(f"{instr.symbol} · {instr.name or ''}").classes(
+                        "text-body2",
+                    ).style("min-width: 18rem")
+                    weight_inputs[instr.id] = ui.input("Weight %", value="").classes(
+                        "min-w-[8rem]",
+                    )
+
+        def _save() -> None:
+            name = (name_in.value or "").strip()
+            if not name:
+                ui.notify("Allocation name is required", type="warning")
+                return
+            weights: dict[int, Decimal] = {}
+            for instrument_id, widget in weight_inputs.items():
+                raw = (widget.value or "").strip()
+                if not raw:
+                    continue
+                try:
+                    weights[instrument_id] = Decimal(raw)
+                except InvalidOperation:
+                    ui.notify(f"Invalid weight: {raw!r}", type="negative")
+                    return
+            if not weights:
+                ui.notify("Pick at least one instrument", type="warning")
+                return
+            total = sum(weights.values(), start=Decimal(0))
+            if abs(total - Decimal(100)) > Decimal("0.01"):
+                ui.notify(
+                    f"Weights sum to {total} %, expected 100 %.",
+                    type="negative",
+                )
+                return
+            try:
+                with session_scope() as session:
+                    allocations_repo.create_allocation(
+                        session,
+                        name,
+                        weights,
+                        active=bool(activate_in.value),
+                    )
+            except Exception as exc:
+                log.exception("Allocation create failed")
+                ui.notify(f"Create failed: {exc}", type="negative")
+                return
+            ui.notify("Allocation created", type="positive")
+            dialog.close()
+            _settings_refresh()
+
+        with ui.row().classes("justify-end w-full gap-sm"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button("Save", on_click=_save).props("color=primary")
+    dialog.open()
+
+
 def _edit_instrument_dialog(
     instrument_id: int,
     current_name: str,
@@ -98,8 +309,6 @@ def _edit_instrument_dialog(
         active_input = ui.checkbox("Active", value=current_active)
 
         def _save() -> None:
-            from decimal import Decimal, InvalidOperation  # noqa: PLC0415
-
             raw_expense = expense_input.value.strip()
             expense_ratio: Decimal | None
             if raw_expense:
@@ -150,6 +359,113 @@ def _settings_refresh() -> None:  # pragma: no cover - UI
     ui.navigate.to(PATH)
 
 
+def _render_display_prefs(current_currency: str) -> None:  # pragma: no cover - UI
+    ui.label("Display preferences").classes("text-h6 q-mt-sm")
+    with ui.row().classes("items-center gap-md"):
+        ui.label("Primary display currency:").classes("text-body2")
+        ui.toggle(
+            list(display_currency_service.SUPPORTED_CURRENCIES),
+            value=current_currency,
+            on_change=lambda e: _set_display_currency(e.value),
+        ).props("dense")
+        ui.label(
+            "Switches every page's KPIs, tables and charts. "
+            "Stored in the local DB so it persists across restarts.",
+        ).classes("text-caption opacity-70")
+
+
+def _render_data_refresh() -> None:  # pragma: no cover - UI
+    ui.label("Data refresh").classes("text-h6")
+    with ui.row().classes("gap-md"):
+        ui.button("Refresh FX rates", on_click=_refresh_fx_clicked).props("color=primary outline")
+        ui.button("Refresh prices", on_click=_refresh_prices_clicked).props("color=primary outline")
+        ui.button("Seed default setup", on_click=_seed_clicked).props("color=secondary outline")
+
+
+def _render_accounts_section(accounts: list) -> None:  # pragma: no cover - UI
+    with ui.row().classes("items-center w-full"):
+        ui.label("Accounts").classes("text-h6")
+        ui.space()
+        ui.button("+ Add account", on_click=_add_account_dialog).props(
+            "color=primary dense",
+        )
+    with ui.column().classes("w-full gap-xs"):
+        if not accounts:
+            ui.label("No accounts yet — add one or seed the defaults.").classes(
+                "text-caption opacity-70",
+            )
+        for a in accounts:
+            with ui.row().classes("items-center gap-md w-full"):
+                ui.label(f"{a.broker} · {a.account_label}").classes("text-body1")
+                ui.label(
+                    f"{a.native_currency} · {a.account_type or '—'}"
+                    f"{'' if a.active else ' · inactive'}"
+                ).classes("text-caption opacity-70")
+                ui.space()
+                ui.button(
+                    "Edit",
+                    on_click=lambda _, a=a: _edit_account_dialog(
+                        a.id, a.account_label, a.account_type, a.active
+                    ),
+                ).props("flat dense")
+
+
+def _render_instruments_section(instruments: list) -> None:  # pragma: no cover - UI
+    with ui.row().classes("items-center w-full q-mt-md"):
+        ui.label("Instruments").classes("text-h6")
+        ui.space()
+        ui.button("+ Add instrument", on_click=_add_instrument_dialog).props(
+            "color=primary dense",
+        )
+    with ui.column().classes("w-full gap-xs"):
+        if not instruments:
+            ui.label("No instruments yet.").classes("text-caption opacity-70")
+        for i in instruments:
+            with ui.row().classes("items-center gap-md w-full"):
+                ui.label(f"{i.symbol} · {i.name or ''}").classes("text-body1")
+                expense_lbl = f" · ER {i.expense_ratio}" if i.expense_ratio is not None else ""
+                ui.label(
+                    f"{i.asset_class} · {i.category or '—'}{expense_lbl}"
+                    f"{'' if i.active else ' · inactive'}"
+                ).classes("text-caption opacity-70")
+                ui.space()
+                ui.button(
+                    "Edit",
+                    on_click=lambda _, i=i: _edit_instrument_dialog(
+                        i.id,
+                        i.name or "",
+                        i.category or "",
+                        i.asset_class,
+                        str(i.expense_ratio) if i.expense_ratio is not None else "",
+                        i.active,
+                    ),
+                ).props("flat dense")
+
+
+def _render_allocations_section(allocations: list) -> None:  # pragma: no cover - UI
+    with ui.row().classes("items-center w-full q-mt-md"):
+        ui.label("Target allocations").classes("text-h6")
+        ui.space()
+        ui.button("+ New allocation", on_click=_add_allocation_dialog).props(
+            "color=primary dense",
+        )
+    with ui.column().classes("w-full gap-xs"):
+        if not allocations:
+            ui.label("No allocations yet.").classes("text-caption opacity-70")
+        for a in allocations:
+            with ui.row().classes("items-center gap-md w-full"):
+                ui.label(f"{a.name}").classes("text-body1")
+                ui.label(f"{len(a.items)} instruments").classes("text-caption opacity-70")
+                ui.space()
+                if a.active:
+                    ui.badge("Active", color="primary")
+                else:
+                    ui.button(
+                        "Activate",
+                        on_click=lambda _, a=a: _activate_allocation(a.id),
+                    ).props("flat dense")
+
+
 def register() -> None:
     @ui.page(PATH)
     def _settings() -> None:  # pragma: no cover
@@ -159,69 +475,12 @@ def register() -> None:
                 accounts = list(accounts_repo.list_accounts(session))
                 instruments = list(instruments_repo.list_instruments(session, only_active=False))
                 allocations = list(allocations_repo.list_allocations(session))
+                current_currency = display_currency_service.get_display_currency(session)
 
-            with ui.row().classes("gap-md"):
-                ui.button("Refresh FX rates", on_click=_refresh_fx_clicked).props(
-                    "color=primary outline"
-                )
-                ui.button("Refresh prices", on_click=_refresh_prices_clicked).props(
-                    "color=primary outline"
-                )
-
+            _render_display_prefs(current_currency)
             ui.separator()
-            ui.label("Accounts").classes("text-h6")
-            with ui.column().classes("w-full gap-xs"):
-                for a in accounts:
-                    with ui.row().classes("items-center gap-md w-full"):
-                        ui.label(f"{a.broker} · {a.account_label}").classes("text-body1")
-                        ui.label(
-                            f"{a.native_currency} · {a.account_type or '—'}"
-                            f"{'' if a.active else ' · inactive'}"
-                        ).classes("text-caption opacity-70")
-                        ui.space()
-                        ui.button(
-                            "Edit",
-                            on_click=lambda _, a=a: _edit_account_dialog(
-                                a.id, a.account_label, a.account_type, a.active
-                            ),
-                        ).props("flat dense")
-
-            ui.label("Instruments").classes("text-h6 q-mt-md")
-            with ui.column().classes("w-full gap-xs"):
-                for i in instruments:
-                    with ui.row().classes("items-center gap-md w-full"):
-                        ui.label(f"{i.symbol} · {i.name or ''}").classes("text-body1")
-                        expense_lbl = (
-                            f" · ER {i.expense_ratio}" if i.expense_ratio is not None else ""
-                        )
-                        ui.label(
-                            f"{i.asset_class} · {i.category or '—'}{expense_lbl}"
-                            f"{'' if i.active else ' · inactive'}"
-                        ).classes("text-caption opacity-70")
-                        ui.space()
-                        ui.button(
-                            "Edit",
-                            on_click=lambda _, i=i: _edit_instrument_dialog(
-                                i.id,
-                                i.name or "",
-                                i.category or "",
-                                i.asset_class,
-                                str(i.expense_ratio) if i.expense_ratio is not None else "",
-                                i.active,
-                            ),
-                        ).props("flat dense")
-
-            ui.label("Target allocations").classes("text-h6 q-mt-md")
-            with ui.column().classes("w-full gap-xs"):
-                for a in allocations:
-                    with ui.row().classes("items-center gap-md w-full"):
-                        ui.label(f"{a.name}").classes("text-body1")
-                        ui.label(f"{len(a.items)} instruments").classes("text-caption opacity-70")
-                        ui.space()
-                        if a.active:
-                            ui.badge("Active", color="primary")
-                        else:
-                            ui.button(
-                                "Activate",
-                                on_click=lambda _, a=a: _activate_allocation(a.id),
-                            ).props("flat dense")
+            _render_data_refresh()
+            ui.separator()
+            _render_accounts_section(accounts)
+            _render_instruments_section(instruments)
+            _render_allocations_section(allocations)

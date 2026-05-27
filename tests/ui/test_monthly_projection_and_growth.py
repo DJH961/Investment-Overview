@@ -63,10 +63,14 @@ def test_to_monthly_table_rows_formats_columns() -> None:
         scenarios=(Decimal("0.07"),),
         start=date(2025, 1, 1),
     )
-    rendered = to_monthly_table_rows(rows)
+    rendered = to_monthly_table_rows(rows, currency="USD", fx_rate=Decimal("1.2"))
     assert rendered[0]["label"] == "2025-02"
-    assert rendered[0]["contributed"] == "100.00"
+    assert rendered[0]["contributed"] == "120.00"
+    assert rendered[0]["contributed_eur"] == "100.00"
+    assert rendered[0]["contributed_usd"] == "120.00"
     assert "rate_0.07" in rendered[0]
+    assert "rate_0.07_eur" in rendered[0]
+    assert "rate_0.07_usd" in rendered[0]
 
 
 def test_modified_dietz_basic() -> None:

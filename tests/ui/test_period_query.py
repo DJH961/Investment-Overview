@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.models import Transaction
 from investment_dashboard.models.transaction import TransactionSource
 from investment_dashboard.repositories import accounts_repo
-from investment_dashboard.ui.pages._period_query import aggregate
+from investment_dashboard.ui.pages._period_query import aggregate, to_table_rows
 
 
 def _seed(session: Session) -> None:
@@ -92,3 +92,14 @@ def test_aggregate_with_closing_value_invokes_positions_service(session: Session
     _seed(session)
     rows = aggregate(session, monthly=False, today=date(2025, 12, 31))
     assert [r.closing_value_eur for r in rows] == [Decimal(0), Decimal(0)]
+
+
+def test_to_table_rows_includes_eur_and_usd_columns(session: Session) -> None:
+    _seed(session)
+    rows = aggregate(session, monthly=True, with_closing_value=False)
+    rendered = to_table_rows(rows, currency="USD", fx_rate=Decimal("1.2"))
+    assert rendered[0]["contributions"] == "600.00"
+    assert rendered[0]["contributions_eur"] == "500.00"
+    assert rendered[0]["contributions_usd"] == "600.00"
+    assert rendered[0]["net_flow_eur"] == "512.00"
+    assert rendered[0]["net_flow_usd"] == "614.40"
