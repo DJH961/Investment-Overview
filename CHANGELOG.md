@@ -16,6 +16,49 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
+## [1.5.0] — 2026-05-27
+
+### Changed
+
+- **Massive UI facelift — "neo-fintech" chrome.** The dashboard now
+  reads as a 2026-era professional product (think Linear / Stripe
+  Dashboard / Mercury) instead of stock Quasar/Material defaults.
+  Strictly cosmetic: no domain, service, repository, query, or import
+  logic was touched.
+  - New design-token system (`investment_dashboard.ui.theme`):
+    brand accent (deep indigo/teal `#0F4C81`), surface palette,
+    spacing / radius / shadow / type scales.
+  - New global stylesheet (`investment_dashboard.ui.style`) injecting
+    CSS custom properties for light **and dark** themes, AG-Grid
+    theme overrides, thin styled scrollbars, accessible focus rings,
+    flatter toast styling and rounded dialog corners.
+  - Header rebuilt: sticky frosted bar with a custom inline brand
+    mark, product name + version pill, compact currency segmented
+    control, **light / dark toggle**, refresh button, and a subtle
+    "as of UTC" timestamp.
+  - Sidebar rebuilt: 240 px surface drawer, rounded active-state
+    pill with 3 px accent bar, hover state, footer build-version
+    line.
+  - Page chrome: shared `page_header(title, subtitle=…)`,
+    `section(title)` card wrapper, `empty_state(icon, title, hint)`
+    placeholder, `chip(...)` pill, and a tabular-num aware
+    metric/KPI card with optional sparkline slot.
+  - Charts: new `colorblind_modern` and `colorblind_dark` Plotly
+    templates (transparent paper, hairline grid, Inter 13 px,
+    modern legend). The legacy `colorblind` template is preserved
+    as an alias so existing call-sites keep working.
+  - Every page (`overview`, `deposits`, `transactions`, `monthly`,
+    `yearly`, `calculator`, `settings`, `onboarding`) was rewired to
+    use the shared helpers; no copy or behaviour changed.
+
+### Notes
+
+- All financial numbers now render with tabular figures so columns
+  visually align without monospacing.
+- Gain/loss colours are still the Wong colorblind-safe pair
+  (`#0072B2` / `#E69F00`) with redundant ↑/↓ arrows. WCAG-AA contrast
+  is preserved in both light and dark modes.
+
 ## [1.4.0] — 2026-05-27
 
 ### Added

@@ -10,6 +10,7 @@ from investment_dashboard import __version__
 from investment_dashboard.boot import run_boot_sequence
 from investment_dashboard.config import get_settings
 from investment_dashboard.logging import configure_logging
+from investment_dashboard.ui import style as ui_style
 from investment_dashboard.ui.pages import (
     calculator,
     deposits,
@@ -34,6 +35,7 @@ _LIVE_REFRESH_INTERVAL_SECONDS = 60.0
 
 def _register_pages() -> None:
     """Register every page module with NiceGUI."""
+    ui_style.install()
     overview.register()
     deposits.register()
     transactions.register()

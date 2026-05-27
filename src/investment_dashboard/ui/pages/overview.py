@@ -8,7 +8,12 @@ from nicegui import ui
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.services import display_currency_service
-from investment_dashboard.ui.components.kpi_card import kpi_card
+from investment_dashboard.ui.components import (
+    empty_state,
+    kpi_card,
+    page_header,
+    section,
+)
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import fmt_money
 from investment_dashboard.ui.pages._overview_query import (
@@ -38,7 +43,7 @@ def _treemap_figure(data, *, currency: str, fx_rate: Decimal | None):  # type: i
     if not data:
         return go.Figure().update_layout(
             title=f"Allocation by category ({currency})",
-            template="colorblind",
+            template="colorblind_modern",
         )
 
     def _to_display(value_eur: Decimal) -> float:
@@ -57,7 +62,7 @@ def _treemap_figure(data, *, currency: str, fx_rate: Decimal | None):  # type: i
     )
     fig.update_layout(
         title=f"Allocation by category ({currency})",
-        template="colorblind",
+        template="colorblind_modern",
         margin={"l": 0, "r": 0, "t": 40, "b": 0},
     )
     return fig
@@ -67,7 +72,7 @@ def register() -> None:
     @ui.page(PATH)
     def _overview() -> None:  # pragma: no cover - rendered by NiceGUI
         with page_frame("Overview", current=PATH):
-            ui.label("Portfolio at a glance").classes("text-h5")
+            page_header("Overview", subtitle="Portfolio at a glance")
             with session_scope() as session:
                 metrics = get_metrics(session)
                 positions = get_positions(session)
@@ -126,62 +131,66 @@ def register() -> None:
                     f"FX (EUR→USD): {fx_rate:,.4f}  ·  Display currency: {display_ccy} "
                     f"(switch from the header toggle)",
                 ).classes("text-caption opacity-70")
-            ui.separator()
             if not rows:
-                ui.label(
-                    "No positions yet — go to Transactions → Import CSV to load broker data.",
-                ).classes("text-body2 opacity-70")
+                empty_state(
+                    "insights",
+                    "No positions yet",
+                    hint="Go to Transactions → Import CSV to load broker data, "
+                    "or seed defaults from Settings.",
+                )
             else:
-                ui.aggrid(
-                    {
-                        "columnDefs": [
-                            {"headerName": "Symbol", "field": "symbol", "pinned": "left"},
-                            {"headerName": "Name", "field": "name"},
-                            {"headerName": "Category", "field": "category", "filter": True},
-                            {"headerName": "Shares", "field": "shares", "type": "rightAligned"},
-                            {
-                                "headerName": "Avg Price",
-                                "field": "avg_price",
-                                "type": "rightAligned",
-                            },
-                            {
-                                "headerName": "Current Price",
-                                "field": "current_price",
-                                "type": "rightAligned",
-                            },
-                            {
-                                "headerName": "Cost Basis (native)",
-                                "field": "cost_basis_native",
-                                "type": "rightAligned",
-                            },
-                            {
-                                "headerName": "Value (native)",
-                                "field": "current_value_native",
-                                "type": "rightAligned",
-                            },
-                            {
-                                "headerName": "Value (USD)",
-                                "field": "current_value_usd",
-                                "type": "rightAligned",
-                            },
-                            {
-                                "headerName": "Value (EUR)",
-                                "field": "current_value_eur",
-                                "type": "rightAligned",
-                            },
-                            {
-                                "headerName": "Growth %",
-                                "field": "total_growth_pct",
-                                "type": "rightAligned",
-                            },
-                        ],
-                        "rowData": rows,
-                        "defaultColDef": {"resizable": True, "sortable": True},
-                    }
-                ).classes("w-full h-[40vh]")
-                ui.plotly(
-                    _treemap_figure(treemap_data, currency=display_ccy, fx_rate=fx_rate),
-                ).classes("w-full h-[40vh]")
+                with section("Positions"):
+                    ui.aggrid(
+                        {
+                            "columnDefs": [
+                                {"headerName": "Symbol", "field": "symbol", "pinned": "left"},
+                                {"headerName": "Name", "field": "name"},
+                                {"headerName": "Category", "field": "category", "filter": True},
+                                {"headerName": "Shares", "field": "shares", "type": "rightAligned"},
+                                {
+                                    "headerName": "Avg Price",
+                                    "field": "avg_price",
+                                    "type": "rightAligned",
+                                },
+                                {
+                                    "headerName": "Current Price",
+                                    "field": "current_price",
+                                    "type": "rightAligned",
+                                },
+                                {
+                                    "headerName": "Cost Basis (native)",
+                                    "field": "cost_basis_native",
+                                    "type": "rightAligned",
+                                },
+                                {
+                                    "headerName": "Value (native)",
+                                    "field": "current_value_native",
+                                    "type": "rightAligned",
+                                },
+                                {
+                                    "headerName": "Value (USD)",
+                                    "field": "current_value_usd",
+                                    "type": "rightAligned",
+                                },
+                                {
+                                    "headerName": "Value (EUR)",
+                                    "field": "current_value_eur",
+                                    "type": "rightAligned",
+                                },
+                                {
+                                    "headerName": "Growth %",
+                                    "field": "total_growth_pct",
+                                    "type": "rightAligned",
+                                },
+                            ],
+                            "rowData": rows,
+                            "defaultColDef": {"resizable": True, "sortable": True},
+                        }
+                    ).classes("ag-theme-alpine w-full h-[40vh]")
+                with section("Allocation"):
+                    ui.plotly(
+                        _treemap_figure(treemap_data, currency=display_ccy, fx_rate=fx_rate),
+                    ).classes("w-full h-[40vh]")
 
 
 def _convert(amount_eur: Decimal | None, target: str, fx_rate: Decimal | None) -> Decimal | None:

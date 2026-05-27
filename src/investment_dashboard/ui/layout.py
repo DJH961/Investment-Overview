@@ -8,6 +8,18 @@ Usage from inside a ``@ui.page`` handler::
     def overview() -> None:
         with page_frame("Overview", current="/overview"):
             ui.label("…page content…")
+
+v1.5 rebuild — modern "neo-fintech" chrome:
+
+* Sticky frosted header with brand mark, name + version pill, a compact
+  currency segmented control, a light/dark toggle, and a "last refresh"
+  timestamp with a manual refresh icon button.
+* Narrower (240 px) sidebar with rounded active-state pill, hover, and
+  footer area with the build version.
+* Wider, centered content column.
+
+The public API (``NAV_ITEMS``, ``page_frame``) is unchanged so existing
+pages keep working without modification.
 """
 
 from __future__ import annotations
@@ -23,6 +35,7 @@ from investment_dashboard import __version__
 from investment_dashboard.db import session_scope
 from investment_dashboard.services import display_currency_service
 from investment_dashboard.services.onboarding_service import is_onboarded
+from investment_dashboard.ui import style as ui_style
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -50,9 +63,6 @@ NAV_ITEMS: tuple[NavItem, ...] = (
 
 
 #: Pages where automatic "no accounts → /onboarding" redirect is skipped.
-#: Onboarding itself, settings (where the user might be hand-adding the
-#: first account), and the welcome page must remain reachable on an
-#: empty DB or the wizard becomes unreachable.
 _ONBOARDING_BYPASS_PATHS: frozenset[str] = frozenset({"/onboarding", "/settings"})
 
 
@@ -64,58 +74,73 @@ def _on_currency_change(value: str) -> None:  # pragma: no cover - UI callback
         ui.notify(str(exc), type="negative")
         return
     ui.notify(f"Display currency set to {value}", type="positive")
-    # Reload the current page so every value re-renders in the new
-    # currency without forcing the user to navigate manually.
     ui.navigate.reload()
 
 
-def _header(title: str, *, current_currency: str) -> None:
-    with ui.header(elevated=True).classes(
-        "items-center justify-between bg-primary text-white q-px-md"
+def _toggle_dark(dark: ui.dark_mode) -> None:  # pragma: no cover - UI callback
+    dark.toggle()
+
+
+def _header(title: str, *, current_currency: str, dark: ui.dark_mode) -> None:
+    with (
+        ui.header(elevated=False).classes("inv-header q-px-md").style("min-height:56px"),
+        ui.row().classes("items-center justify-between w-full no-wrap"),
     ):
-        with ui.row().classes("items-center gap-md"):
-            ui.icon("trending_up").classes("text-h5")
-            ui.label("Investment Dashboard").classes("text-h6")
-            ui.label(f"v{__version__}").classes("text-caption opacity-70")
-        with ui.row().classes("items-center gap-md"):
-            ui.label(title).classes("text-subtitle1")
-            ui.separator().props("vertical inset")
-            ui.label("Display").classes("text-caption opacity-80")
+        # Left: brand + product + version pill
+        with ui.row().classes("items-center gap-sm no-wrap"):
+            ui.html(f'<span class="inv-brand-mark">{ui_style.BRAND_SVG}</span>')
+            ui.html('<span class="inv-brand-name">Investment Dashboard</span>')
+            ui.html(f'<span class="inv-version-pill">v{__version__}</span>')
+            ui.element("div").style(
+                "width:1px;height:20px;background:var(--inv-hairline);margin:0 .5rem"
+            )
+            ui.html(f'<span style="font-size:.875rem;color:var(--inv-muted)">{title}</span>')
+
+        # Right: currency toggle + dark mode + refresh meta
+        with ui.row().classes("items-center gap-sm no-wrap"):
             ui.toggle(
                 list(display_currency_service.SUPPORTED_CURRENCIES),
                 value=current_currency,
                 on_change=lambda e: _on_currency_change(e.value),
-            ).props("dense color=white text-color=primary toggle-color=white")
-            ui.separator().props("vertical inset")
-            ui.label(
-                "Last refresh: " + datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M UTC")
-            ).classes("text-caption")
+            ).props("dense unelevated no-caps")
+            ui.button(
+                icon="dark_mode" if not dark.value else "light_mode",
+                on_click=lambda: _toggle_dark(dark),
+            ).props("flat round dense").tooltip("Toggle light / dark")
+            ui.button(
+                icon="refresh",
+                on_click=ui.navigate.reload,
+            ).props("flat round dense").tooltip("Refresh page")
+            ui.html(
+                '<span style="font-size:.75rem;color:var(--inv-muted)">'
+                + datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M UTC")
+                + "</span>"
+            )
 
 
 def _sidebar(current: str) -> None:
-    with ui.left_drawer(value=True, bordered=True).classes("bg-grey-2"):
-        ui.label("Navigation").classes("text-overline q-pa-sm")
+    with ui.left_drawer(value=True, bordered=False).classes("inv-sidebar q-pa-none"):
+        ui.html('<div class="inv-nav-section">Navigation</div>')
         with ui.list().props("padding").classes("w-full"):
             for item in NAV_ITEMS:
                 active = item.path == current
-                row = ui.item(on_click=lambda p=item.path: ui.navigate.to(p)).props(
-                    f"clickable {'active' if active else ''}"
+                cls = "inv-nav-item" + (" inv-nav-active" if active else "")
+                row = (
+                    ui.item(on_click=lambda p=item.path: ui.navigate.to(p))
+                    .props("clickable")
+                    .classes(cls)
                 )
                 with row:
                     with ui.item_section().props("avatar"):
                         ui.icon(item.icon)
                     with ui.item_section():
                         ui.label(item.label)
+        ui.element("div").classes("col-grow")
+        ui.html(f'<div class="inv-sidebar-footer">Investment Dashboard · v{__version__}</div>')
 
 
 def _maybe_redirect_to_onboarding(current: str) -> bool:
-    """Redirect to ``/onboarding`` when the DB has no accounts.
-
-    Returns ``True`` if a redirect was triggered so callers can short-
-    circuit further rendering. The onboarding and settings pages are
-    bypass-listed so the user can actually reach the wizard / add forms
-    on an empty DB.
-    """
+    """Redirect to ``/onboarding`` when the DB has no accounts."""
     if current in _ONBOARDING_BYPASS_PATHS:
         return False
     try:
@@ -136,9 +161,13 @@ def page_frame(title: str, *, current: str) -> Iterator[None]:
     ``current`` must match the registered path of the active page so the
     sidebar can highlight it.
     """
+    # Dark mode controller — value defaults to "auto" so first-load respects
+    # the user's OS preference. ``ui.dark_mode`` is persistent within the
+    # NiceGUI tab session.
+    ui_style.apply_per_page()
+    dark = ui.dark_mode()
+
     if _maybe_redirect_to_onboarding(current):
-        # Still render an empty frame so NiceGUI has a body while the
-        # client-side navigation kicks in. Returning early would raise.
         with ui.column().classes("w-full q-pa-md"):
             ui.label("Redirecting to setup…").classes("text-caption opacity-60")
             yield
@@ -150,10 +179,8 @@ def page_frame(title: str, *, current: str) -> Iterator[None]:
     except Exception:  # pragma: no cover - defensive
         current_currency = display_currency_service.DEFAULT_CURRENCY
 
-    _header(title, current_currency=current_currency)
+    _header(title, current_currency=current_currency, dark=dark)
     _sidebar(current)
-    with ui.column().classes("w-full q-pa-md gap-md") as col:
+    with ui.column().classes("inv-page q-pa-lg gap-md") as col:
         yield
-    # ``col`` is unused beyond the ``with`` block but keeping the name lets
-    # us extend later (e.g. error boundary) without changing call-sites.
     del col

@@ -2,6 +2,9 @@
 information ``i`` icon hover.
 
 Kept here (rather than inline in pages) so tooltip presentation is consistent.
+
+v1.5: switched icon to ``info_outline`` at 14 px so it is less visually
+intrusive next to the small uppercase KPI labels.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ def label_with_tooltip(text: str, tooltip_key: str, *, classes: str = "") -> Non
     """
     body = tooltips.get(tooltip_key)
     with ui.row().classes(f"items-center gap-xs no-wrap {classes}".strip()):
-        ui.label(text)
+        ui.html(f"<span>{text}</span>")
         if body:
-            with ui.icon("info").classes("text-caption opacity-60 cursor-help"):
+            with ui.icon("info_outline").classes("cursor-help").style("font-size:14px;opacity:.55"):
                 ui.tooltip(body).props("max-width=320px")

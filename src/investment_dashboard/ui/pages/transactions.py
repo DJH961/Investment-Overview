@@ -19,6 +19,7 @@ from investment_dashboard.repositories import (
 )
 from investment_dashboard.services import display_currency_service
 from investment_dashboard.services.importer_service import Broker, import_csv
+from investment_dashboard.ui.components import page_header, section
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.pages._ledger_query import LedgerFilters, list_ledger_rows
 
@@ -49,7 +50,7 @@ def register() -> None:
     @ui.page(PATH)
     def _transactions() -> None:  # pragma: no cover - rendered by NiceGUI
         with page_frame("Transactions", current=PATH):
-            ui.label("Master ledger").classes("text-h5")
+            page_header("Transactions", subtitle="Master ledger")
 
             filters: dict[str, Any] = {
                 "account_id": None,
@@ -59,51 +60,62 @@ def register() -> None:
             accounts = _all_accounts()
             account_options = {a.id: a.account_label for a in accounts}
 
-            with ui.row().classes("items-end gap-md flex-wrap"):
+            with ui.row().classes("items-end gap-md flex-wrap w-full"):
                 ui.select(
                     {None: "All accounts", **account_options},
                     value=None,
                     label="Account",
                     on_change=lambda e: _on_filter("account_id", e.value),
-                ).classes("min-w-[12rem]")
+                ).classes("min-w-[12rem]").props("outlined dense")
                 ui.select(
                     {None: "All kinds", **{k: k for k in _kinds()}},
                     value=None,
                     label="Kind",
                     on_change=lambda e: _on_filter("kind", e.value),
-                ).classes("min-w-[10rem]")
+                ).classes("min-w-[10rem]").props("outlined dense")
                 ui.input(
                     label="Symbol",
                     on_change=lambda e: _on_filter("symbol", (e.value or "").upper() or None),
-                ).classes("min-w-[8rem]")
-                ui.button("+ New Transaction", on_click=lambda: _open_new_modal(accounts)).props(
-                    "color=primary"
-                )
-                ui.button("Import CSV", on_click=lambda: _open_import_modal(accounts)).props(
-                    "color=secondary outline"
-                )
+                ).classes("min-w-[8rem]").props("outlined dense")
+                ui.space()
+                ui.button(
+                    "New transaction",
+                    icon="add",
+                    on_click=lambda: _open_new_modal(accounts),
+                ).props("unelevated color=primary no-caps")
+                ui.button(
+                    "Import",
+                    icon="upload_file",
+                    on_click=lambda: _open_import_modal(accounts),
+                ).props("flat color=primary no-caps")
 
-            grid = ui.aggrid(
-                {
-                    "columnDefs": [
-                        {"headerName": "Date", "field": "date", "sortable": True, "filter": True},
-                        {"headerName": "Account", "field": "account", "filter": True},
-                        {"headerName": "Kind", "field": "kind", "filter": True},
-                        {"headerName": "Symbol", "field": "symbol", "filter": True},
-                        {"headerName": "Qty", "field": "qty", "type": "rightAligned"},
-                        {"headerName": "Price", "field": "price", "type": "rightAligned"},
-                        {"headerName": "Fees", "field": "fees", "type": "rightAligned"},
-                        {"headerName": "Net", "field": "net", "type": "rightAligned"},
-                        {"headerName": "Net EUR", "field": "net_eur", "type": "rightAligned"},
-                        {"headerName": "Net USD", "field": "net_usd", "type": "rightAligned"},
-                        {"headerName": "Source", "field": "source"},
-                    ],
-                    "rowData": [],
-                    "defaultColDef": {"resizable": True, "sortable": True},
-                    "pagination": True,
-                    "paginationAutoPageSize": True,
-                }
-            ).classes("w-full h-[60vh]")
+            with section():
+                grid = ui.aggrid(
+                    {
+                        "columnDefs": [
+                            {
+                                "headerName": "Date",
+                                "field": "date",
+                                "sortable": True,
+                                "filter": True,
+                            },
+                            {"headerName": "Account", "field": "account", "filter": True},
+                            {"headerName": "Kind", "field": "kind", "filter": True},
+                            {"headerName": "Symbol", "field": "symbol", "filter": True},
+                            {"headerName": "Qty", "field": "qty", "type": "rightAligned"},
+                            {"headerName": "Price", "field": "price", "type": "rightAligned"},
+                            {"headerName": "Fees", "field": "fees", "type": "rightAligned"},
+                            {"headerName": "Net", "field": "net", "type": "rightAligned"},
+                            {"headerName": "Net EUR", "field": "net_eur", "type": "rightAligned"},
+                            {"headerName": "Net USD", "field": "net_usd", "type": "rightAligned"},
+                            {"headerName": "Source", "field": "source"},
+                        ],
+                        "rowData": [],
+                        "defaultColDef": {"resizable": True, "sortable": True},
+                        "pagination": True,
+                        "paginationAutoPageSize": True,
+                    }
+                ).classes("ag-theme-alpine w-full h-[60vh]")
 
             def _refresh() -> None:
                 with session_scope() as session:

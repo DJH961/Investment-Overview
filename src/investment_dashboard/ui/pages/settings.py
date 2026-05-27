@@ -27,6 +27,7 @@ from investment_dashboard.services import display_currency_service
 from investment_dashboard.services.fx_service import refresh_fx_history
 from investment_dashboard.services.onboarding_service import seed_default_setup
 from investment_dashboard.services.prices_service import refresh_prices
+from investment_dashboard.ui.components import page_header, section
 from investment_dashboard.ui.layout import page_frame
 
 PATH = "/settings"
@@ -360,14 +361,13 @@ def _settings_refresh() -> None:  # pragma: no cover - UI
 
 
 def _render_display_prefs(current_currency: str) -> None:  # pragma: no cover - UI
-    ui.label("Display preferences").classes("text-h6 q-mt-sm")
     with ui.row().classes("items-center gap-md"):
         ui.label("Primary display currency:").classes("text-body2")
         ui.toggle(
             list(display_currency_service.SUPPORTED_CURRENCIES),
             value=current_currency,
             on_change=lambda e: _set_display_currency(e.value),
-        ).props("dense")
+        ).props("dense unelevated")
         ui.label(
             "Switches every page's KPIs, tables and charts. "
             "Stored in the local DB so it persists across restarts.",
@@ -375,21 +375,25 @@ def _render_display_prefs(current_currency: str) -> None:  # pragma: no cover - 
 
 
 def _render_data_refresh() -> None:  # pragma: no cover - UI
-    ui.label("Data refresh").classes("text-h6")
     with ui.row().classes("gap-md"):
-        ui.button("Refresh FX rates", on_click=_refresh_fx_clicked).props("color=primary outline")
-        ui.button("Refresh prices", on_click=_refresh_prices_clicked).props("color=primary outline")
-        ui.button("Seed default setup", on_click=_seed_clicked).props("color=secondary outline")
+        ui.button("Refresh FX rates", icon="currency_exchange", on_click=_refresh_fx_clicked).props(
+            "flat color=primary no-caps"
+        )
+        ui.button("Refresh prices", icon="trending_up", on_click=_refresh_prices_clicked).props(
+            "flat color=primary no-caps"
+        )
+        ui.button("Seed default setup", icon="auto_fix_high", on_click=_seed_clicked).props(
+            "flat no-caps"
+        )
 
 
 def _render_accounts_section(accounts: list) -> None:  # pragma: no cover - UI
     with ui.row().classes("items-center w-full"):
-        ui.label("Accounts").classes("text-h6")
         ui.space()
-        ui.button("+ Add account", on_click=_add_account_dialog).props(
-            "color=primary dense",
+        ui.button("Add account", icon="add", on_click=_add_account_dialog).props(
+            "unelevated color=primary dense no-caps",
         )
-    with ui.column().classes("w-full gap-xs"):
+    with ui.column().classes("w-full gap-xs q-mt-sm"):
         if not accounts:
             ui.label("No accounts yet — add one or seed the defaults.").classes(
                 "text-caption opacity-70",
@@ -407,17 +411,16 @@ def _render_accounts_section(accounts: list) -> None:  # pragma: no cover - UI
                     on_click=lambda _, a=a: _edit_account_dialog(
                         a.id, a.account_label, a.account_type, a.active
                     ),
-                ).props("flat dense")
+                ).props("flat dense no-caps")
 
 
 def _render_instruments_section(instruments: list) -> None:  # pragma: no cover - UI
-    with ui.row().classes("items-center w-full q-mt-md"):
-        ui.label("Instruments").classes("text-h6")
+    with ui.row().classes("items-center w-full"):
         ui.space()
-        ui.button("+ Add instrument", on_click=_add_instrument_dialog).props(
-            "color=primary dense",
+        ui.button("Add instrument", icon="add", on_click=_add_instrument_dialog).props(
+            "unelevated color=primary dense no-caps",
         )
-    with ui.column().classes("w-full gap-xs"):
+    with ui.column().classes("w-full gap-xs q-mt-sm"):
         if not instruments:
             ui.label("No instruments yet.").classes("text-caption opacity-70")
         for i in instruments:
@@ -439,17 +442,16 @@ def _render_instruments_section(instruments: list) -> None:  # pragma: no cover 
                         str(i.expense_ratio) if i.expense_ratio is not None else "",
                         i.active,
                     ),
-                ).props("flat dense")
+                ).props("flat dense no-caps")
 
 
 def _render_allocations_section(allocations: list) -> None:  # pragma: no cover - UI
-    with ui.row().classes("items-center w-full q-mt-md"):
-        ui.label("Target allocations").classes("text-h6")
+    with ui.row().classes("items-center w-full"):
         ui.space()
-        ui.button("+ New allocation", on_click=_add_allocation_dialog).props(
-            "color=primary dense",
+        ui.button("New allocation", icon="add", on_click=_add_allocation_dialog).props(
+            "unelevated color=primary dense no-caps",
         )
-    with ui.column().classes("w-full gap-xs"):
+    with ui.column().classes("w-full gap-xs q-mt-sm"):
         if not allocations:
             ui.label("No allocations yet.").classes("text-caption opacity-70")
         for a in allocations:
@@ -463,24 +465,27 @@ def _render_allocations_section(allocations: list) -> None:  # pragma: no cover 
                     ui.button(
                         "Activate",
                         on_click=lambda _, a=a: _activate_allocation(a.id),
-                    ).props("flat dense")
+                    ).props("flat dense no-caps")
 
 
 def register() -> None:
     @ui.page(PATH)
     def _settings() -> None:  # pragma: no cover
         with page_frame("Settings", current=PATH):
-            ui.label("Settings").classes("text-h5")
+            page_header("Settings", subtitle="Display preferences, data refresh, accounts")
             with session_scope() as session:
                 accounts = list(accounts_repo.list_accounts(session))
                 instruments = list(instruments_repo.list_instruments(session, only_active=False))
                 allocations = list(allocations_repo.list_allocations(session))
                 current_currency = display_currency_service.get_display_currency(session)
 
-            _render_display_prefs(current_currency)
-            ui.separator()
-            _render_data_refresh()
-            ui.separator()
-            _render_accounts_section(accounts)
-            _render_instruments_section(instruments)
-            _render_allocations_section(allocations)
+            with section("Display preferences"):
+                _render_display_prefs(current_currency)
+            with section("Data refresh"):
+                _render_data_refresh()
+            with section("Accounts"):
+                _render_accounts_section(accounts)
+            with section("Instruments"):
+                _render_instruments_section(instruments)
+            with section("Target allocations"):
+                _render_allocations_section(allocations)
