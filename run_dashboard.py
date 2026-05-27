@@ -15,6 +15,7 @@ import contextlib
 import importlib.metadata as importlib_metadata
 import importlib.util
 import os
+import signal
 import subprocess
 import sys
 import tomllib
@@ -56,6 +57,88 @@ def _run_checked(args: list[str], step: str) -> None:
         subprocess.check_call(args, cwd=ROOT)
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(f"{step} failed with exit code {exc.returncode}.") from exc
+
+
+def _dashboard_port() -> int:
+    raw_port = os.environ.get("INV_DASHBOARD_PORT", "8080")
+    try:
+        return int(raw_port)
+    except ValueError:
+        return 8080
+
+
+def _existing_dashboard_process_ids() -> list[int]:
+    if os.name != "nt":
+        return []
+
+    script = str((ROOT / "run_dashboard.py").resolve())
+    command = r"""
+$script = [System.IO.Path]::GetFullPath($env:INV_DASHBOARD_SCRIPT).ToLowerInvariant()
+$scriptAlt = $script.Replace('\', '/')
+$current = [int]$env:INV_DASHBOARD_CURRENT_PID
+$port = [int]$env:INV_DASHBOARD_PORT_TO_STOP
+$listenerIds = @(
+    Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique
+)
+Get-CimInstance Win32_Process -Filter "Name = 'python.exe' OR Name = 'pythonw.exe' OR Name = 'py.exe'" |
+    Where-Object {
+        $_.ProcessId -ne $current -and
+        $listenerIds -contains $_.ProcessId -and
+        $_.CommandLine -and
+        ($_.CommandLine.ToLowerInvariant().Contains($script) -or
+         $_.CommandLine.ToLowerInvariant().Contains($scriptAlt))
+    } |
+    Select-Object -ExpandProperty ProcessId
+"""
+    env = os.environ.copy()
+    env["INV_DASHBOARD_SCRIPT"] = script
+    env["INV_DASHBOARD_CURRENT_PID"] = str(os.getpid())
+    env["INV_DASHBOARD_PORT_TO_STOP"] = str(_dashboard_port())
+    result = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if result.returncode != 0:
+        return []
+
+    process_ids: list[int] = []
+    for line in result.stdout.splitlines():
+        with contextlib.suppress(ValueError):
+            process_ids.append(int(line.strip()))
+    return process_ids
+
+
+def _terminate_process_tree(process_id: int) -> None:
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill.exe", "/PID", str(process_id), "/T", "/F"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        return
+
+    with contextlib.suppress(ProcessLookupError):
+        os.kill(process_id, signal.SIGTERM)
+
+
+def _stop_existing_dashboard_instances() -> None:
+    process_ids = _existing_dashboard_process_ids()
+    if not process_ids:
+        return
+
+    print(
+        "Stopping existing Investment Dashboard instance before starting the current release ...",
+        flush=True,
+    )
+    for process_id in process_ids:
+        _terminate_process_tree(process_id)
 
 
 def _is_running_from_venv() -> bool:
@@ -174,6 +257,7 @@ def main() -> int:
     try:
         _ensure_supported_python()
         _relaunch_from_venv_if_needed()
+        _stop_existing_dashboard_instances()
         _ensure_src_on_path()
         from investment_dashboard.main import run  # noqa: PLC0415
 

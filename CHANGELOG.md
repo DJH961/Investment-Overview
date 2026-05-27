@@ -16,6 +16,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
+## [1.3.1] — 2026-05-27
+
+### Fixed
+
+- Fixed the Windows launcher release refresh path end to end: it now treats
+  stale installed project metadata as needing an editable reinstall and stops
+  an already-running same-project server on the configured dashboard port
+  before starting, so double-clicking `run_dashboard.bat` serves the current
+  release instead of an older in-memory process.
+
 ## [1.3.0] — 2026-05-27
 
 ### Added
