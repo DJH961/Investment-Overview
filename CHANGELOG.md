@@ -16,6 +16,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
+## [1.3.2] — 2026-05-27
+
+### Fixed
+
+- Fixed launcher recovery for existing `.venv` environments that do not have
+  `pip` installed by bootstrapping pip with `ensurepip` before running package
+  install or upgrade commands.
+
 ## [1.3.1] — 2026-05-27
 
 ### Fixed

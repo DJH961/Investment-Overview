@@ -23,8 +23,8 @@ run_dashboard = _load_launcher_module()
 def test_dependency_check_rejects_stale_project_install(monkeypatch) -> None:
     monkeypatch.setattr(run_dashboard, "REQUIRED_MODULES", ())
     monkeypatch.setattr(run_dashboard, "_nicegui_is_supported", lambda: True)
-    monkeypatch.setattr(run_dashboard, "_project_version", lambda: "1.3.1")
-    monkeypatch.setattr(run_dashboard.importlib_metadata, "version", lambda name: "1.3.0")
+    monkeypatch.setattr(run_dashboard, "_project_version", lambda: "1.3.2")
+    monkeypatch.setattr(run_dashboard.importlib_metadata, "version", lambda name: "1.3.1")
 
     assert not run_dashboard._current_python_has_dependencies()
 
@@ -32,8 +32,8 @@ def test_dependency_check_rejects_stale_project_install(monkeypatch) -> None:
 def test_dependency_check_accepts_current_project_install(monkeypatch) -> None:
     monkeypatch.setattr(run_dashboard, "REQUIRED_MODULES", ())
     monkeypatch.setattr(run_dashboard, "_nicegui_is_supported", lambda: True)
-    monkeypatch.setattr(run_dashboard, "_project_version", lambda: "1.3.1")
-    monkeypatch.setattr(run_dashboard.importlib_metadata, "version", lambda name: "1.3.1")
+    monkeypatch.setattr(run_dashboard, "_project_version", lambda: "1.3.2")
+    monkeypatch.setattr(run_dashboard.importlib_metadata, "version", lambda name: "1.3.2")
 
     assert run_dashboard._current_python_has_dependencies()
 
@@ -46,3 +46,29 @@ def test_startup_stops_existing_dashboard_instances(monkeypatch) -> None:
     run_dashboard._stop_existing_dashboard_instances()
 
     assert terminated == [123, 456]
+
+
+def test_ensure_venv_has_pip_bootstraps_missing_pip(monkeypatch) -> None:
+    calls: list[tuple[list[str], str]] = []
+    monkeypatch.setattr(run_dashboard, "_venv_has_pip", lambda: False)
+    monkeypatch.setattr(
+        run_dashboard, "_run_checked", lambda args, step: calls.append((args, step))
+    )
+
+    run_dashboard._ensure_venv_has_pip()
+
+    assert calls == [
+        ([str(run_dashboard.VENV_PYTHON), "-m", "ensurepip", "--upgrade"], "pip bootstrap")
+    ]
+
+
+def test_ensure_venv_has_pip_skips_bootstrap_when_present(monkeypatch) -> None:
+    calls: list[tuple[list[str], str]] = []
+    monkeypatch.setattr(run_dashboard, "_venv_has_pip", lambda: True)
+    monkeypatch.setattr(
+        run_dashboard, "_run_checked", lambda args, step: calls.append((args, step))
+    )
+
+    run_dashboard._ensure_venv_has_pip()
+
+    assert calls == []

@@ -59,6 +59,29 @@ def _run_checked(args: list[str], step: str) -> None:
         raise RuntimeError(f"{step} failed with exit code {exc.returncode}.") from exc
 
 
+def _venv_has_pip() -> bool:
+    if not VENV_PYTHON.exists():
+        return False
+    return (
+        subprocess.run(
+            [str(VENV_PYTHON), "-m", "pip", "--version"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        ).returncode
+        == 0
+    )
+
+
+def _ensure_venv_has_pip() -> None:
+    if _venv_has_pip():
+        return
+
+    print(f"Bootstrapping pip in {VENV_DIR.name} ...", flush=True)
+    _run_checked([str(VENV_PYTHON), "-m", "ensurepip", "--upgrade"], "pip bootstrap")
+
+
 def _dashboard_port() -> int:
     raw_port = os.environ.get("INV_DASHBOARD_PORT", "8080")
     try:
@@ -229,6 +252,7 @@ def _ensure_venv_ready() -> None:
             "Installing/updating investment-dashboard and dependencies (about a minute) ...",
             flush=True,
         )
+        _ensure_venv_has_pip()
         _run_checked([str(VENV_PYTHON), "-m", "pip", "install", "--upgrade", "pip"], "pip upgrade")
         _run_checked(
             [str(VENV_PYTHON), "-m", "pip", "install", "--upgrade", "-e", "."],
