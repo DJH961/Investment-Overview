@@ -25,6 +25,7 @@ from investment_dashboard.services.onboarding_service import (
     is_onboarded,
     seed_default_setup,
 )
+from investment_dashboard.ui.components import page_header
 from investment_dashboard.ui.layout import page_frame
 
 PATH = "/onboarding"
@@ -52,11 +53,11 @@ def register() -> None:
     @ui.page(PATH)
     def _onboarding() -> None:  # pragma: no cover - rendered by NiceGUI
         with page_frame("Welcome", current=PATH):
-            ui.label("Welcome to Investment Dashboard").classes("text-h4")
-            ui.label(
-                "Looks like this is a fresh database. Pick a starting point "
+            page_header(
+                "Welcome to Investment Dashboard",
+                subtitle="Looks like this is a fresh database. Pick a starting point "
                 "below — you can change everything later from Settings.",
-            ).classes("text-body1 opacity-80")
+            )
 
             with session_scope() as session:
                 already = is_onboarded(session)
@@ -68,8 +69,8 @@ def register() -> None:
                 ).classes("text-caption opacity-70")
 
             with ui.row().classes("gap-md flex-wrap items-stretch q-mt-md"):
-                with ui.card().classes("min-w-[22rem] max-w-[28rem] q-pa-md shadow-2"):
-                    ui.label("Seed the default setup").classes("text-h6")
+                with ui.element("div").classes("inv-section min-w-[22rem] max-w-[28rem]"):
+                    ui.html('<div class="inv-section-title">Seed the default setup</div>')
                     ui.label(
                         "Creates Vanguard, Fidelity and Savings Bank "
                         "accounts plus every instrument the spec ships "
@@ -88,20 +89,22 @@ def register() -> None:
                     ).classes("text-caption q-mt-xs opacity-70")
                     ui.button(
                         "Seed default setup",
+                        icon="auto_fix_high",
                         on_click=_seed_clicked,
-                    ).props("color=primary").classes("q-mt-md")
+                    ).props("unelevated color=primary no-caps").classes("q-mt-md")
 
-                with ui.card().classes("min-w-[22rem] max-w-[28rem] q-pa-md shadow-2"):
-                    ui.label("Start empty / add manually").classes("text-h6")
+                with ui.element("div").classes("inv-section min-w-[22rem] max-w-[28rem]"):
+                    ui.html('<div class="inv-section-title">Start empty / add manually</div>')
                     ui.label(
                         "Go straight to Settings and add accounts, "
                         "instruments and a target allocation by hand.",
                     ).classes("text-body2 opacity-80")
                     ui.button(
                         "Open Settings",
+                        icon="settings",
                         on_click=lambda: ui.navigate.to("/settings"),
-                    ).props("color=primary outline").classes("q-mt-md")
+                    ).props("unelevated color=primary no-caps").classes("q-mt-md")
                     ui.button(
                         "Skip — go to Overview",
                         on_click=lambda: ui.navigate.to("/overview"),
-                    ).props("flat").classes("q-mt-xs")
+                    ).props("flat no-caps").classes("q-mt-xs")

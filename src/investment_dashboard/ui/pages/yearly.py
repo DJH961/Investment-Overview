@@ -8,6 +8,7 @@ from nicegui import ui
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.services import display_currency_service
+from investment_dashboard.ui.components import page_header, section
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.pages._period_query import aggregate, to_table_rows
 from investment_dashboard.ui.pages._projection_query import (
@@ -66,7 +67,7 @@ def _figure(rows, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no
         )
     fig.update_layout(
         title=f"Yearly cashflows ({currency})",
-        template="colorblind",
+        template="colorblind_modern",
         barmode="stack",
         margin={"l": 40, "r": 20, "t": 40, "b": 40},
     )
@@ -81,58 +82,60 @@ def register() -> None:
     @ui.page(PATH)
     def _yearly() -> None:  # pragma: no cover
         with page_frame("Yearly Growth", current=PATH):
-            ui.label("Yearly aggregation").classes("text-h5")
+            page_header("Yearly Growth", subtitle="Annual aggregation and long-term projection")
             with session_scope() as session:
                 rows = aggregate(session, monthly=False)
                 projection_rows = project_from_session(session, years=10)
                 display_ccy = display_currency_service.get_display_currency(session)
                 fx_rate = display_currency_service.current_rate(session, quote="USD")
-            ui.plotly(_figure(rows, currency=display_ccy, fx_rate=fx_rate)).classes(
-                "w-full h-[40vh]",
-            )
-            ui.aggrid(
-                {
-                    "columnDefs": [
-                        {"headerName": "Year", "field": "label", "sortable": True},
-                        *_money_columns("Contributions", "contributions", display_ccy),
-                        *_money_columns("Dividends", "dividends", display_ccy),
-                        *_money_columns("Interest", "interest", display_ccy),
-                        *_money_columns("Net flow", "net_flow", display_ccy),
-                        *_money_columns("Closing value", "closing_value", display_ccy),
-                        {
-                            "headerName": "Growth %",
-                            "field": "growth_pct",
-                            "type": "rightAligned",
-                        },
-                    ],
-                    "rowData": to_table_rows(rows, currency=display_ccy, fx_rate=fx_rate),
-                    "defaultColDef": {"resizable": True, "sortable": True},
-                }
-            ).classes("w-full h-[35vh]")
-
-            ui.label("Hypothetical projection (next 10 years)").classes("text-h6 q-mt-md")
-            ui.label(
-                "Assumes the average historical annual contribution continues, compounded "
-                "at the rates below. For planning only — not a forecast."
-            ).classes("text-caption opacity-70")
-            ui.aggrid(
-                {
-                    "columnDefs": [
-                        {"headerName": "Year", "field": "year"},
-                        *_money_columns("Cumulative contribution", "contributed", display_ccy),
-                        *[
-                            col
-                            for rate in DEFAULT_SCENARIOS
-                            for col in _money_columns(
-                                _scenario_label(rate), f"rate_{rate}", display_ccy
-                            )
+            with section("Cashflows per year"):
+                ui.plotly(_figure(rows, currency=display_ccy, fx_rate=fx_rate)).classes(
+                    "w-full h-[40vh]",
+                )
+            with section("Aggregation table"):
+                ui.aggrid(
+                    {
+                        "columnDefs": [
+                            {"headerName": "Year", "field": "label", "sortable": True},
+                            *_money_columns("Contributions", "contributions", display_ccy),
+                            *_money_columns("Dividends", "dividends", display_ccy),
+                            *_money_columns("Interest", "interest", display_ccy),
+                            *_money_columns("Net flow", "net_flow", display_ccy),
+                            *_money_columns("Closing value", "closing_value", display_ccy),
+                            {
+                                "headerName": "Growth %",
+                                "field": "growth_pct",
+                                "type": "rightAligned",
+                            },
                         ],
-                    ],
-                    "rowData": projection_table_rows(
-                        projection_rows,
-                        currency=display_ccy,
-                        fx_rate=fx_rate,
-                    ),
-                    "defaultColDef": {"resizable": True, "sortable": True},
-                }
-            ).classes("w-full h-[35vh]")
+                        "rowData": to_table_rows(rows, currency=display_ccy, fx_rate=fx_rate),
+                        "defaultColDef": {"resizable": True, "sortable": True},
+                    }
+                ).classes("ag-theme-alpine w-full h-[35vh]")
+
+            with section("Hypothetical projection (next 10 years)"):
+                ui.label(
+                    "Assumes the average historical annual contribution continues, compounded "
+                    "at the rates below. For planning only — not a forecast."
+                ).classes("text-caption opacity-70")
+                ui.aggrid(
+                    {
+                        "columnDefs": [
+                            {"headerName": "Year", "field": "year"},
+                            *_money_columns("Cumulative contribution", "contributed", display_ccy),
+                            *[
+                                col
+                                for rate in DEFAULT_SCENARIOS
+                                for col in _money_columns(
+                                    _scenario_label(rate), f"rate_{rate}", display_ccy
+                                )
+                            ],
+                        ],
+                        "rowData": projection_table_rows(
+                            projection_rows,
+                            currency=display_ccy,
+                            fx_rate=fx_rate,
+                        ),
+                        "defaultColDef": {"resizable": True, "sortable": True},
+                    }
+                ).classes("ag-theme-alpine w-full h-[35vh]")

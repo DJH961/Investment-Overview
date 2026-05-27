@@ -8,7 +8,12 @@ from nicegui import ui
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.services import display_currency_service
-from investment_dashboard.ui.components.kpi_card import kpi_card
+from investment_dashboard.ui.components import (
+    empty_state,
+    kpi_card,
+    page_header,
+    section,
+)
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import fmt_money
 from investment_dashboard.ui.pages._deposits_query import (
@@ -29,7 +34,7 @@ def register() -> None:
     @ui.page(PATH)
     def _deposits() -> None:  # pragma: no cover - rendered by NiceGUI
         with page_frame("Deposits", current=PATH):
-            ui.label("Deposits, withdrawals and interest").classes("text-h5")
+            page_header("Deposits", subtitle="Deposits, withdrawals and interest")
             with session_scope() as session:
                 summary = compute_summary(session)
                 rows = list_deposit_rows(session)
@@ -46,42 +51,54 @@ def register() -> None:
                     sub=fmt_money(secondary, secondary_ccy),
                 )
 
-            with ui.row().classes("gap-md flex-wrap"):
+            with ui.row().classes("gap-md flex-wrap w-full"):
                 _kpi("Total contributed", summary.total_contrib_eur)
                 _kpi("YTD contributions", summary.ytd_contrib_eur)
                 _kpi("MTD contributions", summary.mtd_contrib_eur)
                 _kpi("Interest YTD", summary.interest_ytd_eur)
-            ui.separator()
-            ui.aggrid(
-                {
-                    "columnDefs": [
-                        {"headerName": "Date", "field": "date", "sortable": True, "filter": True},
-                        {"headerName": "Account", "field": "account", "filter": True},
-                        {"headerName": "Kind", "field": "kind", "filter": True},
+            if not rows:
+                empty_state(
+                    "savings",
+                    "No deposits recorded",
+                    hint="Import a broker CSV from Transactions, or add manual rows there.",
+                )
+            else:
+                with section("Cash-flow ledger"):
+                    ui.aggrid(
                         {
-                            "headerName": "Amount (native)",
-                            "field": "amount_native",
-                            "type": "rightAligned",
-                        },
-                        {"headerName": "Currency", "field": "currency"},
-                        {
-                            "headerName": "Amount (EUR)",
-                            "field": "amount_eur",
-                            "type": "rightAligned",
-                        },
-                        {
-                            "headerName": "Amount (USD)",
-                            "field": "amount_usd",
-                            "type": "rightAligned",
-                        },
-                        {"headerName": "Description", "field": "description"},
-                    ],
-                    "rowData": _add_usd_column(rows, fx_rate),
-                    "defaultColDef": {"resizable": True, "sortable": True},
-                    "pagination": True,
-                    "paginationAutoPageSize": True,
-                }
-            ).classes("w-full h-[60vh]")
+                            "columnDefs": [
+                                {
+                                    "headerName": "Date",
+                                    "field": "date",
+                                    "sortable": True,
+                                    "filter": True,
+                                },
+                                {"headerName": "Account", "field": "account", "filter": True},
+                                {"headerName": "Kind", "field": "kind", "filter": True},
+                                {
+                                    "headerName": "Amount (native)",
+                                    "field": "amount_native",
+                                    "type": "rightAligned",
+                                },
+                                {"headerName": "Currency", "field": "currency"},
+                                {
+                                    "headerName": "Amount (EUR)",
+                                    "field": "amount_eur",
+                                    "type": "rightAligned",
+                                },
+                                {
+                                    "headerName": "Amount (USD)",
+                                    "field": "amount_usd",
+                                    "type": "rightAligned",
+                                },
+                                {"headerName": "Description", "field": "description"},
+                            ],
+                            "rowData": _add_usd_column(rows, fx_rate),
+                            "defaultColDef": {"resizable": True, "sortable": True},
+                            "pagination": True,
+                            "paginationAutoPageSize": True,
+                        }
+                    ).classes("ag-theme-alpine w-full h-[60vh]")
 
 
 def _add_usd_column(

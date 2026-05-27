@@ -18,6 +18,7 @@ from investment_dashboard.repositories import allocations_repo, instruments_repo
 from investment_dashboard.services import display_currency_service
 from investment_dashboard.services.positions_service import compute_positions
 from investment_dashboard.services.prices_service import latest_close
+from investment_dashboard.ui.components import page_header, section
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import currency_symbol
 
@@ -35,28 +36,38 @@ def register() -> None:
     @ui.page(PATH)
     def _calculator() -> None:  # pragma: no cover - rendered by NiceGUI
         with page_frame("Calculator", current=PATH):
-            ui.label("Investment calculator").classes("text-h5")
+            page_header(
+                "Calculator",
+                subtitle="Rebalance buy-only against the active target allocation",
+            )
 
             with session_scope() as session:
                 default_ccy = display_currency_service.get_display_currency(session)
                 fx_rate = display_currency_service.current_rate(session, quote="USD")
 
-            with ui.row().classes("items-end gap-md"):
-                cash_in = ui.input(
-                    "Cash to invest",
-                    value="1000",
-                ).classes("min-w-[14rem]")
-                ccy_in = ui.toggle(
-                    list(display_currency_service.SUPPORTED_CURRENCIES),
-                    value=default_ccy,
-                ).props("dense")
-                fractional = ui.checkbox("Allow fractional shares", value=False)
-            ui.label(
-                "Input the cash amount in your preferred currency; the plan is computed "
-                "internally in EUR (the dashboard's base) and the buy amounts displayed in "
-                "both currencies where an FX rate is available.",
-            ).classes("text-caption opacity-70")
-            result_container = ui.column().classes("w-full")
+            with section("Inputs"):
+                with ui.row().classes("items-end gap-md flex-wrap"):
+                    cash_in = (
+                        ui.input(
+                            "Cash to invest",
+                            value="1000",
+                        )
+                        .classes("min-w-[14rem]")
+                        .props("outlined dense")
+                    )
+                    ccy_in = ui.toggle(
+                        list(display_currency_service.SUPPORTED_CURRENCIES),
+                        value=default_ccy,
+                    ).props("dense unelevated")
+                    fractional = ui.checkbox("Allow fractional shares", value=False)
+                    ui.space()
+                    compute_btn_slot = ui.row().classes("items-center")
+                ui.label(
+                    "Input the cash amount in your preferred currency; the plan is computed "
+                    "internally in EUR (the dashboard's base) and the buy amounts displayed in "
+                    "both currencies where an FX rate is available.",
+                ).classes("text-caption opacity-70")
+            result_container = ui.column().classes("w-full gap-md")
 
             def _to_eur(amount: Decimal, source_currency: str) -> Decimal:
                 if source_currency == "EUR" or fx_rate is None or fx_rate == 0:
@@ -126,52 +137,60 @@ def register() -> None:
                 result_container.clear()
                 with result_container:
                     sym_in = currency_symbol(source_ccy)
-                    ui.label(
-                        f"Input: {sym_in}{cash_raw:,.2f} ({source_ccy})  →  "
-                        f"€{cash_eur:,.2f} EUR internally",
-                    ).classes("text-subtitle2 opacity-80")
-                    ui.label(
-                        f"Residual cash after plan: €{plan.residual_cash:,.2f} "
-                        f"(${_from_eur(plan.residual_cash, 'USD'):,.2f})",
-                    ).classes("text-subtitle1")
-                    ui.aggrid(
-                        {
-                            "columnDefs": [
-                                {"headerName": "Symbol", "field": "symbol"},
-                                {
-                                    "headerName": "Target %",
-                                    "field": "target_pct",
-                                    "type": "rightAligned",
-                                },
-                                {
-                                    "headerName": "Current value (EUR)",
-                                    "field": "current_value_eur",
-                                    "type": "rightAligned",
-                                },
-                                {
-                                    "headerName": "Current value (USD)",
-                                    "field": "current_value_usd",
-                                    "type": "rightAligned",
-                                },
-                                {
-                                    "headerName": "Add (EUR)",
-                                    "field": "add_value_eur",
-                                    "type": "rightAligned",
-                                },
-                                {
-                                    "headerName": "Add (USD)",
-                                    "field": "add_value_usd",
-                                    "type": "rightAligned",
-                                },
-                                {
-                                    "headerName": "Add shares",
-                                    "field": "add_shares",
-                                    "type": "rightAligned",
-                                },
-                            ],
-                            "rowData": rows,
-                            "defaultColDef": {"resizable": True, "sortable": True},
-                        }
-                    ).classes("w-full h-[40vh]")
+                    with section("Plan summary"):
+                        ui.label(
+                            f"Input: {sym_in}{cash_raw:,.2f} ({source_ccy})  →  "
+                            f"€{cash_eur:,.2f} EUR internally",
+                        ).classes("text-subtitle2 opacity-80")
+                        ui.label(
+                            f"Residual cash after plan: €{plan.residual_cash:,.2f} "
+                            f"(${_from_eur(plan.residual_cash, 'USD'):,.2f})",
+                        ).classes("text-subtitle1")
+                    with section("Buy plan"):
+                        ui.aggrid(
+                            {
+                                "columnDefs": [
+                                    {"headerName": "Symbol", "field": "symbol"},
+                                    {
+                                        "headerName": "Target %",
+                                        "field": "target_pct",
+                                        "type": "rightAligned",
+                                    },
+                                    {
+                                        "headerName": "Current value (EUR)",
+                                        "field": "current_value_eur",
+                                        "type": "rightAligned",
+                                    },
+                                    {
+                                        "headerName": "Current value (USD)",
+                                        "field": "current_value_usd",
+                                        "type": "rightAligned",
+                                    },
+                                    {
+                                        "headerName": "Add (EUR)",
+                                        "field": "add_value_eur",
+                                        "type": "rightAligned",
+                                    },
+                                    {
+                                        "headerName": "Add (USD)",
+                                        "field": "add_value_usd",
+                                        "type": "rightAligned",
+                                    },
+                                    {
+                                        "headerName": "Add shares",
+                                        "field": "add_shares",
+                                        "type": "rightAligned",
+                                    },
+                                ],
+                                "rowData": rows,
+                                "defaultColDef": {"resizable": True, "sortable": True},
+                            }
+                        ).classes("ag-theme-alpine w-full h-[40vh]")
 
-            ui.button("Compute plan", on_click=_run).props("color=primary")
+            # ``_run`` is also wired to the Compute-plan button declared
+            # in the Inputs section above (forward reference; closures
+            # share the same outer scope).
+            with compute_btn_slot:
+                ui.button("Compute plan", icon="play_arrow", on_click=_run).props(
+                    "unelevated color=primary no-caps"
+                )
