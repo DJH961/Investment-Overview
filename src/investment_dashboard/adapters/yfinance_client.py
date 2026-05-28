@@ -20,6 +20,22 @@ import yfinance as yf
 
 log = logging.getLogger(__name__)
 
+# yfinance prints one ERROR-level line per symbol on its own logger whenever a
+# download returns no rows ("$XXX: possibly delisted; no price data found ...")
+# plus a noisy summary block. That fires constantly during US trading hours
+# when the day's bar hasn't been published yet, and again for symbols that
+# legitimately have no yfinance ticker (e.g. ``VMFXX``/``SPAXX`` sweeps). We
+# already log a single meaningful warning per empty symbol below, so silence
+# yfinance's stderr noise at import time. Use CRITICAL rather than disabling
+# propagation so genuinely fatal yfinance issues still surface.
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+
+# When yfinance returns no rows for a requested window we retry just those
+# symbols with this many extra calendar days of lookback. That guarantees
+# callers get the most recent available close — the user's "last close price"
+# fallback — even when the live bar hasn't published yet.
+_FALLBACK_LOOKBACK_DAYS = 10
+
 
 class YFinanceError(RuntimeError):
     """Raised when yfinance returns a fundamentally unusable payload."""
@@ -64,9 +80,39 @@ def fetch_closes(
 
     download = downloader or yf.download
 
-    # yfinance accepts either a list or whitespace-separated string. We pass
-    # a list for clarity. group_by="ticker" yields a top-level column per
-    # symbol when len(symbols) > 1; for a single symbol the layout is flat.
+    result = _download_window(download, symbols, start, end)
+
+    # If any symbol came back empty (typical for "today" requests during
+    # trading hours, or for tickers yfinance just briefly hiccupped on),
+    # retry just those symbols with a wider lookback so the caller always
+    # gets the most recent available close instead of nothing. Skip the
+    # retry if the original window was already wider than the fallback.
+    missing = [s for s in symbols if not result.get(s)]
+    if missing:
+        fallback_start = end - timedelta(days=_FALLBACK_LOOKBACK_DAYS)
+        if fallback_start < start:
+            log.info(
+                "yfinance empty for %s in %s..%s; retrying from %s for last-close fallback",
+                missing,
+                start,
+                end,
+                fallback_start,
+            )
+            fallback = _download_window(download, missing, fallback_start, end)
+            for symbol, closes in fallback.items():
+                if closes:
+                    result[symbol] = closes
+
+    return result
+
+
+def _download_window(
+    download: Any,
+    symbols: list[str],
+    start: date,
+    end: date,
+) -> dict[str, dict[date, Decimal]]:
+    """Single yfinance ``download`` call, parsed into the adapter's shape."""
     try:
         frame = download(
             tickers=symbols,

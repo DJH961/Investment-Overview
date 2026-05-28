@@ -109,3 +109,75 @@ def test_fetch_closes_live_smoke() -> None:
     out = fetch_closes(["SPY"], date(2024, 1, 2), date(2024, 1, 6))
     assert "SPY" in out
     assert any(isinstance(v, Decimal) for v in out["SPY"].values())
+
+
+def test_fetch_closes_falls_back_to_wider_window_when_empty() -> None:
+    """If the requested window is empty, retry with a wider lookback."""
+    calls: list[tuple[date, date, tuple[str, ...]]] = []
+
+    def fake_download(**kwargs: Any) -> pd.DataFrame:
+        start = date.fromisoformat(kwargs["start"])
+        end = date.fromisoformat(kwargs["end"])
+        tickers = tuple(kwargs["tickers"])
+        calls.append((start, end, tickers))
+        # First (narrow) call returns nothing — emulates "today's bar not yet
+        # published". Second (widened) call returns a last-close row.
+        if (end - start).days <= 1:
+            return pd.DataFrame()
+        idx = pd.to_datetime(["2026-05-27"])
+        cols = pd.MultiIndex.from_tuples([("VTI", "Close"), ("VOO", "Close")])
+        return pd.DataFrame([[240.10, 440.50]], index=idx, columns=cols)
+
+    out = fetch_closes(
+        ["VTI", "VOO"], date(2026, 5, 28), date(2026, 5, 29), downloader=fake_download
+    )
+
+    assert len(calls) == 2, "expected a fallback download call"
+    assert out["VTI"][date(2026, 5, 27)] == Decimal(repr(240.10))
+    assert out["VOO"][date(2026, 5, 27)] == Decimal(repr(440.50))
+
+
+def test_fetch_closes_fallback_only_for_missing_symbols() -> None:
+    """The retry should only ask for symbols that were missing."""
+    calls: list[tuple[str, ...]] = []
+
+    def fake_download(**kwargs: Any) -> pd.DataFrame:
+        tickers = tuple(kwargs["tickers"])
+        calls.append(tickers)
+        if tickers == ("VTI", "VOO"):
+            # Initial call: only VTI has data.
+            idx = pd.to_datetime(["2026-05-28"])
+            cols = pd.MultiIndex.from_tuples([("VTI", "Close")])
+            return pd.DataFrame([[241.00]], index=idx, columns=cols)
+        # Fallback call: should be just VOO.
+        idx = pd.to_datetime(["2026-05-27"])
+        return pd.DataFrame({"Close": [440.50]}, index=idx)
+
+    out = fetch_closes(
+        ["VTI", "VOO"], date(2026, 5, 28), date(2026, 5, 29), downloader=fake_download
+    )
+
+    assert calls[0] == ("VTI", "VOO")
+    assert calls[1] == ("VOO",), "fallback should only refetch the missing symbol"
+    assert out["VTI"][date(2026, 5, 28)] == Decimal(repr(241.00))
+    assert out["VOO"][date(2026, 5, 27)] == Decimal(repr(440.50))
+
+
+def test_fetch_closes_no_fallback_when_window_already_wide() -> None:
+    """If the requested window is already wider than the fallback, don't retry."""
+    calls: list[Any] = []
+
+    def fake_download(**kwargs: Any) -> pd.DataFrame:
+        calls.append(kwargs)
+        return pd.DataFrame()
+
+    out = fetch_closes(["VTI"], date(2024, 1, 1), date(2024, 6, 1), downloader=fake_download)
+    assert len(calls) == 1
+    assert out == {"VTI": {}}
+
+
+def test_yfinance_logger_silenced_on_import() -> None:
+    """The noisy yfinance stderr logger must be muted at module import."""
+    import logging as _logging
+
+    assert _logging.getLogger("yfinance").level >= _logging.CRITICAL
