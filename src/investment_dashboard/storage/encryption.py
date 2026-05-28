@@ -17,7 +17,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from importlib import import_module
 from importlib import util as importlib_util
+from pathlib import Path
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +43,11 @@ class EncryptionConfig:
     enabled: bool
     driver: str | None = None  # "pysqlcipher3" or "sqlcipher3"
     passphrase: str | None = None
+
+
+def sql_string_literal(value: str) -> str:
+    """Return ``value`` as a single-quoted SQL string literal."""
+    return "'" + value.replace("'", "''") + "'"
 
 
 def _detect_driver() -> str | None:
@@ -84,6 +92,38 @@ def store_passphrase_in_keyring(passphrase: str) -> bool:
     except Exception:  # pragma: no cover - backend-specific
         log.warning("keyring store failed", exc_info=True)
         return False
+
+
+def _sqlcipher_dbapi(driver: str):
+    if driver in {"pysqlcipher3", "sqlcipher3"}:
+        return import_module(f"{driver}.dbapi2")
+    raise EncryptionUnavailableError(f"unsupported SQLCipher driver: {driver!r}")
+
+
+def apply_sqlcipher_key(dbapi_conn: Any, config: EncryptionConfig) -> None:
+    """Apply the SQLCipher key as the first statement on ``dbapi_conn``."""
+    if not config.enabled or config.passphrase is None:
+        return
+    cursor = dbapi_conn.cursor()
+    try:
+        cursor.execute(f"PRAGMA key = {sql_string_literal(config.passphrase)}")
+    finally:
+        cursor.close()
+
+
+def connect_sqlite(db_path: Path, config: EncryptionConfig | None = None):
+    """Open a SQLite/SQLCipher connection and apply ``config`` when enabled."""
+    if config is not None and config.enabled:
+        if config.driver is None:
+            raise EncryptionUnavailableError("encryption enabled but no SQLCipher driver resolved")
+        sqlcipher = _sqlcipher_dbapi(config.driver)
+        conn = sqlcipher.connect(str(db_path))
+        apply_sqlcipher_key(conn, config)
+        return conn
+
+    import sqlite3  # noqa: PLC0415
+
+    return sqlite3.connect(db_path)
 
 
 def resolve_encryption(

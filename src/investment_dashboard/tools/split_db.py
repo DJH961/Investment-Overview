@@ -70,7 +70,10 @@ def _encrypt_inplace(plain_path: Path, passphrase: str) -> None:
     The destination is created at ``plain_path`` (atomic swap), so the
     user's path-config doesn't change.
     """
-    from investment_dashboard.storage.encryption import EncryptionUnavailableError  # noqa: PLC0415
+    from investment_dashboard.storage.encryption import (  # noqa: PLC0415
+        EncryptionUnavailableError,
+        sql_string_literal,
+    )
 
     try:
         try:
@@ -93,7 +96,10 @@ def _encrypt_inplace(plain_path: Path, passphrase: str) -> None:
     conn = sqlcipher.connect(plain_path)
     try:
         cur = conn.cursor()
-        cur.execute(f"ATTACH DATABASE ? AS enc KEY '{passphrase}'", (str(enc_path),))
+        cur.execute(
+            f"ATTACH DATABASE ? AS enc KEY {sql_string_literal(passphrase)}",
+            (str(enc_path),),
+        )
         cur.execute("SELECT sqlcipher_export('enc')")
         cur.execute("DETACH DATABASE enc")
         conn.commit()

@@ -16,10 +16,12 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
 from investment_dashboard.storage.backup import snapshot, verify_backup
+from investment_dashboard.storage.encryption import resolve_encryption
 from investment_dashboard.storage.integrity import IntegrityCheckFailed
 
 log = logging.getLogger(__name__)
@@ -33,6 +35,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Integrity-check the resulting backup and print per-table row counts.",
     )
+    p.add_argument(
+        "--passphrase",
+        default=None,
+        help=("SQLCipher passphrase. If omitted, reads INV_DASHBOARD_DB_PASSPHRASE."),
+    )
     p.add_argument("-v", "--verbose", action="store_true")
     return p
 
@@ -44,7 +51,12 @@ def main(argv: list[str] | None = None) -> int:
         format="%(levelname)s %(name)s: %(message)s",
     )
     db: Path = args.db
-    out = snapshot(db)
+    passphrase = args.passphrase or os.environ.get("INV_DASHBOARD_DB_PASSPHRASE")
+    encryption = resolve_encryption(
+        encrypt_synced_tiers=bool(passphrase),
+        env_passphrase=passphrase,
+    )
+    out = snapshot(db, encryption=encryption)
     if out is None:
         log.error("%s does not exist; nothing to back up", db)
         return 2
@@ -52,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.verify:
         return 0
     try:
-        counts = verify_backup(out)
+        counts = verify_backup(out, encryption=encryption)
     except IntegrityCheckFailed as exc:
         log.error("backup verification FAILED: %s", exc)
         return 3

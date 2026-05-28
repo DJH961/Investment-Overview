@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from investment_dashboard.storage.encryption import EncryptionConfig, connect_sqlite
 from investment_dashboard.storage.integrity import (
     backup_database,
     integrity_check,
@@ -101,6 +102,7 @@ def snapshot(
     *,
     policy: RetentionPolicy | None = None,
     now: datetime | None = None,
+    encryption: EncryptionConfig | None = None,
 ) -> Path | None:
     """Snapshot ``db_path`` into ``<dir>/backups/`` and prune old files.
 
@@ -120,21 +122,24 @@ def snapshot(
         _latest_ts(backup_dir, stem, "monthly"),
     )
     dest = backup_dir / f"{stem}-{bucket}-{timestamp_suffix(now)}.sqlite"
-    backup_database(db_path, dest)
+    backup_database(db_path, dest, encryption=encryption)
     _prune(backup_dir, stem, "hourly", policy.hourly)
     _prune(backup_dir, stem, "daily", policy.daily)
     _prune(backup_dir, stem, "monthly", policy.monthly)
     return dest
 
 
-def verify_backup(backup_path: Path) -> dict[str, int]:
+def verify_backup(
+    backup_path: Path,
+    *,
+    encryption: EncryptionConfig | None = None,
+) -> dict[str, int]:
     """Integrity-check a backup and return a row-count manifest per table."""
-    integrity_check(backup_path)
-    import sqlite3  # noqa: PLC0415
+    integrity_check(backup_path, encryption=encryption)
     from contextlib import closing  # noqa: PLC0415
 
     counts: dict[str, int] = {}
-    with closing(sqlite3.connect(backup_path)) as conn:
+    with closing(connect_sqlite(backup_path, encryption)) as conn:
         rows = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' "
             "AND name NOT LIKE 'sqlite_%' ORDER BY name"

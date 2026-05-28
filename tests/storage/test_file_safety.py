@@ -17,6 +17,7 @@ from investment_dashboard.storage.encryption import (
     EncryptionUnavailableError,
     PassphraseMissingError,
     resolve_encryption,
+    sql_string_literal,
 )
 from investment_dashboard.storage.integrity import IntegrityCheckFailed, integrity_check
 from investment_dashboard.storage.lock import WriteLockError, acquire_write_lock
@@ -226,3 +227,7 @@ def test_resolve_encryption_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.enabled is True
     assert cfg.driver == "pysqlcipher3"
     assert cfg.passphrase == "hunter2"
+
+
+def test_sql_string_literal_escapes_passphrase_quotes() -> None:
+    assert sql_string_literal("Bob's passphrase") == "'Bob''s passphrase'"

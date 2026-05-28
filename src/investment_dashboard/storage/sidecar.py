@@ -21,11 +21,11 @@ The v2.0 plan §5.2 mitigates this by:
 from __future__ import annotations
 
 import logging
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
 from investment_dashboard.storage.cloud import path_is_in_cloud_folder
+from investment_dashboard.storage.encryption import EncryptionConfig, connect_sqlite
 
 log = logging.getLogger(__name__)
 
@@ -98,7 +98,11 @@ def assert_no_sidecars_in_cloud(db_paths: list[Path]) -> None:
     raise StraySidecarError("\n".join(lines))
 
 
-def repair_sidecars(db_path: Path) -> SidecarReport:
+def repair_sidecars(
+    db_path: Path,
+    *,
+    encryption: EncryptionConfig | None = None,
+) -> SidecarReport:
     """Integrity-check ``db_path`` and remove its WAL/SHM siblings.
 
     The function opens a short-lived SQLite connection so SQLite has
@@ -111,7 +115,7 @@ def repair_sidecars(db_path: Path) -> SidecarReport:
     if not report.found:
         return report
     # First: open and integrity-check; this also forces a checkpoint.
-    conn = sqlite3.connect(db_path)
+    conn = connect_sqlite(db_path, encryption)
     try:
         result = conn.execute("PRAGMA integrity_check").fetchone()
         if result is None or result[0] != "ok":

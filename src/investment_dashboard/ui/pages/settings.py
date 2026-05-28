@@ -499,7 +499,7 @@ def _render_storage_section() -> None:  # pragma: no cover - UI
         ("Config", layout.config),
         ("Cache", layout.cache),
     ]
-    with ui.column().classes("gap-2"):
+    with ui.column().classes("gap-sm"):
         if is_read_only():
             ui.label("Read-only mode — another instance holds the writer lock.").classes(
                 "text-warning"

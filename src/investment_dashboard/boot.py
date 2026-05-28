@@ -1,12 +1,12 @@
 """Boot sequence — runs once per app start before NiceGUI listens.
 
 Steps (spec §13 + v2.0 plan phases 3-5):
-1. Resolve the cloud-aware storage layout and persist it onto
-   ``Settings`` so engines created later see the right paths.
-2. Resolve encryption (Phase 4): if the user enabled it, fetch the
+1. Resolve encryption (Phase 4): if the user enabled it, fetch the
    passphrase from the OS keychain (or env override) and wire it onto
    the engine factory. Boot fails fast with a clear message when the
    SQLCipher driver is missing.
+2. Resolve the cloud-aware storage layout and persist it onto
+   ``Settings`` so engines created later see the right paths.
 3. Refuse to open if stray ``-wal`` / ``-shm`` sidecars sit next to a
    cloud-located file (Phase 5).
 4. Acquire the single-writer file lock (Phase 5). On failure boot
@@ -57,13 +57,14 @@ def _load_persisted_overrides() -> dict[str, str]:
     boot, or a freshly split layout).
     """
     try:
-        from sqlalchemy import create_engine, text  # noqa: PLC0415
+        from sqlalchemy import text  # noqa: PLC0415
 
         from investment_dashboard.config import get_settings as _gs  # noqa: PLC0415
+        from investment_dashboard.db import make_engine  # noqa: PLC0415
 
         settings = _gs()
         config_url = settings.config_url
-        eng = create_engine(config_url, future=True)
+        eng = make_engine(config_url)
         with eng.connect() as conn:
             row = conn.execute(
                 text("SELECT name FROM sqlite_master WHERE type='table' AND name='app_config'")
@@ -145,12 +146,14 @@ def _acquire_writer_lock() -> None:
 
 
 def _integrity_check_tiers() -> None:
+    from investment_dashboard.db import get_active_encryption  # noqa: PLC0415
     from investment_dashboard.storage.integrity import (  # noqa: PLC0415
         IntegrityCheckFailed,
         integrity_check,
     )
 
     settings = get_settings()
+    encryption = get_active_encryption()
     for label, path in (
         ("ledger", settings.ledger_path),
         ("config", settings.config_path),
@@ -158,7 +161,7 @@ def _integrity_check_tiers() -> None:
         if path is None or path.as_posix() == ":memory:":
             continue
         try:
-            result = integrity_check(path)
+            result = integrity_check(path, encryption=encryption)
             if result == "missing":
                 continue
             log.info("integrity check passed for %s (%s)", label, path)
@@ -168,9 +171,11 @@ def _integrity_check_tiers() -> None:
 
 
 def _rolling_backup() -> None:
+    from investment_dashboard.db import get_active_encryption  # noqa: PLC0415
     from investment_dashboard.storage.backup import snapshot  # noqa: PLC0415
 
     settings = get_settings()
+    encryption = get_active_encryption()
     for label, path in (
         ("ledger", settings.ledger_path),
         ("config", settings.config_path),
@@ -178,7 +183,7 @@ def _rolling_backup() -> None:
         if path is None or path.as_posix() == ":memory:":
             continue
         try:
-            out = snapshot(path)
+            out = snapshot(path, encryption=encryption)
             if out is not None:
                 log.info("backup written: %s -> %s", label, out)
         except Exception:
@@ -279,8 +284,8 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
         skip_network: if ``True``, skip FX/price refresh (useful for tests
             and offline development).
     """
-    _apply_resolved_layout()
     _apply_encryption()
+    _apply_resolved_layout()
     _check_sidecars()
     _acquire_writer_lock()
     _integrity_check_tiers()

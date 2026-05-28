@@ -12,7 +12,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
-## [Unreleased]
+## [2.0.0] — 2026-05-28
 
 ### Added
 - **v2.0 plan Phase 3 — cloud-sync-aware storage paths.**

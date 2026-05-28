@@ -28,7 +28,11 @@ from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from investment_dashboard.config import get_settings
-from investment_dashboard.storage.encryption import EncryptionConfig
+from investment_dashboard.storage.encryption import (
+    EncryptionConfig,
+    apply_sqlcipher_key,
+    to_sqlcipher_url,
+)
 from investment_dashboard.storage.sidecar import should_use_truncate_journal
 
 
@@ -65,33 +69,41 @@ def _url_path(url: str) -> Path | None:
     return None
 
 
-def make_engine(url: str | None = None) -> Engine:
+def make_engine(
+    url: str | None = None, *, encryption_config: EncryptionConfig | None = None
+) -> Engine:
     """Create a SQLAlchemy engine for ``url`` (or the legacy db_url)."""
     if url is None:
         settings = get_settings()
         _ensure_parent(settings.db_path)
         url = settings.db_url
+    encryption = _engine_state["encryption"] if encryption_config is None else encryption_config
+    engine_url = to_sqlcipher_url(url, encryption)
     engine = create_engine(
-        url,
+        engine_url,
         future=True,
         echo=False,
-        connect_args={"check_same_thread": False} if "sqlite" in url else {},
+        connect_args={"check_same_thread": False} if "sqlite" in engine_url else {},
     )
-    if url.startswith("sqlite"):
-        _install_sqlite_pragmas(engine, _url_path(url))
+    if engine_url.startswith("sqlite"):
+        _install_sqlite_pragmas(engine, _url_path(engine_url), encryption)
     return engine
 
 
-def _install_sqlite_pragmas(engine: Engine, db_path: Path | None) -> None:
-    encryption = _engine_state["encryption"]
+def _install_sqlite_pragmas(
+    engine: Engine,
+    db_path: Path | None,
+    encryption: EncryptionConfig,
+) -> None:
     use_truncate = db_path is not None and should_use_truncate_journal(db_path)
 
     @event.listens_for(engine, "connect")
     def _set_sqlite_pragmas(dbapi_conn: Any, _conn_record: Any) -> None:
         cursor = dbapi_conn.cursor()
         # Encryption key MUST be the first statement on the connection.
-        if encryption.enabled and encryption.passphrase is not None:
-            cursor.execute(f"PRAGMA key = '{encryption.passphrase}'")
+        cursor.close()
+        apply_sqlcipher_key(dbapi_conn, encryption)
+        cursor = dbapi_conn.cursor()
         if use_truncate:
             cursor.execute("PRAGMA journal_mode=TRUNCATE")
         else:
@@ -107,10 +119,14 @@ _engines_by_url: dict[str, Engine] = {}
 _factories_by_url: dict[str, sessionmaker[Session]] = {}
 
 
-def _get_or_create_for_url(url: str) -> tuple[Engine, sessionmaker[Session]]:
+def _get_or_create_for_url(
+    url: str,
+    *,
+    encryption_config: EncryptionConfig | None = None,
+) -> tuple[Engine, sessionmaker[Session]]:
     eng = _engines_by_url.get(url)
     if eng is None:
-        eng = make_engine(url)
+        eng = make_engine(url, encryption_config=encryption_config)
         _engines_by_url[url] = eng
         _factories_by_url[url] = sessionmaker(bind=eng, autoflush=False, expire_on_commit=False)
     return eng, _factories_by_url[url]
@@ -138,7 +154,12 @@ def get_cache_engine() -> Engine:
     settings = get_settings()
     assert settings.cache_path is not None
     _ensure_parent_for(settings.cache_path)
-    return _get_or_create_for_url(settings.cache_url)[0]
+    encryption = (
+        _engine_state["encryption"]
+        if settings.cache_url in {settings.ledger_url, settings.config_url}
+        else EncryptionConfig(enabled=False)
+    )
+    return _get_or_create_for_url(settings.cache_url, encryption_config=encryption)[0]
 
 
 def get_ledger_session_factory() -> sessionmaker[Session]:
