@@ -7,28 +7,31 @@ return metrics — XIRR, TWR, CAGR, YTD variants, drawdown, Sharpe, Sortino —
 in both **USD** and **EUR**, and serves them over a NiceGUI web UI accessible
 from the host laptop and any device on the same Wi-Fi network.
 
-> **Status: v1.3.0 — onboarding wizard, EUR/USD toggle on every page,
-> creatable accounts/instruments/allocations.** First-run users land on
-> `/onboarding`, which detects an empty database and can one-click seed
-> the spec's three accounts (Vanguard, Fidelity, Savings Bank) and
-> nineteen default instruments. A header EUR/USD switch persisted in
-> `app_config` flips the dashboard's primary display currency; Overview,
-> Deposits, Monthly, Yearly, Transactions and Calculator render both
-> currencies side-by-side wherever space allows so the predominantly-USD
-> activity stays legible. Settings now exposes add-account, add-instrument
-> and new-allocation dialogs plus a re-run "Seed default setup" button.
-> Builds on v1.2 — snapshots cache, near-live ETF prices, monthly
-> projection — and the one-click launcher now also pre-installs `pytest`
-> into `.venv`. Lint/format/mypy clean.
+> **Status: v2.0.0 — split storage, cloud-aware paths, optional SQLCipher,
+> and SQLite file-safety tooling.** The app remains a local-first,
+> single-user dashboard with onboarding, EUR/USD display switching, CSV/XLSX
+> imports, live overview/deposits/transactions/monthly/yearly/calculator pages,
+> and editable settings. v2.0 adds separate ledger/config/cache tiers, keeps
+> cache data local by default, detects common cloud-sync folders, optionally
+> encrypts synced tiers with SQLCipher, blocks unsafe WAL sidecars in cloud
+> folders, takes rolling backups, and exposes repair/backup/split CLIs.
 
 ## Highlights
 
 - **Layered architecture** — `domain/` (pure math), `adapters/` (external
   I/O), `repositories/` (DB), `services/` (orchestration), `ui/` (NiceGUI).
-- **SQLAlchemy 2.x + Alembic** on a single SQLite file (WAL mode).
+- **SQLAlchemy 2.x + Alembic** on SQLite, with ledger/config/cache storage
+  tiers. Existing single-file installs still work unchanged.
+- **Cloud-aware local-first storage** — ledger/config can live in OneDrive,
+  iCloud, Dropbox, or Google Drive; cache stays device-local by default.
+- **Optional encryption at rest** for synced tiers via the `[encrypted]` extra
+  (`pysqlcipher3`/`sqlcipher3` + keyring).
+- **SQLite file safety** — cloud-located DBs use TRUNCATE journaling; boot
+  guards against stray `-wal`/`-shm` sidecars and takes rolling backups.
 - **FX-aware** — every USD cashflow stored with the EUR rate of its trade
   date, so EUR returns reflect when the money actually moved.
-- **Colorblind-safe** UI (Wong palette) — never relies on red/green alone.
+- **Modern colorblind-safe UI** with light/dark chrome and a Settings →
+  Storage panel showing each tier path/source.
 - **Private**, single-user, $0 hosting. Runs on `0.0.0.0:8080`.
 
 ## Tech stack
@@ -38,8 +41,9 @@ from the host laptop and any device on the same Wi-Fi network.
 | Language | Python ≥ 3.12 |
 | Web UI | NiceGUI (FastAPI + Quasar) |
 | Charts | Plotly |
-| ORM / DB | SQLAlchemy 2.x + SQLite (WAL) |
+| ORM / DB | SQLAlchemy 2.x + SQLite tiers (WAL local, TRUNCATE in cloud) |
 | Migrations | Alembic |
+| Optional encryption | SQLCipher via `investment-dashboard[encrypted]` |
 | FX rates | [Frankfurter](https://frankfurter.dev) (ECB-sourced) |
 | Market data | yfinance (`auto_adjust=False`) |
 | Tests | pytest + hypothesis + respx |
@@ -90,10 +94,46 @@ file at the repo root. See [`.env.example`](.env.example).
 
 | Variable | Default | Notes |
 |---|---|---|
-| `INV_DASHBOARD_DB_PATH` | `%LOCALAPPDATA%/inv-dashboard/db.sqlite` on Windows | SQLite file path |
+| `INV_DASHBOARD_DB_PATH` | platform local data dir | Legacy single-file SQLite path; if set, all tiers share this file |
+| `INV_DASHBOARD_LEDGER_PATH` | cloud root if detected, else local data dir | Ledger/source-of-truth SQLite file |
+| `INV_DASHBOARD_CONFIG_PATH` | cloud root if detected, else local data dir | User preferences/overrides SQLite file |
+| `INV_DASHBOARD_CACHE_PATH` | platform local data dir | Derived cache SQLite file; intentionally local by default |
+| `INV_DASHBOARD_ENCRYPT_SYNCED_TIERS` | `false` | Enable SQLCipher for ledger/config tiers |
+| `INV_DASHBOARD_DB_PASSPHRASE` | unset | SQLCipher passphrase override; normally use OS keyring |
 | `INV_DASHBOARD_HOST` | `0.0.0.0` | Bind address |
 | `INV_DASHBOARD_PORT` | `8080` | Bind port |
 | `INV_DASHBOARD_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+
+### Storage, cloud sync, and safety tools
+
+By default v2.0 resolves storage in this order:
+
+1. explicit env vars (`INV_DASHBOARD_LEDGER_PATH`, `...CONFIG_PATH`,
+   `...CACHE_PATH`);
+2. persisted config overrides for ledger/config;
+3. detected cloud-sync root for ledger/config only;
+4. platform local data dir fallback. Cache never uses the persisted/cloud step.
+
+The Settings → Storage panel shows the active path and resolver source for each
+tier. If ledger/config are inside a detected cloud folder, SQLite opens them
+with `journal_mode=TRUNCATE` and boot refuses to proceed if stale
+`*.sqlite-wal` or `*.sqlite-shm` sidecars are present.
+
+Useful CLIs:
+
+```powershell
+uv run inv-dashboard-split-db --from old.sqlite --ledger ledger.sqlite --config config.sqlite --cache cache.sqlite
+uv run inv-dashboard-repair-sidecar path/to/ledger.sqlite
+uv run inv-dashboard-backup --verify path/to/ledger.sqlite
+```
+
+For encrypted synced tiers:
+
+```powershell
+uv sync --extra encrypted
+set INV_DASHBOARD_ENCRYPT_SYNCED_TIERS=true
+set INV_DASHBOARD_DB_PASSPHRASE=your-local-passphrase   # or store it in keyring
+```
 
 ## Development
 
@@ -119,6 +159,8 @@ src/investment_dashboard/
 ├── models/            # SQLAlchemy ORM
 ├── repositories/      # DB access (Phase 2)
 ├── services/          # use-case orchestration
+├── storage/           # cloud paths, encryption, sidecars, locks, backups
+├── tools/             # split-db, repair-sidecar, backup CLIs
 └── ui/                # NiceGUI pages + components
 migrations/            # Alembic
 tests/                 # mirrors src layout
@@ -149,31 +191,28 @@ docs/                  # architecture notes
 │ SQLAlchemy session │
 └─────────┬──────────┘
           ▼
-   ┌────────────┐
-   │ SQLite DB  │
-   └────────────┘
+   ┌──────────────────────────────────────────────┐
+   │ SQLite tiers                                 │
+   │ ledger.sqlite · config.sqlite · cache.sqlite │
+   └──────────────────────────────────────────────┘
 ```
 
 ## Roadmap
 
 See [`requirements_and_project_overview.md`](requirements_and_project_overview.md)
-§14 for the full phased roadmap. Current status:
+and [`docs/v2.0_split_cloud_security_plan.md`](docs/v2.0_split_cloud_security_plan.md)
+for the full roadmap. Current status:
 
-- ✅ Phase 0 — scaffolding, CI.
-- ✅ Phase 1 — schema, migrations, FX + market-data adapters, CSV
-  importers (Fidelity + Vanguard).
-- ✅ Phase 2 — `domain/` pure math: XIRR, TWR, CAGR, returns, risk,
-  rebalance allocation.
-- ✅ Phase 3 — Repositories, services, importer service, UI shell.
-- ✅ Phase 4 — All seven pages wired with live data: `/overview`,
-  `/deposits`, `/transactions`, `/monthly`, `/yearly`, `/calculator`,
-  `/settings`.
-- ✅ Phase 5 (v1.1) — End-of-period mark-to-market closing balances,
-  inline editing for accounts/instruments/allocations, yearly
-  hypothetical projection block.
-- ⏳ Phase 6 (v1.2+) — Snapshots cache (spec §4.1) to avoid recomputing
-  positions on every page render, JAN-1 backfill for `ytd_start_value`,
-  monthly projection rows.
+- ✅ v1.x — schema, adapters/importers, domain math, repositories/services,
+  onboarding, all UI pages, snapshots/cache refresh, Vanguard XLSX import, and
+  the v1.5 UI facelift.
+- ✅ v2.0 Phase 1–2 — ORM metadata split and tier-specific engines/sessions.
+- ✅ v2.0 Phase 3 — cloud-sync-aware path resolution.
+- ✅ v2.0 Phase 4 — optional SQLCipher encryption for synced tiers.
+- ✅ v2.0 Phase 5 — sidecar guard, single-writer lock, integrity checks, and
+  rolling backups.
+- ⏳ Follow-ups — onboarding passphrase prompt, Settings “Move ledger…” picker,
+  and per-tier Alembic version tables.
 
 ## License
 

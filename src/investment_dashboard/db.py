@@ -99,9 +99,7 @@ def _install_sqlite_pragmas(
 
     @event.listens_for(engine, "connect")
     def _set_sqlite_pragmas(dbapi_conn: Any, _conn_record: Any) -> None:
-        cursor = dbapi_conn.cursor()
         # Encryption key MUST be the first statement on the connection.
-        cursor.close()
         apply_sqlcipher_key(dbapi_conn, encryption)
         cursor = dbapi_conn.cursor()
         if use_truncate:
