@@ -53,17 +53,13 @@ def test_0005_adds_override_columns_and_unknown_asset_class(
 
     with engine.begin() as conn:
         cols = {
-            r[1]
-            for r in conn.exec_driver_sql(
-                "PRAGMA table_info(instrument_overrides)"
-            ).fetchall()
+            r[1] for r in conn.exec_driver_sql("PRAGMA table_info(instrument_overrides)").fetchall()
         }
         assert {"name_override", "asset_class_override", "expense_ratio_override"} <= cols
 
         # Seed data preserved.
         rows = conn.exec_driver_sql(
-            "SELECT instrument_id, category, active, name_override "
-            "FROM instrument_overrides"
+            "SELECT instrument_id, category, active, name_override FROM instrument_overrides"
         ).fetchall()
         assert rows == [(1, "US Stocks", 1, None)]
 
@@ -79,10 +75,7 @@ def test_0005_adds_override_columns_and_unknown_asset_class(
     command.downgrade(cfg, "8d3a2e5b14c6")
     with engine.begin() as conn:
         cols = {
-            r[1]
-            for r in conn.exec_driver_sql(
-                "PRAGMA table_info(instrument_overrides)"
-            ).fetchall()
+            r[1] for r in conn.exec_driver_sql("PRAGMA table_info(instrument_overrides)").fetchall()
         }
         assert "name_override" not in cols
         rows = conn.exec_driver_sql(

@@ -59,6 +59,42 @@ TOOLTIPS: Final[dict[str, str]] = {
         "Difference between current allocation and target allocation. "
         "Positive means over-allocated; negative means under-allocated."
     ),
+    "calmar": (
+        "Annualised return divided by the maximum drawdown. "
+        "Punishes deep drawdowns harder than volatility does; higher is better."
+    ),
+    "ulcer": (
+        "Root-mean-square of percentage drawdowns from the running peak. "
+        "Bigger number = more sustained pain. Lower is better."
+    ),
+    "var": (
+        "Historical Value-at-Risk at the 5% tail. "
+        "'On the worst 1-in-20 days you lost at least this much.'"
+    ),
+    "cvar": (
+        "Average loss on the days at or below the 5% VaR cut-off. Also known as Expected Shortfall."
+    ),
+    "skew": (
+        "Asymmetry of the daily-return distribution. "
+        "Negative = occasional big losses; positive = occasional big gains."
+    ),
+    "kurtosis": (
+        "Excess kurtosis (Fisher). 0 is normal-distribution-like; "
+        "positive = fat tails, more extreme days than a bell curve predicts."
+    ),
+    "risk_free": (
+        "Annualised risk-free rate used by Sharpe, Sortino and Alpha. "
+        "Fetched from the 13-week US T-bill yield (^IRX) by default; "
+        "you can pin a manual rate in Settings."
+    ),
+    "benchmark": (
+        "Index used as the market reference for Beta, Alpha and the "
+        "comparison curve. Default is VT (Vanguard Total World)."
+    ),
+    "attribution": (
+        "Per-instrument contribution to the portfolio's overall P&L over the window. "
+        "Sums to the portfolio total return (modulo rounding)."
+    ),
 }
 
 

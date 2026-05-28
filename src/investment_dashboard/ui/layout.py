@@ -57,6 +57,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem("Transactions", "/transactions", "receipt_long"),
     NavItem("Monthly", "/monthly", "calendar_month"),
     NavItem("Yearly", "/yearly", "calendar_today"),
+    NavItem("Analytics", "/analytics", "insights"),
     NavItem("Calculator", "/calculator", "calculate"),
     NavItem("Settings", "/settings", "settings"),
 )

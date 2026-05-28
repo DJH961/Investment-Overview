@@ -66,18 +66,14 @@ class TestEffectiveInstrument:
         assert eff.asset_class == "etf"
 
     def test_unknown_default_when_ledger_missing(self, session: Session) -> None:
-        instr = instruments_repo.get_or_create(
-            session, symbol="WAT", asset_class="unknown"
-        )
+        instr = instruments_repo.get_or_create(session, symbol="WAT", asset_class="unknown")
         eff = effective_instrument(instr, None)
         assert eff.asset_class == "unknown"
 
 
 class TestEnrichInstrument:
     def test_fills_missing_fields_from_yfinance(self, session: Session) -> None:
-        instr = instruments_repo.get_or_create(
-            session, symbol="VTI", asset_class="unknown"
-        )
+        instr = instruments_repo.get_or_create(session, symbol="VTI", asset_class="unknown")
         fetcher = _fake_fetcher(
             {
                 "VTI": InstrumentInfo(
@@ -119,9 +115,7 @@ class TestEnrichInstrument:
         assert out.expense_ratio == Decimal("0.05")
 
     def test_yfinance_miss_leaves_unknown(self, session: Session) -> None:
-        instr = instruments_repo.get_or_create(
-            session, symbol="ZZZ", asset_class="unknown"
-        )
+        instr = instruments_repo.get_or_create(session, symbol="ZZZ", asset_class="unknown")
         out = enrich_instrument(session, instr.id, fetcher=_fake_fetcher({"ZZZ": None}))
         assert out.asset_class == "unknown"
         assert out.name is None
@@ -138,9 +132,7 @@ class TestEnrichInstrument:
         assert out.asset_class == "cash"
 
     def test_unknown_quote_type_stays_unknown(self, session: Session) -> None:
-        instr = instruments_repo.get_or_create(
-            session, symbol="BTC-USD", asset_class="unknown"
-        )
+        instr = instruments_repo.get_or_create(session, symbol="BTC-USD", asset_class="unknown")
         fetcher = _fake_fetcher(
             {
                 "BTC-USD": InstrumentInfo(
@@ -158,9 +150,7 @@ class TestEnrichInstrument:
 
 
 class TestEnsureInstrument:
-    def test_creates_with_parsed_metadata_then_no_yfinance_needed(
-        self, session: Session
-    ) -> None:
+    def test_creates_with_parsed_metadata_then_no_yfinance_needed(self, session: Session) -> None:
         called: list[str] = []
 
         def _spy(symbol: str) -> InstrumentInfo | None:

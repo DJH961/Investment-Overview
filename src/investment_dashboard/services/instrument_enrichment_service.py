@@ -209,8 +209,7 @@ def ensure_instrument(
     if parsed_native_currency and (instr.native_currency in {"", fallback_native_currency}):
         # Only override the fallback-default native currency; never
         # touch a non-fallback value (it was probably set deliberately).
-        if not instr.native_currency or instr.native_currency == fallback_native_currency:
-            instr.native_currency = parsed_native_currency
+        instr.native_currency = parsed_native_currency
     session.flush()
 
     return enrich_instrument(session, instr.id, fetcher=fetcher)

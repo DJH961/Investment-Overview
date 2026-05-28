@@ -12,6 +12,7 @@ from investment_dashboard.config import get_settings
 from investment_dashboard.logging import configure_logging
 from investment_dashboard.ui import style as ui_style
 from investment_dashboard.ui.pages import (
+    analytics,
     calculator,
     deposits,
     monthly,
@@ -41,6 +42,7 @@ def _register_pages() -> None:
     transactions.register()
     monthly.register()
     yearly.register()
+    analytics.register()
     calculator.register()
     settings_page.register()
     onboarding.register()

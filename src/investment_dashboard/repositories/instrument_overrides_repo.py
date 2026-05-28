@@ -14,7 +14,7 @@ helpers exist for the single-edit dialogs in Settings.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from decimal import Decimal  # noqa: TC003 — referenced by string annotation
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -74,7 +74,7 @@ def upsert(
     active: bool | _Sentinel = ...,  # type: ignore[assignment]
     name_override: str | None | _Sentinel = ...,  # type: ignore[assignment]
     asset_class_override: str | None | _Sentinel = ...,  # type: ignore[assignment]
-    expense_ratio_override: "Decimal | None | _Sentinel" = ...,  # type: ignore[assignment]
+    expense_ratio_override: Decimal | None | _Sentinel = ...,  # type: ignore[assignment]
 ) -> InstrumentOverride:
     """Insert-or-update the override for ``instrument_id``.
 

@@ -291,7 +291,7 @@ def _open_instrument_override_modal() -> None:  # pragma: no cover - UI
         ).classes("w-full")
         name_in = ui.input("Display name override").classes("w-full")
         class_sel = ui.select(
-            [""] + _ASSET_CLASS_OPTIONS,
+            ["", *_ASSET_CLASS_OPTIONS],
             value="",
             label="Asset class override",
         ).classes("w-full")
@@ -310,7 +310,8 @@ def _open_instrument_override_modal() -> None:  # pragma: no cover - UI
             name_in.value = (ov.name_override if ov is not None else "") or ""
             class_sel.value = (ov.asset_class_override if ov is not None else "") or ""
             ter_in.value = (
-                "" if (ov is None or ov.expense_ratio_override is None)
+                ""
+                if (ov is None or ov.expense_ratio_override is None)
                 else str(ov.expense_ratio_override)
             )
             effective_lbl.text = (

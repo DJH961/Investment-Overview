@@ -14,17 +14,78 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [2.2.0] — Unreleased
 
-This is the first slice of the v2.2 "data-scientist analytics + FX-aware
-growth + instrument auto-detect" feature bump. It lands the foundation
-piece: every historical valuation now reflects **historical** FX
-instead of being a uniform scalar of today's spot rate, and **DKK**
-joins EUR/USD as a first-class display currency. The two follow-up
-slices (instrument auto-detect from imports + manual transaction entry;
-Analytics page wiring up TWR/CAGR/Sharpe/Sortino/Calmar/Ulcer/VaR/beta/
-alpha vs a configurable VT benchmark) ship in subsequent v2.2.x
-releases.
+This release lands the full v2.2 "data-scientist analytics + FX-aware
+growth + instrument auto-detect" feature bump, in three slices:
 
-### Added
+* **(a)** Historical FX in every snapshot/aggregation and **DKK** as a
+  first-class display currency.
+* **(b)** Instrument auto-detection from imports + per-instrument
+  display overrides (name / asset class / TER).
+* **(c)** New `/Analytics` page with Calmar, Ulcer, VaR/CVaR, Skew,
+  Excess Kurtosis, Beta and Alpha on top of the existing
+  CAGR/TWR/XIRR/Sharpe/Sortino/Max-Drawdown grid, plus a configurable
+  benchmark (default `VT`) and a **live** risk-free rate sourced from
+  the 13-week US T-bill (`^IRX`) with an optional manual override.
+
+### Added — phase (c) "analytics deep-dive"
+- **`/analytics` page** registered in `main` and the sidebar nav.
+  Renders three rows of KPI cards (returns / drawdown shape /
+  benchmark-relative), an equity-curve plot with cumulative
+  contributions and a rebased benchmark overlay, and a per-instrument
+  attribution table. Lookback selectable from 1M to 5Y.
+- **`domain/risk_extras.py`** — pure, strictly-typed implementations
+  of `calmar_ratio`, `ulcer_index`, `historical_var`,
+  `historical_cvar`, `skewness`, and `excess_kurtosis` (Fisher
+  convention).
+- **`domain/attribution.py`** — `attribute_portfolio_return` produces
+  per-instrument P&L and `% of total return` rows from start / end /
+  net-contribution / dividend triples.
+- **`services/benchmark_service.py`** — configurable benchmark symbol
+  via `app_config['benchmark_symbol']` (default `VT`); fetches closes
+  through the existing yfinance adapter and stores them in
+  `price_history` like any other instrument. Settings page exposes
+  the picker.
+- **`services/risk_free_service.py`** — live fetch of the 13-week US
+  T-bill yield from yfinance `^IRX`, normalised from percent to
+  decimal fraction, cached in `app_config` with a 24h TTL. Supports a
+  user-set manual override that wins over the fetched value. Returns
+  ``None`` on first-ever failure (no hypothetical fallback —
+  Sharpe/Sortino/Alpha simply render as "—" until a real number is
+  available). Settings page exposes symbol, last-fetched timestamp,
+  manual override and a "refresh now" button.
+- **Tooltips** for Calmar, Ulcer, VaR, CVaR, Skew, Kurtosis,
+  risk-free rate, benchmark and attribution.
+
+### Added — phase (b) "instrument auto-detect + overrides"
+- **`services/instrument_enrichment_service.py`** — override → ledger
+  precedence helper (`effective_instrument`) and yfinance-backed
+  gap-filler (`enrich_instrument` / `ensure_instrument`). The importer
+  now creates instruments via this service so unknown symbols arrive
+  with a real `name` / `asset_class` / `native_currency` / TER.
+- **`name` / `asset_class` / `expense_ratio` columns on
+  `instrument_overrides`** so users can re-label an instrument
+  ("VTI" → "US Total Market") and re-bucket it (stock → etf) without
+  editing the ledger.
+- **"Edit instrument" dialog on the Transactions page** lets users
+  apply the overrides interactively with a live preview of the
+  effective value.
+- **Overview positions table and treemap now use the effective
+  values**, so phase-(b) corrections show up everywhere instead of
+  only in Settings.
+- **CSV importers populate `ParsedTransactionRow.name`** from
+  `investment name` (Vanguard), the workbook name (Vanguard XLSX) and
+  `security description` (Fidelity), so a freshly-imported instrument
+  has a real display name even before yfinance enrichment runs.
+- **`instruments.asset_class` CHECK constraint** now accepts
+  `'unknown'` and the importer's default; downgrade coerces
+  `'unknown'` → `'etf'` to preserve the v2.1 constraint.
+
+### Migrations
+- **`0005_v2_2_instrument_enrichment`** (`9e4b3f6c2a17`, parent
+  `8d3a2e5b14c6`) widens the asset-class CHECK and adds the three
+  override columns via `batch_alter_table`.
+
+### Added — phase (a) "historical FX + DKK"
 - **DKK as a display currency.** `display_currency_service.SUPPORTED_CURRENCIES`
   now contains `EUR`, `USD`, `DKK`; the Settings → Display currency
   picker exposes all three. `money_format.currency_symbol` formats DKK
