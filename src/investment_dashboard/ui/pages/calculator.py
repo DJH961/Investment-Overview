@@ -184,7 +184,7 @@ def register() -> None:
                                 "rowData": rows,
                                 "defaultColDef": {"resizable": True, "sortable": True},
                             }
-                        ).classes("ag-theme-alpine w-full h-[40vh]")
+                        ).classes("ag-theme-alpine w-full h-[55vh]")
 
             # ``_run`` is also wired to the Compute-plan button declared
             # in the Inputs section above (forward reference; closures

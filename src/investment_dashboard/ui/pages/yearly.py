@@ -111,7 +111,7 @@ def register() -> None:
                         "rowData": to_table_rows(rows, currency=display_ccy, fx_rate=fx_rate),
                         "defaultColDef": {"resizable": True, "sortable": True},
                     }
-                ).classes("ag-theme-alpine w-full h-[35vh]")
+                ).classes("ag-theme-alpine w-full h-[50vh]")
 
             with section("Hypothetical projection (next 10 years)"):
                 ui.label(
@@ -138,4 +138,4 @@ def register() -> None:
                         ),
                         "defaultColDef": {"resizable": True, "sortable": True},
                     }
-                ).classes("ag-theme-alpine w-full h-[35vh]")
+                ).classes("ag-theme-alpine w-full h-[50vh]")
