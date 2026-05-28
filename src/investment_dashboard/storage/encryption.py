@@ -124,7 +124,7 @@ def connect_sqlite(db_path: Path, config: EncryptionConfig | None = None) -> Any
 
     import sqlite3  # noqa: PLC0415
 
-    return sqlite3.connect(db_path)
+    return sqlite3.connect(str(db_path))
 
 
 def resolve_encryption(

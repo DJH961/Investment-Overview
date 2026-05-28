@@ -152,6 +152,8 @@ def get_cache_engine() -> Engine:
     settings = get_settings()
     assert settings.cache_path is not None
     _ensure_parent_for(settings.cache_path)
+    # Cache is local and unencrypted unless the user is in legacy/single-file
+    # mode, where cache_url is the same physical DB as ledger/config.
     encryption = (
         _engine_state["encryption"]
         if settings.cache_url in {settings.ledger_url, settings.config_url}
