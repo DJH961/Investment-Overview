@@ -12,6 +12,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.1.4] — 2026-05-28
+
+### Fixed
+- **v1.5 "neo-fintech" facelift CSS never reached page renders, leaving the
+  UI looking like raw Quasar defaults.** `ui.style.install()` injected the
+  whole stylesheet via `ui.add_head_html(...)` without `shared=True`. In
+  NiceGUI 2.x that defaults to `shared=False`, which scopes the snippet to
+  the auto-index client at startup time only. Every `@ui.page` route gets
+  its own client, so the entire neo-fintech stylesheet was silently dropped
+  on every real page render — producing the solid blue header, borderless
+  KPI tiles, plain-text version "pill", unstyled currency toggle, squished
+  AG-Grid columns and missing sidebar active state shown in the v2.1.3 bug
+  report. The stylesheet is now attached with `shared=True` so it reaches
+  every page client and the intended chrome actually applies.
+
 ## [2.1.3] — 2026-05-28
 
 ### Fixed
