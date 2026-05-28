@@ -91,10 +91,82 @@ jobs:
           name: windows-installer
           path: dist/InvestmentDashboard-Setup.exe
 
+  build-windows-portable:
+    name: Build InvestmentDashboard-Portable.zip
+    # The portable bundle is just an unpacked embeddable Python plus the
+    # dashboard wheel. Building it on Windows lets us shell out to the
+    # same PowerShell primitives an end-user would have, but the bundle
+    # itself is platform-agnostic (the embeddable Python is the
+    # Windows-AMD64 build, so the resulting ZIP only runs on Windows).
+    # Pinned to ``windows-2022`` for the same UCRT reason as the
+    # one-file installer above.
+    runs-on: windows-2022
+    needs: build-distributions
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build-distributions.outputs.tag }}
+
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Assemble portable bundle
+        shell: pwsh
+        env:
+          EMBED_PYTHON_VERSION: 3.12.7
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundleRoot = 'portable/InvestmentDashboard-Portable'
+          New-Item -ItemType Directory -Force -Path $bundleRoot | Out-Null
+
+          # 1. Drop the embeddable Python next to the launcher.
+          $embedUrl = "https://www.python.org/ftp/python/$env:EMBED_PYTHON_VERSION/python-$env:EMBED_PYTHON_VERSION-embed-amd64.zip"
+          Invoke-WebRequest -Uri $embedUrl -OutFile python-embed.zip
+          Expand-Archive -Path python-embed.zip -DestinationPath "$bundleRoot/python" -Force
+
+          # 2. Enable `import site` so pip-installed packages are found.
+          Get-ChildItem "$bundleRoot/python" -Filter 'python*._pth' | ForEach-Object {
+            (Get-Content $_.FullName) `
+              -replace '#import site','import site' |
+              Set-Content $_.FullName
+          }
+
+          # 3. Bootstrap pip into the bundled interpreter.
+          Invoke-WebRequest -Uri 'https://bootstrap.pypa.io/get-pip.py' -OutFile get-pip.py
+          & "$bundleRoot/python/python.exe" get-pip.py
+          Remove-Item get-pip.py
+
+          # 4. Install the freshly built wheel + its runtime dependencies
+          #    into the bundled site-packages so the ZIP is fully offline.
+          $wheel = Get-ChildItem dist -Filter 'investment_dashboard-*.whl' | Select-Object -First 1
+          if (-not $wheel) { throw 'No wheel found in dist/' }
+          & "$bundleRoot/python/python.exe" -m pip install --no-warn-script-location $wheel.FullName
+
+          # 5. Ship the portable launcher + the double-clickable .cmd
+          #    alongside a tiny README so users know what to do.
+          Copy-Item installer/portable_launcher.py $bundleRoot/portable_launcher.py
+          Copy-Item installer/Run-InvestmentDashboard.cmd $bundleRoot/Run-InvestmentDashboard.cmd
+          Copy-Item installer/PORTABLE_README.txt $bundleRoot/README.txt
+
+          # 6. Zip it up.
+          $zip = "InvestmentDashboard-Portable.zip"
+          if (Test-Path $zip) { Remove-Item $zip }
+          Compress-Archive -Path "$bundleRoot/*" -DestinationPath $zip
+          Write-Host "Bundle assembled: $zip"
+
+      - name: Upload portable bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-portable
+          path: InvestmentDashboard-Portable.zip
+
   publish-release:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
-    needs: [build-distributions, build-windows-installer]
+    needs: [build-distributions, build-windows-installer, build-windows-portable]
     steps:
       - name: Download distribution artifacts
         uses: actions/download-artifact@v4
@@ -108,6 +180,12 @@ jobs:
           name: windows-installer
           path: artifacts/windows-installer
 
+      - name: Download Windows portable bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-portable
+          path: artifacts/windows-portable
+
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -118,3 +196,4 @@ jobs:
           files: |
             artifacts/dist/*
             artifacts/windows-installer/InvestmentDashboard-Setup.exe
+            artifacts/windows-portable/InvestmentDashboard-Portable.zip

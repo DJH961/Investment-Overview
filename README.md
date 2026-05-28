@@ -73,6 +73,25 @@ self-updates to the newest `v*` tag before starting. See
 [`installer/README.md`](installer/README.md) for the design and the
 release pipeline that produces the `.exe`.
 
+### Portable bundle for locked-down work laptops (no admin, no SmartScreen)
+
+If the `.exe` installer is blocked by Windows SmartScreen ("Unknown
+publisher"), or if your corporate proxy blocks `api.github.com` and
+makes the network-driven installer fail with `HTTP Error 404`,
+download **`InvestmentDashboard-Portable.zip`** from the same
+[Releases page](https://github.com/DJH961/Investment-Overview/releases/latest)
+instead.
+
+1. Right-click the ZIP → *Extract All…* into any folder you can write to
+   (e.g. `%USERPROFILE%\InvestmentDashboard`).
+2. Double-click **`Run-InvestmentDashboard.cmd`** inside the extracted
+   folder. The dashboard opens in your default browser.
+
+The portable bundle contains an embeddable CPython 3.12 runtime and a
+pre-installed copy of the dashboard, so it runs **completely offline**,
+requires **no admin rights**, and `.cmd` scripts are **not** subject to
+the SmartScreen unsigned-`.exe` block.
+
 ### One-click launcher (no command line)
 
 The fastest path — works on a fresh clone without any prior Python

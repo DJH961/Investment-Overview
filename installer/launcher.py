@@ -22,15 +22,12 @@ from __future__ import annotations
 
 import contextlib
 import importlib.metadata as importlib_metadata
-import json
 import os
 import subprocess
 import sys
 import traceback
 from pathlib import Path
-from typing import Any
-from urllib.error import URLError
-from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
 # Allow running this file directly (``python launcher.py``) by ensuring its
 # parent directory — which contains the ``installer`` package when shipped —
@@ -47,10 +44,8 @@ from installer.paths import (  # noqa: E402
     version_state_path,
 )
 from installer.version import (  # noqa: E402
-    LATEST_RELEASE_API,
-    USER_AGENT,
-    extract_release_metadata,
     is_newer,
+    resolve_latest_release,
     tarball_url,
 )
 
@@ -66,24 +61,21 @@ def installed_version() -> str | None:
         return None
 
 
-def fetch_latest_release(url: str = LATEST_RELEASE_API) -> dict[str, Any] | None:
-    """Hit the GitHub Releases API. Return ``None`` on any network failure."""
-    request = Request(
-        url, headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"}
-    )
-    try:
-        with urlopen(request, timeout=NETWORK_TIMEOUT_SECONDS) as response:
-            raw = response.read().decode("utf-8")
-    except (URLError, TimeoutError, OSError):
-        return None
+def fetch_latest_release(
+    timeout: float = NETWORK_TIMEOUT_SECONDS,
+) -> tuple[str, str | None] | None:
+    """Resolve the latest release as ``(tag, wheel_url)``.
 
+    Returns ``None`` on any network failure so the launcher can skip the
+    update check and start the app. Uses
+    :func:`installer.version.resolve_latest_release`, which falls back
+    from the GitHub JSON API to the public ``releases/latest`` redirect
+    when ``api.github.com`` is blocked.
+    """
     try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
+        return resolve_latest_release(timeout=timeout)
+    except (URLError, HTTPError, TimeoutError, OSError, ValueError):
         return None
-    if not isinstance(data, dict):
-        return None
-    return data
 
 
 def pip_install_target(tag: str, wheel_url: str | None) -> str:
@@ -115,14 +107,10 @@ def maybe_update(install_root: Path) -> str | None:
         return None
 
     current = installed_version()
-    payload = fetch_latest_release()
-    if payload is None:
+    resolved = fetch_latest_release()
+    if resolved is None:
         return None
-
-    try:
-        tag, wheel_url = extract_release_metadata(payload)
-    except ValueError:
-        return None
+    tag, wheel_url = resolved
 
     if current is not None and not is_newer(tag, current):
         return None

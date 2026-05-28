@@ -29,11 +29,7 @@ def test_maybe_update_skips_when_environment_flag_set(monkeypatch, tmp_path: Pat
 def test_maybe_update_skips_when_already_current(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.delenv("INV_DASHBOARD_SKIP_UPDATE_CHECK", raising=False)
     monkeypatch.setattr(launcher, "installed_version", lambda: "2.1.0")
-    monkeypatch.setattr(
-        launcher,
-        "fetch_latest_release",
-        lambda: {"tag_name": "v2.1.0", "assets": []},
-    )
+    monkeypatch.setattr(launcher, "fetch_latest_release", lambda: ("v2.1.0", None))
 
     def _refuse_install(*_: object, **__: object) -> None:
         raise AssertionError("pip install must not run when versions match")
@@ -48,15 +44,7 @@ def test_maybe_update_installs_newer_release(monkeypatch, tmp_path: Path) -> Non
     monkeypatch.setattr(
         launcher,
         "fetch_latest_release",
-        lambda: {
-            "tag_name": "v2.1.0",
-            "assets": [
-                {
-                    "name": "investment_dashboard-2.1.0-py3-none-any.whl",
-                    "browser_download_url": "https://example/wheel",
-                }
-            ],
-        },
+        lambda: ("v2.1.0", "https://example/wheel"),
     )
     captured: dict[str, object] = {}
 
@@ -74,11 +62,7 @@ def test_maybe_update_installs_newer_release(monkeypatch, tmp_path: Path) -> Non
 def test_maybe_update_swallows_pip_failures(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.delenv("INV_DASHBOARD_SKIP_UPDATE_CHECK", raising=False)
     monkeypatch.setattr(launcher, "installed_version", lambda: "2.0.0")
-    monkeypatch.setattr(
-        launcher,
-        "fetch_latest_release",
-        lambda: {"tag_name": "v2.1.0", "assets": []},
-    )
+    monkeypatch.setattr(launcher, "fetch_latest_release", lambda: ("v2.1.0", None))
 
     def _boom(*_: object, **__: object) -> None:
         raise OSError("network down")
@@ -97,7 +81,9 @@ def test_maybe_update_returns_none_when_release_payload_unavailable(
 
 def test_maybe_update_handles_malformed_payload(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.delenv("INV_DASHBOARD_SKIP_UPDATE_CHECK", raising=False)
-    monkeypatch.setattr(launcher, "fetch_latest_release", lambda: {"assets": []})
+    # Resolver propagates ValueError on garbage payloads, which fetch_latest_release
+    # turns into None; the launcher must skip the update quietly.
+    monkeypatch.setattr(launcher, "fetch_latest_release", lambda: None)
     assert launcher.maybe_update(tmp_path) is None
 
 
