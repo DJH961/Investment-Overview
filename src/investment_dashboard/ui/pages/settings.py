@@ -12,7 +12,7 @@ v1.3 adds:
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from nicegui import ui
@@ -24,7 +24,7 @@ from investment_dashboard.repositories import (
     instrument_overrides_repo,
     instruments_repo,
 )
-from investment_dashboard.services import display_currency_service
+from investment_dashboard.services import display_currency_service, provider_status
 from investment_dashboard.services.fx_service import refresh_fx_history
 from investment_dashboard.services.onboarding_service import seed_default_setup
 from investment_dashboard.services.prices_service import refresh_prices
@@ -518,6 +518,85 @@ def _render_storage_section() -> None:  # pragma: no cover - UI
         ui.label(f"Configured ledger: {settings.ledger_path}").classes("text-caption text-grey")
 
 
+def _status_chip_props(status: str) -> tuple[str, str, str]:
+    """Map a provider status to (icon, qcolor, human label) for the chip."""
+    if status == "ok":
+        return ("check_circle", "positive", "Connected")
+    if status == "partial":
+        return ("warning", "warning", "Partial data")
+    if status == "error":
+        return ("error", "negative", "Failed")
+    return ("help", "grey", "Unknown")
+
+
+def _format_relative(at: datetime) -> str:
+    """Render a timestamp as both relative ("3 m ago") and absolute UTC."""
+    now = datetime.now(UTC)
+    # Treat any naive datetime as UTC — provider_status always uses tz-aware UTC.
+    moment = at if at.tzinfo is not None else at.replace(tzinfo=UTC)
+    delta = now - moment
+    secs = int(delta.total_seconds())
+    if secs < 0:
+        rel = "just now"
+    elif secs < 60:
+        rel = f"{secs}s ago"
+    elif secs < 3600:
+        rel = f"{secs // 60}m ago"
+    elif secs < 86400:
+        rel = f"{secs // 3600}h ago"
+    else:
+        rel = f"{secs // 86400}d ago"
+    return f"{rel} ({moment.strftime('%Y-%m-%d %H:%M:%S UTC')})"
+
+
+def _render_connectivity_section() -> None:  # pragma: no cover - UI
+    """Show the latest yfinance / Frankfurter call outcome + recent log."""
+    known_providers = ("yfinance", "frankfurter")
+    latest = provider_status.all_latest()
+
+    with ui.column().classes("gap-sm w-full"):
+        with ui.row().classes("gap-md items-center w-full"):
+            for prov in known_providers:
+                event = latest.get(prov)
+                if event is None:
+                    icon, color, label = "help", "grey", "No data yet"
+                    detail = "Has not been called since the app started."
+                    when = "—"
+                else:
+                    icon, color, label = _status_chip_props(event.status)
+                    detail = event.message
+                    when = _format_relative(event.at)
+                with ui.card().classes("p-sm"):
+                    with ui.row().classes("items-center gap-sm"):
+                        ui.icon(icon, color=color)
+                        ui.label(prov).classes("text-subtitle2")
+                        ui.badge(label, color=color).props("outline")
+                    ui.label(when).classes("text-caption opacity-70")
+                    ui.label(detail).classes("text-caption")
+
+        events = provider_status.get_log(limit=20)
+        if not events:
+            ui.label(
+                "No provider calls recorded yet. Trigger 'Refresh prices' or "
+                "'Refresh FX rates' above, or wait for the next background tick."
+            ).classes("text-caption opacity-70")
+            return
+
+        with (
+            ui.expansion("Recent activity", icon="history").classes("w-full"),
+            ui.column().classes("gap-xs w-full"),
+        ):
+            for ev in events:
+                icon, color, _ = _status_chip_props(ev.status)
+                with ui.row().classes("items-center gap-sm w-full no-wrap"):
+                    ui.icon(icon, color=color).classes("text-sm")
+                    ui.label(ev.at.astimezone(UTC).strftime("%H:%M:%S")).classes(
+                        "text-caption font-mono opacity-70"
+                    )
+                    ui.label(ev.provider).classes("text-caption font-mono")
+                    ui.label(ev.message).classes("text-caption")
+
+
 def register() -> None:
     @ui.page(PATH)
     def _settings() -> None:  # pragma: no cover
@@ -538,6 +617,8 @@ def register() -> None:
                 _render_storage_section()
             with section("Data refresh"):
                 _render_data_refresh()
+            with section("Connectivity"):
+                _render_connectivity_section()
             with section("Accounts"):
                 _render_accounts_section(accounts)
             with section("Instruments"):

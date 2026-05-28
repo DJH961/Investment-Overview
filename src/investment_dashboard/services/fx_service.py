@@ -24,6 +24,15 @@ from investment_dashboard.repositories import fx_repo
 
 log = logging.getLogger(__name__)
 
+_PROVIDER = "frankfurter"
+
+
+def _record_status(status: str, message: str) -> None:
+    """Lazy wrapper around provider_status.record to avoid a circular import."""
+    from investment_dashboard.services.provider_status import record  # noqa: PLC0415
+
+    record(_PROVIDER, status, message)  # type: ignore[arg-type]
+
 
 def refresh_fx_history(
     session: Session,
@@ -53,9 +62,15 @@ def refresh_fx_history(
         records = fetch_rates(start, today, base=base, quote=quote)
     except FrankfurterError as exc:
         log.warning("FX refresh failed (%s); continuing with stale rates", exc)
+        _record_status("error", f"{base}/{quote} fetch failed: {exc}")
         return 0
     rates = {r.date: r.rate for r in records}
-    return fx_repo.upsert_rates(session, rates, base=base, quote=quote)
+    written = fx_repo.upsert_rates(session, rates, base=base, quote=quote)
+    _record_status(
+        "ok",
+        f"Fetched {len(rates)} {base}/{quote} rate(s) for {start}..{today}; {written} new",
+    )
+    return written
 
 
 def get_rate_eur_to_quote(
