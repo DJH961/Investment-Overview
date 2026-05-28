@@ -14,6 +14,7 @@ helpers exist for the single-edit dialogs in Settings.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from decimal import Decimal  # noqa: TC003 — referenced by string annotation
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -71,12 +72,17 @@ def upsert(
     *,
     category: str | None | _Sentinel = ...,  # type: ignore[assignment]
     active: bool | _Sentinel = ...,  # type: ignore[assignment]
+    name_override: str | None | _Sentinel = ...,  # type: ignore[assignment]
+    asset_class_override: str | None | _Sentinel = ...,  # type: ignore[assignment]
+    expense_ratio_override: "Decimal | None | _Sentinel" = ...,  # type: ignore[assignment]
 ) -> InstrumentOverride:
     """Insert-or-update the override for ``instrument_id``.
 
     Sentinel-default kwargs: omit a field to leave it untouched (or
-    keep its default on insert). Pass ``category=None`` to explicitly
-    clear the category.
+    keep its default on insert). Pass ``category=None`` (etc.) to
+    explicitly clear a value. The three v2.2 display-override fields
+    (``name_override`` / ``asset_class_override`` /
+    ``expense_ratio_override``) follow the same semantics.
     """
     ov = session.get(InstrumentOverride, instrument_id)
     if ov is None:
@@ -84,6 +90,13 @@ def upsert(
             instrument_id=instrument_id,
             category=category if category is not ... else None,
             active=active if active is not ... else True,
+            name_override=name_override if name_override is not ... else None,
+            asset_class_override=(
+                asset_class_override if asset_class_override is not ... else None
+            ),
+            expense_ratio_override=(
+                expense_ratio_override if expense_ratio_override is not ... else None
+            ),
         )
         session.add(ov)
     else:
@@ -91,6 +104,12 @@ def upsert(
             ov.category = category  # type: ignore[assignment]
         if active is not ...:
             ov.active = bool(active)
+        if name_override is not ...:
+            ov.name_override = name_override  # type: ignore[assignment]
+        if asset_class_override is not ...:
+            ov.asset_class_override = asset_class_override  # type: ignore[assignment]
+        if expense_ratio_override is not ...:
+            ov.expense_ratio_override = expense_ratio_override  # type: ignore[assignment]
     session.flush()
     return ov
 

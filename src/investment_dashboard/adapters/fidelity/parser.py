@@ -147,6 +147,8 @@ def parse_fidelity_csv(content: str) -> Iterable[ParsedTransactionRow]:
                 description=row.get("description") or row.get("action"),
                 external_id=external_id,
                 source="import_fidelity_csv",
+                name=(row.get("security description") or row.get("description") or "").strip()
+                or None,
             )
         )
     return results

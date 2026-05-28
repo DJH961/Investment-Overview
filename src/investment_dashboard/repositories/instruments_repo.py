@@ -41,17 +41,18 @@ def get_or_create(
     *,
     symbol: str,
     name: str | None = None,
-    asset_class: str = "etf",
+    asset_class: str = "unknown",
     native_currency: str = "USD",
     expense_ratio: Decimal | None = None,
 ) -> Instrument:
     """Return existing instrument by symbol, or create a minimal stub.
 
-    Used by CSV importers when they encounter an unknown symbol — the
-    user can later fill in ``name``, ``expense_ratio``, etc. from
-    ``/settings``. ``category`` is no longer accepted here; if the
-    caller knows the grouping label, write it via
-    ``instrument_overrides_repo.set_category`` after the row exists.
+    Used by CSV importers when they encounter an unknown symbol. The
+    default ``asset_class`` is ``"unknown"`` (v2.2 phase (b)) so the
+    enrichment service can decide the real taxonomy from
+    yfinance's ``quoteType`` — the v2.1 behaviour of hard-coding
+    ``"etf"`` mis-classified every stock, mutual fund, and index that
+    came in via a CSV.
     """
     existing = get_by_symbol(session, symbol)
     if existing is not None:

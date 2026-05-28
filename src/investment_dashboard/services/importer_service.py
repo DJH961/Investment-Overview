@@ -28,10 +28,9 @@ from investment_dashboard.adapters.vanguard.xlsx_parser import parse_vanguard_xl
 from investment_dashboard.models import Transaction
 from investment_dashboard.repositories import (
     accounts_repo,
-    instruments_repo,
     transactions_repo,
 )
-from investment_dashboard.services import fx_service
+from investment_dashboard.services import fx_service, instrument_enrichment_service
 
 log = logging.getLogger(__name__)
 
@@ -116,14 +115,18 @@ def import_csv(
     inserted = 0
     duplicates = 0
     for prow in parsed_rows:
-        # Resolve symbol → instrument.
+        # Resolve symbol → instrument, enriching as needed (yfinance
+        # call is best-effort and cached per-process).
         instrument_id: int | None = None
         if prow.symbol:
-            instr = instruments_repo.get_or_create(
+            instr = instrument_enrichment_service.ensure_instrument(
                 session,
                 symbol=prow.symbol,
-                native_currency=account.native_currency,
-                asset_class="etf",
+                fallback_native_currency=account.native_currency,
+                parsed_name=prow.name,
+                parsed_asset_class=prow.asset_class,
+                parsed_native_currency=prow.native_currency,
+                parsed_expense_ratio=prow.expense_ratio,
             )
             instrument_id = instr.id
 
