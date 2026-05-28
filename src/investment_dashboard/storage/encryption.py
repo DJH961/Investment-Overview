@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from importlib import import_module
 from importlib import util as importlib_util
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -94,7 +95,7 @@ def store_passphrase_in_keyring(passphrase: str) -> bool:
         return False
 
 
-def _sqlcipher_dbapi(driver: str):
+def _sqlcipher_dbapi(driver: str) -> ModuleType:
     if driver in {"pysqlcipher3", "sqlcipher3"}:
         return import_module(f"{driver}.dbapi2")
     raise EncryptionUnavailableError(f"unsupported SQLCipher driver: {driver!r}")
