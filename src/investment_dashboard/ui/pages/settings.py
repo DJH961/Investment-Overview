@@ -483,6 +483,41 @@ def _render_allocations_section(allocations: list) -> None:  # pragma: no cover 
                     ).props("flat dense no-caps")
 
 
+def _render_storage_section() -> None:  # pragma: no cover - UI
+    """Storage panel: show resolved tier paths and where each came from."""
+    from investment_dashboard.boot import is_read_only  # noqa: PLC0415
+    from investment_dashboard.config import get_settings  # noqa: PLC0415
+    from investment_dashboard.db import get_active_encryption  # noqa: PLC0415
+    from investment_dashboard.storage import resolve_storage_layout  # noqa: PLC0415
+    from investment_dashboard.storage.cloud import path_is_in_cloud_folder  # noqa: PLC0415
+
+    settings = get_settings()
+    layout = resolve_storage_layout()
+    encryption = get_active_encryption()
+    rows = [
+        ("Ledger", layout.ledger),
+        ("Config", layout.config),
+        ("Cache", layout.cache),
+    ]
+    with ui.column().classes("gap-2"):
+        if is_read_only():
+            ui.label("Read-only mode — another instance holds the writer lock.").classes(
+                "text-warning"
+            )
+        ui.label(
+            f"Encryption: {'enabled (' + (encryption.driver or '') + ')' if encryption.enabled else 'disabled'}"
+        )
+        for label, resolved in rows:
+            cloud = path_is_in_cloud_folder(resolved.path) if resolved.path else None
+            line = (
+                f"{label}: {resolved.path}  "
+                f"(source: {resolved.source.value}"
+                f"{', cloud: ' + cloud.provider if cloud else ''})"
+            )
+            ui.label(line).classes("font-mono text-caption")
+        ui.label(f"Configured ledger: {settings.ledger_path}").classes("text-caption text-grey")
+
+
 def register() -> None:
     @ui.page(PATH)
     def _settings() -> None:  # pragma: no cover
@@ -499,6 +534,8 @@ def register() -> None:
 
             with section("Display preferences"):
                 _render_display_prefs(current_currency)
+            with section("Storage"):
+                _render_storage_section()
             with section("Data refresh"):
                 _render_data_refresh()
             with section("Accounts"):

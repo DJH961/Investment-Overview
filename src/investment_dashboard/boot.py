@@ -1,12 +1,25 @@
 """Boot sequence — runs once per app start before NiceGUI listens.
 
-Steps (spec §13):
-1. Apply Alembic migrations (idempotent).
-2. Register the colorblind Plotly template.
-3. Best-effort FX refresh.
-4. Best-effort market-price refresh for tracked instruments.
+Steps (spec §13 + v2.0 plan phases 3-5):
+1. Resolve the cloud-aware storage layout and persist it onto
+   ``Settings`` so engines created later see the right paths.
+2. Resolve encryption (Phase 4): if the user enabled it, fetch the
+   passphrase from the OS keychain (or env override) and wire it onto
+   the engine factory. Boot fails fast with a clear message when the
+   SQLCipher driver is missing.
+3. Refuse to open if stray ``-wal`` / ``-shm`` sidecars sit next to a
+   cloud-located file (Phase 5).
+4. Acquire the single-writer file lock (Phase 5). On failure boot
+   continues in read-only mode.
+5. Integrity-check ledger and config tiers (Phase 5).
+6. Take an on-boot rolling backup of ledger + config (Phase 5).
+7. Apply Alembic migrations (idempotent).
+8. Register the colorblind Plotly template.
+9. Cache-orphan janitor.
+10. Best-effort FX refresh.
+11. Best-effort market-price refresh for tracked instruments.
 
-Steps 3 and 4 are best-effort: they log a warning if the network is
+Steps 10/11 are best-effort: they log a warning if the network is
 unavailable and let the app start anyway, so the UI is usable offline.
 """
 
@@ -25,6 +38,151 @@ log = logging.getLogger(__name__)
 #: short because the heavy lifting happens on first ingest; subsequent
 #: boots only need to catch up the gap since last run.
 _BOOT_BACKFILL_DAYS = 14
+
+#: Set to ``True`` by ``_acquire_writer_lock`` when the lock was held by
+#: another process; UI code can consult :func:`is_read_only` to suppress
+#: write buttons.
+_boot_state: dict[str, object] = {"read_only": False, "held_lock": None}
+
+
+def is_read_only() -> bool:
+    """True when this boot lost the writer-lock race."""
+    return bool(_boot_state["read_only"])
+
+
+def _load_persisted_overrides() -> dict[str, str]:
+    """Read ``ledger_path`` / ``config_path`` from the config tier.
+
+    The lookup tolerates a missing/uninitialised config DB (first
+    boot, or a freshly split layout).
+    """
+    try:
+        from sqlalchemy import create_engine, text  # noqa: PLC0415
+
+        from investment_dashboard.config import get_settings as _gs  # noqa: PLC0415
+
+        settings = _gs()
+        config_url = settings.config_url
+        eng = create_engine(config_url, future=True)
+        with eng.connect() as conn:
+            row = conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' AND name='app_config'")
+            ).fetchone()
+            if row is None:
+                return {}
+            res = conn.execute(text("SELECT key, value FROM app_config")).fetchall()
+        eng.dispose()
+        return {k: v for k, v in res if v and k in {"ledger_path", "config_path"}}
+    except Exception:
+        log.debug("could not read persisted path overrides", exc_info=True)
+        return {}
+
+
+def _apply_resolved_layout() -> None:
+    """Resolve cloud-aware paths and stamp them on the active Settings."""
+    settings = get_settings()
+    # When the legacy single-file env var is set we keep the existing
+    # behaviour (all three tiers point at the same file) so existing
+    # installs continue to work unchanged.
+    import os  # noqa: PLC0415
+
+    if os.environ.get("INV_DASHBOARD_DB_PATH"):
+        return
+    persisted = _load_persisted_overrides()
+    layout = settings.storage_layout(config_overrides=persisted)
+    object.__setattr__(settings, "ledger_path", layout.ledger.path)
+    object.__setattr__(settings, "config_path", layout.config.path)
+    object.__setattr__(settings, "cache_path", layout.cache.path)
+    log.info(
+        "storage layout: ledger=%s (%s), config=%s (%s), cache=%s (%s)",
+        layout.ledger.path,
+        layout.ledger.source.value,
+        layout.config.path,
+        layout.config.source.value,
+        layout.cache.path,
+        layout.cache.source.value,
+    )
+
+
+def _apply_encryption() -> None:
+    from investment_dashboard.db import set_active_encryption  # noqa: PLC0415
+    from investment_dashboard.storage.encryption import resolve_encryption  # noqa: PLC0415
+
+    settings = get_settings()
+    cfg = resolve_encryption(
+        encrypt_synced_tiers=settings.encrypt_synced_tiers,
+        env_passphrase=settings.db_passphrase,
+    )
+    set_active_encryption(cfg)
+    if cfg.enabled:
+        log.info("encryption enabled (driver=%s)", cfg.driver)
+
+
+def _check_sidecars() -> None:
+    from investment_dashboard.storage.sidecar import assert_no_sidecars_in_cloud  # noqa: PLC0415
+
+    settings = get_settings()
+    paths = [settings.ledger_path, settings.config_path]
+    paths = [p for p in paths if p is not None and p.as_posix() != ":memory:"]
+    assert_no_sidecars_in_cloud(paths)
+
+
+def _acquire_writer_lock() -> None:
+    from investment_dashboard.storage.lock import (  # noqa: PLC0415
+        WriteLockError,
+        acquire_write_lock,
+    )
+
+    settings = get_settings()
+    ledger = settings.ledger_path
+    if ledger is None or ledger.as_posix() == ":memory:":
+        return
+    try:
+        _boot_state["held_lock"] = acquire_write_lock(ledger)
+    except WriteLockError:
+        log.warning("writer lock held by another instance; continuing in read-only mode")
+        _boot_state["read_only"] = True
+
+
+def _integrity_check_tiers() -> None:
+    from investment_dashboard.storage.integrity import (  # noqa: PLC0415
+        IntegrityCheckFailed,
+        integrity_check,
+    )
+
+    settings = get_settings()
+    for label, path in (
+        ("ledger", settings.ledger_path),
+        ("config", settings.config_path),
+    ):
+        if path is None or path.as_posix() == ":memory:":
+            continue
+        try:
+            result = integrity_check(path)
+            if result == "missing":
+                continue
+            log.info("integrity check passed for %s (%s)", label, path)
+        except IntegrityCheckFailed:
+            log.error("integrity check FAILED for %s at %s", label, path, exc_info=True)
+            raise
+
+
+def _rolling_backup() -> None:
+    from investment_dashboard.storage.backup import snapshot  # noqa: PLC0415
+
+    settings = get_settings()
+    for label, path in (
+        ("ledger", settings.ledger_path),
+        ("config", settings.config_path),
+    ):
+        if path is None or path.as_posix() == ":memory:":
+            continue
+        try:
+            out = snapshot(path)
+            if out is not None:
+                log.info("backup written: %s -> %s", label, out)
+        except Exception:
+            log.warning("backup failed for %s", label, exc_info=True)
 
 
 def _run_migrations() -> None:
@@ -121,6 +279,12 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
         skip_network: if ``True``, skip FX/price refresh (useful for tests
             and offline development).
     """
+    _apply_resolved_layout()
+    _apply_encryption()
+    _check_sidecars()
+    _acquire_writer_lock()
+    _integrity_check_tiers()
+    _rolling_backup()
     _run_migrations()
     register_plotly_template()
     _run_cache_janitor()

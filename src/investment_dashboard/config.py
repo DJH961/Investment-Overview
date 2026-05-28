@@ -56,6 +56,15 @@ class Settings(BaseSettings):
     port: int = 8080
     log_level: str = "INFO"
 
+    #: Encryption passphrase for the ledger/config tiers. Normally
+    #: ``None`` (driver fetches it from the OS keyring); set via the
+    #: ``INV_DASHBOARD_DB_PASSPHRASE`` env var for CI/test only.
+    db_passphrase: str | None = None
+    #: When ``True``, the ledger and config tiers are expected to be
+    #: SQLCipher-encrypted (``sqlite+pysqlcipher://``). Without the
+    #: driver installed, boot fails fast with a clear message.
+    encrypt_synced_tiers: bool = False
+
     @field_validator("log_level")
     @classmethod
     def _upper(cls, v: str) -> str:
@@ -73,6 +82,23 @@ class Settings(BaseSettings):
         if self.cache_path is None:
             object.__setattr__(self, "cache_path", self.db_path)
         return self
+
+    def storage_layout(
+        self,
+        *,
+        config_overrides: dict[str, str] | None = None,
+        detect_cloud: bool = True,
+    ):
+        """Return the cloud-aware :class:`StorageLayout` for this run.
+
+        See :mod:`investment_dashboard.storage.paths` for resolution
+        rules. ``Settings`` itself remains the back-compat surface;
+        ``boot.apply_resolved_layout()`` mutates the active settings
+        instance with the resolved paths before any engine is created.
+        """
+        from investment_dashboard.storage import resolve_storage_layout  # noqa: PLC0415
+
+        return resolve_storage_layout(config_overrides=config_overrides, detect_cloud=detect_cloud)
 
     @staticmethod
     def _to_url(path: Path) -> str:

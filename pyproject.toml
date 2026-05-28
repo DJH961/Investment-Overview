@@ -43,9 +43,19 @@ dev = [
     "pre-commit>=3.7",
     "types-python-dateutil",
 ]
+encrypted = [
+    # SQLCipher Python binding. ``pysqlcipher3`` is the primary;
+    # ``sqlcipher3-binary`` is the documented fallback when the upstream
+    # wheel isn't available on the user's platform.
+    "pysqlcipher3>=1.2 ; sys_platform != 'win32'",
+    "keyring>=24.0",
+]
 
 [project.scripts]
 investment-dashboard = "investment_dashboard.main:run"
+inv-dashboard-split-db = "investment_dashboard.tools.split_db:main"
+inv-dashboard-repair-sidecar = "investment_dashboard.tools.repair_sidecar:main"
+inv-dashboard-backup = "investment_dashboard.tools.backup:main"
 
 [build-system]
 requires = ["hatchling>=1.24"]

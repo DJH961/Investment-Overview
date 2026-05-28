@@ -28,12 +28,41 @@ from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from investment_dashboard.config import get_settings
+from investment_dashboard.storage.encryption import EncryptionConfig
+from investment_dashboard.storage.sidecar import should_use_truncate_journal
 
 
 def _ensure_parent(path: Path) -> None:
     if path.as_posix() == ":memory:":
         return
     path.parent.mkdir(parents=True, exist_ok=True)
+
+
+# Encryption config applied to subsequently-created engines. Boot sets
+# this once after resolving the keyring/env passphrase. Tests can leave
+# it at the default disabled value. Kept inside a dict so we don't
+# need the `global` keyword on the setter.
+_engine_state: dict[str, EncryptionConfig] = {"encryption": EncryptionConfig(enabled=False)}
+
+
+def set_active_encryption(config: EncryptionConfig) -> None:
+    """Configure encryption applied to future engines."""
+    _engine_state["encryption"] = config
+
+
+def get_active_encryption() -> EncryptionConfig:
+    return _engine_state["encryption"]
+
+
+def _url_path(url: str) -> Path | None:
+    """Best-effort extract the on-disk path from a sqlite URL."""
+    for prefix in ("sqlite+pysqlcipher:///", "sqlite:///"):
+        if url.startswith(prefix):
+            tail = url[len(prefix) :]
+            if tail == ":memory:":
+                return None
+            return Path(tail)
+    return None
 
 
 def make_engine(url: str | None = None) -> Engine:
@@ -46,18 +75,27 @@ def make_engine(url: str | None = None) -> Engine:
         url,
         future=True,
         echo=False,
-        connect_args={"check_same_thread": False} if url.startswith("sqlite") else {},
+        connect_args={"check_same_thread": False} if "sqlite" in url else {},
     )
     if url.startswith("sqlite"):
-        _install_sqlite_pragmas(engine)
+        _install_sqlite_pragmas(engine, _url_path(url))
     return engine
 
 
-def _install_sqlite_pragmas(engine: Engine) -> None:
+def _install_sqlite_pragmas(engine: Engine, db_path: Path | None) -> None:
+    encryption = _engine_state["encryption"]
+    use_truncate = db_path is not None and should_use_truncate_journal(db_path)
+
     @event.listens_for(engine, "connect")
     def _set_sqlite_pragmas(dbapi_conn: Any, _conn_record: Any) -> None:
         cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
+        # Encryption key MUST be the first statement on the connection.
+        if encryption.enabled and encryption.passphrase is not None:
+            cursor.execute(f"PRAGMA key = '{encryption.passphrase}'")
+        if use_truncate:
+            cursor.execute("PRAGMA journal_mode=TRUNCATE")
+        else:
+            cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.close()
