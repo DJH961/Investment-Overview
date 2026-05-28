@@ -181,3 +181,74 @@ def test_yfinance_logger_silenced_on_import() -> None:
     import logging as _logging
 
     assert _logging.getLogger("yfinance").level >= _logging.CRITICAL
+
+
+def test_fetch_closes_records_ok_status() -> None:
+    from investment_dashboard.services import provider_status
+
+    provider_status.reset()
+
+    def fake_download(**_: Any) -> pd.DataFrame:
+        return _single_symbol_frame()
+
+    fetch_closes(["VTI"], date(2024, 1, 2), date(2024, 1, 4), downloader=fake_download)
+
+    event = provider_status.get_status("yfinance")
+    assert event is not None
+    assert event.status == "ok"
+    assert "1 symbol" in event.message
+    provider_status.reset()
+
+
+def test_fetch_closes_records_partial_status() -> None:
+    from investment_dashboard.services import provider_status
+
+    provider_status.reset()
+
+    def fake_download(**_: Any) -> pd.DataFrame:
+        # Only VTI present; MISSING absent — even after the fallback retry.
+        idx = pd.to_datetime(["2024-01-02"])
+        cols = pd.MultiIndex.from_tuples([("VTI", "Close")])
+        return pd.DataFrame([[240.10]], index=idx, columns=cols)
+
+    fetch_closes(["VTI", "MISSING"], date(2024, 1, 2), date(2024, 1, 5), downloader=fake_download)
+
+    event = provider_status.get_status("yfinance")
+    assert event is not None
+    assert event.status == "partial"
+    assert "MISSING" in event.message
+    provider_status.reset()
+
+
+def test_fetch_closes_records_error_on_full_failure() -> None:
+    from investment_dashboard.services import provider_status
+
+    provider_status.reset()
+
+    def fake_download(**_: Any) -> pd.DataFrame:
+        return pd.DataFrame()
+
+    fetch_closes(["VTI", "VOO"], date(2024, 1, 2), date(2024, 1, 5), downloader=fake_download)
+
+    event = provider_status.get_status("yfinance")
+    assert event is not None
+    assert event.status == "error"
+    provider_status.reset()
+
+
+def test_fetch_closes_records_error_on_download_exception() -> None:
+    from investment_dashboard.services import provider_status
+
+    provider_status.reset()
+
+    def boom(**_: Any) -> pd.DataFrame:
+        raise RuntimeError("yfinance down")
+
+    with pytest.raises(YFinanceError):
+        fetch_closes(["VTI"], date(2024, 1, 2), date(2024, 1, 5), downloader=boom)
+
+    event = provider_status.get_status("yfinance")
+    assert event is not None
+    assert event.status == "error"
+    assert "yfinance down" in event.message
+    provider_status.reset()

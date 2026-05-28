@@ -20,6 +20,23 @@ import yfinance as yf
 
 log = logging.getLogger(__name__)
 
+_PROVIDER = "yfinance"
+
+
+def _record_status(status: str, message: str) -> None:
+    """Lazy wrapper around provider_status.record to avoid a circular import.
+
+    ``services/__init__.py`` eagerly imports ``prices_service`` which imports
+    this adapter; importing ``services.provider_status`` at module load time
+    would re-enter the half-initialised ``services`` package. Importing inside
+    the function avoids that and the lookup cost is negligible compared to a
+    network round-trip.
+    """
+    from investment_dashboard.services.provider_status import record  # noqa: PLC0415
+
+    record(_PROVIDER, status, message)  # type: ignore[arg-type]  # str→Literal narrowing
+
+
 # yfinance prints one ERROR-level line per symbol on its own logger whenever a
 # download returns no rows ("$XXX: possibly delisted; no price data found ...")
 # plus a noisy summary block. That fires constantly during US trading hours
@@ -80,7 +97,14 @@ def fetch_closes(
 
     download = downloader or yf.download
 
-    result = _download_window(download, symbols, start, end)
+    try:
+        result = _download_window(download, symbols, start, end)
+    except YFinanceError as exc:
+        _record_status(
+            "error",
+            f"Download failed for {len(symbols)} symbol(s): {exc}",
+        )
+        raise
 
     # If any symbol came back empty (typical for "today" requests during
     # trading hours, or for tickers yfinance just briefly hiccupped on),
@@ -88,6 +112,7 @@ def fetch_closes(
     # gets the most recent available close instead of nothing. Skip the
     # retry if the original window was already wider than the fallback.
     missing = [s for s in symbols if not result.get(s)]
+    used_fallback = False
     if missing:
         fallback_start = end - timedelta(days=_FALLBACK_LOOKBACK_DAYS)
         if fallback_start < start:
@@ -98,10 +123,37 @@ def fetch_closes(
                 end,
                 fallback_start,
             )
-            fallback = _download_window(download, missing, fallback_start, end)
+            try:
+                fallback = _download_window(download, missing, fallback_start, end)
+            except YFinanceError as exc:
+                _record_status(
+                    "error",
+                    f"Fallback download failed for {missing}: {exc}",
+                )
+                raise
+            used_fallback = True
             for symbol, closes in fallback.items():
                 if closes:
                     result[symbol] = closes
+
+    still_missing = [s for s in symbols if not result.get(s)]
+    if not still_missing:
+        msg = f"Fetched {len(symbols)} symbol(s) for {start}..{end}"
+        if used_fallback:
+            msg += " (last-close fallback used)"
+        _record_status("ok", msg)
+    elif len(still_missing) == len(symbols):
+        _record_status(
+            "error",
+            f"No data returned for any of {len(symbols)} symbol(s); "
+            f"first missing: {still_missing[:5]}",
+        )
+    else:
+        _record_status(
+            "partial",
+            f"{len(symbols) - len(still_missing)}/{len(symbols)} symbol(s) returned data; "
+            f"missing: {still_missing[:5]}" + ("…" if len(still_missing) > 5 else ""),
+        )
 
     return result
 
