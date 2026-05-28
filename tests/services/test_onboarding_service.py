@@ -18,7 +18,7 @@ def test_seed_creates_defaults(session: Session) -> None:
     assert result.instruments_created == len(onboarding_service.DEFAULT_INSTRUMENTS)
     assert onboarding_service.is_onboarded(session) is True
     accounts = list(accounts_repo.list_accounts(session))
-    instruments = list(instruments_repo.list_instruments(session, only_active=False))
+    instruments = list(instruments_repo.list_instruments(session))
     assert len(accounts) == len(onboarding_service.DEFAULT_ACCOUNTS)
     assert len(instruments) == len(onboarding_service.DEFAULT_INSTRUMENTS)
 

@@ -20,6 +20,7 @@ from investment_dashboard.models import (
 )
 from investment_dashboard.repositories import (
     accounts_repo,
+    instrument_overrides_repo,
     instruments_repo,
     transactions_repo,
 )
@@ -40,6 +41,10 @@ class Position:
     current_value_native: Decimal
     current_value_eur: Decimal
     cumulative_dividends_cash_native: Decimal
+    #: User-tier annotations composed from the config-tier
+    #: ``instrument_overrides`` table. Default to "no category" / "active".
+    category: str | None = None
+    instrument_active: bool = True
 
 
 def compute_positions(session: Session, *, as_of: date | None = None) -> list[Position]:  # noqa: PLR0912
@@ -80,9 +85,8 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
             agg["shares"] += qty
 
     accounts_by_id = {a.id: a for a in accounts_repo.list_accounts(session)}
-    instruments_by_id = {
-        i.id: i for i in instruments_repo.list_instruments(session, only_active=False)
-    }
+    instruments_by_id = {i.id: i for i in instruments_repo.list_instruments(session)}
+    overrides = instrument_overrides_repo.get_override_map(session, instruments_by_id.keys())
 
     fx_rate_today = fx_service.get_rate_eur_to_quote(session, as_of) or Decimal(1)
 
@@ -113,6 +117,8 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
                 current_value_native=current_value_native,
                 current_value_eur=current_value_eur,
                 cumulative_dividends_cash_native=agg["dividends_cash"],
+                category=(overrides[instr.id].category if instr.id in overrides else None),
+                instrument_active=(overrides[instr.id].active if instr.id in overrides else True),
             )
         )
     results.sort(key=lambda p: (p.account.broker, p.instrument.symbol))

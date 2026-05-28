@@ -1,4 +1,12 @@
-"""Instrument repository — CRUD against the ``instruments`` table."""
+"""Instrument repository — CRUD against the ledger-tier ``instruments`` table.
+
+The user-tier annotations (``category``, ``active``) live in
+``instrument_overrides`` on the config tier and are written through
+:mod:`investment_dashboard.repositories.instrument_overrides_repo`.
+This module deliberately does not touch them — keeping the ledger-tier
+repo unaware of the override surface means callers can never
+accidentally write an override through a ledger session.
+"""
 
 from __future__ import annotations
 
@@ -11,10 +19,15 @@ from sqlalchemy.orm import Session
 from investment_dashboard.models import Instrument
 
 
-def list_instruments(session: Session, *, only_active: bool = True) -> Sequence[Instrument]:
+def list_instruments(session: Session) -> Sequence[Instrument]:
+    """Return every instrument, ordered by symbol.
+
+    The ``active`` filter previously offered by this function moved to
+    the config tier; callers that want only the user-active rows
+    compose with ``instrument_overrides_repo.inactive_ids(config_session)``
+    and skip those ids in Python. See e.g. ``prices_service``.
+    """
     stmt = select(Instrument).order_by(Instrument.symbol)
-    if only_active:
-        stmt = stmt.where(Instrument.active.is_(True))
     return session.scalars(stmt).all()
 
 
@@ -30,13 +43,15 @@ def get_or_create(
     name: str | None = None,
     asset_class: str = "etf",
     native_currency: str = "USD",
-    category: str | None = None,
     expense_ratio: Decimal | None = None,
 ) -> Instrument:
     """Return existing instrument by symbol, or create a minimal stub.
 
-    Used by CSV importers when they encounter an unknown symbol — the user
-    can later fill in ``name``, ``category``, etc. from ``/settings``.
+    Used by CSV importers when they encounter an unknown symbol — the
+    user can later fill in ``name``, ``expense_ratio``, etc. from
+    ``/settings``. ``category`` is no longer accepted here; if the
+    caller knows the grouping label, write it via
+    ``instrument_overrides_repo.set_category`` after the row exists.
     """
     existing = get_by_symbol(session, symbol)
     if existing is not None:
@@ -46,9 +61,7 @@ def get_or_create(
         name=name,
         asset_class=asset_class,
         native_currency=native_currency.upper(),
-        category=category,
         expense_ratio=expense_ratio,
-        active=True,
     )
     session.add(instr)
     session.flush()
@@ -60,15 +73,15 @@ def update_instrument(
     instrument_id: int,
     *,
     name: str | None = None,
-    category: str | None = None,
     asset_class: str | None = None,
     expense_ratio: Decimal | None = None,
-    active: bool | None = None,
 ) -> Instrument:
-    """Update mutable display/classification fields on an instrument.
+    """Update mutable ledger-tier fields on an instrument.
 
     ``symbol`` and ``native_currency`` are intentionally not mutable —
-    they're foreign-keyed by price history and ledger entries.
+    they're loose-referenced by price history and ledger entries.
+    ``category`` and ``active`` are config-tier and live in
+    ``instrument_overrides``; this function does not accept them.
     Raises ``ValueError`` if ``instrument_id`` does not exist.
     """
     instr = session.get(Instrument, instrument_id)
@@ -76,13 +89,9 @@ def update_instrument(
         raise ValueError(f"Instrument {instrument_id} not found")
     if name is not None:
         instr.name = name
-    if category is not None:
-        instr.category = category
     if asset_class is not None:
         instr.asset_class = asset_class
     if expense_ratio is not None:
         instr.expense_ratio = expense_ratio
-    if active is not None:
-        instr.active = active
     session.flush()
     return instr

@@ -26,6 +26,7 @@ from investment_dashboard.models.transaction import TransactionSource
 EXPECTED_TABLES = {
     "accounts",
     "instruments",
+    "instrument_overrides",
     "transactions",
     "price_history",
     "fx_history",
@@ -60,7 +61,6 @@ def test_account_transaction_roundtrip(session: Session) -> None:
         symbol="VTI",
         name="Vanguard Total Stock Market ETF",
         asset_class="etf",
-        category="Total US",
         native_currency="USD",
     )
     session.add_all([account, instrument])

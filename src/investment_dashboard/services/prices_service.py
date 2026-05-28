@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.adapters.yfinance_client import YFinanceError, fetch_closes
 from investment_dashboard.models import Instrument
 from investment_dashboard.repositories import (
+    instrument_overrides_repo,
     instruments_repo,
     price_cache_repo,
     prices_repo,
@@ -51,11 +52,14 @@ def refresh_prices(
     today = today or date.today()
     result: dict[str, int] = {}
 
-    instruments = instruments_repo.list_instruments(session, only_active=True)
+    instruments = instruments_repo.list_instruments(session)
+    inactive = instrument_overrides_repo.inactive_ids(session)
     symbols_to_fetch: list[str] = []
     earliest_per_symbol: dict[str, date] = {}
     for instr in instruments:
         if instr.asset_class in _SYNTHETIC_ASSET_CLASSES:
+            continue
+        if instr.id in inactive:
             continue
         latest = prices_repo.latest_price_date(session, instr.id)
         start = (
@@ -115,8 +119,11 @@ def instruments_due_for_refresh(
     """
     now = now or datetime.now(UTC).replace(tzinfo=None)
     due: list[Instrument] = []
-    for instr in instruments_repo.list_instruments(session, only_active=True):
+    inactive = instrument_overrides_repo.inactive_ids(session)
+    for instr in instruments_repo.list_instruments(session):
         if instr.asset_class in _SYNTHETIC_ASSET_CLASSES:
+            continue
+        if instr.id in inactive:
             continue
         last = price_cache_repo.get_last_refreshed_at(session, instr.id)
         if last is None or (now - last).total_seconds() >= _ttl_for(instr):

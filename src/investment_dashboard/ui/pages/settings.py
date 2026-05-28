@@ -21,6 +21,7 @@ from investment_dashboard.db import session_scope
 from investment_dashboard.repositories import (
     accounts_repo,
     allocations_repo,
+    instrument_overrides_repo,
     instruments_repo,
 )
 from investment_dashboard.services import display_currency_service
@@ -199,15 +200,17 @@ def _add_instrument_dialog() -> None:  # pragma: no cover - UI
                     if instruments_repo.get_by_symbol(session, sym) is not None:
                         ui.notify(f"Instrument {sym} already exists", type="warning")
                         return
-                    instruments_repo.get_or_create(
+                    created = instruments_repo.get_or_create(
                         session,
                         symbol=sym,
                         name=(name_in.value or "").strip() or None,
                         asset_class=asset_class_in.value,
                         native_currency=currency_in.value,
-                        category=(category_in.value or "").strip() or None,
                         expense_ratio=expense,
                     )
+                    category = (category_in.value or "").strip() or None
+                    if category is not None:
+                        instrument_overrides_repo.set_category(session, created.id, category)
             except Exception as exc:
                 log.exception("Instrument create failed")
                 ui.notify(f"Create failed: {exc}", type="negative")
@@ -224,7 +227,7 @@ def _add_instrument_dialog() -> None:  # pragma: no cover - UI
 
 def _add_allocation_dialog() -> None:  # pragma: no cover - UI
     with session_scope() as session:
-        instruments = list(instruments_repo.list_instruments(session, only_active=False))
+        instruments = list(instruments_repo.list_instruments(session))
 
     with ui.dialog() as dialog, ui.card().classes("min-w-[32rem]"):
         ui.label("Create target allocation").classes("text-h6")
@@ -326,9 +329,13 @@ def _edit_instrument_dialog(
                         session,
                         instrument_id,
                         name=name_input.value.strip() or None,
-                        category=category_input.value.strip() or None,
                         asset_class=asset_class_input.value.strip() or None,
                         expense_ratio=expense_ratio,
+                    )
+                    instrument_overrides_repo.upsert(
+                        session,
+                        instrument_id,
+                        category=category_input.value.strip() or None,
                         active=bool(active_input.value),
                     )
                 ui.notify("Instrument updated", type="positive")
@@ -414,7 +421,10 @@ def _render_accounts_section(accounts: list) -> None:  # pragma: no cover - UI
                 ).props("flat dense no-caps")
 
 
-def _render_instruments_section(instruments: list) -> None:  # pragma: no cover - UI
+def _render_instruments_section(
+    instruments: list,
+    overrides: dict[int, object],
+) -> None:  # pragma: no cover - UI
     with ui.row().classes("items-center w-full"):
         ui.space()
         ui.button("Add instrument", icon="add", on_click=_add_instrument_dialog).props(
@@ -424,23 +434,28 @@ def _render_instruments_section(instruments: list) -> None:  # pragma: no cover 
         if not instruments:
             ui.label("No instruments yet.").classes("text-caption opacity-70")
         for i in instruments:
+            ov = overrides.get(i.id)
+            category = ov.category if ov is not None else None
+            active = ov.active if ov is not None else True
             with ui.row().classes("items-center gap-md w-full"):
                 ui.label(f"{i.symbol} · {i.name or ''}").classes("text-body1")
                 expense_lbl = f" · ER {i.expense_ratio}" if i.expense_ratio is not None else ""
                 ui.label(
-                    f"{i.asset_class} · {i.category or '—'}{expense_lbl}"
-                    f"{'' if i.active else ' · inactive'}"
+                    f"{i.asset_class} · {category or '—'}{expense_lbl}"
+                    f"{'' if active else ' · inactive'}"
                 ).classes("text-caption opacity-70")
                 ui.space()
                 ui.button(
                     "Edit",
-                    on_click=lambda _, i=i: _edit_instrument_dialog(
-                        i.id,
-                        i.name or "",
-                        i.category or "",
-                        i.asset_class,
-                        str(i.expense_ratio) if i.expense_ratio is not None else "",
-                        i.active,
+                    on_click=lambda _, i=i, category=category, active=active: (
+                        _edit_instrument_dialog(
+                            i.id,
+                            i.name or "",
+                            category or "",
+                            i.asset_class,
+                            str(i.expense_ratio) if i.expense_ratio is not None else "",
+                            active,
+                        )
                     ),
                 ).props("flat dense no-caps")
 
@@ -475,7 +490,10 @@ def register() -> None:
             page_header("Settings", subtitle="Display preferences, data refresh, accounts")
             with session_scope() as session:
                 accounts = list(accounts_repo.list_accounts(session))
-                instruments = list(instruments_repo.list_instruments(session, only_active=False))
+                instruments = list(instruments_repo.list_instruments(session))
+                instrument_overrides = instrument_overrides_repo.get_override_map(
+                    session, [i.id for i in instruments]
+                )
                 allocations = list(allocations_repo.list_allocations(session))
                 current_currency = display_currency_service.get_display_currency(session)
 
@@ -486,6 +504,6 @@ def register() -> None:
             with section("Accounts"):
                 _render_accounts_section(accounts)
             with section("Instruments"):
-                _render_instruments_section(instruments)
+                _render_instruments_section(instruments, instrument_overrides)
             with section("Target allocations"):
                 _render_allocations_section(allocations)

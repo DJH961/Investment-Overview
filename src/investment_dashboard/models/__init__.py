@@ -20,6 +20,7 @@ from investment_dashboard.models.base import (
 )
 from investment_dashboard.models.fx_history import FxHistory
 from investment_dashboard.models.instrument import Instrument
+from investment_dashboard.models.instrument_override import InstrumentOverride
 from investment_dashboard.models.position_snapshot import PositionSnapshot
 from investment_dashboard.models.price_cache_metadata import PriceCacheMetadata
 from investment_dashboard.models.price_history import PriceHistory
@@ -38,6 +39,7 @@ __all__ = [
     "ConfigBase",
     "FxHistory",
     "Instrument",
+    "InstrumentOverride",
     "LedgerBase",
     "PositionSnapshot",
     "PriceCacheMetadata",
