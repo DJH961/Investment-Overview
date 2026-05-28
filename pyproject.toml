@@ -18,6 +18,8 @@ classifiers = [
 
 dependencies = [
     "nicegui>=2.10,<3",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
     "sqlalchemy>=2.0.30",
     "alembic>=1.13",
     "pydantic>=2.7",
@@ -53,6 +55,8 @@ encrypted = [
 
 [project.scripts]
 investment-dashboard = "investment_dashboard.main:run"
+inv-dashboard-api = "investment_dashboard.api.app:run"
+inv-dashboard-export-snapshot = "investment_dashboard.tools.export_snapshot:main"
 inv-dashboard-split-db = "investment_dashboard.tools.split_db:main"
 inv-dashboard-repair-sidecar = "investment_dashboard.tools.repair_sidecar:main"
 inv-dashboard-backup = "investment_dashboard.tools.backup:main"

@@ -79,6 +79,13 @@ def run() -> None:
     )
     run_boot_sequence()
     _register_pages()
+    if settings.api_enabled:
+        from nicegui import app as _fastapi_app  # noqa: PLC0415
+
+        from investment_dashboard.api import mount_api  # noqa: PLC0415
+
+        mount_api(_fastapi_app)
+        log.info("JSON API mounted at /api (token auth %s)", "on" if settings.api_token else "off")
     ui.timer(_LIVE_REFRESH_INTERVAL_SECONDS, _live_refresh_tick)
     ui.run(
         host=settings.host,

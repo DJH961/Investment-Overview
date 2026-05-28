@@ -76,7 +76,5 @@ def build(session: Session, *, context: ReadModelContext | None = None) -> dict[
     return {
         "metrics": _metrics_dict(metrics),
         "positions": [_position_dict(p) for p in positions],
-        "allocation": [
-            {"label": d.label, "value_eur": dec(d.value_eur)} for d in allocation
-        ],
+        "allocation": [{"label": d.label, "value_eur": dec(d.value_eur)} for d in allocation],
     }

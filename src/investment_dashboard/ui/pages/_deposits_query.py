@@ -71,9 +71,7 @@ def _signed_contrib(t: Transaction) -> Decimal:
     return Decimal(0)
 
 
-def list_deposit_records(
-    session: Session, *, account_id: int | None = None
-) -> list[DepositRecord]:
+def list_deposit_records(session: Session, *, account_id: int | None = None) -> list[DepositRecord]:
     """Return raw cash-flow records for the table (newest first)."""
     stmt = (
         select(Transaction)

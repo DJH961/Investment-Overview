@@ -14,7 +14,7 @@ JSON ``null``.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 
@@ -34,4 +34,4 @@ def iso(value: date | None) -> str | None:
 
 def now_utc_iso() -> str:
     """Current UTC timestamp as an ISO-8601 string."""
-    return datetime.now(tz=timezone.utc).isoformat()
+    return datetime.now(tz=UTC).isoformat()

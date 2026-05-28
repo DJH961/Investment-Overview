@@ -54,15 +54,11 @@ def _build(
     return {"rows": [_row_dict(r) for r in rows]}
 
 
-def build_monthly(
-    session: Session, *, context: ReadModelContext | None = None
-) -> dict[str, Any]:
+def build_monthly(session: Session, *, context: ReadModelContext | None = None) -> dict[str, Any]:
     """Return the JSON-serializable monthly read-model."""
     return _build(session, monthly=True, context=context)
 
 
-def build_yearly(
-    session: Session, *, context: ReadModelContext | None = None
-) -> dict[str, Any]:
+def build_yearly(session: Session, *, context: ReadModelContext | None = None) -> dict[str, Any]:
     """Return the JSON-serializable yearly read-model."""
     return _build(session, monthly=False, context=context)

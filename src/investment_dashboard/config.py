@@ -65,6 +65,21 @@ class Settings(BaseSettings):
     #: driver installed, boot fails fast with a clear message.
     encrypt_synced_tiers: bool = False
 
+    #: When ``True``, the read-only JSON API (see
+    #: :mod:`investment_dashboard.api`) is mounted on the NiceGUI server
+    #: under ``/api``. Off by default so the default LAN experience is
+    #: unchanged.
+    api_enabled: bool = False
+    #: Optional bearer token guarding every ``/api`` route. When ``None``
+    #: the API is unauthenticated (acceptable on a trusted LAN); set it
+    #: the moment the server is reachable beyond the LAN (e.g. via a VPN
+    #: or reverse proxy). Compared in constant time.
+    api_token: str | None = None
+    #: Output path for ``inv-dashboard-export-snapshot``. Defaults to a
+    #: ``mobile_snapshot.json`` next to the config tier so it rides the
+    #: same consumer-cloud sync the user already set up.
+    snapshot_path: Path | None = None
+
     @field_validator("log_level")
     @classmethod
     def _upper(cls, v: str) -> str:
@@ -133,6 +148,19 @@ class Settings(BaseSettings):
     def is_split_db(self) -> bool:
         """True when at least one tier points at a distinct file."""
         return not (self.ledger_path == self.config_path == self.cache_path)
+
+    @property
+    def resolved_snapshot_path(self) -> Path:
+        """Where ``inv-dashboard-export-snapshot`` writes by default.
+
+        Uses ``snapshot_path`` when set, otherwise a ``mobile_snapshot.json``
+        beside the config tier so it inherits the user's existing
+        consumer-cloud sync.
+        """
+        if self.snapshot_path is not None:
+            return self.snapshot_path
+        base = self.config_path if self.config_path is not None else self.db_path
+        return base.parent / "mobile_snapshot.json"
 
 
 @lru_cache(maxsize=1)
