@@ -51,7 +51,12 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # UPX must stay disabled: compressing the bundled Windows UCRT/VC runtime
+    # DLLs (notably ``ucrtbase.dll``) causes the PyInstaller bootloader to
+    # extract a corrupt image, producing the "Bad Image" dialog with status
+    # ``0xc0e90002`` on end-user machines. See the issue reported against
+    # ``InvestmentDashboard-Setup.exe``.
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=True,

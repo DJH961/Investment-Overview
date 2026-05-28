@@ -12,6 +12,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.1.1] — 2026-05-28
+
+### Fixed
+- **`InvestmentDashboard-Setup.exe` "Bad Image" crash on launch.** The
+  PyInstaller spec was building the one-file installer with UPX
+  compression enabled (`upx=True`), which mangled the bundled Windows
+  Universal C Runtime DLLs (notably `ucrtbase.dll`). When the
+  bootloader extracted them to the per-run `_MEI…` temp directory,
+  Windows refused to load the corrupt image and aborted with
+  `Error status 0xc0e90002`. UPX is now disabled in
+  `installer/installer.spec` so runtime DLLs are bundled verbatim and
+  the installer launches cleanly on end-user machines.
+
 ## [2.1.0] — 2026-05-28
 
 ### Added
