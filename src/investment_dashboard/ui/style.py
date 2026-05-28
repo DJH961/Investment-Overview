@@ -440,7 +440,14 @@ def install() -> None:
     """
     from nicegui import ui  # noqa: PLC0415 - lazy
 
-    ui.add_head_html(f"<style>{_css()}</style>")
+    # NiceGUI 2.x: ``ui.add_head_html`` defaults to ``shared=False`` which means
+    # the snippet is only attached to the auto-index client, *not* to the per-
+    # page clients created for ``@ui.page`` routes. Without ``shared=True`` the
+    # entire stylesheet below is silently dropped on every real page render,
+    # which makes the dashboard fall back to unstyled Quasar defaults (solid
+    # blue header, borderless KPI tiles, tiny default fonts, etc.) — i.e. the
+    # regression the v1.5 facelift was meant to fix.
+    ui.add_head_html(f"<style>{_css()}</style>", shared=True)
     register_plotly_template()
 
 
