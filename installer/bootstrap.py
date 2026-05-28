@@ -121,23 +121,80 @@ def install_pip(python_root: Path) -> None:
         get_pip.unlink()
 
 
-def install_latest_dashboard(install_root: Path) -> str:
-    """``pip install`` the latest GitHub release. Returns the installed tag.
+def bundled_wheel() -> Path | None:
+    """Return the dashboard wheel bundled into the installer, if any.
 
-    Resolves the latest release via :func:`installer.version.resolve_latest_release`,
-    which falls back from the GitHub JSON API to the public
-    ``github.com/<repo>/releases/latest`` redirect when the API is
-    unreachable (e.g. corporate proxies that block ``api.github.com`` and
-    return HTTP 404). When the predicted wheel URL exists pip will use
-    it; otherwise we fall back to the source tarball, which every release
-    is guaranteed to have because GitHub auto-generates it.
+    The release workflow embeds ``investment_dashboard-*.whl`` into the
+    one-file installer under a ``bundled_wheels/`` directory (see
+    ``installer/installer.spec``). At runtime PyInstaller extracts the
+    bundle to ``sys._MEIPASS``. Outside the frozen build (e.g. tests or
+    a developer running ``python -m installer.bootstrap`` from a checkout
+    with a built wheel in ``dist/``), we look next to this module so the
+    same code path stays exercisable.
+
+    Returns ``None`` when no wheel was bundled; the caller falls back to
+    resolving the latest release from GitHub in that case.
     """
+    candidates: list[Path] = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / "bundled_wheels")
+    repo_root = Path(__file__).resolve().parent.parent
+    candidates.append(repo_root / "dist")
+    candidates.append(Path(__file__).resolve().parent / "bundled_wheels")
+
+    for directory in candidates:
+        if not directory.is_dir():
+            continue
+        wheels = sorted(directory.glob("investment_dashboard-*.whl"))
+        if wheels:
+            return wheels[-1]
+    return None
+
+
+def _wheel_tag(wheel: Path) -> str:
+    """Reconstruct a ``vX.Y.Z`` tag from a wheel filename.
+
+    Wheel filenames are ``investment_dashboard-<version>-<py>-<abi>-<plat>.whl``.
+    We prefix ``v`` so the value matches the GitHub tag scheme used
+    elsewhere (``v2.1.4``), which keeps the launcher's version-state file
+    consistent regardless of whether the install came from a bundled
+    wheel or from a GitHub release.
+    """
+    parts = wheel.stem.split("-")
+    if len(parts) < 2:
+        return wheel.stem
+    return f"v{parts[1]}"
+
+
+def install_latest_dashboard(install_root: Path) -> str:
+    """``pip install`` the dashboard. Returns the installed tag.
+
+    Prefers the wheel bundled into the installer at build time (see
+    :func:`bundled_wheel`). The repository is private, so anonymous
+    requests for its release metadata return HTTP 404 — the bundled
+    wheel removes that dependency entirely. When no wheel is bundled
+    (e.g. a developer running the bootstrap from a fresh checkout) we
+    fall back to resolving the latest release via
+    :func:`installer.version.resolve_latest_release` and ``pip
+    install``-ing the resulting wheel or source tarball.
+    """
+    python_exe = python_executable(install_root)
+
+    wheel = bundled_wheel()
+    if wheel is not None:
+        tag = _wheel_tag(wheel)
+        print(f"Installing Investment Dashboard {tag} from bundled wheel ...", flush=True)
+        subprocess.check_call(
+            [str(python_exe), "-m", "pip", "install", "--upgrade", str(wheel)],
+        )
+        return tag
+
     print("Resolving latest Investment Dashboard release ...", flush=True)
     tag, wheel_url = resolve_latest_release(timeout=NETWORK_TIMEOUT_SECONDS)
     primary = wheel_url if wheel_url else tarball_url(tag)
     fallback = tarball_url(tag)
 
-    python_exe = python_executable(install_root)
     print(f"Installing Investment Dashboard {tag} from {primary} ...", flush=True)
     try:
         subprocess.check_call(

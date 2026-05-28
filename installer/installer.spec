@@ -20,12 +20,28 @@ from pathlib import Path
 HERE = Path(SPECPATH).resolve()
 PROJECT_ROOT = HERE.parent
 
+# Bundle every wheel found in ``dist/`` into the installer under a
+# ``bundled_wheels/`` directory. The release workflow downloads the
+# ``dist`` build artifact (which contains the freshly built
+# ``investment_dashboard-*.whl``) into this folder before invoking
+# PyInstaller, so the resulting ``.exe`` carries the wheel for the tag
+# being released. At install time ``bootstrap.install_latest_dashboard``
+# pip-installs that bundled wheel directly, which means the installer
+# does **not** need to talk to ``api.github.com`` / ``github.com`` to
+# resolve the latest release. That matters because the repository is
+# private: anonymous GitHub requests for its release metadata return
+# HTTP 404, and the end-user's machine has no GitHub credentials.
+_DIST_DIR = PROJECT_ROOT / "dist"
+_bundled_wheels = [
+    (str(wheel), "bundled_wheels") for wheel in sorted(_DIST_DIR.glob("investment_dashboard-*.whl"))
+]
+
 
 a = Analysis(
     [str(HERE / "bootstrap.py")],
     pathex=[str(PROJECT_ROOT)],
     binaries=[],
-    datas=[],
+    datas=_bundled_wheels,
     hiddenimports=[
         "installer",
         "installer.paths",
