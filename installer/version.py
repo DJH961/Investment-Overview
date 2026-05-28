@@ -7,11 +7,15 @@ small and makes the logic easy to unit-test under the regular pytest suite.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 GITHUB_REPO = "DJH961/Investment-Overview"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+LATEST_RELEASE_HTML = f"https://github.com/{GITHUB_REPO}/releases/latest"
 USER_AGENT = "InvestmentDashboard-Installer"
 
 # Maximum number of numeric components we compare from a version string.
@@ -96,3 +100,72 @@ def tarball_url(tag: str) -> str:
     ships a valid ``pyproject.toml`` at its root.
     """
     return f"https://github.com/{GITHUB_REPO}/archive/refs/tags/{tag}.tar.gz"
+
+
+def predicted_wheel_url(tag: str) -> str:
+    """Best-guess URL of the wheel asset attached to release ``tag``.
+
+    The release workflow uploads wheels named
+    ``investment_dashboard-<X.Y.Z>-py3-none-any.whl`` to every ``v*`` tag.
+    When the GitHub API is unreachable we cannot read the asset list, but
+    we can still construct this URL from the tag alone.
+    """
+    version = tag[1:] if tag[:1] in {"v", "V"} else tag
+    return (
+        f"https://github.com/{GITHUB_REPO}/releases/download/{tag}/"
+        f"investment_dashboard-{version}-py3-none-any.whl"
+    )
+
+
+def tag_from_release_redirect(final_url: str) -> str:
+    """Extract the tag from the URL ``releases/latest`` redirects to.
+
+    GitHub redirects ``https://github.com/<repo>/releases/latest`` to
+    ``https://github.com/<repo>/releases/tag/<tag>``. We pick the last
+    non-empty path segment, stripping any trailing slash or query string.
+    """
+    cleaned = final_url.split("?", 1)[0].split("#", 1)[0].rstrip("/")
+    if "/releases/tag/" not in cleaned:
+        raise ValueError(f"Unexpected releases/latest redirect target: {final_url!r}")
+    return cleaned.rsplit("/", 1)[-1]
+
+
+def resolve_latest_release(
+    timeout: float = 30.0,
+    *,
+    api_url: str = LATEST_RELEASE_API,
+    html_url: str = LATEST_RELEASE_HTML,
+) -> tuple[str, str | None]:
+    """Resolve the latest release tag and (when known) wheel URL.
+
+    Strategy:
+
+    1. Hit the GitHub Releases JSON API. On success, return the tag plus
+       any wheel asset attached to the release.
+    2. If the API is unreachable (HTTP error, DNS block, corporate proxy
+       that returns 404 for ``api.github.com``, …), follow the
+       ``github.com/<repo>/releases/latest`` redirect. ``github.com``
+       itself is far more likely to be reachable from locked-down work
+       networks than the API subdomain. The final URL contains the tag.
+       In that fallback path we predict the wheel URL from the tag,
+       falling back at pip-install time to the source tarball if the
+       predicted wheel happens not to exist.
+
+    The split lives in this pure helper so it can be unit-tested without
+    touching the network.
+    """
+    try:
+        request = Request(
+            api_url,
+            headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"},
+        )
+        with urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        return extract_release_metadata(payload)
+    except (HTTPError, URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError):
+        pass
+
+    request = Request(html_url, headers={"User-Agent": USER_AGENT})
+    with urlopen(request, timeout=timeout) as response:
+        tag = tag_from_release_redirect(response.url)
+    return tag, predicted_wheel_url(tag)

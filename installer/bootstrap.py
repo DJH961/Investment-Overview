@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import json
 import os
 import shutil
 import subprocess
@@ -50,9 +49,8 @@ from installer.paths import (
     pythonw_executable,
 )
 from installer.version import (
-    LATEST_RELEASE_API,
     USER_AGENT,
-    extract_release_metadata,
+    resolve_latest_release,
     tarball_url,
 )
 
@@ -124,20 +122,37 @@ def install_pip(python_root: Path) -> None:
 
 
 def install_latest_dashboard(install_root: Path) -> str:
-    """``pip install`` the latest GitHub release. Returns the installed tag."""
-    request = Request(
-        LATEST_RELEASE_API,
-        headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"},
-    )
-    with urlopen(request, timeout=NETWORK_TIMEOUT_SECONDS) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+    """``pip install`` the latest GitHub release. Returns the installed tag.
 
-    tag, wheel_url = extract_release_metadata(payload)
-    target = wheel_url if wheel_url else tarball_url(tag)
-    print(f"Installing Investment Dashboard {tag} from {target} ...", flush=True)
-    subprocess.check_call(
-        [str(python_executable(install_root)), "-m", "pip", "install", "--upgrade", target],
-    )
+    Resolves the latest release via :func:`installer.version.resolve_latest_release`,
+    which falls back from the GitHub JSON API to the public
+    ``github.com/<repo>/releases/latest`` redirect when the API is
+    unreachable (e.g. corporate proxies that block ``api.github.com`` and
+    return HTTP 404). When the predicted wheel URL exists pip will use
+    it; otherwise we fall back to the source tarball, which every release
+    is guaranteed to have because GitHub auto-generates it.
+    """
+    print("Resolving latest Investment Dashboard release ...", flush=True)
+    tag, wheel_url = resolve_latest_release(timeout=NETWORK_TIMEOUT_SECONDS)
+    primary = wheel_url if wheel_url else tarball_url(tag)
+    fallback = tarball_url(tag)
+
+    python_exe = python_executable(install_root)
+    print(f"Installing Investment Dashboard {tag} from {primary} ...", flush=True)
+    try:
+        subprocess.check_call(
+            [str(python_exe), "-m", "pip", "install", "--upgrade", primary],
+        )
+    except subprocess.CalledProcessError:
+        if primary == fallback:
+            raise
+        print(
+            f"Wheel install failed; retrying with source tarball {fallback} ...",
+            flush=True,
+        )
+        subprocess.check_call(
+            [str(python_exe), "-m", "pip", "install", "--upgrade", fallback],
+        )
     return tag
 
 
