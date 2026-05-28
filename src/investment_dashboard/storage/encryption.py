@@ -112,7 +112,7 @@ def apply_sqlcipher_key(dbapi_conn: Any, config: EncryptionConfig) -> None:
         cursor.close()
 
 
-def connect_sqlite(db_path: Path, config: EncryptionConfig | None = None):
+def connect_sqlite(db_path: Path, config: EncryptionConfig | None = None) -> Any:
     """Open a SQLite/SQLCipher connection and apply ``config`` when enabled."""
     if config is not None and config.enabled:
         if config.driver is None:
