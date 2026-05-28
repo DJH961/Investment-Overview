@@ -4,7 +4,7 @@ The portable distribution (``InvestmentDashboard-Portable.zip``) ships an
 embeddable CPython 3.12 interpreter and a pre-installed copy of the
 ``investment_dashboard`` wheel inside the unzipped folder. This script
 sits next to ``python\\pythonw.exe`` and is launched by the bundled
-``Run Investment Dashboard.cmd``.
+``Run-InvestmentDashboard.cmd``.
 
 Unlike the steady-state ``installer/launcher.py`` used by the one-file
 ``.exe`` installer, this launcher:

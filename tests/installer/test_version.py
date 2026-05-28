@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 import pytest
 from installer.version import (
     GITHUB_REPO,
@@ -127,7 +129,7 @@ def test_resolve_latest_release_uses_api_when_reachable(monkeypatch) -> None:
             return None
 
     def _fake_urlopen(request, timeout):
-        assert "api.github.com" in request.full_url
+        assert urlparse(request.full_url).hostname == "api.github.com"
         return _Resp(payload)
 
     monkeypatch.setattr(version_module, "urlopen", _fake_urlopen)
@@ -152,7 +154,7 @@ def test_resolve_latest_release_falls_back_to_html_redirect_on_api_404(monkeypat
             return None
 
     def _fake_urlopen(request, timeout):
-        if "api.github.com" in request.full_url:
+        if urlparse(request.full_url).hostname == "api.github.com":
             raise HTTPError(request.full_url, 404, "Not Found", hdrs=None, fp=None)
         assert request.full_url == version_module.LATEST_RELEASE_HTML
         return _RedirectResp()
@@ -181,7 +183,7 @@ def test_resolve_latest_release_falls_back_on_url_error(monkeypatch) -> None:
             return None
 
     def _fake_urlopen(request, timeout):
-        if "api.github.com" in request.full_url:
+        if urlparse(request.full_url).hostname == "api.github.com":
             raise URLError("dns blocked")
         return _RedirectResp()
 

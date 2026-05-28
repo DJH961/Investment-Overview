@@ -26,7 +26,7 @@ publishes alongside the wheel/sdist on every `v*` tag:
 1. They download `InvestmentDashboard-Portable.zip` from the same
    Releases page.
 2. They right-click it → *Extract All…* into any writable folder.
-3. They double-click `Run Investment Dashboard.cmd` inside the extracted
+3. They double-click `Run-InvestmentDashboard.cmd` inside the extracted
    folder. The dashboard opens in their default browser.
 
 No installer runs, no shortcuts are created, no internet connection is
@@ -73,7 +73,7 @@ dashboard on a fresh Windows machine with **no network access**:
   all of its runtime dependencies, pre-installed at release-build time.
 - `portable_launcher.py` — a tiny entry-point that imports and runs
   `investment_dashboard.main.run` (see source for the rationale).
-- `Run Investment Dashboard.cmd` — the double-click target. It launches
+- `Run-InvestmentDashboard.cmd` — the double-click target. It launches
   `python\pythonw.exe portable_launcher.py` from the bundle root.
 - `README.txt` — a copy of `installer/PORTABLE_README.txt` aimed at the
   end user.

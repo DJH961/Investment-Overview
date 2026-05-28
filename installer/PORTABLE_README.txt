@@ -11,12 +11,12 @@ How to use it
 1. Right-click ``InvestmentDashboard-Portable.zip`` -> "Extract All...".
    Pick any folder you can write to (e.g. ``%USERPROFILE%\InvestmentDashboard``
    or a folder on your OneDrive).
-2. Double-click ``Run Investment Dashboard.cmd`` inside the extracted
+2. Double-click ``Run-InvestmentDashboard.cmd`` inside the extracted
    folder. A console window will briefly appear and the dashboard will
    open in your default browser at http://localhost:8080.
 3. To stop the dashboard, close the ``pythonw.exe`` task from the system
    tray, or simply close the browser tab and end the ``pythonw.exe``
-   process from Task Manager. You can re-run ``Run Investment Dashboard.cmd``
+   process from Task Manager. You can re-run ``Run-InvestmentDashboard.cmd``
    at any time.
 
 What is in the bundle
@@ -25,7 +25,7 @@ What is in the bundle
   required).
 - ``portable_launcher.py`` - tiny Python entry-point that imports and
   runs the dashboard.
-- ``Run Investment Dashboard.cmd`` - the file you double-click; it just
+- ``Run-InvestmentDashboard.cmd`` - the file you double-click; it just
   launches ``python\pythonw.exe portable_launcher.py``.
 - The ``investment_dashboard`` package and all of its runtime
   dependencies, pre-installed into ``python\Lib\site-packages\``.

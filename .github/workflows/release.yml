@@ -148,7 +148,7 @@ jobs:
           # 5. Ship the portable launcher + the double-clickable .cmd
           #    alongside a tiny README so users know what to do.
           Copy-Item installer/portable_launcher.py $bundleRoot/portable_launcher.py
-          Copy-Item installer/Run-InvestmentDashboard.cmd "$bundleRoot/Run Investment Dashboard.cmd"
+          Copy-Item installer/Run-InvestmentDashboard.cmd $bundleRoot/Run-InvestmentDashboard.cmd
           Copy-Item installer/PORTABLE_README.txt $bundleRoot/README.txt
 
           # 6. Zip it up.

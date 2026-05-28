@@ -84,7 +84,7 @@ instead.
 
 1. Right-click the ZIP → *Extract All…* into any folder you can write to
    (e.g. `%USERPROFILE%\InvestmentDashboard`).
-2. Double-click **`Run Investment Dashboard.cmd`** inside the extracted
+2. Double-click **`Run-InvestmentDashboard.cmd`** inside the extracted
    folder. The dashboard opens in your default browser.
 
 The portable bundle contains an embeddable CPython 3.12 runtime and a
