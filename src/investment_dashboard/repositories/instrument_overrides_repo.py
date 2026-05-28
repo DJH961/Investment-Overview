@@ -54,18 +54,13 @@ def is_active(session: Session, instrument_id: int) -> bool:
     return ov.active if ov is not None else True
 
 
-def active_ids(session: Session) -> set[int]:
-    """Return the set of instrument_ids whose override row exists and
-    is marked ``active=False``.
-
-    Inverted to keep the common case ("most instruments are active")
-    cheap: callers ``if id in inactive_ids`` rather than re-checking
-    every row. See :func:`inactive_ids` for the named version.
-    """
-    return inactive_ids(session)
-
-
 def inactive_ids(session: Session) -> set[int]:
+    """Return the set of instrument_ids whose override row marks them inactive.
+
+    Inverted (rather than ``active_ids``) to keep the common case
+    cheap: most instruments are active, so most callers want
+    ``if id in inactive_ids`` to short-circuit.
+    """
     stmt = select(InstrumentOverride.instrument_id).where(InstrumentOverride.active.is_(False))
     return set(session.scalars(stmt).all())
 

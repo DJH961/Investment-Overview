@@ -28,7 +28,15 @@ _BOOT_BACKFILL_DAYS = 14
 
 
 def _run_migrations() -> None:
-    """Run ``alembic upgrade head`` programmatically."""
+    """Run ``alembic upgrade head`` programmatically.
+
+    Until per-tier Alembic version tables ship (rework v2.0 Phase 2
+    follow-up), we run the single migration tree once against the
+    ledger URL. This is correct as long as all three tiers point at
+    the same file. When split, the ``split_db`` tool stamps each tier
+    file with ``create_all``; per-tier Alembic stamping will land in a
+    follow-up.
+    """
     try:
         from alembic import command  # noqa: PLC0415
         from alembic.config import Config  # noqa: PLC0415
@@ -49,19 +57,41 @@ def _run_migrations() -> None:
 
     cfg = Config(str(ini_path))
     settings = get_settings()
-    settings.db_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.set_main_option("sqlalchemy.url", settings.db_url)
+    if settings.is_split_db:
+        log.info(
+            "split-DB mode: running migrations against ledger only "
+            "(per-tier Alembic version tables are a Phase 2 follow-up)"
+        )
+    settings.ledger_path.parent.mkdir(parents=True, exist_ok=True)  # type: ignore[union-attr]
+    cfg.set_main_option("sqlalchemy.url", settings.ledger_url)
     command.upgrade(cfg, "head")
     log.info("Alembic upgrade head applied")
 
 
+def _run_cache_janitor() -> None:
+    """Drop cache rows whose instrument is gone from the ledger."""
+    try:
+        from investment_dashboard.db import (  # noqa: PLC0415
+            cache_session_scope,
+            ledger_session_scope,
+        )
+        from investment_dashboard.services.cache_janitor import (  # noqa: PLC0415
+            cleanup_orphan_cache_rows,
+        )
+
+        with ledger_session_scope() as ledger, cache_session_scope() as cache:
+            cleanup_orphan_cache_rows(ledger, cache)
+    except Exception:
+        log.warning("cache-orphan janitor failed; continuing", exc_info=True)
+
+
 def _refresh_fx() -> None:
     try:
-        from investment_dashboard.db import session_scope  # noqa: PLC0415
+        from investment_dashboard.db import cache_session_scope  # noqa: PLC0415
         from investment_dashboard.services.fx_service import refresh_fx_history  # noqa: PLC0415
 
         earliest = date.today() - timedelta(days=_BOOT_BACKFILL_DAYS)
-        with session_scope() as session:
+        with cache_session_scope() as session:
             refresh_fx_history(session, earliest_needed=earliest)
         log.info("FX rates refreshed")
     except Exception:
@@ -70,12 +100,15 @@ def _refresh_fx() -> None:
 
 def _refresh_prices() -> None:
     try:
-        from investment_dashboard.db import session_scope  # noqa: PLC0415
+        from investment_dashboard.db import (  # noqa: PLC0415
+            cache_session_scope,
+            ledger_session_scope,
+        )
         from investment_dashboard.services.prices_service import refresh_prices  # noqa: PLC0415
 
         earliest = date.today() - timedelta(days=_BOOT_BACKFILL_DAYS)
-        with session_scope() as session:
-            refresh_prices(session, earliest_needed=earliest)
+        with ledger_session_scope() as ledger, cache_session_scope() as cache:
+            refresh_prices(ledger, cache, earliest_needed=earliest)
         log.info("Prices refreshed")
     except Exception:
         log.warning("Price refresh failed; continuing with cached prices", exc_info=True)
@@ -90,6 +123,7 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
     """
     _run_migrations()
     register_plotly_template()
+    _run_cache_janitor()
     if skip_network:
         log.info("skip_network=True — not refreshing FX or prices")
         return
