@@ -57,6 +57,22 @@ Full rationale in [`docs/architecture.md`](docs/architecture.md) and the
 
 ## Quickstart
 
+### Install on another Windows PC (single file, no clone)
+
+Download **`InvestmentDashboard-Setup.exe`** from the
+[latest release](https://github.com/DJH961/Investment-Overview/releases/latest)
+and double-click it. The installer
+
+1. drops a per-user copy of CPython 3.12 and the dashboard into
+   `%LOCALAPPDATA%\InvestmentDashboard` (no admin rights needed),
+2. creates Start-menu + Desktop shortcuts, and
+3. launches the dashboard immediately.
+
+Every later launch (via the shortcut) checks the GitHub Releases API and
+self-updates to the newest `v*` tag before starting. See
+[`installer/README.md`](installer/README.md) for the design and the
+release pipeline that produces the `.exe`.
+
 ### One-click launcher (no command line)
 
 The fastest path — works on a fresh clone without any prior Python

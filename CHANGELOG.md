@@ -12,6 +12,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.1.0] — 2026-05-28
+
+### Added
+- **Single-file Windows installer (`InvestmentDashboard-Setup.exe`).** New
+  `installer/` package builds a tiny PyInstaller one-file binary that, on
+  first launch, downloads an embeddable CPython 3.12, installs `pip`,
+  pulls the latest `investment-dashboard` release from the GitHub
+  Releases API, drops Start-menu and Desktop shortcuts, and launches the
+  dashboard — no unzipping or admin rights required. See
+  `installer/README.md` for the full design.
+- **Self-updating launcher.** After the first install the shortcut runs
+  `installer/launcher.py`, which compares the installed version against
+  the latest GitHub release and silently `pip install --upgrade`s before
+  starting the dashboard. Update failures are non-fatal.
+- **Release pipeline.** New `.github/workflows/release.yml` builds the
+  wheel, sdist, and `InvestmentDashboard-Setup.exe` on every `v*` tag
+  push (and via `workflow_dispatch`) and attaches all three artifacts to
+  a GitHub Release. Because the installer is version-agnostic at runtime,
+  the same `.exe` keeps working for every future v2.x release without
+  being rebuilt.
+
 ## [2.0.0] — 2026-05-28
 
 ### Added
