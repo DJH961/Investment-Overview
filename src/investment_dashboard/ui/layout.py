@@ -33,7 +33,7 @@ from nicegui import ui
 
 from investment_dashboard import __version__
 from investment_dashboard.db import session_scope
-from investment_dashboard.services import display_currency_service
+from investment_dashboard.services import display_currency_service, theme_service
 from investment_dashboard.services.onboarding_service import is_onboarded
 from investment_dashboard.ui import style as ui_style
 
@@ -114,6 +114,14 @@ def _cycle_theme(
     dark.value = nxt
     button.props(f'icon="{_theme_icon(nxt)}"')
     button.tooltip(_theme_tooltip(nxt))
+    # Persist so the choice survives navigation to another page (each page
+    # render re-creates the ``ui.dark_mode`` instance and would otherwise
+    # snap back to the initial value).
+    try:
+        with session_scope() as session:
+            theme_service.set_theme(session, nxt)
+    except Exception:  # pragma: no cover - defensive
+        pass
 
 
 def _header(title: str, *, current_currency: str, dark: ui.dark_mode) -> None:
@@ -195,12 +203,17 @@ def page_frame(title: str, *, current: str) -> Iterator[None]:
     ``current`` must match the registered path of the active page so the
     sidebar can highlight it.
     """
-    # Dark mode controller — defaults to ``None`` (auto), so the first load
-    # follows the device/browser preference (``prefers-color-scheme``). The
-    # header button cycles Auto → Light → Dark. ``ui.dark_mode`` is persistent
-    # within the NiceGUI tab session.
+    # Dark mode controller — defaults to the persisted user preference
+    # (``None`` / ``False`` / ``True`` meaning Auto / Light / Dark). The
+    # header button cycles Auto → Light → Dark and writes the new choice
+    # back via :mod:`theme_service` so it survives navigation.
     ui_style.apply_per_page()
-    dark = ui.dark_mode(value=None)
+    try:
+        with session_scope() as session:
+            initial_theme = theme_service.get_theme(session)
+    except Exception:  # pragma: no cover - defensive
+        initial_theme = None
+    dark = ui.dark_mode(value=initial_theme)
 
     if _maybe_redirect_to_onboarding(current):
         with ui.column().classes("w-full q-pa-md"):

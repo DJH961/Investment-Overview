@@ -62,6 +62,14 @@ def _css() -> str:
   --inv-accent-ring: {dark["accent_ring"]};
 }}
 
+html {{
+  /* Bump the root font-size so every rem-based token (body text, KPI tiles,
+     section titles, tables, etc.) scales up uniformly. The default browser
+     value is 16px; 18px gives a noticeably roomier, more readable layout
+     without breaking any fixed-pixel measurements. */
+  font-size: 18px;
+}}
+
 html, body {{
   background: var(--inv-canvas);
   color: var(--inv-ink);
@@ -307,13 +315,68 @@ html, body {{
   --ag-row-border-color: var(--inv-hairline);
   --ag-header-column-separator-color: transparent;
   --ag-font-family: "Inter", system-ui, sans-serif;
-  --ag-font-size: 13px;
-  --ag-grid-size: 6px;
-  --ag-row-height: 36px;
-  --ag-header-height: 40px;
-  --ag-cell-horizontal-padding: 12px;
+  --ag-font-size: 15px;
+  --ag-grid-size: 8px;
+  --ag-row-height: 46px;
+  --ag-header-height: 50px;
+  --ag-cell-horizontal-padding: 16px;
   --ag-selected-row-background-color: var(--inv-accent-soft);
   --ag-range-selection-border-color: var(--inv-accent);
+}}
+/* Dark-mode overrides — re-declare AG variables on the dark body so they
+   beat any hard-coded light values shipped in the bundled alpine.css. The
+   `!important` flag is necessary because Alpine's own selector
+   (`.ag-theme-alpine`) has equal specificity to the rule above but is
+   loaded after our stylesheet by NiceGUI. */
+.body--dark .ag-theme-alpine, html.dark .ag-theme-alpine,
+.body--dark .ag-theme-balham, html.dark .ag-theme-balham,
+.body--dark .ag-theme-quartz,  html.dark .ag-theme-quartz {{
+  --ag-foreground-color: {dark["ink"]} !important;
+  --ag-secondary-foreground-color: {dark["muted"]} !important;
+  --ag-data-color: {dark["ink"]} !important;
+  --ag-background-color: {dark["surface"]} !important;
+  --ag-header-foreground-color: {dark["muted"]} !important;
+  --ag-header-background-color: {dark["surface"]} !important;
+  --ag-odd-row-background-color: {dark["surface"]} !important;
+  --ag-row-hover-color: {dark["surface_alt"]} !important;
+  --ag-border-color: {dark["hairline"]} !important;
+  --ag-row-border-color: {dark["hairline"]} !important;
+  --ag-control-panel-background-color: {dark["surface_alt"]} !important;
+  --ag-subheader-background-color: {dark["surface_alt"]} !important;
+  --ag-input-disabled-background-color: {dark["surface_alt"]} !important;
+  --ag-disabled-foreground-color: {dark["muted"]} !important;
+  --ag-modal-overlay-background-color: rgba(11,18,32,0.55) !important;
+  background: {dark["surface"]} !important;
+  color: {dark["ink"]} !important;
+}}
+.body--dark .ag-root-wrapper, html.dark .ag-root-wrapper {{
+  background: {dark["surface"]} !important;
+  border-color: {dark["hairline"]} !important;
+}}
+.body--dark .ag-header, html.dark .ag-header {{
+  background: {dark["surface"]} !important;
+  color: {dark["muted"]} !important;
+  border-bottom-color: {dark["hairline"]} !important;
+}}
+.body--dark .ag-row, html.dark .ag-row {{
+  background: {dark["surface"]} !important;
+  color: {dark["ink"]} !important;
+  border-color: {dark["hairline"]} !important;
+}}
+.body--dark .ag-row-hover, html.dark .ag-row-hover {{
+  background: {dark["surface_alt"]} !important;
+}}
+.body--dark .ag-pinned-left-cols-container, html.dark .ag-pinned-left-cols-container,
+.body--dark .ag-pinned-right-cols-container, html.dark .ag-pinned-right-cols-container,
+.body--dark .ag-pinned-left-header, html.dark .ag-pinned-left-header,
+.body--dark .ag-pinned-right-header, html.dark .ag-pinned-right-header {{
+  background: {dark["surface"]} !important;
+}}
+.body--dark .ag-paging-panel, html.dark .ag-paging-panel,
+.body--dark .ag-status-bar, html.dark .ag-status-bar {{
+  background: {dark["surface"]} !important;
+  color: {dark["muted"]} !important;
+  border-top-color: {dark["hairline"]} !important;
 }}
 .ag-root-wrapper {{
   border-radius: var(--inv-radius-lg);
@@ -325,7 +388,7 @@ html, body {{
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  font-size: 11px;
+  font-size: 12px;
 }}
 .ag-cell[col-id$="_eur"], .ag-cell[col-id$="_usd"], .ag-cell[col-id$="_native"],
 .ag-cell[col-id="qty"], .ag-cell[col-id="price"], .ag-cell[col-id="fees"],
