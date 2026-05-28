@@ -99,10 +99,10 @@ Per the single-user, local-first design, the safety is deliberately
 light-weight but sufficient:
 
 * **Optional bearer token.** `INV_DASHBOARD_API_TOKEN` guards every `/api`
-  route except `/health`; sent as `Authorization: ****** or
-  `X-API-Token`. Compared in constant time. **Off by default** so the
-  current LAN experience is unchanged; turn it on the moment the server
-  is reachable beyond the LAN.
+  route except `/health`; sent as a bearer token in the `Authorization`
+  header or as `X-API-Token`. Compared in constant time. **Off by default**
+  so the current LAN experience is unchanged; turn it on the moment the
+  server is reachable beyond the LAN.
 * **Read-only API.** No write endpoints exist, so a leaked token cannot
   mutate the ledger.
 * **Encryption at rest already exists** for the synced tiers (SQLCipher);

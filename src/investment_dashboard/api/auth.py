@@ -6,9 +6,9 @@ local-first design):
 * When ``settings.api_token`` is unset the API is **open** — fine on a
   trusted home LAN, which is the default deployment.
 * When a token is set, every guarded route requires it, supplied either
-  as an ``Authorization: ****** header or as an ``X-API-Token``
-  header. The comparison is constant-time to avoid leaking the token via
-  timing.
+  as a bearer token in the ``Authorization`` header or as an
+  ``X-API-Token`` header. The comparison is constant-time to avoid
+  leaking the token via timing.
 
 This is the "minimal safety that stays efficient" the owner asked for:
 enough to stop casual access once the server is exposed beyond the LAN
