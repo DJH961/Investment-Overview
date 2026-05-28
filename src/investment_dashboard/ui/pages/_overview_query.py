@@ -60,10 +60,11 @@ def position_rows(
             value_usd_str = f"{p.current_value_native:,.2f}"
         else:
             value_usd_str = ""
+        eff = p.effective
         rows.append(
             {
                 "symbol": p.instrument.symbol,
-                "name": p.instrument.name or "",
+                "name": (eff.name if eff is not None else p.instrument.name) or "",
                 "category": p.category or "",
                 "shares": f"{p.shares:,.4f}",
                 "avg_price": (f"{(p.cost_basis_native / p.shares):,.4f}" if p.shares else ""),
@@ -89,10 +90,12 @@ def _growth_pct(p: Position) -> str:
 
 
 def allocation_treemap(positions: list[Position]) -> list[TreemapDatum]:
-    """Aggregate positions by user-tier ``category`` (fallback ``asset_class``)."""
+    """Aggregate positions by user-tier ``category`` (fallback effective ``asset_class``)."""
     bucket: dict[str, Decimal] = {}
     for p in positions:
-        key = p.category or p.instrument.asset_class or "Uncategorized"
+        eff = p.effective
+        fallback_class = eff.asset_class if eff is not None else p.instrument.asset_class
+        key = p.category or fallback_class or "Uncategorized"
         bucket[key] = bucket.get(key, ZERO) + p.current_value_eur
     items = [TreemapDatum(label=k, value_eur=v) for k, v in bucket.items() if v > ZERO]
     items.sort(key=lambda d: d.value_eur, reverse=True)

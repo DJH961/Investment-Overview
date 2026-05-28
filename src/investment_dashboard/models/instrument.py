@@ -37,7 +37,7 @@ class Instrument(Base):
     __tablename__ = "instruments"
     __table_args__ = (
         CheckConstraint(
-            "asset_class IN ('etf','mutual_fund','stock','cash','savings')",
+            "asset_class IN ('etf','mutual_fund','stock','cash','savings','unknown')",
             name="ck_instrument_asset_class",
         ),
         CheckConstraint("length(native_currency) = 3", name="ck_instrument_currency_len"),

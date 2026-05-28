@@ -15,8 +15,11 @@ from __future__ import annotations
 from decimal import Decimal
 
 #: Symbol prefix per currency. Falls back to the ISO code + space for any
-#: currency we don't know about yet (only EUR/USD are exposed in v1.3).
-_SYMBOLS: dict[str, str] = {"EUR": "€", "USD": "$"}
+#: currency we don't know about yet. v1.3 introduced EUR/USD; v2.2 added
+#: DKK (Danish krone — by convention rendered with a trailing "kr"
+#: suffix; we use a leading "kr " here for column-alignment consistency
+#: with the other prefix-symbol currencies).
+_SYMBOLS: dict[str, str] = {"EUR": "€", "USD": "$", "DKK": "kr "}
 
 
 def currency_symbol(currency: str) -> str:

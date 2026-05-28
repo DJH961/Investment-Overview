@@ -221,6 +221,7 @@ def parse_vanguard_xlsx(content: bytes) -> VanguardXlsxParseResult:
                 description=name,
                 external_id=external_id,
                 source="import_vanguard_xlsx",
+                name=name or None,
             )
         )
 

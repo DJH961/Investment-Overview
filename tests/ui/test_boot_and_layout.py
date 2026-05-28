@@ -69,7 +69,7 @@ def test_boot_migrates_active_ledger_path_in_split_layout(
     assert "transactions" in tables
 
 
-def test_nav_items_cover_all_seven_pages() -> None:
+def test_nav_items_cover_all_pages() -> None:
     from investment_dashboard.ui.layout import NAV_ITEMS
 
     paths = {item.path for item in NAV_ITEMS}
@@ -79,6 +79,7 @@ def test_nav_items_cover_all_seven_pages() -> None:
         "/transactions",
         "/monthly",
         "/yearly",
+        "/analytics",
         "/calculator",
         "/settings",
     }

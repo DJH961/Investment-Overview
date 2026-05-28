@@ -12,6 +12,119 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.2.0] — Unreleased
+
+This release lands the full v2.2 "data-scientist analytics + FX-aware
+growth + instrument auto-detect" feature bump, in three slices:
+
+* **(a)** Historical FX in every snapshot/aggregation and **DKK** as a
+  first-class display currency.
+* **(b)** Instrument auto-detection from imports + per-instrument
+  display overrides (name / asset class / TER).
+* **(c)** New `/Analytics` page with Calmar, Ulcer, VaR/CVaR, Skew,
+  Excess Kurtosis, Beta and Alpha on top of the existing
+  CAGR/TWR/XIRR/Sharpe/Sortino/Max-Drawdown grid, plus a configurable
+  benchmark (default `VT`) and a **live** risk-free rate sourced from
+  the 13-week US T-bill (`^IRX`) with an optional manual override.
+
+### Added — phase (c) "analytics deep-dive"
+- **`/analytics` page** registered in `main` and the sidebar nav.
+  Renders three rows of KPI cards (returns / drawdown shape /
+  benchmark-relative), an equity-curve plot with cumulative
+  contributions and a rebased benchmark overlay, and a per-instrument
+  attribution table. Lookback selectable from 1M to 5Y.
+- **`domain/risk_extras.py`** — pure, strictly-typed implementations
+  of `calmar_ratio`, `ulcer_index`, `historical_var`,
+  `historical_cvar`, `skewness`, and `excess_kurtosis` (Fisher
+  convention).
+- **`domain/attribution.py`** — `attribute_portfolio_return` produces
+  per-instrument P&L and `% of total return` rows from start / end /
+  net-contribution / dividend triples.
+- **`services/benchmark_service.py`** — configurable benchmark symbol
+  via `app_config['benchmark_symbol']` (default `VT`); fetches closes
+  through the existing yfinance adapter and stores them in
+  `price_history` like any other instrument. Settings page exposes
+  the picker.
+- **`services/risk_free_service.py`** — live fetch of the 13-week US
+  T-bill yield from yfinance `^IRX`, normalised from percent to
+  decimal fraction, cached in `app_config` with a 24h TTL. Supports a
+  user-set manual override that wins over the fetched value. Returns
+  ``None`` on first-ever failure (no hypothetical fallback —
+  Sharpe/Sortino/Alpha simply render as "—" until a real number is
+  available). Settings page exposes symbol, last-fetched timestamp,
+  manual override and a "refresh now" button.
+- **Tooltips** for Calmar, Ulcer, VaR, CVaR, Skew, Kurtosis,
+  risk-free rate, benchmark and attribution.
+
+### Added — phase (b) "instrument auto-detect + overrides"
+- **`services/instrument_enrichment_service.py`** — override → ledger
+  precedence helper (`effective_instrument`) and yfinance-backed
+  gap-filler (`enrich_instrument` / `ensure_instrument`). The importer
+  now creates instruments via this service so unknown symbols arrive
+  with a real `name` / `asset_class` / `native_currency` / TER.
+- **`name` / `asset_class` / `expense_ratio` columns on
+  `instrument_overrides`** so users can re-label an instrument
+  ("VTI" → "US Total Market") and re-bucket it (stock → etf) without
+  editing the ledger.
+- **"Edit instrument" dialog on the Transactions page** lets users
+  apply the overrides interactively with a live preview of the
+  effective value.
+- **Overview positions table and treemap now use the effective
+  values**, so phase-(b) corrections show up everywhere instead of
+  only in Settings.
+- **CSV importers populate `ParsedTransactionRow.name`** from
+  `investment name` (Vanguard), the workbook name (Vanguard XLSX) and
+  `security description` (Fidelity), so a freshly-imported instrument
+  has a real display name even before yfinance enrichment runs.
+- **`instruments.asset_class` CHECK constraint** now accepts
+  `'unknown'` and the importer's default; downgrade coerces
+  `'unknown'` → `'etf'` to preserve the v2.1 constraint.
+
+### Migrations
+- **`0005_v2_2_instrument_enrichment`** (`9e4b3f6c2a17`, parent
+  `8d3a2e5b14c6`) widens the asset-class CHECK and adds the three
+  override columns via `batch_alter_table`.
+
+### Added — phase (a) "historical FX + DKK"
+- **DKK as a display currency.** `display_currency_service.SUPPORTED_CURRENCIES`
+  now contains `EUR`, `USD`, `DKK`; the Settings → Display currency
+  picker exposes all three. `money_format.currency_symbol` formats DKK
+  with a `kr ` prefix.
+- **Multi-quote FX backfill.** `fx_service.refresh_fx_history` accepts
+  a `quotes` iterable (default `("USD", "DKK")`) and refreshes each
+  series independently. Boot calls it with the default, so DKK history
+  starts accumulating from the next launch with no configuration.
+- **Per-currency snapshot conversion.** New
+  `snapshots_service.get_or_compute_in_currency(session, date, ccy)`
+  returns the cached EUR snapshot converted at the FX rate **on the
+  snapshot date** (forward-filled to the most recent prior business
+  day). Drives the FX-aware equity curve.
+- **FX-aware period aggregation.** `ui.pages._period_query.aggregate`
+  accepts `display_currency=…`. When set to a non-EUR currency, each
+  `PeriodRow` carries `contributions_display`, `dividends_display`,
+  `interest_display`, `net_flow_display`, `closing_value_display`,
+  `opening_value_display`, and `growth_pct_display` computed using
+  per-trade-date FX (cashflows) and per-period-end FX (balances). The
+  Modified Dietz growth % is then computed in the display currency, so
+  USD/DKK readers see the return their wallet actually experienced
+  including FX drift.
+
+### Fixed
+- **Yearly/Monthly USD and DKK columns and bars previously scaled the
+  EUR series by today's spot rate**, making the entire historical
+  curve a uniform rescaling that hid FX swings. Both pages now drive
+  their primary-currency column and chart bars from the FX-aware
+  aggregation above; the secondary EUR column shows the underlying
+  ledger value for cross-reference. EUR-display callers see no diff.
+- **Overview FX caption was hard-coded to EUR→USD** even when the
+  user's display currency was something else; the caption now follows
+  the active display currency, and KPI cards convert via the EUR→that
+  currency rate rather than re-using the EUR→USD rate.
+- **Deposits page KPIs reused the EUR→USD rate to render the user's
+  display currency**, producing USD numbers under a "DKK" label once
+  DKK is selected. The KPIs now pull the rate for the active display
+  currency; the auxiliary EUR/USD ledger column keeps using EUR→USD.
+
 ## [2.1.4] — 2026-05-28
 
 ### Fixed

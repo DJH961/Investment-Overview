@@ -25,6 +25,10 @@ from investment_dashboard.repositories import (
     transactions_repo,
 )
 from investment_dashboard.services import fx_service, prices_service
+from investment_dashboard.services.instrument_enrichment_service import (
+    EffectiveInstrument,
+    effective_instrument,
+)
 
 ZERO = Decimal(0)
 
@@ -45,6 +49,13 @@ class Position:
     #: ``instrument_overrides`` table. Default to "no category" / "active".
     category: str | None = None
     instrument_active: bool = True
+    #: Override-merged view of the instrument. Read paths should prefer
+    #: ``effective.name`` / ``effective.asset_class`` /
+    #: ``effective.expense_ratio`` over the ledger row, so phase-(b)
+    #: user corrections show up consistently in tables, treemaps, and
+    #: analytics. ``None`` only on the pre-v2.2 in-memory paths that
+    #: build a ``Position`` directly without an effective view.
+    effective: EffectiveInstrument | None = None
 
 
 def compute_positions(session: Session, *, as_of: date | None = None) -> list[Position]:  # noqa: PLR0912
@@ -119,6 +130,7 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
                 cumulative_dividends_cash_native=agg["dividends_cash"],
                 category=(overrides[instr.id].category if instr.id in overrides else None),
                 instrument_active=(overrides[instr.id].active if instr.id in overrides else True),
+                effective=effective_instrument(instr, overrides.get(instr.id)),
             )
         )
     results.sort(key=lambda p: (p.account.broker, p.instrument.symbol))

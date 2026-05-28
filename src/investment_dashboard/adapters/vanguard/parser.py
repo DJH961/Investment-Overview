@@ -150,6 +150,7 @@ def parse_vanguard_csv(content: str) -> VanguardParseResult:
                 description=raw.get("transaction description") or raw.get("investment name"),
                 external_id=external_id,
                 source="import_vanguard_csv",
+                name=(raw.get("investment name") or "").strip() or None,
             )
         )
 

@@ -24,7 +24,12 @@ from investment_dashboard.repositories import (
     instrument_overrides_repo,
     instruments_repo,
 )
-from investment_dashboard.services import display_currency_service, provider_status
+from investment_dashboard.services import (
+    benchmark_service,
+    display_currency_service,
+    provider_status,
+    risk_free_service,
+)
 from investment_dashboard.services.fx_service import refresh_fx_history
 from investment_dashboard.services.onboarding_service import seed_default_setup
 from investment_dashboard.services.prices_service import refresh_prices
@@ -362,6 +367,128 @@ def _activate_allocation(allocation_id: int) -> None:  # pragma: no cover - UI
         ui.notify(f"Activation failed: {exc}", type="negative")
 
 
+def _save_benchmark_symbol(value: str) -> None:  # pragma: no cover - UI
+    try:
+        with session_scope() as session:
+            benchmark_service.set_symbol(session, value)
+    except ValueError as exc:
+        ui.notify(str(exc), type="negative")
+        return
+    ui.notify(f"Benchmark symbol set to {value.upper()}", type="positive")
+    _settings_refresh()
+
+
+def _save_risk_free_symbol(value: str) -> None:  # pragma: no cover - UI
+    try:
+        with session_scope() as session:
+            risk_free_service.set_symbol(session, value)
+    except ValueError as exc:
+        ui.notify(str(exc), type="negative")
+        return
+    ui.notify(f"Risk-free symbol set to {value}", type="positive")
+    _settings_refresh()
+
+
+def _save_risk_free_manual(value: str) -> None:  # pragma: no cover - UI
+    cleaned = value.strip()
+    parsed: Decimal | None
+    if cleaned == "":
+        parsed = None
+    else:
+        try:
+            parsed = Decimal(cleaned)
+        except (InvalidOperation, ValueError):
+            ui.notify("Manual rate must be a decimal fraction (e.g. 0.04)", type="negative")
+            return
+    try:
+        with session_scope() as session:
+            risk_free_service.set_manual_rate(session, parsed)
+    except ValueError as exc:
+        ui.notify(str(exc), type="negative")
+        return
+    if parsed is None:
+        ui.notify("Cleared manual risk-free rate; using live ^IRX feed", type="positive")
+    else:
+        ui.notify(f"Manual risk-free rate set to {parsed}", type="positive")
+    _settings_refresh()
+
+
+def _refresh_risk_free_clicked() -> None:  # pragma: no cover - UI
+    try:
+        with session_scope() as session:
+            snap = risk_free_service.refresh(session)
+    except Exception as exc:
+        ui.notify(f"Refresh failed: {exc}", type="negative")
+        return
+    if snap.rate is None:
+        ui.notify(
+            "Risk-free fetch returned no data — keeping cached value.",
+            type="warning",
+        )
+    else:
+        ui.notify(f"Risk-free rate refreshed to {snap.rate}", type="positive")
+    _settings_refresh()
+
+
+def _render_analytics_prefs(
+    *,
+    benchmark_symbol: str,
+    rf_snapshot,  # type: ignore[no-untyped-def]
+) -> None:  # pragma: no cover - UI
+    with ui.row().classes("items-center gap-md flex-wrap"):
+        ui.label("Benchmark symbol:").classes("text-body2")
+        bench_input = ui.input(value=benchmark_symbol).props("dense outlined").style("width:140px")
+        ui.button(
+            "Save",
+            icon="save",
+            on_click=lambda: _save_benchmark_symbol(bench_input.value),
+        ).props("flat color=primary no-caps")
+        ui.label("Default: VT (Vanguard Total World).").classes("text-caption opacity-70")
+    with ui.row().classes("items-center gap-md flex-wrap q-mt-sm"):
+        ui.label("Risk-free symbol:").classes("text-body2")
+        rf_input = ui.input(value=rf_snapshot.symbol).props("dense outlined").style("width:140px")
+        ui.button(
+            "Save",
+            icon="save",
+            on_click=lambda: _save_risk_free_symbol(rf_input.value),
+        ).props("flat color=primary no-caps")
+        ui.button(
+            "Refresh now",
+            icon="refresh",
+            on_click=_refresh_risk_free_clicked,
+        ).props("flat no-caps")
+        cached = (
+            f"current: {rf_snapshot.rate}"
+            + (
+                f" (fetched {rf_snapshot.fetched_at.isoformat(timespec='minutes')})"
+                if rf_snapshot.fetched_at
+                else ""
+            )
+            if rf_snapshot.rate is not None
+            else "no rate cached yet"
+        )
+        ui.label(cached).classes("text-caption opacity-70")
+    with ui.row().classes("items-center gap-md flex-wrap q-mt-sm"):
+        ui.label("Manual override:").classes("text-body2")
+        manual_input = (
+            ui.input(
+                placeholder="0.04 = 4%",
+                value=str(rf_snapshot.rate) if rf_snapshot.is_manual and rf_snapshot.rate else "",
+            )
+            .props("dense outlined")
+            .style("width:140px")
+        )
+        ui.button(
+            "Save",
+            icon="save",
+            on_click=lambda: _save_risk_free_manual(manual_input.value),
+        ).props("flat color=primary no-caps")
+        ui.label(
+            "Pins Sharpe / Sortino / Alpha to your chosen rate. "
+            "Leave blank to use the live ^IRX feed.",
+        ).classes("text-caption opacity-70")
+
+
 def _settings_refresh() -> None:  # pragma: no cover - UI
     """Reload the settings page after a mutation."""
     ui.navigate.to(PATH)
@@ -610,9 +737,19 @@ def register() -> None:
                 )
                 allocations = list(allocations_repo.list_allocations(session))
                 current_currency = display_currency_service.get_display_currency(session)
+                benchmark_symbol = benchmark_service.get_symbol(session)
+                rf_snapshot = risk_free_service.get_risk_free_rate(
+                    session,
+                    fetcher=lambda symbol: None,  # don't hit the network on a settings render
+                )
 
             with section("Display preferences"):
                 _render_display_prefs(current_currency)
+            with section("Analytics preferences"):
+                _render_analytics_prefs(
+                    benchmark_symbol=benchmark_symbol,
+                    rf_snapshot=rf_snapshot,
+                )
             with section("Storage"):
                 _render_storage_section()
             with section("Data refresh"):

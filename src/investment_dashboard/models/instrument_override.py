@@ -16,15 +16,27 @@ each tier on its own SQLite file where DB-level FKs are not enforceable
 anyway. The cache-orphan janitor at boot keeps overrides in sync if an
 instrument is ever deleted on the ledger.
 
-The other column that used to live on ``Instrument``,
-``expense_ratio``, is intentionally **not** here: it is an intrinsic
-property of the security (the fund issuer sets the TER) and stays on
-the ledger tier.
+v2.2 phase (b) adds three *display* overrides that let the user
+correct or fill in metadata the importer/enrichment couldn't determine
+authoritatively:
+
+* ``name_override`` — pretty name shown in tables/treemap.
+* ``asset_class_override`` — classification used for filtering and
+  refresh TTLs when the ledger row says ``'unknown'`` (or the user
+  disagrees with yfinance's ``quoteType``).
+* ``expense_ratio_override`` — manual TER when the issuer does not
+  publish one to yfinance.
+
+Effective-value composition (override → ledger → default) is centralised
+in :func:`investment_dashboard.services.instrument_enrichment_service.
+effective_instrument` so every read path agrees on precedence.
 """
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, String
+from decimal import Decimal
+
+from sqlalchemy import Boolean, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from investment_dashboard.models.base import ConfigBase
@@ -39,6 +51,12 @@ class InstrumentOverride(ConfigBase):
     instrument_id: Mapped[int] = mapped_column(primary_key=True)
     category: Mapped[str | None] = mapped_column(String(64))
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    name_override: Mapped[str | None] = mapped_column(String(256))
+    asset_class_override: Mapped[str | None] = mapped_column(String(16))
+    expense_ratio_override: Mapped[Decimal | None] = mapped_column(Numeric(7, 5))
 
     def __repr__(self) -> str:  # pragma: no cover
-        return f"<InstrumentOverride instrument_id={self.instrument_id} category={self.category!r} active={self.active}>"
+        return (
+            f"<InstrumentOverride instrument_id={self.instrument_id} "
+            f"category={self.category!r} active={self.active}>"
+        )

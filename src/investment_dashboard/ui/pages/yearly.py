@@ -31,12 +31,20 @@ def _convert(amount_eur: Decimal, target: str, fx_rate: Decimal | None) -> Decim
 
 
 def _money_columns(label: str, field: str, primary: str) -> list[dict[str, str]]:
+    """Build the primary + secondary AG-Grid column pair for one metric.
+
+    The primary column reads the unsuffixed ``field`` key, which the
+    :func:`to_table_rows` renderer fills with the FX-aware display-
+    currency value when ``aggregate`` was called with that currency
+    (v2.2). The secondary column is the EUR ledger value (or USD when
+    primary is already EUR, preserving the v1.3 "both visible" toggle).
+    """
     primary = primary.upper()
-    secondary = "EUR" if primary == "USD" else "USD"
+    secondary = "EUR" if primary in {"USD", "DKK"} else "USD"
     return [
         {
             "headerName": f"{label} ({primary})",
-            "field": f"{field}_{primary.lower()}",
+            "field": field,
             "type": "rightAligned",
         },
         {
@@ -52,8 +60,22 @@ def _figure(rows, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no
 
     fig = go.Figure()
     if rows:
-        contribs = [float(_convert(r.contributions, currency, fx_rate)) for r in rows]
-        divs = [float(_convert(r.dividends + r.interest, currency, fx_rate)) for r in rows]
+        contribs = [
+            float(
+                r.contributions_display
+                if r.contributions_display is not None
+                else _convert(r.contributions, currency, fx_rate)
+            )
+            for r in rows
+        ]
+        divs = [
+            float(
+                ((r.dividends_display or Decimal(0)) + (r.interest_display or Decimal(0)))
+                if r.dividends_display is not None or r.interest_display is not None
+                else _convert(r.dividends + r.interest, currency, fx_rate)
+            )
+            for r in rows
+        ]
         fig.add_bar(
             x=[r.label for r in rows],
             y=contribs,
@@ -84,10 +106,11 @@ def register() -> None:
         with page_frame("Yearly Growth", current=PATH):
             page_header("Yearly Growth", subtitle="Annual aggregation and long-term projection")
             with session_scope() as session:
-                rows = aggregate(session, monthly=False)
-                projection_rows = project_from_session(session, years=10)
                 display_ccy = display_currency_service.get_display_currency(session)
-                fx_rate = display_currency_service.current_rate(session, quote="USD")
+                rows = aggregate(session, monthly=False, display_currency=display_ccy)
+                projection_rows = project_from_session(session, years=10)
+                display_quote = display_ccy if display_ccy != "EUR" else "USD"
+                fx_rate = display_currency_service.current_rate(session, quote=display_quote)
             with section("Cashflows per year"):
                 ui.plotly(_figure(rows, currency=display_ccy, fx_rate=fx_rate)).classes(
                     "w-full h-[40vh]",
