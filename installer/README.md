@@ -36,8 +36,14 @@ needs to be rebuilt if:
 `workflow_dispatch`). It:
 
 1. Builds the dashboard wheel + sdist with `python -m build`.
-2. Builds `InvestmentDashboard-Setup.exe` on a `windows-latest` runner
-   using `installer/installer.spec`.
+2. Builds `InvestmentDashboard-Setup.exe` on a `windows-2022` runner
+   using `installer/installer.spec`. The runner is pinned to
+   `windows-2022` (rather than `windows-latest`) because PyInstaller
+   bundles the build machine's Universal C Runtime, and the UCRT shipped
+   on Windows Server 2025 — to which `windows-latest` now resolves — is
+   incompatible with Windows 10 / 11 client SKUs and produces a
+   `ucrtbase.dll` "Bad Image" dialog (`Error status 0xc0e90002`) on
+   end-user machines.
 3. Publishes a GitHub Release for the tag and attaches all three
    artifacts.
 

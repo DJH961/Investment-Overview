@@ -58,7 +58,16 @@ jobs:
 
   build-windows-installer:
     name: Build InvestmentDashboard-Setup.exe
-    runs-on: windows-latest
+    # Pinned to ``windows-2022`` on purpose. ``windows-latest`` now resolves
+    # to Windows Server 2025, whose Universal C Runtime (UCRT) and api-set
+    # forwarder DLLs are newer than those shipped on Windows 10 / 11 client
+    # SKUs. PyInstaller bundles those DLLs from the build machine into the
+    # one-file installer, and when the bootloader extracts them on an
+    # end-user box the loader rejects the mismatched ``ucrtbase.dll`` with
+    # ``Bad Image`` / ``Error status 0xc0e90002``. Building on
+    # ``windows-2022`` produces a UCRT payload that is compatible with all
+    # currently supported client Windows versions.
+    runs-on: windows-2022
     needs: build-distributions
     steps:
       - uses: actions/checkout@v4

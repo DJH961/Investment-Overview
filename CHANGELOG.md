@@ -12,6 +12,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.1.2] — 2026-05-28
+
+### Fixed
+- **`InvestmentDashboard-Setup.exe` "Bad Image" crash on launch (really
+  this time).** The 2.1.1 release attempted to fix the
+  `ucrtbase.dll` / `0xc0e90002` "Bad Image" dialog by disabling UPX
+  compression in the PyInstaller spec, but UPX was never actually
+  installed on the GitHub Actions Windows runner, so that flag had no
+  effect on the shipped binary and the installer continued to crash.
+  The real root cause is that `.github/workflows/release.yml` built the
+  installer on `windows-latest`, which now resolves to **Windows Server
+  2025**. PyInstaller bundles the build machine's Universal C Runtime
+  into the one-file binary, and Windows Server 2025's `ucrtbase.dll`
+  plus its api-set forwarder DLLs are incompatible with the loader on
+  Windows 10 / 11 client SKUs — when the bootloader extracts them into
+  the per-run `_MEI…` temp directory, the client loader refuses the
+  image and aborts with `Error status 0xc0e90002`. The
+  `build-windows-installer` job is now pinned to `windows-2022`, whose
+  UCRT payload is compatible with all currently supported client
+  Windows versions, so the installer launches cleanly. `upx=False` is
+  retained in the spec as defence in depth.
+
 ## [2.1.1] — 2026-05-28
 
 ### Fixed

@@ -51,11 +51,15 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    # UPX must stay disabled: compressing the bundled Windows UCRT/VC runtime
-    # DLLs (notably ``ucrtbase.dll``) causes the PyInstaller bootloader to
-    # extract a corrupt image, producing the "Bad Image" dialog with status
-    # ``0xc0e90002`` on end-user machines. See the issue reported against
-    # ``InvestmentDashboard-Setup.exe``.
+    # UPX is left disabled for defence in depth: if a future change ever
+    # adds UPX to the build runner, compressing the bundled UCRT/VC runtime
+    # DLLs is known to corrupt them as well. The *primary* fix for the
+    # "Bad Image" dialog with status ``0xc0e90002`` reported against
+    # ``InvestmentDashboard-Setup.exe`` is pinning the build job to
+    # ``windows-2022`` (see ``.github/workflows/release.yml``) so the
+    # bundled ``ucrtbase.dll`` / api-set forwarders are compatible with
+    # Windows 10 / 11 client machines. ``windows-latest`` now resolves to
+    # Windows Server 2025, whose UCRT is incompatible with those clients.
     upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
