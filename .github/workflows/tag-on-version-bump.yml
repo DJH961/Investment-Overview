@@ -1,0 +1,85 @@
+name: Tag on version bump
+
+# When a commit lands on ``main`` (typically via a merged pull request) that
+# bumps ``project.version`` in ``pyproject.toml``, create a matching ``vX.Y.Z``
+# git tag and kick off the existing ``Release`` workflow. This lets a release
+# be cut simply by merging a version-bump PR — no manual tagging required.
+#
+# The ``Release`` workflow already triggers on ``v*`` tag pushes, but a tag
+# pushed with the default ``GITHUB_TOKEN`` does **not** start dependent
+# workflows (GitHub's anti-recursion safety). To make the chain reliable we
+# therefore also dispatch ``release.yml`` explicitly via ``gh workflow run``
+# with the tag as its input.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - pyproject.toml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  tag-and-release:
+    name: Tag vX.Y.Z and trigger release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version from pyproject.toml
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(
+            python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])"
+          )"
+          if [ -z "${version}" ]; then
+            echo "Could not read project.version from pyproject.toml" >&2
+            exit 1
+          fi
+          tag="v${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Resolved version=${version} tag=${tag}"
+
+      - name: Check whether tag already exists
+        id: check
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists on origin — nothing to do."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Tag ${TAG} does not exist yet — will create it."
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create and push tag
+        if: steps.check.outputs.exists == 'false'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${TAG}" -m "Release ${TAG}"
+          git push origin "refs/tags/${TAG}"
+
+      - name: Trigger Release workflow
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Pushing a tag with the default GITHUB_TOKEN does not start the
+          # ``Release`` workflow on its own, so dispatch it explicitly. The
+          # release workflow accepts the tag as a ``workflow_dispatch`` input.
+          gh workflow run release.yml --ref "${TAG}" -f "tag=${TAG}"
