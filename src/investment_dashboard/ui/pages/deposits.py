@@ -39,7 +39,17 @@ def register() -> None:
                 summary = compute_summary(session)
                 rows = list_deposit_rows(session)
                 display_ccy = display_currency_service.get_display_currency(session)
-                fx_rate = display_currency_service.current_rate(session, quote="USD")
+                display_quote = display_ccy if display_ccy != "EUR" else "USD"
+                fx_rate = display_currency_service.current_rate(session, quote=display_quote)
+                # The deposits table always shows a USD column alongside
+                # EUR for cross-currency reference, even when the user's
+                # display preference is DKK; fetch that explicitly so it
+                # isn't a (wrong) re-use of the display FX rate.
+                usd_rate = (
+                    fx_rate
+                    if display_quote == "USD"
+                    else display_currency_service.current_rate(session, quote="USD")
+                )
             secondary_ccy = "EUR" if display_ccy != "EUR" else "USD"
 
             def _kpi(label: str, eur_value: Decimal) -> None:
@@ -93,7 +103,7 @@ def register() -> None:
                                 },
                                 {"headerName": "Description", "field": "description"},
                             ],
-                            "rowData": _add_usd_column(rows, fx_rate),
+                            "rowData": _add_usd_column(rows, usd_rate),
                             "defaultColDef": {"resizable": True, "sortable": True},
                             "pagination": True,
                             "paginationAutoPageSize": True,

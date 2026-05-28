@@ -77,9 +77,18 @@ def register() -> None:
                 metrics = get_metrics(session)
                 positions = get_positions(session)
                 display_ccy = display_currency_service.get_display_currency(session)
-                # FX rate is always EUR→USD; we use it both ways.
-                fx_rate = display_currency_service.current_rate(session, quote="USD")
-            rows = position_rows(positions, display_currency=display_ccy, fx_rate=fx_rate)
+                # Display-currency FX (EUR→display). For EUR display we
+                # still fetch EUR→USD so the secondary USD column on the
+                # positions table stays populated; for USD/DKK display
+                # we use the matching rate so KPIs convert correctly.
+                display_quote = display_ccy if display_ccy != "EUR" else "USD"
+                fx_rate = display_currency_service.current_rate(session, quote=display_quote)
+                usd_rate = (
+                    fx_rate
+                    if display_quote == "USD"
+                    else display_currency_service.current_rate(session, quote="USD")
+                )
+            rows = position_rows(positions, display_currency=display_ccy, fx_rate=usd_rate)
             treemap_data = allocation_treemap(positions)
 
             gain = metrics.capital_gain_eur
@@ -128,8 +137,8 @@ def register() -> None:
                 )
             if fx_rate is not None:
                 ui.label(
-                    f"FX (EUR→USD): {fx_rate:,.4f}  ·  Display currency: {display_ccy} "
-                    f"(switch from the header toggle)",
+                    f"FX (EUR→{display_quote}): {fx_rate:,.4f}  ·  "
+                    f"Display currency: {display_ccy} (switch from the header toggle)",
                 ).classes("text-caption opacity-70")
             if not rows:
                 empty_state(

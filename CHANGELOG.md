@@ -12,6 +12,58 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.2.0] — Unreleased
+
+This is the first slice of the v2.2 "data-scientist analytics + FX-aware
+growth + instrument auto-detect" feature bump. It lands the foundation
+piece: every historical valuation now reflects **historical** FX
+instead of being a uniform scalar of today's spot rate, and **DKK**
+joins EUR/USD as a first-class display currency. The two follow-up
+slices (instrument auto-detect from imports + manual transaction entry;
+Analytics page wiring up TWR/CAGR/Sharpe/Sortino/Calmar/Ulcer/VaR/beta/
+alpha vs a configurable VT benchmark) ship in subsequent v2.2.x
+releases.
+
+### Added
+- **DKK as a display currency.** `display_currency_service.SUPPORTED_CURRENCIES`
+  now contains `EUR`, `USD`, `DKK`; the Settings → Display currency
+  picker exposes all three. `money_format.currency_symbol` formats DKK
+  with a `kr ` prefix.
+- **Multi-quote FX backfill.** `fx_service.refresh_fx_history` accepts
+  a `quotes` iterable (default `("USD", "DKK")`) and refreshes each
+  series independently. Boot calls it with the default, so DKK history
+  starts accumulating from the next launch with no configuration.
+- **Per-currency snapshot conversion.** New
+  `snapshots_service.get_or_compute_in_currency(session, date, ccy)`
+  returns the cached EUR snapshot converted at the FX rate **on the
+  snapshot date** (forward-filled to the most recent prior business
+  day). Drives the FX-aware equity curve.
+- **FX-aware period aggregation.** `ui.pages._period_query.aggregate`
+  accepts `display_currency=…`. When set to a non-EUR currency, each
+  `PeriodRow` carries `contributions_display`, `dividends_display`,
+  `interest_display`, `net_flow_display`, `closing_value_display`,
+  `opening_value_display`, and `growth_pct_display` computed using
+  per-trade-date FX (cashflows) and per-period-end FX (balances). The
+  Modified Dietz growth % is then computed in the display currency, so
+  USD/DKK readers see the return their wallet actually experienced
+  including FX drift.
+
+### Fixed
+- **Yearly/Monthly USD and DKK columns and bars previously scaled the
+  EUR series by today's spot rate**, making the entire historical
+  curve a uniform rescaling that hid FX swings. Both pages now drive
+  their primary-currency column and chart bars from the FX-aware
+  aggregation above; the secondary EUR column shows the underlying
+  ledger value for cross-reference. EUR-display callers see no diff.
+- **Overview FX caption was hard-coded to EUR→USD** even when the
+  user's display currency was something else; the caption now follows
+  the active display currency, and KPI cards convert via the EUR→that
+  currency rate rather than re-using the EUR→USD rate.
+- **Deposits page KPIs reused the EUR→USD rate to render the user's
+  display currency**, producing USD numbers under a "DKK" label once
+  DKK is selected. The KPIs now pull the rate for the active display
+  currency; the auxiliary EUR/USD ledger column keeps using EUR→USD.
+
 ## [2.1.4] — 2026-05-28
 
 ### Fixed
