@@ -84,8 +84,7 @@ def test_install_latest_dashboard_prefers_bundled_wheel(tmp_path, monkeypatch) -
 
     assert tag == "v2.1.4"
     assert len(calls) == 1
-    assert calls[0][-1] == str(wheel)
-    assert calls[0][-3:] == ["pip", "install", "--upgrade", str(wheel)][1:]
+    assert calls[0][1:] == ["-m", "pip", "install", "--upgrade", str(wheel)]
 
 
 def test_install_latest_dashboard_falls_back_to_github_when_no_wheel(tmp_path, monkeypatch) -> None:
