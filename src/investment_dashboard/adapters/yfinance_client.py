@@ -20,6 +20,39 @@ import yfinance as yf
 
 log = logging.getLogger(__name__)
 
+_PROVIDER = "yfinance"
+
+
+def _record_status(status: str, message: str) -> None:
+    """Lazy wrapper around provider_status.record to avoid a circular import.
+
+    ``services/__init__.py`` eagerly imports ``prices_service`` which imports
+    this adapter; importing ``services.provider_status`` at module load time
+    would re-enter the half-initialised ``services`` package. Importing inside
+    the function avoids that and the lookup cost is negligible compared to a
+    network round-trip.
+    """
+    from investment_dashboard.services.provider_status import record  # noqa: PLC0415
+
+    record(_PROVIDER, status, message)  # type: ignore[arg-type]  # str→Literal narrowing
+
+
+# yfinance prints one ERROR-level line per symbol on its own logger whenever a
+# download returns no rows ("$XXX: possibly delisted; no price data found ...")
+# plus a noisy summary block. That fires constantly during US trading hours
+# when the day's bar hasn't been published yet, and again for symbols that
+# legitimately have no yfinance ticker (e.g. ``VMFXX``/``SPAXX`` sweeps). We
+# already log a single meaningful warning per empty symbol below, so silence
+# yfinance's stderr noise at import time. Use CRITICAL rather than disabling
+# propagation so genuinely fatal yfinance issues still surface.
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+
+# When yfinance returns no rows for a requested window we retry just those
+# symbols with this many extra calendar days of lookback. That guarantees
+# callers get the most recent available close — the user's "last close price"
+# fallback — even when the live bar hasn't published yet.
+_FALLBACK_LOOKBACK_DAYS = 10
+
 
 class YFinanceError(RuntimeError):
     """Raised when yfinance returns a fundamentally unusable payload."""
@@ -64,9 +97,74 @@ def fetch_closes(
 
     download = downloader or yf.download
 
-    # yfinance accepts either a list or whitespace-separated string. We pass
-    # a list for clarity. group_by="ticker" yields a top-level column per
-    # symbol when len(symbols) > 1; for a single symbol the layout is flat.
+    try:
+        result = _download_window(download, symbols, start, end)
+    except YFinanceError as exc:
+        _record_status(
+            "error",
+            f"Download failed for {len(symbols)} symbol(s): {exc}",
+        )
+        raise
+
+    # If any symbol came back empty (typical for "today" requests during
+    # trading hours, or for tickers yfinance just briefly hiccupped on),
+    # retry just those symbols with a wider lookback so the caller always
+    # gets the most recent available close instead of nothing. Skip the
+    # retry if the original window was already wider than the fallback.
+    missing = [s for s in symbols if not result.get(s)]
+    used_fallback = False
+    if missing:
+        fallback_start = end - timedelta(days=_FALLBACK_LOOKBACK_DAYS)
+        if fallback_start < start:
+            log.info(
+                "yfinance empty for %s in %s..%s; retrying from %s for last-close fallback",
+                missing,
+                start,
+                end,
+                fallback_start,
+            )
+            try:
+                fallback = _download_window(download, missing, fallback_start, end)
+            except YFinanceError as exc:
+                _record_status(
+                    "error",
+                    f"Fallback download failed for {missing}: {exc}",
+                )
+                raise
+            used_fallback = True
+            for symbol, closes in fallback.items():
+                if closes:
+                    result[symbol] = closes
+
+    still_missing = [s for s in symbols if not result.get(s)]
+    if not still_missing:
+        msg = f"Fetched {len(symbols)} symbol(s) for {start}..{end}"
+        if used_fallback:
+            msg += " (last-close fallback used)"
+        _record_status("ok", msg)
+    elif len(still_missing) == len(symbols):
+        _record_status(
+            "error",
+            f"No data returned for any of {len(symbols)} symbol(s); "
+            f"first missing: {still_missing[:5]}",
+        )
+    else:
+        _record_status(
+            "partial",
+            f"{len(symbols) - len(still_missing)}/{len(symbols)} symbol(s) returned data; "
+            f"missing: {still_missing[:5]}" + ("…" if len(still_missing) > 5 else ""),
+        )
+
+    return result
+
+
+def _download_window(
+    download: Any,
+    symbols: list[str],
+    start: date,
+    end: date,
+) -> dict[str, dict[date, Decimal]]:
+    """Single yfinance ``download`` call, parsed into the adapter's shape."""
     try:
         frame = download(
             tickers=symbols,

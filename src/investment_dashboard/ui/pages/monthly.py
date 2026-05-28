@@ -122,7 +122,7 @@ def register() -> None:
                         "pagination": True,
                         "paginationAutoPageSize": True,
                     }
-                ).classes("ag-theme-alpine w-full h-[40vh]")
+                ).classes("ag-theme-alpine w-full h-[55vh]")
                 ui.label(
                     f"Values shown in {display_ccy} ({sym}). Closing value is end-of-month "
                     "mark-to-market (best-effort if prices are missing). Growth % is "
@@ -157,4 +157,4 @@ def register() -> None:
                         "pagination": True,
                         "paginationAutoPageSize": True,
                     }
-                ).classes("ag-theme-alpine w-full h-[35vh]")
+                ).classes("ag-theme-alpine w-full h-[50vh]")

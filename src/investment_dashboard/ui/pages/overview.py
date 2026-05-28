@@ -88,7 +88,12 @@ def register() -> None:
                     if display_quote == "USD"
                     else display_currency_service.current_rate(session, quote="USD")
                 )
-            rows = position_rows(positions, display_currency=display_ccy, fx_rate=usd_rate)
+            # Hide fully-sold instruments from the positions table — anything
+            # with a residual share count below 1e-7 (a tenth of a millionth
+            # of a share) is effectively zero and just clutters the overview.
+            _min_shares = Decimal("0.0000001")
+            held_positions = [p for p in positions if p.shares >= _min_shares]
+            rows = position_rows(held_positions, display_currency=display_ccy, fx_rate=usd_rate)
             treemap_data = allocation_treemap(positions)
 
             gain = metrics.capital_gain_eur
@@ -195,7 +200,7 @@ def register() -> None:
                             "rowData": rows,
                             "defaultColDef": {"resizable": True, "sortable": True},
                         }
-                    ).classes("ag-theme-alpine w-full h-[40vh]")
+                    ).classes("ag-theme-alpine w-full h-[55vh]")
                 with section("Allocation"):
                     ui.plotly(
                         _treemap_figure(treemap_data, currency=display_ccy, fx_rate=fx_rate),

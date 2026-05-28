@@ -37,6 +37,15 @@ log = logging.getLogger(__name__)
 #: lockstep with ``SUPPORTED_CURRENCIES`` (minus the EUR base).
 DEFAULT_QUOTES: tuple[str, ...] = ("USD", "DKK")
 
+_PROVIDER = "frankfurter"
+
+
+def _record_status(status: str, message: str) -> None:
+    """Lazy wrapper around provider_status.record to avoid a circular import."""
+    from investment_dashboard.services.provider_status import record  # noqa: PLC0415
+
+    record(_PROVIDER, status, message)  # type: ignore[arg-type]
+
 
 def refresh_fx_history(
     session: Session,
@@ -106,9 +115,15 @@ def _refresh_single_quote(
             quote,
             exc,
         )
+        _record_status("error", f"{base}/{quote} fetch failed: {exc}")
         return 0
     rates = {r.date: r.rate for r in records}
-    return fx_repo.upsert_rates(session, rates, base=base, quote=quote)
+    written = fx_repo.upsert_rates(session, rates, base=base, quote=quote)
+    _record_status(
+        "ok",
+        f"Fetched {len(rates)} {base}/{quote} rate(s) for {start}..{today}; {written} new",
+    )
+    return written
 
 
 def get_rate_eur_to_quote(
