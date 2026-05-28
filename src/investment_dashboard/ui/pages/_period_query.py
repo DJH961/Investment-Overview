@@ -29,6 +29,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
@@ -257,7 +258,11 @@ def aggregate(  # noqa: PLR0912, PLR0915
                             )
                         else:
                             opening_display[label] = ZERO
-                    except Exception:  # pragma: no cover - defensive
+                    except (
+                        SQLAlchemyError,
+                        ArithmeticError,
+                        ValueError,
+                    ):  # pragma: no cover - defensive
                         closing_display[label] = ZERO
                         opening_display[label] = ZERO
                     growth_display[label] = _modified_dietz(
