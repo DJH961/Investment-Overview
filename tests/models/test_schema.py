@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from investment_dashboard.models import (
+    ALL_METADATAS,
     Account,
     Base,
     FxHistory,
@@ -25,6 +26,7 @@ from investment_dashboard.models.transaction import TransactionSource
 EXPECTED_TABLES = {
     "accounts",
     "instruments",
+    "instrument_overrides",
     "transactions",
     "price_history",
     "fx_history",
@@ -37,7 +39,15 @@ EXPECTED_TABLES = {
 
 
 def test_all_tables_registered() -> None:
-    assert set(Base.metadata.tables.keys()) == EXPECTED_TABLES
+    # Schema is partitioned across the ledger/config/cache tier metadatas
+    # (see :mod:`investment_dashboard.models.base`); union them.
+    registered: set[str] = set()
+    for md in ALL_METADATAS:
+        registered.update(md.tables.keys())
+    assert registered == EXPECTED_TABLES
+    # ``Base`` is the ledger-tier alias; sanity-check it carries the
+    # ledger tables only so partition stays honest.
+    assert {"accounts", "instruments", "transactions"} <= set(Base.metadata.tables.keys())
 
 
 def test_account_transaction_roundtrip(session: Session) -> None:
@@ -51,7 +61,6 @@ def test_account_transaction_roundtrip(session: Session) -> None:
         symbol="VTI",
         name="Vanguard Total Stock Market ETF",
         asset_class="etf",
-        category="Total US",
         native_currency="USD",
     )
     session.add_all([account, instrument])

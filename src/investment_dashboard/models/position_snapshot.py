@@ -14,7 +14,7 @@ from sqlalchemy import Date, DateTime, Numeric
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
-from investment_dashboard.models.base import Base
+from investment_dashboard.models.base import CacheBase as Base
 
 
 class PositionSnapshot(Base):

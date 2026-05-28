@@ -24,7 +24,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from investment_dashboard.models.base import Base
+from investment_dashboard.models.base import LedgerBase as Base
 
 if TYPE_CHECKING:
     from investment_dashboard.models.account import Account

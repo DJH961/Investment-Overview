@@ -45,19 +45,20 @@ def test_update_account_missing_raises(session: Session) -> None:
 
 
 def test_update_instrument_changes_display_fields(session: Session) -> None:
-    instr = instruments_repo.get_or_create(
-        session, symbol="VTI", name="Old name", category="Old cat"
-    )
+    from investment_dashboard.repositories import instrument_overrides_repo
+
+    instr = instruments_repo.get_or_create(session, symbol="VTI", name="Old name")
+    instrument_overrides_repo.set_category(session, instr.id, "Old cat")
     updated = instruments_repo.update_instrument(
         session,
         instr.id,
         name="Vanguard Total Market",
-        category="US equities",
-        active=False,
     )
+    # Category and active live on the override now.
+    instrument_overrides_repo.upsert(session, instr.id, category="US equities", active=False)
     assert updated.name == "Vanguard Total Market"
-    assert updated.category == "US equities"
-    assert updated.active is False
+    assert instrument_overrides_repo.get_category(session, instr.id) == "US equities"
+    assert instrument_overrides_repo.is_active(session, instr.id) is False
     assert updated.symbol == "VTI"
 
 

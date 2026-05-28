@@ -11,7 +11,7 @@ from decimal import Decimal
 from sqlalchemy import CheckConstraint, Date, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from investment_dashboard.models.base import Base
+from investment_dashboard.models.base import CacheBase as Base
 
 
 class FxHistory(Base):

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.adapters.yfinance_client import YFinanceError, fetch_closes
 from investment_dashboard.models import Instrument
 from investment_dashboard.repositories import (
+    instrument_overrides_repo,
     instruments_repo,
     price_cache_repo,
     prices_repo,
@@ -38,26 +39,37 @@ _SYNTHETIC_ASSET_CLASSES = frozenset({"cash", "savings"})
 
 def refresh_prices(
     session: Session,
+    cache_session: Session | None = None,
     *,
     earliest_needed: date,
     today: date | None = None,
 ) -> dict[str, int]:
     """Backfill ``price_history`` for every active instrument.
 
+    ``session`` reads the ledger tier (instruments + active overrides).
+    ``cache_session`` writes the cache tier (``price_history`` and
+    ``price_cache_metadata``). When unset, falls back to ``session`` —
+    matches the legacy unified-DB call site and keeps tests passing
+    without per-tier fixtures.
+
     Synthetic ``SAVINGS_CASH`` (and other ``cash``/``savings`` asset
     classes) is skipped — there is no yfinance ticker. Returns
     ``{symbol: rows_written}``.
     """
+    cache = cache_session if cache_session is not None else session
     today = today or date.today()
     result: dict[str, int] = {}
 
-    instruments = instruments_repo.list_instruments(session, only_active=True)
+    instruments = instruments_repo.list_instruments(session)
+    inactive = instrument_overrides_repo.inactive_ids(session)
     symbols_to_fetch: list[str] = []
     earliest_per_symbol: dict[str, date] = {}
     for instr in instruments:
         if instr.asset_class in _SYNTHETIC_ASSET_CLASSES:
             continue
-        latest = prices_repo.latest_price_date(session, instr.id)
+        if instr.id in inactive:
+            continue
+        latest = prices_repo.latest_price_date(cache, instr.id)
         start = (
             max(earliest_needed, latest + timedelta(days=1))
             if latest is not None
@@ -88,8 +100,8 @@ def refresh_prices(
             continue
         cutoff = earliest_per_symbol.get(symbol, earliest_needed)
         filtered = {d: c for d, c in closes.items() if d >= cutoff}
-        result[symbol] = prices_repo.upsert_closes(session, instr.id, filtered)
-        price_cache_repo.upsert_last_refreshed_at(session, instr.id, now)
+        result[symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
+        price_cache_repo.upsert_last_refreshed_at(cache, instr.id, now)
     return result
 
 
@@ -115,8 +127,11 @@ def instruments_due_for_refresh(
     """
     now = now or datetime.now(UTC).replace(tzinfo=None)
     due: list[Instrument] = []
-    for instr in instruments_repo.list_instruments(session, only_active=True):
+    inactive = instrument_overrides_repo.inactive_ids(session)
+    for instr in instruments_repo.list_instruments(session):
         if instr.asset_class in _SYNTHETIC_ASSET_CLASSES:
+            continue
+        if instr.id in inactive:
             continue
         last = price_cache_repo.get_last_refreshed_at(session, instr.id)
         if last is None or (now - last).total_seconds() >= _ttl_for(instr):

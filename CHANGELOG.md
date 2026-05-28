@@ -12,9 +12,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
-## [Unreleased]
+## [2.0.0] — 2026-05-28
 
-_Nothing yet._
+### Added
+- **v2.0 plan Phase 3 — cloud-sync-aware storage paths.**
+  `investment_dashboard.storage.cloud.detect_cloud_sync_root` recognises
+  OneDrive, iCloud, Dropbox (including relocated installs via
+  `info.json`) and Google Drive (including the macOS
+  `~/Library/CloudStorage` layout).
+  `investment_dashboard.storage.paths.resolve_storage_layout` resolves
+  ledger / config / cache paths through the precedence chain
+  env > persisted `app_config` > cloud default > local default. Boot
+  applies the layout before opening engines, and the Settings page
+  surfaces the resolved paths plus their source.
+- **v2.0 plan Phase 4 — optional SQLCipher encryption.** New
+  `[encrypted]` install extra (pysqlcipher3 + keyring).
+  `investment_dashboard.storage.encryption.resolve_encryption` resolves
+  driver availability and the passphrase (env var → OS keychain) and
+  fails fast with a clear message if either is missing.
+  `set_active_encryption` on `db.py` rewrites engine URLs to
+  `sqlite+pysqlcipher://` and applies `PRAGMA key` on each connect.
+  `split_db` gained `--encrypt-ledger`, `--encrypt-config`, and
+  `--passphrase` flags that wrap the produced files via
+  `sqlcipher_export`.
+- **v2.0 plan Phase 5 — sidecar guard, writer lock, integrity, backups.**
+  `storage.sidecar.should_use_truncate_journal` flips SQLite to
+  `journal_mode=TRUNCATE` for files inside a cloud folder;
+  `assert_no_sidecars_in_cloud` blocks boot if stray `-wal` / `-shm`
+  files are present. `storage.lock.acquire_write_lock` takes a
+  non-blocking `flock`/`msvcrt.locking` advisory lock with a
+  read-only fallback (`boot.is_read_only`). `storage.integrity` runs
+  `PRAGMA integrity_check` against ledger and config on boot.
+  `storage.backup.snapshot` writes rolling backups
+  (hourly/daily/monthly with 24/14/12 retention) using
+  `sqlite3.Connection.backup`. New CLIs:
+  `inv-dashboard-repair-sidecar` and `inv-dashboard-backup --verify`.
 
 ## [1.5.0] — 2026-05-27
 

@@ -12,6 +12,7 @@ from investment_dashboard.models import Transaction
 from investment_dashboard.models.transaction import TransactionSource
 from investment_dashboard.repositories import (
     accounts_repo,
+    instrument_overrides_repo,
     instruments_repo,
     prices_repo,
 )
@@ -31,12 +32,10 @@ def seeded(session: Session) -> None:
         native_currency="USD",
         account_type="brokerage",
     )
-    vti = instruments_repo.get_or_create(
-        session, symbol="VTI", category="US Stocks", asset_class="etf"
-    )
-    bnd = instruments_repo.get_or_create(
-        session, symbol="BND", category="US Bonds", asset_class="etf"
-    )
+    vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
+    bnd = instruments_repo.get_or_create(session, symbol="BND", asset_class="etf")
+    instrument_overrides_repo.set_category(session, vti.id, "US Stocks")
+    instrument_overrides_repo.set_category(session, bnd.id, "US Bonds")
     prices_repo.upsert_closes(session, vti.id, {date.today(): Decimal("230.00")})
     prices_repo.upsert_closes(session, bnd.id, {date.today(): Decimal("75.00")})
     session.add_all(

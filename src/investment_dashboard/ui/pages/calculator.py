@@ -108,8 +108,7 @@ def register() -> None:
                         for instrument_id in target_pct
                     }
                     symbol_by_id = {
-                        i.id: i.symbol
-                        for i in instruments_repo.list_instruments(session, only_active=False)
+                        i.id: i.symbol for i in instruments_repo.list_instruments(session)
                     }
                 try:
                     plan = plan_rebalance(

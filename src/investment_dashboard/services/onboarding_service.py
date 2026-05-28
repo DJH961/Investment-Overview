@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.models import Account
 from investment_dashboard.repositories import (
     accounts_repo,
+    instrument_overrides_repo,
     instruments_repo,
 )
 
@@ -173,16 +174,24 @@ def seed_default_setup(session: Session) -> SeedResult:
     for instr in DEFAULT_INSTRUMENTS:
         existing = instruments_repo.get_by_symbol(session, instr.symbol)
         if existing is not None:
+            # Idempotent: only seed the override category if it isn't
+            # already set (the user may have customised it).
+            if (
+                instr.category
+                and instrument_overrides_repo.get_category(session, existing.id) is None
+            ):
+                instrument_overrides_repo.set_category(session, existing.id, instr.category)
             continue
-        instruments_repo.get_or_create(
+        created = instruments_repo.get_or_create(
             session,
             symbol=instr.symbol,
             name=instr.name,
             asset_class=instr.asset_class,
             native_currency=instr.native_currency,
-            category=instr.category,
             expense_ratio=instr.expense_ratio,
         )
+        if instr.category:
+            instrument_overrides_repo.set_category(session, created.id, instr.category)
         instruments_created += 1
 
     return SeedResult(

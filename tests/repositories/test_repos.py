@@ -62,14 +62,23 @@ class TestInstrumentsRepo:
         assert first.id == second.id
 
     def test_active_filter(self, session: Session) -> None:
+        # ``active`` is now a config-tier override; the ledger repo
+        # returns every instrument. Filtering by active happens in the
+        # caller via ``instrument_overrides_repo.inactive_ids``.
+        from investment_dashboard.repositories import instrument_overrides_repo
+
         a = instruments_repo.get_or_create(session, symbol="VTI")
         b = instruments_repo.get_or_create(session, symbol="VOO")
-        b.active = False
+        instrument_overrides_repo.set_active(session, b.id, False)
         session.flush()
-        assert {i.symbol for i in instruments_repo.list_instruments(session)} == {"VTI"}
-        all_ = instruments_repo.list_instruments(session, only_active=False)
+        all_ = instruments_repo.list_instruments(session)
         assert {i.symbol for i in all_} == {"VTI", "VOO"}
-        assert a.active is True
+        # Composition: active filter at the call site.
+        inactive = instrument_overrides_repo.inactive_ids(session)
+        assert {i.symbol for i in all_ if i.id not in inactive} == {"VTI"}
+        # Defaults are honoured: a has no override row, treated as active.
+        assert a.id not in inactive
+        assert instrument_overrides_repo.is_active(session, a.id) is True
 
 
 class TestTransactionsRepo:
