@@ -1,4 +1,11 @@
-"""Instrument model — securities, funds, and synthetic cash positions."""
+"""Instrument model — securities, funds, and synthetic cash positions.
+
+Belongs to the **ledger** tier (immutable identity facts: symbol, name,
+asset class, native currency). The user-editable fields ``category``,
+``expense_ratio``, ``target_weight_pct`` and ``active`` are temporarily
+retained here for backwards compatibility and will be peeled off into a
+``config`` tier ``instrument_overrides`` table in a follow-up phase.
+"""
 
 from __future__ import annotations
 
@@ -8,10 +15,9 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Boolean, CheckConstraint, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from investment_dashboard.models.base import Base
+from investment_dashboard.models.base import LedgerBase as Base
 
 if TYPE_CHECKING:
-    from investment_dashboard.models.price_history import PriceHistory
     from investment_dashboard.models.transaction import Transaction
 
 
@@ -36,9 +42,10 @@ class Instrument(Base):
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     transactions: Mapped[list[Transaction]] = relationship(back_populates="instrument")
-    prices: Mapped[list[PriceHistory]] = relationship(
-        back_populates="instrument", cascade="all, delete-orphan"
-    )
+    # NOTE: the ``prices`` relationship to :class:`PriceHistory` previously
+    # lived here. ``PriceHistory`` now lives in the cache tier (separate
+    # ``MetaData``), so a SQLAlchemy ``relationship()`` can no longer
+    # bridge it. Look up prices via ``prices_repo`` instead.
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Instrument {self.symbol}>"

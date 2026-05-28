@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Boolean, CheckConstraint, Date, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from investment_dashboard.models.base import Base
+from investment_dashboard.models.base import LedgerBase as Base
 
 if TYPE_CHECKING:
     from investment_dashboard.models.transaction import Transaction

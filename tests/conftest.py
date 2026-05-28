@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 # Force an in-memory DB before app modules read settings.
 os.environ.setdefault("INV_DASHBOARD_DB_PATH", ":memory:")
 
-from investment_dashboard.models import Base
+from investment_dashboard.models import ALL_METADATAS, Base  # noqa: F401
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -49,7 +49,8 @@ def engine() -> Iterator[Engine]:
         cur.execute("PRAGMA foreign_keys=ON")
         cur.close()
 
-    Base.metadata.create_all(eng)
+    for md in ALL_METADATAS:
+        md.create_all(eng)
     try:
         yield eng
     finally:

@@ -13,7 +13,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from investment_dashboard.config import get_settings
-from investment_dashboard.models import Base
+from investment_dashboard.models import ALL_METADATAS, Base
 
 config = context.config
 
@@ -24,7 +24,13 @@ if config.config_file_name is not None:
 settings = get_settings()
 config.set_main_option("sqlalchemy.url", settings.db_url)
 
-target_metadata = Base.metadata
+# Until the engine split lands (rework Phase 2), all three storage tiers
+# share one SQLite file. Pass the tuple of every tier's ``MetaData`` so
+# autogenerate sees every table regardless of which ``Base`` it lives on.
+# ``Base`` is kept in scope for backwards compatibility with older
+# migration scripts that reference it.
+_ = Base
+target_metadata = list(ALL_METADATAS)
 
 
 def _render_item(type_: str, obj: object, autogen_context: object) -> str | bool:
