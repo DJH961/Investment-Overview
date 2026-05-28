@@ -12,6 +12,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.1.3] — 2026-05-28
+
+### Fixed
+- **Fresh split-storage startups migrated the wrong SQLite file.** The boot
+  sequence correctly injected the resolved ledger database URL into Alembic,
+  but `migrations/env.py` overwrote it with the legacy `db.sqlite` URL. On
+  first launch with the v2 split ledger/config/cache layout, migrations created
+  `transactions` in `db.sqlite` while the `/overview` page queried
+  `ledger.sqlite`, producing a 500 `sqlite3.OperationalError: no such table:
+  transactions`. Alembic now preserves the boot-provided URL and falls back to
+  `settings.ledger_url` for direct migration CLI use, so the active ledger file
+  is initialized before the UI queries it.
+
 ## [2.1.2] — 2026-05-28
 
 ### Fixed

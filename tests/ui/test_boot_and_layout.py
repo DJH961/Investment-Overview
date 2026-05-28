@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import sqlalchemy as sa
 
 from investment_dashboard.boot import run_boot_sequence
 
@@ -30,6 +31,42 @@ def test_boot_creates_db_parent_for_migrations(
         get_settings.cache_clear()
 
     assert db_path.exists()
+
+
+def test_boot_migrates_active_ledger_path_in_split_layout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fresh split-path startup must create ledger tables in the ledger DB."""
+    from investment_dashboard.config import get_settings
+    from investment_dashboard.db import dispose_engines
+
+    ledger_path = tmp_path / "ledger.sqlite"
+    monkeypatch.delenv("INV_DASHBOARD_DB_PATH", raising=False)
+    monkeypatch.setenv("INV_DASHBOARD_LEDGER_PATH", str(ledger_path))
+    monkeypatch.setenv("INV_DASHBOARD_CONFIG_PATH", str(tmp_path / "config.sqlite"))
+    monkeypatch.setenv("INV_DASHBOARD_CACHE_PATH", str(tmp_path / "cache.sqlite"))
+    get_settings.cache_clear()
+    dispose_engines()
+    try:
+        run_boot_sequence(skip_network=True)
+    finally:
+        dispose_engines()
+        get_settings.cache_clear()
+
+    engine = sa.create_engine(f"sqlite:///{ledger_path.as_posix()}", future=True)
+    try:
+        with engine.connect() as conn:
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    sa.text("SELECT name FROM sqlite_master WHERE type='table'")
+                )
+            }
+    finally:
+        engine.dispose()
+
+    assert "transactions" in tables
 
 
 def test_nav_items_cover_all_seven_pages() -> None:

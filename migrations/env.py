@@ -21,8 +21,15 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Inject the runtime DB URL so the user doesn't have to maintain two configs.
+# Programmatic callers (the app boot sequence) may set this before Alembic
+# loads env.py; preserve that URL so migrations run against the active ledger
+# tier rather than the legacy single-file fallback.
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.db_url)
+configured_url = config.get_main_option("sqlalchemy.url")
+config.set_main_option(
+    "sqlalchemy.url",
+    configured_url if configured_url and configured_url.strip() else settings.ledger_url,
+)
 
 # Until the engine split lands (rework Phase 2), all three storage tiers
 # share one SQLite file. Pass the tuple of every tier's ``MetaData`` so
