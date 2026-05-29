@@ -12,6 +12,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.7.0] — Unreleased
+
+### Added
+- **Spreadsheet-to-dashboard parity comparison.** New
+  `docs/spreadsheet_parity_comparison.md` documenting, KPI by KPI, how the
+  dashboard reproduces the original tracking spreadsheet and where it
+  deliberately diverges.
+- **MTD growth KPI.** `PortfolioMetrics.mtd_growth_pct` mirrors the
+  spreadsheet's month-to-date block — simple growth since the 1st of the
+  current month, net of this month's external cashflows. Surfaced as a new
+  Overview KPI card with the `mtd_growth` tooltip.
+- **Fund-fee metrics.** `PortfolioMetrics` gained `weighted_expense_ratio`
+  (value-weighted average TER, spreadsheet `Total!E15`) and
+  `annual_expense_cost_eur` (estimated €/yr fee cost, `Total!E17`), shown
+  in a new `Expense Ratio` KPI card with the `expense_ratio` tooltip.
+- **Per-instrument return figures.** New `InstrumentMetrics` /
+  `compute_instrument_metrics` compute per-holding XIRR, dividend-inclusive
+  total growth, YTD growth, capital gain and expense ratio (mirroring the
+  spreadsheet's `Lots` block). The Overview positions table gained
+  `Expense`, `Capital Gain (native)`, `XIRR` and `YTD Growth` columns; the
+  same figures are exposed in the `/overview` read model.
+- **"Vs Market" verdict.** New `MarketVerdict` / `compute_market_verdict`
+  compare the portfolio's since-inception total growth against a
+  buy-and-hold of the benchmark index (spreadsheet `Total!Z23`), rendered
+  as a KPI card with the `market_verdict` tooltip.
+
+### Changed
+- Overview positions table now colours signed return cells with the
+  colorblind-safe `.inv-cell-pos` / `.inv-cell-neg` styles via AG-Grid
+  `cellClassRules`.
+
 ## [2.6.0] — Unreleased
 
 ### Added
