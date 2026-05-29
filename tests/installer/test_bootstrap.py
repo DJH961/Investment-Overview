@@ -116,3 +116,38 @@ def test_install_latest_dashboard_falls_back_to_github_when_no_wheel(tmp_path, m
 def test_wheel_tag_handles_pep440_qualifiers(version_in_name: str) -> None:
     wheel = Path(f"investment_dashboard-{version_in_name}-py3-none-any.whl")
     assert bootstrap._wheel_tag(wheel) == f"v{version_in_name}"
+
+
+def test_write_launcher_copies_from_meipass(tmp_path, monkeypatch) -> None:
+    """Under PyInstaller the launcher source must be readable from ``_MEIPASS``.
+
+    Regression test for the ``FileNotFoundError: [WinError 3]`` that
+    ``InvestmentDashboard-Setup.exe`` raised when ``installer/launcher.py``
+    was not bundled as a data file in ``installer/installer.spec``.
+    """
+    meipass = tmp_path / "meipass"
+    (meipass / "installer").mkdir(parents=True)
+    (meipass / "installer" / "launcher.py").write_text("# launcher payload\n")
+    monkeypatch.setattr(bootstrap.sys, "_MEIPASS", str(meipass), raising=False)
+
+    install_root = tmp_path / "install"
+    install_root.mkdir()
+    bootstrap.write_launcher(install_root)
+
+    copied = install_root / "launcher.py"
+    assert copied.is_file()
+    assert copied.read_text() == "# launcher payload\n"
+
+
+def test_write_launcher_falls_back_to_repo_checkout(tmp_path, monkeypatch) -> None:
+    """Outside the frozen build the launcher is resolved relative to the package."""
+    monkeypatch.delattr(bootstrap.sys, "_MEIPASS", raising=False)
+
+    install_root = tmp_path / "install"
+    install_root.mkdir()
+    bootstrap.write_launcher(install_root)
+
+    copied = install_root / "launcher.py"
+    assert copied.is_file()
+    # Sanity check: the real launcher module header is present.
+    assert "launcher" in copied.read_text().lower()

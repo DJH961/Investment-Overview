@@ -36,12 +36,22 @@ _bundled_wheels = [
     (str(wheel), "bundled_wheels") for wheel in sorted(_DIST_DIR.glob("investment_dashboard-*.whl"))
 ]
 
+# ``installer/launcher.py`` is also imported as a Python module (see
+# ``hiddenimports`` below) so it ends up in the PYZ, but
+# ``bootstrap.write_launcher`` needs the **source file on disk** under
+# ``sys._MEIPASS`` so it can ``shutil.copy2`` it into the user's install
+# root as the steady-state entry-point. Bundle it as a data file under
+# ``installer/launcher.py`` to match the path that ``write_launcher``
+# resolves at runtime.
+_launcher_source = HERE / "launcher.py"
+_bundled_launcher = [(str(_launcher_source), "installer")]
+
 
 a = Analysis(
     [str(HERE / "bootstrap.py")],
     pathex=[str(PROJECT_ROOT)],
     binaries=[],
-    datas=_bundled_wheels,
+    datas=_bundled_wheels + _bundled_launcher,
     hiddenimports=[
         "installer",
         "installer.paths",

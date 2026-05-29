@@ -12,6 +12,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.3.1] — Unreleased
+
+### Fixed
+- Windows installer (`InvestmentDashboard-Setup.exe`) crashed at the end of installation with `FileNotFoundError: [WinError 3]` in `write_launcher`, because `installer/launcher.py` was declared only as a PyInstaller `hiddenimport` (embedded in the PYZ) and was therefore never extracted to `sys._MEIPASS` for `shutil.copy2` to read. The launcher source is now bundled as a PyInstaller data file at `<_MEIPASS>/installer/launcher.py`, matching the path `bootstrap.write_launcher` resolves at install time.
+
 ## [2.3.0] — Unreleased
 
 ### Added
