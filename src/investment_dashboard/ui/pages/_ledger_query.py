@@ -114,8 +114,23 @@ def list_ledger_rows(
 def _to_record(t: Transaction, *, fx_rate: Decimal | None = None) -> LedgerRecord:
     account: Account | None = t.account  # type: ignore[assignment]
     instrument: Instrument | None = t.instrument  # type: ignore[assignment]
+
+    # Exactly one of net_eur / net_usd is derived on the fly; the other is the
+    # actual native amount (or — for USD-native rows — the EUR figure that was
+    # converted once at import time using that day's FX rate). This keeps the
+    # displayed value for the native side identical to what was booked.
+    native_ccy = (account.native_currency if account else "").upper()
+    net_eur: Decimal | None = t.net_eur
     net_usd: Decimal | None = None
-    if fx_rate is not None and t.net_eur is not None:
+    if native_ccy == "USD":
+        net_usd = t.net_native
+    elif native_ccy == "EUR":
+        net_eur = t.net_native
+        if fx_rate is not None and t.net_native is not None:
+            net_usd = t.net_native * fx_rate
+    # Non-EUR/USD native (rare): fall back to current-rate conversion from
+    # the stored EUR amount so the USD column is at least populated.
+    elif fx_rate is not None and t.net_eur is not None:
         net_usd = t.net_eur * fx_rate
     return LedgerRecord(
         id=t.id,
@@ -128,7 +143,7 @@ def _to_record(t: Transaction, *, fx_rate: Decimal | None = None) -> LedgerRecor
         fees_native=t.fees_native,
         gross_native=t.gross_native,
         net_native=t.net_native,
-        net_eur=t.net_eur,
+        net_eur=net_eur,
         net_usd=net_usd,
         source=t.source,
     )

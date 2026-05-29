@@ -115,7 +115,6 @@ def register() -> None:
                             {"headerName": "Qty", "field": "qty", "type": "rightAligned"},
                             {"headerName": "Price", "field": "price", "type": "rightAligned"},
                             {"headerName": "Fees", "field": "fees", "type": "rightAligned"},
-                            {"headerName": "Net", "field": "net", "type": "rightAligned"},
                             {"headerName": "Net EUR", "field": "net_eur", "type": "rightAligned"},
                             {"headerName": "Net USD", "field": "net_usd", "type": "rightAligned"},
                             {"headerName": "Source", "field": "source"},

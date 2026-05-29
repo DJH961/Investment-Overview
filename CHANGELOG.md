@@ -12,6 +12,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.3.0] — Unreleased
+
+### Added
+- Shared JSON read-model layer for overview, deposits, transactions, monthly, yearly, analytics, calculator and full mobile snapshots, reusing existing domain/services calculations without adding business logic.
+- Optional headless FastAPI `/api` surface and `inv-dashboard-api` entry point for read-only dashboard sections and full snapshot delivery.
+- `inv-dashboard-export-snapshot` CLI for atomic JSON snapshot export to a cloud-synced/offline mobile handoff folder.
+- Android companion design proposal covering Kotlin/Jetpack Compose, cloud-sync delivery, JSON contract, security model and phased APK packaging.
+
+### Changed
+- Deposits and ledger presentation queries now expose raw record fetchers used by both the web UI and read-model serialization, while preserving the existing formatted table row output.
+- API access is opt-in via `INV_DASHBOARD_API_ENABLED`; optional bearer-token auth via `INV_DASHBOARD_API_TOKEN` keeps `/api/health` open for local health checks.
+
 ## [2.2.0] — Unreleased
 
 This release lands the full v2.2 "data-scientist analytics + FX-aware
