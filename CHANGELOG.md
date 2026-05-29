@@ -38,6 +38,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Overview positions table gained dual `Cost Basis`, `Value` and
   `Capital Gain` columns (inline `$X / €Y`) plus a `Total Growth %` column.
 - Tooltip key `total_growth_compounded` explaining the formula.
+- **Interactive projection tool (Monthly & Yearly).** The old blank
+  "hypothetical projection" grid is replaced by a live forward
+  projection. The expected return defaults to the portfolio's own
+  historical XIRR ("assuming existing performance continues") with
+  adjustable optimistic/pessimistic bands, editable contributions and
+  future step-ups, optional inflation-adjusted (real) values, a
+  goal-seek (time-to-target / required contribution), and an outcome-cone
+  chart. Each currency is projected natively with its own XIRR, so the
+  EUR and USD cones — and the implied future EUR→USD drift — fall out of
+  the model rather than a single static spot conversion. New tooltip keys
+  `projection_*` explain each control.
 
 ### Changed
 - Deposits drops the `Amount (native)` + `Currency` columns in favour

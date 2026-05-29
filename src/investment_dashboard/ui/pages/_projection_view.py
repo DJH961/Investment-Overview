@@ -1,18 +1,26 @@
 """Interactive projection tool — shared UI for ``/monthly`` and ``/yearly``.
 
-This module owns the *Projection* section that both period pages render. It
-has two responsibilities:
+This module owns the *Projection* section both period pages render. It is
+**dual-currency by construction** (v2.5 convention): the portfolio is
+projected forward *twice* — once as a EUR wallet and once as a USD wallet
+— each compounding at its **own** historical XIRR. Because the two return
+streams diverge exactly as they have historically, the EUR/USD figures are
+never a naïve fixed-rate conversion of one another; the implied future
+EUR/USD rate drifts on its own, and we surface it explicitly. That is the
+"account for both currencies *and* changing exchange rates" requirement,
+done the same way v2.5 walks the ledger twice rather than dividing by one
+spot rate.
 
-* :func:`build_seed` — a thin DB read that captures the simulation's
-  starting point: current portfolio value, the average historical
-  contribution for the chosen cadence, and the portfolio's **XIRR** (the
-  default "existing performance continues" growth rate).
-* :func:`render` — the NiceGUI widget: assumption controls + a Plotly
-  outcome cone + KPI cards + goal-seeking callout + a per-period table,
-  all recomputed live via :func:`~nicegui.ui.refreshable`.
+Responsibilities:
 
-All heavy math lives in :mod:`._projection_model`; this layer only
-captures inputs, converts EUR→display currency, and draws.
+* :func:`build_seed` — a thin DB read capturing both starting values, the
+  average historical contribution, and **both** per-currency XIRRs.
+* :func:`render` — the live NiceGUI widget: assumption controls, a Plotly
+  outcome cone (primary currency), dual-currency KPI tiles, an implied-FX
+  readout, a goal-seeking callout, and a dual-currency per-period table.
+
+All heavy math lives in :mod:`._projection_model`; this layer captures
+inputs, runs the two simulations, and draws.
 """
 
 from __future__ import annotations
@@ -23,14 +31,16 @@ from decimal import Decimal, InvalidOperation
 
 from nicegui import ui
 
-from investment_dashboard.ui.components import kpi_card, section
-from investment_dashboard.ui.money_format import fmt_money
+from investment_dashboard.ui.components import section
+from investment_dashboard.ui.components.kpi_card import dual_kpi_card
+from investment_dashboard.ui.money_format import dual_money, fmt_money
 from investment_dashboard.ui.pages._period_query import aggregate
 from investment_dashboard.ui.pages._projection_model import (
     SCENARIO_EXPECTED,
     SCENARIO_OPTIMISTIC,
     SCENARIO_PESSIMISTIC,
     ProjectionParams,
+    ProjectionResult,
     band_rates,
     default_expected_rate,
     required_contribution,
@@ -40,8 +50,8 @@ from investment_dashboard.ui.pages._projection_model import (
 from investment_dashboard.ui.theme import GAIN_COLOR
 
 ZERO = Decimal(0)
+ONE = Decimal(1)
 
-# Display labels + plot colours for the three scenarios.
 _SCENARIO_LABEL = {
     SCENARIO_PESSIMISTIC: "Pessimistic",
     SCENARIO_EXPECTED: "Expected",
@@ -51,24 +61,23 @@ _SCENARIO_LABEL = {
 
 @dataclass(frozen=True)
 class ProjectionSeed:
-    """Starting point + sensible defaults for the projection controls."""
+    """Starting point + per-currency defaults for the projection controls."""
 
     monthly: bool
-    starting_value_eur: Decimal
+    primary: str  # "EUR" or "USD" — display-currency ordering only
+    starting_eur: Decimal
+    starting_usd: Decimal
     avg_contribution_eur: Decimal
-    expected_rate: Decimal  # annual, already sanitised
+    avg_contribution_usd: Decimal
+    expected_rate_eur: Decimal  # annual, sanitised
+    expected_rate_usd: Decimal  # annual, sanitised
+    usd_per_eur: Decimal  # current EUR→USD spot, for contribution/target conversion
     xirr_available: bool
-    currency: str
-    fx_rate: Decimal | None
     today: date
 
     @property
     def periods_per_year(self) -> int:
         return 12 if self.monthly else 1
-
-    @property
-    def default_horizon_years(self) -> int:
-        return 10
 
 
 def _avg_contribution(rows) -> Decimal:  # type: ignore[no-untyped-def]
@@ -83,38 +92,41 @@ def build_seed(
     session,  # type: ignore[no-untyped-def]
     *,
     monthly: bool,
-    currency: str,
-    fx_rate: Decimal | None,
+    primary: str,
     today: date | None = None,
 ) -> ProjectionSeed:
-    """Read live portfolio state and derive the projection's starting point."""
-    from investment_dashboard.services import metrics_service, positions_service  # noqa: PLC0415
+    """Read live portfolio state and derive both-currency projection inputs."""
+    from investment_dashboard.services import (  # noqa: PLC0415
+        display_currency_service,
+        metrics_service,
+    )
 
     today = today or date.today()
-    starting = positions_service.total_portfolio_value(session, as_of=today)
-    rows = aggregate(session, monthly=monthly, with_closing_value=False, today=today)
-    avg_contrib = _avg_contribution(rows)
-
     metrics = metrics_service.compute_portfolio_metrics(session, as_of=today)
-    expected = default_expected_rate(metrics.xirr)
+
+    rows = aggregate(session, monthly=monthly, with_closing_value=False, today=today)
+    avg_eur = _avg_contribution(rows)
+
+    # EUR→USD spot. Prefer the live FX rate; fall back to the ratio implied
+    # by the dual-currency portfolio value; finally 1.0 so the page renders.
+    rate = display_currency_service.current_rate(session, quote="USD")
+    if (rate is None or rate == 0) and metrics.total_value_eur > 0:
+        rate = metrics.total_value_usd / metrics.total_value_eur
+    usd_per_eur = rate if rate and rate > 0 else ONE
 
     return ProjectionSeed(
         monthly=monthly,
-        starting_value_eur=starting,
-        avg_contribution_eur=avg_contrib,
-        expected_rate=expected,
-        xirr_available=metrics.xirr is not None,
-        currency=currency,
-        fx_rate=fx_rate,
+        primary=primary.upper(),
+        starting_eur=metrics.total_value_eur,
+        starting_usd=metrics.total_value_usd,
+        avg_contribution_eur=avg_eur,
+        avg_contribution_usd=avg_eur * usd_per_eur,
+        expected_rate_eur=default_expected_rate(metrics.xirr),
+        expected_rate_usd=default_expected_rate(metrics.xirr_usd),
+        usd_per_eur=usd_per_eur,
+        xirr_available=metrics.xirr is not None or metrics.xirr_usd is not None,
         today=today,
     )
-
-
-def _to_display(value_eur: Decimal, currency: str, fx_rate: Decimal | None) -> Decimal:
-    """EUR → display currency (identity for EUR or when no rate is cached)."""
-    if currency.upper() == "EUR" or fx_rate is None or fx_rate == 0:
-        return value_eur
-    return value_eur * fx_rate
 
 
 def _num(value) -> Decimal:  # type: ignore[no-untyped-def]
@@ -127,34 +139,42 @@ def _num(value) -> Decimal:  # type: ignore[no-untyped-def]
         return ZERO
 
 
+def _primary_first(seed: ProjectionSeed, eur: Decimal, usd: Decimal) -> tuple[Decimal, Decimal]:
+    """Return ``(primary, secondary)`` in the seed's display order."""
+    return (eur, usd) if seed.primary == "EUR" else (usd, eur)
+
+
 def render(seed: ProjectionSeed) -> None:  # pragma: no cover - UI wiring
-    """Render the full interactive projection tool for ``seed``."""
+    """Render the full interactive, dual-currency projection tool."""
     period_word = "month" if seed.monthly else "year"
-    ccy = seed.currency
-    fx = seed.fx_rate
+    primary = seed.primary
+    primary_expected, _ = _primary_first(seed, seed.expected_rate_eur, seed.expected_rate_usd)
+    primary_contrib, _ = _primary_first(seed, seed.avg_contribution_eur, seed.avg_contribution_usd)
 
     intro = (
-        "Starts from your current portfolio value and projects forward. The "
-        f"**expected** line grows at your portfolio's historical XIRR "
-        f"({seed.expected_rate * 100:.1f}% p.a."
-        + ("" if seed.xirr_available else ", default — not enough history for XIRR yet")
-        + "); optimistic and pessimistic fan out by the band you choose. "
-        "For planning only — not a guarantee."
+        "Starts from your current portfolio value and projects it forward as **both** "
+        "a EUR and a USD wallet — each growing at its own historical XIRR, so the two "
+        "diverge exactly as currency moves have made them diverge before "
+        + (
+            f"(expected ≈ {primary_expected * 100:.1f}% p.a. in {primary}). "
+            if seed.xirr_available
+            else "(default assumption — not enough history for XIRR yet). "
+        )
+        + "Optimistic / pessimistic fan out by the band you choose. Planning aid, not a forecast."
     )
     ui.markdown(intro).classes("text-caption opacity-70")
 
-    # --- assumption controls -------------------------------------------------
     controls: dict[str, ui.element] = {}
     with ui.row().classes("gap-md items-end flex-wrap q-mb-sm"):
         controls["expected"] = (
             ui.number(
-                "Expected return % p.a.",
-                value=round(float(seed.expected_rate * 100), 2),
+                f"Expected return % p.a. ({primary})",
+                value=round(float(primary_expected * 100), 2),
                 step=0.5,
                 format="%.2f",
             )
             .props("dense outlined")
-            .classes("w-40")
+            .classes("w-48")
         )
         controls["band"] = (
             ui.number("± band (pp)", value=3.0, min=0, step=0.5, format="%.1f")
@@ -163,8 +183,8 @@ def render(seed: ProjectionSeed) -> None:  # pragma: no cover - UI wiring
         )
         controls["contribution"] = (
             ui.number(
-                f"Contribution / {period_word} ({ccy})",
-                value=round(float(_to_display(seed.avg_contribution_eur, ccy, fx)), 2),
+                f"Contribution / {period_word} ({primary})",
+                value=round(float(primary_contrib), 2),
                 min=0,
                 step=50,
                 format="%.2f",
@@ -183,7 +203,7 @@ def render(seed: ProjectionSeed) -> None:  # pragma: no cover - UI wiring
             .classes("w-32")
         )
         controls["target"] = (
-            ui.number(f"Target value ({ccy})", value=0.0, min=0, step=10000, format="%.0f")
+            ui.number(f"Target value ({primary})", value=0.0, min=0, step=10000, format="%.0f")
             .props("dense outlined")
             .classes("w-44")
         )
@@ -193,8 +213,8 @@ def render(seed: ProjectionSeed) -> None:  # pragma: no cover - UI wiring
         controls["horizon"] = (
             ui.slider(
                 min=1,
-                max=40 if seed.monthly is False else 480,
-                value=seed.default_horizon_years if not seed.monthly else 120,
+                max=480 if seed.monthly else 40,
+                value=120 if seed.monthly else 10,
                 step=1,
             )
             .props("label-always")
@@ -202,17 +222,25 @@ def render(seed: ProjectionSeed) -> None:  # pragma: no cover - UI wiring
         )
         controls["real"] = ui.switch("Show in today's money (real)", value=False)
 
-    # --- live body -----------------------------------------------------------
     @ui.refreshable
     def body() -> None:
-        params, target, real = _params_from_controls(seed, controls)
-        result = simulate(params)
-        _render_kpis(result, target=target, real=real, currency=ccy, fx=fx)
-        _render_chart(result, real=real, currency=ccy, fx=fx, period_word=period_word)
+        params_eur, params_usd, target_primary, real = _params(seed, controls)
+        result_eur = simulate(params_eur)
+        result_usd = simulate(params_usd)
+        primary_result = result_eur if primary == "EUR" else result_usd
+
+        _render_kpis(seed, result_eur, result_usd, real=real)
+        _render_chart(seed, primary_result, real=real, period_word=period_word)
+        _render_implied_fx(seed, result_eur, result_usd, real=real)
         _render_goal(
-            params, result, target=target, real=real, currency=ccy, fx=fx, period_word=period_word
+            params_primary=(params_eur if primary == "EUR" else params_usd),
+            primary_result=primary_result,
+            target=target_primary,
+            real=real,
+            primary=primary,
+            period_word=period_word,
         )
-        _render_table(result, real=real, currency=ccy, fx=fx, period_word=period_word)
+        _render_table(seed, result_eur, result_usd, real=real, period_word=period_word)
 
     def _refresh(_event: object = None) -> None:
         body.refresh()
@@ -223,112 +251,153 @@ def render(seed: ProjectionSeed) -> None:  # pragma: no cover - UI wiring
     body()
 
 
-def _params_from_controls(
+def _params(
     seed: ProjectionSeed,
     controls: dict[str, ui.element],
-) -> tuple[ProjectionParams, Decimal, bool]:
-    """Translate live control values into a :class:`ProjectionParams` (EUR base)."""
-    expected = _num(controls["expected"].value) / Decimal(100)
+) -> tuple[ProjectionParams, ProjectionParams, Decimal, bool]:
+    """Build the EUR + USD simulation params from live control values.
+
+    The user edits a single expected return (in the primary currency); the
+    secondary currency's expected return is offset by the **historical
+    spread** between the two XIRRs, preserving the realistic, FX-driven gap
+    as the user explores scenarios.
+    """
+    primary = seed.primary
+    expected_primary = _num(controls["expected"].value) / Decimal(100)
+    spread = seed.expected_rate_usd - seed.expected_rate_eur  # usd minus eur
+    if primary == "EUR":
+        expected_eur = expected_primary
+        expected_usd = expected_primary + spread
+    else:
+        expected_usd = expected_primary
+        expected_eur = expected_primary - spread
+
     band = _num(controls["band"].value) / Decimal(100)
     stepup = _num(controls["stepup"].value) / Decimal(100)
     inflation = _num(controls["inflation"].value) / Decimal(100)
-    horizon = int(_num(controls["horizon"].value))
+    horizon = max(int(_num(controls["horizon"].value)), 0)
     real = bool(controls["real"].value)
 
-    # Controls are entered in display currency; the engine works in EUR.
-    fx = seed.fx_rate
-    rate = fx if (seed.currency.upper() != "EUR" and fx) else Decimal(1)
-    contribution_eur = _num(controls["contribution"].value) / (rate or Decimal(1))
-    target_display = _num(controls["target"].value)
-    target_eur = target_display / (rate or Decimal(1))
+    contrib_primary = _num(controls["contribution"].value)
+    if primary == "EUR":
+        contrib_eur = contrib_primary
+        contrib_usd = contrib_primary * seed.usd_per_eur
+    else:
+        contrib_usd = contrib_primary
+        contrib_eur = contrib_primary / seed.usd_per_eur if seed.usd_per_eur else contrib_primary
 
-    params = ProjectionParams(
-        starting_value=seed.starting_value_eur,
-        base_contribution=contribution_eur,
-        periods=max(horizon, 0),
-        periods_per_year=seed.periods_per_year,
-        annual_rates=band_rates(expected, band),
-        annual_contribution_growth=stepup,
-        inflation_rate=inflation,
-        start=seed.today,
+    target_primary = _num(controls["target"].value)
+
+    common = {
+        "periods": horizon,
+        "periods_per_year": seed.periods_per_year,
+        "annual_contribution_growth": stepup,
+        "inflation_rate": inflation,
+        "start": seed.today,
+    }
+    params_eur = ProjectionParams(
+        starting_value=seed.starting_eur,
+        base_contribution=contrib_eur,
+        annual_rates=band_rates(expected_eur, band),
+        **common,  # type: ignore[arg-type]
     )
-    return params, target_eur, real
+    params_usd = ProjectionParams(
+        starting_value=seed.starting_usd,
+        base_contribution=contrib_usd,
+        annual_rates=band_rates(expected_usd, band),
+        **common,  # type: ignore[arg-type]
+    )
+    return params_eur, params_usd, target_primary, real
 
 
 def _series(point, scenario: str, *, real: bool) -> Decimal:  # type: ignore[no-untyped-def]
     return (point.real_by_scenario if real else point.nominal_by_scenario)[scenario]
 
 
-def _render_kpis(result, *, target, real, currency, fx) -> None:  # type: ignore[no-untyped-def]
+def _final(result: ProjectionResult, scenario: str, *, real: bool) -> Decimal:
     last = result.final
+    if last is None:
+        return result.params.starting_value
+    return _series(last, scenario, real=real)
+
+
+def _render_kpis(
+    seed: ProjectionSeed,
+    result_eur: ProjectionResult,
+    result_usd: ProjectionResult,
+    *,
+    real: bool,
+) -> None:
+    primary = seed.primary
     money_kind = "real" if real else "nominal"
     with ui.row().classes("gap-md flex-wrap q-mt-sm"):
-        if last is None:
-            kpi_card(
-                "Projected value",
-                fmt_money(_disp(result.params.starting_value, currency, fx), currency),
-            )
-            return
-        kpi_card(
+        dual_kpi_card(
             "Expected value",
-            fmt_money(_disp(_series(last, SCENARIO_EXPECTED, real=real), currency, fx), currency),
-            sub=f"{money_kind}, end of horizon",
+            fmt_money(_final(result_eur, SCENARIO_EXPECTED, real=real), "EUR"),
+            fmt_money(_final(result_usd, SCENARIO_EXPECTED, real=real), "USD"),
+            primary=primary,
             tooltip_key="projection_expected",
         )
-        kpi_card(
+        dual_kpi_card(
             "Optimistic",
-            fmt_money(_disp(_series(last, SCENARIO_OPTIMISTIC, real=real), currency, fx), currency),
-            color=GAIN_COLOR,
+            fmt_money(_final(result_eur, SCENARIO_OPTIMISTIC, real=real), "EUR"),
+            fmt_money(_final(result_usd, SCENARIO_OPTIMISTIC, real=real), "USD"),
+            primary=primary,
         )
-        kpi_card(
+        dual_kpi_card(
             "Pessimistic",
-            fmt_money(
-                _disp(_series(last, SCENARIO_PESSIMISTIC, real=real), currency, fx), currency
-            ),
-            color="#c0392b",
+            fmt_money(_final(result_eur, SCENARIO_PESSIMISTIC, real=real), "EUR"),
+            fmt_money(_final(result_usd, SCENARIO_PESSIMISTIC, real=real), "USD"),
+            primary=primary,
         )
-        kpi_card(
+        dual_kpi_card(
             "Total contributed",
-            fmt_money(_disp(result.total_contributed, currency, fx), currency),
-            sub="new money over horizon",
+            fmt_money(result_eur.total_contributed, "EUR"),
+            fmt_money(result_usd.total_contributed, "USD"),
+            primary=primary,
         )
-        expected_final = _series(last, SCENARIO_EXPECTED, real=real)
-        gain = expected_final - result.params.starting_value - result.total_contributed
-        kpi_card(
-            "Projected growth",
-            fmt_money(_disp(gain, currency, fx), currency),
-            sub="expected, excl. contributions",
-            color=GAIN_COLOR if gain >= 0 else "#c0392b",
+        gain_eur = (
+            _final(result_eur, SCENARIO_EXPECTED, real=real)
+            - result_eur.params.starting_value
+            - result_eur.total_contributed
+        )
+        gain_usd = (
+            _final(result_usd, SCENARIO_EXPECTED, real=real)
+            - result_usd.params.starting_value
+            - result_usd.total_contributed
+        )
+        dual_kpi_card(
+            f"Projected growth ({money_kind})",
+            fmt_money(gain_eur, "EUR"),
+            fmt_money(gain_usd, "USD"),
+            primary=primary,
         )
 
 
-def _disp(value_eur: Decimal, currency: str, fx: Decimal | None) -> Decimal:
-    return _to_display(value_eur, currency, fx)
-
-
-def _render_chart(result, *, real, currency, fx, period_word) -> None:  # type: ignore[no-untyped-def]
+def _render_chart(
+    seed: ProjectionSeed,
+    result: ProjectionResult,
+    *,
+    real: bool,
+    period_word: str,
+) -> None:
     import plotly.graph_objects as go  # noqa: PLC0415
 
+    primary = seed.primary
     fig = go.Figure()
     if result.points:
         x = [p.label for p in result.points]
 
         def vals(scenario: str) -> list[float]:
-            return [
-                float(_disp(_series(p, scenario, real=real), currency, fx)) for p in result.points
-            ]
+            return [float(_series(p, scenario, real=real)) for p in result.points]
 
         pess, exp, opt = (
             vals(SCENARIO_PESSIMISTIC),
             vals(SCENARIO_EXPECTED),
             vals(SCENARIO_OPTIMISTIC),
         )
-        contributed = [
-            float(_disp(p.contributed + result.params.starting_value, currency, fx))
-            for p in result.points
-        ]
+        invested = [float(p.contributed + result.params.starting_value) for p in result.points]
 
-        # Shaded cone: pessimistic (lower) then optimistic with fill to it.
         fig.add_trace(
             go.Scatter(
                 x=x, y=pess, mode="lines", line={"width": 0}, name="Pessimistic", showlegend=False
@@ -349,7 +418,7 @@ def _render_chart(result, *, real, currency, fx, period_word) -> None:  # type: 
         fig.add_trace(
             go.Scatter(
                 x=x,
-                y=contributed,
+                y=invested,
                 mode="lines",
                 name="Invested (start + contributions)",
                 line={"width": 1.4, "dash": "dash", "color": GAIN_COLOR},
@@ -357,7 +426,10 @@ def _render_chart(result, *, real, currency, fx, period_word) -> None:  # type: 
         )
     title_kind = "today's money" if real else "nominal"
     fig.update_layout(
-        title=f"Projected value over the next {len(result.points)} {period_word}s ({currency}, {title_kind})",
+        title=(
+            f"Projected value over the next {len(result.points)} {period_word}s "
+            f"({primary}, {title_kind})"
+        ),
         template="colorblind_modern",
         margin={"l": 0, "r": 0, "t": 40, "b": 0},
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
@@ -365,33 +437,59 @@ def _render_chart(result, *, real, currency, fx, period_word) -> None:  # type: 
     ui.plotly(fig).classes("w-full").style("height:420px")
 
 
+def _render_implied_fx(
+    seed: ProjectionSeed,
+    result_eur: ProjectionResult,
+    result_usd: ProjectionResult,
+    *,
+    real: bool,
+) -> None:
+    """Surface the EUR/USD rate the two return streams imply at the horizon."""
+    final_eur = _final(result_eur, SCENARIO_EXPECTED, real=real)
+    final_usd = _final(result_usd, SCENARIO_EXPECTED, real=real)
+    if final_eur <= 0:
+        return
+    implied = final_usd / final_eur
+    today_rate = seed.usd_per_eur
+    drift = ((implied / today_rate) - ONE) * Decimal(100) if today_rate else ZERO
+    arrow = "↑" if implied >= today_rate else "↓"
+    ui.label(
+        f"Implied EUR/USD at horizon: {implied:.4f} {arrow}  "
+        f"(today {today_rate:.4f}, {drift:+.1f}% — the gap between the EUR and USD "
+        "return assumptions, not a fixed-rate conversion)."
+    ).classes("text-caption opacity-70")
+
+
 def _fmt_years(years: Decimal) -> str:
     y = float(years)
-    if y >= 1:
-        return f"{y:.1f} yr"
-    return f"{y * 12:.0f} mo"
+    return f"{y:.1f} yr" if y >= 1 else f"{y * 12:.0f} mo"
 
 
-def _render_goal(  # type: ignore[no-untyped-def]
-    params, result, *, target, real, currency, fx, period_word
+def _render_goal(
+    *,
+    params_primary: ProjectionParams,
+    primary_result: ProjectionResult,
+    target: Decimal,
+    real: bool,
+    primary: str,
+    period_word: str,
 ) -> None:
     if target <= 0:
         return
-    target_disp = fmt_money(_disp(target, currency, fx), currency)
-    hits = time_to_target(result, target, real=real)
+    target_disp = fmt_money(target, primary)
+    hits = time_to_target(primary_result, target, real=real)
     with ui.card().classes("w-full q-mt-sm").style("background: rgba(46,134,193,0.06)"):
-        ui.label(f"🎯 Reaching {target_disp}").classes("text-subtitle2")
+        ui.label(f"🎯 Reaching {target_disp} ({primary})").classes("text-subtitle2")
         with ui.row().classes("gap-lg flex-wrap"):
             for scenario in (SCENARIO_PESSIMISTIC, SCENARIO_EXPECTED, SCENARIO_OPTIMISTIC):
                 hit = hits.get(scenario)
                 when = f"{hit.label} ({_fmt_years(hit.years)})" if hit else "not within horizon"
                 ui.label(f"{_SCENARIO_LABEL[scenario]}: {when}").classes("text-body2")
-        needed = required_contribution(params, target)
+        needed = required_contribution(params_primary, target)
         if needed is not None:
-            needed_disp = fmt_money(_disp(needed, currency, fx), currency)
             ui.label(
-                f"To reach it by the end of the horizon at the expected return, contribute about "
-                f"{needed_disp} per {period_word}."
+                "To reach it by the end of the horizon at the expected return, contribute about "
+                f"{fmt_money(needed, primary)} per {period_word}."
             ).classes("text-caption opacity-80")
         else:
             ui.label(
@@ -400,52 +498,46 @@ def _render_goal(  # type: ignore[no-untyped-def]
             ).classes("text-caption opacity-80")
 
 
-def _render_table(result, *, real, currency, fx, period_word) -> None:  # type: ignore[no-untyped-def]
+def _render_table(
+    seed: ProjectionSeed,
+    result_eur: ProjectionResult,
+    result_usd: ProjectionResult,
+    *,
+    real: bool,
+    period_word: str,
+) -> None:
+    primary = seed.primary
     rows = []
-    for p in result.points:
+    for pe, pu in zip(result_eur.points, result_usd.points, strict=True):
+
+        def cell(scenario: str) -> str:
+            return dual_money(
+                _series(pe, scenario, real=real),  # noqa: B023 - bound per iteration
+                _series(pu, scenario, real=real),  # noqa: B023
+                primary=primary,
+                decimals=0,
+            )
+
         rows.append(
             {
-                "label": p.label,
-                "contributed": float(_disp(p.contributed, currency, fx)),
-                "pessimistic": float(
-                    _disp(_series(p, SCENARIO_PESSIMISTIC, real=real), currency, fx)
+                "label": pe.label,
+                "contributed": dual_money(
+                    pe.contributed, pu.contributed, primary=primary, decimals=0
                 ),
-                "expected": float(_disp(_series(p, SCENARIO_EXPECTED, real=real), currency, fx)),
-                "optimistic": float(
-                    _disp(_series(p, SCENARIO_OPTIMISTIC, real=real), currency, fx)
-                ),
+                "pessimistic": cell(SCENARIO_PESSIMISTIC),
+                "expected": cell(SCENARIO_EXPECTED),
+                "optimistic": cell(SCENARIO_OPTIMISTIC),
             }
         )
-    money_fmt = "params.value.toLocaleString(undefined,{maximumFractionDigits:0})"
     with section(f"Year-by-{period_word} detail"):
         ui.aggrid(
             {
                 "columnDefs": [
                     {"headerName": period_word.capitalize(), "field": "label", "pinned": "left"},
-                    {
-                        "headerName": f"Contributed ({currency})",
-                        "field": "contributed",
-                        "type": "rightAligned",
-                        "valueFormatter": money_fmt,
-                    },
-                    {
-                        "headerName": f"Pessimistic ({currency})",
-                        "field": "pessimistic",
-                        "type": "rightAligned",
-                        "valueFormatter": money_fmt,
-                    },
-                    {
-                        "headerName": f"Expected ({currency})",
-                        "field": "expected",
-                        "type": "rightAligned",
-                        "valueFormatter": money_fmt,
-                    },
-                    {
-                        "headerName": f"Optimistic ({currency})",
-                        "field": "optimistic",
-                        "type": "rightAligned",
-                        "valueFormatter": money_fmt,
-                    },
+                    {"headerName": "Contributed", "field": "contributed", "type": "rightAligned"},
+                    {"headerName": "Pessimistic", "field": "pessimistic", "type": "rightAligned"},
+                    {"headerName": "Expected", "field": "expected", "type": "rightAligned"},
+                    {"headerName": "Optimistic", "field": "optimistic", "type": "rightAligned"},
                 ],
                 "rowData": rows,
                 "defaultColDef": {"sortable": True, "resizable": True},
