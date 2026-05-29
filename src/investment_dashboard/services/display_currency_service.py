@@ -21,13 +21,17 @@ from sqlalchemy.orm import Session
 from investment_dashboard.repositories import app_config_repo
 from investment_dashboard.services import fx_service
 
-#: Currencies the toggle accepts. v2.2 added DKK (Danish krone) alongside
-#: the original EUR/USD pair from v1.3. Adding more is a matter of
-#: teaching :func:`convert_from_eur` how to look up the rate **and**
-#: ensuring :mod:`fx_service` backfills the EUR→quote series at boot
-#: (see ``boot._refresh_fx``). The currency-symbol map in
-#: :mod:`investment_dashboard.ui.money_format` should also be extended.
-SUPPORTED_CURRENCIES: tuple[str, ...] = ("EUR", "USD", "DKK")
+#: Currencies the toggle accepts. v1.3 introduced the EUR/USD pair; the
+#: v2.2 DKK experiment was reverted in v2.4 because the third leg made
+#: the header toggle, the per-row column pairing and the per-trade-date
+#: FX backfill noisier without any concrete benefit for the only user
+#: base. Re-adding a currency is a matter of teaching
+#: :func:`convert_from_eur` how to look up the rate, ensuring
+#: :mod:`fx_service` backfills the EUR→quote series at boot
+#: (see ``boot._refresh_fx``), extending the currency-symbol map in
+#: :mod:`investment_dashboard.ui.money_format`, and broadening the
+#: secondary-column picker in the monthly/yearly tables.
+SUPPORTED_CURRENCIES: tuple[str, ...] = ("EUR", "USD")
 DEFAULT_CURRENCY = "EUR"
 
 _CONFIG_KEY = "display_currency"

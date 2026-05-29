@@ -94,9 +94,18 @@ def test_summary_totals(session: Session) -> None:
     assert summary.mtd_contrib_eur == Decimal("180.00")
     # Interest YTD = 11
     assert summary.interest_ytd_eur == Decimal("11.00")
+    # Seed account is USD-native, so the USD totals come straight from
+    # net_native (no EUR round-trip) regardless of whether FX history
+    # was seeded — verifies the v2.4 fix for the deposits-USD column.
+    assert summary.total_contrib_usd == Decimal("1700.00")  # 500+1000+200
+    assert summary.ytd_contrib_usd == Decimal("1200.00")  # 1000+200
+    assert summary.mtd_contrib_usd == Decimal("200.00")  # today's
+    assert summary.interest_ytd_usd == Decimal("12.00")  # 12
 
 
 def test_summary_handles_no_data(session: Session) -> None:
     summary = compute_summary(session)
     assert summary.total_contrib_eur == Decimal(0)
     assert summary.ytd_contrib_eur == Decimal(0)
+    assert summary.total_contrib_usd == Decimal(0)
+    assert summary.ytd_contrib_usd == Decimal(0)

@@ -34,8 +34,9 @@ log = logging.getLogger(__name__)
 #: list. The display-currency toggle in
 #: :mod:`investment_dashboard.services.display_currency_service` is the
 #: source of truth for which quotes the UI can render — keep this in
-#: lockstep with ``SUPPORTED_CURRENCIES`` (minus the EUR base).
-DEFAULT_QUOTES: tuple[str, ...] = ("USD", "DKK")
+#: lockstep with ``SUPPORTED_CURRENCIES`` (minus the EUR base). v2.4
+#: dropped the DKK leg added in v2.2.
+DEFAULT_QUOTES: tuple[str, ...] = ("USD",)
 
 _PROVIDER = "frankfurter"
 

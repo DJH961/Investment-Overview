@@ -30,9 +30,14 @@ from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
+from investment_dashboard.domain.returns import (
+    total_growth_pct_compounded,
+    xirr,
+    years_between,
+)
 from investment_dashboard.models import Transaction
 
 ZERO = Decimal(0)
@@ -71,12 +76,80 @@ class PeriodRow:
     #: The currency the ``*_display`` fields are denominated in (upper
     #: case ISO code). Empty when no FX-aware path was taken.
     display_currency: str = field(default="")
+    #: Cumulative Total Growth (compounded XIRR) measured from the
+    #: portfolio inception up to the end of this period — the v2.5
+    #: headline metric on the monthly / yearly tables. ``None`` when
+    #: the period precedes any external cashflow or XIRR cannot be
+    #: rooted (degenerate cashflow stream).
+    total_growth_compounded_eur: Decimal | None = None
+    total_growth_compounded_usd: Decimal | None = None
+    #: Closing value translated to USD with the period-end FX rate
+    #: (forward-filled). ``None`` when no FX history is on file.
+    closing_value_usd: Decimal | None = None
 
 
-def _amount_eur(t: Transaction) -> Decimal:
+def _amount_eur(
+    t: Transaction,
+    *,
+    eur_to_usd: dict[date, Decimal] | None = None,
+) -> Decimal:
+    """Return the transaction's EUR amount, computing it on the fly when needed.
+
+    The importer normally writes ``net_eur`` for every transaction, but
+    when the FX cache was empty at import time it left ``net_eur=None``.
+    The v2.3 fallback was to return ``net_native`` unchanged — which, for
+    USD-native accounts, silently treated dollars as euros and made the
+    monthly/yearly tables show wildly wrong (and usually inflated) EUR
+    totals. v2.4 instead converts ``net_native`` via the EUR→native
+    rate that was in force on the trade date (forward-filled when
+    necessary), and only falls back to the raw ``net_native`` when even
+    that is unavailable *and* the account is EUR-native.
+    """
     if t.net_eur is not None:
         return t.net_eur
-    return t.net_native or ZERO
+    if t.net_native is None:
+        return ZERO
+    native_ccy = (t.account.native_currency if t.account else "EUR").upper()
+    if native_ccy == "EUR":
+        return t.net_native
+    if native_ccy == "USD" and eur_to_usd:
+        rate = lookup_rate_with_forward_fill(eur_to_usd, t.date)
+        if rate is not None and rate != 0:
+            return t.net_native / rate
+    # Last resort: leave the figure out rather than mix currencies; the
+    # caller's bucket will simply be missing this row instead of being
+    # poisoned with a wrong-magnitude number.
+    return ZERO
+
+
+def _amount_in(
+    t: Transaction,
+    *,
+    display_currency: str,
+    eur_to_usd: dict[date, Decimal],
+) -> Decimal | None:
+    """Return the txn's value in ``display_currency`` for trade-date FX.
+
+    Returns ``None`` when we cannot honestly produce a number (e.g. no
+    FX rate is on file and the native currency doesn't match the
+    display currency). Callers should treat ``None`` as "skip this row
+    from the display-currency bucket" — the EUR bucket is still
+    populated separately so the page is never blank.
+    """
+    target = display_currency.upper()
+    native_ccy = (t.account.native_currency if t.account else "EUR").upper()
+    # Same-currency short-circuit: never round-trip through EUR.
+    if native_ccy == target and t.net_native is not None:
+        return t.net_native
+    eur_amt = _amount_eur(t, eur_to_usd=eur_to_usd)
+    if target == "EUR":
+        return eur_amt
+    if target == "USD":
+        rate = lookup_rate_with_forward_fill(eur_to_usd, t.date)
+        if rate is None or rate == 0:
+            return None
+        return eur_amt * rate
+    return None
 
 
 def _period_key(d: date, *, monthly: bool) -> str:
@@ -154,12 +227,22 @@ def aggregate(  # noqa: PLR0912, PLR0915
     a Modified Dietz growth % computed in the display currency. The EUR
     fields are unchanged so EUR-display callers see no diff.
     """
-    txns = session.scalars(select(Transaction)).all()
+    txns = session.scalars(select(Transaction).options(joinedload(Transaction.account))).all()
+
+    # Load the EUR→USD series once: it powers both the EUR fallback
+    # (when net_eur was never written by the importer because FX was
+    # cold at the time) and the display-currency conversion below.
+    # Local import to avoid a cycle: services -> repositories -> models,
+    # while this module is imported by the UI layer.
+    from investment_dashboard.repositories import fx_repo  # noqa: PLC0415
+
+    eur_to_usd = fx_repo.get_rates(session, base="EUR", quote="USD")
+
     buckets: dict[str, dict[str, Decimal]] = {}
     for t in txns:
         key = _period_key(t.date, monthly=monthly)
         b = buckets.setdefault(key, {"contrib": ZERO, "div": ZERO, "int": ZERO})
-        amt = _amount_eur(t)
+        amt = _amount_eur(t, eur_to_usd=eur_to_usd)
         if t.kind == "deposit":
             b["contrib"] += amt
         elif t.kind == "withdrawal":
@@ -208,11 +291,8 @@ def aggregate(  # noqa: PLR0912, PLR0915
     normalised_display_ccy = ""
     if display_currency and display_currency.upper() != "EUR" and buckets:
         normalised_display_ccy = display_currency.upper()
-        # Load the EUR→display series once (small dict; fx_history is
-        # a daily cache table per quote, not per row).
-        from investment_dashboard.repositories import fx_repo  # noqa: PLC0415
-
-        fx_rates = fx_repo.get_rates(session, base="EUR", quote=normalised_display_ccy)
+        # We've already loaded the EUR→USD series once above; reuse it.
+        fx_rates = eur_to_usd if normalised_display_ccy == "USD" else {}
 
         # If we have no FX history at all for this quote, skip the
         # display-side conversion entirely — the renderer's spot-rate
@@ -221,12 +301,15 @@ def aggregate(  # noqa: PLR0912, PLR0915
             for label in buckets:
                 display_buckets[label] = {"contrib": ZERO, "div": ZERO, "int": ZERO}
             for t in txns:
-                rate = lookup_rate_with_forward_fill(fx_rates, t.date)
-                if rate is None or rate == 0:
+                amt = _amount_in(
+                    t,
+                    display_currency=normalised_display_ccy,
+                    eur_to_usd=eur_to_usd,
+                )
+                if amt is None:
                     continue
                 key = _period_key(t.date, monthly=monthly)
                 b = display_buckets[key]
-                amt = _amount_eur(t) * rate
                 if t.kind == "deposit":
                     b["contrib"] += amt
                 elif t.kind == "withdrawal":
@@ -298,7 +381,109 @@ def aggregate(  # noqa: PLR0912, PLR0915
         )
         for k, v in sorted(buckets.items())
     ]
+
+    # ------- Cumulative Total Growth (compounded XIRR) per row (v2.5) -------
+    # Walk both currency series of cashflows once; at the end of every
+    # period emit (1 + xirr_to_date)^years_to_date − 1. This is the
+    # canonical headline metric on the Monthly / Yearly tables.
+    rows = _attach_cumulative_growth(
+        rows,
+        txns=list(txns),
+        eur_to_usd=eur_to_usd,
+        monthly=monthly,
+        today=today,
+    )
     return rows
+
+
+def _attach_cumulative_growth(
+    rows: list[PeriodRow],
+    *,
+    txns: list[Transaction],
+    eur_to_usd: dict[date, Decimal],
+    monthly: bool,
+    today: date,
+) -> list[PeriodRow]:
+    """Populate ``total_growth_compounded_eur/usd`` (+ ``closing_value_usd``)
+    on every :class:`PeriodRow` in place-equivalent (returns a new list).
+
+    Cumulative XIRR is recomputed at each period end from the same
+    cashflow stream :mod:`metrics_service` uses, terminated with that
+    period's closing value (EUR or USD). The corresponding compounded
+    Total Growth is ``(1 + xirr) ^ years_invested − 1`` measured from
+    the earliest external cashflow up to the period end.
+    """
+    if not rows:
+        return rows
+    # Local import to avoid a cycle (services → repositories → models).
+    from investment_dashboard.services import metrics_service  # noqa: PLC0415
+
+    def _usd(t: Transaction) -> Decimal:
+        return metrics_service._txn_usd_amount(t, eur_to_usd=eur_to_usd)
+
+    flows_eur = metrics_service.build_portfolio_cashflows(txns)
+    flows_usd = metrics_service.build_portfolio_cashflows(txns, amount_fn=_usd)
+
+    # First external cashflow date — origin of "years invested".
+    first_cf: date | None = None
+    for t in sorted(txns, key=lambda r: r.date):
+        if t.kind in {"deposit", "withdrawal"}:
+            first_cf = t.date
+            break
+
+    out: list[PeriodRow] = []
+    for r in rows:
+        period_end = _period_end(r.label, monthly=monthly, today=today)
+        closing_eur = r.closing_value_eur
+        # USD closing: prefer the display row when display_currency is
+        # already USD; otherwise convert EUR with the period-end FX.
+        if r.display_currency == "USD" and r.closing_value_display is not None:
+            closing_usd: Decimal | None = r.closing_value_display
+        else:
+            fx_eod = lookup_rate_with_forward_fill(eur_to_usd, period_end)
+            closing_usd = closing_eur * fx_eod if fx_eod is not None and fx_eod != 0 else None
+
+        flows_eur_to_date = [cf for cf in flows_eur if cf.date <= period_end]
+        flows_usd_to_date = [cf for cf in flows_usd if cf.date <= period_end]
+
+        years = years_between(first_cf, period_end) if first_cf else Decimal(0)
+
+        xirr_eur = (
+            xirr(flows_eur_to_date, as_of=period_end, terminal_value=closing_eur)
+            if flows_eur_to_date
+            else None
+        )
+        growth_eur = total_growth_pct_compounded(xirr_eur, years)
+        if closing_usd is not None and flows_usd_to_date:
+            xirr_usd = xirr(flows_usd_to_date, as_of=period_end, terminal_value=closing_usd)
+            growth_usd = total_growth_pct_compounded(xirr_usd, years)
+        else:
+            growth_usd = None
+
+        out.append(
+            PeriodRow(
+                label=r.label,
+                contributions=r.contributions,
+                dividends=r.dividends,
+                interest=r.interest,
+                net_flow=r.net_flow,
+                closing_value_eur=r.closing_value_eur,
+                opening_value_eur=r.opening_value_eur,
+                growth_pct=r.growth_pct,
+                contributions_display=r.contributions_display,
+                dividends_display=r.dividends_display,
+                interest_display=r.interest_display,
+                net_flow_display=r.net_flow_display,
+                closing_value_display=r.closing_value_display,
+                opening_value_display=r.opening_value_display,
+                growth_pct_display=r.growth_pct_display,
+                display_currency=r.display_currency,
+                total_growth_compounded_eur=growth_eur,
+                total_growth_compounded_usd=growth_usd,
+                closing_value_usd=closing_usd,
+            )
+        )
+    return out
 
 
 def to_table_rows(
@@ -348,6 +533,18 @@ def to_table_rows(
             "growth_pct": (
                 f"{(_growth_pct(r) or 0) * Decimal(100):,.2f} %"
                 if _growth_pct(r) is not None
+                else "—"
+            ),
+            # v2.5 cumulative Total Growth per currency — the headline
+            # column on monthly / yearly tables.
+            "total_growth_eur": (
+                f"{r.total_growth_compounded_eur * Decimal(100):,.2f} %"
+                if r.total_growth_compounded_eur is not None
+                else "—"
+            ),
+            "total_growth_usd": (
+                f"{r.total_growth_compounded_usd * Decimal(100):,.2f} %"
+                if r.total_growth_compounded_usd is not None
                 else "—"
             ),
         }

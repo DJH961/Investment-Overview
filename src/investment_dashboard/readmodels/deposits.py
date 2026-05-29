@@ -23,6 +23,10 @@ def _summary_dict(s: DepositSummary) -> dict[str, Any]:
         "ytd_contrib_eur": dec(s.ytd_contrib_eur),
         "mtd_contrib_eur": dec(s.mtd_contrib_eur),
         "interest_ytd_eur": dec(s.interest_ytd_eur),
+        "total_contrib_usd": dec(s.total_contrib_usd),
+        "ytd_contrib_usd": dec(s.ytd_contrib_usd),
+        "mtd_contrib_usd": dec(s.mtd_contrib_usd),
+        "interest_ytd_usd": dec(s.interest_ytd_usd),
     }
 
 
@@ -35,6 +39,7 @@ def _record_dict(r: DepositRecord) -> dict[str, Any]:
         "amount_native": dec(r.amount_native),
         "currency": r.native_currency,
         "amount_eur": dec(r.amount_eur),
+        "amount_usd": dec(r.amount_usd) if r.amount_usd is not None else None,
         "description": r.description,
     }
 

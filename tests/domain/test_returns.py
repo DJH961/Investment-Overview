@@ -19,8 +19,10 @@ from investment_dashboard.domain.returns import (
     cagr,
     capital_gain,
     total_growth_pct,
+    total_growth_pct_compounded,
     twr,
     xirr,
+    years_between,
 )
 
 
@@ -169,3 +171,60 @@ def test_xirr_is_annualised(days: int, expected_low: float, expected_high: float
         result = xirr(cfs, as_of=date(2024, 1, 1), terminal_value=Decimal(121))
     assert result is not None
     assert expected_low < float(result) < expected_high
+
+
+# -----------------------------------------------------------------------------
+# total_growth_pct_compounded / years_between (v2.5 headline metric)
+# -----------------------------------------------------------------------------
+
+
+class TestYearsBetween:
+    def test_one_calendar_year(self) -> None:
+        # 365 / 365.25 ≈ 0.99932
+        y = years_between(date(2023, 1, 1), date(2024, 1, 1))
+        assert _approx(y, 365.0 / 365.25)
+
+    def test_negative_or_zero_returns_zero(self) -> None:
+        assert years_between(date(2024, 1, 1), date(2024, 1, 1)) == Decimal(0)
+        assert years_between(date(2024, 6, 1), date(2024, 1, 1)) == Decimal(0)
+
+    def test_one_day(self) -> None:
+        y = years_between(date(2024, 1, 1), date(2024, 1, 2))
+        assert _approx(y, 1.0 / 365.25)
+
+
+class TestTotalGrowthPctCompounded:
+    def test_one_year_at_10pct(self) -> None:
+        # XIRR 10% over 1 year ⇒ ~10% total growth.
+        result = total_growth_pct_compounded(Decimal("0.10"), Decimal(1))
+        assert _approx(result, 0.10)
+
+    def test_ten_years_at_10pct(self) -> None:
+        # XIRR 10% over 10 years ⇒ (1.1)^10 - 1 ≈ 1.5937
+        result = total_growth_pct_compounded(Decimal("0.10"), Decimal(10))
+        assert _approx(result, 1.59374246)
+
+    def test_one_day_horizon(self) -> None:
+        # XIRR 10% prorated to ~1 day.
+        years = years_between(date(2024, 1, 1), date(2024, 1, 2))
+        result = total_growth_pct_compounded(Decimal("0.10"), years)
+        # (1.1)^(1/365.25) - 1 ≈ 0.0002610
+        assert _approx(result, 0.0002610, tol=1e-5)
+
+    def test_negative_xirr(self) -> None:
+        # XIRR -20% over 2 years ⇒ (0.8)^2 - 1 = -0.36
+        result = total_growth_pct_compounded(Decimal("-0.20"), Decimal(2))
+        assert _approx(result, -0.36)
+
+    def test_none_xirr(self) -> None:
+        assert total_growth_pct_compounded(None, Decimal(1)) is None
+
+    def test_zero_years(self) -> None:
+        assert total_growth_pct_compounded(Decimal("0.10"), Decimal(0)) is None
+
+    def test_negative_years(self) -> None:
+        assert total_growth_pct_compounded(Decimal("0.10"), Decimal(-1)) is None
+
+    def test_below_minus_one_xirr_returns_none(self) -> None:
+        # Implies total wipe-out + more — not real-valued.
+        assert total_growth_pct_compounded(Decimal("-1.5"), Decimal(2)) is None

@@ -65,9 +65,11 @@ def _css() -> str:
 html {{
   /* Bump the root font-size so every rem-based token (body text, KPI tiles,
      section titles, tables, etc.) scales up uniformly. The default browser
-     value is 16px; 18px gives a noticeably roomier, more readable layout
-     without breaking any fixed-pixel measurements. */
-  font-size: 18px;
+     value is 16px; v1.5 bumped to 18px, v2.4 takes it to 20px so the KPI
+     numbers and table headers read cleanly on a 1080p panel from across the
+     room. Fixed-pixel measurements (table row height, header height, AG-Grid
+     paddings) are tuned alongside this in the AG-Grid block below. */
+  font-size: 20px;
 }}
 
 html, body {{
@@ -200,6 +202,12 @@ html, body {{
   box-shadow: var(--inv-shadow-soft);
   padding: 1.25rem 1.25rem 1rem;
   margin: 0 !important;
+  /* Clip oversized children (wide AG-Grid tables, plotly canvases) so they
+     scroll internally instead of overhanging the section card / page width.
+     ``min-width: 0`` lets the section participate in flex/grid shrinking
+     without forcing its parent column to grow. */
+  overflow: hidden;
+  min-width: 0;
   transition: box-shadow 150ms ease-out, border-color 150ms ease-out;
 }}
 .inv-section-title {{
@@ -235,7 +243,7 @@ html, body {{
   font-weight: 600;
 }}
 .inv-kpi-value {{
-  font-size: 1.75rem;
+  font-size: 2rem;
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--inv-ink);
@@ -252,6 +260,33 @@ html, body {{
   color: var(--inv-muted);
   margin-top: 4px;
   font-variant-numeric: tabular-nums;
+}}
+/* v2.5 — dual-currency KPI tiles: stacked EUR and USD equally weighted. */
+.inv-kpi-dual-primary {{
+  margin-top: 4px;
+}}
+.inv-kpi-dual-secondary {{
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--inv-ink);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+  opacity: 0.78;
+}}
+.inv-kpi-dual-ccy {{
+  display: inline-block;
+  min-width: 2.4em;
+  font-size: 0.72em;
+  font-weight: 500;
+  color: var(--inv-muted);
+  letter-spacing: 0.04em;
+}}
+.inv-kpi-growth {{
+  margin-top: 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--inv-muted);
 }}
 
 /* ------------------------------------------------------------------ */

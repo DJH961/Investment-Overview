@@ -1,15 +1,22 @@
 """Risk-free rate service — live yield from yfinance with a manual override.
 
 The Sharpe / Sortino / Alpha calculations need a *current* risk-free
-rate. We pull it from yfinance's ``^IRX`` ticker, which quotes the
-13-week US Treasury bill yield as a *percentage* (e.g. ``5.32`` means
-5.32% annualised). The fetched value is persisted in ``app_config`` so
+rate. We pull it from yfinance's ``^TNX`` ticker, which quotes the
+10-year US Treasury yield as a *percentage* (e.g. ``4.32`` means
+4.32% annualised). The fetched value is persisted in ``app_config`` so
 boot doesn't depend on the network and so the Settings page can
 display "last refreshed at" alongside it.
 
+v2.4 switched the default from ``^IRX`` (13-week T-bill yield, which
+yfinance has been returning empty frames for since the CBOE feed was
+restructured) to ``^TNX``. The 10-year yield is still a dynamic,
+realistic risk-free proxy for a multi-year buy-and-hold portfolio
+that doesn't drift far from the 13-week number on a Sharpe-ratio
+basis, and it is reliably published every business day.
+
 Per spec the user can also pin a *manual* rate that wins over the
 fetched one — handy for back-testing scenarios or for cases where the
-local risk-free instrument is something other than US T-bills.
+local risk-free instrument is something other than US Treasuries.
 
 No hypothetical fallback: if we've never managed a successful fetch
 and the user hasn't pinned a manual rate, ``get_risk_free_rate``
@@ -32,8 +39,13 @@ from investment_dashboard.repositories import app_config_repo
 
 log = logging.getLogger(__name__)
 
-#: ``^IRX`` is the CBOE 13-week T-bill *yield*, quoted in % (e.g. 5.32).
-DEFAULT_SYMBOL = "^IRX"
+#: ``^TNX`` is the CBOE 10-year US Treasury *yield*, quoted in %
+#: (e.g. 4.32). v2.4 replaced the v2.2 default ``^IRX`` (13-week
+#: T-bill yield) because yfinance has been returning empty frames for
+#: ``^IRX`` since the upstream CBOE feed changed; ``^TNX`` is a
+#: dynamic, well-supported risk-free proxy that follows the same
+#: percentage-quoted convention.
+DEFAULT_SYMBOL = "^TNX"
 DEFAULT_TTL = timedelta(hours=24)
 
 KEY_VALUE = "risk_free_rate_value"
@@ -70,8 +82,24 @@ def _parse_datetime(raw: str | None) -> datetime | None:
         return None
 
 
+#: Deprecated default that we transparently rewrite to :data:`DEFAULT_SYMBOL`
+#: on read. Existing installs persisted ``^IRX`` to ``app_config`` before
+#: v2.4; upgrading them silently would keep the Analytics page broken
+#: until the user manually edits the Settings field. Rewriting on read
+#: keeps the persisted value in sync with the active default without an
+#: explicit migration step.
+_DEPRECATED_SYMBOLS: frozenset[str] = frozenset({"^IRX"})
+
+
 def get_symbol(session: Session) -> str:
-    return app_config_repo.get(session, KEY_SYMBOL) or DEFAULT_SYMBOL
+    stored = app_config_repo.get(session, KEY_SYMBOL)
+    if stored is None or stored in _DEPRECATED_SYMBOLS:
+        # Rewrite the persisted value so Settings shows the active default
+        # and the next refresh hits the working ticker.
+        if stored in _DEPRECATED_SYMBOLS:
+            app_config_repo.set_value(session, KEY_SYMBOL, DEFAULT_SYMBOL)
+        return DEFAULT_SYMBOL
+    return stored
 
 
 def set_symbol(session: Session, symbol: str) -> str:
@@ -136,9 +164,10 @@ def refresh(
         log.info("risk-free fetch for %s returned no data; keeping cached value", symbol)
         return snapshot
 
-    # ^IRX is quoted in percent; many other yields follow the same
-    # convention. Anything > 1 is assumed to be percent-quoted; values
-    # in (0, 1) are assumed to already be a decimal fraction.
+    # ^TNX (like ^IRX before it) is quoted in percent; many other
+    # yields follow the same convention. Anything > 1 is assumed to be
+    # percent-quoted; values in (0, 1) are assumed to already be a
+    # decimal fraction.
     raw = record.close
     rate = raw / Decimal(100) if raw > Decimal(1) else raw
     stamp = (now or datetime.now(UTC)).isoformat()
