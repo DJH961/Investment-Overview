@@ -261,6 +261,33 @@ html, body {{
   margin-top: 4px;
   font-variant-numeric: tabular-nums;
 }}
+/* v2.5 — dual-currency KPI tiles: stacked EUR and USD equally weighted. */
+.inv-kpi-dual-primary {{
+  margin-top: 4px;
+}}
+.inv-kpi-dual-secondary {{
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--inv-ink);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+  opacity: 0.78;
+}}
+.inv-kpi-dual-ccy {{
+  display: inline-block;
+  min-width: 2.4em;
+  font-size: 0.72em;
+  font-weight: 500;
+  color: var(--inv-muted);
+  letter-spacing: 0.04em;
+}}
+.inv-kpi-growth {{
+  margin-top: 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--inv-muted);
+}}
 
 /* ------------------------------------------------------------------ */
 /* Chip / pill                                                         */

@@ -33,6 +33,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
+from investment_dashboard.domain.returns import (
+    total_growth_pct_compounded,
+    xirr,
+    years_between,
+)
 from investment_dashboard.models import Transaction
 
 ZERO = Decimal(0)
@@ -71,6 +76,16 @@ class PeriodRow:
     #: The currency the ``*_display`` fields are denominated in (upper
     #: case ISO code). Empty when no FX-aware path was taken.
     display_currency: str = field(default="")
+    #: Cumulative Total Growth (compounded XIRR) measured from the
+    #: portfolio inception up to the end of this period — the v2.5
+    #: headline metric on the monthly / yearly tables. ``None`` when
+    #: the period precedes any external cashflow or XIRR cannot be
+    #: rooted (degenerate cashflow stream).
+    total_growth_compounded_eur: Decimal | None = None
+    total_growth_compounded_usd: Decimal | None = None
+    #: Closing value translated to USD with the period-end FX rate
+    #: (forward-filled). ``None`` when no FX history is on file.
+    closing_value_usd: Decimal | None = None
 
 
 def _amount_eur(
@@ -366,7 +381,111 @@ def aggregate(  # noqa: PLR0912, PLR0915
         )
         for k, v in sorted(buckets.items())
     ]
+
+    # ------- Cumulative Total Growth (compounded XIRR) per row (v2.5) -------
+    # Walk both currency series of cashflows once; at the end of every
+    # period emit (1 + xirr_to_date)^years_to_date − 1. This is the
+    # canonical headline metric on the Monthly / Yearly tables.
+    rows = _attach_cumulative_growth(
+        rows,
+        txns=list(txns),
+        eur_to_usd=eur_to_usd,
+        monthly=monthly,
+        today=today,
+    )
     return rows
+
+
+def _attach_cumulative_growth(
+    rows: list[PeriodRow],
+    *,
+    txns: list[Transaction],
+    eur_to_usd: dict[date, Decimal],
+    monthly: bool,
+    today: date,
+) -> list[PeriodRow]:
+    """Populate ``total_growth_compounded_eur/usd`` (+ ``closing_value_usd``)
+    on every :class:`PeriodRow` in place-equivalent (returns a new list).
+
+    Cumulative XIRR is recomputed at each period end from the same
+    cashflow stream :mod:`metrics_service` uses, terminated with that
+    period's closing value (EUR or USD). The corresponding compounded
+    Total Growth is ``(1 + xirr) ^ years_invested − 1`` measured from
+    the earliest external cashflow up to the period end.
+    """
+    if not rows:
+        return rows
+    # Local import to avoid a cycle (services → repositories → models).
+    from investment_dashboard.services import metrics_service  # noqa: PLC0415
+
+    def _usd(t: Transaction) -> Decimal:
+        return metrics_service._txn_usd_amount(t, eur_to_usd=eur_to_usd)
+
+    flows_eur = metrics_service.build_portfolio_cashflows(txns)
+    flows_usd = metrics_service.build_portfolio_cashflows(txns, amount_fn=_usd)
+
+    # First external cashflow date — origin of "years invested".
+    first_cf: date | None = None
+    for t in sorted(txns, key=lambda r: r.date):
+        if t.kind in {"deposit", "withdrawal"}:
+            first_cf = t.date
+            break
+
+    out: list[PeriodRow] = []
+    for r in rows:
+        period_end = _period_end(r.label, monthly=monthly, today=today)
+        closing_eur = r.closing_value_eur
+        # USD closing: prefer the display row when display_currency is
+        # already USD; otherwise convert EUR with the period-end FX.
+        if r.display_currency == "USD" and r.closing_value_display is not None:
+            closing_usd: Decimal | None = r.closing_value_display
+        else:
+            fx_eod = lookup_rate_with_forward_fill(eur_to_usd, period_end)
+            closing_usd = (
+                closing_eur * fx_eod if fx_eod is not None and fx_eod != 0 else None
+            )
+
+        flows_eur_to_date = [cf for cf in flows_eur if cf.date <= period_end]
+        flows_usd_to_date = [cf for cf in flows_usd if cf.date <= period_end]
+
+        years = years_between(first_cf, period_end) if first_cf else Decimal(0)
+
+        xirr_eur = (
+            xirr(flows_eur_to_date, as_of=period_end, terminal_value=closing_eur)
+            if flows_eur_to_date
+            else None
+        )
+        growth_eur = total_growth_pct_compounded(xirr_eur, years)
+        if closing_usd is not None and flows_usd_to_date:
+            xirr_usd = xirr(flows_usd_to_date, as_of=period_end, terminal_value=closing_usd)
+            growth_usd = total_growth_pct_compounded(xirr_usd, years)
+        else:
+            growth_usd = None
+
+        out.append(
+            PeriodRow(
+                label=r.label,
+                contributions=r.contributions,
+                dividends=r.dividends,
+                interest=r.interest,
+                net_flow=r.net_flow,
+                closing_value_eur=r.closing_value_eur,
+                opening_value_eur=r.opening_value_eur,
+                growth_pct=r.growth_pct,
+                contributions_display=r.contributions_display,
+                dividends_display=r.dividends_display,
+                interest_display=r.interest_display,
+                net_flow_display=r.net_flow_display,
+                closing_value_display=r.closing_value_display,
+                opening_value_display=r.opening_value_display,
+                growth_pct_display=r.growth_pct_display,
+                display_currency=r.display_currency,
+                total_growth_compounded_eur=growth_eur,
+                total_growth_compounded_usd=growth_usd,
+                closing_value_usd=closing_usd,
+            )
+        )
+    return out
 
 
 def to_table_rows(

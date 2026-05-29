@@ -55,3 +55,46 @@ def fmt_pair(
         fmt_money(primary_amount, primary_currency, decimals=decimals),
         fmt_money(secondary_amount, secondary_currency, decimals=decimals),
     )
+
+
+def dual_money(
+    eur: Decimal | None,
+    usd: Decimal | None,
+    *,
+    primary: str = "USD",
+    decimals: int = 2,
+) -> str:
+    """Inline ``"$1,234.56 / €1,123.45"`` pair for dense table cells.
+
+    v2.5 — every monetary cell in every table renders both currencies
+    side-by-side. ``primary`` controls which side comes first (the
+    user's chosen display currency).
+    """
+    primary = primary.upper()
+    if primary == "EUR":
+        return f"{fmt_money(eur, 'EUR', decimals=decimals)} / {fmt_money(usd, 'USD', decimals=decimals)}"
+    return f"{fmt_money(usd, 'USD', decimals=decimals)} / {fmt_money(eur, 'EUR', decimals=decimals)}"
+
+
+def fmt_pct(value: Decimal | None, *, decimals: int = 2) -> str:
+    """Render a fractional percentage (``0.1234`` → ``"12.34 %"``)."""
+    if value is None:
+        return "—"
+    return f"{value * 100:,.{decimals}f} %"
+
+
+def dual_pct(
+    eur_pct: Decimal | None,
+    usd_pct: Decimal | None,
+    *,
+    primary: str = "USD",
+    decimals: int = 2,
+) -> str:
+    """Inline ``"12.34 % (USD) / 10.10 % (EUR)"`` for KPIs whose value
+    legitimately differs by currency (XIRR, Total Growth)."""
+    primary = primary.upper()
+    eur_s = f"{fmt_pct(eur_pct, decimals=decimals)} (EUR)"
+    usd_s = f"{fmt_pct(usd_pct, decimals=decimals)} (USD)"
+    if primary == "EUR":
+        return f"{eur_s} / {usd_s}"
+    return f"{usd_s} / {eur_s}"

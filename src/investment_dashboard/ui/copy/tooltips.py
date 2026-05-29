@@ -21,6 +21,12 @@ TOOLTIPS: Final[dict[str, str]] = {
         "Total portfolio growth since inception, expressed as a percentage of net "
         "contributions. (Closing value + cumulative cash dividends) / net contributions - 1."
     ),
+    "total_growth_compounded": (
+        "Cumulative growth since the first cashflow, expressed as "
+        "(1 + XIRR) ^ years − 1. This is XIRR \"stretched\" over the actual time "
+        "you've been invested, so a 10 %/yr return over 5 years shows as ~61 %. "
+        "Computed independently per currency (EUR vs USD), so FX swings show up."
+    ),
     "xirr": (
         "The annualized return that makes the value of all your contributions and "
         "withdrawals (each weighted by when they happened) sum to your current "
