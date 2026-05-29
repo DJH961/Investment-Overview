@@ -14,13 +14,8 @@ from investment_dashboard.ui.components.kpi_card import dual_kpi_card
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import dual_pct, fmt_money
 from investment_dashboard.ui.pages._period_query import aggregate, to_table_rows
-from investment_dashboard.ui.pages._projection_query import (
-    DEFAULT_SCENARIOS,
-    project_from_session,
-)
-from investment_dashboard.ui.pages._projection_query import (
-    to_table_rows as projection_table_rows,
-)
+from investment_dashboard.ui.pages._projection_view import build_seed
+from investment_dashboard.ui.pages._projection_view import render as render_projection
 
 PATH = "/yearly"
 
@@ -85,10 +80,6 @@ def _figure(rows, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no
     return fig
 
 
-def _scenario_label(rate: Decimal) -> str:
-    return f"{rate * 100:.1f}% p.a."
-
-
 def register() -> None:
     @ui.page(PATH)
     def _yearly() -> None:  # pragma: no cover
@@ -97,10 +88,10 @@ def register() -> None:
             with session_scope() as session:
                 display_ccy = display_currency_service.get_display_currency(session)
                 rows = aggregate(session, monthly=False, display_currency=display_ccy)
-                projection_rows = project_from_session(session, years=10)
                 display_quote = display_ccy if display_ccy != "EUR" else "USD"
                 fx_rate = display_currency_service.current_rate(session, quote=display_quote)
                 metrics = compute_portfolio_metrics(session)
+                projection_seed = build_seed(session, monthly=False, primary=display_ccy)
             # v2.5 KPI strip.
             with ui.row().classes("gap-md flex-wrap"):
                 dual_kpi_card(
@@ -156,29 +147,5 @@ def register() -> None:
                     }
                 ).classes("ag-theme-alpine w-full h-[50vh]")
 
-            with section("Hypothetical projection (next 10 years)"):
-                ui.label(
-                    "Assumes the average historical annual contribution continues, compounded "
-                    "at the rates below. For planning only — not a forecast."
-                ).classes("text-caption opacity-70")
-                ui.aggrid(
-                    {
-                        "columnDefs": [
-                            {"headerName": "Year", "field": "year"},
-                            *_money_columns("Cumulative contribution", "contributed", display_ccy),
-                            *[
-                                col
-                                for rate in DEFAULT_SCENARIOS
-                                for col in _money_columns(
-                                    _scenario_label(rate), f"rate_{rate}", display_ccy
-                                )
-                            ],
-                        ],
-                        "rowData": projection_table_rows(
-                            projection_rows,
-                            currency=display_ccy,
-                            fx_rate=fx_rate,
-                        ),
-                        "defaultColDef": {"resizable": True, "sortable": True},
-                    }
-                ).classes("ag-theme-alpine w-full h-[50vh]")
+            with section("Projection"):
+                render_projection(projection_seed)
