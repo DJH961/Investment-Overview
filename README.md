@@ -138,6 +138,9 @@ file at the repo root. See [`.env.example`](.env.example).
 | `INV_DASHBOARD_HOST` | `0.0.0.0` | Bind address |
 | `INV_DASHBOARD_PORT` | `8080` | Bind port |
 | `INV_DASHBOARD_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `INV_DASHBOARD_API_ENABLED` | `false` | Mount the read-only JSON API at `/api` on the server |
+| `INV_DASHBOARD_API_TOKEN` | unset | Optional bearer token guarding `/api` (set when exposed beyond LAN) |
+| `INV_DASHBOARD_SNAPSHOT_PATH` | beside config tier | Output path for `inv-dashboard-export-snapshot` |
 
 ### Storage, cloud sync, and safety tools
 
@@ -170,6 +173,28 @@ set INV_DASHBOARD_ENCRYPT_SYNCED_TIERS=true
 set INV_DASHBOARD_DB_PASSPHRASE=your-local-passphrase   # or store it in keyring
 ```
 
+### Mobile companion: read-only JSON API + snapshot export
+
+A UI-agnostic JSON read-model layer (`readmodels/`) exposes the same
+numbers the web UI shows, for a future Android app. It is delivered two
+ways, both built from the same `readmodels.build_snapshot()`:
+
+```powershell
+# Live API on the existing server (opt-in), guarded by an optional token:
+set INV_DASHBOARD_API_ENABLED=true
+set INV_DASHBOARD_API_TOKEN=your-long-random-token   # optional; LAN-open if unset
+uv run investment-dashboard            # serves /api/snapshot, /api/overview, …
+# …or standalone:
+uv run inv-dashboard-api
+
+# Or export a snapshot file into a consumer-cloud-synced folder (offline phone):
+uv run inv-dashboard-export-snapshot --output "%USERPROFILE%\OneDrive\inv-dashboard\mobile_snapshot.json"
+```
+
+See [`docs/mobile_android_app_proposal.md`](docs/mobile_android_app_proposal.md)
+for the full design (Kotlin + Jetpack Compose, cloud-sync delivery, the
+JSON contract, and security).
+
 ## Development
 
 ```powershell
@@ -194,8 +219,10 @@ src/investment_dashboard/
 ├── models/            # SQLAlchemy ORM
 ├── repositories/      # DB access (Phase 2)
 ├── services/          # use-case orchestration
+├── readmodels/        # UI-agnostic JSON read-models shared by web + mobile
+├── api/               # read-only FastAPI JSON API for the mobile companion
 ├── storage/           # cloud paths, encryption, sidecars, locks, backups
-├── tools/             # split-db, repair-sidecar, backup CLIs
+├── tools/             # split-db, repair-sidecar, backup, export-snapshot CLIs
 └── ui/                # NiceGUI pages + components
 migrations/            # Alembic
 tests/                 # mirrors src layout

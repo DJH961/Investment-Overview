@@ -32,6 +32,26 @@ class DepositSummary:
     interest_ytd_eur: Decimal
 
 
+@dataclass(frozen=True)
+class DepositRecord:
+    """Raw (unformatted) cash-flow row.
+
+    The presentation-free counterpart of the dicts returned by
+    :func:`list_deposit_rows`. Front-ends that format their own numbers
+    (e.g. the JSON API / mobile app) consume these directly so the
+    fetch/filter logic stays in one place.
+    """
+
+    id: int | None
+    date: date
+    account_label: str
+    native_currency: str
+    kind: str
+    amount_native: Decimal
+    amount_eur: Decimal
+    description: str
+
+
 def _amount_eur(t: Transaction) -> Decimal:
     if t.net_eur is not None:
         return t.net_eur
@@ -51,8 +71,8 @@ def _signed_contrib(t: Transaction) -> Decimal:
     return Decimal(0)
 
 
-def list_deposit_rows(session: Session, *, account_id: int | None = None) -> list[dict[str, Any]]:
-    """Return cash-flow rows for the table (newest first)."""
+def list_deposit_records(session: Session, *, account_id: int | None = None) -> list[DepositRecord]:
+    """Return raw cash-flow records for the table (newest first)."""
     stmt = (
         select(Transaction)
         .options(joinedload(Transaction.account))
@@ -61,20 +81,38 @@ def list_deposit_rows(session: Session, *, account_id: int | None = None) -> lis
     )
     if account_id is not None:
         stmt = stmt.where(Transaction.account_id == account_id)
-    return [_to_row(t) for t in session.scalars(stmt).all()]
+    return [_to_record(t) for t in session.scalars(stmt).all()]
 
 
-def _to_row(t: Transaction) -> dict[str, Any]:
+def list_deposit_rows(session: Session, *, account_id: int | None = None) -> list[dict[str, Any]]:
+    """Return cash-flow rows for the table (newest first)."""
+    return [_format_record(r) for r in list_deposit_records(session, account_id=account_id)]
+
+
+def _to_record(t: Transaction) -> DepositRecord:
     account: Account | None = t.account  # type: ignore[assignment]
+    return DepositRecord(
+        id=t.id,
+        date=t.date,
+        account_label=account.account_label if account else "",
+        native_currency=account.native_currency if account else "",
+        kind=t.kind,
+        amount_native=t.net_native or Decimal(0),
+        amount_eur=_amount_eur(t),
+        description=t.description or "",
+    )
+
+
+def _format_record(r: DepositRecord) -> dict[str, Any]:
     return {
-        "id": t.id,
-        "date": t.date.isoformat(),
-        "account": account.account_label if account else "",
-        "kind": t.kind,
-        "amount_native": f"{(t.net_native or Decimal(0)):,.2f}",
-        "currency": account.native_currency if account else "",
-        "amount_eur": f"{_amount_eur(t):,.2f}",
-        "description": t.description or "",
+        "id": r.id,
+        "date": r.date.isoformat(),
+        "account": r.account_label,
+        "kind": r.kind,
+        "amount_native": f"{r.amount_native:,.2f}",
+        "currency": r.native_currency,
+        "amount_eur": f"{r.amount_eur:,.2f}",
+        "description": r.description,
     }
 
 

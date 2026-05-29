@@ -31,6 +31,27 @@ class LedgerFilters:
     end: date | None = None
 
 
+@dataclass(frozen=True)
+class LedgerRecord:
+    """Raw (unformatted) ledger row — presentation-free counterpart of the
+    dicts returned by :func:`list_ledger_rows`.
+    """
+
+    id: int | None
+    date: date
+    account_label: str
+    kind: str
+    symbol: str
+    quantity: Decimal | None
+    price_native: Decimal | None
+    fees_native: Decimal | None
+    gross_native: Decimal | None
+    net_native: Decimal | None
+    net_eur: Decimal | None
+    net_usd: Decimal | None
+    source: str | None
+
+
 def _fmt_decimal(value: Decimal | None, places: int = 2) -> str:
     if value is None:
         return ""
@@ -38,18 +59,7 @@ def _fmt_decimal(value: Decimal | None, places: int = 2) -> str:
     return f"{value.quantize(quant):,}"
 
 
-def list_ledger_rows(
-    session: Session,
-    filters: LedgerFilters | None = None,
-    *,
-    fx_rate: Decimal | None = None,
-) -> list[dict[str, Any]]:
-    """Return ledger rows in newest-first order, ready to hand to AG-Grid.
-
-    ``fx_rate`` is the current EUR→USD conversion factor (USD per 1 EUR).
-    When provided, an extra ``net_usd`` column is populated alongside
-    ``net_eur`` so the transactions page can show both currencies.
-    """
+def _build_ledger_stmt(filters: LedgerFilters | None):  # type: ignore[no-untyped-def]
     f = filters or LedgerFilters()
     stmt = (
         select(Transaction)
@@ -68,12 +78,40 @@ def list_ledger_rows(
         stmt = stmt.where(Transaction.date <= f.end)
     if f.instrument_symbol:
         stmt = stmt.join(Transaction.instrument).where(Instrument.symbol == f.instrument_symbol)
-
-    txns = session.scalars(stmt).all()
-    return [_to_row(t, fx_rate=fx_rate) for t in txns]
+    return stmt
 
 
-def _to_row(t: Transaction, *, fx_rate: Decimal | None = None) -> dict[str, Any]:
+def list_ledger_records(
+    session: Session,
+    filters: LedgerFilters | None = None,
+    *,
+    fx_rate: Decimal | None = None,
+) -> list[LedgerRecord]:
+    """Return raw ledger records in newest-first order.
+
+    ``fx_rate`` is the current EUR→USD conversion factor (USD per 1 EUR);
+    when provided ``net_usd`` is populated alongside ``net_eur``.
+    """
+    txns = session.scalars(_build_ledger_stmt(filters)).all()
+    return [_to_record(t, fx_rate=fx_rate) for t in txns]
+
+
+def list_ledger_rows(
+    session: Session,
+    filters: LedgerFilters | None = None,
+    *,
+    fx_rate: Decimal | None = None,
+) -> list[dict[str, Any]]:
+    """Return ledger rows in newest-first order, ready to hand to AG-Grid.
+
+    ``fx_rate`` is the current EUR→USD conversion factor (USD per 1 EUR).
+    When provided, an extra ``net_usd`` column is populated alongside
+    ``net_eur`` so the transactions page can show both currencies.
+    """
+    return [_format_record(r) for r in list_ledger_records(session, filters, fx_rate=fx_rate)]
+
+
+def _to_record(t: Transaction, *, fx_rate: Decimal | None = None) -> LedgerRecord:
     account: Account | None = t.account  # type: ignore[assignment]
     instrument: Instrument | None = t.instrument  # type: ignore[assignment]
 
@@ -94,18 +132,36 @@ def _to_row(t: Transaction, *, fx_rate: Decimal | None = None) -> dict[str, Any]
     # the stored EUR amount so the USD column is at least populated.
     elif fx_rate is not None and t.net_eur is not None:
         net_usd = t.net_eur * fx_rate
+    return LedgerRecord(
+        id=t.id,
+        date=t.date,
+        account_label=account.account_label if account else "",
+        kind=t.kind,
+        symbol=instrument.symbol if instrument else "",
+        quantity=t.quantity,
+        price_native=t.price_native,
+        fees_native=t.fees_native,
+        gross_native=t.gross_native,
+        net_native=t.net_native,
+        net_eur=net_eur,
+        net_usd=net_usd,
+        source=t.source,
+    )
+
+
+def _format_record(r: LedgerRecord) -> dict[str, Any]:
     return {
-        "id": t.id,
-        "date": t.date.isoformat(),
-        "account": account.account_label if account else "",
-        "kind": t.kind,
-        "symbol": instrument.symbol if instrument else "",
-        "qty": _fmt_decimal(t.quantity, 6),
-        "price": _fmt_decimal(t.price_native, 4),
-        "fees": _fmt_decimal(t.fees_native),
-        "gross": _fmt_decimal(t.gross_native),
-        "net": _fmt_decimal(t.net_native),
-        "net_eur": _fmt_decimal(net_eur),
-        "net_usd": _fmt_decimal(net_usd),
-        "source": t.source,
+        "id": r.id,
+        "date": r.date.isoformat(),
+        "account": r.account_label,
+        "kind": r.kind,
+        "symbol": r.symbol,
+        "qty": _fmt_decimal(r.quantity, 6),
+        "price": _fmt_decimal(r.price_native, 4),
+        "fees": _fmt_decimal(r.fees_native),
+        "gross": _fmt_decimal(r.gross_native),
+        "net": _fmt_decimal(r.net_native),
+        "net_eur": _fmt_decimal(r.net_eur),
+        "net_usd": _fmt_decimal(r.net_usd),
+        "source": r.source,
     }
