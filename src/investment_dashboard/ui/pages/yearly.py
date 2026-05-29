@@ -18,16 +18,8 @@ from investment_dashboard.ui.pages._projection_query import (
 from investment_dashboard.ui.pages._projection_query import (
     to_table_rows as projection_table_rows,
 )
-from investment_dashboard.ui.theme import GAIN_COLOR
 
 PATH = "/yearly"
-
-
-def _convert(amount_eur: Decimal, target: str, fx_rate: Decimal | None) -> Decimal:
-    target = target.upper()
-    if target == "EUR" or fx_rate is None or fx_rate == 0:
-        return amount_eur
-    return amount_eur * fx_rate
 
 
 def _money_columns(label: str, field: str, primary: str) -> list[dict[str, str]]:
@@ -40,7 +32,7 @@ def _money_columns(label: str, field: str, primary: str) -> list[dict[str, str]]
     primary is already EUR, preserving the v1.3 "both visible" toggle).
     """
     primary = primary.upper()
-    secondary = "EUR" if primary in {"USD", "DKK"} else "USD"
+    secondary = "EUR" if primary == "USD" else "USD"
     return [
         {
             "headerName": f"{label} ({primary})",
@@ -56,42 +48,36 @@ def _money_columns(label: str, field: str, primary: str) -> list[dict[str, str]]
 
 
 def _figure(rows, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no-untyped-def]
+    """Yearly Modified-Dietz growth, in the currently selected display currency.
+
+    v2.2's chart stacked contributions + dividends — useful, but the
+    same numbers are in the table below. v2.4 replaces it with the
+    per-year growth % so the user sees the metric they actually came
+    here to see, and so the chart shifts when the EUR ↔ USD toggle
+    flips (because each row's ``growth_pct_display`` comes from per-
+    trade-date FX in :mod:`_period_query`).
+    """
     import plotly.graph_objects as go  # noqa: PLC0415
 
     fig = go.Figure()
     if rows:
-        contribs = [
-            float(
-                r.contributions_display
-                if r.contributions_display is not None
-                else _convert(r.contributions, currency, fx_rate)
-            )
-            for r in rows
-        ]
-        divs = [
-            float(
-                ((r.dividends_display or Decimal(0)) + (r.interest_display or Decimal(0)))
-                if r.dividends_display is not None or r.interest_display is not None
-                else _convert(r.dividends + r.interest, currency, fx_rate)
-            )
-            for r in rows
-        ]
+        labels = [r.label for r in rows]
+        pct_values: list[float] = []
+        for r in rows:
+            growth = r.growth_pct_display if r.growth_pct_display is not None else r.growth_pct
+            pct_values.append(float(growth) * 100.0 if growth is not None else 0.0)
+        colors = ["#0072B2" if v >= 0 else "#E69F00" for v in pct_values]
         fig.add_bar(
-            x=[r.label for r in rows],
-            y=contribs,
-            name="Contributions",
-            marker_color=GAIN_COLOR,
-        )
-        fig.add_bar(
-            x=[r.label for r in rows],
-            y=divs,
-            name="Dividends + Interest",
+            x=labels,
+            y=pct_values,
+            name="Growth %",
+            marker_color=colors,
         )
     fig.update_layout(
-        title=f"Yearly cashflows ({currency})",
+        title=f"Yearly growth % ({currency})",
         template="colorblind_modern",
-        barmode="stack",
         margin={"l": 40, "r": 20, "t": 40, "b": 40},
+        yaxis={"ticksuffix": " %"},
     )
     return fig
 
@@ -111,7 +97,7 @@ def register() -> None:
                 projection_rows = project_from_session(session, years=10)
                 display_quote = display_ccy if display_ccy != "EUR" else "USD"
                 fx_rate = display_currency_service.current_rate(session, quote=display_quote)
-            with section("Cashflows per year"):
+            with section("Growth per year"):
                 ui.plotly(_figure(rows, currency=display_ccy, fx_rate=fx_rate)).classes(
                     "w-full h-[40vh]",
                 )

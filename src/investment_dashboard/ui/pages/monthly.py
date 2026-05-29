@@ -17,47 +17,56 @@ from investment_dashboard.ui.pages._projection_query import (
     project_monthly_from_session,
     to_monthly_table_rows,
 )
-from investment_dashboard.ui.theme import GAIN_COLOR
 
 PATH = "/monthly"
 
 
 def _figure(rows, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no-untyped-def]
+    """Monthly Modified-Dietz growth, in the currently selected display currency.
+
+    v2.2's chart plotted monthly contributions, which is data the
+    aggregation table already shows row-by-row. v2.4 replaces it with
+    the per-month growth % the user actually came here to *see* — the
+    same series the rightmost ``Growth %`` column reports, just shown
+    as a signed bar chart so months of profit/loss read at a glance.
+    Bars are coloured green for positive months and red for negative
+    ones; flat / unknown months fall through the chart as a zero bar.
+
+    The series is FX-aware: when the page's display currency is non-EUR
+    and ``aggregate`` was given the matching ``display_currency`` it
+    will have populated ``growth_pct_display`` per row from per-trade-
+    date FX, so this chart automatically shifts with the EUR ↔ USD
+    toggle (the whole point of v2.4).
+    """
     import plotly.graph_objects as go  # noqa: PLC0415
 
     fig = go.Figure()
     if rows:
-        scaled = [
-            float(
-                r.contributions_display
-                if r.contributions_display is not None
-                else _convert(r.contributions, currency, fx_rate)
-            )
-            for r in rows
-        ]
+        labels = [r.label for r in rows]
+        # Display-currency growth wins; fall back to EUR growth_pct when
+        # the FX-aware path didn't run (EUR display or no FX history yet).
+        pct_values: list[float] = []
+        for r in rows:
+            growth = r.growth_pct_display if r.growth_pct_display is not None else r.growth_pct
+            pct_values.append(float(growth) * 100.0 if growth is not None else 0.0)
+        colors = ["#0072B2" if v >= 0 else "#E69F00" for v in pct_values]
         fig.add_bar(
-            x=[r.label for r in rows],
-            y=scaled,
-            name="Contributions",
-            marker_color=GAIN_COLOR,
+            x=labels,
+            y=pct_values,
+            name="Growth %",
+            marker_color=colors,
         )
     fig.update_layout(
-        title=f"Monthly contributions ({currency})",
+        title=f"Monthly growth % ({currency})",
         template="colorblind_modern",
         margin={"l": 40, "r": 20, "t": 40, "b": 40},
+        yaxis={"ticksuffix": " %"},
     )
     return fig
 
 
 def _scenario_label(rate: Decimal) -> str:
     return f"{rate * 100:.1f}% p.a."
-
-
-def _convert(amount_eur: Decimal, target: str, fx_rate: Decimal | None) -> Decimal:
-    target = target.upper()
-    if target == "EUR" or fx_rate is None or fx_rate == 0:
-        return amount_eur
-    return amount_eur * fx_rate
 
 
 def _money_columns(label: str, field: str, primary: str) -> list[dict[str, str]]:
@@ -70,7 +79,7 @@ def _money_columns(label: str, field: str, primary: str) -> list[dict[str, str]]
     primary is already EUR, preserving the v1.3 "both visible" toggle).
     """
     primary = primary.upper()
-    secondary = "EUR" if primary in {"USD", "DKK"} else "USD"
+    secondary = "EUR" if primary == "USD" else "USD"
     return [
         {
             "headerName": f"{label} ({primary})",
@@ -97,7 +106,7 @@ def register() -> None:
                 display_quote = display_ccy if display_ccy != "EUR" else "USD"
                 fx_rate = display_currency_service.current_rate(session, quote=display_quote)
             sym = currency_symbol(display_ccy)
-            with section("Contributions per month"):
+            with section("Growth per month"):
                 ui.plotly(_figure(rows, currency=display_ccy, fx_rate=fx_rate)).classes(
                     "w-full h-[35vh]",
                 )

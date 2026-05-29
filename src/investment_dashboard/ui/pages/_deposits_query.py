@@ -1,8 +1,19 @@
 """Query helpers for ``/deposits`` — summary KPIs + filtered table rows.
 
 Only ``deposit`` / ``withdrawal`` / ``interest`` ledger rows count
-(spec §8.2). All EUR-side numbers use ``net_eur`` when present and fall
+(spec §8.2). EUR-side numbers use ``net_eur`` when present and fall
 back to ``net_native`` otherwise.
+
+v2.4 made every column **FX-aware per trade date**: the USD totals on
+the KPI cards and the per-row "Amount (USD)" column are computed by
+walking each transaction and converting *that day's* EUR amount with
+the EUR→USD rate that was in force *on that day*. This matters
+because v2.3 multiplied the EUR total by today's spot, which silently
+"double-converted" any deposit that was originally booked in USD
+(USD → EUR at trade-date FX → USD at today's spot), so the page
+displayed a number that didn't match the actual cash the user moved.
+USD-native deposits short-circuit the FX lookup entirely and use
+``net_native`` so we never round-trip them through EUR.
 """
 
 from __future__ import annotations
@@ -16,20 +27,39 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
+from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.models import Account, Transaction
+from investment_dashboard.repositories import fx_repo
 
 _DEPOSIT_KINDS: tuple[str, ...] = ("deposit", "withdrawal", "interest")
+
+ZERO = Decimal(0)
 
 
 @dataclass(frozen=True)
 class DepositSummary:
-    """Top-of-page KPI numbers (spec §8.2)."""
+    """Top-of-page KPI numbers (spec §8.2).
+
+    ``*_eur`` fields are the ledger's EUR amounts (trade-date FX
+    locked in by the importer). ``*_usd`` fields are the same metric
+    re-aggregated by converting each transaction's EUR amount with the
+    EUR→USD rate **on that transaction's date** (USD-native deposits
+    use ``net_native`` directly so we never round-trip them through
+    EUR). ``total_contrib_native`` remains a single Decimal for
+    backwards compatibility but is only meaningful when the user has
+    a single-currency portfolio; mixed-currency users should consult
+    the EUR or USD totals.
+    """
 
     total_contrib_native: Decimal
     total_contrib_eur: Decimal
     ytd_contrib_eur: Decimal
     mtd_contrib_eur: Decimal
     interest_ytd_eur: Decimal
+    total_contrib_usd: Decimal
+    ytd_contrib_usd: Decimal
+    mtd_contrib_usd: Decimal
+    interest_ytd_usd: Decimal
 
 
 @dataclass(frozen=True)
@@ -40,6 +70,11 @@ class DepositRecord:
     :func:`list_deposit_rows`. Front-ends that format their own numbers
     (e.g. the JSON API / mobile app) consume these directly so the
     fetch/filter logic stays in one place.
+
+    ``amount_usd`` is the actual USD value of the cashflow on its own
+    date — :data:`None` only when neither the account was USD-native
+    nor a EUR→USD rate is on file (or has been forward-fillable) for
+    that date.
     """
 
     id: int | None
@@ -49,26 +84,68 @@ class DepositRecord:
     kind: str
     amount_native: Decimal
     amount_eur: Decimal
+    amount_usd: Decimal | None
     description: str
 
 
 def _amount_eur(t: Transaction) -> Decimal:
     if t.net_eur is not None:
         return t.net_eur
-    return t.net_native or Decimal(0)
+    return t.net_native or ZERO
+
+
+def _amount_usd(
+    t: Transaction,
+    *,
+    native_currency: str,
+    eur_to_usd: dict[date, Decimal],
+) -> Decimal | None:
+    """USD value of ``t`` on its trade date.
+
+    USD-native accounts short-circuit FX — the stored ``net_native``
+    *is* the real USD cashflow, no conversion involved. For every
+    other currency we convert the EUR ledger amount with the EUR→USD
+    rate on the trade date (forward-filled to the most recent prior
+    business day, matching the rest of the dashboard's FX policy).
+    """
+    if native_currency == "USD":
+        return t.net_native if t.net_native is not None else _amount_eur(t)
+    rate = lookup_rate_with_forward_fill(eur_to_usd, t.date)
+    if rate is None or rate == ZERO:
+        return None
+    return _amount_eur(t) * rate
 
 
 def _signed_contrib(t: Transaction) -> Decimal:
-    """Return amount that counts as net contribution (deposits positive,
-    withdrawals negative). Interest is *not* counted as a contribution
-    even though it appears on this page.
+    """Return the EUR amount that counts as net contribution (deposits
+    positive, withdrawals negative). Interest is *not* counted as a
+    contribution even though it appears on this page.
     """
     amount = _amount_eur(t)
     if t.kind == "deposit":
         return amount
     if t.kind == "withdrawal":
         return -amount
-    return Decimal(0)
+    return ZERO
+
+
+def _signed_contrib_usd(amount_usd: Decimal | None, kind: str) -> Decimal:
+    """USD-side signed contribution, mirroring :func:`_signed_contrib`.
+
+    Returns :data:`ZERO` rather than skipping the row when ``amount_usd``
+    is :data:`None`; the caller would have no way to distinguish "no
+    FX rate available" from "true zero contribution" otherwise. This
+    is conservative — the KPI undercounts contributions only when FX
+    history is sparse, which the boot refresh now backfills to the
+    earliest transaction date.
+    """
+    if amount_usd is None:
+        return ZERO
+    if kind == "deposit":
+        return amount_usd
+    if kind == "withdrawal":
+        return -amount_usd
+    return ZERO
 
 
 def list_deposit_records(session: Session, *, account_id: int | None = None) -> list[DepositRecord]:
@@ -81,7 +158,9 @@ def list_deposit_records(session: Session, *, account_id: int | None = None) -> 
     )
     if account_id is not None:
         stmt = stmt.where(Transaction.account_id == account_id)
-    return [_to_record(t) for t in session.scalars(stmt).all()]
+    txns = session.scalars(stmt).all()
+    eur_to_usd = fx_repo.get_rates(session, base="EUR", quote="USD")
+    return [_to_record(t, eur_to_usd=eur_to_usd) for t in txns]
 
 
 def list_deposit_rows(session: Session, *, account_id: int | None = None) -> list[dict[str, Any]]:
@@ -89,16 +168,18 @@ def list_deposit_rows(session: Session, *, account_id: int | None = None) -> lis
     return [_format_record(r) for r in list_deposit_records(session, account_id=account_id)]
 
 
-def _to_record(t: Transaction) -> DepositRecord:
+def _to_record(t: Transaction, *, eur_to_usd: dict[date, Decimal]) -> DepositRecord:
     account: Account | None = t.account  # type: ignore[assignment]
+    native_ccy = account.native_currency if account else ""
     return DepositRecord(
         id=t.id,
         date=t.date,
         account_label=account.account_label if account else "",
-        native_currency=account.native_currency if account else "",
+        native_currency=native_ccy,
         kind=t.kind,
-        amount_native=t.net_native or Decimal(0),
+        amount_native=t.net_native or ZERO,
         amount_eur=_amount_eur(t),
+        amount_usd=_amount_usd(t, native_currency=native_ccy, eur_to_usd=eur_to_usd),
         description=t.description or "",
     )
 
@@ -112,43 +193,92 @@ def _format_record(r: DepositRecord) -> dict[str, Any]:
         "amount_native": f"{r.amount_native:,.2f}",
         "currency": r.native_currency,
         "amount_eur": f"{r.amount_eur:,.2f}",
+        "amount_usd": (f"{r.amount_usd:,.2f}" if r.amount_usd is not None else ""),
         "description": r.description,
     }
 
 
 def compute_summary(session: Session, *, today: date | None = None) -> DepositSummary:
-    """Aggregate the four KPI numbers shown at the top of the page."""
+    """Aggregate the KPI numbers shown at the top of the page.
+
+    EUR aggregates come straight from each transaction's ``net_eur``
+    (which was locked in by the importer using trade-date FX). USD
+    aggregates are summed from per-row ``amount_usd`` values computed
+    in the same per-trade-date manner — never ``EUR_total × today_spot``,
+    which would silently double-convert USD-native rows and drift over
+    time as USD/EUR moves.
+    """
     today = today or date.today()
     year_start = date(today.year, 1, 1)
     month_start = date(today.year, today.month, 1)
 
-    stmt = select(Transaction).where(Transaction.kind.in_(_DEPOSIT_KINDS))
+    stmt = (
+        select(Transaction)
+        .options(joinedload(Transaction.account))
+        .where(Transaction.kind.in_(_DEPOSIT_KINDS))
+    )
     txns: Sequence[Transaction] = session.scalars(stmt).all()
+    eur_to_usd = fx_repo.get_rates(session, base="EUR", quote="USD")
 
     total_native = sum(
-        (t.net_native or Decimal(0) for t in txns if t.kind == "deposit"),
-        Decimal(0),
+        (t.net_native or ZERO for t in txns if t.kind == "deposit"),
+        ZERO,
     ) - sum(
-        (t.net_native or Decimal(0) for t in txns if t.kind == "withdrawal"),
-        Decimal(0),
+        (t.net_native or ZERO for t in txns if t.kind == "withdrawal"),
+        ZERO,
     )
-    total_eur = sum((_signed_contrib(t) for t in txns), Decimal(0))
-    ytd = sum(
+    total_eur = sum((_signed_contrib(t) for t in txns), ZERO)
+    ytd_eur = sum(
         (_signed_contrib(t) for t in txns if t.date >= year_start),
-        Decimal(0),
+        ZERO,
     )
-    mtd = sum(
+    mtd_eur = sum(
         (_signed_contrib(t) for t in txns if t.date >= month_start),
-        Decimal(0),
+        ZERO,
     )
-    interest_ytd = sum(
+    interest_ytd_eur = sum(
         (_amount_eur(t) for t in txns if t.kind == "interest" and t.date >= year_start),
-        Decimal(0),
+        ZERO,
     )
+
+    # Per-trade-date USD totals.
+    usd_by_txn: list[tuple[Transaction, Decimal | None]] = [
+        (
+            t,
+            _amount_usd(
+                t,
+                native_currency=(t.account.native_currency if t.account else ""),
+                eur_to_usd=eur_to_usd,
+            ),
+        )
+        for t in txns
+    ]
+    total_usd = sum((_signed_contrib_usd(usd, t.kind) for t, usd in usd_by_txn), ZERO)
+    ytd_usd = sum(
+        (_signed_contrib_usd(usd, t.kind) for t, usd in usd_by_txn if t.date >= year_start),
+        ZERO,
+    )
+    mtd_usd = sum(
+        (_signed_contrib_usd(usd, t.kind) for t, usd in usd_by_txn if t.date >= month_start),
+        ZERO,
+    )
+    interest_ytd_usd = sum(
+        (
+            usd if usd is not None else ZERO
+            for t, usd in usd_by_txn
+            if t.kind == "interest" and t.date >= year_start
+        ),
+        ZERO,
+    )
+
     return DepositSummary(
         total_contrib_native=total_native,
         total_contrib_eur=total_eur,
-        ytd_contrib_eur=ytd,
-        mtd_contrib_eur=mtd,
-        interest_ytd_eur=interest_ytd,
+        ytd_contrib_eur=ytd_eur,
+        mtd_contrib_eur=mtd_eur,
+        interest_ytd_eur=interest_ytd_eur,
+        total_contrib_usd=total_usd,
+        ytd_contrib_usd=ytd_usd,
+        mtd_contrib_usd=mtd_usd,
+        interest_ytd_usd=interest_ytd_usd,
     )

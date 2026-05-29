@@ -17,6 +17,10 @@ TOOLTIPS: Final[dict[str, str]] = {
         "Current portfolio value minus the sum of all your net contributions. "
         "Positive means you've made money; negative means you've lost money."
     ),
+    "total_growth": (
+        "Total portfolio growth since inception, expressed as a percentage of net "
+        "contributions. (Closing value + cumulative cash dividends) / net contributions - 1."
+    ),
     "xirr": (
         "The annualized return that makes the value of all your contributions and "
         "withdrawals (each weighted by when they happened) sum to your current "

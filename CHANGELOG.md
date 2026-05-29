@@ -12,6 +12,59 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.4.0] — Unreleased
+
+### Removed
+- Dropped DKK from the display-currency picker, FX defaults
+  (`DEFAULT_QUOTES`), and the money symbol map. The app now ships with
+  EUR and USD only; v2.2's tri-currency rollout regressed the UX
+  without delivering anything most users wanted.
+
+### Changed
+- **Risk-free rate ticker.** The default switched from `^IRX` (CBOE
+  13-week T-bill yield, which yfinance has been returning as empty
+  frames since the upstream CSV restructured) to `^TNX` (10-year US
+  Treasury yield, a reliably-published series quoted in the same
+  percent convention so existing normalisation still works). Existing
+  installs that have `^IRX` persisted in `app_config` are silently
+  bumped to `^TNX` on read so analytics auto-heal without a Settings
+  visit.
+- **FX history backfills from the earliest transaction date.** Boot
+  previously only refreshed the last 14 days, which left historical
+  trade dates without a rate and forced the FX-aware aggregators to
+  fall back to EUR — so the "growth shifts with currency" feature
+  produced identical numbers for EUR and USD. Boot now caps the
+  refresh window at `earliest_transaction_date()` (or 14 days,
+  whichever is older), so per-trade-date FX is actually available.
+- **Monthly and yearly charts now plot Growth % per period**, not
+  contributions/dividends bars (which were redundant with the table).
+  Green/orange bars; uses the display-currency growth when available.
+- **Overview redesign.** Added a "Total Growth" KPI card and removed
+  the "Cost Basis (native)" and "Value (native)" columns from the
+  positions grid — the page now shows only EUR and the selected
+  display currency, matching the rest of the app.
+- **Larger default fonts** (root 18→20 px, KPI value 1.75→2 rem) and
+  AG-Grid columns now use `flex` with a `minWidth` floor so wide
+  tables scroll internally instead of overflowing the section card.
+- **Deposits page is FX-aware per trade date.** The KPI cards and the
+  per-row "Amount (USD)" column are computed by walking each
+  transaction with the EUR→USD rate that was in force on its own
+  date; USD-native deposits short-circuit FX entirely and use
+  `net_native`, fixing the v2.3 bug where a $1000 deposit displayed
+  as ~$950 after a EUR→USD→EUR→USD round-trip through today's spot.
+- **Monthly / yearly aggregation hardened against missing FX.** When
+  `Transaction.net_eur` is `NULL` (e.g. importer ran while FX cache
+  was cold), the aggregator now converts `net_native` via the
+  trade-date EUR→USD rate instead of treating dollars as euros —
+  which v2.3 did and which produced the inflated "everything is EUR"
+  totals with empty/zero buckets users were seeing.
+
+### Fixed
+- Section cards (`.inv-section`) now set `overflow:hidden;
+  min-width:0` so AG-Grids inside them scroll horizontally instead of
+  pushing the layout sideways (the analytics attribution table no
+  longer overhangs the viewport).
+
 ## [2.3.1] — Unreleased
 
 ### Fixed

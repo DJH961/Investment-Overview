@@ -298,6 +298,11 @@ def register() -> None:
                             ],
                             "rowData": rows,
                             "domLayout": "autoHeight",
-                            "defaultColDef": {"sortable": True, "resizable": True},
+                            "defaultColDef": {
+                                "sortable": True,
+                                "resizable": True,
+                                "flex": 1,
+                                "minWidth": 130,
+                            },
                         },
                     ).classes("w-full")

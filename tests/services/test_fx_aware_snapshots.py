@@ -14,16 +14,16 @@ from investment_dashboard.repositories import fx_repo, snapshots_repo
 from investment_dashboard.services import fx_service, snapshots_service
 
 
-def test_refresh_fx_history_default_targets_usd_and_dkk(session: Session) -> None:
+def test_refresh_fx_history_default_targets_usd(session: Session) -> None:
     """``refresh_fx_history`` with no quote args backfills DEFAULT_QUOTES.
 
-    Each quote is fetched independently so a Frankfurter outage on one
-    leg doesn't poison the other. We assert both per-quote calls go
-    out and both write rows.
+    v2.4 trimmed the default down to a single quote (USD) after the DKK
+    leg added in v2.2 was reverted; this test pins the behaviour so a
+    future change picks up an explicit broadening rather than silently
+    fetching extra currencies.
     """
     fake_records = {
         "USD": [FxRateRecord(date=date(2026, 5, 1), base="EUR", quote="USD", rate=Decimal("1.10"))],
-        "DKK": [FxRateRecord(date=date(2026, 5, 1), base="EUR", quote="DKK", rate=Decimal("7.45"))],
     }
 
     seen: list[tuple[str, str]] = []
@@ -39,14 +39,10 @@ def test_refresh_fx_history_default_targets_usd_and_dkk(session: Session) -> Non
             today=date(2026, 5, 1),
         )
 
-    assert written == 2
-    assert ("EUR", "USD") in seen
-    assert ("EUR", "DKK") in seen
+    assert written == 1
+    assert seen == [("EUR", "USD")]
     assert fx_repo.get_rates(session, base="EUR", quote="USD") == {
         date(2026, 5, 1): Decimal("1.10"),
-    }
-    assert fx_repo.get_rates(session, base="EUR", quote="DKK") == {
-        date(2026, 5, 1): Decimal("7.45"),
     }
 
 
@@ -56,7 +52,7 @@ def test_refresh_fx_history_rejects_both_quote_and_quotes(session: Session) -> N
             session,
             earliest_needed=date(2026, 1, 1),
             quote="USD",
-            quotes=("DKK",),
+            quotes=("USD",),
         )
 
 
@@ -95,21 +91,21 @@ def test_get_or_compute_in_currency_eur_passthrough(session: Session) -> None:
     )
 
 
-def test_get_or_compute_in_currency_dkk_forward_fills(session: Session) -> None:
-    """If the snapshot date has no DKK rate, the prior business-day rate wins."""
+def test_get_or_compute_in_currency_usd_forward_fills(session: Session) -> None:
+    """If the snapshot date has no USD rate, the prior business-day rate wins."""
     snapshot_date = date(2024, 3, 4)  # Monday
     snapshots_repo.upsert_snapshot(session, snapshot_date, Decimal("500"))
     # Only a Friday rate exists; forward-fill must pick it up.
     fx_repo.upsert_rates(
         session,
-        {date(2024, 3, 1): Decimal("7.45")},
+        {date(2024, 3, 1): Decimal("1.085")},
         base="EUR",
-        quote="DKK",
+        quote="USD",
     )
     session.flush()
 
-    value = snapshots_service.get_or_compute_in_currency(session, snapshot_date, "DKK")
-    assert value == Decimal("3725.00")  # 500 * 7.45
+    value = snapshots_service.get_or_compute_in_currency(session, snapshot_date, "USD")
+    assert value == Decimal("542.500")  # 500 * 1.085
 
 
 def test_get_or_compute_in_currency_no_rate_returns_eur(session: Session) -> None:

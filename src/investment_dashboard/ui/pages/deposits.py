@@ -17,6 +17,7 @@ from investment_dashboard.ui.components import (
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import fmt_money
 from investment_dashboard.ui.pages._deposits_query import (
+    DepositSummary,
     compute_summary,
     list_deposit_rows,
 )
@@ -24,10 +25,19 @@ from investment_dashboard.ui.pages._deposits_query import (
 PATH = "/deposits"
 
 
-def _convert(amount_eur: Decimal, target: str, fx_rate: Decimal | None) -> Decimal:
-    if target == "EUR" or fx_rate is None or fx_rate == 0:
-        return amount_eur
-    return amount_eur * fx_rate
+def _pair_for(summary: DepositSummary, key: str, display_ccy: str) -> tuple[Decimal, Decimal]:
+    """Return (primary, secondary) totals for one KPI, both currencies pre-aggregated.
+
+    The values come from :class:`DepositSummary`'s per-trade-date USD
+    totals (and the ledger's EUR totals), never from a today's-spot
+    rescale of the EUR sum, so a USD-native account contributes its
+    actual USD cashflows instead of being double-converted.
+    """
+    eur_value: Decimal = getattr(summary, f"{key}_eur")
+    usd_value: Decimal = getattr(summary, f"{key}_usd")
+    if display_ccy == "USD":
+        return usd_value, eur_value
+    return eur_value, usd_value
 
 
 def register() -> None:
@@ -39,22 +49,10 @@ def register() -> None:
                 summary = compute_summary(session)
                 rows = list_deposit_rows(session)
                 display_ccy = display_currency_service.get_display_currency(session)
-                display_quote = display_ccy if display_ccy != "EUR" else "USD"
-                fx_rate = display_currency_service.current_rate(session, quote=display_quote)
-                # The deposits table always shows a USD column alongside
-                # EUR for cross-currency reference, even when the user's
-                # display preference is DKK; fetch that explicitly so it
-                # isn't a (wrong) re-use of the display FX rate.
-                usd_rate = (
-                    fx_rate
-                    if display_quote == "USD"
-                    else display_currency_service.current_rate(session, quote="USD")
-                )
             secondary_ccy = "EUR" if display_ccy != "EUR" else "USD"
 
-            def _kpi(label: str, eur_value: Decimal) -> None:
-                primary = _convert(eur_value, display_ccy, fx_rate)
-                secondary = _convert(eur_value, secondary_ccy, fx_rate)
+            def _kpi(label: str, key: str) -> None:
+                primary, secondary = _pair_for(summary, key, display_ccy)
                 kpi_card(
                     label,
                     fmt_money(primary, display_ccy),
@@ -62,10 +60,10 @@ def register() -> None:
                 )
 
             with ui.row().classes("gap-md flex-wrap w-full"):
-                _kpi("Total contributed", summary.total_contrib_eur)
-                _kpi("YTD contributions", summary.ytd_contrib_eur)
-                _kpi("MTD contributions", summary.mtd_contrib_eur)
-                _kpi("Interest YTD", summary.interest_ytd_eur)
+                _kpi("Total contributed", "total_contrib")
+                _kpi("YTD contributions", "ytd_contrib")
+                _kpi("MTD contributions", "mtd_contrib")
+                _kpi("Interest YTD", "interest_ytd")
             if not rows:
                 empty_state(
                     "savings",
@@ -103,33 +101,14 @@ def register() -> None:
                                 },
                                 {"headerName": "Description", "field": "description"},
                             ],
-                            "rowData": _add_usd_column(rows, usd_rate),
-                            "defaultColDef": {"resizable": True, "sortable": True},
+                            "rowData": rows,
+                            "defaultColDef": {
+                                "resizable": True,
+                                "sortable": True,
+                                "flex": 1,
+                                "minWidth": 100,
+                            },
                             "pagination": True,
                             "paginationAutoPageSize": True,
                         }
                     ).classes("ag-theme-alpine w-full h-[60vh]")
-
-
-def _add_usd_column(
-    rows: list[dict[str, object]], fx_rate: Decimal | None
-) -> list[dict[str, object]]:
-    """Augment each deposit row with a USD-equivalent column.
-
-    Done client-side here (rather than in the query layer) so the query
-    helper remains UI-agnostic and stays easy to unit-test with no FX
-    context.
-    """
-    out: list[dict[str, object]] = []
-    for r in rows:
-        new = dict(r)
-        if fx_rate is None or fx_rate == 0:
-            new["amount_usd"] = ""
-        else:
-            try:
-                amount_eur = Decimal(str(r["amount_eur"]).replace(",", ""))
-                new["amount_usd"] = f"{amount_eur * fx_rate:,.2f}"
-            except Exception:
-                new["amount_usd"] = ""
-        out.append(new)
-    return out

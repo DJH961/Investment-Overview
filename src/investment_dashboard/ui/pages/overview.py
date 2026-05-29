@@ -79,7 +79,7 @@ def register() -> None:
                 display_ccy = display_currency_service.get_display_currency(session)
                 # Display-currency FX (EUR→display). For EUR display we
                 # still fetch EUR→USD so the secondary USD column on the
-                # positions table stays populated; for USD/DKK display
+                # positions table stays populated; for USD display
                 # we use the matching rate so KPIs convert correctly.
                 display_quote = display_ccy if display_ccy != "EUR" else "USD"
                 fx_rate = display_currency_service.current_rate(session, quote=display_quote)
@@ -118,11 +118,16 @@ def register() -> None:
                 kpi_card(
                     "Total Gain",
                     fmt_money(gain_primary, display_ccy),
-                    sub=(
-                        f"{fmt_money(gain_secondary, secondary_ccy)} · "
-                        f"{_fmt_pct(metrics.total_growth_pct)}"
-                    ),
+                    sub=f"{fmt_money(gain_secondary, secondary_ccy)}",
                     tooltip_key="total_gain",
+                    color=color_for_signed(float(growth_pct)),
+                    arrow=arrow_for_signed(float(growth_pct)),
+                )
+                kpi_card(
+                    "Total Growth",
+                    _fmt_pct(metrics.total_growth_pct),
+                    sub="lifetime · external flows weighted",
+                    tooltip_key="total_growth",
                     color=color_for_signed(float(growth_pct)),
                     arrow=arrow_for_signed(float(growth_pct)),
                 )
@@ -172,16 +177,6 @@ def register() -> None:
                                     "type": "rightAligned",
                                 },
                                 {
-                                    "headerName": "Cost Basis (native)",
-                                    "field": "cost_basis_native",
-                                    "type": "rightAligned",
-                                },
-                                {
-                                    "headerName": "Value (native)",
-                                    "field": "current_value_native",
-                                    "type": "rightAligned",
-                                },
-                                {
                                     "headerName": "Value (USD)",
                                     "field": "current_value_usd",
                                     "type": "rightAligned",
@@ -198,7 +193,12 @@ def register() -> None:
                                 },
                             ],
                             "rowData": rows,
-                            "defaultColDef": {"resizable": True, "sortable": True},
+                            "defaultColDef": {
+                                "resizable": True,
+                                "sortable": True,
+                                "flex": 1,
+                                "minWidth": 110,
+                            },
                         }
                     ).classes("ag-theme-alpine w-full h-[55vh]")
                 with section("Allocation"):

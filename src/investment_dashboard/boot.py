@@ -34,10 +34,40 @@ from investment_dashboard.ui.theme import register_plotly_template
 
 log = logging.getLogger(__name__)
 
-#: Window of days to backfill on every boot for FX/prices. We keep this
-#: short because the heavy lifting happens on first ingest; subsequent
-#: boots only need to catch up the gap since last run.
+#: Maximum window of days we'll *catch up* on every boot when no
+#: transactions yet exist. Once the ledger has data, the actual backfill
+#: floor is the earliest transaction date so the per-trade-date FX
+#: history is dense enough for the FX-aware Modified-Dietz growth on
+#: ``/monthly`` and ``/yearly`` to actually differ between EUR and USD.
 _BOOT_BACKFILL_DAYS = 14
+
+
+def _earliest_needed_date() -> date:
+    """Return the floor date FX / price refresh must cover on this boot.
+
+    For a populated ledger this is the date of the earliest transaction
+    (so per-trade-date FX lookups in
+    :mod:`investment_dashboard.ui.pages._period_query` find a rate
+    instead of falling back to the EUR ledger value, which silently
+    collapses USD growth onto EUR growth — the v2.3 bug). For an empty
+    ledger we keep the legacy 14-day window so first-boot doesn't fan
+    out an open-ended fetch.
+    """
+    try:
+        from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+        from investment_dashboard.repositories.transactions_repo import (  # noqa: PLC0415
+            earliest_transaction_date,
+        )
+
+        with ledger_session_scope() as session:
+            earliest = earliest_transaction_date(session)
+    except Exception:  # pragma: no cover - defensive
+        earliest = None
+    fallback = date.today() - timedelta(days=_BOOT_BACKFILL_DAYS)
+    if earliest is None:
+        return fallback
+    return min(earliest, fallback)
+
 
 #: Set to ``True`` by ``_acquire_writer_lock`` when the lock was held by
 #: another process; UI code can consult :func:`is_read_only` to suppress
@@ -253,10 +283,10 @@ def _refresh_fx() -> None:
         from investment_dashboard.db import cache_session_scope  # noqa: PLC0415
         from investment_dashboard.services.fx_service import refresh_fx_history  # noqa: PLC0415
 
-        earliest = date.today() - timedelta(days=_BOOT_BACKFILL_DAYS)
+        earliest = _earliest_needed_date()
         with cache_session_scope() as session:
             refresh_fx_history(session, earliest_needed=earliest)
-        log.info("FX rates refreshed")
+        log.info("FX rates refreshed (floor=%s)", earliest)
     except Exception:
         log.warning("FX refresh failed; continuing with cached rates", exc_info=True)
 
@@ -269,10 +299,10 @@ def _refresh_prices() -> None:
         )
         from investment_dashboard.services.prices_service import refresh_prices  # noqa: PLC0415
 
-        earliest = date.today() - timedelta(days=_BOOT_BACKFILL_DAYS)
+        earliest = _earliest_needed_date()
         with ledger_session_scope() as ledger, cache_session_scope() as cache:
             refresh_prices(ledger, cache, earliest_needed=earliest)
-        log.info("Prices refreshed")
+        log.info("Prices refreshed (floor=%s)", earliest)
     except Exception:
         log.warning("Price refresh failed; continuing with cached prices", exc_info=True)
 

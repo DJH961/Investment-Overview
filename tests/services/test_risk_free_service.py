@@ -22,12 +22,27 @@ def _make_fetcher(value: Decimal | None):
 
 
 def test_default_symbol_when_unset(session) -> None:
-    assert svc.get_symbol(session) == "^IRX"
+    assert svc.get_symbol(session) == "^TNX"
+
+
+def test_deprecated_irx_is_rewritten(session) -> None:
+    """Persisted ``^IRX`` from pre-v2.4 installs is bumped to the new default.
+
+    yfinance has been returning empty frames for ``^IRX`` since the
+    upstream CBOE feed changed, so silently keeping the value would
+    leave the Analytics page's Sharpe / Sortino / Alpha "unavailable"
+    until the user manually edits the Settings field. ``get_symbol``
+    rewrites it on read so existing installs heal themselves.
+    """
+    app_config_repo.set_value(session, svc.KEY_SYMBOL, "^IRX")
+    assert svc.get_symbol(session) == "^TNX"
+    # And the rewrite was persisted, not just observed.
+    assert app_config_repo.get(session, svc.KEY_SYMBOL) == "^TNX"
 
 
 def test_set_symbol_round_trips(session) -> None:
-    svc.set_symbol(session, "^TNX")
-    assert svc.get_symbol(session) == "^TNX"
+    svc.set_symbol(session, "^FVX")
+    assert svc.get_symbol(session) == "^FVX"
 
 
 def test_set_symbol_rejects_empty(session) -> None:
@@ -41,14 +56,15 @@ def test_get_returns_none_when_never_fetched(session) -> None:
     assert not snap.is_manual
 
 
-def test_percent_quoted_irx_is_normalised(session) -> None:
-    # ^IRX returns 5.32 meaning 5.32%; service should store 0.0532.
-    snap = svc.get_risk_free_rate(session, fetcher=_make_fetcher(Decimal("5.32")))
-    assert snap.rate == Decimal("0.0532")
+def test_percent_quoted_yield_is_normalised(session) -> None:
+    # ^TNX (and the deprecated ^IRX) return e.g. 4.32 meaning 4.32%;
+    # service should store 0.0432.
+    snap = svc.get_risk_free_rate(session, fetcher=_make_fetcher(Decimal("4.32")))
+    assert snap.rate == Decimal("0.0432")
     assert snap.is_manual is False
     assert snap.fetched_at is not None
     # Persistence
-    assert app_config_repo.get(session, svc.KEY_VALUE) == "0.0532"
+    assert app_config_repo.get(session, svc.KEY_VALUE) == "0.0432"
 
 
 def test_decimal_quoted_value_is_passed_through(session) -> None:

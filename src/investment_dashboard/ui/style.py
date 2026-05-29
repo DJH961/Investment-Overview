@@ -65,9 +65,11 @@ def _css() -> str:
 html {{
   /* Bump the root font-size so every rem-based token (body text, KPI tiles,
      section titles, tables, etc.) scales up uniformly. The default browser
-     value is 16px; 18px gives a noticeably roomier, more readable layout
-     without breaking any fixed-pixel measurements. */
-  font-size: 18px;
+     value is 16px; v1.5 bumped to 18px, v2.4 takes it to 20px so the KPI
+     numbers and table headers read cleanly on a 1080p panel from across the
+     room. Fixed-pixel measurements (table row height, header height, AG-Grid
+     paddings) are tuned alongside this in the AG-Grid block below. */
+  font-size: 20px;
 }}
 
 html, body {{
@@ -200,6 +202,12 @@ html, body {{
   box-shadow: var(--inv-shadow-soft);
   padding: 1.25rem 1.25rem 1rem;
   margin: 0 !important;
+  /* Clip oversized children (wide AG-Grid tables, plotly canvases) so they
+     scroll internally instead of overhanging the section card / page width.
+     ``min-width: 0`` lets the section participate in flex/grid shrinking
+     without forcing its parent column to grow. */
+  overflow: hidden;
+  min-width: 0;
   transition: box-shadow 150ms ease-out, border-color 150ms ease-out;
 }}
 .inv-section-title {{
@@ -235,7 +243,7 @@ html, body {{
   font-weight: 600;
 }}
 .inv-kpi-value {{
-  font-size: 1.75rem;
+  font-size: 2rem;
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--inv-ink);
