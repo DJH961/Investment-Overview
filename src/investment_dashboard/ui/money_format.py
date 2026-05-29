@@ -15,11 +15,10 @@ from __future__ import annotations
 from decimal import Decimal
 
 #: Symbol prefix per currency. Falls back to the ISO code + space for any
-#: currency we don't know about yet. v1.3 introduced EUR/USD; v2.2 added
-#: DKK (Danish krone — by convention rendered with a trailing "kr"
-#: suffix; we use a leading "kr " here for column-alignment consistency
-#: with the other prefix-symbol currencies).
-_SYMBOLS: dict[str, str] = {"EUR": "€", "USD": "$", "DKK": "kr "}
+#: currency we don't know about yet. v1.3 introduced EUR/USD; the v2.2
+#: DKK leg was dropped in v2.4 so the symbol table mirrors the supported
+#: currencies again.
+_SYMBOLS: dict[str, str] = {"EUR": "€", "USD": "$"}
 
 
 def currency_symbol(currency: str) -> str:
@@ -56,3 +55,48 @@ def fmt_pair(
         fmt_money(primary_amount, primary_currency, decimals=decimals),
         fmt_money(secondary_amount, secondary_currency, decimals=decimals),
     )
+
+
+def dual_money(
+    eur: Decimal | None,
+    usd: Decimal | None,
+    *,
+    primary: str = "USD",
+    decimals: int = 2,
+) -> str:
+    """Inline ``"$1,234.56 / €1,123.45"`` pair for dense table cells.
+
+    v2.5 — every monetary cell in every table renders both currencies
+    side-by-side. ``primary`` controls which side comes first (the
+    user's chosen display currency).
+    """
+    primary = primary.upper()
+    if primary == "EUR":
+        return f"{fmt_money(eur, 'EUR', decimals=decimals)} / {fmt_money(usd, 'USD', decimals=decimals)}"
+    return (
+        f"{fmt_money(usd, 'USD', decimals=decimals)} / {fmt_money(eur, 'EUR', decimals=decimals)}"
+    )
+
+
+def fmt_pct(value: Decimal | None, *, decimals: int = 2) -> str:
+    """Render a fractional percentage (``0.1234`` → ``"12.34 %"``)."""
+    if value is None:
+        return "—"
+    return f"{value * 100:,.{decimals}f} %"
+
+
+def dual_pct(
+    eur_pct: Decimal | None,
+    usd_pct: Decimal | None,
+    *,
+    primary: str = "USD",
+    decimals: int = 2,
+) -> str:
+    """Inline ``"12.34 % (USD) / 10.10 % (EUR)"`` for KPIs whose value
+    legitimately differs by currency (XIRR, Total Growth)."""
+    primary = primary.upper()
+    eur_s = f"{fmt_pct(eur_pct, decimals=decimals)} (EUR)"
+    usd_s = f"{fmt_pct(usd_pct, decimals=decimals)} (USD)"
+    if primary == "EUR":
+        return f"{eur_s} / {usd_s}"
+    return f"{usd_s} / {eur_s}"

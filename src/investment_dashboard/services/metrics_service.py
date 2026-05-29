@@ -2,25 +2,36 @@
 
 The domain layer is pure; this layer assembles its inputs from the DB.
 Returned metrics use :class:`decimal.Decimal` throughout.
+
+v2.5 added EUR + USD parallel figures across the board. Total Growth
+(``(1 + XIRR) ^ years − 1``) is the canonical headline metric — see
+:func:`investment_dashboard.domain.returns.total_growth_pct_compounded`.
+Both ``*_eur`` and ``*_usd`` are computed from the same ledger walked
+twice with the appropriate per-trade-date FX, so the displayed pair
+reflects the real EUR-wallet vs USD-wallet experience rather than a
+single-currency series rescaled by today's spot.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.returns import (
     Cashflow,
     capital_gain,
     total_growth_pct,
+    total_growth_pct_compounded,
     xirr,
+    years_between,
 )
 from investment_dashboard.models import Transaction, TransactionKind
-from investment_dashboard.repositories import accounts_repo, transactions_repo
+from investment_dashboard.repositories import accounts_repo, fx_repo, transactions_repo
 from investment_dashboard.services import positions_service
 
 ZERO = Decimal(0)
@@ -39,9 +50,24 @@ _DISTRIBUTION_KINDS = {
 
 @dataclass(frozen=True)
 class PortfolioMetrics:
-    """High-level KPIs for ``/overview``."""
+    """High-level KPIs for ``/overview`` — dual-currency since v2.5.
+
+    Every monetary field has an ``*_eur`` and ``*_usd`` counterpart;
+    every return field has an ``*_eur`` / ``*_usd`` pair. The two are
+    computed from the same ledger walked twice with per-trade-date FX,
+    so they reflect the real EUR-wallet / USD-wallet experience.
+
+    ``total_growth_pct`` (legacy "simple" growth = `(V−C)/C`) is kept
+    for backwards compatibility but the UI now headlines
+    ``total_growth_compounded_*`` ((1 + XIRR) ^ years − 1).
+    """
 
     as_of: date
+    #: First date with any contribution / withdrawal cashflow, used as the
+    #: time origin for ``total_growth_compounded_*``. ``None`` for an
+    #: empty ledger.
+    first_cashflow_date: date | None
+    # EUR-denominated figures (legacy + canonical storage)
     total_value_eur: Decimal
     total_contributions_eur: Decimal
     total_dividends_cash_eur: Decimal
@@ -50,6 +76,17 @@ class PortfolioMetrics:
     xirr: Decimal | None
     ytd_xirr: Decimal | None
     ytd_growth_pct: Decimal | None
+    #: (1 + XIRR_eur) ^ years − 1 — headline metric on every page.
+    total_growth_compounded_eur: Decimal | None
+    # USD parallels (v2.5)
+    total_value_usd: Decimal
+    total_contributions_usd: Decimal
+    total_dividends_cash_usd: Decimal
+    capital_gain_usd: Decimal
+    xirr_usd: Decimal | None
+    ytd_xirr_usd: Decimal | None
+    ytd_growth_pct_usd: Decimal | None
+    total_growth_compounded_usd: Decimal | None
     #: Month-to-date portfolio growth (mirrors the spreadsheet's MTD block
     #: on ``Deposits``/``Total``). ``None`` when the start-of-month value
     #: can't be established (brand-new portfolio / no price history).
@@ -77,10 +114,38 @@ def _txn_eur_amount(t: Transaction) -> Decimal:
     return ZERO
 
 
+def _txn_usd_amount(
+    t: Transaction,
+    *,
+    eur_to_usd: dict[date, Decimal],
+) -> Decimal:
+    """USD-converted cash leg of one transaction (per trade-date FX).
+
+    USD-native accounts short-circuit FX entirely. For every other
+    currency we convert the EUR amount with the EUR→USD rate **on the
+    transaction's date** (forward-filled), so a USD wallet's series
+    reflects the FX it actually saw, not today's spot scaled across
+    history. When no rate is available the figure is excluded from the
+    USD series (``Decimal(0)``) rather than poisoned with a wrong-
+    magnitude EUR-as-USD value.
+    """
+    native_ccy = (t.account.native_currency if t.account else "EUR").upper()
+    if native_ccy == "USD" and t.net_native is not None:
+        return t.net_native
+    eur_amt = _txn_eur_amount(t)
+    if eur_amt == ZERO:
+        return ZERO
+    rate = lookup_rate_with_forward_fill(eur_to_usd, t.date)
+    if rate is None or rate == 0:
+        return ZERO
+    return eur_amt * rate
+
+
 def build_portfolio_cashflows(
     transactions: Sequence[Transaction],
     *,
     retained_cash_account_ids: set[int] | frozenset[int] = frozenset(),
+    amount_fn: Callable[[Transaction], Decimal] | None = None,
 ) -> list[Cashflow]:
     """Translate ledger rows into the signed cashflow stream XIRR needs.
 
@@ -93,29 +158,40 @@ def build_portfolio_cashflows(
           rebalances — the cash never leaves the portfolio, so they do
           **not** enter the portfolio-level XIRR. Their P&L appears
           implicitly via the terminal mark-to-market.
+
+    ``amount_fn`` selects which currency to read each transaction in;
+    defaults to :func:`_txn_eur_amount` to preserve pre-v2.5 callers.
+    Pass a USD-aware function (using FX history) to build the USD
+    parallel series.
     """
+    fn = amount_fn or _txn_eur_amount
     flows: list[Cashflow] = []
     for t in transactions:
         kind = t.kind
-        net_eur = _txn_eur_amount(t)
+        amount = fn(t)
         if kind in _CONTRIBUTION_KINDS:
-            # Deposit: net_native > 0 ⇒ cashflow is negative.
-            flows.append(Cashflow(date=t.date, amount=-net_eur))
+            # Deposit: amount > 0 ⇒ cashflow is negative.
+            flows.append(Cashflow(date=t.date, amount=-amount))
         elif kind in _WITHDRAWAL_KINDS:
-            # Withdrawal: net_native < 0 (cash out of account) ⇒ flow positive.
-            flows.append(Cashflow(date=t.date, amount=-net_eur))
+            # Withdrawal: amount < 0 (cash out of account) ⇒ flow positive.
+            flows.append(Cashflow(date=t.date, amount=-amount))
         elif kind in _DISTRIBUTION_KINDS and t.account_id not in retained_cash_account_ids:
-            flows.append(Cashflow(date=t.date, amount=net_eur))
+            flows.append(Cashflow(date=t.date, amount=amount))
     return flows
 
 
-def compute_portfolio_metrics(
+def compute_portfolio_metrics(  # noqa: PLR0915
     session: Session,
     *,
     as_of: date | None = None,
 ) -> PortfolioMetrics:
     as_of = as_of or date.today()
     txns = list(transactions_repo.list_transactions(session, end=as_of))
+
+    eur_to_usd: dict[date, Decimal] = fx_repo.get_rates(session, base="EUR", quote="USD")
+
+    def _usd_amount(t: Transaction) -> Decimal:
+        return _txn_usd_amount(t, eur_to_usd=eur_to_usd)
 
     contributions_eur = sum(
         (_txn_eur_amount(t) for t in txns if t.kind in _CONTRIBUTION_KINDS),
@@ -131,32 +207,87 @@ def compute_portfolio_metrics(
         start=ZERO,
     )
 
+    contributions_usd = sum(
+        (_usd_amount(t) for t in txns if t.kind in _CONTRIBUTION_KINDS),
+        start=ZERO,
+    )
+    withdrawals_usd = sum(
+        (_usd_amount(t) for t in txns if t.kind in _WITHDRAWAL_KINDS),
+        start=ZERO,
+    )
+    net_contributions_usd = contributions_usd + withdrawals_usd
+    dividends_cash_usd = sum(
+        (_usd_amount(t) for t in txns if t.kind == TransactionKind.DIVIDEND_CASH.value),
+        start=ZERO,
+    )
+
     total_value_eur = positions_service.total_portfolio_value(session, as_of=as_of)
+    # Today's spot for the terminal mark-to-market USD value. We use spot
+    # for the *terminal* alone because positions_service already values
+    # everything in EUR using today's FX; per-trade-date USD is applied to
+    # the historical cashflow stream below.
+    fx_today = lookup_rate_with_forward_fill(eur_to_usd, as_of) or ZERO
+    total_value_usd = total_value_eur * fx_today if fx_today != 0 else total_value_eur
+
     retained_cash_account_ids = {
         account.id
         for account in accounts_repo.list_accounts(session)
         if account.account_type in _RETAINED_CASH_ACCOUNT_TYPES
     }
 
-    cap_gain = capital_gain(
+    cap_gain_eur = capital_gain(
         contributions=net_contributions_eur,
         current_value=total_value_eur,
         cumulative_dividends_cash=dividends_cash_eur,
     )
-    growth = total_growth_pct(net_contributions_eur, total_value_eur + dividends_cash_eur)
+    cap_gain_usd = capital_gain(
+        contributions=net_contributions_usd,
+        current_value=total_value_usd,
+        cumulative_dividends_cash=dividends_cash_usd,
+    )
+    growth_pct_legacy = total_growth_pct(
+        net_contributions_eur, total_value_eur + dividends_cash_eur
+    )
 
-    cashflows = build_portfolio_cashflows(
+    cashflows_eur = build_portfolio_cashflows(
         txns,
         retained_cash_account_ids=retained_cash_account_ids,
     )
-    portfolio_xirr = xirr(cashflows, as_of=as_of, terminal_value=total_value_eur)
+    cashflows_usd = build_portfolio_cashflows(
+        txns,
+        retained_cash_account_ids=retained_cash_account_ids,
+        amount_fn=_usd_amount,
+    )
+    portfolio_xirr_eur = xirr(cashflows_eur, as_of=as_of, terminal_value=total_value_eur)
+    portfolio_xirr_usd = xirr(cashflows_usd, as_of=as_of, terminal_value=total_value_usd)
+
+    # Time origin for compounded Total Growth: the earliest contribution
+    # / withdrawal date in the ledger. We deliberately ignore dividend-
+    # cash-only rows since they don't establish "how long you've been
+    # invested" — they're returns *on* invested money.
+    first_cashflow_date: date | None = None
+    for t in sorted(txns, key=lambda r: r.date):
+        if t.kind in _CONTRIBUTION_KINDS or t.kind in _WITHDRAWAL_KINDS:
+            first_cashflow_date = t.date
+            break
+
+    years_lifetime = (
+        years_between(first_cashflow_date, as_of) if first_cashflow_date else Decimal(0)
+    )
+    total_growth_eur = total_growth_pct_compounded(portfolio_xirr_eur, years_lifetime)
+    total_growth_usd = total_growth_pct_compounded(portfolio_xirr_usd, years_lifetime)
 
     # YTD: value at start of year + cashflows from Jan 1 onward.
     year_start = date(as_of.year, 1, 1)
     ytd_txns = [t for t in txns if t.date >= year_start]
-    ytd_cashflows = build_portfolio_cashflows(
+    ytd_cashflows_eur = build_portfolio_cashflows(
         ytd_txns,
         retained_cash_account_ids=retained_cash_account_ids,
+    )
+    ytd_cashflows_usd = build_portfolio_cashflows(
+        ytd_txns,
+        retained_cash_account_ids=retained_cash_account_ids,
+        amount_fn=_usd_amount,
     )
     # Best-effort Jan-1 valuation: requires price + FX history for that
     # date. For brand-new portfolios with no Jan-1 history we fall back
@@ -164,28 +295,51 @@ def compute_portfolio_metrics(
     # ultimately to ``Decimal(0)``), so the page renders instead of
     # raising. This mirrors spec §6.4's "ytd_start_value best-effort"
     # note (v1.2 closure of the v1.0 caveat).
-    ytd_start_value = positions_service.total_portfolio_value(session, as_of=year_start)
-    if ytd_start_value <= ZERO:
-        ytd_start_value = _best_effort_ytd_start_value(session, year_start, as_of)
+    ytd_start_value_eur = positions_service.total_portfolio_value(session, as_of=year_start)
+    if ytd_start_value_eur <= ZERO:
+        ytd_start_value_eur = _best_effort_ytd_start_value(session, year_start, as_of)
+    fx_year_start = lookup_rate_with_forward_fill(eur_to_usd, year_start) or fx_today
+    ytd_start_value_usd = (
+        ytd_start_value_eur * fx_year_start if fx_year_start != 0 else ytd_start_value_eur
+    )
     # Treat the start-of-year value as a synthetic "contribution" (negative).
-    ytd_cashflows.insert(0, Cashflow(date=year_start, amount=-ytd_start_value))
-    ytd_x = xirr(ytd_cashflows, as_of=as_of, terminal_value=total_value_eur)
+    ytd_cashflows_eur.insert(0, Cashflow(date=year_start, amount=-ytd_start_value_eur))
+    ytd_cashflows_usd.insert(0, Cashflow(date=year_start, amount=-ytd_start_value_usd))
+    ytd_xirr_eur = xirr(ytd_cashflows_eur, as_of=as_of, terminal_value=total_value_eur)
+    ytd_xirr_usd = xirr(ytd_cashflows_usd, as_of=as_of, terminal_value=total_value_usd)
 
-    ytd_contributions = sum(
+    ytd_contributions_eur = sum(
         (_txn_eur_amount(t) for t in ytd_txns if t.kind in _CONTRIBUTION_KINDS),
         start=ZERO,
     )
-    ytd_withdrawals = sum(
+    ytd_withdrawals_eur = sum(
         (_txn_eur_amount(t) for t in ytd_txns if t.kind in _WITHDRAWAL_KINDS),
         start=ZERO,
     )
-    ytd_net_contrib = ytd_contributions + ytd_withdrawals
-    if ytd_start_value + ytd_net_contrib > 0:
-        ytd_growth = (total_value_eur - ytd_start_value - ytd_net_contrib) / (
-            ytd_start_value + ytd_net_contrib
+    ytd_net_contrib_eur = ytd_contributions_eur + ytd_withdrawals_eur
+
+    ytd_contributions_usd = sum(
+        (_usd_amount(t) for t in ytd_txns if t.kind in _CONTRIBUTION_KINDS),
+        start=ZERO,
+    )
+    ytd_withdrawals_usd = sum(
+        (_usd_amount(t) for t in ytd_txns if t.kind in _WITHDRAWAL_KINDS),
+        start=ZERO,
+    )
+    ytd_net_contrib_usd = ytd_contributions_usd + ytd_withdrawals_usd
+
+    if ytd_start_value_eur + ytd_net_contrib_eur > 0:
+        ytd_growth_eur = (total_value_eur - ytd_start_value_eur - ytd_net_contrib_eur) / (
+            ytd_start_value_eur + ytd_net_contrib_eur
         )
     else:
-        ytd_growth = None
+        ytd_growth_eur = None
+    if ytd_start_value_usd + ytd_net_contrib_usd > 0:
+        ytd_growth_usd = (total_value_usd - ytd_start_value_usd - ytd_net_contrib_usd) / (
+            ytd_start_value_usd + ytd_net_contrib_usd
+        )
+    else:
+        ytd_growth_usd = None
 
     # MTD: same shape as YTD but bounded to the first of the current month.
     mtd_growth = _compute_mtd_growth(session, txns, as_of, total_value_eur)
@@ -197,14 +351,24 @@ def compute_portfolio_metrics(
 
     return PortfolioMetrics(
         as_of=as_of,
+        first_cashflow_date=first_cashflow_date,
         total_value_eur=total_value_eur,
         total_contributions_eur=net_contributions_eur,
         total_dividends_cash_eur=dividends_cash_eur,
-        capital_gain_eur=cap_gain,
-        total_growth_pct=growth,
-        xirr=portfolio_xirr,
-        ytd_xirr=ytd_x,
-        ytd_growth_pct=ytd_growth,
+        capital_gain_eur=cap_gain_eur,
+        total_growth_pct=growth_pct_legacy,
+        xirr=portfolio_xirr_eur,
+        ytd_xirr=ytd_xirr_eur,
+        ytd_growth_pct=ytd_growth_eur,
+        total_growth_compounded_eur=total_growth_eur,
+        total_value_usd=total_value_usd,
+        total_contributions_usd=net_contributions_usd,
+        total_dividends_cash_usd=dividends_cash_usd,
+        capital_gain_usd=cap_gain_usd,
+        xirr_usd=portfolio_xirr_usd,
+        ytd_xirr_usd=ytd_xirr_usd,
+        ytd_growth_pct_usd=ytd_growth_usd,
+        total_growth_compounded_usd=total_growth_usd,
         mtd_growth_pct=mtd_growth,
         weighted_expense_ratio=weighted_expense_ratio,
         annual_expense_cost_eur=annual_expense_cost_eur,

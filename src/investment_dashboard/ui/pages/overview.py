@@ -14,8 +14,9 @@ from investment_dashboard.ui.components import (
     page_header,
     section,
 )
+from investment_dashboard.ui.components.kpi_card import dual_kpi_card
 from investment_dashboard.ui.layout import page_frame
-from investment_dashboard.ui.money_format import fmt_money
+from investment_dashboard.ui.money_format import dual_pct, fmt_money
 from investment_dashboard.ui.pages._overview_query import (
     MarketVerdict,
     allocation_treemap,
@@ -126,7 +127,7 @@ def register() -> None:
                 display_ccy = display_currency_service.get_display_currency(session)
                 # Display-currency FX (EUR→display). For EUR display we
                 # still fetch EUR→USD so the secondary USD column on the
-                # positions table stays populated; for USD/DKK display
+                # positions table stays populated; for USD display
                 # we use the matching rate so KPIs convert correctly.
                 display_quote = display_ccy if display_ccy != "EUR" else "USD"
                 fx_rate = display_currency_service.current_rate(session, quote=display_quote)
@@ -148,49 +149,67 @@ def register() -> None:
             )
             treemap_data = allocation_treemap(positions)
 
-            gain = metrics.capital_gain_eur
-            growth_pct = metrics.total_growth_pct or Decimal(0)
+            growth_pct = (
+                metrics.total_growth_compounded_eur or metrics.total_growth_pct or Decimal(0)
+            )
 
-            primary_value = _convert(metrics.total_value_eur, display_ccy, fx_rate)
-            secondary_ccy = "EUR" if display_ccy != "EUR" else "USD"
-            secondary_value = _convert(metrics.total_value_eur, secondary_ccy, fx_rate)
-            gain_primary = _convert(gain, display_ccy, fx_rate)
-            gain_secondary = _convert(gain, secondary_ccy, fx_rate)
+            # v2.5 — every monetary KPI shows both currencies; Total
+            # Growth (compounded XIRR × years) is the leftmost / headline
+            # metric.
+            total_value_eur = metrics.total_value_eur
+            total_value_usd = metrics.total_value_usd
+            gain_eur = metrics.capital_gain_eur
+            gain_usd = metrics.capital_gain_usd
+            tg_eur = metrics.total_growth_compounded_eur
+            tg_usd = metrics.total_growth_compounded_usd
 
             with ui.row().classes("gap-md flex-wrap"):
-                kpi_card(
+                dual_kpi_card(
+                    "Total Growth",
+                    fmt_money(total_value_eur, "EUR"),
+                    fmt_money(total_value_usd, "USD"),
+                    primary=display_ccy,
+                    growth_pct=dual_pct(tg_eur, tg_usd, primary=display_ccy),
+                    tooltip_key="total_growth_compounded",
+                )
+                dual_kpi_card(
                     "Total Value",
-                    fmt_money(primary_value, display_ccy),
-                    sub=(
-                        f"{fmt_money(secondary_value, secondary_ccy)} · "
-                        f"as of {metrics.as_of.isoformat()}"
-                    ),
+                    fmt_money(total_value_eur, "EUR"),
+                    fmt_money(total_value_usd, "USD"),
+                    primary=display_ccy,
                     tooltip_key="total_value",
                 )
-                kpi_card(
-                    "Total Gain",
-                    fmt_money(gain_primary, display_ccy),
-                    sub=(
-                        f"{fmt_money(gain_secondary, secondary_ccy)} · "
-                        f"{_fmt_pct(metrics.total_growth_pct)}"
-                    ),
+                dual_kpi_card(
+                    "Capital Gain",
+                    fmt_money(gain_eur, "EUR"),
+                    fmt_money(gain_usd, "USD"),
+                    primary=display_ccy,
                     tooltip_key="total_gain",
-                    color=color_for_signed(float(growth_pct)),
-                    arrow=arrow_for_signed(float(growth_pct)),
                 )
                 kpi_card(
                     "XIRR",
-                    _fmt_pct(metrics.xirr),
+                    dual_pct(metrics.xirr, metrics.xirr_usd, primary=display_ccy),
                     tooltip_key="xirr",
                     color=color_for_signed(float(metrics.xirr or 0)),
                     arrow=arrow_for_signed(float(metrics.xirr or 0)),
                 )
                 kpi_card(
                     "YTD Growth",
-                    _fmt_pct(metrics.ytd_growth_pct),
+                    dual_pct(
+                        metrics.ytd_growth_pct, metrics.ytd_growth_pct_usd, primary=display_ccy
+                    ),
                     tooltip_key="ytd_growth",
                     color=color_for_signed(float(metrics.ytd_growth_pct or 0)),
                     arrow=arrow_for_signed(float(metrics.ytd_growth_pct or 0)),
+                )
+                # Legacy "simple" growth kept as a small reference KPI.
+                kpi_card(
+                    "Simple Growth",
+                    _fmt_pct(metrics.total_growth_pct),
+                    sub="(V - C) / C · legacy",
+                    tooltip_key="total_growth",
+                    color=color_for_signed(float(growth_pct)),
+                    arrow=arrow_for_signed(float(growth_pct)),
                 )
             with ui.row().classes("gap-md flex-wrap q-mt-md"):
                 kpi_card(
@@ -246,24 +265,22 @@ def register() -> None:
                                     "type": "rightAligned",
                                 },
                                 {
-                                    "headerName": "Cost Basis (native)",
-                                    "field": "cost_basis_native",
+                                    "headerName": "Cost Basis",
+                                    "field": "cost_basis_dual",
                                     "type": "rightAligned",
+                                    "minWidth": 200,
                                 },
                                 {
-                                    "headerName": "Value (native)",
-                                    "field": "current_value_native",
+                                    "headerName": "Value",
+                                    "field": "value_dual",
                                     "type": "rightAligned",
+                                    "minWidth": 200,
                                 },
                                 {
-                                    "headerName": "Value (USD)",
-                                    "field": "current_value_usd",
+                                    "headerName": "Capital Gain",
+                                    "field": "capital_gain_dual",
                                     "type": "rightAligned",
-                                },
-                                {
-                                    "headerName": "Value (EUR)",
-                                    "field": "current_value_eur",
-                                    "type": "rightAligned",
+                                    "minWidth": 200,
                                 },
                                 {
                                     "headerName": "Capital Gain (native)",
@@ -271,7 +288,7 @@ def register() -> None:
                                     "type": "rightAligned",
                                 },
                                 {
-                                    "headerName": "Growth %",
+                                    "headerName": "Total Growth %",
                                     "field": "total_growth_pct",
                                     "type": "rightAligned",
                                     "cellClassRules": _SIGN_RULES("total_growth_signed"),
@@ -290,7 +307,12 @@ def register() -> None:
                                 },
                             ],
                             "rowData": rows,
-                            "defaultColDef": {"resizable": True, "sortable": True},
+                            "defaultColDef": {
+                                "resizable": True,
+                                "sortable": True,
+                                "flex": 1,
+                                "minWidth": 110,
+                            },
                         }
                     ).classes("ag-theme-alpine w-full h-[55vh]")
                 with section("Allocation"):
