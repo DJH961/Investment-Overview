@@ -49,11 +49,11 @@ embedded "theoretical investment / missing-for-%" calculator (columns P–T).
 | Stock/ETF/Mutual Fund | name | ✅ |
 | Type | category | ✅ |
 | Price | latest close | ✅ |
-| Expense | expense ratio | ⚠️ stored on instrument, **not shown** in the positions grid |
+| Expense | expense ratio | ✅ shown as the `Expense` column in the positions grid |
 | Amount | shares | ✅ |
-| **TG** | total growth % (USD, dividend-inclusive) | ⚠️ a single `total_growth_pct` is shown, but it is price-only and excludes dividends |
-| **XIRR** | per-instrument money-weighted return | ❌ |
-| **TG YTD** | year-to-date total growth | ❌ |
+| **TG** | total growth % (USD, dividend-inclusive) | ✅ `total_growth_pct` is now dividend-inclusive (`current_value + dividends − cost`) |
+| **XIRR** | per-instrument money-weighted return | ✅ `InstrumentMetrics.xirr`, shown as the `XIRR` column |
+| **TG YTD** | year-to-date total growth | ✅ `InstrumentMetrics.ytd_growth_pct`, shown as the `YTD Growth` column |
 | **TWR** | per-instrument time-weighted return | ❌ |
 | **YTD TWR** | YTD time-weighted return | ❌ |
 | **€ TG** | total growth in EUR | ❌ (per-instrument EUR return not computed) |
@@ -69,11 +69,11 @@ embedded "theoretical investment / missing-for-%" calculator (columns P–T).
 | XIRR | ✅ "XIRR" card |
 | Performance Growth / Total Growth % | ✅ shown as growth % under Total Gain |
 | YTD Growth | ✅ "YTD Growth" card |
-| **MTD profit / month-to-date growth** | ❌ (deposits tracks MTD *contributions* only, not MTD portfolio growth) |
+| **MTD profit / month-to-date growth** | ✅ `PortfolioMetrics.mtd_growth_pct`, shown as the "MTD Growth" card |
 | **Capital Increase** (contribution delta) | ❌ as a headline |
-| **Weighted expense ratio** (`SUMPRODUCT(expense, weight)`) | ❌ |
-| **Annual expense cost in €** (`Σ price·expense·amount`) | ❌ |
-| **Beating / Losing the market** verdict | ❌ (benchmark exists on `/analytics`, but no headline verdict vs the portfolio's own return) |
+| **Weighted expense ratio** (`SUMPRODUCT(expense, weight)`) | ✅ `PortfolioMetrics.weighted_expense_ratio`, shown on the "Expense Ratio" card |
+| **Annual expense cost in €** (`Σ price·expense·amount`) | ✅ `PortfolioMetrics.annual_expense_cost_eur`, shown as the €/yr sub-line on the "Expense Ratio" card |
+| **Beating / Losing the market** verdict | ✅ `MarketVerdict`, shown as the "Vs Market" card |
 | **End-of-year portfolio value (2023/24/25)** | ❌ as discrete marks (history exists via snapshots, not surfaced) |
 
 **Embedded calculator (cols P–T: Theoretical Investment / Missing for % / Investment shares):**
@@ -113,7 +113,7 @@ engine. Most outputs surface on `Total`, so the gaps are the same as §2.1, plus
 | Average Price | ✅ |
 | **End of Year Value 2023 / 2024 / 2025** (per instrument) | ❌ |
 | **Yearly Dividends / Total Dividends** (per instrument, incl. reinvested "X") | ⚠️ only `cumulative_dividends_cash` is tracked; reinvested-dividend totals per instrument are not surfaced |
-| Capital Gain (`End − CostBasis + Dividends`) | ⚠️ price-only gain is shown; dividend-inclusive capital gain is not |
+| Capital Gain (`End − CostBasis + Dividends`) | ✅ dividend-inclusive capital gain is now the `Capital Gain (native)` column (`InstrumentMetrics.capital_gain_native`) |
 | **Performance Gain** (`gain / starting investment`) | ❌ |
 | **Percental Gain** (`gain / total cost basis`) | ❌ |
 | **YTD Gain** (per instrument) | ❌ |
@@ -163,25 +163,27 @@ The single biggest gap. The spreadsheet's headline view is a per-instrument
 table of **XIRR, TWR, Total Growth, and their YTD and EUR variants**; the
 dashboard shows only one price-only growth column.
 
-- [ ] Compute **per-instrument XIRR** (re-use `domain/returns.xirr` with each
+- [x] Compute **per-instrument XIRR** (re-use `domain/returns.xirr` with each
       instrument's own buy/sell/dividend cashflow stream + terminal mark).
+      *(Implemented as `InstrumentMetrics.xirr`.)*
 - [ ] Compute **per-instrument TWR** and **YTD TWR** (re-use the period-return /
       log-return TWR maths already in `domain/returns.py`, run per instrument —
       mirrors `Lots` cols L/M/N → AK/AL).
-- [ ] Add **YTD total growth** per instrument.
+- [x] Add **YTD total growth** per instrument.
+      *(Implemented as `InstrumentMetrics.ytd_growth_pct`.)*
 - [ ] Add **EUR variants** (`€ TG`, `€ YTD TG`) — convert each instrument's
       cashflows at the trade-date FX rate (the machinery already exists in
       `_period_query`).
-- [ ] Make the headline per-instrument growth **dividend-inclusive**
+- [x] Make the headline per-instrument growth **dividend-inclusive**
       (`End − CostBasis + Dividends`) to match the spreadsheet's `TG`.
-- [ ] Surface the **expense ratio** column (already on the instrument record).
+- [x] Surface the **expense ratio** column (already on the instrument record).
 
 ### Priority 2 — Portfolio KPIs on `/overview`
-- [ ] **MTD growth / profit** card (month-to-date portfolio profit, not just
-      contributions).
-- [ ] **Weighted portfolio expense ratio** (`SUMPRODUCT(expense, value-weight)`).
-- [ ] **Annual expense cost in €** (`Σ price · expense · shares`).
-- [ ] **"Beating / Losing the market"** verdict (compare portfolio XIRR/TWR to
+- [x] **MTD growth / profit** card (month-to-date portfolio profit, not just
+      contributions). *(Implemented as `PortfolioMetrics.mtd_growth_pct`.)*
+- [x] **Weighted portfolio expense ratio** (`SUMPRODUCT(expense, value-weight)`).
+- [x] **Annual expense cost in €** (`Σ price · expense · shares`).
+- [x] **"Beating / Losing the market"** verdict (compare portfolio XIRR/TWR to
       the benchmark series already fetched by `benchmark_service`).
 - [ ] **Capital Increase** headline (net new contributions over the period).
 
