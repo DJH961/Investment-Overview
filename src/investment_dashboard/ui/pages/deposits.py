@@ -10,10 +10,10 @@ from investment_dashboard.db import session_scope
 from investment_dashboard.services import display_currency_service
 from investment_dashboard.ui.components import (
     empty_state,
-    kpi_card,
     page_header,
     section,
 )
+from investment_dashboard.ui.components.kpi_card import dual_kpi_card
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import fmt_money
 from investment_dashboard.ui.pages._deposits_query import (
@@ -25,19 +25,9 @@ from investment_dashboard.ui.pages._deposits_query import (
 PATH = "/deposits"
 
 
-def _pair_for(summary: DepositSummary, key: str, display_ccy: str) -> tuple[Decimal, Decimal]:
-    """Return (primary, secondary) totals for one KPI, both currencies pre-aggregated.
-
-    The values come from :class:`DepositSummary`'s per-trade-date USD
-    totals (and the ledger's EUR totals), never from a today's-spot
-    rescale of the EUR sum, so a USD-native account contributes its
-    actual USD cashflows instead of being double-converted.
-    """
-    eur_value: Decimal = getattr(summary, f"{key}_eur")
-    usd_value: Decimal = getattr(summary, f"{key}_usd")
-    if display_ccy == "USD":
-        return usd_value, eur_value
-    return eur_value, usd_value
+def _pair_for(summary: DepositSummary, key: str) -> tuple[Decimal, Decimal]:
+    """Return ``(eur, usd)`` totals for one summary key."""
+    return getattr(summary, f"{key}_eur"), getattr(summary, f"{key}_usd")
 
 
 def register() -> None:
@@ -49,14 +39,14 @@ def register() -> None:
                 summary = compute_summary(session)
                 rows = list_deposit_rows(session)
                 display_ccy = display_currency_service.get_display_currency(session)
-            secondary_ccy = "EUR" if display_ccy != "EUR" else "USD"
 
             def _kpi(label: str, key: str) -> None:
-                primary, secondary = _pair_for(summary, key, display_ccy)
-                kpi_card(
+                eur, usd = _pair_for(summary, key)
+                dual_kpi_card(
                     label,
-                    fmt_money(primary, display_ccy),
-                    sub=fmt_money(secondary, secondary_ccy),
+                    fmt_money(eur, "EUR"),
+                    fmt_money(usd, "USD"),
+                    primary=display_ccy,
                 )
 
             with ui.row().classes("gap-md flex-wrap w-full"):
@@ -83,21 +73,22 @@ def register() -> None:
                                 },
                                 {"headerName": "Account", "field": "account", "filter": True},
                                 {"headerName": "Kind", "field": "kind", "filter": True},
-                                {
-                                    "headerName": "Amount (native)",
-                                    "field": "amount_native",
-                                    "type": "rightAligned",
-                                },
-                                {"headerName": "Currency", "field": "currency"},
+                                # v2.5 — drop the native + currency columns
+                                # in favour of explicit dual EUR + USD,
+                                # mirroring PR #18 on Transactions. The
+                                # native value remains available in the
+                                # row's ``amount_native`` tooltip cell.
                                 {
                                     "headerName": "Amount (EUR)",
                                     "field": "amount_eur",
                                     "type": "rightAligned",
+                                    "tooltipField": "amount_native_tt",
                                 },
                                 {
                                     "headerName": "Amount (USD)",
                                     "field": "amount_usd",
                                     "type": "rightAligned",
+                                    "tooltipField": "amount_native_tt",
                                 },
                                 {"headerName": "Description", "field": "description"},
                             ],

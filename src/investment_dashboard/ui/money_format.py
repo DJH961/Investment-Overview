@@ -73,7 +73,9 @@ def dual_money(
     primary = primary.upper()
     if primary == "EUR":
         return f"{fmt_money(eur, 'EUR', decimals=decimals)} / {fmt_money(usd, 'USD', decimals=decimals)}"
-    return f"{fmt_money(usd, 'USD', decimals=decimals)} / {fmt_money(eur, 'EUR', decimals=decimals)}"
+    return (
+        f"{fmt_money(usd, 'USD', decimals=decimals)} / {fmt_money(eur, 'EUR', decimals=decimals)}"
+    )
 
 
 def fmt_pct(value: Decimal | None, *, decimals: int = 2) -> str:

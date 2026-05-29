@@ -12,7 +12,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
-## [2.4.0] — Unreleased
+## [2.5.0] — Unreleased
+
+### Added
+- **Dual-currency everywhere.** Every monetary KPI, table cell and tile
+  on Overview, Monthly, Yearly, Deposits and Analytics now renders both
+  EUR and USD side-by-side via the new shared helpers `dual_money`,
+  `dual_pct` and `dual_kpi_card`. The Display Currency setting now only
+  controls which currency appears first; the other is always shown next
+  to it (not hidden behind a toggle).
+- **Total Growth headline metric.** A canonical
+  `total_growth_pct_compounded = (1 + XIRR) ^ years − 1` (with
+  `years = (as_of − first_cashflow_date) / 365.25`) is computed
+  independently per currency in `domain/returns.py` and exposed on
+  `PortfolioMetrics` as `total_growth_compounded_{eur,usd}`. It is the
+  leftmost / headline KPI on every page that reports performance.
+- `PortfolioMetrics` gained full USD parallels for
+  `total_value`, `total_contributions`, `total_dividends_cash`,
+  `capital_gain`, `xirr`, `ytd_xirr`, `ytd_growth_pct` plus the new
+  `total_growth_compounded_*` and `first_cashflow_date` fields.
+- Monthly / Yearly rows gained cumulative `total_growth_compounded_{eur,usd}`
+  plus matching `Total Growth (EUR)` / `Total Growth (USD)` table
+  columns. The per-period Modified Dietz is kept as the trailing
+  `Growth % (period)` column.
+- Overview positions table gained dual `Cost Basis`, `Value` and
+  `Capital Gain` columns (inline `$X / €Y`) plus a `Total Growth %` column.
+- Tooltip key `total_growth_compounded` explaining the formula.
+
+### Changed
+- Deposits drops the `Amount (native)` + `Currency` columns in favour
+  of explicit `Amount (EUR)` + `Amount (USD)`; the native amount is now
+  surfaced via cell tooltip (matches PR #18 on Transactions).
+- Overview KPI strip reorders: `Total Growth` (new) is leftmost and
+  shows EUR + USD value with the compounded growth pct underneath.
+
+
 
 ### Removed
 - Dropped DKK from the display-currency picker, FX defaults

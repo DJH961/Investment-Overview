@@ -15,14 +15,16 @@ from nicegui import ui
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.services import display_currency_service
+from investment_dashboard.services.metrics_service import compute_portfolio_metrics
 from investment_dashboard.ui.components import (
     empty_state,
     kpi_card,
     page_header,
     section,
 )
+from investment_dashboard.ui.components.kpi_card import dual_kpi_card
 from investment_dashboard.ui.layout import page_frame
-from investment_dashboard.ui.money_format import fmt_money
+from investment_dashboard.ui.money_format import dual_pct, fmt_money
 from investment_dashboard.ui.pages._analytics_query import (
     AnalyticsBundle,
     build_bundle,
@@ -121,12 +123,41 @@ def _curve_figure(bundle: AnalyticsBundle):  # type: ignore[no-untyped-def]
     return fig
 
 
-def _render_kpis(bundle: AnalyticsBundle, *, display_ccy: str) -> None:
+def _render_kpis(
+    bundle: AnalyticsBundle,
+    *,
+    display_ccy: str,
+    metrics=None,  # type: ignore[no-untyped-def]
+) -> None:
     """Two rows of KPI cards — returns / drawdown / shape."""
+    # v2.5 — Total Growth headline (dual currency) tops every page that
+    # reports performance.
+    if metrics is not None:
+        with ui.row().classes("gap-md flex-wrap"):
+            dual_kpi_card(
+                "Total Growth",
+                fmt_money(metrics.total_value_eur, "EUR"),
+                fmt_money(metrics.total_value_usd, "USD"),
+                primary=display_ccy,
+                growth_pct=dual_pct(
+                    metrics.total_growth_compounded_eur,
+                    metrics.total_growth_compounded_usd,
+                    primary=display_ccy,
+                ),
+                tooltip_key="total_growth_compounded",
+            )
     with ui.row().classes("gap-md flex-wrap"):
         kpi_card("CAGR", _fmt_pct(bundle.cagr), tooltip_key="cagr")
         kpi_card("TWR", _fmt_pct(bundle.twr), tooltip_key="twr")
-        kpi_card("XIRR", _fmt_pct(bundle.xirr), tooltip_key="xirr")
+        kpi_card(
+            "XIRR",
+            dual_pct(
+                metrics.xirr if metrics is not None else bundle.xirr,
+                metrics.xirr_usd if metrics is not None else None,
+                primary=display_ccy,
+            ),
+            tooltip_key="xirr",
+        )
         kpi_card(
             "Volatility",
             _fmt_pct(bundle.volatility),
@@ -223,6 +254,7 @@ def register() -> None:
             with session_scope() as session:
                 display_ccy = display_currency_service.get_display_currency(session)
                 bundle = build_bundle(session, currency=display_ccy, lookback_days=days)
+                metrics = compute_portfolio_metrics(session)
             with ui.row().classes("items-center gap-sm"):
                 ui.label("Lookback:").classes("text-caption opacity-70")
                 ui.toggle(
@@ -234,7 +266,7 @@ def register() -> None:
                     f"{bundle.start.isoformat()} → {bundle.as_of.isoformat()}",
                 ).classes("text-caption opacity-60 q-ml-md")
 
-            _render_kpis(bundle, display_ccy=display_ccy)
+            _render_kpis(bundle, display_ccy=display_ccy, metrics=metrics)
 
             with section("Equity curve"):
                 if not bundle.curve:

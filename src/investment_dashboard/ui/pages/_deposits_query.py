@@ -194,6 +194,9 @@ def _format_record(r: DepositRecord) -> dict[str, Any]:
         "currency": r.native_currency,
         "amount_eur": f"{r.amount_eur:,.2f}",
         "amount_usd": (f"{r.amount_usd:,.2f}" if r.amount_usd is not None else ""),
+        # AG-Grid tooltip field — preserves the native amount as the
+        # third currency without burning a column (v2.5).
+        "amount_native_tt": f"{r.amount_native:,.2f} {r.native_currency}",
         "description": r.description,
     }
 

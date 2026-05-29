@@ -23,7 +23,7 @@ TOOLTIPS: Final[dict[str, str]] = {
     ),
     "total_growth_compounded": (
         "Cumulative growth since the first cashflow, expressed as "
-        "(1 + XIRR) ^ years − 1. This is XIRR \"stretched\" over the actual time "
+        '(1 + XIRR) ^ years - 1. This is XIRR "stretched" over the actual time '
         "you've been invested, so a 10 %/yr return over 5 years shows as ~61 %. "
         "Computed independently per currency (EUR vs USD), so FX swings show up."
     ),

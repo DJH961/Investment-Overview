@@ -8,9 +8,11 @@ from nicegui import ui
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.services import display_currency_service
+from investment_dashboard.services.metrics_service import compute_portfolio_metrics
 from investment_dashboard.ui.components import page_header, section
+from investment_dashboard.ui.components.kpi_card import dual_kpi_card
 from investment_dashboard.ui.layout import page_frame
-from investment_dashboard.ui.money_format import currency_symbol
+from investment_dashboard.ui.money_format import currency_symbol, dual_pct, fmt_money
 from investment_dashboard.ui.pages._period_query import aggregate, to_table_rows
 from investment_dashboard.ui.pages._projection_query import (
     DEFAULT_SCENARIOS,
@@ -105,7 +107,30 @@ def register() -> None:
                 projection_rows = project_monthly_from_session(session, months=36)
                 display_quote = display_ccy if display_ccy != "EUR" else "USD"
                 fx_rate = display_currency_service.current_rate(session, quote=display_quote)
+                metrics = compute_portfolio_metrics(session)
             sym = currency_symbol(display_ccy)
+
+            # v2.5 — KPI row at the top so Total Growth is the most
+            # prominent indicator on this page too.
+            with ui.row().classes("gap-md flex-wrap"):
+                dual_kpi_card(
+                    "Total Growth",
+                    fmt_money(metrics.total_value_eur, "EUR"),
+                    fmt_money(metrics.total_value_usd, "USD"),
+                    primary=display_ccy,
+                    growth_pct=dual_pct(
+                        metrics.total_growth_compounded_eur,
+                        metrics.total_growth_compounded_usd,
+                        primary=display_ccy,
+                    ),
+                    tooltip_key="total_growth_compounded",
+                )
+                dual_kpi_card(
+                    "Periods",
+                    str(len(rows)),
+                    str(len(rows)),
+                    primary=display_ccy,
+                )
             with section("Growth per month"):
                 ui.plotly(_figure(rows, currency=display_ccy, fx_rate=fx_rate)).classes(
                     "w-full h-[35vh]",
@@ -121,7 +146,17 @@ def register() -> None:
                             *_money_columns("Net flow", "net_flow", display_ccy),
                             *_money_columns("Closing value", "closing_value", display_ccy),
                             {
-                                "headerName": "Growth %",
+                                "headerName": "Total Growth (EUR)",
+                                "field": "total_growth_eur",
+                                "type": "rightAligned",
+                            },
+                            {
+                                "headerName": "Total Growth (USD)",
+                                "field": "total_growth_usd",
+                                "type": "rightAligned",
+                            },
+                            {
+                                "headerName": "Growth % (period)",
                                 "field": "growth_pct",
                                 "type": "rightAligned",
                             },
@@ -134,9 +169,9 @@ def register() -> None:
                 ).classes("ag-theme-alpine w-full h-[55vh]")
                 ui.label(
                     f"Values shown in {display_ccy} ({sym}). Closing value is end-of-month "
-                    "mark-to-market (best-effort if prices are missing). Growth % is "
-                    "Modified Dietz over external flows. Use the EUR/USD toggle in the "
-                    "header to choose which currency appears first.",
+                    "mark-to-market (best-effort if prices are missing). Total Growth is "
+                    "cumulative (1 + XIRR) ^ years to the end of the row, per currency; "
+                    "the trailing Growth % column is the per-period Modified Dietz return.",
                 ).classes("text-caption opacity-70")
 
             with section("Hypothetical projection (next 36 months)"):

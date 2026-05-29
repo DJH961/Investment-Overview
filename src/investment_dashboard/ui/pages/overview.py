@@ -14,8 +14,9 @@ from investment_dashboard.ui.components import (
     page_header,
     section,
 )
+from investment_dashboard.ui.components.kpi_card import dual_kpi_card
 from investment_dashboard.ui.layout import page_frame
-from investment_dashboard.ui.money_format import fmt_money
+from investment_dashboard.ui.money_format import dual_pct, fmt_money
 from investment_dashboard.ui.pages._overview_query import (
     allocation_treemap,
     get_metrics,
@@ -96,54 +97,67 @@ def register() -> None:
             rows = position_rows(held_positions, display_currency=display_ccy, fx_rate=usd_rate)
             treemap_data = allocation_treemap(positions)
 
-            gain = metrics.capital_gain_eur
-            growth_pct = metrics.total_growth_pct or Decimal(0)
+            growth_pct = (
+                metrics.total_growth_compounded_eur or metrics.total_growth_pct or Decimal(0)
+            )
 
-            primary_value = _convert(metrics.total_value_eur, display_ccy, fx_rate)
-            secondary_ccy = "EUR" if display_ccy != "EUR" else "USD"
-            secondary_value = _convert(metrics.total_value_eur, secondary_ccy, fx_rate)
-            gain_primary = _convert(gain, display_ccy, fx_rate)
-            gain_secondary = _convert(gain, secondary_ccy, fx_rate)
+            # v2.5 — every monetary KPI shows both currencies; Total
+            # Growth (compounded XIRR × years) is the leftmost / headline
+            # metric.
+            total_value_eur = metrics.total_value_eur
+            total_value_usd = metrics.total_value_usd
+            gain_eur = metrics.capital_gain_eur
+            gain_usd = metrics.capital_gain_usd
+            tg_eur = metrics.total_growth_compounded_eur
+            tg_usd = metrics.total_growth_compounded_usd
 
             with ui.row().classes("gap-md flex-wrap"):
-                kpi_card(
+                dual_kpi_card(
+                    "Total Growth",
+                    fmt_money(total_value_eur, "EUR"),
+                    fmt_money(total_value_usd, "USD"),
+                    primary=display_ccy,
+                    growth_pct=dual_pct(tg_eur, tg_usd, primary=display_ccy),
+                    tooltip_key="total_growth_compounded",
+                )
+                dual_kpi_card(
                     "Total Value",
-                    fmt_money(primary_value, display_ccy),
-                    sub=(
-                        f"{fmt_money(secondary_value, secondary_ccy)} · "
-                        f"as of {metrics.as_of.isoformat()}"
-                    ),
+                    fmt_money(total_value_eur, "EUR"),
+                    fmt_money(total_value_usd, "USD"),
+                    primary=display_ccy,
                     tooltip_key="total_value",
                 )
-                kpi_card(
-                    "Total Gain",
-                    fmt_money(gain_primary, display_ccy),
-                    sub=f"{fmt_money(gain_secondary, secondary_ccy)}",
+                dual_kpi_card(
+                    "Capital Gain",
+                    fmt_money(gain_eur, "EUR"),
+                    fmt_money(gain_usd, "USD"),
+                    primary=display_ccy,
                     tooltip_key="total_gain",
-                    color=color_for_signed(float(growth_pct)),
-                    arrow=arrow_for_signed(float(growth_pct)),
-                )
-                kpi_card(
-                    "Total Growth",
-                    _fmt_pct(metrics.total_growth_pct),
-                    sub="lifetime · external flows weighted",
-                    tooltip_key="total_growth",
-                    color=color_for_signed(float(growth_pct)),
-                    arrow=arrow_for_signed(float(growth_pct)),
                 )
                 kpi_card(
                     "XIRR",
-                    _fmt_pct(metrics.xirr),
+                    dual_pct(metrics.xirr, metrics.xirr_usd, primary=display_ccy),
                     tooltip_key="xirr",
                     color=color_for_signed(float(metrics.xirr or 0)),
                     arrow=arrow_for_signed(float(metrics.xirr or 0)),
                 )
                 kpi_card(
                     "YTD Growth",
-                    _fmt_pct(metrics.ytd_growth_pct),
+                    dual_pct(
+                        metrics.ytd_growth_pct, metrics.ytd_growth_pct_usd, primary=display_ccy
+                    ),
                     tooltip_key="ytd_growth",
                     color=color_for_signed(float(metrics.ytd_growth_pct or 0)),
                     arrow=arrow_for_signed(float(metrics.ytd_growth_pct or 0)),
+                )
+                # Legacy "simple" growth kept as a small reference KPI.
+                kpi_card(
+                    "Simple Growth",
+                    _fmt_pct(metrics.total_growth_pct),
+                    sub="(V - C) / C · legacy",
+                    tooltip_key="total_growth",
+                    color=color_for_signed(float(growth_pct)),
+                    arrow=arrow_for_signed(float(growth_pct)),
                 )
             if fx_rate is not None:
                 ui.label(
@@ -177,17 +191,25 @@ def register() -> None:
                                     "type": "rightAligned",
                                 },
                                 {
-                                    "headerName": "Value (USD)",
-                                    "field": "current_value_usd",
+                                    "headerName": "Cost Basis",
+                                    "field": "cost_basis_dual",
                                     "type": "rightAligned",
+                                    "minWidth": 200,
                                 },
                                 {
-                                    "headerName": "Value (EUR)",
-                                    "field": "current_value_eur",
+                                    "headerName": "Value",
+                                    "field": "value_dual",
                                     "type": "rightAligned",
+                                    "minWidth": 200,
                                 },
                                 {
-                                    "headerName": "Growth %",
+                                    "headerName": "Capital Gain",
+                                    "field": "capital_gain_dual",
+                                    "type": "rightAligned",
+                                    "minWidth": 200,
+                                },
+                                {
+                                    "headerName": "Total Growth %",
                                     "field": "total_growth_pct",
                                     "type": "rightAligned",
                                 },

@@ -441,9 +441,7 @@ def _attach_cumulative_growth(
             closing_usd: Decimal | None = r.closing_value_display
         else:
             fx_eod = lookup_rate_with_forward_fill(eur_to_usd, period_end)
-            closing_usd = (
-                closing_eur * fx_eod if fx_eod is not None and fx_eod != 0 else None
-            )
+            closing_usd = closing_eur * fx_eod if fx_eod is not None and fx_eod != 0 else None
 
         flows_eur_to_date = [cf for cf in flows_eur if cf.date <= period_end]
         flows_usd_to_date = [cf for cf in flows_usd if cf.date <= period_end]
@@ -535,6 +533,18 @@ def to_table_rows(
             "growth_pct": (
                 f"{(_growth_pct(r) or 0) * Decimal(100):,.2f} %"
                 if _growth_pct(r) is not None
+                else "—"
+            ),
+            # v2.5 cumulative Total Growth per currency — the headline
+            # column on monthly / yearly tables.
+            "total_growth_eur": (
+                f"{r.total_growth_compounded_eur * Decimal(100):,.2f} %"
+                if r.total_growth_compounded_eur is not None
+                else "—"
+            ),
+            "total_growth_usd": (
+                f"{r.total_growth_compounded_usd * Decimal(100):,.2f} %"
+                if r.total_growth_compounded_usd is not None
                 else "—"
             ),
         }

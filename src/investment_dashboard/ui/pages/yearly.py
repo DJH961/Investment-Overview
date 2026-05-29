@@ -8,8 +8,11 @@ from nicegui import ui
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.services import display_currency_service
+from investment_dashboard.services.metrics_service import compute_portfolio_metrics
 from investment_dashboard.ui.components import page_header, section
+from investment_dashboard.ui.components.kpi_card import dual_kpi_card
 from investment_dashboard.ui.layout import page_frame
+from investment_dashboard.ui.money_format import dual_pct, fmt_money
 from investment_dashboard.ui.pages._period_query import aggregate, to_table_rows
 from investment_dashboard.ui.pages._projection_query import (
     DEFAULT_SCENARIOS,
@@ -97,6 +100,27 @@ def register() -> None:
                 projection_rows = project_from_session(session, years=10)
                 display_quote = display_ccy if display_ccy != "EUR" else "USD"
                 fx_rate = display_currency_service.current_rate(session, quote=display_quote)
+                metrics = compute_portfolio_metrics(session)
+            # v2.5 KPI strip.
+            with ui.row().classes("gap-md flex-wrap"):
+                dual_kpi_card(
+                    "Total Growth",
+                    fmt_money(metrics.total_value_eur, "EUR"),
+                    fmt_money(metrics.total_value_usd, "USD"),
+                    primary=display_ccy,
+                    growth_pct=dual_pct(
+                        metrics.total_growth_compounded_eur,
+                        metrics.total_growth_compounded_usd,
+                        primary=display_ccy,
+                    ),
+                    tooltip_key="total_growth_compounded",
+                )
+                dual_kpi_card(
+                    "Years",
+                    str(len(rows)),
+                    str(len(rows)),
+                    primary=display_ccy,
+                )
             with section("Growth per year"):
                 ui.plotly(_figure(rows, currency=display_ccy, fx_rate=fx_rate)).classes(
                     "w-full h-[40vh]",
@@ -112,7 +136,17 @@ def register() -> None:
                             *_money_columns("Net flow", "net_flow", display_ccy),
                             *_money_columns("Closing value", "closing_value", display_ccy),
                             {
-                                "headerName": "Growth %",
+                                "headerName": "Total Growth (EUR)",
+                                "field": "total_growth_eur",
+                                "type": "rightAligned",
+                            },
+                            {
+                                "headerName": "Total Growth (USD)",
+                                "field": "total_growth_usd",
+                                "type": "rightAligned",
+                            },
+                            {
+                                "headerName": "Growth % (period)",
                                 "field": "growth_pct",
                                 "type": "rightAligned",
                             },
