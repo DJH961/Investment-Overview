@@ -17,12 +17,17 @@ from investment_dashboard.ui.components import (
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import fmt_money
 from investment_dashboard.ui.pages._overview_query import (
+    MarketVerdict,
     allocation_treemap,
+    compute_instrument_metrics,
+    compute_market_verdict,
     get_metrics,
     get_positions,
     position_rows,
 )
 from investment_dashboard.ui.theme import (
+    GAIN_COLOR,
+    LOSS_COLOR,
     PLOTLY_QUALITATIVE,
     arrow_for_signed,
     color_for_signed,
@@ -35,6 +40,46 @@ def _fmt_pct(value: Decimal | None) -> str:
     if value is None:
         return "—"
     return f"{value * Decimal(100):,.2f} %"
+
+
+def _SIGN_RULES(signed_field: str) -> dict[str, str]:  # noqa: N802 - config-style constant
+    """AG-Grid ``cellClassRules`` colouring a cell by the sign of a companion field.
+
+    ``signed_field`` is a numeric field on the row (e.g. ``xirr_signed``)
+    that carries the raw float; the visible field stays a formatted string.
+    Colours come from the colorblind-safe ``.inv-cell-pos`` / ``.inv-cell-neg``
+    rules in :mod:`investment_dashboard.ui.style`.
+    """
+    return {
+        "inv-cell-pos": f"data.{signed_field} > 0",
+        "inv-cell-neg": f"data.{signed_field} < 0",
+    }
+
+
+def _verdict_card(verdict: MarketVerdict) -> None:
+    """KPI card form of the spreadsheet's "Beating / Losing the market" cell."""
+    if verdict.beating is None:
+        kpi_card(
+            "Vs Market",
+            "—",
+            sub=f"Need {verdict.benchmark_symbol} history to compare",
+            tooltip_key="market_verdict",
+        )
+        return
+    headline = "Beating the market" if verdict.beating else "Trailing the market"
+    color = GAIN_COLOR if verdict.beating else LOSS_COLOR
+    arrow = arrow_for_signed(1.0 if verdict.beating else -1.0)
+    kpi_card(
+        "Vs Market",
+        headline,
+        sub=(
+            f"You {_fmt_pct(verdict.portfolio_return)} · "
+            f"{verdict.benchmark_symbol} {_fmt_pct(verdict.benchmark_return)}"
+        ),
+        tooltip_key="market_verdict",
+        color=color,
+        arrow=arrow,
+    )
 
 
 def _treemap_figure(data, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no-untyped-def]
@@ -76,6 +121,8 @@ def register() -> None:
             with session_scope() as session:
                 metrics = get_metrics(session)
                 positions = get_positions(session)
+                instrument_metrics = compute_instrument_metrics(session, positions)
+                verdict = compute_market_verdict(session, portfolio_return=metrics.total_growth_pct)
                 display_ccy = display_currency_service.get_display_currency(session)
                 # Display-currency FX (EUR→display). For EUR display we
                 # still fetch EUR→USD so the secondary USD column on the
@@ -93,7 +140,12 @@ def register() -> None:
             # of a share) is effectively zero and just clutters the overview.
             _min_shares = Decimal("0.0000001")
             held_positions = [p for p in positions if p.shares >= _min_shares]
-            rows = position_rows(held_positions, display_currency=display_ccy, fx_rate=usd_rate)
+            rows = position_rows(
+                held_positions,
+                display_currency=display_ccy,
+                fx_rate=usd_rate,
+                metrics=instrument_metrics,
+            )
             treemap_data = allocation_treemap(positions)
 
             gain = metrics.capital_gain_eur
@@ -140,6 +192,23 @@ def register() -> None:
                     color=color_for_signed(float(metrics.ytd_growth_pct or 0)),
                     arrow=arrow_for_signed(float(metrics.ytd_growth_pct or 0)),
                 )
+            with ui.row().classes("gap-md flex-wrap q-mt-md"):
+                kpi_card(
+                    "MTD Growth",
+                    _fmt_pct(metrics.mtd_growth_pct),
+                    tooltip_key="mtd_growth",
+                    color=color_for_signed(float(metrics.mtd_growth_pct or 0)),
+                    arrow=arrow_for_signed(float(metrics.mtd_growth_pct or 0)),
+                )
+                kpi_card(
+                    "Expense Ratio",
+                    _fmt_pct(metrics.weighted_expense_ratio),
+                    sub=(
+                        f"≈ {fmt_money(_convert(metrics.annual_expense_cost_eur, display_ccy, fx_rate), display_ccy)} / yr"
+                    ),
+                    tooltip_key="expense_ratio",
+                )
+                _verdict_card(verdict)
             if fx_rate is not None:
                 ui.label(
                     f"FX (EUR→{display_quote}): {fx_rate:,.4f}  ·  "
@@ -172,6 +241,11 @@ def register() -> None:
                                     "type": "rightAligned",
                                 },
                                 {
+                                    "headerName": "Expense",
+                                    "field": "expense_ratio",
+                                    "type": "rightAligned",
+                                },
+                                {
                                     "headerName": "Cost Basis (native)",
                                     "field": "cost_basis_native",
                                     "type": "rightAligned",
@@ -192,9 +266,27 @@ def register() -> None:
                                     "type": "rightAligned",
                                 },
                                 {
+                                    "headerName": "Capital Gain (native)",
+                                    "field": "capital_gain_native",
+                                    "type": "rightAligned",
+                                },
+                                {
                                     "headerName": "Growth %",
                                     "field": "total_growth_pct",
                                     "type": "rightAligned",
+                                    "cellClassRules": _SIGN_RULES("total_growth_signed"),
+                                },
+                                {
+                                    "headerName": "XIRR",
+                                    "field": "xirr",
+                                    "type": "rightAligned",
+                                    "cellClassRules": _SIGN_RULES("xirr_signed"),
+                                },
+                                {
+                                    "headerName": "YTD Growth",
+                                    "field": "ytd_growth_pct",
+                                    "type": "rightAligned",
+                                    "cellClassRules": _SIGN_RULES("ytd_growth_signed"),
                                 },
                             ],
                             "rowData": rows,

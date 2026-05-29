@@ -20,7 +20,11 @@ from investment_dashboard.services.metrics_service import (
     compute_portfolio_metrics,
 )
 from investment_dashboard.services.positions_service import Position, compute_positions
-from investment_dashboard.ui.pages._overview_query import allocation_treemap
+from investment_dashboard.ui.pages._overview_query import (
+    InstrumentMetrics,
+    allocation_treemap,
+    compute_instrument_metrics,
+)
 
 ZERO = Decimal(0)
 
@@ -36,17 +40,21 @@ def _metrics_dict(metrics: PortfolioMetrics) -> dict[str, Any]:
         "xirr": dec(metrics.xirr),
         "ytd_xirr": dec(metrics.ytd_xirr),
         "ytd_growth_pct": dec(metrics.ytd_growth_pct),
+        "mtd_growth_pct": dec(metrics.mtd_growth_pct),
+        "weighted_expense_ratio": dec(metrics.weighted_expense_ratio),
+        "annual_expense_cost_eur": dec(metrics.annual_expense_cost_eur),
     }
 
 
-def _position_dict(p: Position) -> dict[str, Any]:
+def _position_dict(p: Position, im: InstrumentMetrics | None = None) -> dict[str, Any]:
     eff = p.effective
     name = (eff.name if eff is not None else p.instrument.name) or ""
     asset_class = (eff.asset_class if eff is not None else p.instrument.asset_class) or ""
     avg_price = (p.cost_basis_native / p.shares) if p.shares else None
-    growth_pct: Decimal | None = None
+    fallback_growth: Decimal | None = None
     if p.cost_basis_native != ZERO:
-        growth_pct = (p.current_value_native - p.cost_basis_native) / p.cost_basis_native
+        fallback_growth = (p.current_value_native - p.cost_basis_native) / p.cost_basis_native
+    total_growth = im.total_growth_pct if im is not None else fallback_growth
     return {
         "broker": p.account.broker,
         "account": p.account.account_label,
@@ -59,11 +67,15 @@ def _position_dict(p: Position) -> dict[str, Any]:
         "shares": dec(p.shares),
         "avg_price_native": dec(avg_price),
         "current_price_native": dec(p.current_price_native),
+        "expense_ratio": dec(im.expense_ratio if im is not None else None),
         "cost_basis_native": dec(p.cost_basis_native),
         "current_value_native": dec(p.current_value_native),
         "current_value_eur": dec(p.current_value_eur),
         "cumulative_dividends_cash_native": dec(p.cumulative_dividends_cash_native),
-        "total_growth_pct": dec(growth_pct),
+        "capital_gain_native": dec(im.capital_gain_native if im is not None else None),
+        "total_growth_pct": dec(total_growth),
+        "xirr": dec(im.xirr if im is not None else None),
+        "ytd_growth_pct": dec(im.ytd_growth_pct if im is not None else None),
     }
 
 
@@ -72,9 +84,12 @@ def build(session: Session, *, context: ReadModelContext | None = None) -> dict[
     ctx = context or build_context(session)
     metrics = compute_portfolio_metrics(session, as_of=ctx.as_of)
     positions = compute_positions(session, as_of=ctx.as_of)
+    instrument_metrics = compute_instrument_metrics(session, positions, as_of=ctx.as_of)
     allocation = allocation_treemap(positions)
     return {
         "metrics": _metrics_dict(metrics),
-        "positions": [_position_dict(p) for p in positions],
+        "positions": [
+            _position_dict(p, instrument_metrics.get(p.instrument.id)) for p in positions
+        ],
         "allocation": [{"label": d.label, "value_eur": dec(d.value_eur)} for d in allocation],
     }

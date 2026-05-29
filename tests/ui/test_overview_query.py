@@ -86,3 +86,64 @@ def test_treemap_aggregates_by_category(session: Session, seeded: None) -> None:
 
 def test_treemap_handles_no_positions(session: Session) -> None:
     assert allocation_treemap([]) == []
+
+
+def test_instrument_metrics_xirr_and_dividend_inclusive_growth(
+    session: Session, seeded: None
+) -> None:
+    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+
+    positions = get_positions(session)
+    metrics = compute_instrument_metrics(session, positions)
+    vti = next(p for p in positions if p.instrument.symbol == "VTI")
+    im = metrics[vti.instrument.id]
+    # VTI: cost 2200, value 2300 ⇒ capital gain 100, growth +4.55 %.
+    assert im.capital_gain_native == Decimal("100.00")
+    assert im.total_growth_pct is not None
+    assert abs(im.total_growth_pct - Decimal("0.04545")) < Decimal("0.001")
+    # A single buy followed by a higher terminal mark ⇒ positive XIRR.
+    assert im.xirr is not None
+    assert im.xirr > Decimal(0)
+
+
+def test_position_rows_enriched_with_metrics(session: Session, seeded: None) -> None:
+    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+
+    positions = get_positions(session)
+    metrics = compute_instrument_metrics(session, positions)
+    rows = position_rows(positions, metrics=metrics)
+    vti_row = next(r for r in rows if r["symbol"] == "VTI")
+    assert "4.55" in vti_row["total_growth_pct"]
+    assert vti_row["total_growth_signed"] > 0
+    assert vti_row["xirr"] != "—"
+    assert "100.00" in vti_row["capital_gain_native"]
+
+
+def test_market_verdict_beating_and_trailing(session: Session, seeded: None) -> None:
+    from investment_dashboard.ui.pages._overview_query import compute_market_verdict
+
+    # Seed the default benchmark (VT) with +10 % over the window.
+    vt = instruments_repo.get_or_create(session, symbol="VT", asset_class="etf")
+    prices_repo.upsert_closes(
+        session,
+        vt.id,
+        {date(2024, 1, 5): Decimal("100.00"), date.today(): Decimal("110.00")},
+    )
+    session.flush()
+
+    beating = compute_market_verdict(session, portfolio_return=Decimal("0.20"))
+    assert beating.benchmark_symbol == "VT"
+    assert beating.benchmark_return is not None
+    assert abs(beating.benchmark_return - Decimal("0.10")) < Decimal("0.0001")
+    assert beating.beating is True
+
+    trailing = compute_market_verdict(session, portfolio_return=Decimal("0.05"))
+    assert trailing.beating is False
+
+
+def test_market_verdict_none_without_benchmark_history(session: Session, seeded: None) -> None:
+    from investment_dashboard.ui.pages._overview_query import compute_market_verdict
+
+    verdict = compute_market_verdict(session, portfolio_return=Decimal("0.10"))
+    assert verdict.beating is None
+    assert verdict.benchmark_return is None

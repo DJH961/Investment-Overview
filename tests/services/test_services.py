@@ -169,3 +169,118 @@ class TestMetrics:
             (date(2024, 2, 1), Decimal("45")),
             (date(2024, 3, 1), Decimal("4.50")),
         ]
+
+
+class TestExpenseAndMtdMetrics:
+    """Parity KPIs ported from the spreadsheet's ``Total`` block."""
+
+    def test_weighted_expense_ratio_and_annual_cost(self, session: Session) -> None:
+        # EUR brokerage so value_eur == value_native (no FX in play).
+        acct = accounts_repo.create_account(
+            session,
+            broker="vanguard",
+            account_label="Vanguard EUR",
+            native_currency="EUR",
+            account_type="brokerage",
+        )
+        vti = instruments_repo.get_or_create(
+            session, symbol="VTI", native_currency="EUR", expense_ratio=Decimal("0.0003")
+        )
+        vug = instruments_repo.get_or_create(
+            session, symbol="VUG", native_currency="EUR", expense_ratio=Decimal("0.0005")
+        )
+        session.add_all(
+            [
+                Transaction(
+                    account_id=acct.id,
+                    instrument_id=vti.id,
+                    date=date(2024, 1, 5),
+                    kind="buy",
+                    quantity=Decimal("10"),
+                    price_native=Decimal("100"),
+                    net_native=Decimal("-1000"),
+                    net_eur=Decimal("-1000"),
+                    source="manual",
+                ),
+                Transaction(
+                    account_id=acct.id,
+                    instrument_id=vug.id,
+                    date=date(2024, 1, 5),
+                    kind="buy",
+                    quantity=Decimal("10"),
+                    price_native=Decimal("300"),
+                    net_native=Decimal("-3000"),
+                    net_eur=Decimal("-3000"),
+                    source="manual",
+                ),
+            ]
+        )
+        as_of = date(2024, 6, 1)
+        prices_repo.upsert_closes(session, vti.id, {as_of: Decimal("100")})
+        prices_repo.upsert_closes(session, vug.id, {as_of: Decimal("300")})
+        session.flush()
+
+        m = metrics_service.compute_portfolio_metrics(session, as_of=as_of)
+        # Values: VTI 1000 @ 0.0003 = 0.30; VUG 3000 @ 0.0005 = 1.50; total 4000.
+        assert m.annual_expense_cost_eur == Decimal("1.80")
+        # Weighted ratio = 1.80 / 4000 = 0.00045.
+        assert m.weighted_expense_ratio is not None
+        assert abs(m.weighted_expense_ratio - Decimal("0.00045")) < Decimal("0.0000001")
+
+    def test_expense_metrics_none_when_empty(self, session: Session) -> None:
+        m = metrics_service.compute_portfolio_metrics(session)
+        assert m.weighted_expense_ratio is None
+        assert m.annual_expense_cost_eur == Decimal(0)
+
+    def test_mtd_growth_excludes_contributions(self, session: Session) -> None:
+        # EUR savings: 1100 at start of month, +110 interest within month ⇒ +10 %.
+        acct_id = _seed_eur_account(session)
+        session.add_all(
+            [
+                Transaction(
+                    account_id=acct_id,
+                    date=date(2024, 1, 1),
+                    kind="deposit",
+                    net_native=Decimal("1000"),
+                    net_eur=Decimal("1000"),
+                    source="manual",
+                ),
+                Transaction(
+                    account_id=acct_id,
+                    date=date(2024, 2, 15),
+                    kind="interest",
+                    net_native=Decimal("100"),
+                    net_eur=Decimal("100"),
+                    source="manual",
+                ),
+                Transaction(
+                    account_id=acct_id,
+                    date=date(2024, 3, 10),
+                    kind="interest",
+                    net_native=Decimal("110"),
+                    net_eur=Decimal("110"),
+                    source="manual",
+                ),
+            ]
+        )
+        session.flush()
+        m = metrics_service.compute_portfolio_metrics(session, as_of=date(2024, 3, 15))
+        assert m.mtd_growth_pct is not None
+        assert abs(m.mtd_growth_pct - Decimal("0.10")) < Decimal("0.0001")
+
+    def test_mtd_growth_none_without_month_start_value(self, session: Session) -> None:
+        acct_id = _seed_eur_account(session)
+        session.add(
+            Transaction(
+                account_id=acct_id,
+                date=date(2024, 3, 5),
+                kind="deposit",
+                net_native=Decimal("1000"),
+                net_eur=Decimal("1000"),
+                source="manual",
+            )
+        )
+        session.flush()
+        # Month start (2024-03-01) precedes the only deposit ⇒ no base value.
+        m = metrics_service.compute_portfolio_metrics(session, as_of=date(2024, 3, 15))
+        assert m.mtd_growth_pct is None

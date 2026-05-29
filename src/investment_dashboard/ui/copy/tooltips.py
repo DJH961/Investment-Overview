@@ -35,6 +35,18 @@ TOOLTIPS: Final[dict[str, str]] = {
         "Excludes new contributions — pure investment performance."
     ),
     "ytd_xirr": ("Like XIRR but restricted to cashflows from 1 January of the current year."),
+    "mtd_growth": (
+        "Portfolio growth since the 1st of the current month, excluding new "
+        "contributions — a short-horizon read on how the holdings are moving."
+    ),
+    "expense_ratio": (
+        "The value-weighted average annual fund fee (TER) across your holdings, "
+        "with the estimated euro cost per year at today's marks. Lower is better."
+    ),
+    "market_verdict": (
+        "Compares your portfolio's total growth since inception against simply "
+        "buying and holding the benchmark index over the same period."
+    ),
     "max_drawdown": (
         "The biggest peak-to-trough drop the portfolio experienced — a measure of worst-case pain."
     ),
