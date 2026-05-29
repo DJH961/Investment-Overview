@@ -434,9 +434,11 @@ html, body {{
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }}
-
-/* ------------------------------------------------------------------ */
-/* Buttons / inputs                                                    */
+/* Sign-coloured return cells (colorblind-safe: blue gain / orange loss,
+   reinforced by the directional arrow in adjacent KPI cards). Applied via
+   AG-Grid ``cellClassRules`` on the overview positions table. */
+.ag-cell.inv-cell-pos {{ color: var(--inv-gain); font-weight: 600; }}
+.ag-cell.inv-cell-neg {{ color: var(--inv-loss); font-weight: 600; }}
 /* ------------------------------------------------------------------ */
 .q-btn {{
   border-radius: var(--inv-radius-md) !important;

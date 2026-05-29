@@ -95,6 +95,19 @@ def test_overview_readmodel_shape(session: Session, seeded: None) -> None:
     assert "US Stocks" in labels
 
 
+def test_overview_readmodel_includes_parity_fields(session: Session, seeded: None) -> None:
+    rm = overview_rm.build(session)
+    # Portfolio-level KPIs ported from the spreadsheet's ``Total`` block.
+    assert "mtd_growth_pct" in rm["metrics"]
+    assert "weighted_expense_ratio" in rm["metrics"]
+    assert "annual_expense_cost_eur" in rm["metrics"]
+    # Per-instrument parity columns.
+    vti = next(p for p in rm["positions"] if p["symbol"] == "VTI")
+    for key in ("expense_ratio", "capital_gain_native", "xirr", "ytd_growth_pct"):
+        assert key in vti
+    assert Decimal(vti["capital_gain_native"]) == Decimal("100")
+
+
 def test_deposits_readmodel(session: Session, seeded: None) -> None:
     rm = readmodels.deposits.build(session)
     assert Decimal(rm["summary"]["total_contrib_eur"]) == Decimal("1000.00")

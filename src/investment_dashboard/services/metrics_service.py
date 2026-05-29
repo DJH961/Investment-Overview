@@ -87,6 +87,17 @@ class PortfolioMetrics:
     ytd_xirr_usd: Decimal | None
     ytd_growth_pct_usd: Decimal | None
     total_growth_compounded_usd: Decimal | None
+    #: Month-to-date portfolio growth (mirrors the spreadsheet's MTD block
+    #: on ``Deposits``/``Total``). ``None`` when the start-of-month value
+    #: can't be established (brand-new portfolio / no price history).
+    mtd_growth_pct: Decimal | None = None
+    #: Value-weighted average expense ratio across held positions
+    #: (spreadsheet ``Total!E15`` = ``SUMPRODUCT(expense, weight)``).
+    #: ``None`` when there are no valued positions.
+    weighted_expense_ratio: Decimal | None = None
+    #: Estimated annual fund-fee cost in EUR at the current marks
+    #: (spreadsheet ``Total!E17`` = ``Σ price·expense·shares``).
+    annual_expense_cost_eur: Decimal = Decimal(0)
 
 
 def _txn_eur_amount(t: Transaction) -> Decimal:
@@ -330,6 +341,14 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     else:
         ytd_growth_usd = None
 
+    # MTD: same shape as YTD but bounded to the first of the current month.
+    mtd_growth = _compute_mtd_growth(session, txns, as_of, total_value_eur)
+
+    # Fund-fee figures from the live positions (value-weighted TER + €/yr cost).
+    weighted_expense_ratio, annual_expense_cost_eur = _compute_expense_figures(
+        positions_service.compute_positions(session, as_of=as_of)
+    )
+
     return PortfolioMetrics(
         as_of=as_of,
         first_cashflow_date=first_cashflow_date,
@@ -350,7 +369,69 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         ytd_xirr_usd=ytd_xirr_usd,
         ytd_growth_pct_usd=ytd_growth_usd,
         total_growth_compounded_usd=total_growth_usd,
+        mtd_growth_pct=mtd_growth,
+        weighted_expense_ratio=weighted_expense_ratio,
+        annual_expense_cost_eur=annual_expense_cost_eur,
     )
+
+
+def _compute_mtd_growth(
+    session: Session,
+    txns: list[Transaction],
+    as_of: date,
+    total_value_eur: Decimal,
+) -> Decimal | None:
+    """Month-to-date simple growth, net of this month's external cashflows.
+
+    ``(V_today - V_month_start - net_contributions_mtd) /
+    (V_month_start + net_contributions_mtd)``. Returns ``None`` when the
+    denominator is non-positive (e.g. a brand-new portfolio with no
+    start-of-month value).
+    """
+    month_start = date(as_of.year, as_of.month, 1)
+    month_start_value = positions_service.total_portfolio_value(session, as_of=month_start)
+    if month_start_value <= ZERO:
+        return None
+    mtd_txns = [t for t in txns if t.date >= month_start]
+    mtd_contrib = sum(
+        (_txn_eur_amount(t) for t in mtd_txns if t.kind in _CONTRIBUTION_KINDS),
+        start=ZERO,
+    )
+    mtd_withdraw = sum(
+        (_txn_eur_amount(t) for t in mtd_txns if t.kind in _WITHDRAWAL_KINDS),
+        start=ZERO,
+    )
+    mtd_net = mtd_contrib + mtd_withdraw
+    denom = month_start_value + mtd_net
+    if denom <= ZERO:
+        return None
+    return (total_value_eur - month_start_value - mtd_net) / denom
+
+
+def _compute_expense_figures(
+    positions: list[positions_service.Position],
+) -> tuple[Decimal | None, Decimal]:
+    """Value-weighted expense ratio + annual €-cost across held positions.
+
+    Mirrors the spreadsheet's ``Total!E15`` (``SUMPRODUCT(expense, weight)``)
+    and ``Total!E17`` (annual fee cost in €). Positions with an unknown TER
+    contribute ``0`` to the cost numerator (treated as fee-free), matching
+    the spreadsheet's blank-expense handling. Returns ``(None, 0)`` when no
+    position carries a positive EUR value.
+    """
+    total_value = ZERO
+    weighted_cost = ZERO
+    for p in positions:
+        value_eur = p.current_value_eur
+        if value_eur <= ZERO:
+            continue
+        total_value += value_eur
+        ter = p.effective.expense_ratio if p.effective is not None else p.instrument.expense_ratio
+        if ter is not None:
+            weighted_cost += value_eur * ter
+    if total_value <= ZERO:
+        return None, ZERO
+    return weighted_cost / total_value, weighted_cost
 
 
 def _best_effort_ytd_start_value(
