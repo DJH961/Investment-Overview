@@ -105,6 +105,32 @@ TOOLTIPS: Final[dict[str, str]] = {
         "Per-instrument contribution to the portfolio's overall P&L over the window. "
         "Sums to the portfolio total return (modulo rounding)."
     ),
+    "projection_expected": (
+        "The default growth assumption is your portfolio's own historical XIRR — "
+        "what your money has earned so far. Edit it to model a more or less "
+        "aggressive future"
+    ),
+    "projection_band": (
+        "How far the optimistic and pessimistic lines fan out above and below the "
+        "expected return, in annual percentage points. A wider band means more "
+        "uncertainty about future returns"
+    ),
+    "projection_stepup": (
+        "An annual raise applied to your contribution, for when you expect to invest "
+        "more over time. Set it to zero to keep contributions flat"
+    ),
+    "projection_inflation": (
+        "Discounts future values back into today's purchasing power so amounts stay "
+        "comparable to now. Set it to zero to see raw nominal figures"
+    ),
+    "projection_target": (
+        "A milestone you are aiming for. The tool shows when each scenario reaches it "
+        "and what contribution would get you there by the end of the horizon"
+    ),
+    "projection_real": (
+        "Inflation-adjusted value — what the projected balance would be worth in "
+        "today's money after discounting by your inflation assumption"
+    ),
 }
 
 

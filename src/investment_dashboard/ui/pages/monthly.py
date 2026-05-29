@@ -14,11 +14,8 @@ from investment_dashboard.ui.components.kpi_card import dual_kpi_card
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import currency_symbol, dual_pct, fmt_money
 from investment_dashboard.ui.pages._period_query import aggregate, to_table_rows
-from investment_dashboard.ui.pages._projection_query import (
-    DEFAULT_SCENARIOS,
-    project_monthly_from_session,
-    to_monthly_table_rows,
-)
+from investment_dashboard.ui.pages._projection_view import build_seed
+from investment_dashboard.ui.pages._projection_view import render as render_projection
 
 PATH = "/monthly"
 
@@ -67,10 +64,6 @@ def _figure(rows, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no
     return fig
 
 
-def _scenario_label(rate: Decimal) -> str:
-    return f"{rate * 100:.1f}% p.a."
-
-
 def _money_columns(label: str, field: str, primary: str) -> list[dict[str, str]]:
     """Build the primary + secondary AG-Grid column pair for one metric.
 
@@ -104,10 +97,10 @@ def register() -> None:
             with session_scope() as session:
                 display_ccy = display_currency_service.get_display_currency(session)
                 rows = aggregate(session, monthly=True, display_currency=display_ccy)
-                projection_rows = project_monthly_from_session(session, months=36)
                 display_quote = display_ccy if display_ccy != "EUR" else "USD"
                 fx_rate = display_currency_service.current_rate(session, quote=display_quote)
                 metrics = compute_portfolio_metrics(session)
+                projection_seed = build_seed(session, monthly=True, primary=display_ccy)
             sym = currency_symbol(display_ccy)
 
             # v2.5 — KPI row at the top so Total Growth is the most
@@ -174,31 +167,5 @@ def register() -> None:
                     "the trailing Growth % column is the per-period Modified Dietz return.",
                 ).classes("text-caption opacity-70")
 
-            with section("Hypothetical projection (next 36 months)"):
-                ui.label(
-                    "Assumes the average historical monthly contribution continues, compounded "
-                    "at the rates below. For planning only — not a forecast."
-                ).classes("text-caption opacity-70")
-                ui.aggrid(
-                    {
-                        "columnDefs": [
-                            {"headerName": "Month", "field": "label"},
-                            *_money_columns("Cumulative contribution", "contributed", display_ccy),
-                            *[
-                                col
-                                for rate in DEFAULT_SCENARIOS
-                                for col in _money_columns(
-                                    _scenario_label(rate), f"rate_{rate}", display_ccy
-                                )
-                            ],
-                        ],
-                        "rowData": to_monthly_table_rows(
-                            projection_rows,
-                            currency=display_ccy,
-                            fx_rate=fx_rate,
-                        ),
-                        "defaultColDef": {"resizable": True, "sortable": True},
-                        "pagination": True,
-                        "paginationAutoPageSize": True,
-                    }
-                ).classes("ag-theme-alpine w-full h-[50vh]")
+            with section("Projection"):
+                render_projection(projection_seed)
