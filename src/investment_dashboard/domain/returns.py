@@ -270,3 +270,55 @@ def capital_gain(
     ``current_value`` via the new shares they bought.
     """
     return current_value + cumulative_dividends_cash - contributions
+
+
+# -----------------------------------------------------------------------------
+# Total Growth (compounded XIRR) — v2.5 canonical headline metric
+# -----------------------------------------------------------------------------
+
+
+def years_between(start: date, end: date) -> Decimal:
+    """Calendar years between ``start`` and ``end`` (``end`` inclusive).
+
+    Uses :data:`DAYS_PER_CALENDAR_YEAR` (365.25) so leap years average out.
+    Returns ``Decimal(0)`` when ``end <= start``.
+    """
+    days = (end - start).days
+    if days <= 0:
+        return Decimal(0)
+    return Decimal(days) / DAYS_PER_CALENDAR_YEAR
+
+
+def total_growth_pct_compounded(
+    xirr_rate: Decimal | None,
+    years: Decimal,
+) -> Decimal | None:
+    """Cumulative growth implied by ``xirr_rate`` over ``years``.
+
+    Headline metric across the v2.5 UI: "what XIRR-implied compound
+    return would you have realised over the time you've actually been
+    invested?" Formula::
+
+        (1 + xirr) ** years - 1
+
+    This is "XIRR × time" expressed correctly (compounded, not
+    multiplied) and degrades gracefully:
+
+    * Returns ``None`` if ``xirr_rate`` is ``None`` (insufficient data
+      for an XIRR root) or if ``years <= 0``.
+    * Returns ``None`` if ``1 + xirr_rate <= 0`` (catastrophic loss
+      below -100% — the real-valued power would be undefined).
+
+    The computation goes through ``float`` because ``Decimal`` has no
+    general fractional power; the result is round-tripped back through
+    ``Decimal(repr(...))`` to keep the public type stable.
+    """
+    if xirr_rate is None or years <= 0:
+        return None
+    base = Decimal(1) + xirr_rate
+    if base <= 0:
+        return None
+    grown = float(base) ** float(years)
+    if math.isnan(grown) or math.isinf(grown):
+        return None
+    return Decimal(repr(grown)) - Decimal(1)

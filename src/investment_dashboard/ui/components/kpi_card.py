@@ -63,6 +63,50 @@ def kpi_card(
             _spark(list(sparkline), color=color)
 
 
+def dual_kpi_card(
+    label: str,
+    eur_value: str,
+    usd_value: str,
+    *,
+    primary: str = "USD",
+    growth_pct: str | None = None,
+    tooltip_key: str | None = None,
+) -> None:
+    """Render a KPI tile that stacks an EUR and USD value equally.
+
+    v2.5 — every monetary KPI on every page renders both currencies
+    side by side (never one without the other). ``primary`` decides
+    which currency is shown first / larger; the other is shown
+    immediately under it, equally weighted (not "main + small grey").
+
+    When ``growth_pct`` is supplied (a pre-formatted percent string —
+    typically dual EUR/USD via :func:`dual_pct`) it is rendered as a
+    third line, giving Total Growth its prominent position under the
+    money value.
+    """
+    primary = primary.upper()
+    first_value, first_ccy, second_value, second_ccy = (
+        (usd_value, "USD", eur_value, "EUR")
+        if primary != "EUR"
+        else (eur_value, "EUR", usd_value, "USD")
+    )
+    with ui.element("div").classes("inv-kpi"):
+        if tooltip_key:
+            label_with_tooltip(label, tooltip_key, classes="inv-kpi-label")
+        else:
+            ui.html(f'<div class="inv-kpi-label">{label}</div>')
+        ui.html(
+            f'<div class="inv-kpi-value inv-kpi-dual-primary">'
+            f'<span class="inv-kpi-dual-ccy">{first_ccy}</span> {first_value}</div>'
+        )
+        ui.html(
+            f'<div class="inv-kpi-dual-secondary">'
+            f'<span class="inv-kpi-dual-ccy">{second_ccy}</span> {second_value}</div>'
+        )
+        if growth_pct is not None:
+            ui.html(f'<div class="inv-kpi-growth">{growth_pct}</div>')
+
+
 def _spark(values: list[float], *, color: str | None) -> None:  # pragma: no cover - UI
     """Render a tiny inline sparkline using Plotly."""
     import plotly.graph_objects as go  # noqa: PLC0415
