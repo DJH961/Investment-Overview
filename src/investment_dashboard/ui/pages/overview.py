@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-import plotly.graph_objects as go
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
@@ -88,6 +87,8 @@ def _verdict_card(verdict: MarketVerdict) -> None:
 
 
 def _treemap_figure(data, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no-untyped-def]
+    import plotly.graph_objects as go  # noqa: PLC0415
+
     if not data:
         return go.Figure().update_layout(
             title=f"Allocation by category ({currency})",
@@ -118,6 +119,8 @@ def _treemap_figure(data, *, currency: str, fx_rate: Decimal | None):  # type: i
 
 def _value_curve_figure(points, *, currency: str):  # type: ignore[no-untyped-def]
     """Classic portfolio-value line graph over the selected time range."""
+    import plotly.graph_objects as go  # noqa: PLC0415
+
     fig = go.Figure()
     if points:
         fig.add_trace(
