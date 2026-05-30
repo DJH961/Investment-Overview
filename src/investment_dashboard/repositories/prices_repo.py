@@ -40,6 +40,28 @@ def latest_close(session: Session, instrument_id: int) -> Decimal | None:
     return session.scalars(stmt).one_or_none()
 
 
+def close_as_of(session: Session, instrument_id: int, as_of: date) -> Decimal | None:
+    """Most recent close for ``instrument_id`` on or before ``as_of``.
+
+    Forward-fills across weekends / holidays / sparse history by taking the
+    last available print at or before ``as_of``. Returns ``None`` when no
+    print exists on or before that date (e.g. the instrument's history starts
+    later). This is the as-of analogue of :func:`latest_close` and is what
+    historical valuations (YTD start, MTD start, the equity curve) must use so
+    that past dates are priced with past prices rather than today's close.
+    """
+    stmt = (
+        select(PriceHistory.close_native)
+        .where(
+            PriceHistory.instrument_id == instrument_id,
+            PriceHistory.date <= as_of,
+        )
+        .order_by(PriceHistory.date.desc())
+        .limit(1)
+    )
+    return session.scalars(stmt).one_or_none()
+
+
 def upsert_closes(
     session: Session,
     instrument_id: int,

@@ -66,6 +66,7 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
     balance, per spec §4.1 ``price_history``).
     """
     as_of = as_of or date.today()
+    is_historical = as_of < date.today()
     txns = transactions_repo.list_transactions(session, end=as_of)
 
     # Aggregate by (account_id, instrument_id).
@@ -109,7 +110,14 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
             continue
         account = accounts_by_id[account_id]
         instr = instruments_by_id[instrument_id]
-        current_price = prices_service.latest_close(session, instr.id)
+        # Historical valuations must use the close that was in effect on
+        # ``as_of`` (forward-filled), not today's price — otherwise YTD/MTD
+        # start values and the equity curve are all priced at today's close.
+        # For "today" we keep ``latest_close`` so intraday refreshes show.
+        if is_historical:
+            current_price = prices_service.close_as_of(session, instr.id, as_of)
+        else:
+            current_price = prices_service.latest_close(session, instr.id)
         current_value_native = agg["shares"] * current_price if current_price is not None else ZERO
         # Currency conversion to EUR.
         if account.native_currency == "EUR":
