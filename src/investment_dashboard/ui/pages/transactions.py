@@ -25,8 +25,14 @@ from investment_dashboard.services.instrument_enrichment_service import (
     effective_instrument,
 )
 from investment_dashboard.ui.components import page_header, section
+from investment_dashboard.ui.components.kpi_card import dual_kpi_card, kpi_card
 from investment_dashboard.ui.layout import page_frame
-from investment_dashboard.ui.pages._ledger_query import LedgerFilters, list_ledger_rows
+from investment_dashboard.ui.money_format import fmt_money
+from investment_dashboard.ui.pages._ledger_query import (
+    LedgerFilters,
+    list_ledger_rows,
+    summarize_ledger,
+)
 
 PATH = "/transactions"
 
@@ -64,6 +70,21 @@ def register() -> None:
             }
             accounts = _all_accounts()
             account_options = {a.id: a.account_label for a in accounts}
+
+            with session_scope() as session:
+                display_ccy = display_currency_service.get_display_currency(session)
+                fx_rate = display_currency_service.current_rate(session, quote="USD")
+                summary = summarize_ledger(session, fx_rate=fx_rate)
+            with ui.row().classes("gap-md flex-wrap w-full"):
+                kpi_card("Transactions", f"{summary.count:,}")
+                kpi_card("Buys", f"{summary.buy_count:,}")
+                kpi_card("Sells", f"{summary.sell_count:,}")
+                dual_kpi_card(
+                    "Avg trade size",
+                    fmt_money(summary.avg_trade_size_eur, "EUR"),
+                    fmt_money(summary.avg_trade_size_usd, "USD"),
+                    primary=display_ccy,
+                )
 
             with ui.row().classes("items-end gap-md flex-wrap w-full"):
                 ui.select(

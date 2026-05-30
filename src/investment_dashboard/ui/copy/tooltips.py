@@ -49,6 +49,13 @@ TOOLTIPS: Final[dict[str, str]] = {
         "Portfolio growth since the 1st of the current month, excluding new "
         "contributions — a short-horizon read on how the holdings are moving."
     ),
+    "daily_growth": (
+        "Single-day change in portfolio value on the most recent completed "
+        "trading day — the latest date any holding repriced. On a weekend or "
+        "before the market close it shows the last business day's move (the "
+        "as-of date is labelled). Mutual-fund NAVs lag ETFs by a day; the whole "
+        "book is valued consistently on each date."
+    ),
     "expense_ratio": (
         "The value-weighted average annual fund fee (TER) across your holdings, "
         "with the estimated euro cost per year at today's marks. Lower is better."

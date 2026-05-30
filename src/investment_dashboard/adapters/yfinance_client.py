@@ -185,9 +185,21 @@ def _download_window(
         log.warning("yfinance returned no data for %s..%s symbols=%s", start, end, symbols)
         return result
 
+    # ``group_by="ticker"`` makes yfinance return a column ``MultiIndex``
+    # *even for a single ticker* (``(symbol, "Close")``), so a one-symbol
+    # fetch must still be read as ``frame[symbol]["Close"]``. The earlier
+    # ``len(symbols) == 1`` short-circuit (``frame["Close"]``) raised a
+    # silently-swallowed ``KeyError`` for every single-symbol fetch — which
+    # is exactly the benchmark/analytics path (VT, VTI, …). We branch on the
+    # actual column shape instead so both grouped and ungrouped frames work.
+    columns = getattr(frame, "columns", None)
+    import pandas as pd  # noqa: PLC0415
+
+    is_grouped = isinstance(columns, pd.MultiIndex)
+
     for symbol in symbols:
         try:
-            close_series = frame["Close"] if len(symbols) == 1 else frame[symbol]["Close"]
+            close_series = frame[symbol]["Close"] if is_grouped else frame["Close"]
         except KeyError:
             log.warning("yfinance returned no rows for symbol %s", symbol)
             continue

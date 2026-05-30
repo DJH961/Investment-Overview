@@ -228,7 +228,10 @@ html, body {{
   box-shadow: var(--inv-shadow-soft);
   padding: 1rem 1.125rem;
   min-width: 13rem;
+  min-height: 7.25rem;
   flex: 1 1 13rem;
+  display: flex;
+  flex-direction: column;
   transition: transform 150ms ease-out, box-shadow 150ms ease-out, border-color 150ms ease-out;
 }}
 .inv-kpi:hover {{
