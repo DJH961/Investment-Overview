@@ -14,29 +14,109 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [2.8.0] — Unreleased
 
+This release lands the full **v2.8 whole-app cleanup** — a broad sweep of
+correctness and UX fixes spanning Overview, Deposits, Transactions, Monthly,
+Yearly, Projection, Analytics, Settings and onboarding. The work was delivered
+as one branch / one PR organised into seven themed steps; the step-by-step
+plan and root-cause analysis live in `docs/v2.8-cleanup-plan.md`.
+
 ### Added
-- **Standalone Projection page.** The interactive projection tool now lives on
-  its own `/projection` route with dedicated navigation, axis titles, and
-  updated copy so Monthly and Yearly can focus on historical reporting.
-- **Validated onboarding ticker selection.** Onboarding and Settings now share
-  ticker validation so benchmark / portfolio symbols are checked before saving,
-  and the cloud-sync link can be chosen during onboarding and edited later in
-  Settings.
+- **Standalone Projection page.** The interactive dual-currency projection
+  tool — previously embedded *identically* on both `/monthly` and `/yearly`
+  — now lives in exactly one place on its own `/projection` route, wired into
+  the navigation and router. A Yearly/Monthly granularity toggle rebuilds the
+  seed and re-renders the forecast in place, the EUR and USD cones each carry
+  proper chart **axis titles**, and the "Total contributed" line was renamed
+  to **"Additionally contributed"** to make clear it is future, not
+  historical, money.
+- **Validated ticker selection (`ticker_validation_service`).** A new service
+  confirms that a free-form symbol actually *resolves and prices* on the
+  market-data provider before it is written to the ledger — a symbol is only
+  accepted when the provider returns recognisable metadata **and** at least
+  one recent close. The resolved name / asset class / native currency are
+  returned so the UI can pre-fill the add form and the user can eyeball the
+  match (e.g. confirm "Global X DAX Germany ETF" rather than a German-listed
+  clone). Onboarding and Settings both gate on this so a typo or wrong-exchange
+  suffix can no longer seed an instrument that never prices.
+- **Cloud / sync link picker in onboarding.** The OneDrive/cloud sync folder
+  can now be chosen *during* onboarding alongside the benchmark / portfolio
+  ETF, in addition to being editable later in Settings.
+- **Editable cloud / sync folder in Settings.** The sync-folder path is now a
+  writable field that persists `ledger_path` / `config_path` into the
+  config-tier `app_config` table, overriding the auto-detected cloud folder on
+  the next launch; clearing it falls back to auto-detection.
+- **Transactions summary KPIs.** The Transactions page gained a summary strip
+  — total transaction count, buy count, sell count, and dual-currency average
+  trade size — via the new `summarize_ledger()` query.
+- **Daily growth metric.** `PortfolioMetrics` gained dual-currency
+  `daily_growth_pct{,_usd}` plus `daily_growth_as_of`: single-day portfolio
+  growth measured on the most recent *completed* trading day (the latest date
+  any held instrument repriced), so it skips weekends / holidays and tolerates
+  the one-day NAV lag of mutual funds versus ETFs. Backed by a new
+  `prices_repo.recent_price_dates()` helper.
+- **MTD growth in USD.** `PortfolioMetrics.mtd_growth_pct_usd` adds a USD
+  parallel to the existing EUR month-to-date figure, valuing the month's
+  external flows at per-trade-date FX, so the Overview MTD card now reports
+  both currencies.
+- **As-of pricing helper.** `prices_repo.close_as_of()` returns the most
+  recent close on or before a given date (forward-filling across weekends /
+  holidays / sparse history), the building block that makes historical
+  valuations price past dates with past prices.
+- Regression tests for historical (as-of) valuation, the Overview value
+  series, single-symbol grouped yfinance frames, and ticker validation.
 
 ### Changed
-- **Whole-app KPI and table cleanup.** Overview, Monthly, Yearly, Deposits,
-  Transactions, and Settings were aligned around the corrected dual-currency
-  math, simplified KPI layouts, more readable tables, sortable per-currency
-  values, and the standalone Projection workflow introduced for v2.8.
+- **Overview page redesign.** Cards were reordered to put **Total Value
+  first** and **Total Growth second**, and Total Growth now shows actual
+  compounded growth % rather than echoing total value; the legacy **Simple
+  Growth** KPI was removed. XIRR / YTD / MTD / Daily are rendered as
+  dual-currency cards with the display currency large and the other currency
+  shown smaller as a secondary line, coloured / arrowed by the primary sign.
+  The allocation treemap now rounds values to the cent (`ROUND_HALF_UP`), and
+  the positions table exposes numeric per-currency columns so each currency
+  sorts independently, alongside per-row growth / XIRR / YTD-growth stats.
+- **Equal-height KPI cards and more readable tables.** KPI cards were unified
+  to consistent value / label / secondary sizing across the app, and table
+  fonts were bumped to a readable-but-compact modern size.
+- **Monthly table paginates per calendar year.** The Monthly view now shows
+  one whole calendar year per page via `aggregate(fill_gaps=True)`, padding
+  the empty Jan/Feb 2023 buckets (investing started March 2023) so each year
+  renders complete.
+- **Yearly chart is now a cumulative value line.** The per-year **bar** chart
+  was replaced with a cumulative **value-over-time line** chart with proper
+  axes.
+- **Slimmer Monthly & Yearly KPIs.** The redundant top "main" KPIs and the
+  "Periods" / "Years" count KPIs were dropped from both pages.
+- **Settings layout.** The **Reset data** action was moved to the last
+  settings section, and the DAX preset was confirmed as "Global X DAX
+  Germany".
 
 ### Fixed
+- **Benchmark and market-data lookups.** Single-symbol yfinance downloads
+  assumed an ungrouped frame, but `group_by="ticker"` returns a column
+  `MultiIndex` even for one ticker — so every single-symbol fetch raised a
+  silently-swallowed `KeyError`. This single bug was the root cause of all
+  Analytics benchmark failures **and** the stale VT ~2.2 "Beating the market"
+  number on Overview; `_download_window` now branches on the actual column
+  shape so both grouped and ungrouped frames resolve.
 - **Historical valuation and period math.** Past-date portfolio values now use
-  the close and FX history that were actually in effect on each as-of date,
-  which corrects YTD/MTD signs, closing balances, and the Overview value
-  series.
-- **Benchmark and market-data lookups.** Single-symbol yfinance downloads now
-  handle grouped MultiIndex frames correctly, restoring benchmark fetches for
-  Analytics and the Overview market-comparison KPI.
+  the close *and* FX history that were actually in effect on each as-of date
+  (via `positions_service` + `prices_service.close_as_of`), which corrects the
+  YTD sign, the month-to-date / year closing balances, and the Overview
+  value-over-time curve — these previously leaked today's price into every
+  historical point.
+
+### Removed
+- **The "interest" concept on Deposits.** The erroneous interest kind, summary
+  fields (`interest_ytd_eur` / `interest_ytd_usd`), readmodel keys and KPI were
+  removed — Deposits is a contributions view, not an interest-bearing account.
+
+### Notes
+- Several originally-reported items — per-trade-date FX across Deposits /
+  Transactions / metrics, the removal of the silent `Decimal(1)` spot
+  fallback, and historical share-count closing balances — were already
+  corrected by earlier work on this branch (v2.4–v2.5) and are **verified**
+  here rather than re-implemented.
 
 ## [2.7.2] — Unreleased
 
