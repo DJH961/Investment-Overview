@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from nicegui import ui
 
@@ -175,7 +175,7 @@ def _treemap_figure(data, *, currency: str, fx_rate: Decimal | None):  # type: i
         )
         # Round to the cent so the treemap's value labels read cleanly
         # (the user's "numbers should be rounded to cent" note).
-        return float(raw.quantize(Decimal("0.01")))
+        return float(raw.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
     fig = go.Figure(
         go.Treemap(
