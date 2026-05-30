@@ -41,6 +41,7 @@ def _metrics_dict(metrics: PortfolioMetrics) -> dict[str, Any]:
         "ytd_xirr": dec(metrics.ytd_xirr),
         "ytd_growth_pct": dec(metrics.ytd_growth_pct),
         "mtd_growth_pct": dec(metrics.mtd_growth_pct),
+        "mtd_growth_pct_usd": dec(metrics.mtd_growth_pct_usd),
         "daily_growth_pct": dec(metrics.daily_growth_pct),
         "daily_growth_pct_usd": dec(metrics.daily_growth_pct_usd),
         "daily_growth_as_of": (

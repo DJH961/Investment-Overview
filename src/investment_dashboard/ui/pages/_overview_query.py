@@ -356,10 +356,18 @@ def position_rows(
                 "current_value_eur": (
                     f"{value_eur:,.2f}" if value_eur is not None else f"{p.current_value_eur:,.2f}"
                 ),
-                # v2.5 dual columns.
+                # v2.5 dual columns (formatted string, kept for back-compat).
                 "value_dual": dual_money(value_eur, value_usd, primary=display_currency),
                 "cost_basis_dual": dual_money(cost_eur, cost_usd, primary=display_currency),
                 "capital_gain_dual": dual_money(gain_eur, gain_usd, primary=display_currency),
+                # v2.8 — numeric per-currency companions so AG-Grid can sort
+                # each money column by value (not by the formatted tuple).
+                "value_eur_num": _num(value_eur),
+                "value_usd_num": _num(value_usd),
+                "cost_basis_eur_num": _num(cost_eur),
+                "cost_basis_usd_num": _num(cost_usd),
+                "capital_gain_eur_num": _num(gain_eur),
+                "capital_gain_usd_num": _num(gain_usd),
                 "capital_gain_native": (f"{im.capital_gain_native:,.2f}" if im is not None else ""),
                 "total_growth_pct": _fmt_pct(growth),
                 "total_growth_signed": _signed(growth),
@@ -389,6 +397,11 @@ def _fmt_pct(value: Decimal | None) -> str:
 def _signed(value: Decimal | None) -> float:
     """Raw float for AG-Grid ``cellClassRules`` sign colouring (0 when None)."""
     return float(value) if value is not None else 0.0
+
+
+def _num(value: Decimal | None) -> float | None:
+    """Raw float for a sortable numeric AG-Grid column (``None`` stays empty)."""
+    return float(value) if value is not None else None
 
 
 def allocation_treemap(positions: list[Position]) -> list[TreemapDatum]:
