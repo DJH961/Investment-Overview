@@ -20,7 +20,7 @@ from investment_dashboard.ui.pages._analytics_query import build_bundle
 
 
 @pytest.fixture(autouse=True)
-def no_live_risk_free_fetch(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def no_live_risk_free_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep analytics query tests deterministic even when yfinance is reachable."""
     monkeypatch.setattr(
         "investment_dashboard.adapters.yfinance_client.fetch_latest_close",
