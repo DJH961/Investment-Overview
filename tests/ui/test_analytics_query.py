@@ -19,6 +19,15 @@ from investment_dashboard.services import benchmark_service
 from investment_dashboard.ui.pages._analytics_query import build_bundle
 
 
+@pytest.fixture(autouse=True)
+def no_live_risk_free_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep analytics query tests deterministic even when yfinance is reachable."""
+    monkeypatch.setattr(
+        "investment_dashboard.adapters.yfinance_client.fetch_latest_close",
+        lambda _symbol: None,
+    )
+
+
 @pytest.fixture
 def populated_session(session):  # type: ignore[no-untyped-def]
     """Account + instrument + a year of synthetic snapshot history."""

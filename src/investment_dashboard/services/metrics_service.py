@@ -31,7 +31,12 @@ from investment_dashboard.domain.returns import (
     years_between,
 )
 from investment_dashboard.models import Transaction, TransactionKind
-from investment_dashboard.repositories import accounts_repo, fx_repo, transactions_repo
+from investment_dashboard.repositories import (
+    accounts_repo,
+    fx_repo,
+    prices_repo,
+    transactions_repo,
+)
 from investment_dashboard.services import positions_service
 
 ZERO = Decimal(0)
@@ -91,6 +96,10 @@ class PortfolioMetrics:
     #: on ``Deposits``/``Total``). ``None`` when the start-of-month value
     #: can't be established (brand-new portfolio / no price history).
     mtd_growth_pct: Decimal | None = None
+    #: USD parallel of ``mtd_growth_pct`` (start-of-month value + this
+    #: month's external flows valued at per-trade-date FX). ``None`` under
+    #: the same conditions as the EUR figure.
+    mtd_growth_pct_usd: Decimal | None = None
     #: Value-weighted average expense ratio across held positions
     #: (spreadsheet ``Total!E15`` = ``SUMPRODUCT(expense, weight)``).
     #: ``None`` when there are no valued positions.
@@ -98,6 +107,15 @@ class PortfolioMetrics:
     #: Estimated annual fund-fee cost in EUR at the current marks
     #: (spreadsheet ``Total!E17`` = ``Σ price·expense·shares``).
     annual_expense_cost_eur: Decimal = Decimal(0)
+    #: Single-day portfolio growth on the most recent *completed* trading
+    #: day — i.e. the latest date any held instrument repriced (skips
+    #: weekends/holidays; tolerates the mutual-fund NAV lag vs ETFs).
+    #: ``None`` until there are at least two priced dates.
+    daily_growth_pct: Decimal | None = None
+    daily_growth_pct_usd: Decimal | None = None
+    #: The date ``daily_growth_pct`` refers to (the "last daily growth day"),
+    #: so the UI can label *when* the move is from. ``None`` when unavailable.
+    daily_growth_as_of: date | None = None
 
 
 def _txn_eur_amount(t: Transaction) -> Decimal:
@@ -342,7 +360,14 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         ytd_growth_usd = None
 
     # MTD: same shape as YTD but bounded to the first of the current month.
-    mtd_growth = _compute_mtd_growth(session, txns, as_of, total_value_eur)
+    mtd_growth, mtd_growth_usd = _compute_mtd_growth(
+        session, txns, as_of, total_value_eur, total_value_usd, eur_to_usd=eur_to_usd
+    )
+
+    # Daily growth on the most recent completed trading day (dual currency).
+    daily_growth_eur, daily_growth_usd, daily_as_of = _compute_daily_growth(
+        session, as_of=as_of, eur_to_usd=eur_to_usd
+    )
 
     # Fund-fee figures from the live positions (value-weighted TER + €/yr cost).
     weighted_expense_ratio, annual_expense_cost_eur = _compute_expense_figures(
@@ -370,9 +395,57 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         ytd_growth_pct_usd=ytd_growth_usd,
         total_growth_compounded_usd=total_growth_usd,
         mtd_growth_pct=mtd_growth,
+        mtd_growth_pct_usd=mtd_growth_usd,
         weighted_expense_ratio=weighted_expense_ratio,
         annual_expense_cost_eur=annual_expense_cost_eur,
+        daily_growth_pct=daily_growth_eur,
+        daily_growth_pct_usd=daily_growth_usd,
+        daily_growth_as_of=daily_as_of,
     )
+
+
+def _value_in_both(
+    session: Session,
+    on: date,
+    *,
+    eur_to_usd: dict[date, Decimal],
+) -> tuple[Decimal, Decimal]:
+    """Portfolio value on ``on`` in (EUR, USD), USD via that date's FX."""
+    eur = positions_service.total_portfolio_value(session, as_of=on)
+    fx = lookup_rate_with_forward_fill(eur_to_usd, on) or ZERO
+    usd = eur * fx if fx != 0 else eur
+    return eur, usd
+
+
+def _compute_daily_growth(
+    session: Session,
+    *,
+    as_of: date,
+    eur_to_usd: dict[date, Decimal],
+) -> tuple[Decimal | None, Decimal | None, date | None]:
+    """Single-day growth on the most recent completed trading day.
+
+    The "last daily growth day" is the latest date (``<= as_of``) on which
+    *any* currently-held instrument has a price print — so on a Sunday it is
+    Friday's data, and before the US close (e.g. 10am CET) it is yesterday's.
+    The portfolio is valued on that date and on the prior print date with
+    forward-filled prices, which transparently accommodates the fact that some
+    holdings are ETFs (daily close) and some are mutual funds (lagged NAV):
+    each date is a consistent mark of the whole book.
+
+    Returns ``(growth_eur, growth_usd, as_of_date)``; all ``None`` when there
+    aren't two priced dates yet.
+    """
+    held_ids = [p.instrument.id for p in positions_service.compute_positions(session, as_of=as_of)]
+    dates = prices_repo.recent_price_dates(session, held_ids, on_or_before=as_of, limit=2)
+    if len(dates) < 2:
+        return None, None, None
+    last_date, prev_date = dates[0], dates[1]
+    last_eur, last_usd = _value_in_both(session, last_date, eur_to_usd=eur_to_usd)
+    prev_eur, prev_usd = _value_in_both(session, prev_date, eur_to_usd=eur_to_usd)
+    growth_eur = (last_eur - prev_eur) / prev_eur if prev_eur > ZERO else None
+    growth_usd = (last_usd - prev_usd) / prev_usd if prev_usd > ZERO else None
+    return growth_eur, growth_usd, last_date
 
 
 def _compute_mtd_growth(
@@ -380,32 +453,67 @@ def _compute_mtd_growth(
     txns: list[Transaction],
     as_of: date,
     total_value_eur: Decimal,
-) -> Decimal | None:
-    """Month-to-date simple growth, net of this month's external cashflows.
+    total_value_usd: Decimal,
+    *,
+    eur_to_usd: dict[date, Decimal],
+) -> tuple[Decimal | None, Decimal | None]:
+    """Month-to-date simple growth in EUR and USD, net of this month's flows.
 
     ``(V_today - V_month_start - net_contributions_mtd) /
-    (V_month_start + net_contributions_mtd)``. Returns ``None`` when the
-    denominator is non-positive (e.g. a brand-new portfolio with no
-    start-of-month value).
+    (V_month_start + net_contributions_mtd)`` computed independently for
+    each currency. The USD leg values the start-of-month portfolio with
+    the FX rate in effect on the first of the month and this month's
+    contributions at their per-trade-date rate, mirroring the dual-wallet
+    treatment used for XIRR/YTD. Returns ``(None, None)`` for a currency
+    whose denominator is non-positive (e.g. a brand-new portfolio).
     """
     month_start = date(as_of.year, as_of.month, 1)
-    month_start_value = positions_service.total_portfolio_value(session, as_of=month_start)
-    if month_start_value <= ZERO:
-        return None
+    month_start_value_eur = positions_service.total_portfolio_value(session, as_of=month_start)
+    if month_start_value_eur <= ZERO:
+        return None, None
+    fx_month_start = lookup_rate_with_forward_fill(eur_to_usd, month_start) or ZERO
+    month_start_value_usd = (
+        month_start_value_eur * fx_month_start if fx_month_start != 0 else month_start_value_eur
+    )
+
     mtd_txns = [t for t in txns if t.date >= month_start]
-    mtd_contrib = sum(
+    mtd_contrib_eur = sum(
         (_txn_eur_amount(t) for t in mtd_txns if t.kind in _CONTRIBUTION_KINDS),
         start=ZERO,
     )
-    mtd_withdraw = sum(
+    mtd_withdraw_eur = sum(
         (_txn_eur_amount(t) for t in mtd_txns if t.kind in _WITHDRAWAL_KINDS),
         start=ZERO,
     )
-    mtd_net = mtd_contrib + mtd_withdraw
-    denom = month_start_value + mtd_net
-    if denom <= ZERO:
-        return None
-    return (total_value_eur - month_start_value - mtd_net) / denom
+    mtd_net_eur = mtd_contrib_eur + mtd_withdraw_eur
+    mtd_contrib_usd = sum(
+        (
+            _txn_usd_amount(t, eur_to_usd=eur_to_usd)
+            for t in mtd_txns
+            if t.kind in _CONTRIBUTION_KINDS
+        ),
+        start=ZERO,
+    )
+    mtd_withdraw_usd = sum(
+        (
+            _txn_usd_amount(t, eur_to_usd=eur_to_usd)
+            for t in mtd_txns
+            if t.kind in _WITHDRAWAL_KINDS
+        ),
+        start=ZERO,
+    )
+    mtd_net_usd = mtd_contrib_usd + mtd_withdraw_usd
+
+    def _growth(value_now: Decimal, value_start: Decimal, net: Decimal) -> Decimal | None:
+        denom = value_start + net
+        if denom <= ZERO:
+            return None
+        return (value_now - value_start - net) / denom
+
+    return (
+        _growth(total_value_eur, month_start_value_eur, mtd_net_eur),
+        _growth(total_value_usd, month_start_value_usd, mtd_net_usd),
+    )
 
 
 def _compute_expense_figures(

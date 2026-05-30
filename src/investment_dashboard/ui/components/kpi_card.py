@@ -107,6 +107,51 @@ def dual_kpi_card(
             ui.html(f'<div class="inv-kpi-growth">{growth_pct}</div>')
 
 
+def dual_pct_kpi_card(
+    label: str,
+    primary_value: str,
+    secondary_value: str,
+    *,
+    primary_ccy: str,
+    secondary_ccy: str,
+    tooltip_key: str | None = None,
+    color: str | None = None,
+    arrow: str | None = None,
+    sub: str | None = None,
+) -> None:
+    """Render a percentage KPI with a large primary and a smaller secondary.
+
+    Used for return metrics that have an EUR and a USD figure (XIRR, Total
+    Growth, YTD, MTD, Daily). The primary-currency percentage gets the big,
+    coloured ``inv-kpi-value`` treatment with an optional arrow; the
+    secondary-currency percentage is rendered underneath at the smaller
+    ``inv-kpi-dual-secondary`` size so it reads as secondary rather than
+    competing with the headline (the user's "EUR number should be smaller"
+    note on the XIRR card).
+    """
+    with ui.element("div").classes("inv-kpi"):
+        if tooltip_key:
+            label_with_tooltip(label, tooltip_key, classes="inv-kpi-label")
+        else:
+            ui.html(f'<div class="inv-kpi-label">{label}</div>')
+        with ui.row().classes("items-baseline gap-xs no-wrap q-mt-xs"):
+            if arrow:
+                ui.html(
+                    f'<span class="inv-kpi-arrow" style="color: {color or "inherit"}">'
+                    f"{arrow}</span>"
+                )
+            ui.html(
+                f'<span class="inv-kpi-value" style="color: {color or "inherit"}">'
+                f'<span class="inv-kpi-dual-ccy">{primary_ccy}</span> {primary_value}</span>'
+            )
+        ui.html(
+            f'<div class="inv-kpi-dual-secondary">'
+            f'<span class="inv-kpi-dual-ccy">{secondary_ccy}</span> {secondary_value}</div>'
+        )
+        if sub:
+            ui.html(f'<div class="inv-kpi-sub">{sub}</div>')
+
+
 def _spark(values: list[float], *, color: str | None) -> None:  # pragma: no cover - UI
     """Render a tiny inline sparkline using Plotly."""
     import plotly.graph_objects as go  # noqa: PLC0415

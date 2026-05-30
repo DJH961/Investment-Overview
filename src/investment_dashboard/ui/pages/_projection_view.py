@@ -351,7 +351,7 @@ def _render_kpis(
             primary=primary,
         )
         dual_kpi_card(
-            "Total contributed",
+            "Additionally contributed",
             fmt_money(result_eur.total_contributed, "EUR"),
             fmt_money(result_usd.total_contributed, "USD"),
             primary=primary,
@@ -431,8 +431,10 @@ def _render_chart(
             f"({primary}, {title_kind})"
         ),
         template="colorblind_modern",
-        margin={"l": 0, "r": 0, "t": 40, "b": 0},
+        margin={"l": 60, "r": 20, "t": 40, "b": 50},
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
+        xaxis={"title": period_word.capitalize()},
+        yaxis={"title": f"Value ({primary})"},
     )
     ui.plotly(fig).classes("w-full").style("height:420px")
 

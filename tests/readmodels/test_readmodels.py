@@ -112,7 +112,7 @@ def test_deposits_readmodel(session: Session, seeded: None) -> None:
     rm = readmodels.deposits.build(session)
     assert Decimal(rm["summary"]["total_contrib_eur"]) == Decimal("1000.00")
     kinds = {r["kind"] for r in rm["rows"]}
-    assert kinds == {"deposit", "interest"}
+    assert kinds == {"deposit"}
 
 
 def test_snapshot_is_json_serializable(session: Session, seeded: None) -> None:

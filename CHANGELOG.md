@@ -12,6 +12,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.8.0] — Unreleased
+
+### Added
+- **Standalone Projection page.** The interactive projection tool now lives on
+  its own `/projection` route with dedicated navigation, axis titles, and
+  updated copy so Monthly and Yearly can focus on historical reporting.
+- **Validated onboarding ticker selection.** Onboarding and Settings now share
+  ticker validation so benchmark / portfolio symbols are checked before saving,
+  and the cloud-sync link can be chosen during onboarding and edited later in
+  Settings.
+
+### Changed
+- **Whole-app KPI and table cleanup.** Overview, Monthly, Yearly, Deposits,
+  Transactions, and Settings were aligned around the corrected dual-currency
+  math, simplified KPI layouts, more readable tables, sortable per-currency
+  values, and the standalone Projection workflow introduced for v2.8.
+
+### Fixed
+- **Historical valuation and period math.** Past-date portfolio values now use
+  the close and FX history that were actually in effect on each as-of date,
+  which corrects YTD/MTD signs, closing balances, and the Overview value
+  series.
+- **Benchmark and market-data lookups.** Single-symbol yfinance downloads now
+  handle grouped MultiIndex frames correctly, restoring benchmark fetches for
+  Analytics and the Overview market-comparison KPI.
+
 ## [2.7.2] — Unreleased
 
 ### Added

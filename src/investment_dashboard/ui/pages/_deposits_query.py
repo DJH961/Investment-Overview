@@ -1,6 +1,6 @@
 """Query helpers for ``/deposits`` — summary KPIs + filtered table rows.
 
-Only ``deposit`` / ``withdrawal`` / ``interest`` ledger rows count
+Only ``deposit`` / ``withdrawal`` ledger rows count
 (spec §8.2). EUR-side numbers use ``net_eur`` when present and fall
 back to ``net_native`` otherwise.
 
@@ -31,7 +31,7 @@ from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.models import Account, Transaction
 from investment_dashboard.repositories import fx_repo
 
-_DEPOSIT_KINDS: tuple[str, ...] = ("deposit", "withdrawal", "interest")
+_DEPOSIT_KINDS: tuple[str, ...] = ("deposit", "withdrawal")
 
 ZERO = Decimal(0)
 
@@ -55,11 +55,9 @@ class DepositSummary:
     total_contrib_eur: Decimal
     ytd_contrib_eur: Decimal
     mtd_contrib_eur: Decimal
-    interest_ytd_eur: Decimal
     total_contrib_usd: Decimal
     ytd_contrib_usd: Decimal
     mtd_contrib_usd: Decimal
-    interest_ytd_usd: Decimal
 
 
 @dataclass(frozen=True)
@@ -239,10 +237,6 @@ def compute_summary(session: Session, *, today: date | None = None) -> DepositSu
         (_signed_contrib(t) for t in txns if t.date >= month_start),
         ZERO,
     )
-    interest_ytd_eur = sum(
-        (_amount_eur(t) for t in txns if t.kind == "interest" and t.date >= year_start),
-        ZERO,
-    )
 
     # Per-trade-date USD totals.
     usd_by_txn: list[tuple[Transaction, Decimal | None]] = [
@@ -265,23 +259,13 @@ def compute_summary(session: Session, *, today: date | None = None) -> DepositSu
         (_signed_contrib_usd(usd, t.kind) for t, usd in usd_by_txn if t.date >= month_start),
         ZERO,
     )
-    interest_ytd_usd = sum(
-        (
-            usd if usd is not None else ZERO
-            for t, usd in usd_by_txn
-            if t.kind == "interest" and t.date >= year_start
-        ),
-        ZERO,
-    )
 
     return DepositSummary(
         total_contrib_native=total_native,
         total_contrib_eur=total_eur,
         ytd_contrib_eur=ytd_eur,
         mtd_contrib_eur=mtd_eur,
-        interest_ytd_eur=interest_ytd_eur,
         total_contrib_usd=total_usd,
         ytd_contrib_usd=ytd_usd,
         mtd_contrib_usd=mtd_usd,
-        interest_ytd_usd=interest_ytd_usd,
     )

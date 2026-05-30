@@ -111,6 +111,48 @@ def list_ledger_rows(
     return [_format_record(r) for r in list_ledger_records(session, filters, fx_rate=fx_rate)]
 
 
+@dataclass(frozen=True)
+class LedgerSummary:
+    """Top-of-page KPI numbers for the Transactions ledger.
+
+    ``avg_trade_size_*`` is the mean absolute net amount across *trade*
+    rows (buys + sells), which is the figure users intuitively read as
+    "average trade size"; cash-only rows are excluded so a string of
+    small deposits doesn't drag the number down.
+    """
+
+    count: int
+    buy_count: int
+    sell_count: int
+    avg_trade_size_eur: Decimal
+    avg_trade_size_usd: Decimal
+
+
+def summarize_ledger(
+    session: Session,
+    filters: LedgerFilters | None = None,
+    *,
+    fx_rate: Decimal | None = None,
+) -> LedgerSummary:
+    """Aggregate KPI figures for the (optionally filtered) ledger."""
+    records = list_ledger_records(session, filters, fx_rate=fx_rate)
+    count = len(records)
+    buy_count = sum(1 for r in records if r.kind == "buy")
+    sell_count = sum(1 for r in records if r.kind == "sell")
+    trades = [r for r in records if r.kind in ("buy", "sell")]
+    eur_amounts = [abs(r.net_eur) for r in trades if r.net_eur is not None]
+    usd_amounts = [abs(r.net_usd) for r in trades if r.net_usd is not None]
+    avg_eur = (sum(eur_amounts, Decimal(0)) / len(eur_amounts)) if eur_amounts else Decimal(0)
+    avg_usd = (sum(usd_amounts, Decimal(0)) / len(usd_amounts)) if usd_amounts else Decimal(0)
+    return LedgerSummary(
+        count=count,
+        buy_count=buy_count,
+        sell_count=sell_count,
+        avg_trade_size_eur=avg_eur,
+        avg_trade_size_usd=avg_usd,
+    )
+
+
 def _to_record(t: Transaction, *, fx_rate: Decimal | None = None) -> LedgerRecord:
     account: Account | None = t.account  # type: ignore[assignment]
     instrument: Instrument | None = t.instrument  # type: ignore[assignment]
