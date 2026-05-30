@@ -12,9 +12,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
-## [2.7.1] — Unreleased
+## [2.7.2] — Unreleased
 
 ### Fixed
+- **Installer and portable bundle verified working end-to-end.** The
+  Windows one-file installer (`InvestmentDashboard-Setup.exe`) and the
+  portable bundle (`InvestmentDashboard-Portable.zip`) were re-tested top to
+  bottom against a freshly built wheel: the standalone `launcher.py` /
+  `portable_launcher.py` import with **no** `installer` package on
+  `sys.path`, boot creates the full schema via the `create_all` fallback
+  when Alembic is unavailable, and the dashboard server starts and serves
+  `/` and `/overview` successfully. This is the first release in which both
+  distribution channels are confirmed fully functional.
+
+### Fixed (carried over from 2.7.1)
 - **Installed app now starts (release flow works end-to-end).** Two
   release-only bugs that left the installed program broken on launch are
   fixed:
