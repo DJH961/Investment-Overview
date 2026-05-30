@@ -1,4 +1,4 @@
-"""Yearly page (spec §8.5) — yearly aggregation table + bar chart + projection."""
+"""Yearly page (spec §8.5) — yearly aggregation table + cumulative growth line."""
 
 from __future__ import annotations
 
@@ -8,14 +8,10 @@ from nicegui import ui
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.services import display_currency_service
-from investment_dashboard.services.metrics_service import compute_portfolio_metrics
 from investment_dashboard.ui.components import page_header, section
-from investment_dashboard.ui.components.kpi_card import dual_kpi_card
 from investment_dashboard.ui.layout import page_frame
-from investment_dashboard.ui.money_format import dual_pct, fmt_money
+from investment_dashboard.ui.money_format import currency_symbol
 from investment_dashboard.ui.pages._period_query import aggregate, to_table_rows
-from investment_dashboard.ui.pages._projection_view import build_seed
-from investment_dashboard.ui.pages._projection_view import render as render_projection
 
 PATH = "/yearly"
 
@@ -46,36 +42,45 @@ def _money_columns(label: str, field: str, primary: str) -> list[dict[str, str]]
 
 
 def _figure(rows, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no-untyped-def]
-    """Yearly Modified-Dietz growth, in the currently selected display currency.
+    """Cumulative portfolio value as a line over time, in display currency.
 
-    v2.2's chart stacked contributions + dividends — useful, but the
-    same numbers are in the table below. v2.4 replaces it with the
-    per-year growth % so the user sees the metric they actually came
-    here to see, and so the chart shifts when the EUR ↔ USD toggle
-    flips (because each row's ``growth_pct_display`` comes from per-
-    trade-date FX in :mod:`_period_query`).
+    The user asked to replace the per-year growth *bars* with a line
+    chart "to see how it goes up over time" — a full growth-over-time
+    trajectory. We plot the end-of-year mark-to-market portfolio value
+    (the ``closing_value`` series), which rises as the portfolio grows.
+    It is FX-aware: ``closing_value_display`` (per-period-end FX) is
+    used when present, otherwise the EUR value is scaled by today's spot.
     """
     import plotly.graph_objects as go  # noqa: PLC0415
 
     fig = go.Figure()
     if rows:
         labels = [r.label for r in rows]
-        pct_values: list[float] = []
+        values: list[float] = []
         for r in rows:
-            growth = r.growth_pct_display if r.growth_pct_display is not None else r.growth_pct
-            pct_values.append(float(growth) * 100.0 if growth is not None else 0.0)
-        colors = ["#0072B2" if v >= 0 else "#E69F00" for v in pct_values]
-        fig.add_bar(
+            if r.closing_value_display is not None:
+                value = r.closing_value_display
+            elif currency.upper() == "EUR" or fx_rate is None or fx_rate == 0:
+                value = r.closing_value_eur
+            else:
+                value = r.closing_value_eur * fx_rate
+            values.append(float(value))
+        fig.add_scatter(
             x=labels,
-            y=pct_values,
-            name="Growth %",
-            marker_color=colors,
+            y=values,
+            mode="lines+markers",
+            name=f"Portfolio value ({currency})",
+            line={"width": 2.5, "color": "#0072B2"},
+            marker={"size": 7},
+            fill="tozeroy",
+            fillcolor="rgba(0,114,178,0.08)",
         )
     fig.update_layout(
-        title=f"Yearly growth % ({currency})",
+        title=f"Portfolio value over time ({currency})",
         template="colorblind_modern",
-        margin={"l": 40, "r": 20, "t": 40, "b": 40},
-        yaxis={"ticksuffix": " %"},
+        margin={"l": 60, "r": 20, "t": 40, "b": 50},
+        xaxis={"title": "Year"},
+        yaxis={"title": f"Value ({currency})"},
     )
     return fig
 
@@ -84,35 +89,14 @@ def register() -> None:
     @ui.page(PATH)
     def _yearly() -> None:  # pragma: no cover
         with page_frame("Yearly Growth", current=PATH):
-            page_header("Yearly Growth", subtitle="Annual aggregation and long-term projection")
+            page_header("Yearly Growth", subtitle="Annual aggregation and growth over time")
             with session_scope() as session:
                 display_ccy = display_currency_service.get_display_currency(session)
                 rows = aggregate(session, monthly=False, display_currency=display_ccy)
                 display_quote = display_ccy if display_ccy != "EUR" else "USD"
                 fx_rate = display_currency_service.current_rate(session, quote=display_quote)
-                metrics = compute_portfolio_metrics(session)
-                projection_seed = build_seed(session, monthly=False, primary=display_ccy)
-            # v2.5 KPI strip.
-            with ui.row().classes("gap-md flex-wrap"):
-                dual_kpi_card(
-                    "Total Growth",
-                    fmt_money(metrics.total_value_eur, "EUR"),
-                    fmt_money(metrics.total_value_usd, "USD"),
-                    primary=display_ccy,
-                    growth_pct=dual_pct(
-                        metrics.total_growth_compounded_eur,
-                        metrics.total_growth_compounded_usd,
-                        primary=display_ccy,
-                    ),
-                    tooltip_key="total_growth_compounded",
-                )
-                dual_kpi_card(
-                    "Years",
-                    str(len(rows)),
-                    str(len(rows)),
-                    primary=display_ccy,
-                )
-            with section("Growth per year"):
+            sym = currency_symbol(display_ccy)
+            with section("Growth over time"):
                 ui.plotly(_figure(rows, currency=display_ccy, fx_rate=fx_rate)).classes(
                     "w-full h-[40vh]",
                 )
@@ -146,6 +130,9 @@ def register() -> None:
                         "defaultColDef": {"resizable": True, "sortable": True},
                     }
                 ).classes("ag-theme-alpine w-full h-[50vh]")
-
-            with section("Projection"):
-                render_projection(projection_seed)
+                ui.label(
+                    f"Values shown in {display_ccy} ({sym}). Closing value is end-of-year "
+                    "mark-to-market (best-effort if prices are missing). Total Growth is "
+                    "cumulative (1 + XIRR) ^ years to the end of the row, per currency; "
+                    "the trailing Growth % column is the per-period Modified Dietz return.",
+                ).classes("text-caption opacity-70")

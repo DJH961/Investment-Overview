@@ -117,3 +117,18 @@ def test_to_table_rows_includes_dual_total_growth_columns(session: Session) -> N
         # Either a formatted "x %" or the em-dash when not computable.
         assert r["total_growth_eur"].endswith("%") or r["total_growth_eur"] == "—"
         assert r["total_growth_usd"].endswith("%") or r["total_growth_usd"] == "—"
+
+
+def test_fill_gaps_pads_contiguous_calendar_months(session: Session) -> None:
+    _seed(session)
+    rows = aggregate(session, monthly=True, with_closing_value=False, fill_gaps=True)
+    labels = [r.label for r in rows]
+    # Padded from January of the first active year (2024) through the
+    # last active month (2025-03), every month present and contiguous.
+    assert labels[0] == "2024-01"
+    assert labels[-1] == "2025-03"
+    assert len(labels) == 15  # 12 (2024) + 3 (2025)
+    # A padded month carries zeroed cashflows.
+    feb_2025 = next(r for r in rows if r.label == "2025-02")
+    assert feb_2025.contributions == Decimal("0")
+    assert feb_2025.net_flow == Decimal("0")
