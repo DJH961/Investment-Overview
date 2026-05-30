@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import plotly.graph_objects as go
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
@@ -18,13 +19,16 @@ from investment_dashboard.ui.components.kpi_card import dual_kpi_card
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import dual_pct, fmt_money
 from investment_dashboard.ui.pages._overview_query import (
+    VALUE_RANGES,
     MarketVerdict,
     allocation_treemap,
+    build_value_series,
     compute_instrument_metrics,
     compute_market_verdict,
     get_metrics,
     get_positions,
     position_rows,
+    resolve_range_days,
 )
 from investment_dashboard.ui.theme import (
     GAIN_COLOR,
@@ -84,8 +88,6 @@ def _verdict_card(verdict: MarketVerdict) -> None:
 
 
 def _treemap_figure(data, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no-untyped-def]
-    import plotly.graph_objects as go  # noqa: PLC0415
-
     if not data:
         return go.Figure().update_layout(
             title=f"Allocation by category ({currency})",
@@ -114,17 +116,71 @@ def _treemap_figure(data, *, currency: str, fx_rate: Decimal | None):  # type: i
     return fig
 
 
+def _value_curve_figure(points, *, currency: str):  # type: ignore[no-untyped-def]
+    """Classic portfolio-value line graph over the selected time range."""
+    fig = go.Figure()
+    if points:
+        fig.add_trace(
+            go.Scatter(
+                x=[p.date for p in points],
+                y=[float(p.value) for p in points],
+                mode="lines",
+                name=f"Portfolio value ({currency})",
+                line={"width": 2.4, "color": GAIN_COLOR},
+                fill="tozeroy",
+            )
+        )
+    fig.update_layout(
+        title=f"Portfolio value over time ({currency})",
+        template="colorblind_modern",
+        margin={"l": 0, "r": 0, "t": 40, "b": 0},
+        yaxis={"title": currency},
+        showlegend=False,
+    )
+    return fig
+
+
+def _on_value_range_change(label: str) -> None:  # pragma: no cover - UI callback
+    ui.navigate.to(f"{PATH}?value_range={label}")
+
+
+def _value_over_time_section(value_series, *, range_label, display_ccy):  # type: ignore[no-untyped-def]
+    """Render the value-over-time line chart + Day/Month/Year/All selector."""
+    with section("Value over time"):
+        with ui.row().classes("items-center gap-sm"):
+            ui.label("Range:").classes("text-caption opacity-70")
+            ui.toggle(
+                [name for name, _ in VALUE_RANGES],
+                value=range_label,
+                on_change=lambda e: _on_value_range_change(str(e.value)),
+            ).props("dense unelevated no-caps")
+        if not value_series:
+            empty_state(
+                "show_chart",
+                "No value history yet",
+                hint="Import transactions or wait for the daily snapshot to populate.",
+            )
+        else:
+            ui.plotly(_value_curve_figure(value_series, currency=display_ccy)).classes(
+                "w-full"
+            ).style("height:360px")
+
+
 def register() -> None:
     @ui.page(PATH)
-    def _overview() -> None:  # pragma: no cover - rendered by NiceGUI
+    def _overview(value_range: str | None = None) -> None:  # pragma: no cover - rendered by NiceGUI
         with page_frame("Overview", current=PATH):
             page_header("Overview", subtitle="Portfolio at a glance")
+            range_label, _ = resolve_range_days(value_range)
             with session_scope() as session:
                 metrics = get_metrics(session)
                 positions = get_positions(session)
                 instrument_metrics = compute_instrument_metrics(session, positions)
                 verdict = compute_market_verdict(session, portfolio_return=metrics.total_growth_pct)
                 display_ccy = display_currency_service.get_display_currency(session)
+                value_series = build_value_series(
+                    session, currency=display_ccy, range_label=range_label
+                )
                 # Display-currency FX (EUR→display). For EUR display we
                 # still fetch EUR→USD so the secondary USD column on the
                 # positions table stays populated; for USD display
@@ -248,6 +304,9 @@ def register() -> None:
                     f"FX (EUR→{display_quote}): {fx_rate:,.4f}  ·  "
                     f"Display currency: {display_ccy} (switch from the header toggle)",
                 ).classes("text-caption opacity-70")
+
+            _value_over_time_section(value_series, range_label=range_label, display_ccy=display_ccy)
+
             if not rows:
                 empty_state(
                     "insights",

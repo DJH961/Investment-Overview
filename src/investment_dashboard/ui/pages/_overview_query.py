@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.domain.returns import Cashflow, xirr
 from investment_dashboard.models import TransactionKind
 from investment_dashboard.repositories import transactions_repo
+from investment_dashboard.services import snapshots_service
 from investment_dashboard.services.metrics_service import (
     PortfolioMetrics,
     compute_portfolio_metrics,
@@ -23,6 +24,76 @@ from investment_dashboard.services.positions_service import (
 from investment_dashboard.ui.money_format import dual_money
 
 ZERO = Decimal(0)
+
+#: Time-range options for the Overview value-over-time chart. ``None`` means
+#: "all time" (start at the first transaction). Labels match the user's
+#: requested Day / Month / Year / All selections.
+VALUE_RANGES: tuple[tuple[str, int | None], ...] = (
+    ("Day", 1),
+    ("Month", 30),
+    ("Year", 365),
+    ("All", None),
+)
+_DEFAULT_RANGE = "Year"
+
+
+@dataclass(frozen=True)
+class ValueSeriesPoint:
+    """One point on the Overview portfolio-value line graph."""
+
+    date: date
+    value: Decimal
+
+
+def resolve_range_days(label: str | None) -> tuple[str, int | None]:
+    """Map a range query-param to ``(canonical_label, lookback_days|None)``."""
+    if label is not None:
+        wanted = label.strip().capitalize()
+        for name, days in VALUE_RANGES:
+            if name == wanted:
+                return name, days
+    for name, days in VALUE_RANGES:
+        if name == _DEFAULT_RANGE:
+            return name, days
+    return VALUE_RANGES[0]
+
+
+def _earliest_transaction_date(session: Session) -> date | None:
+    txns = transactions_repo.list_transactions(session)
+    return txns[0].date if txns else None
+
+
+def build_value_series(
+    session: Session,
+    *,
+    currency: str,
+    range_label: str | None = None,
+    as_of: date | None = None,
+) -> list[ValueSeriesPoint]:
+    """Daily portfolio-value series for the selected range, in ``currency``.
+
+    Uses the read-through snapshot cache, so historical days are O(1) and —
+    now that historical valuations price with the as-of close (v2.8 item 1) —
+    the curve reflects how the portfolio actually moved rather than today's
+    prices projected backwards. Returns ``[]`` when there is no history.
+    """
+    end = as_of or date.today()
+    _, days = resolve_range_days(range_label)
+    if days is None:
+        start = _earliest_transaction_date(session)
+        if start is None:
+            return []
+    else:
+        start = end - timedelta(days=days)
+    start = min(start, end)
+
+    points: list[ValueSeriesPoint] = []
+    day = start
+    while day <= end:
+        value = snapshots_service.get_or_compute_in_currency(session, day, currency)
+        points.append(ValueSeriesPoint(date=day, value=value))
+        day += timedelta(days=1)
+    return points
 
 
 @dataclass(frozen=True)
