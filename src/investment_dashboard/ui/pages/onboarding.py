@@ -19,6 +19,7 @@ import logging
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
+from investment_dashboard.repositories import app_config_repo
 from investment_dashboard.services.onboarding_service import (
     DEFAULT_ACCOUNTS,
     DEFAULT_INSTRUMENTS,
@@ -133,6 +134,73 @@ def _validated_ticker_card() -> None:  # pragma: no cover - UI
         add_button.on("click", _add)
 
 
+def _cloud_link_card() -> None:  # pragma: no cover - UI
+    """Let the user choose where their data syncs, during first-run setup.
+
+    The ledger + config tiers live under this folder (the cache always
+    stays local). By default the app auto-detects a consumer-cloud folder
+    (OneDrive, iCloud, Dropbox, Google Drive); here the user can override
+    that with any folder they like — e.g. a different provider, or a plain
+    local path if they don't want OneDrive. The choice is persisted into
+    ``app_config`` so the resolver honours it on the next launch.
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    from investment_dashboard.storage import resolve_storage_layout  # noqa: PLC0415
+    from investment_dashboard.storage.cloud import detect_cloud_sync_root  # noqa: PLC0415
+
+    with ui.element("div").classes("inv-section min-w-[22rem] max-w-[28rem]"):
+        ui.html('<div class="inv-section-title">Choose your cloud / sync folder</div>')
+        detected = detect_cloud_sync_root()
+        if detected is not None:
+            ui.label(
+                f"Auto-detected {detected.provider} at {detected.root}. "
+                "Leave the box blank to use it, or set a different folder "
+                "below (e.g. another cloud provider or a local folder).",
+            ).classes("text-body2 opacity-80")
+        else:
+            ui.label(
+                "No cloud folder detected. Set a folder below to sync your "
+                "ledger and config files, or leave blank to keep them local.",
+            ).classes("text-body2 opacity-80")
+
+        layout = resolve_storage_layout()
+        current_folder = str(layout.ledger.path.parent) if layout.ledger.path is not None else ""
+        folder_in = (
+            ui.input("Sync folder", value=current_folder, placeholder="/path/to/cloud/folder")
+            .props("dense outlined")
+            .classes("w-full font-mono")
+        )
+
+        def _save() -> None:
+            folder = (folder_in.value or "").strip()
+            try:
+                with session_scope() as session:
+                    if not folder:
+                        app_config_repo.set_value(session, "ledger_path", None)
+                        app_config_repo.set_value(session, "config_path", None)
+                    else:
+                        base = Path(folder).expanduser()
+                        app_config_repo.set_value(
+                            session, "ledger_path", str(base / "ledger.sqlite")
+                        )
+                        app_config_repo.set_value(
+                            session, "config_path", str(base / "config.sqlite")
+                        )
+            except Exception as exc:
+                log.exception("Save sync folder failed")
+                ui.notify(f"Could not save sync folder: {exc}", type="negative")
+                return
+            ui.notify(
+                "Sync folder saved — restart the app for it to take effect.",
+                type="positive",
+            )
+
+        ui.button("Save sync folder", icon="cloud_sync", on_click=_save).props(
+            "unelevated color=primary no-caps"
+        ).classes("q-mt-md")
+
+
 def register() -> None:
     @ui.page(PATH)
     def _onboarding() -> None:  # pragma: no cover - rendered by NiceGUI
@@ -194,3 +262,5 @@ def register() -> None:
                     ).props("flat no-caps").classes("q-mt-xs")
 
                 _validated_ticker_card()
+
+                _cloud_link_card()
