@@ -2,11 +2,48 @@
 
 from __future__ import annotations
 
+import importlib.util
+import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 from installer import launcher
+
+_LAUNCHER_SOURCE = Path(launcher.__file__).resolve()
+
+
+def _load_launcher_standalone(module_name: str) -> ModuleType:
+    """Load ``installer/launcher.py`` by path with the ``installer`` package blocked.
+
+    ``installer.bootstrap.write_launcher`` copies *only* ``launcher.py`` into
+    the user's install root — the ``installer`` package is never installed
+    next to the dashboard wheel. Setting ``sys.modules['installer'] = None``
+    forces any ``import installer`` to raise ``ModuleNotFoundError`` so this
+    test fails loudly if the launcher ever regains a dependency on the
+    package (the root cause of the "installed program does not start" bug).
+    """
+    spec = importlib.util.spec_from_file_location(module_name, _LAUNCHER_SOURCE)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_launcher_imports_without_installer_package(monkeypatch) -> None:
+    monkeypatch.setitem(sys.modules, "installer", None)
+    monkeypatch.setitem(sys.modules, "installer.paths", None)
+    monkeypatch.setitem(sys.modules, "installer.version", None)
+
+    standalone = _load_launcher_standalone("standalone_launcher")
+
+    # The inlined helpers must be present and behave like the originals.
+    assert standalone.PROJECT_NAME == "investment-dashboard"
+    assert standalone.is_newer("v2.2.0", "2.1.0") is True
+    assert standalone.pip_install_target("v2.1.0", None).endswith("v2.1.0.tar.gz")
+    assert standalone.version_state_path(Path("/x")) == Path("/x") / "installed_version.txt"
 
 
 def test_pip_install_target_prefers_wheel_url() -> None:

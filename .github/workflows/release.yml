@@ -99,6 +99,19 @@ jobs:
       - name: Build one-file installer
         run: pyinstaller --clean --noconfirm installer/installer.spec
 
+      - name: Smoke-test the built installer packaging
+        # Run the freshly built Windows .exe in offline self-test mode so the
+        # release actually exercises the real frozen executable: it must
+        # extract and resolve its bundled dashboard wheel and launcher.py
+        # from the one-file bundle. This catches "release-only" packaging
+        # regressions (missing wheel, missing launcher data file, broken
+        # hidden imports) before the artifact is published, without needing
+        # the network or the embeddable interpreter. A non-zero exit fails
+        # the release.
+        env:
+          INV_DASHBOARD_INSTALLER_SELFTEST: "1"
+        run: .\dist\InvestmentDashboard-Setup.exe
+
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:

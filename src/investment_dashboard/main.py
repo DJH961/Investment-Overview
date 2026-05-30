@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+import threading
 
 from nicegui import ui
 
 from investment_dashboard import __version__
-from investment_dashboard.boot import run_boot_sequence
+from investment_dashboard.boot import run_boot_sequence, run_deferred_network_refresh
 from investment_dashboard.config import get_settings
 from investment_dashboard.logging import configure_logging
 from investment_dashboard.ui import style as ui_style
@@ -72,6 +73,22 @@ def _live_refresh_tick() -> None:  # pragma: no cover - background loop
         log.warning("live price refresh tick failed", exc_info=True)
 
 
+def _start_deferred_network_refresh() -> None:
+    """Kick off the best-effort FX/price refresh on a background daemon thread.
+
+    Keeping the network work off the startup path lets ``ui.run(show=True)``
+    open the browser immediately instead of leaving the user waiting at the
+    console while rates and prices download. The thread is a daemon so it
+    never keeps the process alive on shutdown.
+    """
+    thread = threading.Thread(
+        target=run_deferred_network_refresh,
+        name="inv-dashboard-startup-refresh",
+        daemon=True,
+    )
+    thread.start()
+
+
 def run() -> None:
     configure_logging()
     settings = get_settings()
@@ -81,7 +98,9 @@ def run() -> None:
         settings.host,
         settings.port,
     )
-    run_boot_sequence()
+    # Run only the fast, offline portion of boot synchronously so the UI is
+    # served right away; the slow network refresh happens in the background.
+    run_boot_sequence(skip_network=True)
     _register_pages()
     if settings.api_enabled:
         from nicegui import app as _fastapi_app  # noqa: PLC0415
@@ -90,6 +109,7 @@ def run() -> None:
 
         mount_api(_fastapi_app)
         log.info("JSON API mounted at /api (token auth %s)", "on" if settings.api_token else "off")
+    _start_deferred_network_refresh()
     ui.timer(_LIVE_REFRESH_INTERVAL_SECONDS, _live_refresh_tick)
     ui.run(
         host=settings.host,

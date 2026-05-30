@@ -34,6 +34,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import traceback
 import zipfile
 from pathlib import Path
@@ -63,6 +64,15 @@ EMBED_PYTHON_URL = (
 )
 GET_PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
 NETWORK_TIMEOUT_SECONDS = 60
+
+#: Setting this environment variable makes :func:`main` run an offline
+#: packaging smoke-test (:func:`self_test`) instead of a real install. The
+#: release CI runs the freshly built ``InvestmentDashboard-Setup.exe`` with
+#: this flag right after PyInstaller produces it, so every release verifies
+#: the *actual Windows executable* extracts and resolves its bundled wheel
+#: and ``launcher.py`` — without downloading the embeddable interpreter or
+#: touching the network.
+SELFTEST_ENV = "INV_DASHBOARD_INSTALLER_SELFTEST"
 
 
 def _download(url: str) -> bytes:
@@ -308,7 +318,54 @@ def install(install_root: Path | None = None) -> int:
     return 0
 
 
+def self_test() -> int:
+    """Offline smoke-test of the frozen installer's bundled payload.
+
+    Run by the release CI immediately after PyInstaller builds
+    ``InvestmentDashboard-Setup.exe`` (and runnable on the frozen binary on
+    any platform) to prove the one-file executable is internally complete
+    **without** downloading the embeddable interpreter or hitting the
+    network. It verifies the two assets that must travel inside the
+    executable and that earlier releases shipped broken:
+
+    * the bundled dashboard wheel (``bundled_wheels/*.whl``), and
+    * the steady-state ``launcher.py`` data file,
+
+    resolving both exactly the way :func:`install` does at run time (via
+    ``sys._MEIPASS`` when frozen). Returns ``0`` on success and ``1`` on any
+    problem, printing a single-line verdict either way. No shortcuts are
+    created and nothing is installed, so the check is side-effect free.
+    """
+    frozen = bool(getattr(sys, "frozen", False))
+    print(f"Running installer packaging self-test (frozen={frozen}) ...", flush=True)
+
+    wheel = bundled_wheel()
+    if wheel is None:
+        print("SELF-TEST FAILED: no bundled dashboard wheel found in the package.", flush=True)
+        return 1
+    print(f"  bundled wheel: {wheel.name}", flush=True)
+
+    scratch = Path(tempfile.mkdtemp(prefix="inv-installer-selftest-"))
+    try:
+        write_launcher(scratch)
+        launcher = launcher_path(scratch)
+        if not launcher.is_file() or launcher.stat().st_size == 0:
+            print("SELF-TEST FAILED: launcher.py was not written from the package.", flush=True)
+            return 1
+        print(f"  launcher.py extracted ({launcher.stat().st_size} bytes)", flush=True)
+    except OSError as exc:
+        print(f"SELF-TEST FAILED: could not write launcher.py ({exc!r}).", flush=True)
+        return 1
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+    print("SELF-TEST OK: installer packaging is complete.", flush=True)
+    return 0
+
+
 def main() -> int:
+    if os.environ.get(SELFTEST_ENV):
+        return self_test()
     try:
         return install()
     except KeyboardInterrupt:

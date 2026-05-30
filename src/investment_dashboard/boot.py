@@ -221,21 +221,40 @@ def _rolling_backup() -> None:
 
 
 def _run_migrations() -> None:
-    """Run ``alembic upgrade head`` programmatically.
+    """Bring the database schema up to date.
 
-    Until per-tier Alembic version tables ship (rework v2.0 Phase 2
-    follow-up), we run the single migration tree once against the
-    ledger URL. This is correct as long as all three tiers point at
-    the same file. When split, the ``split_db`` tool stamps each tier
-    file with ``create_all``; per-tier Alembic stamping will land in a
-    follow-up.
+    In a development / editable checkout ``alembic.ini`` and the
+    ``migrations/`` tree sit next to the package, so we run
+    ``alembic upgrade head`` for a faithful, incremental migration.
+
+    The packaged Windows installer and the portable bundle ship **only**
+    the ``investment_dashboard`` wheel — ``alembic.ini`` and the migration
+    scripts are not part of the wheel. In that case there is nothing for
+    Alembic to run, which historically left a freshly installed app with
+    an empty database: every page then failed with ``no such table``. To
+    make the release usable start-to-finish we fall back to creating the
+    current schema directly with ``create_all`` across every storage tier.
+    ``create_all`` only creates missing tables, so it is a safe no-op once
+    Alembic has built the schema in a dev checkout.
+    """
+    if not _run_alembic_upgrade():
+        _ensure_schema_present()
+
+
+def _run_alembic_upgrade() -> bool:
+    """Run ``alembic upgrade head``. Returns ``True`` only if it actually ran.
+
+    Returns ``False`` (without raising) when Alembic is not importable or
+    when ``alembic.ini`` cannot be located — the two situations that occur
+    in the packaged installer/portable bundle, where the caller falls back
+    to :func:`_ensure_schema_present`.
     """
     try:
         from alembic import command  # noqa: PLC0415
         from alembic.config import Config  # noqa: PLC0415
     except ImportError:
-        log.warning("alembic not installed; skipping migrations")
-        return
+        log.warning("alembic not installed; will create schema directly")
+        return False
 
     # Locate alembic.ini at the repo root (three levels up from this file).
     pkg_root = Path(__file__).resolve().parent
@@ -245,8 +264,8 @@ def _run_migrations() -> None:
     ]
     ini_path = next((p for p in candidates if p.exists()), None)
     if ini_path is None:
-        log.warning("alembic.ini not found; skipping migrations")
-        return
+        log.warning("alembic.ini not found; will create schema directly")
+        return False
 
     cfg = Config(str(ini_path))
     settings = get_settings()
@@ -259,6 +278,32 @@ def _run_migrations() -> None:
     cfg.set_main_option("sqlalchemy.url", settings.ledger_url)
     command.upgrade(cfg, "head")
     log.info("Alembic upgrade head applied")
+    return True
+
+
+def _ensure_schema_present() -> None:
+    """Create the current ORM schema directly, one storage tier at a time.
+
+    Used when Alembic migrations are unavailable (the packaged installer /
+    portable bundle). ``create_all`` is idempotent — it only emits
+    ``CREATE TABLE`` for tables that do not yet exist — so a partially
+    populated database keeps its data while gaining any missing tables.
+    """
+    from investment_dashboard.db import (  # noqa: PLC0415
+        get_cache_engine,
+        get_config_engine,
+        get_ledger_engine,
+    )
+    from investment_dashboard.models.base import (  # noqa: PLC0415
+        CacheBase,
+        ConfigBase,
+        LedgerBase,
+    )
+
+    LedgerBase.metadata.create_all(get_ledger_engine())
+    ConfigBase.metadata.create_all(get_config_engine())
+    CacheBase.metadata.create_all(get_cache_engine())
+    log.info("Database schema ensured via create_all (Alembic migrations unavailable)")
 
 
 def _run_cache_janitor() -> None:
@@ -312,7 +357,9 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
 
     Args:
         skip_network: if ``True``, skip FX/price refresh (useful for tests
-            and offline development).
+            and offline development). :func:`main.run` passes ``True`` and
+            instead runs :func:`run_deferred_network_refresh` on a
+            background thread so the UI opens immediately.
     """
     _apply_encryption()
     _apply_resolved_layout()
@@ -326,5 +373,23 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
     if skip_network:
         log.info("skip_network=True — not refreshing FX or prices")
         return
+    _refresh_fx()
+    _refresh_prices()
+
+
+def run_deferred_network_refresh() -> None:
+    """Best-effort FX + price refresh meant to run *after* the server starts.
+
+    Pulling fresh FX rates and market prices is the slowest part of boot and
+    needs the network, which previously blocked the browser from opening: the
+    user stared at the console while the refresh ran. ``main.run`` now runs the
+    fast, offline portion of the boot sequence synchronously, opens the UI
+    immediately, and calls this helper on a background daemon thread. The page
+    renders straight away from cached data and quietly updates once the refresh
+    lands (the periodic live-refresh timer keeps it current thereafter).
+
+    Like the in-sequence refresh it is best-effort: every failure is logged and
+    swallowed so an offline machine still gets a working dashboard.
+    """
     _refresh_fx()
     _refresh_prices()

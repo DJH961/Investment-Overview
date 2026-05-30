@@ -151,3 +151,38 @@ def test_write_launcher_falls_back_to_repo_checkout(tmp_path, monkeypatch) -> No
     assert copied.is_file()
     # Sanity check: the real launcher module header is present.
     assert "launcher" in copied.read_text().lower()
+
+
+def test_self_test_passes_when_wheel_and_launcher_bundled(tmp_path, monkeypatch) -> None:
+    """The frozen-packaging smoke-test succeeds when both assets resolve.
+
+    This mirrors what the release CI runs against the real
+    ``InvestmentDashboard-Setup.exe``: a bundled wheel must be found and
+    ``launcher.py`` must be writable from the packaged source.
+    """
+    wheel = _touch_wheel(tmp_path / "wheels", "2.7.2")
+    monkeypatch.setattr(bootstrap, "bundled_wheel", lambda: wheel)
+    # Resolve launcher.py from the real repo checkout (no _MEIPASS).
+    monkeypatch.delattr(bootstrap.sys, "_MEIPASS", raising=False)
+
+    assert bootstrap.self_test() == 0
+
+
+def test_self_test_fails_when_no_wheel_bundled(monkeypatch) -> None:
+    """A missing bundled wheel must make the smoke-test fail (non-zero)."""
+    monkeypatch.setattr(bootstrap, "bundled_wheel", lambda: None)
+
+    assert bootstrap.self_test() == 1
+
+
+def test_main_runs_self_test_when_env_set(monkeypatch) -> None:
+    """``main`` short-circuits to the self-test when the env flag is set."""
+    monkeypatch.setenv(bootstrap.SELFTEST_ENV, "1")
+
+    def _no_install(*_: object, **__: object) -> int:
+        raise AssertionError("install() must not run in self-test mode")
+
+    monkeypatch.setattr(bootstrap, "install", _no_install)
+    monkeypatch.setattr(bootstrap, "self_test", lambda: 0)
+
+    assert bootstrap.main() == 0
