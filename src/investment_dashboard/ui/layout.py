@@ -64,7 +64,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
 
 
 #: Pages where automatic "no accounts → /onboarding" redirect is skipped.
-_ONBOARDING_BYPASS_PATHS: frozenset[str] = frozenset({"/onboarding", "/settings"})
+_ONBOARDING_BYPASS_PATHS: frozenset[str] = frozenset({"/onboarding", "/settings", "/help"})
 
 
 def _on_currency_change(value: str) -> None:  # pragma: no cover - UI callback
@@ -150,6 +150,10 @@ def _header(title: str, *, current_currency: str, dark: ui.dark_mode) -> None:
             theme_btn = ui.button(icon=_theme_icon(dark.value)).props("flat round dense")
             theme_btn.tooltip(_theme_tooltip(dark.value))
             theme_btn.on_click(lambda: _cycle_theme(dark, theme_btn))
+            ui.button(
+                icon="help_outline",
+                on_click=lambda: ui.navigate.to("/help"),
+            ).props("flat round dense").tooltip("Help & user guide")
             ui.button(
                 icon="refresh",
                 on_click=ui.navigate.reload,

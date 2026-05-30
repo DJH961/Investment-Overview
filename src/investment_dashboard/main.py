@@ -22,6 +22,9 @@ from investment_dashboard.ui.pages import (
     yearly,
 )
 from investment_dashboard.ui.pages import (
+    help as help_page,
+)
+from investment_dashboard.ui.pages import (
     settings as settings_page,
 )
 
@@ -46,6 +49,7 @@ def _register_pages() -> None:
     calculator.register()
     settings_page.register()
     onboarding.register()
+    help_page.register()
 
     @ui.page("/")
     def _root() -> None:  # pragma: no cover - simple redirect

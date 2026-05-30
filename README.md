@@ -122,6 +122,20 @@ uv run investment-dashboard      # launches NiceGUI on http://0.0.0.0:8080
 Open `http://localhost:8080` on the laptop, or `http://<laptop-LAN-IP>:8080`
 from a phone on the same Wi-Fi.
 
+### Using the app (help & user guide)
+
+Not sure what a screen or a setting does? The app ships with built-in help:
+
+- Click the **`?` icon** in the top-right header, or open **Settings → Help &
+  documentation**, to reach the in-app **Help & user guide** page. It explains
+  every page and walks through each Settings control in plain English.
+- Hover the small **ⓘ icon** next to any metric for a one-line explanation in
+  context.
+- The same walkthrough is available as a portable markdown file:
+  [`docs/user_guide.md`](docs/user_guide.md).
+
+You do not need to understand the maths to use the dashboard.
+
 ## Configuration
 
 All settings are env-vars prefixed `INV_DASHBOARD_` and can be set in a `.env`

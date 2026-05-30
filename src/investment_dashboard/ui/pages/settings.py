@@ -724,6 +724,20 @@ def _render_connectivity_section() -> None:  # pragma: no cover - UI
                     ui.label(ev.message).classes("text-caption")
 
 
+def _render_help_section() -> None:  # pragma: no cover - UI
+    ui.label(
+        "New to the dashboard, or unsure what a control does? Open the in-app "
+        "guide for a plain-English explanation of every page and every setting "
+        "on this screen.",
+    ).classes("text-caption opacity-70")
+    with ui.row().classes("gap-md q-mt-sm"):
+        ui.button(
+            "Open Help & user guide",
+            icon="help_outline",
+            on_click=lambda: ui.navigate.to("/help"),
+        ).props("unelevated color=primary no-caps")
+
+
 def register() -> None:
     @ui.page(PATH)
     def _settings() -> None:  # pragma: no cover
@@ -744,21 +758,62 @@ def register() -> None:
                 )
 
             with section("Display preferences"):
+                ui.label(
+                    "Controls how figures are shown across the app. These "
+                    "options change presentation only — they never alter your "
+                    "transactions or move money.",
+                ).classes("text-caption opacity-70 q-mb-sm")
                 _render_display_prefs(current_currency)
             with section("Analytics preferences"):
+                ui.label(
+                    "Inputs used by the risk metrics on the Analytics page. The "
+                    "benchmark is what your portfolio is compared against; the "
+                    "risk-free rate feeds Sharpe, Sortino and Alpha.",
+                ).classes("text-caption opacity-70 q-mb-sm")
                 _render_analytics_prefs(
                     benchmark_symbol=benchmark_symbol,
                     rf_snapshot=rf_snapshot,
                 )
             with section("Storage"):
+                ui.label(
+                    "Read-only view of where your data files live and whether "
+                    "encryption or cloud-sync is in effect. Nothing here is "
+                    "editable.",
+                ).classes("text-caption opacity-70 q-mb-sm")
                 _render_storage_section()
             with section("Data refresh"):
+                ui.label(
+                    "Pull fresh prices and FX rates on demand. The app also "
+                    "refreshes in the background, so use these only when you want "
+                    "the latest numbers right now.",
+                ).classes("text-caption opacity-70 q-mb-sm")
                 _render_data_refresh()
             with section("Connectivity"):
+                ui.label(
+                    "Whether the last call to each data provider succeeded. "
+                    "Green is good; check here if a refresh is not updating.",
+                ).classes("text-caption opacity-70 q-mb-sm")
                 _render_connectivity_section()
             with section("Accounts"):
+                ui.label(
+                    "Your brokerage and savings accounts. Mark an account "
+                    "inactive to keep its history while hiding it from the live "
+                    "view.",
+                ).classes("text-caption opacity-70 q-mb-sm")
                 _render_accounts_section(accounts)
             with section("Instruments"):
+                ui.label(
+                    "The funds, ETFs and cash lines you hold. The expense ratio "
+                    "is a decimal fraction (0.0007 = 0.07%); categories group "
+                    "instruments in allocation views.",
+                ).classes("text-caption opacity-70 q-mb-sm")
                 _render_instruments_section(instruments, instrument_overrides)
             with section("Target allocations"):
+                ui.label(
+                    "Your desired instrument mix by percentage (weights must sum "
+                    "to 100%). Activate one to drive the allocation-drift "
+                    "metrics; only one is active at a time.",
+                ).classes("text-caption opacity-70 q-mb-sm")
                 _render_allocations_section(allocations)
+            with section("Help & documentation"):
+                _render_help_section()
