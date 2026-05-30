@@ -156,7 +156,8 @@ def test_install_diagnostics_writes_log_and_redirects(monkeypatch, tmp_path: Pat
         sys.stderr.write("an error line\n")
     finally:
         sys.stdout, sys.stderr = saved_out, saved_err
-        stream.close()
+        if stream is not None:
+            stream.close()
 
     log = launcher.diagnostics_log_path(tmp_path).read_text(encoding="utf-8")
     assert "Investment Dashboard launcher started" in log
