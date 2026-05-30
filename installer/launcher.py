@@ -31,9 +31,11 @@ the installed ``investment_dashboard`` wheel.
 from __future__ import annotations
 
 import contextlib
+import datetime
 import importlib.metadata as importlib_metadata
 import json
 import os
+import platform
 import subprocess
 import sys
 import traceback
@@ -52,6 +54,29 @@ from urllib.request import Request, urlopen
 PROJECT_NAME = "investment-dashboard"
 APP_NAME = "InvestmentDashboard"
 VERSION_STATE_FILENAME = "installed_version.txt"
+
+#: The Start-menu / Desktop shortcut points ``pythonw.exe`` at this launcher.
+#: ``pythonw.exe`` has **no console**, so ``sys.stdout`` / ``sys.stderr`` are
+#: ``None`` and every ``print`` / traceback (from the launcher itself, from
+#: ``pip``, and from NiceGUI/uvicorn) is silently discarded — which is exactly
+#: why a broken install "never runs" with no visible error. The launcher
+#: therefore mirrors all of its output to this log file inside the install
+#: root so a failed start always leaves a diagnosable trail. Setting
+#: ``INV_DASHBOARD_LAUNCHER_DEBUG=1`` raises the dashboard log level to DEBUG.
+LAUNCHER_LOG_FILENAME = "launcher.log"
+
+#: Truncate the diagnostics log once it grows past this size so it never
+#: balloons across many launches. One launch's output is tiny, so this only
+#: trims accumulated history.
+_LOG_MAX_BYTES = 1_000_000
+
+_DEBUG_ENV = "INV_DASHBOARD_LAUNCHER_DEBUG"
+
+#: Original interpreter streams captured at import time. Under ``pythonw.exe``
+#: these are ``None``; under ``python.exe`` (a console diagnostic run) they are
+#: real streams we still want to write to in addition to the log file.
+_ORIGINAL_STDOUT = sys.stdout
+_ORIGINAL_STDERR = sys.stderr
 
 GITHUB_REPO = "DJH961/Investment-Overview"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
@@ -204,6 +229,94 @@ def resolve_latest_release(
 
 
 # ---------------------------------------------------------------------------
+# Diagnostics — capture output even when launched via ``pythonw.exe``
+# ---------------------------------------------------------------------------
+
+
+class _Tee:
+    """Minimal write-only stream that fans output out to several sinks.
+
+    Used to mirror ``sys.stdout`` / ``sys.stderr`` to the diagnostics log file
+    *and*, when present, to the real console stream. Every method is defensive:
+    a sink that is ``None`` or raises (e.g. the absent ``pythonw`` console) is
+    skipped so logging can never crash the launcher.
+    """
+
+    def __init__(self, *sinks: Any) -> None:
+        self._sinks = [sink for sink in sinks if sink is not None]
+
+    def write(self, data: str) -> int:
+        for sink in self._sinks:
+            with contextlib.suppress(Exception):
+                sink.write(data)
+        return len(data)
+
+    def flush(self) -> None:
+        for sink in self._sinks:
+            with contextlib.suppress(Exception):
+                sink.flush()
+
+    def isatty(self) -> bool:
+        return False
+
+
+def diagnostics_log_path(install_root: Path) -> Path:
+    """Location of the launcher diagnostics log inside ``install_root``."""
+    return install_root / LAUNCHER_LOG_FILENAME
+
+
+def _open_log_stream(install_root: Path) -> Any | None:
+    """Open (and size-cap) the diagnostics log. Returns ``None`` on failure."""
+    try:
+        install_root.mkdir(parents=True, exist_ok=True)
+        path = diagnostics_log_path(install_root)
+        with contextlib.suppress(OSError):
+            if path.exists() and path.stat().st_size > _LOG_MAX_BYTES:
+                path.unlink()
+        # Line-buffered so a hard crash still flushes the most recent lines.
+        return open(path, "a", encoding="utf-8", buffering=1)
+    except OSError:
+        return None
+
+
+def _log_environment(install_root: Path) -> None:
+    """Write a header describing the runtime so failures are diagnosable."""
+    stamp = datetime.datetime.now().isoformat(timespec="seconds")
+    print("=" * 72, flush=True)
+    print(f"Investment Dashboard launcher started {stamp}", flush=True)
+    print(f"  install root      : {install_root}", flush=True)
+    print(f"  python executable : {sys.executable}", flush=True)
+    print(f"  python version    : {sys.version.splitlines()[0]}", flush=True)
+    print(f"  platform          : {platform.platform()}", flush=True)
+    print(f"  argv              : {sys.argv}", flush=True)
+    print(f"  cwd               : {os.getcwd()}", flush=True)
+    print(f"  installed version : {installed_version() or '(not installed)'}", flush=True)
+    print("=" * 72, flush=True)
+
+
+def install_diagnostics(install_root: Path) -> Any | None:
+    """Redirect stdout/stderr to the diagnostics log and log the environment.
+
+    ``pythonw.exe`` provides no console, so without this every message and
+    traceback is lost and a broken install looks like it "does nothing".
+    Mirroring to a file (and to the console when one exists) means any failure
+    leaves a trail the user can report. Returns the opened log stream, or
+    ``None`` if the log could not be created (in which case the launcher still
+    runs — just without file diagnostics).
+    """
+    stream = _open_log_stream(install_root)
+    if stream is None:
+        return None
+    sys.stdout = _Tee(stream, _ORIGINAL_STDOUT)
+    sys.stderr = _Tee(stream, _ORIGINAL_STDERR)
+    if os.environ.get(_DEBUG_ENV):
+        os.environ.setdefault("INV_DASHBOARD_LOG_LEVEL", "DEBUG")
+    with contextlib.suppress(Exception):
+        _log_environment(install_root)
+    return stream
+
+
+# ---------------------------------------------------------------------------
 # Launcher logic
 # ---------------------------------------------------------------------------
 
@@ -283,23 +396,46 @@ def maybe_update(install_root: Path) -> str | None:
 
 
 def start_dashboard() -> int:
-    """Import and run the dashboard. Returns the process exit code."""
+    """Import and run the dashboard. Returns the process exit code.
+
+    Any failure here — a missing dependency in the embedded interpreter, a
+    port already in use, a NiceGUI/uvicorn startup error — is logged with a
+    full traceback rather than silently killing the (console-less) process.
+    """
     try:
         from investment_dashboard.main import run  # noqa: PLC0415
-    except ImportError:
+    except Exception:
+        print("Failed to import the dashboard application:", flush=True)
         traceback.print_exc()
         return 1
-    run()
+    try:
+        run()
+    except Exception:
+        print("The dashboard crashed while starting:", flush=True)
+        traceback.print_exc()
+        return 1
     return 0
 
 
 def main() -> int:
     install_root = default_install_root()
+    log_stream = install_diagnostics(install_root)
     try:
-        maybe_update(install_root)
+        try:
+            maybe_update(install_root)
+        except Exception:
+            print("Update check failed (continuing with installed version):", flush=True)
+            traceback.print_exc()
+        return start_dashboard()
     except Exception:
+        # Last-resort guard so nothing escapes unlogged under pythonw.exe.
+        print("Unexpected launcher failure:", flush=True)
         traceback.print_exc()
-    return start_dashboard()
+        return 1
+    finally:
+        if log_stream is not None:
+            with contextlib.suppress(Exception):
+                log_stream.flush()
 
 
 if __name__ in {"__main__", "__mp_main__"}:

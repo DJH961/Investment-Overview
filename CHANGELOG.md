@@ -15,6 +15,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [2.7.2] — Unreleased
 
 ### Added
+- **The installed launcher now writes a diagnostics log so a failed start is
+  no longer invisible.** The Start-menu / Desktop shortcut (and the portable
+  `.cmd`) run the app via `pythonw.exe`, which has **no console** — so every
+  message and crash traceback from the launcher, `pip`, and NiceGUI/uvicorn
+  was silently discarded, making "installs fine but never runs" impossible to
+  diagnose. Both `installer/launcher.py` and `installer/portable_launcher.py`
+  now mirror all output to a `launcher.log` file (in
+  `%LOCALAPPDATA%\InvestmentDashboard\` for the installed app, next to the
+  portable `.cmd` for the bundle), record the runtime environment (Python
+  version/path, platform, install location, installed dashboard version) up
+  front, and catch **every** startup failure — failed update checks, import
+  errors, and crashes while the web server starts (e.g. port 8080 already in
+  use) — writing a full traceback instead of dying with no trace. Set
+  `INV_DASHBOARD_LAUNCHER_DEBUG=1` to raise the app log level to `DEBUG`. See
+  `docs/windows_install_troubleshooting.md` for the bug-test plan.
 - **The release now tests the real Windows installer `.exe`.** PyInstaller
   produces `InvestmentDashboard-Setup.exe` only on the release runner, so
   packaging regressions (a missing bundled wheel, a missing `launcher.py`
