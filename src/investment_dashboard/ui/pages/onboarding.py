@@ -22,9 +22,12 @@ from investment_dashboard.db import session_scope
 from investment_dashboard.services.onboarding_service import (
     DEFAULT_ACCOUNTS,
     DEFAULT_INSTRUMENTS,
+    InvalidTickerError,
+    add_validated_instrument,
     is_onboarded,
     seed_default_setup,
 )
+from investment_dashboard.services.ticker_validation_service import validate_ticker
 from investment_dashboard.ui.components import page_header
 from investment_dashboard.ui.layout import page_frame
 
@@ -47,6 +50,87 @@ def _seed_clicked() -> None:  # pragma: no cover - UI
         type="positive",
     )
     ui.navigate.to("/overview")
+
+
+def _validated_ticker_card() -> None:  # pragma: no cover - UI
+    """A validated path for adding a custom ticker during onboarding.
+
+    The user types a symbol, **Validate** confirms it resolves to a real,
+    priceable instrument on the market-data provider (showing the resolved
+    name + last close so they can eyeball the match), and only then is
+    **Add** enabled — so a typo or wrong-exchange suffix can't be seeded.
+    """
+    with ui.element("div").classes("inv-section min-w-[22rem] max-w-[28rem]"):
+        ui.html('<div class="inv-section-title">Add your own ticker (validated)</div>')
+        ui.label(
+            "Hold something not in the defaults — e.g. the Global X DAX "
+            "Germany ETF (ticker DAX)? Enter the symbol and validate it "
+            "before it's added, so you don't seed an incorrect ticker.",
+        ).classes("text-body2 opacity-80")
+
+        symbol_input = ui.input("Ticker symbol", placeholder="DAX").props("dense").classes("w-full")
+        category_input = (
+            ui.input("Category (optional)", placeholder="DAX").props("dense").classes("w-full")
+        )
+        validate_button = (
+            ui.button("Validate", icon="verified").props("flat no-caps").classes("q-mt-xs")
+        )
+        status = ui.label("").classes("text-caption q-mt-xs")
+        add_button = ui.button("Add instrument", icon="add").props(
+            "unelevated color=primary no-caps"
+        )
+        add_button.disable()
+
+        state: dict[str, str | None] = {"validated_symbol": None}
+
+        def _validate() -> None:
+            result = validate_ticker(symbol_input.value or "")
+            status.text = result.message
+            status.classes(
+                replace="text-caption q-mt-xs "
+                + ("text-positive" if result.valid else "text-negative")
+            )
+            if result.valid:
+                state["validated_symbol"] = result.symbol
+                add_button.enable()
+            else:
+                state["validated_symbol"] = None
+                add_button.disable()
+
+        def _invalidate() -> None:
+            # Any edit to the symbol forces a re-validation before adding.
+            state["validated_symbol"] = None
+            add_button.disable()
+
+        def _add() -> None:
+            symbol = symbol_input.value or ""
+            normalize = symbol.strip().upper()
+            if normalize and state["validated_symbol"] != normalize:
+                ui.notify("Validate the ticker first.", type="warning")
+                return
+            try:
+                with session_scope() as session:
+                    result = add_validated_instrument(
+                        session,
+                        symbol,
+                        category=(category_input.value or None),
+                    )
+            except InvalidTickerError as exc:
+                ui.notify(str(exc), type="negative")
+                return
+            except Exception as exc:
+                log.exception("Add validated instrument failed")
+                ui.notify(f"Add failed: {exc}", type="negative")
+                return
+            ui.notify(f"Added {result.symbol} — {result.name or result.symbol}.", type="positive")
+            symbol_input.value = ""
+            category_input.value = ""
+            status.text = ""
+            _invalidate()
+
+        symbol_input.on("blur", lambda _: _invalidate())
+        validate_button.on("click", _validate)
+        add_button.on("click", _add)
 
 
 def register() -> None:
@@ -108,3 +192,5 @@ def register() -> None:
                         "Skip — go to Overview",
                         on_click=lambda: ui.navigate.to("/overview"),
                     ).props("flat no-caps").classes("q-mt-xs")
+
+                _validated_ticker_card()

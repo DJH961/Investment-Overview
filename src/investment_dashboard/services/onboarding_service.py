@@ -32,6 +32,10 @@ from investment_dashboard.repositories import (
     instrument_overrides_repo,
     instruments_repo,
 )
+from investment_dashboard.services.ticker_validation_service import (
+    TickerValidation,
+    validate_ticker,
+)
 
 
 @dataclass(frozen=True)
@@ -126,9 +130,7 @@ DEFAULT_INSTRUMENTS: tuple[_SeedInstrument, ...] = (
         "USD",
         Decimal("0.0066"),
     ),
-    _SeedInstrument(
-        "DAX", "Global X DAX Germany ETF", "etf", "DAX", "USD", Decimal("0.0020")
-    ),
+    _SeedInstrument("DAX", "Global X DAX Germany ETF", "etf", "DAX", "USD", Decimal("0.0020")),
     _SeedInstrument(
         "SAVINGS_CASH", "Direct Savings (Tagesgeld) balance", "savings", "Cash", "EUR"
     ),
@@ -198,3 +200,52 @@ def seed_default_setup(session: Session) -> SeedResult:
         accounts_created=accounts_created,
         instruments_created=instruments_created,
     )
+
+
+class InvalidTickerError(ValueError):
+    """Raised when a caller tries to seed a ticker that didn't validate."""
+
+
+def add_validated_instrument(
+    session: Session,
+    symbol: str,
+    *,
+    category: str | None = None,
+    asset_class: str | None = None,
+    native_currency: str | None = None,
+    name: str | None = None,
+    expense_ratio: Decimal | None = None,
+    validator: object | None = None,
+) -> TickerValidation:
+    """Validate ``symbol`` and, only if it resolves, persist the instrument.
+
+    This is the *validated path* the onboarding wizard offers so the user can
+    add their own tickers (e.g. the DAX ETF) without risking a typo'd or
+    wrong-exchange symbol that never prices. The provider-resolved metadata is
+    used to fill any field the caller didn't override.
+
+    Returns the :class:`TickerValidation` so the UI can show the resolved
+    name / price. Raises :class:`InvalidTickerError` when the symbol does not
+    validate — nothing is written in that case.
+    """
+    validate = validator or validate_ticker
+    result: TickerValidation = validate(symbol)  # type: ignore[operator]
+    if not result.valid:
+        raise InvalidTickerError(result.message)
+
+    instruments_repo.get_or_create(
+        session,
+        symbol=result.symbol,
+        name=name or result.name,
+        asset_class=(asset_class or result.asset_class or "unknown"),
+        native_currency=(native_currency or result.native_currency or "USD"),
+        expense_ratio=(expense_ratio if expense_ratio is not None else result.expense_ratio),
+    )
+    if category:
+        created = instruments_repo.get_by_symbol(session, result.symbol)
+        if (
+            created is not None
+            and instrument_overrides_repo.get_category(session, created.id) is None
+        ):
+            instrument_overrides_repo.set_category(session, created.id, category)
+    return result
