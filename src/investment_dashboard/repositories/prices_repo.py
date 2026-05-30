@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 
@@ -60,6 +60,36 @@ def close_as_of(session: Session, instrument_id: int, as_of: date) -> Decimal | 
         .limit(1)
     )
     return session.scalars(stmt).one_or_none()
+
+
+def recent_price_dates(
+    session: Session,
+    instrument_ids: Sequence[int],
+    *,
+    on_or_before: date,
+    limit: int = 2,
+) -> list[date]:
+    """Most recent distinct print dates across ``instrument_ids`` (newest first).
+
+    Used to find the portfolio's "last completed trading day(s)" so daily
+    growth lands on the most recent date *any* held instrument repriced —
+    skipping weekends / holidays, and gracefully tolerating the one-day NAV
+    lag of mutual funds vs ETFs (the portfolio is then valued consistently on
+    each date with forward-filled prices). Returns at most ``limit`` dates.
+    """
+    if not instrument_ids:
+        return []
+    stmt = (
+        select(PriceHistory.date)
+        .where(
+            PriceHistory.instrument_id.in_(instrument_ids),
+            PriceHistory.date <= on_or_before,
+        )
+        .distinct()
+        .order_by(PriceHistory.date.desc())
+        .limit(limit)
+    )
+    return list(session.scalars(stmt).all())
 
 
 def upsert_closes(

@@ -82,3 +82,61 @@ def test_ytd_growth_positive_when_prices_rose(session: Session) -> None:
     assert metrics.ytd_growth_pct is not None
     assert metrics.ytd_growth_pct > 0
     assert abs(metrics.ytd_growth_pct - Decimal("0.30")) < Decimal("0.001")
+
+
+def _seed_two_priced_days(session: Session) -> None:
+    """A single EUR holding priced on two consecutive business days."""
+    acct_id = _seed_eur_brokerage(session)
+    instr = instruments_repo.get_or_create(session, symbol="ACME", native_currency="EUR")
+    session.add(
+        Transaction(
+            account_id=acct_id,
+            instrument_id=instr.id,
+            date=date(2024, 12, 15),
+            kind="buy",
+            quantity=Decimal("10"),
+            price_native=Decimal("100.00"),
+            net_native=Decimal("-1000.00"),
+            net_eur=Decimal("-1000.00"),
+            source="manual",
+        )
+    )
+    prices_repo.upsert_closes(
+        session,
+        instr.id,
+        {date(2025, 5, 29): Decimal("100.00"), date(2025, 5, 30): Decimal("110.00")},
+    )
+    session.flush()
+
+
+def test_daily_growth_uses_last_two_priced_days(session: Session) -> None:
+    _seed_two_priced_days(session)
+    # as_of is a weekend (Sun 2025-06-01); last priced day is Fri 2025-05-30.
+    metrics = metrics_service.compute_portfolio_metrics(session, as_of=date(2025, 6, 1))
+    assert metrics.daily_growth_as_of == date(2025, 5, 30)
+    assert metrics.daily_growth_pct is not None
+    # 1000 -> 1100 ⇒ +10%.
+    assert abs(metrics.daily_growth_pct - Decimal("0.10")) < Decimal("0.001")
+
+
+def test_daily_growth_none_with_single_priced_day(session: Session) -> None:
+    acct_id = _seed_eur_brokerage(session)
+    instr = instruments_repo.get_or_create(session, symbol="ACME", native_currency="EUR")
+    session.add(
+        Transaction(
+            account_id=acct_id,
+            instrument_id=instr.id,
+            date=date(2024, 12, 15),
+            kind="buy",
+            quantity=Decimal("10"),
+            price_native=Decimal("100.00"),
+            net_native=Decimal("-1000.00"),
+            net_eur=Decimal("-1000.00"),
+            source="manual",
+        )
+    )
+    prices_repo.upsert_closes(session, instr.id, {date(2025, 5, 30): Decimal("110.00")})
+    session.flush()
+    metrics = metrics_service.compute_portfolio_metrics(session, as_of=date(2025, 6, 1))
+    assert metrics.daily_growth_pct is None
+    assert metrics.daily_growth_as_of is None

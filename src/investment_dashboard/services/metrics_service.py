@@ -31,7 +31,12 @@ from investment_dashboard.domain.returns import (
     years_between,
 )
 from investment_dashboard.models import Transaction, TransactionKind
-from investment_dashboard.repositories import accounts_repo, fx_repo, transactions_repo
+from investment_dashboard.repositories import (
+    accounts_repo,
+    fx_repo,
+    prices_repo,
+    transactions_repo,
+)
 from investment_dashboard.services import positions_service
 
 ZERO = Decimal(0)
@@ -98,6 +103,15 @@ class PortfolioMetrics:
     #: Estimated annual fund-fee cost in EUR at the current marks
     #: (spreadsheet ``Total!E17`` = ``Σ price·expense·shares``).
     annual_expense_cost_eur: Decimal = Decimal(0)
+    #: Single-day portfolio growth on the most recent *completed* trading
+    #: day — i.e. the latest date any held instrument repriced (skips
+    #: weekends/holidays; tolerates the mutual-fund NAV lag vs ETFs).
+    #: ``None`` until there are at least two priced dates.
+    daily_growth_pct: Decimal | None = None
+    daily_growth_pct_usd: Decimal | None = None
+    #: The date ``daily_growth_pct`` refers to (the "last daily growth day"),
+    #: so the UI can label *when* the move is from. ``None`` when unavailable.
+    daily_growth_as_of: date | None = None
 
 
 def _txn_eur_amount(t: Transaction) -> Decimal:
@@ -344,6 +358,11 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     # MTD: same shape as YTD but bounded to the first of the current month.
     mtd_growth = _compute_mtd_growth(session, txns, as_of, total_value_eur)
 
+    # Daily growth on the most recent completed trading day (dual currency).
+    daily_growth_eur, daily_growth_usd, daily_as_of = _compute_daily_growth(
+        session, as_of=as_of, eur_to_usd=eur_to_usd
+    )
+
     # Fund-fee figures from the live positions (value-weighted TER + €/yr cost).
     weighted_expense_ratio, annual_expense_cost_eur = _compute_expense_figures(
         positions_service.compute_positions(session, as_of=as_of)
@@ -372,7 +391,54 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         mtd_growth_pct=mtd_growth,
         weighted_expense_ratio=weighted_expense_ratio,
         annual_expense_cost_eur=annual_expense_cost_eur,
+        daily_growth_pct=daily_growth_eur,
+        daily_growth_pct_usd=daily_growth_usd,
+        daily_growth_as_of=daily_as_of,
     )
+
+
+def _value_in_both(
+    session: Session,
+    on: date,
+    *,
+    eur_to_usd: dict[date, Decimal],
+) -> tuple[Decimal, Decimal]:
+    """Portfolio value on ``on`` in (EUR, USD), USD via that date's FX."""
+    eur = positions_service.total_portfolio_value(session, as_of=on)
+    fx = lookup_rate_with_forward_fill(eur_to_usd, on) or ZERO
+    usd = eur * fx if fx != 0 else eur
+    return eur, usd
+
+
+def _compute_daily_growth(
+    session: Session,
+    *,
+    as_of: date,
+    eur_to_usd: dict[date, Decimal],
+) -> tuple[Decimal | None, Decimal | None, date | None]:
+    """Single-day growth on the most recent completed trading day.
+
+    The "last daily growth day" is the latest date (``<= as_of``) on which
+    *any* currently-held instrument has a price print — so on a Sunday it is
+    Friday's data, and before the US close (e.g. 10am CET) it is yesterday's.
+    The portfolio is valued on that date and on the prior print date with
+    forward-filled prices, which transparently accommodates the fact that some
+    holdings are ETFs (daily close) and some are mutual funds (lagged NAV):
+    each date is a consistent mark of the whole book.
+
+    Returns ``(growth_eur, growth_usd, as_of_date)``; all ``None`` when there
+    aren't two priced dates yet.
+    """
+    held_ids = [p.instrument.id for p in positions_service.compute_positions(session, as_of=as_of)]
+    dates = prices_repo.recent_price_dates(session, held_ids, on_or_before=as_of, limit=2)
+    if len(dates) < 2:
+        return None, None, None
+    last_date, prev_date = dates[0], dates[1]
+    last_eur, last_usd = _value_in_both(session, last_date, eur_to_usd=eur_to_usd)
+    prev_eur, prev_usd = _value_in_both(session, prev_date, eur_to_usd=eur_to_usd)
+    growth_eur = (last_eur - prev_eur) / prev_eur if prev_eur > ZERO else None
+    growth_usd = (last_usd - prev_usd) / prev_usd if prev_usd > ZERO else None
+    return growth_eur, growth_usd, last_date
 
 
 def _compute_mtd_growth(

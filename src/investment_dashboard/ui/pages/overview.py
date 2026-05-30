@@ -212,6 +212,21 @@ def register() -> None:
                     arrow=arrow_for_signed(float(growth_pct)),
                 )
             with ui.row().classes("gap-md flex-wrap q-mt-md"):
+                _daily_growth_eur = metrics.daily_growth_pct
+                _daily_growth_usd = metrics.daily_growth_pct_usd
+                _daily_sub = (
+                    f"as of {metrics.daily_growth_as_of.isoformat()}"
+                    if metrics.daily_growth_as_of is not None
+                    else "awaiting two priced days"
+                )
+                kpi_card(
+                    "Daily Growth",
+                    dual_pct(_daily_growth_eur, _daily_growth_usd, primary=display_ccy),
+                    sub=_daily_sub,
+                    tooltip_key="daily_growth",
+                    color=color_for_signed(float(_daily_growth_eur or 0)),
+                    arrow=arrow_for_signed(float(_daily_growth_eur or 0)),
+                )
                 kpi_card(
                     "MTD Growth",
                     _fmt_pct(metrics.mtd_growth_pct),
