@@ -357,7 +357,9 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
 
     Args:
         skip_network: if ``True``, skip FX/price refresh (useful for tests
-            and offline development).
+            and offline development). :func:`main.run` passes ``True`` and
+            instead runs :func:`run_deferred_network_refresh` on a
+            background thread so the UI opens immediately.
     """
     _apply_encryption()
     _apply_resolved_layout()
@@ -371,5 +373,23 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
     if skip_network:
         log.info("skip_network=True — not refreshing FX or prices")
         return
+    _refresh_fx()
+    _refresh_prices()
+
+
+def run_deferred_network_refresh() -> None:
+    """Best-effort FX + price refresh meant to run *after* the server starts.
+
+    Pulling fresh FX rates and market prices is the slowest part of boot and
+    needs the network, which previously blocked the browser from opening: the
+    user stared at the console while the refresh ran. ``main.run`` now runs the
+    fast, offline portion of the boot sequence synchronously, opens the UI
+    immediately, and calls this helper on a background daemon thread. The page
+    renders straight away from cached data and quietly updates once the refresh
+    lands (the periodic live-refresh timer keeps it current thereafter).
+
+    Like the in-sequence refresh it is best-effort: every failure is logged and
+    swallowed so an offline machine still gets a working dashboard.
+    """
     _refresh_fx()
     _refresh_prices()

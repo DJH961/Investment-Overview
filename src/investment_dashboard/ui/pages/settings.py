@@ -494,6 +494,115 @@ def _settings_refresh() -> None:  # pragma: no cover - UI
     ui.navigate.to(PATH)
 
 
+#: Reset levels offered in the Settings "Reset data" section, smallest blast
+#: radius first. Each tuple is (level, title, what-it-clears, what-it-keeps).
+_RESET_OPTIONS = (
+    (
+        "cache",
+        "Reset cached market data",
+        "Clears downloaded prices, FX rates and position snapshots. They are "
+        "re-downloaded automatically on the next refresh.",
+        "Keeps every account, instrument, transaction and setting.",
+        "refresh",
+    ),
+    (
+        "transactions",
+        "Clear all transactions",
+        "Deletes every imported transaction (and the cached data derived from "
+        "them) so you can re-import a corrected file from scratch.",
+        "Keeps your accounts, instruments, target allocations and settings.",
+        "receipt_long",
+    ),
+    (
+        "everything",
+        "Reset everything (factory reset)",
+        "Removes all data — accounts, instruments, transactions, allocations, "
+        "overrides and preferences — returning the app to its first-run state.",
+        "Keeps nothing; you will be taken back through onboarding.",
+        "delete_forever",
+    ),
+)
+
+
+def _perform_reset(level_value: str) -> None:  # pragma: no cover - UI
+    from investment_dashboard.services.database_reset_service import (  # noqa: PLC0415
+        ResetLevel,
+        reset_database,
+    )
+
+    try:
+        result = reset_database(ResetLevel(level_value))
+    except Exception as exc:
+        log.exception("database reset failed")
+        ui.notify(f"Reset failed: {exc}", type="negative")
+        return
+
+    ui.notify(
+        f"Reset complete — removed {result.total_deleted} row(s).",
+        type="positive",
+    )
+    if level_value == "everything":
+        ui.navigate.to("/onboarding")
+    else:
+        _settings_refresh()
+
+
+def _open_reset_dialog(
+    level_value: str,
+    title: str,
+    clears: str,
+    keeps: str,
+) -> None:  # pragma: no cover - UI
+    """Confirm a reset before performing it.
+
+    The destructive "everything" level additionally requires the user to type
+    ``RESET`` so it can never be triggered by a stray click.
+    """
+    requires_phrase = level_value == "everything"
+    with ui.dialog() as dialog, ui.card().classes("min-w-[28rem] gap-sm"):
+        ui.label(title).classes("text-h6")
+        ui.label(clears).classes("text-body2")
+        ui.label(keeps).classes("text-caption opacity-70")
+        ui.label("This cannot be undone.").classes("text-negative text-body2 q-mt-sm")
+
+        phrase_input = None
+        if requires_phrase:
+            ui.label("Type RESET to confirm:").classes("text-body2 q-mt-sm")
+            phrase_input = ui.input(placeholder="RESET").props("dense outlined autofocus")
+
+        def _confirm() -> None:
+            if requires_phrase and (phrase_input is None or phrase_input.value.strip() != "RESET"):
+                ui.notify("Type RESET to confirm the factory reset.", type="warning")
+                return
+            dialog.close()
+            _perform_reset(level_value)
+
+        with ui.row().classes("justify-end w-full gap-sm q-mt-md"):
+            ui.button("Cancel", on_click=dialog.close).props("flat no-caps")
+            ui.button("Reset", icon="warning", on_click=_confirm).props(
+                "unelevated color=negative no-caps"
+            )
+    dialog.open()
+
+
+def _render_reset_section() -> None:  # pragma: no cover - UI
+    with ui.column().classes("w-full gap-sm"):
+        for level_value, title, clears, keeps, icon in _RESET_OPTIONS:
+            with ui.row().classes("items-center gap-md w-full"):
+                with ui.column().classes("gap-none"):
+                    ui.label(title).classes("text-body1")
+                    ui.label(clears).classes("text-caption opacity-70")
+                    ui.label(keeps).classes("text-caption opacity-70")
+                ui.space()
+                ui.button(
+                    "Reset",
+                    icon=icon,
+                    on_click=lambda _, lv=level_value, t=title, c=clears, k=keeps: (
+                        _open_reset_dialog(lv, t, c, k)
+                    ),
+                ).props("outline color=negative dense no-caps")
+
+
 def _render_display_prefs(current_currency: str) -> None:  # pragma: no cover - UI
     with ui.row().classes("items-center gap-md"):
         ui.label("Primary display currency:").classes("text-body2")
@@ -788,6 +897,13 @@ def register() -> None:
                     "the latest numbers right now.",
                 ).classes("text-caption opacity-70 q-mb-sm")
                 _render_data_refresh()
+            with section("Reset data"):
+                ui.label(
+                    "Wipe data so you can start over or re-import. Pick the "
+                    "smallest option that fits — each asks for confirmation, and "
+                    "the factory reset cannot be undone.",
+                ).classes("text-caption opacity-70 q-mb-sm")
+                _render_reset_section()
             with section("Connectivity"):
                 ui.label(
                     "Whether the last call to each data provider succeeded. "

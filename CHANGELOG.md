@@ -14,7 +14,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [2.7.1] — Unreleased
 
+### Fixed
+- **Installed app now starts (release flow works end-to-end).** Two
+  release-only bugs that left the installed program broken on launch are
+  fixed:
+  - The steady-state `installer/launcher.py` is copied **standalone** into
+    the install root, but it imported the `installer` package (`installer.paths`,
+    `installer.version`) which is never installed there — so every launch
+    died with `ModuleNotFoundError: No module named 'installer'`. The
+    launcher is now fully self-contained, depending only on the standard
+    library and the installed `investment_dashboard` wheel.
+  - A freshly installed app created **no database tables**: the wheel does
+    not ship `alembic.ini` or the `migrations/` tree, so boot skipped
+    migrations and every page failed with `no such table`. Boot now falls
+    back to creating the current schema with `create_all` across all storage
+    tiers when Alembic is unavailable (the packaged installer / portable
+    bundle), while continuing to run real Alembic migrations in a developer
+    checkout. Verified end-to-end by installing the wheel into an isolated
+    interpreter and launching exactly as the desktop shortcut does.
+
 ### Added
+- **Faster startup with a responsive loading experience.** The dashboard
+  now serves its UI immediately on launch instead of blocking the console
+  while it downloads FX rates and prices. The slow, best-effort network
+  refresh runs on a background thread after the server is up; the page
+  renders from cached data and updates as fresh figures arrive (the periodic
+  live-refresh timer keeps it current). The double-click launcher therefore
+  opens the browser in about a second rather than after the network round-trips.
+- **Database reset in Settings.** A new *Reset data* section offers three
+  confirmation-gated levels so you can start over or re-import cleanly:
+  *Reset cached market data* (prices/FX/snapshots — rebuilt on next refresh),
+  *Clear all transactions* (wipe the ledger to re-import, keeping accounts,
+  instruments, allocations and settings), and *Reset everything* (a factory
+  reset back to onboarding, which additionally requires typing `RESET`).
+  Backed by a new `services/database_reset_service.py` that deletes rows in a
+  foreign-key-safe order across the correct storage tiers.
 - **In-app Help page.** New `/help` page and navigation entry providing an
   overview of the dashboard, a section-by-section walkthrough and KPI
   glossary, plus a companion `docs/user_guide.md`. Documentation-only

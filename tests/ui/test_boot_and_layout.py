@@ -80,7 +80,7 @@ def test_boot_creates_schema_without_alembic(
     tree), so boot must fall back to ``create_all`` and produce a complete
     schema. Without it every page failed with ``no such table``.
     """
-    import investment_dashboard.boot as boot
+    from investment_dashboard import boot
     from investment_dashboard.config import get_settings
     from investment_dashboard.db import dispose_engines
 

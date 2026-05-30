@@ -25,7 +25,8 @@ def _load_launcher_standalone(module_name: str) -> ModuleType:
     package (the root cause of the "installed program does not start" bug).
     """
     spec = importlib.util.spec_from_file_location(module_name, _LAUNCHER_SOURCE)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
