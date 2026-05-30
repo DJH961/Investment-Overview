@@ -14,6 +14,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [2.7.2] — Unreleased
 
+### Added
+- **The release now tests the real Windows installer `.exe`.** PyInstaller
+  produces `InvestmentDashboard-Setup.exe` only on the release runner, so
+  packaging regressions (a missing bundled wheel, a missing `launcher.py`
+  data file, broken frozen imports) were invisible until an end-user ran
+  the download — which is exactly how earlier releases shipped broken. The
+  bootstrapper gained an offline self-test mode (`INV_DASHBOARD_INSTALLER_SELFTEST`)
+  that makes the frozen executable verify it can extract and resolve its
+  bundled dashboard wheel and `launcher.py` from its own one-file bundle,
+  and the release workflow now runs the freshly built `.exe` in that mode
+  immediately after building it. A non-zero result fails the release, so a
+  broken installer can no longer be published. Verified locally by freezing
+  the exact `installer/installer.spec` and running the frozen binary, which
+  resolved the bundled `investment_dashboard-2.7.2` wheel and `launcher.py`
+  and reported `SELF-TEST OK`.
+
 ### Fixed
 - **Installer and portable bundle verified working end-to-end.** The
   Windows one-file installer (`InvestmentDashboard-Setup.exe`) and the
