@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import builtins
 import importlib.util
+import os
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -140,3 +142,76 @@ def test_skip_env_values_are_truthy(monkeypatch, tmp_path: Path, env_value: str)
         lambda: pytest.fail("should not be called"),
     )
     assert launcher.maybe_update(tmp_path) is None
+
+
+def test_install_diagnostics_writes_log_and_redirects(monkeypatch, tmp_path: Path) -> None:
+    # Pretend we are launched via pythonw.exe (no console streams).
+    monkeypatch.setattr(launcher, "_ORIGINAL_STDOUT", None)
+    monkeypatch.setattr(launcher, "_ORIGINAL_STDERR", None)
+    saved_out, saved_err = sys.stdout, sys.stderr
+    try:
+        stream = launcher.install_diagnostics(tmp_path)
+        assert stream is not None
+        print("output from the running app")
+        sys.stderr.write("an error line\n")
+    finally:
+        sys.stdout, sys.stderr = saved_out, saved_err
+        stream.close()
+
+    log = launcher.diagnostics_log_path(tmp_path).read_text(encoding="utf-8")
+    assert "Investment Dashboard launcher started" in log
+    assert "python executable" in log
+    assert "output from the running app" in log
+    assert "an error line" in log
+
+
+def test_install_diagnostics_debug_env_sets_log_level(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("INV_DASHBOARD_LOG_LEVEL", raising=False)
+    monkeypatch.setenv("INV_DASHBOARD_LAUNCHER_DEBUG", "1")
+    saved_out, saved_err = sys.stdout, sys.stderr
+    try:
+        stream = launcher.install_diagnostics(tmp_path)
+    finally:
+        sys.stdout, sys.stderr = saved_out, saved_err
+        if stream is not None:
+            stream.close()
+    assert os.environ["INV_DASHBOARD_LOG_LEVEL"] == "DEBUG"
+
+
+def test_install_diagnostics_returns_none_when_log_unwritable(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(launcher, "_open_log_stream", lambda _root: None)
+    saved_out, saved_err = sys.stdout, sys.stderr
+    stream = launcher.install_diagnostics(tmp_path)
+    assert stream is None
+    # Streams are left untouched so the launcher still runs without a log.
+    assert sys.stdout is saved_out
+    assert sys.stderr is saved_err
+
+
+def test_start_dashboard_logs_import_failure(monkeypatch, capsys) -> None:
+    real_import = builtins.__import__
+
+    def _fake_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "investment_dashboard.main":
+            raise ModuleNotFoundError("no dashboard here")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    assert launcher.start_dashboard() == 1
+    captured = capsys.readouterr()
+    assert "Failed to import the dashboard application" in captured.out
+    assert "no dashboard here" in captured.out + captured.err
+
+
+def test_start_dashboard_logs_run_failure(monkeypatch, capsys) -> None:
+    fake_main = ModuleType("investment_dashboard.main")
+
+    def _boom() -> None:
+        raise RuntimeError("port already in use")
+
+    fake_main.run = _boom  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "investment_dashboard.main", fake_main)
+    assert launcher.start_dashboard() == 1
+    captured = capsys.readouterr()
+    assert "crashed while starting" in captured.out
+    assert "port already in use" in captured.out + captured.err
