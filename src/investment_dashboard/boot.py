@@ -221,21 +221,40 @@ def _rolling_backup() -> None:
 
 
 def _run_migrations() -> None:
-    """Run ``alembic upgrade head`` programmatically.
+    """Bring the database schema up to date.
 
-    Until per-tier Alembic version tables ship (rework v2.0 Phase 2
-    follow-up), we run the single migration tree once against the
-    ledger URL. This is correct as long as all three tiers point at
-    the same file. When split, the ``split_db`` tool stamps each tier
-    file with ``create_all``; per-tier Alembic stamping will land in a
-    follow-up.
+    In a development / editable checkout ``alembic.ini`` and the
+    ``migrations/`` tree sit next to the package, so we run
+    ``alembic upgrade head`` for a faithful, incremental migration.
+
+    The packaged Windows installer and the portable bundle ship **only**
+    the ``investment_dashboard`` wheel — ``alembic.ini`` and the migration
+    scripts are not part of the wheel. In that case there is nothing for
+    Alembic to run, which historically left a freshly installed app with
+    an empty database: every page then failed with ``no such table``. To
+    make the release usable start-to-finish we fall back to creating the
+    current schema directly with ``create_all`` across every storage tier.
+    ``create_all`` only creates missing tables, so it is a safe no-op once
+    Alembic has built the schema in a dev checkout.
+    """
+    if not _run_alembic_upgrade():
+        _ensure_schema_present()
+
+
+def _run_alembic_upgrade() -> bool:
+    """Run ``alembic upgrade head``. Returns ``True`` only if it actually ran.
+
+    Returns ``False`` (without raising) when Alembic is not importable or
+    when ``alembic.ini`` cannot be located — the two situations that occur
+    in the packaged installer/portable bundle, where the caller falls back
+    to :func:`_ensure_schema_present`.
     """
     try:
         from alembic import command  # noqa: PLC0415
         from alembic.config import Config  # noqa: PLC0415
     except ImportError:
-        log.warning("alembic not installed; skipping migrations")
-        return
+        log.warning("alembic not installed; will create schema directly")
+        return False
 
     # Locate alembic.ini at the repo root (three levels up from this file).
     pkg_root = Path(__file__).resolve().parent
@@ -245,8 +264,8 @@ def _run_migrations() -> None:
     ]
     ini_path = next((p for p in candidates if p.exists()), None)
     if ini_path is None:
-        log.warning("alembic.ini not found; skipping migrations")
-        return
+        log.warning("alembic.ini not found; will create schema directly")
+        return False
 
     cfg = Config(str(ini_path))
     settings = get_settings()
@@ -259,6 +278,32 @@ def _run_migrations() -> None:
     cfg.set_main_option("sqlalchemy.url", settings.ledger_url)
     command.upgrade(cfg, "head")
     log.info("Alembic upgrade head applied")
+    return True
+
+
+def _ensure_schema_present() -> None:
+    """Create the current ORM schema directly, one storage tier at a time.
+
+    Used when Alembic migrations are unavailable (the packaged installer /
+    portable bundle). ``create_all`` is idempotent — it only emits
+    ``CREATE TABLE`` for tables that do not yet exist — so a partially
+    populated database keeps its data while gaining any missing tables.
+    """
+    from investment_dashboard.db import (  # noqa: PLC0415
+        get_cache_engine,
+        get_config_engine,
+        get_ledger_engine,
+    )
+    from investment_dashboard.models.base import (  # noqa: PLC0415
+        CacheBase,
+        ConfigBase,
+        LedgerBase,
+    )
+
+    LedgerBase.metadata.create_all(get_ledger_engine())
+    ConfigBase.metadata.create_all(get_config_engine())
+    CacheBase.metadata.create_all(get_cache_engine())
+    log.info("Database schema ensured via create_all (Alembic migrations unavailable)")
 
 
 def _run_cache_janitor() -> None:

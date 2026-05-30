@@ -69,6 +69,49 @@ def test_boot_migrates_active_ledger_path_in_split_layout(
     assert "transactions" in tables
 
 
+def test_boot_creates_schema_without_alembic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Installed wheel scenario: no alembic.ini, schema must still be created.
+
+    Regression test for the release flow never working end-to-end: the
+    packaged installer ships only the wheel (no ``alembic.ini`` / migrations
+    tree), so boot must fall back to ``create_all`` and produce a complete
+    schema. Without it every page failed with ``no such table``.
+    """
+    import investment_dashboard.boot as boot
+    from investment_dashboard.config import get_settings
+    from investment_dashboard.db import dispose_engines
+
+    db_path = tmp_path / "installed.sqlite"
+    monkeypatch.setenv("INV_DASHBOARD_DB_PATH", str(db_path))
+    # Simulate the packaged environment where Alembic cannot run.
+    monkeypatch.setattr(boot, "_run_alembic_upgrade", lambda: False)
+    get_settings.cache_clear()
+    dispose_engines()
+    try:
+        run_boot_sequence(skip_network=True)
+    finally:
+        dispose_engines()
+        get_settings.cache_clear()
+
+    engine = sa.create_engine(f"sqlite:///{db_path.as_posix()}", future=True)
+    try:
+        with engine.connect() as conn:
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    sa.text("SELECT name FROM sqlite_master WHERE type='table'")
+                )
+            }
+    finally:
+        engine.dispose()
+
+    # Every ORM table — across all storage tiers — must exist.
+    assert {"transactions", "instruments", "accounts", "instrument_overrides"} <= tables
+
+
 def test_nav_items_cover_all_pages() -> None:
     from investment_dashboard.ui.layout import NAV_ITEMS
 
