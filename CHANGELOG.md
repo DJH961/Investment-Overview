@@ -12,6 +12,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.7.1] — Unreleased
+
+### Added
+- **In-app Help page.** New `/help` page and navigation entry providing an
+  overview of the dashboard, a section-by-section walkthrough and KPI
+  glossary, plus a companion `docs/user_guide.md`. Documentation-only
+  addition with no change to portfolio calculations or stored data.
+- **Settings explanations.** The Settings page now documents what each
+  configurable option does, alongside the existing controls.
+
 ## [2.7.0] — Unreleased
 
 ### Added
