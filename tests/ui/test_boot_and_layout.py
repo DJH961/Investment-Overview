@@ -122,7 +122,6 @@ def test_nav_items_cover_all_pages() -> None:
         "/transactions",
         "/monthly",
         "/yearly",
-        "/projection",
         "/analytics",
         "/calculator",
         "/settings",

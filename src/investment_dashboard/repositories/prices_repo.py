@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from datetime import date
 from decimal import Decimal
 
@@ -38,58 +38,6 @@ def latest_close(session: Session, instrument_id: int) -> Decimal | None:
         .limit(1)
     )
     return session.scalars(stmt).one_or_none()
-
-
-def close_as_of(session: Session, instrument_id: int, as_of: date) -> Decimal | None:
-    """Most recent close for ``instrument_id`` on or before ``as_of``.
-
-    Forward-fills across weekends / holidays / sparse history by taking the
-    last available print at or before ``as_of``. Returns ``None`` when no
-    print exists on or before that date (e.g. the instrument's history starts
-    later). This is the as-of analogue of :func:`latest_close` and is what
-    historical valuations (YTD start, MTD start, the equity curve) must use so
-    that past dates are priced with past prices rather than today's close.
-    """
-    stmt = (
-        select(PriceHistory.close_native)
-        .where(
-            PriceHistory.instrument_id == instrument_id,
-            PriceHistory.date <= as_of,
-        )
-        .order_by(PriceHistory.date.desc())
-        .limit(1)
-    )
-    return session.scalars(stmt).one_or_none()
-
-
-def recent_price_dates(
-    session: Session,
-    instrument_ids: Sequence[int],
-    *,
-    on_or_before: date,
-    limit: int = 2,
-) -> list[date]:
-    """Most recent distinct print dates across ``instrument_ids`` (newest first).
-
-    Used to find the portfolio's "last completed trading day(s)" so daily
-    growth lands on the most recent date *any* held instrument repriced —
-    skipping weekends / holidays, and gracefully tolerating the one-day NAV
-    lag of mutual funds vs ETFs (the portfolio is then valued consistently on
-    each date with forward-filled prices). Returns at most ``limit`` dates.
-    """
-    if not instrument_ids:
-        return []
-    stmt = (
-        select(PriceHistory.date)
-        .where(
-            PriceHistory.instrument_id.in_(instrument_ids),
-            PriceHistory.date <= on_or_before,
-        )
-        .distinct()
-        .order_by(PriceHistory.date.desc())
-        .limit(limit)
-    )
-    return list(session.scalars(stmt).all())
 
 
 def upsert_closes(

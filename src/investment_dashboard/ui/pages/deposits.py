@@ -34,7 +34,7 @@ def register() -> None:
     @ui.page(PATH)
     def _deposits() -> None:  # pragma: no cover - rendered by NiceGUI
         with page_frame("Deposits", current=PATH):
-            page_header("Deposits", subtitle="Deposits and withdrawals")
+            page_header("Deposits", subtitle="Deposits, withdrawals and interest")
             with session_scope() as session:
                 summary = compute_summary(session)
                 rows = list_deposit_rows(session)
@@ -53,6 +53,7 @@ def register() -> None:
                 _kpi("Total contributed", "total_contrib")
                 _kpi("YTD contributions", "ytd_contrib")
                 _kpi("MTD contributions", "mtd_contrib")
+                _kpi("Interest YTD", "interest_ytd")
             if not rows:
                 empty_state(
                     "savings",

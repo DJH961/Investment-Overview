@@ -22,9 +22,11 @@ def _summary_dict(s: DepositSummary) -> dict[str, Any]:
         "total_contrib_eur": dec(s.total_contrib_eur),
         "ytd_contrib_eur": dec(s.ytd_contrib_eur),
         "mtd_contrib_eur": dec(s.mtd_contrib_eur),
+        "interest_ytd_eur": dec(s.interest_ytd_eur),
         "total_contrib_usd": dec(s.total_contrib_usd),
         "ytd_contrib_usd": dec(s.ytd_contrib_usd),
         "mtd_contrib_usd": dec(s.mtd_contrib_usd),
+        "interest_ytd_usd": dec(s.interest_ytd_usd),
     }
 
 

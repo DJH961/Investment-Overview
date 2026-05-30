@@ -41,12 +41,6 @@ def _metrics_dict(metrics: PortfolioMetrics) -> dict[str, Any]:
         "ytd_xirr": dec(metrics.ytd_xirr),
         "ytd_growth_pct": dec(metrics.ytd_growth_pct),
         "mtd_growth_pct": dec(metrics.mtd_growth_pct),
-        "mtd_growth_pct_usd": dec(metrics.mtd_growth_pct_usd),
-        "daily_growth_pct": dec(metrics.daily_growth_pct),
-        "daily_growth_pct_usd": dec(metrics.daily_growth_pct_usd),
-        "daily_growth_as_of": (
-            metrics.daily_growth_as_of.isoformat() if metrics.daily_growth_as_of else None
-        ),
         "weighted_expense_ratio": dec(metrics.weighted_expense_ratio),
         "annual_expense_cost_eur": dec(metrics.annual_expense_cost_eur),
     }

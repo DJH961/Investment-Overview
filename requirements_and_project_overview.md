@@ -47,7 +47,7 @@ This document is written so that an engineer with no access to the original `Inv
 | Tables | NiceGUI `ui.aggrid` (AG-Grid Community) | Sort, filter, inline edit, large datasets; matches the spreadsheet feel. |
 | ORM / DB | **SQLAlchemy 2.x** + **SQLite** (single file, WAL mode) | Single-user, zero-config; one file to back up via git/restic. |
 | Migrations | **Alembic** | Schema evolution discipline. |
-| Market data | **yfinance** | Free; covers all current tickers (VTI, VOO, VUG, VTV, VXUS, VGK, VT, VWO, SCHK, IAUM, MSFT, FXAIX, FSKAX, FSPSX, FTIHX, SCHD, FSELX, plus the Global X DAX Germany ETF, ticker `DAX`, NASDAQ-listed). |
+| Market data | **yfinance** | Free; covers all current tickers (VTI, VOO, VUG, VTV, VXUS, VGK, VT, VWO, SCHK, IAUM, MSFT, FXAIX, FSKAX, FSPSX, FTIHX, SCHD, FSELX, plus a DAX-tracking ETF — exact symbol to confirm). |
 | FX rates | **Frankfurter API** (`https://api.frankfurter.dev`) | Free, no key, ECB-sourced, full historical daily series since 1999. |
 | Date handling | Python stdlib `datetime` + `zoneinfo` | Avoid pendulum. |
 | Numerics | `numpy`, `pandas`, `scipy.optimize.brentq` (XIRR solver) | Standard. |
@@ -338,7 +338,7 @@ Per the user, the existing `Investments.xlsx` is partially inaccurate. So strate
 - Handles weekends/holidays (no row written; "today's price" logic falls back to the latest available close).
 - Failure mode: if yfinance throws, log a warning and continue with stale prices. The UI surfaces "Prices last refreshed: <timestamp>" in the footer.
 
-The DAX-tracking ETF is the **Global X DAX Germany ETF**, yfinance ticker `DAX` (NASDAQ-listed, USD). A setting in `/settings` maps a friendly name to a yfinance ticker, and onboarding offers a validated ticker path.
+For the DAX-tracking ETF: the exact symbol is to be confirmed (e.g. `EXS1.DE`, `DBXD.DE`, `XDDX.DE`). Add a setting in `/settings` to map a friendly name to a yfinance ticker.
 
 ### 5.6 FX fetcher
 
@@ -809,7 +809,7 @@ Optionally: a Windows `.bat` file + a Task Scheduler entry to auto-start on logi
 
 ## 15. Open questions to resolve before Phase 0
 
-1. **DAX ETF ticker.** Confirmed: the **Global X DAX Germany ETF**, yfinance ticker `DAX` (NASDAQ-listed, USD).
+1. **DAX ETF ticker.** Which DAX-tracking ETF do you actually hold? Likely `EXS1.DE`, `DBXD.DE`, or similar. Needed for yfinance.
 2. **Pre-2024 Vanguard data.** Two paths: (a) accept that the legacy spreadsheet's data is "good enough" for that window and import it via the migration utility, or (b) accept that Vanguard returns will be partial pre-cutoff. Recommendation: (a), with verification against current share counts.
 3. **Risk-free rate source.** Hardcode 3.5%, or fetch ECB main refi rate? Recommendation: hardcoded for v1, configurable in settings.
 4. **GitHub repo visibility.** Public (showcase, more contributions possible) or private (financial data context, even though the repo would contain no real data)? Recommendation: **private**; the code itself reveals nothing sensitive, but keeping it private avoids any temptation to commit a real DB file.

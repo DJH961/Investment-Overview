@@ -79,7 +79,7 @@ def test_only_cashflow_kinds_in_table(session: Session) -> None:
     _seed(session)
     rows = list_deposit_rows(session)
     kinds = {r["kind"] for r in rows}
-    assert kinds == {"deposit"}
+    assert kinds == {"deposit", "interest"}
 
 
 def test_summary_totals(session: Session) -> None:
@@ -92,12 +92,15 @@ def test_summary_totals(session: Session) -> None:
     assert summary.ytd_contrib_eur == Decimal("1080.00")
     # MTD = today's only = 180
     assert summary.mtd_contrib_eur == Decimal("180.00")
+    # Interest YTD = 11
+    assert summary.interest_ytd_eur == Decimal("11.00")
     # Seed account is USD-native, so the USD totals come straight from
     # net_native (no EUR round-trip) regardless of whether FX history
     # was seeded — verifies the v2.4 fix for the deposits-USD column.
     assert summary.total_contrib_usd == Decimal("1700.00")  # 500+1000+200
     assert summary.ytd_contrib_usd == Decimal("1200.00")  # 1000+200
     assert summary.mtd_contrib_usd == Decimal("200.00")  # today's
+    assert summary.interest_ytd_usd == Decimal("12.00")  # 12
 
 
 def test_summary_handles_no_data(session: Session) -> None:

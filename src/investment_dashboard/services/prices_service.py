@@ -110,15 +110,6 @@ def latest_close(session: Session, instrument_id: int) -> Decimal | None:
     return prices_repo.latest_close(session, instrument_id)
 
 
-def close_as_of(session: Session, instrument_id: int, as_of: date) -> Decimal | None:
-    """Most recent close for ``instrument_id`` on or before ``as_of``.
-
-    Forward-fills sparse history so a historical valuation reflects the price
-    that was actually in effect on ``as_of`` rather than today's close.
-    """
-    return prices_repo.close_as_of(session, instrument_id, as_of)
-
-
 def _ttl_for(instr: Instrument) -> int:
     return REFRESH_TTL_SECONDS.get(instr.asset_class, _DEFAULT_TTL_SECONDS)
 

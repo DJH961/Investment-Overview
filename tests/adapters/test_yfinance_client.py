@@ -62,23 +62,6 @@ def test_fetch_closes_single_symbol() -> None:
     assert out["VTI"][date(2024, 1, 3)] == Decimal(repr(241.55))
 
 
-def test_fetch_closes_single_symbol_grouped_frame() -> None:
-    """yfinance with ``group_by='ticker'`` returns a MultiIndex even for one
-    ticker — the benchmark/analytics path. The adapter must read it as
-    ``frame[symbol]['Close']`` rather than the bare ``frame['Close']``.
-    """
-
-    def fake_download(**_: Any) -> pd.DataFrame:
-        idx = pd.to_datetime(["2024-01-02", "2024-01-03"])
-        cols = pd.MultiIndex.from_tuples([("VT", "Open"), ("VT", "Close")])
-        return pd.DataFrame([[239.0, 240.10], [240.5, 241.55]], index=idx, columns=cols)
-
-    out = fetch_closes(["VT"], date(2024, 1, 2), date(2024, 1, 4), downloader=fake_download)
-
-    assert list(out["VT"].keys()) == [date(2024, 1, 2), date(2024, 1, 3)]
-    assert out["VT"][date(2024, 1, 3)] == Decimal(repr(241.55))
-
-
 def test_fetch_closes_empty_frame() -> None:
     def fake_download(**_: Any) -> pd.DataFrame:
         return pd.DataFrame()

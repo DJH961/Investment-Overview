@@ -21,7 +21,6 @@ from investment_dashboard.db import session_scope
 from investment_dashboard.repositories import (
     accounts_repo,
     allocations_repo,
-    app_config_repo,
     instrument_overrides_repo,
     instruments_repo,
 )
@@ -720,44 +719,8 @@ def _render_allocations_section(allocations: list) -> None:  # pragma: no cover 
                     ).props("flat dense no-caps")
 
 
-def _save_sync_folder(raw: str) -> None:  # pragma: no cover - UI callback
-    """Persist a custom cloud/sync folder for the ledger + config tiers.
-
-    Writes ``ledger_path`` / ``config_path`` into the config-tier
-    ``app_config`` table (the ``PERSISTED`` step of the resolver), which
-    overrides the auto-detected cloud folder on the next launch. Pass an
-    empty string to clear the override and fall back to auto-detection.
-    """
-    from pathlib import Path  # noqa: PLC0415
-
-    folder = raw.strip()
-    try:
-        with session_scope() as session:
-            if not folder:
-                app_config_repo.set_value(session, "ledger_path", None)
-                app_config_repo.set_value(session, "config_path", None)
-            else:
-                base = Path(folder).expanduser()
-                app_config_repo.set_value(session, "ledger_path", str(base / "ledger.sqlite"))
-                app_config_repo.set_value(session, "config_path", str(base / "config.sqlite"))
-    except Exception as exc:
-        ui.notify(f"Could not save sync folder: {exc}", type="negative")
-        return
-    if folder:
-        ui.notify(
-            "Sync folder saved — restart the app for it to take effect.",
-            type="positive",
-        )
-    else:
-        ui.notify(
-            "Cleared — the app will auto-detect a cloud folder on next launch.",
-            type="positive",
-        )
-
-
 def _render_storage_section() -> None:  # pragma: no cover - UI
-    """Storage panel: show resolved tier paths and let the user point the
-    ledger + config tiers at a custom cloud/sync folder."""
+    """Storage panel: show resolved tier paths and where each came from."""
     from investment_dashboard.boot import is_read_only  # noqa: PLC0415
     from investment_dashboard.config import get_settings  # noqa: PLC0415
     from investment_dashboard.db import get_active_encryption  # noqa: PLC0415
@@ -789,36 +752,6 @@ def _render_storage_section() -> None:  # pragma: no cover - UI
             )
             ui.label(line).classes("font-mono text-caption")
         ui.label(f"Configured ledger: {settings.ledger_path}").classes("text-caption text-grey")
-
-        # Editable cloud/sync link (v2.8). The ledger + config tiers live
-        # under this folder; the cache always stays local. Persisted into
-        # app_config so the resolver picks it over the auto-detected cloud
-        # provider on the next launch.
-        ui.separator().classes("q-my-sm")
-        ui.label("Cloud / sync folder").classes("text-subtitle2")
-        ui.label(
-            "Point your ledger and config files at a folder of your choice "
-            "(e.g. a different cloud provider, or a plain local folder if you "
-            "don't want OneDrive). Leave blank to auto-detect. Takes effect "
-            "after a restart.",
-        ).classes("text-caption opacity-70")
-        current_folder = str(layout.ledger.path.parent) if layout.ledger.path is not None else ""
-        folder_in = (
-            ui.input("Sync folder", value=current_folder)
-            .props("outlined dense")
-            .classes("w-full max-w-2xl font-mono")
-        )
-        with ui.row().classes("gap-sm"):
-            ui.button(
-                "Save sync folder",
-                icon="save",
-                on_click=lambda: _save_sync_folder(folder_in.value or ""),
-            ).props("unelevated color=primary no-caps")
-            ui.button(
-                "Use auto-detected",
-                icon="autorenew",
-                on_click=lambda: (_save_sync_folder(""), folder_in.set_value("")),
-            ).props("flat no-caps")
 
 
 def _status_chip_props(status: str) -> tuple[str, str, str]:
@@ -952,9 +885,9 @@ def register() -> None:
                 )
             with section("Storage"):
                 ui.label(
-                    "Where your data files live and whether encryption or "
-                    "cloud-sync is in effect. You can point the ledger and "
-                    "config tiers at a sync folder of your choice below.",
+                    "Read-only view of where your data files live and whether "
+                    "encryption or cloud-sync is in effect. Nothing here is "
+                    "editable.",
                 ).classes("text-caption opacity-70 q-mb-sm")
                 _render_storage_section()
             with section("Data refresh"):
@@ -964,6 +897,13 @@ def register() -> None:
                     "the latest numbers right now.",
                 ).classes("text-caption opacity-70 q-mb-sm")
                 _render_data_refresh()
+            with section("Reset data"):
+                ui.label(
+                    "Wipe data so you can start over or re-import. Pick the "
+                    "smallest option that fits — each asks for confirmation, and "
+                    "the factory reset cannot be undone.",
+                ).classes("text-caption opacity-70 q-mb-sm")
+                _render_reset_section()
             with section("Connectivity"):
                 ui.label(
                     "Whether the last call to each data provider succeeded. "
@@ -993,12 +933,3 @@ def register() -> None:
                 _render_allocations_section(allocations)
             with section("Help & documentation"):
                 _render_help_section()
-            # Reset lives last — it's the most destructive action, so it sits
-            # at the bottom of the page rather than near the top (v2.8).
-            with section("Reset data"):
-                ui.label(
-                    "Wipe data so you can start over or re-import. Pick the "
-                    "smallest option that fits — each asks for confirmation, and "
-                    "the factory reset cannot be undone.",
-                ).classes("text-caption opacity-70 q-mb-sm")
-                _render_reset_section()

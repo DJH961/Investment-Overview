@@ -205,27 +205,6 @@ def _convert_to_usd(value_eur: Decimal, fx_rate: Decimal | None) -> Decimal:
     return value_eur * fx_rate
 
 
-def _month_label_range(first_label: str, last_label: str) -> list[str]:
-    """All ``YYYY-MM`` labels from January of ``first_label``'s year up to
-    ``last_label`` inclusive.
-
-    Used to pad the monthly table so each calendar year is a complete,
-    twelve-row block (the user invested from March 2023, so Jan/Feb 2023
-    need empty rows for the per-year pagination to line up).
-    """
-    first_year = int(first_label.split("-", 1)[0])
-    last_year, last_month = (int(p) for p in last_label.split("-"))
-    labels: list[str] = []
-    year, month = first_year, 1
-    while (year, month) <= (last_year, last_month):
-        labels.append(f"{year:04d}-{month:02d}")
-        month += 1
-        if month > 12:
-            month = 1
-            year += 1
-    return labels
-
-
 def aggregate(  # noqa: PLR0912, PLR0915
     session: Session,
     *,
@@ -233,7 +212,6 @@ def aggregate(  # noqa: PLR0912, PLR0915
     with_closing_value: bool = True,
     today: date | None = None,
     display_currency: str | None = None,
-    fill_gaps: bool = False,
 ) -> list[PeriodRow]:
     """Return one :class:`PeriodRow` per non-empty period, oldest first.
 
@@ -248,12 +226,6 @@ def aggregate(  # noqa: PLR0912, PLR0915
     per-trade-date FX (cashflows) and per-period-end FX (balances), with
     a Modified Dietz growth % computed in the display currency. The EUR
     fields are unchanged so EUR-display callers see no diff.
-
-    When ``fill_gaps`` is true (monthly only) every calendar month from
-    January of the first active year through the most recent active
-    period is emitted, even if it carried no cashflows. This keeps the
-    monthly table a contiguous twelve-rows-per-year grid so it can be
-    paginated one calendar year at a time.
     """
     txns = session.scalars(select(Transaction).options(joinedload(Transaction.account))).all()
 
@@ -279,15 +251,6 @@ def aggregate(  # noqa: PLR0912, PLR0915
             b["div"] += amt
         elif t.kind == "interest":
             b["int"] += amt
-
-    # Pad the monthly grid so every calendar month between January of the
-    # first active year and the latest active month exists as a (possibly
-    # empty) bucket — the user's "add empty Jan/Feb 2023" request, and the
-    # prerequisite for one-year-per-page pagination.
-    if fill_gaps and monthly and buckets:
-        labels_sorted = sorted(buckets)
-        for label in _month_label_range(labels_sorted[0], labels_sorted[-1]):
-            buckets.setdefault(label, {"contrib": ZERO, "div": ZERO, "int": ZERO})
 
     today = today or date.today()
     closing_by_label: dict[str, Decimal] = {}

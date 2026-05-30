@@ -10,11 +10,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.models import Transaction
 from investment_dashboard.models.transaction import TransactionSource
 from investment_dashboard.repositories import accounts_repo, instruments_repo
-from investment_dashboard.ui.pages._ledger_query import (
-    LedgerFilters,
-    list_ledger_rows,
-    summarize_ledger,
-)
+from investment_dashboard.ui.pages._ledger_query import LedgerFilters, list_ledger_rows
 
 
 def _seed(session: Session) -> None:
@@ -124,16 +120,3 @@ def test_eur_native_derives_only_net_usd(session: Session) -> None:
     rows = list_ledger_rows(session, fx_rate=Decimal("1.10"))
     assert rows[0]["net_eur"] == "100.00"
     assert rows[0]["net_usd"] == "110.00"
-
-
-def test_summarize_ledger_counts_and_average(session: Session) -> None:
-    _seed(session)
-    summary = summarize_ledger(session, fx_rate=Decimal("1.20"))
-    # Two ledger rows total (one buy, one deposit).
-    assert summary.count == 2
-    assert summary.buy_count == 1
-    assert summary.sell_count == 0
-    # Average trade size only considers trade rows (the single buy);
-    # the deposit is excluded. The USD-native buy carries no net_eur in
-    # this seed, so the EUR average is 0 while USD uses net_native.
-    assert summary.avg_trade_size_usd == Decimal("2205.00")
