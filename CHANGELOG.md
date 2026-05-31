@@ -27,10 +27,12 @@ deliver, plus a table-readability and timezone fix that span the whole app.
 - **YTD → MTD → Daily ordering.** The three period-growth cards are now kept
   adjacent and in that order so they read as a consistent group.
 - **Modern, larger tables.** Every AG-Grid table (Overview, Transactions,
-  Deposits, Monthly, Yearly, Calculator, Projection) gained a larger data
-  font (15px → 16px), taller rows, more cell padding, and slightly heavier
-  data text so the tables read as crisp and modern rather than thin and
-  faint.
+  Deposits, Monthly, Yearly, Calculator, Projection) was restyled for
+  readability: a larger 18px data font, taller rows with vertically-centred
+  cells, more cell padding, a tinted uppercase header band over a crisp 2px
+  rule, subtle zebra striping on alternating rows, and an accent-tinted row
+  hover — so the tables read as crisp, stylish and modern rather than thin,
+  flat and faint.
 - **Header clock follows your timezone.** The header timestamp no longer
   hard-codes UTC. It defaults to this computer's local timezone and can be
   pointed at any IANA zone (or UTC) from the new **Timezone** picker under

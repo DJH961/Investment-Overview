@@ -356,20 +356,29 @@ html, body {{
 /* ------------------------------------------------------------------ */
 .ag-theme-alpine, .ag-theme-balham, .ag-theme-quartz {{
   --ag-foreground-color: var(--inv-ink);
+  --ag-data-color: var(--inv-ink);
   --ag-background-color: var(--inv-surface);
   --ag-header-foreground-color: var(--inv-muted);
-  --ag-header-background-color: var(--inv-surface);
-  --ag-odd-row-background-color: var(--inv-surface);
-  --ag-row-hover-color: var(--inv-surface-alt);
+  /* Distinct, slightly tinted header band so column titles read as a clear
+     anchor above the data rather than blending into the first row. */
+  --ag-header-background-color: var(--inv-surface-alt);
+  /* Zebra striping (v2.8.1): a whisper-soft tint on alternating rows makes
+     wide financial tables far easier to scan across without feeling busy. */
+  --ag-odd-row-background-color: color-mix(in srgb, var(--inv-surface-alt) 55%, var(--inv-surface));
+  /* Accent-tinted hover so the pointed-at row stands apart from the stripes. */
+  --ag-row-hover-color: var(--inv-accent-soft);
   --ag-border-color: var(--inv-hairline);
   --ag-row-border-color: var(--inv-hairline);
   --ag-header-column-separator-color: transparent;
   --ag-font-family: "Inter", system-ui, sans-serif;
-  --ag-font-size: 16px;
+  /* Larger, comfortably readable body text. The document root is 20px, so a
+     16px table read noticeably *smaller* than the surrounding UI; 18px brings
+     the data up to a large, stylish, easy-to-read size (v2.8.1). */
+  --ag-font-size: 18px;
   --ag-grid-size: 9px;
-  --ag-row-height: 54px;
-  --ag-header-height: 56px;
-  --ag-cell-horizontal-padding: 18px;
+  --ag-row-height: 62px;
+  --ag-header-height: 60px;
+  --ag-cell-horizontal-padding: 24px;
   --ag-selected-row-background-color: var(--inv-accent-soft);
   --ag-range-selection-border-color: var(--inv-accent);
 }}
@@ -386,9 +395,9 @@ html, body {{
   --ag-data-color: {dark["ink"]} !important;
   --ag-background-color: {dark["surface"]} !important;
   --ag-header-foreground-color: {dark["muted"]} !important;
-  --ag-header-background-color: {dark["surface"]} !important;
-  --ag-odd-row-background-color: {dark["surface"]} !important;
-  --ag-row-hover-color: {dark["surface_alt"]} !important;
+  --ag-header-background-color: {dark["surface_alt"]} !important;
+  --ag-odd-row-background-color: {dark["surface_alt"]} !important;
+  --ag-row-hover-color: {dark["accent_soft"]} !important;
   --ag-border-color: {dark["hairline"]} !important;
   --ag-row-border-color: {dark["hairline"]} !important;
   --ag-control-panel-background-color: {dark["surface_alt"]} !important;
@@ -404,7 +413,7 @@ html, body {{
   border-color: {dark["hairline"]} !important;
 }}
 .body--dark .ag-header, html.dark .ag-header {{
-  background: {dark["surface"]} !important;
+  background: {dark["surface_alt"]} !important;
   color: {dark["muted"]} !important;
   border-bottom-color: {dark["hairline"]} !important;
 }}
@@ -413,8 +422,13 @@ html, body {{
   color: {dark["ink"]} !important;
   border-color: {dark["hairline"]} !important;
 }}
-.body--dark .ag-row-hover, html.dark .ag-row-hover {{
+/* Zebra striping in dark mode: AG-Grid's own odd-row variable is shadowed by
+   the blanket .ag-row override above, so tint odd rows explicitly. */
+.body--dark .ag-row-odd, html.dark .ag-row-odd {{
   background: {dark["surface_alt"]} !important;
+}}
+.body--dark .ag-row-hover, html.dark .ag-row-hover {{
+  background: {dark["accent_soft"]} !important;
 }}
 .body--dark .ag-pinned-left-cols-container, html.dark .ag-pinned-left-cols-container,
 .body--dark .ag-pinned-right-cols-container, html.dark .ag-pinned-right-cols-container,
@@ -434,15 +448,19 @@ html, body {{
   overflow: hidden;
 }}
 .ag-header {{
-  border-bottom: 1px solid var(--inv-hairline) !important;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  border-bottom: 2px solid var(--inv-hairline) !important;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  font-size: 13px;
+  font-size: 13.5px;
 }}
-/* Slightly heavier data text so the larger tables read as crisp and modern
-   rather than thin and faint (v2.8.1). */
+/* Vertically centre cell content with comfortable line-height, and give the
+   data slightly heavier weight so the taller tables read as crisp, airy and
+   modern rather than thin, faint and top-anchored (v2.8.1). */
 .ag-theme-alpine .ag-cell {{
+  display: flex;
+  align-items: center;
+  line-height: 1.45;
   font-weight: 500;
 }}
 .ag-cell[col-id$="_eur"], .ag-cell[col-id$="_usd"], .ag-cell[col-id$="_native"],
