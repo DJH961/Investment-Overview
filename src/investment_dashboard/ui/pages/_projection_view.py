@@ -33,7 +33,7 @@ from nicegui import ui
 
 from investment_dashboard.ui.components import section
 from investment_dashboard.ui.components.kpi_card import dual_kpi_card
-from investment_dashboard.ui.money_format import dual_money, fmt_money
+from investment_dashboard.ui.money_format import dual_money, fmt_money, fmt_pct
 from investment_dashboard.ui.pages._period_query import aggregate
 from investment_dashboard.ui.pages._projection_model import (
     SCENARIO_EXPECTED,
@@ -156,7 +156,7 @@ def render(seed: ProjectionSeed) -> None:  # pragma: no cover - UI wiring
         "a EUR and a USD wallet — each growing at its own historical XIRR, so the two "
         "diverge exactly as currency moves have made them diverge before "
         + (
-            f"(expected ≈ {primary_expected * 100:.1f}% p.a. in {primary}). "
+            f"(expected ≈ {fmt_pct(primary_expected)} p.a. in {primary}). "
             if seed.xirr_available
             else "(default assumption — not enough history for XIRR yet). "
         )
@@ -457,7 +457,7 @@ def _render_implied_fx(
     arrow = "↑" if implied >= today_rate else "↓"
     ui.label(
         f"Implied EUR/USD at horizon: {implied:.4f} {arrow}  "
-        f"(today {today_rate:.4f}, {drift:+.1f}% — the gap between the EUR and USD "
+        f"(today {today_rate:.4f}, {drift:+.2f} % — the gap between the EUR and USD "
         "return assumptions, not a fixed-rate conversion)."
     ).classes("text-caption opacity-70")
 
@@ -517,14 +517,14 @@ def _render_table(
                 _series(pe, scenario, real=real),  # noqa: B023 - bound per iteration
                 _series(pu, scenario, real=real),  # noqa: B023
                 primary=primary,
-                decimals=0,
+                decimals=2,
             )
 
         rows.append(
             {
                 "label": pe.label,
                 "contributed": dual_money(
-                    pe.contributed, pu.contributed, primary=primary, decimals=0
+                    pe.contributed, pu.contributed, primary=primary, decimals=2
                 ),
                 "pessimistic": cell(SCENARIO_PESSIMISTIC),
                 "expected": cell(SCENARIO_EXPECTED),

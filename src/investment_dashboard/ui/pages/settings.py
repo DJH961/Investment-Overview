@@ -39,6 +39,7 @@ from investment_dashboard.services.onboarding_service import seed_default_setup
 from investment_dashboard.services.prices_service import refresh_prices
 from investment_dashboard.ui.components import page_header, section
 from investment_dashboard.ui.layout import page_frame
+from investment_dashboard.ui.money_format import fmt_pct
 
 PATH = "/settings"
 
@@ -452,7 +453,7 @@ def _save_risk_free_manual(value: str) -> None:  # pragma: no cover - UI
     if parsed is None:
         ui.notify("Cleared manual risk-free rate; using live ^IRX feed", type="positive")
     else:
-        ui.notify(f"Manual risk-free rate set to {parsed}", type="positive")
+        ui.notify(f"Manual risk-free rate set to {fmt_pct(parsed)}", type="positive")
     _settings_refresh()
 
 
@@ -469,7 +470,7 @@ def _refresh_risk_free_clicked() -> None:  # pragma: no cover - UI
             type="warning",
         )
     else:
-        ui.notify(f"Risk-free rate refreshed to {snap.rate}", type="positive")
+        ui.notify(f"Risk-free rate refreshed to {fmt_pct(snap.rate)}", type="positive")
     _settings_refresh()
 
 
@@ -501,7 +502,7 @@ def _render_analytics_prefs(
             on_click=_refresh_risk_free_clicked,
         ).props("flat no-caps")
         cached = (
-            f"current: {rf_snapshot.rate}"
+            f"current: {fmt_pct(rf_snapshot.rate)}"
             + (
                 f" (fetched {rf_snapshot.fetched_at.isoformat(timespec='minutes')})"
                 if rf_snapshot.fetched_at

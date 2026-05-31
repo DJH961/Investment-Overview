@@ -24,7 +24,7 @@ from investment_dashboard.ui.components import (
 )
 from investment_dashboard.ui.components.kpi_card import dual_kpi_card
 from investment_dashboard.ui.layout import page_frame
-from investment_dashboard.ui.money_format import dual_pct, fmt_money
+from investment_dashboard.ui.money_format import aggrid_money_formatter, dual_pct, fmt_money
 from investment_dashboard.ui.pages._analytics_query import (
     AnalyticsBundle,
     build_bundle,
@@ -301,31 +301,31 @@ def register() -> None:
                                     "headerName": "Start value (EUR)",
                                     "field": "start_value",
                                     "type": "rightAligned",
-                                    "valueFormatter": "params.value.toLocaleString(undefined,{maximumFractionDigits:2})",
+                                    "valueFormatter": aggrid_money_formatter("EUR"),
                                 },
                                 {
                                     "headerName": "End value (EUR)",
                                     "field": "end_value",
                                     "type": "rightAligned",
-                                    "valueFormatter": "params.value.toLocaleString(undefined,{maximumFractionDigits:2})",
+                                    "valueFormatter": aggrid_money_formatter("EUR"),
                                 },
                                 {
                                     "headerName": "Net contribution (EUR)",
                                     "field": "net_contribution",
                                     "type": "rightAligned",
-                                    "valueFormatter": "params.value.toLocaleString(undefined,{maximumFractionDigits:2})",
+                                    "valueFormatter": aggrid_money_formatter("EUR"),
                                 },
                                 {
                                     "headerName": "P&L (EUR)",
                                     "field": "absolute_pnl",
                                     "type": "rightAligned",
-                                    "valueFormatter": "params.value.toLocaleString(undefined,{maximumFractionDigits:2})",
+                                    "valueFormatter": aggrid_money_formatter("EUR"),
                                 },
                                 {
                                     "headerName": "% of total return",
                                     "field": "pct_of_total_return",
                                     "type": "rightAligned",
-                                    "valueFormatter": "params.value.toFixed(2) + ' %'",
+                                    "valueFormatter": "value == null ? '' : value.toFixed(2) + ' %'",
                                 },
                             ],
                             "rowData": rows,

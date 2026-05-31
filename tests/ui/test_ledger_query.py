@@ -61,7 +61,7 @@ def test_kind_filter(session: Session) -> None:
     rows = list_ledger_rows(session, LedgerFilters(kind="buy"))
     assert len(rows) == 1
     assert rows[0]["symbol"] == "VTI"
-    assert rows[0]["net"] == "-2,205.00"
+    assert rows[0]["net"] == "$-2,205.00"
 
 
 def test_symbol_filter(session: Session) -> None:
@@ -98,8 +98,8 @@ def test_usd_native_uses_net_native_for_net_usd(session: Session) -> None:
     )
     session.flush()
     rows = list_ledger_rows(session, fx_rate=Decimal("1.20"))
-    assert rows[0]["net_usd"] == "-19.99"
-    assert rows[0]["net_eur"] == "-17.24"
+    assert rows[0]["net_usd"] == "$-19.99"
+    assert rows[0]["net_eur"] == "€-17.24"
 
 
 def test_eur_native_derives_only_net_usd(session: Session) -> None:
@@ -122,8 +122,8 @@ def test_eur_native_derives_only_net_usd(session: Session) -> None:
     )
     session.flush()
     rows = list_ledger_rows(session, fx_rate=Decimal("1.10"))
-    assert rows[0]["net_eur"] == "100.00"
-    assert rows[0]["net_usd"] == "110.00"
+    assert rows[0]["net_eur"] == "€100.00"
+    assert rows[0]["net_usd"] == "$110.00"
 
 
 def test_summarize_ledger_counts_and_average(session: Session) -> None:
@@ -168,6 +168,6 @@ def test_net_eur_derived_from_trade_date_fx(session: Session) -> None:
     # fx_rate (current spot) is only a fallback; the row has trade-date FX.
     rows = list_ledger_rows(session, fx_rate=Decimal("1.10"))
     row = rows[0]
-    assert row["net_usd"] == "-2,500.00"
+    assert row["net_usd"] == "$-2,500.00"
     # -2500 USD / 1.25 = -2000 EUR (trade-date rate, not the 1.10 fallback).
-    assert row["net_eur"] == "-2,000.00"
+    assert row["net_eur"] == "€-2,000.00"
