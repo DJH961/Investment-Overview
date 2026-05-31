@@ -189,3 +189,58 @@ def test_market_verdict_none_without_benchmark_history(session: Session, seeded:
     verdict = compute_market_verdict(session, portfolio_return=Decimal("0.10"))
     assert verdict.beating is None
     assert verdict.benchmark_return is None
+
+
+def test_partial_sale_uses_average_cost_growth(session: Session) -> None:
+    """A partial sale must release a proportional slice of the cost basis in
+    both wallets, otherwise growth is massively deflated (v2.9.6 fix)."""
+    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Fidelity",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    acme = instruments_repo.get_or_create(session, symbol="ACME", asset_class="etf")
+    prices_repo.upsert_closes(session, acme.id, {date.today(): Decimal("150.00")})
+    fx_repo.upsert_rates(
+        session,
+        {date(2024, 1, 5): Decimal("1.25"), date.today(): Decimal("1.25")},
+    )
+    session.add_all(
+        [
+            Transaction(
+                account_id=acct.id,
+                date=date(2024, 1, 5),
+                kind="buy",
+                instrument_id=acme.id,
+                quantity=Decimal("10"),
+                price_native=Decimal("100"),
+                net_native=Decimal("-1000"),
+                source=TransactionSource.MANUAL,
+            ),
+            Transaction(
+                account_id=acct.id,
+                date=date(2024, 6, 5),
+                kind="sell",
+                instrument_id=acme.id,
+                quantity=Decimal("-5"),
+                price_native=Decimal("150"),
+                net_native=Decimal("750"),
+                source=TransactionSource.MANUAL,
+            ),
+        ]
+    )
+    session.flush()
+
+    positions = get_positions(session)
+    metrics = compute_instrument_metrics(session, positions)
+    im = metrics[acme.id]
+    # 5 shares remain; half the $1000 basis is released ⇒ cost $500.
+    assert im.cost_basis_usd == Decimal("500.00")
+    # Value 5 × $150 = $750 ⇒ gain $250, growth +50 % (not a deflated loss).
+    assert im.capital_gain_usd == Decimal("250.00")
+    assert im.total_growth_usd is not None
+    assert abs(im.total_growth_usd - Decimal("0.5")) < Decimal("0.001")

@@ -12,6 +12,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain.money_market import MONEY_MARKET_NAV, is_money_market
 from investment_dashboard.models import (
     Account,
     Instrument,
@@ -24,7 +25,6 @@ from investment_dashboard.repositories import (
     instruments_repo,
     transactions_repo,
 )
-from investment_dashboard.domain.money_market import MONEY_MARKET_NAV, is_money_market
 from investment_dashboard.services import fx_service, prices_service
 from investment_dashboard.services.instrument_enrichment_service import (
     EffectiveInstrument,
@@ -59,7 +59,7 @@ class Position:
     effective: EffectiveInstrument | None = None
 
 
-def compute_positions(session: Session, *, as_of: date | None = None) -> list[Position]:  # noqa: PLR0912
+def compute_positions(session: Session, *, as_of: date | None = None) -> list[Position]:  # noqa: PLR0912, PLR0915
     """Return one :class:`Position` per non-zero (account, instrument) pair.
 
     Cash-account holdings (Savings) appear with ``shares = 1`` and
@@ -107,8 +107,7 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
                 avg_cost = agg["cost_basis"] / shares_before
                 # qty negative ⇒ this subtracts the sold shares' basis.
                 agg["cost_basis"] += avg_cost * qty
-                if agg["cost_basis"] < ZERO:
-                    agg["cost_basis"] = ZERO
+                agg["cost_basis"] = max(agg["cost_basis"], ZERO)
             agg["shares"] += qty
         elif kind == TransactionKind.DIVIDEND_REINVEST.value:
             agg["shares"] += qty

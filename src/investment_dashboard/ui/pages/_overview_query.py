@@ -215,9 +215,7 @@ def compute_instrument_metrics(  # noqa: PLR0915
     # as income (already captured as cost basis + shares via the reinvest
     # leg), otherwise growth double-counts them.
     reinvest_keys: set[tuple[int | None, date]] = {
-        (t.instrument_id, t.date)
-        for t in txns
-        if t.kind == TransactionKind.DIVIDEND_REINVEST.value
+        (t.instrument_id, t.date) for t in txns if t.kind == TransactionKind.DIVIDEND_REINVEST.value
     }
     for t in txns:
         iid = t.instrument_id

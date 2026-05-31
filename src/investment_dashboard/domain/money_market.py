@@ -63,6 +63,4 @@ def is_money_market(
     """
     if symbol and symbol.strip().upper() in MONEY_MARKET_SYMBOLS:
         return True
-    if name and "money market" in name.lower():
-        return True
-    return False
+    return bool(name and "money market" in name.lower())
