@@ -40,6 +40,12 @@ uv run pre-commit install
   rows or domain dataclasses; never raw `dict`s.
 - `services/` orchestrates use-cases by composing the layers above.
 - `ui/` reads input, calls a service, renders the result. Nothing else.
+- **Cache-tier data (prices, FX, snapshots) is read/written only through its
+  service** (`prices_service`, `fx_service`, `snapshots_service`), which routes
+  to the cache engine via `db.cache_read_session` / `cache_write_session`.
+  Never call `prices_repo` / `fx_repo` / `snapshots_repo` directly on a ledger
+  session — it silently returns empty under a split-DB layout. See
+  "Storage tiers" in [`docs/architecture.md`](docs/architecture.md).
 
 ## Tests
 

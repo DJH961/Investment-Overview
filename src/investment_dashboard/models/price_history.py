@@ -3,11 +3,15 @@
 Belongs to the **cache** tier (device-local, regenerable from market data
 + ``Instrument`` rows). ``instrument_id`` references the ledger-tier
 ``instruments`` table by integer only — SQLAlchemy cannot bridge a
-``ForeignKey`` across separate ``MetaData`` instances, and Phase 2 of the
-DB split puts each tier on its own SQLite file where DB-level FKs would
-not be enforced anyway. Referential integrity is maintained at the
+``ForeignKey`` across separate ``MetaData`` instances, and under the
+split-DB layout each tier lives on its own SQLite file where DB-level FKs
+would not be enforced anyway. Referential integrity is maintained at the
 application level (writers check the instrument exists; a boot-time
 cache-orphan janitor sweeps rows whose instrument was deleted).
+
+Read/write this table only through ``prices_service`` (which routes to the
+cache engine); a raw ``prices_repo`` call on a ledger session returns
+nothing under a split-DB layout.
 """
 
 from __future__ import annotations
