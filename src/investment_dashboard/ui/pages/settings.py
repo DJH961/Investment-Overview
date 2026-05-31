@@ -882,6 +882,112 @@ def _render_storage_section() -> None:  # pragma: no cover - UI
             ).props("flat no-caps")
 
 
+def _set_auto_shutdown_pref(enabled: bool) -> None:  # pragma: no cover - UI
+    """Persist + arm the auto-shutdown-on-tab-close preference."""
+    from investment_dashboard import shutdown  # noqa: PLC0415
+
+    try:
+        with session_scope() as session:
+            app_config_repo.set_value(
+                session, "auto_shutdown_on_tab_close", "true" if enabled else "false"
+            )
+    except Exception as exc:
+        ui.notify(f"Could not save preference: {exc}", type="negative")
+        return
+    shutdown.set_auto_shutdown(enabled)
+    ui.notify(
+        "Server will quit when the last tab closes."
+        if enabled
+        else "Auto-shutdown on tab close disabled.",
+        type="positive",
+    )
+
+
+def _handoff_lock_clicked() -> None:  # pragma: no cover - UI
+    """Release the writer lock so another instance can take over."""
+    from investment_dashboard import shutdown  # noqa: PLC0415
+
+    if shutdown.release_writer_lock_for_handoff():
+        ui.notify(
+            "Writer lock released — this window is now read-only. "
+            "Another instance can take over writes.",
+            type="positive",
+        )
+        ui.navigate.reload()
+    else:
+        ui.notify("No writer lock to release (already read-only).", type="info")
+
+
+def _shutdown_clicked() -> None:  # pragma: no cover - UI
+    """Confirm, then release the lock and stop the server."""
+    from investment_dashboard import shutdown  # noqa: PLC0415
+
+    with ui.dialog() as dialog, ui.card():
+        ui.label("Shut down the dashboard server?").classes("text-subtitle1")
+        ui.label(
+            "This stops the background server and releases the writer lock. "
+            "You'll need to relaunch the app to use it again.",
+        ).classes("text-caption opacity-70")
+        with ui.row().classes("justify-end w-full gap-sm"):
+            ui.button("Cancel", on_click=dialog.close).props("flat no-caps")
+
+            def _confirm() -> None:
+                dialog.close()
+                ui.notify("Shutting down… you can close this tab.", type="warning")
+                # Give the notification a moment to render before the server
+                # stops serving, then release the lock and exit.
+                ui.timer(0.6, shutdown.request_shutdown, once=True)
+
+            ui.button("Shut down", icon="power_settings_new", on_click=_confirm).props(
+                "unelevated color=negative no-caps"
+            )
+    dialog.open()
+
+
+def _render_server_section() -> None:  # pragma: no cover - UI
+    """Server controls: hand off the writer lock, toggle auto-shutdown, quit."""
+    from investment_dashboard import shutdown  # noqa: PLC0415
+    from investment_dashboard.boot import holds_writer_lock, is_read_only  # noqa: PLC0415
+
+    holding = holds_writer_lock()
+    with ui.column().classes("w-full gap-sm"):
+        if is_read_only():
+            ui.label("This window is read-only — another instance holds the writer lock.").classes(
+                "text-warning"
+            )
+        else:
+            ui.label("This window holds the writer lock (read-write).").classes("text-positive")
+
+        ui.switch(
+            "Quit the server when I close the last browser tab",
+            value=shutdown.auto_shutdown_enabled(),
+            on_change=lambda e: _set_auto_shutdown_pref(e.value),
+        )
+        ui.label(
+            "Stops the background server a few seconds after the last tab "
+            "closes, releasing the writer lock so other instances can run.",
+        ).classes("text-caption opacity-70")
+
+        with ui.row().classes("items-center gap-sm q-mt-sm"):
+            handoff = ui.button(
+                "Release writer lock",
+                icon="lock_open",
+                on_click=_handoff_lock_clicked,
+            ).props("outline color=primary no-caps")
+            if not holding:
+                handoff.props("disable")
+            ui.button(
+                "Shut down server",
+                icon="power_settings_new",
+                on_click=_shutdown_clicked,
+            ).props("unelevated color=negative no-caps")
+        ui.label(
+            '"Release writer lock" keeps this window open but read-only so '
+            "another instance can take over writes; "
+            '"Shut down server" stops the app entirely.',
+        ).classes("text-caption opacity-70")
+
+
 def _status_chip_props(status: str) -> tuple[str, str, str]:
     """Map a provider status to (icon, qcolor, human label) for the chip."""
     if status == "ok":
@@ -1019,6 +1125,13 @@ def register() -> None:
                     "config tiers at a sync folder of your choice below.",
                 ).classes("text-caption opacity-70 q-mb-sm")
                 _render_storage_section()
+            with section("Server"):
+                ui.label(
+                    "Start/stop controls for the local server. Hand off the "
+                    "writer lock to another instance, or shut the server down "
+                    "cleanly when you're done.",
+                ).classes("text-caption opacity-70 q-mb-sm")
+                _render_server_section()
             with section("Data refresh"):
                 ui.label(
                     "Pull fresh prices and FX rates on demand. The app also "
