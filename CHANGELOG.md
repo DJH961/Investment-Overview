@@ -12,7 +12,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
-## [Unreleased]
+## [2.9.3] — 2026-05-31
 
 Adds a robust way to stop the local server and release the single-writer lock,
 so the packaged desktop build no longer has to be killed from Task Manager (and

@@ -143,7 +143,6 @@ def test_install_registers_on_shutdown_lock_release(monkeypatch: pytest.MonkeyPa
 def test_resolve_auto_shutdown_prefers_persisted_value(monkeypatch: pytest.MonkeyPatch) -> None:
     from investment_dashboard import main
 
-    monkeypatch.setattr(main, "_resolve_auto_shutdown", main._resolve_auto_shutdown)
     # Persisted "true" wins regardless of the setting default.
     monkeypatch.setattr(
         "investment_dashboard.repositories.app_config_repo.get",
