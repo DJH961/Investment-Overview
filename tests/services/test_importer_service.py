@@ -131,15 +131,26 @@ class TestImportFidelity:
 
 
 class TestImportVanguard:
-    def test_import_drops_sweeps(self, session: Session, usd_account: int, fx_seeded: None) -> None:
+    def test_import_drops_sweeps_and_synthesizes_settlement(
+        self, session: Session, usd_account: int, fx_seeded: None
+    ) -> None:
         content = (FIXTURE_DIR / "vanguard_sample.csv").read_text()
         result = import_csv(
             session, broker=Broker.VANGUARD, account_id=usd_account, content=content
         )
-        # 5 ledger rows (Buy, Dividend, Reinvestment, Funds Received, Sell);
-        # 2 sweep rows dropped.
-        assert result.inserted == 5
+        # 5 real ledger rows (Buy, Dividend, Reinvestment, Funds Received,
+        # Sell) survive; the 2 broker sweep rows are dropped. Each real row
+        # that moves cash gains a synthesized VMFXX settlement leg, so 5 + 5.
+        assert result.inserted == 10
         assert result.sweeps_dropped == 2
+        # The reconstructed VMFXX settlement balance = 2000 deposited + 450
+        # sold − 1100 bought (the dividend/reinvest pair nets to zero).
+        vmfxx_shares = sum(
+            (t.quantity or Decimal(0))
+            for t in session.scalars(select(Transaction)).all()
+            if t.instrument is not None and t.instrument.symbol == "VMFXX"
+        )
+        assert vmfxx_shares == Decimal("1350")
 
 
 class TestImportVanguardXlsx:
@@ -226,13 +237,24 @@ class TestImportVanguardXlsx:
             account_id=usd_account,
             content=self._xlsx_bytes(),
         )
-        assert result.inserted == 2  # Buy + Funds Received
+        # Buy + Funds Received survive (1 sweep dropped); each gains a
+        # synthesized VMFXX settlement leg ⇒ 4 inserted.
+        assert result.inserted == 4
         assert result.sweeps_dropped == 1
         assert result.unknown_actions == []
+        # 1100 swept in by the deposit and 1100 swept out by the VTI buy net
+        # to a zero settlement balance.
+        vmfxx_shares = sum(
+            (t.quantity or Decimal(0))
+            for t in session.scalars(select(Transaction)).all()
+            if t.instrument is not None and t.instrument.symbol == "VMFXX"
+        )
+        assert vmfxx_shares == Decimal("0")
 
     def test_reimport_dedupes(self, session: Session, usd_account: int, fx_seeded: None) -> None:
         data = self._xlsx_bytes()
         import_csv(session, broker=Broker.VANGUARD, account_id=usd_account, content=data)
         result = import_csv(session, broker=Broker.VANGUARD, account_id=usd_account, content=data)
         assert result.inserted == 0
-        assert result.duplicates == 2
+        # Both real rows and their synthesized VMFXX legs dedupe on re-import.
+        assert result.duplicates == 4

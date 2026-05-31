@@ -12,6 +12,46 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.9.6] — 2026-05-31
+
+Bug-fix bundle for portfolio valuation accuracy: partial-sale growth, money-
+market settlement funds, Vanguard cash sweeps, reinvested-dividend
+double-counting, and the DAX ticker.
+
+### Fixed
+- **Partial sales no longer deflate growth.** A sale released no cost basis, so
+  after selling part of a holding the remaining shares kept the *full* original
+  basis and the reported growth collapsed. Sales now release a proportional
+  slice of the cost basis (average-cost method) in the native, EUR, and USD
+  views (`positions_service.compute_positions`,
+  `_overview_query.compute_instrument_metrics`).
+- **Money-market / settlement funds value at par.** `VMFXX`, `SPAXX`, and peers
+  have no tradeable price feed, so their positions valued at `0` — which
+  understated monthly/yearly **closing values** by the whole uninvested-cash
+  balance and gave the funds an absurd >1000 % growth. They are now priced at
+  their constant $1.00 NAV (`domain/money_market.py`).
+- **Vanguard deposits sweep into the settlement fund automatically.** The
+  Full-History export drops the internal "Sweep In/Out" rows, so uninvested
+  cash was invisible. The importer now reconstructs the `VMFXX` settlement legs
+  deterministically — deposits/sales/dividends flow **in**, security buys flow
+  **out** — so the settlement holding matches what you actually hold
+  (`adapters/vanguard/settlement.py`). Fidelity is unaffected (it exports
+  `SPAXX` explicitly).
+- **Reinvested dividends are no longer double-counted.** A reinvested dividend
+  arrives as a cash leg *and* a reinvestment leg; the cash leg was added to
+  income while the new shares were also counted, inflating the gain. The cash
+  leg of a reinvested dividend is now excluded from cash-dividend income.
+- **DAX (and any `EXCHANGE:TICKER` symbol) resolves on yfinance.** A symbol
+  pasted as `NASDAQ:DAX` was queried verbatim and failed to price. A recognised
+  exchange prefix is now stripped to the bare ticker
+  (`ticker_validation_service.normalize_symbol`).
+
+### Notes
+- Fidelity `SPAXX` reinvested-dividend shares (e.g. 12.23) faithfully reflect
+  the reinvestment rows in the export; the par-pricing and double-count fixes
+  bring its growth back to a sane value, but the share count itself mirrors the
+  source data.
+
 ## [2.9.4] — 2026-05-31
 
 A maintenance round driven by an internal audit: fixes a family of latent

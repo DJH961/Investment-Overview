@@ -54,9 +54,48 @@ class TickerValidation:
     latest_close_date: date | None = None
 
 
+#: Exchange qualifiers some users paste in front of a symbol (Google/TradingView
+#: style, e.g. ``NASDAQ:DAX``). yfinance wants the bare ticker, so we strip a
+#: recognised leading ``EXCHANGE:`` prefix before looking the symbol up — this
+#: is why a freshly-added ``NASDAQ:DAX`` failed to price (it was queried
+#: verbatim and matched nothing, or fell through to the German index).
+_EXCHANGE_PREFIXES: frozenset[str] = frozenset(
+    {
+        "NASDAQ",
+        "NYSE",
+        "NYSEARCA",
+        "ARCA",
+        "AMEX",
+        "BATS",
+        "CBOE",
+        "OTC",
+        "OTCMKTS",
+        "LON",
+        "LSE",
+        "ETR",
+        "FRA",
+        "XETRA",
+        "EPA",
+        "BME",
+        "TSE",
+        "TSX",
+        "ASX",
+    }
+)
+
+
 def normalize_symbol(symbol: str) -> str:
-    """Upper-case and trim a symbol the way the ledger stores it."""
-    return symbol.strip().upper()
+    """Upper-case, trim, and strip an ``EXCHANGE:`` prefix from a symbol.
+
+    yfinance expects the bare ticker (``DAX``), not a Google/TradingView-style
+    ``EXCHANGE:TICKER`` (``NASDAQ:DAX``). Only a recognised exchange prefix is
+    removed, so a symbol that legitimately contains a colon is left untouched.
+    """
+    cleaned = symbol.strip().upper()
+    prefix, sep, rest = cleaned.partition(":")
+    if sep and rest and prefix in _EXCHANGE_PREFIXES:
+        return rest.strip()
+    return cleaned
 
 
 def validate_ticker(

@@ -67,6 +67,44 @@ class TestValidateTicker:
         # Metadata still surfaced so the UI can explain the match.
         assert res.name == "Global X DAX Germany ETF"
 
+    def test_strips_exchange_prefix_before_lookup(self) -> None:
+        # Users paste Google/TradingView-style ``NASDAQ:DAX``; yfinance needs
+        # the bare ``DAX`` ticker, so the prefix must be stripped before the
+        # provider lookup (v2.9.6 DAX fix).
+        seen: list[str] = []
+
+        def info_fetcher(s: str) -> InstrumentInfo:
+            seen.append(s)
+            return _info()
+
+        res = ticker_validation_service.validate_ticker(
+            "NASDAQ:DAX",
+            info_fetcher=info_fetcher,
+            close_fetcher=lambda s: _close(),
+        )
+        assert seen == ["DAX"]
+        assert res.symbol == "DAX"
+        assert res.valid is True
+
+
+class TestNormalizeSymbol:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("dax", "DAX"),
+            ("  vti ", "VTI"),
+            ("NASDAQ:DAX", "DAX"),
+            ("nyse:brk.b", "BRK.B"),
+            ("NYSEARCA:VOO", "VOO"),
+            # An unknown prefix is left intact (don't mangle real symbols).
+            ("FOO:BAR", "FOO:BAR"),
+            # A trailing Yahoo exchange suffix is preserved.
+            ("RHM.DE", "RHM.DE"),
+        ],
+    )
+    def test_normalize(self, raw: str, expected: str) -> None:
+        assert ticker_validation_service.normalize_symbol(raw) == expected
+
 
 class TestAddValidatedInstrument:
     def test_persists_validated_instrument(self, session: Session) -> None:
