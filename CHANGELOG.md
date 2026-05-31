@@ -38,6 +38,13 @@ intraday quotes are a supported feature.
   external cash flows (in like a deposit, out like a withdrawal) across metrics,
   deposits and the monthly/yearly aggregation (`metrics_service`,
   `_period_query`, `_deposits_query`).
+- **Encryption passphrase onboarding + recovery file.** Settings → Storage and
+  the first-run onboarding page now collect the SQLCipher passphrase for the
+  synced ledger/config tiers and store it in the OS keychain
+  (`store_passphrase_in_keyring`), so the `INV_DASHBOARD_DB_PASSPHRASE` env var
+  is no longer the only way to supply it. Both surfaces also offer a downloadable
+  **recovery file** (`storage.encryption.build_recovery_file`), closing the
+  "encrypted-mode users have no key-recovery path" gap from the v2.0 storage plan.
 
 ### Fixed
 - **USD figures no longer silently relabel EUR as USD when an FX rate is
@@ -57,6 +64,10 @@ intraday quotes are a supported feature.
 - **Unconvertible cashflows** are left out of a period bucket (`None`) rather
   than folded in as `0`, which had shrunk the Modified-Dietz denominator
   (`_period_query`).
+- **Split-DB migrations now stamp every tier.** Boot records the Alembic
+  revision in each tier's own `alembic_version` table (not just the ledger),
+  so a future config/cache-tier migration is applied instead of silently
+  skipped for split-DB users (`boot.py`).
 
 ### Changed
 - **Default risk-free symbol is `^IRX` again** (13-week US T-bill yield). The

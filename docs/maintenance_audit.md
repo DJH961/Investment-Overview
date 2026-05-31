@@ -28,8 +28,8 @@ functionality. Ordered by impact.
 | 🔴 2 | Decide on the silent **EUR-as-USD fallback** | `_overview_query.py:268,278`; `metrics_service.py:249`; `_period_query.py:250-258` | When an FX rate is missing the USD column shows the EUR number *relabelled* as USD instead of blank — silently wrong figures. Should degrade to `None`/blank. (Bug #1, #2.) |
 | 🔴 3 | Refresh the user-facing docs that now lie | `README.md`, `docs/user_guide.md`, `CONTRIBUTING.md` | Status pill says v2.0.0, risk-free shown as `^IRX`, "Storage is not editable", "UI never calls repositories" — all now false. Misleads the only reader (you). |
 | 🟠 4 | Wire the **v2.9.4 CHANGELOG entry** | `CHANGELOG.md` | `pyproject.toml` is `2.9.4` but the changelog tops out at `2.9.3` and even has a stale `2.9.1 — Unreleased` block below it. Version history is incoherent. |
-| 🟠 5 | Per-tier **Alembic** version tables | `boot.py:349-363`; plan doc | Migrations only run against the ledger DB in split-DB mode. The next schema migration to config/cache tiers will silently not apply for split-DB users. |
-| 🟠 6 | Onboarding **passphrase + recovery-file** prompts | `storage/encryption.py:12,84` | Plumbing (`store_passphrase_in_keyring`) exists but no UI calls it; encrypted-mode users can lose data with no recovery path. |
+| 🟠 5 | Per-tier **Alembic** version tables | `boot.py:349-363`; plan doc | Migrations only run against the ledger DB in split-DB mode. The next schema migration to config/cache tiers will silently not apply for split-DB users. _(done — see CHANGELOG)_ |
+| 🟠 6 | Onboarding **passphrase + recovery-file** prompts | `storage/encryption.py:12,84` | Plumbing (`store_passphrase_in_keyring`) exists but no UI calls it; encrypted-mode users can lose data with no recovery path. _(done — Settings → Storage + onboarding now collect the passphrase and offer a recovery file)_ |
 | 🟢 7 | True daily-snapshot **TWR per period** | see TODO #12 | Currently a Modified-Dietz approximation; daily snapshots now exist, so the "easy follow-up" is finally cheap. |
 
 Everything below is the full detail behind this list.
@@ -155,14 +155,14 @@ only — no logic touched):
 ## 3. Full TODO / caveat backlog
 
 ### 3.1 Outstanding — SOON / IMMEDIATE
-1. **Per-tier Alembic version tables** — `boot.py:349-363`,
-   `docs/v2.0_split_cloud_security_plan.md:401-408`. Migrations run against the
-   ledger URL only; config/cache-tier migrations won't apply in split-DB mode.
-2. **Onboarding passphrase screen** — `storage/encryption.py:84`
-   (`store_passphrase_in_keyring`) is wired underneath but no UI collects it.
-   (`docs/v2.0_split_cloud_security_plan.md:429-431`, `README.md:290`.)
-3. **Recovery-file save prompt** — `storage/encryption.py:12-13`. Without it,
-   encrypted-mode users have no key-recovery path → data-loss risk.
+1. ~~**Per-tier Alembic version tables**~~ — _done._ Boot now stamps each tier's
+   `alembic_version` table in split-DB mode (`boot.py`).
+2. ~~**Onboarding passphrase screen**~~ — _done._ Settings → Storage and the
+   first-run onboarding page now collect the synced-tier passphrase and store
+   it via `store_passphrase_in_keyring` (`storage/encryption.py:84`).
+3. ~~**Recovery-file save prompt**~~ — _done._ Both surfaces offer a downloadable
+   recovery document (`storage.encryption.build_recovery_file`), giving
+   encrypted-mode users a key-recovery path.
 
 ### 3.2 Outstanding — MEDIUM
 4. Settings "Move ledger…" picker — `README.md:290`. No `move_ledger` code/UI.

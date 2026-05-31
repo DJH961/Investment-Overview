@@ -937,6 +937,96 @@ def _render_storage_section() -> None:  # pragma: no cover - UI
                 on_click=lambda: (_save_sync_folder(""), folder_in.set_value("")),
             ).props("flat no-caps")
 
+        ui.separator().classes("q-my-sm")
+        _render_encryption_passphrase(encryption.enabled)
+
+
+def _save_passphrase(passphrase: str, confirm: str) -> None:  # pragma: no cover - UI
+    """Validate + store the synced-tier passphrase in the OS keychain."""
+    from investment_dashboard.storage.encryption import (  # noqa: PLC0415
+        store_passphrase_in_keyring,
+        validate_passphrase,
+    )
+
+    error = validate_passphrase(passphrase, confirm)
+    if error is not None:
+        ui.notify(error, type="warning")
+        return
+    if store_passphrase_in_keyring(passphrase):
+        ui.notify(
+            "Passphrase saved to the OS keychain. Save a recovery file too, "
+            "then restart with encryption enabled.",
+            type="positive",
+        )
+    else:
+        ui.notify(
+            "Could not reach the OS keychain (the `keyring` package may be "
+            "missing — install the `[encrypted]` extra).",
+            type="negative",
+        )
+
+
+def _download_recovery_file(passphrase: str, confirm: str) -> None:  # pragma: no cover - UI
+    """Offer the passphrase as a downloadable recovery document."""
+    from investment_dashboard.storage.encryption import (  # noqa: PLC0415
+        RECOVERY_FILENAME,
+        build_recovery_file,
+        validate_passphrase,
+    )
+
+    error = validate_passphrase(passphrase, confirm)
+    if error is not None:
+        ui.notify(error, type="warning")
+        return
+    ui.download.content(build_recovery_file(passphrase), RECOVERY_FILENAME)
+    ui.notify(
+        "Recovery file downloaded — store it somewhere safe and offline.",
+        type="positive",
+    )
+
+
+def _render_encryption_passphrase(enabled: bool) -> None:  # pragma: no cover - UI
+    """Collect the synced-tier passphrase and offer a recovery file.
+
+    Encryption itself is turned on with ``INV_DASHBOARD_ENCRYPT_SYNCED_TIERS``
+    + the ``[encrypted]`` SQLCipher driver; this panel makes the *passphrase*
+    side usable from the app — storing it in the OS keychain (so the env var
+    isn't required) and producing the offline recovery document that the
+    encryption plan called for.
+    """
+    ui.label("Encryption passphrase").classes("text-subtitle2")
+    ui.label(
+        "Store the SQLCipher passphrase for your synced ledger/config tiers in "
+        "the OS keychain, and save an offline recovery file. The passphrase is "
+        "never written to your database folder; if you lose it the encrypted "
+        "data cannot be recovered.",
+    ).classes("text-caption opacity-70")
+    if not enabled:
+        ui.label(
+            "Encryption is currently disabled. Saving a passphrase here prepares "
+            "it for when you enable encryption (restart with the `[encrypted]` "
+            "extra installed and INV_DASHBOARD_ENCRYPT_SYNCED_TIERS=true).",
+        ).classes("text-caption text-grey")
+    pass_in = (
+        ui.input("Passphrase").props("outlined dense type=password").classes("w-full max-w-md")
+    )
+    confirm_in = (
+        ui.input("Confirm passphrase")
+        .props("outlined dense type=password")
+        .classes("w-full max-w-md")
+    )
+    with ui.row().classes("gap-sm"):
+        ui.button(
+            "Save to keychain",
+            icon="key",
+            on_click=lambda: _save_passphrase(pass_in.value or "", confirm_in.value or ""),
+        ).props("unelevated color=primary no-caps")
+        ui.button(
+            "Download recovery file",
+            icon="download",
+            on_click=lambda: _download_recovery_file(pass_in.value or "", confirm_in.value or ""),
+        ).props("flat no-caps")
+
 
 def _set_auto_shutdown_pref(enabled: bool) -> None:  # pragma: no cover - UI
     """Persist + arm the auto-shutdown-on-tab-close preference."""

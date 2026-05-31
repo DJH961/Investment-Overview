@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -16,8 +16,11 @@ from investment_dashboard.storage.backup import (
 from investment_dashboard.storage.encryption import (
     EncryptionUnavailableError,
     PassphraseMissingError,
+    build_recovery_file,
     resolve_encryption,
     sql_string_literal,
+    store_passphrase_in_keyring,
+    validate_passphrase,
 )
 from investment_dashboard.storage.integrity import IntegrityCheckFailed, integrity_check
 from investment_dashboard.storage.lock import WriteLockError, acquire_write_lock
@@ -231,3 +234,49 @@ def test_resolve_encryption_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_sql_string_literal_escapes_passphrase_quotes() -> None:
     assert sql_string_literal("Bob's passphrase") == "'Bob''s passphrase'"
+
+
+def test_validate_passphrase_accepts_matching_strong_pair() -> None:
+    assert validate_passphrase("correcthorse", "correcthorse") is None
+
+
+def test_validate_passphrase_rejects_empty() -> None:
+    assert validate_passphrase("", "") == "Enter a passphrase."
+
+
+def test_validate_passphrase_rejects_too_short() -> None:
+    msg = validate_passphrase("short", "short")
+    assert msg is not None
+    assert "at least" in msg
+
+
+def test_validate_passphrase_rejects_mismatch() -> None:
+    assert validate_passphrase("correcthorse", "batterystaple") == (
+        "The two passphrases don't match."
+    )
+
+
+def test_build_recovery_file_includes_passphrase_and_keychain_location() -> None:
+    text = build_recovery_file(
+        "correcthorse", generated_at=datetime(2026, 5, 31, 12, 0, tzinfo=UTC)
+    )
+    assert "Passphrase: correcthorse" in text
+    assert "investment-dashboard" in text
+    assert "synced-tiers" in text
+    assert "2026-05-31 12:00 UTC" in text
+
+
+def test_store_passphrase_in_keyring_returns_false_without_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _no_keyring(name: str, *args: object, **kwargs: object) -> object:
+        if name == "keyring":
+            raise ImportError("no keyring")
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(builtins, "__import__", _no_keyring)
+    assert store_passphrase_in_keyring("correcthorse") is False
