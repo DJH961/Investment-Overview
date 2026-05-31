@@ -2,8 +2,8 @@
 
 Belongs to the **config** tier. The ``instrument_id`` column references
 the ledger-tier ``instruments`` table by integer only; SQLAlchemy
-``ForeignKey`` cannot bridge separate ``MetaData`` instances, and
-Phase 2 of the DB split puts each tier on its own SQLite file where
+``ForeignKey`` cannot bridge separate ``MetaData`` instances, and under
+the split-DB layout each tier lives on its own SQLite file where
 cross-file FKs are not enforceable. Application-level checks (the repo
 validates the instrument exists before insert) take that role.
 

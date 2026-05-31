@@ -69,6 +69,53 @@ def test_boot_migrates_active_ledger_path_in_split_layout(
     assert "transactions" in tables
 
 
+def test_boot_creates_cache_and_config_schema_in_split_layout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Split startup must also build the cache + config tier schemas.
+
+    Alembic only migrates the ledger tier, so without an explicit step the
+    cache DB (prices/FX/snapshots) and config DB stayed schemaless — the
+    background refresh then wrote into nothing and every value read as 0.
+    """
+    from investment_dashboard.config import get_settings
+    from investment_dashboard.db import dispose_engines
+
+    cache_path = tmp_path / "cache.sqlite"
+    config_path = tmp_path / "config.sqlite"
+    monkeypatch.delenv("INV_DASHBOARD_DB_PATH", raising=False)
+    monkeypatch.setenv("INV_DASHBOARD_LEDGER_PATH", str(tmp_path / "ledger.sqlite"))
+    monkeypatch.setenv("INV_DASHBOARD_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("INV_DASHBOARD_CACHE_PATH", str(cache_path))
+    get_settings.cache_clear()
+    dispose_engines()
+    try:
+        run_boot_sequence(skip_network=True)
+    finally:
+        dispose_engines()
+        get_settings.cache_clear()
+
+    def _tables(path: Path) -> set[str]:
+        engine = sa.create_engine(f"sqlite:///{path.as_posix()}", future=True)
+        try:
+            with engine.connect() as conn:
+                return {
+                    row[0]
+                    for row in conn.execute(
+                        sa.text("SELECT name FROM sqlite_master WHERE type='table'")
+                    )
+                }
+        finally:
+            engine.dispose()
+
+    cache_tables = _tables(cache_path)
+    assert "price_history" in cache_tables
+    assert "position_snapshots" in cache_tables
+    assert "fx_history" in cache_tables
+    assert "instrument_overrides" in _tables(config_path)
+
+
 def test_boot_creates_schema_without_alembic(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

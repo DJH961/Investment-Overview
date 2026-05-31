@@ -314,10 +314,12 @@ def aggregate(  # noqa: PLR0912, PLR0915
     # (when net_eur was never written by the importer because FX was
     # cold at the time) and the display-currency conversion below.
     # Local import to avoid a cycle: services -> repositories -> models,
-    # while this module is imported by the UI layer.
-    from investment_dashboard.repositories import fx_repo  # noqa: PLC0415
+    # while this module is imported by the UI layer. The service wrapper
+    # routes the read to the cache tier so split-DB installs find the FX
+    # history (which lives in the separate cache database).
+    from investment_dashboard.services import fx_service  # noqa: PLC0415
 
-    eur_to_usd = fx_repo.get_rates(session, base="EUR", quote="USD")
+    eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
 
     buckets: dict[str, dict[str, Decimal]] = {}
     for t in txns:

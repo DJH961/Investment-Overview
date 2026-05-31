@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -106,17 +107,51 @@ def refresh_prices(
 
 
 def latest_close(session: Session, instrument_id: int) -> Decimal | None:
-    """Last known close for ``instrument_id``."""
-    return prices_repo.latest_close(session, instrument_id)
+    """Last known close for ``instrument_id``.
+
+    Reads from the cache tier: in split-DB mode prices live in a separate
+    database that the caller's ledger session cannot see, so the lookup is
+    routed through a cache-tier session (a no-op reuse in single-file mode).
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return prices_repo.latest_close(cache, instrument_id)
 
 
 def close_as_of(session: Session, instrument_id: int, as_of: date) -> Decimal | None:
     """Most recent close for ``instrument_id`` on or before ``as_of``.
 
     Forward-fills sparse history so a historical valuation reflects the price
-    that was actually in effect on ``as_of`` rather than today's close.
+    that was actually in effect on ``as_of`` rather than today's close. Like
+    :func:`latest_close`, the read is routed to the cache tier so split-DB
+    installs see the prices written by the background refresh.
     """
-    return prices_repo.close_as_of(session, instrument_id, as_of)
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return prices_repo.close_as_of(cache, instrument_id, as_of)
+
+
+def recent_price_dates(
+    session: Session,
+    instrument_ids: Sequence[int],
+    *,
+    on_or_before: date,
+    limit: int = 2,
+) -> list[date]:
+    """Most recent distinct print dates across ``instrument_ids`` (cache tier).
+
+    Tier-aware wrapper around :func:`prices_repo.recent_price_dates` so callers
+    holding a ledger session still find the price history that lives in the
+    cache database under split-DB layouts.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return prices_repo.recent_price_dates(
+            cache, instrument_ids, on_or_before=on_or_before, limit=limit
+        )
 
 
 def _ttl_for(instr: Instrument) -> int:

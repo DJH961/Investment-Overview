@@ -242,6 +242,49 @@ def session_scope() -> Iterator[Session]:
         yield s
 
 
+@contextmanager
+def cache_read_session(fallback: Session) -> Iterator[Session]:
+    """Yield a session that can *read* cache-tier data (prices/FX/snapshots).
+
+    In single-file mode all three tiers share one database, so the caller's
+    ``fallback`` session already sees the cache tables and is reused untouched
+    (zero overhead, and tests that build their own engine keep working).
+
+    In split-DB mode the cache tables live in a **separate** database that the
+    caller's ledger/config session cannot see — querying them through the
+    ledger session would hit the ledger DB's (empty) copies and silently return
+    ``None`` for every price/FX lookup, zeroing all historical valuations. So a
+    short-lived cache-tier session is opened here and closed afterwards. It is
+    read-only; no commit is issued.
+    """
+    if not get_settings().is_split_db:
+        yield fallback
+        return
+    s = get_cache_session_factory()()
+    try:
+        yield s
+    finally:
+        s.close()
+
+
+@contextmanager
+def cache_write_session(fallback: Session) -> Iterator[Session]:
+    """Yield a session that can *write* cache-tier data (e.g. snapshots).
+
+    Mirror of :func:`cache_read_session` for the write path. In single-file
+    mode the caller's ``fallback`` session is reused and left for the caller to
+    commit (preserving the legacy write-through-without-commit behaviour). In
+    split-DB mode a dedicated cache-tier transaction is opened and committed so
+    the row lands in the cache database the readers and the boot-time snapshot
+    invalidation actually use.
+    """
+    if not get_settings().is_split_db:
+        yield fallback
+        return
+    with cache_session_scope() as s:
+        yield s
+
+
 def dispose_engines() -> None:
     """Dispose all cached engines (used by tests and ``split_db``)."""
     for eng in _engines_by_url.values():

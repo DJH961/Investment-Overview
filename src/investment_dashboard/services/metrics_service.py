@@ -33,11 +33,9 @@ from investment_dashboard.domain.returns import (
 from investment_dashboard.models import Transaction, TransactionKind
 from investment_dashboard.repositories import (
     accounts_repo,
-    fx_repo,
-    prices_repo,
     transactions_repo,
 )
-from investment_dashboard.services import positions_service
+from investment_dashboard.services import fx_service, positions_service, prices_service
 
 ZERO = Decimal(0)
 
@@ -209,7 +207,7 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     as_of = as_of or date.today()
     txns = list(transactions_repo.list_transactions(session, end=as_of))
 
-    eur_to_usd: dict[date, Decimal] = fx_repo.get_rates(session, base="EUR", quote="USD")
+    eur_to_usd: dict[date, Decimal] = fx_service.get_rates(session, base="EUR", quote="USD")
 
     def _usd_amount(t: Transaction) -> Decimal:
         return _txn_usd_amount(t, eur_to_usd=eur_to_usd)
@@ -440,7 +438,7 @@ def _compute_daily_growth(
     aren't two priced dates yet.
     """
     held_ids = [p.instrument.id for p in positions_service.compute_positions(session, as_of=as_of)]
-    dates = prices_repo.recent_price_dates(session, held_ids, on_or_before=as_of, limit=2)
+    dates = prices_service.recent_price_dates(session, held_ids, on_or_before=as_of, limit=2)
     if len(dates) < 2:
         return None, None, None
     last_date, prev_date = dates[0], dates[1]

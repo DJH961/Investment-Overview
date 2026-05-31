@@ -11,8 +11,8 @@ choices rather than intrinsic security facts:
 
 ``instrument_id`` is a loose reference to the ledger-tier ``instruments``
 table (integer, indexed). SQLAlchemy ``ForeignKey`` cannot bridge
-separate ``MetaData`` instances, and the engine split in Phase 2 puts
-each tier on its own SQLite file where DB-level FKs are not enforceable
+separate ``MetaData`` instances, and under the split-DB layout each tier
+lives on its own SQLite file where DB-level FKs are not enforceable
 anyway. The cache-orphan janitor at boot keeps overrides in sync if an
 instrument is ever deleted on the ledger.
 

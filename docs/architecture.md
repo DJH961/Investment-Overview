@@ -33,6 +33,54 @@ models/     SQLAlchemy ORM.                     Schema definition only.
   starts a transaction directly.
 - **UI never reaches past services.** No `from investment_dashboard.repositories
   import …` in any `ui/` module.
+- **Cache-tier reads/writes go through their service, never a raw repo on the
+  caller's session.** Prices, FX history, and snapshots live in the *cache*
+  tier (see "Storage tiers" below). Call `prices_service`, `fx_service`, or
+  `snapshots_service` — they route to the cache engine. Calling
+  `prices_repo` / `fx_repo` / `snapshots_repo` directly with a ledger/config
+  session silently returns empty results under a split-DB layout. This is the
+  exact bug class that zeroed closing values in v2.9.4.
+
+## Storage tiers (split-DB layout)
+
+The schema is partitioned across **three storage tiers**, each owning its own
+SQLAlchemy `DeclarativeBase` / `MetaData` (`models/base.py`):
+
+```
+LedgerBase  Facts that happened.   accounts, instruments, transactions.   Encrypted + cloud-synced.
+ConfigBase  User choices.          settings, target allocations, overrides, write-queue.   Encrypted + cloud-synced.
+CacheBase   Derived, regenerable.  price_history, fx_history, snapshots, refresh metadata.   Device-local, never synced.
+```
+
+Two physical layouts exist behind the same ORM:
+
+- **Single-file (default).** All three tiers share one SQLite file. The
+  caller's session sees every table, so tier routing is a transparent no-op.
+- **Split-DB (cloud installs).** Each tier is a separate SQLite file — typically
+  ledger + config on cloud storage (OneDrive) and the cache on a local disk.
+  A session bound to one tier **cannot see another tier's tables.**
+
+### Hard rules for tiers
+
+- **No cross-tier `ForeignKey` or `relationship`.** SQLAlchemy can't bridge
+  separate `MetaData` instances, and in split-DB mode the tables live in
+  different files where DB-level FKs aren't enforceable anyway. Cross-tier
+  references are plain integer columns; integrity is kept at the application
+  level (writers validate; a boot-time cache-orphan janitor sweeps dangling
+  cache rows).
+- **Route every cache-tier read/write through `db.cache_read_session` /
+  `db.cache_write_session`** (the `*_service` wrappers already do this). In
+  single-file mode they reuse the caller's session; in split-DB mode they open
+  a short-lived cache-tier session against the cache engine. Querying cache
+  tables through a ledger session hits the ledger DB's (empty) copies and
+  returns `None`/`[]` for every lookup — zeroing historical valuations,
+  inflating YTD, and dropping MTD.
+- **Boot creates every tier's schema.** Alembic migrates the *ledger* tier
+  only, so `boot._ensure_secondary_tier_schema` runs `create_all` on the config
+  and cache engines after an upgrade; otherwise a split-DB cache database stays
+  schemaless and the background refresh writes silently fail.
+- **Use `ALL_METADATAS`** for `create_all`/`drop_all` in tests and boot so
+  adding a tier later stays a one-line change.
 
 ## Data model essentials
 
