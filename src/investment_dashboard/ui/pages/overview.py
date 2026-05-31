@@ -473,6 +473,8 @@ def register() -> None:
                                 "sortable": True,
                                 "flex": 1,
                                 "minWidth": 110,
+                                "wrapHeaderText": True,
+                                "autoHeaderHeight": True,
                             },
                         }
                     ).classes("ag-theme-alpine w-full h-[55vh]")

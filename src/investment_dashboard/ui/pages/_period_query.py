@@ -42,6 +42,60 @@ from investment_dashboard.models import Transaction
 
 ZERO = Decimal(0)
 
+#: AG-Grid ``valueFormatter`` (JS) rendering a numeric money value with
+#: thousands separators and two decimals; blanks out ``null``.
+_MONEY_FORMATTER = (
+    "params.value == null ? '' : params.value.toLocaleString("
+    "undefined,{minimumFractionDigits:2,maximumFractionDigits:2})"
+)
+
+#: AG-Grid ``valueFormatter`` (JS) rendering a numeric fraction as a signed
+#: percentage, e.g. ``0.0455`` -> ``"4.55 %"``; blanks out ``null``.
+_PCT_FORMATTER = (
+    "params.value == null ? '' : (params.value * 100).toLocaleString("
+    "undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) + ' %'"
+)
+
+
+def _sign_rules(signed_field: str) -> dict[str, str]:
+    """AG-Grid ``cellClassRules`` colouring a cell by the sign of its value."""
+    return {
+        "inv-cell-pos": f"data.{signed_field} > 0",
+        "inv-cell-neg": f"data.{signed_field} < 0",
+    }
+
+
+def money_column(label: str, field: str, currency: str) -> dict[str, object]:
+    """A single money column for the display ``currency`` only (v2.9.1).
+
+    Binds to the ``{field}_{ccy}_num`` numeric row key produced by
+    :func:`to_table_rows` so the column sorts by value, and renders it with a
+    thousands-separated money ``valueFormatter``. The page shows one currency
+    at a time and flips the whole table via the header toggle.
+    """
+    ccy = currency.upper()
+    return {
+        "headerName": f"{label} ({ccy})",
+        "field": f"{field}_{ccy.lower()}_num",
+        "type": "rightAligned",
+        "valueFormatter": _MONEY_FORMATTER,
+        "minWidth": 120,
+    }
+
+
+def pct_column(label: str, field: str, currency: str) -> dict[str, object]:
+    """A single percentage column for the display ``currency``, sign-coloured."""
+    ccy = currency.upper()
+    signed_field = f"{field}_{ccy.lower()}_signed"
+    return {
+        "headerName": f"{label} ({ccy})",
+        "field": signed_field,
+        "type": "rightAligned",
+        "valueFormatter": _PCT_FORMATTER,
+        "cellClassRules": _sign_rules(signed_field),
+        "minWidth": 120,
+    }
+
 
 @dataclass(frozen=True)
 class PeriodRow:
@@ -531,7 +585,7 @@ def to_table_rows(
     *,
     currency: str = "EUR",
     fx_rate: Decimal | None = None,
-) -> list[dict[str, str]]:
+) -> list[dict[str, str | float | None]]:
     """Format aggregation rows into the dict shape the AG-Grid wants.
 
     When a row's ``*_display`` fields are populated (the FX-aware path
@@ -551,6 +605,30 @@ def to_table_rows(
         if r.growth_pct_display is not None:
             return r.growth_pct_display
         return r.growth_pct
+
+    def _f(value: Decimal | None) -> float | None:
+        """Raw float for a sortable AG-Grid numeric column (``None`` stays empty)."""
+        return float(value) if value is not None else None
+
+    def _usd_money(eur_value: Decimal, display_value: Decimal | None) -> Decimal:
+        """USD value of a cashflow bucket.
+
+        Prefer the per-trade-date display leg when the page already
+        aggregated in USD; otherwise fall back to scaling the EUR series
+        by today's spot ``fx_rate`` so the (currently hidden) USD column
+        is still a sensible number.
+        """
+        if currency.upper() == "USD" and display_value is not None:
+            return display_value
+        return _convert_to_usd(eur_value, fx_rate)
+
+    def _closing_usd(r: PeriodRow) -> Decimal:
+        """Closing value in USD, preferring per-period-end FX."""
+        if r.closing_value_usd is not None:
+            return r.closing_value_usd
+        if currency.upper() == "USD" and r.closing_value_display is not None:
+            return r.closing_value_display
+        return _convert_to_usd(r.closing_value_eur, fx_rate)
 
     return [
         {
@@ -587,6 +665,29 @@ def to_table_rows(
                 if r.total_growth_compounded_usd is not None
                 else "—"
             ),
+            # v2.9.1 numeric companions: the monthly / yearly tables render
+            # one currency at a time (the header toggle) by binding columns to
+            # ``{field}_{ccy}_num`` (money) and ``{field}_{ccy}_signed`` (ratios)
+            # so each column sorts by value and the percentage cells can be
+            # sign-coloured. Money is carried in both currencies; period growth
+            # (Modified Dietz) carries EUR always plus the display currency, and
+            # Total Growth carries both per-currency series.
+            "contributions_eur_num": _f(r.contributions),
+            "contributions_usd_num": _f(_usd_money(r.contributions, r.contributions_display)),
+            "dividends_eur_num": _f(r.dividends),
+            "dividends_usd_num": _f(_usd_money(r.dividends, r.dividends_display)),
+            "interest_eur_num": _f(r.interest),
+            "interest_usd_num": _f(_usd_money(r.interest, r.interest_display)),
+            "net_flow_eur_num": _f(r.net_flow),
+            "net_flow_usd_num": _f(_usd_money(r.net_flow, r.net_flow_display)),
+            "closing_value_eur_num": _f(r.closing_value_eur),
+            "closing_value_usd_num": _f(_closing_usd(r)),
+            "growth_pct_eur_signed": _f(r.growth_pct),
+            "growth_pct_usd_signed": _f(
+                r.growth_pct_display if currency.upper() == "USD" else None
+            ),
+            "total_growth_eur_signed": _f(r.total_growth_compounded_eur),
+            "total_growth_usd_signed": _f(r.total_growth_compounded_usd),
         }
         for r in rows
     ]

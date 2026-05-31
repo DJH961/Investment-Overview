@@ -52,3 +52,75 @@ def test_invalidate_from_drops_subsequent_snapshots(session: Session) -> None:
     assert snapshots_repo.get_snapshot(session, date(2023, 1, 1)) is not None
     assert snapshots_repo.get_snapshot(session, date(2024, 1, 1)) is None
     assert snapshots_repo.get_snapshot(session, date(2025, 1, 1)) is None
+
+
+def test_invalidate_all_drops_every_snapshot(session: Session) -> None:
+    """v2.9.1 — clearing the whole cache after a FX/price backfill so the
+    stale ``0`` closing values computed before the deferred refresh are
+    recomputed against the now-complete history."""
+    snapshots_repo.upsert_snapshot(session, date(2023, 1, 1), Decimal("0"))
+    snapshots_repo.upsert_snapshot(session, date(2024, 1, 1), Decimal("0"))
+    snapshots_repo.upsert_snapshot(session, date(2025, 1, 1), Decimal("0"))
+    session.flush()
+
+    dropped = snapshots_service.invalidate_all(session)
+    session.flush()
+    assert dropped == 3
+    assert snapshots_repo.get_snapshot(session, date(2023, 1, 1)) is None
+    assert snapshots_repo.get_snapshot(session, date(2024, 1, 1)) is None
+    assert snapshots_repo.get_snapshot(session, date(2025, 1, 1)) is None
+
+
+def test_stale_zero_snapshot_recomputes_after_invalidation(session: Session) -> None:
+    """End-to-end guard for the v2.9.1 closing-value=0 bug.
+
+    The UI opens before the deferred FX/price backfill, so the first render
+    caches a period's closing value as ``0`` (no prices yet). After the
+    backfill lands, ``invalidate_all`` must drop that stale zero so the next
+    ``get_or_compute`` reflects the now-priced holding.
+    """
+    from investment_dashboard.models import Transaction
+    from investment_dashboard.repositories import (
+        accounts_repo,
+        instruments_repo,
+        prices_repo,
+    )
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="vanguard",
+        account_label="EUR Brokerage",
+        native_currency="EUR",
+        account_type="brokerage",
+    )
+    instr = instruments_repo.get_or_create(session, symbol="ACME", native_currency="EUR")
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            instrument_id=instr.id,
+            date=date(2025, 1, 2),
+            kind="buy",
+            quantity=Decimal("10"),
+            price_native=Decimal("100.00"),
+            net_native=Decimal("-1000.00"),
+            net_eur=Decimal("-1000.00"),
+            source="manual",
+        )
+    )
+    session.flush()
+
+    past = date(2025, 1, 31)
+    # First render: prices not yet backfilled ⇒ closing value caches as 0.
+    assert snapshots_service.get_or_compute(session, past) == Decimal(0)
+    assert snapshots_repo.get_snapshot(session, past) is not None
+
+    # Deferred backfill lands; prices now cover the period.
+    prices_repo.upsert_closes(session, instr.id, {date(2025, 1, 31): Decimal("120.00")})
+    session.flush()
+
+    # Without invalidation the stale 0 would persist…
+    assert snapshots_service.get_or_compute(session, past) == Decimal(0)
+    # …but invalidate_all forces a correct recompute (10 sh × 120 = 1200).
+    snapshots_service.invalidate_all(session)
+    session.flush()
+    assert snapshots_service.get_or_compute(session, past) == Decimal("1200.00")

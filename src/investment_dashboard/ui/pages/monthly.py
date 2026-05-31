@@ -11,7 +11,12 @@ from investment_dashboard.services import display_currency_service
 from investment_dashboard.ui.components import page_header, section
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import currency_symbol
-from investment_dashboard.ui.pages._period_query import aggregate, to_table_rows
+from investment_dashboard.ui.pages._period_query import (
+    aggregate,
+    money_column,
+    pct_column,
+    to_table_rows,
+)
 
 PATH = "/monthly"
 
@@ -60,29 +65,14 @@ def _figure(rows, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no
     return fig
 
 
-def _money_columns(label: str, field: str, primary: str) -> list[dict[str, str]]:
-    """Build the primary + secondary AG-Grid column pair for one metric.
+def _money_columns(label: str, field: str, primary: str) -> list[dict[str, object]]:
+    """Single display-currency money column (v2.9.1).
 
-    The primary column reads the unsuffixed ``field`` key, which the
-    :func:`to_table_rows` renderer fills with the FX-aware display-
-    currency value when ``aggregate`` was called with that currency
-    (v2.2). The secondary column is the EUR ledger value (or USD when
-    primary is already EUR, preserving the v1.3 "both visible" toggle).
+    The monthly / yearly tables now show **one currency at a time** — the same
+    executive decision the overview table adopted — flipping the whole table
+    with the header toggle rather than carrying an EUR+USD pair per metric.
     """
-    primary = primary.upper()
-    secondary = "EUR" if primary == "USD" else "USD"
-    return [
-        {
-            "headerName": f"{label} ({primary})",
-            "field": field,
-            "type": "rightAligned",
-        },
-        {
-            "headerName": f"{label} ({secondary})",
-            "field": f"{field}_{secondary.lower()}",
-            "type": "rightAligned",
-        },
-    ]
+    return [money_column(label, field, primary)]
 
 
 def register() -> None:
@@ -113,24 +103,19 @@ def register() -> None:
                             *_money_columns("Interest", "interest", display_ccy),
                             *_money_columns("Net flow", "net_flow", display_ccy),
                             *_money_columns("Closing value", "closing_value", display_ccy),
-                            {
-                                "headerName": "Total Growth (EUR)",
-                                "field": "total_growth_eur",
-                                "type": "rightAligned",
-                            },
-                            {
-                                "headerName": "Total Growth (USD)",
-                                "field": "total_growth_usd",
-                                "type": "rightAligned",
-                            },
-                            {
-                                "headerName": "Growth % (period)",
-                                "field": "growth_pct",
-                                "type": "rightAligned",
-                            },
+                            # Period (Modified Dietz) growth, per currency.
+                            pct_column("Growth % (period)", "growth_pct", display_ccy),
+                            # Total Growth is the headline cumulative metric — kept
+                            # last per the v2.9.1 layout request.
+                            pct_column("Total Growth", "total_growth", display_ccy),
                         ],
                         "rowData": to_table_rows(rows, currency=display_ccy, fx_rate=fx_rate),
-                        "defaultColDef": {"resizable": True, "sortable": True},
+                        "defaultColDef": {
+                            "resizable": True,
+                            "sortable": True,
+                            "wrapHeaderText": True,
+                            "autoHeaderHeight": True,
+                        },
                         # One calendar year per page: rows are padded to a
                         # contiguous Jan–Dec grid (``fill_gaps``) so each
                         # 12-row page is exactly one year.
@@ -139,10 +124,10 @@ def register() -> None:
                     }
                 ).classes("ag-theme-alpine w-full h-[55vh]")
                 ui.label(
-                    f"Values shown in {display_ccy} ({sym}). Closing value is end-of-month "
-                    "mark-to-market (best-effort if prices are missing). Total Growth is "
-                    "cumulative (1 + XIRR) ^ years to the end of the row, per currency; "
-                    "the trailing Growth % column is the per-period Modified Dietz return. "
-                    "Each page is one calendar year (empty months before your first "
-                    "investment are padded so years line up).",
+                    f"Values shown in {display_ccy} ({sym}); switch currency from the header "
+                    "toggle. Closing value is end-of-month mark-to-market (best-effort if "
+                    "prices are missing). Growth % (period) is the per-month Modified Dietz "
+                    "return; Total Growth (last column) is cumulative (1 + XIRR) ^ years to "
+                    "the end of the row. Each page is one calendar year (empty months before "
+                    "your first investment are padded so years line up).",
                 ).classes("text-caption opacity-70")
