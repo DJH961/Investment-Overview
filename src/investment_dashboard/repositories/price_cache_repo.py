@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
@@ -32,3 +32,10 @@ def upsert_last_refreshed_at(
         set_={"last_refreshed_at": stmt.excluded.last_refreshed_at},
     )
     session.execute(stmt)
+
+
+def delete_for_instrument(session: Session, instrument_id: int) -> None:
+    """Forget ``instrument_id``'s refresh timestamp so it is due again."""
+    session.execute(
+        delete(PriceCacheMetadata).where(PriceCacheMetadata.instrument_id == instrument_id)
+    )

@@ -95,6 +95,45 @@ def test_instrument_daily_growth_per_currency(session: Session, seeded: None) ->
     assert im.daily_growth_eur != im.daily_growth_usd
 
 
+def test_money_market_daily_growth_is_flat_zero(session: Session) -> None:
+    """Settlement funds have no price feed; their single-day growth is a flat
+    0 (par did not move) rather than an inconsistent em dash."""
+    from investment_dashboard.models import Transaction
+    from investment_dashboard.models.transaction import TransactionSource
+    from investment_dashboard.ui.pages._overview_query import (
+        compute_instrument_metrics,
+        get_positions,
+    )
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Fidelity",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    spaxx = instruments_repo.get_or_create(session, symbol="SPAXX")
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2024, 1, 5),
+            kind="buy",
+            instrument_id=spaxx.id,
+            quantity=Decimal("1000"),
+            price_native=Decimal("1"),
+            net_native=Decimal("-1000"),
+            source=TransactionSource.MANUAL,
+        )
+    )
+    session.flush()
+
+    positions = get_positions(session)
+    metrics = compute_instrument_metrics(session, positions)
+    im = metrics[spaxx.id]
+    assert im.daily_growth_usd == Decimal("0")
+    assert im.daily_growth_eur == Decimal("0")
+
+
 def test_positions_table_has_growth_pct(session: Session, seeded: None) -> None:
     from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
 
