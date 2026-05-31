@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.adapters import yfinance_client
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.returns import Cashflow, xirr
-from investment_dashboard.models import Instrument, TransactionKind
+from investment_dashboard.models import Instrument, Transaction, TransactionKind
 from investment_dashboard.repositories import (
     app_config_repo,
     instruments_repo,
@@ -165,7 +165,7 @@ def get_series(
     return BenchmarkSeries(symbol=symbol, closes=closes)
 
 
-def _txn_eur_amount(t: Any) -> Decimal:
+def _txn_eur_amount(t: Transaction) -> Decimal:
     """EUR cash leg of a transaction (cached ``net_eur`` else ``net_native``)."""
     if t.net_eur is not None:
         return t.net_eur
