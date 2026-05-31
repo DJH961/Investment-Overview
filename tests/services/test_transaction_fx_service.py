@@ -12,16 +12,18 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from unittest.mock import patch
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.adapters.frankfurter_client import FrankfurterError
 from investment_dashboard.domain.currency import (
     dual_currency_amounts,
     split_native_to_dual_legs,
 )
 from investment_dashboard.models import Transaction
 from investment_dashboard.repositories import accounts_repo, fx_repo, transactions_repo
-from investment_dashboard.services import transaction_fx_service
+from investment_dashboard.services import fx_service, transaction_fx_service
 
 
 class TestSplitNativeToDualLegs:
@@ -211,7 +213,11 @@ class TestEnsureFxCoverage:
         )
 
     def test_returns_false_when_uncovered_and_offline(self, session: Session) -> None:
-        # No history and the network is unavailable in tests ⇒ stays uncovered.
-        assert not transaction_fx_service.ensure_fx_coverage(
-            session, earliest_needed=date(2024, 1, 1), max_attempts=1
-        )
+        # No history and the network is unavailable, so the refresh can't fetch
+        # any rate ⇒ stays uncovered. Simulate the offline condition by making
+        # the Frankfurter fetch fail, so the result is deterministic in CI
+        # (which has network access) as well as locally.
+        with patch.object(fx_service, "fetch_rates", side_effect=FrankfurterError("offline")):
+            assert not transaction_fx_service.ensure_fx_coverage(
+                session, earliest_needed=date(2024, 1, 1), max_attempts=1
+            )

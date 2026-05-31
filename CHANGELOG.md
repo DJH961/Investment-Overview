@@ -12,7 +12,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
-## [2.9.0] — Unreleased
+## [2.9.0] — 2026-05-31
 
 Makes trade-date FX values **persistent** instead of re-derived on every
 render, and flips the stored perspective so the **native** leg (almost always
@@ -44,7 +44,7 @@ derived from it) stays live.
   derivation for rows still missing a value, removing the repeated full
   FX-history load on the common path.
 
-## [2.8.2] — Unreleased
+## [2.8.2] — 2026-05-31
 
 Patch fixing the **currency / FX math** that regressed in v2.8 (v2.8.1 is the
 parallel UI overhaul). The unifying rule: store the **native** amount (almost
