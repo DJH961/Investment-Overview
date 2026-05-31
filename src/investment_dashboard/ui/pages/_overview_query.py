@@ -134,9 +134,9 @@ class InstrumentMetrics:
     cost_basis_eur: Decimal = ZERO
     cost_basis_usd: Decimal = ZERO
     current_value_eur: Decimal = ZERO
-    current_value_usd: Decimal = ZERO
+    current_value_usd: Decimal | None = ZERO
     capital_gain_eur: Decimal = ZERO
-    capital_gain_usd: Decimal = ZERO
+    capital_gain_usd: Decimal | None = ZERO
     total_growth_eur: Decimal | None = None
     total_growth_usd: Decimal | None = None
     xirr_eur: Decimal | None = None
@@ -265,26 +265,38 @@ def compute_instrument_metrics(  # noqa: PLR0915
         c_eur = _round_cent(cost_eur.get(iid, ZERO))
         c_usd = _round_cent(cost_usd.get(iid, ZERO))
         cv_eur = p.current_value_eur
-        cv_usd = cv_eur * today_rate if today_rate not in (None, 0) else cv_eur
+        # When the EUR→USD spot is unavailable we degrade the USD figures to
+        # ``None`` (blank) rather than relabelling the EUR amount as USD —
+        # otherwise XIRR(USD) / growth(USD) would be computed against a
+        # terminal value that is euros pretending to be dollars (bug §1.1).
+        cv_usd = cv_eur * today_rate if today_rate not in (None, 0) else None
         d_eur = div_eur.get(iid, ZERO)
         d_usd = div_usd.get(iid, ZERO)
         gain_eur = _round_cent(cv_eur + d_eur - c_eur)
-        gain_usd = _round_cent(cv_usd + d_usd - c_usd)
+        gain_usd = _round_cent(cv_usd + d_usd - c_usd) if cv_usd is not None else None
         growth_eur = (gain_eur / c_eur) if c_eur != ZERO else None
-        growth_usd = (gain_usd / c_usd) if c_usd != ZERO else None
+        growth_usd = (gain_usd / c_usd) if (gain_usd is not None and c_usd != ZERO) else None
         xirr_eur = xirr(eur_flows.get(iid, []), as_of=as_of, terminal_value=cv_eur)
-        xirr_usd = xirr(usd_flows.get(iid, []), as_of=as_of, terminal_value=cv_usd)
+        xirr_usd = (
+            xirr(usd_flows.get(iid, []), as_of=as_of, terminal_value=cv_usd)
+            if cv_usd is not None
+            else None
+        )
         sv_eur = start_value_eur.get(iid, ZERO)
-        sv_usd = sv_eur * fx_year_start if fx_year_start not in (None, 0) else sv_eur
+        sv_usd = sv_eur * fx_year_start if fx_year_start not in (None, 0) else None
         ytd_eur = _instrument_ytd_growth(
             start_value=sv_eur,
             current_value=cv_eur,
             net_invested=ytd_invested_eur.get(iid, ZERO),
         )
-        ytd_usd = _instrument_ytd_growth(
-            start_value=sv_usd,
-            current_value=cv_usd,
-            net_invested=ytd_invested_usd.get(iid, ZERO),
+        ytd_usd = (
+            _instrument_ytd_growth(
+                start_value=sv_usd,
+                current_value=cv_usd,
+                net_invested=ytd_invested_usd.get(iid, ZERO),
+            )
+            if (sv_usd is not None and cv_usd is not None)
+            else None
         )
         daily_eur, daily_usd = _instrument_daily_growth(
             session,
@@ -309,7 +321,7 @@ def compute_instrument_metrics(  # noqa: PLR0915
             cost_basis_eur=c_eur,
             cost_basis_usd=c_usd,
             current_value_eur=_round_cent(cv_eur),
-            current_value_usd=_round_cent(cv_usd),
+            current_value_usd=_round_cent(cv_usd) if cv_usd is not None else None,
             capital_gain_eur=gain_eur,
             capital_gain_usd=gain_usd,
             total_growth_eur=growth_eur,

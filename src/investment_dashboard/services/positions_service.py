@@ -58,7 +58,7 @@ class Position:
     effective: EffectiveInstrument | None = None
 
 
-def compute_positions(session: Session, *, as_of: date | None = None) -> list[Position]:  # noqa: PLR0912
+def compute_positions(session: Session, *, as_of: date | None = None) -> list[Position]:  # noqa: PLR0912, PLR0915
     """Return one :class:`Position` per non-zero (account, instrument) pair.
 
     Cash-account holdings (Savings) appear with ``shares = 1`` and
@@ -100,7 +100,22 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
     instruments_by_id = {i.id: i for i in instruments_repo.list_instruments(session)}
     overrides = instrument_overrides_repo.get_override_map(session, instruments_by_id.keys())
 
-    fx_rate_today = fx_service.get_rate_eur_to_quote(session, as_of) or Decimal(1)
+    # Each non-EUR account converts with the EUR→*its own* native currency
+    # rate, not a single shared USD rate — a GBP/CHF account must not be
+    # divided by the USD rate (bug §1.5). Rates are memoised per quote so we
+    # hit the FX cache at most once per distinct currency; a missing rate
+    # degrades to 1:1 (the long-standing "render something" fallback).
+    rate_cache: dict[str, Decimal] = {}
+
+    def _eur_rate_for(currency: str) -> Decimal:
+        ccy = currency.upper()
+        if ccy == "EUR":
+            return Decimal(1)
+        if ccy not in rate_cache:
+            rate_cache[ccy] = fx_service.get_rate_eur_to_quote(
+                session, as_of, quote=ccy
+            ) or Decimal(1)
+        return rate_cache[ccy]
 
     results: list[Position] = []
     for (account_id, instrument_id), agg in holdings.items():
@@ -119,11 +134,12 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
         else:
             current_price = prices_service.latest_close(session, instr.id)
         current_value_native = agg["shares"] * current_price if current_price is not None else ZERO
-        # Currency conversion to EUR.
-        if account.native_currency == "EUR":
+        # Currency conversion to EUR using this account's own native rate.
+        native_rate = _eur_rate_for(account.native_currency)
+        if account.native_currency.upper() == "EUR":
             current_value_eur = current_value_native
-        elif fx_rate_today != 0:
-            current_value_eur = current_value_native / fx_rate_today
+        elif native_rate != 0:
+            current_value_eur = current_value_native / native_rate
         else:
             current_value_eur = ZERO
         results.append(
@@ -175,14 +191,24 @@ def total_portfolio_value(session: Session, *, as_of: date | None = None) -> Dec
     )
 
     fx_rate = fx_service.get_rate_eur_to_quote(session, as_of) or Decimal(1)
+    rate_cache: dict[str, Decimal] = {"USD": fx_rate}
     for account in accounts_repo.list_accounts(session):
         if account.account_type not in {"savings", "cash"}:
             continue
         balance_native = compute_cash_balance(session, account.id, as_of=as_of)
-        if account.native_currency == "EUR":
+        ccy = account.native_currency.upper()
+        if ccy == "EUR":
             total_eur += balance_native
-        elif fx_rate != 0:
-            total_eur += balance_native / fx_rate
+            continue
+        # Convert with this account's own EUR→native rate, not a shared USD one
+        # (bug §1.6); a missing rate degrades to 1:1.
+        if ccy not in rate_cache:
+            rate_cache[ccy] = fx_service.get_rate_eur_to_quote(
+                session, as_of, quote=ccy
+            ) or Decimal(1)
+        rate = rate_cache[ccy]
+        if rate != 0:
+            total_eur += balance_native / rate
     return total_eur
 
 

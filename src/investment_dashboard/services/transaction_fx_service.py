@@ -85,6 +85,13 @@ def compute_legs(
         fx_rate_to_eur = (
             Decimal(1) / eur_to_usd if eur_to_usd is not None and eur_to_usd != 0 else None
         )
+        # ``native_to_eur_rate`` is the *quote-per-1-EUR* (EUR→native) rate
+        # consumed by :func:`split_native_to_dual_legs` as ``net_native /
+        # rate`` — so for USD-native it is the EUR→USD rate (~1.08), exactly
+        # what the general branch below would derive via ``quote="USD"``. (The
+        # USD branch of ``split_native_to_dual_legs`` short-circuits before
+        # using it, but we keep it correct so a future control-flow change
+        # can't silently invert the conversion.)
         native_to_eur_rate = eur_to_usd
     else:
         native_to_eur_rate = fx_service.get_rate_eur_to_quote(session, on, quote=ccy)

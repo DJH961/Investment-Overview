@@ -143,7 +143,7 @@ def _amount_eur(
     t: Transaction,
     *,
     eur_to_usd: dict[date, Decimal] | None = None,
-) -> Decimal:
+) -> Decimal | None:
     """Return the transaction's EUR amount, computing it on the fly when needed.
 
     The importer normally writes ``net_eur`` for every transaction, but
@@ -153,8 +153,14 @@ def _amount_eur(
     monthly/yearly tables show wildly wrong (and usually inflated) EUR
     totals. v2.4 instead converts ``net_native`` via the EUR→native
     rate that was in force on the trade date (forward-filled when
-    necessary), and only falls back to the raw ``net_native`` when even
-    that is unavailable *and* the account is EUR-native.
+    necessary).
+
+    When even that is unavailable (no FX history *and* a non-EUR account)
+    the function returns ``None`` so the caller leaves the row out of the
+    bucket entirely rather than poisoning it with a wrong-magnitude
+    number. ``None`` is *not* the same as ``ZERO`` here: ``ZERO`` would be
+    counted in the bucket (shrinking the Modified-Dietz denominator and
+    inflating growth %), whereas ``None`` is skipped.
     """
     if t.net_eur is not None:
         return t.net_eur
@@ -168,9 +174,9 @@ def _amount_eur(
         if rate is not None and rate != 0:
             return t.net_native / rate
     # Last resort: leave the figure out rather than mix currencies; the
-    # caller's bucket will simply be missing this row instead of being
-    # poisoned with a wrong-magnitude number.
-    return ZERO
+    # caller's bucket simply omits this row instead of being poisoned with
+    # a wrong-magnitude number.
+    return None
 
 
 def _amount_in(
@@ -200,7 +206,7 @@ def _amount_in(
             return t.net_usd
         eur_amt = _amount_eur(t, eur_to_usd=eur_to_usd)
         rate = lookup_rate_with_forward_fill(eur_to_usd, t.date)
-        if rate is None or rate == 0:
+        if eur_amt is None or rate is None or rate == 0:
             return None
         return eur_amt * rate
     return None
@@ -247,15 +253,21 @@ def _modified_dietz(
     return (closing - opening - net_external_flow) / denom
 
 
-def _display_value(value_eur: Decimal, currency: str, fx_rate: Decimal | None) -> Decimal:
-    if currency.upper() == "EUR" or fx_rate is None or fx_rate == 0:
+def _display_value(value_eur: Decimal, currency: str, fx_rate: Decimal | None) -> Decimal | None:
+    if currency.upper() == "EUR":
         return value_eur
+    if fx_rate is None or fx_rate == 0:
+        # No spot rate on file: we cannot honestly convert EUR into the
+        # display currency, so report "unavailable" rather than relabelling
+        # the euro figure as the foreign-currency one.
+        return None
     return value_eur * fx_rate
 
 
-def _convert_to_usd(value_eur: Decimal, fx_rate: Decimal | None) -> Decimal:
+def _convert_to_usd(value_eur: Decimal, fx_rate: Decimal | None) -> Decimal | None:
     if fx_rate is None or fx_rate == 0:
-        return value_eur
+        # Missing FX → blank, not the EUR value masquerading as USD.
+        return None
     return value_eur * fx_rate
 
 
@@ -327,6 +339,10 @@ def aggregate(  # noqa: PLR0912, PLR0915
         key = _period_key(t.date, monthly=monthly)
         b = buckets.setdefault(key, {"contrib": ZERO, "div": ZERO, "int": ZERO})
         amt = _amount_eur(t, eur_to_usd=eur_to_usd)
+        if amt is None:
+            # Unconvertible non-EUR row with no FX history — leave it out of
+            # the bucket rather than counting a wrong-magnitude figure.
+            continue
         if t.kind == "deposit":
             b["contrib"] += amt
         elif t.kind == "withdrawal":
@@ -370,11 +386,17 @@ def aggregate(  # noqa: PLR0912, PLR0915
             except Exception:  # pragma: no cover - defensive: keep page renderable
                 closing_by_label[label] = ZERO
                 opening_by_label[label] = ZERO
-            growth_by_label[label] = _modified_dietz(
-                opening_by_label[label],
-                closing_by_label[label],
-                agg["contrib"],
-            )
+            if period_open > today:
+                # The period hasn't started yet — a Modified-Dietz on a forced
+                # zero opening would emit a spurious figure (e.g. −200 %), so
+                # leave growth undefined.
+                growth_by_label[label] = None
+            else:
+                growth_by_label[label] = _modified_dietz(
+                    opening_by_label[label],
+                    closing_by_label[label],
+                    agg["contrib"],
+                )
 
     # ------- FX-aware per-display-currency reaggregation (v2.2) -------
     display_buckets: dict[str, dict[str, Decimal]] = {}
@@ -441,11 +463,14 @@ def aggregate(  # noqa: PLR0912, PLR0915
                     ):  # pragma: no cover - defensive
                         closing_display[label] = ZERO
                         opening_display[label] = ZERO
-                    growth_display[label] = _modified_dietz(
-                        opening_display[label] or ZERO,
-                        closing_display[label] or ZERO,
-                        display_buckets[label]["contrib"],
-                    )
+                    if period_open > today:
+                        growth_display[label] = None
+                    else:
+                        growth_display[label] = _modified_dietz(
+                            opening_display[label] or ZERO,
+                            closing_display[label] or ZERO,
+                            display_buckets[label]["contrib"],
+                        )
 
     rows = [
         PeriodRow(
@@ -595,7 +620,11 @@ def to_table_rows(
     FX-aware aggregation.
     """
 
-    def _display(eur_value: Decimal, display_value: Decimal | None) -> Decimal:
+    def _m(value: Decimal | None) -> str:
+        """Money string for an AG-Grid text cell; ``None`` renders as an em dash."""
+        return f"{value:,.2f}" if value is not None else "—"
+
+    def _display(eur_value: Decimal, display_value: Decimal | None) -> Decimal | None:
         if display_value is not None:
             return display_value
         return _display_value(eur_value, currency, fx_rate)
@@ -609,19 +638,19 @@ def to_table_rows(
         """Raw float for a sortable AG-Grid numeric column (``None`` stays empty)."""
         return float(value) if value is not None else None
 
-    def _usd_money(eur_value: Decimal, display_value: Decimal | None) -> Decimal:
+    def _usd_money(eur_value: Decimal, display_value: Decimal | None) -> Decimal | None:
         """USD value of a cashflow bucket.
 
         Prefer the per-trade-date display leg when the page already
         aggregated in USD; otherwise fall back to scaling the EUR series
-        by today's spot ``fx_rate`` so the (currently hidden) USD column
-        is still a sensible number.
+        by today's spot ``fx_rate``. Returns ``None`` when no FX rate is
+        available rather than relabelling the EUR figure as USD.
         """
         if currency.upper() == "USD" and display_value is not None:
             return display_value
         return _convert_to_usd(eur_value, fx_rate)
 
-    def _closing_usd(r: PeriodRow) -> Decimal:
+    def _closing_usd(r: PeriodRow) -> Decimal | None:
         """Closing value in USD, preferring per-period-end FX."""
         if r.closing_value_usd is not None:
             return r.closing_value_usd
@@ -632,21 +661,21 @@ def to_table_rows(
     return [
         {
             "label": r.label,
-            "contributions": f"{_display(r.contributions, r.contributions_display):,.2f}",
+            "contributions": _m(_display(r.contributions, r.contributions_display)),
             "contributions_eur": f"{r.contributions:,.2f}",
-            "contributions_usd": f"{_convert_to_usd(r.contributions, fx_rate):,.2f}",
-            "dividends": f"{_display(r.dividends, r.dividends_display):,.2f}",
+            "contributions_usd": _m(_convert_to_usd(r.contributions, fx_rate)),
+            "dividends": _m(_display(r.dividends, r.dividends_display)),
             "dividends_eur": f"{r.dividends:,.2f}",
-            "dividends_usd": f"{_convert_to_usd(r.dividends, fx_rate):,.2f}",
-            "interest": f"{_display(r.interest, r.interest_display):,.2f}",
+            "dividends_usd": _m(_convert_to_usd(r.dividends, fx_rate)),
+            "interest": _m(_display(r.interest, r.interest_display)),
             "interest_eur": f"{r.interest:,.2f}",
-            "interest_usd": f"{_convert_to_usd(r.interest, fx_rate):,.2f}",
-            "net_flow": f"{_display(r.net_flow, r.net_flow_display):,.2f}",
+            "interest_usd": _m(_convert_to_usd(r.interest, fx_rate)),
+            "net_flow": _m(_display(r.net_flow, r.net_flow_display)),
             "net_flow_eur": f"{r.net_flow:,.2f}",
-            "net_flow_usd": f"{_convert_to_usd(r.net_flow, fx_rate):,.2f}",
-            "closing_value": (f"{_display(r.closing_value_eur, r.closing_value_display):,.2f}"),
+            "net_flow_usd": _m(_convert_to_usd(r.net_flow, fx_rate)),
+            "closing_value": _m(_display(r.closing_value_eur, r.closing_value_display)),
             "closing_value_eur": f"{r.closing_value_eur:,.2f}",
-            "closing_value_usd": f"{_convert_to_usd(r.closing_value_eur, fx_rate):,.2f}",
+            "closing_value_usd": _m(_convert_to_usd(r.closing_value_eur, fx_rate)),
             "growth_pct": (
                 f"{(_growth_pct(r) or 0) * Decimal(100):,.2f} %"
                 if _growth_pct(r) is not None
