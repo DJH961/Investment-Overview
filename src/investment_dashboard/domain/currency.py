@@ -83,10 +83,10 @@ def dual_currency_amounts(
     be computed (no native amount and no usable rate).
     """
     rate = lookup_rate_with_forward_fill(eur_to_usd, on)
-    ncur = (native_currency or "").upper()
+    native_ccy = (native_currency or "").upper()
     eur: Decimal | None
     usd: Decimal | None
-    if ncur == "USD":
+    if native_ccy == "USD":
         # USD is booked; EUR is derived. Use the trade-date rate for
         # historical correctness and only fall back to a previously stored
         # ``net_eur`` (never today's spot, which would distort old rows).
@@ -103,7 +103,7 @@ def dual_currency_amounts(
     if rate is None or rate == 0:
         rate = fallback_rate
     usable = rate is not None and rate != 0
-    if ncur == "EUR":
+    if native_ccy == "EUR":
         eur = net_native if net_native is not None else net_eur
         usd = eur * rate if (eur is not None and usable and rate is not None) else None
         return eur, usd
