@@ -109,6 +109,22 @@ def test_overview_readmodel_includes_parity_fields(session: Session, seeded: Non
     assert Decimal(vti["capital_gain_native"]) == Decimal("100")
 
 
+def test_overview_readmodel_flags_corrupt_price_history(session: Session, seeded: None) -> None:
+    from datetime import date
+
+    from investment_dashboard.repositories import instruments_repo, prices_repo
+
+    vti_id = instruments_repo.get_by_symbol(session, "VTI").id
+    # A zero close cached in history marks the instrument's prices as corrupt.
+    prices_repo.upsert_closes(session, vti_id, {date(2024, 1, 2): Decimal("0")})
+    rm = overview_rm.build(session)
+    vti = next(p for p in rm["positions"] if p["symbol"] == "VTI")
+    others = [p for p in rm["positions"] if p["symbol"] != "VTI"]
+    assert vti["price_data_warning"] is True
+    assert all(p["price_data_warning"] is False for p in others)
+    assert "value_warning" in vti
+
+
 def test_deposits_readmodel(session: Session, seeded: None) -> None:
     rm = readmodels.deposits.build(session)
     assert Decimal(rm["summary"]["total_contrib_eur"]) == Decimal("1000.00")

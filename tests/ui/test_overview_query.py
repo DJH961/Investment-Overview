@@ -200,6 +200,21 @@ def test_position_rows_enriched_with_metrics(session: Session, seeded: None) -> 
     assert vti_row["capital_gain_eur_num"] == 80.0
 
 
+def test_position_rows_flag_price_data_warning(session: Session, seeded: None) -> None:
+    positions = get_positions(session)
+    vti_id = next(p.instrument.id for p in positions if p.instrument.symbol == "VTI")
+    rows = position_rows(positions, price_anomaly_ids={vti_id})
+    vti_row = next(r for r in rows if r["symbol"] == "VTI")
+    other = next(r for r in rows if r["symbol"] != "VTI")
+    assert vti_row["price_data_warning"] is True
+    assert other["price_data_warning"] is False
+
+
+def test_position_rows_default_no_price_data_warning(session: Session, seeded: None) -> None:
+    rows = position_rows(get_positions(session))
+    assert all(r["price_data_warning"] is False for r in rows)
+
+
 def test_market_verdict_beating_and_trailing(session: Session, seeded: None) -> None:
     from investment_dashboard.ui.pages._overview_query import compute_market_verdict
 

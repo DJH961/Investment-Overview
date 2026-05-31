@@ -178,6 +178,23 @@ def recent_price_dates(
         )
 
 
+def instruments_with_price_anomalies(session: Session, instrument_ids: Sequence[int]) -> set[int]:
+    """Instrument ids whose cached price history is corrupt (a non-positive close).
+
+    Tier-aware wrapper around
+    :func:`prices_repo.instrument_ids_with_nonpositive_close` so a caller
+    holding a ledger session still inspects the price history that lives in the
+    cache database under split-DB layouts. A returned id means the feed handed
+    back a ``0`` (or negative) close at some point, which forward-fills into
+    historical valuations and understates them — the UI flags it so the user
+    knows that instrument's figures can't be trusted until it reprices.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return prices_repo.instrument_ids_with_nonpositive_close(cache, instrument_ids)
+
+
 def _ttl_for(instr: Instrument) -> int:
     return REFRESH_TTL_SECONDS.get(instr.asset_class, _DEFAULT_TTL_SECONDS)
 
