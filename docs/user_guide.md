@@ -40,7 +40,8 @@ You can change everything later, so it is safe to experiment.
 | **Monthly** | Performance broken down per calendar month. |
 | **Yearly** | Performance broken down per calendar year. |
 | **Analytics** | Deeper risk/performance metrics (Sharpe, Sortino, drawdown, beta, alpha, allocation drift). |
-| **Calculator** | Project your portfolio forward under different return, contribution and inflation assumptions. |
+| **Projection** | Project your portfolio forward under different return, contribution and inflation assumptions. |
+| **Calculator** | "I have €X to invest" — works out how many shares of each holding to buy to move toward your target allocation (buy-only rebalance). |
 | **Settings** | Where you change how the app behaves — see the next section. |
 
 ---
@@ -70,15 +71,18 @@ The Settings page is organised top to bottom into the sections below.
 
 ### Storage
 
-A **read-only** panel showing where your three database files live:
+A panel showing where your three database files live:
 
 - **Ledger** — your source of truth (accounts, transactions).
 - **Config** — your preferences and overrides.
 - **Cache** — derived data; kept on the local device by default.
 
 It also shows whether **encryption** is enabled and whether any file is inside
-a detected **cloud-sync** folder (OneDrive, iCloud, Dropbox, Google Drive).
-Nothing here is editable — it is for confirming your data is where you expect.
+a detected **cloud-sync** folder (OneDrive, iCloud, Dropbox, Google Drive). The
+tier paths themselves are read-only, but you **can** point the ledger and config
+tiers at a **cloud / sync folder of your choice** here (for example a different
+cloud provider, or a plain local folder) — the change takes effect on the next
+restart.
 
 ### Data refresh
 

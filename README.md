@@ -7,14 +7,15 @@ return metrics — XIRR, TWR, CAGR, YTD variants, drawdown, Sharpe, Sortino —
 in both **USD** and **EUR**, and serves them over a NiceGUI web UI accessible
 from the host laptop and any device on the same Wi-Fi network.
 
-> **Status: v2.0.0 — split storage, cloud-aware paths, optional SQLCipher,
-> and SQLite file-safety tooling.** The app remains a local-first,
-> single-user dashboard with onboarding, EUR/USD display switching, CSV/XLSX
-> imports, live overview/deposits/transactions/monthly/yearly/calculator pages,
-> and editable settings. v2.0 adds separate ledger/config/cache tiers, keeps
-> cache data local by default, detects common cloud-sync folders, optionally
-> encrypts synced tiers with SQLCipher, blocks unsafe WAL sidecars in cloud
-> folders, takes rolling backups, and exposes repair/backup/split CLIs.
+> **Status: v2.9.4 — split storage, cloud-aware paths, optional SQLCipher,
+> intraday price refresh, and SQLite file-safety tooling.** The app remains a
+> local-first, single-user dashboard with onboarding, EUR/USD display switching,
+> CSV/XLSX imports, live overview/deposits/transactions/monthly/yearly/calculator
+> pages, a standalone projection page, and editable settings. It runs separate
+> ledger/config/cache tiers, keeps cache data local by default, detects common
+> cloud-sync folders, optionally encrypts synced tiers with SQLCipher, blocks
+> unsafe WAL sidecars in cloud folders, takes rolling backups, and exposes
+> repair/backup/split CLIs.
 
 ## Highlights
 
