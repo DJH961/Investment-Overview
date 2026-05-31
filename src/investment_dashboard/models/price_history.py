@@ -1,4 +1,10 @@
-"""Daily closing prices per instrument, in the instrument's native currency.
+"""Per-instrument price history, in the instrument's native currency.
+
+Stores one row per (instrument, date). For ETFs and stocks the latest
+row tracks that day's bar, whose close is refreshed every couple of
+minutes during market hours, so the most recent value reflects the live
+intraday price rather than only the prior end-of-day close. Mutual-fund
+NAVs update roughly once a day, as the provider publishes them.
 
 Belongs to the **cache** tier (device-local, regenerable from market data
 + ``Instrument`` rows). ``instrument_id`` references the ledger-tier

@@ -83,7 +83,10 @@ Nothing here is editable — it is for confirming your data is where you expect.
 ### Data refresh
 
 - **Refresh FX rates** — pull fresh EUR/USD rates.
-- **Refresh prices** — pull fresh market closing prices.
+- **Refresh prices** — pull the latest market prices. During market hours
+  ETF and stock quotes update intraday (roughly every couple of minutes in
+  the background), so values move through the day rather than only at the
+  daily close; mutual-fund NAVs update about once a day when published.
 - **Seed default setup** — add the bundled example accounts and instruments.
   Safe to run repeatedly: existing rows are skipped, only missing ones are
   added.

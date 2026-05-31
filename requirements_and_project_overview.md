@@ -13,18 +13,17 @@ This document is written so that an engineer with no access to the original `Inv
 1. Replace a hand-maintained Excel spreadsheet with a queryable, auditable, version-controlled system whose ground truth is a transaction ledger.
 2. Compute, per holding and at the portfolio level: total return %, CAGR, XIRR, TWR, YTD variants of all of the above, plus simple period-bound growth rates.
 3. Provide simultaneous USD and EUR views, with every USD cashflow converted to EUR at the spot rate of the transaction date.
-4. Allow ingestion via (a) broker CSV imports, (b) manual entry through the UI, (c) automated daily price refresh via market data API.
+4. Allow ingestion via (a) broker CSV imports, (b) manual entry through the UI, (c) automated price refresh via market data API, including near-real-time intraday quotes during market hours so the user can watch positions move.
 5. Provide an investment-calculator workflow: "I have €X cash to allocate; given my current holdings and target allocation, how many shares of each ticker should I buy?"
 6. Be accessible from the user's phone over local Wi-Fi without paid hosting.
 7. Be red-green-colorblind-safe in every chart, table heatmap, and status indicator.
 
 ### 1.2 Non-goals
 
-1. No real-time intraday quotes — end-of-day prices are sufficient.
-2. No multi-user, no authentication beyond binding to the local network.
-3. No tax-lot accounting for capital-gains tax purposes (current spreadsheet doesn't do this; out of scope unless explicitly added later).
-4. No trading execution — read-only with respect to brokers.
-5. No mobile-native app — responsive web UI accessed via the phone's browser.
+1. No multi-user, no authentication beyond binding to the local network.
+2. No tax-lot accounting for capital-gains tax purposes (current spreadsheet doesn't do this; out of scope unless explicitly added later).
+3. No trading execution — read-only with respect to brokers.
+4. No mobile-native app — responsive web UI accessed via the phone's browser.
 
 ### 1.3 Constraints
 
@@ -174,7 +173,7 @@ The unified ledger. **Every** position change, dividend, and cash movement is on
 For a `buy`: `quantity > 0`, `net_native < 0`. For `dividend_reinvest`: `quantity > 0`, `net_native = 0`. For `deposit`: `quantity = NULL`, `net_native > 0`. For `interest`: `quantity = NULL`, `net_native > 0`. This sign convention makes the cashflow stream for XIRR straightforward: XIRR uses `-net_native` from the user's perspective (deposits/buys are negative cashflow from outside the portfolio... see §6.2 for the canonical sign rules).
 
 #### `price_history`
-Daily close prices in the instrument's native currency.
+Per-instrument price history in the native currency: one row per (instrument, date). For ETFs and stocks the latest row's close refreshes every couple of minutes during market hours (live intraday price); mutual-fund NAVs update about once a day.
 
 | Column | Type |
 |---|---|
