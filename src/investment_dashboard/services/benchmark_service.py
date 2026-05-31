@@ -28,13 +28,33 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from investment_dashboard.adapters import yfinance_client
-from investment_dashboard.models import Instrument
-from investment_dashboard.repositories import app_config_repo, instruments_repo, prices_repo
+from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
+from investment_dashboard.domain.returns import Cashflow, xirr
+from investment_dashboard.models import Instrument, Transaction, TransactionKind
+from investment_dashboard.repositories import (
+    app_config_repo,
+    instruments_repo,
+    prices_repo,
+    transactions_repo,
+)
+from investment_dashboard.services import fx_service
 
 log = logging.getLogger(__name__)
 
 DEFAULT_SYMBOL = "VT"
 KEY_SYMBOL = "benchmark_symbol"
+
+# External-cash kinds that fund (or drain) the simulated benchmark holding,
+# mirroring metrics_service's portfolio-XIRR contribution convention so the two
+# returns are computed over the same flows.
+_CONTRIBUTION_KINDS = {
+    TransactionKind.DEPOSIT.value,
+    TransactionKind.TRANSFER_IN.value,
+}
+_WITHDRAWAL_KINDS = {
+    TransactionKind.WITHDRAWAL.value,
+    TransactionKind.TRANSFER_OUT.value,
+}
 
 
 @dataclass(frozen=True)
@@ -116,7 +136,12 @@ def refresh_history(
         return 0
     if not closes:
         return 0
-    return prices_repo.upsert_closes(session, instrument.id, closes, source="benchmark")
+    # Closes live in the cache tier; in split-DB mode the ledger session cannot
+    # see ``price_history`` so the write has to go through the cache engine.
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+
+    with cache_write_session(session) as cache:
+        return prices_repo.upsert_closes(cache, instrument.id, closes, source="benchmark")
 
 
 def get_series(
@@ -130,6 +155,93 @@ def get_series(
     instrument = instruments_repo.get_by_symbol(session, symbol)
     if instrument is None:
         return BenchmarkSeries(symbol=symbol, closes={})
-    all_closes = prices_repo.get_closes_for_instrument(session, instrument.id)
+    # ``price_history`` is a cache-tier table; read it through the cache engine
+    # so split-DB installs see the full series instead of the empty ledger copy.
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        all_closes = prices_repo.get_closes_for_instrument(cache, instrument.id)
     closes = {d: c for d, c in all_closes.items() if start <= d <= end}
     return BenchmarkSeries(symbol=symbol, closes=closes)
+
+
+def _txn_eur_amount(t: Transaction) -> Decimal:
+    """EUR cash leg of a transaction (cached ``net_eur`` else ``net_native``)."""
+    if t.net_eur is not None:
+        return t.net_eur
+    if t.net_native is not None:
+        return t.net_native
+    return Decimal(0)
+
+
+def _close_as_of(closes: dict[date, Decimal], sorted_dates: list[date], d: date) -> Decimal | None:
+    """Forward-filled benchmark close on ``d`` (earliest close if ``d`` precedes
+    the series), or ``None`` when the series is empty."""
+    if not sorted_dates:
+        return None
+    prev: date | None = None
+    for cd in sorted_dates:
+        if cd <= d:
+            prev = cd
+        else:
+            break
+    chosen = prev if prev is not None else sorted_dates[0]
+    return closes[chosen]
+
+
+def simulate_benchmark_xirr(session: Session, *, as_of: date | None = None) -> Decimal | None:
+    """XIRR of a buy-and-hold of the benchmark funded by the portfolio's own
+    external contribution cashflows (EUR basis).
+
+    Each deposit/transfer-in buys benchmark shares at that day's close
+    (converted to EUR via the EUR→USD history); each withdrawal/transfer-out
+    sells shares. The terminal mark is the resulting share balance valued at the
+    ``as_of`` close. This makes "vs market" an apples-to-apples XIRR comparison —
+    "what return would these same contributions have earned in the index?".
+
+    Returns ``None`` when there is no benchmark history or no external
+    contributions to simulate.
+    """
+    as_of = as_of or date.today()
+    txns = [
+        t
+        for t in transactions_repo.list_transactions(session, end=as_of)
+        if t.kind in _CONTRIBUTION_KINDS or t.kind in _WITHDRAWAL_KINDS
+    ]
+    if not txns:
+        return None
+    start = min(t.date for t in txns)
+    series = get_series(session, start=start, end=as_of)
+    if len(series.closes) < 2:
+        return None
+    sorted_dates = sorted(series.closes)
+    eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
+
+    def _price_eur(d: date) -> Decimal | None:
+        close_usd = _close_as_of(series.closes, sorted_dates, d)
+        if close_usd is None:
+            return None
+        rate = lookup_rate_with_forward_fill(eur_to_usd, d)
+        if rate is None or rate == 0:
+            return None
+        return close_usd / rate
+
+    shares = Decimal(0)
+    flows: list[Cashflow] = []
+    for t in sorted(txns, key=lambda r: (r.date, r.id)):
+        amount = _txn_eur_amount(t)
+        if amount == 0:
+            continue
+        price = _price_eur(t.date)
+        if price is None or price == 0:
+            continue
+        # Contributions are positive cash in (amount > 0 ⇒ buy shares, negative
+        # flow); withdrawals are negative cash (amount < 0 ⇒ sell shares,
+        # positive flow). Both reduce to: shares += amount / price, flow = -amount.
+        shares += amount / price
+        flows.append(Cashflow(date=t.date, amount=-amount))
+    terminal_price = _price_eur(as_of)
+    if terminal_price is None or not flows:
+        return None
+    terminal_value = shares * terminal_price
+    return xirr(flows, as_of=as_of, terminal_value=terminal_value)

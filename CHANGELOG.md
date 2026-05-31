@@ -12,6 +12,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.10.2] — 2026-05-31
+
+Fixes the "vs market" comparison and the empty analytics benchmark overlay, and
+removes a double-count that inflated the portfolio XIRR.
+
+### Fixed
+- **Benchmark history was invisible in split-DB mode.** `benchmark_service`
+  read and wrote the benchmark's close series through the *ledger* session, but
+  `price_history` is a cache-tier table — so split-DB installs saw only a
+  handful of closes (whatever happened to be in the ledger copy), collapsing the
+  analytics comparison curve onto the x-axis and starving the "vs market"
+  verdict. `get_series`/`refresh_history` now route through
+  `cache_read_session`/`cache_write_session` like the rest of the price feed
+  (`services/benchmark_service`).
+- **Benchmark history is now backfilled over the portfolio lifetime.** Boot
+  never called `refresh_history`, so benchmarks the user doesn't already hold
+  had no curve at all. A `_refresh_benchmark()` step now runs in both the
+  synchronous and deferred network-refresh paths, fetching from the earliest
+  transaction date (`boot`).
+- **"Vs market" is now an apples-to-apples XIRR comparison.** The verdict
+  compared the portfolio's *legacy simple* growth (`(V−C)/C`) against a raw
+  two-close price move of the benchmark — two different methods over two
+  different horizons, which is what produced the nonsensical "66 % vs 2.87 %".
+  It now simulates the portfolio's own external contributions into the benchmark
+  and compares the resulting **benchmark XIRR** against the **portfolio XIRR**,
+  expressing both as the compounded total growth `(1 + XIRR) ^ years − 1` the
+  overview already headlines (`services/benchmark_service.simulate_benchmark_xirr`,
+  `ui/pages/_overview_query.compute_market_verdict`, `ui/pages/overview`).
+- **Distributions swept into in-portfolio settlement funds no longer inflate
+  XIRR.** Dividends/interest paid into a money-market settlement fund
+  (VMFXX/SPAXX) are already captured by that fund's terminal value; counting
+  them again as XIRR outflows double-counted the cash. Accounts that hold a
+  money-market fund are now treated as cash-retaining
+  (`services/metrics_service`).
+
 ## [2.10.1] — 2026-05-31
 
 Investigates the residual ~8–10 % gap between the developer audit export and the

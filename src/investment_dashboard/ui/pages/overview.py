@@ -7,6 +7,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
+from investment_dashboard.domain.returns import years_between
 from investment_dashboard.services import display_currency_service, prices_service
 from investment_dashboard.ui.components import (
     empty_state,
@@ -365,7 +366,16 @@ def register() -> None:  # noqa: PLR0915
                 price_anomaly_ids = prices_service.instruments_with_price_anomalies(
                     session, [p.instrument.id for p in positions]
                 )
-                verdict = compute_market_verdict(session, portfolio_return=metrics.total_growth_pct)
+                verdict = compute_market_verdict(
+                    session,
+                    portfolio_xirr=metrics.xirr,
+                    years=(
+                        years_between(metrics.first_cashflow_date, metrics.as_of)
+                        if metrics.first_cashflow_date
+                        else None
+                    ),
+                    as_of=metrics.as_of,
+                )
                 display_ccy = display_currency_service.get_display_currency(session)
                 value_series = build_value_series(
                     session, currency=display_ccy, range_label=range_label
