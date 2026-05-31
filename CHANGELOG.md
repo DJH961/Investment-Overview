@@ -47,7 +47,7 @@ table typography back down to a readable size.
   `autoHeaderHeight` plus header white-space CSS) so a column's numbers and its
   header both stay fully readable.
 
-## [2.9.0] — Unreleased
+## [2.9.0] — 2026-05-31
 
 Makes trade-date FX values **persistent** instead of re-derived on every
 render, and flips the stored perspective so the **native** leg (almost always
@@ -79,7 +79,7 @@ derived from it) stays live.
   derivation for rows still missing a value, removing the repeated full
   FX-history load on the common path.
 
-## [2.8.2] — Unreleased
+## [2.8.2] — 2026-05-31
 
 Patch fixing the **currency / FX math** that regressed in v2.8 (v2.8.1 is the
 parallel UI overhaul). The unifying rule: store the **native** amount (almost

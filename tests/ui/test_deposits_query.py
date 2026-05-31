@@ -143,3 +143,33 @@ def test_eur_computed_from_trade_date_fx_not_parity(session: Session) -> None:
     summary = compute_summary(session, today=date(2024, 6, 4))
     assert summary.total_contrib_usd == Decimal("1000.00")
     assert summary.total_contrib_eur == Decimal("800.00")
+
+
+def test_eur_native_missing_trade_date_fx_uses_current_fallback(session: Session) -> None:
+    """Keep deposits consistent with the ledger fallback for sparse FX history."""
+    from investment_dashboard.repositories import fx_repo
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="EUR account",
+        native_currency="EUR",
+        account_type="brokerage",
+    )
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2024, 1, 1),
+            kind="deposit",
+            net_native=Decimal("100.00"),
+            net_eur=Decimal("100.00"),
+            source=TransactionSource.MANUAL,
+        )
+    )
+    fx_repo.upsert_rates(session, {date(2024, 6, 1): Decimal("1.20")})
+    session.flush()
+
+    summary = compute_summary(session, today=date(2024, 6, 2))
+
+    assert summary.total_contrib_eur == Decimal("100.00")
+    assert summary.total_contrib_usd == Decimal("120.0000")

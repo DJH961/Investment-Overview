@@ -5,13 +5,16 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from investment_dashboard.adapters.frankfurter_client import FrankfurterError
 from investment_dashboard.models import Transaction
 from investment_dashboard.repositories import accounts_repo, fx_repo
+from investment_dashboard.services import fx_service
 from investment_dashboard.services.importer_service import Broker, import_csv
 
 FIXTURE_DIR = Path(__file__).parents[1] / "adapters" / "fixtures"
@@ -89,13 +92,16 @@ class TestImportFidelity:
     def test_fx_missing_dates_reported_without_history(
         self, session: Session, usd_account: int
     ) -> None:
-        # No FX history seeded and the network is unavailable in tests, so the
-        # EUR leg can't be derived: the importer must surface the gap (rather
-        # than silently freezing a wrong number) while still inserting rows.
+        # No FX history seeded and the network is unavailable, so the EUR leg
+        # can't be derived: the importer must surface the gap (rather than
+        # silently freezing a wrong number) while still inserting rows. The
+        # offline condition is simulated by making the Frankfurter fetch fail,
+        # so the result is deterministic in CI (which has network) too.
         content = (FIXTURE_DIR / "fidelity_sample.csv").read_text()
-        result = import_csv(
-            session, broker=Broker.FIDELITY, account_id=usd_account, content=content
-        )
+        with patch.object(fx_service, "fetch_rates", side_effect=FrankfurterError("offline")):
+            result = import_csv(
+                session, broker=Broker.FIDELITY, account_id=usd_account, content=content
+            )
         assert result.inserted == 6
         assert result.fx_missing_dates  # non-empty
         # USD leg is still exact even when EUR can't be derived.
