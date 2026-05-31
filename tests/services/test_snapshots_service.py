@@ -124,3 +124,74 @@ def test_stale_zero_snapshot_recomputes_after_invalidation(session: Session) -> 
     snapshots_service.invalidate_all(session)
     session.flush()
     assert snapshots_service.get_or_compute(session, past) == Decimal("1200.00")
+
+
+def test_series_in_currency_matches_per_day_helper(session: Session) -> None:
+    """The batched series equals calling ``get_or_compute_in_currency`` per day."""
+    from investment_dashboard.repositories import fx_repo
+
+    start = date(2024, 1, 1)
+    end = date(2024, 1, 5)
+    days = [date(2024, 1, d) for d in range(1, 6)]
+    for i, day in enumerate(days):
+        snapshots_repo.upsert_snapshot(session, day, Decimal(1000 + i))
+    fx_repo.upsert_rates(
+        session,
+        {start: Decimal("1.10"), date(2024, 1, 3): Decimal("1.20")},
+        base="EUR",
+        quote="USD",
+    )
+    session.flush()
+
+    batched = snapshots_service.series_in_currency(session, start, end, "USD")
+    per_day = [
+        (day, snapshots_service.get_or_compute_in_currency(session, day, "USD")) for day in days
+    ]
+    assert batched == per_day
+
+
+def test_series_in_currency_eur_passthrough(session: Session) -> None:
+    start = date(2024, 2, 1)
+    end = date(2024, 2, 3)
+    for d in range(1, 4):
+        snapshots_repo.upsert_snapshot(session, date(2024, 2, d), Decimal(500 + d))
+    session.flush()
+
+    series = snapshots_service.series_in_currency(session, start, end, "EUR")
+    assert series == [
+        (date(2024, 2, 1), Decimal("501")),
+        (date(2024, 2, 2), Decimal("502")),
+        (date(2024, 2, 3), Decimal("503")),
+    ]
+
+
+def test_series_in_currency_caches_missing_historical_days(session: Session) -> None:
+    """Days absent from the cache are computed and persisted (empty ⇒ 0)."""
+    start = date(2024, 3, 1)
+    end = date(2024, 3, 3)
+    series = snapshots_service.series_in_currency(session, start, end, "EUR")
+    assert [v for _, v in series] == [Decimal(0), Decimal(0), Decimal(0)]
+    for d in range(1, 4):
+        assert snapshots_repo.get_snapshot(session, date(2024, 3, d)) is not None
+
+
+def test_series_in_currency_today_ignores_stale_cache(session: Session) -> None:
+    today = date.today()
+    snapshots_repo.upsert_snapshot(session, today, Decimal("9999.99"))
+    session.flush()
+    series = snapshots_service.series_in_currency(session, today, today, "EUR")
+    # Today is always recomputed live ⇒ empty portfolio yields 0, not 9999.99.
+    assert series == [(today, Decimal(0))]
+
+
+def test_warm_range_computes_and_caches_each_day(session: Session) -> None:
+    start = date(2024, 4, 1)
+    end = date(2024, 4, 4)
+    warmed = snapshots_service.warm_range(session, start, end)
+    assert warmed == 4
+    for d in range(1, 5):
+        assert snapshots_repo.get_snapshot(session, date(2024, 4, d)) is not None
+
+
+def test_warm_range_empty_when_end_before_start(session: Session) -> None:
+    assert snapshots_service.warm_range(session, date(2024, 5, 2), date(2024, 5, 1)) == 0

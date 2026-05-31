@@ -119,11 +119,10 @@ def _build_curve(
 ) -> list[EquityCurvePoint]:
     """One point per calendar day in ``[start, end]`` (inclusive).
 
-    Daily granularity keeps drawdown / vol math honest. The portfolio
-    valuation is read-through-cached by
-    :func:`snapshots_service.get_or_compute_in_currency`, so historical
-    days are O(1). Benchmark closes are forward-filled across weekends
-    and holidays from the most recent available print.
+    Daily granularity keeps drawdown / vol math honest.     The portfolio valuation is read-through-cached and loaded in bulk via
+    :func:`snapshots_service.series_in_currency`, so historical days are O(1).
+    Benchmark closes are forward-filled across weekends and holidays from the
+    most recent available print.
     """
     # Cashflows by date for the cumulative-contributions overlay.
     txns = list(transactions_repo.list_transactions(session, end=end))
@@ -141,12 +140,16 @@ def _build_curve(
     bench_idx = 0
     last_bench: Decimal | None = None
 
+    # Bulk-load the daily portfolio valuations once (single snapshot read +
+    # single FX-series load) instead of reopening a cache session per day.
+    values = dict(snapshots_service.series_in_currency(session, start, end, currency))
+
     points: list[EquityCurvePoint] = []
     cumulative = ZERO
     day = start
     while day <= end:
         cumulative += contribs_by_date.get(day, ZERO)
-        value = snapshots_service.get_or_compute_in_currency(session, day, currency)
+        value = values[day]
         while bench_idx < len(sorted_benchmark) and sorted_benchmark[bench_idx] <= day:
             last_bench = benchmark_closes[sorted_benchmark[bench_idx]]
             bench_idx += 1

@@ -614,6 +614,29 @@ def _invalidate_snapshots() -> None:
         log.warning("Snapshot invalidation failed; continuing", exc_info=True)
 
 
+def _warm_snapshots() -> None:
+    """Recompute the daily snapshot cache over the portfolio lifetime.
+
+    :func:`_invalidate_snapshots` drops every cached daily value once the fresh
+    FX/price history lands, so the next ``/overview`` or ``/analytics`` render
+    would otherwise rebuild the whole equity curve day by day on the request
+    thread — the slow first load (and occasional reconnect) the user reports.
+    Running the rebuild here, on the post-boot background thread, moves that
+    work off the UI so the first render reads cached values. Best-effort: a
+    failure just leaves the lazy read-through path to recompute on demand.
+    """
+    try:
+        from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+        from investment_dashboard.services.snapshots_service import warm_range  # noqa: PLC0415
+
+        start = _earliest_needed_date()
+        with ledger_session_scope() as session:
+            warmed = warm_range(session, start, date.today())
+        log.info("Warmed %d daily snapshot(s) (floor=%s)", warmed, start)
+    except Exception:
+        log.warning("Snapshot warming failed; continuing", exc_info=True)
+
+
 def run_boot_sequence(*, skip_network: bool = False) -> None:
     """Run all startup steps.
 
@@ -641,6 +664,7 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
     _refresh_splits()
     _refresh_benchmark()
     _invalidate_snapshots()
+    _warm_snapshots()
 
 
 def run_deferred_network_refresh() -> None:
@@ -663,3 +687,4 @@ def run_deferred_network_refresh() -> None:
     _refresh_splits()
     _refresh_benchmark()
     _invalidate_snapshots()
+    _warm_snapshots()

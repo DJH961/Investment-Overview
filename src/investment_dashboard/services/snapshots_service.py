@@ -16,7 +16,7 @@ of being a uniform scalar of today's spot rate.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -82,6 +82,85 @@ def get_or_compute_in_currency(
     if rate is None or rate == 0:
         return eur
     return eur * rate
+
+
+def series_in_currency(
+    session: Session,
+    start: date,
+    end: date,
+    currency: str,
+) -> list[tuple[date, Decimal]]:
+    """Daily ``[start, end]`` portfolio values in ``currency``, computed in bulk.
+
+    Batched equivalent of calling :func:`get_or_compute_in_currency` once per
+    day. A naive day-by-day loop reopened a cache-tier session *and* reloaded
+    the full FX rate series for every date in the range — 365+ cache sessions
+    and 365+ full FX scans for the default one-year window, all on the request
+    thread. This helper instead:
+
+    * reads every already-cached snapshot in the window in a single query;
+    * loads the EUR→``currency`` rate series once and forward-fills it in
+      memory; and
+    * only falls back to :func:`get_or_compute` for the days that are still
+      missing from the cache (plus today, which is always recomputed live).
+
+    The per-day values are identical to :func:`get_or_compute_in_currency`; only
+    the number of round-trips changes.
+    """
+    currency = currency.upper()
+    today = date.today()
+    if end < start:
+        return []
+
+    # One bulk read of the already-cached historical snapshots.
+    stored = stored_snapshots_in_range(session, start, end)
+
+    # Load the FX rate series once instead of per day.
+    rates: dict[date, Decimal] | None = None
+    if currency != "EUR":
+        from investment_dashboard.domain.currency import (  # noqa: PLC0415
+            lookup_rate_with_forward_fill,
+        )
+        from investment_dashboard.services import fx_service  # noqa: PLC0415
+
+        rates = fx_service.get_rates(session, base="EUR", quote=currency)
+
+    out: list[tuple[date, Decimal]] = []
+    day = start
+    while day <= end:
+        # Today is always recomputed live; a missing historical day is computed
+        # and cached on demand exactly as the per-day helper would.
+        eur = stored[day] if day < today and day in stored else get_or_compute(session, day)
+        if currency == "EUR" or not rates:
+            value = eur
+        else:
+            rate = lookup_rate_with_forward_fill(rates, day)
+            value = eur if (rate is None or rate == 0) else eur * rate
+        out.append((day, value))
+        day += timedelta(days=1)
+    return out
+
+
+def warm_range(session: Session, start: date, end: date) -> int:
+    """Compute and cache every snapshot in ``[start, end]`` (background use).
+
+    The deferred network refresh drops the snapshot cache once fresh prices and
+    FX land, so the *first* ``/overview`` or ``/analytics`` render would
+    otherwise recompute the whole history day by day on the request thread —
+    the slow first load (and occasional reconnect) the user sees. Warming the
+    range from a background thread moves that work off the UI: the page then
+    reads cached values. Best-effort and idempotent; returns the number of days
+    warmed.
+    """
+    if end < start:
+        return 0
+    warmed = 0
+    day = start
+    while day <= end:
+        get_or_compute(session, day)
+        warmed += 1
+        day += timedelta(days=1)
+    return warmed
 
 
 def invalidate_from(session: Session, start: date) -> int:
