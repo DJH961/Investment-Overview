@@ -213,20 +213,69 @@ def _download_window(
     return result
 
 
-def fetch_latest_close(symbol: str, *, lookback_days: int = 7) -> PriceRecord | None:
+def fetch_latest_close(
+    symbol: str,
+    *,
+    lookback_days: int = 7,
+    ticker_factory: Any = None,
+) -> PriceRecord | None:
     """Convenience helper: return the most recent available close for ``symbol``.
 
     ``yfinance`` doesn't expose a "last close" endpoint, so we fetch a small
     window and pick the latest row. Returns ``None`` if nothing is available
     in that window (e.g., delisted ticker, network failure tolerated upstream).
+
+    Some CBOE yield tickers (notably ``^IRX``, the 13-week T-bill yield) come
+    back as *empty frames* from ``yfinance.download`` even though they're alive
+    and well on the ``Ticker.history`` endpoint. When the bulk-download path
+    yields nothing we therefore retry via ``Ticker(symbol).history`` before
+    giving up. ``ticker_factory`` lets tests inject a fake ``yf.Ticker``.
     """
     end = date.today() + timedelta(days=1)
     start = end - timedelta(days=max(lookback_days, 1))
     closes = fetch_closes([symbol], start, end).get(symbol, {})
     if not closes:
+        closes = _history_closes(symbol, start, end, ticker_factory=ticker_factory)
+    if not closes:
         return None
     latest_day = max(closes)
     return PriceRecord(symbol=symbol, date=latest_day, close=closes[latest_day])
+
+
+def _history_closes(
+    symbol: str,
+    start: date,
+    end: date,
+    *,
+    ticker_factory: Any = None,
+) -> dict[date, Decimal]:
+    """Fallback price fetch via ``Ticker.history`` for tickers that the bulk
+    ``download`` endpoint returns empty for (e.g. ``^IRX``)."""
+    factory = ticker_factory or yf.Ticker
+    try:
+        ticker = factory(symbol)
+        frame = ticker.history(
+            start=start.isoformat(),
+            end=end.isoformat(),
+            auto_adjust=False,
+            actions=False,
+        )
+    except Exception as exc:  # pragma: no cover - network churn
+        log.warning("yfinance Ticker.history fallback failed for %s: %s", symbol, exc)
+        return {}
+
+    if frame is None or getattr(frame, "empty", True):
+        return {}
+
+    closes: dict[date, Decimal] = {}
+    try:
+        close_series = frame["Close"]
+    except (KeyError, TypeError):
+        return {}
+    for ts, value in close_series.dropna().items():
+        day = ts.date() if hasattr(ts, "date") else ts
+        closes[day] = Decimal(repr(float(value)))
+    return closes
 
 
 @dataclass(frozen=True)

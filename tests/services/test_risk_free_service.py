@@ -22,21 +22,18 @@ def _make_fetcher(value: Decimal | None):
 
 
 def test_default_symbol_when_unset(session) -> None:
-    assert svc.get_symbol(session) == "^TNX"
+    assert svc.get_symbol(session) == "^IRX"
 
 
-def test_deprecated_irx_is_rewritten(session) -> None:
-    """Persisted ``^IRX`` from pre-v2.4 installs is bumped to the new default.
+def test_stored_symbol_is_respected(session) -> None:
+    """A persisted symbol is returned verbatim (no rewriting).
 
-    yfinance has been returning empty frames for ``^IRX`` since the
-    upstream CBOE feed changed, so silently keeping the value would
-    leave the Analytics page's Sharpe / Sortino / Alpha "unavailable"
-    until the user manually edits the Settings field. ``get_symbol``
-    rewrites it on read so existing installs heal themselves.
+    ``^IRX`` is the default again now that ``fetch_latest_close`` retries
+    empty bulk-download frames via ``Ticker.history``, so a stored value
+    is honoured as-is rather than being bumped to another ticker.
     """
-    app_config_repo.set_value(session, svc.KEY_SYMBOL, "^IRX")
+    app_config_repo.set_value(session, svc.KEY_SYMBOL, "^TNX")
     assert svc.get_symbol(session) == "^TNX"
-    # And the rewrite was persisted, not just observed.
     assert app_config_repo.get(session, svc.KEY_SYMBOL) == "^TNX"
 
 
@@ -57,8 +54,8 @@ def test_get_returns_none_when_never_fetched(session) -> None:
 
 
 def test_percent_quoted_yield_is_normalised(session) -> None:
-    # ^TNX (and the deprecated ^IRX) return e.g. 4.32 meaning 4.32%;
-    # service should store 0.0432.
+    # ^IRX returns e.g. 5.21 meaning 5.21%;
+    # service should store 0.0521.
     snap = svc.get_risk_free_rate(session, fetcher=_make_fetcher(Decimal("4.32")))
     assert snap.rate == Decimal("0.0432")
     assert snap.is_manual is False

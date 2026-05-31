@@ -120,6 +120,45 @@ def test_fetch_closes_downloader_error() -> None:
         fetch_closes(["VTI"], date(2024, 1, 1), date(2024, 1, 5), downloader=boom)
 
 
+def test_fetch_latest_close_uses_history_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``^IRX`` comes back empty from the bulk download but works via
+    ``Ticker.history``; ``fetch_latest_close`` must retry through it."""
+    import investment_dashboard.adapters.yfinance_client as yc
+
+    monkeypatch.setattr(yc, "fetch_closes", lambda *a, **k: {"^IRX": {}})
+
+    class FakeTicker:
+        def __init__(self, symbol: str) -> None:
+            self.symbol = symbol
+
+        def history(self, **_: Any) -> pd.DataFrame:
+            idx = pd.to_datetime(["2026-05-28", "2026-05-29"])
+            return pd.DataFrame({"Open": [5.18, 5.20], "Close": [5.19, 5.21]}, index=idx)
+
+    rec = yc.fetch_latest_close("^IRX", ticker_factory=FakeTicker)
+    assert rec is not None
+    assert rec.symbol == "^IRX"
+    assert rec.date == date(2026, 5, 29)
+    assert rec.close == Decimal(repr(5.21))
+
+
+def test_fetch_latest_close_returns_none_when_history_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import investment_dashboard.adapters.yfinance_client as yc
+
+    monkeypatch.setattr(yc, "fetch_closes", lambda *a, **k: {"^IRX": {}})
+
+    class EmptyTicker:
+        def __init__(self, symbol: str) -> None:
+            self.symbol = symbol
+
+        def history(self, **_: Any) -> pd.DataFrame:
+            return pd.DataFrame()
+
+    assert yc.fetch_latest_close("^IRX", ticker_factory=EmptyTicker) is None
+
+
 @pytest.mark.network
 def test_fetch_closes_live_smoke() -> None:
     # SPY is liquid enough to almost always have history available.
