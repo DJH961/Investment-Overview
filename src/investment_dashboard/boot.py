@@ -176,11 +176,23 @@ def _acquire_writer_lock() -> None:
 
 
 def _integrity_check_tiers() -> None:
+    import sqlite3  # noqa: PLC0415
+
     from investment_dashboard.db import get_active_encryption  # noqa: PLC0415
     from investment_dashboard.storage.integrity import (  # noqa: PLC0415
         IntegrityCheckFailed,
         integrity_check,
     )
+
+    # When another instance owns the writer lock this process runs in
+    # read-only mode (e.g. a second instance pointed at the same
+    # OneDrive-synced ledger). The active writer is responsible for
+    # validating integrity; opening the cloud-synced file here only races
+    # the writer/sync client and surfaces as a fatal
+    # ``sqlite3.OperationalError: disk I/O error``. Skip the check.
+    if is_read_only():
+        log.info("read-only mode; skipping integrity check (writer owns validation)")
+        return
 
     settings = get_settings()
     encryption = get_active_encryption()
@@ -198,11 +210,28 @@ def _integrity_check_tiers() -> None:
         except IntegrityCheckFailed:
             log.error("integrity check FAILED for %s at %s", label, path, exc_info=True)
             raise
+        except sqlite3.OperationalError:
+            # A transient access error (e.g. a OneDrive "disk I/O error"
+            # while the cloud client touches the file) is *not* corruption.
+            # Don't crash boot over it — log and let the app start.
+            log.warning(
+                "integrity check could not run for %s at %s; continuing",
+                label,
+                path,
+                exc_info=True,
+            )
 
 
 def _rolling_backup() -> None:
     from investment_dashboard.db import get_active_encryption  # noqa: PLC0415
     from investment_dashboard.storage.backup import snapshot  # noqa: PLC0415
+
+    # A read-only secondary instance must not write backups of a ledger
+    # owned by the active writer; reading the concurrently-written,
+    # cloud-synced file would also risk a "disk I/O error".
+    if is_read_only():
+        log.info("read-only mode; skipping rolling backup (writer owns backups)")
+        return
 
     settings = get_settings()
     encryption = get_active_encryption()
@@ -237,6 +266,13 @@ def _run_migrations() -> None:
     ``create_all`` only creates missing tables, so it is a safe no-op once
     Alembic has built the schema in a dev checkout.
     """
+    # In read-only mode another instance owns the writer lock and has
+    # already migrated the shared (cloud-synced) database. Running Alembic
+    # or ``create_all`` here would attempt to write the locked file and
+    # crash with a "disk I/O error"; the writer keeps the schema current.
+    if is_read_only():
+        log.info("read-only mode; skipping migrations (writer owns schema)")
+        return
     if not _run_alembic_upgrade():
         _ensure_schema_present()
 

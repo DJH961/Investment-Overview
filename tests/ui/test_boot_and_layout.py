@@ -112,6 +112,87 @@ def test_boot_creates_schema_without_alembic(
     assert {"transactions", "instruments", "accounts", "instrument_overrides"} <= tables
 
 
+def test_read_only_mode_skips_writer_maintenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A read-only secondary instance must not run writer-side boot steps.
+
+    Regression test for the ``sqlite3.OperationalError: disk I/O error``
+    boot crash: when another instance owns the writer lock (e.g. a second
+    instance pointed at the same OneDrive-synced ledger), boot continues in
+    read-only mode and must skip integrity check, rolling backup, and
+    migrations — all of which open/modify the cloud-synced file and crash.
+    """
+    from investment_dashboard import boot
+    from investment_dashboard.config import get_settings
+    from investment_dashboard.db import dispose_engines
+
+    db_path = tmp_path / "shared.sqlite"
+    monkeypatch.setenv("INV_DASHBOARD_DB_PATH", str(db_path))
+
+    # Force the read-only path as if the writer lock were already held.
+    def _lose_lock() -> None:
+        boot._boot_state["read_only"] = True
+
+    monkeypatch.setattr(boot, "_acquire_writer_lock", _lose_lock)
+
+    def _boom(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("writer-side maintenance must be skipped in read-only mode")
+
+    monkeypatch.setattr("investment_dashboard.storage.integrity.integrity_check", _boom)
+    monkeypatch.setattr("investment_dashboard.storage.backup.snapshot", _boom)
+    monkeypatch.setattr(boot, "_run_alembic_upgrade", _boom)
+    monkeypatch.setattr(boot, "_ensure_schema_present", _boom)
+
+    saved = dict(boot._boot_state)
+    get_settings.cache_clear()
+    dispose_engines()
+    try:
+        # Must not raise despite every writer-side step being booby-trapped.
+        run_boot_sequence(skip_network=True)
+        assert boot.is_read_only() is True
+    finally:
+        boot._boot_state.update(saved)
+        dispose_engines()
+        get_settings.cache_clear()
+
+
+def test_integrity_check_tolerates_transient_disk_io_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A transient ``OperationalError`` (e.g. cloud "disk I/O error") is not corruption.
+
+    Even on the writer path, an access hiccup from the cloud sync client
+    must not crash boot — only a genuine ``IntegrityCheckFailed`` should.
+    """
+    import sqlite3
+
+    from investment_dashboard import boot
+    from investment_dashboard.config import get_settings
+    from investment_dashboard.db import dispose_engines
+
+    db_path = tmp_path / "flaky.sqlite"
+    monkeypatch.setenv("INV_DASHBOARD_DB_PATH", str(db_path))
+
+    def _disk_io(*_args: object, **_kwargs: object) -> str:
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr("investment_dashboard.storage.integrity.integrity_check", _disk_io)
+
+    saved = dict(boot._boot_state)
+    boot._boot_state["read_only"] = False
+    get_settings.cache_clear()
+    dispose_engines()
+    try:
+        run_boot_sequence(skip_network=True)
+    finally:
+        boot._boot_state.update(saved)
+        dispose_engines()
+        get_settings.cache_clear()
+
+
 def test_nav_items_cover_all_pages() -> None:
     from investment_dashboard.ui.layout import NAV_ITEMS
 
