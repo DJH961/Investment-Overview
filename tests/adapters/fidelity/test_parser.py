@@ -72,3 +72,49 @@ def test_unknown_action_raises() -> None:
     content = "Run Date,Action,Symbol,Description,Type,Quantity,Price ($),Commission ($),Fees ($),Accrued Interest ($),Amount ($),Cash Balance ($),Settlement Date\n01/05/2024,MERGER FOOBAR,,,Cash,,,,,,0,0,01/05/2024\n"
     with pytest.raises(UnknownActionError):
         list(parse_fidelity_csv(content))
+
+
+def test_share_distribution_becomes_split_not_dividend() -> None:
+    """A DISTRIBUTION with ``Type=Shares`` (blank price, a share quantity) is a
+    share distribution / split — it adds shares and is *not* a cash dividend.
+
+    Regression for the Schwab SCHK 2-for-1 split that Fidelity exports as a
+    ``DISTRIBUTION`` row: mapping it to ``dividend_cash`` both dropped the
+    distributed shares and invented a phantom dividend.
+    """
+    header = (
+        "Run Date,Action,Symbol,Description,Type,Quantity,Price ($),"
+        "Commission ($),Fees ($),Accrued Interest ($),Amount ($),"
+        "Cash Balance ($),Settlement Date\n"
+    )
+    row = (
+        "10/11/2024,DISTRIBUTION SCHWAB STRATEGIC TR 1000 INDEX ETF (SCHK),"
+        "SCHK,SCHWAB STRATEGIC TR 1000 INDEX ETF,Shares,26.1,,,,,728.97,0.00,\n"
+    )
+    rows = list(parse_fidelity_csv(header + row))
+    assert len(rows) == 1
+    split = rows[0]
+    assert split.kind == "split"
+    assert split.symbol == "SCHK"
+    assert split.quantity == Decimal("26.1")
+    # No cash moved and no income: the shares carry the value.
+    assert split.net_native is None
+    assert split.price_native is None
+    assert split.gross_native is None
+
+
+def test_cash_distribution_stays_dividend() -> None:
+    """A DISTRIBUTION with ``Type=Cash`` remains a cash dividend."""
+    header = (
+        "Run Date,Action,Symbol,Description,Type,Quantity,Price ($),"
+        "Commission ($),Fees ($),Accrued Interest ($),Amount ($),"
+        "Cash Balance ($),Settlement Date\n"
+    )
+    row = (
+        "10/11/2024,DISTRIBUTION SCHWAB US DIVIDEND EQUITY ETF (SCHD),"
+        "SCHD,SCHWAB US DIVIDEND EQUITY ETF,Cash,0,,,,,12.34,12.34,\n"
+    )
+    rows = list(parse_fidelity_csv(header + row))
+    assert len(rows) == 1
+    assert rows[0].kind == "dividend_cash"
+    assert rows[0].net_native == Decimal("12.34")
