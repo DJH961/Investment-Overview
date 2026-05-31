@@ -9,13 +9,18 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.adapters.yfinance_client import YFinanceError, fetch_closes
+from investment_dashboard.adapters.yfinance_client import (
+    YFinanceError,
+    fetch_closes,
+    fetch_splits,
+)
 from investment_dashboard.models import Instrument
 from investment_dashboard.repositories import (
     instrument_overrides_repo,
     instruments_repo,
     price_cache_repo,
     prices_repo,
+    splits_repo,
 )
 
 log = logging.getLogger(__name__)
@@ -115,6 +120,79 @@ def refresh_prices(
     return result
 
 
+def refresh_splits(
+    session: Session,
+    cache_session: Session | None = None,
+    *,
+    earliest_needed: date,
+    today: date | None = None,
+) -> dict[str, int]:
+    """Cache stock-split corporate actions for every active instrument.
+
+    Splits are the authoritative basis for historical valuation: yfinance
+    back-adjusts an instrument's whole price history by each split, including
+    splits that occurred *after* the user sold the holding (which never appear
+    as ledger ``split`` rows). Caching them lets historical valuations scale
+    the share count on the same basis as the price for held *and* sold
+    instruments.
+
+    Fetches over the full ``[earliest_needed, today]`` window each call —
+    splits are rare and the dataset is tiny, so a complete refetch is cheap and
+    keeps the cache authoritative. ``upsert_splits`` is idempotent. Returns
+    ``{symbol: rows_written}``.
+    """
+    cache = cache_session if cache_session is not None else session
+    today = today or date.today()
+    result: dict[str, int] = {}
+    if earliest_needed >= today + timedelta(days=1):
+        return result
+
+    instruments = instruments_repo.list_instruments(session)
+    inactive = instrument_overrides_repo.inactive_ids(session)
+    symbols_to_fetch = [
+        instr.symbol
+        for instr in instruments
+        if instr.asset_class not in _SYNTHETIC_ASSET_CLASSES and instr.id not in inactive
+    ]
+    if not symbols_to_fetch:
+        return result
+
+    end = today + timedelta(days=1)
+    try:
+        splits_by_symbol = fetch_splits(symbols_to_fetch, earliest_needed, end)
+    except YFinanceError as exc:
+        log.warning("yfinance split refresh failed (%s); keeping cached splits", exc)
+        return result
+
+    by_symbol = {i.symbol: i for i in instruments}
+    for symbol, splits in splits_by_symbol.items():
+        instr = by_symbol.get(symbol)
+        if instr is None:
+            continue
+        result[symbol] = splits_repo.upsert_splits(cache, instr.id, splits)
+    return result
+
+
+def cumulative_split_factor_after(
+    session: Session, instrument_id: int, as_of: date
+) -> Decimal | None:
+    """Feed-derived split factor for splits after ``as_of`` (cache tier).
+
+    Returns the product of every cached split ratio dated after ``as_of`` so a
+    pre-split valuation can scale the share count to the back-adjusted price.
+    Returns ``None`` when *no* split data has been cached for the instrument —
+    the signal for callers to fall back to the ledger ``split`` rows (the
+    offline-safe path) rather than assume a unit factor. An instrument the feed
+    confirms never split returns ``Decimal(1)``.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        if instrument_id not in splits_repo.instrument_ids_with_splits(cache, [instrument_id]):
+            return None
+        return splits_repo.cumulative_factor_after(cache, instrument_id, as_of)
+
+
 def latest_close(session: Session, instrument_id: int) -> Decimal | None:
     """Last known close for ``instrument_id``.
 
@@ -154,6 +232,7 @@ def invalidate_instrument_prices(session: Session, instrument_id: int) -> int:
     with cache_write_session(session) as cache:
         removed = prices_repo.delete_for_instrument(cache, instrument_id)
         price_cache_repo.delete_for_instrument(cache, instrument_id)
+        splits_repo.delete_for_instrument(cache, instrument_id)
     return removed
 
 
@@ -176,6 +255,23 @@ def recent_price_dates(
         return prices_repo.recent_price_dates(
             cache, instrument_ids, on_or_before=on_or_before, limit=limit
         )
+
+
+def instruments_with_price_anomalies(session: Session, instrument_ids: Sequence[int]) -> set[int]:
+    """Instrument ids whose cached price history is corrupt (a non-positive close).
+
+    Tier-aware wrapper around
+    :func:`prices_repo.instrument_ids_with_nonpositive_close` so a caller
+    holding a ledger session still inspects the price history that lives in the
+    cache database under split-DB layouts. A returned id means the feed handed
+    back a ``0`` (or negative) close at some point, which forward-fills into
+    historical valuations and understates them — the UI flags it so the user
+    knows that instrument's figures can't be trusted until it reprices.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return prices_repo.instrument_ids_with_nonpositive_close(cache, instrument_ids)
 
 
 def _ttl_for(instr: Instrument) -> int:

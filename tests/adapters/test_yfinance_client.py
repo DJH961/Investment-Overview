@@ -308,3 +308,59 @@ def test_fetch_closes_records_error_on_download_exception() -> None:
     assert event.status == "error"
     assert "yfinance down" in event.message
     provider_status.reset()
+
+
+def _splits_multi_frame() -> pd.DataFrame:
+    idx = pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"])
+    cols = pd.MultiIndex.from_tuples(
+        [
+            ("SCHD", "Close"),
+            ("SCHD", "Stock Splits"),
+            ("VGT", "Close"),
+            ("VGT", "Stock Splits"),
+        ]
+    )
+    data = [
+        [80.0, 0.0, 500.0, 0.0],
+        [81.0, 3.0, 505.0, 0.0],  # SCHD 3-for-1 on 2024-01-03
+        [27.0, 0.0, 250.0, 2.0],  # VGT 2-for-1 on 2024-01-04
+    ]
+    return pd.DataFrame(data, index=idx, columns=cols)
+
+
+def test_fetch_splits_multi_symbol() -> None:
+    from investment_dashboard.adapters.yfinance_client import fetch_splits
+
+    def fake_download(**_: Any) -> pd.DataFrame:
+        return _splits_multi_frame()
+
+    out = fetch_splits(
+        ["SCHD", "VGT"], date(2024, 1, 2), date(2024, 1, 5), downloader=fake_download
+    )
+
+    # Only the non-zero split rows are returned, as Decimal ratios.
+    assert out["SCHD"] == {date(2024, 1, 3): Decimal("3.0")}
+    assert out["VGT"] == {date(2024, 1, 4): Decimal("2.0")}
+
+
+def test_fetch_splits_single_symbol() -> None:
+    from investment_dashboard.adapters.yfinance_client import fetch_splits
+
+    idx = pd.to_datetime(["2024-01-02", "2024-01-03"])
+    frame = pd.DataFrame({"Close": [80.0, 81.0], "Stock Splits": [0.0, 4.0]}, index=idx)
+
+    def fake_download(**_: Any) -> pd.DataFrame:
+        return frame
+
+    out = fetch_splits(["SCHD"], date(2024, 1, 2), date(2024, 1, 4), downloader=fake_download)
+    assert out["SCHD"] == {date(2024, 1, 3): Decimal("4.0")}
+
+
+def test_fetch_splits_empty_frame() -> None:
+    from investment_dashboard.adapters.yfinance_client import fetch_splits
+
+    def fake_download(**_: Any) -> pd.DataFrame:
+        return pd.DataFrame()
+
+    out = fetch_splits(["SCHD"], date(2024, 1, 2), date(2024, 1, 4), downloader=fake_download)
+    assert out == {"SCHD": {}}

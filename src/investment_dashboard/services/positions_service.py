@@ -6,8 +6,9 @@ rows on the fly. v1.1 will introduce a ``snapshots`` cache (spec §4.1).
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -35,6 +36,45 @@ ZERO = Decimal(0)
 #: Below this residual share count a holding is treated as fully closed, so a
 #: dust position left after a sale never raises the zero-value warning.
 _MIN_HELD_SHARES = Decimal("0.0000001")
+
+
+#: Share-count kinds that move the running holding total (a cash dividend does
+#: not). Used when projecting share counts forward to a later split date.
+_SHARE_MOVING_KINDS = frozenset(
+    {
+        TransactionKind.BUY.value,
+        TransactionKind.SELL.value,
+        TransactionKind.DIVIDEND_REINVEST.value,
+        TransactionKind.SPLIT.value,
+    }
+)
+
+
+def _split_factor_after(shares_at_as_of: Decimal, future_txns: Iterable[Transaction]) -> Decimal:
+    """Cumulative split-adjustment factor for splits *after* the as-of date.
+
+    yfinance returns split-adjusted (back-adjusted) closes: after a split it
+    rewrites all prior history downward by the split ratio. The ledger, by
+    contrast, applies a split as a share-count change only on the split date,
+    so a pre-split date would otherwise multiply the *pre-split* share count by
+    the *post-split-adjusted* (smaller) price and understate the holding by the
+    split ratio (v2.10.1 plan §3).
+
+    To value a past date on the same adjustment basis as the price, scale the
+    as-of share count by the product of each later split's ratio
+    (``shares_after / shares_before``). ``future_txns`` must be the holding's
+    transactions strictly after the as-of date, ordered by date then id.
+    """
+    running = shares_at_as_of
+    factor = Decimal(1)
+    for t in future_txns:
+        if t.kind not in _SHARE_MOVING_KINDS:
+            continue
+        qty = t.quantity or ZERO
+        if t.kind == TransactionKind.SPLIT.value and running > ZERO:
+            factor *= (running + qty) / running
+        running += qty
+    return factor
 
 
 @dataclass(frozen=True)
@@ -136,6 +176,33 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
     instruments_by_id = {i.id: i for i in instruments_repo.list_instruments(session)}
     overrides = instrument_overrides_repo.get_override_map(session, instruments_by_id.keys())
 
+    # Split back-adjustment: yfinance closes are adjusted for every split, so a
+    # historical date must value the *adjusted* share count. The feed's split
+    # history is authoritative (it covers splits that happened after a holding
+    # was sold, which never appear as ledger ``split`` rows); when no feed data
+    # is cached yet, fall back to the ledger split rows (offline-safe). No
+    # splits after ``as_of`` ⇒ factor 1, valuation unchanged.
+    split_factors: dict[tuple[int, int | None], Decimal] = {}
+    if is_historical:
+        future_by_key: dict[tuple[int, int | None], list[Transaction]] = {}
+        for t in transactions_repo.list_transactions(session, start=as_of + timedelta(days=1)):
+            future_by_key.setdefault((t.account_id, t.instrument_id), []).append(t)
+        feed_factor: dict[int, Decimal | None] = {}
+        for key, agg in holdings.items():
+            account_id, instrument_id = key
+            if instrument_id is None:
+                continue
+            if instrument_id not in feed_factor:
+                feed_factor[instrument_id] = prices_service.cumulative_split_factor_after(
+                    session, instrument_id, as_of
+                )
+            factor = feed_factor[instrument_id]
+            if factor is None:
+                future = future_by_key.get(key)
+                factor = _split_factor_after(agg["shares"], future) if future else Decimal(1)
+            if factor != 1:
+                split_factors[key] = factor
+
     # Each non-EUR account converts with the EUR→*its own* native currency
     # rate, not a single shared USD rate — a GBP/CHF account must not be
     # divided by the USD rate. Rates are memoised per quote so we
@@ -178,6 +245,13 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
         else:
             current_price = prices_service.latest_close(session, instr.id)
         current_value_native = agg["shares"] * current_price if current_price is not None else ZERO
+        # Scale by the cumulative post-as-of split factor so a pre-split date
+        # values the adjusted share count against the adjusted close. ``shares``
+        # itself stays the real as-of count; only the valuation is adjusted.
+        if current_price is not None:
+            factor = split_factors.get((account_id, instrument_id))
+            if factor is not None:
+                current_value_native = agg["shares"] * factor * current_price
         # Currency conversion to EUR using this account's own native rate.
         native_rate = _eur_rate_for(account.native_currency)
         if account.native_currency.upper() == "EUR":

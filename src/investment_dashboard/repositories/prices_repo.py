@@ -78,6 +78,32 @@ def close_as_of(session: Session, instrument_id: int, as_of: date) -> Decimal | 
     return session.scalars(stmt).one_or_none()
 
 
+def instrument_ids_with_nonpositive_close(
+    session: Session, instrument_ids: Sequence[int]
+) -> set[int]:
+    """Instrument ids whose cached history holds a non-positive (≤ 0) close.
+
+    A zero (or negative) close is never a legitimate price for a tradeable
+    instrument — yfinance occasionally returns ``0.0`` for a missing print, and
+    that bad value then forward-fills through :func:`close_as_of`, silently
+    understating every historical valuation that lands on it. Surfacing the
+    affected instruments lets the UI flag that the price feed is corrupt so the
+    numbers can't be trusted until it is repaired. Money-market / synthetic rows
+    have no ``price_history`` rows at all, so they are never returned here.
+    """
+    if not instrument_ids:
+        return set()
+    stmt = (
+        select(PriceHistory.instrument_id)
+        .where(
+            PriceHistory.instrument_id.in_(instrument_ids),
+            PriceHistory.close_native <= 0,
+        )
+        .distinct()
+    )
+    return set(session.scalars(stmt).all())
+
+
 def recent_price_dates(
     session: Session,
     instrument_ids: Sequence[int],

@@ -35,6 +35,7 @@ EXPECTED_TABLES = {
     "app_config",
     "position_snapshots",
     "price_cache_metadata",
+    "price_split",
 }
 
 

@@ -78,6 +78,37 @@ class TestZeroValueWarning:
         assert pos.value_warning is False
 
 
+class TestPriceDataAnomalies:
+    """A cached non-positive close marks an instrument's history as corrupt."""
+
+    def test_zero_close_flags_instrument(self, session: Session) -> None:
+        iid = instruments_repo.get_or_create(session, symbol="DAX", asset_class="etf").id
+        prices_repo.upsert_closes(
+            session,
+            iid,
+            {date(2024, 1, 10): Decimal("0"), date.today(): Decimal("46.00")},
+        )
+        flagged = prices_service.instruments_with_price_anomalies(session, [iid])
+        assert flagged == {iid}
+
+    def test_negative_close_flags_instrument(self, session: Session) -> None:
+        iid = instruments_repo.get_or_create(session, symbol="VTV", asset_class="etf").id
+        prices_repo.upsert_closes(session, iid, {date(2024, 1, 10): Decimal("-1.50")})
+        assert prices_service.instruments_with_price_anomalies(session, [iid]) == {iid}
+
+    def test_clean_history_is_not_flagged(self, session: Session) -> None:
+        iid = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf").id
+        prices_repo.upsert_closes(
+            session,
+            iid,
+            {date(2024, 1, 10): Decimal("200.00"), date.today(): Decimal("372.00")},
+        )
+        assert prices_service.instruments_with_price_anomalies(session, [iid]) == set()
+
+    def test_empty_input_returns_empty_set(self, session: Session) -> None:
+        assert prices_service.instruments_with_price_anomalies(session, []) == set()
+
+
 class TestPriceInvalidation:
     def test_invalidate_removes_cached_closes(self, session: Session) -> None:
         iid = instruments_repo.get_or_create(session, symbol="DAX", asset_class="etf").id

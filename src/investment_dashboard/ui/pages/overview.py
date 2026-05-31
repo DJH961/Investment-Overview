@@ -7,7 +7,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
-from investment_dashboard.services import display_currency_service
+from investment_dashboard.services import display_currency_service, prices_service
 from investment_dashboard.ui.components import (
     empty_state,
     kpi_card,
@@ -191,6 +191,34 @@ def _zero_value_warning(rows: list[dict[str, object]]) -> None:  # pragma: no co
         ).classes("text-body2")
 
 
+def _price_data_warning(rows: list[dict[str, object]]) -> None:  # pragma: no cover - UI
+    """Banner warning that an instrument's price *history* is corrupt.
+
+    A non-positive (zero/negative) close in the cached history is never a real
+    price — it forward-fills into every historical valuation that lands on it
+    and silently understates past balances and growth. We name the affected
+    symbols so the user can re-fetch or repoint them before trusting the
+    historic numbers. No-op when nothing is flagged.
+    """
+    symbols = [str(r["symbol"]) for r in rows if r.get("price_data_warning")]
+    if not symbols:
+        return
+    listed = ", ".join(symbols)
+    with (
+        ui.element("div")
+        .classes("w-full rounded-borders q-pa-sm q-my-sm")
+        .style("background-color: rgba(244,67,54,0.12); border: 1px solid rgba(244,67,54,0.5)"),
+        ui.row().classes("items-center gap-sm no-wrap"),
+    ):
+        ui.icon("error", color="negative")
+        ui.label(
+            f"Inaccurate price history — a zero (or negative) close was cached for "
+            f"{listed}. Historical values and growth for these holdings are "
+            "understated and can't be trusted until the feed is repaired. "
+            "Re-fetch prices, or check the ticker in Settings → Instruments."
+        ).classes("text-body2")
+
+
 def _treemap_figure(data, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no-untyped-def]
     import plotly.graph_objects as go  # noqa: PLC0415
 
@@ -324,7 +352,7 @@ def _value_over_time_section(value_series, *, range_label, display_ccy):  # type
             ).style("height:360px")
 
 
-def register() -> None:
+def register() -> None:  # noqa: PLR0915
     @ui.page(PATH)
     def _overview(value_range: str | None = None) -> None:  # pragma: no cover - rendered by NiceGUI
         with page_frame("Overview", current=PATH):
@@ -334,6 +362,9 @@ def register() -> None:
                 metrics = get_metrics(session)
                 positions = get_positions(session)
                 instrument_metrics = compute_instrument_metrics(session, positions)
+                price_anomaly_ids = prices_service.instruments_with_price_anomalies(
+                    session, [p.instrument.id for p in positions]
+                )
                 verdict = compute_market_verdict(session, portfolio_return=metrics.total_growth_pct)
                 display_ccy = display_currency_service.get_display_currency(session)
                 value_series = build_value_series(
@@ -360,6 +391,7 @@ def register() -> None:
                 display_currency=display_ccy,
                 fx_rate=usd_rate,
                 metrics=instrument_metrics,
+                price_anomaly_ids=price_anomaly_ids,
             )
             treemap_data = allocation_treemap(positions)
 
@@ -463,6 +495,7 @@ def register() -> None:
                 )
             else:
                 _zero_value_warning(rows)
+                _price_data_warning(rows)
                 with section("Positions"):
                     ui.aggrid(
                         {

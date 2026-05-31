@@ -512,6 +512,7 @@ def position_rows(
     display_currency: str = "EUR",
     fx_rate: Decimal | None = None,
     metrics: dict[int, InstrumentMetrics] | None = None,
+    price_anomaly_ids: set[int] | None = None,
 ) -> list[dict[str, Any]]:
     """Shape positions for the AG-Grid table on the overview page.
 
@@ -524,9 +525,15 @@ def position_rows(
     FX, plus per-currency XIRR, total growth, YTD growth and single-day growth.
     Without metrics it falls back to a today's-spot conversion of the native
     cost basis / value, with the return columns left blank.
+
+    ``price_anomaly_ids`` are instrument ids whose cached price history holds a
+    non-positive close (a corrupt feed value); their rows carry
+    ``price_data_warning`` so the page can flag that the instrument's historical
+    valuations are unreliable.
     """
     rows: list[dict[str, Any]] = []
     metrics = metrics or {}
+    anomalies = price_anomaly_ids or set()
     for p in positions:
         native = p.account.native_currency
         im = metrics.get(p.instrument.id)
@@ -554,6 +561,7 @@ def position_rows(
             {
                 "symbol": p.instrument.symbol,
                 "value_warning": p.value_warning,
+                "price_data_warning": p.instrument.id in anomalies,
                 "name": (eff.name if eff is not None else p.instrument.name) or "",
                 "category": p.category or "",
                 "shares": fmt_shares(p.shares),

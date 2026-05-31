@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec
+from investment_dashboard.services import prices_service
 from investment_dashboard.services.metrics_service import (
     PortfolioMetrics,
     compute_portfolio_metrics,
@@ -53,7 +54,12 @@ def _metrics_dict(metrics: PortfolioMetrics) -> dict[str, Any]:
     }
 
 
-def _position_dict(p: Position, im: InstrumentMetrics | None = None) -> dict[str, Any]:
+def _position_dict(
+    p: Position,
+    im: InstrumentMetrics | None = None,
+    *,
+    price_data_warning: bool = False,
+) -> dict[str, Any]:
     eff = p.effective
     name = (eff.name if eff is not None else p.instrument.name) or ""
     asset_class = (eff.asset_class if eff is not None else p.instrument.asset_class) or ""
@@ -83,6 +89,10 @@ def _position_dict(p: Position, im: InstrumentMetrics | None = None) -> dict[str
         "total_growth_pct": dec(total_growth),
         "xirr": dec(im.xirr if im is not None else None),
         "ytd_growth_pct": dec(im.ytd_growth_pct if im is not None else None),
+        # True when this instrument's cached history holds a non-positive close
+        # (a corrupt feed value) that understates its historical valuations.
+        "value_warning": p.value_warning,
+        "price_data_warning": price_data_warning,
     }
 
 
@@ -92,11 +102,19 @@ def build(session: Session, *, context: ReadModelContext | None = None) -> dict[
     metrics = compute_portfolio_metrics(session, as_of=ctx.as_of)
     positions = compute_positions(session, as_of=ctx.as_of)
     instrument_metrics = compute_instrument_metrics(session, positions, as_of=ctx.as_of)
+    price_anomaly_ids = prices_service.instruments_with_price_anomalies(
+        session, [p.instrument.id for p in positions]
+    )
     allocation = allocation_treemap(positions)
     return {
         "metrics": _metrics_dict(metrics),
         "positions": [
-            _position_dict(p, instrument_metrics.get(p.instrument.id)) for p in positions
+            _position_dict(
+                p,
+                instrument_metrics.get(p.instrument.id),
+                price_data_warning=p.instrument.id in price_anomaly_ids,
+            )
+            for p in positions
         ],
         "allocation": [{"label": d.label, "value_eur": dec(d.value_eur)} for d in allocation],
     }

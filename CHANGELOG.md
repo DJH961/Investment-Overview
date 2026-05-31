@@ -12,7 +12,64 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
-## [2.10.0] — 2026-05-31
+## [2.10.1] — 2026-05-31
+
+Investigates the residual ~8–10 % gap between the developer audit export and the
+authoritative `Investments.xlsx` historic balances, and adds a UI flag for
+instruments whose cached price feed is corrupt.
+
+### Added
+- **Inaccurate-price-history warning.** When an instrument's cached price
+  history contains a non-positive (zero or negative) close — a value yfinance
+  occasionally returns for a missing print, which then forward-fills into every
+  historical valuation that lands on it — the Overview now shows a red banner
+  naming the affected symbols, and the audit export carries a
+  `price_data_warning` flag per position. This is distinct from the existing
+  zero-*value* warning (which only catches a holding worth zero *today*): the
+  new flag surfaces instruments whose *past* numbers are silently understated
+  (`prices_repo.instrument_ids_with_nonpositive_close`,
+  `prices_service.instruments_with_price_anomalies`, `ui/pages/overview`,
+  `ui/pages/_overview_query`, `readmodels/overview`).
+
+### Investigated
+- **Historic divergence root cause (split back-adjustment).** The remaining
+  divergence is traced to stock splits: yfinance returns *split-adjusted*
+  (back-adjusted) closes for all history, but the ledger applies a split as a
+  share-count change only on the split date. For any date *before* a split the
+  dashboard multiplies the pre-split share count by the post-split-adjusted
+  (smaller) price, understating that holding by the split ratio. The two splits
+  in the data (SCHK 2:1 on 2024-10-11, VUG on 2026-04-21) each leave a visible
+  step in the spreadsheet-vs-dashboard gap, and the gap vanishes once both
+  splits are reached — fully explaining the historic understatement. The fix is
+  scoped in `docs/v2.10.1-plan.md` and shipped below (Option A).
+
+### Fixed
+- **Split back-adjustment in historical valuation.** Past-date holdings are now
+  valued on the same adjustment basis as the price feed: when valuing an
+  as-of date, the share count is scaled by the cumulative split factor of every
+  split that occurs *after* that date, so a pre-split date multiplies the
+  *adjusted* share count by yfinance's *adjusted* close instead of understating
+  the holding by the split ratio. The today path (no future splits ⇒ factor 1)
+  and money-market par-pricing are unchanged, and cached daily snapshots are
+  already cleared on each boot refresh so historic closing values recompute.
+  This closes the ~8–10 % historic gap on `SCHK`/`VUG` against `Investments.xlsx`
+  (`services/positions_service.compute_positions`).
+- **Splits are corrected even for instruments sold before the split.** The split
+  factor is now sourced from the market-data feed's authoritative corporate-action
+  history, not only from ledger `split` rows. A split that happens *after* the
+  user sells a holding never appears as a ledger row (brokers only record splits
+  for shares you still hold), yet yfinance still back-adjusts that instrument's
+  whole price history for it — so previously-owned tickers like `SCHD`/`VGT`
+  were understated on every date they were held. A new device-local
+  `price_split` cache table is populated on each boot refresh
+  (`prices_service.refresh_splits`, `adapters/yfinance_client.fetch_splits`),
+  and historical valuation prefers the feed factor
+  (`prices_service.cumulative_split_factor_after`), falling back to the ledger
+  `split` rows only when no feed data is cached yet (offline-safe). Repointing an
+  instrument's ticker now also invalidates its cached splits
+  (`models/price_split`, `repositories/splits_repo`, migration `0008`).
+
+
 
 Reconciles the developer audit export with the authoritative `Investments.xlsx`
 after it diverged on four distinct valuation defects, plus two UX/robustness

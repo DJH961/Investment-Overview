@@ -559,6 +559,22 @@ def _refresh_prices() -> None:
         log.warning("Price refresh failed; continuing with cached prices", exc_info=True)
 
 
+def _refresh_splits() -> None:
+    try:
+        from investment_dashboard.db import (  # noqa: PLC0415
+            cache_session_scope,
+            ledger_session_scope,
+        )
+        from investment_dashboard.services.prices_service import refresh_splits  # noqa: PLC0415
+
+        earliest = _earliest_needed_date()
+        with ledger_session_scope() as ledger, cache_session_scope() as cache:
+            refresh_splits(ledger, cache, earliest_needed=earliest)
+        log.info("Stock splits refreshed (floor=%s)", earliest)
+    except Exception:
+        log.warning("Split refresh failed; continuing with cached splits", exc_info=True)
+
+
 def _invalidate_snapshots() -> None:
     """Drop cached daily snapshots after a FX/price backfill.
 
@@ -606,6 +622,7 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
     _refresh_fx()
     _backfill_transaction_legs()
     _refresh_prices()
+    _refresh_splits()
     _invalidate_snapshots()
 
 
@@ -626,4 +643,5 @@ def run_deferred_network_refresh() -> None:
     _refresh_fx()
     _backfill_transaction_legs()
     _refresh_prices()
+    _refresh_splits()
     _invalidate_snapshots()
