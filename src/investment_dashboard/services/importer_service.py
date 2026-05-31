@@ -24,6 +24,7 @@ from investment_dashboard.adapters.importer_types import (
     UnknownActionError,
 )
 from investment_dashboard.adapters.vanguard.parser import parse_vanguard_csv
+from investment_dashboard.adapters.vanguard.settlement import inject_settlement_legs
 from investment_dashboard.adapters.vanguard.xlsx_parser import parse_vanguard_xlsx
 from investment_dashboard.models import Transaction
 from investment_dashboard.repositories import (
@@ -117,6 +118,14 @@ def import_csv(
     if account is None:
         raise ValueError(f"Unknown account_id={account_id}")
     parsed_rows, sweeps_dropped, unknown_actions = _parse(broker, content)
+
+    # Vanguard routes every cash movement through its VMFXX settlement fund,
+    # but the export drops those internal sweeps. Reconstruct the VMFXX legs
+    # so deposits land in the settlement fund and security buys draw it down
+    # (spec §5.2; v2.9.6). Fidelity exports SPAXX explicitly, so this is
+    # Vanguard-only.
+    if broker == Broker.VANGUARD and parsed_rows:
+        parsed_rows = inject_settlement_legs(parsed_rows)
 
     # Safe-FX procedure (spec §5.6): before freezing any trade-date leg,
     # make sure FX history actually covers the earliest trade in this batch,

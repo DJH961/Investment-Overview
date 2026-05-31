@@ -204,10 +204,21 @@ def compute_instrument_metrics(  # noqa: PLR0915
     usd_flows: dict[int, list[Cashflow]] = {}
     cost_eur: dict[int, Decimal] = {}
     cost_usd: dict[int, Decimal] = {}
+    # Running share count per instrument, needed to release a proportional
+    # slice of the cost basis on partial sales (average-cost method).
+    shares_held: dict[int, Decimal] = {}
     div_eur: dict[int, Decimal] = {}
     div_usd: dict[int, Decimal] = {}
     ytd_invested_eur: dict[int, Decimal] = {}
     ytd_invested_usd: dict[int, Decimal] = {}
+    # Cash-dividend legs that were immediately reinvested must not be counted
+    # as income (already captured as cost basis + shares via the reinvest
+    # leg), otherwise growth double-counts them.
+    reinvest_keys: set[tuple[int | None, date]] = {
+        (t.instrument_id, t.date)
+        for t in txns
+        if t.kind == TransactionKind.DIVIDEND_REINVEST.value
+    }
     for t in txns:
         iid = t.instrument_id
         if iid is None:
@@ -224,19 +235,35 @@ def compute_instrument_metrics(  # noqa: PLR0915
         )
         eur = eur or ZERO
         usd = usd or ZERO
+        qty = t.quantity or ZERO
         kind = t.kind
         if kind == TransactionKind.BUY.value:
             # Buy legs are negative (cash out) ⇒ cost basis is the negation.
             cost_eur[iid] = cost_eur.get(iid, ZERO) - eur
             cost_usd[iid] = cost_usd.get(iid, ZERO) - usd
+            shares_held[iid] = shares_held.get(iid, ZERO) + qty
+        elif kind == TransactionKind.SELL.value:
+            # Average-cost partial-sale handling: release the sold shares'
+            # proportional slice of the cost basis in each currency.
+            shares_before = shares_held.get(iid, ZERO)
+            if shares_before > ZERO:
+                sold = min(-qty, shares_before)
+                frac = sold / shares_before
+                cost_eur[iid] = cost_eur.get(iid, ZERO) * (1 - frac)
+                cost_usd[iid] = cost_usd.get(iid, ZERO) * (1 - frac)
+            shares_held[iid] = shares_before + qty
         elif kind == TransactionKind.DIVIDEND_REINVEST.value and t.price_native is not None:
-            val_native = (t.quantity or ZERO) * t.price_native
+            val_native = qty * t.price_native
             e, u = _convert_native(val_native, native, t.date, eur_to_usd, today_rate)
             cost_eur[iid] = cost_eur.get(iid, ZERO) + e
             cost_usd[iid] = cost_usd.get(iid, ZERO) + u
+            shares_held[iid] = shares_held.get(iid, ZERO) + qty
+        elif kind == TransactionKind.SPLIT.value:
+            shares_held[iid] = shares_held.get(iid, ZERO) + qty
         elif kind == TransactionKind.DIVIDEND_CASH.value:
-            div_eur[iid] = div_eur.get(iid, ZERO) + eur
-            div_usd[iid] = div_usd.get(iid, ZERO) + usd
+            if (iid, t.date) not in reinvest_keys:
+                div_eur[iid] = div_eur.get(iid, ZERO) + eur
+                div_usd[iid] = div_usd.get(iid, ZERO) + usd
         if kind in {
             TransactionKind.BUY.value,
             TransactionKind.SELL.value,
