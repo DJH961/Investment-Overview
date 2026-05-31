@@ -77,3 +77,18 @@ def get_or_compute_in_currency(
 def invalidate_from(session: Session, start: date) -> int:
     """Drop cached snapshots on/after ``start`` after a ledger mutation."""
     return snapshots_repo.delete_from(session, start)
+
+
+def invalidate_all(session: Session) -> int:
+    """Drop every cached snapshot so they recompute from current data.
+
+    The web UI opens *before* the deferred FX/price backfill finishes, so
+    the first render of ``/monthly`` or ``/yearly`` computes every period's
+    closing value against an empty (or partial) price + FX cache and persists
+    those as ``0``. Nothing in the periodic refresh path invalidated those
+    rows, so the zero closing values stuck permanently. Clearing the whole
+    snapshot cache after a backfill forces the next render to recompute each
+    period with the now-complete price + FX history. Snapshots are pure
+    cache-tier data (regenerable), so dropping them is always safe.
+    """
+    return snapshots_repo.delete_from(session, date.min)

@@ -377,14 +377,16 @@ html, body {{
   --ag-row-border-color: var(--inv-hairline) !important;
   --ag-header-column-separator-color: transparent !important;
   --ag-font-family: "Inter", system-ui, sans-serif !important;
-  /* Larger, comfortably readable body text. The document root is 20px, so a
-     16px table read noticeably *smaller* than the surrounding UI; 18px brings
-     the data up to a large, stylish, easy-to-read size (v2.8.1). */
-  --ag-font-size: 18px !important;
-  --ag-grid-size: 9px !important;
-  --ag-row-height: 62px !important;
-  --ag-header-height: 60px !important;
-  --ag-cell-horizontal-padding: 24px !important;
+  /* Comfortably large but not oversized table text. The document root is
+     20px; v2.8.1 pushed the grid to 18px (with 62px rows) which read far too
+     large once the restyle loaded. v2.9.1 brings the data back to a roomy-yet-
+     sensible 15px / 44px so a column's numbers and its (wrapping) header both
+     fit with breathing room. */
+  --ag-font-size: 15px !important;
+  --ag-grid-size: 6px !important;
+  --ag-row-height: 44px !important;
+  --ag-header-height: 46px !important;
+  --ag-cell-horizontal-padding: 16px !important;
   --ag-selected-row-background-color: var(--inv-accent-soft) !important;
   --ag-range-selection-border-color: var(--inv-accent);
 }}
@@ -456,9 +458,22 @@ html, body {{
 .ag-header {{
   border-bottom: 2px solid var(--inv-hairline) !important;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  font-size: 13.5px;
+  font-size: 12px;
+}}
+/* Let long column titles wrap onto two lines (paired with the grids'
+   ``wrapHeaderText`` / ``autoHeaderHeight`` options) instead of being clipped
+   with an ellipsis, so headers like "Closing value (EUR)" stay fully readable
+   without forcing every column wide (v2.9.1). */
+.ag-header-cell-label {{
+  width: 100%;
+}}
+.ag-header-cell-text {{
+  white-space: normal;
+  line-height: 1.2;
+  overflow: visible;
+  text-overflow: clip;
 }}
 /* Vertically centre cell content with comfortable line-height, and give the
    data slightly heavier weight so the taller tables read as crisp, airy and

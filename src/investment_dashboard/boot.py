@@ -418,6 +418,29 @@ def _refresh_prices() -> None:
         log.warning("Price refresh failed; continuing with cached prices", exc_info=True)
 
 
+def _invalidate_snapshots() -> None:
+    """Drop cached daily snapshots after a FX/price backfill.
+
+    The UI opens before the deferred network refresh lands, so the first
+    render of ``/monthly`` / ``/yearly`` caches every period's closing value
+    against an empty price + FX cache (i.e. ``0``). Once the backfill writes
+    the real history those cached zeros are stale; clearing them forces the
+    next render to recompute each period correctly. Snapshots are pure
+    cache-tier data, so this is always safe.
+    """
+    try:
+        from investment_dashboard.db import cache_session_scope  # noqa: PLC0415
+        from investment_dashboard.services.snapshots_service import (  # noqa: PLC0415
+            invalidate_all,
+        )
+
+        with cache_session_scope() as session:
+            dropped = invalidate_all(session)
+        log.info("Invalidated %d cached snapshot(s) after refresh", dropped)
+    except Exception:
+        log.warning("Snapshot invalidation failed; continuing", exc_info=True)
+
+
 def run_boot_sequence(*, skip_network: bool = False) -> None:
     """Run all startup steps.
 
@@ -442,6 +465,7 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
     _refresh_fx()
     _backfill_transaction_legs()
     _refresh_prices()
+    _invalidate_snapshots()
 
 
 def run_deferred_network_refresh() -> None:
@@ -461,3 +485,4 @@ def run_deferred_network_refresh() -> None:
     _refresh_fx()
     _backfill_transaction_legs()
     _refresh_prices()
+    _invalidate_snapshots()

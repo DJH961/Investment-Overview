@@ -12,6 +12,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.9.1] — Unreleased
+
+Fixes the monthly/yearly value calculations that the v2.8 attempt left broken,
+makes the period tables single-currency (matching the overview), and brings the
+table typography back down to a readable size.
+
+### Fixed
+- **Closing values were `0` for every month and year.** The web UI opens before
+  the deferred FX/price backfill finishes, so the first render of `/monthly` and
+  `/yearly` computed each period's closing value against an empty price + FX
+  cache and persisted those zeros as daily snapshots. Nothing ever invalidated
+  them, so the zeros stuck permanently and every downstream figure (growth %,
+  Total Growth, the yearly value line) was wrong. Boot now clears the snapshot
+  cache after the FX/price refresh (`boot._invalidate_snapshots` /
+  `snapshots_service.invalidate_all`), forcing each period to recompute against
+  the now-complete history. Portfolio value at a past date is therefore a robust
+  function of each holding's quantity, its as-of close, and the trade/period FX
+  rate.
+
+### Changed
+- **Monthly & Yearly tables now show one currency at a time**, flipped by the
+  header currency toggle — the same decision the overview table adopted — instead
+  of carrying an EUR+USD pair for every money column. EUR ⇄ USD conversion is
+  exercised on every column (money companions in both currencies, period growth
+  and Total Growth per currency) so either currency reads correctly and
+  completely, with no empty/`0` EUR cells.
+- **Period growth is now per currency** and **Total Growth is the last column**
+  on both period tables (previously Total Growth sat before a single, shared
+  Growth % column).
+- **Table typography dialed back** from the oversized v2.8.1 values (18px text /
+  62px rows) to a roomy-but-sensible 15px text / 44px rows with 12px headers.
+  Long column titles now wrap onto two lines (`wrapHeaderText` /
+  `autoHeaderHeight` plus header white-space CSS) so a column's numbers and its
+  header both stay fully readable.
+
 ## [2.9.0] — 2026-05-31
 
 Makes trade-date FX values **persistent** instead of re-derived on every

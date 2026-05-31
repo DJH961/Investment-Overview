@@ -11,34 +11,19 @@ from investment_dashboard.services import display_currency_service
 from investment_dashboard.ui.components import page_header, section
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import currency_symbol
-from investment_dashboard.ui.pages._period_query import aggregate, to_table_rows
+from investment_dashboard.ui.pages._period_query import (
+    aggregate,
+    money_column,
+    pct_column,
+    to_table_rows,
+)
 
 PATH = "/yearly"
 
 
-def _money_columns(label: str, field: str, primary: str) -> list[dict[str, str]]:
-    """Build the primary + secondary AG-Grid column pair for one metric.
-
-    The primary column reads the unsuffixed ``field`` key, which the
-    :func:`to_table_rows` renderer fills with the FX-aware display-
-    currency value when ``aggregate`` was called with that currency
-    (v2.2). The secondary column is the EUR ledger value (or USD when
-    primary is already EUR, preserving the v1.3 "both visible" toggle).
-    """
-    primary = primary.upper()
-    secondary = "EUR" if primary == "USD" else "USD"
-    return [
-        {
-            "headerName": f"{label} ({primary})",
-            "field": field,
-            "type": "rightAligned",
-        },
-        {
-            "headerName": f"{label} ({secondary})",
-            "field": f"{field}_{secondary.lower()}",
-            "type": "rightAligned",
-        },
-    ]
+def _money_columns(label: str, field: str, primary: str) -> list[dict[str, object]]:
+    """Single display-currency money column (v2.9.1, one currency at a time)."""
+    return [money_column(label, field, primary)]
 
 
 def _figure(rows, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no-untyped-def]
@@ -110,29 +95,24 @@ def register() -> None:
                             *_money_columns("Interest", "interest", display_ccy),
                             *_money_columns("Net flow", "net_flow", display_ccy),
                             *_money_columns("Closing value", "closing_value", display_ccy),
-                            {
-                                "headerName": "Total Growth (EUR)",
-                                "field": "total_growth_eur",
-                                "type": "rightAligned",
-                            },
-                            {
-                                "headerName": "Total Growth (USD)",
-                                "field": "total_growth_usd",
-                                "type": "rightAligned",
-                            },
-                            {
-                                "headerName": "Growth % (period)",
-                                "field": "growth_pct",
-                                "type": "rightAligned",
-                            },
+                            # Period (Modified Dietz) growth, per currency.
+                            pct_column("Growth % (period)", "growth_pct", display_ccy),
+                            # Total Growth headline metric — kept last (v2.9.1).
+                            pct_column("Total Growth", "total_growth", display_ccy),
                         ],
                         "rowData": to_table_rows(rows, currency=display_ccy, fx_rate=fx_rate),
-                        "defaultColDef": {"resizable": True, "sortable": True},
+                        "defaultColDef": {
+                            "resizable": True,
+                            "sortable": True,
+                            "wrapHeaderText": True,
+                            "autoHeaderHeight": True,
+                        },
                     }
                 ).classes("ag-theme-alpine w-full h-[50vh]")
                 ui.label(
-                    f"Values shown in {display_ccy} ({sym}). Closing value is end-of-year "
-                    "mark-to-market (best-effort if prices are missing). Total Growth is "
-                    "cumulative (1 + XIRR) ^ years to the end of the row, per currency; "
-                    "the trailing Growth % column is the per-period Modified Dietz return.",
+                    f"Values shown in {display_ccy} ({sym}); switch currency from the header "
+                    "toggle. Closing value is end-of-year mark-to-market (best-effort if "
+                    "prices are missing). Growth % (period) is the per-year Modified Dietz "
+                    "return; Total Growth (last column) is cumulative (1 + XIRR) ^ years to "
+                    "the end of the row.",
                 ).classes("text-caption opacity-70")

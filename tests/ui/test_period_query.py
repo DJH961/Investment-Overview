@@ -132,3 +132,39 @@ def test_fill_gaps_pads_contiguous_calendar_months(session: Session) -> None:
     feb_2025 = next(r for r in rows if r.label == "2025-02")
     assert feb_2025.contributions == Decimal("0")
     assert feb_2025.net_flow == Decimal("0")
+
+
+def test_to_table_rows_emits_numeric_companions_for_one_currency_columns(
+    session: Session,
+) -> None:
+    """v2.9.1 — the monthly/yearly tables bind one currency at a time to the
+    ``{field}_{ccy}_num`` / ``{field}_{ccy}_signed`` numeric companions."""
+    _seed(session)
+    rows = aggregate(session, monthly=True, with_closing_value=False)
+    rendered = to_table_rows(rows, currency="EUR", fx_rate=Decimal("1.2"))
+    r = rendered[0]
+    # Money companions exist in both currencies and are floats (or None).
+    for field in ("contributions", "dividends", "interest", "net_flow", "closing_value"):
+        for ccy in ("eur", "usd"):
+            key = f"{field}_{ccy}_num"
+            assert key in r
+            assert r[key] is None or isinstance(r[key], float)
+    # EUR contributions numeric companion matches the EUR bucket (500).
+    assert r["contributions_eur_num"] == 500.0
+    # Signed ratio companions exist for period + total growth, per currency.
+    for field in ("growth_pct", "total_growth"):
+        for ccy in ("eur", "usd"):
+            assert f"{field}_{ccy}_signed" in r
+
+
+def test_money_and_pct_columns_bind_to_display_currency() -> None:
+    """The column builders target the selected currency's numeric field."""
+    from investment_dashboard.ui.pages._period_query import money_column, pct_column
+
+    mc = money_column("Closing value", "closing_value", "USD")
+    assert mc["field"] == "closing_value_usd_num"
+    assert "valueFormatter" in mc
+
+    pc = pct_column("Total Growth", "total_growth", "EUR")
+    assert pc["field"] == "total_growth_eur_signed"
+    assert "cellClassRules" in pc
