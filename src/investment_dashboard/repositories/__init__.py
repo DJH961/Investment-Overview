@@ -15,6 +15,7 @@ from investment_dashboard.repositories import (
     price_cache_repo,
     prices_repo,
     snapshots_repo,
+    splits_repo,
     transactions_repo,
 )
 
@@ -28,5 +29,6 @@ __all__ = [
     "price_cache_repo",
     "prices_repo",
     "snapshots_repo",
+    "splits_repo",
     "transactions_repo",
 ]

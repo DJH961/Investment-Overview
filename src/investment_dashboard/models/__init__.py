@@ -24,6 +24,7 @@ from investment_dashboard.models.instrument_override import InstrumentOverride
 from investment_dashboard.models.position_snapshot import PositionSnapshot
 from investment_dashboard.models.price_cache_metadata import PriceCacheMetadata
 from investment_dashboard.models.price_history import PriceHistory
+from investment_dashboard.models.price_split import PriceSplit
 from investment_dashboard.models.target_allocation import (
     TargetAllocation,
     TargetAllocationItem,
@@ -44,6 +45,7 @@ __all__ = [
     "PositionSnapshot",
     "PriceCacheMetadata",
     "PriceHistory",
+    "PriceSplit",
     "TargetAllocation",
     "TargetAllocationItem",
     "Transaction",

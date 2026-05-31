@@ -47,15 +47,27 @@ instruments whose cached price feed is corrupt.
 - **Split back-adjustment in historical valuation.** Past-date holdings are now
   valued on the same adjustment basis as the price feed: when valuing an
   as-of date, the share count is scaled by the cumulative split factor of every
-  split that occurs *after* that date (derived from the `split` ledger rows as
-  `shares_after / shares_before`), so a pre-split date multiplies the
+  split that occurs *after* that date, so a pre-split date multiplies the
   *adjusted* share count by yfinance's *adjusted* close instead of understating
   the holding by the split ratio. The today path (no future splits ⇒ factor 1)
   and money-market par-pricing are unchanged, and cached daily snapshots are
   already cleared on each boot refresh so historic closing values recompute.
   This closes the ~8–10 % historic gap on `SCHK`/`VUG` against `Investments.xlsx`
-  (`services/positions_service._split_factor_after`,
-  `services/positions_service.compute_positions`).
+  (`services/positions_service.compute_positions`).
+- **Splits are corrected even for instruments sold before the split.** The split
+  factor is now sourced from the market-data feed's authoritative corporate-action
+  history, not only from ledger `split` rows. A split that happens *after* the
+  user sells a holding never appears as a ledger row (brokers only record splits
+  for shares you still hold), yet yfinance still back-adjusts that instrument's
+  whole price history for it — so previously-owned tickers like `SCHD`/`VGT`
+  were understated on every date they were held. A new device-local
+  `price_split` cache table is populated on each boot refresh
+  (`prices_service.refresh_splits`, `adapters/yfinance_client.fetch_splits`),
+  and historical valuation prefers the feed factor
+  (`prices_service.cumulative_split_factor_after`), falling back to the ledger
+  `split` rows only when no feed data is cached yet (offline-safe). Repointing an
+  instrument's ticker now also invalidates its cached splits
+  (`models/price_split`, `repositories/splits_repo`, migration `0008`).
 
 
 

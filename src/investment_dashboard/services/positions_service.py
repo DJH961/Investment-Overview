@@ -177,19 +177,29 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
     overrides = instrument_overrides_repo.get_override_map(session, instruments_by_id.keys())
 
     # Split back-adjustment: yfinance closes are adjusted for every split, so a
-    # historical date must value the *adjusted* share count. Derive, per
-    # holding, the cumulative split factor for splits that happen after
-    # ``as_of`` (none on the today path ⇒ factor 1, valuation unchanged).
+    # historical date must value the *adjusted* share count. The feed's split
+    # history is authoritative (it covers splits that happened after a holding
+    # was sold, which never appear as ledger ``split`` rows); when no feed data
+    # is cached yet, fall back to the ledger split rows (offline-safe). No
+    # splits after ``as_of`` ⇒ factor 1, valuation unchanged.
     split_factors: dict[tuple[int, int | None], Decimal] = {}
     if is_historical:
         future_by_key: dict[tuple[int, int | None], list[Transaction]] = {}
         for t in transactions_repo.list_transactions(session, start=as_of + timedelta(days=1)):
             future_by_key.setdefault((t.account_id, t.instrument_id), []).append(t)
+        feed_factor: dict[int, Decimal | None] = {}
         for key, agg in holdings.items():
-            future = future_by_key.get(key)
-            if not future:
+            account_id, instrument_id = key
+            if instrument_id is None:
                 continue
-            factor = _split_factor_after(agg["shares"], future)
+            if instrument_id not in feed_factor:
+                feed_factor[instrument_id] = prices_service.cumulative_split_factor_after(
+                    session, instrument_id, as_of
+                )
+            factor = feed_factor[instrument_id]
+            if factor is None:
+                future = future_by_key.get(key)
+                factor = _split_factor_after(agg["shares"], future) if future else Decimal(1)
             if factor != 1:
                 split_factors[key] = factor
 

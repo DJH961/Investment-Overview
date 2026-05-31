@@ -213,6 +213,67 @@ def _download_window(
     return result
 
 
+def fetch_splits(
+    symbols: list[str],
+    start: date,
+    end: date,
+    *,
+    downloader: Any = None,
+) -> dict[str, dict[date, Decimal]]:
+    """Return ``{symbol: {date: ratio}}`` of stock splits in ``[start, end)``.
+
+    ``ratio`` is ``shares_after / shares_before`` (``2`` for a 2-for-1 split,
+    ``0.5`` for a 1-for-2 reverse split). Symbols with no split in the window
+    map to an empty dict. Splits are authoritative corporate actions from the
+    feed, needed because yfinance back-adjusts an instrument's whole price
+    history by every split — even ones after the user sold the holding, which
+    therefore never appear as a ledger ``split`` transaction.
+
+    Parameters mirror :func:`fetch_closes`; ``downloader`` injects a stub
+    matching ``yfinance.download`` in tests.
+    """
+    if end <= start:
+        raise ValueError(f"end ({end}) must be strictly after start ({start})")
+    if not symbols:
+        return {}
+
+    download = downloader or yf.download
+    try:
+        frame = download(
+            tickers=symbols,
+            start=start.isoformat(),
+            end=end.isoformat(),
+            auto_adjust=False,
+            actions=True,
+            progress=False,
+            group_by="ticker",
+            threads=False,
+        )
+    except Exception as exc:
+        raise YFinanceError(f"yfinance.download (splits) failed: {exc}") from exc
+
+    result: dict[str, dict[date, Decimal]] = {s: {} for s in symbols}
+    if frame is None or getattr(frame, "empty", True):
+        return result
+
+    import pandas as pd  # noqa: PLC0415
+
+    columns = getattr(frame, "columns", None)
+    is_grouped = isinstance(columns, pd.MultiIndex)
+    for symbol in symbols:
+        try:
+            splits = frame[symbol]["Stock Splits"] if is_grouped else frame["Stock Splits"]
+        except KeyError:
+            continue
+        for ts, value in splits.dropna().items():
+            ratio = Decimal(repr(float(value)))
+            if ratio <= 0:
+                continue  # 0.0 marks "no split that day"
+            day = ts.date() if hasattr(ts, "date") else ts
+            result[symbol][day] = ratio
+    return result
+
+
 def fetch_latest_close(
     symbol: str,
     *,
