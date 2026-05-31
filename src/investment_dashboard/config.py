@@ -80,6 +80,12 @@ class Settings(BaseSettings):
     #: same consumer-cloud sync the user already set up.
     snapshot_path: Path | None = None
 
+    #: Optional password gating the Settings "Developer tools" panel (the
+    #: full audit export). When ``None`` the panel is ungated — fine for the
+    #: single-user, local-first default; set it to keep the export tucked
+    #: away behind a password. Compared in constant time.
+    dev_password: str | None = None
+
     #: When ``True``, the server stops itself a short grace period after the
     #: last browser tab disconnects, releasing the single-writer lock (see
     #: :mod:`investment_dashboard.shutdown`). Off by default so a server left
