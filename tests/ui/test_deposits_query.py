@@ -106,3 +106,40 @@ def test_summary_handles_no_data(session: Session) -> None:
     assert summary.ytd_contrib_eur == Decimal(0)
     assert summary.total_contrib_usd == Decimal(0)
     assert summary.ytd_contrib_usd == Decimal(0)
+
+
+def test_eur_computed_from_trade_date_fx_not_parity(session: Session) -> None:
+    """A USD deposit with no stored net_eur must convert at the trade-date rate.
+
+    Regression for the v2.8 bug where USD and EUR sat at parity because the
+    EUR leg fell back to ``net_native`` whenever ``net_eur`` was empty (which
+    is the case for every manually entered transaction).
+    """
+    from investment_dashboard.repositories import fx_repo
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Fidelity",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    fx_repo.upsert_rates(session, {date(2024, 6, 3): Decimal("1.25")})
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2024, 6, 3),
+            kind="deposit",
+            net_native=Decimal("1000.00"),
+            source=TransactionSource.MANUAL,
+        )
+    )
+    session.flush()
+    rows = list_deposit_rows(session)
+    assert rows[0]["amount_usd"] == "1,000.00"
+    # 1000 USD / 1.25 (USD per EUR) = 800 EUR — explicitly *not* 1000.
+    assert rows[0]["amount_eur"] == "800.00"
+
+    summary = compute_summary(session, today=date(2024, 6, 4))
+    assert summary.total_contrib_usd == Decimal("1000.00")
+    assert summary.total_contrib_eur == Decimal("800.00")

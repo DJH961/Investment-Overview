@@ -137,3 +137,37 @@ def test_summarize_ledger_counts_and_average(session: Session) -> None:
     # the deposit is excluded. The USD-native buy carries no net_eur in
     # this seed, so the EUR average is 0 while USD uses net_native.
     assert summary.avg_trade_size_usd == Decimal("2205.00")
+
+
+def test_net_eur_derived_from_trade_date_fx(session: Session) -> None:
+    """A USD-native buy with no stored net_eur shows EUR at the trade-date rate.
+
+    Regression for the v2.8 bug where the transactions table left Net EUR
+    empty for every manually entered (USD) row.
+    """
+    from investment_dashboard.repositories import fx_repo
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Fidelity",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    fx_repo.upsert_rates(session, {date(2024, 1, 5): Decimal("1.25")})
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2024, 1, 5),
+            kind="buy",
+            net_native=Decimal("-2500.00"),
+            source=TransactionSource.MANUAL,
+        )
+    )
+    session.flush()
+    # fx_rate (current spot) is only a fallback; the row has trade-date FX.
+    rows = list_ledger_rows(session, fx_rate=Decimal("1.10"))
+    row = rows[0]
+    assert row["net_usd"] == "-2,500.00"
+    # -2500 USD / 1.25 = -2000 EUR (trade-date rate, not the 1.10 fallback).
+    assert row["net_eur"] == "-2,000.00"

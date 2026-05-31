@@ -16,7 +16,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
+from investment_dashboard.domain.currency import dual_currency_amounts
 from investment_dashboard.models import Account, Instrument, Transaction
+from investment_dashboard.repositories import fx_repo
 
 
 @dataclass(frozen=True)
@@ -89,11 +91,15 @@ def list_ledger_records(
 ) -> list[LedgerRecord]:
     """Return raw ledger records in newest-first order.
 
-    ``fx_rate`` is the current EUR→USD conversion factor (USD per 1 EUR);
-    when provided ``net_usd`` is populated alongside ``net_eur``.
+    Both ``net_eur`` and ``net_usd`` are derived from the EUR→USD rate that
+    was in force **on each transaction's own date** (forward-filled), so the
+    non-native side reflects the exchange rate of the day the trade happened
+    rather than today's spot. ``fx_rate`` (current EUR→USD) is only used as a
+    fallback when a row predates the available FX history.
     """
     txns = session.scalars(_build_ledger_stmt(filters)).all()
-    return [_to_record(t, fx_rate=fx_rate) for t in txns]
+    eur_to_usd = fx_repo.get_rates(session, base="EUR", quote="USD")
+    return [_to_record(t, eur_to_usd=eur_to_usd, fallback_rate=fx_rate) for t in txns]
 
 
 def list_ledger_rows(
@@ -104,9 +110,9 @@ def list_ledger_rows(
 ) -> list[dict[str, Any]]:
     """Return ledger rows in newest-first order, ready to hand to AG-Grid.
 
-    ``fx_rate`` is the current EUR→USD conversion factor (USD per 1 EUR).
-    When provided, an extra ``net_usd`` column is populated alongside
-    ``net_eur`` so the transactions page can show both currencies.
+    ``net_eur`` and ``net_usd`` are both populated per the trade-date FX rate
+    (see :func:`list_ledger_records`); ``fx_rate`` is the current EUR→USD spot
+    used only as a fallback for rows older than the FX history.
     """
     return [_format_record(r) for r in list_ledger_records(session, filters, fx_rate=fx_rate)]
 
@@ -153,27 +159,29 @@ def summarize_ledger(
     )
 
 
-def _to_record(t: Transaction, *, fx_rate: Decimal | None = None) -> LedgerRecord:
+def _to_record(
+    t: Transaction,
+    *,
+    eur_to_usd: dict[date, Decimal] | None = None,
+    fallback_rate: Decimal | None = None,
+) -> LedgerRecord:
     account: Account | None = t.account  # type: ignore[assignment]
     instrument: Instrument | None = t.instrument  # type: ignore[assignment]
 
-    # Exactly one of net_eur / net_usd is derived on the fly; the other is the
-    # actual native amount (or — for USD-native rows — the EUR figure that was
-    # converted once at import time using that day's FX rate). This keeps the
-    # displayed value for the native side identical to what was booked.
+    # Derive both currency legs from the FX rate on the transaction's own
+    # date. The native side is the booked amount; the other side is converted
+    # at the trade-date rate so e.g. a USD buy shows the EUR it actually cost
+    # that day rather than today's spot. ``fallback_rate`` (current spot) only
+    # kicks in for rows older than the available FX history.
     native_ccy = (account.native_currency if account else "").upper()
-    net_eur: Decimal | None = t.net_eur
-    net_usd: Decimal | None = None
-    if native_ccy == "USD":
-        net_usd = t.net_native
-    elif native_ccy == "EUR":
-        net_eur = t.net_native
-        if fx_rate is not None and t.net_native is not None:
-            net_usd = t.net_native * fx_rate
-    # Non-EUR/USD native (rare): fall back to current-rate conversion from
-    # the stored EUR amount so the USD column is at least populated.
-    elif fx_rate is not None and t.net_eur is not None:
-        net_usd = t.net_eur * fx_rate
+    net_eur, net_usd = dual_currency_amounts(
+        native_currency=native_ccy,
+        net_native=t.net_native,
+        net_eur=t.net_eur,
+        on=t.date,
+        eur_to_usd=eur_to_usd or {},
+        fallback_rate=fallback_rate,
+    )
     return LedgerRecord(
         id=t.id,
         date=t.date,

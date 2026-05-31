@@ -49,3 +49,61 @@ def lookup_rate_with_forward_fill(
     if not prior:
         return None
     return rates_by_date[max(prior)]
+
+
+def dual_currency_amounts(
+    *,
+    native_currency: str,
+    net_native: Decimal | None,
+    net_eur: Decimal | None,
+    on: date,
+    eur_to_usd: Mapping[date, Decimal],
+    fallback_rate: Decimal | None = None,
+) -> tuple[Decimal | None, Decimal | None]:
+    """Return ``(eur, usd)`` for one cashflow using the **trade-date** FX rate.
+
+    The native side is always the booked amount; the *other* side is derived
+    from the EUR→USD rate that was in force on ``on`` (forward-filled to the
+    most recent prior business day, matching the rest of the dashboard's FX
+    policy). This is the single source of truth for "what was this worth in
+    the other currency on the day it happened":
+
+    * **USD-native** (the common case) — ``usd = net_native`` and
+      ``eur = net_native / rate``. A previously stored ``net_eur`` is honoured
+      only when no trade-date rate is on file, so historical rows still render
+      something rather than an em dash when FX history is sparse.
+    * **EUR-native** (the rare, "flipped" case) — ``eur = net_native`` and
+      ``usd = net_native * rate``.
+    * **Any other native currency** — falls back to the stored ``net_eur`` as
+      the EUR leg and derives USD from it.
+
+    ``fallback_rate`` (typically the *current* EUR→USD spot) is used only when
+    the trade-date lookup yields nothing, so the derived side is at least
+    populated. Either element of the tuple is ``None`` when it genuinely can't
+    be computed (no native amount and no usable rate).
+    """
+    rate = lookup_rate_with_forward_fill(eur_to_usd, on)
+    ncur = (native_currency or "").upper()
+    if ncur == "USD":
+        # USD is booked; EUR is derived. Use the trade-date rate for
+        # historical correctness and only fall back to a previously stored
+        # ``net_eur`` (never today's spot, which would distort old rows).
+        usd = net_native
+        if rate not in (None, 0) and net_native is not None:
+            eur = net_native / rate  # type: ignore[operator]
+        else:
+            eur = net_eur
+        return eur, usd
+    # For EUR-native / other currencies the USD leg has nothing stored, so a
+    # current-spot ``fallback_rate`` is acceptable to at least populate it
+    # when the row predates the FX history.
+    if rate in (None, 0):
+        rate = fallback_rate
+    if ncur == "EUR":
+        eur = net_native if net_native is not None else net_eur
+        usd = eur * rate if (eur is not None and rate not in (None, 0)) else None
+        return eur, usd
+    # Any other native currency (rare): trust the stored EUR leg.
+    eur = net_eur
+    usd = eur * rate if (eur is not None and rate not in (None, 0)) else None
+    return eur, usd
