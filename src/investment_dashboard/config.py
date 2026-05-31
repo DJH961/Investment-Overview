@@ -80,6 +80,14 @@ class Settings(BaseSettings):
     #: same consumer-cloud sync the user already set up.
     snapshot_path: Path | None = None
 
+    #: When ``True``, the server stops itself a short grace period after the
+    #: last browser tab disconnects, releasing the single-writer lock (see
+    #: :mod:`investment_dashboard.shutdown`). Off by default so a server left
+    #: open intentionally (e.g. a LAN host) keeps running; the desktop user
+    #: can enable it from Settings. Acts as the initial value only — the
+    #: persisted ``auto_shutdown_on_tab_close`` app-config key wins when set.
+    shutdown_on_tab_close: bool = False
+
     @field_validator("log_level")
     @classmethod
     def _upper(cls, v: str) -> str:

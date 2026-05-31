@@ -80,6 +80,36 @@ def is_read_only() -> bool:
     return bool(_boot_state["read_only"])
 
 
+def holds_writer_lock() -> bool:
+    """True when this instance currently owns the single-writer lock."""
+    return _boot_state["held_lock"] is not None
+
+
+def release_writer_lock() -> bool:
+    """Release the writer lock held by this instance, if any. Idempotent.
+
+    After a successful release the instance is flipped to *read-only* so it
+    stops writing to the (now unlocked) shared database — another instance
+    can immediately acquire the lock and take over writes. Returns ``True``
+    only if a lock was actually released, so callers can give accurate
+    feedback ("handed off" vs "nothing to release").
+
+    Safe to call from a NiceGUI ``app.on_shutdown`` hook or a UI button.
+    """
+    lock = _boot_state["held_lock"]
+    _boot_state["held_lock"] = None
+    if lock is None:
+        return False
+    try:
+        lock.release()  # type: ignore[attr-defined]
+    except Exception:  # pragma: no cover - defensive; release already suppresses
+        log.warning("failed to release writer lock cleanly", exc_info=True)
+        return False
+    _boot_state["read_only"] = True
+    log.info("writer lock released; instance is now read-only")
+    return True
+
+
 def _load_persisted_overrides() -> dict[str, str]:
     """Read ``ledger_path`` / ``config_path`` from the config tier.
 

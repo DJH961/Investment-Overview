@@ -12,6 +12,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [Unreleased]
+
+Adds a robust way to stop the local server and release the single-writer lock,
+so the packaged desktop build no longer has to be killed from Task Manager (and
+no longer strands the writer lock held against a cloud-synced ledger).
+
+### Added
+- **Clean shutdown + writer-lock handoff** (`investment_dashboard.shutdown`).
+  Settings → **Server** gains three controls: **Shut down server** (releases the
+  lock and stops the process), **Release writer lock** (drops this window to
+  read-only so another instance — e.g. another device — can take over writes
+  without stopping the server), and a **"Quit when I close the last tab"** toggle
+  that auto-stops the server a short grace period after the final browser tab
+  disconnects (the grace period ignores the brief disconnect from in-app
+  navigation). The writer lock is now *always* released on server shutdown via
+  an `app.on_shutdown` hook (`boot.release_writer_lock`), regardless of how the
+  server stops. The tab-close default is configurable with
+  `INV_DASHBOARD_SHUTDOWN_ON_TAB_CLOSE`; the in-app toggle is persisted and
+  wins over the env default.
+
 ## [2.9.1] — Unreleased
 
 Fixes the monthly/yearly value calculations that the v2.8 attempt left broken,

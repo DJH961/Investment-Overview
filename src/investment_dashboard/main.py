@@ -91,6 +91,26 @@ def _start_deferred_network_refresh() -> None:
     thread.start()
 
 
+def _resolve_auto_shutdown() -> bool:
+    """Initial auto-shutdown-on-tab-close preference for this boot.
+
+    The persisted ``auto_shutdown_on_tab_close`` app-config key (toggled from
+    Settings) wins; absent that we fall back to the ``shutdown_on_tab_close``
+    setting / ``INV_DASHBOARD_SHUTDOWN_ON_TAB_CLOSE`` env default.
+    """
+    try:
+        from investment_dashboard.db import session_scope  # noqa: PLC0415
+        from investment_dashboard.repositories import app_config_repo  # noqa: PLC0415
+
+        with session_scope() as session:
+            raw = app_config_repo.get(session, "auto_shutdown_on_tab_close")
+    except Exception:  # pragma: no cover - defensive (read-only / fresh DB)
+        raw = None
+    if raw is not None:
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+    return get_settings().shutdown_on_tab_close
+
+
 def run() -> None:
     configure_logging()
     settings = get_settings()
@@ -111,6 +131,12 @@ def run() -> None:
 
         mount_api(_fastapi_app)
         log.info("JSON API mounted at /api (token auth %s)", "on" if settings.api_token else "off")
+    # Register clean-shutdown handlers so the single-writer lock is always
+    # released when the server stops, and optionally auto-stop when the last
+    # browser tab closes (see :mod:`investment_dashboard.shutdown`).
+    from investment_dashboard import shutdown as _shutdown  # noqa: PLC0415
+
+    _shutdown.install(auto_shutdown=_resolve_auto_shutdown())
     _start_deferred_network_refresh()
     ui.timer(_LIVE_REFRESH_INTERVAL_SECONDS, _live_refresh_tick)
     ui.run(
