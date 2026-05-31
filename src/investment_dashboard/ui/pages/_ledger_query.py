@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from investment_dashboard.domain.currency import dual_currency_amounts
 from investment_dashboard.models import Account, Instrument, Transaction
-from investment_dashboard.repositories import fx_repo
+from investment_dashboard.services import fx_service
 
 
 @dataclass(frozen=True)
@@ -98,7 +98,7 @@ def list_ledger_records(
     fallback when a row predates the available FX history.
     """
     txns = session.scalars(_build_ledger_stmt(filters)).all()
-    eur_to_usd = fx_repo.get_rates(session, base="EUR", quote="USD")
+    eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
     return [_to_record(t, eur_to_usd=eur_to_usd, fallback_rate=fx_rate) for t in txns]
 
 

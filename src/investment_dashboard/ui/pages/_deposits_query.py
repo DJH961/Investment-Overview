@@ -32,7 +32,7 @@ from investment_dashboard.domain.currency import (
     lookup_rate_with_forward_fill,
 )
 from investment_dashboard.models import Account, Transaction
-from investment_dashboard.repositories import fx_repo
+from investment_dashboard.services import fx_service
 
 _DEPOSIT_KINDS: tuple[str, ...] = ("deposit", "withdrawal")
 
@@ -177,7 +177,7 @@ def list_deposit_records(session: Session, *, account_id: int | None = None) -> 
     if account_id is not None:
         stmt = stmt.where(Transaction.account_id == account_id)
     txns = session.scalars(stmt).all()
-    eur_to_usd = fx_repo.get_rates(session, base="EUR", quote="USD")
+    eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
     fallback_rate = lookup_rate_with_forward_fill(eur_to_usd, date.today())
     return [_to_record(t, eur_to_usd=eur_to_usd, fallback_rate=fallback_rate) for t in txns]
 
@@ -249,7 +249,7 @@ def compute_summary(session: Session, *, today: date | None = None) -> DepositSu
         .where(Transaction.kind.in_(_DEPOSIT_KINDS))
     )
     txns: Sequence[Transaction] = session.scalars(stmt).all()
-    eur_to_usd = fx_repo.get_rates(session, base="EUR", quote="USD")
+    eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
     fallback_rate = lookup_rate_with_forward_fill(eur_to_usd, today)
 
     total_native = sum(

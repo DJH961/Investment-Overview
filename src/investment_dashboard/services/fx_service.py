@@ -127,6 +127,25 @@ def _refresh_single_quote(
     return written
 
 
+def get_rates(
+    session: Session,
+    *,
+    base: str = "EUR",
+    quote: str = "USD",
+) -> dict[date, Decimal]:
+    """Return the full ``{date: rate}`` series for ``base``/``quote``.
+
+    Tier-aware wrapper around :func:`fx_repo.get_rates`: FX history lives in the
+    cache tier, so under a split-DB layout the read is routed to the cache
+    database instead of the caller's (empty) ledger copy. In single-file mode
+    the caller's session is reused unchanged.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return fx_repo.get_rates(cache, base=base, quote=quote)
+
+
 def get_rate_eur_to_quote(
     session: Session,
     target: date,
@@ -138,5 +157,5 @@ def get_rate_eur_to_quote(
 
     Returns ``None`` if the database has no prior rate at all.
     """
-    rates = fx_repo.get_rates(session, base=base, quote=quote)
+    rates = get_rates(session, base=base, quote=quote)
     return lookup_rate_with_forward_fill(rates, target)

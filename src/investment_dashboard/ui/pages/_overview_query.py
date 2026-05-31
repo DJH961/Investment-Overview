@@ -15,8 +15,8 @@ from investment_dashboard.domain.currency import (
 )
 from investment_dashboard.domain.returns import Cashflow, xirr
 from investment_dashboard.models import TransactionKind
-from investment_dashboard.repositories import fx_repo, prices_repo, transactions_repo
-from investment_dashboard.services import prices_service, snapshots_service
+from investment_dashboard.repositories import transactions_repo
+from investment_dashboard.services import fx_service, prices_service, snapshots_service
 from investment_dashboard.services.metrics_service import (
     PortfolioMetrics,
     compute_portfolio_metrics,
@@ -195,7 +195,7 @@ def compute_instrument_metrics(  # noqa: PLR0915
     """
     as_of = as_of or date.today()
     txns = list(transactions_repo.list_transactions(session, end=as_of))
-    eur_to_usd = fx_repo.get_rates(session, base="EUR", quote="USD")
+    eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
     today_rate = lookup_rate_with_forward_fill(eur_to_usd, as_of)
 
     year_start = date(as_of.year, 1, 1)
@@ -345,7 +345,7 @@ def _instrument_daily_growth(
     EUR figures differ only by the (small) intraday FX move — exactly the
     per-currency daily growth the KPI strip shows, but per instrument.
     """
-    dates = prices_repo.recent_price_dates(session, [instrument_id], on_or_before=as_of, limit=2)
+    dates = prices_service.recent_price_dates(session, [instrument_id], on_or_before=as_of, limit=2)
     if len(dates) < 2:
         return None, None
     last_date, prev_date = dates[0], dates[1]

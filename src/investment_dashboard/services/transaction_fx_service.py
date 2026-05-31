@@ -18,10 +18,10 @@ or one that predates the backfill). A ``NULL`` leg is therefore a signal that
 the row should be revisited — :func:`backfill_missing_legs` (run on boot and
 from *Settings → Recalculate*) keeps retrying until accurate data lands.
 
-Tier note: like :mod:`investment_dashboard.services.importer_service`, this
-reads ``fx_history`` (cache tier) through the *ledger* session, which works
-in the default single-file layout. Split-DB FX backfill is a Phase 2
-follow-up (mirrors the boot/Alembic stance).
+Tier note: ``fx_history`` is cache-tier data. The FX lookups here go through
+:mod:`investment_dashboard.services.fx_service` / a cache-tier session, so they
+resolve against the cache database even under a split-DB layout (and reuse the
+caller's session in the default single-file layout).
 """
 
 from __future__ import annotations
@@ -199,18 +199,25 @@ def ensure_fx_coverage(
     the next run regardless.
     """
     today = today or date.today()
-    for _ in range(max(1, max_attempts)):
-        rates = fx_repo.get_rates(session, base="EUR", quote="USD")
-        if any(d <= earliest_needed for d in rates):
-            return True
-        try:
-            fx_service.refresh_fx_history(
-                session, earliest_needed=earliest_needed, today=today, quote="USD"
-            )
-        except Exception:  # pragma: no cover - defensive; refresh logs already
-            log.warning("FX coverage refresh attempt failed; retrying", exc_info=True)
-    rates = fx_repo.get_rates(session, base="EUR", quote="USD")
-    return any(d <= earliest_needed for d in rates)
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+
+    # FX history is cache-tier data. Read coverage *and* write any refreshed
+    # rates through a cache-tier session so split-DB installs probe and populate
+    # the same database the dashboard read paths use (a no-op reuse of
+    # ``session`` in single-file mode).
+    with cache_write_session(session) as cache:
+        for _ in range(max(1, max_attempts)):
+            rates = fx_repo.get_rates(cache, base="EUR", quote="USD")
+            if any(d <= earliest_needed for d in rates):
+                return True
+            try:
+                fx_service.refresh_fx_history(
+                    cache, earliest_needed=earliest_needed, today=today, quote="USD"
+                )
+            except Exception:  # pragma: no cover - defensive; refresh logs already
+                log.warning("FX coverage refresh attempt failed; retrying", exc_info=True)
+        rates = fx_repo.get_rates(cache, base="EUR", quote="USD")
+        return any(d <= earliest_needed for d in rates)
 
 
 def list_accounts_currency_map(session: Session) -> dict[int, str]:

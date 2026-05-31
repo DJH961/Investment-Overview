@@ -30,18 +30,28 @@ def get_or_compute(session: Session, snapshot_date: date) -> Decimal:
     If a stored snapshot exists for any historical date, return it.
     For ``date.today()`` the value is always recomputed live (today's
     prices are still moving) and the row is upserted in place.
+
+    Snapshots are cache-tier data. Under a split-DB layout they live in a
+    separate database from the ledger the caller's ``session`` is bound to, so
+    the cached row is read and written through cache-tier sessions while the
+    live recomputation still rolls up transactions through the caller's ledger
+    session. In single-file mode every tier shares one database and the
+    caller's session is reused unchanged.
     """
     # Lazy import to break the cycle (positions_service → repositories).
+    from investment_dashboard.db import cache_read_session, cache_write_session  # noqa: PLC0415
     from investment_dashboard.services import positions_service  # noqa: PLC0415
 
     today = date.today()
     if snapshot_date < today:
-        existing = snapshots_repo.get_snapshot(session, snapshot_date)
+        with cache_read_session(session) as cache:
+            existing = snapshots_repo.get_snapshot(cache, snapshot_date)
         if existing is not None:
             return existing.total_value_eur
 
     value = positions_service.total_portfolio_value(session, as_of=snapshot_date)
-    snapshots_repo.upsert_snapshot(session, snapshot_date, value)
+    with cache_write_session(session) as cache:
+        snapshots_repo.upsert_snapshot(cache, snapshot_date, value)
     return value
 
 

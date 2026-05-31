@@ -305,6 +305,15 @@ def _run_migrations() -> None:
         return
     if not _run_alembic_upgrade():
         _ensure_schema_present()
+    else:
+        # Alembic only migrates the ledger tier (see ``_run_alembic_upgrade``).
+        # In a split-DB layout the config and cache databases are *separate*
+        # files that Alembic never touched, so their tables would never be
+        # created — leaving the background FX/price refresh writing into a
+        # schemaless cache DB (every write silently fails) and every read
+        # resolving to 0. Create the secondary tiers' schema directly;
+        # ``create_all`` is idempotent and a no-op in single-file mode.
+        _ensure_secondary_tier_schema()
 
 
 def _run_alembic_upgrade() -> bool:
@@ -345,6 +354,33 @@ def _run_alembic_upgrade() -> bool:
     command.upgrade(cfg, "head")
     log.info("Alembic upgrade head applied")
     return True
+
+
+def _ensure_secondary_tier_schema() -> None:
+    """Create the config + cache tier schema after an Alembic (ledger) upgrade.
+
+    Alembic runs against the ledger URL only (per-tier version tables are a
+    Phase 2 follow-up), so in a split-DB layout the config and cache databases
+    are never migrated. ``create_all`` is idempotent — it only emits
+    ``CREATE TABLE`` for missing tables — so this is a safe no-op in single-file
+    mode (where every tier already shares the ledger DB that Alembic just
+    migrated) and only does real work when the tiers live in separate files.
+    """
+    settings = get_settings()
+    if not settings.is_split_db:
+        return
+    from investment_dashboard.db import (  # noqa: PLC0415
+        get_cache_engine,
+        get_config_engine,
+    )
+    from investment_dashboard.models.base import (  # noqa: PLC0415
+        CacheBase,
+        ConfigBase,
+    )
+
+    ConfigBase.metadata.create_all(get_config_engine())
+    CacheBase.metadata.create_all(get_cache_engine())
+    log.info("split-DB: ensured config + cache tier schema after Alembic upgrade")
 
 
 def _ensure_schema_present() -> None:
