@@ -44,7 +44,7 @@ funds showing an inconsistent single-day growth.
   now corrected to the canonical preset facts on the next *seed defaults* run;
   deliberate user customisations are left untouched (`onboarding_service`).
 
-
+## [2.9.6] — 2026-05-31
 
 Bug-fix bundle for portfolio valuation accuracy: partial-sale growth, money-
 market settlement funds, Vanguard cash sweeps, reinvested-dividend
