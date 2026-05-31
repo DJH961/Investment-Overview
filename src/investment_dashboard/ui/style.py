@@ -354,32 +354,38 @@ html, body {{
 /* ------------------------------------------------------------------ */
 /* AG-Grid overrides — alpine theme, hairline borders, tabular-num     */
 /* ------------------------------------------------------------------ */
+/* These AG-Grid custom properties must carry ``!important``: NiceGUI loads the
+   bundled ``ag-grid.css`` (which declares the same variables on
+   ``.ag-theme-alpine`` at equal specificity) *after* this stylesheet, so
+   without the flag Alpine's defaults silently win and our font-size / row
+   sizing / colours never render. The dark-mode block below relies on the same
+   technique. */
 .ag-theme-alpine, .ag-theme-balham, .ag-theme-quartz {{
-  --ag-foreground-color: var(--inv-ink);
-  --ag-data-color: var(--inv-ink);
-  --ag-background-color: var(--inv-surface);
-  --ag-header-foreground-color: var(--inv-muted);
+  --ag-foreground-color: var(--inv-ink) !important;
+  --ag-data-color: var(--inv-ink) !important;
+  --ag-background-color: var(--inv-surface) !important;
+  --ag-header-foreground-color: var(--inv-muted) !important;
   /* Distinct, slightly tinted header band so column titles read as a clear
      anchor above the data rather than blending into the first row. */
-  --ag-header-background-color: var(--inv-surface-alt);
+  --ag-header-background-color: var(--inv-surface-alt) !important;
   /* Zebra striping (v2.8.1): a whisper-soft tint on alternating rows makes
      wide financial tables far easier to scan across without feeling busy. */
-  --ag-odd-row-background-color: color-mix(in srgb, var(--inv-surface-alt) 55%, var(--inv-surface));
+  --ag-odd-row-background-color: color-mix(in srgb, var(--inv-surface-alt) 55%, var(--inv-surface)) !important;
   /* Accent-tinted hover so the pointed-at row stands apart from the stripes. */
-  --ag-row-hover-color: var(--inv-accent-soft);
-  --ag-border-color: var(--inv-hairline);
-  --ag-row-border-color: var(--inv-hairline);
-  --ag-header-column-separator-color: transparent;
-  --ag-font-family: "Inter", system-ui, sans-serif;
+  --ag-row-hover-color: var(--inv-accent-soft) !important;
+  --ag-border-color: var(--inv-hairline) !important;
+  --ag-row-border-color: var(--inv-hairline) !important;
+  --ag-header-column-separator-color: transparent !important;
+  --ag-font-family: "Inter", system-ui, sans-serif !important;
   /* Larger, comfortably readable body text. The document root is 20px, so a
      16px table read noticeably *smaller* than the surrounding UI; 18px brings
      the data up to a large, stylish, easy-to-read size (v2.8.1). */
-  --ag-font-size: 18px;
-  --ag-grid-size: 9px;
-  --ag-row-height: 62px;
-  --ag-header-height: 60px;
-  --ag-cell-horizontal-padding: 24px;
-  --ag-selected-row-background-color: var(--inv-accent-soft);
+  --ag-font-size: 18px !important;
+  --ag-grid-size: 9px !important;
+  --ag-row-height: 62px !important;
+  --ag-header-height: 60px !important;
+  --ag-cell-horizontal-padding: 24px !important;
+  --ag-selected-row-background-color: var(--inv-accent-soft) !important;
   --ag-range-selection-border-color: var(--inv-accent);
 }}
 /* Dark-mode overrides — re-declare AG variables on the dark body so they
