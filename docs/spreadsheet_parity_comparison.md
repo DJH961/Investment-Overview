@@ -139,7 +139,7 @@ engine. Most outputs surface on `Total`, so the gaps are the same as §2.1, plus
 | Year / Starting / Closing balance | ✅ |
 | Gain/Loss / Growth % | ✅ growth %; ⚠️ absolute Gain/Loss € not a column |
 | Contribution / Dividends | ✅ |
-| **Div Yield** (`Dividends / Closing Balance`) | ❌ |
+| **Div Yield** (`Dividends / Closing Balance`) | ✅ `PortfolioMetrics.dividend_yield_pct`, shown on the Overview KPI footer |
 | USD/EUR / € Growth / € Value | ✅ |
 | **YGC / "HYPOTHETICAL!"** forward growth scenario | ✅ covered by `/yearly` + `/monthly` projection (`_projection_query`) |
 

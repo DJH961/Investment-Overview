@@ -101,6 +101,7 @@ def test_overview_readmodel_includes_parity_fields(session: Session, seeded: Non
     assert "mtd_growth_pct" in rm["metrics"]
     assert "weighted_expense_ratio" in rm["metrics"]
     assert "annual_expense_cost_eur" in rm["metrics"]
+    assert "dividend_yield_pct" in rm["metrics"]
     # Per-instrument parity columns.
     vti = next(p for p in rm["positions"] if p["symbol"] == "VTI")
     for key in ("expense_ratio", "capital_gain_native", "xirr", "ytd_growth_pct"):

@@ -124,6 +124,10 @@ class PortfolioMetrics:
     #: ``None`` until there are at least two priced dates.
     daily_growth_pct: Decimal | None = None
     daily_growth_pct_usd: Decimal | None = None
+    #: Trailing dividend yield = cash dividends received ÷ current closing
+    #: balance (spreadsheet ``Total`` block's ``Dividends / Closing Balance``).
+    #: ``None`` when the portfolio has no value yet.
+    dividend_yield_pct: Decimal | None = None
     #: The date ``daily_growth_pct`` refers to (the "last daily growth day"),
     #: so the UI can label *when* the move is from. ``None`` when unavailable.
     daily_growth_as_of: date | None = None
@@ -408,6 +412,11 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         positions_service.compute_positions(session, as_of=as_of)
     )
 
+    # Trailing dividend yield = cash dividends ÷ current closing balance.
+    dividend_yield_pct = (
+        dividends_cash_eur / total_value_eur if total_value_eur > 0 else None
+    )
+
     return PortfolioMetrics(
         as_of=as_of,
         first_cashflow_date=first_cashflow_date,
@@ -435,6 +444,7 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         daily_growth_pct=daily_growth_eur,
         daily_growth_pct_usd=daily_growth_usd,
         daily_growth_as_of=daily_as_of,
+        dividend_yield_pct=dividend_yield_pct,
     )
 
 
