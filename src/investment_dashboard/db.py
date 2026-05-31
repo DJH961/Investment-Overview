@@ -72,7 +72,7 @@ def _url_path(url: str) -> Path | None:
 def make_engine(
     url: str | None = None, *, encryption_config: EncryptionConfig | None = None
 ) -> Engine:
-    """Create a SQLAlchemy engine for ``url`` (or the legacy db_url)."""
+    """Create a SQLAlchemy engine for ``url`` (defaults to the configured ledger URL)."""
     if url is None:
         settings = get_settings()
         _ensure_parent(settings.db_path)

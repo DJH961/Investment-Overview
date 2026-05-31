@@ -1,4 +1,4 @@
-"""Global CSS + Quasar primary-color setup for the v1.5 "neo-fintech" chrome.
+"""Global CSS + Quasar primary-color setup for the "neo-fintech" chrome.
 
 This module is the single source of truth for the visual identity of the
 dashboard. It is injected into the document ``<head>`` by

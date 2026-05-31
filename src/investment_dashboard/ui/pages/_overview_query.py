@@ -451,7 +451,7 @@ def _today_dual(
     elif native == "USD":
         usd = value_native
         eur = value_native / fx_rate if fx_rate not in (None, 0) else None
-    else:  # pragma: no cover - DKK removed in v2.4
+    else:  # pragma: no cover - defensive: unsupported native currency
         eur = usd = None
     return eur, usd
 

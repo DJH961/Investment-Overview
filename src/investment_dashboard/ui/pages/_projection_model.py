@@ -1,8 +1,8 @@
 """Interactive portfolio projection engine (v2.3).
 
-This is the pure-math core behind the *Projection* tool on ``/monthly``
-and ``/yearly``. It replaces the old fixed three-rate table with a single,
-realistic, **XIRR-anchored** forward simulation:
+This is the pure-math core behind the standalone *Projection* tool on the
+``/projection`` page (extracted out of ``/monthly`` and ``/yearly`` in
+v2.8). It uses a single, realistic, **XIRR-anchored** forward simulation:
 
 * The **expected** scenario compounds at the portfolio's own historical
   money-weighted return (XIRR) — "assuming existing performance

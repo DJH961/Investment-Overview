@@ -104,7 +104,8 @@ class PeriodRow:
     populated only when :func:`aggregate` was called with a
     non-EUR ``display_currency`` and FX history is available; otherwise
     they remain ``None`` and the table renderer falls back to scaling
-    the EUR series by today's spot rate (legacy v1.3 behaviour).
+    the EUR series by today's spot rate (a degrade-gracefully fallback,
+    originally from v1.3, still active when FX history is unavailable).
     """
 
     label: str
