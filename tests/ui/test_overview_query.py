@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -70,6 +70,29 @@ def seeded(session: Session) -> None:
         ]
     )
     session.flush()
+
+
+def test_instrument_daily_growth_per_currency(session: Session, seeded: None) -> None:
+    """Daily growth uses the two most recent print dates, converted at each
+    day's own FX, so EUR and USD differ by the intraday FX move."""
+    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+
+    vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
+    yesterday = date.today() - timedelta(days=1)
+    # Prior close + a slightly different FX on the prior day vs today.
+    prices_repo.upsert_closes(session, vti.id, {yesterday: Decimal("220.00")})
+    fx_repo.upsert_rates(session, {yesterday: Decimal("1.20")})
+    session.flush()
+
+    positions = get_positions(session)
+    metrics = compute_instrument_metrics(session, positions)
+    im = metrics[vti.id]
+    # USD price move 220 -> 230 = +4.5454...%
+    assert im.daily_growth_usd is not None
+    assert abs(im.daily_growth_usd - Decimal("0.04545")) < Decimal("0.001")
+    # EUR move includes the FX shift 1.20 -> 1.25, so it differs from USD.
+    assert im.daily_growth_eur is not None
+    assert im.daily_growth_eur != im.daily_growth_usd
 
 
 def test_positions_table_has_growth_pct(session: Session, seeded: None) -> None:

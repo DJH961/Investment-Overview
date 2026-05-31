@@ -12,6 +12,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.8.2] — Unreleased
+
+Patch fixing the **currency / FX math** that regressed in v2.8 (v2.8.1 is the
+parallel UI overhaul). The unifying rule: store the **native** amount (almost
+always USD) and always derive the *other* currency from the EUR→USD rate **of
+the row's own trade/deposit date** — never current spot, never parity. All
+money is rounded to the cent and every percentage is rendered as a rounded
+percent.
+
+### Fixed
+- **Transactions & Deposits FX.** Both pages now compute the converted value
+  from the exchange rate of the transaction/deposit date via the shared
+  `domain.currency.dual_currency_amounts` helper. This fixes deposits showing
+  USD and EUR at parity and transactions leaving the EUR column empty when a
+  manually entered row had no stored `net_eur`.
+- **Overview cost basis** is now accumulated **transaction by transaction** at
+  each trade's own FX rate (not a single current rate) and rounded to the cent
+  in both wallets.
+- **Overview capital gain** is rounded to the cent and computed as today's value
+  (at today's FX) minus the trade-date cost basis. The redundant "native"
+  column was removed — native is USD, shown in the USD view.
+
+### Changed
+- **One currency at a time.** Every Overview money/percentage value is computed
+  per currency but the table renders only the active display currency; the
+  header toggle flips the whole table. This keeps the grid compact.
+- **Total Growth and XIRR are now per currency** and shown as rounded
+  percentages rather than a single raw decimal.
+
+### Added
+- **Per-instrument Daily Growth** column in the Overview positions table, per
+  currency (mirroring the top-of-page daily-growth KPI).
+
 ## [2.8.0] — Unreleased
 
 This release lands the full **v2.8 whole-app cleanup** — a broad sweep of
