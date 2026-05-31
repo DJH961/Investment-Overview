@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, joinedload
 from investment_dashboard.domain.currency import dual_currency_amounts
 from investment_dashboard.models import Account, Instrument, Transaction
 from investment_dashboard.repositories import fx_repo
+from investment_dashboard.ui.money_format import currency_symbol, fmt_shares
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,7 @@ class LedgerRecord:
     account_label: str
     kind: str
     symbol: str
+    native_currency: str
     quantity: Decimal | None
     price_native: Decimal | None
     fees_native: Decimal | None
@@ -54,11 +56,12 @@ class LedgerRecord:
     source: str | None
 
 
-def _fmt_decimal(value: Decimal | None, places: int = 2) -> str:
+def _fmt_money(value: Decimal | None, currency: str, places: int = 2) -> str:
+    """Format a currency value with its symbol and a fixed 2-decimal (cent) scale."""
     if value is None:
         return ""
     quant = Decimal(10) ** -places
-    return f"{value.quantize(quant):,}"
+    return f"{currency_symbol(currency)}{value.quantize(quant):,}"
 
 
 def _build_ledger_stmt(filters: LedgerFilters | None):  # type: ignore[no-untyped-def]
@@ -189,6 +192,7 @@ def _to_record(
         account_label=account.account_label if account else "",
         kind=t.kind,
         symbol=instrument.symbol if instrument else "",
+        native_currency=native_ccy,
         quantity=t.quantity,
         price_native=t.price_native,
         fees_native=t.fees_native,
@@ -201,18 +205,19 @@ def _to_record(
 
 
 def _format_record(r: LedgerRecord) -> dict[str, Any]:
+    ccy = r.native_currency
     return {
         "id": r.id,
         "date": r.date.isoformat(),
         "account": r.account_label,
         "kind": r.kind,
         "symbol": r.symbol,
-        "qty": _fmt_decimal(r.quantity, 6),
-        "price": _fmt_decimal(r.price_native, 4),
-        "fees": _fmt_decimal(r.fees_native),
-        "gross": _fmt_decimal(r.gross_native),
-        "net": _fmt_decimal(r.net_native),
-        "net_eur": _fmt_decimal(r.net_eur),
-        "net_usd": _fmt_decimal(r.net_usd),
+        "qty": fmt_shares(r.quantity),
+        "price": _fmt_money(r.price_native, ccy),
+        "fees": _fmt_money(r.fees_native, ccy),
+        "gross": _fmt_money(r.gross_native, ccy),
+        "net": _fmt_money(r.net_native, ccy),
+        "net_eur": _fmt_money(r.net_eur, "EUR"),
+        "net_usd": _fmt_money(r.net_usd, "USD"),
         "source": r.source,
     }

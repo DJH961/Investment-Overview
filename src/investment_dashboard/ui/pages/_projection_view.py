@@ -517,14 +517,14 @@ def _render_table(
                 _series(pe, scenario, real=real),  # noqa: B023 - bound per iteration
                 _series(pu, scenario, real=real),  # noqa: B023
                 primary=primary,
-                decimals=0,
+                decimals=2,
             )
 
         rows.append(
             {
                 "label": pe.label,
                 "contributed": dual_money(
-                    pe.contributed, pu.contributed, primary=primary, decimals=0
+                    pe.contributed, pu.contributed, primary=primary, decimals=2
                 ),
                 "pessimistic": cell(SCENARIO_PESSIMISTIC),
                 "expected": cell(SCENARIO_EXPECTED),

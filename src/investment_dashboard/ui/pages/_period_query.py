@@ -39,15 +39,9 @@ from investment_dashboard.domain.returns import (
     years_between,
 )
 from investment_dashboard.models import Transaction
+from investment_dashboard.ui.money_format import aggrid_money_formatter
 
 ZERO = Decimal(0)
-
-#: AG-Grid ``valueFormatter`` (JS) rendering a numeric money value with
-#: thousands separators and two decimals; blanks out ``null``.
-_MONEY_FORMATTER = (
-    "params.value == null ? '' : params.value.toLocaleString("
-    "undefined,{minimumFractionDigits:2,maximumFractionDigits:2})"
-)
 
 #: AG-Grid ``valueFormatter`` (JS) rendering a numeric fraction as a signed
 #: percentage, e.g. ``0.0455`` -> ``"4.55 %"``; blanks out ``null``.
@@ -78,7 +72,7 @@ def money_column(label: str, field: str, currency: str) -> dict[str, object]:
         "headerName": f"{label} ({ccy})",
         "field": f"{field}_{ccy.lower()}_num",
         "type": "rightAligned",
-        "valueFormatter": _MONEY_FORMATTER,
+        "valueFormatter": aggrid_money_formatter(ccy),
         "minWidth": 120,
     }
 

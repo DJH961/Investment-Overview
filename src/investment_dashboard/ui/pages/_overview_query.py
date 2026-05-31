@@ -25,6 +25,7 @@ from investment_dashboard.services.positions_service import (
     Position,
     compute_positions,
 )
+from investment_dashboard.ui.money_format import currency_symbol, fmt_shares
 
 ZERO = Decimal(0)
 _CENT = Decimal("0.01")
@@ -504,10 +505,16 @@ def position_rows(
                 "symbol": p.instrument.symbol,
                 "name": (eff.name if eff is not None else p.instrument.name) or "",
                 "category": p.category or "",
-                "shares": f"{p.shares:,.4f}",
-                "avg_price": (f"{(p.cost_basis_native / p.shares):,.4f}" if p.shares else ""),
+                "shares": fmt_shares(p.shares),
+                "avg_price": (
+                    f"{currency_symbol(native)}{(p.cost_basis_native / p.shares):,.2f}"
+                    if p.shares
+                    else ""
+                ),
                 "current_price": (
-                    f"{p.current_price_native:,.4f}" if p.current_price_native is not None else ""
+                    f"{currency_symbol(native)}{p.current_price_native:,.2f}"
+                    if p.current_price_native is not None
+                    else ""
                 ),
                 "expense_ratio": _fmt_pct(ter),
                 # Per-currency numeric companions (one currency rendered at a

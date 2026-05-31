@@ -136,9 +136,9 @@ def test_eur_computed_from_trade_date_fx_not_parity(session: Session) -> None:
     )
     session.flush()
     rows = list_deposit_rows(session)
-    assert rows[0]["amount_usd"] == "1,000.00"
+    assert rows[0]["amount_usd"] == "$1,000.00"
     # 1000 USD / 1.25 (USD per EUR) = 800 EUR — explicitly *not* 1000.
-    assert rows[0]["amount_eur"] == "800.00"
+    assert rows[0]["amount_eur"] == "€800.00"
 
     summary = compute_summary(session, today=date(2024, 6, 4))
     assert summary.total_contrib_usd == Decimal("1000.00")
