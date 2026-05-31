@@ -37,11 +37,23 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("transactions", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("net_usd", sa.Numeric(precision=18, scale=6), nullable=True))
-
     bind = op.get_bind()
-    tables = set(sa.inspect(bind).get_table_names())
+    inspector = sa.inspect(bind)
+
+    # Idempotent add: a packaged/dev boot may have created ``transactions`` via
+    # ``create_all`` (current model already carries ``net_usd``) or added the
+    # column through the boot ``_ensure_added_columns`` guard while the Alembic
+    # version stayed at 0005. In that case the column already exists and a plain
+    # ``ADD COLUMN`` would raise ``duplicate column name: net_usd``. Only add it
+    # when it is genuinely missing; the backfill below still runs either way.
+    existing_columns = {col["name"] for col in inspector.get_columns("transactions")}
+    if "net_usd" not in existing_columns:
+        with op.batch_alter_table("transactions", schema=None) as batch_op:
+            batch_op.add_column(
+                sa.Column("net_usd", sa.Numeric(precision=18, scale=6), nullable=True)
+            )
+
+    tables = set(inspector.get_table_names())
 
     # 1. USD-native accounts: the booked amount IS the USD leg.
     if "accounts" in tables:
