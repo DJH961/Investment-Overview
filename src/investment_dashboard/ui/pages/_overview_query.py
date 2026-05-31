@@ -268,7 +268,7 @@ def compute_instrument_metrics(  # noqa: PLR0915
         # When the EUR→USD spot is unavailable we degrade the USD figures to
         # ``None`` (blank) rather than relabelling the EUR amount as USD —
         # otherwise XIRR(USD) / growth(USD) would be computed against a
-        # terminal value that is euros pretending to be dollars (bug §1.1).
+        # terminal value that is euros pretending to be dollars.
         cv_usd = cv_eur * today_rate if today_rate not in (None, 0) else None
         d_eur = div_eur.get(iid, ZERO)
         d_usd = div_usd.get(iid, ZERO)

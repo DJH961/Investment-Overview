@@ -280,11 +280,10 @@ def _chained_twr(
     Modified-Dietz return (with that sub-period's external flow), and the
     sub-returns are geometrically linked: ``Π(1 + r_i) − 1``. With no
     interior snapshots this collapses to a single Modified-Dietz over the
-    whole period, so it is a strict generalisation of the previous
-    approximation (the audit §3.2.12 upgrade — daily snapshots now exist,
-    so intra-period market swings between contributions are no longer
-    averaged away). Returns ``None`` if any sub-period denominator is
-    non-positive.
+    whole period, so it is a strict generalisation of a single Modified-Dietz
+    approximation: using the stored daily snapshots, intra-period market
+    swings between contributions are no longer averaged away. Returns
+    ``None`` if any sub-period denominator is non-positive.
     """
     points = [*interior, (period_end, closing)]
     prev_value = opening
@@ -384,7 +383,7 @@ def aggregate(  # noqa: PLR0912, PLR0915
 
     buckets: dict[str, dict[str, Decimal]] = {}
     #: Signed external cash flow (deposit/transfer_in +, withdrawal/transfer_out −)
-    #: per calendar date in EUR — feeds the daily-chained TWR (§3.2.12).
+    #: per calendar date in EUR — feeds the daily-chained TWR.
     flows_by_date_eur: dict[date, Decimal] = {}
     for t in txns:
         key = _period_key(t.date, monthly=monthly)
@@ -446,7 +445,7 @@ def aggregate(  # noqa: PLR0912, PLR0915
                 growth_by_label[label] = None
             else:
                 # True daily-chained TWR: compound each sub-period between
-                # stored daily snapshots (§3.2.12). Interior days are only
+                # stored daily snapshots. Interior days are only
                 # those already cached — never force-computed here — so the
                 # calc degrades to a single Modified-Dietz when daily values
                 # are sparse (e.g. before the daily backfill ran).
@@ -478,7 +477,7 @@ def aggregate(  # noqa: PLR0912, PLR0915
         # display-side conversion entirely — the renderer's spot-rate
         # fallback is more useful than emitting zeros for every row.
         if fx_rates:
-            #: Signed external flow per date in the display currency (§3.2.12).
+            #: Signed external flow per date in the display currency.
             flows_by_date_display: dict[date, Decimal] = {}
             for label in buckets:
                 display_buckets[label] = {"contrib": ZERO, "div": ZERO, "int": ZERO}

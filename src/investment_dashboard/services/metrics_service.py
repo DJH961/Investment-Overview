@@ -264,7 +264,7 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     # the historical cashflow stream below.
     fx_today = lookup_rate_with_forward_fill(eur_to_usd, as_of) or ZERO
     # Degrade the terminal USD mark to ``None`` (blank) when there is no
-    # EUR→USD spot, rather than relabelling the EUR value as USD (bug §1.1).
+    # EUR→USD spot, rather than relabelling the EUR value as USD.
     # The USD *wallet* cashflows are still real (per-trade-date legs); only
     # the terminal mark-to-market is unknown.
     total_value_usd: Decimal | None = total_value_eur * fx_today if fx_today != 0 else None

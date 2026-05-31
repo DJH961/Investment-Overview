@@ -225,7 +225,7 @@ def _apply_market_suggestion(
     currency_in: ui.select,
     expense_in: ui.input,
 ) -> None:  # pragma: no cover - UI
-    """Pre-fill the add-instrument form from market metadata (§3.2.5)."""
+    """Pre-fill the add-instrument form from market metadata."""
     sym = (symbol_in.value or "").strip().upper()
     if not sym:
         ui.notify("Enter a symbol first", type="warning")

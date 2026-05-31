@@ -373,9 +373,9 @@ def _stamp_secondary_tiers() -> None:
     ledger tables there). Instead, after their schema is materialised by
     ``create_all``, we ``alembic stamp head`` each tier so every storage
     database carries its own version table pinned to the current head —
-    giving each tier an independent migration baseline for the future
-    (audit §3.1.1). Best-effort: a stamping failure must never block boot,
-    since the schema itself is already present.
+    giving each tier an independent migration baseline for the future.
+    Best-effort: a stamping failure must never block boot, since the schema
+    itself is already present.
     """
     settings = get_settings()
     if not settings.is_split_db:
@@ -418,7 +418,7 @@ def _ensure_secondary_tier_schema() -> None:
     ConfigBase.metadata.create_all(get_config_engine())
     CacheBase.metadata.create_all(get_cache_engine())
     log.info("split-DB: ensured config + cache tier schema after Alembic upgrade")
-    # Give each secondary tier its own alembic_version baseline (§3.1.1).
+    # Give each secondary tier its own alembic_version baseline.
     _stamp_secondary_tiers()
 
 

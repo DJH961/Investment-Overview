@@ -102,7 +102,7 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
 
     # Each non-EUR account converts with the EUR→*its own* native currency
     # rate, not a single shared USD rate — a GBP/CHF account must not be
-    # divided by the USD rate (bug §1.5). Rates are memoised per quote so we
+    # divided by the USD rate. Rates are memoised per quote so we
     # hit the FX cache at most once per distinct currency; a missing rate
     # degrades to 1:1 (the long-standing "render something" fallback).
     rate_cache: dict[str, Decimal] = {}
@@ -200,8 +200,8 @@ def total_portfolio_value(session: Session, *, as_of: date | None = None) -> Dec
         if ccy == "EUR":
             total_eur += balance_native
             continue
-        # Convert with this account's own EUR→native rate, not a shared USD one
-        # (bug §1.6); a missing rate degrades to 1:1.
+        # Convert with this account's own EUR→native rate, not a shared USD one;
+        # a missing rate degrades to 1:1.
         if ccy not in rate_cache:
             rate_cache[ccy] = fx_service.get_rate_eur_to_quote(
                 session, as_of, quote=ccy

@@ -87,12 +87,23 @@ intraday quotes are a supported feature.
   corrected (`requirements_and_project_overview.md`, `docs/user_guide.md`,
   `models/price_history.py`).
 
+### Removed
+- **Dead/uncalled helpers** confirmed unreferenced by the audit: the
+  single-file `get_engine` / `get_session_factory` accessors (`db.py`),
+  `snapshots_repo.list_snapshots`, `transactions_repo.delete_transaction`,
+  `transaction_fx_service.list_accounts_currency_map`,
+  `encryption.driver_available`, and `money_format.fmt_pair`. No call sites
+  remained, so removing them shrinks the surface without behaviour change.
+
 ### Docs
 - Brought `README` status, `docs/user_guide.md` (pages, risk-free, editable
   storage folder), `docs/architecture.md` / `CONTRIBUTING.md` (UI may read
   repositories directly), and `requirements_and_project_overview.md` (3-tier
   storage, standalone projection page, historical roadmap) back in line with the
-  code. Marked the fully-shipped v2.0/v2.2/v2.8 plan docs as historical.
+  code. Refreshed the in-app **Help** page so the Storage entry lists the
+  sync-folder, move-ledger, passphrase and recovery-file controls instead of the
+  stale "nothing here is editable" note (`ui/pages/help`). Marked the
+  fully-shipped v2.0/v2.2/v2.8 plan docs as historical.
 - Normalised the changelog: every prior `— Unreleased` heading now carries its
   release date.
 
