@@ -58,11 +58,6 @@ def _detect_driver() -> str | None:
     return None
 
 
-def driver_available() -> bool:
-    """``True`` if a SQLCipher Python binding is importable."""
-    return _detect_driver() is not None
-
-
 def load_passphrase_from_keyring() -> str | None:
     """Look up the synced-tier passphrase in the OS keychain.
 

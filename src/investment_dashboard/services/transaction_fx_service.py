@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.domain.currency import split_native_to_dual_legs
 from investment_dashboard.models import Transaction
-from investment_dashboard.repositories import accounts_repo, fx_repo, transactions_repo
+from investment_dashboard.repositories import fx_repo, transactions_repo
 from investment_dashboard.services import fx_service
 
 log = logging.getLogger(__name__)
@@ -226,7 +226,3 @@ def ensure_fx_coverage(
         rates = fx_repo.get_rates(cache, base="EUR", quote="USD")
         return any(d <= earliest_needed for d in rates)
 
-
-def list_accounts_currency_map(session: Session) -> dict[int, str]:
-    """``{account_id: native_currency}`` helper for callers that batch rows."""
-    return {a.id: a.native_currency for a in accounts_repo.list_accounts(session)}

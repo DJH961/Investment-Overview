@@ -43,25 +43,6 @@ def fmt_money(
     return f"{currency_symbol(currency)}{amount:,.{decimals}f}"
 
 
-def fmt_pair(
-    primary_amount: Decimal | None,
-    primary_currency: str,
-    secondary_amount: Decimal | None,
-    secondary_currency: str,
-    *,
-    decimals: int = 2,
-) -> tuple[str, str]:
-    """Format two amounts (primary big, secondary small) for KPI cards.
-
-    Returns ``(primary_str, secondary_str)``. Either side renders as
-    ``"—"`` when its amount is ``None``.
-    """
-    return (
-        fmt_money(primary_amount, primary_currency, decimals=decimals),
-        fmt_money(secondary_amount, secondary_currency, decimals=decimals),
-    )
-
-
 def dual_money(
     eur: Decimal | None,
     usd: Decimal | None,

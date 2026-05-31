@@ -180,19 +180,6 @@ def get_cache_session_factory() -> sessionmaker[Session]:
     return _factories_by_url[settings.cache_url]
 
 
-# --- Back-compat single-engine API ----------------------------------
-
-
-def get_engine() -> Engine:
-    """Legacy: returns the ledger engine."""
-    return get_ledger_engine()
-
-
-def get_session_factory() -> sessionmaker[Session]:
-    """Legacy: returns the ledger session factory."""
-    return get_ledger_session_factory()
-
-
 # --- Context managers -----------------------------------------------
 
 
