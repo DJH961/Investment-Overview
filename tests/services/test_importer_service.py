@@ -75,6 +75,54 @@ class TestImportFidelity:
         assert buy.net_eur is not None
         assert abs(buy.net_eur - Decimal("-2041.67")) < Decimal("0.05")
 
+    def test_net_usd_frozen_as_native_for_usd_account(
+        self, session: Session, usd_account: int, fx_seeded: None
+    ) -> None:
+        # USD is the booked currency, so net_usd must equal net_native
+        # *exactly* (no FX round-trip), per the v2.9 USD-native perspective.
+        content = (FIXTURE_DIR / "fidelity_sample.csv").read_text()
+        import_csv(session, broker=Broker.FIDELITY, account_id=usd_account, content=content)
+        for txn in session.scalars(select(Transaction)).all():
+            if txn.net_native is not None:
+                assert txn.net_usd == txn.net_native
+
+    def test_fx_missing_dates_reported_without_history(
+        self, session: Session, usd_account: int
+    ) -> None:
+        # No FX history seeded and the network is unavailable in tests, so the
+        # EUR leg can't be derived: the importer must surface the gap (rather
+        # than silently freezing a wrong number) while still inserting rows.
+        content = (FIXTURE_DIR / "fidelity_sample.csv").read_text()
+        result = import_csv(
+            session, broker=Broker.FIDELITY, account_id=usd_account, content=content
+        )
+        assert result.inserted == 6
+        assert result.fx_missing_dates  # non-empty
+        # USD leg is still exact even when EUR can't be derived.
+        buy = session.scalars(select(Transaction).where(Transaction.kind == "buy")).one()
+        assert buy.net_usd == buy.net_native
+        assert buy.net_eur is None
+
+    def test_eur_account_freezes_usd_leg(self, session: Session, fx_seeded: None) -> None:
+        # For an EUR-native account, net_eur == net_native and net_usd is
+        # derived at the trade-date rate.
+        eur_account = accounts_repo.create_account(
+            session,
+            broker="fidelity",
+            account_label="Fidelity EUR",
+            native_currency="EUR",
+            account_type="brokerage",
+        ).id
+        content = (FIXTURE_DIR / "fidelity_sample.csv").read_text()
+        import_csv(session, broker=Broker.FIDELITY, account_id=eur_account, content=content)
+        buy = session.scalars(select(Transaction).where(Transaction.kind == "buy")).one()
+        assert buy.net_eur == buy.net_native
+        assert buy.net_usd is not None
+        # net_usd = net_native × EUR→USD on the trade date (2024-01-05 ⇒ 1.08).
+        assert buy.net_usd == buy.net_native * Decimal("1.08")
+        # fx_rate_to_eur is the EUR→native rate, which for an EUR account is 1.
+        assert buy.fx_rate_to_eur == Decimal(1)
+
 
 class TestImportVanguard:
     def test_import_drops_sweeps(self, session: Session, usd_account: int, fx_seeded: None) -> None:

@@ -24,6 +24,7 @@ from investment_dashboard.repositories import (
     app_config_repo,
     instrument_overrides_repo,
     instruments_repo,
+    transactions_repo,
 )
 from investment_dashboard.services import (
     benchmark_service,
@@ -31,6 +32,7 @@ from investment_dashboard.services import (
     provider_status,
     risk_free_service,
     timezone_service,
+    transaction_fx_service,
 )
 from investment_dashboard.services.fx_service import refresh_fx_history
 from investment_dashboard.services.onboarding_service import seed_default_setup
@@ -62,6 +64,34 @@ def _refresh_prices_clicked() -> None:  # pragma: no cover - UI
     except Exception as exc:
         log.exception("Price refresh failed")
         ui.notify(f"Price refresh failed: {exc}", type="negative")
+
+
+def _recalc_fx_legs_clicked() -> None:  # pragma: no cover - UI
+    """Force a full rebuild of every transaction's frozen EUR/USD legs.
+
+    First makes sure FX history reaches back to the earliest trade (retrying
+    the refresh), then recomputes both currency legs on every ledger row from
+    that history. Use this after a failed/partial import, or whenever the FX
+    data has been corrected, to bring all derived KPIs back into agreement.
+    """
+    try:
+        with session_scope() as session:
+            earliest = transactions_repo.earliest_transaction_date(session)
+            if earliest is not None:
+                transaction_fx_service.ensure_fx_coverage(session, earliest_needed=earliest)
+            result = transaction_fx_service.backfill_missing_legs(session, force=True)
+    except Exception as exc:
+        log.exception("Recalculate FX-derived values failed")
+        ui.notify(f"Recalculation failed: {exc}", type="negative")
+        return
+    msg = f"Recalculated {result.updated} transaction(s)"
+    if result.incomplete:
+        ui.notify(
+            f"{msg}; {result.incomplete} still missing FX data — refresh FX rates and try again.",
+            type="warning",
+        )
+    else:
+        ui.notify(f"{msg}. All legs valued at trade-date FX.", type="positive")
 
 
 def _seed_clicked() -> None:  # pragma: no cover - UI
@@ -652,6 +682,11 @@ def _render_data_refresh() -> None:  # pragma: no cover - UI
         ui.button("Refresh prices", icon="trending_up", on_click=_refresh_prices_clicked).props(
             "flat color=primary no-caps"
         )
+        ui.button(
+            "Recalculate FX-derived values",
+            icon="calculate",
+            on_click=_recalc_fx_legs_clicked,
+        ).props("flat color=primary no-caps")
         ui.button("Seed default setup", icon="auto_fix_high", on_click=_seed_clicked).props(
             "flat no-caps"
         )

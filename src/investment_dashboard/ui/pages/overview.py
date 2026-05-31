@@ -94,28 +94,36 @@ _MONEY_FORMATTER = (
 )
 
 
-def _money_columns(label: str, field: str, primary: str) -> list[dict[str, object]]:
-    """Primary + secondary numeric money columns for one metric.
+def _money_column(label: str, field: str, primary: str) -> dict[str, object]:
+    """A single numeric money column for the *display* currency only.
 
-    Each column binds to a numeric ``{field}_{ccy}_num`` row key so AG-Grid
-    sorts by the underlying value per currency (the user's "let me sort by
-    value per currency" request), and a ``valueFormatter`` renders the
-    number. The display currency comes first.
+    The user's executive decision (v2.8.2): show one currency at a time and
+    flip the whole table with the header toggle, rather than doubling every
+    money column. The column binds to the ``{field}_{ccy}_num`` numeric row key
+    so it still sorts by value, and a ``valueFormatter`` renders the number.
     """
     primary = primary.upper()
-    secondary = "EUR" if primary == "USD" else "USD"
-    cols: list[dict[str, object]] = []
-    for ccy in (primary, secondary):
-        cols.append(
-            {
-                "headerName": f"{label} ({ccy})",
-                "field": f"{field}_{ccy.lower()}_num",
-                "type": "rightAligned",
-                "valueFormatter": _MONEY_FORMATTER,
-                "minWidth": 130,
-            }
-        )
-    return cols
+    return {
+        "headerName": f"{label} ({primary})",
+        "field": f"{field}_{primary.lower()}_num",
+        "type": "rightAligned",
+        "valueFormatter": _MONEY_FORMATTER,
+        "minWidth": 130,
+    }
+
+
+def _pct_column(label: str, base_field: str, primary: str) -> dict[str, object]:
+    """A single percentage column for the display currency, coloured by sign."""
+    primary = primary.upper()
+    field = f"{base_field}_{primary.lower()}_signed"
+    return {
+        "headerName": f"{label} ({primary})",
+        "field": field,
+        "type": "rightAligned",
+        "valueFormatter": _PCT_FORMATTER,
+        "cellClassRules": _SIGN_RULES(field),
+        "minWidth": 120,
+    }
 
 
 def _SIGN_RULES(signed_field: str) -> dict[str, str]:  # noqa: N802 - config-style constant
@@ -450,35 +458,14 @@ def register() -> None:
                                     "field": "expense_ratio",
                                     "type": "rightAligned",
                                 },
-                                *_money_columns("Cost Basis", "cost_basis", display_ccy),
-                                *_money_columns("Value", "value", display_ccy),
-                                *_money_columns("Capital Gain", "capital_gain", display_ccy),
-                                {
-                                    "headerName": "Capital Gain (native)",
-                                    "field": "capital_gain_native",
-                                    "type": "rightAligned",
-                                },
-                                {
-                                    "headerName": "Total Growth %",
-                                    "field": "total_growth_signed",
-                                    "type": "rightAligned",
-                                    "valueFormatter": _PCT_FORMATTER,
-                                    "cellClassRules": _SIGN_RULES("total_growth_signed"),
-                                },
-                                {
-                                    "headerName": "XIRR",
-                                    "field": "xirr_signed",
-                                    "type": "rightAligned",
-                                    "valueFormatter": _PCT_FORMATTER,
-                                    "cellClassRules": _SIGN_RULES("xirr_signed"),
-                                },
-                                {
-                                    "headerName": "YTD Growth",
-                                    "field": "ytd_growth_signed",
-                                    "type": "rightAligned",
-                                    "valueFormatter": _PCT_FORMATTER,
-                                    "cellClassRules": _SIGN_RULES("ytd_growth_signed"),
-                                },
+                                # One currency at a time (the display toggle).
+                                _money_column("Cost Basis", "cost_basis", display_ccy),
+                                _money_column("Value", "value", display_ccy),
+                                _money_column("Capital Gain", "capital_gain", display_ccy),
+                                _pct_column("Total Growth", "total_growth", display_ccy),
+                                _pct_column("XIRR", "xirr", display_ccy),
+                                _pct_column("Daily Growth", "daily", display_ccy),
+                                _pct_column("YTD Growth", "ytd", display_ccy),
                             ],
                             "rowData": rows,
                             "defaultColDef": {

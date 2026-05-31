@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -12,6 +12,7 @@ from investment_dashboard.models import Transaction
 from investment_dashboard.models.transaction import TransactionSource
 from investment_dashboard.repositories import (
     accounts_repo,
+    fx_repo,
     instrument_overrides_repo,
     instruments_repo,
     prices_repo,
@@ -38,6 +39,12 @@ def seeded(session: Session) -> None:
     instrument_overrides_repo.set_category(session, bnd.id, "US Bonds")
     prices_repo.upsert_closes(session, vti.id, {date.today(): Decimal("230.00")})
     prices_repo.upsert_closes(session, bnd.id, {date.today(): Decimal("75.00")})
+    # A flat EUR→USD = 1.25 on both the trade date and today, so EUR figures
+    # are exactly the USD ones / 1.25 and the growth fractions match.
+    fx_repo.upsert_rates(
+        session,
+        {date(2024, 1, 5): Decimal("1.25"), date.today(): Decimal("1.25")},
+    )
     session.add_all(
         [
             Transaction(
@@ -65,14 +72,41 @@ def seeded(session: Session) -> None:
     session.flush()
 
 
-def test_positions_table_has_growth_pct(session: Session, seeded: None) -> None:
+def test_instrument_daily_growth_per_currency(session: Session, seeded: None) -> None:
+    """Daily growth uses the two most recent print dates, converted at each
+    day's own FX, so EUR and USD differ by the intraday FX move."""
+    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+
+    vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
+    yesterday = date.today() - timedelta(days=1)
+    # Prior close + a slightly different FX on the prior day vs today.
+    prices_repo.upsert_closes(session, vti.id, {yesterday: Decimal("220.00")})
+    fx_repo.upsert_rates(session, {yesterday: Decimal("1.20")})
+    session.flush()
+
     positions = get_positions(session)
-    rows = position_rows(positions)
+    metrics = compute_instrument_metrics(session, positions)
+    im = metrics[vti.id]
+    # USD price move 220 -> 230 = +4.5454...%
+    assert im.daily_growth_usd is not None
+    assert abs(im.daily_growth_usd - Decimal("0.04545")) < Decimal("0.001")
+    # EUR move includes the FX shift 1.20 -> 1.25, so it differs from USD.
+    assert im.daily_growth_eur is not None
+    assert im.daily_growth_eur != im.daily_growth_usd
+
+
+def test_positions_table_has_growth_pct(session: Session, seeded: None) -> None:
+    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+
+    positions = get_positions(session)
+    metrics = compute_instrument_metrics(session, positions)
+    rows = position_rows(positions, metrics=metrics)
     symbols = {r["symbol"] for r in rows}
     assert symbols == {"VTI", "BND"}
     vti_row = next(r for r in rows if r["symbol"] == "VTI")
-    # cost 2200, current 2300 ⇒ +4.55 %
-    assert "4.55" in vti_row["total_growth_pct"]
+    # cost 2200, current 2300 ⇒ +4.55 % in both currencies (flat FX).
+    assert abs(vti_row["total_growth_usd_signed"] - 0.04545) < 0.001
+    assert abs(vti_row["total_growth_eur_signed"] - 0.04545) < 0.001
 
 
 def test_treemap_aggregates_by_category(session: Session, seeded: None) -> None:
@@ -97,13 +131,20 @@ def test_instrument_metrics_xirr_and_dividend_inclusive_growth(
     metrics = compute_instrument_metrics(session, positions)
     vti = next(p for p in positions if p.instrument.symbol == "VTI")
     im = metrics[vti.instrument.id]
-    # VTI: cost 2200, value 2300 ⇒ capital gain 100, growth +4.55 %.
-    assert im.capital_gain_native == Decimal("100.00")
-    assert im.total_growth_pct is not None
-    assert abs(im.total_growth_pct - Decimal("0.04545")) < Decimal("0.001")
-    # A single buy followed by a higher terminal mark ⇒ positive XIRR.
-    assert im.xirr is not None
-    assert im.xirr > Decimal(0)
+    # VTI USD: cost 2200, value 2300 ⇒ gain 100 (USD), 80 (EUR @ 1.25).
+    assert im.capital_gain_usd == Decimal("100.00")
+    assert im.capital_gain_eur == Decimal("80.00")
+    assert im.cost_basis_usd == Decimal("2200.00")
+    assert im.cost_basis_eur == Decimal("1760.00")
+    # Growth +4.55 % in both wallets (flat FX).
+    assert im.total_growth_usd is not None
+    assert abs(im.total_growth_usd - Decimal("0.04545")) < Decimal("0.001")
+    assert abs(im.total_growth_eur - Decimal("0.04545")) < Decimal("0.001")
+    # A single buy followed by a higher terminal mark ⇒ positive XIRR per ccy.
+    assert im.xirr_usd is not None
+    assert im.xirr_usd > Decimal(0)
+    assert im.xirr_eur is not None
+    assert im.xirr_eur > Decimal(0)
 
 
 def test_position_rows_enriched_with_metrics(session: Session, seeded: None) -> None:
@@ -111,12 +152,13 @@ def test_position_rows_enriched_with_metrics(session: Session, seeded: None) -> 
 
     positions = get_positions(session)
     metrics = compute_instrument_metrics(session, positions)
-    rows = position_rows(positions, metrics=metrics)
+    rows = position_rows(positions, display_currency="USD", metrics=metrics)
     vti_row = next(r for r in rows if r["symbol"] == "VTI")
-    assert "4.55" in vti_row["total_growth_pct"]
-    assert vti_row["total_growth_signed"] > 0
-    assert vti_row["xirr"] != "—"
-    assert "100.00" in vti_row["capital_gain_native"]
+    assert abs(vti_row["total_growth_usd_signed"] - 0.04545) < 0.001
+    assert vti_row["total_growth_usd_signed"] > 0
+    assert vti_row["xirr_usd_signed"] != 0
+    assert vti_row["capital_gain_usd_num"] == 100.0
+    assert vti_row["capital_gain_eur_num"] == 80.0
 
 
 def test_market_verdict_beating_and_trailing(session: Session, seeded: None) -> None:

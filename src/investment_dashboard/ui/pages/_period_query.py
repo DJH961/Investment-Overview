@@ -141,10 +141,13 @@ def _amount_in(
     # Same-currency short-circuit: never round-trip through EUR.
     if native_ccy == target and t.net_native is not None:
         return t.net_native
-    eur_amt = _amount_eur(t, eur_to_usd=eur_to_usd)
+    # Prefer the frozen legs persisted at write time (v2.9) over re-deriving.
     if target == "EUR":
-        return eur_amt
+        return t.net_eur if t.net_eur is not None else _amount_eur(t, eur_to_usd=eur_to_usd)
     if target == "USD":
+        if t.net_usd is not None:
+            return t.net_usd
+        eur_amt = _amount_eur(t, eur_to_usd=eur_to_usd)
         rate = lookup_rate_with_forward_fill(eur_to_usd, t.date)
         if rate is None or rate == 0:
             return None

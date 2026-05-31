@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
-from decimal import Decimal
+from dataclasses import dataclass, field
+from datetime import date
 from enum import StrEnum
 
 from sqlalchemy.orm import Session
@@ -30,11 +30,12 @@ from investment_dashboard.repositories import (
     accounts_repo,
     transactions_repo,
 )
-from investment_dashboard.services import fx_service, instrument_enrichment_service
+from investment_dashboard.services import (
+    instrument_enrichment_service,
+    transaction_fx_service,
+)
 
 log = logging.getLogger(__name__)
-
-ZERO = Decimal(0)
 
 
 class Broker(StrEnum):
@@ -50,6 +51,11 @@ class ImportResult:
     duplicates: int
     sweeps_dropped: int
     unknown_actions: list[str]
+    #: Trade dates whose EUR→USD rate could not be resolved even after
+    #: retrying the FX refresh, so the row's frozen legs are incomplete.
+    #: Empty on a healthy import. The boot/Settings recalculation will keep
+    #: retrying these until accurate data lands.
+    fx_missing_dates: list[date] = field(default_factory=list)
 
 
 def _parse(
@@ -112,8 +118,19 @@ def import_csv(
         raise ValueError(f"Unknown account_id={account_id}")
     parsed_rows, sweeps_dropped, unknown_actions = _parse(broker, content)
 
+    # Safe-FX procedure (spec §5.6): before freezing any trade-date leg,
+    # make sure FX history actually covers the earliest trade in this batch,
+    # retrying the refresh so a transient network/server glitch doesn't bake
+    # in a wrong (or missing) rate. Any row left without a rate is still
+    # written — with a NULL leg — so the boot/Settings backfill can repair it
+    # once accurate data lands, rather than silently storing a bad number.
+    if parsed_rows:
+        earliest = min(prow.date for prow in parsed_rows)
+        transaction_fx_service.ensure_fx_coverage(session, earliest_needed=earliest)
+
     inserted = 0
     duplicates = 0
+    fx_missing: set[date] = set()
     for prow in parsed_rows:
         # Resolve symbol → instrument, enriching as needed (yfinance
         # call is best-effort and cached per-process).
@@ -130,18 +147,18 @@ def import_csv(
             )
             instrument_id = instr.id
 
-        # FX: cache the EUR rate for the trade date.
-        fx_rate: Decimal | None
-        net_eur: Decimal | None
-        if account.native_currency == "EUR":
-            fx_rate = Decimal(1)
-            net_eur = prow.net_native
-        else:
-            fx_rate = fx_service.get_rate_eur_to_quote(session, prow.date)
-            if fx_rate is not None and prow.net_native is not None and fx_rate != 0:
-                net_eur = prow.net_native / fx_rate
-            else:
-                net_eur = None
+        # Freeze both currency legs (EUR + USD) at the trade-date rate. For
+        # USD-native accounts ``net_usd`` is the booked amount verbatim and
+        # EUR is derived; for EUR-native it's the mirror; other currencies
+        # derive both. A NULL leg flags an FX-history gap to revisit.
+        legs = transaction_fx_service.compute_legs(
+            session,
+            native_currency=account.native_currency,
+            net_native=prow.net_native,
+            on=prow.date,
+        )
+        if not legs.complete:
+            fx_missing.add(prow.date)
 
         txn = Transaction(
             account_id=account_id,
@@ -154,8 +171,9 @@ def import_csv(
             gross_native=prow.gross_native,
             fees_native=prow.fees_native,
             net_native=prow.net_native,
-            fx_rate_to_eur=fx_rate,
-            net_eur=net_eur,
+            fx_rate_to_eur=legs.fx_rate_to_eur,
+            net_eur=legs.net_eur,
+            net_usd=legs.net_usd,
             description=prow.description,
             external_id=prow.external_id,
             source=prow.source,
@@ -171,4 +189,5 @@ def import_csv(
         duplicates=duplicates,
         sweeps_dropped=sweeps_dropped,
         unknown_actions=unknown_actions,
+        fx_missing_dates=sorted(fx_missing),
     )

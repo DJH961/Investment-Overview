@@ -139,14 +139,17 @@ def _txn_usd_amount(
 ) -> Decimal:
     """USD-converted cash leg of one transaction (per trade-date FX).
 
-    USD-native accounts short-circuit FX entirely. For every other
-    currency we convert the EUR amount with the EUR→USD rate **on the
-    transaction's date** (forward-filled), so a USD wallet's series
-    reflects the FX it actually saw, not today's spot scaled across
-    history. When no rate is available the figure is excluded from the
-    USD series (``Decimal(0)``) rather than poisoned with a wrong-
-    magnitude EUR-as-USD value.
+    Prefers the **frozen** ``net_usd`` leg persisted at import / manual entry
+    (v2.9), which for USD-native accounts is the booked amount verbatim. Only
+    when that column is ``NULL`` (a row predating the backfill, or written
+    during an FX-history gap) do we fall back to live derivation: USD-native
+    rows read ``net_native`` directly, every other currency converts the EUR
+    amount at the EUR→USD rate **on the transaction's date** (forward-filled).
+    When no rate is available the figure is excluded from the USD series
+    (``Decimal(0)``) rather than poisoned with a wrong-magnitude value.
     """
+    if t.net_usd is not None:
+        return t.net_usd
     native_ccy = (t.account.native_currency if t.account else "EUR").upper()
     if native_ccy == "USD" and t.net_native is not None:
         return t.net_native

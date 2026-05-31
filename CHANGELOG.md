@@ -12,6 +12,71 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.9.0] — Unreleased
+
+Makes trade-date FX values **persistent** instead of re-derived on every
+render, and flips the stored perspective so the **native** leg (almost always
+USD) is frozen verbatim and EUR is derived. Once a transaction is booked its
+currency legs never need recomputing — only today's value (and capital gain
+derived from it) stays live.
+
+### Added
+- **`transactions.net_usd`** column (Alembic migration `0006`): every cash
+  movement now stores *both* frozen legs — `net_eur` and `net_usd` — valued at
+  the EUR→USD rate on the row's own trade date. For USD-native accounts
+  `net_usd` is the booked amount verbatim (no FX round-trip); EUR is derived.
+  Existing rows are backfilled by the migration, and on packaged installs (no
+  Alembic) a boot-time column guard adds the column and a backfill pass fills
+  the legs.
+- **Safe-FX import.** The importer now ensures FX history actually covers the
+  earliest trade *before* freezing any leg, retrying the refresh so a transient
+  network/server glitch can't bake in a wrong or missing rate. Any unresolved
+  gap is reported back to the user, and the affected legs stay re-derivable.
+- **Settings → "Recalculate FX-derived values"** forces a full rebuild of every
+  transaction's frozen legs from current FX history — use it after a partial
+  import or once FX data has been corrected.
+
+### Changed
+- **Manual transaction entry** now freezes both currency legs on save (it
+  previously stored neither), so manual rows match imported ones.
+- **Read paths** (overview, deposits, ledger, monthly/yearly periods,
+  portfolio KPIs/XIRR) prefer the stored legs and only fall back to live FX
+  derivation for rows still missing a value, removing the repeated full
+  FX-history load on the common path.
+
+## [2.8.2] — Unreleased
+
+Patch fixing the **currency / FX math** that regressed in v2.8 (v2.8.1 is the
+parallel UI overhaul). The unifying rule: store the **native** amount (almost
+always USD) and always derive the *other* currency from the EUR→USD rate **of
+the row's own trade/deposit date** — never current spot, never parity. All
+money is rounded to the cent and every percentage is rendered as a rounded
+percent.
+
+### Fixed
+- **Transactions & Deposits FX.** Both pages now compute the converted value
+  from the exchange rate of the transaction/deposit date via the shared
+  `domain.currency.dual_currency_amounts` helper. This fixes deposits showing
+  USD and EUR at parity and transactions leaving the EUR column empty when a
+  manually entered row had no stored `net_eur`.
+- **Overview cost basis** is now accumulated **transaction by transaction** at
+  each trade's own FX rate (not a single current rate) and rounded to the cent
+  in both wallets.
+- **Overview capital gain** is rounded to the cent and computed as today's value
+  (at today's FX) minus the trade-date cost basis. The redundant "native"
+  column was removed — native is USD, shown in the USD view.
+
+### Changed
+- **One currency at a time.** Every Overview money/percentage value is computed
+  per currency but the table renders only the active display currency; the
+  header toggle flips the whole table. This keeps the grid compact.
+- **Total Growth and XIRR are now per currency** and shown as rounded
+  percentages rather than a single raw decimal.
+
+### Added
+- **Per-instrument Daily Growth** column in the Overview positions table, per
+  currency (mirroring the top-of-page daily-growth KPI).
+
 ## [2.8.1] — Unreleased
 
 Follow-up patch tightening the **Overview** page polish that v2.8 set out to

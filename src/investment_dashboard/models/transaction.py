@@ -96,6 +96,14 @@ class Transaction(Base):
 
     fx_rate_to_eur: Mapped[Decimal | None] = mapped_column(Numeric(12, 8))
     net_eur: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    #: Frozen USD leg of the cash movement, valued at the **trade-date**
+    #: EUR→USD rate. For USD-native accounts this is exactly ``net_native``
+    #: (USD is the booked currency — see spec §4.1 and the v2.9 "freeze the
+    #: native leg" change); for every other currency it is derived once at
+    #: write time and never recomputed. Read paths prefer this column and
+    #: only fall back to live FX derivation when it is ``NULL`` (a row that
+    #: predates the backfill or was written while FX history had a gap).
+    net_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
 
     description: Mapped[str | None] = mapped_column(String(512))
     external_id: Mapped[str | None] = mapped_column(String(128))
