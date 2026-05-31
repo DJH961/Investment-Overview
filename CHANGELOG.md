@@ -41,7 +41,21 @@ instruments whose cached price feed is corrupt.
   in the data (SCHK 2:1 on 2024-10-11, VUG on 2026-04-21) each leave a visible
   step in the spreadsheet-vs-dashboard gap, and the gap vanishes once both
   splits are reached — fully explaining the historic understatement. The fix is
-  scoped in `docs/v2.10.1-plan.md`.
+  scoped in `docs/v2.10.1-plan.md` and shipped below (Option A).
+
+### Fixed
+- **Split back-adjustment in historical valuation.** Past-date holdings are now
+  valued on the same adjustment basis as the price feed: when valuing an
+  as-of date, the share count is scaled by the cumulative split factor of every
+  split that occurs *after* that date (derived from the `split` ledger rows as
+  `shares_after / shares_before`), so a pre-split date multiplies the
+  *adjusted* share count by yfinance's *adjusted* close instead of understating
+  the holding by the split ratio. The today path (no future splits ⇒ factor 1)
+  and money-market par-pricing are unchanged, and cached daily snapshots are
+  already cleared on each boot refresh so historic closing values recompute.
+  This closes the ~8–10 % historic gap on `SCHK`/`VUG` against `Investments.xlsx`
+  (`services/positions_service._split_factor_after`,
+  `services/positions_service.compute_positions`).
 
 
 

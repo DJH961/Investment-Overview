@@ -140,3 +140,67 @@ def test_daily_growth_none_with_single_priced_day(session: Session) -> None:
     metrics = metrics_service.compute_portfolio_metrics(session, as_of=date(2025, 6, 1))
     assert metrics.daily_growth_pct is None
     assert metrics.daily_growth_as_of is None
+
+
+def _seed_split_holding(session: Session) -> int:
+    """10 shares bought pre-split; a 2:1 split later doubles the share count.
+
+    yfinance back-adjusts every cached close for the split, so the pre-split
+    date's stored close is the *adjusted* (halved) price.
+    """
+    acct_id = _seed_eur_brokerage(session)
+    instr = instruments_repo.get_or_create(session, symbol="SPLT", native_currency="EUR")
+    session.add(
+        Transaction(
+            account_id=acct_id,
+            instrument_id=instr.id,
+            date=date(2024, 12, 15),
+            kind="buy",
+            quantity=Decimal("10"),
+            price_native=Decimal("200.00"),
+            net_native=Decimal("-2000.00"),
+            net_eur=Decimal("-2000.00"),
+            source="manual",
+        )
+    )
+    # 2:1 split on 2025-06-01 adds 10 shares (10 → 20).
+    session.add(
+        Transaction(
+            account_id=acct_id,
+            instrument_id=instr.id,
+            date=date(2025, 6, 1),
+            kind="split",
+            quantity=Decimal("10"),
+            source="manual",
+        )
+    )
+    prices_repo.upsert_closes(
+        session,
+        instr.id,
+        {
+            # Pre-split close, already back-adjusted by yfinance (200 → 100).
+            date(2025, 1, 1): Decimal("100.00"),
+            # Post-split close (no further adjustment).
+            date(2025, 7, 1): Decimal("110.00"),
+        },
+    )
+    session.flush()
+    return instr.id
+
+
+def test_pre_split_date_uses_split_adjusted_share_count(session: Session) -> None:
+    _seed_split_holding(session)
+    # Pre-split: 10 real shares × 200 real price = 2000. The cached close is the
+    # back-adjusted 100, so without scaling the share count the holding would be
+    # understated by the 2:1 ratio (1000). The fix scales 10 → 20.
+    assert positions_service.total_portfolio_value(session, as_of=date(2025, 1, 1)) == Decimal(
+        "2000.00"
+    )
+
+
+def test_post_split_date_unscaled(session: Session) -> None:
+    _seed_split_holding(session)
+    # After the split there is no later split: 20 shares × 110 = 2200, no scaling.
+    assert positions_service.total_portfolio_value(session, as_of=date(2025, 7, 1)) == Decimal(
+        "2200.00"
+    )
