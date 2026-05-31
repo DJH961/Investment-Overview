@@ -13,7 +13,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from investment_dashboard.domain.currency import dual_currency_amounts
@@ -32,6 +32,7 @@ class LedgerFilters:
     source: str | None = None
     start: date | None = None
     end: date | None = None
+    hide_settlement_sweeps: bool = True
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,19 @@ def _build_ledger_stmt(filters: LedgerFilters | None):  # type: ignore[no-untype
         stmt = stmt.where(Transaction.date <= f.end)
     if f.instrument_symbol:
         stmt = stmt.join(Transaction.instrument).where(Instrument.symbol == f.instrument_symbol)
+    if f.hide_settlement_sweeps:
+        # Auto-generated Vanguard VMFXX settlement legs carry an external_id
+        # suffixed ``:vmfxx`` (settlement.py). They keep the settlement balance
+        # accurate for valuation but pair one row to every cash movement, which
+        # floods the ledger view — hide them here by default while leaving them
+        # in the ledger so positions_service still values VMFXX correctly. Rows
+        # with no external_id (e.g. manual entries) must stay visible.
+        stmt = stmt.where(
+            or_(
+                Transaction.external_id.is_(None),
+                Transaction.external_id.notlike("%:vmfxx"),
+            )
+        )
     return stmt
 
 
