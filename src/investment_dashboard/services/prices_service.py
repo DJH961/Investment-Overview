@@ -133,6 +133,21 @@ def close_as_of(session: Session, instrument_id: int, as_of: date) -> Decimal | 
         return prices_repo.close_as_of(cache, instrument_id, as_of)
 
 
+def invalidate_instrument_prices(session: Session, instrument_id: int) -> int:
+    """Drop an instrument's cached closes + refresh timestamp (cache tier).
+
+    Called when an instrument's ticker is repointed at a different symbol so
+    the stale closes for the old symbol can't keep forward-filling the new
+    one. Returns the number of price rows removed.
+    """
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+
+    with cache_write_session(session) as cache:
+        removed = prices_repo.delete_for_instrument(cache, instrument_id)
+        price_cache_repo.delete_for_instrument(cache, instrument_id)
+    return removed
+
+
 def recent_price_dates(
     session: Session,
     instrument_ids: Sequence[int],

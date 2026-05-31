@@ -30,6 +30,7 @@ from investment_dashboard.services import (
     benchmark_service,
     display_currency_service,
     instrument_enrichment_service,
+    prices_service,
     provider_status,
     risk_free_service,
     timezone_service,
@@ -400,17 +401,26 @@ def _add_allocation_dialog() -> None:  # pragma: no cover - UI
 
 def _edit_instrument_dialog(
     instrument_id: int,
+    current_symbol: str,
     current_name: str,
     current_category: str,
     current_asset_class: str,
+    current_native_currency: str,
     current_expense_ratio: str,
     current_active: bool,
 ) -> None:  # pragma: no cover - UI
     with ui.dialog() as dialog, ui.card():
         ui.label("Edit instrument").classes("text-h6")
+        symbol_input = ui.input("Ticker symbol", value=current_symbol)
+        ui.label(
+            "Repoint a preset/imported line that resolves to the wrong ticker "
+            "(e.g. a DAX line that never priced). Cached prices are cleared so "
+            "the next refresh repopulates from the new symbol."
+        ).classes("text-caption opacity-70")
         name_input = ui.input("Name", value=current_name)
         category_input = ui.input("Category", value=current_category)
         asset_class_input = ui.input("Asset class", value=current_asset_class)
+        currency_input = ui.input("Native currency (3-letter)", value=current_native_currency)
         expense_input = ui.input(
             "Expense ratio (e.g. 0.0007 for 0.07 %)", value=current_expense_ratio
         )
@@ -427,14 +437,19 @@ def _edit_instrument_dialog(
                     return
             else:
                 expense_ratio = None
+            new_symbol = symbol_input.value.strip().upper()
+            symbol_changed = bool(new_symbol) and new_symbol != current_symbol.strip().upper()
             try:
                 with session_scope() as session:
                     instruments_repo.update_instrument(
                         session,
                         instrument_id,
+                        symbol=new_symbol or None,
                         name=name_input.value.strip() or None,
                         asset_class=asset_class_input.value.strip() or None,
+                        native_currency=currency_input.value.strip() or None,
                         expense_ratio=expense_ratio,
+                        clear_expense_ratio=not raw_expense,
                     )
                     instrument_overrides_repo.upsert(
                         session,
@@ -442,6 +457,10 @@ def _edit_instrument_dialog(
                         category=category_input.value.strip() or None,
                         active=bool(active_input.value),
                     )
+                    if symbol_changed:
+                        # The cached closes belong to the old ticker; drop them
+                        # so the new symbol's prices are fetched fresh.
+                        prices_service.invalidate_instrument_prices(session, instrument_id)
                 ui.notify("Instrument updated", type="positive")
                 dialog.close()
                 _settings_refresh()
@@ -804,9 +823,11 @@ def _render_instruments_section(
                     on_click=lambda _, i=i, category=category, active=active: (
                         _edit_instrument_dialog(
                             i.id,
+                            i.symbol,
                             i.name or "",
                             category or "",
                             i.asset_class,
+                            i.native_currency,
                             str(i.expense_ratio) if i.expense_ratio is not None else "",
                             active,
                         )

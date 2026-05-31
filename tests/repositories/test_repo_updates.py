@@ -89,3 +89,48 @@ def test_update_instrument_can_set_expense_ratio(session: Session) -> None:
     assert instr.expense_ratio is None
     updated = instruments_repo.update_instrument(session, instr.id, expense_ratio=Decimal("0.0003"))
     assert updated.expense_ratio == Decimal("0.0003")
+
+
+def test_update_instrument_can_change_symbol_and_currency(session: Session) -> None:
+    instr = instruments_repo.get_or_create(session, symbol="DAX", native_currency="USD")
+    updated = instruments_repo.update_instrument(
+        session, instr.id, symbol="exs1.de", native_currency="eur"
+    )
+    # Symbol and currency are normalised to upper-case.
+    assert updated.symbol == "EXS1.DE"
+    assert updated.native_currency == "EUR"
+    assert instruments_repo.get_by_symbol(session, "EXS1.DE") is not None
+
+
+def test_update_instrument_rejects_duplicate_symbol(session: Session) -> None:
+    import pytest
+
+    instruments_repo.get_or_create(session, symbol="VTI")
+    other = instruments_repo.get_or_create(session, symbol="VOO")
+    with pytest.raises(ValueError, match="already uses symbol"):
+        instruments_repo.update_instrument(session, other.id, symbol="VTI")
+
+
+def test_update_instrument_rejects_blank_symbol_and_bad_currency(session: Session) -> None:
+    import pytest
+
+    instr = instruments_repo.get_or_create(session, symbol="VTI")
+    with pytest.raises(ValueError, match="blank"):
+        instruments_repo.update_instrument(session, instr.id, symbol="   ")
+    with pytest.raises(ValueError, match="3-letter"):
+        instruments_repo.update_instrument(session, instr.id, native_currency="US")
+
+
+def test_update_instrument_clear_expense_ratio(session: Session) -> None:
+    from decimal import Decimal
+
+    instr = instruments_repo.get_or_create(session, symbol="VTI", expense_ratio=Decimal("0.0003"))
+    updated = instruments_repo.update_instrument(session, instr.id, clear_expense_ratio=True)
+    assert updated.expense_ratio is None
+
+
+def test_update_instrument_same_symbol_is_noop(session: Session) -> None:
+    instr = instruments_repo.get_or_create(session, symbol="VTI")
+    updated = instruments_repo.update_instrument(session, instr.id, symbol="vti", name="New")
+    assert updated.symbol == "VTI"
+    assert updated.name == "New"

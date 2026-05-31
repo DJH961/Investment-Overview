@@ -183,6 +183,12 @@ def seed_default_setup(session: Session) -> SeedResult:
                 and instrument_overrides_repo.get_category(session, existing.id) is None
             ):
                 instrument_overrides_repo.set_category(session, existing.id, instr.category)
+            # Repair placeholder metadata on a row that was created by the
+            # importer (or an older seed) before the canonical preset facts
+            # were known — e.g. a DAX line left as ``unknown`` / no TER. Only
+            # missing or placeholder fields are filled, so deliberate user
+            # edits (a real name, a chosen asset class) are never clobbered.
+            _repair_preset_metadata(session, existing, instr)
             continue
         created = instruments_repo.get_or_create(
             session,
@@ -199,6 +205,38 @@ def seed_default_setup(session: Session) -> SeedResult:
     return SeedResult(
         accounts_created=accounts_created,
         instruments_created=instruments_created,
+    )
+
+
+def _repair_preset_metadata(
+    session: Session,
+    existing: object,
+    seed: _SeedInstrument,
+) -> None:
+    """Fill missing/placeholder ledger metadata on an existing preset row.
+
+    Conservative on purpose: a field is only written when the stored value is
+    absent or a placeholder (no name, ``unknown`` asset class, no expense
+    ratio), so a user's deliberate customisation survives a re-seed. The
+    canonical preset values come straight from the issuer, so this lets a
+    re-seed repair an instrument (e.g. DAX) that an import created with stub
+    metadata.
+    """
+    name = seed.name if not getattr(existing, "name", None) else None
+    asset_class = seed.asset_class if getattr(existing, "asset_class", None) == "unknown" else None
+    expense_ratio = (
+        seed.expense_ratio
+        if (seed.expense_ratio is not None and getattr(existing, "expense_ratio", None) is None)
+        else None
+    )
+    if name is None and asset_class is None and expense_ratio is None:
+        return
+    instruments_repo.update_instrument(
+        session,
+        existing.id,  # type: ignore[attr-defined]
+        name=name,
+        asset_class=asset_class,
+        expense_ratio=expense_ratio,
     )
 
 

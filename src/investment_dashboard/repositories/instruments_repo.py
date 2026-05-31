@@ -73,26 +73,56 @@ def update_instrument(
     session: Session,
     instrument_id: int,
     *,
+    symbol: str | None = None,
     name: str | None = None,
     asset_class: str | None = None,
+    native_currency: str | None = None,
     expense_ratio: Decimal | None = None,
+    clear_expense_ratio: bool = False,
 ) -> Instrument:
     """Update mutable ledger-tier fields on an instrument.
 
-    ``symbol`` and ``native_currency`` are intentionally not mutable —
-    they're loose-referenced by price history and ledger entries.
+    ``symbol`` and ``native_currency`` are editable so the user can repair a
+    preset/imported instrument that resolved to the wrong ticker or quote
+    currency (e.g. a DAX line that never priced). Both are keyed only by the
+    instrument's ``id`` in price history and the ledger, so changing them is
+    safe — but callers that repoint the ``symbol`` should also invalidate the
+    cached price history (see
+    :func:`prices_service.invalidate_instrument_prices`) so the now-wrong
+    closes for the old ticker stop forward-filling.
+
     ``category`` and ``active`` are config-tier and live in
-    ``instrument_overrides``; this function does not accept them.
-    Raises ``ValueError`` if ``instrument_id`` does not exist.
+    ``instrument_overrides``; this function does not accept them. Passing
+    ``clear_expense_ratio=True`` resets the TER to ``NULL``.
+
+    Raises ``ValueError`` if ``instrument_id`` does not exist, if ``symbol``
+    is blank, if ``native_currency`` is not a 3-letter code, or if ``symbol``
+    collides with a different instrument.
     """
     instr = session.get(Instrument, instrument_id)
     if instr is None:
         raise ValueError(f"Instrument {instrument_id} not found")
+    if symbol is not None:
+        new_symbol = symbol.strip().upper()
+        if not new_symbol:
+            raise ValueError("Symbol cannot be blank")
+        if new_symbol != instr.symbol:
+            clash = get_by_symbol(session, new_symbol)
+            if clash is not None and clash.id != instrument_id:
+                raise ValueError(f"Another instrument already uses symbol {new_symbol!r}")
+            instr.symbol = new_symbol
     if name is not None:
         instr.name = name
     if asset_class is not None:
         instr.asset_class = asset_class
-    if expense_ratio is not None:
+    if native_currency is not None:
+        ccy = native_currency.strip().upper()
+        if len(ccy) != 3:
+            raise ValueError(f"Native currency must be a 3-letter code, got {native_currency!r}")
+        instr.native_currency = ccy
+    if clear_expense_ratio:
+        instr.expense_ratio = None
+    elif expense_ratio is not None:
         instr.expense_ratio = expense_ratio
     session.flush()
     return instr

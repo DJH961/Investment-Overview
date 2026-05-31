@@ -13,6 +13,7 @@ from investment_dashboard.domain.currency import (
     dual_currency_amounts,
     lookup_rate_with_forward_fill,
 )
+from investment_dashboard.domain.money_market import is_money_market
 from investment_dashboard.domain.returns import Cashflow, xirr
 from investment_dashboard.models import TransactionKind
 from investment_dashboard.repositories import transactions_repo
@@ -323,6 +324,9 @@ def compute_instrument_metrics(  # noqa: PLR0915
             if (sv_usd is not None and cv_usd is not None)
             else None
         )
+        eff_name = p.effective.name if p.effective is not None else p.instrument.name
+        eff_class = p.effective.asset_class if p.effective is not None else p.instrument.asset_class
+        is_mm = is_money_market(p.instrument.symbol, asset_class=eff_class, name=eff_name)
         daily_eur, daily_usd = _instrument_daily_growth(
             session,
             instrument_id=iid,
@@ -331,6 +335,7 @@ def compute_instrument_metrics(  # noqa: PLR0915
             as_of=as_of,
             eur_to_usd=eur_to_usd,
             today_rate=today_rate,
+            is_money_market=is_mm,
         )
         ter = p.effective.expense_ratio if p.effective is not None else p.instrument.expense_ratio
         # Legacy native-currency figures (readmodels / API back-compat).
@@ -375,6 +380,7 @@ def _instrument_daily_growth(
     as_of: date,
     eur_to_usd: dict[date, Decimal],
     today_rate: Decimal | None,
+    is_money_market: bool = False,
 ) -> tuple[Decimal | None, Decimal | None]:
     """Single-day growth for one instrument, in EUR and USD.
 
@@ -382,7 +388,14 @@ def _instrument_daily_growth(
     closes) and converts each with the FX rate of *that* day, so the USD and
     EUR figures differ only by the (small) intraday FX move — exactly the
     per-currency daily growth the KPI strip shows, but per instrument.
+
+    Money-market / settlement funds hold a constant $1.00 NAV with no price
+    feed, so they have no print dates to diff. Rather than render an em dash
+    (which looked inconsistent next to their other, computed figures) their
+    single-day growth is a flat ``0`` — the par value did not move.
     """
+    if is_money_market:
+        return ZERO, ZERO
     dates = prices_service.recent_price_dates(session, [instrument_id], on_or_before=as_of, limit=2)
     if len(dates) < 2:
         return None, None
@@ -540,6 +553,7 @@ def position_rows(
         rows.append(
             {
                 "symbol": p.instrument.symbol,
+                "value_warning": p.value_warning,
                 "name": (eff.name if eff is not None else p.instrument.name) or "",
                 "category": p.category or "",
                 "shares": fmt_shares(p.shares),

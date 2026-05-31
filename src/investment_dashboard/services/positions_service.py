@@ -32,6 +32,9 @@ from investment_dashboard.services.instrument_enrichment_service import (
 )
 
 ZERO = Decimal(0)
+#: Below this residual share count a holding is treated as fully closed, so a
+#: dust position left after a sale never raises the zero-value warning.
+_MIN_HELD_SHARES = Decimal("0.0000001")
 
 
 @dataclass(frozen=True)
@@ -50,6 +53,12 @@ class Position:
     #: ``instrument_overrides`` table. Default to "no category" / "active".
     category: str | None = None
     instrument_active: bool = True
+    #: True when the holding has a non-trivial share count but values to zero
+    #: because no price could be sourced (e.g. a ticker that stopped pricing).
+    #: A zero value on a held position is not normal — every figure derived
+    #: from it (totals, growth, allocation) is understated — so the UI raises a
+    #: visible warning. Money-market funds price at par and never trip this.
+    value_warning: bool = False
     #: Override-merged view of the instrument. Read paths should prefer
     #: ``effective.name`` / ``effective.asset_class`` /
     #: ``effective.expense_ratio`` over the ledger row, so phase-(b)
@@ -177,6 +186,13 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
             current_value_eur = current_value_native / native_rate
         else:
             current_value_eur = ZERO
+        # A held position (non-trivial shares) that values to zero means no
+        # price could be sourced — flag it so the UI can warn that downstream
+        # totals/growth are understated. Money-market funds price at par and
+        # never reach a zero value here.
+        value_warning = agg["shares"] > _MIN_HELD_SHARES and (
+            current_price is None or current_value_native == ZERO
+        )
         results.append(
             Position(
                 account=account,
@@ -189,6 +205,7 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
                 cumulative_dividends_cash_native=agg["dividends_cash"],
                 category=(overrides[instr.id].category if instr.id in overrides else None),
                 instrument_active=(overrides[instr.id].active if instr.id in overrides else True),
+                value_warning=value_warning,
                 effective=eff,
             )
         )

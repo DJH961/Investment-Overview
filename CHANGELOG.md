@@ -12,6 +12,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.9.7] — 2026-05-31
+
+Follow-up to the 2.9.6 valuation bundle: makes preset/imported instruments
+fully editable, surfaces held-but-unpriced holdings, and stops money-market
+funds showing an inconsistent single-day growth.
+
+### Added
+- **Zero-value warning.** When a holding has shares but values to `0` because
+  no price could be sourced (e.g. a ticker that stopped pricing), the Overview
+  now shows a red banner naming the affected symbols — that state is abnormal
+  and understates every downstream total, growth and allocation figure, so the
+  numbers can't be trusted until it prices again (`positions_service`,
+  `_overview_query.position_rows`, `ui/pages/overview`).
+
+### Fixed
+- **Instrument ticker & native currency are now editable.** The Settings →
+  Instruments editor only exposed name / asset class / category / TER, so a
+  preset or imported line that resolved to the wrong ticker (e.g. a DAX line
+  that never priced) could not be repaired from the UI. Symbol and native
+  currency are now editable; changing the symbol clears that instrument's
+  cached closes so the next refresh repopulates from the new ticker
+  (`instruments_repo.update_instrument`, `prices_service`, `ui/pages/settings`).
+- **Money-market / settlement funds no longer show an inconsistent daily
+  growth.** `SPAXX` / `VMFXX` have no price feed, so their single-day growth
+  rendered as an em dash while their other figures were computed — looking
+  "strange" next to each other. The par NAV does not move, so their daily
+  growth is now a flat `0` in both currencies (`_overview_query`).
+- **Re-seeding repairs drifted preset metadata.** An instrument an import had
+  created with stub metadata (e.g. `unknown` asset class, no name, no TER) is
+  now corrected to the canonical preset facts on the next *seed defaults* run;
+  deliberate user customisations are left untouched (`onboarding_service`).
+
 ## [2.9.6] — 2026-05-31
 
 Bug-fix bundle for portfolio valuation accuracy: partial-sale growth, money-

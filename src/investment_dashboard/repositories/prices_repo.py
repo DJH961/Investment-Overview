@@ -6,7 +6,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
@@ -122,3 +122,16 @@ def upsert_closes(
     )
     result = session.execute(stmt)
     return result.rowcount or len(closes)
+
+
+def delete_for_instrument(session: Session, instrument_id: int) -> int:
+    """Drop every cached close for ``instrument_id``. Returns rows removed.
+
+    Used when an instrument's ticker is repointed at a different symbol so
+    the next refresh repopulates the cache from the new ticker instead of
+    forward-filling the old symbol's (now wrong) closes.
+    """
+    result = session.execute(
+        delete(PriceHistory).where(PriceHistory.instrument_id == instrument_id)
+    )
+    return result.rowcount or 0

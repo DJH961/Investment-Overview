@@ -165,6 +165,32 @@ def _verdict_card(verdict: MarketVerdict) -> None:
     )
 
 
+def _zero_value_warning(rows: list[dict[str, object]]) -> None:  # pragma: no cover - UI
+    """Banner warning that held positions value to zero (no price sourced).
+
+    A held holding worth zero understates every downstream figure (total
+    value, growth, allocation), so the numbers can't be trusted until the
+    ticker prices again — repoint it from Settings → Instruments if the
+    symbol is wrong. No-op when nothing is flagged.
+    """
+    symbols = [str(r["symbol"]) for r in rows if r.get("value_warning")]
+    if not symbols:
+        return
+    listed = ", ".join(symbols)
+    with (
+        ui.element("div")
+        .classes("w-full rounded-borders q-pa-sm q-my-sm")
+        .style("background-color: rgba(244,67,54,0.12); border: 1px solid rgba(244,67,54,0.5)"),
+        ui.row().classes("items-center gap-sm no-wrap"),
+    ):
+        ui.icon("warning", color="negative")
+        ui.label(
+            f"Held but valued at zero — no price found for {listed}. "
+            "Totals, growth and allocation are understated until this is "
+            "priced. Check the ticker in Settings → Instruments."
+        ).classes("text-body2")
+
+
 def _treemap_figure(data, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no-untyped-def]
     import plotly.graph_objects as go  # noqa: PLC0415
 
@@ -436,6 +462,7 @@ def register() -> None:
                     "or seed defaults from Settings.",
                 )
             else:
+                _zero_value_warning(rows)
                 with section("Positions"):
                     ui.aggrid(
                         {
