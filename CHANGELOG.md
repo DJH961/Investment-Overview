@@ -12,6 +12,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.9.0] — Unreleased
+
+Makes trade-date FX values **persistent** instead of re-derived on every
+render, and flips the stored perspective so the **native** leg (almost always
+USD) is frozen verbatim and EUR is derived. Once a transaction is booked its
+currency legs never need recomputing — only today's value (and capital gain
+derived from it) stays live.
+
+### Added
+- **`transactions.net_usd`** column (Alembic migration `0006`): every cash
+  movement now stores *both* frozen legs — `net_eur` and `net_usd` — valued at
+  the EUR→USD rate on the row's own trade date. For USD-native accounts
+  `net_usd` is the booked amount verbatim (no FX round-trip); EUR is derived.
+  Existing rows are backfilled by the migration, and on packaged installs (no
+  Alembic) a boot-time column guard adds the column and a backfill pass fills
+  the legs.
+- **Safe-FX import.** The importer now ensures FX history actually covers the
+  earliest trade *before* freezing any leg, retrying the refresh so a transient
+  network/server glitch can't bake in a wrong or missing rate. Any unresolved
+  gap is reported back to the user, and the affected legs stay re-derivable.
+- **Settings → "Recalculate FX-derived values"** forces a full rebuild of every
+  transaction's frozen legs from current FX history — use it after a partial
+  import or once FX data has been corrected.
+
+### Changed
+- **Manual transaction entry** now freezes both currency legs on save (it
+  previously stored neither), so manual rows match imported ones.
+- **Read paths** (overview, deposits, ledger, monthly/yearly periods,
+  portfolio KPIs/XIRR) prefer the stored legs and only fall back to live FX
+  derivation for rows still missing a value, removing the repeated full
+  FX-history load on the common path.
+
 ## [2.8.2] — Unreleased
 
 Patch fixing the **currency / FX math** that regressed in v2.8 (v2.8.1 is the
