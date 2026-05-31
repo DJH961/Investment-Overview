@@ -108,6 +108,53 @@ def test_summary_handles_no_data(session: Session) -> None:
     assert summary.ytd_contrib_usd == Decimal(0)
 
 
+def test_withdrawals_reduce_contributions_once(session: Session) -> None:
+    """A withdrawal must *reduce* net contributions, not inflate them.
+
+    Withdrawals/transfer_out are stored with a negative net leg. Subtracting
+    the (already negative) leg double-counted it as a positive contribution,
+    so a deposit + withdrawal reported more than the deposit alone. Net
+    contributions must equal deposits + signed withdrawals exactly once and
+    agree across EUR, USD and native legs.
+    """
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Fidelity",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    session.add_all(
+        [
+            Transaction(
+                account_id=acct.id,
+                date=date(2023, 6, 1),
+                kind="deposit",
+                net_native=Decimal("1000.00"),
+                net_eur=Decimal("900.00"),
+                net_usd=Decimal("1000.00"),
+                source=TransactionSource.MANUAL,
+            ),
+            Transaction(
+                account_id=acct.id,
+                date=date(2023, 7, 1),
+                kind="withdrawal",
+                net_native=Decimal("-300.00"),
+                net_eur=Decimal("-270.00"),
+                net_usd=Decimal("-300.00"),
+                source=TransactionSource.MANUAL,
+            ),
+        ]
+    )
+    session.flush()
+
+    summary = compute_summary(session, today=date(2023, 8, 1))
+    # 1000 deposit − 300 withdrawal = 700 net, in every currency leg.
+    assert summary.total_contrib_native == Decimal("700.00")
+    assert summary.total_contrib_usd == Decimal("700.00")
+    assert summary.total_contrib_eur == Decimal("630.00")
+
+
 def test_eur_computed_from_trade_date_fx_not_parity(session: Session) -> None:
     """A USD deposit with no stored net_eur must convert at the trade-date rate.
 

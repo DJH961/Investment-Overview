@@ -209,3 +209,136 @@ def test_daily_chained_twr_compounds_interior_snapshots(session: Session) -> Non
     # A naive single-period Modified-Dietz would report ≈ 0.10909 — confirm
     # the chained figure is materially different (intra-period swing kept).
     assert jan.growth_pct > Decimal("0.115")
+
+
+def test_withdrawal_reduces_period_contributions(session: Session) -> None:
+    """A withdrawal must net *down* the period's contributions.
+
+    The signed net leg (negative for withdrawals) is added once, matching
+    metrics_service. Subtracting it would flip the sign and inflate both the
+    contribution figure and the period growth %.
+    """
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Fidelity",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    session.add_all(
+        [
+            Transaction(
+                account_id=acct.id,
+                date=date(2024, 1, 5),
+                kind="deposit",
+                net_eur=Decimal("1000"),
+                net_native=Decimal("1100"),
+                source=TransactionSource.MANUAL,
+            ),
+            Transaction(
+                account_id=acct.id,
+                date=date(2024, 1, 20),
+                kind="withdrawal",
+                net_eur=Decimal("-400"),
+                net_native=Decimal("-440"),
+                source=TransactionSource.MANUAL,
+            ),
+        ]
+    )
+    session.flush()
+    rows = aggregate(session, monthly=True, with_closing_value=False)
+    jan = next(r for r in rows if r.label == "2024-01")
+    assert jan.contributions == Decimal("600")  # 1000 − 400
+    assert jan.net_flow == Decimal("600")
+
+
+def test_dividends_count_reinvested_value_and_unpaired_cash(session: Session) -> None:
+    """Dividend income = reinvested value + un-reinvested cash, counted once.
+
+    A reinvested dividend arrives as a paired cash + reinvest row; only the
+    reinvested value is counted (the cash leg is skipped). A settlement-fund
+    interest reinvestment carries a zero cash leg, so its value must come from
+    quantity × price. An un-reinvested cash dividend counts its cash.
+    """
+    acct = accounts_repo.create_account(
+        session,
+        broker="vanguard",
+        account_label="Vanguard",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    from investment_dashboard.repositories import instruments_repo
+
+    vti = instruments_repo.get_or_create(session, symbol="VTI", name="VTI")
+    vmfxx = instruments_repo.get_or_create(session, symbol="VMFXX", name="VMFXX")
+    session.add_all(
+        [
+            # Reinvested VTI dividend: cash leg (skipped) + reinvest leg (counted).
+            Transaction(
+                account_id=acct.id,
+                instrument_id=vti.id,
+                date=date(2024, 3, 10),
+                kind="dividend_cash",
+                net_native=Decimal("20"),
+                net_eur=Decimal("18"),
+                net_usd=Decimal("20"),
+                source=TransactionSource.MANUAL,
+            ),
+            Transaction(
+                account_id=acct.id,
+                instrument_id=vti.id,
+                date=date(2024, 3, 10),
+                kind="dividend_reinvest",
+                quantity=Decimal("0.1"),
+                price_native=Decimal("200"),
+                net_native=Decimal("-20"),
+                net_eur=Decimal("-18"),
+                net_usd=Decimal("-20"),
+                source=TransactionSource.MANUAL,
+            ),
+            # VMFXX interest reinvested with a zero cash leg.
+            Transaction(
+                account_id=acct.id,
+                instrument_id=vmfxx.id,
+                date=date(2024, 3, 31),
+                kind="dividend_reinvest",
+                quantity=Decimal("5"),
+                price_native=Decimal("1"),
+                net_native=Decimal("0"),
+                net_eur=Decimal("0"),
+                net_usd=Decimal("0"),
+                source=TransactionSource.MANUAL,
+            ),
+            # Un-reinvested cash dividend (the rare early case).
+            Transaction(
+                account_id=acct.id,
+                instrument_id=vti.id,
+                date=date(2024, 4, 5),
+                kind="dividend_cash",
+                net_native=Decimal("7"),
+                net_eur=Decimal("6"),
+                net_usd=Decimal("7"),
+                source=TransactionSource.MANUAL,
+            ),
+        ]
+    )
+    session.flush()
+    from investment_dashboard.repositories import fx_repo
+
+    fx_repo.upsert_rates(
+        session,
+        {
+            date(2024, 3, 10): Decimal("1"),
+            date(2024, 3, 31): Decimal("1"),
+            date(2024, 4, 5): Decimal("1"),
+        },
+        base="EUR",
+        quote="USD",
+    )
+    session.flush()
+    rows = aggregate(session, monthly=False, with_closing_value=False, display_currency="USD")
+    rendered = to_table_rows(rows, currency="USD", fx_rate=Decimal("1"))
+    usd = next(r for r in rendered if r["label"] == "2024")
+    # USD income = 20 (VTI reinvest) + 5 (VMFXX) + 7 (cash) = 32; the paired
+    # cash leg of the reinvested VTI dividend (20) is NOT double-counted.
+    assert usd["dividends_usd_num"] == 32.0

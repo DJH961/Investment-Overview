@@ -131,7 +131,90 @@ class TestMetrics:
         assert m.xirr is not None
         assert abs(m.xirr - Decimal("0.10")) < Decimal("0.001")
 
-    def test_cashflows_include_unretained_dividends_and_interest(self, session: Session) -> None:
+    def test_dividend_income_counts_reinvested_capital_gain_uses_realized(
+        self, session: Session
+    ) -> None:
+        """Overview dividends = income (reinvested + cash); capital gain only
+        adds back realized (un-reinvested) cash, never the reinvested value
+        that is already embedded in the portfolio's current mark.
+        """
+        acct_id = _seed_usd_brokerage(session)
+        from investment_dashboard.repositories import fx_repo, instruments_repo
+
+        vti = instruments_repo.get_or_create(session, symbol="VTI", name="VTI")
+        vmfxx = instruments_repo.get_or_create(session, symbol="VMFXX", name="VMFXX")
+        session.add_all(
+            [
+                # Reinvested dividend: paired cash (skipped) + reinvest (counted).
+                Transaction(
+                    account_id=acct_id,
+                    instrument_id=vti.id,
+                    date=date(2024, 3, 10),
+                    kind="dividend_cash",
+                    net_native=Decimal("20"),
+                    net_eur=Decimal("20"),
+                    net_usd=Decimal("20"),
+                    source="manual",
+                ),
+                Transaction(
+                    account_id=acct_id,
+                    instrument_id=vti.id,
+                    date=date(2024, 3, 10),
+                    kind="dividend_reinvest",
+                    quantity=Decimal("0.1"),
+                    price_native=Decimal("200"),
+                    net_native=Decimal("-20"),
+                    net_eur=Decimal("-20"),
+                    net_usd=Decimal("-20"),
+                    source="manual",
+                ),
+                # VMFXX interest reinvested with a zero cash leg.
+                Transaction(
+                    account_id=acct_id,
+                    instrument_id=vmfxx.id,
+                    date=date(2024, 3, 31),
+                    kind="dividend_reinvest",
+                    quantity=Decimal("5"),
+                    price_native=Decimal("1"),
+                    net_native=Decimal("0"),
+                    net_eur=Decimal("0"),
+                    net_usd=Decimal("0"),
+                    source="manual",
+                ),
+                # Un-reinvested cash dividend.
+                Transaction(
+                    account_id=acct_id,
+                    instrument_id=vti.id,
+                    date=date(2024, 4, 5),
+                    kind="dividend_cash",
+                    net_native=Decimal("7"),
+                    net_eur=Decimal("7"),
+                    net_usd=Decimal("7"),
+                    source="manual",
+                ),
+            ]
+        )
+        fx_repo.upsert_rates(
+            session,
+            {
+                date(2024, 3, 10): Decimal("1"),
+                date(2024, 3, 31): Decimal("1"),
+                date(2024, 4, 5): Decimal("1"),
+            },
+            base="EUR",
+            quote="USD",
+        )
+        session.flush()
+        m = metrics_service.compute_portfolio_metrics(session, as_of=date(2024, 5, 1))
+        # Income = 20 (VTI reinvest) + 5 (VMFXX) + 7 (cash) = 32.
+        assert m.total_dividends_cash_usd == Decimal("32")
+        # Capital gain = current value + realized cash − net contributions.
+        # The reinvested VMFXX shares are in the value ($5 @ $1 NAV); the
+        # reinvested VTI value is NOT added back as a dividend (its unpriced
+        # shares mark to 0 here). Realized cash adds back only the $7. So
+        # 5 + 7 − 0 = 12 — the reinvested distributions are counted once.
+        assert m.capital_gain_usd == Decimal("12")
+
         acct_id = _seed_usd_brokerage(session)
         txns = [
             Transaction(
