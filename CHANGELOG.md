@@ -12,6 +12,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.9.8] — 2026-05-31
+
+### Added
+- **Developer audit export.** Settings → Developer tools can now download the
+  full dashboard snapshot — the same read-model the mobile API serves, covering
+  overview KPIs and positions, deposits, the raw ledger, the monthly/yearly
+  period tables, analytics and the calculator — as a pretty-printed JSON
+  document for offline reconciliation. The panel is gated behind a configurable
+  developer password (`INV_DASHBOARD_DEV_PASSWORD`), verified with a
+  constant-time comparison, and stays hidden/inert when no password is set
+  (`services/audit_export_service`, `ui/pages/settings`, `config`).
+
 ## [2.9.7] — 2026-05-31
 
 Follow-up to the 2.9.6 valuation bundle: makes preset/imported instruments
