@@ -343,9 +343,9 @@ def aggregate(  # noqa: PLR0912, PLR0915
             # Unconvertible non-EUR row with no FX history — leave it out of
             # the bucket rather than counting a wrong-magnitude figure.
             continue
-        if t.kind == "deposit":
+        if t.kind in ("deposit", "transfer_in"):
             b["contrib"] += amt
-        elif t.kind == "withdrawal":
+        elif t.kind in ("withdrawal", "transfer_out"):
             b["contrib"] -= amt
         elif t.kind == "dividend_cash":
             b["div"] += amt

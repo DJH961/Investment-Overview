@@ -41,8 +41,19 @@ ZERO = Decimal(0)
 
 
 # Kinds that move *external* cash (the user's bank ↔ portfolio).
-_CONTRIBUTION_KINDS = {TransactionKind.DEPOSIT.value}
-_WITHDRAWAL_KINDS = {TransactionKind.WITHDRAWAL.value}
+# ``transfer_in`` / ``transfer_out`` model inter-account or in-kind moves: a
+# transfer between two *tracked* accounts records both legs, so counting
+# ``transfer_in`` as a contribution and ``transfer_out`` as a withdrawal nets
+# to zero at the portfolio level, while a move that crosses the tracked
+# boundary (only one leg exists) is correctly treated as an external flow.
+_CONTRIBUTION_KINDS = {
+    TransactionKind.DEPOSIT.value,
+    TransactionKind.TRANSFER_IN.value,
+}
+_WITHDRAWAL_KINDS = {
+    TransactionKind.WITHDRAWAL.value,
+    TransactionKind.TRANSFER_OUT.value,
+}
 _RETAINED_CASH_ACCOUNT_TYPES = {"savings", "cash"}
 # Kinds that receive cash not represented in the current portfolio value.
 _DISTRIBUTION_KINDS = {

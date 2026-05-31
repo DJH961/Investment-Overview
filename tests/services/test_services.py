@@ -171,6 +171,41 @@ class TestMetrics:
         ]
 
 
+    def test_transfer_kinds_count_as_external_flows(self, session: Session) -> None:
+        """``transfer_in`` behaves like a deposit and ``transfer_out`` like a
+        withdrawal in the portfolio cashflow series (audit §3.2.11)."""
+        acct_id = _seed_usd_brokerage(session)
+        txns = [
+            Transaction(
+                account_id=acct_id,
+                date=date(2024, 1, 1),
+                kind="transfer_in",
+                net_native=Decimal("1000"),
+                net_eur=Decimal("900"),
+                source="manual",
+            ),
+            Transaction(
+                account_id=acct_id,
+                date=date(2024, 6, 1),
+                kind="transfer_out",
+                net_native=Decimal("-200"),
+                net_eur=Decimal("-180"),
+                source="manual",
+            ),
+        ]
+        session.add_all(txns)
+        session.flush()
+
+        cashflows = metrics_service.build_portfolio_cashflows(txns)
+
+        # transfer_in (amount 900) ⇒ negative flow; transfer_out (amount -180)
+        # ⇒ positive flow — exactly the deposit/withdrawal sign convention.
+        assert [(cf.date, cf.amount) for cf in cashflows] == [
+            (date(2024, 1, 1), Decimal("-900")),
+            (date(2024, 6, 1), Decimal("180")),
+        ]
+
+
 class TestExpenseAndMtdMetrics:
     """Parity KPIs ported from the spreadsheet's ``Total`` block."""
 

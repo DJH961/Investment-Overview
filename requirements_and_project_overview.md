@@ -169,7 +169,7 @@ The unified ledger. **Every** position change, dividend, and cash movement is on
 - `withdrawal` — external cash out. `instrument_id` NULL.
 - `interest` — bank interest credited (Savings). `instrument_id` NULL.
 - `fee` — standalone fee. `instrument_id` NULL.
-- `transfer_in` / `transfer_out` — for inter-account or in-kind moves; out of scope v1 but reserved.
+- `transfer_in` / `transfer_out` — inter-account or in-kind moves. Counted as external cash flows (in like a deposit, out like a withdrawal), so a transfer between two tracked accounts nets to zero at the portfolio level while a boundary-crossing move is captured as a contribution/withdrawal.
 - `split` — stock split adjustment; quantity = new shares minus old; price = 0; net = 0.
 
 ##### Sign conventions
