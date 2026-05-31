@@ -4,15 +4,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain.currency import (
+    dual_currency_amounts,
+    lookup_rate_with_forward_fill,
+)
 from investment_dashboard.domain.returns import Cashflow, xirr
 from investment_dashboard.models import TransactionKind
-from investment_dashboard.repositories import transactions_repo
-from investment_dashboard.services import snapshots_service
+from investment_dashboard.repositories import fx_repo, prices_repo, transactions_repo
+from investment_dashboard.services import prices_service, snapshots_service
 from investment_dashboard.services.metrics_service import (
     PortfolioMetrics,
     compute_portfolio_metrics,
@@ -21,9 +25,9 @@ from investment_dashboard.services.positions_service import (
     Position,
     compute_positions,
 )
-from investment_dashboard.ui.money_format import dual_money
 
 ZERO = Decimal(0)
+_CENT = Decimal("0.01")
 
 #: Time-range options for the Overview value-over-time chart. ``None`` means
 #: "all time" (start at the first transaction). Labels match the user's
@@ -108,20 +112,38 @@ class TreemapDatum:
 class InstrumentMetrics:
     """Per-instrument return figures mirroring the spreadsheet's ``Lots`` block.
 
-    All ratios are fractions (``0.12`` = +12 %). ``xirr`` is the
-    money-weighted annualised return computed from the instrument's own
-    EUR cashflow stream plus its terminal mark; the remaining figures are
-    dividend-inclusive simple-growth measures in the instrument's native
-    currency. Any field that can't be computed (no cost basis, no
-    start-of-year mark) is ``None`` so the renderer shows an em dash.
+    All ratios are fractions (``0.12`` = +12 %). The legacy ``xirr`` /
+    ``total_growth_pct`` / ``ytd_growth_pct`` / ``capital_gain_native`` fields
+    are retained for the JSON read-model / API. The v2.8.2 ``*_eur`` / ``*_usd``
+    fields are the ones the Overview table renders: every money figure is the
+    real per-currency value (cost basis converted at each buy's **trade-date**
+    FX, current value at today's FX) rounded to the cent, and every return is
+    computed independently per currency. ``None`` means "not computable" (no
+    cost basis / no prior price) so the renderer shows an em dash.
     """
 
     instrument_id: int
+    # Legacy native-currency figures (kept for readmodels / API back-compat).
     xirr: Decimal | None
     total_growth_pct: Decimal | None
     ytd_growth_pct: Decimal | None
     capital_gain_native: Decimal
     expense_ratio: Decimal | None
+    # v2.8.2 per-currency figures (drive the Overview table).
+    cost_basis_eur: Decimal = ZERO
+    cost_basis_usd: Decimal = ZERO
+    current_value_eur: Decimal = ZERO
+    current_value_usd: Decimal = ZERO
+    capital_gain_eur: Decimal = ZERO
+    capital_gain_usd: Decimal = ZERO
+    total_growth_eur: Decimal | None = None
+    total_growth_usd: Decimal | None = None
+    xirr_eur: Decimal | None = None
+    xirr_usd: Decimal | None = None
+    ytd_growth_eur: Decimal | None = None
+    ytd_growth_usd: Decimal | None = None
+    daily_growth_eur: Decimal | None = None
+    daily_growth_usd: Decimal | None = None
 
 
 def get_metrics(session: Session, *, as_of: date | None = None) -> PortfolioMetrics:
@@ -132,80 +154,213 @@ def get_positions(session: Session, *, as_of: date | None = None) -> list[Positi
     return compute_positions(session, as_of=as_of)
 
 
-def compute_instrument_metrics(
+def _convert_native(
+    value_native: Decimal,
+    native_currency: str,
+    on: date,
+    eur_to_usd: dict[date, Decimal],
+    fallback_rate: Decimal | None,
+) -> tuple[Decimal, Decimal]:
+    """Convert a positive native-currency value to ``(eur, usd)`` at trade-date FX.
+
+    Thin wrapper over :func:`dual_currency_amounts` that coerces the missing
+    legs to :data:`ZERO` so cost-basis accumulation never trips over a sparse
+    FX history (the boot refresh backfills rates to the earliest trade date).
+    """
+    eur, usd = dual_currency_amounts(
+        native_currency=native_currency,
+        net_native=value_native,
+        net_eur=None,
+        on=on,
+        eur_to_usd=eur_to_usd,
+        fallback_rate=fallback_rate,
+    )
+    return (eur or ZERO), (usd or ZERO)
+
+
+def compute_instrument_metrics(  # noqa: PLR0915
     session: Session,
     positions: list[Position],
     *,
     as_of: date | None = None,
 ) -> dict[int, InstrumentMetrics]:
-    """Per-instrument XIRR + dividend-inclusive growth, keyed by instrument id.
+    """Per-instrument returns in EUR **and** USD, keyed by instrument id.
 
-    Reuses the same domain math as the portfolio-level KPIs but scopes each
-    cashflow stream to a single instrument. ``positions`` supplies the
-    terminal marks and cost bases so the caller controls the ``as_of`` /
-    currency conventions consistently with the rest of the page.
+    Every money figure is computed per currency: the cost basis (and cash
+    dividends) are converted at each transaction's own trade-date FX rate,
+    while the current value uses today's FX — so the capital gain is "what I
+    could cash out today vs what it cost me back then". XIRR, total growth,
+    YTD growth and single-day (daily) growth are each computed twice, once per
+    wallet, mirroring the portfolio-level KPIs.
     """
     as_of = as_of or date.today()
     txns = list(transactions_repo.list_transactions(session, end=as_of))
+    eur_to_usd = fx_repo.get_rates(session, base="EUR", quote="USD")
+    today_rate = lookup_rate_with_forward_fill(eur_to_usd, as_of)
 
-    # EUR cashflows for XIRR + YTD net purchases (native), grouped by instrument.
     year_start = date(as_of.year, 1, 1)
     eur_flows: dict[int, list[Cashflow]] = {}
-    ytd_net_invested_native: dict[int, Decimal] = {}
+    usd_flows: dict[int, list[Cashflow]] = {}
+    cost_eur: dict[int, Decimal] = {}
+    cost_usd: dict[int, Decimal] = {}
+    div_eur: dict[int, Decimal] = {}
+    div_usd: dict[int, Decimal] = {}
+    ytd_invested_eur: dict[int, Decimal] = {}
+    ytd_invested_usd: dict[int, Decimal] = {}
     for t in txns:
-        if t.instrument_id is None:
+        iid = t.instrument_id
+        if iid is None:
             continue
-        if t.kind in {
+        native = t.account.native_currency if t.account else "EUR"
+        eur, usd = dual_currency_amounts(
+            native_currency=native,
+            net_native=t.net_native,
+            net_eur=t.net_eur,
+            on=t.date,
+            eur_to_usd=eur_to_usd,
+            fallback_rate=today_rate,
+        )
+        eur = eur or ZERO
+        usd = usd or ZERO
+        kind = t.kind
+        if kind == TransactionKind.BUY.value:
+            # Buy legs are negative (cash out) ⇒ cost basis is the negation.
+            cost_eur[iid] = cost_eur.get(iid, ZERO) - eur
+            cost_usd[iid] = cost_usd.get(iid, ZERO) - usd
+        elif kind == TransactionKind.DIVIDEND_REINVEST.value and t.price_native is not None:
+            val_native = (t.quantity or ZERO) * t.price_native
+            e, u = _convert_native(val_native, native, t.date, eur_to_usd, today_rate)
+            cost_eur[iid] = cost_eur.get(iid, ZERO) + e
+            cost_usd[iid] = cost_usd.get(iid, ZERO) + u
+        elif kind == TransactionKind.DIVIDEND_CASH.value:
+            div_eur[iid] = div_eur.get(iid, ZERO) + eur
+            div_usd[iid] = div_usd.get(iid, ZERO) + usd
+        if kind in {
             TransactionKind.BUY.value,
             TransactionKind.SELL.value,
             TransactionKind.DIVIDEND_CASH.value,
         }:
-            net_eur = t.net_eur if t.net_eur is not None else (t.net_native or ZERO)
-            # Buy legs are already negative (cash out); sells / cash dividends
-            # are positive — exactly the XIRR sign convention, so pass through.
-            eur_flows.setdefault(t.instrument_id, []).append(Cashflow(date=t.date, amount=net_eur))
-        if t.date >= year_start and t.kind in {
+            eur_flows.setdefault(iid, []).append(Cashflow(date=t.date, amount=eur))
+            usd_flows.setdefault(iid, []).append(Cashflow(date=t.date, amount=usd))
+        if t.date >= year_start and kind in {
             TransactionKind.BUY.value,
             TransactionKind.SELL.value,
         }:
-            net_native = t.net_native or ZERO
-            ytd_net_invested_native[t.instrument_id] = (
-                ytd_net_invested_native.get(t.instrument_id, ZERO) - net_native
-            )
+            ytd_invested_eur[iid] = ytd_invested_eur.get(iid, ZERO) - eur
+            ytd_invested_usd[iid] = ytd_invested_usd.get(iid, ZERO) - usd
 
-    # Start-of-year native value per instrument (best-effort, for YTD growth).
-    start_value_native: dict[int, Decimal] = {
-        p.instrument.id: p.current_value_native
-        for p in compute_positions(session, as_of=year_start)
+    # Start-of-year value per instrument in EUR (best-effort, for YTD growth);
+    # USD parallel uses the FX rate on the first of the year.
+    fx_year_start = lookup_rate_with_forward_fill(eur_to_usd, year_start) or today_rate
+    start_value_eur: dict[int, Decimal] = {
+        p.instrument.id: p.current_value_eur for p in compute_positions(session, as_of=year_start)
     }
 
     out: dict[int, InstrumentMetrics] = {}
     for p in positions:
         iid = p.instrument.id
-        cost = p.cost_basis_native
-        div = p.cumulative_dividends_cash_native
-        gain = p.current_value_native + div - cost
-        growth = (gain / cost) if cost != ZERO else None
-        instr_xirr = xirr(
-            eur_flows.get(iid, []),
-            as_of=as_of,
-            terminal_value=p.current_value_eur,
+        native = p.account.native_currency
+        c_eur = _round_cent(cost_eur.get(iid, ZERO))
+        c_usd = _round_cent(cost_usd.get(iid, ZERO))
+        cv_eur = p.current_value_eur
+        cv_usd = cv_eur * today_rate if today_rate not in (None, 0) else cv_eur
+        d_eur = div_eur.get(iid, ZERO)
+        d_usd = div_usd.get(iid, ZERO)
+        gain_eur = _round_cent(cv_eur + d_eur - c_eur)
+        gain_usd = _round_cent(cv_usd + d_usd - c_usd)
+        growth_eur = (gain_eur / c_eur) if c_eur != ZERO else None
+        growth_usd = (gain_usd / c_usd) if c_usd != ZERO else None
+        xirr_eur = xirr(eur_flows.get(iid, []), as_of=as_of, terminal_value=cv_eur)
+        xirr_usd = xirr(usd_flows.get(iid, []), as_of=as_of, terminal_value=cv_usd)
+        sv_eur = start_value_eur.get(iid, ZERO)
+        sv_usd = sv_eur * fx_year_start if fx_year_start not in (None, 0) else sv_eur
+        ytd_eur = _instrument_ytd_growth(
+            start_value=sv_eur,
+            current_value=cv_eur,
+            net_invested=ytd_invested_eur.get(iid, ZERO),
         )
-        ytd_growth = _instrument_ytd_growth(
-            start_value=start_value_native.get(iid, ZERO),
-            current_value=p.current_value_native,
-            net_invested=ytd_net_invested_native.get(iid, ZERO),
+        ytd_usd = _instrument_ytd_growth(
+            start_value=sv_usd,
+            current_value=cv_usd,
+            net_invested=ytd_invested_usd.get(iid, ZERO),
+        )
+        daily_eur, daily_usd = _instrument_daily_growth(
+            session,
+            instrument_id=iid,
+            shares=p.shares,
+            native_currency=native,
+            as_of=as_of,
+            eur_to_usd=eur_to_usd,
+            today_rate=today_rate,
         )
         ter = p.effective.expense_ratio if p.effective is not None else p.instrument.expense_ratio
+        # Legacy native-currency figures (readmodels / API back-compat).
+        cost_native = p.cost_basis_native
+        gain_native = p.current_value_native + p.cumulative_dividends_cash_native - cost_native
         out[iid] = InstrumentMetrics(
             instrument_id=iid,
-            xirr=instr_xirr,
-            total_growth_pct=growth,
-            ytd_growth_pct=ytd_growth,
-            capital_gain_native=gain,
+            xirr=xirr_eur,
+            total_growth_pct=((gain_native / cost_native) if cost_native != ZERO else None),
+            ytd_growth_pct=ytd_eur,
+            capital_gain_native=gain_native,
             expense_ratio=ter,
+            cost_basis_eur=c_eur,
+            cost_basis_usd=c_usd,
+            current_value_eur=_round_cent(cv_eur),
+            current_value_usd=_round_cent(cv_usd),
+            capital_gain_eur=gain_eur,
+            capital_gain_usd=gain_usd,
+            total_growth_eur=growth_eur,
+            total_growth_usd=growth_usd,
+            xirr_eur=xirr_eur,
+            xirr_usd=xirr_usd,
+            ytd_growth_eur=ytd_eur,
+            ytd_growth_usd=ytd_usd,
+            daily_growth_eur=daily_eur,
+            daily_growth_usd=daily_usd,
         )
     return out
+
+
+def _round_cent(value: Decimal) -> Decimal:
+    """Round a money amount to the nearest cent (half-up)."""
+    return value.quantize(_CENT, rounding=ROUND_HALF_UP)
+
+
+def _instrument_daily_growth(
+    session: Session,
+    *,
+    instrument_id: int,
+    shares: Decimal,
+    native_currency: str,
+    as_of: date,
+    eur_to_usd: dict[date, Decimal],
+    today_rate: Decimal | None,
+) -> tuple[Decimal | None, Decimal | None]:
+    """Single-day growth for one instrument, in EUR and USD.
+
+    Values the holding on the two most recent print dates (forward-filled
+    closes) and converts each with the FX rate of *that* day, so the USD and
+    EUR figures differ only by the (small) intraday FX move — exactly the
+    per-currency daily growth the KPI strip shows, but per instrument.
+    """
+    dates = prices_repo.recent_price_dates(session, [instrument_id], on_or_before=as_of, limit=2)
+    if len(dates) < 2:
+        return None, None
+    last_date, prev_date = dates[0], dates[1]
+    close_last = prices_service.close_as_of(session, instrument_id, last_date)
+    close_prev = prices_service.close_as_of(session, instrument_id, prev_date)
+    if close_last is None or close_prev is None:
+        return None, None
+    e_last, u_last = _convert_native(
+        shares * close_last, native_currency, last_date, eur_to_usd, today_rate
+    )
+    e_prev, u_prev = _convert_native(
+        shares * close_prev, native_currency, prev_date, eur_to_usd, today_rate
+    )
+    growth_eur = (e_last - e_prev) / e_prev if e_prev > ZERO else None
+    growth_usd = (u_last - u_prev) / u_prev if u_prev > ZERO else None
+    return growth_eur, growth_usd
 
 
 def _instrument_ytd_growth(
@@ -279,20 +434,21 @@ def compute_market_verdict(
     return MarketVerdict(symbol, portfolio_return, benchmark_return, beating)
 
 
-def _to_eur_usd(
-    amount_native: Decimal, native: str, fx_rate: Decimal | None
+def _today_dual(
+    value_native: Decimal, native: str, fx_rate: Decimal | None
 ) -> tuple[Decimal | None, Decimal | None]:
-    """Convert a native-currency amount to (EUR, USD) using today's spot FX.
+    """Convert a native amount to ``(eur, usd)`` using today's spot ``fx_rate``.
 
-    ``fx_rate`` is EUR→USD. Returns ``(None, None)`` when the FX rate is
-    missing for non-EUR/USD accounts.
+    Only used as a degraded fallback in :func:`position_rows` when no enriched
+    per-instrument metrics are supplied; the live page always passes metrics
+    (trade-date FX). ``fx_rate`` is EUR→USD.
     """
     if native == "EUR":
-        eur = amount_native
-        usd = amount_native * fx_rate if fx_rate is not None and fx_rate != 0 else None
+        eur = value_native
+        usd = value_native * fx_rate if fx_rate not in (None, 0) else None
     elif native == "USD":
-        usd = amount_native
-        eur = amount_native / fx_rate if fx_rate is not None and fx_rate != 0 else None
+        usd = value_native
+        eur = value_native / fx_rate if fx_rate not in (None, 0) else None
     else:  # pragma: no cover - DKK removed in v2.4
         eur = usd = None
     return eur, usd
@@ -307,37 +463,41 @@ def position_rows(
 ) -> list[dict[str, Any]]:
     """Shape positions for the AG-Grid table on the overview page.
 
-    v2.5 — every monetary column is rendered as a dual ``$X / €Y`` pair
-    via :func:`dual_money` so EUR and USD are always shown together.
-    ``display_currency`` controls which currency appears first;
-    ``fx_rate`` (EUR→USD) is used to translate values to the
-    non-native currency. The legacy single-currency keys
-    (``current_value_usd``, ``current_value_eur``) are retained for
-    backwards compatibility with any caller / test that still reads
-    them.
-
-    When ``metrics`` (from :func:`compute_instrument_metrics`) is supplied,
-    each row is enriched with the per-instrument expense ratio, XIRR,
-    dividend-inclusive total growth, YTD growth, and capital gain — the
-    spreadsheet's ``Total``/``Lots`` per-holding return block. The
-    ``*_signed`` companions carry the raw float so AG-Grid can colour the
-    cell by sign.
+    Every money / return value is carried per currency as a numeric companion
+    (``*_eur_num`` / ``*_usd_num`` for money, ``*_eur_signed`` / ``*_usd_signed``
+    for ratios) so the page can render **one currency at a time** (the display
+    toggle) while still sorting by the underlying value. When ``metrics`` (from
+    :func:`compute_instrument_metrics`) is supplied the figures are the real
+    per-currency numbers — cost basis at trade-date FX, capital gain vs today's
+    FX, plus per-currency XIRR, total growth, YTD growth and single-day growth.
+    Without metrics it falls back to a today's-spot conversion of the native
+    cost basis / value, with the return columns left blank.
     """
     rows: list[dict[str, Any]] = []
     metrics = metrics or {}
     for p in positions:
         native = p.account.native_currency
-        value_eur, value_usd = (
-            (p.current_value_eur, p.current_value_eur * fx_rate if fx_rate else None)
-            if native == "EUR"
-            else _to_eur_usd(p.current_value_native, native, fx_rate)
-        )
-        cost_eur, cost_usd = _to_eur_usd(p.cost_basis_native, native, fx_rate)
-        gain_eur = value_eur - cost_eur if value_eur is not None and cost_eur is not None else None
-        gain_usd = value_usd - cost_usd if value_usd is not None and cost_usd is not None else None
-        eff = p.effective
         im = metrics.get(p.instrument.id)
-        growth = im.total_growth_pct if im is not None else _growth_fraction(p)
+        if im is not None:
+            cb_eur, cb_usd = im.cost_basis_eur, im.cost_basis_usd
+            v_eur, v_usd = im.current_value_eur, im.current_value_usd
+            g_eur, g_usd = im.capital_gain_eur, im.capital_gain_usd
+            tg_eur, tg_usd = im.total_growth_eur, im.total_growth_usd
+            xirr_eur, xirr_usd = im.xirr_eur, im.xirr_usd
+            ytd_eur, ytd_usd = im.ytd_growth_eur, im.ytd_growth_usd
+            daily_eur, daily_usd = im.daily_growth_eur, im.daily_growth_usd
+            ter = im.expense_ratio
+        else:
+            cb_eur, cb_usd = _today_dual(p.cost_basis_native, native, fx_rate)
+            v_eur = p.current_value_eur
+            v_usd = p.current_value_eur * fx_rate if fx_rate not in (None, 0) else None
+            g_eur = (v_eur - cb_eur) if (v_eur is not None and cb_eur is not None) else None
+            g_usd = (v_usd - cb_usd) if (v_usd is not None and cb_usd is not None) else None
+            tg_eur = (g_eur / cb_eur) if (g_eur is not None and cb_eur) else None
+            tg_usd = (g_usd / cb_usd) if (g_usd is not None and cb_usd) else None
+            xirr_eur = xirr_usd = ytd_eur = ytd_usd = daily_eur = daily_usd = None
+            ter = None
+        eff = p.effective
         rows.append(
             {
                 "symbol": p.instrument.symbol,
@@ -348,44 +508,28 @@ def position_rows(
                 "current_price": (
                     f"{p.current_price_native:,.4f}" if p.current_price_native is not None else ""
                 ),
-                # Legacy single-currency keys (kept for back-compat).
-                "expense_ratio": _fmt_pct(im.expense_ratio if im is not None else None),
-                "cost_basis_native": f"{p.cost_basis_native:,.2f}",
-                "current_value_native": f"{p.current_value_native:,.2f}",
-                "current_value_usd": (f"{value_usd:,.2f}" if value_usd is not None else ""),
-                "current_value_eur": (
-                    f"{value_eur:,.2f}" if value_eur is not None else f"{p.current_value_eur:,.2f}"
-                ),
-                # v2.5 dual columns (formatted string, kept for back-compat).
-                "value_dual": dual_money(value_eur, value_usd, primary=display_currency),
-                "cost_basis_dual": dual_money(cost_eur, cost_usd, primary=display_currency),
-                "capital_gain_dual": dual_money(gain_eur, gain_usd, primary=display_currency),
-                # v2.8 — numeric per-currency companions so AG-Grid can sort
-                # each money column by value (not by the formatted tuple).
-                "value_eur_num": _num(value_eur),
-                "value_usd_num": _num(value_usd),
-                "cost_basis_eur_num": _num(cost_eur),
-                "cost_basis_usd_num": _num(cost_usd),
-                "capital_gain_eur_num": _num(gain_eur),
-                "capital_gain_usd_num": _num(gain_usd),
-                "capital_gain_native": (f"{im.capital_gain_native:,.2f}" if im is not None else ""),
-                "total_growth_pct": _fmt_pct(growth),
-                "total_growth_signed": _signed(growth),
-                "xirr": _fmt_pct(im.xirr if im is not None else None),
-                "xirr_signed": _signed(im.xirr if im is not None else None),
-                "ytd_growth_pct": _fmt_pct(im.ytd_growth_pct if im is not None else None),
-                "ytd_growth_signed": _signed(im.ytd_growth_pct if im is not None else None),
+                "expense_ratio": _fmt_pct(ter),
+                # Per-currency numeric companions (one currency rendered at a
+                # time via the display toggle; both kept so the toggle is
+                # instant and each column sorts by its own value).
+                "cost_basis_eur_num": _num(cb_eur),
+                "cost_basis_usd_num": _num(cb_usd),
+                "value_eur_num": _num(v_eur),
+                "value_usd_num": _num(v_usd),
+                "capital_gain_eur_num": _num(g_eur),
+                "capital_gain_usd_num": _num(g_usd),
+                "total_growth_eur_signed": _signed(tg_eur),
+                "total_growth_usd_signed": _signed(tg_usd),
+                "xirr_eur_signed": _signed(xirr_eur),
+                "xirr_usd_signed": _signed(xirr_usd),
+                "ytd_eur_signed": _signed(ytd_eur),
+                "ytd_usd_signed": _signed(ytd_usd),
+                "daily_eur_signed": _signed(daily_eur),
+                "daily_usd_signed": _signed(daily_usd),
                 "display_currency": display_currency,
             }
         )
     return rows
-
-
-def _growth_fraction(p: Position) -> Decimal | None:
-    """Price-only growth fraction — fallback when no enriched metrics exist."""
-    if p.cost_basis_native == ZERO:
-        return None
-    return (p.current_value_native - p.cost_basis_native) / p.cost_basis_native
 
 
 def _fmt_pct(value: Decimal | None) -> str:
