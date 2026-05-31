@@ -111,7 +111,23 @@ def parse_fidelity_csv(content: str) -> Iterable[ParsedTransactionRow]:
         commission = _parse_decimal(row.get("commission")) or Decimal(0)
         fees = _parse_decimal(row.get("fees")) or Decimal(0)
         amount = _parse_decimal(row.get("amount"))
+        raw_amount = amount  # preserved for a stable external_id below
         total_fees = commission + fees
+
+        # Share distribution vs cash distribution. Fidelity books a stock
+        # split / in-kind share distribution as a DISTRIBUTION row whose
+        # ``Type`` is ``Shares`` (blank price, a share Quantity, and an Amount
+        # that is the *cost-basis value*, not cash that moved). The action map
+        # can't tell it apart from a cash payout, so it lands as
+        # ``dividend_cash``. Treat the share form as a ``split`` (zero-cost
+        # share add) instead: the shares belong in the holding and the figure
+        # is not income. Counting it as a cash dividend both dropped the shares
+        # and invented a phantom dividend.
+        row_type = (row.get("type") or "").strip().lower()
+        if kind == "dividend_cash" and row_type == "shares" and quantity not in (None, Decimal(0)):
+            kind = "split"
+            amount = None  # no cash moved; the shares carry the value
+            price = None
 
         # Fidelity may report Price to 2 decimals — recompute for precision
         # when we have quantity > 0 and an amount (spec §5.1 caveat).
@@ -130,7 +146,12 @@ def parse_fidelity_csv(content: str) -> Iterable[ParsedTransactionRow]:
         gross = quantity * price if (quantity is not None and price is not None) else None
 
         external_id = _hash_external_id(
-            run_date.isoformat(), action, symbol or "", quantity or "", price or "", amount or ""
+            run_date.isoformat(),
+            action,
+            symbol or "",
+            quantity or "",
+            price or "",
+            raw_amount or "",
         )
 
         results.append(

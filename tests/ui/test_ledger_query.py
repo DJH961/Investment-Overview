@@ -171,3 +171,62 @@ def test_net_eur_derived_from_trade_date_fx(session: Session) -> None:
     assert row["net_usd"] == "$-2,500.00"
     # -2500 USD / 1.25 = -2000 EUR (trade-date rate, not the 1.10 fallback).
     assert row["net_eur"] == "€-2,000.00"
+
+
+def _seed_with_settlement_leg(session: Session) -> None:
+    acct = accounts_repo.create_account(
+        session,
+        broker="vanguard",
+        account_label="Vanguard",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    vmfxx = instruments_repo.get_or_create(session, symbol="VMFXX")
+    session.add_all(
+        [
+            Transaction(
+                account_id=acct.id,
+                date=date(2024, 1, 5),
+                kind="deposit",
+                net_native=Decimal("1000.00"),
+                source=TransactionSource.IMPORT_VANGUARD_XLSX,
+                external_id="dep-1",
+            ),
+            # Auto-generated settlement leg paired to the deposit.
+            Transaction(
+                account_id=acct.id,
+                date=date(2024, 1, 5),
+                kind="buy",
+                instrument_id=vmfxx.id,
+                quantity=Decimal("1000.00"),
+                price_native=Decimal("1"),
+                net_native=Decimal("-1000.00"),
+                source=TransactionSource.IMPORT_VANGUARD_XLSX,
+                external_id="dep-1:vmfxx",
+            ),
+        ]
+    )
+    session.flush()
+
+
+def test_settlement_sweeps_hidden_by_default(session: Session) -> None:
+    _seed_with_settlement_leg(session)
+    rows = list_ledger_rows(session)
+    # The :vmfxx settlement leg is hidden; the genuine deposit remains.
+    assert len(rows) == 1
+    assert rows[0]["kind"] == "deposit"
+
+
+def test_settlement_sweeps_shown_when_requested(session: Session) -> None:
+    _seed_with_settlement_leg(session)
+    rows = list_ledger_rows(session, LedgerFilters(hide_settlement_sweeps=False))
+    assert len(rows) == 2
+    assert any(r["symbol"] == "VMFXX" for r in rows)
+
+
+def test_summary_excludes_hidden_sweeps(session: Session) -> None:
+    _seed_with_settlement_leg(session)
+    summary = summarize_ledger(session)
+    # Only the deposit is counted; the hidden VMFXX buy leg is excluded.
+    assert summary.count == 1
+    assert summary.buy_count == 0

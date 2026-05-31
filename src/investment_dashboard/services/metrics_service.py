@@ -21,6 +21,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain import dividends
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.returns import (
     Cashflow,
@@ -238,10 +239,30 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         start=ZERO,
     )
     net_contributions_eur = contributions_eur + withdrawals_eur  # withdrawals are negative
-    dividends_cash_eur = sum(
-        (_txn_eur_amount(t) for t in txns if t.kind == TransactionKind.DIVIDEND_CASH.value),
-        start=ZERO,
-    )
+
+    # Dividend *income* (spec §6.1): every distribution counted once — the
+    # reinvested value plus un-reinvested cash — matching the spreadsheet's
+    # Dividends column (incl. VMFXX settlement-fund interest, which has no
+    # separate cash leg). Realized cash is the subset that actually left the
+    # portfolio; reinvested distributions are already in ``total_value`` so
+    # only realized cash may be added back to reconstruct capital gain.
+    reinvest_keys = dividends.reinvest_keys(list(txns))
+
+    def _dividends(*, include_reinvested: bool) -> tuple[Decimal, Decimal]:
+        eur_total = ZERO
+        usd_total = ZERO
+        for t in txns:
+            div_eur, div_usd = dividends.income_dual(
+                t, reinvest_keys, eur_to_usd=eur_to_usd, include_reinvested=include_reinvested
+            )
+            if div_eur is not None:
+                eur_total += div_eur
+            if div_usd is not None:
+                usd_total += div_usd
+        return eur_total, usd_total
+
+    dividends_income_eur, dividends_income_usd = _dividends(include_reinvested=True)
+    dividends_realized_eur, dividends_realized_usd = _dividends(include_reinvested=False)
 
     contributions_usd = sum(
         (_usd_amount(t) for t in txns if t.kind in _CONTRIBUTION_KINDS),
@@ -252,10 +273,6 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         start=ZERO,
     )
     net_contributions_usd = contributions_usd + withdrawals_usd
-    dividends_cash_usd = sum(
-        (_usd_amount(t) for t in txns if t.kind == TransactionKind.DIVIDEND_CASH.value),
-        start=ZERO,
-    )
 
     total_value_eur = positions_service.total_portfolio_value(session, as_of=as_of)
     # Today's spot for the terminal mark-to-market USD value. We use spot
@@ -278,19 +295,19 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     cap_gain_eur = capital_gain(
         contributions=net_contributions_eur,
         current_value=total_value_eur,
-        cumulative_dividends_cash=dividends_cash_eur,
+        cumulative_dividends_cash=dividends_realized_eur,
     )
     cap_gain_usd = (
         capital_gain(
             contributions=net_contributions_usd,
             current_value=total_value_usd,
-            cumulative_dividends_cash=dividends_cash_usd,
+            cumulative_dividends_cash=dividends_realized_usd,
         )
         if total_value_usd is not None
         else None
     )
     growth_pct_legacy = total_growth_pct(
-        net_contributions_eur, total_value_eur + dividends_cash_eur
+        net_contributions_eur, total_value_eur + dividends_realized_eur
     )
 
     cashflows_eur = build_portfolio_cashflows(
@@ -412,15 +429,16 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         positions_service.compute_positions(session, as_of=as_of)
     )
 
-    # Trailing dividend yield = cash dividends ÷ current closing balance.
-    dividend_yield_pct = dividends_cash_eur / total_value_eur if total_value_eur > 0 else None
+    # Trailing dividend yield = total dividend income ÷ current closing balance
+    # (matches the spreadsheet's Dividends ÷ Closing Balance).
+    dividend_yield_pct = dividends_income_eur / total_value_eur if total_value_eur > 0 else None
 
     return PortfolioMetrics(
         as_of=as_of,
         first_cashflow_date=first_cashflow_date,
         total_value_eur=total_value_eur,
         total_contributions_eur=net_contributions_eur,
-        total_dividends_cash_eur=dividends_cash_eur,
+        total_dividends_cash_eur=dividends_income_eur,
         capital_gain_eur=cap_gain_eur,
         total_growth_pct=growth_pct_legacy,
         xirr=portfolio_xirr_eur,
@@ -429,7 +447,7 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         total_growth_compounded_eur=total_growth_eur,
         total_value_usd=total_value_usd,
         total_contributions_usd=net_contributions_usd,
-        total_dividends_cash_usd=dividends_cash_usd,
+        total_dividends_cash_usd=dividends_income_usd,
         capital_gain_usd=cap_gain_usd,
         xirr_usd=portfolio_xirr_usd,
         ytd_xirr_usd=ytd_xirr_usd,

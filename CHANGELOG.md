@@ -12,6 +12,50 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.10.0] — 2026-05-31
+
+Reconciles the developer audit export with the authoritative `Investments.xlsx`
+after it diverged on four distinct valuation defects, plus two UX/robustness
+improvements.
+
+### Added
+- **Show settlement sweeps toggle.** Auto-generated Vanguard settlement legs
+  (`external_id … :vmfxx`) are now hidden from `/transactions` by default via a
+  new `LedgerFilters.hide_settlement_sweeps`, with a **Show settlement sweeps**
+  toggle to bring them back. They remain in the ledger, so VMFXX valuation is
+  unchanged (`ui/pages/_ledger_query`, `ui/pages/transactions`).
+
+### Fixed
+- **Fidelity share distributions are no longer booked as dividends.** Schwab's
+  2-for-1 `SCHK` distribution arrives as `DISTRIBUTION, Type=Shares, blank
+  price, qty=26.1` and was mapped unconditionally to `dividend_cash` — dropping
+  the shares and inventing a ~$728.97 dividend. The `Type=Shares` form (non-zero
+  qty, no price) is now reclassified to `split`; genuine cash dividends
+  (`Type=Cash`, qty 0) are untouched. Alembic `0007` repairs already-imported
+  rows so `SCHK` resolves to 53.145 shares and the 2024 dividend spike is removed
+  (`adapters/fidelity/parser`, migration `0007`).
+- **Single dividend-income definition.** Dividend income is now recognised once
+  per distribution: reinvested legs valued at `quantity × price` (capturing VMFXX
+  interest whose cash leg is `$0`), paired cash legs skipped, and un-reinvested
+  cash counted. Metrics separate **income** (KPI / yield / yearly) from
+  **realized cash** (capital-gain add-back), which previously double-counted
+  reinvested dividends (`domain/dividends`, `metrics_service`).
+- **Withdrawal sign convention.** The deposits and period queries re-subtracted
+  already-negative withdrawals (effectively adding them) while `metrics_service`
+  netted them correctly. All paths now net withdrawals once, correcting
+  contributions, net flow, growth % and XIRR (`_deposits_query`,
+  `_period_query`).
+- **Historic valuation leading-gap backfill.** Price / FX refresh only extended
+  the cache forward, so a cache starting later than the earliest needed date left
+  early months valuing holdings at zero (~11–13% understatement). Refresh now
+  refetches from the earliest needed date when a leading gap exists
+  (`prices_repo.earliest_price_date`, `fx_repo.earliest_rate_date`,
+  `prices_service`, `fx_service`).
+- **Early non-reinvested dividends.** Income recognition now treats a
+  `dividend_cash` row with no paired reinvest on the same
+  `(account, instrument, date)` as income, covering the early cash-dividend
+  period (`domain/dividends`).
+
 ## [2.9.8] — 2026-05-31
 
 ### Added

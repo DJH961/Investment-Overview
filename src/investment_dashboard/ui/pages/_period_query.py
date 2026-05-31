@@ -32,6 +32,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
+from investment_dashboard.domain import dividends
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.returns import (
     total_growth_pct_compounded,
@@ -385,22 +386,33 @@ def aggregate(  # noqa: PLR0912, PLR0915
     #: Signed external cash flow (deposit/transfer_in +, withdrawal/transfer_out −)
     #: per calendar date in EUR — feeds the daily-chained TWR.
     flows_by_date_eur: dict[date, Decimal] = {}
+    reinvest_keys = dividends.reinvest_keys(txns)
     for t in txns:
         key = _period_key(t.date, monthly=monthly)
         b = buckets.setdefault(key, {"contrib": ZERO, "div": ZERO, "int": ZERO})
+        if t.kind in ("dividend_cash", "dividend_reinvest"):
+            # Dividend *income* (spec §6.1): reinvested distributions counted
+            # at their reinvested value plus un-reinvested cash, so the column
+            # matches the spreadsheet (which records reinvested amounts, incl.
+            # VMFXX settlement-fund interest that has no separate cash leg).
+            div_eur, _ = dividends.income_dual(t, reinvest_keys, eur_to_usd=eur_to_usd)
+            if div_eur is not None:
+                b["div"] += div_eur
+            continue
         amt = _amount_eur(t, eur_to_usd=eur_to_usd)
         if amt is None:
             # Unconvertible non-EUR row with no FX history — leave it out of
             # the bucket rather than counting a wrong-magnitude figure.
             continue
-        if t.kind in ("deposit", "transfer_in"):
+        if t.kind in ("deposit", "transfer_in", "withdrawal", "transfer_out"):
+            # net_eur/net_native are signed at write time: deposits/transfer_in
+            # positive, withdrawals/transfer_out negative. Adding the signed
+            # amount nets the flow exactly once — matching metrics_service's
+            # ``contributions + withdrawals`` convention. Subtracting a
+            # withdrawal here would double-count it (a negative minus a
+            # negative), which inflated contributions, net-flow and growth %.
             b["contrib"] += amt
             flows_by_date_eur[t.date] = flows_by_date_eur.get(t.date, ZERO) + amt
-        elif t.kind in ("withdrawal", "transfer_out"):
-            b["contrib"] -= amt
-            flows_by_date_eur[t.date] = flows_by_date_eur.get(t.date, ZERO) - amt
-        elif t.kind == "dividend_cash":
-            b["div"] += amt
         elif t.kind == "interest":
             b["int"] += amt
 
@@ -482,6 +494,14 @@ def aggregate(  # noqa: PLR0912, PLR0915
             for label in buckets:
                 display_buckets[label] = {"contrib": ZERO, "div": ZERO, "int": ZERO}
             for t in txns:
+                key = _period_key(t.date, monthly=monthly)
+                b = display_buckets[key]
+                if t.kind in ("dividend_cash", "dividend_reinvest"):
+                    _, div_usd = dividends.income_dual(t, reinvest_keys, eur_to_usd=eur_to_usd)
+                    div_disp = div_usd if normalised_display_ccy == "USD" else None
+                    if div_disp is not None:
+                        b["div"] += div_disp
+                    continue
                 amt = _amount_in(
                     t,
                     display_currency=normalised_display_ccy,
@@ -489,16 +509,11 @@ def aggregate(  # noqa: PLR0912, PLR0915
                 )
                 if amt is None:
                     continue
-                key = _period_key(t.date, monthly=monthly)
-                b = display_buckets[key]
-                if t.kind in ("deposit", "transfer_in"):
+                if t.kind in ("deposit", "transfer_in", "withdrawal", "transfer_out"):
+                    # Signed-amount convention (see the EUR loop above):
+                    # withdrawals/transfer_out are already negative.
                     b["contrib"] += amt
                     flows_by_date_display[t.date] = flows_by_date_display.get(t.date, ZERO) + amt
-                elif t.kind in ("withdrawal", "transfer_out"):
-                    b["contrib"] -= amt
-                    flows_by_date_display[t.date] = flows_by_date_display.get(t.date, ZERO) - amt
-                elif t.kind == "dividend_cash":
-                    b["div"] += amt
                 elif t.kind == "interest":
                     b["int"] += amt
 

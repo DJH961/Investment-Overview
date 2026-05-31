@@ -31,6 +31,21 @@ def latest_rate_date(session: Session, *, base: str = "EUR", quote: str = "USD")
     return session.scalars(stmt).one_or_none()
 
 
+def earliest_rate_date(session: Session, *, base: str = "EUR", quote: str = "USD") -> date | None:
+    """Oldest cached rate date for ``(base, quote)`` (``None`` if empty).
+
+    Mirrors :func:`investment_dashboard.repositories.prices_repo.earliest_price_date`
+    so the FX refresh can detect a leading gap and backfill earlier dates.
+    """
+    stmt = (
+        select(FxHistory.date)
+        .where(FxHistory.base == base, FxHistory.quote == quote)
+        .order_by(FxHistory.date.asc())
+        .limit(1)
+    )
+    return session.scalars(stmt).one_or_none()
+
+
 def upsert_rates(
     session: Session,
     rates: Mapping[date, Decimal],

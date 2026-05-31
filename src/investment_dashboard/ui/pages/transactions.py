@@ -67,6 +67,7 @@ def register() -> None:
                 "account_id": None,
                 "kind": None,
                 "symbol": None,
+                "show_sweeps": False,
             }
             accounts = _all_accounts()
             account_options = {a.id: a.account_label for a in accounts}
@@ -103,6 +104,14 @@ def register() -> None:
                     label="Symbol",
                     on_change=lambda e: _on_filter("symbol", (e.value or "").upper() or None),
                 ).classes("min-w-[8rem]").props("outlined dense")
+                ui.switch(
+                    "Show settlement sweeps",
+                    value=False,
+                    on_change=lambda e: _on_filter("show_sweeps", bool(e.value)),
+                ).props("dense").tooltip(
+                    "Auto-generated VMFXX settlement legs are hidden by default; "
+                    "they still count towards your VMFXX balance."
+                )
                 ui.space()
                 ui.button(
                     "New transaction",
@@ -156,6 +165,7 @@ def register() -> None:
                             account_id=filters["account_id"],
                             kind=filters["kind"],
                             instrument_symbol=filters["symbol"],
+                            hide_settlement_sweeps=not filters["show_sweeps"],
                         ),
                         fx_rate=fx_rate,
                     )

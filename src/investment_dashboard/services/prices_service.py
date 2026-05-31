@@ -71,11 +71,20 @@ def refresh_prices(
         if instr.id in inactive:
             continue
         latest = prices_repo.latest_price_date(cache, instr.id)
-        start = (
-            max(earliest_needed, latest + timedelta(days=1))
-            if latest is not None
-            else earliest_needed
-        )
+        earliest = prices_repo.earliest_price_date(cache, instr.id)
+        if latest is None:
+            start = earliest_needed
+        elif earliest is not None and earliest > earliest_needed:
+            # Leading gap: cached history starts later than the portfolio needs
+            # (e.g. the first refresh ran before an older transaction existed,
+            # or only extended forward). Refetch from ``earliest_needed`` to
+            # fill the early dates; ``upsert_closes`` is idempotent so the
+            # already-cached tail is rewritten harmlessly. Once filled,
+            # ``earliest`` equals ``earliest_needed`` and the forward-only path
+            # below takes over.
+            start = earliest_needed
+        else:
+            start = max(earliest_needed, latest + timedelta(days=1))
         if start >= today + timedelta(days=1):
             result[instr.symbol] = 0
             continue
