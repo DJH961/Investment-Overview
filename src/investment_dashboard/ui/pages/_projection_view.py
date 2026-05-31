@@ -110,7 +110,11 @@ def build_seed(
     # EUR→USD spot. Prefer the live FX rate; fall back to the ratio implied
     # by the dual-currency portfolio value; finally 1.0 so the page renders.
     rate = display_currency_service.current_rate(session, quote="USD")
-    if (rate is None or rate == 0) and metrics.total_value_eur > 0:
+    if (
+        (rate is None or rate == 0)
+        and metrics.total_value_usd is not None
+        and metrics.total_value_eur > 0
+    ):
         rate = metrics.total_value_usd / metrics.total_value_eur
     usd_per_eur = rate if rate and rate > 0 else ONE
 
@@ -118,7 +122,11 @@ def build_seed(
         monthly=monthly,
         primary=primary.upper(),
         starting_eur=metrics.total_value_eur,
-        starting_usd=metrics.total_value_usd,
+        starting_usd=(
+            metrics.total_value_usd
+            if metrics.total_value_usd is not None
+            else metrics.total_value_eur * usd_per_eur
+        ),
         avg_contribution_eur=avg_eur,
         avg_contribution_usd=avg_eur * usd_per_eur,
         expected_rate_eur=default_expected_rate(metrics.xirr),

@@ -49,6 +49,7 @@ def _metrics_dict(metrics: PortfolioMetrics) -> dict[str, Any]:
         ),
         "weighted_expense_ratio": dec(metrics.weighted_expense_ratio),
         "annual_expense_cost_eur": dec(metrics.annual_expense_cost_eur),
+        "dividend_yield_pct": dec(metrics.dividend_yield_pct),
     }
 
 

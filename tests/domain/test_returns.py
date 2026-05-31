@@ -133,6 +133,10 @@ class TestCagr:
         assert cagr(Decimal(100), Decimal(-1), 365) is None
         assert cagr(Decimal(100), Decimal(200), 0) is None
 
+    def test_total_loss_is_minus_100_percent(self) -> None:
+        # A wipeout is a well-defined −100 % CAGR, not ``None``.
+        assert cagr(Decimal(10_000), Decimal(0), 365) == Decimal(-1)
+
 
 class TestGrowthPct:
     def test_total_growth(self) -> None:

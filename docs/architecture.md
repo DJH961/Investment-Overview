@@ -31,8 +31,12 @@ models/     SQLAlchemy ORM.                     Schema definition only.
   Callers should be able to rename a column without grepping the codebase.
 - **Services own transactions.** A use-case is one logical commit. UI never
   starts a transaction directly.
-- **UI never reaches past services.** No `from investment_dashboard.repositories
-  import …` in any `ui/` module.
+- **UI prefers services, but may read repositories directly.** Read-heavy
+  pages (`ui/pages/_overview_query.py`, `transactions.py`, `settings.py`,
+  `calculator.py`, …) import ledger-tier repositories such as
+  `transactions_repo` / `instruments_repo` for straightforward queries.
+  Mutations and any multi-step use-case still go through a service so the
+  commit boundary stays in one place.
 - **Cache-tier reads/writes go through their service, never a raw repo on the
   caller's session.** Prices, FX history, and snapshots live in the *cache*
   tier (see "Storage tiers" below). Call `prices_service`, `fx_service`, or

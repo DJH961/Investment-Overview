@@ -201,6 +201,64 @@ def _cloud_link_card() -> None:  # pragma: no cover - UI
         ).classes("q-mt-md")
 
 
+def _passphrase_card() -> None:  # pragma: no cover - UI
+    """First-run prompt to set an encryption passphrase + save a recovery file.
+
+    Encryption is opt-in (driver + env flag), but collecting the passphrase
+    here means an encrypted-mode user has it stored in the OS keychain and a
+    recovery file in hand from day one, closing the "no key-recovery path"
+    gap in the storage-security plan.
+    """
+    from investment_dashboard.storage.encryption import (  # noqa: PLC0415
+        RECOVERY_FILENAME,
+        build_recovery_file,
+        store_passphrase_in_keyring,
+        validate_passphrase,
+    )
+
+    with ui.element("div").classes("inv-section min-w-[22rem] max-w-[28rem]"):
+        ui.html('<div class="inv-section-title">Encryption passphrase (optional)</div>')
+        ui.label(
+            "If you sync your ledger to the cloud and turn on SQLCipher "
+            "encryption, set a passphrase now. It's stored in your OS keychain "
+            "and never written next to the database. Save the recovery file "
+            "somewhere safe — without it, encrypted data can't be recovered.",
+        ).classes("text-body2 opacity-80")
+
+        pass_in = ui.input("Passphrase").props("dense type=password").classes("w-full")
+        confirm_in = ui.input("Confirm passphrase").props("dense type=password").classes("w-full")
+
+        def _save() -> None:
+            error = validate_passphrase(pass_in.value or "", confirm_in.value or "")
+            if error is not None:
+                ui.notify(error, type="warning")
+                return
+            if store_passphrase_in_keyring(pass_in.value or ""):
+                ui.notify("Passphrase saved to the OS keychain.", type="positive")
+            else:
+                ui.notify(
+                    "Could not reach the OS keychain (install the `[encrypted]` "
+                    "extra to enable it).",
+                    type="negative",
+                )
+
+        def _download() -> None:
+            error = validate_passphrase(pass_in.value or "", confirm_in.value or "")
+            if error is not None:
+                ui.notify(error, type="warning")
+                return
+            ui.download.content(build_recovery_file(pass_in.value or ""), RECOVERY_FILENAME)
+            ui.notify("Recovery file downloaded — keep it safe.", type="positive")
+
+        with ui.row().classes("gap-sm q-mt-md"):
+            ui.button("Save to keychain", icon="key", on_click=_save).props(
+                "unelevated color=primary no-caps"
+            )
+            ui.button("Download recovery file", icon="download", on_click=_download).props(
+                "flat no-caps"
+            )
+
+
 def register() -> None:
     @ui.page(PATH)
     def _onboarding() -> None:  # pragma: no cover - rendered by NiceGUI
@@ -264,3 +322,5 @@ def register() -> None:
                 _validated_ticker_card()
 
                 _cloud_link_card()
+
+                _passphrase_card()

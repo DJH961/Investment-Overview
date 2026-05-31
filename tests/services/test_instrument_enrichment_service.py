@@ -11,9 +11,11 @@ from investment_dashboard.models import InstrumentOverride
 from investment_dashboard.repositories import instrument_overrides_repo, instruments_repo
 from investment_dashboard.services.instrument_enrichment_service import (
     QUOTE_TYPE_MAP,
+    InstrumentSuggestion,
     effective_instrument,
     enrich_instrument,
     ensure_instrument,
+    suggest_instrument_fields,
 )
 
 
@@ -196,6 +198,54 @@ class TestEnsureInstrument:
         assert QUOTE_TYPE_MAP["ETF"] == "etf"
         assert QUOTE_TYPE_MAP["EQUITY"] == "stock"
         assert QUOTE_TYPE_MAP["MUTUALFUND"] == "mutual_fund"
+
+
+class TestSuggestInstrumentFields:
+    def test_maps_market_metadata_to_form_fields(self) -> None:
+        fetcher = _fake_fetcher(
+            {
+                "VTI": InstrumentInfo(
+                    symbol="VTI",
+                    long_name="Vanguard Total Stock Market",
+                    quote_type="ETF",
+                    currency="USD",
+                    expense_ratio=Decimal("0.0003"),
+                    category="Large Blend",
+                )
+            }
+        )
+        s = suggest_instrument_fields("vti", fetcher=fetcher)
+        assert s.name == "Vanguard Total Stock Market"
+        assert s.asset_class == "etf"
+        assert s.native_currency == "USD"
+        assert s.expense_ratio == Decimal("0.0003")
+        assert s.category == "Large Blend"
+
+    def test_blank_symbol_returns_empty_suggestion(self) -> None:
+        s = suggest_instrument_fields("   ", fetcher=_fake_fetcher({}))
+        assert s == InstrumentSuggestion(None, None, None, None, None)
+
+    def test_missing_payload_returns_empty_suggestion(self) -> None:
+        s = suggest_instrument_fields("ZZZZ", fetcher=_fake_fetcher({"ZZZZ": None}))
+        assert s.asset_class is None
+        assert s.category is None
+
+    def test_unmapped_quote_type_leaves_asset_class_none(self) -> None:
+        fetcher = _fake_fetcher(
+            {
+                "BTC-USD": InstrumentInfo(
+                    symbol="BTC-USD",
+                    long_name="Bitcoin USD",
+                    quote_type="CRYPTOCURRENCY",
+                    currency="USD",
+                    expense_ratio=None,
+                    category=None,
+                )
+            }
+        )
+        s = suggest_instrument_fields("BTC-USD", fetcher=fetcher)
+        assert s.asset_class is None
+        assert s.name == "Bitcoin USD"
 
 
 class TestOverridesRepoExtended:

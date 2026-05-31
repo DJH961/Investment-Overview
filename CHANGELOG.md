@@ -52,6 +52,101 @@ double-counting, and the DAX ticker.
   bring its growth back to a sane value, but the share count itself mirrors the
   source data.
 
+## [2.9.4] — 2026-05-31
+
+A maintenance round driven by an internal audit: fixes a family of latent
+FX-conversion bugs, restores `^IRX` as the default risk-free symbol (with a
+resilient fetch), corrects the documentation, and clarifies that near-real-time
+intraday quotes are a supported feature.
+
+### Added
+- **Daily-snapshot time-weighted return** (`/monthly`, `/yearly`). When daily
+  portfolio snapshots exist inside a period, the growth % now chains each
+  sub-period's Modified-Dietz return (`Π(1+rᵢ)−1`) instead of approximating the
+  whole period with a single flow — so a contribution made between two market
+  swings no longer averages the swing away. Degrades to the old single-period
+  calc when daily values are sparse (`_period_query`, `snapshots_service`).
+- **Dividend-yield KPI** on `/overview` (`cash dividends ÷ closing balance`),
+  completing the spreadsheet's `Total` block parity (`metrics_service`,
+  `readmodels/overview`, `ui/pages/overview`).
+- **Instrument metadata auto-populate.** The Settings "Add instrument" dialog
+  gained a *Fetch from market data* button that fills asset class, category,
+  expense ratio, name and native currency from yfinance, so those fields are no
+  longer hand-typed (`instrument_enrichment_service.suggest_instrument_fields`,
+  `adapters/yfinance_client`, `ui/pages/settings`).
+- **`transfer_in` / `transfer_out` transaction kinds** are now counted as
+  external cash flows (in like a deposit, out like a withdrawal) across metrics,
+  deposits and the monthly/yearly aggregation (`metrics_service`,
+  `_period_query`, `_deposits_query`).
+- **Encryption passphrase onboarding + recovery file.** Settings → Storage and
+  the first-run onboarding page now collect the SQLCipher passphrase for the
+  synced ledger/config tiers and store it in the OS keychain
+  (`store_passphrase_in_keyring`), so the `INV_DASHBOARD_DB_PASSPHRASE` env var
+  is no longer the only way to supply it. Both surfaces also offer a downloadable
+  **recovery file** (`storage.encryption.build_recovery_file`), closing the
+  "encrypted-mode users have no key-recovery path" gap from the v2.0 storage plan.
+- **Settings "Move ledger…" picker.** Settings → Storage can now physically
+  relocate the ledger and config database files to a folder of your choice. The
+  move takes a rolling backup, copies each file with an integrity check, swaps it
+  into place atomically, removes the originals (sidecars included), persists the
+  new tier paths to `app_config`, and prompts for a restart — implementing the
+  v2.0 plan's §4.4 "Move ledger…" flow (`storage/move.py`, `ui/pages/settings`).
+
+### Fixed
+- **USD figures no longer silently relabel EUR as USD when an FX rate is
+  missing.** Overview instrument/portfolio metrics and the monthly/yearly period
+  tables now degrade the USD column to a blank (`—`) instead of showing the EUR
+  amount under a USD label (`_overview_query`, `metrics_service`,
+  `_period_query`). XIRR/growth/YTD in USD are suppressed alongside the value so
+  no metric is computed against a mislabelled terminal value.
+- **Per-currency FX conversion.** Positions and cash balances now convert each
+  non-EUR account with its *own* EUR→native rate instead of reusing the USD
+  rate for every currency (`positions_service`). Harmless today (only EUR+USD
+  are live) but correct for any future currency.
+- **CAGR of a total loss** (`end_value == 0`) now returns a well-defined −100 %
+  instead of `None` (`domain/returns.py`).
+- **Future (not-yet-started) periods** report `None` growth instead of running
+  Modified-Dietz on forced-zero balances (`_period_query`).
+- **Unconvertible cashflows** are left out of a period bucket (`None`) rather
+  than folded in as `0`, which had shrunk the Modified-Dietz denominator
+  (`_period_query`).
+- **Split-DB migrations now stamp every tier.** Boot records the Alembic
+  revision in each tier's own `alembic_version` table (not just the ledger),
+  so a future config/cache-tier migration is applied instead of silently
+  skipped for split-DB users (`boot.py`).
+
+### Changed
+- **Default risk-free symbol is `^IRX` again** (13-week US T-bill yield). The
+  earlier switch to `^TNX` was a workaround for `yfinance.download` returning
+  empty frames for `^IRX`; the real fix is a `Ticker.history` fallback in
+  `yfinance_client.fetch_latest_close`, so `^IRX` now fetches reliably and no
+  symbol-rewriting deprecation shim is needed.
+- **Near-real-time intraday quotes are a documented goal, not a non-goal.**
+  ETF/stock prices already refresh roughly every two minutes during market
+  hours; the docs/comments that described prices as "end-of-day only" have been
+  corrected (`requirements_and_project_overview.md`, `docs/user_guide.md`,
+  `models/price_history.py`).
+
+### Removed
+- **Dead/uncalled helpers** confirmed unreferenced by the audit: the
+  single-file `get_engine` / `get_session_factory` accessors (`db.py`),
+  `snapshots_repo.list_snapshots`, `transactions_repo.delete_transaction`,
+  `transaction_fx_service.list_accounts_currency_map`,
+  `encryption.driver_available`, and `money_format.fmt_pair`. No call sites
+  remained, so removing them shrinks the surface without behaviour change.
+
+### Docs
+- Brought `README` status, `docs/user_guide.md` (pages, risk-free, editable
+  storage folder), `docs/architecture.md` / `CONTRIBUTING.md` (UI may read
+  repositories directly), and `requirements_and_project_overview.md` (3-tier
+  storage, standalone projection page, historical roadmap) back in line with the
+  code. Refreshed the in-app **Help** page so the Storage entry lists the
+  sync-folder, move-ledger, passphrase and recovery-file controls instead of the
+  stale "nothing here is editable" note (`ui/pages/help`). Marked the
+  fully-shipped v2.0/v2.2/v2.8 plan docs as historical.
+- Normalised the changelog: every prior `— Unreleased` heading now carries its
+  release date.
+
 ## [2.9.3] — 2026-05-31
 
 Adds a robust way to stop the local server and release the single-writer lock,
@@ -72,7 +167,7 @@ no longer strands the writer lock held against a cloud-synced ledger).
   `INV_DASHBOARD_SHUTDOWN_ON_TAB_CLOSE`; the in-app toggle is persisted and
   wins over the env default.
 
-## [2.9.1] — Unreleased
+## [2.9.1] — 2026-05-31
 
 Fixes the monthly/yearly value calculations that the v2.8 attempt left broken,
 makes the period tables single-currency (matching the overview), and brings the
@@ -172,7 +267,7 @@ percent.
 - **Per-instrument Daily Growth** column in the Overview positions table, per
   currency (mirroring the top-of-page daily-growth KPI).
 
-## [2.8.1] — Unreleased
+## [2.8.1] — 2026-05-31
 
 Follow-up patch tightening the **Overview** page polish that v2.8 set out to
 deliver, plus a table-readability and timezone fix that span the whole app.
@@ -208,7 +303,7 @@ deliver, plus a table-readability and timezone fix that span the whole app.
   repeats the capital-gain money as a sub-line — that figure already has its
   own dedicated **Capital Gain** card.
 
-## [2.8.0] — Unreleased
+## [2.8.0] — 2026-05-31
 
 This release lands the full **v2.8 whole-app cleanup** — a broad sweep of
 correctness and UX fixes spanning Overview, Deposits, Transactions, Monthly,
@@ -314,7 +409,7 @@ plan and root-cause analysis live in `docs/v2.8-cleanup-plan.md`.
   corrected by earlier work on this branch (v2.4–v2.5) and are **verified**
   here rather than re-implemented.
 
-## [2.7.2] — Unreleased
+## [2.7.2] — 2026-05-31
 
 ### Added
 - **The installed launcher now writes a diagnostics log so a failed start is
@@ -400,7 +495,7 @@ plan and root-cause analysis live in `docs/v2.8-cleanup-plan.md`.
 - **Settings explanations.** The Settings page now documents what each
   configurable option does, alongside the existing controls.
 
-## [2.7.0] — Unreleased
+## [2.7.0] — 2026-05-31
 
 ### Added
 - **Spreadsheet-to-dashboard parity comparison.** New
@@ -431,7 +526,7 @@ plan and root-cause analysis live in `docs/v2.8-cleanup-plan.md`.
   colorblind-safe `.inv-cell-pos` / `.inv-cell-neg` styles via AG-Grid
   `cellClassRules`.
 
-## [2.6.0] — Unreleased
+## [2.6.0] — 2026-05-31
 
 ### Added
 - **Interactive projection tool (Monthly & Yearly).** The old blank
@@ -446,7 +541,7 @@ plan and root-cause analysis live in `docs/v2.8-cleanup-plan.md`.
   the model rather than a single static spot conversion. New tooltip keys
   `projection_*` explain each control.
 
-## [2.5.0] — Unreleased
+## [2.5.0] — 2026-05-31
 
 ### Added
 - **Dual-currency everywhere.** Every monetary KPI, table cell and tile
@@ -533,12 +628,12 @@ plan and root-cause analysis live in `docs/v2.8-cleanup-plan.md`.
   pushing the layout sideways (the analytics attribution table no
   longer overhangs the viewport).
 
-## [2.3.1] — Unreleased
+## [2.3.1] — 2026-05-31
 
 ### Fixed
 - Windows installer (`InvestmentDashboard-Setup.exe`) crashed at the end of installation with `FileNotFoundError: [WinError 3]` in `write_launcher`, because `installer/launcher.py` was declared only as a PyInstaller `hiddenimport` (embedded in the PYZ) and was therefore never extracted to `sys._MEIPASS` for `shutil.copy2` to read. The launcher source is now bundled as a PyInstaller data file at `<_MEIPASS>/installer/launcher.py`, matching the path `bootstrap.write_launcher` resolves at install time.
 
-## [2.3.0] — Unreleased
+## [2.3.0] — 2026-05-31
 
 ### Added
 - Shared JSON read-model layer for overview, deposits, transactions, monthly, yearly, analytics, calculator and full mobile snapshots, reusing existing domain/services calculations without adding business logic.
@@ -550,7 +645,7 @@ plan and root-cause analysis live in `docs/v2.8-cleanup-plan.md`.
 - Deposits and ledger presentation queries now expose raw record fetchers used by both the web UI and read-model serialization, while preserving the existing formatted table row output.
 - API access is opt-in via `INV_DASHBOARD_API_ENABLED`; optional bearer-token auth via `INV_DASHBOARD_API_TOKEN` keeps `/api/health` open for local health checks.
 
-## [2.2.0] — Unreleased
+## [2.2.0] — 2026-05-31
 
 This release lands the full v2.2 "data-scientist analytics + FX-aware
 growth + instrument auto-detect" feature bump, in three slices:
@@ -1260,7 +1355,7 @@ treemap.
 - Docs: `README.md` (quickstart + architecture diagram), `CONTRIBUTING.md`,
   `docs/architecture.md`.
 
-[Unreleased]: https://github.com/DJH961/Investment-Overview/compare/v1.4.0...HEAD
+[2.9.4]: https://github.com/DJH961/Investment-Overview/compare/v2.9.3...v2.9.4
 [1.4.0]: https://github.com/DJH961/Investment-Overview/compare/v1.3.2...v1.4.0
 [1.1.0]: https://github.com/DJH961/Investment-Overview/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/DJH961/Investment-Overview/compare/v0.9.0...v1.0.0

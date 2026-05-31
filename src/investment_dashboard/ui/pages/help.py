@@ -89,10 +89,13 @@ _SETTINGS_GUIDE: tuple[tuple[str, str], ...] = (
     ),
     (
         "Storage",
-        "Read-only view of where your three database files (ledger, config, "
-        "cache) live, whether encryption is on, and whether any file is inside a "
-        "cloud-sync folder. Nothing here is editable — it is for confirming your "
-        "data is where you expect.",
+        "Shows where your three database files (ledger, config, cache) live, "
+        "whether encryption is on, and whether any file is inside a cloud-sync "
+        "folder. You can point the ledger and config tiers at a cloud / sync "
+        "folder of your choice, use 'Move ledger…' to physically relocate them "
+        "to another folder (with a safety backup and integrity check), and "
+        "store an encryption passphrase plus download a recovery file. Path "
+        "changes take effect after a restart.",
     ),
     (
         "Data refresh",
