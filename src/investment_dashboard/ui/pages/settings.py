@@ -29,6 +29,7 @@ from investment_dashboard.repositories import (
 from investment_dashboard.services import (
     benchmark_service,
     display_currency_service,
+    instrument_enrichment_service,
     provider_status,
     risk_free_service,
     timezone_service,
@@ -215,6 +216,43 @@ def _add_account_dialog() -> None:  # pragma: no cover - UI
     dialog.open()
 
 
+def _apply_market_suggestion(
+    *,
+    symbol_in: ui.input,
+    name_in: ui.input,
+    asset_class_in: ui.select,
+    category_in: ui.input,
+    currency_in: ui.select,
+    expense_in: ui.input,
+) -> None:  # pragma: no cover - UI
+    """Pre-fill the add-instrument form from market metadata (§3.2.5)."""
+    sym = (symbol_in.value or "").strip().upper()
+    if not sym:
+        ui.notify("Enter a symbol first", type="warning")
+        return
+    suggestion = instrument_enrichment_service.suggest_instrument_fields(sym)
+    filled: list[str] = []
+    if suggestion.name and not (name_in.value or "").strip():
+        name_in.value = suggestion.name
+        filled.append("name")
+    if suggestion.asset_class:
+        asset_class_in.value = suggestion.asset_class
+        filled.append("asset class")
+    if suggestion.category and not (category_in.value or "").strip():
+        category_in.value = suggestion.category
+        filled.append("category")
+    if suggestion.native_currency in {"USD", "EUR"}:
+        currency_in.value = suggestion.native_currency
+        filled.append("currency")
+    if suggestion.expense_ratio is not None and not (expense_in.value or "").strip():
+        expense_in.value = format(suggestion.expense_ratio, "f")
+        filled.append("expense ratio")
+    if filled:
+        ui.notify(f"Filled from market data: {', '.join(filled)}", type="positive")
+    else:
+        ui.notify(f"No market metadata found for {sym}", type="warning")
+
+
 def _add_instrument_dialog() -> None:  # pragma: no cover - UI
     with ui.dialog() as dialog, ui.card().classes("min-w-[24rem]"):
         ui.label("Add instrument").classes("text-h6")
@@ -230,6 +268,23 @@ def _add_instrument_dialog() -> None:  # pragma: no cover - UI
             "w-full",
         )
         expense_in = ui.input("Expense ratio (optional, e.g. 0.0003)").classes("w-full")
+
+        ui.button(
+            "Fetch from market data",
+            icon="cloud_download",
+            on_click=lambda: _apply_market_suggestion(
+                symbol_in=symbol_in,
+                name_in=name_in,
+                asset_class_in=asset_class_in,
+                category_in=category_in,
+                currency_in=currency_in,
+                expense_in=expense_in,
+            ),
+        ).props("flat color=primary").classes("self-start")
+        ui.label(
+            "Asset class, category and expense ratio are auto-populated from market "
+            "data — adjust only if the published values are wrong.",
+        ).classes("text-caption opacity-70")
 
         def _save() -> None:
             sym = (symbol_in.value or "").strip().upper()

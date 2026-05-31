@@ -225,4 +225,3 @@ def ensure_fx_coverage(
                 log.warning("FX coverage refresh attempt failed; retrying", exc_info=True)
         rates = fx_repo.get_rates(cache, base="EUR", quote="USD")
         return any(d <= earliest_needed for d in rates)
-

@@ -294,6 +294,10 @@ class InstrumentInfo:
     quote_type: str | None
     currency: str | None
     expense_ratio: Decimal | None
+    #: Market-data grouping label — yfinance's fund ``category`` (e.g.
+    #: ``"Large Blend"``) or, for single equities, the ``sector``
+    #: (e.g. ``"Technology"``). ``None`` when yfinance publishes neither.
+    category: str | None = None
 
 
 def fetch_instrument_info(
@@ -331,10 +335,14 @@ def fetch_instrument_info(
 
     long_name = info.get("longName") or info.get("shortName")
     currency = info.get("currency")
+    # Funds expose ``category`` (e.g. "Large Blend"); single equities expose
+    # ``sector`` (e.g. "Technology"). Prefer the former, fall back to the latter.
+    raw_category = info.get("category") or info.get("sector")
     return InstrumentInfo(
         symbol=symbol,
         long_name=(str(long_name).strip() or None) if long_name else None,
         quote_type=(str(info.get("quoteType")).upper() if info.get("quoteType") else None),
         currency=(str(currency).upper() if currency else None),
         expense_ratio=expense_ratio,
+        category=(str(raw_category).strip() or None) if raw_category else None,
     )

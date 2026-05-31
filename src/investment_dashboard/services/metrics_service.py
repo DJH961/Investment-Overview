@@ -413,9 +413,7 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     )
 
     # Trailing dividend yield = cash dividends ÷ current closing balance.
-    dividend_yield_pct = (
-        dividends_cash_eur / total_value_eur if total_value_eur > 0 else None
-    )
+    dividend_yield_pct = dividends_cash_eur / total_value_eur if total_value_eur > 0 else None
 
     return PortfolioMetrics(
         as_of=as_of,

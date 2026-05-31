@@ -170,7 +170,6 @@ class TestMetrics:
             (date(2024, 3, 1), Decimal("4.50")),
         ]
 
-
     def test_transfer_kinds_count_as_external_flows(self, session: Session) -> None:
         """``transfer_in`` behaves like a deposit and ``transfer_out`` like a
         withdrawal in the portfolio cashflow series (audit §3.2.11)."""

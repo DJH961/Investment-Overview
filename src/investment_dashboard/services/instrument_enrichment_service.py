@@ -111,6 +111,58 @@ def effective_instrument(
     )
 
 
+@dataclass(frozen=True)
+class InstrumentSuggestion:
+    """Market-data-derived field suggestions for the Settings UI.
+
+    Returned by :func:`suggest_instrument_fields` so the "Fetch from
+    market data" button can pre-fill the add-instrument form (asset
+    class, category, expense ratio, name, native currency) instead of
+    the user typing them by hand. Every field is ``None`` when yfinance
+    has nothing useful, so the UI can leave that input untouched.
+    """
+
+    name: str | None
+    asset_class: str | None
+    native_currency: str | None
+    expense_ratio: Decimal | None
+    category: str | None
+
+
+def suggest_instrument_fields(
+    symbol: str,
+    *,
+    fetcher: Any = None,
+) -> InstrumentSuggestion:
+    """Resolve display fields for ``symbol`` straight from market data.
+
+    Pure read helper (no DB writes) used by the Settings add-instrument
+    dialog: it fetches the yfinance payload and maps it onto our ledger
+    taxonomy. ``fetcher`` matches :func:`fetch_instrument_info` for test
+    injection. Returns an all-``None`` suggestion when the symbol is
+    blank or yfinance has nothing.
+    """
+    sym = (symbol or "").strip().upper()
+    if not sym:
+        return InstrumentSuggestion(None, None, None, None, None)
+    fetch = fetcher or fetch_instrument_info
+    try:
+        info = fetch(sym)
+    except Exception:  # pragma: no cover - defensive, fetch_* swallows
+        log.warning("suggestion fetch failed for %s", sym, exc_info=True)
+        info = None
+    if info is None:
+        return InstrumentSuggestion(None, None, None, None, None)
+    asset_class = QUOTE_TYPE_MAP.get(info.quote_type) if info.quote_type else None
+    return InstrumentSuggestion(
+        name=info.long_name,
+        asset_class=asset_class,
+        native_currency=info.currency,
+        expense_ratio=info.expense_ratio,
+        category=info.category,
+    )
+
+
 def enrich_instrument(
     session: Session,
     instrument_id: int,
