@@ -10,7 +10,7 @@ entry — and persists them on the ``transactions`` row:
   is exactly ``net_native``; USD is the booked currency, so it is frozen
   verbatim and EUR is the derived side.
 * ``net_eur`` — the EUR leg (already persisted pre-v2.9; kept canonical).
-* ``fx_rate_to_eur`` — the EUR→native rate used, for audit.
+* ``fx_rate_to_eur`` — EUR per 1 unit of native currency, for audit.
 
 Read paths prefer these frozen columns and only fall back to live FX
 derivation when a leg is ``NULL`` (a row written while FX history had a gap,
@@ -82,11 +82,17 @@ def compute_legs(
         fx_rate_to_eur: Decimal | None = Decimal(1)
         native_to_eur_rate: Decimal | None = Decimal(1)
     elif ccy == "USD":
-        fx_rate_to_eur = eur_to_usd
+        fx_rate_to_eur = (
+            Decimal(1) / eur_to_usd if eur_to_usd is not None and eur_to_usd != 0 else None
+        )
         native_to_eur_rate = eur_to_usd
     else:
         native_to_eur_rate = fx_service.get_rate_eur_to_quote(session, on, quote=ccy)
-        fx_rate_to_eur = native_to_eur_rate
+        fx_rate_to_eur = (
+            Decimal(1) / native_to_eur_rate
+            if native_to_eur_rate is not None and native_to_eur_rate != 0
+            else None
+        )
 
     net_eur, net_usd = split_native_to_dual_legs(
         native_currency=ccy,

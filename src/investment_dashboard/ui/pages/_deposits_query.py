@@ -27,7 +27,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from investment_dashboard.domain.currency import dual_currency_amounts
+from investment_dashboard.domain.currency import (
+    dual_currency_amounts,
+    lookup_rate_with_forward_fill,
+)
 from investment_dashboard.models import Account, Transaction
 from investment_dashboard.repositories import fx_repo
 
@@ -91,6 +94,7 @@ def _amounts(
     *,
     native_currency: str,
     eur_to_usd: dict[date, Decimal],
+    fallback_rate: Decimal | None = None,
 ) -> tuple[Decimal, Decimal | None]:
     """``(eur, usd)`` value of ``t`` on its trade date.
 
@@ -107,6 +111,7 @@ def _amounts(
         net_usd=t.net_usd,
         on=t.date,
         eur_to_usd=eur_to_usd,
+        fallback_rate=fallback_rate,
     )
     return (eur if eur is not None else ZERO), usd
 
@@ -173,7 +178,8 @@ def list_deposit_records(session: Session, *, account_id: int | None = None) -> 
         stmt = stmt.where(Transaction.account_id == account_id)
     txns = session.scalars(stmt).all()
     eur_to_usd = fx_repo.get_rates(session, base="EUR", quote="USD")
-    return [_to_record(t, eur_to_usd=eur_to_usd) for t in txns]
+    fallback_rate = lookup_rate_with_forward_fill(eur_to_usd, date.today())
+    return [_to_record(t, eur_to_usd=eur_to_usd, fallback_rate=fallback_rate) for t in txns]
 
 
 def list_deposit_rows(session: Session, *, account_id: int | None = None) -> list[dict[str, Any]]:
@@ -181,10 +187,20 @@ def list_deposit_rows(session: Session, *, account_id: int | None = None) -> lis
     return [_format_record(r) for r in list_deposit_records(session, account_id=account_id)]
 
 
-def _to_record(t: Transaction, *, eur_to_usd: dict[date, Decimal]) -> DepositRecord:
+def _to_record(
+    t: Transaction,
+    *,
+    eur_to_usd: dict[date, Decimal],
+    fallback_rate: Decimal | None = None,
+) -> DepositRecord:
     account: Account | None = t.account  # type: ignore[assignment]
     native_ccy = account.native_currency if account else ""
-    amount_eur, amount_usd = _amounts(t, native_currency=native_ccy, eur_to_usd=eur_to_usd)
+    amount_eur, amount_usd = _amounts(
+        t,
+        native_currency=native_ccy,
+        eur_to_usd=eur_to_usd,
+        fallback_rate=fallback_rate,
+    )
     return DepositRecord(
         id=t.id,
         date=t.date,
@@ -234,6 +250,7 @@ def compute_summary(session: Session, *, today: date | None = None) -> DepositSu
     )
     txns: Sequence[Transaction] = session.scalars(stmt).all()
     eur_to_usd = fx_repo.get_rates(session, base="EUR", quote="USD")
+    fallback_rate = lookup_rate_with_forward_fill(eur_to_usd, today)
 
     total_native = sum(
         (t.net_native or ZERO for t in txns if t.kind == "deposit"),
@@ -251,6 +268,7 @@ def compute_summary(session: Session, *, today: date | None = None) -> DepositSu
                 t,
                 native_currency=(t.account.native_currency if t.account else ""),
                 eur_to_usd=eur_to_usd,
+                fallback_rate=fallback_rate,
             ),
         )
         for t in txns

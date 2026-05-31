@@ -78,6 +78,20 @@ def _fx(session: Session) -> None:
 
 
 class TestBackfill:
+    def test_compute_legs_stamps_usd_rate_to_eur(self, session: Session) -> None:
+        _fx(session)
+
+        legs = transaction_fx_service.compute_legs(
+            session,
+            native_currency="USD",
+            net_native=Decimal("1000"),
+            on=date(2024, 1, 5),
+        )
+
+        assert legs.fx_rate_to_eur == Decimal(1) / Decimal("1.08")
+        assert legs.net_usd == Decimal("1000")
+        assert abs((legs.net_eur or Decimal(0)) - Decimal("925.93")) < Decimal("0.01")
+
     def test_backfill_fills_missing_legs(self, session: Session) -> None:
         account_id = _seed(session, native="USD")
         _fx(session)
