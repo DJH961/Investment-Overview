@@ -20,7 +20,7 @@ from investment_dashboard.services.positions_service import compute_positions
 from investment_dashboard.services.prices_service import latest_close
 from investment_dashboard.ui.components import page_header, section
 from investment_dashboard.ui.layout import page_frame
-from investment_dashboard.ui.money_format import currency_symbol
+from investment_dashboard.ui.money_format import currency_symbol, fmt_shares
 
 PATH = "/calculator"
 
@@ -129,7 +129,7 @@ def register() -> None:
                         "current_value_usd": f"${_from_eur(r.current_value, 'USD'):,.2f}",
                         "add_value_eur": f"€{r.add_value:,.2f}",
                         "add_value_usd": f"${_from_eur(r.add_value, 'USD'):,.2f}",
-                        "add_shares": f"{r.add_shares}",
+                        "add_shares": fmt_shares(r.add_shares),
                     }
                     for r in plan.rows
                 ]

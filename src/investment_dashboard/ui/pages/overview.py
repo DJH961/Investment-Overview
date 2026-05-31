@@ -16,7 +16,11 @@ from investment_dashboard.ui.components import (
 )
 from investment_dashboard.ui.components.kpi_card import dual_kpi_card, dual_pct_kpi_card
 from investment_dashboard.ui.layout import page_frame
-from investment_dashboard.ui.money_format import currency_symbol, fmt_money
+from investment_dashboard.ui.money_format import (
+    aggrid_money_formatter,
+    currency_symbol,
+    fmt_money,
+)
 from investment_dashboard.ui.pages._overview_query import (
     VALUE_RANGES,
     MarketVerdict,
@@ -80,17 +84,12 @@ def _pct_card(
 
 
 #: AG-Grid ``valueFormatter`` (JS expression) rendering a numeric fraction as a
-#: signed percentage, e.g. ``0.0455`` -> ``"4.55 %"``; blanks out ``null``.
+#: signed percentage, e.g. ``0.0455`` -> ``"4.55 %"``; blanks out ``null``. The
+#: value is the AG-Grid expression variable ``value`` (there is no ``params``
+#: object for string expressions — using it leaves the cell unformatted).
 _PCT_FORMATTER = (
-    "params.value == null ? '' : (params.value * 100).toLocaleString("
+    "value == null ? '' : (value * 100).toLocaleString("
     "undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) + ' %'"
-)
-
-#: AG-Grid ``valueFormatter`` (JS expression) rendering a numeric money value
-#: with thousands separators and two decimals; blanks out ``null``.
-_MONEY_FORMATTER = (
-    "params.value == null ? '' : params.value.toLocaleString("
-    "undefined,{minimumFractionDigits:2,maximumFractionDigits:2})"
 )
 
 
@@ -107,7 +106,7 @@ def _money_column(label: str, field: str, primary: str) -> dict[str, object]:
         "headerName": f"{label} ({primary})",
         "field": f"{field}_{primary.lower()}_num",
         "type": "rightAligned",
-        "valueFormatter": _MONEY_FORMATTER,
+        "valueFormatter": aggrid_money_formatter(primary),
         "minWidth": 130,
     }
 
@@ -410,20 +409,21 @@ def register() -> None:
                     tooltip_key="daily_growth",
                     sub=_daily_sub,
                 )
-                kpi_card(
-                    "Expense Ratio",
-                    _fmt_pct(metrics.weighted_expense_ratio),
-                    sub=(
-                        f"≈ {fmt_money(_convert(metrics.annual_expense_cost_eur, display_ccy, fx_rate), display_ccy)} / yr"
-                    ),
-                    tooltip_key="expense_ratio",
-                )
                 _verdict_card(verdict)
+            # Expense ratio moved out of the KPI grid (kept the grid a clean
+            # 4×2) and surfaced as text alongside the FX line below.
+            expense_text = (
+                f"Weighted expense ratio: {_fmt_pct(metrics.weighted_expense_ratio)}  "
+                f"(≈ {fmt_money(_convert(metrics.annual_expense_cost_eur, display_ccy, fx_rate), display_ccy)} / yr)"
+            )
             if fx_rate is not None:
                 ui.label(
                     f"FX (EUR→{display_quote}): {fx_rate:,.4f}  ·  "
-                    f"Display currency: {display_ccy} (switch from the header toggle)",
+                    f"Display currency: {display_ccy} (switch from the header toggle)  ·  "
+                    f"{expense_text}",
                 ).classes("text-caption opacity-70")
+            else:
+                ui.label(expense_text).classes("text-caption opacity-70")
 
             _value_over_time_section(value_series, range_label=range_label, display_ccy=display_ccy)
 

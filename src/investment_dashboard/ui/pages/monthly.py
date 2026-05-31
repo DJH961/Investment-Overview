@@ -55,6 +55,7 @@ def _figure(rows, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no
             y=pct_values,
             name="Growth %",
             marker_color=colors,
+            hovertemplate="%{x}<br>%{y:.2f} %<extra></extra>",
         )
     fig.update_layout(
         title=f"Monthly growth % ({currency})",

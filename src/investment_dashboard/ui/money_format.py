@@ -20,6 +20,11 @@ from decimal import Decimal
 #: currencies again.
 _SYMBOLS: dict[str, str] = {"EUR": "€", "USD": "$"}
 
+#: Uniform number of fractional digits used to render *share* quantities in
+#: every table, so a holding reads the same whether it appears on the
+#: overview, the transactions ledger or the rebalance calculator.
+SHARES_DECIMALS = 4
+
 
 def currency_symbol(currency: str) -> str:
     """Return the display symbol for an ISO currency code."""
@@ -83,6 +88,38 @@ def fmt_pct(value: Decimal | None, *, decimals: int = 2) -> str:
     if value is None:
         return "—"
     return f"{value * 100:,.{decimals}f} %"
+
+
+def fmt_shares(value: Decimal | None, *, decimals: int = SHARES_DECIMALS) -> str:
+    """Render a share quantity with a uniform number of decimal places.
+
+    Every table renders share counts through this helper so a holding shows
+    the same precision regardless of the page it appears on. ``None`` renders
+    as an empty cell (the convention used by the AG-Grid tables).
+    """
+    if value is None:
+        return ""
+    return f"{value:,.{decimals}f}"
+
+
+def aggrid_money_formatter(currency: str, *, decimals: int = 2) -> str:
+    """Build an AG-Grid ``valueFormatter`` (JS) for a numeric money column.
+
+    Renders the value with thousand separators, a fixed number of decimals
+    (cents by default) and the currency symbol prefixed, so a column reads e.g.
+    ``"€1,234.56"`` / ``"$1,234.56"`` and EUR vs USD is unambiguous. ``null``
+    blanks out.
+    """
+    symbol = currency_symbol(currency)
+    # NB: AG-Grid evaluates a string ``valueFormatter`` as an *expression* whose
+    # in-scope variables are ``value``, ``data``, ``node`` … (there is no
+    # ``params`` object — that only exists for real function formatters). Using
+    # ``value`` is what makes the column actually format instead of silently
+    # falling back to the raw, unformatted number.
+    return (
+        f"value == null ? '' : '{symbol}' + value.toLocaleString("
+        f"undefined,{{minimumFractionDigits:{decimals},maximumFractionDigits:{decimals}}})"
+    )
 
 
 def dual_pct(
