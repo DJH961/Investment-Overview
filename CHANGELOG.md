@@ -12,6 +12,42 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.8.1] — Unreleased
+
+Follow-up patch tightening the **Overview** page polish that v2.8 set out to
+deliver, plus a table-readability and timezone fix that span the whole app.
+
+### Changed
+- **Unified Overview KPI grid.** The KPI tiles previously sat in two
+  ragged flex-wrap rows that left mismatched sizes and uneven gaps. They now
+  share one responsive CSS grid (`.inv-kpi-grid`) so every card is the same
+  width, lines up in tidy columns, and keeps a uniform headline size — the
+  big value font was trimmed (2rem → 1.6rem) so long figures stay on one
+  line instead of wrapping.
+- **YTD → MTD → Daily ordering.** The three period-growth cards are now kept
+  adjacent and in that order so they read as a consistent group.
+- **Modern, larger tables.** Every AG-Grid table (Overview, Transactions,
+  Deposits, Monthly, Yearly, Calculator, Projection) was restyled for
+  readability: a larger 18px data font, taller rows with vertically-centred
+  cells, more cell padding, a tinted uppercase header band over a crisp 2px
+  rule, subtle zebra striping on alternating rows, and an accent-tinted row
+  hover — so the tables read as crisp, stylish and modern rather than thin,
+  flat and faint.
+- **Header clock follows your timezone.** The header timestamp no longer
+  hard-codes UTC. It defaults to this computer's local timezone and can be
+  pointed at any IANA zone (or UTC) from the new **Timezone** picker under
+  Settings → Display preferences, persisted via `timezone_service`.
+- **Better portfolio-value chart.** The Overview "Value over time" graph now
+  renders the way mainstream investing apps do: a soft accent area under the
+  line, a money-formatted left axis with a currency prefix and visible tick
+  marks, an adaptive date axis, a unified hover read-out, and a horizontal
+  spike line for reading a value off any date.
+
+### Removed
+- **Duplicate gain line on Total Growth.** The Total Growth KPI no longer
+  repeats the capital-gain money as a sub-line — that figure already has its
+  own dedicated **Capital Gain** card.
+
 ## [2.8.0] — Unreleased
 
 This release lands the full **v2.8 whole-app cleanup** — a broad sweep of

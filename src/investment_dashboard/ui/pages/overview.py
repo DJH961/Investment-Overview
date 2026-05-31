@@ -16,7 +16,7 @@ from investment_dashboard.ui.components import (
 )
 from investment_dashboard.ui.components.kpi_card import dual_kpi_card, dual_pct_kpi_card
 from investment_dashboard.ui.layout import page_frame
-from investment_dashboard.ui.money_format import fmt_money
+from investment_dashboard.ui.money_format import currency_symbol, fmt_money
 from investment_dashboard.ui.pages._overview_query import (
     VALUE_RANGES,
     MarketVerdict,
@@ -195,26 +195,71 @@ def _treemap_figure(data, *, currency: str, fx_rate: Decimal | None):  # type: i
 
 
 def _value_curve_figure(points, *, currency: str):  # type: ignore[no-untyped-def]
-    """Classic portfolio-value line graph over the selected time range."""
+    """Classic portfolio-value area graph over the selected time range.
+
+    Styled the way mainstream investing apps present value-over-time:
+    a soft accent area under a clean line, a money-formatted left axis with
+    a currency prefix and visible tick marks, a date axis with adaptive
+    tick formatting, a unified hover read-out and a horizontal spike line so
+    a value can be read off any date.
+    """
     import plotly.graph_objects as go  # noqa: PLC0415
 
+    symbol = currency_symbol(currency)
     fig = go.Figure()
     if points:
+        dates = [p.date for p in points]
+        values = [float(p.value) for p in points]
+        # Adapt the x-axis tick density/format to the span so a one-day range
+        # shows the day and a multi-year range shows months/years cleanly.
+        span_days = (dates[-1] - dates[0]).days if len(dates) > 1 else 0
+        if span_days <= 2:
+            tickformat = "%H:%M"
+        elif span_days <= 95:
+            tickformat = "%d %b"
+        elif span_days <= 730:
+            tickformat = "%b %Y"
+        else:
+            tickformat = "%Y"
         fig.add_trace(
             go.Scatter(
-                x=[p.date for p in points],
-                y=[float(p.value) for p in points],
+                x=dates,
+                y=values,
                 mode="lines",
                 name=f"Portfolio value ({currency})",
                 line={"width": 2.4, "color": GAIN_COLOR},
                 fill="tozeroy",
+                fillcolor="rgba(0,114,178,0.12)",
+                hovertemplate=(f"%{{x|%d %b %Y}}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"),
             )
+        )
+        fig.update_xaxes(
+            tickformat=tickformat,
+            ticks="outside",
+            ticklen=5,
+            nticks=8,
+            showgrid=False,
+            automargin=True,
+            showspikes=True,
+            spikemode="across",
+            spikethickness=1,
+            spikedash="dot",
+            spikecolor="rgba(91,107,124,0.5)",
+        )
+        fig.update_yaxes(
+            tickprefix=symbol,
+            tickformat=",.0f",
+            ticks="outside",
+            ticklen=5,
+            nticks=6,
+            separatethousands=True,
+            automargin=True,
         )
     fig.update_layout(
         title=f"Portfolio value over time ({currency})",
         template="colorblind_modern",
-        margin={"l": 0, "r": 0, "t": 40, "b": 0},
-        yaxis={"title": currency},
+        margin={"l": 16, "r": 16, "t": 40, "b": 36},
+        hovermode="x unified",
         showlegend=False,
     )
     return fig
@@ -294,7 +339,7 @@ def register() -> None:
             tg_eur = metrics.total_growth_compounded_eur
             tg_usd = metrics.total_growth_compounded_usd
 
-            with ui.row().classes("gap-md flex-wrap"):
+            with ui.element("div").classes("inv-kpi-grid w-full"):
                 # Total Value is the headline money figure (shown first).
                 dual_kpi_card(
                     "Total Value",
@@ -304,14 +349,15 @@ def register() -> None:
                     tooltip_key="total_value",
                 )
                 # Total Growth shows *growth* — the compounded (1+XIRR)^years
-                # return per currency — with the capital-gain money as a sub.
+                # return per currency. The capital-gain money lives on its own
+                # "Capital Gain" card, so it is no longer duplicated as a sub
+                # here (v2.8.1).
                 _pct_card(
                     "Total Growth",
                     tg_eur,
                     tg_usd,
                     display_ccy=display_ccy,
                     tooltip_key="total_growth_compounded",
-                    sub=(f"Gain {fmt_money(gain_eur, 'EUR')} / {fmt_money(gain_usd, 'USD')}"),
                 )
                 dual_kpi_card(
                     "Capital Gain",
@@ -327,6 +373,8 @@ def register() -> None:
                     display_ccy=display_ccy,
                     tooltip_key="xirr",
                 )
+                # YTD → MTD → Daily are kept adjacent and in this order so the
+                # period-growth metrics read as a consistent group (v2.8.1).
                 _pct_card(
                     "YTD Growth",
                     metrics.ytd_growth_pct,
@@ -334,7 +382,13 @@ def register() -> None:
                     display_ccy=display_ccy,
                     tooltip_key="ytd_growth",
                 )
-            with ui.row().classes("gap-md flex-wrap q-mt-md"):
+                _pct_card(
+                    "MTD Growth",
+                    metrics.mtd_growth_pct,
+                    metrics.mtd_growth_pct_usd,
+                    display_ccy=display_ccy,
+                    tooltip_key="mtd_growth",
+                )
                 _daily_sub = (
                     f"as of {metrics.daily_growth_as_of.isoformat()}"
                     if metrics.daily_growth_as_of is not None
@@ -347,13 +401,6 @@ def register() -> None:
                     display_ccy=display_ccy,
                     tooltip_key="daily_growth",
                     sub=_daily_sub,
-                )
-                _pct_card(
-                    "MTD Growth",
-                    metrics.mtd_growth_pct,
-                    metrics.mtd_growth_pct_usd,
-                    display_ccy=display_ccy,
-                    tooltip_key="mtd_growth",
                 )
                 kpi_card(
                     "Expense Ratio",

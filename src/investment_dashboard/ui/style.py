@@ -221,14 +221,24 @@ html, body {{
 /* ------------------------------------------------------------------ */
 /* KPI / metric cards                                                  */
 /* ------------------------------------------------------------------ */
+/* v2.8.1 — all Overview KPI tiles share one responsive grid so every
+   card is the same width and lines up in tidy columns instead of the
+   ragged flex-wrap rows that left odd gaps and mismatched sizes. */
+.inv-kpi-grid {{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+  gap: 1rem;
+  align-items: stretch;
+}}
 .inv-kpi {{
   background: var(--inv-surface) !important;
   border: 1px solid var(--inv-hairline);
   border-radius: var(--inv-radius-lg);
   box-shadow: var(--inv-shadow-soft);
   padding: 1rem 1.125rem;
-  min-width: 13rem;
-  min-height: 7.25rem;
+  min-width: 0;
+  min-height: 7.5rem;
+  height: 100%;
   flex: 1 1 13rem;
   display: flex;
   flex-direction: column;
@@ -246,7 +256,9 @@ html, body {{
   font-weight: 600;
 }}
 .inv-kpi-value {{
-  font-size: 2rem;
+  /* Trimmed from 2rem so long figures (e.g. a big YTD %) stay on one line
+     and every tile keeps a uniform headline size (v2.8.1). */
+  font-size: 1.6rem;
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--inv-ink);
@@ -342,23 +354,38 @@ html, body {{
 /* ------------------------------------------------------------------ */
 /* AG-Grid overrides — alpine theme, hairline borders, tabular-num     */
 /* ------------------------------------------------------------------ */
+/* These AG-Grid custom properties must carry ``!important``: NiceGUI loads the
+   bundled ``ag-grid.css`` (which declares the same variables on
+   ``.ag-theme-alpine`` at equal specificity) *after* this stylesheet, so
+   without the flag Alpine's defaults silently win and our font-size / row
+   sizing / colours never render. The dark-mode block below relies on the same
+   technique. */
 .ag-theme-alpine, .ag-theme-balham, .ag-theme-quartz {{
-  --ag-foreground-color: var(--inv-ink);
-  --ag-background-color: var(--inv-surface);
-  --ag-header-foreground-color: var(--inv-muted);
-  --ag-header-background-color: var(--inv-surface);
-  --ag-odd-row-background-color: var(--inv-surface);
-  --ag-row-hover-color: var(--inv-surface-alt);
-  --ag-border-color: var(--inv-hairline);
-  --ag-row-border-color: var(--inv-hairline);
-  --ag-header-column-separator-color: transparent;
-  --ag-font-family: "Inter", system-ui, sans-serif;
-  --ag-font-size: 15px;
-  --ag-grid-size: 8px;
-  --ag-row-height: 46px;
-  --ag-header-height: 50px;
-  --ag-cell-horizontal-padding: 16px;
-  --ag-selected-row-background-color: var(--inv-accent-soft);
+  --ag-foreground-color: var(--inv-ink) !important;
+  --ag-data-color: var(--inv-ink) !important;
+  --ag-background-color: var(--inv-surface) !important;
+  --ag-header-foreground-color: var(--inv-muted) !important;
+  /* Distinct, slightly tinted header band so column titles read as a clear
+     anchor above the data rather than blending into the first row. */
+  --ag-header-background-color: var(--inv-surface-alt) !important;
+  /* Zebra striping (v2.8.1): a whisper-soft tint on alternating rows makes
+     wide financial tables far easier to scan across without feeling busy. */
+  --ag-odd-row-background-color: color-mix(in srgb, var(--inv-surface-alt) 55%, var(--inv-surface)) !important;
+  /* Accent-tinted hover so the pointed-at row stands apart from the stripes. */
+  --ag-row-hover-color: var(--inv-accent-soft) !important;
+  --ag-border-color: var(--inv-hairline) !important;
+  --ag-row-border-color: var(--inv-hairline) !important;
+  --ag-header-column-separator-color: transparent !important;
+  --ag-font-family: "Inter", system-ui, sans-serif !important;
+  /* Larger, comfortably readable body text. The document root is 20px, so a
+     16px table read noticeably *smaller* than the surrounding UI; 18px brings
+     the data up to a large, stylish, easy-to-read size (v2.8.1). */
+  --ag-font-size: 18px !important;
+  --ag-grid-size: 9px !important;
+  --ag-row-height: 62px !important;
+  --ag-header-height: 60px !important;
+  --ag-cell-horizontal-padding: 24px !important;
+  --ag-selected-row-background-color: var(--inv-accent-soft) !important;
   --ag-range-selection-border-color: var(--inv-accent);
 }}
 /* Dark-mode overrides — re-declare AG variables on the dark body so they
@@ -374,9 +401,9 @@ html, body {{
   --ag-data-color: {dark["ink"]} !important;
   --ag-background-color: {dark["surface"]} !important;
   --ag-header-foreground-color: {dark["muted"]} !important;
-  --ag-header-background-color: {dark["surface"]} !important;
-  --ag-odd-row-background-color: {dark["surface"]} !important;
-  --ag-row-hover-color: {dark["surface_alt"]} !important;
+  --ag-header-background-color: {dark["surface_alt"]} !important;
+  --ag-odd-row-background-color: {dark["surface_alt"]} !important;
+  --ag-row-hover-color: {dark["accent_soft"]} !important;
   --ag-border-color: {dark["hairline"]} !important;
   --ag-row-border-color: {dark["hairline"]} !important;
   --ag-control-panel-background-color: {dark["surface_alt"]} !important;
@@ -392,7 +419,7 @@ html, body {{
   border-color: {dark["hairline"]} !important;
 }}
 .body--dark .ag-header, html.dark .ag-header {{
-  background: {dark["surface"]} !important;
+  background: {dark["surface_alt"]} !important;
   color: {dark["muted"]} !important;
   border-bottom-color: {dark["hairline"]} !important;
 }}
@@ -401,8 +428,13 @@ html, body {{
   color: {dark["ink"]} !important;
   border-color: {dark["hairline"]} !important;
 }}
-.body--dark .ag-row-hover, html.dark .ag-row-hover {{
+/* Zebra striping in dark mode: AG-Grid's own odd-row variable is shadowed by
+   the blanket .ag-row override above, so tint odd rows explicitly. */
+.body--dark .ag-row-odd, html.dark .ag-row-odd {{
   background: {dark["surface_alt"]} !important;
+}}
+.body--dark .ag-row-hover, html.dark .ag-row-hover {{
+  background: {dark["accent_soft"]} !important;
 }}
 .body--dark .ag-pinned-left-cols-container, html.dark .ag-pinned-left-cols-container,
 .body--dark .ag-pinned-right-cols-container, html.dark .ag-pinned-right-cols-container,
@@ -422,11 +454,20 @@ html, body {{
   overflow: hidden;
 }}
 .ag-header {{
-  border-bottom: 1px solid var(--inv-hairline) !important;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  border-bottom: 2px solid var(--inv-hairline) !important;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  font-size: 12px;
+  font-size: 13.5px;
+}}
+/* Vertically centre cell content with comfortable line-height, and give the
+   data slightly heavier weight so the taller tables read as crisp, airy and
+   modern rather than thin, faint and top-anchored (v2.8.1). */
+.ag-theme-alpine .ag-cell {{
+  display: flex;
+  align-items: center;
+  line-height: 1.45;
+  font-weight: 500;
 }}
 .ag-cell[col-id$="_eur"], .ag-cell[col-id$="_usd"], .ag-cell[col-id$="_native"],
 .ag-cell[col-id="qty"], .ag-cell[col-id="price"], .ag-cell[col-id="fees"],
