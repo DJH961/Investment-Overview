@@ -221,14 +221,24 @@ html, body {{
 /* ------------------------------------------------------------------ */
 /* KPI / metric cards                                                  */
 /* ------------------------------------------------------------------ */
+/* v2.8.1 — all Overview KPI tiles share one responsive grid so every
+   card is the same width and lines up in tidy columns instead of the
+   ragged flex-wrap rows that left odd gaps and mismatched sizes. */
+.inv-kpi-grid {{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+  gap: 1rem;
+  align-items: stretch;
+}}
 .inv-kpi {{
   background: var(--inv-surface) !important;
   border: 1px solid var(--inv-hairline);
   border-radius: var(--inv-radius-lg);
   box-shadow: var(--inv-shadow-soft);
   padding: 1rem 1.125rem;
-  min-width: 13rem;
-  min-height: 7.25rem;
+  min-width: 0;
+  min-height: 7.5rem;
+  height: 100%;
   flex: 1 1 13rem;
   display: flex;
   flex-direction: column;
@@ -246,7 +256,9 @@ html, body {{
   font-weight: 600;
 }}
 .inv-kpi-value {{
-  font-size: 2rem;
+  /* Trimmed from 2rem so long figures (e.g. a big YTD %) stay on one line
+     and every tile keeps a uniform headline size (v2.8.1). */
+  font-size: 1.6rem;
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--inv-ink);
@@ -353,11 +365,11 @@ html, body {{
   --ag-row-border-color: var(--inv-hairline);
   --ag-header-column-separator-color: transparent;
   --ag-font-family: "Inter", system-ui, sans-serif;
-  --ag-font-size: 15px;
-  --ag-grid-size: 8px;
-  --ag-row-height: 46px;
-  --ag-header-height: 50px;
-  --ag-cell-horizontal-padding: 16px;
+  --ag-font-size: 16px;
+  --ag-grid-size: 9px;
+  --ag-row-height: 54px;
+  --ag-header-height: 56px;
+  --ag-cell-horizontal-padding: 18px;
   --ag-selected-row-background-color: var(--inv-accent-soft);
   --ag-range-selection-border-color: var(--inv-accent);
 }}
@@ -424,9 +436,14 @@ html, body {{
 .ag-header {{
   border-bottom: 1px solid var(--inv-hairline) !important;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  font-size: 12px;
+  font-size: 13px;
+}}
+/* Slightly heavier data text so the larger tables read as crisp and modern
+   rather than thin and faint (v2.8.1). */
+.ag-theme-alpine .ag-cell {{
+  font-weight: 500;
 }}
 .ag-cell[col-id$="_eur"], .ag-cell[col-id$="_usd"], .ag-cell[col-id$="_native"],
 .ag-cell[col-id="qty"], .ag-cell[col-id="price"], .ag-cell[col-id="fees"],

@@ -26,14 +26,17 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from nicegui import ui
 
 from investment_dashboard import __version__
 from investment_dashboard.db import session_scope
-from investment_dashboard.services import display_currency_service, theme_service
+from investment_dashboard.services import (
+    display_currency_service,
+    theme_service,
+    timezone_service,
+)
 from investment_dashboard.services.onboarding_service import is_onboarded
 from investment_dashboard.ui import style as ui_style
 
@@ -126,7 +129,7 @@ def _cycle_theme(
         pass
 
 
-def _header(title: str, *, current_currency: str, dark: ui.dark_mode) -> None:
+def _header(title: str, *, current_currency: str, now_label: str, dark: ui.dark_mode) -> None:
     with (
         ui.header(elevated=False).classes("inv-header q-px-md").style("min-height:56px"),
         ui.row().classes("items-center justify-between w-full no-wrap"),
@@ -160,9 +163,7 @@ def _header(title: str, *, current_currency: str, dark: ui.dark_mode) -> None:
                 on_click=ui.navigate.reload,
             ).props("flat round dense").tooltip("Refresh page")
             ui.html(
-                '<span style="font-size:.75rem;color:var(--inv-muted)">'
-                + datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M UTC")
-                + "</span>"
+                '<span style="font-size:.75rem;color:var(--inv-muted)">' + now_label + "</span>"
             )
 
 
@@ -230,10 +231,12 @@ def page_frame(title: str, *, current: str) -> Iterator[None]:
     try:
         with session_scope() as session:
             current_currency = display_currency_service.get_display_currency(session)
+            now_label = timezone_service.now(session).strftime("%Y-%m-%d %H:%M %Z")
     except Exception:  # pragma: no cover - defensive
         current_currency = display_currency_service.DEFAULT_CURRENCY
+        now_label = ""
 
-    _header(title, current_currency=current_currency, dark=dark)
+    _header(title, current_currency=current_currency, now_label=now_label, dark=dark)
     _sidebar(current)
     with ui.column().classes("inv-page q-pa-lg gap-md") as col:
         yield
