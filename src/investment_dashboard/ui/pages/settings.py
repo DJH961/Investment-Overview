@@ -703,6 +703,86 @@ def _open_reset_dialog(
     dialog.open()
 
 
+def _download_audit_export() -> None:  # pragma: no cover - UI
+    """Build the full dashboard snapshot and offer it as a JSON download."""
+    from investment_dashboard.services.audit_export_service import (  # noqa: PLC0415
+        audit_export_filename,
+        build_audit_export_json,
+    )
+
+    try:
+        with session_scope() as session:
+            payload = build_audit_export_json(session)
+    except Exception as exc:
+        log.exception("audit export failed")
+        ui.notify(f"Audit export failed: {exc}", type="negative")
+        return
+    ui.download.content(payload, audit_export_filename())
+    ui.notify("Audit export downloaded.", type="positive")
+
+
+def _render_audit_export_controls() -> None:  # pragma: no cover - UI
+    ui.button(
+        "Download audit export (JSON)",
+        icon="download",
+        on_click=_download_audit_export,
+    ).props("unelevated color=primary no-caps")
+
+
+def _render_dev_tools_section() -> None:  # pragma: no cover - UI
+    """Collapsed developer panel: a password-gated full audit export.
+
+    The export bundles every dashboard's computed figures and the raw ledger
+    into one JSON file so the app's totals and growth rates can be reconciled
+    against an external source. It lives behind a collapsed expansion (and an
+    optional dev password) so it stays out of the everyday flow.
+    """
+    from investment_dashboard.services.audit_export_service import (  # noqa: PLC0415
+        dev_password_configured,
+        verify_dev_password,
+    )
+
+    with ui.expansion("Developer tools", icon="developer_mode").classes("w-full"):
+        ui.label(
+            "Advanced diagnostics. The audit export bundles every dashboard's "
+            "computed figures (overview, monthly, yearly, analytics, "
+            "calculator, deposits) together with the raw ledger into a single "
+            "JSON file, so the app's totals and growth rates can be reconciled "
+            "against an external source and any divergence pinned down.",
+        ).classes("text-caption opacity-70 q-mb-sm")
+        if not dev_password_configured():
+            ui.label(
+                "No developer password is set, so this export is ungated. Set "
+                "the INV_DASHBOARD_DEV_PASSWORD environment variable to require "
+                "one here.",
+            ).classes("text-caption text-grey q-mb-sm")
+            _render_audit_export_controls()
+            return
+
+        ui.label("Enter the developer password to unlock the audit export.").classes(
+            "text-caption opacity-70"
+        )
+        pw_in = (
+            ui.input("Developer password")
+            .props("outlined dense type=password")
+            .classes("w-full max-w-md")
+        )
+        slot = ui.column().classes("gap-sm q-mt-sm")
+
+        def _unlock() -> None:
+            if not verify_dev_password(pw_in.value or ""):
+                ui.notify("Incorrect developer password.", type="warning")
+                return
+            slot.clear()
+            with slot:
+                _render_audit_export_controls()
+            ui.notify("Developer tools unlocked.", type="positive")
+
+        ui.button("Unlock", icon="lock_open", on_click=_unlock).props(
+            "unelevated color=primary no-caps"
+        )
+
+
 def _render_reset_section() -> None:  # pragma: no cover - UI
     with ui.column().classes("w-full gap-sm"):
         for level_value, title, clears, keeps, icon in _RESET_OPTIONS:
@@ -1415,6 +1495,12 @@ def register() -> None:
                 _render_allocations_section(allocations)
             with section("Help & documentation"):
                 _render_help_section()
+            with section("Developer tools"):
+                ui.label(
+                    "Diagnostics for reconciling the app against another "
+                    "source. Tucked away and optionally password-gated.",
+                ).classes("text-caption opacity-70 q-mb-sm")
+                _render_dev_tools_section()
             # Reset lives last — it's the most destructive action, so it sits
             # at the bottom of the page rather than near the top (v2.8).
             with section("Reset data"):

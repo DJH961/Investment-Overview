@@ -143,6 +143,18 @@ Your desired mix of instruments, by percentage.
 
 A shortcut back to the in-app **Help** page (the same content as this guide).
 
+### Developer tools
+
+A collapsed panel with an **audit export**. Expand it and (if a developer
+password is configured) enter it to unlock **Download audit export (JSON)**.
+The export bundles every dashboard's computed figures — overview KPIs and
+positions, deposits, the monthly and yearly tables, analytics and the
+calculator — together with the **raw ledger** into one JSON file. Use it to
+reconcile the app's totals and growth rates against an external source (for
+example a spreadsheet) and pin down where they diverge. It is read-only and
+never alters your data. Set `INV_DASHBOARD_DEV_PASSWORD` to require a password
+here; leave it unset to keep the export ungated on a single-user machine.
+
 ---
 
 ## 4. Understanding the headline return metrics

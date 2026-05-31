@@ -156,6 +156,7 @@ file at the repo root. See [`.env.example`](.env.example).
 | `INV_DASHBOARD_API_ENABLED` | `false` | Mount the read-only JSON API at `/api` on the server |
 | `INV_DASHBOARD_API_TOKEN` | unset | Optional bearer token guarding `/api` (set when exposed beyond LAN) |
 | `INV_DASHBOARD_SNAPSHOT_PATH` | beside config tier | Output path for `inv-dashboard-export-snapshot` |
+| `INV_DASHBOARD_DEV_PASSWORD` | unset | Optional password gating Settings → Developer tools (the full audit export) |
 
 ### Storage, cloud sync, and safety tools
 
