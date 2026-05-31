@@ -227,7 +227,7 @@ def _value_curve_figure(points, *, currency: str):  # type: ignore[no-untyped-de
                 y=values,
                 mode="lines",
                 name=f"Portfolio value ({currency})",
-                line={"width": 2.4, "color": GAIN_COLOR, "shape": "spline"},
+                line={"width": 2.4, "color": GAIN_COLOR},
                 fill="tozeroy",
                 fillcolor="rgba(0,114,178,0.12)",
                 hovertemplate=(f"%{{x|%d %b %Y}}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"),

@@ -639,7 +639,7 @@ def _render_display_prefs(
             on_change=lambda e: _set_timezone(e.value),
         ).props("dense outlined options-dense").classes("min-w-[16rem]")
         ui.label(
-            "Sets the clock shown in the header. “Local” follows this "
+            'Sets the clock shown in the header. "Local" follows this '
             "computer's timezone; pick any zone to override it.",
         ).classes("text-caption opacity-70")
 
