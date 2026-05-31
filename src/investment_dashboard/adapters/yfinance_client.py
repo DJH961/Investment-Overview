@@ -273,8 +273,12 @@ def _history_closes(
     except (KeyError, TypeError):
         return {}
     for ts, value in close_series.dropna().items():
-        day = ts.date() if hasattr(ts, "date") else ts
-        closes[day] = Decimal(repr(float(value)))
+        if not hasattr(ts, "date"):
+            # The index is normally a pandas Timestamp; anything without a
+            # ``.date()`` can't be a valid date key, so skip it rather than
+            # store a non-date key the callers would never match.
+            continue
+        closes[ts.date()] = Decimal(repr(float(value)))
     return closes
 
 
