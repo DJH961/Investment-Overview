@@ -218,29 +218,62 @@ def test_position_rows_default_no_price_data_warning(session: Session, seeded: N
 def test_market_verdict_beating_and_trailing(session: Session, seeded: None) -> None:
     from investment_dashboard.ui.pages._overview_query import compute_market_verdict
 
-    # Seed the default benchmark (VT) with +10 % over the window.
+    # Fund the simulated benchmark with a real external contribution, and give
+    # VT a +10 % move over the window (flat EUR→USD so EUR price == USD close).
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Cash",
+        native_currency="EUR",
+        account_type="brokerage",
+    )
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2024, 1, 5),
+            kind="deposit",
+            quantity=None,
+            price_native=None,
+            net_native=Decimal("1000"),
+            net_eur=Decimal("1000"),
+            source=TransactionSource.MANUAL,
+        )
+    )
     vt = instruments_repo.get_or_create(session, symbol="VT", asset_class="etf")
     prices_repo.upsert_closes(
         session,
         vt.id,
         {date(2024, 1, 5): Decimal("100.00"), date.today(): Decimal("110.00")},
     )
+    fx_repo.upsert_rates(
+        session,
+        {date(2024, 1, 5): Decimal("1.00"), date.today(): Decimal("1.00")},
+    )
     session.flush()
 
-    beating = compute_market_verdict(session, portfolio_return=Decimal("0.20"))
+    from investment_dashboard.domain.returns import years_between
+
+    # In production ``years`` is the real horizon (first contribution → as_of),
+    # which equals the benchmark simulation horizon, so the benchmark's
+    # compounded growth collapses back to its 1000 → 1100 total return.
+    years = years_between(date(2024, 1, 5), date.today())
+    # Portfolio XIRR well above the benchmark's ⇒ beating.
+    beating = compute_market_verdict(session, portfolio_xirr=Decimal("5.0"), years=years)
     assert beating.benchmark_symbol == "VT"
     assert beating.benchmark_return is not None
+    # A single contribution that grows 1000 → 1100 implies 10 % compounded
+    # total growth over the horizon, independent of the annualisation.
     assert abs(beating.benchmark_return - Decimal("0.10")) < Decimal("0.0001")
     assert beating.beating is True
 
-    trailing = compute_market_verdict(session, portfolio_return=Decimal("0.05"))
+    trailing = compute_market_verdict(session, portfolio_xirr=Decimal("0.0"), years=years)
     assert trailing.beating is False
 
 
 def test_market_verdict_none_without_benchmark_history(session: Session, seeded: None) -> None:
     from investment_dashboard.ui.pages._overview_query import compute_market_verdict
 
-    verdict = compute_market_verdict(session, portfolio_return=Decimal("0.10"))
+    verdict = compute_market_verdict(session, portfolio_xirr=Decimal("0.10"), years=Decimal("1"))
     assert verdict.beating is None
     assert verdict.benchmark_return is None
 

@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import dividends
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
+from investment_dashboard.domain.money_market import is_money_market
 from investment_dashboard.domain.returns import (
     Cashflow,
     capital_gain,
@@ -290,6 +291,18 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         account.id
         for account in accounts_repo.list_accounts(session)
         if account.account_type in _RETAINED_CASH_ACCOUNT_TYPES
+    }
+    # Distributions swept into an in-portfolio money-market / settlement fund
+    # (VMFXX, SPAXX, …) are already captured by the terminal mark-to-market of
+    # that fund's holding, so counting them again as XIRR outflows would
+    # double-count the cash and inflate the return. Treat any account that
+    # holds such a fund as cash-retaining.
+    retained_cash_account_ids |= {
+        t.account_id
+        for t in txns
+        if t.account_id is not None
+        and t.instrument is not None
+        and is_money_market(t.instrument.symbol, name=t.instrument.name)
     }
 
     cap_gain_eur = capital_gain(

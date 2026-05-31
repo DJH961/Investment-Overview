@@ -434,3 +434,83 @@ class TestExpenseAndMtdMetrics:
         # Month start (2024-03-01) precedes the only deposit ⇒ no base value.
         m = metrics_service.compute_portfolio_metrics(session, as_of=date(2024, 3, 15))
         assert m.mtd_growth_pct is None
+
+
+class TestMoneyMarketSweptDistributions:
+    def test_distribution_swept_into_settlement_fund_not_an_xirr_outflow(
+        self, session: Session
+    ) -> None:
+        """A dividend paid into a brokerage account that also holds a
+        money-market settlement fund (VMFXX/SPAXX) is already captured by that
+        fund's terminal value, so it must not double-count as an XIRR outflow
+        and inflate the return."""
+        acct_id = _seed_usd_brokerage(session)
+        vti = instruments_repo.get_or_create(session, symbol="VTI", name="VTI")
+        vmfxx = instruments_repo.get_or_create(session, symbol="VMFXX", name="VMFXX")
+        session.add_all(
+            [
+                Transaction(
+                    account_id=acct_id,
+                    instrument_id=vti.id,
+                    date=date(2024, 1, 5),
+                    kind="buy",
+                    quantity=Decimal("10"),
+                    price_native=Decimal("100"),
+                    net_native=Decimal("-1000"),
+                    net_eur=Decimal("-1000"),
+                    net_usd=Decimal("-1000"),
+                    source="manual",
+                ),
+                # Settlement-fund holding in the same account.
+                Transaction(
+                    account_id=acct_id,
+                    instrument_id=vmfxx.id,
+                    date=date(2024, 1, 5),
+                    kind="buy",
+                    quantity=Decimal("50"),
+                    price_native=Decimal("1"),
+                    net_native=Decimal("-50"),
+                    net_eur=Decimal("-50"),
+                    net_usd=Decimal("-50"),
+                    source="manual",
+                ),
+                # A cash dividend swept into the settlement fund.
+                Transaction(
+                    account_id=acct_id,
+                    instrument_id=vti.id,
+                    date=date(2024, 6, 1),
+                    kind="dividend_cash",
+                    net_native=Decimal("30"),
+                    net_eur=Decimal("30"),
+                    net_usd=Decimal("30"),
+                    source="manual",
+                ),
+            ]
+        )
+        prices_repo.upsert_closes(session, vti.id, {date.today(): Decimal("120")})
+        fx_repo.upsert_rates(
+            session,
+            {
+                date(2024, 1, 5): Decimal("1"),
+                date(2024, 6, 1): Decimal("1"),
+                date.today(): Decimal("1"),
+            },
+        )
+        session.flush()
+
+        from investment_dashboard.domain.money_market import is_money_market
+        from investment_dashboard.repositories import transactions_repo
+        from investment_dashboard.services import metrics_service as ms
+
+        txns = list(transactions_repo.list_transactions(session))
+        retained = {
+            t.account_id
+            for t in txns
+            if t.account_id is not None
+            and t.instrument is not None
+            and is_money_market(t.instrument.symbol, name=t.instrument.name)
+        }
+        assert acct_id in retained
+        flows = ms.build_portfolio_cashflows(txns, retained_cash_account_ids=retained)
+        # No positive distribution flow: the swept dividend is retained.
+        assert all(cf.amount <= 0 for cf in flows)

@@ -14,7 +14,7 @@ from investment_dashboard.domain.currency import (
     lookup_rate_with_forward_fill,
 )
 from investment_dashboard.domain.money_market import is_money_market
-from investment_dashboard.domain.returns import Cashflow, xirr
+from investment_dashboard.domain.returns import Cashflow, total_growth_pct_compounded, xirr
 from investment_dashboard.models import TransactionKind
 from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import fx_service, prices_service, snapshots_service
@@ -435,11 +435,16 @@ def _instrument_ytd_growth(
 class MarketVerdict:
     """ "Did I beat the market?" comparison for the overview KPI strip.
 
-    Mirrors the spreadsheet's ``Total!Z23`` verdict. ``portfolio_return``
-    and ``benchmark_return`` are total (not annualised) growth fractions
-    over the same window — the portfolio's since-inception total growth vs
-    a buy-and-hold of the benchmark index. ``beating`` is ``None`` when
-    either side can't be computed (no benchmark history / no transactions).
+    Mirrors the spreadsheet's ``Total!Z23`` verdict. Both sides are computed
+    with the **same** method over the **same** horizon: an XIRR over the
+    portfolio's external contribution cashflows, expressed as the compounded
+    total growth ``(1 + XIRR) ^ years − 1`` it implies over the time invested.
+    ``portfolio_return`` is the portfolio's own XIRR-implied growth; the
+    ``benchmark_return`` is the growth those identical contributions would have
+    earned in a buy-and-hold of the benchmark index. ``beating`` compares the
+    two annualised XIRRs (equivalently, the two compounded returns over the same
+    horizon) and is ``None`` when either side can't be computed (no benchmark
+    history / no transactions).
     """
 
     benchmark_symbol: str
@@ -451,38 +456,38 @@ class MarketVerdict:
 def compute_market_verdict(
     session: Session,
     *,
-    portfolio_return: Decimal | None,
+    portfolio_xirr: Decimal | None,
+    years: Decimal | None,
     as_of: date | None = None,
 ) -> MarketVerdict:
-    """Compare ``portfolio_return`` to a buy-and-hold of the benchmark index.
+    """Compare the portfolio XIRR to the same contributions invested in the
+    benchmark index, on an apples-to-apples XIRR basis.
 
-    The benchmark window starts at the earliest transaction date so the two
-    returns cover the same horizon. Forward-fills nothing — it simply uses
-    the first and last available benchmark closes inside the window.
+    ``portfolio_xirr`` / ``years`` come from the portfolio metrics (EUR basis).
+    The benchmark XIRR is simulated by routing the portfolio's external
+    contribution cashflows into the index (see
+    :func:`benchmark_service.simulate_benchmark_xirr`). Both XIRRs are converted
+    to the compounded total-growth family the overview headlines so the verdict
+    and the headline never quote two different "growth" numbers.
     """
     # Local import keeps the (heavier) benchmark/adapters import lazy and
     # avoids any chance of an import cycle at module load.
     from investment_dashboard.services import benchmark_service  # noqa: PLC0415
 
     as_of = as_of or date.today()
-    txns = list(transactions_repo.list_transactions(session, end=as_of))
     symbol = benchmark_service.get_symbol(session)
-    if not txns:
-        return MarketVerdict(symbol, portfolio_return, None, None)
 
-    start = min(t.date for t in txns)
-    series = benchmark_service.get_series(session, start=start, end=as_of)
+    benchmark_xirr = benchmark_service.simulate_benchmark_xirr(session, as_of=as_of)
+
+    portfolio_return: Decimal | None = None
     benchmark_return: Decimal | None = None
-    if len(series.closes) >= 2:
-        ordered = sorted(series.closes)
-        first_close = series.closes[ordered[0]]
-        last_close = series.closes[ordered[-1]]
-        if first_close != ZERO:
-            benchmark_return = (last_close - first_close) / first_close
+    if years is not None and years > ZERO:
+        portfolio_return = total_growth_pct_compounded(portfolio_xirr, years)
+        benchmark_return = total_growth_pct_compounded(benchmark_xirr, years)
 
     beating: bool | None = None
-    if portfolio_return is not None and benchmark_return is not None:
-        beating = portfolio_return >= benchmark_return
+    if portfolio_xirr is not None and benchmark_xirr is not None:
+        beating = portfolio_xirr >= benchmark_xirr
     return MarketVerdict(symbol, portfolio_return, benchmark_return, beating)
 
 

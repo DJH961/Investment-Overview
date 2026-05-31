@@ -103,3 +103,53 @@ def test_changing_symbol_uses_new_instrument(session) -> None:
     series = svc.get_series(session, start=date(2026, 1, 2), end=date(2026, 1, 3))
     assert series.symbol == "URTH"
     assert series.closes[date(2026, 1, 2)] == Decimal("80")
+
+
+def test_simulate_benchmark_xirr_from_contributions(session) -> None:
+    """A single contribution routed into the benchmark reproduces the index's
+    own buy-and-hold return as the simulated XIRR's compounded growth."""
+    from investment_dashboard.domain.returns import total_growth_pct_compounded, years_between
+    from investment_dashboard.models import Transaction
+    from investment_dashboard.models.transaction import TransactionSource
+    from investment_dashboard.repositories import accounts_repo, fx_repo, prices_repo
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Cash",
+        native_currency="EUR",
+        account_type="brokerage",
+    )
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2024, 1, 5),
+            kind="deposit",
+            net_native=Decimal("1000"),
+            net_eur=Decimal("1000"),
+            source=TransactionSource.MANUAL,
+        )
+    )
+    vt = instruments_repo.get_or_create(session, symbol="VT", asset_class="etf")
+    prices_repo.upsert_closes(
+        session,
+        vt.id,
+        {date(2024, 1, 5): Decimal("100.00"), date.today(): Decimal("110.00")},
+    )
+    fx_repo.upsert_rates(
+        session, {date(2024, 1, 5): Decimal("1.00"), date.today(): Decimal("1.00")}
+    )
+    session.flush()
+
+    bench_xirr = svc.simulate_benchmark_xirr(session, as_of=date.today())
+    assert bench_xirr is not None
+    years = years_between(date(2024, 1, 5), date.today())
+    growth = total_growth_pct_compounded(bench_xirr, years)
+    assert growth is not None
+    assert abs(growth - Decimal("0.10")) < Decimal("0.0001")
+
+
+def test_simulate_benchmark_xirr_none_without_contributions(session) -> None:
+    """With no external contributions there is nothing to route into the
+    benchmark, so the simulation declines to produce a figure."""
+    assert svc.simulate_benchmark_xirr(session, as_of=date.today()) is None

@@ -575,6 +575,22 @@ def _refresh_splits() -> None:
         log.warning("Split refresh failed; continuing with cached splits", exc_info=True)
 
 
+def _refresh_benchmark() -> None:
+    """Backfill the comparison-benchmark close history over the portfolio
+    lifetime so the analytics overlay and the "vs market" verdict have a full
+    curve to compare against (not just the trailing few days)."""
+    try:
+        from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+        from investment_dashboard.services import benchmark_service  # noqa: PLC0415
+
+        start = _earliest_needed_date()
+        with ledger_session_scope() as session:
+            rows = benchmark_service.refresh_history(session, start=start)
+        log.info("Benchmark history refreshed (floor=%s, rows=%d)", start, rows)
+    except Exception:
+        log.warning("Benchmark refresh failed; continuing with cached benchmark", exc_info=True)
+
+
 def _invalidate_snapshots() -> None:
     """Drop cached daily snapshots after a FX/price backfill.
 
@@ -623,6 +639,7 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
     _backfill_transaction_legs()
     _refresh_prices()
     _refresh_splits()
+    _refresh_benchmark()
     _invalidate_snapshots()
 
 
@@ -644,4 +661,5 @@ def run_deferred_network_refresh() -> None:
     _backfill_transaction_legs()
     _refresh_prices()
     _refresh_splits()
+    _refresh_benchmark()
     _invalidate_snapshots()
