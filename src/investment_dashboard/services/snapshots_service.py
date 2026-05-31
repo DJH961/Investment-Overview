@@ -89,6 +89,25 @@ def invalidate_from(session: Session, start: date) -> int:
     return snapshots_repo.delete_from(session, start)
 
 
+def stored_snapshots_in_range(
+    session: Session,
+    start: date,
+    end: date,
+) -> dict[date, Decimal]:
+    """Return ``{date: EUR value}`` for **already-stored** daily snapshots.
+
+    Read-only: unlike :func:`get_or_compute` this never recomputes or
+    caches missing days — it only surfaces the daily values that already
+    exist so callers (period TWR chaining) can compound real intra-period
+    sub-returns. Routed through the cache tier for split-DB layouts.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        rows = snapshots_repo.list_in_range(cache, start, end)
+    return {r.snapshot_date: r.total_value_eur for r in rows}
+
+
 def invalidate_all(session: Session) -> int:
     """Drop every cached snapshot so they recompute from current data.
 

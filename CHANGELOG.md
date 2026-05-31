@@ -19,6 +19,26 @@ FX-conversion bugs, restores `^IRX` as the default risk-free symbol (with a
 resilient fetch), corrects the documentation, and clarifies that near-real-time
 intraday quotes are a supported feature.
 
+### Added
+- **Daily-snapshot time-weighted return** (`/monthly`, `/yearly`). When daily
+  portfolio snapshots exist inside a period, the growth % now chains each
+  sub-period's Modified-Dietz return (`Π(1+rᵢ)−1`) instead of approximating the
+  whole period with a single flow — so a contribution made between two market
+  swings no longer averages the swing away. Degrades to the old single-period
+  calc when daily values are sparse (`_period_query`, `snapshots_service`).
+- **Dividend-yield KPI** on `/overview` (`cash dividends ÷ closing balance`),
+  completing the spreadsheet's `Total` block parity (`metrics_service`,
+  `readmodels/overview`, `ui/pages/overview`).
+- **Instrument metadata auto-populate.** The Settings "Add instrument" dialog
+  gained a *Fetch from market data* button that fills asset class, category,
+  expense ratio, name and native currency from yfinance, so those fields are no
+  longer hand-typed (`instrument_enrichment_service.suggest_instrument_fields`,
+  `adapters/yfinance_client`, `ui/pages/settings`).
+- **`transfer_in` / `transfer_out` transaction kinds** are now counted as
+  external cash flows (in like a deposit, out like a withdrawal) across metrics,
+  deposits and the monthly/yearly aggregation (`metrics_service`,
+  `_period_query`, `_deposits_query`).
+
 ### Fixed
 - **USD figures no longer silently relabel EUR as USD when an FX rate is
   missing.** Overview instrument/portfolio metrics and the monthly/yearly period

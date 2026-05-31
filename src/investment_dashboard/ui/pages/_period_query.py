@@ -253,6 +253,54 @@ def _modified_dietz(
     return (closing - opening - net_external_flow) / denom
 
 
+def _flow_between(
+    flows_by_date: dict[date, Decimal],
+    after: date,
+    through: date,
+) -> Decimal:
+    """Sum signed external flows on dates in ``(after, through]``."""
+    return sum(
+        (amt for d, amt in flows_by_date.items() if after < d <= through),
+        start=ZERO,
+    )
+
+
+def _chained_twr(
+    *,
+    opening: Decimal,
+    opening_date: date,
+    period_end: date,
+    closing: Decimal,
+    interior: list[tuple[date, Decimal]],
+    flows_by_date: dict[date, Decimal],
+) -> Decimal | None:
+    """True daily time-weighted return chained across stored snapshots.
+
+    Each sub-period between consecutive stored daily values gets its own
+    Modified-Dietz return (with that sub-period's external flow), and the
+    sub-returns are geometrically linked: ``Π(1 + r_i) − 1``. With no
+    interior snapshots this collapses to a single Modified-Dietz over the
+    whole period, so it is a strict generalisation of the previous
+    approximation (the audit §3.2.12 upgrade — daily snapshots now exist,
+    so intra-period market swings between contributions are no longer
+    averaged away). Returns ``None`` if any sub-period denominator is
+    non-positive.
+    """
+    points = [*interior, (period_end, closing)]
+    prev_value = opening
+    prev_date = opening_date
+    cumulative = Decimal(1)
+    for point_date, point_value in points:
+        flow = _flow_between(flows_by_date, prev_date, point_date)
+        sub = _modified_dietz(prev_value, point_value, flow)
+        if sub is None:
+            return None
+        cumulative *= Decimal(1) + sub
+        prev_value = point_value
+        prev_date = point_date
+    return cumulative - Decimal(1)
+
+
 def _display_value(value_eur: Decimal, currency: str, fx_rate: Decimal | None) -> Decimal | None:
     if currency.upper() == "EUR":
         return value_eur
@@ -335,6 +383,9 @@ def aggregate(  # noqa: PLR0912, PLR0915
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
 
     buckets: dict[str, dict[str, Decimal]] = {}
+    #: Signed external cash flow (deposit/transfer_in +, withdrawal/transfer_out −)
+    #: per calendar date in EUR — feeds the daily-chained TWR (§3.2.12).
+    flows_by_date_eur: dict[date, Decimal] = {}
     for t in txns:
         key = _period_key(t.date, monthly=monthly)
         b = buckets.setdefault(key, {"contrib": ZERO, "div": ZERO, "int": ZERO})
@@ -345,8 +396,10 @@ def aggregate(  # noqa: PLR0912, PLR0915
             continue
         if t.kind in ("deposit", "transfer_in"):
             b["contrib"] += amt
+            flows_by_date_eur[t.date] = flows_by_date_eur.get(t.date, ZERO) + amt
         elif t.kind in ("withdrawal", "transfer_out"):
             b["contrib"] -= amt
+            flows_by_date_eur[t.date] = flows_by_date_eur.get(t.date, ZERO) - amt
         elif t.kind == "dividend_cash":
             b["div"] += amt
         elif t.kind == "interest":
@@ -371,7 +424,7 @@ def aggregate(  # noqa: PLR0912, PLR0915
         # services elsewhere.
         from investment_dashboard.services import snapshots_service  # noqa: PLC0415
 
-        for label, agg in buckets.items():
+        for label in buckets:
             period_end = _period_end(label, monthly=monthly, today=today)
             period_open = _period_start(label, monthly=monthly)
             try:
@@ -392,10 +445,22 @@ def aggregate(  # noqa: PLR0912, PLR0915
                 # leave growth undefined.
                 growth_by_label[label] = None
             else:
-                growth_by_label[label] = _modified_dietz(
-                    opening_by_label[label],
-                    closing_by_label[label],
-                    agg["contrib"],
+                # True daily-chained TWR: compound each sub-period between
+                # stored daily snapshots (§3.2.12). Interior days are only
+                # those already cached — never force-computed here — so the
+                # calc degrades to a single Modified-Dietz when daily values
+                # are sparse (e.g. before the daily backfill ran).
+                interior_map = snapshots_service.stored_snapshots_in_range(
+                    session, period_open, period_end - timedelta(days=1)
+                )
+                interior = sorted(interior_map.items())
+                growth_by_label[label] = _chained_twr(
+                    opening=opening_by_label[label],
+                    opening_date=period_open - timedelta(days=1),
+                    period_end=period_end,
+                    closing=closing_by_label[label],
+                    interior=interior,
+                    flows_by_date=flows_by_date_eur,
                 )
 
     # ------- FX-aware per-display-currency reaggregation (v2.2) -------
@@ -413,6 +478,8 @@ def aggregate(  # noqa: PLR0912, PLR0915
         # display-side conversion entirely — the renderer's spot-rate
         # fallback is more useful than emitting zeros for every row.
         if fx_rates:
+            #: Signed external flow per date in the display currency (§3.2.12).
+            flows_by_date_display: dict[date, Decimal] = {}
             for label in buckets:
                 display_buckets[label] = {"contrib": ZERO, "div": ZERO, "int": ZERO}
             for t in txns:
@@ -425,10 +492,12 @@ def aggregate(  # noqa: PLR0912, PLR0915
                     continue
                 key = _period_key(t.date, monthly=monthly)
                 b = display_buckets[key]
-                if t.kind == "deposit":
+                if t.kind in ("deposit", "transfer_in"):
                     b["contrib"] += amt
-                elif t.kind == "withdrawal":
+                    flows_by_date_display[t.date] = flows_by_date_display.get(t.date, ZERO) + amt
+                elif t.kind in ("withdrawal", "transfer_out"):
                     b["contrib"] -= amt
+                    flows_by_date_display[t.date] = flows_by_date_display.get(t.date, ZERO) - amt
                 elif t.kind == "dividend_cash":
                     b["div"] += amt
                 elif t.kind == "interest":
@@ -466,10 +535,27 @@ def aggregate(  # noqa: PLR0912, PLR0915
                     if period_open > today:
                         growth_display[label] = None
                     else:
-                        growth_display[label] = _modified_dietz(
-                            opening_display[label] or ZERO,
-                            closing_display[label] or ZERO,
-                            display_buckets[label]["contrib"],
+                        interior_dates = sorted(
+                            _snap_for_ccy.stored_snapshots_in_range(
+                                session, period_open, period_end - timedelta(days=1)
+                            )
+                        )
+                        interior_disp = [
+                            (
+                                d,
+                                _snap_for_ccy.get_or_compute_in_currency(
+                                    session, d, normalised_display_ccy
+                                ),
+                            )
+                            for d in interior_dates
+                        ]
+                        growth_display[label] = _chained_twr(
+                            opening=opening_display[label] or ZERO,
+                            opening_date=period_open - timedelta(days=1),
+                            period_end=period_end,
+                            closing=closing_display[label] or ZERO,
+                            interior=interior_disp,
+                            flows_by_date=flows_by_date_display,
                         )
 
     rows = [
