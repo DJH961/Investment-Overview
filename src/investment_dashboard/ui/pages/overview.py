@@ -84,9 +84,11 @@ def _pct_card(
 
 
 #: AG-Grid ``valueFormatter`` (JS expression) rendering a numeric fraction as a
-#: signed percentage, e.g. ``0.0455`` -> ``"4.55 %"``; blanks out ``null``.
+#: signed percentage, e.g. ``0.0455`` -> ``"4.55 %"``; blanks out ``null``. The
+#: value is the AG-Grid expression variable ``value`` (there is no ``params``
+#: object for string expressions — using it leaves the cell unformatted).
 _PCT_FORMATTER = (
-    "params.value == null ? '' : (params.value * 100).toLocaleString("
+    "value == null ? '' : (value * 100).toLocaleString("
     "undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) + ' %'"
 )
 

@@ -44,9 +44,11 @@ from investment_dashboard.ui.money_format import aggrid_money_formatter
 ZERO = Decimal(0)
 
 #: AG-Grid ``valueFormatter`` (JS) rendering a numeric fraction as a signed
-#: percentage, e.g. ``0.0455`` -> ``"4.55 %"``; blanks out ``null``.
+#: percentage, e.g. ``0.0455`` -> ``"4.55 %"``; blanks out ``null``. The string
+#: is an AG-Grid *expression*, so the value is the in-scope ``value`` variable
+#: (there is no ``params`` object — that only exists for function formatters).
 _PCT_FORMATTER = (
-    "params.value == null ? '' : (params.value * 100).toLocaleString("
+    "value == null ? '' : (value * 100).toLocaleString("
     "undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) + ' %'"
 )
 

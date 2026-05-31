@@ -111,8 +111,13 @@ def aggrid_money_formatter(currency: str, *, decimals: int = 2) -> str:
     blanks out.
     """
     symbol = currency_symbol(currency)
+    # NB: AG-Grid evaluates a string ``valueFormatter`` as an *expression* whose
+    # in-scope variables are ``value``, ``data``, ``node`` … (there is no
+    # ``params`` object — that only exists for real function formatters). Using
+    # ``value`` is what makes the column actually format instead of silently
+    # falling back to the raw, unformatted number.
     return (
-        f"params.value == null ? '' : '{symbol}' + params.value.toLocaleString("
+        f"value == null ? '' : '{symbol}' + value.toLocaleString("
         f"undefined,{{minimumFractionDigits:{decimals},maximumFractionDigits:{decimals}}})"
     )
 

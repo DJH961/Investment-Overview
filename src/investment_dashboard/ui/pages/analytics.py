@@ -325,7 +325,7 @@ def register() -> None:
                                     "headerName": "% of total return",
                                     "field": "pct_of_total_return",
                                     "type": "rightAligned",
-                                    "valueFormatter": "params.value.toFixed(2) + ' %'",
+                                    "valueFormatter": "value == null ? '' : value.toFixed(2) + ' %'",
                                 },
                             ],
                             "rowData": rows,
