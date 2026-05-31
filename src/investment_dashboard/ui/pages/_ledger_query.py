@@ -178,6 +178,7 @@ def _to_record(
         native_currency=native_ccy,
         net_native=t.net_native,
         net_eur=t.net_eur,
+        net_usd=t.net_usd,
         on=t.date,
         eur_to_usd=eur_to_usd or {},
         fallback_rate=fallback_rate,

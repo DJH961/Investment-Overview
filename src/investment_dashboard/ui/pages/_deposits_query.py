@@ -104,6 +104,7 @@ def _amounts(
         native_currency=native_currency,
         net_native=t.net_native,
         net_eur=t.net_eur,
+        net_usd=t.net_usd,
         on=t.date,
         eur_to_usd=eur_to_usd,
     )

@@ -216,6 +216,7 @@ def compute_instrument_metrics(  # noqa: PLR0915
             native_currency=native,
             net_native=t.net_native,
             net_eur=t.net_eur,
+            net_usd=t.net_usd,
             on=t.date,
             eur_to_usd=eur_to_usd,
             fallback_rate=today_rate,

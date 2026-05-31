@@ -303,7 +303,73 @@ def _ensure_schema_present() -> None:
     LedgerBase.metadata.create_all(get_ledger_engine())
     ConfigBase.metadata.create_all(get_config_engine())
     CacheBase.metadata.create_all(get_cache_engine())
+    _ensure_added_columns(get_ledger_engine())
     log.info("Database schema ensured via create_all (Alembic migrations unavailable)")
+
+
+#: Columns added to existing tables after their initial ``CREATE TABLE``.
+#: ``create_all`` only emits ``CREATE TABLE`` for *missing* tables — it never
+#: ``ALTER``s an existing one — so packaged installs (which have no Alembic)
+#: would otherwise never gain a newly added column and every ORM query that
+#: selects it would fail. Each entry is ``(table, column, DDL type)`` and is
+#: applied idempotently (skipped when the column already exists).
+_ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (("transactions", "net_usd", "NUMERIC(18, 6)"),)
+
+
+def _ensure_added_columns(engine: object) -> None:
+    """Idempotently add post-creation columns missing from existing tables.
+
+    Mirrors what Alembic migration 0006 does, for the packaged-install path
+    where Alembic isn't available. Safe to run on every boot: each column is
+    only added when ``PRAGMA table_info`` shows it absent.
+    """
+    from sqlalchemy import text  # noqa: PLC0415
+    from sqlalchemy.engine import Engine  # noqa: PLC0415
+
+    if not isinstance(engine, Engine):  # pragma: no cover - defensive
+        return
+    try:
+        with engine.begin() as conn:
+            for table, column, ddl_type in _ADDED_COLUMNS:
+                existing = {
+                    row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()
+                }
+                if not existing:
+                    # Table doesn't exist yet (fresh DB handled by create_all
+                    # of the current model, which already includes the column).
+                    continue
+                if column in existing:
+                    continue
+                conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {ddl_type}'))
+                log.info("Added missing column %s.%s via create_all guard", table, column)
+    except Exception:  # pragma: no cover - defensive
+        log.warning("Could not ensure added columns; continuing", exc_info=True)
+
+
+def _backfill_transaction_legs() -> None:
+    """Freeze any missing trade-date EUR/USD legs on the ledger.
+
+    Runs after the FX refresh so newly fetched rates can fill rows that were
+    written during an earlier FX-history gap. Cheap on a healthy ledger
+    (``force=False`` only touches rows missing a leg). Best-effort: failures
+    are logged and swallowed so boot never blocks on it.
+    """
+    try:
+        from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+        from investment_dashboard.services.transaction_fx_service import (  # noqa: PLC0415
+            backfill_missing_legs,
+        )
+
+        with ledger_session_scope() as session:
+            result = backfill_missing_legs(session)
+        if result.updated or result.incomplete:
+            log.info(
+                "Transaction legs backfill: %d updated, %d still incomplete",
+                result.updated,
+                result.incomplete,
+            )
+    except Exception:  # pragma: no cover - defensive
+        log.warning("Transaction-legs backfill failed; continuing", exc_info=True)
 
 
 def _run_cache_janitor() -> None:
@@ -374,6 +440,7 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
         log.info("skip_network=True — not refreshing FX or prices")
         return
     _refresh_fx()
+    _backfill_transaction_legs()
     _refresh_prices()
 
 
@@ -392,4 +459,5 @@ def run_deferred_network_refresh() -> None:
     swallowed so an offline machine still gets a working dashboard.
     """
     _refresh_fx()
+    _backfill_transaction_legs()
     _refresh_prices()

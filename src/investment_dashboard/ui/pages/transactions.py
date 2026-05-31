@@ -18,7 +18,7 @@ from investment_dashboard.repositories import (
     instruments_repo,
     transactions_repo,
 )
-from investment_dashboard.services import display_currency_service
+from investment_dashboard.services import display_currency_service, transaction_fx_service
 from investment_dashboard.services.importer_service import Broker, import_csv
 from investment_dashboard.services.instrument_enrichment_service import (
     QUOTE_TYPE_MAP,
@@ -199,6 +199,18 @@ def _open_new_modal(accounts: list[Account]) -> None:  # pragma: no cover - UI
                 if sym:
                     instr = instruments_repo.get_or_create(session, symbol=sym)
                     instrument_id = instr.id
+                net_native = _decimal_or_none(net_in.value or "")
+                account = next((a for a in accounts if a.id == account_sel.value), None)
+                native_ccy = account.native_currency if account else "EUR"
+                # Freeze EUR + USD legs at the trade-date rate, just like the
+                # importer, so manual rows aren't the one place left deriving
+                # FX live on every render.
+                legs = transaction_fx_service.compute_legs(
+                    session,
+                    native_currency=native_ccy,
+                    net_native=net_native,
+                    on=txn_date,
+                )
                 txn = Transaction(
                     account_id=account_sel.value,
                     date=txn_date,
@@ -207,7 +219,10 @@ def _open_new_modal(accounts: list[Account]) -> None:  # pragma: no cover - UI
                     quantity=_decimal_or_none(qty_in.value or ""),
                     price_native=_decimal_or_none(price_in.value or ""),
                     fees_native=_decimal_or_none(fees_in.value or ""),
-                    net_native=_decimal_or_none(net_in.value or ""),
+                    net_native=net_native,
+                    fx_rate_to_eur=legs.fx_rate_to_eur,
+                    net_eur=legs.net_eur,
+                    net_usd=legs.net_usd,
                     description=(desc_in.value or "").strip() or None,
                     source=TransactionSource.MANUAL,
                 )
@@ -268,7 +283,14 @@ def _open_import_modal(accounts: list[Account]) -> None:  # pragma: no cover - U
             )
             if result.unknown_actions:
                 status.text += f", unknown actions: {sorted(result.unknown_actions)}"
-            ui.notify(status.text, type="positive")
+            if result.fx_missing_dates:
+                status.text += (
+                    f", FX missing for {len(result.fx_missing_dates)} date(s) — "
+                    "refresh FX rates then Settings → Recalculate FX-derived values"
+                )
+                ui.notify(status.text, type="warning")
+            else:
+                ui.notify(status.text, type="positive")
 
         ui.upload(on_upload=_on_upload, auto_upload=True).props("accept=.csv,.xlsx").classes(
             "w-full"
