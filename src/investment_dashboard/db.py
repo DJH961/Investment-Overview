@@ -72,7 +72,7 @@ def _url_path(url: str) -> Path | None:
 def make_engine(
     url: str | None = None, *, encryption_config: EncryptionConfig | None = None
 ) -> Engine:
-    """Create a SQLAlchemy engine for ``url`` (or the legacy db_url)."""
+    """Create a SQLAlchemy engine for ``url`` (defaults to the configured ledger URL)."""
     if url is None:
         settings = get_settings()
         _ensure_parent(settings.db_path)
@@ -178,19 +178,6 @@ def get_cache_session_factory() -> sessionmaker[Session]:
     settings = get_settings()
     get_cache_engine()
     return _factories_by_url[settings.cache_url]
-
-
-# --- Back-compat single-engine API ----------------------------------
-
-
-def get_engine() -> Engine:
-    """Legacy: returns the ledger engine."""
-    return get_ledger_engine()
-
-
-def get_session_factory() -> sessionmaker[Session]:
-    """Legacy: returns the ledger session factory."""
-    return get_ledger_session_factory()
 
 
 # --- Context managers -----------------------------------------------

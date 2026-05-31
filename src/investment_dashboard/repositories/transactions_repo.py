@@ -64,15 +64,6 @@ def insert_transaction(session: Session, txn: Transaction) -> Transaction | None
     return txn
 
 
-def delete_transaction(session: Session, txn_id: int) -> bool:
-    txn = session.get(Transaction, txn_id)
-    if txn is None:
-        return False
-    session.delete(txn)
-    session.flush()
-    return True
-
-
 def earliest_transaction_date(session: Session) -> date | None:
     stmt = select(Transaction.date).order_by(Transaction.date).limit(1)
     return session.scalars(stmt).one_or_none()

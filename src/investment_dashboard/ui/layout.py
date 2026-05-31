@@ -9,7 +9,7 @@ Usage from inside a ``@ui.page`` handler::
         with page_frame("Overview", current="/overview"):
             ui.label("…page content…")
 
-v1.5 rebuild — modern "neo-fintech" chrome:
+Modern "neo-fintech" chrome (introduced in the v1.5 rebuild, iterated since):
 
 * Sticky frosted header with brand mark, name + version pill, a compact
   currency segmented control, a light/dark toggle, and a "last refresh"

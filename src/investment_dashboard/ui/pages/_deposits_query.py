@@ -34,7 +34,12 @@ from investment_dashboard.domain.currency import (
 from investment_dashboard.models import Account, Transaction
 from investment_dashboard.services import fx_service
 
-_DEPOSIT_KINDS: tuple[str, ...] = ("deposit", "withdrawal")
+_DEPOSIT_KINDS: tuple[str, ...] = (
+    "deposit",
+    "withdrawal",
+    "transfer_in",
+    "transfer_out",
+)
 
 ZERO = Decimal(0)
 
@@ -140,9 +145,9 @@ def _signed_contrib(amount_eur: Decimal, kind: str) -> Decimal:
     positive, withdrawals negative). Interest is *not* counted as a
     contribution even though it appears on this page.
     """
-    if kind == "deposit":
+    if kind in ("deposit", "transfer_in"):
         return amount_eur
-    if kind == "withdrawal":
+    if kind in ("withdrawal", "transfer_out"):
         return -amount_eur
     return ZERO
 
@@ -159,9 +164,9 @@ def _signed_contrib_usd(amount_usd: Decimal | None, kind: str) -> Decimal:
     """
     if amount_usd is None:
         return ZERO
-    if kind == "deposit":
+    if kind in ("deposit", "transfer_in"):
         return amount_usd
-    if kind == "withdrawal":
+    if kind in ("withdrawal", "transfer_out"):
         return -amount_usd
     return ZERO
 
@@ -253,10 +258,10 @@ def compute_summary(session: Session, *, today: date | None = None) -> DepositSu
     fallback_rate = lookup_rate_with_forward_fill(eur_to_usd, today)
 
     total_native = sum(
-        (t.net_native or ZERO for t in txns if t.kind == "deposit"),
+        (t.net_native or ZERO for t in txns if t.kind in ("deposit", "transfer_in")),
         ZERO,
     ) - sum(
-        (t.net_native or ZERO for t in txns if t.kind == "withdrawal"),
+        (t.net_native or ZERO for t in txns if t.kind in ("withdrawal", "transfer_out")),
         ZERO,
     )
 

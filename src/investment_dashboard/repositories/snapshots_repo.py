@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
 
@@ -17,19 +16,21 @@ def get_snapshot(session: Session, snapshot_date: date) -> PositionSnapshot | No
     return session.get(PositionSnapshot, snapshot_date)
 
 
-def list_snapshots(
-    session: Session,
-    *,
-    start: date | None = None,
-    end: date | None = None,
-) -> Sequence[PositionSnapshot]:
-    """Return snapshots in ``[start, end]`` inclusive, oldest first."""
-    stmt = select(PositionSnapshot).order_by(PositionSnapshot.snapshot_date)
-    if start is not None:
-        stmt = stmt.where(PositionSnapshot.snapshot_date >= start)
-    if end is not None:
-        stmt = stmt.where(PositionSnapshot.snapshot_date <= end)
-    return session.scalars(stmt).all()
+def list_in_range(session: Session, start: date, end: date) -> list[PositionSnapshot]:
+    """Return stored snapshots with ``start <= snapshot_date <= end``, oldest first.
+
+    Used to chain true daily time-weighted returns over a period: the
+    caller walks consecutive stored daily values and compounds each
+    sub-period return, rather than approximating the whole period with a
+    single Modified-Dietz flow.
+    """
+    stmt = (
+        select(PositionSnapshot)
+        .where(PositionSnapshot.snapshot_date >= start)
+        .where(PositionSnapshot.snapshot_date <= end)
+        .order_by(PositionSnapshot.snapshot_date)
+    )
+    return list(session.scalars(stmt).all())
 
 
 def upsert_snapshot(

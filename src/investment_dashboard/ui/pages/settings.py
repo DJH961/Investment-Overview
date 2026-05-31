@@ -29,6 +29,7 @@ from investment_dashboard.repositories import (
 from investment_dashboard.services import (
     benchmark_service,
     display_currency_service,
+    instrument_enrichment_service,
     provider_status,
     risk_free_service,
     timezone_service,
@@ -215,6 +216,43 @@ def _add_account_dialog() -> None:  # pragma: no cover - UI
     dialog.open()
 
 
+def _apply_market_suggestion(
+    *,
+    symbol_in: ui.input,
+    name_in: ui.input,
+    asset_class_in: ui.select,
+    category_in: ui.input,
+    currency_in: ui.select,
+    expense_in: ui.input,
+) -> None:  # pragma: no cover - UI
+    """Pre-fill the add-instrument form from market metadata."""
+    sym = (symbol_in.value or "").strip().upper()
+    if not sym:
+        ui.notify("Enter a symbol first", type="warning")
+        return
+    suggestion = instrument_enrichment_service.suggest_instrument_fields(sym)
+    filled: list[str] = []
+    if suggestion.name and not (name_in.value or "").strip():
+        name_in.value = suggestion.name
+        filled.append("name")
+    if suggestion.asset_class:
+        asset_class_in.value = suggestion.asset_class
+        filled.append("asset class")
+    if suggestion.category and not (category_in.value or "").strip():
+        category_in.value = suggestion.category
+        filled.append("category")
+    if suggestion.native_currency in {"USD", "EUR"}:
+        currency_in.value = suggestion.native_currency
+        filled.append("currency")
+    if suggestion.expense_ratio is not None and not (expense_in.value or "").strip():
+        expense_in.value = format(suggestion.expense_ratio, "f")
+        filled.append("expense ratio")
+    if filled:
+        ui.notify(f"Filled from market data: {', '.join(filled)}", type="positive")
+    else:
+        ui.notify(f"No market metadata found for {sym}", type="warning")
+
+
 def _add_instrument_dialog() -> None:  # pragma: no cover - UI
     with ui.dialog() as dialog, ui.card().classes("min-w-[24rem]"):
         ui.label("Add instrument").classes("text-h6")
@@ -230,6 +268,23 @@ def _add_instrument_dialog() -> None:  # pragma: no cover - UI
             "w-full",
         )
         expense_in = ui.input("Expense ratio (optional, e.g. 0.0003)").classes("w-full")
+
+        ui.button(
+            "Fetch from market data",
+            icon="cloud_download",
+            on_click=lambda: _apply_market_suggestion(
+                symbol_in=symbol_in,
+                name_in=name_in,
+                asset_class_in=asset_class_in,
+                category_in=category_in,
+                currency_in=currency_in,
+                expense_in=expense_in,
+            ),
+        ).props("flat color=primary").classes("self-start")
+        ui.label(
+            "Asset class, category and expense ratio are auto-populated from market "
+            "data — adjust only if the published values are wrong.",
+        ).classes("text-caption opacity-70")
 
         def _save() -> None:
             sym = (symbol_in.value or "").strip().upper()
@@ -881,6 +936,176 @@ def _render_storage_section() -> None:  # pragma: no cover - UI
                 icon="autorenew",
                 on_click=lambda: (_save_sync_folder(""), folder_in.set_value("")),
             ).props("flat no-caps")
+
+        ui.separator().classes("q-my-sm")
+        _render_move_ledger(is_read_only())
+
+        ui.separator().classes("q-my-sm")
+        _render_encryption_passphrase(encryption.enabled)
+
+
+def _move_ledger(raw: str) -> None:  # pragma: no cover - UI callback
+    """Physically relocate the ledger + config tiers to ``raw`` and persist it.
+
+    Copies each synced-tier file into the chosen folder (rolling backup +
+    integrity check + atomic move), removes the originals, writes the new
+    paths into ``app_config`` so the resolver finds them next launch, and
+    asks the user to restart.
+    """
+    from investment_dashboard.db import get_active_encryption  # noqa: PLC0415
+    from investment_dashboard.storage.move import (  # noqa: PLC0415
+        PERSIST_KEYS,
+        MoveError,
+        move_synced_tiers,
+    )
+
+    folder = raw.strip()
+    if not folder:
+        ui.notify("Choose a destination folder first.", type="warning")
+        return
+    try:
+        result = move_synced_tiers(folder, encryption=get_active_encryption())
+        with session_scope() as session:
+            for tier, new_path in result.moved.items():
+                app_config_repo.set_value(session, PERSIST_KEYS[tier], str(new_path))
+    except MoveError as exc:
+        ui.notify(str(exc), type="negative")
+        return
+    except Exception as exc:
+        log.exception("Move ledger failed")
+        ui.notify(f"Move failed: {exc}", type="negative")
+        return
+    if result.leftover_sources:
+        ui.notify(
+            "Moved, but the old file(s) could not be deleted yet "
+            f"({len(result.leftover_sources)} left) — they release on restart. "
+            "Restart the app for the move to take effect.",
+            type="warning",
+            timeout=0,
+            close_button="OK",
+        )
+    else:
+        ui.notify(
+            "Ledger moved — restart the app for it to take effect.",
+            type="positive",
+        )
+
+
+def _render_move_ledger(read_only: bool) -> None:  # pragma: no cover - UI
+    """Folder picker that relocates the ledger + config tiers (plan §4.4)."""
+    ui.label("Move ledger…").classes("text-subtitle2")
+    ui.label(
+        "Relocate your ledger and config database files to another folder "
+        "(for example onto a different drive or cloud folder). The files are "
+        "copied with an integrity check and a safety backup, the originals "
+        "removed, and the new location remembered. Takes effect after a "
+        "restart. The local cache is left where it is.",
+    ).classes("text-caption opacity-70")
+    dest_in = (
+        ui.input("Destination folder", placeholder="/path/to/new/folder")
+        .props("outlined dense")
+        .classes("w-full max-w-2xl font-mono")
+    )
+    move_btn = ui.button(
+        "Move ledger",
+        icon="drive_file_move",
+        on_click=lambda: _move_ledger(dest_in.value or ""),
+    ).props("unelevated color=primary no-caps")
+    if read_only:
+        # Another instance holds the writer lock; moving its files would be
+        # unsafe, so disable the action in read-only mode.
+        dest_in.disable()
+        move_btn.disable()
+        ui.label(
+            "Disabled in read-only mode — close the other instance first.",
+        ).classes("text-caption text-warning")
+
+
+def _save_passphrase(passphrase: str, confirm: str) -> None:  # pragma: no cover - UI
+    """Validate + store the synced-tier passphrase in the OS keychain."""
+    from investment_dashboard.storage.encryption import (  # noqa: PLC0415
+        store_passphrase_in_keyring,
+        validate_passphrase,
+    )
+
+    error = validate_passphrase(passphrase, confirm)
+    if error is not None:
+        ui.notify(error, type="warning")
+        return
+    if store_passphrase_in_keyring(passphrase):
+        ui.notify(
+            "Passphrase saved to the OS keychain. Save a recovery file too, "
+            "then restart with encryption enabled.",
+            type="positive",
+        )
+    else:
+        ui.notify(
+            "Could not reach the OS keychain (the `keyring` package may be "
+            "missing — install the `[encrypted]` extra).",
+            type="negative",
+        )
+
+
+def _download_recovery_file(passphrase: str, confirm: str) -> None:  # pragma: no cover - UI
+    """Offer the passphrase as a downloadable recovery document."""
+    from investment_dashboard.storage.encryption import (  # noqa: PLC0415
+        RECOVERY_FILENAME,
+        build_recovery_file,
+        validate_passphrase,
+    )
+
+    error = validate_passphrase(passphrase, confirm)
+    if error is not None:
+        ui.notify(error, type="warning")
+        return
+    ui.download.content(build_recovery_file(passphrase), RECOVERY_FILENAME)
+    ui.notify(
+        "Recovery file downloaded — store it somewhere safe and offline.",
+        type="positive",
+    )
+
+
+def _render_encryption_passphrase(enabled: bool) -> None:  # pragma: no cover - UI
+    """Collect the synced-tier passphrase and offer a recovery file.
+
+    Encryption itself is turned on with ``INV_DASHBOARD_ENCRYPT_SYNCED_TIERS``
+    + the ``[encrypted]`` SQLCipher driver; this panel makes the *passphrase*
+    side usable from the app — storing it in the OS keychain (so the env var
+    isn't required) and producing the offline recovery document that the
+    encryption plan called for.
+    """
+    ui.label("Encryption passphrase").classes("text-subtitle2")
+    ui.label(
+        "Store the SQLCipher passphrase for your synced ledger/config tiers in "
+        "the OS keychain, and save an offline recovery file. The passphrase is "
+        "never written to your database folder; if you lose it the encrypted "
+        "data cannot be recovered.",
+    ).classes("text-caption opacity-70")
+    if not enabled:
+        ui.label(
+            "Encryption is currently disabled. Saving a passphrase here prepares "
+            "it for when you enable encryption (restart with the `[encrypted]` "
+            "extra installed and INV_DASHBOARD_ENCRYPT_SYNCED_TIERS=true).",
+        ).classes("text-caption text-grey")
+    pass_in = (
+        ui.input("Passphrase").props("outlined dense type=password").classes("w-full max-w-md")
+    )
+    confirm_in = (
+        ui.input("Confirm passphrase")
+        .props("outlined dense type=password")
+        .classes("w-full max-w-md")
+    )
+    with ui.row().classes("gap-sm"):
+        ui.button(
+            "Save to keychain",
+            icon="key",
+            on_click=lambda: _save_passphrase(pass_in.value or "", confirm_in.value or ""),
+        ).props("unelevated color=primary no-caps")
+        ui.button(
+            "Download recovery file",
+            icon="download",
+            on_click=lambda: _download_recovery_file(pass_in.value or "", confirm_in.value or ""),
+        ).props("flat no-caps")
 
 
 def _set_auto_shutdown_pref(enabled: bool) -> None:  # pragma: no cover - UI

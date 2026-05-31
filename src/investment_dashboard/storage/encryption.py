@@ -9,14 +9,17 @@ keep working without the dependency.
 
 Key material lives in the OS keychain via the ``keyring`` package and
 is **never** persisted to disk by us. Loss of passphrase = loss of
-data; we offer a "save recovery file" prompt during onboarding (out
-of scope here; surfaced as a UI follow-up).
+data, so :func:`build_recovery_file` produces a printable recovery
+document the user can save somewhere safe; the onboarding/Settings UI
+collects the passphrase (:func:`store_passphrase_in_keyring`) and
+offers the recovery file as a download.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from importlib import import_module
 from importlib import util as importlib_util
 from pathlib import Path
@@ -27,6 +30,12 @@ log = logging.getLogger(__name__)
 
 _KEYRING_SERVICE = "investment-dashboard"
 _KEYRING_USERNAME = "synced-tiers"
+
+#: Suggested filename for the saved recovery document.
+RECOVERY_FILENAME = "investment-dashboard-recovery.txt"
+
+#: Minimum passphrase length accepted by :func:`validate_passphrase`.
+MIN_PASSPHRASE_LENGTH = 8
 
 
 class EncryptionUnavailableError(RuntimeError):
@@ -56,11 +65,6 @@ def _detect_driver() -> str | None:
         if importlib_util.find_spec(name) is not None:
             return name
     return None
-
-
-def driver_available() -> bool:
-    """``True`` if a SQLCipher Python binding is importable."""
-    return _detect_driver() is not None
 
 
 def load_passphrase_from_keyring() -> str | None:
@@ -93,6 +97,51 @@ def store_passphrase_in_keyring(passphrase: str) -> bool:
     except Exception:  # pragma: no cover - backend-specific
         log.warning("keyring store failed", exc_info=True)
         return False
+
+
+def validate_passphrase(passphrase: str, confirm: str) -> str | None:
+    """Validate a user-entered passphrase pair.
+
+    Returns ``None`` when the pair is acceptable, otherwise a short,
+    user-facing error message explaining what to fix. Used by the
+    onboarding / Settings passphrase prompts before the secret is
+    stored in the keychain.
+    """
+    if not passphrase:
+        return "Enter a passphrase."
+    if len(passphrase) < MIN_PASSPHRASE_LENGTH:
+        return f"Passphrase must be at least {MIN_PASSPHRASE_LENGTH} characters."
+    if passphrase != confirm:
+        return "The two passphrases don't match."
+    return None
+
+
+def build_recovery_file(passphrase: str, *, generated_at: datetime | None = None) -> str:
+    """Return the text of a printable passphrase-recovery document.
+
+    The passphrase is the only thing standing between the user and their
+    encrypted ledger/config tiers, and we deliberately never write it to
+    disk ourselves. This document lets the user keep their own offline
+    copy (printed, in a password manager, etc.). It records the keychain
+    location so a future restore knows where the app expects the secret.
+    """
+    when = (generated_at or datetime.now(UTC)).strftime("%Y-%m-%d %H:%M UTC")
+    return (
+        "Investment Dashboard — encryption recovery file\n"
+        "===============================================\n\n"
+        f"Generated: {when}\n\n"
+        "This passphrase decrypts your synced ledger and config databases.\n"
+        "If you lose it, the encrypted data CANNOT be recovered. Store this\n"
+        "file somewhere safe and offline (a password manager or a printout),\n"
+        "NOT next to the synced database files.\n\n"
+        f"Passphrase: {passphrase}\n\n"
+        "Keychain location (where the app stores this secret):\n"
+        f"  Service:  {_KEYRING_SERVICE}\n"
+        f"  Username: {_KEYRING_USERNAME}\n\n"
+        "To restore on a new machine, re-enter this passphrase in\n"
+        "Settings -> Storage, or set the INV_DASHBOARD_DB_PASSPHRASE\n"
+        "environment variable before launching the app.\n"
+    )
 
 
 def _sqlcipher_dbapi(driver: str) -> ModuleType:

@@ -13,18 +13,17 @@ This document is written so that an engineer with no access to the original `Inv
 1. Replace a hand-maintained Excel spreadsheet with a queryable, auditable, version-controlled system whose ground truth is a transaction ledger.
 2. Compute, per holding and at the portfolio level: total return %, CAGR, XIRR, TWR, YTD variants of all of the above, plus simple period-bound growth rates.
 3. Provide simultaneous USD and EUR views, with every USD cashflow converted to EUR at the spot rate of the transaction date.
-4. Allow ingestion via (a) broker CSV imports, (b) manual entry through the UI, (c) automated daily price refresh via market data API.
+4. Allow ingestion via (a) broker CSV imports, (b) manual entry through the UI, (c) automated price refresh via market data API, including near-real-time intraday quotes during market hours so the user can watch positions move.
 5. Provide an investment-calculator workflow: "I have €X cash to allocate; given my current holdings and target allocation, how many shares of each ticker should I buy?"
 6. Be accessible from the user's phone over local Wi-Fi without paid hosting.
 7. Be red-green-colorblind-safe in every chart, table heatmap, and status indicator.
 
 ### 1.2 Non-goals
 
-1. No real-time intraday quotes — end-of-day prices are sufficient.
-2. No multi-user, no authentication beyond binding to the local network.
-3. No tax-lot accounting for capital-gains tax purposes (current spreadsheet doesn't do this; out of scope unless explicitly added later).
-4. No trading execution — read-only with respect to brokers.
-5. No mobile-native app — responsive web UI accessed via the phone's browser.
+1. No multi-user, no authentication beyond binding to the local network.
+2. No tax-lot accounting for capital-gains tax purposes (current spreadsheet doesn't do this; out of scope unless explicitly added later).
+3. No trading execution — read-only with respect to brokers.
+4. No mobile-native app — responsive web UI accessed via the phone's browser.
 
 ### 1.3 Constraints
 
@@ -45,7 +44,7 @@ This document is written so that an engineer with no access to the original `Inv
 | Web UI framework | **NiceGUI** (≥ 2.x) | FastAPI under the hood; event-driven (no Streamlit rerun); supports tables, forms, charts, multi-page; binds to `0.0.0.0` trivially; Quasar/Tailwind components built in. |
 | Charting | **Plotly** (interactive) embedded in NiceGUI via `ui.plotly` | Better tooltips/zoom than matplotlib; honors custom colorblind palettes. |
 | Tables | NiceGUI `ui.aggrid` (AG-Grid Community) | Sort, filter, inline edit, large datasets; matches the spreadsheet feel. |
-| ORM / DB | **SQLAlchemy 2.x** + **SQLite** (single file, WAL mode) | Single-user, zero-config; one file to back up via git/restic. |
+| ORM / DB | **SQLAlchemy 2.x** + **SQLite** (ledger / config / cache tiers; WAL locally, TRUNCATE in cloud-sync folders) | Single-user, zero-config; the ledger tier is the file to back up. Tiers can be split across local + cloud-sync locations. |
 | Migrations | **Alembic** | Schema evolution discipline. |
 | Market data | **yfinance** | Free; covers all current tickers (VTI, VOO, VUG, VTV, VXUS, VGK, VT, VWO, SCHK, IAUM, MSFT, FXAIX, FSKAX, FSPSX, FTIHX, SCHD, FSELX, plus the Global X DAX Germany ETF, ticker `DAX`, NASDAQ-listed). |
 | FX rates | **Frankfurter API** (`https://api.frankfurter.dev`) | Free, no key, ECB-sourced, full historical daily series since 1999. |
@@ -67,7 +66,8 @@ This document is written so that an engineer with no access to the original `Inv
 │  bind: 0.0.0.0:8080                                         │
 │                                                              │
 │  Pages: /overview /deposits /transactions /monthly          │
-│         /yearly /calculator /settings                       │
+│         /yearly /analytics /projection /calculator          │
+│         /settings                                           │
 └──────────────────────┬──────────────────────────────────────┘
                        │
    ┌───────────────────┼───────────────────────────────┐
@@ -87,9 +87,11 @@ This document is written so that an engineer with no access to the original `Inv
 │ SQLAlchemy session │
 └─────────┬──────────┘
           ▼
-   ┌────────────┐
-   │ SQLite DB  │   path: $XDG_DATA_HOME/inv-dashboard/db.sqlite
-   └────────────┘
+   ┌──────────────────────────────────────────────┐
+   │ SQLite tiers: ledger · config · cache        │
+   │ (cache stays device-local; ledger/config may │
+   │  live in a cloud-sync folder)                │
+   └──────────────────────────────────────────────┘
 ```
 
 Layering rules:
@@ -167,14 +169,14 @@ The unified ledger. **Every** position change, dividend, and cash movement is on
 - `withdrawal` — external cash out. `instrument_id` NULL.
 - `interest` — bank interest credited (Savings). `instrument_id` NULL.
 - `fee` — standalone fee. `instrument_id` NULL.
-- `transfer_in` / `transfer_out` — for inter-account or in-kind moves; out of scope v1 but reserved.
-- `split` — stock split adjustment; quantity = new shares minus old; price = 0; net = 0. Reserved for v1.1.
+- `transfer_in` / `transfer_out` — inter-account or in-kind moves. Counted as external cash flows (in like a deposit, out like a withdrawal), so a transfer between two tracked accounts nets to zero at the portfolio level while a boundary-crossing move is captured as a contribution/withdrawal.
+- `split` — stock split adjustment; quantity = new shares minus old; price = 0; net = 0.
 
 ##### Sign conventions
 For a `buy`: `quantity > 0`, `net_native < 0`. For `dividend_reinvest`: `quantity > 0`, `net_native = 0`. For `deposit`: `quantity = NULL`, `net_native > 0`. For `interest`: `quantity = NULL`, `net_native > 0`. This sign convention makes the cashflow stream for XIRR straightforward: XIRR uses `-net_native` from the user's perspective (deposits/buys are negative cashflow from outside the portfolio... see §6.2 for the canonical sign rules).
 
 #### `price_history`
-Daily close prices in the instrument's native currency.
+Per-instrument price history in the native currency: one row per (instrument, date). For ETFs and stocks the latest row's close refreshes every couple of minutes during market hours (live intraday price); mutual-fund NAVs update about once a day.
 
 | Column | Type |
 |---|---|
@@ -216,8 +218,8 @@ Convention: store as `EUR→USD` (i.e. how many USD = 1 EUR). To convert a USD a
 
 (Keep the active-allocation pattern instead of stuffing `target_weight_pct` on `instruments` directly, so the user can iterate on allocations over time without losing history.)
 
-#### `snapshots` (optional, v1.1)
-Daily portfolio-level closing values, pre-computed for the Growth/Yearly views so monthly graphs don't recompute on every page load. v1 can compute on the fly; v1.1 should cache.
+#### `snapshots`
+Daily portfolio-level closing values, pre-computed for the Growth/Yearly views so monthly graphs don't recompute on every page load. Implemented as a write-through cache in the cache tier (`models/position_snapshot.py`).
 
 #### `app_config`
 Key-value table for user-configurable settings (default base currency display, preferred broker for new transactions, last imported file checksum, etc.).
@@ -560,6 +562,11 @@ Master ledger view — every row in `transactions`.
 
 ### 8.4 `/monthly` — Monthly Growth with Projection
 
+> **Note (v2.8+):** the live `/monthly` and `/yearly` pages show historical
+> performance only. The interactive forward **projection** has graduated to its
+> own standalone `/projection` page (covering both the monthly and yearly
+> forecasts described below).
+
 **Table** (one row per month):
 | Month | Starting Balance | Contributions | Dividends | Capital Gain | Total Gain | Growth % | Closing Balance | USD/EUR | Closing EUR | EUR Growth % |
 
@@ -766,6 +773,12 @@ Optionally: a Windows `.bat` file + a Task Scheduler entry to auto-start on logi
 
 ## 14. Roadmap
 
+> **Historical (✅ delivered).** This phased plan is the *original* v1 build
+> roadmap and is preserved for context. All of Phases 0–6 shipped long ago; the
+> project is now at v2.9.4 with split storage, cloud-aware paths, optional
+> encryption, intraday price refresh, a standalone projection page, and an
+> analytics page. See `CHANGELOG.md` for the authoritative history.
+
 ### Phase 0 — scaffolding (≈ 1 weekend)
 - Repo, pyproject, ruff/mypy/pytest config, Alembic init, empty migration.
 - NiceGUI hello-world page on `0.0.0.0:8080`.
@@ -808,6 +821,9 @@ Optionally: a Windows `.bat` file + a Task Scheduler entry to auto-start on logi
 ---
 
 ## 15. Open questions to resolve before Phase 0
+
+> **Historical (✅ resolved).** These were the pre-build decisions; all have
+> long since been settled in code. Kept for context.
 
 1. **DAX ETF ticker.** Confirmed: the **Global X DAX Germany ETF**, yfinance ticker `DAX` (NASDAQ-listed, USD).
 2. **Pre-2024 Vanguard data.** Two paths: (a) accept that the legacy spreadsheet's data is "good enough" for that window and import it via the migration utility, or (b) accept that Vanguard returns will be partial pre-cutoff. Recommendation: (a), with verification against current share counts.

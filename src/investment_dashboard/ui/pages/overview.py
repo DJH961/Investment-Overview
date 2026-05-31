@@ -416,14 +416,15 @@ def register() -> None:
                 f"Weighted expense ratio: {_fmt_pct(metrics.weighted_expense_ratio)}  "
                 f"(≈ {fmt_money(_convert(metrics.annual_expense_cost_eur, display_ccy, fx_rate), display_ccy)} / yr)"
             )
+            div_yield_text = f"Dividend yield: {_fmt_pct(metrics.dividend_yield_pct)}"
             if fx_rate is not None:
                 ui.label(
                     f"FX (EUR→{display_quote}): {fx_rate:,.4f}  ·  "
                     f"Display currency: {display_ccy} (switch from the header toggle)  ·  "
-                    f"{expense_text}",
+                    f"{expense_text}  ·  {div_yield_text}",
                 ).classes("text-caption opacity-70")
             else:
-                ui.label(expense_text).classes("text-caption opacity-70")
+                ui.label(f"{expense_text}  ·  {div_yield_text}").classes("text-caption opacity-70")
 
             _value_over_time_section(value_series, range_label=range_label, display_ccy=display_ccy)
 

@@ -41,8 +41,19 @@ ZERO = Decimal(0)
 
 
 # Kinds that move *external* cash (the user's bank ↔ portfolio).
-_CONTRIBUTION_KINDS = {TransactionKind.DEPOSIT.value}
-_WITHDRAWAL_KINDS = {TransactionKind.WITHDRAWAL.value}
+# ``transfer_in`` / ``transfer_out`` model inter-account or in-kind moves: a
+# transfer between two *tracked* accounts records both legs, so counting
+# ``transfer_in`` as a contribution and ``transfer_out`` as a withdrawal nets
+# to zero at the portfolio level, while a move that crosses the tracked
+# boundary (only one leg exists) is correctly treated as an external flow.
+_CONTRIBUTION_KINDS = {
+    TransactionKind.DEPOSIT.value,
+    TransactionKind.TRANSFER_IN.value,
+}
+_WITHDRAWAL_KINDS = {
+    TransactionKind.WITHDRAWAL.value,
+    TransactionKind.TRANSFER_OUT.value,
+}
 _RETAINED_CASH_ACCOUNT_TYPES = {"savings", "cash"}
 # Kinds that receive cash not represented in the current portfolio value.
 _DISTRIBUTION_KINDS = {
@@ -81,11 +92,13 @@ class PortfolioMetrics:
     ytd_growth_pct: Decimal | None
     #: (1 + XIRR_eur) ^ years − 1 — headline metric on every page.
     total_growth_compounded_eur: Decimal | None
-    # USD parallels (v2.5)
-    total_value_usd: Decimal
+    # USD parallels (v2.5). ``total_value_usd`` / ``capital_gain_usd`` are
+    # ``None`` when the EUR→USD spot is unavailable (no FX history at all) —
+    # we report "unavailable" rather than relabelling the EUR figure as USD.
+    total_value_usd: Decimal | None
     total_contributions_usd: Decimal
     total_dividends_cash_usd: Decimal
-    capital_gain_usd: Decimal
+    capital_gain_usd: Decimal | None
     xirr_usd: Decimal | None
     ytd_xirr_usd: Decimal | None
     ytd_growth_pct_usd: Decimal | None
@@ -111,6 +124,10 @@ class PortfolioMetrics:
     #: ``None`` until there are at least two priced dates.
     daily_growth_pct: Decimal | None = None
     daily_growth_pct_usd: Decimal | None = None
+    #: Trailing dividend yield = cash dividends received ÷ current closing
+    #: balance (spreadsheet ``Total`` block's ``Dividends / Closing Balance``).
+    #: ``None`` when the portfolio has no value yet.
+    dividend_yield_pct: Decimal | None = None
     #: The date ``daily_growth_pct`` refers to (the "last daily growth day"),
     #: so the UI can label *when* the move is from. ``None`` when unavailable.
     daily_growth_as_of: date | None = None
@@ -246,7 +263,11 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     # everything in EUR using today's FX; per-trade-date USD is applied to
     # the historical cashflow stream below.
     fx_today = lookup_rate_with_forward_fill(eur_to_usd, as_of) or ZERO
-    total_value_usd = total_value_eur * fx_today if fx_today != 0 else total_value_eur
+    # Degrade the terminal USD mark to ``None`` (blank) when there is no
+    # EUR→USD spot, rather than relabelling the EUR value as USD.
+    # The USD *wallet* cashflows are still real (per-trade-date legs); only
+    # the terminal mark-to-market is unknown.
+    total_value_usd: Decimal | None = total_value_eur * fx_today if fx_today != 0 else None
 
     retained_cash_account_ids = {
         account.id
@@ -259,10 +280,14 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         current_value=total_value_eur,
         cumulative_dividends_cash=dividends_cash_eur,
     )
-    cap_gain_usd = capital_gain(
-        contributions=net_contributions_usd,
-        current_value=total_value_usd,
-        cumulative_dividends_cash=dividends_cash_usd,
+    cap_gain_usd = (
+        capital_gain(
+            contributions=net_contributions_usd,
+            current_value=total_value_usd,
+            cumulative_dividends_cash=dividends_cash_usd,
+        )
+        if total_value_usd is not None
+        else None
     )
     growth_pct_legacy = total_growth_pct(
         net_contributions_eur, total_value_eur + dividends_cash_eur
@@ -278,7 +303,11 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         amount_fn=_usd_amount,
     )
     portfolio_xirr_eur = xirr(cashflows_eur, as_of=as_of, terminal_value=total_value_eur)
-    portfolio_xirr_usd = xirr(cashflows_usd, as_of=as_of, terminal_value=total_value_usd)
+    portfolio_xirr_usd = (
+        xirr(cashflows_usd, as_of=as_of, terminal_value=total_value_usd)
+        if total_value_usd is not None
+        else None
+    )
 
     # Time origin for compounded Total Growth: the earliest contribution
     # / withdrawal date in the ledger. We deliberately ignore dividend-
@@ -318,14 +347,18 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     if ytd_start_value_eur <= ZERO:
         ytd_start_value_eur = _best_effort_ytd_start_value(session, year_start, as_of)
     fx_year_start = lookup_rate_with_forward_fill(eur_to_usd, year_start) or fx_today
-    ytd_start_value_usd = (
-        ytd_start_value_eur * fx_year_start if fx_year_start != 0 else ytd_start_value_eur
+    # ``None`` (not EUR-as-USD) when there is no EUR→USD spot to convert with.
+    ytd_start_value_usd: Decimal | None = (
+        ytd_start_value_eur * fx_year_start if fx_year_start != 0 else None
     )
     # Treat the start-of-year value as a synthetic "contribution" (negative).
     ytd_cashflows_eur.insert(0, Cashflow(date=year_start, amount=-ytd_start_value_eur))
-    ytd_cashflows_usd.insert(0, Cashflow(date=year_start, amount=-ytd_start_value_usd))
     ytd_xirr_eur = xirr(ytd_cashflows_eur, as_of=as_of, terminal_value=total_value_eur)
-    ytd_xirr_usd = xirr(ytd_cashflows_usd, as_of=as_of, terminal_value=total_value_usd)
+    if total_value_usd is not None and ytd_start_value_usd is not None:
+        ytd_cashflows_usd.insert(0, Cashflow(date=year_start, amount=-ytd_start_value_usd))
+        ytd_xirr_usd = xirr(ytd_cashflows_usd, as_of=as_of, terminal_value=total_value_usd)
+    else:
+        ytd_xirr_usd = None
 
     ytd_contributions_eur = sum(
         (_txn_eur_amount(t) for t in ytd_txns if t.kind in _CONTRIBUTION_KINDS),
@@ -353,7 +386,11 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         )
     else:
         ytd_growth_eur = None
-    if ytd_start_value_usd + ytd_net_contrib_usd > 0:
+    if (
+        total_value_usd is not None
+        and ytd_start_value_usd is not None
+        and ytd_start_value_usd + ytd_net_contrib_usd > 0
+    ):
         ytd_growth_usd = (total_value_usd - ytd_start_value_usd - ytd_net_contrib_usd) / (
             ytd_start_value_usd + ytd_net_contrib_usd
         )
@@ -374,6 +411,9 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     weighted_expense_ratio, annual_expense_cost_eur = _compute_expense_figures(
         positions_service.compute_positions(session, as_of=as_of)
     )
+
+    # Trailing dividend yield = cash dividends ÷ current closing balance.
+    dividend_yield_pct = dividends_cash_eur / total_value_eur if total_value_eur > 0 else None
 
     return PortfolioMetrics(
         as_of=as_of,
@@ -402,6 +442,7 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         daily_growth_pct=daily_growth_eur,
         daily_growth_pct_usd=daily_growth_usd,
         daily_growth_as_of=daily_as_of,
+        dividend_yield_pct=dividend_yield_pct,
     )
 
 
@@ -454,7 +495,7 @@ def _compute_mtd_growth(
     txns: list[Transaction],
     as_of: date,
     total_value_eur: Decimal,
-    total_value_usd: Decimal,
+    total_value_usd: Decimal | None,
     *,
     eur_to_usd: dict[date, Decimal],
 ) -> tuple[Decimal | None, Decimal | None]:
@@ -466,15 +507,16 @@ def _compute_mtd_growth(
     the FX rate in effect on the first of the month and this month's
     contributions at their per-trade-date rate, mirroring the dual-wallet
     treatment used for XIRR/YTD. Returns ``(None, None)`` for a currency
-    whose denominator is non-positive (e.g. a brand-new portfolio).
+    whose denominator is non-positive (e.g. a brand-new portfolio) or, for
+    USD, when no EUR→USD spot is available to value the terminal mark.
     """
     month_start = date(as_of.year, as_of.month, 1)
     month_start_value_eur = positions_service.total_portfolio_value(session, as_of=month_start)
     if month_start_value_eur <= ZERO:
         return None, None
     fx_month_start = lookup_rate_with_forward_fill(eur_to_usd, month_start) or ZERO
-    month_start_value_usd = (
-        month_start_value_eur * fx_month_start if fx_month_start != 0 else month_start_value_eur
+    month_start_value_usd: Decimal | None = (
+        month_start_value_eur * fx_month_start if fx_month_start != 0 else None
     )
 
     mtd_txns = [t for t in txns if t.date >= month_start]
@@ -511,9 +553,14 @@ def _compute_mtd_growth(
             return None
         return (value_now - value_start - net) / denom
 
+    usd_growth = (
+        _growth(total_value_usd, month_start_value_usd, mtd_net_usd)
+        if (total_value_usd is not None and month_start_value_usd is not None)
+        else None
+    )
     return (
         _growth(total_value_eur, month_start_value_eur, mtd_net_eur),
-        _growth(total_value_usd, month_start_value_usd, mtd_net_usd),
+        usd_growth,
     )
 
 

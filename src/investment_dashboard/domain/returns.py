@@ -228,10 +228,16 @@ def cagr(start_value: Decimal, end_value: Decimal, days: int) -> Decimal | None:
 
     ``(V_end / V_start) ** (1 / years) - 1`` with ``years = days / 365.25``.
     Returns ``None`` for non-positive start values, zero-length windows, or
-    negative end values (the formula's real-valued domain).
+    negative end values (the formula's real-valued domain). A *total loss*
+    (``end_value == 0``) is well-defined: the holding lost everything, so the
+    CAGR is exactly −100 % rather than ``None``.
     """
-    if start_value <= 0 or end_value <= 0 or days <= 0:
+    if start_value <= 0 or end_value < 0 or days <= 0:
         return None
+    if end_value == 0:
+        # A wipeout (€10k → €0) is a clean −100 % compound rate; the power
+        # formula below would divide-by-zero / take log(0), so short-circuit.
+        return Decimal(-1)
     years = Decimal(days) / DAYS_PER_CALENDAR_YEAR
     ratio = float(end_value / start_value)
     return Decimal(repr(ratio ** float(Decimal(1) / years))) - Decimal(1)

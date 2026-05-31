@@ -114,6 +114,9 @@ def test_boot_creates_cache_and_config_schema_in_split_layout(
     assert "position_snapshots" in cache_tables
     assert "fx_history" in cache_tables
     assert "instrument_overrides" in _tables(config_path)
+    # §3.1.1 — every storage tier carries its own Alembic version baseline.
+    assert "alembic_version" in cache_tables
+    assert "alembic_version" in _tables(config_path)
 
 
 def test_boot_creates_schema_without_alembic(

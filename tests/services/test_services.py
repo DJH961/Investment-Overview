@@ -170,6 +170,40 @@ class TestMetrics:
             (date(2024, 3, 1), Decimal("4.50")),
         ]
 
+    def test_transfer_kinds_count_as_external_flows(self, session: Session) -> None:
+        """``transfer_in`` behaves like a deposit and ``transfer_out`` like a
+        withdrawal in the portfolio cashflow series (audit §3.2.11)."""
+        acct_id = _seed_usd_brokerage(session)
+        txns = [
+            Transaction(
+                account_id=acct_id,
+                date=date(2024, 1, 1),
+                kind="transfer_in",
+                net_native=Decimal("1000"),
+                net_eur=Decimal("900"),
+                source="manual",
+            ),
+            Transaction(
+                account_id=acct_id,
+                date=date(2024, 6, 1),
+                kind="transfer_out",
+                net_native=Decimal("-200"),
+                net_eur=Decimal("-180"),
+                source="manual",
+            ),
+        ]
+        session.add_all(txns)
+        session.flush()
+
+        cashflows = metrics_service.build_portfolio_cashflows(txns)
+
+        # transfer_in (amount 900) ⇒ negative flow; transfer_out (amount -180)
+        # ⇒ positive flow — exactly the deposit/withdrawal sign convention.
+        assert [(cf.date, cf.amount) for cf in cashflows] == [
+            (date(2024, 1, 1), Decimal("-900")),
+            (date(2024, 6, 1), Decimal("180")),
+        ]
+
 
 class TestExpenseAndMtdMetrics:
     """Parity KPIs ported from the spreadsheet's ``Total`` block."""
@@ -226,6 +260,39 @@ class TestExpenseAndMtdMetrics:
         # Weighted ratio = 1.80 / 4000 = 0.00045.
         assert m.weighted_expense_ratio is not None
         assert abs(m.weighted_expense_ratio - Decimal("0.00045")) < Decimal("0.0000001")
+
+    def test_dividend_yield_is_dividends_over_closing_balance(self, session: Session) -> None:
+        acct_id = _seed_eur_account(session, "Dividend Account")
+        session.add_all(
+            [
+                Transaction(
+                    account_id=acct_id,
+                    date=date(2024, 1, 1),
+                    kind="deposit",
+                    net_native=Decimal("1000"),
+                    net_eur=Decimal("1000"),
+                    source="manual",
+                ),
+                Transaction(
+                    account_id=acct_id,
+                    date=date(2024, 6, 1),
+                    kind="dividend_cash",
+                    net_native=Decimal("20"),
+                    net_eur=Decimal("20"),
+                    source="manual",
+                ),
+            ]
+        )
+        session.flush()
+        m = metrics_service.compute_portfolio_metrics(session, as_of=date(2024, 12, 31))
+        # Closing balance = 1000 + 20 = 1020; yield = 20 / 1020.
+        assert m.total_value_eur == Decimal("1020")
+        assert m.dividend_yield_pct is not None
+        assert abs(m.dividend_yield_pct - (Decimal("20") / Decimal("1020"))) < Decimal("1e-9")
+
+    def test_dividend_yield_none_when_empty(self, session: Session) -> None:
+        m = metrics_service.compute_portfolio_metrics(session)
+        assert m.dividend_yield_pct is None
 
     def test_expense_metrics_none_when_empty(self, session: Session) -> None:
         m = metrics_service.compute_portfolio_metrics(session)

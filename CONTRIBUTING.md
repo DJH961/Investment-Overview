@@ -39,7 +39,9 @@ uv run pre-commit install
 - `repositories/` is the only layer that imports ORM models. Returns ORM
   rows or domain dataclasses; never raw `dict`s.
 - `services/` orchestrates use-cases by composing the layers above.
-- `ui/` reads input, calls a service, renders the result. Nothing else.
+- `ui/` reads input, renders the result, and calls a service for any mutation
+  or multi-step use-case. It may also read ledger-tier repositories directly
+  for simple queries (e.g. `transactions_repo`, `instruments_repo`).
 - **Cache-tier data (prices, FX, snapshots) is read/written only through its
   service** (`prices_service`, `fx_service`, `snapshots_service`), which routes
   to the cache engine via `db.cache_read_session` / `cache_write_session`.

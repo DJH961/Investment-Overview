@@ -168,3 +168,44 @@ def test_money_and_pct_columns_bind_to_display_currency() -> None:
     pc = pct_column("Total Growth", "total_growth", "EUR")
     assert pc["field"] == "total_growth_eur_signed"
     assert "cellClassRules" in pc
+
+
+def test_daily_chained_twr_compounds_interior_snapshots(session: Session) -> None:
+    """§3.2.12 — when daily snapshots exist *inside* a period, the growth %
+    chains each sub-period's return instead of a single Modified-Dietz over
+    the whole period (which would average intra-period market swings away)."""
+    from investment_dashboard.repositories import snapshots_repo
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="savings_bank",
+        account_label="Direct Savings",
+        native_currency="EUR",
+        account_type="savings",
+    )
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2024, 1, 15),
+            kind="deposit",
+            net_eur=Decimal("200"),
+            net_native=Decimal("200"),
+            source=TransactionSource.MANUAL,
+        )
+    )
+    # Daily portfolio values: open 1000 → +10% by Jan 10 → flat through the
+    # Jan-15 deposit → +1.538% tail to close at 1320.
+    snapshots_repo.upsert_snapshot(session, date(2023, 12, 31), Decimal("1000"))
+    snapshots_repo.upsert_snapshot(session, date(2024, 1, 10), Decimal("1100"))
+    snapshots_repo.upsert_snapshot(session, date(2024, 1, 20), Decimal("1300"))
+    snapshots_repo.upsert_snapshot(session, date(2024, 1, 31), Decimal("1320"))
+    session.flush()
+
+    rows = aggregate(session, monthly=True, today=date(2024, 2, 5))
+    jan = next(r for r in rows if r.label == "2024-01")
+    # Chained: (1.10)·(1.0)·(1320/1300) − 1 ≈ 0.116923.
+    assert jan.growth_pct is not None
+    assert abs(jan.growth_pct - Decimal("0.116923")) < Decimal("0.0001")
+    # A naive single-period Modified-Dietz would report ≈ 0.10909 — confirm
+    # the chained figure is materially different (intra-period swing kept).
+    assert jan.growth_pct > Decimal("0.115")

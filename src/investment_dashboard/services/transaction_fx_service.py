@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.domain.currency import split_native_to_dual_legs
 from investment_dashboard.models import Transaction
-from investment_dashboard.repositories import accounts_repo, fx_repo, transactions_repo
+from investment_dashboard.repositories import fx_repo, transactions_repo
 from investment_dashboard.services import fx_service
 
 log = logging.getLogger(__name__)
@@ -85,6 +85,13 @@ def compute_legs(
         fx_rate_to_eur = (
             Decimal(1) / eur_to_usd if eur_to_usd is not None and eur_to_usd != 0 else None
         )
+        # ``native_to_eur_rate`` is the *quote-per-1-EUR* (EUR→native) rate
+        # consumed by :func:`split_native_to_dual_legs` as ``net_native /
+        # rate`` — so for USD-native it is the EUR→USD rate (~1.08), exactly
+        # what the general branch below would derive via ``quote="USD"``. (The
+        # USD branch of ``split_native_to_dual_legs`` short-circuits before
+        # using it, but we keep it correct so a future control-flow change
+        # can't silently invert the conversion.)
         native_to_eur_rate = eur_to_usd
     else:
         native_to_eur_rate = fx_service.get_rate_eur_to_quote(session, on, quote=ccy)
@@ -218,8 +225,3 @@ def ensure_fx_coverage(
                 log.warning("FX coverage refresh attempt failed; retrying", exc_info=True)
         rates = fx_repo.get_rates(cache, base="EUR", quote="USD")
         return any(d <= earliest_needed for d in rates)
-
-
-def list_accounts_currency_map(session: Session) -> dict[int, str]:
-    """``{account_id: native_currency}`` helper for callers that batch rows."""
-    return {a.id: a.native_currency for a in accounts_repo.list_accounts(session)}
