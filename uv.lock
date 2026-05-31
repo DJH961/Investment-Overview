@@ -894,10 +894,11 @@ wheels = [
 
 [[package]]
 name = "investment-dashboard"
-version = "2.3.0"
+version = "2.8.1"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
+    { name = "fastapi" },
     { name = "httpx" },
     { name = "nicegui" },
     { name = "numpy" },
@@ -909,6 +910,7 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "scipy" },
     { name = "sqlalchemy" },
+    { name = "uvicorn" },
     { name = "yfinance" },
 ]
 
@@ -931,6 +933,7 @@ encrypted = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
+    { name = "fastapi", specifier = ">=0.110" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.100" },
     { name = "keyring", marker = "extra == 'encrypted'", specifier = ">=24.0" },
@@ -952,6 +955,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.13" },
     { name = "sqlalchemy", specifier = ">=2.0.30" },
     { name = "types-python-dateutil", marker = "extra == 'dev'" },
+    { name = "uvicorn", specifier = ">=0.29" },
     { name = "yfinance", specifier = ">=0.2.40" },
 ]
 provides-extras = ["dev", "encrypted"]
