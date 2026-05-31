@@ -30,6 +30,22 @@ def latest_price_date(session: Session, instrument_id: int) -> date | None:
     return session.scalars(stmt).one_or_none()
 
 
+def earliest_price_date(session: Session, instrument_id: int) -> date | None:
+    """Oldest cached print date for ``instrument_id`` (``None`` if empty).
+
+    Lets the refresh detect a *leading* gap — cached history that starts later
+    than the earliest date the portfolio needs — so the backfill can extend
+    backwards instead of only ever appending newer prints.
+    """
+    stmt = (
+        select(PriceHistory.date)
+        .where(PriceHistory.instrument_id == instrument_id)
+        .order_by(PriceHistory.date.asc())
+        .limit(1)
+    )
+    return session.scalars(stmt).one_or_none()
+
+
 def latest_close(session: Session, instrument_id: int) -> Decimal | None:
     stmt = (
         select(PriceHistory.close_native)

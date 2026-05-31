@@ -103,8 +103,22 @@ def _refresh_single_quote(
 ) -> int:
     latest = fx_repo.latest_rate_date(session, base=base, quote=quote)
     if latest is not None and latest >= today:
-        return 0
-    start = max(earliest_needed, (latest + timedelta(days=1)) if latest else earliest_needed)
+        # Up to date at the tail, but a leading gap (cached history starting
+        # later than ``earliest_needed``) still needs filling.
+        earliest = fx_repo.earliest_rate_date(session, base=base, quote=quote)
+        if earliest is None or earliest <= earliest_needed:
+            return 0
+        start = earliest_needed
+    else:
+        earliest = fx_repo.earliest_rate_date(session, base=base, quote=quote)
+        if earliest is not None and earliest > earliest_needed:
+            # Leading gap: refetch from ``earliest_needed`` (upsert is
+            # idempotent so the cached tail is rewritten harmlessly).
+            start = earliest_needed
+        else:
+            start = max(
+                earliest_needed, (latest + timedelta(days=1)) if latest else earliest_needed
+            )
     if start > today:
         return 0
     try:
