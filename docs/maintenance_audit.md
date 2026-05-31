@@ -165,7 +165,11 @@ only — no logic touched):
    encrypted-mode users a key-recovery path.
 
 ### 3.2 Outstanding — MEDIUM
-4. Settings "Move ledger…" picker — `README.md:290`. No `move_ledger` code/UI.
+4. ~~Settings "Move ledger…" picker~~ — _done._ Settings → Storage now has a
+   "Move ledger…" folder picker that relocates the ledger + config tiers via a
+   safe copy-verify-delete move (rolling backup + integrity check), persists the
+   new paths to `app_config`, and prompts for a restart
+   (`storage/move.py`, `ui/pages/settings.py`).
 5. Auto-populate instrument category/asset-class from market-data metadata,
    downgrading the Settings field to read-only + "refresh" —
    `docs/v2.0_split_cloud_security_plan.md:80-82`.

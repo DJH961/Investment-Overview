@@ -45,6 +45,12 @@ intraday quotes are a supported feature.
   is no longer the only way to supply it. Both surfaces also offer a downloadable
   **recovery file** (`storage.encryption.build_recovery_file`), closing the
   "encrypted-mode users have no key-recovery path" gap from the v2.0 storage plan.
+- **Settings "Move ledger…" picker.** Settings → Storage can now physically
+  relocate the ledger and config database files to a folder of your choice. The
+  move takes a rolling backup, copies each file with an integrity check, swaps it
+  into place atomically, removes the originals (sidecars included), persists the
+  new tier paths to `app_config`, and prompts for a restart — implementing the
+  v2.0 plan's §4.4 "Move ledger…" flow (`storage/move.py`, `ui/pages/settings`).
 
 ### Fixed
 - **USD figures no longer silently relabel EUR as USD when an FX rate is

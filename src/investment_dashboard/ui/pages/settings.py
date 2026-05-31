@@ -938,7 +938,87 @@ def _render_storage_section() -> None:  # pragma: no cover - UI
             ).props("flat no-caps")
 
         ui.separator().classes("q-my-sm")
+        _render_move_ledger(is_read_only())
+
+        ui.separator().classes("q-my-sm")
         _render_encryption_passphrase(encryption.enabled)
+
+
+def _move_ledger(raw: str) -> None:  # pragma: no cover - UI callback
+    """Physically relocate the ledger + config tiers to ``raw`` and persist it.
+
+    Copies each synced-tier file into the chosen folder (rolling backup +
+    integrity check + atomic move), removes the originals, writes the new
+    paths into ``app_config`` so the resolver finds them next launch, and
+    asks the user to restart.
+    """
+    from investment_dashboard.db import get_active_encryption  # noqa: PLC0415
+    from investment_dashboard.storage.move import (  # noqa: PLC0415
+        PERSIST_KEYS,
+        MoveError,
+        move_synced_tiers,
+    )
+
+    folder = raw.strip()
+    if not folder:
+        ui.notify("Choose a destination folder first.", type="warning")
+        return
+    try:
+        result = move_synced_tiers(folder, encryption=get_active_encryption())
+        with session_scope() as session:
+            for tier, new_path in result.moved.items():
+                app_config_repo.set_value(session, PERSIST_KEYS[tier], str(new_path))
+    except MoveError as exc:
+        ui.notify(str(exc), type="negative")
+        return
+    except Exception as exc:
+        log.exception("Move ledger failed")
+        ui.notify(f"Move failed: {exc}", type="negative")
+        return
+    if result.leftover_sources:
+        ui.notify(
+            "Moved, but the old file(s) could not be deleted yet "
+            f"({len(result.leftover_sources)} left) — they release on restart. "
+            "Restart the app for the move to take effect.",
+            type="warning",
+            timeout=0,
+            close_button="OK",
+        )
+    else:
+        ui.notify(
+            "Ledger moved — restart the app for it to take effect.",
+            type="positive",
+        )
+
+
+def _render_move_ledger(read_only: bool) -> None:  # pragma: no cover - UI
+    """Folder picker that relocates the ledger + config tiers (plan §4.4)."""
+    ui.label("Move ledger…").classes("text-subtitle2")
+    ui.label(
+        "Relocate your ledger and config database files to another folder "
+        "(for example onto a different drive or cloud folder). The files are "
+        "copied with an integrity check and a safety backup, the originals "
+        "removed, and the new location remembered. Takes effect after a "
+        "restart. The local cache is left where it is.",
+    ).classes("text-caption opacity-70")
+    dest_in = (
+        ui.input("Destination folder", placeholder="/path/to/new/folder")
+        .props("outlined dense")
+        .classes("w-full max-w-2xl font-mono")
+    )
+    move_btn = ui.button(
+        "Move ledger",
+        icon="drive_file_move",
+        on_click=lambda: _move_ledger(dest_in.value or ""),
+    ).props("unelevated color=primary no-caps")
+    if read_only:
+        # Another instance holds the writer lock; moving its files would be
+        # unsafe, so disable the action in read-only mode.
+        dest_in.disable()
+        move_btn.disable()
+        ui.label(
+            "Disabled in read-only mode — close the other instance first.",
+        ).classes("text-caption text-warning")
 
 
 def _save_passphrase(passphrase: str, confirm: str) -> None:  # pragma: no cover - UI

@@ -288,9 +288,8 @@ for the full roadmap. Current status:
 - ✅ v2.0 Phase 4 — optional SQLCipher encryption for synced tiers.
 - ✅ v2.0 Phase 5 — sidecar guard, single-writer lock, integrity checks, and
   rolling backups.
-- ✅ Onboarding/Settings passphrase prompt + recovery file, and per-tier
-  Alembic version tables (v2.9.4).
-- ⏳ Follow-ups — Settings “Move ledger…” picker.
+- ✅ Onboarding/Settings passphrase prompt + recovery file, per-tier Alembic
+  version tables, and the Settings “Move ledger…” relocation picker (v2.9.4).
 
 ## License
 

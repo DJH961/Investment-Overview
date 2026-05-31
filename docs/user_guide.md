@@ -82,7 +82,11 @@ a detected **cloud-sync** folder (OneDrive, iCloud, Dropbox, Google Drive). The
 tier paths themselves are read-only, but you **can** point the ledger and config
 tiers at a **cloud / sync folder of your choice** here (for example a different
 cloud provider, or a plain local folder) — the change takes effect on the next
-restart.
+restart. Use **Move ledger…** to physically relocate the ledger and config files
+to a new folder (the app copies them with an integrity check and a safety backup,
+removes the originals, and remembers the new location). You can also store the
+SQLCipher **encryption passphrase** in your OS keychain and download an offline
+**recovery file** so an encrypted ledger always has a key-recovery path.
 
 ### Data refresh
 
