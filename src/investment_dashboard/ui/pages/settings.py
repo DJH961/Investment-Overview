@@ -31,6 +31,7 @@ from investment_dashboard.services import (
     display_currency_service,
     provider_status,
     risk_free_service,
+    timezone_service,
     transaction_fx_service,
 )
 from investment_dashboard.services.fx_service import refresh_fx_history
@@ -118,6 +119,17 @@ def _set_display_currency(value: str) -> None:  # pragma: no cover - UI
         return
     ui.notify(f"Display currency set to {value}", type="positive")
     _settings_refresh()
+
+
+def _set_timezone(value: str) -> None:  # pragma: no cover - UI
+    try:
+        with session_scope() as session:
+            timezone_service.set_timezone(session, value)
+    except ValueError as exc:
+        ui.notify(str(exc), type="negative")
+        return
+    ui.notify(f"Timezone set to {value}", type="positive")
+    ui.navigate.reload()
 
 
 def _edit_account_dialog(
@@ -634,7 +646,9 @@ def _render_reset_section() -> None:  # pragma: no cover - UI
                 ).props("outline color=negative dense no-caps")
 
 
-def _render_display_prefs(current_currency: str) -> None:  # pragma: no cover - UI
+def _render_display_prefs(
+    current_currency: str, current_timezone: str
+) -> None:  # pragma: no cover - UI
     with ui.row().classes("items-center gap-md"):
         ui.label("Primary display currency:").classes("text-body2")
         ui.toggle(
@@ -645,6 +659,18 @@ def _render_display_prefs(current_currency: str) -> None:  # pragma: no cover - 
         ui.label(
             "Switches every page's KPIs, tables and charts. "
             "Stored in the local DB so it persists across restarts.",
+        ).classes("text-caption opacity-70")
+    with ui.row().classes("items-center gap-md q-mt-sm"):
+        ui.label("Timezone:").classes("text-body2")
+        ui.select(
+            timezone_service.supported_timezones(),
+            value=current_timezone,
+            with_input=True,
+            on_change=lambda e: _set_timezone(e.value),
+        ).props("dense outlined options-dense").classes("min-w-[16rem]")
+        ui.label(
+            'Sets the clock shown in the header. "Local" follows this '
+            "computer's timezone; pick any zone to override it.",
         ).classes("text-caption opacity-70")
 
 
@@ -962,6 +988,7 @@ def register() -> None:
                 )
                 allocations = list(allocations_repo.list_allocations(session))
                 current_currency = display_currency_service.get_display_currency(session)
+                current_timezone = timezone_service.get_timezone(session)
                 benchmark_symbol = benchmark_service.get_symbol(session)
                 rf_snapshot = risk_free_service.get_risk_free_rate(
                     session,
@@ -974,7 +1001,7 @@ def register() -> None:
                     "options change presentation only — they never alter your "
                     "transactions or move money.",
                 ).classes("text-caption opacity-70 q-mb-sm")
-                _render_display_prefs(current_currency)
+                _render_display_prefs(current_currency, current_timezone)
             with section("Analytics preferences"):
                 ui.label(
                     "Inputs used by the risk metrics on the Analytics page. The "
