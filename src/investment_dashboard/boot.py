@@ -28,6 +28,7 @@ from __future__ import annotations
 import logging
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Any
 
 from investment_dashboard.config import get_settings
 from investment_dashboard.ui.theme import register_plotly_template
@@ -316,20 +317,19 @@ def _run_migrations() -> None:
         _ensure_secondary_tier_schema()
 
 
-def _run_alembic_upgrade() -> bool:
-    """Run ``alembic upgrade head``. Returns ``True`` only if it actually ran.
+def _load_alembic_config() -> tuple[Any, Any] | None:
+    """Return ``(alembic.command, Config)`` or ``None`` when unavailable.
 
-    Returns ``False`` (without raising) when Alembic is not importable or
-    when ``alembic.ini`` cannot be located — the two situations that occur
-    in the packaged installer/portable bundle, where the caller falls back
-    to :func:`_ensure_schema_present`.
+    Centralises the "is Alembic importable and is ``alembic.ini`` on disk?"
+    probe shared by the ledger upgrade and the per-tier version-table
+    stamping, so both degrade identically in the packaged bundle.
     """
     try:
         from alembic import command  # noqa: PLC0415
         from alembic.config import Config  # noqa: PLC0415
     except ImportError:
         log.warning("alembic not installed; will create schema directly")
-        return False
+        return None
 
     # Locate alembic.ini at the repo root (three levels up from this file).
     pkg_root = Path(__file__).resolve().parent
@@ -340,20 +340,57 @@ def _run_alembic_upgrade() -> bool:
     ini_path = next((p for p in candidates if p.exists()), None)
     if ini_path is None:
         log.warning("alembic.ini not found; will create schema directly")
-        return False
+        return None
+    return command, Config(str(ini_path))
 
-    cfg = Config(str(ini_path))
+
+def _run_alembic_upgrade() -> bool:
+    """Run ``alembic upgrade head``. Returns ``True`` only if it actually ran.
+
+    Returns ``False`` (without raising) when Alembic is not importable or
+    when ``alembic.ini`` cannot be located — the two situations that occur
+    in the packaged installer/portable bundle, where the caller falls back
+    to :func:`_ensure_schema_present`.
+    """
+    loaded = _load_alembic_config()
+    if loaded is None:
+        return False
+    command, cfg = loaded
+
     settings = get_settings()
-    if settings.is_split_db:
-        log.info(
-            "split-DB mode: running migrations against ledger only "
-            "(per-tier Alembic version tables are a Phase 2 follow-up)"
-        )
     settings.ledger_path.parent.mkdir(parents=True, exist_ok=True)  # type: ignore[union-attr]
     cfg.set_main_option("sqlalchemy.url", settings.ledger_url)
     command.upgrade(cfg, "head")
     log.info("Alembic upgrade head applied")
     return True
+
+
+def _stamp_secondary_tiers() -> None:
+    """Stamp the config + cache databases with their own ``alembic_version``.
+
+    Alembic's migration scripts describe the *ledger* metadata, so we must
+    not run them against the secondary tiers (that would try to create
+    ledger tables there). Instead, after their schema is materialised by
+    ``create_all``, we ``alembic stamp head`` each tier so every storage
+    database carries its own version table pinned to the current head —
+    giving each tier an independent migration baseline for the future
+    (audit §3.1.1). Best-effort: a stamping failure must never block boot,
+    since the schema itself is already present.
+    """
+    settings = get_settings()
+    if not settings.is_split_db:
+        return
+    loaded = _load_alembic_config()
+    if loaded is None:
+        return
+    command, cfg = loaded
+    for tier, url in (("config", settings.config_url), ("cache", settings.cache_url)):
+        try:
+            cfg.set_main_option("sqlalchemy.url", url)
+            command.stamp(cfg, "head")
+            log.info("Alembic stamped %s tier to head", tier)
+        except Exception:  # pragma: no cover - defensive: schema already exists
+            log.warning("could not stamp %s tier alembic_version", tier, exc_info=True)
 
 
 def _ensure_secondary_tier_schema() -> None:
@@ -381,6 +418,8 @@ def _ensure_secondary_tier_schema() -> None:
     ConfigBase.metadata.create_all(get_config_engine())
     CacheBase.metadata.create_all(get_cache_engine())
     log.info("split-DB: ensured config + cache tier schema after Alembic upgrade")
+    # Give each secondary tier its own alembic_version baseline (§3.1.1).
+    _stamp_secondary_tiers()
 
 
 def _ensure_schema_present() -> None:
