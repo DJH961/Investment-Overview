@@ -12,6 +12,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain.money_market import MONEY_MARKET_NAV, is_money_market
 from investment_dashboard.models import (
     Account,
     Instrument,
@@ -69,6 +70,19 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
     is_historical = as_of < date.today()
     txns = transactions_repo.list_transactions(session, end=as_of)
 
+    # Cash dividends that were immediately reinvested arrive as a pair of
+    # ledger rows (DIVIDEND_CASH + DIVIDEND_REINVEST, same instrument & date).
+    # The reinvested shares already raise both the share count and the cost
+    # basis, so counting the cash leg as income too would double-count it in
+    # the capital gain (spec §6.1, returns.capital_gain). Track which
+    # (account, instrument, date) keys carry a reinvestment so the matching
+    # cash leg can be skipped.
+    reinvest_keys: set[tuple[int, int | None, date]] = {
+        (t.account_id, t.instrument_id, t.date)
+        for t in txns
+        if t.kind == TransactionKind.DIVIDEND_REINVEST.value
+    }
+
     # Aggregate by (account_id, instrument_id).
     holdings: dict[tuple[int, int | None], dict[str, Decimal]] = {}
     for t in txns:
@@ -84,7 +98,17 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
             agg["shares"] += qty
             agg["cost_basis"] += -net  # buy net is negative ⇒ cost positive
         elif kind == TransactionKind.SELL.value:
-            agg["shares"] += qty  # qty is already negative for sells
+            # Average-cost method: a partial sale releases a proportional
+            # slice of the cost basis, otherwise the remaining shares keep
+            # the *full* original basis and growth is massively deflated
+            # (spec §6.5). ``qty`` is already negative for sells.
+            shares_before = agg["shares"]
+            if shares_before > ZERO:
+                avg_cost = agg["cost_basis"] / shares_before
+                # qty negative ⇒ this subtracts the sold shares' basis.
+                agg["cost_basis"] += avg_cost * qty
+                agg["cost_basis"] = max(agg["cost_basis"], ZERO)
+            agg["shares"] += qty
         elif kind == TransactionKind.DIVIDEND_REINVEST.value:
             agg["shares"] += qty
             # Reinvested dividends raise the cost basis by the reinvestment
@@ -92,7 +116,10 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
             if t.price_native is not None:
                 agg["cost_basis"] += qty * t.price_native
         elif kind == TransactionKind.DIVIDEND_CASH.value:
-            agg["dividends_cash"] += net
+            # Skip the cash leg of a reinvested dividend (already captured by
+            # the paired DIVIDEND_REINVEST as new shares + cost basis).
+            if (t.account_id, t.instrument_id, t.date) not in reinvest_keys:
+                agg["dividends_cash"] += net
         elif kind == TransactionKind.SPLIT.value:
             agg["shares"] += qty
 
@@ -125,11 +152,19 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
             continue
         account = accounts_by_id[account_id]
         instr = instruments_by_id[instrument_id]
+        eff = effective_instrument(instr, overrides.get(instr.id))
+        # Money-market / settlement funds (VMFXX, SPAXX …) hold uninvested
+        # cash at a constant $1.00 NAV and have no tradeable price feed. Price
+        # them at par so their value reflects the cash balance instead of
+        # collapsing to zero (which understated closing values and inflated
+        # their growth %).
+        if is_money_market(instr.symbol, asset_class=eff.asset_class, name=eff.name):
+            current_price: Decimal | None = MONEY_MARKET_NAV
         # Historical valuations must use the close that was in effect on
         # ``as_of`` (forward-filled), not today's price — otherwise YTD/MTD
         # start values and the equity curve are all priced at today's close.
         # For "today" we keep ``latest_close`` so intraday refreshes show.
-        if is_historical:
+        elif is_historical:
             current_price = prices_service.close_as_of(session, instr.id, as_of)
         else:
             current_price = prices_service.latest_close(session, instr.id)
@@ -154,7 +189,7 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
                 cumulative_dividends_cash_native=agg["dividends_cash"],
                 category=(overrides[instr.id].category if instr.id in overrides else None),
                 instrument_active=(overrides[instr.id].active if instr.id in overrides else True),
-                effective=effective_instrument(instr, overrides.get(instr.id)),
+                effective=eff,
             )
         )
     results.sort(key=lambda p: (p.account.broker, p.instrument.symbol))
