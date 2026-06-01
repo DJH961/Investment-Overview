@@ -162,6 +162,43 @@ def test_boot_creates_schema_without_alembic(
     assert {"transactions", "instruments", "accounts", "instrument_overrides"} <= tables
 
 
+def test_split_layout_without_alembic_reads_app_config_via_ledger_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Portable-bundle first start must not crash reading ``app_config``.
+
+    The portable bundle ships no Alembic, and a fresh install resolves to a
+    split-DB layout (separate ledger/config/cache files). Config-tier reads
+    such as the benchmark symbol still run on the back-compat ledger session,
+    so the ledger DB must carry the ``app_config`` table. Regression test for
+    the first-start ``no such table: app_config`` 500 error: building only the
+    ledger metadata left that table out of the ledger DB.
+    """
+    from investment_dashboard import boot
+    from investment_dashboard.config import get_settings
+    from investment_dashboard.db import dispose_engines, session_scope
+    from investment_dashboard.services import benchmark_service
+
+    monkeypatch.delenv("INV_DASHBOARD_DB_PATH", raising=False)
+    monkeypatch.setenv("INV_DASHBOARD_LEDGER_PATH", str(tmp_path / "ledger.sqlite"))
+    monkeypatch.setenv("INV_DASHBOARD_CONFIG_PATH", str(tmp_path / "config.sqlite"))
+    monkeypatch.setenv("INV_DASHBOARD_CACHE_PATH", str(tmp_path / "cache.sqlite"))
+    # Simulate the packaged environment where Alembic cannot run.
+    monkeypatch.setattr(boot, "_run_alembic_upgrade", lambda: False)
+    get_settings.cache_clear()
+    dispose_engines()
+    try:
+        run_boot_sequence(skip_network=True)
+        with session_scope() as session:
+            symbol = benchmark_service.get_symbol(session)
+    finally:
+        dispose_engines()
+        get_settings.cache_clear()
+
+    assert symbol == benchmark_service.DEFAULT_SYMBOL
+
+
 def test_read_only_mode_skips_writer_maintenance(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

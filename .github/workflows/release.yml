@@ -178,10 +178,28 @@ jobs:
           Copy-Item installer/Run-InvestmentDashboard.cmd $bundleRoot/Run-InvestmentDashboard.cmd
           Copy-Item installer/PORTABLE_README.txt $bundleRoot/README.txt
 
-          # 6. Zip it up.
+          # 6. Slim the bundle before zipping. The unzip is slow mostly because
+          #    of the *number* of files, and an embeddable Python plus pip and
+          #    all the compiled bytecode caches add thousands of tiny throwaway
+          #    files. Pruning them shrinks the ZIP and dramatically speeds up
+          #    extraction with no runtime cost: the portable launcher never
+          #    self-updates (so pip is unused) and CPython regenerates any
+          #    __pycache__ on first import.
+          Get-ChildItem -Path $bundleRoot -Recurse -Directory -Filter '__pycache__' |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          $sitePackages = Join-Path $bundleRoot 'python/Lib/site-packages'
+          if (Test-Path $sitePackages) {
+            Get-ChildItem -Path $sitePackages -Directory |
+              Where-Object { $_.Name -match '^(pip|setuptools|wheel|pkg_resources|_distutils_hack)(-.*)?$' } |
+              Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+          # 7. Zip it up. ``Optimal`` trades a little CPU at build time for the
+          #    smallest archive, which means fewer bytes to inflate on the
+          #    user's machine.
           $zip = "InvestmentDashboard-Portable.zip"
           if (Test-Path $zip) { Remove-Item $zip }
-          Compress-Archive -Path "$bundleRoot/*" -DestinationPath $zip
+          Compress-Archive -Path "$bundleRoot/*" -DestinationPath $zip -CompressionLevel Optimal
           Write-Host "Bundle assembled: $zip"
 
       - name: Upload portable bundle artifact
