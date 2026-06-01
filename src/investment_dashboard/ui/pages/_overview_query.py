@@ -93,13 +93,10 @@ def build_value_series(
         start = end - timedelta(days=days)
     start = min(start, end)
 
-    points: list[ValueSeriesPoint] = []
-    day = start
-    while day <= end:
-        value = snapshots_service.get_or_compute_in_currency(session, day, currency)
-        points.append(ValueSeriesPoint(date=day, value=value))
-        day += timedelta(days=1)
-    return points
+    return [
+        ValueSeriesPoint(date=day, value=value)
+        for day, value in snapshots_service.series_in_currency(session, start, end, currency)
+    ]
 
 
 @dataclass(frozen=True)

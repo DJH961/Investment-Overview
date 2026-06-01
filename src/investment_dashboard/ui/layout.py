@@ -188,16 +188,11 @@ def _sidebar(current: str) -> None:
         ui.html(f'<div class="inv-sidebar-footer">Investment Dashboard · v{__version__}</div>')
 
 
-def _maybe_redirect_to_onboarding(current: str) -> bool:
+def _maybe_redirect_to_onboarding(current: str, *, onboarded: bool) -> bool:
     """Redirect to ``/onboarding`` when the DB has no accounts."""
     if current in _ONBOARDING_BYPASS_PATHS:
         return False
-    try:
-        with session_scope() as session:
-            already = is_onboarded(session)
-    except Exception:  # pragma: no cover - defensive
-        return False
-    if already:
+    if onboarded:
         return False
     ui.navigate.to("/onboarding")
     return True
@@ -215,26 +210,26 @@ def page_frame(title: str, *, current: str) -> Iterator[None]:
     # header button cycles Auto → Light → Dark and writes the new choice
     # back via :mod:`theme_service` so it survives navigation.
     ui_style.apply_per_page()
+    # All chrome reads (theme, onboarding gate, currency, clock) share one
+    # session so a tab switch opens a single transaction instead of three.
     try:
         with session_scope() as session:
             initial_theme = theme_service.get_theme(session)
+            onboarded = is_onboarded(session)
+            current_currency = display_currency_service.get_display_currency(session)
+            now_label = timezone_service.now(session).strftime("%Y-%m-%d %H:%M %Z")
     except Exception:  # pragma: no cover - defensive
         initial_theme = None
+        onboarded = True
+        current_currency = display_currency_service.DEFAULT_CURRENCY
+        now_label = ""
     dark = ui.dark_mode(value=initial_theme)
 
-    if _maybe_redirect_to_onboarding(current):
+    if _maybe_redirect_to_onboarding(current, onboarded=onboarded):
         with ui.column().classes("w-full q-pa-md"):
             ui.label("Redirecting to setup…").classes("text-caption opacity-60")
             yield
         return
-
-    try:
-        with session_scope() as session:
-            current_currency = display_currency_service.get_display_currency(session)
-            now_label = timezone_service.now(session).strftime("%Y-%m-%d %H:%M %Z")
-    except Exception:  # pragma: no cover - defensive
-        current_currency = display_currency_service.DEFAULT_CURRENCY
-        now_label = ""
 
     _header(title, current_currency=current_currency, now_label=now_label, dark=dark)
     _sidebar(current)

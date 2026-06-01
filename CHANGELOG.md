@@ -12,6 +12,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.11.0] — 2026-05-31
+
+Performance pass: the same numbers, computed with far fewer round-trips, and
+the heavy historical rebuild moved off the page-render thread. The trading-day
+live-price refresh is unchanged — intraday prices keep updating exactly as
+before.
+
+### Changed
+- **Daily equity curves load in bulk instead of day-by-day.** The Overview
+  value-over-time chart and the Analytics equity curve previously walked the
+  selected range one calendar day at a time, and *each* day reopened a
+  cache-tier session for the snapshot **and** reloaded the entire EUR→display
+  FX rate series — roughly 365 cache sessions and 365 full FX scans for the
+  default one-year view, all on the request thread. A new
+  `snapshots_service.series_in_currency` reads every cached snapshot in the
+  window in a single query, loads the FX series once, and only recomputes the
+  days genuinely missing from the cache. The plotted values are identical; only
+  the round-trips change (`services/snapshots_service.series_in_currency`,
+  `ui/pages/_overview_query.build_value_series`,
+  `ui/pages/_analytics_query._build_curve`).
+- **The snapshot cache is warmed in the background after a refresh.** The
+  deferred network refresh drops every cached daily snapshot once fresh prices
+  and FX land, so the *first* Overview/Analytics render used to rebuild the
+  whole history day by day on the UI thread — the slow first load (and the
+  occasional "connection lost"). A new `_warm_snapshots()` boot step now
+  recomputes that history over the portfolio lifetime on the post-boot
+  background thread, so the first render reads cached values
+  (`boot._warm_snapshots`, `services/snapshots_service.warm_range`).
+- **Each page navigation opens one chrome session instead of three.** The
+  shared `page_frame` header/sidebar read the theme, onboarding gate, display
+  currency, and clock in three separate transactions on every tab switch; they
+  now share a single session (`ui/layout.page_frame`).
+
 ## [2.10.2] — 2026-05-31
 
 Fixes the "vs market" comparison and the empty analytics benchmark overlay, and

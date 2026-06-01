@@ -258,3 +258,59 @@ def test_nav_items_cover_all_pages() -> None:
         "/calculator",
         "/settings",
     }
+
+
+def test_warm_snapshots_populates_cache_for_seeded_ledger(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``_warm_snapshots`` precomputes the daily cache off the request thread.
+
+    Seeds a transaction, then verifies the background warm step writes a
+    snapshot row for the period so the first ``/overview`` render reads cached
+    values instead of rebuilding the curve day by day.
+    """
+    from datetime import date, timedelta
+    from decimal import Decimal
+
+    from investment_dashboard import boot
+    from investment_dashboard.config import get_settings
+    from investment_dashboard.db import dispose_engines, ledger_session_scope
+    from investment_dashboard.models import Transaction
+    from investment_dashboard.repositories import accounts_repo, snapshots_repo
+
+    db_path = tmp_path / "warm.sqlite"
+    monkeypatch.setenv("INV_DASHBOARD_DB_PATH", str(db_path))
+    get_settings.cache_clear()
+    dispose_engines()
+    try:
+        run_boot_sequence(skip_network=True)
+        recent = date.today() - timedelta(days=3)
+        with ledger_session_scope() as session:
+            acct = accounts_repo.create_account(
+                session,
+                broker="vanguard",
+                account_label="Brokerage",
+                native_currency="EUR",
+                account_type="brokerage",
+            )
+            session.add(
+                Transaction(
+                    account_id=acct.id,
+                    instrument_id=None,
+                    date=recent,
+                    kind="deposit",
+                    net_native=Decimal("1000.00"),
+                    net_eur=Decimal("1000.00"),
+                    source="manual",
+                )
+            )
+
+        boot._warm_snapshots()
+
+        with ledger_session_scope() as session:
+            assert snapshots_repo.get_snapshot(session, recent) is not None
+            assert snapshots_repo.get_snapshot(session, date.today()) is not None
+    finally:
+        dispose_engines()
+        get_settings.cache_clear()
