@@ -119,7 +119,8 @@ def _build_curve(
 ) -> list[EquityCurvePoint]:
     """One point per calendar day in ``[start, end]`` (inclusive).
 
-    Daily granularity keeps drawdown / vol math honest.     The portfolio valuation is read-through-cached and loaded in bulk via
+    Daily granularity keeps drawdown / vol math honest. The portfolio
+    valuation is read-through-cached and loaded in bulk via
     :func:`snapshots_service.series_in_currency`, so historical days are O(1).
     Benchmark closes are forward-filled across weekends and holidays from the
     most recent available print.
