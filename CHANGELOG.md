@@ -12,6 +12,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [2.11.1] — 2026-06-01
+
+Bug-fix release for the portable bundle's first-start experience.
+
+### Fixed
+- **First start no longer crashes with `no such table: app_config`.** A fresh
+  install resolves to a split-DB layout (separate `ledger`/`config`/`cache`
+  files), and the portable bundle ships no Alembic, so boot falls back to
+  `create_all`. That fallback only built each tier's tables in its own file, so
+  the ledger database had no `app_config` table — yet config-tier reads (the
+  benchmark symbol, display currency, persisted storage paths) still run on the
+  back-compat ledger session. The first page render therefore 500'd before the
+  user could pick where their database goes. Boot now mirrors Alembic migration
+  0001 and builds the full schema on the ledger database, so those reads
+  resolve. `create_all` stays idempotent, so existing installs are unaffected.
+
+### Changed
+- **The portable ZIP extracts much faster.** The bundle is now slimmed before
+  zipping — bundled `pip`/`setuptools`/`wheel` (unused at runtime; the portable
+  launcher never self-updates) and all `__pycache__` bytecode caches
+  (regenerated on first import) are pruned, and the archive uses optimal
+  compression. This removes thousands of tiny files, the main cause of the slow
+  unzip.
+
 ## [2.11.0] — 2026-05-31
 
 Performance pass: the same numbers, computed with far fewer round-trips, and

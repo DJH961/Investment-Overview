@@ -436,15 +436,29 @@ def _ensure_schema_present() -> None:
         get_ledger_engine,
     )
     from investment_dashboard.models.base import (  # noqa: PLC0415
+        ALL_METADATAS,
         CacheBase,
         ConfigBase,
-        LedgerBase,
     )
 
-    LedgerBase.metadata.create_all(get_ledger_engine())
+    ledger_engine = get_ledger_engine()
+    # Mirror Alembic migration 0001, which builds the *entire* schema (every
+    # tier's tables) on the ledger URL. The back-compat ``session_scope`` is a
+    # ledger-tier session, and config-tier reads such as ``app_config`` (the
+    # benchmark symbol, display currency, persisted storage paths) still run on
+    # it — so the ledger DB must carry those tables too. Creating only
+    # ``LedgerBase`` here left a split-DB packaged install (the portable bundle,
+    # which ships no Alembic) with an ``app_config``-less ledger DB, so the very
+    # first page render crashed with ``no such table: app_config``. ``create_all``
+    # is idempotent, so this stays a safe no-op once the schema exists.
+    for metadata in ALL_METADATAS:
+        metadata.create_all(ledger_engine)
+    # In split-DB mode the config and cache tiers live in their own files; give
+    # them their schema too (a no-op in single-file mode where the engines alias
+    # the ledger DB just populated above).
     ConfigBase.metadata.create_all(get_config_engine())
     CacheBase.metadata.create_all(get_cache_engine())
-    _ensure_added_columns(get_ledger_engine())
+    _ensure_added_columns(ledger_engine)
     log.info("Database schema ensured via create_all (Alembic migrations unavailable)")
 
 
