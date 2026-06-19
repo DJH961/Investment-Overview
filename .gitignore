@@ -232,3 +232,7 @@ htmlcov/
 .mypy_cache/
 .pytest_cache/
 
+
+# Real (un-anonymized) financial exports must never be committed.
+# The personal master workbook was removed as un-fakeable; keep it local only.
+docs/Comparison Files/Investments.xlsx
