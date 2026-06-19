@@ -28,9 +28,7 @@ def _make_alembic_config() -> Config:
     return cfg
 
 
-def test_0009_rebrands_legacy_savings(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_0009_rebrands_legacy_savings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     db_path = tmp_path / "ledger.sqlite"
     monkeypatch.setenv("INV_DASHBOARD_DB_PATH", str(db_path))
     from investment_dashboard.config import get_settings
@@ -70,12 +68,8 @@ def test_0009_rebrands_legacy_savings(
     command.upgrade(cfg, "e5b1c9a3f7d2")
 
     with engine.begin() as conn:
-        brokers = {
-            r[0] for r in conn.exec_driver_sql("SELECT broker FROM accounts").fetchall()
-        }
-        symbols = {
-            r[0] for r in conn.exec_driver_sql("SELECT symbol FROM instruments").fetchall()
-        }
+        brokers = {r[0] for r in conn.exec_driver_sql("SELECT broker FROM accounts").fetchall()}
+        symbols = {r[0] for r in conn.exec_driver_sql("SELECT symbol FROM instruments").fetchall()}
 
     # Legacy savings code relabelled; brokerages untouched.
     assert brokers == {"savings_bank", "vanguard"}
@@ -91,12 +85,11 @@ def test_0009_rebrands_legacy_savings(
             "VALUES ('savings_bank', 'Another Savings', 'EUR', 'savings', 1)"
         )
     # ...and still rejects unknown broker codes.
-    with pytest.raises(Exception):
-        with engine.begin() as conn:
-            conn.exec_driver_sql(
-                "INSERT INTO accounts (broker, account_label, native_currency, account_type, active) "
-                "VALUES ('not_a_broker', 'X', 'EUR', 'savings', 1)"
-            )
+    with pytest.raises(sa.exc.IntegrityError), engine.begin() as conn:
+        conn.exec_driver_sql(
+            "INSERT INTO accounts (broker, account_label, native_currency, account_type, active) "
+            "VALUES ('not_a_broker', 'X', 'EUR', 'savings', 1)"
+        )
 
     engine.dispose()
     get_settings.cache_clear()  # type: ignore[attr-defined]

@@ -1,0 +1,190 @@
+{
+  "annualize_return": [
+    {
+      "expected": "2.1886804769053065",
+      "inputs": {
+        "days": 30,
+        "total_return": "0.10"
+      },
+      "name": "ordinary"
+    },
+    {
+      "expected": null,
+      "inputs": {
+        "days": 0,
+        "total_return": "0.10"
+      },
+      "name": "invalid_days"
+    }
+  ],
+  "cagr": [
+    {
+      "expected": "0.224914948717307",
+      "inputs": {
+        "days": 730,
+        "end_value": "1500",
+        "start_value": "1000"
+      },
+      "name": "ordinary"
+    },
+    {
+      "expected": "-1",
+      "inputs": {
+        "days": 365,
+        "end_value": "0",
+        "start_value": "1000"
+      },
+      "name": "total_loss"
+    },
+    {
+      "expected": null,
+      "inputs": {
+        "days": 365,
+        "end_value": "1000",
+        "start_value": "0"
+      },
+      "name": "invalid_zero_start"
+    }
+  ],
+  "capital_gain": [
+    {
+      "expected": "325",
+      "inputs": {
+        "contributions": "1000",
+        "cumulative_dividends_cash": "75",
+        "current_value": "1250"
+      },
+      "name": "ordinary"
+    }
+  ],
+  "schema_version": 1,
+  "tolerances": {
+    "money": "0.000001",
+    "rates": "0.00000001",
+    "xirr": "0.000001"
+  },
+  "total_growth_pct": [
+    {
+      "expected": "0.25",
+      "inputs": {
+        "contributions": "1000",
+        "current_value": "1250"
+      },
+      "name": "ordinary"
+    },
+    {
+      "expected": null,
+      "inputs": {
+        "contributions": "0",
+        "current_value": "1250"
+      },
+      "name": "zero_contributions"
+    }
+  ],
+  "total_growth_pct_compounded": [
+    {
+      "expected": "0.2121584371690033",
+      "inputs": {
+        "xirr_rate": "0.08",
+        "years": "2.5"
+      },
+      "name": "ordinary"
+    },
+    {
+      "expected": null,
+      "inputs": {
+        "xirr_rate": null,
+        "years": "2.5"
+      },
+      "name": "none_xirr"
+    }
+  ],
+  "xirr": [
+    {
+      "expected": "0.10026289612679369",
+      "inputs": {
+        "as_of": "2024-01-15",
+        "cashflows": [
+          {
+            "amount": "-10000",
+            "date": "2020-01-15"
+          },
+          {
+            "amount": "-2500",
+            "date": "2021-06-01"
+          },
+          {
+            "amount": "900",
+            "date": "2022-03-20"
+          }
+        ],
+        "terminal_value": "16800"
+      },
+      "name": "ordinary"
+    },
+    {
+      "expected": "-0.06911645340032807",
+      "inputs": {
+        "as_of": "2023-01-01",
+        "cashflows": [
+          {
+            "amount": "-10000",
+            "date": "2021-01-01"
+          },
+          {
+            "amount": "500",
+            "date": "2022-01-01"
+          }
+        ],
+        "terminal_value": "8200"
+      },
+      "name": "negative"
+    },
+    {
+      "expected": null,
+      "inputs": {
+        "as_of": "2024-05-01",
+        "cashflows": [
+          {
+            "amount": "-1000",
+            "date": "2024-05-01"
+          }
+        ],
+        "terminal_value": null
+      },
+      "name": "all_same_day_single_cashflow"
+    },
+    {
+      "expected": "0.10660513918387363",
+      "inputs": {
+        "as_of": "2024-02-29",
+        "cashflows": [
+          {
+            "amount": "-1000",
+            "date": "2020-02-29"
+          }
+        ],
+        "terminal_value": "1500"
+      },
+      "name": "leap_year_span"
+    }
+  ],
+  "years_between": [
+    {
+      "expected": "4",
+      "inputs": {
+        "end": "2024-01-01",
+        "start": "2020-01-01"
+      },
+      "name": "ordinary"
+    },
+    {
+      "expected": "0",
+      "inputs": {
+        "end": "2024-01-01",
+        "start": "2024-01-01"
+      },
+      "name": "same_day"
+    }
+  ]
+}

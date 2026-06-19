@@ -22,7 +22,10 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import dividends
-from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
+from investment_dashboard.domain.currency import (
+    dual_currency_amounts,
+    lookup_rate_with_forward_fill,
+)
 from investment_dashboard.domain.money_market import is_money_market
 from investment_dashboard.domain.returns import (
     Cashflow,
@@ -179,6 +182,44 @@ def _txn_usd_amount(
     return eur_amt * rate
 
 
+def build_instrument_cashflows(
+    session: Session,
+    *,
+    as_of: date | None = None,
+) -> tuple[dict[int, list[Cashflow]], dict[int, list[Cashflow]]]:
+    """Per-instrument EUR and USD cashflow streams for holding-level XIRR."""
+    as_of = as_of or date.today()
+    txns = list(transactions_repo.list_transactions(session, end=as_of))
+    eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
+    today_rate = lookup_rate_with_forward_fill(eur_to_usd, as_of)
+    eur_flows: dict[int, list[Cashflow]] = {}
+    usd_flows: dict[int, list[Cashflow]] = {}
+    for t in txns:
+        iid = t.instrument_id
+        if iid is None:
+            continue
+        kind = t.kind
+        if kind not in {
+            TransactionKind.BUY.value,
+            TransactionKind.SELL.value,
+            TransactionKind.DIVIDEND_CASH.value,
+        }:
+            continue
+        native = t.account.native_currency if t.account else "EUR"
+        eur, usd = dual_currency_amounts(
+            native_currency=native,
+            net_native=t.net_native,
+            net_eur=t.net_eur,
+            net_usd=t.net_usd,
+            on=t.date,
+            eur_to_usd=eur_to_usd,
+            fallback_rate=today_rate,
+        )
+        eur_flows.setdefault(iid, []).append(Cashflow(date=t.date, amount=eur or ZERO))
+        usd_flows.setdefault(iid, []).append(Cashflow(date=t.date, amount=usd or ZERO))
+    return eur_flows, usd_flows
+
+
 def build_portfolio_cashflows(
     transactions: Sequence[Transaction],
     *,
@@ -216,6 +257,26 @@ def build_portfolio_cashflows(
         elif kind in _DISTRIBUTION_KINDS and t.account_id not in retained_cash_account_ids:
             flows.append(Cashflow(date=t.date, amount=amount))
     return flows
+
+
+def build_retained_cash_account_ids(
+    session: Session,
+    transactions: Sequence[Transaction],
+) -> set[int]:
+    """Accounts whose distributions are already retained in terminal value."""
+    retained = {
+        account.id
+        for account in accounts_repo.list_accounts(session)
+        if account.account_type in _RETAINED_CASH_ACCOUNT_TYPES
+    }
+    retained |= {
+        t.account_id
+        for t in transactions
+        if t.account_id is not None
+        and t.instrument is not None
+        and is_money_market(t.instrument.symbol, name=t.instrument.name)
+    }
+    return retained
 
 
 def compute_portfolio_metrics(  # noqa: PLR0915
@@ -287,23 +348,12 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     # the terminal mark-to-market is unknown.
     total_value_usd: Decimal | None = total_value_eur * fx_today if fx_today != 0 else None
 
-    retained_cash_account_ids = {
-        account.id
-        for account in accounts_repo.list_accounts(session)
-        if account.account_type in _RETAINED_CASH_ACCOUNT_TYPES
-    }
     # Distributions swept into an in-portfolio money-market / settlement fund
     # (VMFXX, SPAXX, …) are already captured by the terminal mark-to-market of
     # that fund's holding, so counting them again as XIRR outflows would
     # double-count the cash and inflate the return. Treat any account that
     # holds such a fund as cash-retaining.
-    retained_cash_account_ids |= {
-        t.account_id
-        for t in txns
-        if t.account_id is not None
-        and t.instrument is not None
-        and is_money_market(t.instrument.symbol, name=t.instrument.name)
-    }
+    retained_cash_account_ids = build_retained_cash_account_ids(session, txns)
 
     cap_gain_eur = capital_gain(
         contributions=net_contributions_eur,

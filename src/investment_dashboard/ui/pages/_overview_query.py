@@ -14,12 +14,13 @@ from investment_dashboard.domain.currency import (
     lookup_rate_with_forward_fill,
 )
 from investment_dashboard.domain.money_market import is_money_market
-from investment_dashboard.domain.returns import Cashflow, total_growth_pct_compounded, xirr
+from investment_dashboard.domain.returns import total_growth_pct_compounded, xirr
 from investment_dashboard.models import TransactionKind
 from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import fx_service, prices_service, snapshots_service
 from investment_dashboard.services.metrics_service import (
     PortfolioMetrics,
+    build_instrument_cashflows,
     compute_portfolio_metrics,
 )
 from investment_dashboard.services.positions_service import (
@@ -198,8 +199,7 @@ def compute_instrument_metrics(  # noqa: PLR0915
     today_rate = lookup_rate_with_forward_fill(eur_to_usd, as_of)
 
     year_start = date(as_of.year, 1, 1)
-    eur_flows: dict[int, list[Cashflow]] = {}
-    usd_flows: dict[int, list[Cashflow]] = {}
+    eur_flows, usd_flows = build_instrument_cashflows(session, as_of=as_of)
     cost_eur: dict[int, Decimal] = {}
     cost_usd: dict[int, Decimal] = {}
     # Running share count per instrument, needed to release a proportional
@@ -260,13 +260,6 @@ def compute_instrument_metrics(  # noqa: PLR0915
             if (iid, t.date) not in reinvest_keys:
                 div_eur[iid] = div_eur.get(iid, ZERO) + eur
                 div_usd[iid] = div_usd.get(iid, ZERO) + usd
-        if kind in {
-            TransactionKind.BUY.value,
-            TransactionKind.SELL.value,
-            TransactionKind.DIVIDEND_CASH.value,
-        }:
-            eur_flows.setdefault(iid, []).append(Cashflow(date=t.date, amount=eur))
-            usd_flows.setdefault(iid, []).append(Cashflow(date=t.date, amount=usd))
         if t.date >= year_start and kind in {
             TransactionKind.BUY.value,
             TransactionKind.SELL.value,

@@ -17,11 +17,13 @@ from investment_dashboard.readmodels import (
     analytics,
     calculator,
     deposits,
+    mobile_export,
     overview,
     periods,
     transactions,
 )
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
+from investment_dashboard.readmodels.mobile_export import build_mobile_export
 from investment_dashboard.readmodels.snapshot import (
     SCHEMA_VERSION,
     build_meta,
@@ -34,9 +36,11 @@ __all__ = [
     "analytics",
     "build_context",
     "build_meta",
+    "build_mobile_export",
     "build_snapshot",
     "calculator",
     "deposits",
+    "mobile_export",
     "overview",
     "periods",
     "transactions",
