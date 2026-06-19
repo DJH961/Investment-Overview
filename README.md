@@ -156,6 +156,12 @@ file at the repo root. See [`.env.example`](.env.example).
 | `INV_DASHBOARD_API_ENABLED` | `false` | Mount the read-only JSON API at `/api` on the server |
 | `INV_DASHBOARD_API_TOKEN` | unset | Optional bearer token guarding `/api` (set when exposed beyond LAN) |
 | `INV_DASHBOARD_SNAPSHOT_PATH` | beside config tier | Output path for `inv-dashboard-export-snapshot` |
+| `INV_DASHBOARD_PUBLISH_ENABLED` | `false` | Enable the v3.0 live-web encrypted publish pipeline |
+| `INV_DASHBOARD_PUBLISH_REPO` | unset | Target `owner/name` repo for the published `portfolio.enc` |
+| `INV_DASHBOARD_PUBLISH_RELEASE_TAG` | `live-data` | Release tag whose single asset is overwritten each publish |
+| `INV_DASHBOARD_PUBLISH_INCLUDE_TRANSACTIONS` | `false` | Include the transaction list in the published export |
+| `INV_DASHBOARD_PUBLISH_TOKEN` | unset | GitHub PAT for publishing; normally use OS keyring |
+| `INV_DASHBOARD_MOBILE_PASSPHRASE` | unset | Live-web blob passphrase; normally use OS keyring |
 | `INV_DASHBOARD_DEV_PASSWORD` | unset | Optional password gating Settings → Developer tools (the full audit export) |
 
 ### Storage, cloud sync, and safety tools
@@ -205,6 +211,10 @@ uv run inv-dashboard-api
 
 # Or export a snapshot file into a consumer-cloud-synced folder (offline phone):
 uv run inv-dashboard-export-snapshot --output "%USERPROFILE%\OneDrive\inv-dashboard\mobile_snapshot.json"
+
+# Or publish an encrypted blob to a GitHub release for the v3.0 live-web companion
+# (repo/token/passphrase from Settings → Live web companion, or env vars):
+uv run inv-dashboard-publish-web            # add --refresh to pull fresh prices first
 ```
 
 See [`docs/mobile_android_app_proposal.md`](docs/mobile_android_app_proposal.md)
@@ -238,7 +248,7 @@ src/investment_dashboard/
 ├── readmodels/        # UI-agnostic JSON read-models shared by web + mobile
 ├── api/               # read-only FastAPI JSON API for the mobile companion
 ├── storage/           # cloud paths, encryption, sidecars, locks, backups
-├── tools/             # split-db, repair-sidecar, backup, export-snapshot CLIs
+├── tools/             # split-db, repair-sidecar, backup, export-snapshot, publish-web CLIs
 └── ui/                # NiceGUI pages + components
 migrations/            # Alembic
 tests/                 # mirrors src layout

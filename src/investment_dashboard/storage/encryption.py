@@ -31,6 +31,13 @@ log = logging.getLogger(__name__)
 _KEYRING_SERVICE = "investment-dashboard"
 _KEYRING_USERNAME = "synced-tiers"
 
+#: Keyring usernames for the v3.0 live-web companion secrets. They share the
+#: SQLCipher service so all app secrets live in one keychain entry group, but
+#: use distinct usernames so the mobile passphrase, publish token, and DB
+#: passphrase never collide.
+_KEYRING_MOBILE_PASSPHRASE_USERNAME = "mobile-passphrase"
+_KEYRING_PUBLISH_TOKEN_USERNAME = "publish-token"
+
 #: Suggested filename for the saved recovery document.
 RECOVERY_FILENAME = "investment-dashboard-recovery.txt"
 
@@ -74,25 +81,53 @@ def load_passphrase_from_keyring() -> str | None:
     absent. We treat both equivalently to keep the failure path
     uniform (caller decides whether to prompt).
     """
+    return _keyring_get(_KEYRING_USERNAME)
+
+
+def store_passphrase_in_keyring(passphrase: str) -> bool:
+    """Persist the passphrase to the OS keychain. Returns ``True`` on success."""
+    return _keyring_set(_KEYRING_USERNAME, passphrase)
+
+
+def load_mobile_passphrase_from_keyring() -> str | None:
+    """Look up the v3.0 live-web companion passphrase in the OS keychain."""
+    return _keyring_get(_KEYRING_MOBILE_PASSPHRASE_USERNAME)
+
+
+def store_mobile_passphrase_in_keyring(passphrase: str) -> bool:
+    """Persist the live-web companion passphrase to the OS keychain."""
+    return _keyring_set(_KEYRING_MOBILE_PASSPHRASE_USERNAME, passphrase)
+
+
+def load_publish_token_from_keyring() -> str | None:
+    """Look up the GitHub publish PAT in the OS keychain."""
+    return _keyring_get(_KEYRING_PUBLISH_TOKEN_USERNAME)
+
+
+def store_publish_token_in_keyring(token: str) -> bool:
+    """Persist the GitHub publish PAT to the OS keychain."""
+    return _keyring_set(_KEYRING_PUBLISH_TOKEN_USERNAME, token)
+
+
+def _keyring_get(username: str) -> str | None:
     try:
         import keyring  # noqa: PLC0415
     except ImportError:
         return None
     try:
-        return keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
+        return keyring.get_password(_KEYRING_SERVICE, username)
     except Exception:  # pragma: no cover - backend-specific
         log.warning("keyring lookup failed", exc_info=True)
         return None
 
 
-def store_passphrase_in_keyring(passphrase: str) -> bool:
-    """Persist the passphrase to the OS keychain. Returns ``True`` on success."""
+def _keyring_set(username: str, secret: str) -> bool:
     try:
         import keyring  # noqa: PLC0415
     except ImportError:
         return False
     try:
-        keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME, passphrase)
+        keyring.set_password(_KEYRING_SERVICE, username, secret)
         return True
     except Exception:  # pragma: no cover - backend-specific
         log.warning("keyring store failed", exc_info=True)

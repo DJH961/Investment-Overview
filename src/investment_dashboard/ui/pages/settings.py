@@ -1394,6 +1394,178 @@ def _render_connectivity_section() -> None:  # pragma: no cover - UI
                     ui.label(ev.message).classes("text-caption")
 
 
+def _live_web_config(session) -> dict[str, str | None]:  # pragma: no cover - UI
+    """Read persisted live-web prefs from app_config (non-secret only)."""
+    return {
+        "repo": app_config_repo.get(session, "live_web_repo"),
+        "enabled": app_config_repo.get(session, "live_web_enabled"),
+        "include_transactions": app_config_repo.get(session, "live_web_include_transactions"),
+        "last_published_at": app_config_repo.get(session, "live_web_last_published_at"),
+    }
+
+
+def _save_live_web_passphrase(passphrase: str, confirm: str) -> None:  # pragma: no cover - UI
+    """Validate + store the mobile (web companion) passphrase in the keychain."""
+    from investment_dashboard.storage.encryption import (  # noqa: PLC0415
+        store_mobile_passphrase_in_keyring,
+        validate_passphrase,
+    )
+
+    error = validate_passphrase(passphrase, confirm)
+    if error is not None:
+        ui.notify(error, type="warning")
+        return
+    if store_mobile_passphrase_in_keyring(passphrase):
+        ui.notify(
+            "Mobile passphrase saved to the OS keychain. Use the same phrase "
+            "in the browser to unlock the live view.",
+            type="positive",
+        )
+    else:
+        ui.notify(
+            "Could not reach the OS keychain (install the `[encrypted]` extra "
+            "to add the `keyring` package).",
+            type="negative",
+        )
+
+
+def _save_publish_token(token: str) -> None:  # pragma: no cover - UI
+    """Store the GitHub publish PAT in the OS keychain."""
+    from investment_dashboard.storage.encryption import (  # noqa: PLC0415
+        store_publish_token_in_keyring,
+    )
+
+    if not token.strip():
+        ui.notify("Paste a GitHub token first.", type="warning")
+        return
+    if store_publish_token_in_keyring(token.strip()):
+        ui.notify("GitHub token saved to the OS keychain.", type="positive")
+    else:
+        ui.notify(
+            "Could not reach the OS keychain (install the `[encrypted]` extra "
+            "to add the `keyring` package).",
+            type="negative",
+        )
+
+
+def _save_live_web_prefs(repo: str, enabled: bool, include_transactions: bool) -> None:
+    # pragma: no cover - UI
+    """Persist the non-secret live-web preferences to app_config."""
+    try:
+        with session_scope() as session:
+            app_config_repo.set_value(session, "live_web_repo", repo.strip() or None)
+            app_config_repo.set_value(session, "live_web_enabled", "true" if enabled else "false")
+            app_config_repo.set_value(
+                session,
+                "live_web_include_transactions",
+                "true" if include_transactions else "false",
+            )
+    except Exception as exc:
+        ui.notify(f"Could not save preferences: {exc}", type="negative")
+        return
+    ui.notify("Live web companion preferences saved.", type="positive")
+
+
+def _publish_now_clicked(repo: str, include_transactions: bool) -> None:  # pragma: no cover - UI
+    """Build → encrypt → publish the live-web blob, then record the timestamp."""
+    from investment_dashboard.services import publish_service  # noqa: PLC0415
+
+    try:
+        with session_scope() as session:
+            result = publish_service.publish_now(
+                session,
+                repo=repo.strip() or None,
+                include_transactions=include_transactions,
+            )
+        with session_scope() as session:
+            app_config_repo.set_value(
+                session, "live_web_last_published_at", result.published_at.isoformat()
+            )
+    except publish_service.PublishError as exc:
+        ui.notify(str(exc), type="negative")
+        return
+    except Exception as exc:  # pragma: no cover - network/runtime
+        ui.notify(f"Publish failed: {exc}", type="negative")
+        return
+    ui.notify(
+        f"Published {result.asset_name} ({result.size_bytes} bytes) to "
+        f"{result.repo}@{result.release_tag}.",
+        type="positive",
+    )
+
+
+def _render_live_web_companion_section() -> None:  # pragma: no cover - UI
+    """Settings panel for the v3.0 live web companion (proposal §5.6)."""
+    with session_scope() as session:
+        cfg = _live_web_config(session)
+
+    ui.label(
+        "Publish an encrypted snapshot of your portfolio to a GitHub release "
+        "so a browser-based companion can show live figures on the go. The "
+        "blob is AES-256-GCM encrypted on this machine; only someone with your "
+        "mobile passphrase can read it.",
+    ).classes("text-caption opacity-70")
+
+    repo_in = (
+        ui.input("Repository (owner/name)", value=cfg["repo"] or "")
+        .props("outlined dense")
+        .classes("w-full max-w-md")
+    )
+    enabled_sw = ui.switch("Enable publishing", value=cfg["enabled"] == "true")
+    include_sw = ui.switch(
+        "Include transactions in the export",
+        value=cfg["include_transactions"] == "true",
+    )
+    ui.button(
+        "Save preferences",
+        icon="save",
+        on_click=lambda: _save_live_web_prefs(
+            repo_in.value or "", bool(enabled_sw.value), bool(include_sw.value)
+        ),
+    ).props("flat no-caps")
+
+    ui.separator()
+    ui.label("Secrets (stored in the OS keychain, never in the repo)").classes("text-subtitle2")
+    pass_in = (
+        ui.input("Mobile passphrase")
+        .props("outlined dense type=password")
+        .classes("w-full max-w-md")
+    )
+    confirm_in = (
+        ui.input("Confirm passphrase")
+        .props("outlined dense type=password")
+        .classes("w-full max-w-md")
+    )
+    token_in = (
+        ui.input("GitHub token (fine-grained PAT, Contents: write)")
+        .props("outlined dense type=password")
+        .classes("w-full max-w-md")
+    )
+    with ui.row().classes("gap-sm"):
+        ui.button(
+            "Save passphrase",
+            icon="key",
+            on_click=lambda: _save_live_web_passphrase(pass_in.value or "", confirm_in.value or ""),
+        ).props("unelevated color=primary no-caps")
+        ui.button(
+            "Save token",
+            icon="vpn_key",
+            on_click=lambda: _save_publish_token(token_in.value or ""),
+        ).props("flat no-caps")
+
+    ui.separator()
+    with ui.row().classes("items-center gap-md"):
+        ui.button(
+            "Publish now",
+            icon="cloud_upload",
+            on_click=lambda: _publish_now_clicked(repo_in.value or "", bool(include_sw.value)),
+        ).props("unelevated color=primary no-caps")
+        last = cfg["last_published_at"]
+        ui.label(f"Last published: {last}" if last else "Not published yet.").classes(
+            "text-caption opacity-70"
+        )
+
+
 def _render_help_section() -> None:  # pragma: no cover - UI
     ui.label(
         "New to the dashboard, or unsure what a control does? Open the in-app "
@@ -1459,6 +1631,13 @@ def register() -> None:
                     "cleanly when you're done.",
                 ).classes("text-caption opacity-70 q-mb-sm")
                 _render_server_section()
+            with section("Live web companion"):
+                ui.label(
+                    "Publish an encrypted, read-only snapshot to a GitHub "
+                    "release for a browser companion that shows live figures "
+                    "on the go. Off until you add a repo, passphrase and token.",
+                ).classes("text-caption opacity-70 q-mb-sm")
+                _render_live_web_companion_section()
             with section("Data refresh"):
                 ui.label(
                     "Pull fresh prices and FX rates on demand. The app also "
