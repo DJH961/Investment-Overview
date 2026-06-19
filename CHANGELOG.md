@@ -14,6 +14,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added — v3.0 live-web companion, Phase 3 "web hero"
+- **Browser front-end (`web/`).** A Vite + TypeScript single-page app deployed
+  to GitHub Pages that downloads the encrypted `portfolio.enc` blob, decrypts it
+  **in the browser** with the mobile passphrase (WebCrypto PBKDF2-HMAC-SHA256 →
+  AES-256-GCM, mirroring `storage/blob_crypto.py`), fetches live quotes (Twelve
+  Data) and EUR FX (Frankfurter), and renders a live **Overview + per-holding**
+  dashboard — total value, today's move, total gain, and XIRR (portfolio and
+  per holding), all computed client-side.
+- **Ported return maths with a parity suite.** `web/src/returns.ts` re-implements
+  the `domain/returns.py` leaf functions (XIRR, CAGR, annualise, growth
+  variants) on decimal.js. `web/test/returns.parity.test.ts` replays the
+  committed `tests/parity/vectors.json` so the browser numbers can never silently
+  drift from the desktop, and `web/test/crypto.test.ts` decrypts a committed
+  golden envelope produced by the Python crypto to prove interop.
+- **Setup + unlock UX.** A device-local setup screen stores the Twelve Data API
+  key and data-source repository in `localStorage` (never in the repo); the
+  passphrase is held in memory only and dropped on "Lock". NAV-only and
+  last-known-price fallbacks are labelled explicitly, and gain/loss colours use
+  a colourblind-safe blue↔orange palette.
+- **CI + Pages wiring.** A new `web` job in `ci.yml` runs the typecheck, parity +
+  unit tests, and production build; `pages.yml` now builds `web/` with Vite and
+  publishes `web/dist`.
+
 ### Added — v3.0 live-web companion, Phase 2 "crypto + publish"
 - **Encrypted publish pipeline for the browser companion.** New
   `services/publish_service.py` orchestrates export → encrypt → publish:
