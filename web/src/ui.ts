@@ -132,10 +132,15 @@ function renderHoldings(holdings: HoldingView[]): HTMLElement {
   return card("Holdings", [h("div", { class: "table-wrap" }, [h("table", {}, [head, body])])]);
 }
 
-export function renderDashboard(model: DashboardModel, onRefresh: () => void, onLock: () => void): HTMLElement {
+export function renderDashboard(
+  model: DashboardModel,
+  onRefresh: () => void,
+  onLock: () => void,
+  lockLabel = "Lock",
+): HTMLElement {
   const actions = h("div", { class: "toolbar" }, [
     h("button", { class: "btn", type: "button", "data-action": "refresh" }, ["Refresh prices"]),
-    h("button", { class: "btn ghost", type: "button", "data-action": "lock" }, ["Lock"]),
+    h("button", { class: "btn ghost", type: "button", "data-action": "lock" }, [lockLabel]),
   ]);
   actions.querySelector('[data-action="refresh"]')?.addEventListener("click", onRefresh);
   actions.querySelector('[data-action="lock"]')?.addEventListener("click", onLock);

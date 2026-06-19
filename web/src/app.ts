@@ -10,6 +10,7 @@
 import { fetchEnvelope } from "./blob";
 import { buildDashboard, type DashboardModel } from "./compute";
 import { decryptEnvelopeToJson } from "./crypto";
+import { buildDemoModel } from "./demo";
 import {
   isValidRepo,
   loadConfig,
@@ -37,8 +38,19 @@ export class App {
   }
 
   start(): void {
-    if (!this.isConfigured()) this.showSetup();
+    if (this.demoRequested()) this.showDemo();
+    else if (!this.isConfigured()) this.showSetup();
     else this.showUnlock();
+  }
+
+  /** Demo mode is opt-in via a `?demo` (or `?preview`) query flag in the URL. */
+  private demoRequested(): boolean {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.has("demo") || params.has("preview");
+    } catch {
+      return false;
+    }
   }
 
   private isConfigured(): boolean {
@@ -94,7 +106,12 @@ export class App {
       field("Blob URL override", blobUrl, "Advanced: use a direct URL instead of the release asset."),
       error ? h("p", { class: "note err" }, [error]) : document.createTextNode(""),
       h("button", { class: "btn", type: "submit" }, ["Save & continue"]),
+      h("button", { class: "btn ghost", type: "button", "data-action": "demo" }, [
+        "Preview the dashboard with sample data",
+      ]),
     ]);
+
+    form.querySelector('[data-action="demo"]')?.addEventListener("click", () => this.showDemo());
 
     form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -148,6 +165,32 @@ export class App {
 
   private showStatus(message: string): void {
     this.mount(h("div", { class: "screen" }, [h("div", { class: "panel status" }, [h("p", {}, [message])])]));
+  }
+
+  // --- Demo / preview ---------------------------------------------------------
+
+  /**
+   * Render the dashboard from baked-in sample data — no key, passphrase, or
+   * network. Lets anyone explore the UI; "Exit demo" returns to the setup.
+   */
+  private showDemo(): void {
+    const model = buildDemoModel();
+    const banner = h("div", { class: "demo-banner" }, [
+      h("strong", {}, ["Demo mode"]),
+      " — sample data, no real portfolio. Figures are illustrative.",
+    ]);
+    const dashboard = renderDashboard(
+      model,
+      () => this.showDemo(),
+      () => {
+        // Leave the preview for the real app, regardless of a `?demo` URL flag.
+        this.state.config = loadConfig();
+        if (this.isConfigured()) this.showUnlock();
+        else this.showSetup();
+      },
+      "Exit demo",
+    );
+    this.mount(h("div", { class: "screen demo" }, [banner, dashboard]));
   }
 
   // --- Load pipeline ----------------------------------------------------------

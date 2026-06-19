@@ -20,6 +20,45 @@ in [`docs/v3.0_live_web_companion_proposal.md`](../docs/v3.0_live_web_companion_
 Completed-period and analytics *display* land in Phase 4; those blocks already
 ride along in the export.
 
+## Preview the UI (sample data — no key, passphrase, or blob)
+
+Want to *see and click through the dashboard* without setting anything up? The
+app has a built-in **demo mode** that renders the full Overview + Holdings UI
+from baked-in, entirely synthetic data — nothing is fetched and no real
+portfolio is involved.
+
+There are two ways to reach it:
+
+- **On the setup screen**, click **“Preview the dashboard with sample data”**.
+- **Via URL**, add `?demo` to the address (e.g. `…/index.html?demo` or, once
+  deployed, `https://<user>.github.io/<repo>/?demo`).
+
+Press **“Exit demo”** in the demo to return to the normal setup screen.
+
+### No command line: view it on GitHub Pages
+
+1. In the repo, open **Settings → Pages** and set **Source: “GitHub Actions”**.
+2. The existing `.github/workflows/pages.yml` builds `web/` and publishes it on
+   the next push to `main` that touches `web/**` (or trigger it manually from
+   the **Actions** tab → *Deploy Pages* → **Run workflow**).
+3. Open the published URL with `?demo` appended — e.g.
+   `https://<user>.github.io/<repo>/?demo`.
+
+Because demo mode uses only synthetic data and the app never serves any
+plaintext financial data (see *Security invariant* below), the page is safe to
+view. The demo link is the only thing you need to explore the UI.
+
+### One command: run it locally
+
+If you'd rather not touch GitHub settings, from this `web/` directory run:
+
+```bash
+npm ci && npm run dev
+```
+
+then open the printed URL with `?demo` appended (e.g.
+`http://localhost:5173/?demo`).
+
 ## Develop
 
 ```bash
