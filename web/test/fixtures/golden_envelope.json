@@ -1,0 +1,16 @@
+{
+  "_comment": "Golden AES-256-GCM envelope produced by storage/blob_crypto.encrypt_bytes; used by the web companion's WebCrypto decrypt parity test. Do NOT edit by hand.",
+  "envelope": {
+    "ciphertext": "y2hDqTm9yLv3GT8dWZTuwvMqPB7L8MoRYMEcflbz7CGEcjl388FDPs4uii5G6TUP9yslYJDjnp9Vc6cH5UzafrTfGgxFhHsDWmjpfGOBHB2xHtC/tfHcxfe+2ftyj7Ggp44ThqYpziGRwsJvi+Ju0AHMJkm+nDtAzj54C//Dx7SrL4zW/R7ZKIyo",
+    "kdf": "PBKDF2-HMAC-SHA256",
+    "kdf_params": {
+      "iterations": 600000,
+      "salt": "e6mWtep00vEAywjWqv9o1g=="
+    },
+    "nonce": "Y5ofRUPMhLC7biy3",
+    "tag": "nUmeXa2zpEhnl/iz3hRlow==",
+    "v": 1
+  },
+  "expected_plaintext": "{\"meta\":{\"schema_version\":1,\"base_currency\":\"EUR\"},\"holdings\":[{\"symbol\":\"VTI\",\"shares\":\"10.000000\"}],\"hello\":\"world \u2014 \u00fcn\u00efc\u00f6d\u00e9 \u2713\"}",
+  "passphrase": "correct-horse-battery-staple-42"
+}
