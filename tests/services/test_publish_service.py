@@ -41,9 +41,11 @@ def _asset_body(asset_id: int = 1) -> dict:
 
 
 def test_validate_repo_rejects_bad_slug() -> None:
-    with pytest.raises(publish_service.PublishError):
-        publish_service.validate_repo("not-a-repo")
+    for bad in ("not-a-repo", "owner/..", "../owner", "owner/na/me", "-bad/name"):
+        with pytest.raises(publish_service.PublishError):
+            publish_service.validate_repo(bad)
     publish_service.validate_repo("owner/name")  # no raise
+    publish_service.validate_repo("DJH961/Investment-Overview")  # no raise
 
 
 def test_resolvers_prefer_settings_then_keyring(monkeypatch: pytest.MonkeyPatch) -> None:

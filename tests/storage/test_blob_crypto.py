@@ -45,7 +45,7 @@ def test_wrong_passphrase_fails_authentication() -> None:
 
 def test_tampered_ciphertext_is_rejected() -> None:
     envelope = blob_crypto.encrypt_bytes(b"secret", PASSPHRASE)
-    raw = bytearray(base64.b64decode(envelope["ciphertext"]) or b"\x00")
+    raw = bytearray(base64.b64decode(envelope["ciphertext"]))
     raw[0] ^= 0xFF
     envelope["ciphertext"] = base64.b64encode(bytes(raw)).decode("ascii")
     with pytest.raises(blob_crypto.EnvelopeError):

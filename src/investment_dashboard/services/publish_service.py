@@ -50,8 +50,10 @@ ASSET_NAME = "portfolio.enc"
 #: GitHub REST API roots.
 _API_ROOT = "https://api.github.com"
 
-#: ``owner/name`` repository slug.
-_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+#: ``owner/name`` repository slug. Each part must start alphanumerically; the
+#: explicit ``..`` guard in :func:`validate_repo` then blocks any path-traversal
+#: attempt against the REST URL.
+_REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 #: Per-request network timeout (seconds). Uploads are tiny (a few KB).
 _HTTP_TIMEOUT = 30.0
@@ -86,8 +88,12 @@ def resolve_publish_token(settings: Settings) -> str | None:
 
 
 def validate_repo(repo: str) -> None:
-    """Raise :class:`PublishError` unless ``repo`` is a valid ``owner/name``."""
-    if not _REPO_RE.match(repo):
+    """Raise :class:`PublishError` unless ``repo`` is a valid ``owner/name``.
+
+    Guards against path traversal: a slug like ``owner/..`` would otherwise
+    collapse the GitHub REST path and target an unintended endpoint.
+    """
+    if not _REPO_RE.match(repo) or ".." in repo:
         raise PublishError(f"publish_repo must be in 'owner/name' form, got {repo!r}.")
 
 

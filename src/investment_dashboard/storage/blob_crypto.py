@@ -110,6 +110,8 @@ def encrypt_bytes(
     nonce = os.urandom(NONCE_LENGTH)
     key = _derive_key(passphrase, salt, iterations)
     sealed = AESGCM(key).encrypt(nonce, plaintext, None)
+    # AESGCM returns ``ciphertext || tag``; store them as separate envelope
+    # fields so the browser can hand WebCrypto the exact buffer it expects.
     ciphertext, tag = sealed[:-TAG_LENGTH], sealed[-TAG_LENGTH:]
     return {
         "v": ENVELOPE_VERSION,

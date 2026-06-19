@@ -1528,17 +1528,17 @@ def _render_live_web_companion_section() -> None:  # pragma: no cover - UI
     ui.label("Secrets (stored in the OS keychain, never in the repo)").classes("text-subtitle2")
     pass_in = (
         ui.input("Mobile passphrase")
-        .props("outlined dense type=password")
+        .props("outlined dense type=password autocomplete=new-password")
         .classes("w-full max-w-md")
     )
     confirm_in = (
         ui.input("Confirm passphrase")
-        .props("outlined dense type=password")
+        .props("outlined dense type=password autocomplete=new-password")
         .classes("w-full max-w-md")
     )
     token_in = (
         ui.input("GitHub token (fine-grained PAT, Contents: write)")
-        .props("outlined dense type=password")
+        .props("outlined dense type=password autocomplete=off")
         .classes("w-full max-w-md")
     )
     with ui.row().classes("gap-sm"):
