@@ -3,6 +3,26 @@
 This directory holds the **public**, read-only GitHub Pages front-end described
 in [`docs/v3.0_live_web_companion_proposal.md`](../docs/v3.0_live_web_companion_proposal.md).
 
+## Design priority: mobile first
+
+**Mobile is the number-one priority.** This companion exists primarily to give a
+great-looking, glanceable portfolio view on a phone, in the style of a modern
+neobroker. Every layout decision starts from a narrow single-column phone
+viewport and only *then* scales up. A polished desktop-browser experience is an
+explicit goal too, but whenever the two are in tension, **mobile wins**.
+
+Concretely, that means:
+
+- Single-column, thumb-reachable layout by default; wider screens get more
+  breathing room and multi-column KPI grids via `min-width` media queries.
+- Holdings render as a scannable **list** (symbol · name · value · today's
+  move), never a wide horizontal-scrolling spreadsheet table.
+- The headline portfolio value and today's move are the hero of the screen;
+  month- and year-to-date growth sit right beneath so the three return horizons
+  are visible at a glance without scrolling on a phone.
+- The gain/loss colours stay the colourblind-safe **blue ↔ orange** pair (never
+  red/green) — see proposal §7.3.
+
 ## Status
 
 **Phase 3 (Web hero) implemented.** A Vite + TypeScript single-page app that:
@@ -15,10 +35,13 @@ in [`docs/v3.0_live_web_companion_proposal.md`](../docs/v3.0_live_web_companion_
 3. fetches live quotes (Twelve Data) + EUR FX (Frankfurter),
 4. computes KPIs and per-holding stats with the **ported** `domain/returns`
    maths, guarded by a parity suite, and
-5. renders an Overview + per-holding dashboard.
+5. renders a mobile-first Overview (headline value + today/month/year growth and
+   parity-matched KPIs) and a holdings list.
 
-Completed-period and analytics *display* land in Phase 4; those blocks already
-ride along in the export.
+Per-holding analytics and completed-period *history* display land in Phase 4;
+those blocks already ride along in the export. Month- and year-to-date growth
+are recomputed live in the browser from `period_openings` + the exported
+cashflows.
 
 ## Preview the UI (sample data — no key, passphrase, or blob)
 

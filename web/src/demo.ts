@@ -122,8 +122,8 @@ const DEMO_EXPORT: MobileExport = {
     { account_label: "USD savings", broker: "Sample Broker", native_currency: "USD", balance_native: "1200" },
   ],
   period_openings: {
-    month_start_value_eur: "47200",
-    year_start_value_eur: "44100",
+    month_start_value_eur: "35800",
+    year_start_value_eur: "33000",
     holdings: {},
   },
 };
