@@ -113,7 +113,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .btn {
   font: inherit;
-  font-weight: 650;
+  font-weight: 600;
   cursor: pointer;
   padding: 0.7rem 1.1rem;
   border-radius: var(--radius-sm);
@@ -274,7 +274,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .segment-value {
   font-size: 1.15rem;
-  font-weight: 750;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
@@ -302,7 +302,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   letter-spacing: 0.04em;
   font-weight: 600;
 }
-.stat-value { font-size: 1.25rem; font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.stat-value { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 .stat-sub { font-size: 0.82rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* --- Holdings list -------------------------------------------------------- */
@@ -349,7 +349,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .holding-figures { text-align: right; display: grid; gap: 0.1rem; flex: none; }
 .holding-value { font-weight: 700; font-variant-numeric: tabular-nums; }
-.holding-change { font-size: 0.85rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.holding-change { font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .holding-meta { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .chip {
@@ -408,7 +408,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   gap: 0.4rem;
 }
 .alloc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; }
-.alloc-label { font-weight: 650; }
+.alloc-label { font-weight: 600; }
 .alloc-pct { font-weight: 700; font-variant-numeric: tabular-nums; }
 .alloc-bar {
   display: block;
