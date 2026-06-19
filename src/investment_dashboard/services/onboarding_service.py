@@ -131,9 +131,7 @@ DEFAULT_INSTRUMENTS: tuple[_SeedInstrument, ...] = (
         Decimal("0.0066"),
     ),
     _SeedInstrument("DAX", "Global X DAX Germany ETF", "etf", "DAX", "USD", Decimal("0.0020")),
-    _SeedInstrument(
-        "SAVINGS_CASH", "Direct Savings (Tagesgeld) balance", "savings", "Cash", "EUR"
-    ),
+    _SeedInstrument("SAVINGS_CASH", "Direct Savings (Tagesgeld) balance", "savings", "Cash", "EUR"),
 )
 
 

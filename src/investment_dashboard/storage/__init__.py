@@ -7,6 +7,7 @@ This package implements the v2.0 plan's storage layer:
 * ``paths`` — resolve the three tier paths (ledger / config / cache)
   through the precedence chain documented in §4.1 of the plan.
 * ``encryption`` — optional SQLCipher integration (Phase 4).
+* ``blob_crypto`` — AES-256-GCM envelope for the v3.0 live-web blob.
 * ``lock`` — single-writer file lock (Phase 5).
 * ``sidecar`` — boot-time stray ``-wal`` / ``-shm`` scanner (Phase 5).
 * ``integrity`` — ``PRAGMA integrity_check`` helpers (Phase 5).

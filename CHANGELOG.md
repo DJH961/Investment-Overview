@@ -12,7 +12,57 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
-## [2.11.1] — 2026-06-01
+## [Unreleased]
+
+### Added — v3.0 live-web companion, Phase 3 "web hero"
+- **Browser front-end (`web/`).** A Vite + TypeScript single-page app deployed
+  to GitHub Pages that downloads the encrypted `portfolio.enc` blob, decrypts it
+  **in the browser** with the mobile passphrase (WebCrypto PBKDF2-HMAC-SHA256 →
+  AES-256-GCM, mirroring `storage/blob_crypto.py`), fetches live quotes (Twelve
+  Data) and EUR FX (Frankfurter), and renders a live **Overview + per-holding**
+  dashboard — total value, today's move, total gain, and XIRR (portfolio and
+  per holding), all computed client-side.
+- **Ported return maths with a parity suite.** `web/src/returns.ts` re-implements
+  the `domain/returns.py` leaf functions (XIRR, CAGR, annualise, growth
+  variants) on decimal.js. `web/test/returns.parity.test.ts` replays the
+  committed `tests/parity/vectors.json` so the browser numbers can never silently
+  drift from the desktop, and `web/test/crypto.test.ts` decrypts a committed
+  golden envelope produced by the Python crypto to prove interop.
+- **Setup + unlock UX.** A device-local setup screen stores the Twelve Data API
+  key and data-source repository in `localStorage` (never in the repo); the
+  passphrase is held in memory only and dropped on "Lock". NAV-only and
+  last-known-price fallbacks are labelled explicitly, and gain/loss colours use
+  a colourblind-safe blue↔orange palette.
+- **CI + Pages wiring.** A new `web` job in `ci.yml` runs the typecheck, parity +
+  unit tests, and production build; `pages.yml` now builds `web/` with Vite and
+  publishes `web/dist`.
+
+### Added — v3.0 live-web companion, Phase 2 "crypto + publish"
+- **Encrypted publish pipeline for the browser companion.** New
+  `services/publish_service.py` orchestrates export → encrypt → publish:
+  it builds the minimized mobile export (Phase 1's
+  `readmodels.build_mobile_export`), seals it into an AES-256-GCM envelope, and
+  overwrites a single `portfolio.enc` asset on a fixed GitHub release so old
+  ciphertext never accumulates in git history.
+- **AES-256-GCM envelope crypto** (`storage/blob_crypto.py`): PBKDF2-HMAC-SHA256
+  at 600,000 iterations, random salt/nonce per publish, ciphertext and tag
+  stored separately so the browser's WebCrypto code can recombine and decrypt
+  with zero JavaScript crypto dependencies. Tampering is detected on decrypt.
+- **Keyring-backed secrets.** The mobile passphrase and the GitHub fine-grained
+  PAT are stored in the OS keychain alongside the SQLCipher passphrase — never
+  in the repo, `.env`, or logs.
+- **New CLI `inv-dashboard-publish-web`** mirrors `inv-dashboard-export-snapshot`
+  for manual/scheduled publishing, with `--refresh` and a `--output` dry-run
+  that writes the encrypted blob to a local file.
+- **Settings → Live web companion panel** captures the repo, passphrase, token
+  and include-transactions toggle, and offers a "Publish now" button plus a
+  last-published indicator.
+- **New settings** (`INV_DASHBOARD_` prefix): `publish_enabled`, `publish_repo`,
+  `publish_release_tag`, `publish_token`, `mobile_passphrase`,
+  `publish_include_transactions`. All additive and off by default.
+- New dependency: `cryptography>=48.0.1` for AES-GCM.
+
+
 
 Bug-fix release for the portable bundle's first-start experience.
 

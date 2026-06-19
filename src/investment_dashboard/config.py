@@ -80,6 +80,27 @@ class Settings(BaseSettings):
     #: same consumer-cloud sync the user already set up.
     snapshot_path: Path | None = None
 
+    # --- v3.0 live-web companion publishing (docs/v3.0 proposal §5.5) -------
+    # All additive and off by default: a vanilla install never publishes.
+    #: Master toggle. When ``False`` (default) no publishing happens, and the
+    #: auto-publish triggers stay dormant.
+    publish_enabled: bool = False
+    #: Target repository in ``owner/name`` form (e.g. ``DJH961/Investment-Overview``)
+    #: that hosts the GitHub Pages app + the encrypted release asset.
+    publish_repo: str | None = None
+    #: Release tag whose single asset is overwritten on each publish. Keeping
+    #: the ciphertext on a fixed release (not committed into the tree) keeps
+    #: old encrypted snapshots out of git history.
+    publish_release_tag: str = "live-data"
+    #: GitHub fine-grained PAT (Contents: write on ``publish_repo`` only).
+    #: Normally ``None`` — resolved from the OS keyring; set via env for CI.
+    publish_token: str | None = None
+    #: Passphrase the browser uses to decrypt the published blob. Separate from
+    #: ``db_passphrase``. Normally ``None`` — resolved from the OS keyring.
+    mobile_passphrase: str | None = None
+    #: Whether the published export includes the (larger) transaction list.
+    publish_include_transactions: bool = False
+
     #: Optional password gating the Settings "Developer tools" panel (the
     #: full audit export). When ``None`` the panel is ungated — fine for the
     #: single-user, local-first default; set it to keep the export tucked

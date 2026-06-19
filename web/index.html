@@ -4,87 +4,16 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
+    <meta name="color-scheme" content="light dark" />
     <title>Investment Overview — Live Web Companion</title>
-    <style>
-      :root {
-        color-scheme: light dark;
-        --fg: #1c1f24;
-        --muted: #5b6470;
-        --accent: #2f6f4f;
-        --bg: #f7f8fa;
-        --card: #ffffff;
-        --border: #e2e6ea;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --fg: #e8ebef;
-          --muted: #9aa3ad;
-          --accent: #5fae85;
-          --bg: #14171a;
-          --card: #1d2125;
-          --border: #2b3036;
-        }
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-        color: var(--fg);
-        background: var(--bg);
-        padding: 1.5rem;
-      }
-      main {
-        max-width: 32rem;
-        width: 100%;
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 2rem;
-      }
-      h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
-      .tag {
-        display: inline-block;
-        font-size: 0.72rem;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        color: var(--accent);
-        border: 1px solid var(--accent);
-        border-radius: 999px;
-        padding: 0.1rem 0.6rem;
-        margin-bottom: 1rem;
-      }
-      p { color: var(--muted); margin: 0.6rem 0; }
-      code {
-        font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
-        background: var(--bg);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 0.05rem 0.35rem;
-        font-size: 0.85em;
-      }
-    </style>
+    <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
-    <main>
-      <span class="tag">Placeholder · Phase 3 pending</span>
-      <h1>Live Web Companion</h1>
-      <p>
-        This is the static shell for the read-only web companion. The real
-        front-end — which decrypts an encrypted ledger entirely in your browser
-        and computes statistics client-side — has not been built yet.
-      </p>
-      <p>
-        No financial data is, or ever will be, served from this page in
-        plaintext. The data layer is delivered as an encrypted blob and
-        decrypted locally with a passphrase you alone hold.
-      </p>
-      <p>
-        Replace this file with the built front-end output (see
-        <code>docs/v3.0_live_web_companion_proposal.md</code>).
-      </p>
-    </main>
+    <noscript>
+      This companion decrypts an encrypted blob and computes everything in your
+      browser, so JavaScript is required.
+    </noscript>
+    <div id="app" aria-live="polite"></div>
+    <script type="module" src="./src/main.ts"></script>
   </body>
 </html>
