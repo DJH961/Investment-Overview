@@ -25,6 +25,12 @@ function read(key: string): string {
   }
 }
 
+// SECURITY (accepted, intentional — proposal §6.2): the Twelve Data price API
+// key is deliberately persisted in localStorage so it is entered only once per
+// device. It is a low-sensitivity, rate-limited, free price-data token scoped to
+// the user's own account — NOT a credential to any financial data — and it never
+// leaves the device or enters the repo. CodeQL's clear-text-storage rule flags
+// this write; the trade-off is accepted for this token class.
 function write(key: string, value: string): void {
   try {
     if (value) localStorage.setItem(key, value);
