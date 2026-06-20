@@ -122,3 +122,104 @@ describe("buildDashboard", () => {
     expect(m.overview.fxMissingCurrencies).toContain("USD");
   });
 });
+
+function makePeriodExport(): MobileExport {
+  return {
+    meta: {
+      schema_version: 1,
+      app_version: "test",
+      generated_at: "2024-06-15T00:00:00+00:00",
+      as_of: "2024-06-15",
+      display_currency: "EUR",
+      fx_pivot: "EUR",
+      fx_rate_eur_usd: "1.10",
+      currency_note: "test",
+    },
+    holdings: [
+      {
+        symbol: "VWCE",
+        name: "All-World",
+        asset_class: "etf",
+        broker: "Broker",
+        account: "Taxable",
+        native_currency: "EUR",
+        shares: "100",
+        cost_basis_native: "8000",
+        cumulative_dividends_cash_native: "200",
+        price_symbol: "VWCE",
+        price_type: "market",
+        last_known_price_native: "100",
+        cashflows: [{ date: "2023-12-01", amount: "-8000" }],
+      },
+      {
+        symbol: "AGGH",
+        name: "Bonds",
+        asset_class: "bond",
+        broker: "Broker",
+        account: "Taxable",
+        native_currency: "EUR",
+        shares: "50",
+        cost_basis_native: "900",
+        cumulative_dividends_cash_native: "0",
+        price_symbol: "AGGH",
+        price_type: "market",
+        last_known_price_native: "20",
+        cashflows: [{ date: "2023-12-01", amount: "-900" }],
+      },
+    ],
+    portfolio_cashflows: [
+      { date: "2023-12-01", amount: "-8000" },
+      { date: "2023-12-01", amount: "-900" },
+    ],
+    cash: [],
+    period_openings: {
+      month_start_value_eur: "10000",
+      year_start_value_eur: "8800",
+      holdings: {},
+    },
+  };
+}
+
+describe("buildDashboard overview parity features", () => {
+  const eurFx: FxRates = { base: "EUR", rates: { USD: new Decimal("1.10") } };
+  const flatQuotes = new Map<string, Quote>([
+    ["VWCE", { symbol: "VWCE", price: new Decimal("100"), previousClose: new Decimal("100"), currency: "EUR" }],
+    ["AGGH", { symbol: "AGGH", price: new Decimal("20"), previousClose: new Decimal("20"), currency: "EUR" }],
+  ]);
+  const model = buildDashboard(makePeriodExport(), flatQuotes, eurFx, new Date("2024-06-15T12:00:00Z"));
+
+  it("computes month- and year-to-date growth from the period openings", () => {
+    // Value = 100×100 + 50×20 = 11000 EUR; no flows since Jan, so growth is pure.
+    approx(model.overview.mtdGrowthPct, (11000 - 10000) / 10000); // +10%
+    approx(model.overview.ytdGrowthPct, (11000 - 8800) / 8800); // +25%
+  });
+
+  it("computes compounded total growth over the invested lifetime", () => {
+    // Single deposit date → compounded growth collapses to the total return.
+    approx(model.overview.totalGrowthCompoundedPct, 11000 / 8900 - 1, 2e-3);
+  });
+
+  it("computes the trailing dividend yield from per-holding dividend cash", () => {
+    approx(model.overview.totalDividendsEur, 200);
+    approx(model.overview.dividendYieldPct, 200 / 11000);
+  });
+
+  it("surfaces the EUR→USD reference rate", () => {
+    expect(model.overview.fxRateEurUsd?.toNumber()).toBeCloseTo(1.1, 6);
+  });
+
+  it("builds an allocation by asset class, ordered by value", () => {
+    expect(model.allocation.map((s) => s.label)).toEqual(["etf", "bond"]);
+    approx(model.allocation[0].weight, 10000 / 11000);
+    approx(model.allocation[1].weight, 1000 / 11000);
+    const weightSum = model.allocation.reduce((acc, s) => acc + (s.weight?.toNumber() ?? 0), 0);
+    expect(weightSum).toBeCloseTo(1, 6);
+  });
+
+  it("returns null period growth when no opening value is available", () => {
+    const m = buildDashboard(makeExport(), quotes, fx, new Date("2024-06-01T12:00:00Z"));
+    // makeExport()'s period_openings are zero → no positive base to grow from.
+    expect(m.overview.mtdGrowthPct).toBeNull();
+    expect(m.overview.ytdGrowthPct).toBeNull();
+  });
+});

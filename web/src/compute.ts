@@ -12,8 +12,8 @@
 
 import { Decimal } from "./decimal-config";
 import { convert, type FxRates, type Quote } from "./prices";
-import { xirr, type Cashflow } from "./returns";
-import type { ExportHolding, MobileExport } from "./types";
+import { xirr, totalGrowthPctCompounded, yearsBetween, type Cashflow } from "./returns";
+import type { ExportCashflow, ExportHolding, MobileExport } from "./types";
 
 const EUR = "EUR";
 
@@ -48,7 +48,18 @@ export interface OverviewView {
   totalGainPct: Decimal | null;
   todayMoveEur: Decimal;
   todayMovePct: Decimal | null;
+  /** Month-to-date growth on the start-of-month value + net flows since. */
+  mtdGrowthPct: Decimal | null;
+  /** Year-to-date growth on the start-of-year value + net flows since. */
+  ytdGrowthPct: Decimal | null;
   portfolioXirr: Decimal | null;
+  /** Compounded (1+XIRR)^years total growth over the invested lifetime. */
+  totalGrowthCompoundedPct: Decimal | null;
+  /** Trailing dividend income (EUR) and its yield on current total value. */
+  totalDividendsEur: Decimal;
+  dividendYieldPct: Decimal | null;
+  /** EUR→USD reference rate carried in the export meta (for the FX line). */
+  fxRateEurUsd: Decimal | null;
   holdingsCount: number;
   /** Symbols whose live price was unavailable (NAV stale or unsupported). */
   missingPriceSymbols: string[];
@@ -56,14 +67,55 @@ export interface OverviewView {
   fxMissingCurrencies: string[];
 }
 
+/** Portfolio allocation by asset class (holdings only, excludes cash). */
+export interface AllocationSlice {
+  label: string;
+  valueEur: Decimal;
+  weight: Decimal | null;
+}
+
 export interface DashboardModel {
   overview: OverviewView;
   holdings: HoldingView[];
+  allocation: AllocationSlice[];
 }
 
 /** Today's date as an ISO `YYYY-MM-DD` string in UTC (the live XIRR "now"). */
 export function todayIso(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);
+}
+
+/** First day of the current month/year for `asOf` (ISO `YYYY-MM-DD`). */
+function periodStartIso(asOf: string, kind: "month" | "year"): string {
+  return kind === "month" ? `${asOf.slice(0, 7)}-01` : `${asOf.slice(0, 4)}-01-01`;
+}
+
+/**
+ * Net external contributions on/after `startIso`, in the desktop's sign
+ * convention (positive = money added). Exported `portfolio_cashflows` use the
+ * XIRR convention (deposits negative), so we negate the sum.
+ */
+function netContributionsSince(cashflows: ExportCashflow[], startIso: string): Decimal {
+  let sum = new Decimal(0);
+  for (const cf of cashflows) {
+    if (cf.date >= startIso) sum = sum.plus(new Decimal(cf.amount));
+  }
+  return sum.negated();
+}
+
+/**
+ * Period growth = (value − start − netContrib) / (start + netContrib), matching
+ * the desktop's MTD/YTD growth. Returns `null` when there is no positive base
+ * to grow from (e.g. a brand-new portfolio with no start-of-period value).
+ */
+function periodGrowth(
+  totalValue: Decimal,
+  startValue: Decimal,
+  netContrib: Decimal,
+): Decimal | null {
+  const base = startValue.plus(netContrib);
+  if (!base.greaterThan(0)) return null;
+  return totalValue.minus(startValue).minus(netContrib).dividedBy(base);
 }
 
 function holdingCashflows(holding: ExportHolding): Cashflow[] {
@@ -197,6 +249,24 @@ export function buildDashboard(
   const prevTotal = totalValueEur.minus(todayMoveEur);
   const todayMovePct = prevTotal.greaterThan(0) ? todayMoveEur.dividedBy(prevTotal) : null;
 
+  // Month/year-to-date growth, recomputed live against the exported period
+  // openings (start-of-period portfolio value) and the net external flows
+  // booked since. `meta.as_of` anchors the period so the boundaries align with
+  // the openings captured at export time.
+  const periodAnchor = data.meta.as_of || asOf;
+  const monthStartValue = new Decimal(data.period_openings?.month_start_value_eur ?? "0");
+  const yearStartValue = new Decimal(data.period_openings?.year_start_value_eur ?? "0");
+  const mtdGrowthPct = periodGrowth(
+    totalValueEur,
+    monthStartValue,
+    netContributionsSince(data.portfolio_cashflows, periodStartIso(periodAnchor, "month")),
+  );
+  const ytdGrowthPct = periodGrowth(
+    totalValueEur,
+    yearStartValue,
+    netContributionsSince(data.portfolio_cashflows, periodStartIso(periodAnchor, "year")),
+  );
+
   const portfolioCashflows: Cashflow[] = data.portfolio_cashflows.map((cf) => ({
     date: cf.date,
     amount: new Decimal(cf.amount),
@@ -204,6 +274,42 @@ export function buildDashboard(
   const portfolioXirr = totalValueEur.greaterThan(0)
     ? xirr(portfolioCashflows, asOf, { terminalValue: totalValueEur })
     : null;
+
+  // Total Growth (compounded): the (1+XIRR)^years return over the lifetime the
+  // money has actually been invested — the desktop overview's headline growth.
+  const firstCashflowDate = data.portfolio_cashflows.reduce<string | null>(
+    (earliest, cf) => (earliest === null || cf.date < earliest ? cf.date : earliest),
+    null,
+  );
+  const totalGrowthCompoundedPct =
+    firstCashflowDate !== null
+      ? totalGrowthPctCompounded(portfolioXirr, yearsBetween(firstCashflowDate, asOf))
+      : null;
+
+  // Trailing dividend yield = total dividend cash ÷ current total value
+  // (mirrors the desktop's Dividends ÷ Closing Balance).
+  let totalDividendsEur = new Decimal(0);
+  for (const holding of data.holdings) {
+    const eur = convert(
+      new Decimal(holding.cumulative_dividends_cash_native),
+      holding.native_currency,
+      EUR,
+      fx,
+    );
+    if (eur !== null) totalDividendsEur = totalDividendsEur.plus(eur);
+  }
+  const dividendYieldPct = totalValueEur.greaterThan(0)
+    ? totalDividendsEur.dividedBy(totalValueEur)
+    : null;
+
+  const fxRateEurUsd =
+    data.meta.fx_rate_eur_usd !== null && data.meta.fx_rate_eur_usd !== undefined
+      ? new Decimal(data.meta.fx_rate_eur_usd)
+      : null;
+
+  // Allocation by asset class (holdings only — cash is reported separately),
+  // mirroring the desktop overview's allocation breakdown.
+  const allocation = buildAllocation(holdings, holdingsValueEur);
 
   const overview: OverviewView = {
     generatedAt: data.meta.generated_at,
@@ -215,11 +321,34 @@ export function buildDashboard(
     totalGainPct,
     todayMoveEur,
     todayMovePct,
+    mtdGrowthPct,
+    ytdGrowthPct,
     portfolioXirr,
+    totalGrowthCompoundedPct,
+    totalDividendsEur,
+    dividendYieldPct,
+    fxRateEurUsd,
     holdingsCount: holdings.length,
     missingPriceSymbols: missingPrice,
     fxMissingCurrencies: [...fxMissing],
   };
 
-  return { overview, holdings };
+  return { overview, holdings, allocation };
+}
+
+/** Group holding values by asset class into descending allocation slices. */
+function buildAllocation(holdings: HoldingView[], holdingsValueEur: Decimal): AllocationSlice[] {
+  const byClass = new Map<string, Decimal>();
+  for (const holding of holdings) {
+    if (holding.valueEur === null) continue;
+    const label = holding.assetClass || "other";
+    byClass.set(label, (byClass.get(label) ?? new Decimal(0)).plus(holding.valueEur));
+  }
+  return [...byClass.entries()]
+    .map(([label, valueEur]) => ({
+      label,
+      valueEur,
+      weight: holdingsValueEur.greaterThan(0) ? valueEur.dividedBy(holdingsValueEur) : null,
+    }))
+    .sort((a, b) => b.valueEur.minus(a.valueEur).toNumber());
 }
