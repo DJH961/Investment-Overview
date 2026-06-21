@@ -159,8 +159,12 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
   `analytics.py` was removed in favour of `money_format.fmt_pct`, and the inline
   `f"€{…}"` / `f"${…}"` literals in `calculator.py` now route through
   `money_format.fmt_money`, so currency/percent rendering has a single source.
-* **E7** — Confirmation dialogs for destructive actions (e.g. "Seed default
-  setup" overwriting allocations).
+* **E7** — ✅ done. A reusable `confirm_dialog` component
+  (`ui/components/confirm.py`) now gates the overwriting/irreversible data
+  actions on Settings: "Seed default setup" (may duplicate on a populated
+  ledger) and "Recalculate FX-derived values" (`backfill_missing_legs(force)`
+  overwrites every stored leg) both pop a Cancel/confirm modal before running.
+  The factory-reset flow already had its own typed-`RESET` confirmation.
 
 ### F. Documentation & version hygiene
 
