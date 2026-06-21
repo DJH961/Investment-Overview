@@ -14,53 +14,73 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Added — local app: every error surfaces in the browser, not just the console
-- **All warnings/errors now reach the in-app tracker.** Previously only two
-  hand-wired background tasks (live price refresh / startup refresh) showed up as
-  an in-app toast and on Data Health; every *other* failure was written to the
-  log but stayed invisible once the app runs with no console window. A logging
-  handler (`logging._RuntimeStatusHandler`) now mirrors every `WARNING`/`ERROR`
-  log record into `services.runtime_status`, so anything that gets logged —
-  wherever it comes from — also toasts and is listed on Data Health.
-- **Uncaught exceptions are caught too.** `services.error_reporting` installs
-  `sys.excepthook`, `threading.excepthook`, `sys.unraisablehook` and an asyncio
-  event-loop exception handler that route uncaught failures (on any thread, in
-  the event loop, or in finalizers) into the same tracker — while still logging
-  them, so the on-disk log and support bundle stay complete.
-- **Stray `stderr` writes are captured.** A `stderr` tee records bare
-  tracebacks/prints from libraries that bypass logging entirely. It wraps the
-  stream *after* logging binds its handler, so normal log output is never
-  double-recorded.
-- **De-duplication.** `runtime_status.record_error` now suppresses an identical
-  `(source, message)` repeated within a short window, so a repeatedly-failing
-  tick or a chatty library can't flood the toast queue. The Data Health section
-  is renamed *Recent errors* to reflect its broader scope.
-
-### Added — local app: live connection & navigation feedback
-- **Top progress bar.** A thin accent bar appears the instant you click a nav
-  item or link (and on every page load/unload), so navigation always feels
-  responsive even while the server builds the next page synchronously. Lives in
-  `ui/connectivity.py` and is injected on every page from `main._register_pages`.
-- **Immediate "connection lost" banner + header status dot.** The websocket to
-  the local server is now surfaced continuously: an always-on header dot
-  (green connected / amber reconnecting / red offline) and a prominent
-  full-width banner that shows the **moment** the socket drops — replacing
-  NiceGUI's easy-to-miss bottom-corner popup, which only fades in after a 2 s
-  delay. The banner includes a **Reconnect now** escape hatch so a wedged tab is
-  never a dead end. Driven from the real `window.socket` plus the browser
-  `online`/`offline` events, attached additively so NiceGUI's own handlers keep
-  working.
-- **Longer reconnect window.** `ui.run(reconnect_timeout=10.0)` lets the existing
-  tab ride out brief local stalls (a heavy metrics build, a slow cloud-synced DB
-  read) and resume with its state intact, instead of being discarded after 3 s
-  and forced into a full reload — the "I seemingly disconnect and get stuck"
-  symptom.
-
 ## [3.0.1] — 2026-06-21
 
-A patch release polishing the **v3.0 live-web companion** UI: a first pass at
-de-cluttering the mobile dashboard, followed by fixes for the spacing
-regressions that pass introduced.
+Patch release collecting the post-v3.0.0 follow-up work through PR #36: local-app
+responsiveness and diagnostics, live-web companion fixes for real-world hosting and
+free-tier data limits, and polish for charts, tables, mobile spacing, settings, and
+shutdown behavior.
+
+### Added — local app reliability and diagnostics
+- **Live navigation and connection feedback.** A top progress bar, long-load hint,
+  immediate connection-lost banner, header status dot, and longer NiceGUI
+  reconnect window make slow page builds and websocket drops visible instead of
+  feeling like the app is stuck.
+- **Clean in-app shutdown.** A header power button confirms and requests a graceful
+  server shutdown, releasing the single-writer lock without needing a console or
+  process kill.
+- **Shareable log files and support bundles.** Logging now writes a redacted,
+  rotating `dashboard.log` beside the data directory by default, and Data Health
+  can download a support bundle with version/platform/config context plus recent
+  log output.
+- **Every important error surfaces in the browser.** Warning/error logs, uncaught
+  exceptions, asyncio loop failures, unraisable/thread exceptions, and stray
+  `stderr` tracebacks now funnel into the same in-app Recent errors tracker, with
+  de-duplication to avoid toast floods.
+
+### Changed — local app performance and table UX
+- **Monthly/Yearly pages paint immediately.** Their heavy roll-ups now run through
+  the deferred spinner helper, and abandoned clients are skipped so rapid tab
+  switches do not queue work for dead pages.
+- **Yearly no longer cold-recomputes the full history on the request thread.**
+  Snapshot refreshes rebuild cached daily values in place instead of deleting the
+  cache first, and the Yearly full-history curve bounds synchronous recompute to
+  a short recent tail while the background warm fills older gaps.
+- **Overview positions are easier to scan.** The table opens sorted by holding
+  value, capital gains are sign-coloured, and each row gets a gain/loss stripe
+  based on total growth in the displayed currency.
+
+### Added — live-web companion hosting and chart polish
+- **CORS proxy for the encrypted blob.** Added a pinned Cloudflare Worker under
+  `web/proxy/` plus setup docs so the browser companion can fetch the overwritten
+  GitHub release asset through a CORS-enabled URL without putting ciphertext in
+  Pages builds or git history.
+- **Chart time-range presets.** Overview and Risk charts now offer adaptive
+  1M/3M/6M/1Y/All buttons that re-slice already-loaded data on both phone and
+  desktop.
+
+### Changed — live-web companion data freshness and free-tier behavior
+- **Twelve Data free-tier budgeting.** Quote and FX loading is cache-first, tracks
+  rolling per-minute/day credit use, defers overflow symbols instead of failing
+  the whole dashboard, and retries transient 429/5xx/network errors with backoff.
+  Settings now include a quote-cache TTL knob.
+- **NAV polling learns from each fund.** The companion records when a fund's NAV
+  `valueDate` actually advances and derives a tighter per-symbol publish window;
+  the bootstrap guess now starts around the European close instead of polling too
+  early.
+- **Desktop web layout uses wide screens better.** The Overview hero/chart,
+  Periods spacing, Risk tooltips, and Plan projection layout were widened and
+  aligned so tabs no longer jump between different content widths.
+
+### Fixed — live-web companion correctness and failures
+- **Unlock failures now explain the real CORS problem.** Browser-generic
+  `Failed to fetch` errors are translated into an actionable Blob URL / proxy
+  hint, while HTTP, JSON, and missing-blob errors remain distinct.
+- **The value-over-time chart no longer draws a false final dip.** Holdings that
+  cannot be valued live fall back to the last exported EUR value when available,
+  get a `stale value` label, and still contribute to totals; only holdings with
+  no usable price/FX/fallback are excluded, in which case the chart stops at the
+  last fully valued exported point.
 
 ### Added — web companion UI: spacing, collapsible lists, period overview, settings (PR #35)
 - **Roomier spacing.** Widened the topbar button gaps and the overall
