@@ -324,6 +324,97 @@ html, body {{
 .inv-chip-accent {{ color: var(--inv-accent); background: var(--inv-accent-soft); border-color: transparent; }}
 
 /* ------------------------------------------------------------------ */
+/* Holding cards (Overview redesign — one web-style box per holding)   */
+/* ------------------------------------------------------------------ */
+.inv-holding-grid {{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+  gap: 1rem;
+  align-items: stretch;
+}}
+.inv-holding-card {{
+  background: var(--inv-surface) !important;
+  border: 1px solid var(--inv-hairline);
+  border-radius: var(--inv-radius-lg);
+  box-shadow: var(--inv-shadow-soft);
+  padding: 1rem 1.125rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: transform 150ms ease-out, box-shadow 150ms ease-out, border-color 150ms ease-out;
+}}
+.inv-holding-card:hover {{
+  border-color: color-mix(in srgb, var(--inv-accent) 40%, var(--inv-hairline));
+  box-shadow: 0 4px 12px rgba(11,18,32,.06), 0 1px 2px rgba(11,18,32,.05);
+}}
+/* A coloured rail down the left edge, keyed on the holding's total growth. */
+.inv-holding-card.inv-holding-gain {{ border-left: 3px solid var(--inv-gain); }}
+.inv-holding-card.inv-holding-loss {{ border-left: 3px solid var(--inv-loss); }}
+.inv-holding-topline {{
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 0.5rem; min-width: 0;
+}}
+.inv-holding-sym {{
+  font-size: 1.05rem; font-weight: 700; letter-spacing: -0.01em;
+  color: var(--inv-ink); display: inline-flex; align-items: center; gap: 6px;
+}}
+.inv-holding-asof {{
+  font-size: 0.6875rem; color: var(--inv-muted); text-align: right;
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}}
+.inv-holding-name {{
+  font-size: 0.8125rem; color: var(--inv-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}}
+.inv-holding-figures {{
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 0.5rem; margin-top: 0.15rem;
+}}
+.inv-holding-value {{
+  font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em;
+  color: var(--inv-ink); font-variant-numeric: tabular-nums; line-height: 1.1;
+}}
+.inv-holding-value-sub {{
+  font-size: 0.8125rem; color: var(--inv-muted);
+  font-variant-numeric: tabular-nums; margin-top: 1px;
+}}
+.inv-holding-change {{
+  font-size: 0.95rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}}
+/* The detailed statistics grid the user asked to sit below each box. */
+.inv-holding-stats {{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.35rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--inv-hairline);
+}}
+.inv-holding-stat {{ display: flex; flex-direction: column; min-width: 0; }}
+.inv-holding-stat-label {{
+  font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--inv-muted); font-weight: 600;
+}}
+.inv-holding-stat-value {{
+  font-size: 0.875rem; font-weight: 600; color: var(--inv-ink);
+  font-variant-numeric: tabular-nums;
+}}
+.inv-holding-pill {{
+  display: inline-flex; align-items: center; font-size: 0.625rem;
+  font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 1px 6px; border-radius: var(--inv-radius-pill);
+  background: var(--inv-surface-alt); color: var(--inv-muted);
+  border: 1px solid var(--inv-hairline);
+}}
+.inv-holding-pill.inv-holding-pill-warn {{
+  color: var(--inv-loss); background: rgba(230,159,0,.12);
+  border-color: rgba(230,159,0,.3);
+}}
+
+
+/* ------------------------------------------------------------------ */
 /* Empty state                                                         */
 /* ------------------------------------------------------------------ */
 .inv-empty {{

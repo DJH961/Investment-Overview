@@ -65,9 +65,9 @@ This document is written so that an engineer with no access to the original `Inv
 │  NiceGUI app (FastAPI + Quasar)                             │
 │  bind: 0.0.0.0:8080                                         │
 │                                                              │
-│  Pages: /overview /deposits /transactions /monthly          │
-│         /yearly /analytics /projection /calculator          │
-│         /settings                                           │
+│  Pages: /overview /holdings /deposits /transactions         │
+│         /monthly /yearly /analytics /projection             │
+│         /calculator /settings                               │
 └──────────────────────┬──────────────────────────────────────┘
                        │
    ┌───────────────────┼───────────────────────────────┐
@@ -523,13 +523,30 @@ The home/landing page. One screen of vital signs.
 3. **XIRR** — portfolio XIRR % annualized; tooltip on hover.
 4. **YTD Growth** — YTD growth %; tooltip.
 
+**Per-holding cards** (replacing the old aggrid table): one card per holding,
+mirroring the live-web companion's holding rows. Each card shows value, daily
+move, total growth, P/L, XIRR, YTD, price, shares, cost basis, expense ratio,
+and a price-freshness line ("as of" the latest cached print date plus the saved
+"updated" fetch time). Money-market funds are labelled as par $1.00 instead of
+faking a date. Cards are sorted by EUR value, largest first. Portfolio **weight**
+is deliberately *not* on the overview cards — it is a secondary stat that lives
+in the `/holdings` table.
+
+**Bottom**: one chart, allocation-pie or treemap, by `category`. Treemap preferred — it scales better visually and is the user's existing mental model.
+
+### 8.1a `/holdings` — Holdings detail
+
+The full sortable table and deeper per-holding statistics, kept out of the
+overview so the landing page stays a one-screen summary.
+
 **Per-instrument table** (using `ui.aggrid`):
 
-| Symbol | Name | Category | Shares | Avg Price | Current Price | Cost Basis (USD) | Current Value (USD) | Current Value (EUR) | Total Growth % | XIRR | TWR | YTD Growth | YTD XIRR | Target % | Current % | Drift |
+| Symbol | Name | Category | Shares | Avg Price | Current Price | As Of | Cost Basis (USD) | Current Value (USD) | Current Value (EUR) | Total Growth % | XIRR | TWR | YTD Growth | YTD XIRR | Target % | Current % | Weight | Drift |
 
 Drift = current% − target%, shown as a small horizontal bar (left = under-allocated, right = over-allocated).
 
-**Bottom**: one chart, allocation-pie or treemap, by `category`. Treemap preferred — it scales better visually and is the user's existing mental model.
+**Headline KPI cards** plus a **summary strip**: best/worst performer, gainers
+vs. losers, most-concentrated holding, and weighted expense ratio.
 
 ### 8.2 `/deposits`
 

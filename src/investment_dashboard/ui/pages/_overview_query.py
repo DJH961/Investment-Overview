@@ -532,6 +532,7 @@ def position_rows(
     fx_rate: Decimal | None = None,
     metrics: dict[int, InstrumentMetrics] | None = None,
     price_anomaly_ids: set[int] | None = None,
+    freshness: dict[int, HoldingFreshness] | None = None,
 ) -> list[dict[str, Any]]:
     """Shape positions for the AG-Grid table on the overview page.
 
@@ -553,6 +554,7 @@ def position_rows(
     rows: list[dict[str, Any]] = []
     metrics = metrics or {}
     anomalies = price_anomaly_ids or set()
+    fresh = freshness or {}
     for p in positions:
         native = p.account.native_currency
         im = metrics.get(p.instrument.id)
@@ -576,11 +578,16 @@ def position_rows(
             xirr_eur = xirr_usd = ytd_eur = ytd_usd = daily_eur = daily_usd = None
             ter = None
         eff = p.effective
+        fr = fresh.get(p.instrument.id)
         rows.append(
             {
                 "symbol": p.instrument.symbol,
+                "instrument_id": p.instrument.id,
                 "value_warning": p.value_warning,
                 "price_data_warning": p.instrument.id in anomalies,
+                # Price freshness ("as of" the observation date) for the table's
+                # transparency column. Money-market par funds have no feed date.
+                "price_as_of": _fmt_asof(fr),
                 "name": (eff.name if eff is not None else p.instrument.name) or "",
                 "category": p.category or "",
                 "shares": fmt_shares(p.shares),
@@ -641,6 +648,17 @@ def _fmt_pct(value: Decimal | None) -> str:
     return f"{value * Decimal(100):,.2f} %"
 
 
+def _fmt_asof(freshness: HoldingFreshness | None) -> str:
+    """Compact "as of" string for a table row (date, par note, or em dash)."""
+    if freshness is None:
+        return "—"
+    if freshness.is_money_market:
+        return "par"
+    if freshness.price_as_of is None:
+        return "—"
+    return freshness.price_as_of.strftime("%d %b %Y")
+
+
 def _signed(value: Decimal | None) -> float:
     """Raw float for AG-Grid ``cellClassRules`` sign colouring (0 when None)."""
     return float(value) if value is not None else 0.0
@@ -687,9 +705,7 @@ class HoldingFreshness:
     is_money_market: bool
 
 
-def holding_freshness(
-    session: Session, positions: list[Position]
-) -> dict[int, HoldingFreshness]:
+def holding_freshness(session: Session, positions: list[Position]) -> dict[int, HoldingFreshness]:
     """Per-instrument price freshness for the held ``positions`` (cache tier).
 
     Batches the two cache-tier lookups (latest print date + last-refreshed
@@ -832,16 +848,10 @@ def build_holding_cards(
             )
         )
     # Portfolio weight: each card's EUR value as a share of the held total.
-    total_value_eur = sum(
-        (c.value_eur for c in cards if c.value_eur is not None), ZERO
-    )
+    total_value_eur = sum((c.value_eur for c in cards if c.value_eur is not None), ZERO)
     if total_value_eur > ZERO:
         cards = [
-            (
-                replace(c, weight=(c.value_eur / total_value_eur))
-                if c.value_eur is not None
-                else c
-            )
+            (replace(c, weight=(c.value_eur / total_value_eur)) if c.value_eur is not None else c)
             for c in cards
         ]
     cards.sort(key=lambda c: c.value_eur if c.value_eur is not None else ZERO, reverse=True)

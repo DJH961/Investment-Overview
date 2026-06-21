@@ -18,6 +18,7 @@ from investment_dashboard.ui.pages import (
     calculator,
     deposits,
     diagnostics,
+    holdings,
     monthly,
     onboarding,
     overview,
@@ -48,6 +49,7 @@ def _register_pages() -> None:
     # immediate "connection lost" banner, header status dot) on every page.
     connectivity.install()
     overview.register()
+    holdings.register()
     deposits.register()
     transactions.register()
     monthly.register()

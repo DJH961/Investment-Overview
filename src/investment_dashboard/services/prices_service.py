@@ -259,9 +259,7 @@ def latest_closes(session: Session, instrument_ids: Sequence[int]) -> dict[int, 
         return prices_repo.latest_closes(cache, instrument_ids)
 
 
-def latest_price_dates_for(
-    session: Session, instrument_ids: Sequence[int]
-) -> dict[int, date]:
+def latest_price_dates_for(session: Session, instrument_ids: Sequence[int]) -> dict[int, date]:
     """Newest cached print *date* per instrument (cache tier).
 
     Tier-aware wrapper around :func:`prices_repo.latest_price_dates`. This is
@@ -277,9 +275,7 @@ def latest_price_dates_for(
         return prices_repo.latest_price_dates(cache, instrument_ids)
 
 
-def last_refreshed_at_for(
-    session: Session, instrument_ids: Sequence[int]
-) -> dict[int, datetime]:
+def last_refreshed_at_for(session: Session, instrument_ids: Sequence[int]) -> dict[int, datetime]:
     """When each instrument's price cache was last refreshed (cache tier).
 
     Tier-aware wrapper around :func:`price_cache_repo.get_last_refreshed_at_map`

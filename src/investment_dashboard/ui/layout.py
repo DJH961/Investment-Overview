@@ -58,6 +58,7 @@ class NavItem:
 #: Ordered nav for the seven app pages (spec §8).
 NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem("Overview", "/overview", "dashboard"),
+    NavItem("Holdings", "/holdings", "account_balance_wallet"),
     NavItem("Deposits", "/deposits", "savings"),
     NavItem("Transactions", "/transactions", "receipt_long"),
     NavItem("Monthly", "/monthly", "calendar_month"),

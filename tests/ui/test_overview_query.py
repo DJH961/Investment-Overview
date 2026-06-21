@@ -331,3 +331,89 @@ def test_partial_sale_uses_average_cost_growth(session: Session) -> None:
     assert im.capital_gain_usd == Decimal("250.00")
     assert im.total_growth_usd is not None
     assert abs(im.total_growth_usd - Decimal("0.5")) < Decimal("0.001")
+
+
+def test_position_rows_carry_portfolio_weight(session: Session, seeded: None) -> None:
+    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+
+    positions = get_positions(session)
+    metrics = compute_instrument_metrics(session, positions)
+    rows = position_rows(positions, metrics=metrics)
+    # Weight is a fraction of the held EUR total; the per-row weights sum to ~1.
+    weights = [r["weight_num"] for r in rows]
+    assert all(w is not None for w in weights)
+    assert abs(sum(weights) - 1.0) < 1e-9
+    # The larger holding (VTI, 10×230) outweighs the smaller (BND, 20×75).
+    vti = next(r for r in rows if r["symbol"] == "VTI")
+    bnd = next(r for r in rows if r["symbol"] == "BND")
+    assert vti["weight_num"] > bnd["weight_num"]
+
+
+def test_position_rows_as_of_date_from_freshness(session: Session, seeded: None) -> None:
+    from investment_dashboard.ui.pages._overview_query import holding_freshness
+
+    positions = get_positions(session)
+    fresh = holding_freshness(session, positions)
+    rows = position_rows(positions, freshness=fresh)
+    vti = next(r for r in rows if r["symbol"] == "VTI")
+    # The "as of" string reflects the latest cached print date (today here).
+    assert vti["price_as_of"] == date.today().strftime("%d %b %Y")
+    assert "instrument_id" in vti
+
+
+def test_position_rows_as_of_dash_without_freshness(session: Session, seeded: None) -> None:
+    rows = position_rows(get_positions(session))
+    assert all(r["price_as_of"] == "—" for r in rows)
+
+
+def test_build_holding_cards_weight_and_sort(session: Session, seeded: None) -> None:
+    from investment_dashboard.ui.pages._overview_query import (
+        build_holding_cards,
+        compute_instrument_metrics,
+        holding_freshness,
+    )
+
+    positions = get_positions(session)
+    metrics = compute_instrument_metrics(session, positions)
+    fresh = holding_freshness(session, positions)
+    cards = build_holding_cards(positions, metrics=metrics, freshness=fresh)
+    # Sorted by EUR value, largest first.
+    assert [c.symbol for c in cards] == ["VTI", "BND"]
+    # Weights are a share of the total and sum to ~1.
+    total_weight = sum((c.weight for c in cards if c.weight is not None), Decimal(0))
+    assert abs(total_weight - Decimal(1)) < Decimal("0.0000001")
+    # Freshness is carried through onto the card (today's print date).
+    assert cards[0].price_as_of == date.today()
+    assert cards[0].is_money_market is False
+
+
+def test_holding_freshness_marks_money_market(session: Session) -> None:
+    from investment_dashboard.ui.pages._overview_query import holding_freshness
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="vanguard",
+        account_label="Settlement",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    vmfxx = instruments_repo.get_or_create(session, symbol="VMFXX", asset_class="mutual_fund")
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2024, 1, 5),
+            kind="buy",
+            instrument_id=vmfxx.id,
+            quantity=Decimal("100"),
+            price_native=Decimal("1"),
+            net_native=Decimal("-100"),
+            source=TransactionSource.MANUAL,
+        )
+    )
+    session.flush()
+    positions = get_positions(session)
+    fresh = holding_freshness(session, positions)
+    mm = fresh[vmfxx.id]
+    assert mm.is_money_market is True
+    assert mm.price_as_of is None
+    assert mm.updated_at is None

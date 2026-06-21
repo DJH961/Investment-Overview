@@ -14,6 +14,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.1.1] — 2026-06-21
+
+Desktop price-freshness transparency and a holdings redesign that mirrors the
+live-web companion, plus a small web tweak so the per-holding chip shows the
+stat that actually matters.
+
+### Added — desktop: price-freshness transparency
+
+- **Every holding now says when its price is from.** The desktop app reads the
+  same two facts the web companion surfaces — the observation date of the
+  latest cached print (`PriceHistory.date`) and the saved fetch time
+  (`PriceCacheMetadata.last_refreshed_at`) — and shows them per holding. Money-
+  market funds (par $1.00, no feed) are labelled as such instead of faking a
+  date.
+
+### Changed — desktop: overview redesign + new Holdings tab
+
+- **The outdated positions table on `/overview` is gone.** In its place every
+  holding gets a card (like the web companion's holding rows) with value, daily
+  move, total growth, P/L, XIRR, YTD, price, shares, cost basis, expense ratio,
+  and its "as of" / "updated" freshness line. Cards are sorted by EUR value,
+  largest first.
+- **New `/holdings` tab.** The full sortable table moved here, joined by deeper
+  detail: a portfolio-**weight** column, an "As Of" column, headline KPI cards,
+  and a summary strip (best/worst performer, gainers vs. losers, most-
+  concentrated holding, weighted expense ratio).
+
+### Changed — live-web companion
+
+- **The per-holding chip now shows total growth instead of portfolio weight.**
+  Growth (unrealised P/L over cost) is the primary read; weight is a secondary
+  stat and now lives in the desktop Holdings table.
+
 ## [3.1.0] — 2026-06-21
 
 Live-web companion (`web/`): mutual-fund (NAV) pricing, the value-over-time
