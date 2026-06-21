@@ -57,8 +57,8 @@ _log: deque[BackgroundError] = deque(maxlen=_MAX_LOG_ENTRIES)
 #: Monotonic error counter, boxed in a dict so updates need no ``global``.
 _state: dict[str, int] = {"seq": 0}
 #: Last time each ``(source, message)`` was recorded, for de-duplication. Pruned
-#: of expired entries on every call so it stays bounded by the number of
-#: *distinct* recent failures.
+#: of expired entries on every call to :func:`record_error`, so it stays bounded
+#: by the number of *distinct* recent failures.
 _last_seen: dict[tuple[str, str], datetime] = {}
 
 

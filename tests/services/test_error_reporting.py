@@ -128,7 +128,7 @@ def test_loop_exception_handler_records() -> None:
     assert "KeyError" in latest.message
 
 
-def test_logging_output_bypasses_stderr_tee(caplog: pytest.LogCaptureFixture) -> None:
+def test_logging_output_bypasses_stderr_tee() -> None:
     """A logged warning written to stderr by a StreamHandler must not be
     double-recorded through the stderr tee (the handler keeps the original
     stream)."""
