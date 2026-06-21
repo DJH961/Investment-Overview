@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+import pytest
 from sqlalchemy.orm import Session
 
 from investment_dashboard.models import Transaction
@@ -20,6 +21,18 @@ from investment_dashboard.repositories import (
     transactions_repo,
 )
 from investment_dashboard.services import diagnostics_service, provider_status
+
+
+@pytest.fixture(autouse=True)
+def _reset_provider_status() -> None:
+    """Isolate the process-global provider status between tests.
+
+    ``provider_status`` keeps the last outcome per provider in a module-level
+    dict, so a provider event recorded by an earlier test in the full suite
+    would otherwise leak into these probes and make the all-green assertions
+    flaky. Reset before each test here so every case starts from a clean slate.
+    """
+    provider_status.reset()
 
 
 def _account(session: Session, native: str = "USD") -> int:

@@ -197,10 +197,22 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
 
 ### G. Functionality gaps for 3.0
 
-* `transfer_in` / `transfer_out` enum kinds are reserved but have no
-  importer/UI logic — implement or remove from the enum.
-* True daily-snapshot TWR per period (currently a Modified-Dietz approximation;
-  daily snapshots now exist, so exact TWR is cheap).
+* **G1** — ✅ resolved (kept + documented, not removed). `transfer_in` /
+  `transfer_out` are *not* dead: they are offered in the manual "New
+  Transaction" form (`transactions._kinds()` enumerates the whole enum) and are
+  treated as external contributions / withdrawals everywhere flows matter
+  (`metrics_service`, `benchmark_service`, `_deposits_query`, `_period_query`).
+  CSV importers deliberately normalise broker "transfer in/out" rows to
+  `deposit` / `withdrawal` via the per-broker action maps, so the kinds exist
+  for manual inter-account moves. A class-level comment on `TransactionKind`
+  now records this contract so they aren't mistaken for dead code again.
+* **G2** — ✅ resolved (already implemented; stale labels corrected). The
+  per-period growth on Monthly/Yearly is a true daily-snapshot TWR:
+  `_period_query._chained_twr` geometrically links each sub-period's
+  Modified-Dietz return across the stored daily snapshots, degrading to a single
+  Modified-Dietz only when interior snapshots are sparse. The user-facing
+  footnotes on `/monthly` and `/yearly` (which still called it "Modified Dietz")
+  were corrected to describe the chained TWR.
 * ~~Stale split-cache after a manual ticker change~~ — ✅ done (see "Verified
   already fixed" above): the symbol-edit path invalidates closes and splits.
 

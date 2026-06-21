@@ -127,8 +127,10 @@ def register() -> None:
                 ui.label(
                     f"Values shown in {display_ccy} ({sym}); switch currency from the header "
                     "toggle. Closing value is end-of-month mark-to-market (best-effort if "
-                    "prices are missing). Growth % (period) is the per-month Modified Dietz "
-                    "return; Total Growth (last column) is cumulative (1 + XIRR) ^ years to "
-                    "the end of the row. Each page is one calendar year (empty months before "
-                    "your first investment are padded so years line up).",
+                    "prices are missing). Growth % (period) is the per-month time-weighted "
+                    "return, chained across daily snapshots (it degrades to a single "
+                    "Modified-Dietz month when snapshots are sparse); Total Growth (last "
+                    "column) is cumulative (1 + XIRR) ^ years to the end of the row. Each "
+                    "page is one calendar year (empty months before your first investment "
+                    "are padded so years line up).",
                 ).classes("text-caption opacity-70")
