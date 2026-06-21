@@ -6,7 +6,7 @@ from nicegui import ui
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.services import display_currency_service
-from investment_dashboard.ui.components import page_header, section
+from investment_dashboard.ui.components import deferred, page_header, section
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import currency_symbol
 from investment_dashboard.ui.pages._overview_query import build_value_series
@@ -77,46 +77,50 @@ def register() -> None:
     def _yearly() -> None:  # pragma: no cover
         with page_frame("Yearly Growth", current=PATH):
             page_header("Yearly Growth", subtitle="Annual aggregation and growth over time")
-            with session_scope() as session:
-                display_ccy = display_currency_service.get_display_currency(session)
-                rows = aggregate(session, monthly=False, display_currency=display_ccy)
-                value_series = build_value_series(session, currency=display_ccy, range_label="All")
-                display_quote = display_ccy if display_ccy != "EUR" else "USD"
-                fx_rate = display_currency_service.current_rate(session, quote=display_quote)
-            sym = currency_symbol(display_ccy)
-            with section("Growth over time"):
-                ui.plotly(_figure(value_series, currency=display_ccy)).classes(
-                    "w-full h-[40vh]",
-                )
-            with section("Aggregation table"):
-                ui.aggrid(
-                    {
-                        "columnDefs": [
-                            {"headerName": "Year", "field": "label", "sortable": True},
-                            *_money_columns("Contributions", "contributions", display_ccy),
-                            *_money_columns("Dividends", "dividends", display_ccy),
-                            *_money_columns("Interest", "interest", display_ccy),
-                            *_money_columns("Net flow", "net_flow", display_ccy),
-                            *_money_columns("Closing value", "closing_value", display_ccy),
-                            # Period (Modified Dietz) growth, per currency.
-                            pct_column("Growth % (period)", "growth_pct", display_ccy),
-                            # Total Growth headline metric — kept last (v2.9.1).
-                            pct_column("Total Growth", "total_growth", display_ccy),
-                        ],
-                        "rowData": to_table_rows(rows, currency=display_ccy, fx_rate=fx_rate),
-                        "defaultColDef": {
-                            "resizable": True,
-                            "sortable": True,
-                            "wrapHeaderText": True,
-                            "autoHeaderHeight": True,
-                        },
-                    }
-                ).classes("ag-theme-alpine w-full h-[50vh]")
-                ui.label(
-                    f"Values shown in {display_ccy} ({sym}); switch currency from the header "
-                    "toggle. Closing value is end-of-year mark-to-market (best-effort if "
-                    "prices are missing). Growth % (period) is the per-year time-weighted "
-                    "return, chained across daily snapshots (it degrades to a single "
-                    "Modified-Dietz year when snapshots are sparse); Total Growth (last "
-                    "column) is cumulative (1 + XIRR) ^ years to the end of the row.",
-                ).classes("text-caption opacity-70")
+            deferred(_build_body)
+
+
+def _build_body() -> None:  # pragma: no cover - heavy render, run after first paint
+    with session_scope() as session:
+        display_ccy = display_currency_service.get_display_currency(session)
+        rows = aggregate(session, monthly=False, display_currency=display_ccy)
+        value_series = build_value_series(session, currency=display_ccy, range_label="All")
+        display_quote = display_ccy if display_ccy != "EUR" else "USD"
+        fx_rate = display_currency_service.current_rate(session, quote=display_quote)
+    sym = currency_symbol(display_ccy)
+    with section("Growth over time"):
+        ui.plotly(_figure(value_series, currency=display_ccy)).classes(
+            "w-full h-[40vh]",
+        )
+    with section("Aggregation table"):
+        ui.aggrid(
+            {
+                "columnDefs": [
+                    {"headerName": "Year", "field": "label", "sortable": True},
+                    *_money_columns("Contributions", "contributions", display_ccy),
+                    *_money_columns("Dividends", "dividends", display_ccy),
+                    *_money_columns("Interest", "interest", display_ccy),
+                    *_money_columns("Net flow", "net_flow", display_ccy),
+                    *_money_columns("Closing value", "closing_value", display_ccy),
+                    # Period (Modified Dietz) growth, per currency.
+                    pct_column("Growth % (period)", "growth_pct", display_ccy),
+                    # Total Growth headline metric — kept last (v2.9.1).
+                    pct_column("Total Growth", "total_growth", display_ccy),
+                ],
+                "rowData": to_table_rows(rows, currency=display_ccy, fx_rate=fx_rate),
+                "defaultColDef": {
+                    "resizable": True,
+                    "sortable": True,
+                    "wrapHeaderText": True,
+                    "autoHeaderHeight": True,
+                },
+            }
+        ).classes("ag-theme-alpine w-full h-[50vh]")
+        ui.label(
+            f"Values shown in {display_ccy} ({sym}); switch currency from the header "
+            "toggle. Closing value is end-of-year mark-to-market (best-effort if "
+            "prices are missing). Growth % (period) is the per-year time-weighted "
+            "return, chained across daily snapshots (it degrades to a single "
+            "Modified-Dietz year when snapshots are sparse); Total Growth (last "
+            "column) is cumulative (1 + XIRR) ^ years to the end of the row.",
+        ).classes("text-caption opacity-70")

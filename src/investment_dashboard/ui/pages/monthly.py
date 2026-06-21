@@ -8,7 +8,7 @@ from nicegui import ui
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.services import display_currency_service
-from investment_dashboard.ui.components import page_header, section
+from investment_dashboard.ui.components import deferred, page_header, section
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import currency_symbol
 from investment_dashboard.ui.pages._period_query import (
@@ -81,56 +81,58 @@ def register() -> None:
     def _monthly() -> None:  # pragma: no cover
         with page_frame("Monthly Growth", current=PATH):
             page_header("Monthly Growth", subtitle="Aggregated cashflows and mark-to-market")
-            with session_scope() as session:
-                display_ccy = display_currency_service.get_display_currency(session)
-                rows = aggregate(
-                    session, monthly=True, display_currency=display_ccy, fill_gaps=True
-                )
-                display_quote = display_ccy if display_ccy != "EUR" else "USD"
-                fx_rate = display_currency_service.current_rate(session, quote=display_quote)
-            sym = currency_symbol(display_ccy)
+            deferred(_build_body)
 
-            with section("Growth per month"):
-                ui.plotly(_figure(rows, currency=display_ccy, fx_rate=fx_rate)).classes(
-                    "w-full h-[35vh]",
-                )
-            with section("Aggregation table"):
-                ui.aggrid(
-                    {
-                        "columnDefs": [
-                            {"headerName": "Month", "field": "label", "sortable": True},
-                            *_money_columns("Contributions", "contributions", display_ccy),
-                            *_money_columns("Dividends", "dividends", display_ccy),
-                            *_money_columns("Interest", "interest", display_ccy),
-                            *_money_columns("Net flow", "net_flow", display_ccy),
-                            *_money_columns("Closing value", "closing_value", display_ccy),
-                            # Period (Modified Dietz) growth, per currency.
-                            pct_column("Growth % (period)", "growth_pct", display_ccy),
-                            # Total Growth is the headline cumulative metric — kept
-                            # last per the v2.9.1 layout request.
-                            pct_column("Total Growth", "total_growth", display_ccy),
-                        ],
-                        "rowData": to_table_rows(rows, currency=display_ccy, fx_rate=fx_rate),
-                        "defaultColDef": {
-                            "resizable": True,
-                            "sortable": True,
-                            "wrapHeaderText": True,
-                            "autoHeaderHeight": True,
-                        },
-                        # One calendar year per page: rows are padded to a
-                        # contiguous Jan–Dec grid (``fill_gaps``) so each
-                        # 12-row page is exactly one year.
-                        "pagination": True,
-                        "paginationPageSize": 12,
-                    }
-                ).classes("ag-theme-alpine w-full h-[55vh]")
-                ui.label(
-                    f"Values shown in {display_ccy} ({sym}); switch currency from the header "
-                    "toggle. Closing value is end-of-month mark-to-market (best-effort if "
-                    "prices are missing). Growth % (period) is the per-month time-weighted "
-                    "return, chained across daily snapshots (it degrades to a single "
-                    "Modified-Dietz month when snapshots are sparse); Total Growth (last "
-                    "column) is cumulative (1 + XIRR) ^ years to the end of the row. Each "
-                    "page is one calendar year (empty months before your first investment "
-                    "are padded so years line up).",
-                ).classes("text-caption opacity-70")
+
+def _build_body() -> None:  # pragma: no cover - heavy render, run after first paint
+    with session_scope() as session:
+        display_ccy = display_currency_service.get_display_currency(session)
+        rows = aggregate(session, monthly=True, display_currency=display_ccy, fill_gaps=True)
+        display_quote = display_ccy if display_ccy != "EUR" else "USD"
+        fx_rate = display_currency_service.current_rate(session, quote=display_quote)
+    sym = currency_symbol(display_ccy)
+
+    with section("Growth per month"):
+        ui.plotly(_figure(rows, currency=display_ccy, fx_rate=fx_rate)).classes(
+            "w-full h-[35vh]",
+        )
+    with section("Aggregation table"):
+        ui.aggrid(
+            {
+                "columnDefs": [
+                    {"headerName": "Month", "field": "label", "sortable": True},
+                    *_money_columns("Contributions", "contributions", display_ccy),
+                    *_money_columns("Dividends", "dividends", display_ccy),
+                    *_money_columns("Interest", "interest", display_ccy),
+                    *_money_columns("Net flow", "net_flow", display_ccy),
+                    *_money_columns("Closing value", "closing_value", display_ccy),
+                    # Period (Modified Dietz) growth, per currency.
+                    pct_column("Growth % (period)", "growth_pct", display_ccy),
+                    # Total Growth is the headline cumulative metric — kept
+                    # last per the v2.9.1 layout request.
+                    pct_column("Total Growth", "total_growth", display_ccy),
+                ],
+                "rowData": to_table_rows(rows, currency=display_ccy, fx_rate=fx_rate),
+                "defaultColDef": {
+                    "resizable": True,
+                    "sortable": True,
+                    "wrapHeaderText": True,
+                    "autoHeaderHeight": True,
+                },
+                # One calendar year per page: rows are padded to a
+                # contiguous Jan–Dec grid (``fill_gaps``) so each
+                # 12-row page is exactly one year.
+                "pagination": True,
+                "paginationPageSize": 12,
+            }
+        ).classes("ag-theme-alpine w-full h-[55vh]")
+        ui.label(
+            f"Values shown in {display_ccy} ({sym}); switch currency from the header "
+            "toggle. Closing value is end-of-month mark-to-market (best-effort if "
+            "prices are missing). Growth % (period) is the per-month time-weighted "
+            "return, chained across daily snapshots (it degrades to a single "
+            "Modified-Dietz month when snapshots are sparse); Total Growth (last "
+            "column) is cumulative (1 + XIRR) ^ years to the end of the row. Each "
+            "page is one calendar year (empty months before your first investment "
+            "are padded so years line up).",
+        ).classes("text-caption opacity-70")

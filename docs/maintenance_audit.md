@@ -268,3 +268,35 @@ These run inside `run_boot_sequence(skip_network=True)` on the cold-start path.
   which the existing snapshot cache (`snapshots_service`) already covers for the
   expensive historical series. No further work needed; revisit only if profiling
   surfaces a new shared hot path.
+
+### 5F — Periods pages blocked the render path (added 2026-06-21 — ✅ done)
+
+- **5F.12 Monthly/Yearly built their heavy body synchronously** — ✅ done.
+  Unlike Overview/Analytics/Projection (which already used the `deferred`
+  spinner-then-build helper), `ui/pages/monthly.py` and `ui/pages/yearly.py`
+  ran their full `aggregate(...)` roll-up (plus the Yearly daily value series)
+  **inside** the `@ui.page` body, so NiceGUI couldn't send the page until all
+  of it finished. On a real ledger that left the tab blank for seconds and,
+  because the synchronous build also blocked the event loop, rapidly toggling
+  Monthly ↔ Yearly could trip the socket reconnect window and "break it every
+  time". Both pages now paint a header immediately and run the heavy work via
+  `deferred(_build_body)`, matching the other pages.
+- **5F.13 Rapid view switching piled work onto dead tabs** — ✅ done. `deferred`
+  now captures the request's `context.client` and skips the heavy `build`
+  entirely if `client.has_socket_connection` is false by the time its one-shot
+  timer fires — so clicking through views again and again never stacks expensive
+  database work on tabs the user already navigated away from.
+
+## 6. Observability / shareable diagnostics (added 2026-06-21 — ✅ done)
+
+- **6.1 No persistent log file to share** — ✅ done. `logging.configure_logging`
+  added a `RotatingFileHandler` (default `logs/dashboard.log` beside the active
+  DB; size/backup/dir configurable via `INV_DASHBOARD_LOG_*`) alongside the
+  existing stderr stream. It is best-effort: a read-only data dir falls back to
+  console-only logging instead of blocking boot. The secret-redacting filter is
+  applied to the file sink too, so nothing sensitive is written to disk.
+- **6.2 One-click support bundle** — ✅ done. `services/support_bundle.py` builds
+  a single plain-text file — app version, platform, redacted config summary and
+  the tail of `dashboard.log` — surfaced as a "Download support bundle" button on
+  the Data Health page so a slow/broken session can be reported with the actual
+  logs attached.
