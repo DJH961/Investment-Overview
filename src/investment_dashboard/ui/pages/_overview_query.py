@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date, timedelta
+from dataclasses import dataclass, replace
+from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
@@ -612,9 +612,26 @@ def position_rows(
                 "ytd_usd_signed": _signed(ytd_usd),
                 "daily_eur_signed": _signed(daily_eur),
                 "daily_usd_signed": _signed(daily_usd),
+                # Portfolio weight (this holding's EUR value ÷ the total of all
+                # held EUR values). Filled in a second pass once the grand total
+                # is known. A fraction (``0.12`` = 12 %) so the grid's percent
+                # formatter renders it. Weight is currency-independent (a ratio),
+                # so a single column serves both display currencies.
+                "weight_num": None,
                 "display_currency": display_currency,
             }
         )
+    # Second pass: portfolio weight needs the grand total of all EUR values.
+    total_value_eur = sum(
+        (Decimal(str(r["value_eur_num"])) for r in rows if r["value_eur_num"] is not None),
+        ZERO,
+    )
+    if total_value_eur > ZERO:
+        for r in rows:
+            v = r["value_eur_num"]
+            r["weight_num"] = (Decimal(str(v)) / total_value_eur) if v is not None else None
+            if r["weight_num"] is not None:
+                r["weight_num"] = float(r["weight_num"])
     return rows
 
 
@@ -645,3 +662,187 @@ def allocation_treemap(positions: list[Position]) -> list[TreemapDatum]:
     items = [TreemapDatum(label=k, value_eur=v) for k, v in bucket.items() if v > ZERO]
     items.sort(key=lambda d: d.value_eur, reverse=True)
     return items
+
+
+@dataclass(frozen=True)
+class HoldingFreshness:
+    """When a holding's displayed price was observed and last refreshed.
+
+    Mirrors the web companion's per-row transparency for the desktop:
+
+    * ``price_as_of`` — the *observation* date of the close the holding is
+      valued at (the latest cached print). A stale-but-latest NAV then reads
+      honestly ("as of 20 Jun") instead of pretending to be today's price.
+    * ``updated_at`` — *when we last pulled* fresh prices for the instrument
+      (the saved ``last_refreshed_at`` timestamp), so the user can tell a fresh
+      fetch from a value that has simply not moved.
+
+    Money-market / settlement funds price at a fixed $1.00 par with no feed, so
+    both fields are ``None`` and ``is_money_market`` is set — the UI shows a
+    "fixed par" note rather than a misleading date.
+    """
+
+    price_as_of: date | None
+    updated_at: datetime | None
+    is_money_market: bool
+
+
+def holding_freshness(
+    session: Session, positions: list[Position]
+) -> dict[int, HoldingFreshness]:
+    """Per-instrument price freshness for the held ``positions`` (cache tier).
+
+    Batches the two cache-tier lookups (latest print date + last-refreshed
+    timestamp) once for every held instrument instead of per row.
+    """
+    ids = [p.instrument.id for p in positions]
+    as_of_dates = prices_service.latest_price_dates_for(session, ids)
+    refreshed = prices_service.last_refreshed_at_for(session, ids)
+    out: dict[int, HoldingFreshness] = {}
+    for p in positions:
+        iid = p.instrument.id
+        eff = p.effective
+        eff_name = eff.name if eff is not None else p.instrument.name
+        eff_class = eff.asset_class if eff is not None else p.instrument.asset_class
+        is_mm = is_money_market(p.instrument.symbol, asset_class=eff_class, name=eff_name)
+        out[iid] = HoldingFreshness(
+            price_as_of=None if is_mm else as_of_dates.get(iid),
+            updated_at=None if is_mm else refreshed.get(iid),
+            is_money_market=is_mm,
+        )
+    return out
+
+
+@dataclass(frozen=True)
+class HoldingCard:
+    """View-model for one Overview holding card (the redesigned per-holding box).
+
+    Carries raw per-currency :class:`~decimal.Decimal` figures (not formatted
+    strings) so the renderer can format for the active display currency and
+    colour by sign. ``weight`` is this holding's share of the portfolio's total
+    EUR value; it is shown in the desktop Holdings table, not on the card.
+    """
+
+    instrument_id: int
+    symbol: str
+    name: str
+    category: str
+    native_currency: str
+    is_money_market: bool
+    value_warning: bool
+    price_data_warning: bool
+    shares: Decimal
+    current_price_native: Decimal | None
+    avg_price_native: Decimal | None
+    expense_ratio: Decimal | None
+    # Per-currency money + returns (EUR / USD).
+    value_eur: Decimal | None
+    value_usd: Decimal | None
+    cost_basis_eur: Decimal
+    cost_basis_usd: Decimal
+    capital_gain_eur: Decimal | None
+    capital_gain_usd: Decimal | None
+    total_growth_eur: Decimal | None
+    total_growth_usd: Decimal | None
+    xirr_eur: Decimal | None
+    xirr_usd: Decimal | None
+    daily_growth_eur: Decimal | None
+    daily_growth_usd: Decimal | None
+    ytd_growth_eur: Decimal | None
+    ytd_growth_usd: Decimal | None
+    weight: Decimal | None
+    # Freshness / transparency.
+    price_as_of: date | None
+    updated_at: datetime | None
+
+
+def build_holding_cards(
+    positions: list[Position],
+    *,
+    metrics: dict[int, InstrumentMetrics] | None = None,
+    freshness: dict[int, HoldingFreshness] | None = None,
+    price_anomaly_ids: set[int] | None = None,
+) -> list[HoldingCard]:
+    """Shape held positions into Overview holding cards, sorted by EUR value.
+
+    Each card mirrors the web companion's per-holding box (value, today's move,
+    total growth, P/L, XIRR) and adds the desktop-native extras the user asked
+    for — per-currency figures plus the price's "as of" date and saved update
+    time. ``weight`` (share of portfolio) is computed here so the Holdings table
+    can reuse the same figure.
+    """
+    metrics = metrics or {}
+    freshness = freshness or {}
+    anomalies = price_anomaly_ids or set()
+    cards: list[HoldingCard] = []
+    for p in positions:
+        iid = p.instrument.id
+        im = metrics.get(iid)
+        fr = freshness.get(iid)
+        eff = p.effective
+        name = (eff.name if eff is not None else p.instrument.name) or p.instrument.symbol
+        avg_price = (p.cost_basis_native / p.shares) if p.shares else None
+        if im is not None:
+            value_eur, value_usd = im.current_value_eur, im.current_value_usd
+            cb_eur, cb_usd = im.cost_basis_eur, im.cost_basis_usd
+            g_eur, g_usd = im.capital_gain_eur, im.capital_gain_usd
+            tg_eur, tg_usd = im.total_growth_eur, im.total_growth_usd
+            xirr_eur, xirr_usd = im.xirr_eur, im.xirr_usd
+            daily_eur, daily_usd = im.daily_growth_eur, im.daily_growth_usd
+            ytd_eur, ytd_usd = im.ytd_growth_eur, im.ytd_growth_usd
+            ter = im.expense_ratio
+        else:
+            value_eur = p.current_value_eur
+            value_usd = None
+            cb_eur = cb_usd = ZERO
+            g_eur = g_usd = tg_eur = tg_usd = None
+            xirr_eur = xirr_usd = daily_eur = daily_usd = ytd_eur = ytd_usd = None
+            ter = None
+        cards.append(
+            HoldingCard(
+                instrument_id=iid,
+                symbol=p.instrument.symbol,
+                name=name,
+                category=p.category or "",
+                native_currency=p.account.native_currency,
+                is_money_market=fr.is_money_market if fr is not None else False,
+                value_warning=p.value_warning,
+                price_data_warning=iid in anomalies,
+                shares=p.shares,
+                current_price_native=p.current_price_native,
+                avg_price_native=avg_price,
+                expense_ratio=ter,
+                value_eur=value_eur,
+                value_usd=value_usd,
+                cost_basis_eur=cb_eur,
+                cost_basis_usd=cb_usd,
+                capital_gain_eur=g_eur,
+                capital_gain_usd=g_usd,
+                total_growth_eur=tg_eur,
+                total_growth_usd=tg_usd,
+                xirr_eur=xirr_eur,
+                xirr_usd=xirr_usd,
+                daily_growth_eur=daily_eur,
+                daily_growth_usd=daily_usd,
+                ytd_growth_eur=ytd_eur,
+                ytd_growth_usd=ytd_usd,
+                weight=None,
+                price_as_of=fr.price_as_of if fr is not None else None,
+                updated_at=fr.updated_at if fr is not None else None,
+            )
+        )
+    # Portfolio weight: each card's EUR value as a share of the held total.
+    total_value_eur = sum(
+        (c.value_eur for c in cards if c.value_eur is not None), ZERO
+    )
+    if total_value_eur > ZERO:
+        cards = [
+            (
+                replace(c, weight=(c.value_eur / total_value_eur))
+                if c.value_eur is not None
+                else c
+            )
+            for c in cards
+        ]
+    cards.sort(key=lambda c: c.value_eur if c.value_eur is not None else ZERO, reverse=True)
+    return cards
