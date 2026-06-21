@@ -84,7 +84,18 @@ def _build_body() -> None:  # pragma: no cover - heavy render, run after first p
     with session_scope() as session:
         display_ccy = display_currency_service.get_display_currency(session)
         rows = aggregate(session, monthly=False, display_currency=display_ccy)
-        value_series = build_value_series(session, currency=display_ccy, range_label="All")
+        value_series = build_value_series(
+            session,
+            currency=display_ccy,
+            range_label="All",
+            # The Yearly chart spans the whole portfolio lifetime. Render it
+            # from the persistent snapshot cache plus a short fresh tail rather
+            # than cold-recomputing thousands of days on the request thread —
+            # the background warm keeps the cache complete, and bounding the
+            # live recompute here is what stops the page from blocking the event
+            # loop (and tripping the reconnect/"crash") when the cache is cold.
+            recompute_tail_days=7,
+        )
         display_quote = display_ccy if display_ccy != "EUR" else "USD"
         fx_rate = display_currency_service.current_rate(session, quote=display_quote)
     sym = currency_symbol(display_ccy)

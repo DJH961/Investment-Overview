@@ -665,38 +665,40 @@ def _refresh_benchmark() -> None:
 
 
 def _invalidate_snapshots() -> None:
-    """Drop cached daily snapshots after a FX/price backfill.
+    """Deprecated no-op kept for backwards compatibility.
 
-    The UI opens before the deferred network refresh lands, so the first
-    render of ``/monthly`` / ``/yearly`` caches every period's closing value
-    against an empty price + FX cache (i.e. ``0``). Once the backfill writes
-    the real history those cached zeros are stale; clearing them forces the
-    next render to recompute each period correctly. Snapshots are pure
-    cache-tier data, so this is always safe.
+    Earlier versions dropped **every** cached daily snapshot here (a blunt
+    ``invalidate_all``) before warming the cache back up. That left the snapshot
+    cache completely empty on *every* startup until the warm finished, so a user
+    who opened the daily-granularity ``/yearly`` chart during that window forced
+    a synchronous full-history recompute onto the request thread — seconds of
+    blocked event loop that tripped NiceGUI's socket-reconnect window and made
+    the app appear to crash. The Monthly page only touches a handful of
+    month-boundary snapshots, so it stayed under the reconnect threshold and
+    looked fine.
+
+    :func:`_warm_snapshots` now rebuilds the cache *in place* (force-recompute,
+    overwriting stale values without deleting them first), so there is no longer
+    an empty-cache window to guard against and nothing for this step to do.
     """
-    try:
-        from investment_dashboard.db import cache_session_scope  # noqa: PLC0415
-        from investment_dashboard.services.snapshots_service import (  # noqa: PLC0415
-            invalidate_all,
-        )
-
-        with cache_session_scope() as session:
-            dropped = invalidate_all(session)
-        log.info("Invalidated %d cached snapshot(s) after refresh", dropped)
-    except Exception:
-        log.warning("Snapshot invalidation failed; continuing", exc_info=True)
+    return
 
 
 def _warm_snapshots() -> None:
-    """Recompute the daily snapshot cache over the portfolio lifetime.
+    """Rebuild the daily snapshot cache over the portfolio lifetime, in place.
 
-    :func:`_invalidate_snapshots` drops every cached daily value once the fresh
-    FX/price history lands, so the next ``/overview`` or ``/analytics`` render
-    would otherwise rebuild the whole equity curve day by day on the request
-    thread — the slow first load (and occasional reconnect) the user reports.
-    Running the rebuild here, on the post-boot background thread, moves that
-    work off the UI so the first render reads cached values. Best-effort: a
-    failure just leaves the lazy read-through path to recompute on demand.
+    Once the deferred FX/price backfill lands, historical closing values that
+    were cached against an empty/partial price + FX cache (e.g. the ``0``
+    closing values a pre-backfill render persisted) are stale and must be
+    recomputed. Rather than delete every snapshot and recompute from an empty
+    cache — which briefly forces a full-history page like ``/yearly`` to rebuild
+    its whole daily equity curve on the request thread — this force-rebuilds
+    each day and *overwrites* the cached row in place. Readers keep seeing the
+    previous (still-valid) value until the fresh one is written, so the heavy
+    work stays on this background thread and the UI never blocks.
+
+    Best-effort: a failure just leaves the lazy read-through path to recompute
+    on demand.
     """
     try:
         from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
@@ -704,8 +706,8 @@ def _warm_snapshots() -> None:
 
         start = _earliest_needed_date()
         with ledger_session_scope() as session:
-            warmed = warm_range(session, start, date.today())
-        log.info("Warmed %d daily snapshot(s) (floor=%s)", warmed, start)
+            warmed = warm_range(session, start, date.today(), force=True)
+        log.info("Rebuilt %d daily snapshot(s) in place (floor=%s)", warmed, start)
     except Exception:
         log.warning("Snapshot warming failed; continuing", exc_info=True)
 
@@ -736,7 +738,9 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
     _refresh_prices()
     _refresh_splits()
     _refresh_benchmark()
-    _invalidate_snapshots()
+    # Rebuild the snapshot cache in place (no delete-all window — see
+    # _warm_snapshots) so a full-history page like /yearly never cold-recomputes
+    # its daily curve on the request thread.
     _warm_snapshots()
 
 
@@ -759,5 +763,7 @@ def run_deferred_network_refresh() -> None:
     _refresh_prices()
     _refresh_splits()
     _refresh_benchmark()
-    _invalidate_snapshots()
+    # Rebuild the snapshot cache in place (no delete-all window — see
+    # _warm_snapshots) so a full-history page like /yearly never cold-recomputes
+    # its daily curve on the request thread.
     _warm_snapshots()

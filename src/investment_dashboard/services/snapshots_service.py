@@ -25,12 +25,20 @@ from sqlalchemy.orm import Session
 from investment_dashboard.repositories import snapshots_repo
 
 
-def get_or_compute(session: Session, snapshot_date: date) -> Decimal:
+def get_or_compute(session: Session, snapshot_date: date, *, force: bool = False) -> Decimal:
     """Return the EUR portfolio value on ``snapshot_date``.
 
     If a stored snapshot exists for any historical date, return it.
     For ``date.today()`` the value is always recomputed live (today's
     prices are still moving) and the row is upserted in place.
+
+    Pass ``force=True`` to ignore any cached historical value and recompute
+    the day from scratch, upserting the fresh value in place. This is how the
+    background refresh rebuilds the cache against newly-backfilled prices/FX
+    *without* first deleting the old rows — readers keep seeing the previous
+    (still-valid) value until the new one is written, so there is never an
+    empty-cache window that would force an expensive full-history recompute
+    onto the request thread.
 
     Snapshots are cache-tier data. Under a split-DB layout they live in a
     separate database from the ledger the caller's ``session`` is bound to, so
@@ -44,7 +52,7 @@ def get_or_compute(session: Session, snapshot_date: date) -> Decimal:
     from investment_dashboard.services import positions_service  # noqa: PLC0415
 
     today = date.today()
-    if snapshot_date < today:
+    if snapshot_date < today and not force:
         with cache_read_session(session) as cache:
             existing = snapshots_repo.get_snapshot(cache, snapshot_date)
         if existing is not None:
@@ -122,6 +130,8 @@ def series_in_currency(
     start: date,
     end: date,
     currency: str,
+    *,
+    recompute_tail_days: int | None = None,
 ) -> list[tuple[date, Decimal]]:
     """Daily ``[start, end]`` portfolio values in ``currency``, computed in bulk.
 
@@ -139,6 +149,17 @@ def series_in_currency(
 
     The per-day values are identical to :func:`get_or_compute_in_currency`; only
     the number of round-trips changes.
+
+    ``recompute_tail_days`` bounds how much work this may push onto the request
+    thread. When set, a historical day that is *not* already cached and is older
+    than ``today - recompute_tail_days`` is **skipped** (omitted from the
+    series) rather than recomputed synchronously — only today and the trailing
+    ``recompute_tail_days`` days are ever computed live. The full-history Yearly
+    chart uses this so it always renders from the persistent snapshot cache plus
+    a few fresh recent days, never blocking the event loop on a cold full-history
+    rebuild (the background warm fills in the rest, and a later render shows the
+    complete curve). ``None`` (default) keeps the original recompute-every-day
+    behaviour for callers that need a gap-free series.
     """
     currency = currency.upper()
     today = date.today()
@@ -147,6 +168,10 @@ def series_in_currency(
 
     # One bulk read of the already-cached historical snapshots.
     stored = stored_snapshots_in_range(session, start, end)
+
+    tail_floor = (
+        today - timedelta(days=recompute_tail_days) if recompute_tail_days is not None else None
+    )
 
     # Load the FX rate series once instead of per day.
     rates: dict[date, Decimal] | None = None
@@ -162,8 +187,17 @@ def series_in_currency(
     day = start
     while day <= end:
         # Today is always recomputed live; a missing historical day is computed
-        # and cached on demand exactly as the per-day helper would.
-        eur = stored[day] if day < today and day in stored else get_or_compute(session, day)
+        # and cached on demand exactly as the per-day helper would — unless a
+        # tail budget is set and the day is older than it, in which case we skip
+        # it to keep the request thread responsive (the background warm fills
+        # the gap in for the next render).
+        if day < today and day in stored:
+            eur = stored[day]
+        elif tail_floor is not None and day < today and day < tail_floor:
+            day += timedelta(days=1)
+            continue
+        else:
+            eur = get_or_compute(session, day)
         if currency == "EUR" or not rates:
             value = eur
         else:
@@ -174,21 +208,30 @@ def series_in_currency(
     return out
 
 
-def warm_range(session: Session, start: date, end: date) -> int:
+def warm_range(session: Session, start: date, end: date, *, force: bool = False) -> int:
     """Compute and cache every snapshot in ``[start, end]`` (background use).
 
-    The deferred network refresh drops the snapshot cache once fresh prices and
-    FX land, so the *first* ``/overview`` or ``/analytics`` render would
-    otherwise recompute the whole history day by day on the request thread —
-    the slow first load (and occasional reconnect) the user sees. Warming the
-    range from a background thread moves that work off the UI: the page then
-    reads cached values. Best-effort and idempotent; returns the number of days
+    The deferred network refresh rebuilds the snapshot cache once fresh prices
+    and FX land, so the *first* ``/overview``, ``/analytics`` or ``/yearly``
+    render would otherwise recompute the whole history day by day on the
+    request thread — the slow first load (and the reconnect/"crash" the user
+    sees when opening the daily-granularity Yearly chart). Warming the range
+    from a background thread moves that work off the UI: the page then reads
+    cached values. Best-effort and idempotent; returns the number of days
     actually (re)computed.
 
-    Already-cached historical days are skipped after a single bulk read of the
-    window instead of reopening a cache-tier session per day (B4); only the
-    still-missing days — plus today, which always recomputes against live
-    intra-day prices — fall through to :func:`get_or_compute`.
+    With ``force=False`` (default) already-cached historical days are skipped
+    after a single bulk read of the window; only the still-missing days — plus
+    today, which always recomputes against live intra-day prices — fall through
+    to :func:`get_or_compute`.
+
+    With ``force=True`` every historical day is recomputed and upserted in
+    place, overwriting values that were cached against an empty/partial
+    price + FX cache (e.g. the ``0`` closing values persisted by a render that
+    ran before the backfill landed). Because the rows are overwritten rather
+    than deleted first, readers never observe an empty cache mid-rebuild, so a
+    full-history page like Yearly is never pushed into a synchronous cold
+    recompute on the request thread.
     """
     if end < start:
         return 0
@@ -198,12 +241,13 @@ def warm_range(session: Session, start: date, end: date) -> int:
     warmed = 0
     day = start
     while day <= end:
-        # Historical days already cached need no recompute; today is always
-        # recomputed because its intra-day price marks keep moving.
-        if day < today and day in stored:
+        # Historical days already cached need no recompute unless we are
+        # force-rebuilding; today is always recomputed because its intra-day
+        # price marks keep moving.
+        if not force and day < today and day in stored:
             day += timedelta(days=1)
             continue
-        get_or_compute(session, day)
+        get_or_compute(session, day, force=force)
         warmed += 1
         day += timedelta(days=1)
     return warmed
