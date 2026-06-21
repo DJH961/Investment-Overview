@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -179,6 +179,21 @@ def test_snapshot_creates_file_and_prunes(tmp_path: Path) -> None:
 
 def test_snapshot_returns_none_when_db_missing(tmp_path: Path) -> None:
     assert snapshot(tmp_path / "absent.sqlite") is None
+
+
+def test_snapshot_skips_when_within_min_interval(tmp_path: Path) -> None:
+    db = tmp_path / "ledger.sqlite"
+    _make_sqlite(db)
+    base = datetime(2025, 1, 1, 10, 0, 0)
+    first = snapshot(db, now=base, min_interval=timedelta(hours=1))
+    assert first is not None
+    # 30 min later: inside the interval → skipped, no new file.
+    skipped = snapshot(db, now=base + timedelta(minutes=30), min_interval=timedelta(hours=1))
+    assert skipped is None
+    # 90 min later: past the interval → a new backup is taken.
+    later = snapshot(db, now=base + timedelta(minutes=90), min_interval=timedelta(hours=1))
+    assert later is not None
+    assert later != first
 
 
 def test_verify_backup_returns_row_counts(tmp_path: Path) -> None:

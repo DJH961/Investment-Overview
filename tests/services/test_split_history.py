@@ -82,6 +82,32 @@ def test_cumulative_split_factor_after_unit_when_feed_confirms_no_split(
     ) == Decimal("1")
 
 
+def test_cumulative_factors_after_batched_matches_per_instrument(session: Session) -> None:
+    # Two instruments with cached splits, one without — the batched lookup must
+    # match the per-instrument helper and *omit* the instrument with no cached
+    # split data (the "fall back to ledger rows" signal).
+    a = instruments_repo.get_or_create(session, symbol="AAA", asset_class="etf")
+    b = instruments_repo.get_or_create(session, symbol="BBB", asset_class="etf")
+    none = instruments_repo.get_or_create(session, symbol="NOSPLIT", asset_class="etf")
+    splits_repo.upsert_splits(
+        session, a.id, {date(2024, 1, 1): Decimal("2"), date(2025, 1, 1): Decimal("3")}
+    )
+    splits_repo.upsert_splits(session, b.id, {date(2020, 1, 1): Decimal("4")})
+    session.flush()
+
+    as_of = date(2024, 6, 1)
+    batched = splits_repo.cumulative_factors_after(session, [a.id, b.id, none.id], as_of)
+    # AAA: only the 2025 split is after 2024-06-01 ⇒ 3. BBB: no later split ⇒ 1.
+    assert batched == {a.id: Decimal("3"), b.id: Decimal("1")}
+    # NOSPLIT has no cached rows ⇒ absent, matching the per-call None signal.
+    assert none.id not in batched
+    # Service wrapper routes through the cache tier and returns the same map.
+    assert (
+        prices_service.cumulative_split_factors_after(session, [a.id, b.id, none.id], as_of)
+        == batched
+    )
+
+
 def test_refresh_splits_caches_feed_corporate_actions(session: Session) -> None:
     held = instruments_repo.get_or_create(session, symbol="HELD", asset_class="etf")
     instruments_repo.get_or_create(session, symbol="SAVINGS_CASH", asset_class="cash")

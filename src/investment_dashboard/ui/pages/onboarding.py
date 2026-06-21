@@ -237,8 +237,8 @@ def _passphrase_card() -> None:  # pragma: no cover - UI
                 ui.notify("Passphrase saved to the OS keychain.", type="positive")
             else:
                 ui.notify(
-                    "Could not reach the OS keychain (install the `[encrypted]` "
-                    "extra to enable it).",
+                    "Could not reach the OS keychain. Check that a keyring "
+                    "backend is available for your operating system.",
                     type="negative",
                 )
 

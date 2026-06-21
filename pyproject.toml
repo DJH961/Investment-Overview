@@ -1,6 +1,6 @@
 [project]
 name = "investment-dashboard"
-version = "2.11.1"
+version = "3.0.0"
 description = "Single-user, locally-hosted investment tracking dashboard unifying Vanguard, Fidelity, and Savings Bank with XIRR/TWR/CAGR analytics in USD and EUR."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -33,6 +33,11 @@ dependencies = [
     "plotly>=5.22",
     "openpyxl>=3.1",
     "cryptography>=48.0.1",
+    # OS keychain access for the live-web companion secrets (mobile passphrase
+    # and GitHub publish token) and the optional synced-tier passphrase. Kept in
+    # core deps so the companion works out of the box; only the heavy SQLCipher
+    # driver below stays optional.
+    "keyring>=24.0",
 ]
 
 [project.optional-dependencies]
@@ -47,11 +52,11 @@ dev = [
     "types-python-dateutil",
 ]
 encrypted = [
-    # SQLCipher Python binding. ``pysqlcipher3`` is the primary;
-    # ``sqlcipher3-binary`` is the documented fallback when the upstream
-    # wheel isn't available on the user's platform.
+    # SQLCipher Python binding for optional encryption-at-rest of the synced
+    # ledger/config tiers. ``pysqlcipher3`` is the primary; ``sqlcipher3-binary``
+    # is the documented fallback when the upstream wheel isn't available on the
+    # user's platform. (``keyring`` lives in the core dependencies now.)
     "pysqlcipher3>=1.2 ; sys_platform != 'win32'",
-    "keyring>=24.0",
 ]
 
 [project.scripts]

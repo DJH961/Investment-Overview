@@ -68,6 +68,15 @@ def refresh_prices(
 
     instruments = instruments_repo.list_instruments(session)
     inactive = instrument_overrides_repo.inactive_ids(session)
+    # Batch the per-instrument MAX/MIN(date) lookups into two GROUP BY queries
+    # instead of 2N individual round-trips.
+    candidate_ids = [
+        instr.id
+        for instr in instruments
+        if instr.asset_class not in _SYNTHETIC_ASSET_CLASSES and instr.id not in inactive
+    ]
+    latest_dates = prices_repo.latest_price_dates(cache, candidate_ids)
+    earliest_dates = prices_repo.earliest_price_dates(cache, candidate_ids)
     symbols_to_fetch: list[str] = []
     earliest_per_symbol: dict[str, date] = {}
     for instr in instruments:
@@ -75,8 +84,8 @@ def refresh_prices(
             continue
         if instr.id in inactive:
             continue
-        latest = prices_repo.latest_price_date(cache, instr.id)
-        earliest = prices_repo.earliest_price_date(cache, instr.id)
+        latest = latest_dates.get(instr.id)
+        earliest = earliest_dates.get(instr.id)
         if latest is None:
             start = earliest_needed
         elif earliest is not None and earliest > earliest_needed:
@@ -193,6 +202,22 @@ def cumulative_split_factor_after(
         return splits_repo.cumulative_factor_after(cache, instrument_id, as_of)
 
 
+def cumulative_split_factors_after(
+    session: Session, instrument_ids: Sequence[int], as_of: date
+) -> dict[int, Decimal]:
+    """Batched :func:`cumulative_split_factor_after` (cache tier).
+
+    Returns ``{instrument_id: factor}`` only for instruments that have cached
+    split data; an instrument absent from the mapping carries the same "no
+    split data cached — fall back to the ledger ``split`` rows" signal that the
+    per-instrument helper conveys with ``None``.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return splits_repo.cumulative_factors_after(cache, instrument_ids, as_of)
+
+
 def latest_close(session: Session, instrument_id: int) -> Decimal | None:
     """Last known close for ``instrument_id``.
 
@@ -250,23 +275,6 @@ def closes_as_of(
         return prices_repo.latest_closes(cache, instrument_ids, on_or_before=as_of)
 
 
-def cumulative_split_factors_after(
-    session: Session, instrument_ids: Sequence[int], as_of: date
-) -> dict[int, Decimal]:
-    """Batched :func:`cumulative_split_factor_after` (cache tier).
-
-    Returns ``{instrument_id: factor}`` only for instruments that have cached
-    split data; a missing key carries the same meaning as a ``None`` return
-    from the singular helper (no feed data ⇒ fall back to ledger split rows).
-    """
-    if not instrument_ids:
-        return {}
-    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
-
-    with cache_read_session(session) as cache:
-        return splits_repo.cumulative_factors_after(cache, instrument_ids, as_of)
-
-
 def invalidate_instrument_prices(session: Session, instrument_id: int) -> int:
     """Drop an instrument's cached closes + refresh timestamp (cache tier).
 
@@ -281,6 +289,27 @@ def invalidate_instrument_prices(session: Session, instrument_id: int) -> int:
         price_cache_repo.delete_for_instrument(cache, instrument_id)
         splits_repo.delete_for_instrument(cache, instrument_id)
     return removed
+
+
+def recent_closes_by_instrument(
+    session: Session,
+    instrument_ids: Sequence[int],
+    *,
+    on_or_before: date,
+    limit: int = 2,
+) -> dict[int, list[tuple[date, Decimal]]]:
+    """Batched per-instrument ``(date, close)`` lookup (cache tier).
+
+    Tier-aware wrapper around :func:`prices_repo.recent_closes_by_instrument`
+    so a caller holding a ledger session still reads the price history that
+    lives in the cache database under split-DB layouts.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return prices_repo.recent_closes_by_instrument(
+            cache, instrument_ids, on_or_before=on_or_before, limit=limit
+        )
 
 
 def recent_price_dates(
@@ -339,12 +368,18 @@ def instruments_due_for_refresh(
     now = now or datetime.now(UTC).replace(tzinfo=None)
     due: list[Instrument] = []
     inactive = instrument_overrides_repo.inactive_ids(session)
-    for instr in instruments_repo.list_instruments(session):
+    instruments = instruments_repo.list_instruments(session)
+    # One IN(...) query for every instrument's last-refresh timestamp instead
+    # of one lookup per instrument.
+    last_refreshed = price_cache_repo.get_last_refreshed_at_map(
+        session, [i.id for i in instruments]
+    )
+    for instr in instruments:
         if instr.asset_class in _SYNTHETIC_ASSET_CLASSES:
             continue
         if instr.id in inactive:
             continue
-        last = price_cache_repo.get_last_refreshed_at(session, instr.id)
+        last = last_refreshed.get(instr.id)
         if last is None or (now - last).total_seconds() >= _ttl_for(instr):
             due.append(instr)
     return due
@@ -370,8 +405,9 @@ def refresh_due_prices(
 
     symbols_to_fetch: list[str] = []
     earliest_per_symbol: dict[str, date] = {}
+    latest_dates = prices_repo.latest_price_dates(session, [i.id for i in due])
     for instr in due:
-        latest = prices_repo.latest_price_date(session, instr.id)
+        latest = latest_dates.get(instr.id)
         start = (latest + timedelta(days=1)) if latest is not None else today - timedelta(days=14)
         # Always fetch today's window so intraday closes overwrite stale rows.
         start = min(start, today)

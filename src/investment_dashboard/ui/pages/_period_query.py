@@ -29,7 +29,6 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
 from investment_dashboard.domain import dividends
@@ -382,39 +381,77 @@ def aggregate(  # noqa: PLR0912, PLR0915
 
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
 
+    # ------- Display-currency context (v2.2) -------
+    # Resolve the display currency up front so the EUR and display-currency
+    # buckets can be filled in a *single* ledger walk instead of iterating the
+    # whole ``txns`` list twice. ``build_display`` is only true when a non-EUR
+    # display currency was requested *and* we actually have FX history for it;
+    # otherwise the renderer's spot-rate fallback is more useful than zeros.
+    normalised_display_ccy = display_currency.upper() if display_currency else ""
+    if normalised_display_ccy == "EUR":
+        normalised_display_ccy = ""
+    # We've already loaded the EUR→USD series once above; reuse it.
+    fx_rates = eur_to_usd if normalised_display_ccy == "USD" else {}
+    build_display = bool(normalised_display_ccy) and bool(fx_rates)
+
     buckets: dict[str, dict[str, Decimal]] = {}
+    display_buckets: dict[str, dict[str, Decimal]] = {}
     #: Signed external cash flow (deposit/transfer_in +, withdrawal/transfer_out −)
     #: per calendar date in EUR — feeds the daily-chained TWR.
     flows_by_date_eur: dict[date, Decimal] = {}
+    #: Signed external flow per date in the display currency.
+    flows_by_date_display: dict[date, Decimal] = {}
     reinvest_keys = dividends.reinvest_keys(txns)
     for t in txns:
         key = _period_key(t.date, monthly=monthly)
         b = buckets.setdefault(key, {"contrib": ZERO, "div": ZERO, "int": ZERO})
+        db = (
+            display_buckets.setdefault(key, {"contrib": ZERO, "div": ZERO, "int": ZERO})
+            if build_display
+            else None
+        )
         if t.kind in ("dividend_cash", "dividend_reinvest"):
             # Dividend *income* (spec §6.1): reinvested distributions counted
             # at their reinvested value plus un-reinvested cash, so the column
             # matches the spreadsheet (which records reinvested amounts, incl.
             # VMFXX settlement-fund interest that has no separate cash leg).
-            div_eur, _ = dividends.income_dual(t, reinvest_keys, eur_to_usd=eur_to_usd)
+            div_eur, div_usd = dividends.income_dual(t, reinvest_keys, eur_to_usd=eur_to_usd)
             if div_eur is not None:
                 b["div"] += div_eur
+            if db is not None:
+                div_disp = div_usd if normalised_display_ccy == "USD" else None
+                if div_disp is not None:
+                    db["div"] += div_disp
             continue
+        # net_eur/net_native are signed at write time: deposits/transfer_in
+        # positive, withdrawals/transfer_out negative. Adding the signed
+        # amount nets the flow exactly once — matching metrics_service's
+        # ``contributions + withdrawals`` convention. Subtracting a
+        # withdrawal here would double-count it (a negative minus a
+        # negative), which inflated contributions, net-flow and growth %.
         amt = _amount_eur(t, eur_to_usd=eur_to_usd)
-        if amt is None:
-            # Unconvertible non-EUR row with no FX history — leave it out of
-            # the bucket rather than counting a wrong-magnitude figure.
-            continue
-        if t.kind in ("deposit", "transfer_in", "withdrawal", "transfer_out"):
-            # net_eur/net_native are signed at write time: deposits/transfer_in
-            # positive, withdrawals/transfer_out negative. Adding the signed
-            # amount nets the flow exactly once — matching metrics_service's
-            # ``contributions + withdrawals`` convention. Subtracting a
-            # withdrawal here would double-count it (a negative minus a
-            # negative), which inflated contributions, net-flow and growth %.
-            b["contrib"] += amt
-            flows_by_date_eur[t.date] = flows_by_date_eur.get(t.date, ZERO) + amt
-        elif t.kind == "interest":
-            b["int"] += amt
+        if amt is not None:
+            # ``None`` ⇒ unconvertible non-EUR row with no FX history — leave it
+            # out of the bucket rather than counting a wrong-magnitude figure.
+            if t.kind in ("deposit", "transfer_in", "withdrawal", "transfer_out"):
+                b["contrib"] += amt
+                flows_by_date_eur[t.date] = flows_by_date_eur.get(t.date, ZERO) + amt
+            elif t.kind == "interest":
+                b["int"] += amt
+        if db is not None:
+            amt_disp = _amount_in(
+                t,
+                display_currency=normalised_display_ccy,
+                eur_to_usd=eur_to_usd,
+            )
+            if amt_disp is not None:
+                if t.kind in ("deposit", "transfer_in", "withdrawal", "transfer_out"):
+                    db["contrib"] += amt_disp
+                    flows_by_date_display[t.date] = (
+                        flows_by_date_display.get(t.date, ZERO) + amt_disp
+                    )
+                elif t.kind == "interest":
+                    db["int"] += amt_disp
 
     # Pad the monthly grid so every calendar month between January of the
     # first active year and the latest active month exists as a (possibly
@@ -424,153 +461,130 @@ def aggregate(  # noqa: PLR0912, PLR0915
         labels_sorted = sorted(buckets)
         for label in _month_label_range(labels_sorted[0], labels_sorted[-1]):
             buckets.setdefault(label, {"contrib": ZERO, "div": ZERO, "int": ZERO})
+    # Mirror every (possibly padded) label into the display buckets so the
+    # render layer sees a display entry for each row.
+    if build_display:
+        for label in buckets:
+            display_buckets.setdefault(label, {"contrib": ZERO, "div": ZERO, "int": ZERO})
 
     today = today or date.today()
     closing_by_label: dict[str, Decimal] = {}
     opening_by_label: dict[str, Decimal] = {}
     growth_by_label: dict[str, Decimal | None] = {}
+    closing_display: dict[str, Decimal | None] = {}
+    opening_display: dict[str, Decimal | None] = {}
+    growth_display: dict[str, Decimal | None] = {}
     if with_closing_value and buckets:
         # Local import to avoid a cycle: services -> repositories -> models,
         # while this module is imported by the UI layer which also imports
         # services elsewhere.
         from investment_dashboard.services import snapshots_service  # noqa: PLC0415
 
+        # Resolve each period's [open, end] boundary once.
+        bounds = {
+            label: (
+                _period_start(label, monthly=monthly),
+                _period_end(label, monthly=monthly, today=today),
+            )
+            for label in buckets
+        }
+        # Batch every boundary snapshot read in one shot: each period needs its
+        # closing (period_end) and — once it has started — its opening
+        # (previous day's close). A single bulk read replaces the previous
+        # ``get_or_compute`` per period (2N cache round-trips).
+        boundary_dates: set[date] = set()
+        for period_open, period_end in bounds.values():
+            boundary_dates.add(period_end)
+            if period_open <= today:
+                boundary_dates.add(period_open - timedelta(days=1))
+        try:
+            boundary_eur = snapshots_service.get_or_compute_many(session, boundary_dates)
+        except Exception:  # pragma: no cover - defensive: keep page renderable
+            boundary_eur = {}
+        boundary_disp: dict[date, Decimal] = {}
+        if build_display:
+            # Derive the display-currency boundary values from the EUR ones we
+            # just read — converting at the forward-filled rate on each date —
+            # instead of issuing a second batched snapshot read.
+            boundary_disp = {
+                d: v * (lookup_rate_with_forward_fill(fx_rates, d) or Decimal(1))
+                for d, v in boundary_eur.items()
+            }
+
+        # Batch the interior daily snapshots once across the full started span;
+        # each period then slices the dates inside its own window in memory
+        # (the chained TWR only consumes already-cached interior values).
+        interior_all: dict[date, Decimal] = {}
+        started = [(po, pe) for po, pe in bounds.values() if po <= today]
+        if started:
+            span_start = min(po for po, _ in started)
+            span_end = max(pe for _, pe in started) - timedelta(days=1)
+            if span_end >= span_start:
+                interior_all = snapshots_service.stored_snapshots_in_range(
+                    session, span_start, span_end
+                )
+
         for label in buckets:
-            period_end = _period_end(label, monthly=monthly, today=today)
-            period_open = _period_start(label, monthly=monthly)
-            try:
-                closing_by_label[label] = snapshots_service.get_or_compute(session, period_end)
-                # Opening = previous day's close (capped if start > today).
-                if period_open <= today:
-                    opening_by_label[label] = snapshots_service.get_or_compute(
-                        session, period_open - timedelta(days=1)
-                    )
-                else:
-                    opening_by_label[label] = ZERO
-            except Exception:  # pragma: no cover - defensive: keep page renderable
-                closing_by_label[label] = ZERO
-                opening_by_label[label] = ZERO
-            if period_open > today:
+            period_open, period_end = bounds[label]
+            opening_prev = period_open - timedelta(days=1)
+            started_period = period_open <= today
+            closing_by_label[label] = boundary_eur.get(period_end, ZERO)
+            # Opening = previous day's close (zero for not-yet-started periods).
+            opening_by_label[label] = (
+                boundary_eur.get(opening_prev, ZERO) if started_period else ZERO
+            )
+            if build_display:
+                closing_display[label] = boundary_disp.get(period_end, ZERO)
+                opening_display[label] = (
+                    boundary_disp.get(opening_prev, ZERO) if started_period else ZERO
+                )
+            if not started_period:
                 # The period hasn't started yet — a Modified-Dietz on a forced
                 # zero opening would emit a spurious figure (e.g. −200 %), so
                 # leave growth undefined.
                 growth_by_label[label] = None
-            else:
-                # True daily-chained TWR: compound each sub-period between
-                # stored daily snapshots. Interior days are only
-                # those already cached — never force-computed here — so the
-                # calc degrades to a single Modified-Dietz when daily values
-                # are sparse (e.g. before the daily backfill ran).
-                interior_map = snapshots_service.stored_snapshots_in_range(
-                    session, period_open, period_end - timedelta(days=1)
-                )
-                interior = sorted(interior_map.items())
-                growth_by_label[label] = _chained_twr(
-                    opening=opening_by_label[label],
-                    opening_date=period_open - timedelta(days=1),
+                if build_display:
+                    growth_display[label] = None
+                continue
+            # True daily-chained TWR: compound each sub-period between stored
+            # daily snapshots. Interior days are only those already cached —
+            # never force-computed here — so the calc degrades to a single
+            # Modified-Dietz when daily values are sparse (e.g. before the
+            # daily backfill ran).
+            interior_eur = sorted(
+                (d, v)
+                for d, v in interior_all.items()
+                if period_open <= d <= period_end - timedelta(days=1)
+            )
+            growth_by_label[label] = _chained_twr(
+                opening=opening_by_label[label],
+                opening_date=opening_prev,
+                period_end=period_end,
+                closing=closing_by_label[label],
+                interior=interior_eur,
+                flows_by_date=flows_by_date_eur,
+            )
+            if build_display:
+                # Convert the already-cached interior EUR values into the
+                # display currency with the rate on each snapshot date (the
+                # same forward-fill ``get_or_compute_in_currency`` applies).
+                interior_disp = [
+                    (
+                        d,
+                        v * (lookup_rate_with_forward_fill(fx_rates, d) or Decimal(1))
+                        if normalised_display_ccy == "USD"
+                        else v,
+                    )
+                    for d, v in interior_eur
+                ]
+                growth_display[label] = _chained_twr(
+                    opening=opening_display[label] or ZERO,
+                    opening_date=opening_prev,
                     period_end=period_end,
-                    closing=closing_by_label[label],
-                    interior=interior,
-                    flows_by_date=flows_by_date_eur,
+                    closing=closing_display[label] or ZERO,
+                    interior=interior_disp,
+                    flows_by_date=flows_by_date_display,
                 )
-
-    # ------- FX-aware per-display-currency reaggregation (v2.2) -------
-    display_buckets: dict[str, dict[str, Decimal]] = {}
-    closing_display: dict[str, Decimal | None] = {}
-    opening_display: dict[str, Decimal | None] = {}
-    growth_display: dict[str, Decimal | None] = {}
-    normalised_display_ccy = ""
-    if display_currency and display_currency.upper() != "EUR" and buckets:
-        normalised_display_ccy = display_currency.upper()
-        # We've already loaded the EUR→USD series once above; reuse it.
-        fx_rates = eur_to_usd if normalised_display_ccy == "USD" else {}
-
-        # If we have no FX history at all for this quote, skip the
-        # display-side conversion entirely — the renderer's spot-rate
-        # fallback is more useful than emitting zeros for every row.
-        if fx_rates:
-            #: Signed external flow per date in the display currency.
-            flows_by_date_display: dict[date, Decimal] = {}
-            for label in buckets:
-                display_buckets[label] = {"contrib": ZERO, "div": ZERO, "int": ZERO}
-            for t in txns:
-                key = _period_key(t.date, monthly=monthly)
-                b = display_buckets[key]
-                if t.kind in ("dividend_cash", "dividend_reinvest"):
-                    _, div_usd = dividends.income_dual(t, reinvest_keys, eur_to_usd=eur_to_usd)
-                    div_disp = div_usd if normalised_display_ccy == "USD" else None
-                    if div_disp is not None:
-                        b["div"] += div_disp
-                    continue
-                amt = _amount_in(
-                    t,
-                    display_currency=normalised_display_ccy,
-                    eur_to_usd=eur_to_usd,
-                )
-                if amt is None:
-                    continue
-                if t.kind in ("deposit", "transfer_in", "withdrawal", "transfer_out"):
-                    # Signed-amount convention (see the EUR loop above):
-                    # withdrawals/transfer_out are already negative.
-                    b["contrib"] += amt
-                    flows_by_date_display[t.date] = flows_by_date_display.get(t.date, ZERO) + amt
-                elif t.kind == "interest":
-                    b["int"] += amt
-
-            if with_closing_value:
-                from investment_dashboard.services import (  # noqa: PLC0415
-                    snapshots_service as _snap_for_ccy,
-                )
-
-                for label in buckets:
-                    period_end = _period_end(label, monthly=monthly, today=today)
-                    period_open = _period_start(label, monthly=monthly)
-                    try:
-                        closing_display[label] = _snap_for_ccy.get_or_compute_in_currency(
-                            session,
-                            period_end,
-                            normalised_display_ccy,
-                        )
-                        if period_open <= today:
-                            opening_display[label] = _snap_for_ccy.get_or_compute_in_currency(
-                                session,
-                                period_open - timedelta(days=1),
-                                normalised_display_ccy,
-                            )
-                        else:
-                            opening_display[label] = ZERO
-                    except (
-                        SQLAlchemyError,
-                        ArithmeticError,
-                        ValueError,
-                    ):  # pragma: no cover - defensive
-                        closing_display[label] = ZERO
-                        opening_display[label] = ZERO
-                    if period_open > today:
-                        growth_display[label] = None
-                    else:
-                        interior_dates = sorted(
-                            _snap_for_ccy.stored_snapshots_in_range(
-                                session, period_open, period_end - timedelta(days=1)
-                            )
-                        )
-                        interior_disp = [
-                            (
-                                d,
-                                _snap_for_ccy.get_or_compute_in_currency(
-                                    session, d, normalised_display_ccy
-                                ),
-                            )
-                            for d in interior_dates
-                        ]
-                        growth_display[label] = _chained_twr(
-                            opening=opening_display[label] or ZERO,
-                            opening_date=period_open - timedelta(days=1),
-                            period_end=period_end,
-                            closing=closing_display[label] or ZERO,
-                            interior=interior_disp,
-                            flows_by_date=flows_by_date_display,
-                        )
 
     rows = [
         PeriodRow(

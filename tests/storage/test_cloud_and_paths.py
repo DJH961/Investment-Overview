@@ -30,6 +30,8 @@ def _clear_cloud_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "INV_DASHBOARD_CACHE_PATH",
     ):
         monkeypatch.delenv(var, raising=False)
+    # The detector is memoized; clear it so each test sees its own env.
+    detect_cloud_sync_root.cache_clear()
 
 
 def test_detect_cloud_sync_root_returns_none_when_nothing_present(

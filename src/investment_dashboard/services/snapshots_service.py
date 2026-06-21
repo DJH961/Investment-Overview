@@ -16,6 +16,7 @@ of being a uniform scalar of today's spot rate.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -82,6 +83,38 @@ def get_or_compute_in_currency(
     if rate is None or rate == 0:
         return eur
     return eur * rate
+
+
+def get_or_compute_many(
+    session: Session,
+    dates: Iterable[date],
+) -> dict[date, Decimal]:
+    """Batched :func:`get_or_compute` for an arbitrary set of dates.
+
+    The period pages need the closing/opening EUR value on each period
+    boundary. Calling :func:`get_or_compute` once per boundary reopened a
+    cache-tier session for every read even when the value was already
+    cached. This helper instead bulk-reads every already-cached historical
+    snapshot spanning the requested dates in a single query, and only falls
+    back to :func:`get_or_compute` for the days that are still missing (plus
+    today, which is always recomputed live). The per-date values are
+    identical to calling :func:`get_or_compute` for each date.
+    """
+    wanted = sorted({d for d in dates})
+    if not wanted:
+        return {}
+    today = date.today()
+    historical = [d for d in wanted if d < today]
+    stored: dict[date, Decimal] = {}
+    if historical:
+        stored = stored_snapshots_in_range(session, historical[0], historical[-1])
+    out: dict[date, Decimal] = {}
+    for d in wanted:
+        if d < today and d in stored:
+            out[d] = stored[d]
+        else:
+            out[d] = get_or_compute(session, d)
+    return out
 
 
 def series_in_currency(

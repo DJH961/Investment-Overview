@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
 from investment_dashboard.models import TargetAllocation, TargetAllocationItem
@@ -31,9 +31,20 @@ def get_active(session: Session) -> TargetAllocation | None:
 
 
 def set_active(session: Session, allocation_id: int) -> None:
-    """Mark one allocation active and all others inactive."""
-    for alloc in session.scalars(select(TargetAllocation)).all():
-        alloc.active = alloc.id == allocation_id
+    """Mark one allocation active and all others inactive.
+
+    Two bulk ``UPDATE``s instead of loading every allocation and flipping
+    ``active`` in Python. ``synchronize_session="evaluate"`` keeps any ORM
+    instances already loaded in this session consistent with the change.
+    """
+    session.execute(
+        update(TargetAllocation).where(TargetAllocation.id != allocation_id).values(active=False),
+        execution_options={"synchronize_session": "evaluate"},
+    )
+    session.execute(
+        update(TargetAllocation).where(TargetAllocation.id == allocation_id).values(active=True),
+        execution_options={"synchronize_session": "evaluate"},
+    )
     session.flush()
 
 
