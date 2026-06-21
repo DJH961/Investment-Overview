@@ -22,7 +22,8 @@
   --card: #ffffff;
   --card-2: #fbfcfe;
   --border: #e6eaf2;
-  --shadow: 0 1px 2px rgba(16, 22, 35, 0.04), 0 12px 28px -18px rgba(16, 22, 35, 0.28);
+  /* Flatter, "2026 neobroker" elevation: a hairline lift, no heavy drop shadow. */
+  --shadow: 0 1px 2px rgba(16, 22, 35, 0.05);
   --pos: #1f6f8b; /* blue — gains */
   --neg: #c4561e; /* orange — losses */
   --pos-soft: rgba(31, 111, 139, 0.12);
@@ -32,8 +33,32 @@
   --radius: 18px;
   --radius-sm: 12px;
 }
+
+/* Dark palette. Applied when the user pins dark (`[data-theme="dark"]`) and, by
+ * default, when the OS prefers dark and no explicit choice is set (the media
+ * query below). The two selectors share the same values intentionally. */
+:root[data-theme="dark"] {
+  --fg: #eef2f8;
+  --muted: #9aa6b8;
+  --faint: #6f7c91;
+  --accent: #8b85ff;
+  --accent-2: #3ad7ee;
+  --bg: #0b0e14;
+  --bg-grad: radial-gradient(1200px 600px at 100% -10%, rgba(139, 133, 255, 0.16), transparent 60%),
+    radial-gradient(900px 500px at -10% 0%, rgba(58, 215, 238, 0.12), transparent 55%);
+  --card: #141925;
+  --card-2: #171d2b;
+  --border: #232b3b;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --pos: #5fb3c9;
+  --neg: #e8894f;
+  --pos-soft: rgba(95, 179, 201, 0.16);
+  --neg-soft: rgba(232, 137, 79, 0.16);
+  --pill: #1d2433;
+  --warn: #d8b84a;
+}
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     --fg: #eef2f8;
     --muted: #9aa6b8;
     --faint: #6f7c91;
@@ -45,7 +70,7 @@
     --card: #141925;
     --card-2: #171d2b;
     --border: #232b3b;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 18px 40px -22px rgba(0, 0, 0, 0.8);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
     --pos: #5fb3c9;
     --neg: #e8894f;
     --pos-soft: rgba(95, 179, 201, 0.16);
@@ -60,7 +85,8 @@
 body {
   margin: 0;
   min-height: 100vh;
-  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font: 16px/1.5 "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
   color: var(--fg);
   background: var(--bg) var(--bg-grad) fixed;
   -webkit-font-smoothing: antialiased;
@@ -158,7 +184,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   height: 1.4rem;
   border-radius: 8px;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  box-shadow: 0 4px 12px -4px color-mix(in srgb, var(--accent) 60%, transparent);
+  box-shadow: 0 2px 8px -4px color-mix(in srgb, var(--accent) 50%, transparent);
   flex: none;
 }
 .brand-name {
@@ -395,14 +421,39 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .demo-banner strong { color: var(--warn); }
 
-/* --- Allocation ----------------------------------------------------------- */
-.allocation { display: grid; gap: 0.2rem; }
-.alloc-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.7rem; }
-.alloc-row {
+/* --- Allocation (de-emphasised, collapsible) ------------------------------ */
+.allocation {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow);
+}
+.alloc-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.85rem 0.95rem;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.alloc-summary::-webkit-details-marker { display: none; }
+.alloc-summary::after {
+  content: "›";
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 700;
+  transition: transform 0.15s ease;
+}
+.allocation[open] .alloc-summary::after { transform: rotate(90deg); }
+.alloc-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--radius-sm); }
+.alloc-summary-title { font-size: 1.02rem; font-weight: 700; letter-spacing: -0.01em; }
+.alloc-summary .muted { font-size: 0.82rem; }
+.alloc-list { list-style: none; margin: 0; padding: 0 0.95rem 0.95rem; display: grid; gap: 0.7rem; }
+.alloc-row {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   padding: 0.7rem 0.85rem;
   display: grid;
   gap: 0.4rem;
@@ -426,6 +477,23 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .alloc-value { font-size: 0.8rem; font-variant-numeric: tabular-nums; }
 
 /* --- Desktop / tablet enhancements ---------------------------------------- */
+/* On the narrowest phones, collapse the glyph buttons (refresh/theme) to icons
+ * so the sticky topbar never crowds the brand. The text returns on wider
+ * screens; the lock button keeps its label (it has no glyph). */
+@media (max-width: 30rem) {
+  .icon-btn[data-action="refresh"] .icon-btn-text,
+  .icon-btn[data-action="theme"] .icon-btn-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
 @media (min-width: 560px) {
   .content { padding: 1.4rem 1.4rem 3.5rem; gap: 1.15rem; }
   .stat-grid { grid-template-columns: repeat(4, 1fr); }

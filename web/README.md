@@ -22,6 +22,12 @@ Concretely, that means:
   are visible at a glance without scrolling on a phone.
 - The gain/loss colours stay the colourblind-safe **blue ↔ orange** pair (never
   red/green) — see proposal §7.3.
+- The headline value, return horizons and KPIs lead; **asset-class allocation is
+  intentionally de-emphasised** into a collapsed panel below the holdings (a
+  fixed, lopsided allocation does not need to be front-and-centre).
+- A topbar **theme toggle** cycles System → Light → Dark, persisted per device
+  in `localStorage`; "System" follows the OS `prefers-color-scheme`. The modern
+  **Inter** typeface is bundled (self-hosted — no third-party font requests).
 
 ## Status
 
