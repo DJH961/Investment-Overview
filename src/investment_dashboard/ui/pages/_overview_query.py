@@ -850,9 +850,12 @@ def build_holding_cards(
     # Portfolio weight: each card's EUR value as a share of the held total.
     total_value_eur = sum((c.value_eur for c in cards if c.value_eur is not None), ZERO)
     if total_value_eur > ZERO:
-        cards = [
-            (replace(c, weight=(c.value_eur / total_value_eur)) if c.value_eur is not None else c)
-            for c in cards
-        ]
+
+        def _with_weight(card: HoldingCard) -> HoldingCard:
+            if card.value_eur is None:
+                return card
+            return replace(card, weight=card.value_eur / total_value_eur)
+
+        cards = [_with_weight(c) for c in cards]
     cards.sort(key=lambda c: c.value_eur if c.value_eur is not None else ZERO, reverse=True)
     return cards
