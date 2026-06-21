@@ -532,11 +532,18 @@ def _value_in_both(
     on: date,
     *,
     eur_to_usd: dict[date, Decimal],
-) -> tuple[Decimal, Decimal]:
-    """Portfolio value on ``on`` in (EUR, USD), USD via that date's FX."""
+) -> tuple[Decimal, Decimal | None]:
+    """Portfolio value on ``on`` in (EUR, USD), USD via that date's FX.
+
+    When there is no EUR→USD rate to convert with, the USD leg degrades to
+    ``None`` (blank/unavailable) rather than relabelling the EUR figure as
+    USD — mirroring every other valuation site (lines 349/432/600,
+    ``_overview_query``, ``_period_query``). Returning the EUR value in the
+    USD slot silently reported the wrong daily-growth (USD) number.
+    """
     eur = positions_service.total_portfolio_value(session, as_of=on)
     fx = lookup_rate_with_forward_fill(eur_to_usd, on) or ZERO
-    usd = eur * fx if fx != 0 else eur
+    usd: Decimal | None = eur * fx if fx != ZERO else None
     return eur, usd
 
 
@@ -567,7 +574,13 @@ def _compute_daily_growth(
     last_eur, last_usd = _value_in_both(session, last_date, eur_to_usd=eur_to_usd)
     prev_eur, prev_usd = _value_in_both(session, prev_date, eur_to_usd=eur_to_usd)
     growth_eur = (last_eur - prev_eur) / prev_eur if prev_eur > ZERO else None
-    growth_usd = (last_usd - prev_usd) / prev_usd if prev_usd > ZERO else None
+    # USD growth is only meaningful when both marks could be valued in USD;
+    # a missing EUR→USD rate on either date degrades the USD leg to ``None``
+    # rather than producing a spurious number from a relabelled EUR value.
+    if last_usd is not None and prev_usd is not None and prev_usd > ZERO:
+        growth_usd = (last_usd - prev_usd) / prev_usd
+    else:
+        growth_usd = None
     return growth_eur, growth_usd, last_date
 
 

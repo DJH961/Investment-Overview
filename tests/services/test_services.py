@@ -131,6 +131,41 @@ class TestMetrics:
         assert m.xirr is not None
         assert abs(m.xirr - Decimal("0.10")) < Decimal("0.001")
 
+    def test_daily_growth_usd_is_none_when_fx_missing(self, session: Session) -> None:
+        """A1: with no EUR→USD rate on file, the daily-growth USD leg degrades
+        to ``None`` instead of relabelling the EUR figure as USD."""
+        from investment_dashboard.repositories import instruments_repo, prices_repo
+
+        acct_id = _seed_usd_brokerage(session)
+        vti = instruments_repo.get_or_create(session, symbol="VTI", native_currency="USD")
+        session.add(
+            Transaction(
+                account_id=acct_id,
+                instrument_id=vti.id,
+                date=date(2024, 1, 5),
+                kind="buy",
+                quantity=Decimal("10"),
+                price_native=Decimal("200.00"),
+                net_native=Decimal("-2000.00"),
+                net_eur=Decimal("-1800.00"),
+                source="manual",
+            )
+        )
+        # Two priced dates so daily growth is computable, but NO FX rows at all.
+        prices_repo.upsert_closes(
+            session,
+            vti.id,
+            {date(2024, 1, 31): Decimal("210.00"), date(2024, 2, 1): Decimal("220.00")},
+        )
+        session.flush()
+
+        m = metrics_service.compute_portfolio_metrics(session, as_of=date(2024, 2, 1))
+        # EUR leg is still meaningful (positions value in EUR at 1:1 fallback).
+        assert m.daily_growth_pct is not None
+        # USD leg must be blank, not an EUR value relabelled as USD.
+        assert m.daily_growth_pct_usd is None
+        assert m.total_value_usd is None
+
     def test_dividend_income_counts_reinvested_capital_gain_uses_realized(
         self, session: Session
     ) -> None:

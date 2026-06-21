@@ -73,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     from investment_dashboard.config import get_settings  # noqa: PLC0415
     from investment_dashboard.db import session_scope  # noqa: PLC0415
     from investment_dashboard.services import publish_service  # noqa: PLC0415
+    from investment_dashboard.storage.atomic_io import atomic_write_text  # noqa: PLC0415
 
     run_boot_sequence(skip_network=not args.refresh)
     settings = get_settings()
@@ -93,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
                 include_transactions=include_transactions,
             )
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(envelope, separators=(",", ":")), encoding="utf-8")
+        atomic_write_text(args.output, json.dumps(envelope, separators=(",", ":")))
         log.info("encrypted blob written: %s", args.output)
         return 0
 
