@@ -304,6 +304,31 @@ for the full roadmap. Current status:
 - ✅ Onboarding/Settings passphrase prompt + recovery file, per-tier Alembic
   version tables, and the Settings “Move ledger…” relocation picker (v2.9.4).
 
+## Security & privacy
+
+This is a **local-first, single-user** app and your real financial data is
+designed to never leave your control:
+
+- **Your data stays on your machine.** The SQLite tiers, `.env`, and any real
+  brokerage exports are gitignored and never committed. The one anonymized
+  fixture set under [`docs/Comparison Files/`](docs/Comparison%20Files/) contains
+  **fabricated** figures only — no real positions.
+- **The server is LAN-only by design.** It binds `0.0.0.0:8080` so your own
+  phone/laptop on the same Wi-Fi can reach it. Do **not** expose it directly to
+  the internet; if you must, set `INV_DASHBOARD_API_TOKEN` and put it behind a
+  VPN or authenticating reverse proxy first.
+- **The only thing ever published is user-encrypted.** The optional live-web
+  companion uploads a single `portfolio.enc` blob (AES-256-GCM, PBKDF2-HMAC-
+  SHA256 at 600,000 iterations) that is decrypted **in your browser** with a
+  passphrase that is never committed, logged, or written to disk. The blob is
+  world-downloadable, so choose a long, unique passphrase.
+- **Secrets live in your OS keychain**, not in the repo. SQLCipher/publish/
+  mobile passphrases are read from the keyring by default; the `INV_DASHBOARD_`
+  env keys exist only for headless/CI use.
+
+Found a security problem? Please follow [`SECURITY.md`](SECURITY.md) and use
+GitHub's private vulnerability reporting rather than a public issue.
+
 ## License
 
 Proprietary, private repository. No public license granted.
