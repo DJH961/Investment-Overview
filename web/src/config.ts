@@ -21,6 +21,7 @@ const KEYS = {
   blobUrl: "iv.web.blob_url",
   metaUrl: "iv.web.meta_url",
   quoteCacheMinutes: "iv.web.quote_cache_minutes",
+  autoLockMinutes: "iv.web.auto_lock_minutes",
 } as const;
 
 const DEFAULT_RELEASE_TAG = "live-data";
@@ -38,6 +39,16 @@ const META_ASSET_NAME = "portfolio.meta.json";
  * refetches and fewer credits spent, at the cost of slightly older prices.
  */
 const DEFAULT_QUOTE_CACHE_MINUTES = 15;
+/**
+ * Default idle auto-lock timeout (minutes). After this many minutes without any
+ * interaction the companion clears the in-memory passphrase and returns to the
+ * unlock screen, so an unattended phone doesn't sit on an unlocked dashboard.
+ * Tuned as a sensible preset for a quick-check companion; configurable, and
+ * `0` disables auto-lock entirely.
+ */
+const DEFAULT_AUTO_LOCK_MINUTES = 5;
+/** Upper bound for the configurable idle auto-lock timeout, in minutes. */
+const MAX_AUTO_LOCK_MINUTES = 240;
 
 /** Wraps/unwraps the API key with a non-extractable per-device key (IndexedDB). */
 const secrets = createSecretBox();
@@ -72,6 +83,11 @@ export interface AppConfig {
   metaUrl: string;
   /** Quote-cache freshness in minutes (free-tier credit economy knob). */
   quoteCacheMinutes: number;
+  /**
+   * Idle auto-lock timeout in minutes. After this long without interaction the
+   * session locks itself; `0` disables auto-lock.
+   */
+  autoLockMinutes: number;
 }
 
 /** Clamp a parsed cache-minutes value to a sane 1–240 range, with a default. */
@@ -79,6 +95,19 @@ function parseCacheMinutes(raw: string): number {
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_QUOTE_CACHE_MINUTES;
   return Math.min(240, Math.round(n));
+}
+
+/**
+ * Clamp a parsed auto-lock value to `0`–{@link MAX_AUTO_LOCK_MINUTES}. A blank
+ * value (never set, or a field the user cleared) falls back to the preset
+ * {@link DEFAULT_AUTO_LOCK_MINUTES}; an explicit `0` — or any other non-positive
+ * value — means "never lock". Exported so the Settings UI clamps identically.
+ */
+export function parseAutoLockMinutes(raw: string): number {
+  if (raw.trim() === "") return DEFAULT_AUTO_LOCK_MINUTES;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(MAX_AUTO_LOCK_MINUTES, Math.round(n));
 }
 
 /** A blank, unconfigured config — used as the initial in-memory state. */
@@ -90,6 +119,7 @@ export function defaultConfig(): AppConfig {
     blobUrl: "",
     metaUrl: "",
     quoteCacheMinutes: DEFAULT_QUOTE_CACHE_MINUTES,
+    autoLockMinutes: DEFAULT_AUTO_LOCK_MINUTES,
   };
 }
 
@@ -134,6 +164,7 @@ export async function loadConfig(): Promise<AppConfig> {
     blobUrl: read(KEYS.blobUrl),
     metaUrl: read(KEYS.metaUrl),
     quoteCacheMinutes: parseCacheMinutes(read(KEYS.quoteCacheMinutes)),
+    autoLockMinutes: parseAutoLockMinutes(read(KEYS.autoLockMinutes)),
   };
 }
 
@@ -144,6 +175,7 @@ export async function saveConfig(config: AppConfig): Promise<void> {
   write(KEYS.blobUrl, config.blobUrl.trim());
   write(KEYS.metaUrl, config.metaUrl.trim());
   write(KEYS.quoteCacheMinutes, String(config.quoteCacheMinutes));
+  write(KEYS.autoLockMinutes, String(config.autoLockMinutes));
 }
 
 /** A loosely-validated `owner/name` slug, matching the publisher's guard. */
@@ -202,4 +234,4 @@ export function resolveMetaUrl(config: AppConfig): string | null {
   return `https://github.com/${config.repo}/releases/download/${tag}/${META_ASSET_NAME}`;
 }
 
-export { DEFAULT_RELEASE_TAG, ASSET_NAME, META_ASSET_NAME, DEFAULT_QUOTE_CACHE_MINUTES };
+export { DEFAULT_RELEASE_TAG, ASSET_NAME, META_ASSET_NAME, DEFAULT_QUOTE_CACHE_MINUTES, DEFAULT_AUTO_LOCK_MINUTES, MAX_AUTO_LOCK_MINUTES };

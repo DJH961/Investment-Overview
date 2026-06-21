@@ -15,6 +15,7 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     blobUrl: "",
     metaUrl: "",
     quoteCacheMinutes: 15,
+    autoLockMinutes: 5,
     ...overrides,
   };
 }
