@@ -14,6 +14,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed — manual refresh feedback was invisible on mobile
+
+- **Tapping the web Refresh button now always shows feedback.** Two gaps made a
+  phone tap look completely inert: (1) a refresh fully served from cache resolves
+  in a few milliseconds, so the spinner + "Refreshing prices…" pill flashed for
+  less than a frame, and (2) a tap that landed while an automatic background pull
+  was already running was silently dropped. The manual feedback is now held on
+  screen for a short minimum so it is always perceptible, a tap during an
+  in-flight auto-refresh is acknowledged instead of ignored, and every manual
+  refresh ends with a brief toast stating the outcome (prices updated, already
+  up to date, queued, or a fallback when live data couldn't be reached).
+- **The local app's Settings refresh spinner no longer flashes by.** The same
+  root cause applied on desktop: `Refresh prices` / `Refresh FX rates` early-
+  return without a network call when the data is already current, so the
+  button's in-place spinner could appear and vanish within a single frame. The
+  spinner is now held for a short minimum so a manual refresh is always
+  perceptible there too (the outcome toast was already shown).
+
 ## [3.1.1] — 2026-06-21
 
 Desktop price-freshness transparency and a holdings redesign that mirrors the

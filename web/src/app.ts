@@ -67,6 +67,15 @@ import { h, renderDashboard, renderThemeToggle } from "./ui";
 const TOAST_DURATION_MS = 4500;
 
 /**
+ * Minimum time the manual "Refreshing prices…" feedback stays on screen after
+ * a tap. A live refresh that is fully served from cache (every quote/FX rate
+ * still inside its window) resolves in a few milliseconds, so without a floor
+ * the spinner + pill would flash for less than a frame and a phone tap would
+ * look completely inert — exactly the "nothing happens" the user reported.
+ */
+const MANUAL_REFRESH_MIN_FEEDBACK_MS = 650;
+
+/**
  * What triggered a price refresh: a `manual` tap of the Refresh button or an
  * `auto` background pull by the scheduler. Drives the distinct visual feedback
  * each gets (a spinning button + "Refreshing…" pill vs. an "Auto-updating…"
@@ -115,6 +124,14 @@ export class App {
   private visibilityHandler: (() => void) | null = null;
   /** Guards against overlapping price refreshes. */
   private refreshing = false;
+  /**
+   * When the manual refresh feedback (pill + spinning glyph) may be torn down.
+   * A cache-served refresh finishes almost instantly, so we hold the feedback
+   * until at least this time for it to be perceptible. Paired with
+   * {@link manualFeedbackTimer}, the pending deferred-teardown timer.
+   */
+  private manualFeedbackUntil = 0;
+  private manualFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
   /** Pending idle auto-lock timer, if any. */
   private autoLockTimer: ReturnType<typeof setTimeout> | null = null;
   /** Installed activity listeners that reset the idle auto-lock timer. */
@@ -837,6 +854,27 @@ export class App {
   }
 
   /**
+   * Handle a manual tap of the Refresh button. Always gives immediate feedback
+   * the user can actually see: it shows the spinning glyph + "Refreshing prices…"
+   * pill for a guaranteed minimum (so a cache-fast refresh doesn't flash by),
+   * and — crucially — acknowledges the tap *even when an automatic pull is
+   * already in flight*, where the old code silently bailed and the button felt
+   * dead. On completion it confirms the outcome with a brief toast.
+   */
+  private manualRefresh(): void {
+    if (this.refreshing) {
+      // An automatic pull is already running and will paint fresh prices; we
+      // can't start a second overlapping refresh, but the tap must not feel
+      // ignored, so flash the manual feedback and let it clear on its minimum.
+      this.setUpdating(true, "manual");
+      this.setUpdating(false, "manual");
+      this.toast("Already refreshing prices…");
+      return;
+    }
+    void this.runScheduledRefresh(this.sessionId, "manual");
+  }
+
+  /**
    * One auto-refresh tick: do a live refresh and schedule the next one. On
    * startup, while symbols are still being filled in (deferred to stay within
    * the free-tier per-minute budget), it bursts roughly once a minute so every
@@ -860,6 +898,9 @@ export class App {
       this.setUpdating(false, kind);
     }
     if (session !== this.sessionId || report === null) return;
+    // Confirm the outcome of a manual tap so the user understands what happened
+    // (fresh prices pulled, already up to date, or some deferred by the budget).
+    if (kind === "manual") this.toast(manualRefreshSummary(report));
     const delayMs = nextRefreshDelayMs({ deferred: report.deferred });
     // Idea A — near-free freshness polling: once we've settled into the slow
     // steady-state cadence (nothing deferred), piggy-back the cheap meta/304
@@ -913,8 +954,47 @@ export class App {
    * user can see *both* that their tap registered and that the auto-refresh
    * keeps working on its own. A manual refresh additionally spins the Refresh
    * button's glyph for immediate, in-place feedback at the point of the tap.
+   *
+   * For manual refreshes the feedback is held on screen for at least
+   * {@link MANUAL_REFRESH_MIN_FEEDBACK_MS}: a refresh fully served from cache
+   * completes in a few milliseconds, so without this floor the pill + spinner
+   * would appear and vanish within a single frame and a phone tap would look
+   * like nothing happened at all.
    */
   private setUpdating(on: boolean, kind: RefreshKind = "auto"): void {
+    if (typeof document === "undefined") return;
+    if (kind === "manual") {
+      if (on) {
+        // (Re)start the minimum-visible window and cancel any pending teardown
+        // so a fresh tap can't be torn down by a previous refresh's timer.
+        this.manualFeedbackUntil = Date.now() + MANUAL_REFRESH_MIN_FEEDBACK_MS;
+        this.clearManualFeedbackTimer();
+      } else {
+        const remaining = this.manualFeedbackUntil - Date.now();
+        if (remaining > 0) {
+          // Too soon to be seen — defer the teardown until the floor elapses.
+          if (this.manualFeedbackTimer === null) {
+            this.manualFeedbackTimer = setTimeout(() => {
+              this.manualFeedbackTimer = null;
+              this.applyUpdating(false, "manual");
+            }, remaining);
+          }
+          return;
+        }
+      }
+    }
+    this.applyUpdating(on, kind);
+  }
+
+  private clearManualFeedbackTimer(): void {
+    if (this.manualFeedbackTimer !== null) {
+      clearTimeout(this.manualFeedbackTimer);
+      this.manualFeedbackTimer = null;
+    }
+  }
+
+  /** Actually add/remove the pill and toggle the glyph spin in the DOM. */
+  private applyUpdating(on: boolean, kind: RefreshKind = "auto"): void {
     if (typeof document === "undefined") return;
     const glyph = document.querySelector('[data-action="refresh"] .icon-btn-glyph');
     if (kind === "manual") glyph?.classList.toggle("is-spinning", on);
@@ -983,7 +1063,7 @@ export class App {
     this.mount(
       renderDashboard(
         model,
-        () => void this.runScheduledRefresh(this.sessionId, "manual"),
+        () => this.manualRefresh(),
         () => this.lock(),
         () => this.reRenderCurrentModel(),
         () => this.showSettings(),
@@ -1007,7 +1087,7 @@ export class App {
     ]);
     panel
       .querySelector('[data-action="retry"]')
-      ?.addEventListener("click", () => void this.runScheduledRefresh(this.sessionId, "manual"));
+      ?.addEventListener("click", () => this.manualRefresh());
     panel.querySelector('[data-action="settings"]')?.addEventListener("click", () => this.showSetup());
     this.mount(h("div", { class: "screen" }, [panel]));
   }
@@ -1018,12 +1098,30 @@ export class App {
     this.clearRefreshTimer();
     this.removeVisibilityRefresh();
     this.removeAutoLock();
+    this.clearManualFeedbackTimer();
+    this.manualFeedbackUntil = 0;
     this.setUpdating(false);
     this.refreshing = false;
     this.state.passphrase = null;
     this.state.data = null;
     this.showUnlock();
   }
+}
+
+/**
+ * A short, human summary of a manual refresh outcome for the confirmation
+ * toast, so a tap always ends with a clear statement of what happened rather
+ * than silence. Distinguishes a fresh live pull, an all-from-cache no-op, and a
+ * budget-deferred partial refresh.
+ */
+export function manualRefreshSummary(report: QuoteLoadReport): string {
+  if (report.error) return "Couldn't reach live prices — showing last known values";
+  if (report.fetched.length > 0) {
+    const n = report.fetched.length;
+    return `Prices updated (${n} ${n === 1 ? "quote" : "quotes"} refreshed)`;
+  }
+  if (report.deferred.length > 0) return "Some prices queued — they'll refresh shortly";
+  return "Prices are up to date";
 }
 
 /**
