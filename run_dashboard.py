@@ -237,6 +237,8 @@ def _parse_requirement(entry: str) -> tuple[str, _Bound, _Bound] | None:
 
     ``lower`` is the tightest ``>=``/``==``/``~=`` floor and ``upper`` the
     tightest ``<`` ceiling found; either may be ``None`` when unconstrained.
+    ``~=`` is treated as a floor only (no ``~=`` pins are used today); this gate
+    is a coarse minimum-version check, not a full PEP 440 evaluator.
     Returns ``None`` when no package name can be extracted.
     """
     name = re.split(r"[<>=!~;\s\[]", entry, maxsplit=1)[0].strip().lower().replace("_", "-")
@@ -245,7 +247,7 @@ def _parse_requirement(entry: str) -> tuple[str, _Bound, _Bound] | None:
 
     lower: _Bound = None
     upper: _Bound = None
-    for operator, raw_version in re.findall(r"(>=|<=|==|~=|<|>)\s*([0-9][0-9.]*)", entry):
+    for operator, raw_version in re.findall(r"(>=|<=|==|~=|<|>)\s*([0-9]+(?:\.[0-9]+)*)", entry):
         version = _version_tuple(raw_version)
         if operator in {">=", "==", "~="}:
             lower = version if lower is None else max(lower, version)
