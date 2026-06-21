@@ -26,13 +26,14 @@ DEFAULT_PAD_FRACTION = 0.06
 
 
 def downsample[T](points: list[T], max_points: int = DEFAULT_MAX_POINTS) -> list[T]:
-    """Return at most ``max_points`` items, evenly spaced, keeping the ends.
+"""Return a visually-thinned copy of ``points``, capped at ``max_points``.
 
-    A no-op when the series already fits. The first and last points are always
-    retained so the visible start/end values match the underlying data; the
-    interior is sampled at a fixed stride. This is a *visual* simplification
-    only — callers should still compute statistics on the full series.
-    """
+A no-op when the series already fits, or when ``max_points < 2`` (in which case
+we return the full series rather than raising). The first and last points are
+always retained so the visible start/end values match the underlying data; the
+interior is sampled at a fixed stride. This is a *visual* simplification only —
+callers should still compute statistics on the full series.
+"""
     n = len(points)
     if max_points < 2 or n <= max_points:
         return list(points)
