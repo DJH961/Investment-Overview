@@ -254,6 +254,8 @@ def _integrity_check_tiers() -> None:
 
 
 def _rolling_backup() -> None:
+    from datetime import timedelta  # noqa: PLC0415
+
     from investment_dashboard.db import get_active_encryption  # noqa: PLC0415
     from investment_dashboard.storage.backup import snapshot  # noqa: PLC0415
 
@@ -266,6 +268,11 @@ def _rolling_backup() -> None:
 
     settings = get_settings()
     encryption = get_active_encryption()
+    # The backup is a full decrypt+re-encrypt copy through SQLCipher and runs
+    # synchronously on the cold-start path. Skip it when a backup was already
+    # taken within the last hour so frequent relaunches don't repeatedly pay
+    # that cost; the rolling retention/cadence is unaffected.
+    min_interval = timedelta(hours=1)
     for label, path in (
         ("ledger", settings.ledger_path),
         ("config", settings.config_path),
@@ -273,7 +280,7 @@ def _rolling_backup() -> None:
         if path is None or path.as_posix() == ":memory:":
             continue
         try:
-            out = snapshot(path, encryption=encryption)
+            out = snapshot(path, encryption=encryption, min_interval=min_interval)
             if out is not None:
                 log.info("backup written: %s -> %s", label, out)
         except Exception:
