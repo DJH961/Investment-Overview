@@ -12,10 +12,17 @@ const KEYS = {
   repo: "iv.web.repo",
   releaseTag: "iv.web.release_tag",
   blobUrl: "iv.web.blob_url",
+  quoteCacheMinutes: "iv.web.quote_cache_minutes",
 } as const;
 
 const DEFAULT_RELEASE_TAG = "live-data";
 const ASSET_NAME = "portfolio.enc";
+/**
+ * Default quote-cache freshness (minutes). Tuned for the Twelve Data free tier
+ * (8 credits/min, 800/day, 1 credit per symbol): a longer window means fewer
+ * refetches and fewer credits spent, at the cost of slightly older prices.
+ */
+const DEFAULT_QUOTE_CACHE_MINUTES = 15;
 
 function read(key: string): string {
   try {
@@ -45,6 +52,15 @@ export interface AppConfig {
   repo: string;
   releaseTag: string;
   blobUrl: string;
+  /** Quote-cache freshness in minutes (free-tier credit economy knob). */
+  quoteCacheMinutes: number;
+}
+
+/** Clamp a parsed cache-minutes value to a sane 1–240 range, with a default. */
+function parseCacheMinutes(raw: string): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_QUOTE_CACHE_MINUTES;
+  return Math.min(240, Math.round(n));
 }
 
 export function loadConfig(): AppConfig {
@@ -53,6 +69,7 @@ export function loadConfig(): AppConfig {
     repo: read(KEYS.repo),
     releaseTag: read(KEYS.releaseTag) || DEFAULT_RELEASE_TAG,
     blobUrl: read(KEYS.blobUrl),
+    quoteCacheMinutes: parseCacheMinutes(read(KEYS.quoteCacheMinutes)),
   };
 }
 
@@ -61,6 +78,7 @@ export function saveConfig(config: AppConfig): void {
   write(KEYS.repo, config.repo.trim());
   write(KEYS.releaseTag, config.releaseTag.trim());
   write(KEYS.blobUrl, config.blobUrl.trim());
+  write(KEYS.quoteCacheMinutes, String(config.quoteCacheMinutes));
 }
 
 /** A loosely-validated `owner/name` slug, matching the publisher's guard. */
@@ -91,4 +109,4 @@ export function resolveBlobUrl(config: AppConfig): string | null {
   return `https://github.com/${config.repo}/releases/download/${tag}/${ASSET_NAME}`;
 }
 
-export { DEFAULT_RELEASE_TAG, ASSET_NAME };
+export { DEFAULT_RELEASE_TAG, ASSET_NAME, DEFAULT_QUOTE_CACHE_MINUTES };

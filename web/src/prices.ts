@@ -40,29 +40,49 @@ export class PriceError extends Error {
    * back to the exported last-known prices instead of dead-ending the screen.
    */
   readonly retryable: boolean;
+  /**
+   * Server-advised wait before retrying, in milliseconds, parsed from a
+   * `Retry-After` header when present; null otherwise. Callers may prefer this
+   * over their own backoff schedule.
+   */
+  readonly retryAfterMs: number | null;
 
   constructor(
     message: string,
-    options: { status?: number | null; retryable?: boolean } = {},
+    options: { status?: number | null; retryable?: boolean; retryAfterMs?: number | null } = {},
   ) {
     super(message);
     this.name = "PriceError";
     this.status = options.status ?? null;
     this.retryable = options.retryable ?? false;
+    this.retryAfterMs = options.retryAfterMs ?? null;
   }
 }
 
+/** Parse a `Retry-After` header (delta-seconds or HTTP-date) into milliseconds. */
+function parseRetryAfter(resp: Response, now: number = Date.now()): number | null {
+  const raw = resp.headers?.get?.("Retry-After");
+  if (!raw) return null;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const when = Date.parse(raw);
+  if (Number.isFinite(when)) return Math.max(0, when - now);
+  return null;
+}
+
 /** Translate a non-OK HTTP response into a classified PriceError. */
-function httpError(service: string, status: number): PriceError {
+function httpError(service: string, resp: Response): PriceError {
+  const status = resp.status;
   if (status === 429) {
     return new PriceError(
       `the ${service} is rate limited (HTTP 429) — too many requests, try again shortly`,
-      { status, retryable: true },
+      { status, retryable: true, retryAfterMs: parseRetryAfter(resp) },
     );
   }
   return new PriceError(`${service} returned HTTP ${status}`, {
     status,
     retryable: status >= 500,
+    retryAfterMs: status >= 500 ? parseRetryAfter(resp) : null,
   });
 }
 
@@ -118,7 +138,7 @@ export async function fetchQuotes(
     });
   }
   if (!resp.ok) {
-    throw httpError("price service", resp.status);
+    throw httpError("price service", resp);
   }
   const body = (await resp.json()) as Record<string, unknown>;
 
@@ -164,7 +184,7 @@ export async function fetchFxRates(
     });
   }
   if (!resp.ok) {
-    throw httpError("FX service", resp.status);
+    throw httpError("FX service", resp);
   }
   const body = (await resp.json()) as { base?: string; rates?: Record<string, unknown> };
   const rates: Record<string, Decimal> = {};
