@@ -144,8 +144,13 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
   EUR to the chosen currency (at the window's as-of rate) and the headers are
   relabelled accordingly; the rate-invariant `% of total return` column is
   unchanged. EUR display keeps the values unconverted.
-* **E4** — Inline form validation (symbol existence, decimal/date bounds, live
-  allocation-weight total) instead of save-time-only.
+* **E4** — ✅ done. New pure, unit-tested validators (`ui/forms.py`:
+  `validate_date`/`validate_decimal`/`validate_symbol`) are wired as NiceGUI
+  inline `validation=` callbacks on the manual "New Transaction" form (date
+  bounds, numeric/sign bounds, and symbol presence/shape per kind, re-checked
+  when the kind changes), gating Save instead of validating only on submit.
+  The "Create target allocation" dialog gained a live running weight total that
+  turns green at 100 %.
 * **E5** — ✅ verified already guarded (see "Verified already fixed" above):
   the projection seed gates the implied-FX ratio on a positive EUR value and
   `_render_implied_fx` returns early on a non-positive horizon value, so a

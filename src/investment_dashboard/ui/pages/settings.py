@@ -330,7 +330,7 @@ def _add_instrument_dialog() -> None:  # pragma: no cover - UI
     dialog.open()
 
 
-def _add_allocation_dialog() -> None:  # pragma: no cover - UI
+def _add_allocation_dialog() -> None:  # noqa: PLR0915  # pragma: no cover - UI
     with session_scope() as session:
         instruments = list(instruments_repo.list_instruments(session))
 
@@ -351,6 +351,36 @@ def _add_allocation_dialog() -> None:  # pragma: no cover - UI
                     weight_inputs[instr.id] = ui.input("Weight %", value="").classes(
                         "min-w-[8rem]",
                     )
+
+        total_label = ui.label().classes("text-body2 q-mt-xs")
+
+        def _update_total() -> None:
+            total = Decimal(0)
+            invalid = False
+            for widget in weight_inputs.values():
+                raw = (widget.value or "").strip()
+                if not raw:
+                    continue
+                try:
+                    total += Decimal(raw)
+                except InvalidOperation:
+                    invalid = True
+            if invalid:
+                total_label.set_text("Live total: — (fix invalid weights)")
+                total_label.style("color: var(--inv-loss, #f44336)")
+                return
+            on_target = abs(total - Decimal(100)) <= Decimal("0.01")
+            total_label.set_text(
+                f"Live total: {total:g} %"
+                + ("  ✓" if on_target else f"  (need {Decimal(100) - total:g} % more)")
+            )
+            total_label.style(
+                "color: var(--inv-gain, #21ba45)" if on_target else "color: var(--inv-muted, #888)"
+            )
+
+        for widget in weight_inputs.values():
+            widget.on_value_change(_update_total)
+        _update_total()
 
         def _save() -> None:
             name = (name_in.value or "").strip()
