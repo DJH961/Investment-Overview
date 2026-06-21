@@ -80,16 +80,10 @@ function renderHero(o: OverviewView): HTMLElement {
     ]),
   ]);
 
-  // Freshness lives at the very top: the exact market time when the data is
-  // live from today (a stock/ETF tick), or a date when the latest mark is older
-  // (a NAV fund or a closed market). It always shows a time/date here — there is
-  // no vague "last known" bubble.
-  const updated = h("span", { class: "hero-updated" }, [
-    `Updated ${formatAsOf(o.liveAsOf, o.liveAsOfFallbackDate)}`,
-  ]);
-
+  // Per-holding rows and the footer note both carry "as of" freshness, so the
+  // hero stays clean: just the headline value and today's move, with no date
+  // stamped above "Total value" at the very top of the screen.
   return h("section", { class: "hero" }, [
-    updated,
     h("span", { class: "hero-label" }, ["Total value"]),
     h("span", { class: "hero-value" }, [formatCurrency(o.totalValueEur)]),
     change,

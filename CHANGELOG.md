@@ -14,6 +14,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.1.0] — 2026-06-21
+
+Live-web companion (`web/`): mutual-fund (NAV) pricing, the value-over-time
+chart, and the benchmark line. This release lands the work from PR #34 (which
+had not been recorded here) **and** the follow-up fixes that finally make NAV
+freshness correct around market closures.
+
+### Fixed — live-web companion: overview hero & live NAV override
+
+- **The date stamp at the very top of the overview is gone.** The "Updated …"
+  line that sat above "Total value" has been removed; freshness now lives only
+  where it is actionable — the per-holding "as of" chips and the footer note —
+  so the hero is just the headline value and today's move.
+- **A fresh Twelve Data pull now overrides a stale or wrong exported NAV on the
+  same trading day.** Previously a live NAV only superseded the exported value
+  when its value-date was *strictly newer* than the export, so a re-fetch could
+  not correct a bad value baked into the export/blob for the current day. A live
+  NAV bar now wins whenever it is for the **same or a newer** trading day than
+  the exported price; the export is kept only when the live bar is strictly
+  *older* (a closed-day carry-forward), so the value never swaps backward onto a
+  stale basis.
+
 ### Fixed — live-web companion: value chart & holding dates
 
 - **The "Value over time" chart no longer drops off a cliff at the live tip.**
@@ -37,15 +59,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a fund priced from Friday's NAV no longer reads as "today" when the export was
   taken on a weekend.
 
-## [3.1.0] — 2026-06-21
-
-Live-web companion (`web/`): mutual-fund (NAV) pricing, the value-over-time
-chart, and the benchmark line. This release lands the work from PR #34 (which
-had not been recorded here) **and** the follow-up fixes that finally make NAV
-freshness correct around market closures.
-
-### Fixed — live-web companion: mutual-fund NAV pricing
-
 - **NAV is now priced from the daily `time_series` endpoint, not `quote`.**
   Twelve Data's `/quote` carries a fund's last NAV forward and stamps it with
   *today's* date even when the market is closed — so on a Sunday (or a mid-week
@@ -55,8 +68,8 @@ freshness correct around market closures.
   weekend or holiday produces no new bar, so the exported NAV is correctly kept
   until the fund actually re-strikes. This needs no hand-maintained holiday
   calendar.
-- **The exported NAV is only superseded by a strictly newer value-date** (PR
-  #34), and a live value is never stamped with the fetch time — its "as of" is
+- **The exported NAV is superseded by a same-or-newer value-date**, and a live
+  value is never stamped with the fetch time — its "as of" is
   the NAV's real strike date. Together with the `time_series` source this fixes
   the "Twelve Data says the fund updated today even though markets are closed"
   bug.

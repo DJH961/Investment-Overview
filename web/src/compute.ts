@@ -247,17 +247,18 @@ function priceForHolding(
     // NAV-priced holdings (mutual funds / money-market) publish only ~once a
     // trading day. Their live mark comes from the daily `time_series` endpoint,
     // whose latest bar is the genuine last-published NAV (it has no bar for a
-    // weekend or a mid-week market holiday). We only supersede the exported
-    // value when that bar's value-date is strictly newer than the export, so a
-    // closed-day carry-forward never swaps the value onto a stale basis — which
-    // is what made the value chart crash on its final point. (The business-day
-    // check is a belt-and-suspenders guard; the trading-day source does the real
-    // work.)
-    const navNotNewer =
+    // weekend or a mid-week market holiday). A fresh Twelve Data pull is the
+    // source of truth, so it overrides the exported value whenever its bar is
+    // for the *same or a newer* trading day than the exported price — this lets
+    // a re-fetch correct a stale or wrong value baked into the export/blob. We
+    // only keep the exported value when the live bar is strictly *older* than
+    // the price we already have (a closed-day carry-forward), so we never swap
+    // the value backward onto an older basis.
+    const navStale =
       holding.price_type === "nav" &&
       holding.last_known_price_native !== null &&
-      !(quote.valueDate != null && quote.valueDate > exportAsOf && isBusinessDayIso(quote.valueDate));
-    if (!navNotNewer) {
+      !(quote.valueDate != null && quote.valueDate >= fallbackDate && isBusinessDayIso(quote.valueDate));
+    if (!navStale) {
       // "as of" should reflect when the price actually applies, not when we
       // fetched it. Market quotes carry an intraday strike time (`priceTime`), so
       // a same-day price reads as a clock time; a daily NAV bar has only a date,
