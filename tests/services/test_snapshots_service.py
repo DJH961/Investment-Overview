@@ -193,5 +193,16 @@ def test_warm_range_computes_and_caches_each_day(session: Session) -> None:
         assert snapshots_repo.get_snapshot(session, date(2024, 4, d)) is not None
 
 
+def test_warm_range_skips_already_cached_days(session: Session) -> None:
+    start = date(2024, 4, 1)
+    end = date(2024, 4, 4)
+    # First pass warms all four historical days.
+    assert snapshots_service.warm_range(session, start, end) == 4
+    # Second pass finds them cached and recomputes none (B4 skip).
+    assert snapshots_service.warm_range(session, start, end) == 0
+    for d in range(1, 5):
+        assert snapshots_repo.get_snapshot(session, date(2024, 4, d)) is not None
+
+
 def test_warm_range_empty_when_end_before_start(session: Session) -> None:
     assert snapshots_service.warm_range(session, date(2024, 5, 2), date(2024, 5, 1)) == 0

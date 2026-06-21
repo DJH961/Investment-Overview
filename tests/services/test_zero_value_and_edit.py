@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.models import Transaction
 from investment_dashboard.repositories import (
     accounts_repo,
+    fx_repo,
     instruments_repo,
     prices_repo,
 )
@@ -64,6 +65,9 @@ class TestZeroValueWarning:
         iid = instruments_repo.get_or_create(session, symbol="DAX", asset_class="etf").id
         _buy(session, acct, iid, "10", "30")
         prices_repo.upsert_closes(session, iid, {date.today(): Decimal("46.00")})
+        # A non-EUR holding needs an EUR↔native rate to be valued in EUR; seed
+        # one so the position is fully valued (the par 1:1 fallback is gone, A2).
+        fx_repo.upsert_rates(session, {date(2024, 1, 1): Decimal("1.10")})
         pos = _position(positions_service.compute_positions(session), "DAX")
         assert pos.current_value_native == Decimal("460")
         assert pos.value_warning is False
@@ -73,6 +77,7 @@ class TestZeroValueWarning:
         iid = instruments_repo.get_or_create(session, symbol="VMFXX").id
         _buy(session, acct, iid, "1000", "1")
         # Money-market funds value at par even without a price feed.
+        fx_repo.upsert_rates(session, {date(2024, 1, 1): Decimal("1.10")})
         pos = _position(positions_service.compute_positions(session), "VMFXX")
         assert pos.current_value_native == Decimal("1000")
         assert pos.value_warning is False

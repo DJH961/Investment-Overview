@@ -38,6 +38,7 @@ from investment_dashboard.domain.returns import (
 from investment_dashboard.models import Transaction, TransactionKind
 from investment_dashboard.repositories import (
     accounts_repo,
+    snapshots_repo,
     transactions_repo,
 )
 from investment_dashboard.services import fx_service, positions_service, prices_service
@@ -279,6 +280,65 @@ def build_retained_cash_account_ids(
     return retained
 
 
+def build_portfolio_cashflows_dual(
+    transactions: Sequence[Transaction],
+    *,
+    retained_cash_account_ids: set[int] | frozenset[int] = frozenset(),
+    usd_amount_fn: Callable[[Transaction], Decimal],
+) -> tuple[list[Cashflow], list[Cashflow]]:
+    """EUR and USD portfolio cashflow streams in a single ledger pass (B5).
+
+    Equivalent to calling :func:`build_portfolio_cashflows` twice (once with
+    the default EUR ``amount_fn`` and once with ``usd_amount_fn``) but walks
+    ``transactions`` only once. The EUR leg always uses :func:`_txn_eur_amount`,
+    matching the default of :func:`build_portfolio_cashflows`.
+    """
+    eur_flows: list[Cashflow] = []
+    usd_flows: list[Cashflow] = []
+    for t in transactions:
+        kind = t.kind
+        if kind in _CONTRIBUTION_KINDS or kind in _WITHDRAWAL_KINDS:
+            eur_flows.append(Cashflow(date=t.date, amount=-_txn_eur_amount(t)))
+            usd_flows.append(Cashflow(date=t.date, amount=-usd_amount_fn(t)))
+        elif kind in _DISTRIBUTION_KINDS and t.account_id not in retained_cash_account_ids:
+            eur_flows.append(Cashflow(date=t.date, amount=_txn_eur_amount(t)))
+            usd_flows.append(Cashflow(date=t.date, amount=usd_amount_fn(t)))
+    return eur_flows, usd_flows
+
+
+class _ValuationCache:
+    """In-request memo of ``compute_positions`` / ``total_portfolio_value`` (B1).
+
+    ``compute_portfolio_metrics`` values the portfolio on the same handful of
+    dates repeatedly (today, year-start, month-start, the two daily-growth print
+    dates) and recomputes the *same* ``as_of`` roll-up several times (terminal
+    value, daily-growth holdings, expense figures). Each roll-up re-walks the
+    whole ledger with nested price/FX lookups, so memoising by date collapses
+    those duplicate passes without changing any number.
+    """
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self._positions: dict[date, list[positions_service.Position]] = {}
+        self._values: dict[date, Decimal] = {}
+
+    def positions(self, on: date) -> list[positions_service.Position]:
+        cached = self._positions.get(on)
+        if cached is None:
+            cached = positions_service.compute_positions(self._session, as_of=on)
+            self._positions[on] = cached
+        return cached
+
+    def total_value(self, on: date) -> Decimal:
+        cached = self._values.get(on)
+        if cached is None:
+            cached = positions_service.total_portfolio_value(
+                self._session, as_of=on, positions=self.positions(on)
+            )
+            self._values[on] = cached
+        return cached
+
+
 def compute_portfolio_metrics(  # noqa: PLR0915
     session: Session,
     *,
@@ -286,6 +346,11 @@ def compute_portfolio_metrics(  # noqa: PLR0915
 ) -> PortfolioMetrics:
     as_of = as_of or date.today()
     txns = list(transactions_repo.list_transactions(session, end=as_of))
+
+    # Memoise per-date portfolio roll-ups for this request (B1): the terminal
+    # value, daily-growth holdings and expense figures all want ``as_of`` and
+    # several helpers re-value year-start / month-start dates.
+    cache = _ValuationCache(session)
 
     eur_to_usd: dict[date, Decimal] = fx_service.get_rates(session, base="EUR", quote="USD")
 
@@ -336,7 +401,7 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     )
     net_contributions_usd = contributions_usd + withdrawals_usd
 
-    total_value_eur = positions_service.total_portfolio_value(session, as_of=as_of)
+    total_value_eur = cache.total_value(as_of)
     # Today's spot for the terminal mark-to-market USD value. We use spot
     # for the *terminal* alone because positions_service already values
     # everything in EUR using today's FX; per-trade-date USD is applied to
@@ -373,14 +438,10 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         net_contributions_eur, total_value_eur + dividends_realized_eur
     )
 
-    cashflows_eur = build_portfolio_cashflows(
+    cashflows_eur, cashflows_usd = build_portfolio_cashflows_dual(
         txns,
         retained_cash_account_ids=retained_cash_account_ids,
-    )
-    cashflows_usd = build_portfolio_cashflows(
-        txns,
-        retained_cash_account_ids=retained_cash_account_ids,
-        amount_fn=_usd_amount,
+        usd_amount_fn=_usd_amount,
     )
     portfolio_xirr_eur = xirr(cashflows_eur, as_of=as_of, terminal_value=total_value_eur)
     portfolio_xirr_usd = (
@@ -408,14 +469,10 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     # YTD: value at start of year + cashflows from Jan 1 onward.
     year_start = date(as_of.year, 1, 1)
     ytd_txns = [t for t in txns if t.date >= year_start]
-    ytd_cashflows_eur = build_portfolio_cashflows(
+    ytd_cashflows_eur, ytd_cashflows_usd = build_portfolio_cashflows_dual(
         ytd_txns,
         retained_cash_account_ids=retained_cash_account_ids,
-    )
-    ytd_cashflows_usd = build_portfolio_cashflows(
-        ytd_txns,
-        retained_cash_account_ids=retained_cash_account_ids,
-        amount_fn=_usd_amount,
+        usd_amount_fn=_usd_amount,
     )
     # Best-effort Jan-1 valuation: requires price + FX history for that
     # date. For brand-new portfolios with no Jan-1 history we fall back
@@ -423,9 +480,9 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     # ultimately to ``Decimal(0)``), so the page renders instead of
     # raising. This mirrors spec §6.4's "ytd_start_value best-effort"
     # note (v1.2 closure of the v1.0 caveat).
-    ytd_start_value_eur = positions_service.total_portfolio_value(session, as_of=year_start)
+    ytd_start_value_eur = cache.total_value(year_start)
     if ytd_start_value_eur <= ZERO:
-        ytd_start_value_eur = _best_effort_ytd_start_value(session, year_start, as_of)
+        ytd_start_value_eur = _best_effort_ytd_start_value(session, year_start, as_of, cache=cache)
     fx_year_start = lookup_rate_with_forward_fill(eur_to_usd, year_start) or fx_today
     # ``None`` (not EUR-as-USD) when there is no EUR→USD spot to convert with.
     ytd_start_value_usd: Decimal | None = (
@@ -479,17 +536,17 @@ def compute_portfolio_metrics(  # noqa: PLR0915
 
     # MTD: same shape as YTD but bounded to the first of the current month.
     mtd_growth, mtd_growth_usd = _compute_mtd_growth(
-        session, txns, as_of, total_value_eur, total_value_usd, eur_to_usd=eur_to_usd
+        session, txns, as_of, total_value_eur, total_value_usd, eur_to_usd=eur_to_usd, cache=cache
     )
 
     # Daily growth on the most recent completed trading day (dual currency).
     daily_growth_eur, daily_growth_usd, daily_as_of = _compute_daily_growth(
-        session, as_of=as_of, eur_to_usd=eur_to_usd
+        session, as_of=as_of, eur_to_usd=eur_to_usd, cache=cache
     )
 
     # Fund-fee figures from the live positions (value-weighted TER + €/yr cost).
     weighted_expense_ratio, annual_expense_cost_eur = _compute_expense_figures(
-        positions_service.compute_positions(session, as_of=as_of)
+        cache.positions(as_of)
     )
 
     # Trailing dividend yield = total dividend income ÷ current closing balance
@@ -532,6 +589,7 @@ def _value_in_both(
     on: date,
     *,
     eur_to_usd: dict[date, Decimal],
+    cache: _ValuationCache | None = None,
 ) -> tuple[Decimal, Decimal | None]:
     """Portfolio value on ``on`` in (EUR, USD), USD via that date's FX.
 
@@ -541,7 +599,11 @@ def _value_in_both(
     ``_overview_query``, ``_period_query``). Returning the EUR value in the
     USD slot silently reported the wrong daily-growth (USD) number.
     """
-    eur = positions_service.total_portfolio_value(session, as_of=on)
+    eur = (
+        cache.total_value(on)
+        if cache is not None
+        else positions_service.total_portfolio_value(session, as_of=on)
+    )
     fx = lookup_rate_with_forward_fill(eur_to_usd, on) or ZERO
     usd: Decimal | None = eur * fx if fx != ZERO else None
     return eur, usd
@@ -552,6 +614,7 @@ def _compute_daily_growth(
     *,
     as_of: date,
     eur_to_usd: dict[date, Decimal],
+    cache: _ValuationCache | None = None,
 ) -> tuple[Decimal | None, Decimal | None, date | None]:
     """Single-day growth on the most recent completed trading day.
 
@@ -566,13 +629,18 @@ def _compute_daily_growth(
     Returns ``(growth_eur, growth_usd, as_of_date)``; all ``None`` when there
     aren't two priced dates yet.
     """
-    held_ids = [p.instrument.id for p in positions_service.compute_positions(session, as_of=as_of)]
+    positions = (
+        cache.positions(as_of)
+        if cache is not None
+        else positions_service.compute_positions(session, as_of=as_of)
+    )
+    held_ids = [p.instrument.id for p in positions]
     dates = prices_service.recent_price_dates(session, held_ids, on_or_before=as_of, limit=2)
     if len(dates) < 2:
         return None, None, None
     last_date, prev_date = dates[0], dates[1]
-    last_eur, last_usd = _value_in_both(session, last_date, eur_to_usd=eur_to_usd)
-    prev_eur, prev_usd = _value_in_both(session, prev_date, eur_to_usd=eur_to_usd)
+    last_eur, last_usd = _value_in_both(session, last_date, eur_to_usd=eur_to_usd, cache=cache)
+    prev_eur, prev_usd = _value_in_both(session, prev_date, eur_to_usd=eur_to_usd, cache=cache)
     growth_eur = (last_eur - prev_eur) / prev_eur if prev_eur > ZERO else None
     # USD growth is only meaningful when both marks could be valued in USD;
     # a missing EUR→USD rate on either date degrades the USD leg to ``None``
@@ -592,6 +660,7 @@ def _compute_mtd_growth(
     total_value_usd: Decimal | None,
     *,
     eur_to_usd: dict[date, Decimal],
+    cache: _ValuationCache | None = None,
 ) -> tuple[Decimal | None, Decimal | None]:
     """Month-to-date simple growth in EUR and USD, net of this month's flows.
 
@@ -605,7 +674,11 @@ def _compute_mtd_growth(
     USD, when no EUR→USD spot is available to value the terminal mark.
     """
     month_start = date(as_of.year, as_of.month, 1)
-    month_start_value_eur = positions_service.total_portfolio_value(session, as_of=month_start)
+    month_start_value_eur = (
+        cache.total_value(month_start)
+        if cache is not None
+        else positions_service.total_portfolio_value(session, as_of=month_start)
+    )
     if month_start_value_eur <= ZERO:
         return None, None
     fx_month_start = lookup_rate_with_forward_fill(eur_to_usd, month_start) or ZERO
@@ -688,19 +761,33 @@ def _best_effort_ytd_start_value(
     session: Session,
     year_start: date,
     as_of: date,
+    *,
+    cache: _ValuationCache | None = None,
 ) -> Decimal:
     """Fallback when Jan-1 has no price/FX tick (new portfolio / sparse history).
 
-    Walks forward day-by-day (up to 31 days) and returns the first
-    non-zero ``total_portfolio_value``. Bounded so we don't fan out a
-    full year of position roll-ups on the unhappy path.
+    Prefers a stored daily snapshot (B3): persisted snapshots already hold the
+    EUR total-portfolio value for a date, so the earliest positive snapshot in
+    the bounded window is the Jan-1-start proxy without re-rolling the ledger.
+    When no snapshots cover the window we fall back to the original bounded
+    day-by-day live valuation so brand-new portfolios (which have no snapshots
+    yet) keep rendering.
     """
     from datetime import timedelta as _td  # noqa: PLC0415
 
     horizon = min(as_of, year_start + _td(days=31))
+
+    for snap in snapshots_repo.list_in_range(session, year_start, horizon):
+        if snap.total_value_eur > ZERO:
+            return snap.total_value_eur
+
     cursor = year_start
     while cursor <= horizon:
-        value = positions_service.total_portfolio_value(session, as_of=cursor)
+        value = (
+            cache.total_value(cursor)
+            if cache is not None
+            else positions_service.total_portfolio_value(session, as_of=cursor)
+        )
         if value > ZERO:
             return value
         cursor += _td(days=1)

@@ -93,11 +93,14 @@ class Position:
     #: ``instrument_overrides`` table. Default to "no category" / "active".
     category: str | None = None
     instrument_active: bool = True
-    #: True when the holding has a non-trivial share count but values to zero
-    #: because no price could be sourced (e.g. a ticker that stopped pricing).
-    #: A zero value on a held position is not normal — every figure derived
-    #: from it (totals, growth, allocation) is understated — so the UI raises a
-    #: visible warning. Money-market funds price at par and never trip this.
+    #: True when the holding has a non-trivial share count but its EUR value is
+    #: unavailable — either because no *price* could be sourced (e.g. a ticker
+    #: that stopped pricing) or because no EUR↔native *FX rate* was available to
+    #: convert a non-EUR holding. A zero/blank value on a held position is not
+    #: normal — every figure derived from it (totals, growth, allocation) is
+    #: understated — so the UI raises a visible warning. We never paper over a
+    #: missing rate by relabelling the native amount as EUR at par (1:1).
+    #: Money-market funds price at par and never trip this.
     value_warning: bool = False
     #: Override-merged view of the instrument. Read paths should prefer
     #: ``effective.name`` / ``effective.asset_class`` /
@@ -187,37 +190,47 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
         future_by_key: dict[tuple[int, int | None], list[Transaction]] = {}
         for t in transactions_repo.list_transactions(session, start=as_of + timedelta(days=1)):
             future_by_key.setdefault((t.account_id, t.instrument_id), []).append(t)
-        feed_factor: dict[int, Decimal | None] = {}
+        # One batched feed lookup for every held instrument instead of an N+1
+        # per-instrument query (B2). A missing key means "no split data cached"
+        # (fall back to ledger rows), matching the singular helper's ``None``.
+        split_ids = [iid for (_acct, iid) in holdings if iid is not None]
+        feed_factors = prices_service.cumulative_split_factors_after(session, split_ids, as_of)
         for key, agg in holdings.items():
             account_id, instrument_id = key
             if instrument_id is None:
                 continue
-            if instrument_id not in feed_factor:
-                feed_factor[instrument_id] = prices_service.cumulative_split_factor_after(
-                    session, instrument_id, as_of
-                )
-            factor = feed_factor[instrument_id]
+            factor = feed_factors.get(instrument_id)
             if factor is None:
                 future = future_by_key.get(key)
                 factor = _split_factor_after(agg["shares"], future) if future else Decimal(1)
             if factor != 1:
                 split_factors[key] = factor
 
+    # Batch every held instrument's valuation close in a single query rather
+    # than calling ``close_as_of`` / ``latest_close`` once per instrument (B2).
+    valued_ids = [
+        iid
+        for (_acct, iid), agg in holdings.items()
+        if iid is not None and not (agg["shares"] == ZERO and agg["cost_basis"] == ZERO)
+    ]
+    if is_historical:
+        closes_by_id = prices_service.closes_as_of(session, valued_ids, as_of)
+    else:
+        closes_by_id = prices_service.latest_closes(session, valued_ids)
+
     # Each non-EUR account converts with the EUR→*its own* native currency
     # rate, not a single shared USD rate — a GBP/CHF account must not be
     # divided by the USD rate. Rates are memoised per quote so we
-    # hit the FX cache at most once per distinct currency; a missing rate
-    # degrades to 1:1 (the long-standing "render something" fallback).
-    rate_cache: dict[str, Decimal] = {}
+    # hit the FX cache at most once per distinct currency. A missing rate
+    # yields ``None`` (value unavailable), never a par 1:1 figure (A2).
+    rate_cache: dict[str, Decimal | None] = {}
 
-    def _eur_rate_for(currency: str) -> Decimal:
+    def _eur_rate_for(currency: str) -> Decimal | None:
         ccy = currency.upper()
         if ccy == "EUR":
             return Decimal(1)
         if ccy not in rate_cache:
-            rate_cache[ccy] = fx_service.get_rate_eur_to_quote(
-                session, as_of, quote=ccy
-            ) or Decimal(1)
+            rate_cache[ccy] = fx_service.get_rate_eur_to_quote(session, as_of, quote=ccy)
         return rate_cache[ccy]
 
     results: list[Position] = []
@@ -239,11 +252,10 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
         # Historical valuations must use the close that was in effect on
         # ``as_of`` (forward-filled), not today's price — otherwise YTD/MTD
         # start values and the equity curve are all priced at today's close.
-        # For "today" we keep ``latest_close`` so intraday refreshes show.
-        elif is_historical:
-            current_price = prices_service.close_as_of(session, instr.id, as_of)
+        # For "today" we keep the latest close so intraday refreshes show.
+        # Both come from the single batched lookup above (B2).
         else:
-            current_price = prices_service.latest_close(session, instr.id)
+            current_price = closes_by_id.get(instr.id)
         current_value_native = agg["shares"] * current_price if current_price is not None else ZERO
         # Scale by the cumulative post-as-of split factor so a pre-split date
         # values the adjusted share count against the adjusted close. ``shares``
@@ -254,18 +266,23 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
                 current_value_native = agg["shares"] * factor * current_price
         # Currency conversion to EUR using this account's own native rate.
         native_rate = _eur_rate_for(account.native_currency)
+        fx_unavailable = False
         if account.native_currency.upper() == "EUR":
             current_value_eur = current_value_native
-        elif native_rate != 0:
+        elif native_rate is not None and native_rate != 0:
             current_value_eur = current_value_native / native_rate
         else:
+            # FX rate missing ⇒ the holding's EUR value is unavailable. Leave it
+            # blank (ZERO) and flag it, rather than relabel the native amount as
+            # EUR at par — a par figure silently corrupts totals/growth (A2).
             current_value_eur = ZERO
-        # A held position (non-trivial shares) that values to zero means no
-        # price could be sourced — flag it so the UI can warn that downstream
-        # totals/growth are understated. Money-market funds price at par and
-        # never reach a zero value here.
+            fx_unavailable = True
+        # A held position (non-trivial shares) that can't be valued in EUR —
+        # because no price *or* no FX rate could be sourced — flags a warning so
+        # the UI can surface that downstream totals/growth are understated.
+        # Money-market funds price at par and never reach a zero value here.
         value_warning = agg["shares"] > _MIN_HELD_SHARES and (
-            current_price is None or current_value_native == ZERO
+            current_price is None or current_value_native == ZERO or fx_unavailable
         )
         results.append(
             Position(
@@ -309,15 +326,25 @@ def compute_cash_balance(
     return total
 
 
-def total_portfolio_value(session: Session, *, as_of: date | None = None) -> Decimal:
-    """Sum of all positions' EUR value + Savings cash balance in EUR."""
-    as_of = as_of or date.today()
-    total_eur = sum(
-        (p.current_value_eur for p in compute_positions(session, as_of=as_of)), start=ZERO
-    )
+def total_portfolio_value(
+    session: Session,
+    *,
+    as_of: date | None = None,
+    positions: list[Position] | None = None,
+) -> Decimal:
+    """Sum of all positions' EUR value + Savings cash balance in EUR.
 
-    fx_rate = fx_service.get_rate_eur_to_quote(session, as_of) or Decimal(1)
-    rate_cache: dict[str, Decimal] = {"USD": fx_rate}
+    ``positions`` may be passed to reuse an already-computed roll-up for the
+    same ``as_of`` date (avoids a redundant :func:`compute_positions` pass when
+    a caller has already built it).
+    """
+    as_of = as_of or date.today()
+    if positions is None:
+        positions = compute_positions(session, as_of=as_of)
+    total_eur = sum((p.current_value_eur for p in positions), start=ZERO)
+
+    fx_rate = fx_service.get_rate_eur_to_quote(session, as_of)
+    rate_cache: dict[str, Decimal | None] = {"USD": fx_rate}
     for account in accounts_repo.list_accounts(session):
         if account.account_type not in {"savings", "cash"}:
             continue
@@ -326,14 +353,14 @@ def total_portfolio_value(session: Session, *, as_of: date | None = None) -> Dec
         if ccy == "EUR":
             total_eur += balance_native
             continue
-        # Convert with this account's own EUR→native rate, not a shared USD one;
-        # a missing rate degrades to 1:1.
+        # Convert with this account's own EUR→native rate, not a shared USD one.
+        # A missing rate means this balance can't be expressed in EUR, so omit
+        # it rather than add a par (1:1) figure that silently overstates the
+        # total (A2: FX missing ⇒ value unavailable, never par).
         if ccy not in rate_cache:
-            rate_cache[ccy] = fx_service.get_rate_eur_to_quote(
-                session, as_of, quote=ccy
-            ) or Decimal(1)
+            rate_cache[ccy] = fx_service.get_rate_eur_to_quote(session, as_of, quote=ccy)
         rate = rate_cache[ccy]
-        if rate != 0:
+        if rate is not None and rate != 0:
             total_eur += balance_native / rate
     return total_eur
 

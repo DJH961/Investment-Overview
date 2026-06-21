@@ -154,7 +154,13 @@ def backfill_missing_legs(session: Session, *, force: bool = False) -> RecalcRes
     healthy ledger is a no-op. ``force=True`` recomputes every row from
     current FX history — the *Settings → Recalculate* behaviour.
     """
-    txns = list(transactions_repo.list_transactions(session))
+    # ``force`` recomputes every row; the boot default only needs rows that are
+    # still missing a frozen leg, so push that filter into SQL (B6) instead of
+    # loading the whole ledger and discarding the healthy majority in Python.
+    if force:
+        txns = list(transactions_repo.list_transactions(session))
+    else:
+        txns = list(transactions_repo.list_transactions_missing_legs(session))
     examined = 0
     updated = 0
     incomplete = 0
@@ -180,12 +186,8 @@ def missing_fx_dates(session: Session) -> list[date]:
     Used by the importer to decide whether to retry an FX refresh and by the
     UI to report unresolved gaps to the user.
     """
-    txns = transactions_repo.list_transactions(session)
-    gaps = {
-        t.date
-        for t in txns
-        if t.net_native is not None and (t.net_eur is None or t.net_usd is None)
-    }
+    txns = transactions_repo.list_transactions_missing_legs(session)
+    gaps = {t.date for t in txns if t.net_native is not None}
     return sorted(gaps)
 
 
