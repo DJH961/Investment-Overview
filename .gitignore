@@ -232,6 +232,10 @@ htmlcov/
 .mypy_cache/
 .pytest_cache/
 
+# Cloudflare Wrangler local state/cache for the web/proxy Worker (holds the
+# local account id and build artifacts — must never be committed).
+web/proxy/.wrangler/
+
 
 # Real (un-anonymized) financial exports must never be committed.
 # The anonymized synthetic fixtures already tracked under
