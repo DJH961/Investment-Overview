@@ -21,7 +21,8 @@ from sqlalchemy.orm import Session
 from investment_dashboard.adapters.fidelity.parser import parse_fidelity_csv
 from investment_dashboard.adapters.importer_types import (
     ParsedTransactionRow,
-    UnknownActionError,
+    ParseReport,
+    RowIssue,
 )
 from investment_dashboard.adapters.vanguard.parser import parse_vanguard_csv
 from investment_dashboard.adapters.vanguard.settlement import inject_settlement_legs
@@ -57,43 +58,34 @@ class ImportResult:
     #: Empty on a healthy import. The boot/Settings recalculation will keep
     #: retrying these until accurate data lands.
     fx_missing_dates: list[date] = field(default_factory=list)
+    #: Rows that were **skipped** because the parser couldn't read them
+    #: (unknown action, un-parseable / EU-locale cell). Collected rather
+    #: than aborting the whole import (audit D3/D5).
+    errors: list[RowIssue] = field(default_factory=list)
+    #: Rows that were **imported** but failed a light consistency check
+    #: (negative price, amount not reconciling with quantity×price) — worth
+    #: the user's attention (audit D4).
+    warnings: list[RowIssue] = field(default_factory=list)
+    #: Symbols the data provider couldn't resolve (delisted, a typo, or the
+    #: provider was offline), so the instrument stays an ``unknown`` stub
+    #: until a later refresh (audit D2).
+    unresolved_symbols: list[str] = field(default_factory=list)
 
 
-def _parse(
-    broker: Broker, content: str | bytes
-) -> tuple[Sequence[ParsedTransactionRow], int, list[str]]:
-    unknowns: list[str] = []
-    sweeps = 0
-    rows: list[ParsedTransactionRow] = []
-    try:
-        if broker == Broker.FIDELITY:
-            text = (
-                content.decode("utf-8-sig", errors="replace")
-                if isinstance(content, bytes)
-                else content
-            )
-            rows = list(parse_fidelity_csv(text))
-        # Vanguard supports two formats: the brokerage CSV (last 18
-        # months) and the Excel-formatted Full History report (no
-        # 18-month cap). We detect the workbook by the standard ZIP
-        # magic bytes (``PK\x03\x04``) so the UI can hand us either.
-        elif isinstance(content, bytes) and content[:4] == b"PK\x03\x04":
-            xlsx_result = parse_vanguard_xlsx(content)
-            rows = xlsx_result.rows
-            sweeps = xlsx_result.sweeps_dropped
-        else:
-            text = (
-                content.decode("utf-8-sig", errors="replace")
-                if isinstance(content, bytes)
-                else content
-            )
-            csv_result = parse_vanguard_csv(text)
-            rows = csv_result.rows
-            sweeps = csv_result.sweeps_dropped
-    except UnknownActionError as exc:
-        # Surface as one entry; the user can fix the action map.
-        unknowns.append(str(exc))
-    return rows, sweeps, unknowns
+def _parse(broker: Broker, content: str | bytes) -> ParseReport:
+    if broker == Broker.FIDELITY:
+        text = (
+            content.decode("utf-8-sig", errors="replace") if isinstance(content, bytes) else content
+        )
+        return parse_fidelity_csv(text)
+    # Vanguard supports two formats: the brokerage CSV (last 18
+    # months) and the Excel-formatted Full History report (no
+    # 18-month cap). We detect the workbook by the standard ZIP
+    # magic bytes (``PK\x03\x04``) so the UI can hand us either.
+    if isinstance(content, bytes) and content[:4] == b"PK\x03\x04":
+        return parse_vanguard_xlsx(content)
+    text = content.decode("utf-8-sig", errors="replace") if isinstance(content, bytes) else content
+    return parse_vanguard_csv(text)
 
 
 def import_csv(
@@ -117,7 +109,8 @@ def import_csv(
     account = accounts_repo.get_account(session, account_id)
     if account is None:
         raise ValueError(f"Unknown account_id={account_id}")
-    parsed_rows, sweeps_dropped, unknown_actions = _parse(broker, content)
+    report = _parse(broker, content)
+    parsed_rows: Sequence[ParsedTransactionRow] = report.rows
 
     # Vanguard routes every cash movement through its VMFXX settlement fund,
     # but the export drops those internal sweeps. Reconstruct the VMFXX legs
@@ -140,6 +133,8 @@ def import_csv(
     inserted = 0
     duplicates = 0
     fx_missing: set[date] = set()
+    # Symbols the data provider couldn't resolve during enrichment (audit D2).
+    unresolved: set[str] = set()
     for prow in parsed_rows:
         # Resolve symbol → instrument, enriching as needed (yfinance
         # call is best-effort and cached per-process).
@@ -153,6 +148,7 @@ def import_csv(
                 parsed_asset_class=prow.asset_class,
                 parsed_native_currency=prow.native_currency,
                 parsed_expense_ratio=prow.expense_ratio,
+                on_unresolved=unresolved.add,
             )
             instrument_id = instr.id
 
@@ -196,7 +192,10 @@ def import_csv(
     return ImportResult(
         inserted=inserted,
         duplicates=duplicates,
-        sweeps_dropped=sweeps_dropped,
-        unknown_actions=unknown_actions,
+        sweeps_dropped=report.sweeps_dropped,
+        unknown_actions=report.unknown_actions,
         fx_missing_dates=sorted(fx_missing),
+        errors=report.errors,
+        warnings=report.warnings,
+        unresolved_symbols=sorted(unresolved),
     )

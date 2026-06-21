@@ -291,13 +291,37 @@ def _open_import_modal(accounts: list[Account]) -> None:  # pragma: no cover - U
                 f"Inserted {result.inserted}, duplicates {result.duplicates}, "
                 f"sweeps dropped {result.sweeps_dropped}"
             )
-            if result.unknown_actions:
-                status.text += f", unknown actions: {sorted(result.unknown_actions)}"
+            # Rows the parser had to skip (unknown action, un-parseable or
+            # EU-locale cell) — surfaced so a single bad row no longer
+            # silently shrinks the import (audit D3/D5).
+            if result.errors:
+                preview = "; ".join(
+                    f"line {e.line}: {e.message}" if e.line else e.message
+                    for e in result.errors[:5]
+                )
+                more = "" if len(result.errors) <= 5 else f" (+{len(result.errors) - 5} more)"
+                status.text += f", skipped {len(result.errors)} row(s): {preview}{more}"
+            # Rows imported but worth eyeballing (audit D4).
+            if result.warnings:
+                wpreview = "; ".join(
+                    f"line {w.line}: {w.message}" if w.line else w.message
+                    for w in result.warnings[:5]
+                )
+                wmore = "" if len(result.warnings) <= 5 else f" (+{len(result.warnings) - 5} more)"
+                status.text += f", {len(result.warnings)} warning(s): {wpreview}{wmore}"
+            # Symbols the data provider couldn't resolve (audit D2).
+            if result.unresolved_symbols:
+                status.text += (
+                    f", unresolved symbol(s): {result.unresolved_symbols} "
+                    "(delisted, a typo, or the data provider was offline)"
+                )
             if result.fx_missing_dates:
                 status.text += (
                     f", FX missing for {len(result.fx_missing_dates)} date(s) — "
                     "refresh FX rates then Settings → Recalculate FX-derived values"
                 )
+                ui.notify(status.text, type="warning")
+            elif result.errors or result.warnings or result.unresolved_symbols:
                 ui.notify(status.text, type="warning")
             else:
                 ui.notify(status.text, type="positive")

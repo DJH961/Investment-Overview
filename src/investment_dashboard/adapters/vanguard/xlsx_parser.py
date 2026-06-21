@@ -29,6 +29,12 @@ Differences from the brokerage CSV (:mod:`.parser`):
 
 Sweep rows are dropped just like in :mod:`.parser`; the count is
 returned alongside the parsed rows.
+
+Numbers/dates are assumed **US-locale** (see
+:mod:`investment_dashboard.adapters.locale_parsing`). Per-row problems
+(unknown action, un-parseable / EU-locale cell) are *collected* into the
+returned :class:`ParseReport` rather than aborting the whole import (audit
+D3); a structural header/layout mismatch still aborts loudly (audit D2).
 """
 
 from __future__ import annotations
@@ -38,28 +44,36 @@ import io
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from openpyxl import load_workbook
 
 from investment_dashboard.adapters.importer_types import (
     ParsedTransactionRow,
+    ParseReport,
+    RowIssue,
     UnknownActionError,
 )
+from investment_dashboard.adapters.locale_parsing import (
+    LocaleError,
+    parse_us_date,
+    parse_us_decimal,
+)
+from investment_dashboard.adapters.row_validation import validate_row
 from investment_dashboard.adapters.vanguard.action_map import map_transaction_type
-
-_DATE_FORMATS = ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y")
 
 # Canonical header tokens (lower-cased, ``**`` footnote markers stripped).
 _REQUIRED_HEADERS = ("settlement date", "trade date", "transaction type", "amount")
 
 
 @dataclass(frozen=True)
-class VanguardXlsxParseResult:
-    """Output of :func:`parse_vanguard_xlsx`."""
+class VanguardXlsxParseResult(ParseReport):
+    """Backwards-compatible name for :class:`ParseReport`.
 
-    rows: list[ParsedTransactionRow]
-    sweeps_dropped: int
+    Retained so existing call sites/tests that import
+    ``VanguardXlsxParseResult`` keep working; carries the new
+    ``unknown_actions`` / ``errors`` / ``warnings`` fields.
+    """
 
 
 def _normalise_header(h: object) -> str:
@@ -82,36 +96,21 @@ def _parse_date(v: object) -> date:
         return v.date()
     if isinstance(v, date):
         return v
-    s = _to_str(v)
-    for fmt in _DATE_FORMATS:
-        try:
-            return datetime.strptime(s, fmt).date()
-        except ValueError:
-            continue
-    raise ValueError(f"Unrecognised date format: {s!r}")
+    return parse_us_date(_to_str(v))
 
 
 def _parse_decimal(v: object) -> Decimal | None:
     """Parse a Vanguard XLSX numeric cell.
 
     Tolerates raw numbers, ``"$1,234.5600"``, ``"-$10,000.0000"``,
-    ``"Free"``, blanks and dashes.
+    ``"Free"``, blanks and dashes. EU-locale strings raise
+    :class:`LocaleError` via :func:`parse_us_decimal`.
     """
     if v is None:
         return None
     if isinstance(v, int | float | Decimal):
         return Decimal(str(v))
-    s = str(v).strip()
-    if not s or s in {"-", "--"} or s.lower() == "free":
-        return None
-    # Strip currency symbol + thousands separators. Keep leading minus.
-    cleaned = s.replace("$", "").replace(",", "").replace(" ", "").strip()
-    if not cleaned:
-        return None
-    try:
-        return Decimal(cleaned)
-    except InvalidOperation as exc:
-        raise ValueError(f"Bad decimal: {v!r}") from exc
+    return parse_us_decimal(str(v))
 
 
 def _hash_external_id(*parts: object) -> str:
@@ -130,9 +129,12 @@ def _find_header_row(grid: list[list[object]]) -> int:
     )
 
 
-def _row_records(grid: list[list[object]], header_row: int) -> Iterable[dict[str, object]]:
+def _row_records(
+    grid: list[list[object]], header_row: int
+) -> Iterable[tuple[int, dict[str, object]]]:
     headers = [_normalise_header(c) for c in grid[header_row]]
-    for raw in grid[header_row + 1 :]:
+    for offset, raw in enumerate(grid[header_row + 1 :], start=header_row + 2):
+        # ``offset`` is the 1-based spreadsheet row number.
         # Skip fully empty rows / trailing disclaimer text that openpyxl
         # returns as a single non-empty cell.
         if not any(_to_str(c) for c in raw):
@@ -159,17 +161,65 @@ def _row_records(grid: list[list[object]], header_row: int) -> Iterable[dict[str
             # Footnote rows ("** Vanguard Brokerage Services® does not …")
             # — they live below the data and lack a transaction type.
             continue
-        yield record
+        yield offset, record
+
+
+def _parse_record(record: dict[str, object]) -> ParsedTransactionRow | None:
+    """Parse one record. Returns ``None`` for a sweep; raises on a bad cell."""
+    txn_type = _to_str(record.get("transaction type"))
+    kind = map_transaction_type(txn_type)
+    if kind is None:
+        return None  # sweep — caller counts it
+
+    trade_date = _parse_date(record.get("trade date") or record.get("settlement date"))
+    settlement_raw = record.get("settlement date")
+    settlement = _parse_date(settlement_raw) if _to_str(settlement_raw) else None
+
+    symbol = _to_str(record.get("symbol")) or None
+    quantity = _parse_decimal(record.get("quantity"))
+    price = _parse_decimal(record.get("price"))
+    commission = _parse_decimal(record.get("commission & fees")) or Decimal(0)
+    net = _parse_decimal(record.get("amount"))
+    name = _to_str(record.get("name")) or None
+
+    # Vanguard's XLSX export *already* signs sell quantities negative,
+    # so unlike the CSV path we do not flip them here.
+
+    gross = quantity * price if (quantity is not None and price is not None) else None
+
+    external_id = _hash_external_id(
+        trade_date.isoformat(),
+        txn_type,
+        symbol or "",
+        quantity if quantity is not None else "",
+        price if price is not None else "",
+        net if net is not None else "",
+    )
+
+    return ParsedTransactionRow(
+        date=trade_date,
+        settlement_date=settlement,
+        kind=kind,
+        symbol=symbol,
+        quantity=quantity,
+        price_native=price,
+        gross_native=gross,
+        fees_native=commission if commission != 0 else None,
+        net_native=net,
+        description=name,
+        external_id=external_id,
+        source="import_vanguard_xlsx",
+        name=name or None,
+    )
 
 
 def parse_vanguard_xlsx(content: bytes) -> VanguardXlsxParseResult:
-    """Parse a Vanguard Full-History Excel workbook.
+    """Parse a Vanguard Full-History Excel workbook into a :class:`ParseReport`.
 
-    Returns the parsed transaction rows plus the count of sweep rows
-    dropped (mirrors :func:`parse_vanguard_csv`). Raises
-    :class:`UnknownActionError` for any transaction type that
-    :mod:`.action_map` doesn't recognise so importer UI can surface the
-    offender.
+    Unknown transaction types and bad/EU-locale cells are collected as
+    per-row errors (the row is skipped) instead of aborting; a structural
+    header/layout mismatch still raises loudly. Light consistency-check
+    failures are reported as warnings.
     """
     wb = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
     try:
@@ -179,64 +229,38 @@ def parse_vanguard_xlsx(content: bytes) -> VanguardXlsxParseResult:
         wb.close()
 
     if not grid:
-        return VanguardXlsxParseResult(rows=[], sweeps_dropped=0)
+        return VanguardXlsxParseResult(rows=[])
 
     header_row = _find_header_row(grid)
 
     rows: list[ParsedTransactionRow] = []
     sweeps_dropped = 0
+    unknown_actions: list[str] = []
+    errors: list[RowIssue] = []
+    warnings: list[RowIssue] = []
 
-    for record in _row_records(grid, header_row):
+    for line, record in _row_records(grid, header_row):
         txn_type = _to_str(record.get("transaction type"))
         try:
-            kind = map_transaction_type(txn_type)
-        except UnknownActionError:
-            raise
-        if kind is None:
+            parsed = _parse_record(record)
+        except UnknownActionError as exc:
+            unknown_actions.append(txn_type)
+            errors.append(RowIssue(message=str(exc), line=line, raw=txn_type))
+            continue
+        except (LocaleError, ValueError) as exc:
+            errors.append(RowIssue(message=str(exc), line=line, raw=txn_type))
+            continue
+        if parsed is None:
             sweeps_dropped += 1
             continue
+        rows.append(parsed)
+        for warn in validate_row(parsed):
+            warnings.append(RowIssue(message=warn, line=line, raw=txn_type))
 
-        trade_date = _parse_date(record.get("trade date") or record.get("settlement date"))
-        settlement_raw = record.get("settlement date")
-        settlement = _parse_date(settlement_raw) if _to_str(settlement_raw) else None
-
-        symbol = _to_str(record.get("symbol")) or None
-        quantity = _parse_decimal(record.get("quantity"))
-        price = _parse_decimal(record.get("price"))
-        commission = _parse_decimal(record.get("commission & fees")) or Decimal(0)
-        net = _parse_decimal(record.get("amount"))
-        name = _to_str(record.get("name")) or None
-
-        # Vanguard's XLSX export *already* signs sell quantities negative,
-        # so unlike the CSV path we do not flip them here.
-
-        gross = quantity * price if (quantity is not None and price is not None) else None
-
-        external_id = _hash_external_id(
-            trade_date.isoformat(),
-            txn_type,
-            symbol or "",
-            quantity if quantity is not None else "",
-            price if price is not None else "",
-            net if net is not None else "",
-        )
-
-        rows.append(
-            ParsedTransactionRow(
-                date=trade_date,
-                settlement_date=settlement,
-                kind=kind,
-                symbol=symbol,
-                quantity=quantity,
-                price_native=price,
-                gross_native=gross,
-                fees_native=commission if commission != 0 else None,
-                net_native=net,
-                description=name,
-                external_id=external_id,
-                source="import_vanguard_xlsx",
-                name=name or None,
-            )
-        )
-
-    return VanguardXlsxParseResult(rows=rows, sweeps_dropped=sweeps_dropped)
+    return VanguardXlsxParseResult(
+        rows=rows,
+        sweeps_dropped=sweeps_dropped,
+        unknown_actions=unknown_actions,
+        errors=errors,
+        warnings=warnings,
+    )
