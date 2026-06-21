@@ -16,6 +16,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [3.1.1] — 2026-06-21
 
+Desktop price-freshness transparency and a holdings redesign that mirrors the
+live-web companion, plus a small web tweak so the per-holding chip shows the
+stat that actually matters — and visible feedback for manual and automatic
+price refresh across both apps.
+
+### Added — desktop: price-freshness transparency
+
+- **Every holding now says when its price is from.** The desktop app reads the
+  same two facts the web companion surfaces — the observation date of the
+  latest cached print (`PriceHistory.date`) and the saved fetch time
+  (`PriceCacheMetadata.last_refreshed_at`) — and shows them per holding. Money-
+  market funds (par $1.00, no feed) are labelled as such instead of faking a
+  date.
+
+### Changed — desktop: overview redesign + new Holdings tab
+
+- **The outdated positions table on `/overview` is gone.** In its place every
+  holding gets a card (like the web companion's holding rows) with value, daily
+  move, total growth, P/L, XIRR, YTD, price, shares, cost basis, expense ratio,
+  and its "as of" / "updated" freshness line. Cards are sorted by EUR value,
+  largest first.
+- **New `/holdings` tab.** The full sortable table moved here, joined by deeper
+  detail: a portfolio-**weight** column, an "As Of" column, headline KPI cards,
+  and a summary strip (best/worst performer, gainers vs. losers, most-
+  concentrated holding, weighted expense ratio).
+
+### Changed — live-web companion
+
+- **The per-holding chip now shows total growth instead of portfolio weight.**
+  Growth (unrealised P/L over cost) is the primary read; weight is a secondary
+  stat and now lives in the desktop Holdings table.
+
 ### Added — visible feedback for manual and automatic price refresh
 
 - **Manual refresh now shows in-progress feedback.** On the web app, tapping
@@ -39,7 +71,43 @@ chart, and the benchmark line. This release lands the work from PR #34 (which
 had not been recorded here) **and** the follow-up fixes that finally make NAV
 freshness correct around market closures.
 
-### Fixed — live-web companion: mutual-fund NAV pricing
+### Fixed — live-web companion: overview hero & live NAV override
+
+- **The date stamp at the very top of the overview is gone.** The "Updated …"
+  line that sat above "Total value" has been removed; freshness now lives only
+  where it is actionable — the per-holding "as of" chips and the footer note —
+  so the hero is just the headline value and today's move.
+- **A fresh Twelve Data pull now overrides a stale or wrong exported NAV on the
+  same trading day.** Previously a live NAV only superseded the exported value
+  when its value-date was *strictly newer* than the export, so a re-fetch could
+  not correct a bad value baked into the export/blob for the current day. A live
+  NAV bar now wins whenever it is for the **same or a newer** trading day than
+  the exported price; the export is kept only when the live bar is strictly
+  *older* (a closed-day carry-forward), so the value never swaps backward onto a
+  stale basis.
+
+### Fixed — live-web companion: value chart & holding dates
+
+- **The "Value over time" chart no longer drops off a cliff at the live tip.**
+  The exported analytics equity curve was serialized in the desktop's *display*
+  currency, but the web companion is EUR-native and converts to the display
+  currency at render time — so the curve was effectively converted twice,
+  inflating the whole line by the EUR→display factor and leaving a ~16% vertical
+  drop where the (correctly-EUR) live total joined the (display-currency)
+  history. The export now always emits the curve in EUR, matching every other
+  figure in the bundle. Risk/return metrics are scale-invariant, so they are
+  unchanged.
+- **Removed the redundant date stamp under the chart.** The
+  "`<date>` → today · live tip from your current total value." caption is gone;
+  a note now appears only when there is something to flag (an incomplete live
+  total or a stale holding).
+- **Each holding's "as of" date moved to the top row.** It now sits in the space
+  between the symbol/NAV pill and the price, instead of on a line under the name.
+- **Fallback (non-live) holding dates now show when the value was actually last
+  updated.** The export carries a per-holding `last_price_date` (the trading day
+  the exported price came from); the web uses it instead of the export date, so
+  a fund priced from Friday's NAV no longer reads as "today" when the export was
+  taken on a weekend.
 
 - **NAV is now priced from the daily `time_series` endpoint, not `quote`.**
   Twelve Data's `/quote` carries a fund's last NAV forward and stamps it with
@@ -50,8 +118,8 @@ freshness correct around market closures.
   weekend or holiday produces no new bar, so the exported NAV is correctly kept
   until the fund actually re-strikes. This needs no hand-maintained holiday
   calendar.
-- **The exported NAV is only superseded by a strictly newer value-date** (PR
-  #34), and a live value is never stamped with the fetch time — its "as of" is
+- **The exported NAV is superseded by a same-or-newer value-date**, and a live
+  value is never stamped with the fetch time — its "as of" is
   the NAV's real strike date. Together with the `time_series` source this fixes
   the "Twelve Data says the fund updated today even though markets are closed"
   bug.

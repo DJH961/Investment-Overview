@@ -129,6 +129,19 @@ describe("buildDashboard", () => {
     expect(sum).toBeLessThan(1);
   });
 
+  it("exposes per-holding total growth on cost (P/L ÷ cost basis)", () => {
+    for (const holding of model.holdings) {
+      if (
+        holding.unrealisedPlEur !== null &&
+        holding.costBasisEur !== null &&
+        holding.costBasisEur.greaterThan(0)
+      ) {
+        expect(holding.totalGrowthPct).not.toBeNull();
+        approx(holding.totalGrowthPct, holding.unrealisedPlEur.dividedBy(holding.costBasisEur).toNumber());
+      }
+    }
+  });
+
   it("produces a portfolio XIRR (sign change present)", () => {
     expect(model.overview.portfolioXirr).not.toBeNull();
   });
@@ -208,54 +221,55 @@ describe("buildDashboard", () => {
     expect(fxaix.priceAsOf).toBe(priceTime);
   });
 
-  it("does not let a same-or-older live NAV override the consistent exported price", () => {
-    const exp = makeExport(); // as_of 2024-06-01
-    const navQuotes = new Map<string, Quote>([
-      ["VTI", { symbol: "VTI", price: new Decimal("100"), previousClose: new Decimal("95"), currency: "USD" }],
-      // A live NAV whose value-date is NOT newer than the export, and on a wildly
-      // different (wrong) basis — must be ignored to avoid cratering the total.
-      [
-        "FXAIX",
-        {
-          symbol: "FXAIX",
-          price: new Decimal("1"), // bogus / off-basis NAV
-          previousClose: null,
-          currency: "USD",
-          at: Date.parse("2024-06-01T12:00:00Z"),
-          priceTime: Date.parse("2024-06-01T00:00:00Z"),
-          valueDate: "2024-06-01", // same day as export → not newer
-        },
-      ],
-    ]);
-    const m = buildDashboard(exp, navQuotes, fx, new Date("2024-06-01T12:00:00Z"));
-    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
-    // Kept the exported last-known price (100), not the bogus live 1.
-    expect(fxaix.priceIsLive).toBe(false);
-    approx(fxaix.priceNative, 100);
-    approx(fxaix.valueEur, (5 * 100) / 1.1, 1e-3);
-  });
-
-  it("ignores a NAV value-date that is not newer than the export (e.g. a mid-week holiday carry-forward)", () => {
+  it("lets a fresh same-day live NAV override the exported (possibly stale) price", () => {
+    // A re-fetch from Twelve Data is the source of truth: when its bar is for the
+    // same trading day as the exported price, it must override the exported
+    // value so a stale/incorrect figure baked into the blob gets corrected.
     const exp = makeExport();
-    exp.meta.as_of = "2024-05-31"; // Friday export
+    exp.meta.as_of = "2024-05-31"; // Friday export, FXAIX last-known 100
     const navQuotes = new Map<string, Quote>([
       ["VTI", { symbol: "VTI", price: new Decimal("100"), previousClose: new Decimal("95"), currency: "USD" }],
-      // The daily time_series has no bar for a closed day, so the latest NAV bar
-      // is still Friday's — not newer than the export, so the export price stands.
       [
         "FXAIX",
         {
           symbol: "FXAIX",
-          price: new Decimal("1"), // off-basis value must never be adopted
+          price: new Decimal("102"), // the real, corrected NAV for the day
           previousClose: null,
           currency: "USD",
-          at: Date.parse("2024-06-03T12:00:00Z"),
+          at: Date.parse("2024-05-31T20:00:00Z"),
           priceTime: null,
           valueDate: "2024-05-31", // same trading day as the export
         },
       ],
     ]);
-    // Monday 2024-06-03 (imagine a holiday); no newer NAV has published.
+    const m = buildDashboard(exp, navQuotes, fx, new Date("2024-05-31T21:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    // Adopted the fresh live NAV (102), not the exported last-known (100).
+    expect(fxaix.priceIsLive).toBe(true);
+    approx(fxaix.priceNative, 102);
+  });
+
+  it("ignores a live NAV bar that is strictly older than the exported price (a closed-day carry-forward)", () => {
+    const exp = makeExport();
+    exp.meta.as_of = "2024-05-31"; // Friday export
+    exp.holdings[1].last_price_date = "2024-05-31"; // exported NAV struck Friday
+    const navQuotes = new Map<string, Quote>([
+      ["VTI", { symbol: "VTI", price: new Decimal("100"), previousClose: new Decimal("95"), currency: "USD" }],
+      // The daily time_series only has an older Thursday bar; adopting it would
+      // swap the value backward onto a stale basis, so the export price stands.
+      [
+        "FXAIX",
+        {
+          symbol: "FXAIX",
+          price: new Decimal("1"), // older / off-basis value must never be adopted
+          previousClose: null,
+          currency: "USD",
+          at: Date.parse("2024-06-03T12:00:00Z"),
+          priceTime: null,
+          valueDate: "2024-05-30", // Thursday — older than Friday's exported NAV
+        },
+      ],
+    ]);
     const m = buildDashboard(exp, navQuotes, fx, new Date("2024-06-03T12:00:00Z"));
     const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
     expect(fxaix.priceIsLive).toBe(false);
@@ -314,6 +328,27 @@ describe("buildDashboard", () => {
     expect(fxaix.priceIsLive).toBe(false);
     expect(fxaix.todayMoveEur).toBeNull();
     expect(fxaix.todayMovePct).toBeNull();
+  });
+
+  it("shows a fallback NAV's real last-update date (last_price_date), not the export date", () => {
+    // Export taken on a Sunday, but FXAIX's NAV last published the prior Friday.
+    const exp = makeExport();
+    exp.meta.as_of = "2024-06-02"; // Sunday export
+    exp.holdings[1].last_price_date = "2024-05-31"; // Friday's NAV strike
+    // No live quote for FXAIX → falls back to the exported last-known price.
+    const m = buildDashboard(exp, quotes, fx, new Date("2024-06-02T12:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.priceIsLive).toBe(false);
+    expect(fxaix.priceAsOf).toBeNull();
+    // The row dates to when the value was actually updated, not the export day.
+    expect(fxaix.priceFallbackDate).toBe("2024-05-31");
+  });
+
+  it("falls back to the export date when last_price_date is absent (older exports)", () => {
+    const exp = makeExport(); // as_of 2024-06-01, no last_price_date
+    const m = buildDashboard(exp, quotes, fx, new Date("2024-06-01T12:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.priceFallbackDate).toBe("2024-06-01");
   });
 });
 

@@ -80,16 +80,10 @@ function renderHero(o: OverviewView): HTMLElement {
     ]),
   ]);
 
-  // Freshness lives at the very top: the exact market time when the data is
-  // live from today (a stock/ETF tick), or a date when the latest mark is older
-  // (a NAV fund or a closed market). It always shows a time/date here — there is
-  // no vague "last known" bubble.
-  const updated = h("span", { class: "hero-updated" }, [
-    `Updated ${formatAsOf(o.liveAsOf, o.liveAsOfFallbackDate)}`,
-  ]);
-
+  // Per-holding rows and the footer note both carry "as of" freshness, so the
+  // hero stays clean: just the headline value and today's move, with no date
+  // stamped above "Total value" at the very top of the screen.
   return h("section", { class: "hero" }, [
-    updated,
     h("span", { class: "hero-label" }, ["Total value"]),
     h("span", { class: "hero-value" }, [formatCurrency(o.totalValueEur)]),
     change,
@@ -296,13 +290,17 @@ function renderHoldingRow(holding: HoldingView): HTMLElement {
   const todayCls = signClass(holding.todayMovePct);
   const main = h("div", { class: "holding-main" }, [
     h("div", { class: "holding-id" }, [
-      h("span", { class: "holding-sym" }, symChildren),
-      h("span", { class: "holding-name" }, [holding.name]),
-      // Show *when the price is from* up top (the actual strike time, not "now"),
-      // so a stale-but-latest NAV reads honestly as e.g. "as of 20 Jun".
-      h("span", { class: "holding-asof" }, [
-        `as of ${formatAsOf(holding.priceAsOf, holding.priceFallbackDate)}`,
+      // Top line: symbol (+ NAV/stale pills) on the left, and the price's
+      // "as of" date pushed to the right — into the gap between the pills and
+      // the value — so a stale-but-latest NAV reads honestly there (e.g. "as of
+      // 20 Jun") instead of being buried on a line under the name.
+      h("div", { class: "holding-topline" }, [
+        h("span", { class: "holding-sym" }, symChildren),
+        h("span", { class: "holding-asof" }, [
+          `as of ${formatAsOf(holding.priceAsOf, holding.priceFallbackDate)}`,
+        ]),
       ]),
+      h("span", { class: "holding-name" }, [holding.name]),
     ]),
     h("div", { class: "holding-figures" }, [
       h("span", { class: "holding-value" }, [formatCurrency(holding.valueEur)]),
@@ -317,7 +315,15 @@ function renderHoldingRow(holding: HoldingView): HTMLElement {
         : "Px —",
     ),
     chip(`${formatShares(holding.shares)} sh`),
-    chip(holding.weight !== null ? `${formatPercent(holding.weight)} wt` : "— wt"),
+    // Weight (% of portfolio) is a secondary stat — it now lives in the desktop
+    // Holdings table. The card instead leads with total growth on cost, the
+    // headline performance figure, coloured by sign.
+    chip(
+      holding.totalGrowthPct !== null
+        ? `${formatSignedPercent(holding.totalGrowthPct)} growth`
+        : "— growth",
+      signClass(holding.totalGrowthPct),
+    ),
     chip(`P/L ${formatSignedCurrency(holding.unrealisedPlEur)}`, signClass(holding.unrealisedPlEur)),
     chip(`XIRR ${formatPercent(holding.xirr)}`, signClass(holding.xirr)),
   ]);
@@ -819,15 +825,15 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
   if (!chart) return null;
 
   const cls = signClass(o.todayMoveEur);
-  let note: string;
+  // Only surface a note when there is something the user actually needs to know
+  // about the curve's honesty — not a redundant date stamp on every render.
+  let note: string | null = null;
   if (!o.totalValueIsComplete) {
-    note = `${dates[0]} → ${dates[dates.length - 1]} · live total is incomplete (missing prices or FX rates), so the curve stops at the last fully-valued day.`;
+    note = "Live total is incomplete (missing prices or FX rates), so the curve stops at the last fully-valued day.";
   } else if (o.staleValueSymbols.length > 0) {
-    note = `${dates[0]} → today · live tip from your current total value (last exported value used for ${o.staleValueSymbols.join(", ")}).`;
-  } else {
-    note = `${dates[0]} → today · live tip from your current total value.`;
+    note = `Last exported value used for ${o.staleValueSymbols.join(", ")} (no live price available).`;
   }
-  return h("section", { class: "card value-chart" }, [
+  const children: Array<Node | string> = [
     h("div", { class: "section-head" }, [
       h("h2", {}, ["Value over time"]),
       h("span", { class: `muted ${cls}` }, [
@@ -835,8 +841,9 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
       ]),
     ]),
     chart,
-    h("p", { class: "note" }, [note]),
-  ]);
+  ];
+  if (note) children.push(h("p", { class: "note" }, [note]));
+  return h("section", { class: "card value-chart" }, children);
 }
 
 function renderAttribution(rows: AnalyticsView["attribution"]): HTMLElement | null {

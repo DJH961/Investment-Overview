@@ -259,6 +259,38 @@ def latest_closes(session: Session, instrument_ids: Sequence[int]) -> dict[int, 
         return prices_repo.latest_closes(cache, instrument_ids)
 
 
+def latest_price_dates_for(session: Session, instrument_ids: Sequence[int]) -> dict[int, date]:
+    """Newest cached print *date* per instrument (cache tier).
+
+    Tier-aware wrapper around :func:`prices_repo.latest_price_dates`. This is
+    the price's observation date — the "as of" the desktop holding cards show
+    so a stale-but-latest close reads honestly (mirroring the web companion's
+    per-row "as of" chip). Instruments with no cached history are absent.
+    """
+    if not instrument_ids:
+        return {}
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return prices_repo.latest_price_dates(cache, instrument_ids)
+
+
+def last_refreshed_at_for(session: Session, instrument_ids: Sequence[int]) -> dict[int, datetime]:
+    """When each instrument's price cache was last refreshed (cache tier).
+
+    Tier-aware wrapper around :func:`price_cache_repo.get_last_refreshed_at_map`
+    — the saved timestamp the background loop stamps every time it pulls fresh
+    prices, surfaced so the desktop can show *when the price was last updated*.
+    Instruments never refreshed are absent from the mapping.
+    """
+    if not instrument_ids:
+        return {}
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return price_cache_repo.get_last_refreshed_at_map(cache, instrument_ids)
+
+
 def closes_as_of(
     session: Session, instrument_ids: Sequence[int], as_of: date
 ) -> dict[int, Decimal]:

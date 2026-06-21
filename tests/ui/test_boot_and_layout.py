@@ -313,6 +313,7 @@ def test_nav_items_cover_all_pages() -> None:
     paths = {item.path for item in NAV_ITEMS}
     assert paths == {
         "/overview",
+        "/holdings",
         "/deposits",
         "/transactions",
         "/monthly",

@@ -61,6 +61,9 @@ export interface HoldingView {
   todayMovePct: Decimal | null;
   weight: Decimal | null;
   unrealisedPlEur: Decimal | null;
+  /** Simple total growth on cost: unrealised P/L ÷ cost basis (null when no
+   * cost basis to grow from). Shown on the holding card in place of weight. */
+  totalGrowthPct: Decimal | null;
   xirr: Decimal | null;
 }
 
@@ -299,21 +302,28 @@ function priceForHolding(
   /** Date to show when `at` is null (a NAV's value-date, or the export date). */
   asOfDate: string;
 } {
+  // When we fall back to the exported price, show *when that price was actually
+  // struck* (the holding's last cached close date) rather than the export date —
+  // a fund's NAV exported on a Sunday still applies to the Friday it last
+  // published, never "today". Older exports omit `last_price_date`, so default
+  // to the export's as-of date.
+  const fallbackDate = holding.last_price_date ?? exportAsOf;
   if (quote && quote.price) {
     // NAV-priced holdings (mutual funds / money-market) publish only ~once a
     // trading day. Their live mark comes from the daily `time_series` endpoint,
     // whose latest bar is the genuine last-published NAV (it has no bar for a
-    // weekend or a mid-week market holiday). We only supersede the exported
-    // value when that bar's value-date is strictly newer than the export, so a
-    // closed-day carry-forward never swaps the value onto a stale basis — which
-    // is what made the value chart crash on its final point. (The business-day
-    // check is a belt-and-suspenders guard; the trading-day source does the real
-    // work.)
-    const navNotNewer =
+    // weekend or a mid-week market holiday). A fresh Twelve Data pull is the
+    // source of truth, so it overrides the exported value whenever its bar is
+    // for the *same or a newer* trading day than the exported price — this lets
+    // a re-fetch correct a stale or wrong value baked into the export/blob. We
+    // only keep the exported value when the live bar is strictly *older* than
+    // the price we already have (a closed-day carry-forward), so we never swap
+    // the value backward onto an older basis.
+    const navStale =
       holding.price_type === "nav" &&
       holding.last_known_price_native !== null &&
-      !(quote.valueDate != null && quote.valueDate > exportAsOf && isBusinessDayIso(quote.valueDate));
-    if (!navNotNewer) {
+      !(quote.valueDate != null && quote.valueDate >= fallbackDate && isBusinessDayIso(quote.valueDate));
+    if (!navStale) {
       // "as of" should reflect when the price actually applies, not when we
       // fetched it. Market quotes carry an intraday strike time (`priceTime`), so
       // a same-day price reads as a clock time; a daily NAV bar has only a date,
@@ -324,14 +334,14 @@ function priceForHolding(
         price: quote.price,
         isLive: true,
         at: isNav ? (quote.priceTime ?? null) : (quote.priceTime ?? quote.at ?? null),
-        asOfDate: quote.valueDate ?? exportAsOf,
+        asOfDate: quote.valueDate ?? fallbackDate,
       };
     }
   }
   if (holding.last_known_price_native !== null) {
-    return { price: new Decimal(holding.last_known_price_native), isLive: false, at: null, asOfDate: exportAsOf };
+    return { price: new Decimal(holding.last_known_price_native), isLive: false, at: null, asOfDate: fallbackDate };
   }
-  return { price: null, isLive: false, at: null, asOfDate: exportAsOf };
+  return { price: null, isLive: false, at: null, asOfDate: fallbackDate };
 }
 
 function buildHolding(
@@ -393,6 +403,14 @@ function buildHolding(
   const unrealisedPlEur =
     valueEur !== null && costBasisEur !== null ? valueEur.minus(costBasisEur) : null;
 
+  // Simple total growth on cost (price-based, dividends excluded): the
+  // holding's unrealised P/L as a fraction of what it cost. Null when there is
+  // no cost basis to grow from (e.g. a fully gifted/spun-off position).
+  const totalGrowthPct =
+    unrealisedPlEur !== null && costBasisEur !== null && costBasisEur.greaterThan(0)
+      ? unrealisedPlEur.dividedBy(costBasisEur)
+      : null;
+
   const xirrRate =
     valueEur !== null && valueEur.greaterThan(0)
       ? xirr(holdingCashflows(holding), asOf, { terminalValue: valueEur })
@@ -418,6 +436,7 @@ function buildHolding(
     todayMovePct,
     weight: null, // filled once the portfolio total is known
     unrealisedPlEur,
+    totalGrowthPct,
     xirr: xirrRate,
   };
 }
