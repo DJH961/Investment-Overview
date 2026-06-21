@@ -7,17 +7,22 @@ import { describe, expect, it } from "vitest";
 
 import {
   creditsSpentWithin,
+  readCachedEnvelope,
   readCachedFx,
   readCachedQuotes,
   readCreditLog,
   readNavPublishStats,
+  readSymbolPlan,
   recordCredits,
   recordNavPublish,
+  writeCachedEnvelope,
   writeCachedFx,
   writeCachedQuotes,
+  writeSymbolPlan,
   NAV_PUBLISH_SAMPLES,
   type StorageLike,
 } from "../src/cache";
+import type { Envelope } from "../src/crypto";
 import type { Quote } from "../src/prices";
 
 function memStorage(): StorageLike {
@@ -162,5 +167,90 @@ describe("learned NAV publish stats", () => {
     expect(readNavPublishStats(s).size).toBe(0);
     s.setItem("iv.web.nav_publish", "{ not json");
     expect(readNavPublishStats(s).size).toBe(0);
+  });
+});
+
+describe("encrypted-blob cache", () => {
+  const envelope: Envelope = {
+    v: 1,
+    kdf: "PBKDF2-HMAC-SHA256",
+    kdf_params: { salt: "c2FsdA==", iterations: 200000 },
+    nonce: "bm9uY2U=",
+    ciphertext: "Y2lwaGVy",
+    tag: "dGFn",
+  };
+
+  it("round-trips an envelope with its download timestamp", () => {
+    const s = memStorage();
+    writeCachedEnvelope(envelope, 1_700_000_000_000, {}, s);
+    const got = readCachedEnvelope(s);
+    expect(got?.at).toBe(1_700_000_000_000);
+    expect(got?.envelope.ciphertext).toBe("Y2lwaGVy");
+    expect(got?.envelope.kdf_params.iterations).toBe(200000);
+  });
+
+  it("round-trips HTTP validators and the meta version stamp", () => {
+    const s = memStorage();
+    writeCachedEnvelope(envelope, 1, { etag: 'W/"abc"', lastModified: "Wed, 21 Oct 2026 07:28:00 GMT", metaVersion: "v123" }, s);
+    const got = readCachedEnvelope(s);
+    expect(got?.etag).toBe('W/"abc"');
+    expect(got?.lastModified).toBe("Wed, 21 Oct 2026 07:28:00 GMT");
+    expect(got?.metaVersion).toBe("v123");
+  });
+
+  it("defaults validators to null when none are supplied", () => {
+    const s = memStorage();
+    writeCachedEnvelope(envelope, 1, {}, s);
+    const got = readCachedEnvelope(s);
+    expect(got?.etag).toBeNull();
+    expect(got?.lastModified).toBeNull();
+    expect(got?.metaVersion).toBeNull();
+  });
+
+  it("returns null when nothing is cached or the store is corrupt", () => {
+    const s = memStorage();
+    expect(readCachedEnvelope(s)).toBeNull();
+    s.setItem("iv.web.blob_cache", "{ not json");
+    expect(readCachedEnvelope(s)).toBeNull();
+    s.setItem("iv.web.blob_cache", JSON.stringify({ envelope }));
+    expect(readCachedEnvelope(s)).toBeNull();
+  });
+});
+
+describe("symbol plan cache", () => {
+  it("round-trips a priority plan", () => {
+    const s = memStorage();
+    const plan = [
+      { symbol: "BIG_ETF", priceType: "market", assetClass: "etf", sizeEur: 9000 },
+      { symbol: "FUND", priceType: "nav", assetClass: "mutual_fund", sizeEur: 500 },
+    ];
+    writeSymbolPlan(plan, s);
+    expect(readSymbolPlan(s)).toEqual(plan);
+  });
+
+  it("returns an empty array for missing/corrupt storage", () => {
+    const s = memStorage();
+    expect(readSymbolPlan(s)).toEqual([]);
+    s.setItem("iv.web.symbol_plan", "{ not json");
+    expect(readSymbolPlan(s)).toEqual([]);
+    s.setItem("iv.web.symbol_plan", JSON.stringify({ not: "an array" }));
+    expect(readSymbolPlan(s)).toEqual([]);
+  });
+
+  it("skips malformed entries and defaults missing fields", () => {
+    const s = memStorage();
+    s.setItem(
+      "iv.web.symbol_plan",
+      JSON.stringify([
+        { symbol: "OK" },
+        { symbol: "" },
+        { notASymbol: true },
+        { symbol: "TYPED", priceType: "nav", assetClass: "mutual_fund", sizeEur: 12 },
+      ]),
+    );
+    expect(readSymbolPlan(s)).toEqual([
+      { symbol: "OK", priceType: "market", assetClass: "", sizeEur: 0 },
+      { symbol: "TYPED", priceType: "nav", assetClass: "mutual_fund", sizeEur: 12 },
+    ]);
   });
 });

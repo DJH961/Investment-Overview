@@ -11,5 +11,10 @@ compatibility_date = "2024-11-01"
 # The single upstream this proxy is allowed to fetch. Change the owner/repo or
 # release tag here if you ever rename them. Keeping it pinned makes this a
 # closed (non-SSRF) proxy: it can only ever return *your* encrypted blob.
+#
+# META_URL is the tiny version sidecar (portfolio.meta.json) served when the
+# companion requests `?meta`. Leave it unset to derive it from RELEASE_URL by
+# swapping the filename — only set it if the sidecar lives somewhere else.
 [vars]
 RELEASE_URL = "https://github.com/DJH961/Investment-Overview/releases/download/live-data/portfolio.enc"
+# META_URL = "https://github.com/DJH961/Investment-Overview/releases/download/live-data/portfolio.meta.json"

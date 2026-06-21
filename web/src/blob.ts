@@ -43,6 +43,19 @@ export async function fetchEnvelope(url: string, fetchImpl: typeof fetch = fetch
   } catch (err) {
     throw new BlobError(describeFetchFailure(err));
   }
+  return parseEnvelopeResponse(resp);
+}
+
+/** Read the HTTP cache validators a response exposes (may be null). */
+function readValidators(resp: Response): { etag: string | null; lastModified: string | null } {
+  return {
+    etag: resp.headers.get("ETag"),
+    lastModified: resp.headers.get("Last-Modified"),
+  };
+}
+
+/** Turn a 200 response into a validated envelope, mapping failures to BlobError. */
+async function parseEnvelopeResponse(resp: Response): Promise<Envelope> {
   if (!resp.ok) {
     throw new BlobError(
       resp.status === 404
@@ -58,4 +71,90 @@ export async function fetchEnvelope(url: string, fetchImpl: typeof fetch = fetch
   }
   assertEnvelope(parsed);
   return parsed;
+}
+
+/** Validators carried with a cached blob, sent back as conditional headers. */
+export interface ConditionalValidators {
+  etag?: string | null;
+  lastModified?: string | null;
+}
+
+/** Outcome of a conditional blob fetch. */
+export type ConditionalEnvelope =
+  | { status: "not-modified" }
+  | {
+      status: "modified";
+      envelope: Envelope;
+      etag: string | null;
+      lastModified: string | null;
+    };
+
+/**
+ * Conditionally fetch the encrypted blob. Sends `If-None-Match` /
+ * `If-Modified-Since` from the cached validators so an unchanged blob comes back
+ * as a bodyless **304 Not Modified** — no transfer, no decrypt. A real change
+ * returns the new envelope plus its fresh validators to cache for next time.
+ *
+ * Network/CORS and HTTP errors are reported exactly as {@link fetchEnvelope}.
+ */
+export async function fetchEnvelopeConditional(
+  url: string,
+  validators: ConditionalValidators | null,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ConditionalEnvelope> {
+  const headers: Record<string, string> = {};
+  if (validators?.etag) headers["If-None-Match"] = validators.etag;
+  if (validators?.lastModified) headers["If-Modified-Since"] = validators.lastModified;
+
+  let resp: Response;
+  try {
+    resp = await fetchImpl(url, { cache: "no-store", headers });
+  } catch (err) {
+    throw new BlobError(describeFetchFailure(err));
+  }
+  if (resp.status === 304) return { status: "not-modified" };
+  const envelope = await parseEnvelopeResponse(resp);
+  const { etag, lastModified } = readValidators(resp);
+  return { status: "modified", envelope, etag, lastModified };
+}
+
+/** The version stamp the desktop publishes in the `portfolio.meta.json` sidecar. */
+export interface BlobMeta {
+  /** Opaque change token (a hash of the encrypted blob). */
+  version: string;
+  /** Encrypted-blob size in bytes, if published. */
+  size?: number;
+  /** ISO-8601 publish time, if published. */
+  publishedAt?: string;
+}
+
+/**
+ * Fetch the tiny `portfolio.meta.json` version sidecar. A successful read lets
+ * the companion decide "is there a newer export?" from a few bytes instead of
+ * the whole blob. Returns `null` (rather than throwing) for any failure — a
+ * missing/unsupported sidecar must transparently fall back to a conditional
+ * blob download, never block the refresh.
+ */
+export async function fetchBlobMeta(url: string, fetchImpl: typeof fetch = fetch): Promise<BlobMeta | null> {
+  let resp: Response;
+  try {
+    resp = await fetchImpl(url, { cache: "no-store" });
+  } catch {
+    return null;
+  }
+  if (!resp.ok) return null;
+  let parsed: unknown;
+  try {
+    parsed = await resp.json();
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const obj = parsed as Record<string, unknown>;
+  if (typeof obj.version !== "string" || obj.version.length === 0) return null;
+  return {
+    version: obj.version,
+    size: typeof obj.size === "number" ? obj.size : undefined,
+    publishedAt: typeof obj.published_at === "string" ? obj.published_at : undefined,
+  };
 }

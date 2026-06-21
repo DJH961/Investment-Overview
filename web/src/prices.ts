@@ -225,6 +225,95 @@ export async function fetchQuotes(
   return result;
 }
 
+/**
+ * Fetch the latest **NAV** for mutual-fund / money-market symbols from Twelve
+ * Data's `time_series` (daily) endpoint instead of `quote`.
+ *
+ * Why a different endpoint: `quote` carries a fund's last NAV forward and stamps
+ * it with *today's* date even on days the fund did not publish (a weekend or a
+ * mid-week market holiday), which made a stale NAV masquerade as "today's" and
+ * dragged the value chart off a cliff. The daily `time_series` only ever returns
+ * a bar for a real trading day, so the latest bar's `datetime` is the authentic
+ * date the NAV was struck — no weekend/holiday calendar of our own required. We
+ * ask for two bars (`outputsize=2`, newest first) so a previous close is
+ * available too.
+ */
+export async function fetchNavQuotes(
+  symbols: string[],
+  apiKey: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<Map<string, Quote>> {
+  const result = new Map<string, Quote>();
+  const unique = [...new Set(symbols.filter((s) => s.length > 0))];
+  if (unique.length === 0) return result;
+
+  const url = new URL(`${TWELVE_DATA_ROOT}/time_series`);
+  url.searchParams.set("symbol", unique.join(","));
+  url.searchParams.set("interval", "1day");
+  url.searchParams.set("outputsize", "2");
+  url.searchParams.set("order", "desc");
+  url.searchParams.set("apikey", apiKey);
+
+  let resp: Response;
+  try {
+    resp = await fetchImpl(url.toString());
+  } catch (err) {
+    throw new PriceError(`could not reach the price service: ${(err as Error).message}`, {
+      retryable: true,
+    });
+  }
+  if (!resp.ok) {
+    throw httpError("price service", resp);
+  }
+  const body = (await resp.json()) as Record<string, unknown>;
+
+  // A top-level error with no `meta`/`values` means the whole call failed
+  // (usually a bad/over-quota API key) — same handling as the quote endpoint.
+  if (body.status === "error" && !("values" in body) && !("meta" in body)) {
+    const code = typeof body.code === "number" ? body.code : null;
+    throw new PriceError(
+      typeof body.message === "string" ? body.message : "price request rejected",
+      { status: code, retryable: code === 429 },
+    );
+  }
+
+  if (unique.length === 1) {
+    result.set(unique[0], navQuoteFromNode(unique[0], body));
+    return result;
+  }
+  for (const symbol of unique) {
+    const node = body[symbol];
+    result.set(
+      symbol,
+      node && typeof node === "object"
+        ? navQuoteFromNode(symbol, node as Record<string, unknown>)
+        : { symbol, price: null, previousClose: null, currency: null, at: null, priceTime: null, valueDate: null },
+    );
+  }
+  return result;
+}
+
+/** Build a NAV {@link Quote} from a `time_series` node (`{meta, values}`). */
+function navQuoteFromNode(symbol: string, node: Record<string, unknown>): Quote {
+  const meta = (node.meta ?? {}) as Record<string, unknown>;
+  const values = Array.isArray(node.values) ? (node.values as Array<Record<string, unknown>>) : [];
+  const latest = values[0];
+  if (node.status === "error" || !latest) {
+    return { symbol, price: null, previousClose: null, currency: null, at: null, priceTime: null, valueDate: null };
+  }
+  return {
+    symbol,
+    price: parseDecimal(latest.close),
+    previousClose: values[1] ? parseDecimal(values[1].close) : null,
+    currency: typeof meta.currency === "string" ? meta.currency : null,
+    at: null,
+    // A daily NAV bar carries only a date (no intraday strike time), so the UI
+    // shows it as a date — exactly right for a once-a-day fund mark.
+    priceTime: null,
+    valueDate: parseValueDate(latest.datetime),
+  };
+}
+
 /** Fetch FX rates from Frankfurter with `base` as the reference currency. */
 export async function fetchFxRates(
   base = "EUR",

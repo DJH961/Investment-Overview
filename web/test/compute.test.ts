@@ -5,7 +5,7 @@
 import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 
-import { buildDashboard } from "../src/compute";
+import { buildDashboard, buildFetchPlan } from "../src/compute";
 import type { FxRates, Quote } from "../src/prices";
 import type { MobileExport } from "../src/types";
 
@@ -234,6 +234,60 @@ describe("buildDashboard", () => {
     approx(fxaix.priceNative, 100);
     approx(fxaix.valueEur, (5 * 100) / 1.1, 1e-3);
   });
+
+  it("ignores a NAV value-date that is not newer than the export (e.g. a mid-week holiday carry-forward)", () => {
+    const exp = makeExport();
+    exp.meta.as_of = "2024-05-31"; // Friday export
+    const navQuotes = new Map<string, Quote>([
+      ["VTI", { symbol: "VTI", price: new Decimal("100"), previousClose: new Decimal("95"), currency: "USD" }],
+      // The daily time_series has no bar for a closed day, so the latest NAV bar
+      // is still Friday's — not newer than the export, so the export price stands.
+      [
+        "FXAIX",
+        {
+          symbol: "FXAIX",
+          price: new Decimal("1"), // off-basis value must never be adopted
+          previousClose: null,
+          currency: "USD",
+          at: Date.parse("2024-06-03T12:00:00Z"),
+          priceTime: null,
+          valueDate: "2024-05-31", // same trading day as the export
+        },
+      ],
+    ]);
+    // Monday 2024-06-03 (imagine a holiday); no newer NAV has published.
+    const m = buildDashboard(exp, navQuotes, fx, new Date("2024-06-03T12:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.priceIsLive).toBe(false);
+    approx(fxaix.priceNative, 100);
+  });
+
+  it("adopts a genuinely newer NAV bar and shows its value-date (not the fetch time)", () => {
+    const exp = makeExport();
+    exp.meta.as_of = "2024-05-30"; // Thursday export
+    const navQuotes = new Map<string, Quote>([
+      ["VTI", { symbol: "VTI", price: new Decimal("100"), previousClose: new Decimal("95"), currency: "USD" }],
+      [
+        "FXAIX",
+        {
+          symbol: "FXAIX",
+          price: new Decimal("110"),
+          previousClose: new Decimal("108"),
+          currency: "USD",
+          at: Date.parse("2024-06-03T12:00:00Z"),
+          priceTime: null, // daily bar: no intraday time
+          valueDate: "2024-05-31", // Friday — newer than the Thursday export
+        },
+      ],
+    ]);
+    const m = buildDashboard(exp, navQuotes, fx, new Date("2024-06-03T12:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.priceIsLive).toBe(true);
+    approx(fxaix.priceNative, 110);
+    // No intraday strike time → the row shows the NAV's value-date as a date.
+    expect(fxaix.priceAsOf).toBeNull();
+    expect(fxaix.priceFallbackDate).toBe("2024-05-31");
+  });
 });
 
 function makeAnalyticsWith(
@@ -372,5 +426,58 @@ describe("buildDashboard overview parity features", () => {
     // makeExport()'s period_openings are zero → no positive base to grow from.
     expect(m.overview.mtdGrowthPct).toBeNull();
     expect(m.overview.ytdGrowthPct).toBeNull();
+  });
+});
+
+describe("buildFetchPlan", () => {
+  function planExport(): MobileExport {
+    const base = makeExport();
+    base.holdings = [
+      { ...base.holdings[0], symbol: "SMALL_ETF", price_symbol: "SMALL_ETF", asset_class: "etf", price_type: "market" },
+      { ...base.holdings[0], symbol: "BIG_ETF", price_symbol: "BIG_ETF", asset_class: "etf", price_type: "market" },
+      { ...base.holdings[1], symbol: "BIG_FUND", price_symbol: "BIG_FUND", asset_class: "mutual_fund", price_type: "nav" },
+      { ...base.holdings[1], symbol: "SMALL_FUND", price_symbol: "SMALL_FUND", asset_class: "mutual_fund", price_type: "nav" },
+      { ...base.holdings[1], symbol: "MMF", price_symbol: "MMF", asset_class: "money_market", price_type: "nav" },
+    ];
+    base.period_openings = {
+      month_start_value_eur: "0",
+      year_start_value_eur: "0",
+      holdings: {
+        SMALL_ETF: { month_start_value_eur: "100", year_start_value_eur: "100" },
+        BIG_ETF: { month_start_value_eur: "9000", year_start_value_eur: "9000" },
+        BIG_FUND: { month_start_value_eur: "5000", year_start_value_eur: "5000" },
+        SMALL_FUND: { month_start_value_eur: "50", year_start_value_eur: "50" },
+        MMF: { month_start_value_eur: "9999", year_start_value_eur: "9999" },
+      },
+    };
+    return base;
+  }
+
+  it("orders ETFs/stocks first (largest first), then mutual funds (largest first)", () => {
+    const plan = buildFetchPlan(planExport(), new Set(["mutual_fund"]));
+    expect(plan.map((e) => e.symbol)).toEqual(["BIG_ETF", "SMALL_ETF", "BIG_FUND", "SMALL_FUND"]);
+  });
+
+  it("excludes money-market (never-requested) holdings", () => {
+    const plan = buildFetchPlan(planExport(), new Set(["mutual_fund"]));
+    expect(plan.map((e) => e.symbol)).not.toContain("MMF");
+  });
+
+  it("aggregates size across holdings sharing one ticker and prefers market priority", () => {
+    const data = planExport();
+    // A second holding on BIG_FUND's ticker, but market-priced and large.
+    data.holdings.push({
+      ...data.holdings[0],
+      symbol: "DUP",
+      price_symbol: "BIG_FUND",
+      asset_class: "etf",
+      price_type: "market",
+    });
+    data.period_openings.holdings.DUP = { month_start_value_eur: "1", year_start_value_eur: "1" };
+    const plan = buildFetchPlan(data, new Set(["mutual_fund"]));
+    const bigFund = plan.find((e) => e.symbol === "BIG_FUND")!;
+    // Market priority wins, so the ticker now ranks among the market group.
+    expect(bigFund.priceType).toBe("market");
+    expect(bigFund.sizeEur).toBe(5001);
   });
 });

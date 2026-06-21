@@ -46,7 +46,8 @@ export interface HoldingView {
    * "as of" freshness indicator.
    */
   priceAsOf: number | null;
-  /** The export's valuation date (`meta.as_of`), shown when `priceAsOf` is null. */
+  /** Date the displayed price applies to when `priceAsOf` is null — a NAV's
+   * value-date, or the export's valuation date (`meta.as_of`) for a fallback. */
   priceFallbackDate: string;
   /**
    * True when `valueEur` could not be computed from any price (no live quote,
@@ -66,6 +67,16 @@ export interface HoldingView {
 export interface OverviewView {
   generatedAt: string;
   asOf: string;
+  /**
+   * Epoch ms of the freshest live price observed across all holdings (the most
+   * recent strike time), or null when nothing was priced live. Drives the
+   * top-of-screen "updated …" stamp: shown as a clock time when it landed today
+   * (a live stock/ETF), or a date when the latest data is older (NAV / closed
+   * market).
+   */
+  liveAsOf: number | null;
+  /** Export valuation date (`meta.as_of`), shown when `liveAsOf` is null. */
+  liveAsOfFallbackDate: string;
   totalValueEur: Decimal;
   cashValueEur: Decimal;
   totalCostBasisEur: Decimal;
@@ -200,6 +211,83 @@ function lastExportedValues(data: MobileExport): Map<string, Decimal> {
   return values;
 }
 
+/**
+ * One symbol the live layer will request, with the context needed to order the
+ * fetch *before* any live quote arrives.
+ */
+export interface FetchPlanEntry {
+  /** The ticker passed to Twelve Data (`price_symbol`). */
+  symbol: string;
+  /** `market` for ETFs/stocks, or the NAV class for funds. */
+  priceType: string;
+  /** Asset class (e.g. `equity_etf`, `mutual_fund`), for downstream routing. */
+  assetClass: string;
+  /** Aggregated last-known EUR size across holdings sharing this ticker. */
+  sizeEur: number;
+}
+
+/**
+ * Build the priority-ordered list of symbols to price live, newest sizing first.
+ *
+ * Order (matching the app's own "biggest first" instinct, and so the most
+ * impactful prices land first under the free-tier per-minute cap):
+ *   1. **market** holdings (ETFs / stocks), largest EUR size first;
+ *   2. then **NAV** holdings in `fetchableNavClasses` (mutual funds), largest first.
+ *
+ * Money-market / cash rows are excluded by passing only the genuinely fetchable
+ * NAV classes in `fetchableNavClasses` (their NAV is pinned and never requested).
+ * Sizes come from the last exported per-holding EUR value, so the order is
+ * available without a fresh quote and is safe to cache between sessions.
+ */
+export function buildFetchPlan(data: MobileExport, fetchableNavClasses: Set<string>): FetchPlanEntry[] {
+  const sizes = lastExportedValues(data);
+  // Aggregate by ticker: multiple holdings can map to one price symbol.
+  const bySymbol = new Map<string, FetchPlanEntry>();
+  for (const holding of data.holdings) {
+    const isMarket = holding.price_type === "market";
+    const isFetchableNav = fetchableNavClasses.has(holding.asset_class);
+    if (!isMarket && !isFetchableNav) continue;
+    const symbol = holding.price_symbol;
+    if (!symbol) continue;
+    const sizeEur = sizes.get(holding.symbol)?.toNumber() ?? 0;
+    const existing = bySymbol.get(symbol);
+    if (existing) {
+      existing.sizeEur += sizeEur;
+      // Market priority wins if any holding on this ticker is market-priced.
+      if (isMarket) existing.priceType = "market";
+    } else {
+      bySymbol.set(symbol, {
+        symbol,
+        priceType: holding.price_type,
+        assetClass: holding.asset_class,
+        sizeEur,
+      });
+    }
+  }
+
+  const rank = (e: FetchPlanEntry): number => (e.priceType === "market" ? 0 : 1);
+  return [...bySymbol.values()].sort((a, b) => {
+    if (rank(a) !== rank(b)) return rank(a) - rank(b);
+    if (b.sizeEur !== a.sizeEur) return b.sizeEur - a.sizeEur;
+    return a.symbol.localeCompare(b.symbol); // stable, deterministic tiebreak
+  });
+}
+
+/**
+ * Is `iso` (a `YYYY-MM-DD` date) a weekday a fund could strike a NAV on?
+ *
+ * Defence-in-depth only: NAV value-dates now come from the daily `time_series`
+ * endpoint, which already omits non-trading days, so a weekend date should never
+ * reach here. We still reject one as a cheap guard against any feed quirk. The
+ * date is read in UTC so the weekday is independent of the viewer's timezone.
+ */
+function isBusinessDayIso(iso: string): boolean {
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return false;
+  const day = d.getUTCDay();
+  return day !== 0 && day !== 6;
+}
+
 function priceForHolding(
   holding: ExportHolding,
   quote: Quote | undefined,
@@ -208,33 +296,42 @@ function priceForHolding(
   price: Decimal | null;
   isLive: boolean;
   at: number | null;
+  /** Date to show when `at` is null (a NAV's value-date, or the export date). */
+  asOfDate: string;
 } {
   if (quote && quote.price) {
     // NAV-priced holdings (mutual funds / money-market) publish only ~once a
-    // business day, and the live feed and the desktop export draw their NAVs
-    // from different providers. Adopting a live NAV that is *not* genuinely
-    // newer than the export's mark therefore swaps the value onto a different
-    // basis for no new information — which is exactly what made the value chart
-    // appear to crash on its final point and mislabelled a day-old NAV as "now".
-    // So for NAV rows we only supersede the exported value with a live quote
-    // whose value-date is strictly newer than the export; otherwise we keep the
-    // consistent exported last-known price.
+    // trading day. Their live mark comes from the daily `time_series` endpoint,
+    // whose latest bar is the genuine last-published NAV (it has no bar for a
+    // weekend or a mid-week market holiday). We only supersede the exported
+    // value when that bar's value-date is strictly newer than the export, so a
+    // closed-day carry-forward never swaps the value onto a stale basis — which
+    // is what made the value chart crash on its final point. (The business-day
+    // check is a belt-and-suspenders guard; the trading-day source does the real
+    // work.)
     const navNotNewer =
       holding.price_type === "nav" &&
       holding.last_known_price_native !== null &&
-      !(quote.valueDate != null && quote.valueDate > exportAsOf);
+      !(quote.valueDate != null && quote.valueDate > exportAsOf && isBusinessDayIso(quote.valueDate));
     if (!navNotNewer) {
-      // "as of" should be when the price actually struck (Twelve Data
-      // `timestamp`), not when we happened to fetch it — so a stale-but-latest
-      // price reads as e.g. "yesterday", never "now". Fall back to fetch time
-      // only when the API gave no usable timestamp.
-      return { price: quote.price, isLive: true, at: quote.priceTime ?? quote.at ?? null };
+      // "as of" should reflect when the price actually applies, not when we
+      // fetched it. Market quotes carry an intraday strike time (`priceTime`), so
+      // a same-day price reads as a clock time; a daily NAV bar has only a date,
+      // so we surface its value-date and the UI shows a date — never the fetch
+      // time, which would mislabel a once-a-day NAV as "now".
+      const isNav = holding.price_type === "nav";
+      return {
+        price: quote.price,
+        isLive: true,
+        at: isNav ? (quote.priceTime ?? null) : (quote.priceTime ?? quote.at ?? null),
+        asOfDate: quote.valueDate ?? exportAsOf,
+      };
     }
   }
   if (holding.last_known_price_native !== null) {
-    return { price: new Decimal(holding.last_known_price_native), isLive: false, at: null };
+    return { price: new Decimal(holding.last_known_price_native), isLive: false, at: null, asOfDate: exportAsOf };
   }
-  return { price: null, isLive: false, at: null };
+  return { price: null, isLive: false, at: null, asOfDate: exportAsOf };
 }
 
 function buildHolding(
@@ -247,7 +344,7 @@ function buildHolding(
   fallbackValueEur: Decimal | null,
 ): HoldingView {
   const shares = new Decimal(holding.shares);
-  const { price, isLive, at } = priceForHolding(holding, quote, exportAsOf);
+  const { price, isLive, at, asOfDate } = priceForHolding(holding, quote, exportAsOf);
   const currency = holding.native_currency;
 
   let valueEur: Decimal | null = null;
@@ -300,7 +397,7 @@ function buildHolding(
     priceNative: price,
     priceIsLive: isLive,
     priceAsOf: at,
-    priceFallbackDate: exportAsOf,
+    priceFallbackDate: asOfDate,
     valueIsStale,
     valueEur,
     costBasisEur,
@@ -452,6 +549,18 @@ export function buildDashboard(
   const overview: OverviewView = {
     generatedAt: data.meta.generated_at,
     asOf,
+    liveAsOf: holdings.reduce<number | null>(
+      (latest, h) =>
+        h.priceAsOf !== null && (latest === null || h.priceAsOf > latest) ? h.priceAsOf : latest,
+      null,
+    ),
+    // When nothing was priced intraday (e.g. a fund-only portfolio over a
+    // weekend), the top stamp shows the newest date we do know — the latest
+    // holding value-date, or the export date.
+    liveAsOfFallbackDate: holdings.reduce<string>(
+      (latest, h) => (h.priceFallbackDate > latest ? h.priceFallbackDate : latest),
+      exportAsOf,
+    ),
     totalValueEur,
     cashValueEur,
     totalCostBasisEur,
