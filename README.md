@@ -35,7 +35,9 @@ from the host laptop and any device on the same Wi-Fi network.
   date, so EUR returns reflect when the money actually moved.
 - **Modern colorblind-safe UI** with light/dark chrome and a Settings →
   Storage panel showing each tier path/source.
-- **Private**, single-user, $0 hosting. Runs on `0.0.0.0:8080`.
+- **Private deployment**, single-user, $0 hosting. Runs on `0.0.0.0:8080` and is
+  LAN-only by design (the *deployment* is private even though this source
+  repository is public — see [`SECURITY.md`](SECURITY.md)).
 
 ## Tech stack
 

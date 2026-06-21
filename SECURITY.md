@@ -121,19 +121,22 @@ release. The design assumption is deliberately blunt:
 - Use a long, unique **mobile passphrase**: the published `portfolio.enc` is
   world-downloadable by design, so its only protection is that passphrase.
 
-## Before making this repository public
+## This repository is public
 
-Making a repository public exposes its entire **git history**, not just the
-current files. See `docs/v3.0_live_web_companion_proposal.md` §7 for the full
-pre‑flip checklist. In short, before flipping visibility:
+**This repository is now public.** Making a repository public exposes its entire
+**git history**, not just the current files, so the pre‑flip scrub in
+`docs/v3.0_live_web_companion_proposal.md` §7 was completed before visibility was
+flipped. The same hygiene must be **maintained** going forward:
 
-- Real financial exports must be removed **and purged from history** (or pushed
-  to a fresh repository). Note that GitHub keeps immutable `refs/pull/<N>/head`
-  refs that a force‑push cannot rewrite — see §7.1.
-- `.gitignore` must block real data files, `.env`, and build artefacts.
+- Real financial exports stay out of the tree **and** out of history — only the
+  anonymized synthetic fixtures under `docs/Comparison Files/` are tracked. The
+  real exports were purged from history (and the stale `refs/pull/<N>/head` refs
+  resolved) before going public — see §7.1.
+- `.gitignore` blocks real data files, `.env`, and build artefacts so they can't
+  be re‑added.
 - No secrets in code, history, or workflows; PAT + passphrase keyring‑only.
-- A strong, unique mobile passphrase must be set.
+- A strong, unique mobile passphrase is set.
 
 A lightweight regression guard (`tests/test_public_readiness.py`) asserts that no
-obviously real export or `.env` file is tracked, so the checklist can't silently
-rot.
+obviously real export or `.env` file is tracked, so this hygiene can't silently
+rot now that the tree is world‑readable.
