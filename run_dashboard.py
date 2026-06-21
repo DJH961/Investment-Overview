@@ -247,12 +247,14 @@ def _parse_requirement(entry: str) -> tuple[str, _Bound, _Bound] | None:
 
     lower: _Bound = None
     upper: _Bound = None
-    for operator, raw_version in re.findall(r"(>=|<=|==|~=|<|>)\s*([0-9]+(?:\.[0-9]+)*)", entry):
+    # Only the operators this coarse floor/ceiling model understands are matched;
+    # unsupported ones (bare ``>``/``<=``/``!=``) are intentionally not captured.
+    for operator, raw_version in re.findall(r"(>=|==|~=|<)\s*([0-9]+(?:\.[0-9]+)*)", entry):
         version = _version_tuple(raw_version)
-        if operator in {">=", "==", "~="}:
-            lower = version if lower is None else max(lower, version)
-        elif operator == "<":
+        if operator == "<":
             upper = version if upper is None else min(upper, version)
+        else:
+            lower = version if lower is None else max(lower, version)
     return name, lower, upper
 
 

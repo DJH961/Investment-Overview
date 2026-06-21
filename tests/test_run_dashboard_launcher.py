@@ -36,7 +36,9 @@ def test_parse_requirement_extracts_name_and_bounds() -> None:
 
 def test_parse_requirement_returns_none_for_unnamed_entry() -> None:
     assert run_dashboard._parse_requirement("") is None
+    assert run_dashboard._parse_requirement("   ") is None
     assert run_dashboard._parse_requirement(">=1.0") is None
+    assert run_dashboard._parse_requirement("[extra]>=1.0") is None
 
 
 def test_parse_requirement_picks_tightest_constraints() -> None:
