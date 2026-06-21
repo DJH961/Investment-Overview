@@ -28,9 +28,20 @@ def test_css_defines_feedback_elements_and_hides_default_popup() -> None:
 def test_body_html_exposes_stable_ids() -> None:
     body = connectivity._body_html()
     assert 'id="inv-loadbar"' in body
+    assert 'id="inv-loadhint"' in body
     assert 'id="inv-connbar"' in body
     assert 'id="inv-connbar-text"' in body
     assert 'id="inv-connbar-reload"' in body
+
+
+def test_stall_hint_is_wired_to_show_and_hide() -> None:
+    css = connectivity._css()
+    js = connectivity._script()
+    assert "#inv-loadhint" in css
+    # The 8s stall timer must actually reveal the hint, and a completed load
+    # must hide it again (no dead reassurance code).
+    assert "showHint(true)" in js
+    assert "showHint(false)" in js
 
 
 def test_script_attaches_to_socket_additively_and_guards_double_install() -> None:

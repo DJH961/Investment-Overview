@@ -20,8 +20,8 @@ app's state continuously visible:
   **Reconnect now** escape hatch so a wedged tab is never a dead end.
 * **Header status dot** — an always-on at-a-glance dot (green connected / amber
   reconnecting / red offline) rendered into the header by :mod:`layout`.
-* **Stall hint** — if loading runs unusually long the progress bar widens its
-  message to reassure that the app is busy, not dead.
+* **Stall hint** — if a load runs unusually long, a small "Still working…" pill
+  appears to reassure that the app is busy, not dead.
 
 Everything is driven from the real ``window.socket`` (the socket.io client
 NiceGUI creates per page) plus the browser ``online``/``offline`` events, and is
@@ -70,6 +70,34 @@ def _css() -> str:
   pointer-events: none;
 }
 #inv-loadbar.is-active { opacity: 1; }
+
+/* "Still working…" reassurance shown only when a load runs unusually long. */
+#inv-loadhint {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  align-items: center;
+  gap: .4rem;
+  padding: .25rem .7rem;
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--inv-ink, #1f2937);
+  background: var(--inv-surface, #fff);
+  border: 1px solid var(--inv-hairline, rgba(0, 0, 0, .12));
+  border-radius: 999px;
+  box-shadow: var(--inv-shadow-soft, 0 2px 10px rgba(0, 0, 0, .12));
+  z-index: 100002;
+  pointer-events: none;
+}
+#inv-loadhint.is-visible { display: flex; }
+#inv-loadhint .inv-connbar-spinner {
+  width: 11px;
+  height: 11px;
+  border-color: rgba(0, 0, 0, .2);
+  border-top-color: var(--inv-accent, #2563eb);
+}
 
 /* Full-width connection banner — appears immediately when the socket drops. */
 #inv-connbar {
@@ -159,6 +187,10 @@ def _body_html() -> str:
     """Return the banner + progress-bar markup injected into every page body."""
     return """
 <div id="inv-loadbar"></div>
+<div id="inv-loadhint">
+  <span class="inv-connbar-spinner" aria-hidden="true"></span>
+  <span>Still working&hellip;</span>
+</div>
 <div id="inv-connbar" role="alert" aria-live="assertive">
   <span class="inv-connbar-spinner" aria-hidden="true"></span>
   <span id="inv-connbar-text">Connection lost &mdash; reconnecting&hellip;</span>
@@ -182,14 +214,17 @@ def _script() -> str:
   window.__invFeedbackInstalled = true;
 
   // ---- Top progress bar ------------------------------------------------
-  var bar = null, trickle = null, progress = 0, startedAt = 0, stallTimer = null;
+  var bar = null, hint = null, trickle = null, progress = 0, stallTimer = null;
   function el(id) { return document.getElementById(id); }
   function setText(t) { var n = el('inv-connbar-text'); if (n) n.textContent = t; }
+  function showHint(v) {
+    hint = hint || el('inv-loadhint');
+    if (hint) hint.classList.toggle('is-visible', !!v);
+  }
 
   function barStart() {
     bar = bar || el('inv-loadbar');
     if (!bar) return;
-    startedAt = Date.now();
     bar.classList.add('is-active');
     progress = Math.max(progress, 8);
     bar.style.width = progress + '%';
@@ -204,12 +239,13 @@ def _script() -> str:
     if (stallTimer) clearTimeout(stallTimer);
     stallTimer = setTimeout(function () {
       // Long load: reassure the user the app is busy, not dead.
-      if (dot && dot.classList.contains('is-ok')) { /* keep dot as-is */ }
+      showHint(true);
     }, 8000);
   }
   function barDone() {
     if (trickle) { clearInterval(trickle); trickle = null; }
     if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+    showHint(false);
     bar = bar || el('inv-loadbar');
     if (!bar) return;
     progress = 100;
