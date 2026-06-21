@@ -15,7 +15,6 @@ from nicegui import ui
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.services import display_currency_service
-from investment_dashboard.services.metrics_service import compute_portfolio_metrics
 from investment_dashboard.ui.components import (
     empty_state,
     kpi_card,
@@ -259,7 +258,7 @@ def register() -> None:
             with session_scope() as session:
                 display_ccy = display_currency_service.get_display_currency(session)
                 bundle = build_bundle(session, currency=display_ccy, lookback_days=days)
-                metrics = compute_portfolio_metrics(session)
+                metrics = bundle.metrics
             with ui.row().classes("items-center gap-sm"):
                 ui.label("Lookback:").classes("text-caption opacity-70")
                 ui.toggle(

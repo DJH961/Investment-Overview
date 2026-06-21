@@ -98,6 +98,7 @@ class AnalyticsBundle:
     risk_free_symbol: str
     benchmark_symbol: str
     attribution: list[AttributionRow]
+    metrics: "metrics_service.PortfolioMetrics"
 
 
 def _daily_returns(values: list[Decimal]) -> list[Decimal]:
@@ -336,4 +337,5 @@ def build_bundle(
         risk_free_symbol=rf_snapshot.symbol,
         benchmark_symbol=benchmark_series.symbol,
         attribution=attribution,
+        metrics=portfolio_metrics,
     )
