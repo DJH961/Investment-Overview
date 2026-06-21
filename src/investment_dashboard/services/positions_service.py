@@ -202,16 +202,18 @@ def compute_positions(  # noqa: PLR0912, PLR0915
         future_by_key: dict[tuple[int, int | None], list[Transaction]] = {}
         for t in transactions_repo.list_transactions(session, start=as_of + timedelta(days=1)):
             future_by_key.setdefault((t.account_id, t.instrument_id), []).append(t)
-        feed_factor: dict[int, Decimal | None] = {}
+        held_instrument_ids = {iid for (_, iid) in holdings if iid is not None}
+        # One batched lookup for the feed split factors instead of a query per
+        # held instrument (5C.11). Absent ids carry the "no cached split data —
+        # fall back to ledger split rows" signal.
+        feed_factor = prices_service.cumulative_split_factors_after(
+            session, held_instrument_ids, as_of
+        )
         for key, agg in holdings.items():
             account_id, instrument_id = key
             if instrument_id is None:
                 continue
-            if instrument_id not in feed_factor:
-                feed_factor[instrument_id] = prices_service.cumulative_split_factor_after(
-                    session, instrument_id, as_of
-                )
-            factor = feed_factor[instrument_id]
+            factor = feed_factor.get(instrument_id)
             if factor is None:
                 future = future_by_key.get(key)
                 factor = _split_factor_after(agg["shares"], future) if future else Decimal(1)
@@ -235,6 +237,15 @@ def compute_positions(  # noqa: PLR0912, PLR0915
             ) or Decimal(1)
         return rate_cache[ccy]
 
+    # Batch the per-instrument close lookups into one window query instead of a
+    # `close_as_of` / `latest_close` call per held instrument (5C.11). Money-
+    # market funds price at par below and never consult this map.
+    held_instrument_ids = {iid for (_, iid) in holdings if iid is not None}
+    if is_historical:
+        closes_by_instrument = prices_service.closes_as_of(session, held_instrument_ids, as_of)
+    else:
+        closes_by_instrument = prices_service.latest_closes(session, held_instrument_ids)
+
     results: list[Position] = []
     for (account_id, instrument_id), agg in holdings.items():
         if instrument_id is None:
@@ -255,10 +266,8 @@ def compute_positions(  # noqa: PLR0912, PLR0915
         # ``as_of`` (forward-filled), not today's price — otherwise YTD/MTD
         # start values and the equity curve are all priced at today's close.
         # For "today" we keep ``latest_close`` so intraday refreshes show.
-        elif is_historical:
-            current_price = prices_service.close_as_of(session, instr.id, as_of)
         else:
-            current_price = prices_service.latest_close(session, instr.id)
+            current_price = closes_by_instrument.get(instr.id)
         current_value_native = agg["shares"] * current_price if current_price is not None else ZERO
         # Scale by the cumulative post-as-of split factor so a pre-split date
         # values the adjusted share count against the adjusted close. ``shares``

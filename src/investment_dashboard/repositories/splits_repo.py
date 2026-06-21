@@ -61,6 +61,35 @@ def cumulative_factor_after(session: Session, instrument_id: int, as_of: date) -
     return factor
 
 
+def cumulative_factors_after(
+    session: Session, instrument_ids: Sequence[int], as_of: date
+) -> dict[int, Decimal]:
+    """Batched :func:`cumulative_factor_after` for many instruments.
+
+    Returns ``{instrument_id: factor}`` for every instrument that has at least
+    one cached split, where ``factor`` is the product of its split ratios
+    strictly after ``as_of`` (``Decimal(1)`` when the feed confirms it split
+    but not after ``as_of``). Instruments with *no* cached split data are
+    **absent** from the mapping — the same "fall back to ledger split rows"
+    signal that :func:`cumulative_factor_after` conveys via ``None`` per call,
+    so a caller can distinguish "never fetched" from "confirmed no later split".
+    """
+    if not instrument_ids:
+        return {}
+    with_splits = instrument_ids_with_splits(session, instrument_ids)
+    if not with_splits:
+        return {}
+    factors: dict[int, Decimal] = {iid: Decimal(1) for iid in with_splits}
+    stmt = select(PriceSplit.instrument_id, PriceSplit.ratio).where(
+        PriceSplit.instrument_id.in_(with_splits),
+        PriceSplit.date > as_of,
+    )
+    for iid, ratio in session.execute(stmt).all():
+        if ratio and ratio > 0:
+            factors[iid] *= ratio
+    return factors
+
+
 def upsert_splits(
     session: Session,
     instrument_id: int,

@@ -112,6 +112,67 @@ def close_as_of(session: Session, instrument_id: int, as_of: date) -> Decimal | 
     return session.scalars(stmt).one_or_none()
 
 
+def latest_closes(session: Session, instrument_ids: Sequence[int]) -> dict[int, Decimal]:
+    """Last known close per instrument in one window query.
+
+    Batched form of :func:`latest_close` so valuing "today" across a whole
+    portfolio is a single round-trip instead of one lookup per holding.
+    Instruments with no cached history are absent from the mapping.
+    """
+    if not instrument_ids:
+        return {}
+    ranked = (
+        select(
+            PriceHistory.instrument_id,
+            PriceHistory.close_native,
+            func.row_number()
+            .over(
+                partition_by=PriceHistory.instrument_id,
+                order_by=PriceHistory.date.desc(),
+            )
+            .label("rn"),
+        )
+        .where(PriceHistory.instrument_id.in_(instrument_ids))
+        .subquery()
+    )
+    stmt = select(ranked.c.instrument_id, ranked.c.close_native).where(ranked.c.rn == 1)
+    return {iid: close for iid, close in session.execute(stmt).all()}
+
+
+def closes_as_of(
+    session: Session, instrument_ids: Sequence[int], as_of: date
+) -> dict[int, Decimal]:
+    """Most recent close on or before ``as_of`` per instrument in one query.
+
+    Batched form of :func:`close_as_of`: a single window query partitions by
+    ``instrument_id`` and keeps each instrument's newest print at or before
+    ``as_of``, replacing the per-instrument N+1 that historical valuations
+    (YTD/MTD start, period-closing snapshots) otherwise issue. Instruments with
+    no print on or before ``as_of`` are absent from the mapping.
+    """
+    if not instrument_ids:
+        return {}
+    ranked = (
+        select(
+            PriceHistory.instrument_id,
+            PriceHistory.close_native,
+            func.row_number()
+            .over(
+                partition_by=PriceHistory.instrument_id,
+                order_by=PriceHistory.date.desc(),
+            )
+            .label("rn"),
+        )
+        .where(
+            PriceHistory.instrument_id.in_(instrument_ids),
+            PriceHistory.date <= as_of,
+        )
+        .subquery()
+    )
+    stmt = select(ranked.c.instrument_id, ranked.c.close_native).where(ranked.c.rn == 1)
+    return {iid: close for iid, close in session.execute(stmt).all()}
+
+
 def instrument_ids_with_nonpositive_close(
     session: Session, instrument_ids: Sequence[int]
 ) -> set[int]:

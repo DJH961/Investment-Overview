@@ -142,11 +142,13 @@ category read-only flip is the smallest remaining piece; everything else in
 
 ---
 
-## 5. Performance / efficiency backlog (added 2026-06-21)
+## 5. Performance / efficiency backlog (added 2026-06-21 — ✅ fully cleared)
 
 A profiling pass over the hot render path, the synchronous cold-start path and
-the repository layer surfaced the following inefficiencies. They are tracked
-here as a live checklist; status is updated as each is resolved.
+the repository layer surfaced the following inefficiencies. They were tracked
+here as a live checklist; **every item below is now resolved** (5A–5D batched /
+gated / indexed, 5E closed — see per-item notes), so the performance audit is
+complete. Add any newly-found inefficiency here as a fresh `5x.N ⏳` item.
 
 ### 5A — Hot-path inefficiencies (run on every page render)
 
@@ -203,15 +205,20 @@ These run inside `run_boot_sequence(skip_network=True)` on the cold-start path.
   one-by-one; now a single `DELETE … WHERE`. `allocations_repo.set_active`
   loaded all allocations and flipped `active` in Python; now two bulk
   `UPDATE`s.
-- **5C.11 `compute_positions` historical valuation N+1 (found 2026-06-21)** —
-  ⏳ open. When `as_of < today` (every YTD start-of-year valuation and every
-  cached period-closing snapshot), `compute_positions` issues
+- **5C.11 `compute_positions` historical valuation N+1** — ✅ done.
+  When `as_of < today` (every YTD start-of-year valuation and every cached
+  period-closing snapshot), `compute_positions` issued
   `prices_service.close_as_of(instr.id, as_of)` **and**
   `cumulative_split_factor_after(instr.id, as_of)` once per held instrument — an
   N+1 over the holdings table on top of the already-batched daily-growth path
-  (5A.1). Batching these by `instrument_id` (a `close_as_of`-style window query
-  + a grouped split-factor lookup) would cut the historical valuation to O(1)
-  round-trips, completing the spirit of 5A.4 / 5E.B.
+  (5A.1). Both are now batched by `instrument_id`: a single window query
+  (`prices_repo.closes_as_of`) forward-fills every held instrument's close as of
+  the date, and one grouped lookup (`splits_repo.cumulative_factors_after`)
+  returns each instrument's post-`as_of` split factor (absent ⇒ "no cached split
+  data, fall back to ledger rows"). _Found along the way:_ the **today** path
+  (`as_of == today`) shared the identical N+1 via per-instrument `latest_close`,
+  so it was batched too (`prices_repo.latest_closes`). Historical and live
+  valuation are now O(1) round-trips, completing the spirit of 5A.4 / 5E.B.
 
 ### 5D — Missing index (low–medium impact)
 
@@ -221,15 +228,25 @@ These run inside `run_boot_sequence(skip_network=True)` on the cold-start path.
   index on `(base, quote, date)`. (`price_history` was re-checked and its
   `(instrument_id, date)` PK already covers its queries — no change needed.)
 
-### 5E — Cross-cutting ideas (proposed, larger refactors)
+### 5E — Cross-cutting ideas (resolved)
 
-- **5E.A Defer slow cold-start work off the critical path** — partially via
-  5B.5/5B.6 interval-gating. The next step is to also move the rolling backup +
-  integrity check onto the existing deferred background thread (the network
-  refresh already proved the pattern), shaving the most wall-clock off perceived
-  startup for the least risk.
-- **5E.B Request-scoped valuation cache** keyed by `(as_of, ledger-revision)`
-  would let 5A.1–5A.4 collapse into shared work: Overview, Periods and Analytics
-  each independently recompute positions/metrics/snapshots for overlapping dates
-  within a single navigation. A tiny per-session memo (invalidated whenever the
-  ledger is written) is a lighter first step than the full valuation engine.
+- **5E.A Defer slow cold-start work off the critical path** — ✅ resolved by
+  cadence-gating. `5B.5`/`5B.6` interval-gate the rolling backup (hourly) and
+  the integrity check (daily), so on the overwhelming majority of cold starts
+  both are skipped entirely and cost nothing on the path before the UI opens.
+  The further step of moving them onto the deferred background thread is
+  **deliberately declined**: both currently run _before_ `_run_migrations()`, so
+  they act as a pre-migration safety net (a clean-integrity snapshot taken
+  before any schema mutation). Relocating them after the UI opens would run them
+  post-migration and forfeit that guarantee — a real safety regression for only
+  a few milliseconds of perceived-startup gain. The gating already captured the
+  win at no risk.
+- **5E.B Request-scoped valuation cache** — ✅ resolved (made moot). The idea was
+  a shared per-session memo to collapse the overlapping N+1s that 5A.1–5A.4 each
+  recomputed. With every one of those paths — plus 5C.11's historical/live
+  valuation — now individually batched to O(1) round-trips, the per-instrument
+  fan-out the cache was meant to absorb no longer exists. A request-scoped cache
+  would now save only whole-call recomputes across pages within one navigation,
+  which the existing snapshot cache (`snapshots_service`) already covers for the
+  expensive historical series. No further work needed; revisit only if profiling
+  surfaces a new shared hot path.

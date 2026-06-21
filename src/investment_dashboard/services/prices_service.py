@@ -202,6 +202,22 @@ def cumulative_split_factor_after(
         return splits_repo.cumulative_factor_after(cache, instrument_id, as_of)
 
 
+def cumulative_split_factors_after(
+    session: Session, instrument_ids: Sequence[int], as_of: date
+) -> dict[int, Decimal]:
+    """Batched :func:`cumulative_split_factor_after` (cache tier).
+
+    Returns ``{instrument_id: factor}`` only for instruments that have cached
+    split data; an instrument absent from the mapping carries the same "no
+    split data cached — fall back to the ledger ``split`` rows" signal that the
+    per-instrument helper conveys with ``None``.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return splits_repo.cumulative_factors_after(cache, instrument_ids, as_of)
+
+
 def latest_close(session: Session, instrument_id: int) -> Decimal | None:
     """Last known close for ``instrument_id``.
 
@@ -227,6 +243,34 @@ def close_as_of(session: Session, instrument_id: int, as_of: date) -> Decimal | 
 
     with cache_read_session(session) as cache:
         return prices_repo.close_as_of(cache, instrument_id, as_of)
+
+
+def latest_closes(session: Session, instrument_ids: Sequence[int]) -> dict[int, Decimal]:
+    """Batched :func:`latest_close` (cache tier).
+
+    Values a whole portfolio "today" in one round-trip; instruments with no
+    cached history are absent from the mapping (the ``None`` of the per-row
+    helper).
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return prices_repo.latest_closes(cache, instrument_ids)
+
+
+def closes_as_of(
+    session: Session, instrument_ids: Sequence[int], as_of: date
+) -> dict[int, Decimal]:
+    """Batched :func:`close_as_of` (cache tier).
+
+    Values a whole portfolio as of a past date in one round-trip, replacing the
+    per-instrument N+1 in historical valuations. Instruments with no print on
+    or before ``as_of`` are absent from the mapping.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return prices_repo.closes_as_of(cache, instrument_ids, as_of)
 
 
 def invalidate_instrument_prices(session: Session, instrument_id: int) -> int:
