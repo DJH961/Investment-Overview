@@ -12,9 +12,10 @@
  *     verification (the fingerprint touch). The browser/OS keeps the underlying
  *     key in hardware; it is never exposed to JS or to us.
  *   - We use that PRF secret as an AES-256-GCM key to wrap (encrypt) the
- *     passphrase, and persist only the ciphertext (plus the credential id and
- *     PRF salt) in `localStorage`. Without a live fingerprint touch on *this*
- *     device the ciphertext is inert.
+ *     passphrase, and persist only the **encrypted** passphrase (the `iv` +
+ *     `ciphertext`) alongside the `credentialId` and PRF `prfSalt` needed to
+ *     re-derive the key, in `localStorage`. Without a live fingerprint touch on
+ *     *this* device the ciphertext is inert.
  *
  * Everything degrades gracefully: if the platform has no authenticator or the
  * PRF extension is unsupported, {@link isBiometricSupported} resolves false and
@@ -207,6 +208,13 @@ export async function enrolBiometric(passphrase: string): Promise<void> {
     iv,
     ciphertext,
   };
+  // SECURITY (accepted, intentional): CodeQL's clear-text-storage rule flags
+  // this write because `ciphertext` flows from the passphrase. It is NOT clear
+  // text — it is the passphrase AES-256-GCM-encrypted under a key that only the
+  // device's authenticator can re-derive (via the WebAuthn PRF secret, gated on
+  // a verified fingerprint touch). The persisted record (credential id, PRF
+  // salt, nonce, ciphertext) is inert without that hardware-backed touch, so no
+  // usable passphrase or plaintext is stored. The trade-off is accepted here.
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(stored));
   } catch {

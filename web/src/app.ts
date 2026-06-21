@@ -62,6 +62,9 @@ import { h, renderDashboard } from "./ui";
  */
 const BLOB_REFETCH_MIN_INTERVAL_MS = 2 * 60 * 1000;
 
+/** How long an auto-dismissing status toast stays on screen. */
+const TOAST_DURATION_MS = 4500;
+
 /**
  * NAV-priced asset classes that are real, tickered funds and so can be priced
  * live (their NAV publishes ~once a day). Only genuine `mutual_fund` holdings
@@ -597,7 +600,7 @@ export class App {
     if (typeof document === "undefined") return;
     const node = h("div", { class: "app-toast", role: "status", "aria-live": "polite" }, [message]);
     document.body.append(node);
-    setTimeout(() => node.remove(), 4500);
+    setTimeout(() => node.remove(), TOAST_DURATION_MS);
   }
 
   /**
