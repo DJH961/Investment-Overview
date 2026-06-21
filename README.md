@@ -7,7 +7,7 @@ return metrics — XIRR, TWR, CAGR, YTD variants, drawdown, Sharpe, Sortino —
 in both **USD** and **EUR**, and serves them over a NiceGUI web UI accessible
 from the host laptop and any device on the same Wi-Fi network.
 
-> **Status: v2.11.1 — split storage, cloud-aware paths, optional SQLCipher,
+> **Status: v3.0.0 — split storage, cloud-aware paths, optional SQLCipher,
 > intraday price refresh, bulk/background snapshot performance, SQLite
 > file-safety tooling, an equity-curve performance pass, structured per-row
 > broker imports, and the v3.0 live-web companion (encrypted publish + an

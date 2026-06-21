@@ -14,6 +14,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.0.0] — 2026-06-21
+
+The **v3.0 live-web companion** lands: an encrypted publish pipeline and an
+in-browser dashboard that decrypts and renders your portfolio client-side, plus
+an installable PWA, desktop auto-publish triggers, a public-repo security scrub,
+and structured per-row broker imports. This release also folds in the portable
+bundle first-start fix that shipped under 2.11.x.
+
 ### Added — v3.0 live-web companion, Phase 5 "PWA + auto-publish + public scrub"
 - **Installable PWA (`web/`).** A web manifest (`public/manifest.webmanifest`),
   a brand SVG icon (`public/icon.svg`), and a service worker (`public/sw.js`)
@@ -83,11 +91,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `publish_include_transactions`. All additive and off by default.
 - New dependency: `cryptography>=48.0.1` for AES-GCM.
 
+### Fixed — portable bundle first-start
 
+Bug-fix work for the portable bundle's first-start experience.
 
-Bug-fix release for the portable bundle's first-start experience.
-
-### Fixed
 - **First start no longer crashes with `no such table: app_config`.** A fresh
   install resolves to a split-DB layout (separate `ledger`/`config`/`cache`
   files), and the portable bundle ships no Alembic, so boot falls back to
