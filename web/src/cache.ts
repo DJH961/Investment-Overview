@@ -69,6 +69,8 @@ interface StoredQuote {
   currency: string | null;
   /** Epoch ms when this quote was fetched. */
   at: number;
+  /** Trading day the price applies to (`YYYY-MM-DD`); see {@link Quote.valueDate}. */
+  valueDate?: string | null;
 }
 
 type QuoteCacheFile = Record<string, StoredQuote>;
@@ -93,6 +95,7 @@ export function readCachedQuotes(storage: StorageLike | null = defaultStorage())
         previousClose: toDecimal(stored.previousClose),
         currency: stored.currency,
         at: stored.at,
+        valueDate: stored.valueDate ?? null,
       },
     });
   }
@@ -118,6 +121,7 @@ export function writeCachedQuotes(
       previousClose: quote.previousClose ? quote.previousClose.toString() : null,
       currency: quote.currency,
       at,
+      valueDate: quote.valueDate ?? null,
     };
   }
   writeJson(storage, QUOTE_KEY, file);

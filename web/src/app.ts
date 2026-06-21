@@ -20,7 +20,7 @@ import {
   type AppConfig,
 } from "./config";
 import { PriceError } from "./prices";
-import { DEFAULT_NAV_CACHE_TTL_MS, FREE_TIER, loadFxRates, loadQuotes, type QuoteLoadReport } from "./quotes";
+import { DEFAULT_NAV_CACHE_TTL_MS, FREE_TIER, loadFxRates, loadQuotes, navCacheTtlMs, type QuoteLoadReport } from "./quotes";
 import { setEurUsdRate } from "./currency";
 import type { MobileExport } from "./types";
 import { h, renderDashboard } from "./ui";
@@ -263,14 +263,18 @@ export class App {
 
     // Free-tier-aware loaders: quotes economise on Twelve Data credits (cache +
     // per-minute/day budgeting + retry-with-backoff); FX prefers a daily cache.
-    // NAV symbols use a long (daily-ish) freshness window so they barely touch
-    // the credit budget.
+    // NAV symbols normally sit on a long (daily-ish) freshness window, but
+    // around the evening publish time they poll harder until today's fresh NAV
+    // lands — then relax again — so updates are caught promptly without burning
+    // the credit budget the rest of the day.
     const cacheTtlMs = config.quoteCacheMinutes * 60 * 1000;
     const [quoteLoad, fxLoad] = await Promise.all([
       loadQuotes(symbols, config.apiKey, {
         cacheTtlMs,
-        cacheTtlMsForSymbol: (symbol) =>
-          navFetchSymbols.has(symbol) ? DEFAULT_NAV_CACHE_TTL_MS : cacheTtlMs,
+        cacheTtlMsForSymbol: (symbol, cached) =>
+          navFetchSymbols.has(symbol)
+            ? navCacheTtlMs(cached?.quote, { shortTtlMs: cacheTtlMs, longTtlMs: DEFAULT_NAV_CACHE_TTL_MS })
+            : cacheTtlMs,
       }),
       loadFxRates(),
     ]);

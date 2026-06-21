@@ -25,6 +25,7 @@ import {
   recordCredits,
   writeCachedFx,
   writeCachedQuotes,
+  type CachedQuote,
   type StorageLike,
 } from "./cache";
 import {
@@ -61,6 +62,100 @@ export const DEFAULT_CACHE_TTL_MS = 15 * MINUTE_MS;
  */
 export const DEFAULT_NAV_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
+/**
+ * Local hour (0–23) by which a fund's once-a-day NAV is expected to be
+ * published. NAV strike/publish times vary by fund and timezone, so this is a
+ * deliberately generous evening default rather than a per-fund schedule.
+ */
+export const NAV_PUBLISH_HOUR = 18;
+
+/**
+ * How many hours after {@link NAV_PUBLISH_HOUR} the refresh layer keeps polling
+ * hard for a not-yet-seen NAV before relaxing again. Bounds the credit cost of
+ * a fund that publishes late (or skips a day) to one evening window.
+ */
+export const NAV_CATCHUP_WINDOW_HOURS = 6;
+
+/** Tunables for {@link navCacheTtlMs} (all optional; sensible defaults apply). */
+export interface NavRefreshOptions {
+  /** Wall-clock epoch ms; defaults to {@link Date.now}. Injected in tests. */
+  now?: number;
+  /** Local hour the NAV is expected to publish; see {@link NAV_PUBLISH_HOUR}. */
+  publishHour?: number;
+  /** Hours after `publishHour` to keep polling; see {@link NAV_CATCHUP_WINDOW_HOURS}. */
+  catchUpWindowHours?: number;
+  /** TTL while catching up to a fresh NAV (poll cadence). */
+  shortTtlMs?: number;
+  /** TTL once the latest NAV is in hand, or outside the publish window. */
+  longTtlMs?: number;
+}
+
+/** Is `d` (in local time) a weekday a fund could publish a NAV on? */
+function isBusinessDay(d: Date): boolean {
+  const day = d.getDay();
+  return day !== 0 && day !== 6;
+}
+
+function localYmd(d: Date): string {
+  const y = d.getFullYear();
+  const m = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * The most recent business day (`YYYY-MM-DD`, local time) whose NAV should
+ * already be published as of `now`: today once we're past `publishHour` on a
+ * business day, otherwise the previous business day.
+ */
+export function latestExpectedNavDate(now: Date, publishHour = NAV_PUBLISH_HOUR): string {
+  const d = new Date(now);
+  if (isBusinessDay(d) && d.getHours() >= publishHour) return localYmd(d);
+  do {
+    d.setDate(d.getDate() - 1);
+  } while (!isBusinessDay(d));
+  return localYmd(d);
+}
+
+/** Are we currently inside today's "catch the new NAV" polling window? */
+function withinCatchUpWindow(now: Date, publishHour: number, windowHours: number): boolean {
+  if (!isBusinessDay(now)) return false;
+  const hour = now.getHours() + now.getMinutes() / 60;
+  return hour >= publishHour && hour < Math.min(24, publishHour + windowHours);
+}
+
+/**
+ * Adaptive freshness window for a NAV-priced holding. Funds publish their NAV
+ * only ~once per business day, so polling on a fixed short interval all day
+ * wastes the free-tier budget while a fixed long interval can leave today's
+ * fresh NAV unseen for hours.
+ *
+ * This returns a short (poll-often) TTL only when we are *both* inside the
+ * evening publish window *and* still missing the latest expected NAV (judged by
+ * the cached quote's value-date). Once that NAV lands — or outside the window —
+ * it relaxes to the long window so refreshes barely touch the credit budget.
+ */
+export function navCacheTtlMs(
+  cached: { valueDate?: string | null } | null | undefined,
+  options: NavRefreshOptions = {},
+): number {
+  const {
+    now = Date.now(),
+    publishHour = NAV_PUBLISH_HOUR,
+    catchUpWindowHours = NAV_CATCHUP_WINDOW_HOURS,
+    shortTtlMs = DEFAULT_CACHE_TTL_MS,
+    longTtlMs = DEFAULT_NAV_CACHE_TTL_MS,
+  } = options;
+
+  const nowDate = new Date(now);
+  const have = cached?.valueDate ?? null;
+  // Already holding the latest expected NAV: nothing new to chase.
+  if (have && have >= latestExpectedNavDate(nowDate, publishHour)) return longTtlMs;
+  // Missing it — poll hard only during the evening publish window.
+  if (withinCatchUpWindow(nowDate, publishHour, catchUpWindowHours)) return shortTtlMs;
+  return longTtlMs;
+}
+
 /** Tunables + injectable seams (tests supply deterministic clock/sleep/storage). */
 export interface LoadQuotesOptions {
   fetchImpl?: FetchLike;
@@ -71,10 +166,12 @@ export interface LoadQuotesOptions {
   cacheTtlMs?: number;
   /**
    * Per-symbol override of {@link cacheTtlMs}. Lets NAV-priced symbols use a
-   * longer (daily-ish) window than market symbols in a single call. Falls back
-   * to `cacheTtlMs` when omitted or when it returns a non-positive value.
+   * longer (daily-ish) window than market symbols in a single call, and adapt
+   * it from the cached quote (e.g. poll harder while a fresh NAV is expected).
+   * Falls back to `cacheTtlMs` when omitted or when it returns a non-positive
+   * value.
    */
-  cacheTtlMsForSymbol?: (symbol: string) => number;
+  cacheTtlMsForSymbol?: (symbol: string, cached?: CachedQuote) => number;
   creditsPerMinute?: number;
   creditsPerDay?: number;
   /** Backoff retries for a transient (429/5xx/network) failure. */
@@ -135,13 +232,13 @@ export async function loadQuotes(
   const stale: string[] = [];
 
   const t0 = now();
-  const ttlFor = (symbol: string): number => {
-    const override = cacheTtlMsForSymbol?.(symbol);
+  const ttlFor = (symbol: string, cached?: CachedQuote): number => {
+    const override = cacheTtlMsForSymbol?.(symbol, cached);
     return override !== undefined && override > 0 ? override : cacheTtlMs;
   };
   for (const symbol of unique) {
     const cached = cache.get(symbol);
-    if (cached && t0 - cached.at < ttlFor(symbol) && cached.quote.price !== null) {
+    if (cached && t0 - cached.at < ttlFor(symbol, cached) && cached.quote.price !== null) {
       result.set(symbol, cached.quote);
       servedFresh.push(symbol);
     } else {

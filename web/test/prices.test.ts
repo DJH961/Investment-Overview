@@ -23,12 +23,13 @@ async function captureError(fn: () => Promise<unknown>): Promise<PriceError> {
 describe("fetchQuotes", () => {
   it("parses a single-symbol response", async () => {
     const fetchImpl: FetchLike = async () =>
-      jsonResponse({ symbol: "VTI", close: "100.5", previous_close: "99.0", currency: "USD" });
+      jsonResponse({ symbol: "VTI", close: "100.5", previous_close: "99.0", currency: "USD", datetime: "2024-01-10 15:30:00" });
     const quotes = await fetchQuotes(["VTI"], "key", fetchImpl);
     const vti = quotes.get("VTI")!;
     expect(vti.price?.toString()).toBe("100.5");
     expect(vti.previousClose?.toString()).toBe("99");
     expect(vti.currency).toBe("USD");
+    expect(vti.valueDate).toBe("2024-01-10"); // date extracted from `datetime`
   });
 
   it("parses a multi-symbol response and flags per-symbol errors", async () => {

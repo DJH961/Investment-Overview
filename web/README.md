@@ -107,6 +107,10 @@ To stay comfortably inside that budget the app (`src/cache.ts`, `src/quotes.ts`)
    Mutual-fund / money-market **NAV** holdings are also priced live, but on a
    long ~12 h window (their NAV only publishes ~once a business day), so they
    track the latest available value while barely touching the credit budget.
+   Around the **evening publish window** (`navCacheTtlMs` in `src/quotes.ts`),
+   though, a NAV whose latest value-date is still behind today's expected one
+   temporarily drops to the short market window so refreshes pick up the new NAV
+   promptly — then relaxes back to ~12 h once today's value is in hand.
    Synthetic cash/savings rows have no ticker and keep their exported value.
 2. **Budgets itself across reloads** via a rolling credit-spend log: it spends
    at most the credits left in the current minute/day windows and **defers** any

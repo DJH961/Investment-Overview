@@ -10,7 +10,7 @@ import {
   writeCachedQuotes,
   type StorageLike,
 } from "../src/cache";
-import { loadFxRates, loadQuotes } from "../src/quotes";
+import { loadFxRates, loadQuotes, navCacheTtlMs, DEFAULT_NAV_CACHE_TTL_MS, DEFAULT_CACHE_TTL_MS } from "../src/quotes";
 import { PriceError, type FetchLike, type Quote } from "../src/prices";
 import Decimal from "decimal.js";
 
@@ -33,7 +33,7 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
  * multiple symbols return a `{SYM: node}` map.
  */
 function quoteBodyFor(requested: string[]): Record<string, unknown> {
-  const node = { close: "100", previous_close: "99", currency: "USD" };
+  const node = { close: "100", previous_close: "99", currency: "USD", datetime: "2024-01-10" };
   if (requested.length === 1) return { symbol: requested[0], ...node };
   const out: Record<string, unknown> = {};
   for (const s of requested) out[s] = { ...node };
@@ -243,5 +243,69 @@ describe("loadFxRates", () => {
     expect(cached).toBe(true);
     expect(error).toBeInstanceOf(PriceError);
     expect(fx.rates.USD.toString()).toBe("1.3");
+  });
+});
+
+describe("navCacheTtlMs — adaptive NAV refresh", () => {
+  // Local-time constructors keep these assertions timezone-independent, matching
+  // the helper's use of local getters. 2024-01-10 is a Wednesday.
+  const wed = (h: number, m = 0) => new Date(2024, 0, 10, h, m).getTime();
+  const sat = (h: number) => new Date(2024, 0, 13, h).getTime();
+
+  it("relaxes to the long window once today's NAV is in hand", () => {
+    const ttl = navCacheTtlMs({ valueDate: "2024-01-10" }, { now: wed(19) });
+    expect(ttl).toBe(DEFAULT_NAV_CACHE_TTL_MS);
+  });
+
+  it("polls hard during the evening window while the new NAV is still missing", () => {
+    const ttl = navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(19) });
+    expect(ttl).toBe(DEFAULT_CACHE_TTL_MS);
+  });
+
+  it("chases an unknown (uncached) value-date during the window", () => {
+    expect(navCacheTtlMs(null, { now: wed(19) })).toBe(DEFAULT_CACHE_TTL_MS);
+    expect(navCacheTtlMs({ valueDate: null }, { now: wed(19) })).toBe(DEFAULT_CACHE_TTL_MS);
+  });
+
+  it("stays on the long window outside the publish window even if behind", () => {
+    // 12:00 is before the 18:00 publish hour; expected = previous business day.
+    const ttl = navCacheTtlMs({ valueDate: "2024-01-08" }, { now: wed(12) });
+    expect(ttl).toBe(DEFAULT_NAV_CACHE_TTL_MS);
+  });
+
+  it("never polls on a weekend (no NAV publishes)", () => {
+    // Saturday evening: latest expected is Friday's NAV, which we already hold.
+    expect(navCacheTtlMs({ valueDate: "2024-01-12" }, { now: sat(19) })).toBe(DEFAULT_NAV_CACHE_TTL_MS);
+    // Even missing, a weekend evening is never a publish window.
+    expect(navCacheTtlMs({ valueDate: "2024-01-05" }, { now: sat(19) })).toBe(DEFAULT_NAV_CACHE_TTL_MS);
+  });
+
+  it("backs off again past the catch-up window", () => {
+    // publishHour 18 + 6h window ends at 24:00; 23:00 is inside, but a 2h window
+    // would already be closed.
+    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(23), catchUpWindowHours: 2 })).toBe(
+      DEFAULT_NAV_CACHE_TTL_MS,
+    );
+    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(23), catchUpWindowHours: 6 })).toBe(
+      DEFAULT_CACHE_TTL_MS,
+    );
+  });
+
+  it("honours custom short/long TTL overrides", () => {
+    const opts = { now: wed(19), shortTtlMs: 1234, longTtlMs: 5678 };
+    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, opts)).toBe(1234);
+    expect(navCacheTtlMs({ valueDate: "2024-01-10" }, opts)).toBe(5678);
+  });
+
+  it("carries the fetched quote's value-date through to the cache", async () => {
+    const storage = memStorage();
+    const fetchImpl = vi.fn<FetchLike>(async (url) => quoteResponse(url));
+    const { quotes } = await loadQuotes(["VTI"], "key", {
+      fetchImpl,
+      storage,
+      now: clock(0),
+      sleep: noSleep,
+    });
+    expect(quotes.get("VTI")?.valueDate).toBe("2024-01-10");
   });
 });
