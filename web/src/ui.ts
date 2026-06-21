@@ -216,6 +216,62 @@ function chip(text: string, cls = ""): HTMLElement {
   return h("span", { class: `chip ${cls}`.trim() }, [text]);
 }
 
+/**
+ * A collapsible section: a tappable header (title + optional sub-label and a
+ * chevron) over a body that can be folded away. Long lists (holdings, the
+ * by-month and by-year period tables) use this so the user can collapse a list
+ * and reach the content below it without scrolling past every row — important
+ * on a phone where these lists can run long. Open by default unless told not to.
+ *
+ * Each section's open/closed state is remembered per device (keyed by its
+ * stable class/title), so collapsing a list to reach what's beneath it survives
+ * a refresh, a currency toggle, or a return from Settings.
+ */
+function collapsibleSection(
+  title: string,
+  sub: string | undefined,
+  body: HTMLElement,
+  extraClass = "",
+  open = true,
+): HTMLElement {
+  const summaryChildren: Array<Node | string> = [h("h2", {}, [title])];
+  if (sub) summaryChildren.push(h("span", { class: "muted" }, [sub]));
+  // Combine the (stable) class and title so each section gets a distinct,
+  // collision-proof persistence key.
+  const id = `${extraClass} ${title}`.trim().replace(/\s+/g, "-").toLowerCase();
+  const attrs: Attrs = { class: `collapsible ${extraClass}`.trim() };
+  if (loadOpenState(id, open)) attrs.open = "open";
+  const details = h("details", attrs, [
+    h("summary", { class: "collapsible-summary" }, summaryChildren),
+    body,
+  ]) as HTMLDetailsElement;
+  details.addEventListener("toggle", () => saveOpenState(id, details.open));
+  return details;
+}
+
+const COLLAPSE_KEY_PREFIX = "iv.web.collapse.";
+
+/** Read a section's remembered open state, defaulting to `fallbackOpen`. */
+function loadOpenState(id: string, fallbackOpen: boolean): boolean {
+  try {
+    const value = localStorage.getItem(COLLAPSE_KEY_PREFIX + id);
+    if (value === "open") return true;
+    if (value === "closed") return false;
+  } catch {
+    /* No storage access; fall back to the default open state. */
+  }
+  return fallbackOpen;
+}
+
+/** Persist a section's open state so it survives a re-render or refresh. */
+function saveOpenState(id: string, open: boolean): void {
+  try {
+    localStorage.setItem(COLLAPSE_KEY_PREFIX + id, open ? "open" : "closed");
+  } catch {
+    /* Preference just won't persist; the in-memory state still applies. */
+  }
+}
+
 /** A single holding as a list row (mobile-first, no wide horizontal table). */
 function renderHoldingRow(holding: HoldingView): HTMLElement {
   const symChildren: Array<Node | string> = [holding.symbol];
@@ -265,10 +321,8 @@ function renderHoldings(holdings: HoldingView[]): HTMLElement {
     return bv - av;
   });
   const count = `${holdings.length} ${holdings.length === 1 ? "position" : "positions"}`;
-  return h("section", { class: "holdings" }, [
-    h("div", { class: "section-head" }, [h("h2", {}, ["Holdings"]), h("span", { class: "muted" }, [count])]),
-    h("ul", { class: "holding-list" }, sorted.map(renderHoldingRow)),
-  ]);
+  const list = h("ul", { class: "holding-list" }, sorted.map(renderHoldingRow));
+  return collapsibleSection("Holdings", count, list, "holdings");
 }
 
 export function renderDashboard(
@@ -276,6 +330,7 @@ export function renderDashboard(
   onRefresh: () => void,
   onLock: () => void,
   onToggleCurrency: () => void,
+  onSettings: () => void,
   lockLabel = "Lock",
 ): HTMLElement {
   const refresh = h("button", { class: "icon-btn", type: "button", "data-action": "refresh" }, [
@@ -286,7 +341,13 @@ export function renderDashboard(
   refresh.addEventListener("click", onRefresh);
   lock.addEventListener("click", onLock);
 
-  const theme = renderThemeToggle();
+  const settings = h(
+    "button",
+    { class: "icon-btn ghost icon-only", type: "button", "data-action": "settings", "aria-label": "Settings", title: "Settings" },
+    [h("span", { class: "icon-btn-glyph", "aria-hidden": "true" }, ["⚙"])],
+  );
+  settings.addEventListener("click", onSettings);
+
   const currency = renderCurrencyToggle(onToggleCurrency);
 
   const topbar = h("header", { class: "topbar" }, [
@@ -295,7 +356,7 @@ export function renderDashboard(
         h("span", { class: "brand-mark", "aria-hidden": "true" }, []),
         h("span", { class: "brand-name" }, ["Investment Overview"]),
       ]),
-      h("div", { class: "topbar-actions" }, [currency, theme, refresh, lock]),
+      h("div", { class: "topbar-actions" }, [currency, refresh, settings, lock]),
     ]),
   ]);
 
@@ -454,10 +515,9 @@ function renderPeriodList(title: string, rows: PeriodRowView[], extraClass = "")
   if (rows.length === 0) {
     return h("section", { class: cls }, [sectionHead(title), h("p", { class: "note" }, ["No periods yet."])]);
   }
-  return h("section", { class: cls }, [
-    sectionHead(title, `${rows.length} ${rows.length === 1 ? "period" : "periods"}`),
-    h("ul", { class: "holding-list" }, rows.map(renderPeriodRow)),
-  ]);
+  const list = h("ul", { class: "holding-list" }, rows.map(renderPeriodRow));
+  const sub = `${rows.length} ${rows.length === 1 ? "period" : "periods"}`;
+  return collapsibleSection(title, sub, list, cls);
 }
 
 function renderDepositsBlock(deposits: DepositsView): HTMLElement {
@@ -782,10 +842,7 @@ function renderAttribution(rows: AnalyticsView["attribution"]): HTMLElement | nu
       h("span", { class: `ledger-amount ${signClass(r.absolutePnlEur)}` }, [formatSignedCurrency(r.absolutePnlEur)]),
     ]),
   );
-  return h("section", { class: "card" }, [
-    h("div", { class: "section-head" }, [h("h2", {}, ["Attribution"]), h("span", { class: "muted" }, ["P/L by holding"])]),
-    h("ul", { class: "ledger-list" }, items),
-  ]);
+  return collapsibleSection("Attribution", "P/L by holding", h("ul", { class: "ledger-list" }, items), "card attribution");
 }
 
 function renderAnalyticsPanel(analytics: AnalyticsView | null): HTMLElement {
@@ -940,7 +997,7 @@ function renderProjection(
  * its own glyph/label in place, so both the live dashboard and demo share it
  * without threading state through the controller.
  */
-function renderThemeToggle(): HTMLElement {
+export function renderThemeToggle(): HTMLElement {
   const glyph = h("span", { class: "icon-btn-glyph", "aria-hidden": "true" }, []);
   const text = h("span", { class: "icon-btn-text" }, []);
   const button = h("button", { class: "icon-btn ghost", type: "button", "data-action": "theme" }, [glyph, text]);

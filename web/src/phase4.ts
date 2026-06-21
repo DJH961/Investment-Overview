@@ -114,50 +114,108 @@ function decOr0(value: string | null | undefined): Decimal {
   return dec(value) ?? new Decimal(0);
 }
 
+/**
+ * Modified Dietz period return, mirroring the desktop `_modified_dietz`:
+ * `(close - open - flow) / (open + flow/2)`. Used as a web-side *fallback* when
+ * the export left a completed period's growth undefined — most often the very
+ * first period, which opens at 0 yet still has a meaningful return on the money
+ * paid in that period. `flow` is the external contributions only (dividends and
+ * interest are internal gains). Returns null when the denominator is
+ * non-positive (e.g. a period with no opening value and no contributions).
+ */
+function modifiedDietzGrowth(
+  opening: Decimal,
+  closing: Decimal,
+  contributions: Decimal,
+): Decimal | null {
+  const denom = opening.plus(contributions.dividedBy(2));
+  if (denom.lessThanOrEqualTo(0)) return null;
+  return closing.minus(opening).minus(contributions).dividedBy(denom);
+}
+
 function mapPeriodRow(row: ExportPeriodRow): PeriodRowView {
+  const openingValueEur = decOr0(row.opening_value_eur);
+  const closingValueEur = dec(row.closing_value_eur);
+  const contributionsEur = decOr0(row.contributions_eur);
+  // Prefer the exported (chained-TWR) growth; when it is missing but we have a
+  // closing value, fall back to a Modified Dietz so periods like the first year
+  // (which opens at 0) still show a growth number instead of a bare dash.
+  let growthPct = dec(row.growth_pct);
+  if (growthPct === null && closingValueEur !== null) {
+    growthPct = modifiedDietzGrowth(openingValueEur, closingValueEur, contributionsEur);
+  }
   return {
     label: row.label,
     netFlowEur: decOr0(row.net_flow_eur),
-    contributionsEur: decOr0(row.contributions_eur),
+    contributionsEur,
     dividendsEur: decOr0(row.dividends_eur),
     interestEur: decOr0(row.interest_eur),
-    openingValueEur: decOr0(row.opening_value_eur),
-    closingValueEur: dec(row.closing_value_eur),
-    growthPct: dec(row.growth_pct),
+    openingValueEur,
+    closingValueEur,
+    growthPct,
     isCurrent: false,
     isLive: false,
   };
 }
 
 /**
- * Overlay the live current-period figures onto the matching (latest) row. The
- * current month label is `YYYY-MM`, the current year `YYYY` (matching the
- * desktop `_period_query` bucket labels), so we key off `meta.as_of`.
+ * Reflect the live current period in the table. The current month label is
+ * `YYYY-MM`, the current year `YYYY` (matching the desktop `_period_query`
+ * bucket labels), so we key off `meta.as_of`. When the export already has a row
+ * for the current period we overlay the live figures onto it; when it does not
+ * (e.g. a brand-new month with no transactions yet) we append a synthetic row
+ * so the current period is always present in the overview.
  */
-function overlayCurrent(
+function upsertCurrent(
   rows: PeriodRowView[],
   currentLabel: string,
   liveGrowthPct: Decimal | null,
   liveClosingEur: Decimal,
 ): void {
-  for (const row of rows) {
-    if (row.label !== currentLabel) continue;
-    row.isCurrent = true;
-    row.closingValueEur = liveClosingEur;
+  const existing = rows.find((row) => row.label === currentLabel);
+  if (existing) {
+    existing.isCurrent = true;
+    existing.closingValueEur = liveClosingEur;
     if (liveGrowthPct !== null) {
-      row.growthPct = liveGrowthPct;
-      row.isLive = true;
+      existing.growthPct = liveGrowthPct;
+      existing.isLive = true;
     }
+    return;
   }
+  // No exported bucket for the current period yet: synthesise a live-only row.
+  // It sorts last chronologically, so after the reverse() it leads the list.
+  // Carry the previous period's close forward as the opening value so the row
+  // is continuous with the completed history rather than starting from zero.
+  const previousClosing = rows.length > 0 ? rows[rows.length - 1].closingValueEur : null;
+  rows.push({
+    label: currentLabel,
+    netFlowEur: new Decimal(0),
+    contributionsEur: new Decimal(0),
+    dividendsEur: new Decimal(0),
+    interestEur: new Decimal(0),
+    openingValueEur: previousClosing ?? new Decimal(0),
+    closingValueEur: liveClosingEur,
+    growthPct: liveGrowthPct,
+    isCurrent: true,
+    isLive: liveGrowthPct !== null,
+  });
 }
 
 /** Build the monthly + yearly period tables, overlaying the live current period. */
 export function buildPeriods(data: MobileExport, overview: OverviewView): PeriodsView {
-  const monthly = (data.monthly?.rows ?? []).map(mapPeriodRow);
-  const yearly = (data.yearly?.rows ?? []).map(mapPeriodRow);
+  const monthlySource = data.monthly?.rows;
+  const yearlySource = data.yearly?.rows;
+  const monthly = (monthlySource ?? []).map(mapPeriodRow);
+  const yearly = (yearlySource ?? []).map(mapPeriodRow);
   const anchor = data.meta.as_of || overview.asOf;
-  overlayCurrent(monthly, anchor.slice(0, 7), overview.mtdGrowthPct, overview.totalValueEur);
-  overlayCurrent(yearly, anchor.slice(0, 4), overview.ytdGrowthPct, overview.totalValueEur);
+  // Only surface a current period when the export actually carries that table;
+  // with no period read-model at all we leave the tables empty.
+  if (monthlySource) {
+    upsertCurrent(monthly, anchor.slice(0, 7), overview.mtdGrowthPct, overview.totalValueEur);
+  }
+  if (yearlySource) {
+    upsertCurrent(yearly, anchor.slice(0, 4), overview.ytdGrowthPct, overview.totalValueEur);
+  }
   // Newest period first (neobroker reverse-chronological list).
   monthly.reverse();
   yearly.reverse();
