@@ -23,6 +23,20 @@ export interface Quote {
   /** Prior close, for the "today's move" figure; null if unavailable. */
   previousClose: Decimal | null;
   currency: string | null;
+  /**
+   * Epoch ms the price was observed — the moment it was fetched, or, for a
+   * cache hit, when it was originally stored. Lets the UI say how fresh each
+   * holding's price is. Null when unknown (e.g. a freshly parsed API node
+   * before {@link loadQuotes} stamps it).
+   */
+  at?: number | null;
+  /**
+   * The trading day this price applies to (`YYYY-MM-DD`), parsed from the
+   * quote's `datetime`. For a NAV-priced fund this is the date its once-a-day
+   * NAV was struck, which lets the refresh layer tell whether the latest
+   * published NAV is already in hand. Null when the API omits it.
+   */
+  valueDate?: string | null;
 }
 
 export interface FxRates {
@@ -99,15 +113,28 @@ function parseDecimal(value: unknown): Decimal | null {
   }
 }
 
+/**
+ * Extract the `YYYY-MM-DD` date from a Twelve Data `datetime` field, which is
+ * either a bare date (daily bars, e.g. NAV) or a `YYYY-MM-DD HH:MM:SS`
+ * timestamp (intraday). Returns null for anything unparseable.
+ */
+function parseValueDate(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(value.trim());
+  return match ? match[1] : null;
+}
+
 function quoteFromNode(symbol: string, node: Record<string, unknown>): Quote {
   if (node.status === "error") {
-    return { symbol, price: null, previousClose: null, currency: null };
+    return { symbol, price: null, previousClose: null, currency: null, at: null, valueDate: null };
   }
   return {
     symbol,
     price: parseDecimal(node.close ?? node.price),
     previousClose: parseDecimal(node.previous_close),
     currency: typeof node.currency === "string" ? node.currency : null,
+    at: null,
+    valueDate: parseValueDate(node.datetime),
   };
 }
 
@@ -161,7 +188,7 @@ export async function fetchQuotes(
     if (node && typeof node === "object") {
       result.set(symbol, quoteFromNode(symbol, node as Record<string, unknown>));
     } else {
-      result.set(symbol, { symbol, price: null, previousClose: null, currency: null });
+      result.set(symbol, { symbol, price: null, previousClose: null, currency: null, at: null });
     }
   }
   return result;

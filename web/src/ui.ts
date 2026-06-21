@@ -22,6 +22,7 @@ import {
   PROJECTION_SCENARIOS,
 } from "./phase4";
 import {
+  formatAsOf,
   formatCurrency,
   formatNativePrice,
   formatPercent,
@@ -247,6 +248,9 @@ function renderHoldingRow(holding: HoldingView): HTMLElement {
     chip(holding.weight !== null ? `${formatPercent(holding.weight)} wt` : "— wt"),
     chip(`P/L ${formatSignedCurrency(holding.unrealisedPlEur)}`, signClass(holding.unrealisedPlEur)),
     chip(`XIRR ${formatPercent(holding.xirr)}`, signClass(holding.xirr)),
+    // Always show how fresh this row's price is — a live/cached time, or the
+    // export date when falling back to the last-known value.
+    chip(`as of ${formatAsOf(holding.priceAsOf, holding.priceFallbackDate)}`, "asof"),
   ]);
 
   return h("li", { class: "holding" }, [main, meta]);

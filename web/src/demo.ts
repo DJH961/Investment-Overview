@@ -230,6 +230,8 @@ function quote(symbol: string, price: string, previousClose: string, currency: s
     price: new Decimal(price),
     previousClose: new Decimal(previousClose),
     currency,
+    // Stamp the preview "now" so demo rows show a realistic freshness time.
+    at: DEMO_NOW.getTime(),
   };
 }
 

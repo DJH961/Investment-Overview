@@ -107,6 +107,21 @@ describe("buildDashboard", () => {
     expect(model.overview.totalValueIsComplete).toBe(true);
   });
 
+  it("exposes per-holding price freshness (live timestamp vs. export fallback)", () => {
+    const at = 1_717_243_200_000; // 2024-06-01T12:00:00Z
+    const stamped = new Map<string, Quote>([
+      ["VTI", { symbol: "VTI", price: new Decimal("100"), previousClose: new Decimal("95"), currency: "USD", at }],
+    ]);
+    const m = buildDashboard(makeExport(), stamped, fx, new Date("2024-06-01T12:00:00Z"));
+    const vti = m.holdings.find((h) => h.symbol === "VTI")!;
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    // Live/cached price carries its observation time; export fallback is null
+    // but still advertises the export's valuation date for the UI to show.
+    expect(vti.priceAsOf).toBe(at);
+    expect(fxaix.priceAsOf).toBeNull();
+    expect(fxaix.priceFallbackDate).toBe("2024-06-01");
+  });
+
   it("weights sum to ~1 across priced holdings + cash share", () => {
     const sum = model.holdings.reduce((acc, h) => acc + (h.weight?.toNumber() ?? 0), 0);
     // Holdings weight excludes the cash slice, so it is < 1 but > 0.

@@ -408,6 +408,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .chip.pos { color: var(--pos); border-color: color-mix(in srgb, var(--pos) 35%, var(--border)); }
 .chip.neg { color: var(--neg); border-color: color-mix(in srgb, var(--neg) 35%, var(--border)); }
+.chip.asof { color: var(--faint); font-weight: 500; }
 
 .pill {
   display: inline-block;

@@ -40,6 +40,15 @@ export interface HoldingView {
   /** True when a fresh live quote supplied the price (vs. exported fallback). */
   priceIsLive: boolean;
   /**
+  /**
+   * Epoch ms the displayed price was observed (live fetch or cache hit), or
+   * null when it came from the export's last-known value. Drives the per-row
+   * "as of" freshness indicator.
+   */
+  priceAsOf: number | null;
+  /** The export's valuation date (`meta.as_of`), shown when `priceAsOf` is null. */
+  priceFallbackDate: string;
+  /**
    * True when `valueEur` could not be computed from any price (no live quote,
    * no last-known price, or no FX leg) and instead falls back to the last value
    * exported for this holding. The figure is then stale, not live.
@@ -194,12 +203,13 @@ function lastExportedValues(data: MobileExport): Map<string, Decimal> {
 function priceForHolding(holding: ExportHolding, quote: Quote | undefined): {
   price: Decimal | null;
   isLive: boolean;
+  at: number | null;
 } {
-  if (quote && quote.price) return { price: quote.price, isLive: true };
+  if (quote && quote.price) return { price: quote.price, isLive: true, at: quote.at ?? null };
   if (holding.last_known_price_native !== null) {
-    return { price: new Decimal(holding.last_known_price_native), isLive: false };
+    return { price: new Decimal(holding.last_known_price_native), isLive: false, at: null };
   }
-  return { price: null, isLive: false };
+  return { price: null, isLive: false, at: null };
 }
 
 function buildHolding(
@@ -208,10 +218,11 @@ function buildHolding(
   fx: FxRates,
   asOf: string,
   fxMissing: Set<string>,
+  exportAsOf: string,
   fallbackValueEur: Decimal | null,
 ): HoldingView {
   const shares = new Decimal(holding.shares);
-  const { price, isLive } = priceForHolding(holding, quote);
+  const { price, isLive, at } = priceForHolding(holding, quote);
   const currency = holding.native_currency;
 
   let valueEur: Decimal | null = null;
@@ -263,6 +274,8 @@ function buildHolding(
     shares,
     priceNative: price,
     priceIsLive: isLive,
+    priceAsOf: at,
+    priceFallbackDate: exportAsOf,
     valueIsStale,
     valueEur,
     costBasisEur,
@@ -283,6 +296,7 @@ export function buildDashboard(
   liveDegradedReason: string | null = null,
 ): DashboardModel {
   const asOf = todayIso(now);
+  const exportAsOf = data.meta.as_of || asOf;
   const fxMissing = new Set<string>();
   const missingPrice: string[] = [];
   const staleValue: string[] = [];
@@ -298,6 +312,7 @@ export function buildDashboard(
       fx,
       asOf,
       fxMissing,
+      exportAsOf,
       fallbackValues.get(h.symbol) ?? null,
     );
     // A holding with no value at all (no price, FX, or fallback) is dropped from

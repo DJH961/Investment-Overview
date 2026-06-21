@@ -104,6 +104,20 @@ To stay comfortably inside that budget the app (`src/cache.ts`, `src/quotes.ts`)
    min**, adjustable in Settings → *Quote cache (minutes)*). A tab reload,
    currency toggle, or quick re-open re-uses the cache and spends **zero
    credits**. FX is cached too (~12 h, since Frankfurter updates daily).
+   Mutual-fund / money-market **NAV** holdings are also priced live, but on a
+   long ~12 h window (their NAV only publishes ~once a business day), so they
+   track the latest available value while barely touching the credit budget.
+   Within each fund's **publish window** (`navCacheTtlMs` / `navPublishWindow`
+   in `src/quotes.ts`), though, a NAV whose latest value-date is still behind
+   today's expected one temporarily drops to the short market window so refreshes
+   pick up the new NAV promptly — then relaxes back to ~12 h once today's value
+   is in hand. That window is **learned per fund** from when its value-date has
+   actually advanced (recorded in `localStorage`; see `recordNavPublish`), so a
+   fund that strikes its NAV late and in a tight band is polled only in that band
+   rather than all evening. Before any history is observed it falls back to the
+   European market close (~22:00), since a EUR-listed fund's NAV can't strike
+   before its market shuts. Synthetic cash/savings rows have no ticker and keep
+   their exported value.
 2. **Budgets itself across reloads** via a rolling credit-spend log: it spends
    at most the credits left in the current minute/day windows and **defers** any
    overflow symbols to their last cached (or exported last-known) value,
@@ -116,6 +130,11 @@ To stay comfortably inside that budget the app (`src/cache.ts`, `src/quotes.ts`)
    why (e.g. *"3 symbols deferred to stay within your free-tier limit"*). Only a
    genuine config error (a rejected/over-quota API key) shows the blocking error
    screen with a route to Settings.
+
+Every holding row carries an **"as of" indicator** so it is always transparent
+how current that price is — a clock time for a live/cached quote pulled today, a
+date for an older one, or the export date when a row is showing its last-known
+value. This applies to stocks, ETFs and funds alike.
 
 A longer **Quote cache** means fewer refetches and fewer credits spent, at the
 cost of slightly older prices — tune it to taste.
