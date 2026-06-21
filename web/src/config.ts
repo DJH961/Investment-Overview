@@ -1,11 +1,18 @@
 /**
  * Per-device configuration, persisted in `localStorage`.
  *
- * Only non-secret, device-local preferences live here: the Twelve Data API key
- * (entered once per device per the proposal §6.2), the source repository, and
- * the release tag the encrypted blob is published under. The mobile passphrase
- * is NEVER persisted — it is held in memory only for the current session.
+ * Device-local preferences live here: the Twelve Data API key (entered once per
+ * device per the proposal §6.2), the source repository, and the release tag the
+ * encrypted blob is published under. The mobile passphrase is NEVER persisted —
+ * it is held in memory only for the current session.
+ *
+ * The API key is the one secret among these, so it is encrypted at rest (see
+ * `secret-store.ts`): `localStorage` holds only ciphertext, never the raw token.
+ * Reading/writing the key is therefore async, which is why `loadConfig` and
+ * `saveConfig` return promises.
  */
+
+import { createSecretBox, looksEncrypted } from "./secret-store";
 
 const KEYS = {
   apiKey: "iv.web.twelvedata_api_key",
@@ -32,6 +39,9 @@ const META_ASSET_NAME = "portfolio.meta.json";
  */
 const DEFAULT_QUOTE_CACHE_MINUTES = 15;
 
+/** Wraps/unwraps the API key with a non-extractable per-device key (IndexedDB). */
+const secrets = createSecretBox();
+
 function read(key: string): string {
   try {
     return localStorage.getItem(key) ?? "";
@@ -40,12 +50,6 @@ function read(key: string): string {
   }
 }
 
-// SECURITY (accepted, intentional — proposal §6.2): the Twelve Data price API
-// key is deliberately persisted in localStorage so it is entered only once per
-// device. It is a low-sensitivity, rate-limited, free price-data token scoped to
-// the user's own account — NOT a credential to any financial data — and it never
-// leaves the device or enters the repo. CodeQL's clear-text-storage rule flags
-// this write; the trade-off is accepted for this token class.
 function write(key: string, value: string): void {
   try {
     if (value) localStorage.setItem(key, value);
@@ -77,9 +81,54 @@ function parseCacheMinutes(raw: string): number {
   return Math.min(240, Math.round(n));
 }
 
-export function loadConfig(): AppConfig {
+/** A blank, unconfigured config — used as the initial in-memory state. */
+export function defaultConfig(): AppConfig {
   return {
-    apiKey: read(KEYS.apiKey),
+    apiKey: "",
+    repo: "",
+    releaseTag: DEFAULT_RELEASE_TAG,
+    blobUrl: "",
+    metaUrl: "",
+    quoteCacheMinutes: DEFAULT_QUOTE_CACHE_MINUTES,
+  };
+}
+
+/**
+ * Decrypt the persisted API key. Returns "" when none is stored or the stored
+ * ciphertext can't be read (e.g. the device key is gone, or crypto/IndexedDB is
+ * unavailable). A legacy plaintext key written by an older build is adopted and
+ * transparently upgraded to ciphertext on read.
+ */
+async function loadApiKey(): Promise<string> {
+  const stored = read(KEYS.apiKey);
+  if (!stored) return "";
+  if (!looksEncrypted(stored)) {
+    await saveApiKey(stored); // migrate the legacy plaintext token to ciphertext
+    return stored;
+  }
+  try {
+    return await secrets.decrypt(stored);
+  } catch {
+    return "";
+  }
+}
+
+/** Encrypt and persist the API key, or clear it when blank. */
+async function saveApiKey(apiKey: string): Promise<void> {
+  if (!apiKey) {
+    write(KEYS.apiKey, "");
+    return;
+  }
+  try {
+    write(KEYS.apiKey, await secrets.encrypt(apiKey));
+  } catch {
+    /* crypto/IndexedDB unavailable (e.g. private mode); skip persisting the key. */
+  }
+}
+
+export async function loadConfig(): Promise<AppConfig> {
+  return {
+    apiKey: await loadApiKey(),
     repo: read(KEYS.repo),
     releaseTag: read(KEYS.releaseTag) || DEFAULT_RELEASE_TAG,
     blobUrl: read(KEYS.blobUrl),
@@ -88,8 +137,8 @@ export function loadConfig(): AppConfig {
   };
 }
 
-export function saveConfig(config: AppConfig): void {
-  write(KEYS.apiKey, config.apiKey.trim());
+export async function saveConfig(config: AppConfig): Promise<void> {
+  await saveApiKey(config.apiKey.trim());
   write(KEYS.repo, config.repo.trim());
   write(KEYS.releaseTag, config.releaseTag.trim());
   write(KEYS.blobUrl, config.blobUrl.trim());
