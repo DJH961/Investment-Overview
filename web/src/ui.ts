@@ -32,6 +32,13 @@ import {
   signClass,
 } from "./format";
 import { cycleTheme, loadTheme, themeButtonContent } from "./theme";
+import {
+  canConvertToUsd,
+  getDisplayCurrency,
+  toggleDisplayCurrency,
+  type DisplayCurrency,
+} from "./currency";
+import { buildLineChart, type ChartSeries } from "./chart";
 
 type Attrs = Record<string, string>;
 
@@ -250,6 +257,7 @@ export function renderDashboard(
   model: DashboardModel,
   onRefresh: () => void,
   onLock: () => void,
+  onToggleCurrency: () => void,
   lockLabel = "Lock",
 ): HTMLElement {
   const refresh = h("button", { class: "icon-btn", type: "button", "data-action": "refresh" }, [
@@ -261,6 +269,7 @@ export function renderDashboard(
   lock.addEventListener("click", onLock);
 
   const theme = renderThemeToggle();
+  const currency = renderCurrencyToggle(onToggleCurrency);
 
   const topbar = h("header", { class: "topbar" }, [
     h("div", { class: "topbar-inner" }, [
@@ -268,7 +277,7 @@ export function renderDashboard(
         h("span", { class: "brand-mark", "aria-hidden": "true" }, []),
         h("span", { class: "brand-name" }, ["Investment Overview"]),
       ]),
-      h("div", { class: "topbar-actions" }, [theme, refresh, lock]),
+      h("div", { class: "topbar-actions" }, [currency, theme, refresh, lock]),
     ]),
   ]);
 
@@ -306,13 +315,14 @@ function renderTabs(tabs: TabDef[]): { nav: HTMLElement; content: HTMLElement } 
     return tab.panel;
   });
 
-  const select = (index: number): void => {
+  const select = (index: number, persist = true): void => {
     tabs.forEach((_, i) => {
       const active = i === index;
       buttons[i].classList.toggle("active", active);
       buttons[i].setAttribute("aria-selected", active ? "true" : "false");
       panels[i].hidden = !active;
     });
+    if (persist) saveActiveTab(tabs[index]?.id);
   };
 
   tabs.forEach((tab, index) => {
@@ -330,8 +340,30 @@ function renderTabs(tabs: TabDef[]): { nav: HTMLElement; content: HTMLElement } 
 
   const nav = h("nav", { class: "tabbar", "aria-label": "Sections" }, buttons);
   const content = h("div", { class: "content" }, panels);
-  select(0);
+  // Reopen the section the user last viewed (e.g. across a refresh or currency
+  // toggle re-render); default to the first tab when none is remembered.
+  const savedIndex = tabs.findIndex((t) => t.id === loadActiveTab());
+  select(savedIndex >= 0 ? savedIndex : 0, false);
   return { nav, content };
+}
+
+const ACTIVE_TAB_KEY = "iv.web.tab";
+
+function loadActiveTab(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_TAB_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveActiveTab(id: string | undefined): void {
+  if (!id) return;
+  try {
+    localStorage.setItem(ACTIVE_TAB_KEY, id);
+  } catch {
+    /* Preference just won't persist; the in-memory selection still applies. */
+  }
 }
 
 /** The Phase 3 overview (hero, return horizons, KPIs, holdings, allocation). */
@@ -339,9 +371,10 @@ function renderOverviewPanel(model: DashboardModel): HTMLElement {
   const content: Array<Node | string> = [
     renderHero(model.overview),
     renderReturns(model.overview),
-    renderStats(model.overview),
-    renderHoldings(model.holdings),
   ];
+  const valueChart = renderValueChart(model.analytics, model.overview);
+  if (valueChart) content.push(valueChart);
+  content.push(renderStats(model.overview), renderHoldings(model.holdings));
   const allocation = renderAllocation(model.allocation);
   if (allocation) content.push(allocation);
   content.push(
@@ -398,11 +431,12 @@ function renderPeriodRow(row: PeriodRowView): HTMLElement {
   return h("li", { class: "holding" }, [main, meta]);
 }
 
-function renderPeriodList(title: string, rows: PeriodRowView[]): HTMLElement {
+function renderPeriodList(title: string, rows: PeriodRowView[], extraClass = ""): HTMLElement {
+  const cls = `holdings ${extraClass}`.trim();
   if (rows.length === 0) {
-    return h("section", { class: "holdings" }, [sectionHead(title), h("p", { class: "note" }, ["No periods yet."])]);
+    return h("section", { class: cls }, [sectionHead(title), h("p", { class: "note" }, ["No periods yet."])]);
   }
-  return h("section", { class: "holdings" }, [
+  return h("section", { class: cls }, [
     sectionHead(title, `${rows.length} ${rows.length === 1 ? "period" : "periods"}`),
     h("ul", { class: "holding-list" }, rows.map(renderPeriodRow)),
   ]);
@@ -443,8 +477,8 @@ function renderDepositsBlock(deposits: DepositsView): HTMLElement {
 
 function renderPeriodsPanel(periods: PeriodsView, deposits: DepositsView | null): HTMLElement {
   const children: Array<Node | string> = [
-    renderPeriodList("This year, by month", periods.monthly),
-    renderPeriodList("By year", periods.yearly),
+    renderPeriodList("This year, by month", periods.monthly, "periods-monthly"),
+    renderPeriodList("By year", periods.yearly, "periods-yearly"),
   ];
   if (deposits) children.push(renderDepositsBlock(deposits));
   children.push(
@@ -452,10 +486,58 @@ function renderPeriodsPanel(periods: PeriodsView, deposits: DepositsView | null)
       "The current month and year are recomputed live; completed periods are frozen as of the last export.",
     ]),
   );
-  return h("section", { class: "panel-stack" }, children);
+  return h("section", { class: "panel-stack panel-periods" }, children);
 }
 
 // --- Analytics / risk tab ---------------------------------------------------
+
+/** Plain-language definitions for the (often cryptic) risk/return metrics. */
+const METRIC_INFO: Record<string, string> = {
+  CAGR: "Compound Annual Growth Rate — the smoothed yearly return that would take you from the start value to today.",
+  TWR: "Time-Weighted Return — return that strips out the effect of deposits/withdrawals, so it measures the strategy, not the timing of cash.",
+  XIRR: "Money-weighted annualised return (internal rate of return) that does account for the size and timing of your cash flows.",
+  Alpha: "Excess return versus the benchmark after adjusting for market risk (beta). Positive means you beat the benchmark on a risk-adjusted basis.",
+  Beta: "Sensitivity to the benchmark. 1.0 moves in line with it; above 1 is more volatile, below 1 is less.",
+  "Risk-free": "Assumed return of a 'safe' asset (e.g. short-term government rate) used as the baseline for Sharpe/Sortino/Alpha.",
+  Volatility: "Annualised standard deviation of returns — how much the value swings around. Higher means a bumpier ride.",
+  Sharpe: "Return earned per unit of total risk (excess return ÷ volatility). Higher is better; above 1 is generally good.",
+  Sortino: "Like Sharpe but only penalises downside volatility, so it ignores 'good' upside swings.",
+  "Max drawdown": "The largest peak-to-trough drop over the period — the worst loss you would have sat through.",
+  Calmar: "CAGR ÷ the absolute max drawdown — return relative to the worst drop. Higher is better.",
+  "Ulcer index": "Measures the depth and duration of drawdowns. Lower means shallower, shorter declines.",
+  "VaR 95%": "Value at Risk — the loss you would not expect to exceed on 95% of days (a typical bad day).",
+  "CVaR 95%": "Conditional VaR — the average loss on the worst 5% of days, i.e. how bad the tail beyond VaR tends to be.",
+  Skew: "Asymmetry of returns. Negative means occasional large losses; positive means occasional large gains.",
+  Kurtosis: "'Fat tails' — how often extreme moves happen versus a normal bell curve. Higher means more surprises.",
+};
+
+/** A small tappable "i" that reveals a definition (hover/focus and tap). */
+function infoDot(text: string): HTMLElement {
+  const tip = h("span", { class: "info-tip", role: "tooltip" }, [text]);
+  const button = h(
+    "button",
+    { class: "info-dot", type: "button", "aria-label": `What is this? ${text}` },
+    [h("span", { "aria-hidden": "true" }, ["i"]), tip],
+  );
+  // Tap toggles the tooltip on touch devices (where :hover never fires).
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    button.classList.toggle("open");
+  });
+  return button;
+}
+
+/** A metric stat card whose label carries an info dot when a definition exists. */
+function metricStat(metric: RiskMetric): HTMLElement {
+  const cls = metric.kind === "pct" ? signClass(metric.value) : "flat";
+  const labelChildren: Array<Node | string> = [metric.label];
+  const info = METRIC_INFO[metric.label];
+  if (info) labelChildren.push(infoDot(info));
+  return h("div", { class: "stat" }, [
+    h("span", { class: "stat-label" }, labelChildren),
+    h("span", { class: `stat-value ${cls}` }, [renderMetricValue(metric)]),
+  ]);
+}
 
 function renderMetricValue(metric: RiskMetric): string {
   if (metric.value === null) return "—";
@@ -465,67 +547,96 @@ function renderMetricValue(metric: RiskMetric): string {
 }
 
 function renderMetricGrid(metrics: RiskMetric[]): HTMLElement {
-  return h(
-    "div",
-    { class: "stat-grid" },
-    metrics.map((m) => stat(m.label, renderMetricValue(m), m.kind === "pct" ? signClass(m.value) : "flat")),
-  );
+  return h("div", { class: "stat-grid" }, metrics.map(metricStat));
 }
 
 /**
- * A compact inline-SVG equity curve. No charting dependency: we map the
- * exported value series onto a polyline (portfolio) plus, when present, the
- * cumulative-contributions baseline. Purely illustrative, stamped as-of-export.
+ * The Risk-tab equity curve: portfolio value vs. the cumulative-contributions
+ * baseline and (when present) the benchmark, drawn with the shared axis-aware
+ * line chart. Stamped as-of-export — history-bound, it does not move intraday.
  */
-function renderEquityCurve(curve: AnalyticsView["curve"]): HTMLElement | null {
+function renderEquityCurve(curve: AnalyticsView["curve"], benchmarkSymbol: string | null): HTMLElement | null {
   const points = curve.filter((p) => p.portfolioValue !== null);
   if (points.length < 2) return null;
 
-  const width = 320;
-  const height = 96;
-  const values = points.map((p) => p.portfolioValue!.toNumber());
-  const contribs = points.map((p) => p.contributions?.toNumber() ?? null);
-  const all = [...values, ...contribs.filter((v): v is number => v !== null)];
-  const min = Math.min(...all);
-  const max = Math.max(...all);
-  const span = max - min || 1;
-  const x = (i: number): number => (i / (points.length - 1)) * width;
-  const y = (v: number): number => height - ((v - min) / span) * height;
-
-  const toPath = (series: Array<number | null>): string => {
-    let d = "";
-    series.forEach((v, i) => {
-      if (v === null) return;
-      d += `${d === "" ? "M" : "L"}${x(i).toFixed(1)} ${y(v).toFixed(1)} `;
-    });
-    return d.trim();
-  };
-
-  const svgNs = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(svgNs, "svg");
-  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  svg.setAttribute("preserveAspectRatio", "none");
-  svg.setAttribute("class", "equity-svg");
-  svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label", "Portfolio value over the analytics window");
-
-  if (contribs.some((v) => v !== null)) {
-    const base = document.createElementNS(svgNs, "path");
-    base.setAttribute("d", toPath(contribs));
-    base.setAttribute("class", "equity-base");
-    svg.appendChild(base);
+  const dates = points.map((p) => p.date);
+  const series: ChartSeries[] = [
+    { values: points.map((p) => p.portfolioValue), className: "series-portfolio", area: true },
+  ];
+  const hasContribs = points.some((p) => p.contributions !== null);
+  if (hasContribs) {
+    series.push({ values: points.map((p) => p.contributions), className: "series-contrib" });
   }
-  const line = document.createElementNS(svgNs, "path");
-  line.setAttribute("d", toPath(values));
-  line.setAttribute("class", "equity-line");
-  svg.appendChild(line);
+  const hasBenchmark = points.some((p) => p.benchmarkValue !== null);
+  if (hasBenchmark) {
+    series.push({ values: points.map((p) => p.benchmarkValue), className: "series-benchmark" });
+  }
 
-  const first = points[0].date;
-  const last = points[points.length - 1].date;
+  const chart = buildLineChart({ dates, series });
+  if (!chart) return null;
+
+  const legend: Array<Node | string> = [legendItem("series-portfolio", "Portfolio")];
+  if (hasContribs) legend.push(legendItem("series-contrib", "Contributions"));
+  if (hasBenchmark) legend.push(legendItem("series-benchmark", benchmarkSymbol ?? "Benchmark"));
+
   return h("section", { class: "card equity" }, [
-    h("div", { class: "section-head" }, [h("h2", {}, ["Equity curve"]), h("span", { class: "muted" }, ["portfolio vs. contributions"])]),
-    svg as unknown as HTMLElement,
-    h("p", { class: "note" }, [`${first} → ${last}`]),
+    h("div", { class: "section-head" }, [
+      h("h2", {}, ["Equity curve"]),
+      h("span", { class: "muted" }, ["value over time"]),
+    ]),
+    h("div", { class: "chart-wrap" }, [chart as unknown as HTMLElement]),
+    h("div", { class: "chart-legend" }, legend),
+  ]);
+}
+
+/** A coloured swatch + label for a chart legend. */
+function legendItem(seriesClass: string, label: string): HTMLElement {
+  return h("span", { class: "legend-item" }, [
+    h("span", { class: `legend-swatch ${seriesClass}`, "aria-hidden": "true" }, []),
+    label,
+  ]);
+}
+
+/**
+ * The Overview "value over time" graph. Reuses the exported equity curve and
+ * appends today's live total value as the final point, so the headline figure
+ * is the tip of the line. Returns null when no usable history was exported.
+ */
+function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTMLElement | null {
+  if (analytics === null) return null;
+  const points = analytics.curve.filter((p) => p.portfolioValue !== null);
+  if (points.length < 1) return null;
+
+  const dates = points.map((p) => p.date);
+  const values: Array<Decimal | null> = points.map((p) => p.portfolioValue);
+
+  // Append today's live total as the latest point when it is newer than the
+  // last exported point, so the curve runs right up to "today".
+  const lastDate = dates[dates.length - 1];
+  if (o.asOf > lastDate) {
+    dates.push(o.asOf);
+    values.push(o.totalValueEur);
+  } else if (o.asOf === lastDate) {
+    values[values.length - 1] = o.totalValueEur;
+  }
+  if (values.filter((v) => v !== null).length < 2) return null;
+
+  const chart = buildLineChart({
+    dates,
+    series: [{ values, className: "series-portfolio", area: true }],
+  });
+  if (!chart) return null;
+
+  const cls = signClass(o.todayMoveEur);
+  return h("section", { class: "card value-chart" }, [
+    h("div", { class: "section-head" }, [
+      h("h2", {}, ["Value over time"]),
+      h("span", { class: `muted ${cls}` }, [
+        o.todayMovePct !== null ? `${formatSignedPercent(o.todayMovePct)} today` : "today",
+      ]),
+    ]),
+    h("div", { class: "chart-wrap" }, [chart as unknown as HTMLElement]),
+    h("p", { class: "note" }, [`${dates[0]} → today · live tip from your current total value.`]),
   ]);
 }
 
@@ -560,14 +671,14 @@ function renderAnalyticsPanel(analytics: AnalyticsView | null): HTMLElement {
   }
 
   const children: Array<Node | string> = [
-    h("section", { class: "card" }, [
+    h("section", { class: "card analytics-returns" }, [
       h("div", { class: "section-head" }, [
         h("h2", {}, ["Returns"]),
         h("span", { class: "muted" }, [`as of ${analytics.asOf}`]),
       ]),
       renderMetricGrid(analytics.returns),
     ]),
-    h("section", { class: "card" }, [
+    h("section", { class: "card analytics-risk" }, [
       h("div", { class: "section-head" }, [
         h("h2", {}, ["Risk"]),
         h("span", { class: "muted" }, [analytics.benchmarkSymbol ? `vs ${analytics.benchmarkSymbol}` : "history-based"]),
@@ -576,7 +687,7 @@ function renderAnalyticsPanel(analytics: AnalyticsView | null): HTMLElement {
     ]),
   ];
 
-  const curve = renderEquityCurve(analytics.curve);
+  const curve = renderEquityCurve(analytics.curve, analytics.benchmarkSymbol);
   if (curve) children.push(curve);
   const attribution = renderAttribution(analytics.attribution);
   if (attribution) children.push(attribution);
@@ -586,7 +697,7 @@ function renderAnalyticsPanel(analytics: AnalyticsView | null): HTMLElement {
       `History-bound risk metrics are computed on the desktop and shown as of the last export (${analytics.start} → ${analytics.asOf}). They do not move intraday.`,
     ]),
   );
-  return h("section", { class: "panel-stack" }, children);
+  return h("section", { class: "panel-stack panel-analytics" }, children);
 }
 
 // --- Plan / projection tab --------------------------------------------------
@@ -626,7 +737,7 @@ function renderPlanPanel(plan: PlanView): HTMLElement {
   years.input.addEventListener("input", recompute);
   contribution.input.addEventListener("input", recompute);
 
-  const form = h("section", { class: "card" }, [
+  const form = h("section", { class: "card plan-form" }, [
     h("div", { class: "section-head" }, [h("h2", {}, ["Projection"]), h("span", { class: "muted" }, ["from today's value"])]),
     h("p", { class: "note" }, [
       `Starting from your live value of ${formatCurrency(plan.startingValueEur)}, growing at 4% / 7% / 10% a year with contributions added at year-end.`,
@@ -635,7 +746,7 @@ function renderPlanPanel(plan: PlanView): HTMLElement {
   ]);
 
   recompute();
-  return h("section", { class: "panel-stack" }, [
+  return h("section", { class: "panel-stack panel-plan" }, [
     form,
     output,
     h("p", { class: "disclaimer" }, [
@@ -711,6 +822,37 @@ function renderThemeToggle(): HTMLElement {
   button.addEventListener("click", () => {
     cycleTheme();
     sync();
+  });
+  return button;
+}
+
+/**
+ * EUR ↔ USD display-currency toggle. The compute layer is EUR-only; flipping
+ * this re-renders the whole dashboard (via `onToggle`) so every figure reformats
+ * in the chosen currency. Disabled when no EUR→USD rate is available.
+ */
+function renderCurrencyToggle(onToggle: () => void): HTMLElement {
+  const glyph = h("span", { class: "icon-btn-glyph", "aria-hidden": "true" }, []);
+  const text = h("span", { class: "icon-btn-text" }, []);
+  const button = h("button", { class: "icon-btn ghost", type: "button", "data-action": "currency" }, [glyph, text]);
+
+  const sync = (): void => {
+    const active: DisplayCurrency = getDisplayCurrency();
+    glyph.textContent = active === "USD" ? "$" : "€";
+    text.textContent = active;
+    button.setAttribute("aria-label", `Currency: ${active} (tap to switch)`);
+    button.setAttribute("title", `Showing ${active} — tap to switch`);
+  };
+  sync();
+
+  if (!canConvertToUsd() && getDisplayCurrency() === "EUR") {
+    button.setAttribute("disabled", "disabled");
+    button.setAttribute("title", "EUR→USD rate unavailable");
+  }
+
+  button.addEventListener("click", () => {
+    toggleDisplayCurrency();
+    onToggle();
   });
   return button;
 }
