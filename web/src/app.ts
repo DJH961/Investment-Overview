@@ -32,7 +32,7 @@ import {
 } from "./quotes";
 import { setEurUsdRate } from "./currency";
 import type { MobileExport } from "./types";
-import { h, renderDashboard } from "./ui";
+import { h, renderDashboard, renderThemeToggle } from "./ui";
 
 /**
  * NAV-priced asset classes that are real, tickered funds and so can be priced
@@ -85,7 +85,8 @@ export class App {
 
   // --- Setup screen -----------------------------------------------------------
 
-  private showSetup(error?: string): void {
+  private showSetup(error?: string, mode: "setup" | "settings" = "setup"): void {
+    const settingsMode = mode === "settings";
     const { config } = this.state;
     const apiKey = h("input", {
       type: "password",
@@ -126,24 +127,48 @@ export class App {
       value: String(config.quoteCacheMinutes),
     });
 
-    const form = h("form", { class: "panel", novalidate: "novalidate" }, [
-      h("h1", {}, ["Set up the companion"]),
-      h("p", { class: "muted" }, [
-        "These stay on this device. The API key powers live quotes; the repository tells the app where to find your encrypted data.",
-      ]),
+    const actions: Array<Node | string> = [
+      h("button", { class: "btn", type: "submit" }, [settingsMode ? "Save & reload" : "Save & continue"]),
+    ];
+    if (settingsMode) {
+      actions.push(h("button", { class: "btn ghost", type: "button", "data-action": "back" }, ["Back"]));
+    } else {
+      actions.push(
+        h("button", { class: "btn ghost", type: "button", "data-action": "demo" }, [
+          "Preview the dashboard with sample data",
+        ]),
+      );
+    }
+
+    const intro = settingsMode
+      ? "Update where the companion looks for your data and how it behaves. Changes stay on this device."
+      : "These stay on this device. The API key powers live quotes; the repository tells the app where to find your encrypted data.";
+
+    const formChildren: Array<Node | string> = [
+      h("h1", {}, [settingsMode ? "Settings" : "Set up the companion"]),
+      h("p", { class: "muted" }, [intro]),
       field("Price API key", apiKey, "Free key from twelvedata.com — never leaves this device."),
       field("Data repository", repo, "The repo that hosts your published portfolio.enc release asset."),
       field("Release tag", tag, "Defaults to live-data."),
       field("Blob URL override", blobUrl, "Advanced: a direct, CORS-enabled URL (e.g. your web/proxy Worker) to fetch the encrypted blob from, instead of the release asset."),
       field("Quote cache (minutes)", cacheMinutes, "Free tier is 8 credits/min, 800/day (1 per symbol). A longer cache means fewer refetches and fewer credits spent."),
+    ];
+    // Appearance (light / dark / system) lives in Settings instead of crowding
+    // the dashboard topbar.
+    if (settingsMode) {
+      formChildren.push(
+        field("Appearance", renderThemeToggle(), "Switch between system, light and dark themes."),
+      );
+    }
+    formChildren.push(
       error ? h("p", { class: "note err" }, [error]) : document.createTextNode(""),
-      h("button", { class: "btn", type: "submit" }, ["Save & continue"]),
-      h("button", { class: "btn ghost", type: "button", "data-action": "demo" }, [
-        "Preview the dashboard with sample data",
-      ]),
-    ]);
+      h("div", { class: "row" }, actions),
+    );
+
+    const form = h("form", { class: "panel", novalidate: "novalidate" }, formChildren);
 
     form.querySelector('[data-action="demo"]')?.addEventListener("click", () => this.showDemo());
+    form.querySelector('[data-action="back"]')?.addEventListener("click", () => this.exitSettings());
 
     form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -154,15 +179,32 @@ export class App {
         blobUrl: (blobUrl as HTMLInputElement).value.trim(),
         quoteCacheMinutes: clampCacheMinutes((cacheMinutes as HTMLInputElement).value),
       };
-      if (!next.apiKey) return this.showSetup("Enter your price API key.");
+      if (!next.apiKey) return this.showSetup("Enter your price API key.", mode);
       const hasSource = next.blobUrl.length > 0 || isValidRepo(next.repo);
-      if (!hasSource) return this.showSetup("Enter a valid owner/repository or a direct blob URL.");
+      if (!hasSource) return this.showSetup("Enter a valid owner/repository or a direct blob URL.", mode);
       this.state.config = next;
       saveConfig(next);
+      // In Settings (already unlocked) re-run the load pipeline with the new
+      // config; otherwise continue the first-run flow to the unlock screen.
+      if (settingsMode && this.state.data) {
+        void this.refresh();
+        return;
+      }
       return this.showUnlock();
     });
 
     this.mount(h("div", { class: "screen" }, [form]));
+  }
+
+  /** Open the editable settings while logged in (reachable from the topbar). */
+  private showSettings(): void {
+    this.showSetup(undefined, "settings");
+  }
+
+  /** Leave Settings without saving: back to the dashboard, or the unlock screen. */
+  private exitSettings(): void {
+    if (this.state.data && this.model) this.renderDashboard(this.model);
+    else this.showUnlock();
   }
 
   // --- Unlock screen ----------------------------------------------------------
@@ -225,6 +267,7 @@ export class App {
         else this.showSetup();
       },
       () => this.showDemo(),
+      () => this.showSettings(),
       "Exit demo",
     );
     this.mount(h("div", { class: "demo-shell" }, [banner, dashboard]));
@@ -354,6 +397,7 @@ export class App {
         () => void this.refresh(),
         () => this.lock(),
         () => this.reRenderCurrentModel(),
+        () => this.showSettings(),
       ),
     );
   }
