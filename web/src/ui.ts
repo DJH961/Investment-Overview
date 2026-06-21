@@ -21,6 +21,7 @@ import {
   formatTimestamp,
   signClass,
 } from "./format";
+import { cycleTheme, loadTheme, themeButtonContent } from "./theme";
 
 type Attrs = Record<string, string>;
 
@@ -144,7 +145,11 @@ function renderNotes(o: OverviewView): HTMLElement[] {
   return notes;
 }
 
-/** Allocation by asset class — a compact, visually weighted bar list. */
+/**
+ * Allocation by asset class — de-emphasised into a collapsed `<details>` panel
+ * below the holdings. For a fixed, lopsided allocation this keeps it one tap
+ * away without competing with the headline value and KPIs above.
+ */
 function renderAllocation(allocation: AllocationSlice[]): HTMLElement | null {
   if (allocation.length === 0) return null;
   const rows = allocation.map((slice, index) => {
@@ -161,8 +166,11 @@ function renderAllocation(allocation: AllocationSlice[]): HTMLElement | null {
       h("span", { class: "alloc-value muted" }, [formatCurrency(slice.valueEur)]),
     ]);
   });
-  return h("section", { class: "allocation" }, [
-    h("div", { class: "section-head" }, [h("h2", {}, ["Allocation"]), h("span", { class: "muted" }, ["by asset class"])]),
+  return h("details", { class: "allocation" }, [
+    h("summary", { class: "alloc-summary" }, [
+      h("span", { class: "alloc-summary-title" }, ["Allocation"]),
+      h("span", { class: "muted" }, ["by asset class"]),
+    ]),
     h("ul", { class: "alloc-list" }, rows),
   ]);
 }
@@ -242,13 +250,15 @@ export function renderDashboard(
   refresh.addEventListener("click", onRefresh);
   lock.addEventListener("click", onLock);
 
+  const theme = renderThemeToggle();
+
   const topbar = h("header", { class: "topbar" }, [
     h("div", { class: "topbar-inner" }, [
       h("div", { class: "brand" }, [
         h("span", { class: "brand-mark", "aria-hidden": "true" }, []),
         h("span", { class: "brand-name" }, ["Investment Overview"]),
       ]),
-      h("div", { class: "topbar-actions" }, [refresh, lock]),
+      h("div", { class: "topbar-actions" }, [theme, refresh, lock]),
     ]),
   ]);
 
@@ -256,15 +266,40 @@ export function renderDashboard(
     renderHero(model.overview),
     renderReturns(model.overview),
     renderStats(model.overview),
+    renderHoldings(model.holdings),
   ];
   const allocation = renderAllocation(model.allocation);
   if (allocation) content.push(allocation);
   content.push(
-    renderHoldings(model.holdings),
     h("p", { class: "disclaimer" }, [
       "Read-only. Live figures are computed in your browser from public market data and may differ slightly from your broker.",
     ]),
   );
 
   return h("main", { class: "app" }, [topbar, h("div", { class: "content" }, content)]);
+}
+
+/**
+ * Self-contained colour-theme toggle. Cycles System → Light → Dark and updates
+ * its own glyph/label in place, so both the live dashboard and demo share it
+ * without threading state through the controller.
+ */
+function renderThemeToggle(): HTMLElement {
+  const glyph = h("span", { class: "icon-btn-glyph", "aria-hidden": "true" }, []);
+  const text = h("span", { class: "icon-btn-text" }, []);
+  const button = h("button", { class: "icon-btn ghost", type: "button", "data-action": "theme" }, [glyph, text]);
+
+  const sync = (): void => {
+    const { glyph: g, label } = themeButtonContent(loadTheme());
+    glyph.textContent = g;
+    text.textContent = label;
+    button.setAttribute("aria-label", `Theme: ${label} (tap to change)`);
+    button.setAttribute("title", `Theme: ${label}`);
+  };
+  sync();
+  button.addEventListener("click", () => {
+    cycleTheme();
+    sync();
+  });
+  return button;
 }
