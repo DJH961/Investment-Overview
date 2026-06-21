@@ -30,9 +30,17 @@ def test_changelog_documents_current_pyproject_version() -> None:
     version = _pyproject_version()
     changelog = (_REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     # Released entries are ``## [x.y.z] — <date>``; ``## [Unreleased]`` is the
-    # only heading allowed to carry undated, not-yet-versioned notes.
-    heading = re.compile(rf"^## \[{re.escape(version)}\]", re.MULTILINE)
-    assert heading.search(changelog), (
+    # only heading allowed to carry undated, not-yet-versioned notes. Capturing
+    # the rest of the line lets us also reject a malformed (e.g. dateless)
+    # heading, not just a missing one.
+    heading = re.compile(rf"^## \[{re.escape(version)}\](?P<rest>.*)$", re.MULTILINE)
+    match = heading.search(changelog)
+    assert match, (
         f"pyproject version {version!r} has no '## [{version}]' entry in CHANGELOG.md; "
         "add the release heading (its notes may currently be orphaned under [Unreleased])."
+    )
+    # A released heading must be dated (``— YYYY-MM-DD``) so an orphaned block
+    # that merely got a bare ``## [x.y.z]`` line still gets caught.
+    assert re.search(r"—\s*\d{4}-\d{2}-\d{2}", match.group("rest")), (
+        f"CHANGELOG '## [{version}]' heading is missing its '— YYYY-MM-DD' release date."
     )
