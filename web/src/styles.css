@@ -390,6 +390,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.holding-asof { color: var(--faint); font-size: 0.72rem; font-weight: 500; }
 .holding-figures { text-align: right; display: grid; gap: 0.1rem; flex: none; }
 .holding-value { font-weight: 700; font-variant-numeric: tabular-nums; }
 .holding-change { font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums; }
