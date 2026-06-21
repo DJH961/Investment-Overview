@@ -352,16 +352,20 @@ html, body {{
 .inv-holding-card.inv-holding-gain {{ border-left: 3px solid var(--inv-gain); }}
 .inv-holding-card.inv-holding-loss {{ border-left: 3px solid var(--inv-loss); }}
 .inv-holding-topline {{
-  display: flex; align-items: baseline; justify-content: space-between;
-  gap: 0.5rem; min-width: 0;
+  display: flex; align-items: baseline; flex-wrap: wrap;
+  gap: 0.15rem 0.5rem; min-width: 0;
 }}
 .inv-holding-sym {{
   font-size: 1.05rem; font-weight: 700; letter-spacing: -0.01em;
-  color: var(--inv-ink); display: inline-flex; align-items: center; gap: 6px;
+  color: var(--inv-ink); display: inline-flex; align-items: center;
+  flex-wrap: wrap; gap: 6px; min-width: 0;
 }}
+/* ``margin-left:auto`` keeps the freshness pinned right; ``flex-wrap`` on the
+   topline lets it drop to its own right-aligned line on a narrow card instead
+   of clipping the longer "… · updated …" string against the symbol/pills. */
 .inv-holding-asof {{
   font-size: 0.6875rem; color: var(--inv-muted); text-align: right;
-  white-space: nowrap; font-variant-numeric: tabular-nums;
+  white-space: nowrap; font-variant-numeric: tabular-nums; margin-left: auto;
 }}
 .inv-holding-name {{
   font-size: 0.8125rem; color: var(--inv-muted);
