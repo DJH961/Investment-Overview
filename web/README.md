@@ -39,8 +39,13 @@ Concretely, that means:
 
 ## Status
 
-**Phase 4 (Periods + projection + analytics) implemented**, building on the
-Phase 3 web hero. A Vite + TypeScript single-page app that:
+**Phase 5 (PWA) implemented**, building on the Phase 4 periods/projection/
+analytics work. The companion is now an installable **progressive web app**: a
+web manifest + icon make it add-to-home-screen capable, and a service worker
+caches **only the public, static app shell** so the UI opens instantly and works
+offline. The service worker never caches the encrypted blob, the live price/FX
+responses, or any decrypted data (that lives in memory only) — see
+`public/sw.js`. A Vite + TypeScript single-page app that:
 
 1. collects a Twelve Data API key + the data repository on a setup screen
    (stored in `localStorage`, never in the repo),
