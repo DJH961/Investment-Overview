@@ -137,6 +137,20 @@ def _row_records(grid: list[list[object]], header_row: int) -> Iterable[dict[str
         # returns as a single non-empty cell.
         if not any(_to_str(c) for c in raw):
             continue
+        # A populated cell that maps to no header (a blank/short header column)
+        # would be silently dropped by the ``if key`` filter below. That means
+        # the sheet layout doesn't line up with the detected header, so refuse
+        # rather than truncate data. Trailing *empty* cells (openpyxl pads
+        # ragged rows to the widest row) are fine.
+        for idx, value in enumerate(raw):
+            key = headers[idx] if idx < len(headers) else ""
+            if not key and _to_str(value):
+                raise ValueError(
+                    "Vanguard XLSX: a data cell falls under a column with no "
+                    f"header (column {idx + 1}); the file layout doesn't match "
+                    "the detected header. Refusing to import rather than "
+                    "silently drop data."
+                )
         record: dict[str, object] = {}
         for key, value in zip(headers, raw, strict=False):
             if key:

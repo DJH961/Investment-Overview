@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -22,6 +21,7 @@ from investment_dashboard.storage.sidecar import (
     repair_sidecars,
     scan_sidecars,
 )
+from investment_dashboard.tools._passphrase import resolve_passphrase
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +32,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--passphrase",
         default=None,
-        help=("SQLCipher passphrase. If omitted, reads INV_DASHBOARD_DB_PASSPHRASE."),
+        help=(
+            "SQLCipher passphrase (insecure: leaks into ps/shell history). Prefer the "
+            "INV_DASHBOARD_DB_PASSPHRASE env var or the interactive prompt."
+        ),
     )
     p.add_argument("-v", "--verbose", action="store_true")
     return p
@@ -52,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     if not before.found:
         log.info("no stray sidecars next to %s; nothing to do", db)
         return 0
-    passphrase = args.passphrase or os.environ.get("INV_DASHBOARD_DB_PASSPHRASE")
+    passphrase = resolve_passphrase(args.passphrase)
     encryption = resolve_encryption(
         encrypt_synced_tiers=bool(passphrase),
         env_passphrase=passphrase,

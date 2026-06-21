@@ -11,6 +11,7 @@ import pytest
 from investment_dashboard.tools import backup as backup_cli
 from investment_dashboard.tools import repair_sidecar as repair_cli
 from investment_dashboard.tools import split_db as split_db_mod
+from investment_dashboard.tools._passphrase import ENV_VAR, resolve_passphrase
 
 
 def _make_sqlite(path: Path) -> None:
@@ -102,3 +103,32 @@ def test_split_db_encrypt_requires_passphrase(tmp_path: Path) -> None:
             encrypt_ledger=True,
             passphrase=None,
         )
+
+
+def test_resolve_passphrase_prefers_cli_value_with_warning(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.delenv(ENV_VAR, raising=False)
+    with caplog.at_level("WARNING"):
+        assert resolve_passphrase("hunter2") == "hunter2"
+    assert any("--passphrase" in r.getMessage() for r in caplog.records)
+
+
+def test_resolve_passphrase_falls_back_to_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(ENV_VAR, "from-env")
+    assert resolve_passphrase(None) == "from-env"
+
+
+def test_resolve_passphrase_none_when_non_interactive(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(ENV_VAR, raising=False)
+    # allow_prompt=False mirrors a non-TTY run; no flag and no env var → None.
+    assert resolve_passphrase(None, allow_prompt=False) is None
+
+
+def test_resolve_passphrase_prompts_when_interactive(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(ENV_VAR, raising=False)
+    monkeypatch.setattr("investment_dashboard.tools._passphrase.sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr(
+        "investment_dashboard.tools._passphrase.getpass.getpass", lambda _prompt: "typed-secret"
+    )
+    assert resolve_passphrase(None) == "typed-secret"

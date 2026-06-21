@@ -59,3 +59,35 @@ def test_split_mode_creates_three_engines(tmp_path: Path, monkeypatch: pytest.Mo
     # Parent dirs are auto-created.
     assert eng_l.url.database is not None
     _reload_settings()
+
+
+def _synchronous(engine: object) -> str:
+    from sqlalchemy import text
+
+    with engine.connect() as conn:  # type: ignore[attr-defined]
+        return str(conn.execute(text("PRAGMA synchronous")).scalar())
+
+
+def test_split_mode_synchronous_levels(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Durable tiers fsync (FULL=2); the rebuildable cache stays NORMAL (1)."""
+    monkeypatch.setenv("INV_DASHBOARD_LEDGER_PATH", str(tmp_path / "ledger.sqlite"))
+    monkeypatch.setenv("INV_DASHBOARD_CONFIG_PATH", str(tmp_path / "config.sqlite"))
+    monkeypatch.setenv("INV_DASHBOARD_CACHE_PATH", str(tmp_path / "cache.sqlite"))
+    _reload_settings()
+
+    assert _synchronous(db_mod.get_ledger_engine()) == "2"  # FULL
+    assert _synchronous(db_mod.get_config_engine()) == "2"  # FULL
+    assert _synchronous(db_mod.get_cache_engine()) == "1"  # NORMAL
+    _reload_settings()
+
+
+def test_unified_mode_cache_is_durable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """In single-file mode the shared engine is durable, so the cache is FULL too."""
+    monkeypatch.setenv("INV_DASHBOARD_DB_PATH", str(tmp_path / "db.sqlite"))
+    monkeypatch.delenv("INV_DASHBOARD_LEDGER_PATH", raising=False)
+    monkeypatch.delenv("INV_DASHBOARD_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("INV_DASHBOARD_CACHE_PATH", raising=False)
+    _reload_settings()
+
+    assert _synchronous(db_mod.get_cache_engine()) == "2"  # FULL (shared with ledger)
+    _reload_settings()

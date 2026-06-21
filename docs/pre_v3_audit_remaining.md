@@ -17,6 +17,9 @@ records, for each cluster, what is done, what is deferred, and why.
 | **A6** | The fetched risk-free rate is range-checked (`0 ≤ rate ≤ 1`); a bad tick keeps the last good cached value. | `services/risk_free_service.py` |
 | **D1** | Bounded retry/backoff for the yfinance and Frankfurter clients; HTTP 429 handled distinctly with `Retry-After`. | `adapters/_retry.py`, `adapters/yfinance_client.py`, `adapters/frankfurter_client.py` |
 | **C2** | Backup manifests, the `publish-web` blob, and the snapshot export now write through one atomic-write (+ fsync) helper. | `storage/atomic_io.py`, `tools/backup.py`, `tools/publish_web.py`, `tools/export_snapshot.py` |
+| **C1** | Durable tiers (ledger/config) now commit with `PRAGMA synchronous=FULL`; the rebuildable cache keeps `NORMAL`. Survives power loss in cloud-sync folders without slowing the cache. | `db.py` |
+| **C4** | `--passphrase` is no longer the only non-interactive path: one shared resolver prefers the env var, falls back to a `getpass` prompt on a TTY, and warns that the CLI flag leaks into `ps`/shell history. | `tools/_passphrase.py`, `tools/backup.py`, `tools/split_db.py`, `tools/repair_sidecar.py` |
+| **D2** (partial) | The Vanguard XLSX parser now refuses an import when a data cell lands under a column the header doesn't name (mis-aligned layout), instead of silently dropping it via `zip(strict=False)`. | `adapters/vanguard/xlsx_parser.py` |
 | **H2** | Full-metrics golden-master regression harness for `compute_portfolio_metrics`. | `tests/services/test_metrics_golden_master.py`, `tests/services/golden/portfolio_metrics.json` |
 | **F1** (partial) | README status pill re-synced from v2.9.4 → v2.11.1. | `README.md` |
 
@@ -29,6 +32,14 @@ records, for each cluster, what is done, what is deferred, and why.
   already returns `None` (≈ line 180); only the genuinely-no-amount case
   (`net_native is None`) returns `ZERO`, which is harmless to a Modified-Dietz
   denominator. No further change required.
+* **G — Stale split/price cache after a manual ticker change.** Already wired:
+  `ui/pages/settings.py` calls `prices_service.invalidate_instrument_prices`
+  whenever the symbol changes, and that helper drops closes **and** the split
+  cache (`splits_repo.delete_for_instrument`). No further change required.
+* **E5 — Projection empty-state division/`inf`.** Already guarded: the seed
+  builder gates the implied-FX ratio on `metrics.total_value_eur > 0`
+  (`_projection_view.py` ≈ line 116) and `_render_implied_fx` returns early on
+  `final_eur <= 0`. No further change required.
 
 ---
 
@@ -77,17 +88,21 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
 
 ### C. Data-safety & storage
 
-* **C1** — `PRAGMA synchronous=NORMAL` for the ledger (`db.py:110`). Consider
-  `FULL` for the ledger tier specifically (cache can stay NORMAL), since these
-  DBs can live in cloud-sync folders exposed to power loss.
+* **C1** — ✅ done. `synchronous=FULL` for the ledger/config tiers; the cache
+  tier (and only the cache tier, unless it shares a file with a durable tier)
+  stays on `NORMAL`. `db.py` threads a `durable` flag through `make_engine`.
 * **C2** — ✅ done (atomic sidecar writes).
-* **C3** — Sidecar repair ordering (`storage/sidecar.py`): it checkpoints →
-  deletes sidecars → flips `journal_mode`; a crash mid-sequence can leave the
-  DB un-openable. Reorder so `journal_mode` is set before/with the checkpoint
-  and make the operation restart-safe. *(Verify current ordering first.)*
-* **C4** — `--passphrase` on the CLI (`tools/backup.py`, `split_db.py`,
-  `repair_sidecar.py`) leaks into `ps`/shell history. Prefer env-var/keyring
-  or interactive prompt.
+* **C3** — Sidecar repair ordering (`storage/sidecar.py`). *Verified:*
+  `repair_sidecars` runs `integrity_check` → `wal_checkpoint(TRUNCATE)` →
+  `journal_mode=TRUNCATE` on a short-lived connection, then deletes any
+  survivors — i.e. the journal mode is already flipped *before* the unlink, and
+  re-running the tool simply re-checkpoints. The order is restart-safe as-is; no
+  change required. (Original audit note described a checkpoint→delete→flip order
+  that the current code doesn't use.)
+* **C4** — ✅ done. A shared `tools/_passphrase.resolve_passphrase` prefers the
+  `INV_DASHBOARD_DB_PASSPHRASE` env var, falls back to an interactive `getpass`
+  prompt on a TTY, and warns when the leak-prone `--passphrase` flag is used.
+  Wired into `backup`, `split_db`, and `repair_sidecar`.
 * **C5** — Pre-flight validation for publish (`services/publish_service.py`):
   validate the GitHub PAT scope/expiry *before* upload, and sanitise HTTP error
   bodies so a token can't be echoed into logs.
@@ -95,9 +110,10 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
 ### D. Adapters / importers
 
 * **D1** — ✅ done (retry/backoff + 429).
-* **D2** — Silent row/symbol loss. Surface yfinance empty-dict (delisted/typo)
-  results to the user, and switch the Vanguard XLSX `zip(..., strict=False)` to
-  a length check rather than silent truncation.
+* **D2** (partial) — ✅ XLSX misalignment now fails loudly: a data cell under an
+  unnamed header column raises rather than being dropped by `zip(strict=False)`.
+  *Still to do:* surface yfinance empty-dict (delisted/typo) results to the user
+  via the import/diagnostics surface.
 * **D3** — Import aborts on the first unknown action. Collect row-level errors
   and report them together so one `MERGER` row doesn't discard a 100-row
   import.
@@ -116,8 +132,10 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
   EUR; make them respect the display-currency switch.
 * **E4** — Inline form validation (symbol existence, decimal/date bounds, live
   allocation-weight total) instead of save-time-only.
-* **E5** — Projection page empty-state guard (a zero-value portfolio can drive
-  division/`inf`).
+* **E5** — ✅ verified already guarded (see "Verified already fixed" above):
+  the projection seed gates the implied-FX ratio on a positive EUR value and
+  `_render_implied_fx` returns early on a non-positive horizon value, so a
+  zero-value portfolio can't drive a division/`inf`.
 * **E6** — Consolidate duplicated `_fmt_pct` and inline `f"€{…}"` formatting in
   `overview.py` / `analytics.py` / `calculator.py` onto `money_format`.
 * **E7** — Confirmation dialogs for destructive actions (e.g. "Seed default
@@ -144,9 +162,8 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
   importer/UI logic — implement or remove from the enum.
 * True daily-snapshot TWR per period (currently a Modified-Dietz approximation;
   daily snapshots now exist, so exact TWR is cheap).
-* Stale split-cache after a manual ticker change —
-  `prices_service.invalidate_instrument_prices` exists but nothing calls it when
-  `instruments.symbol` is edited.
+* ~~Stale split-cache after a manual ticker change~~ — ✅ done (see "Verified
+  already fixed" above): the symbol-edit path invalidates closes and splits.
 
 ### H. Cross-cutting ideas
 
@@ -175,3 +192,20 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
    its `*_eur` counterpart × `r`," and "all `*_growth_*` fields are `None` or in
    `[-1, ∞)`." Byte-stability locks the *current* numbers; invariants lock the
    *relationships*, catching a wider class of B-series regressions.
+
+3. **A process-wide secret-redaction log filter.** C4 (passphrase-on-CLI) and C5
+   (token echoed in HTTP error bodies) are two instances of the same hazard: a
+   secret reaching a log sink. Rather than fixing each call site, install one
+   `logging.Filter` at app/CLI start-up that scrubs known secret shapes (GitHub
+   PATs `ghp_…`/`github_pat_…`, the SQLCipher passphrase, the mobile passphrase)
+   from every record. It's a small, central, defence-in-depth net that keeps the
+   *next* accidental `log.exception(resp.text)` from leaking a credential.
+
+4. **Make the Vanguard/Fidelity importers report a structured row-ledger.** D2/D3
+   /D4 all want the importer to *collect* per-row outcomes (imported, dropped,
+   unknown-action, validation-failed) instead of aborting on the first problem.
+   A single `ImportReport(rows_ok, skipped, errors[])` value object returned from
+   the parsers would let the UI render one reconciliation table and feed the H1
+   Data-Health page — turning today's all-or-nothing import into an auditable
+   one. The XLSX misalignment guard added in this pass is a fail-fast stopgap
+   that this report would later upgrade to a per-row diagnostic.
