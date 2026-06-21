@@ -71,6 +71,7 @@ export async function wrapPassphrase(
   prfOutput: ArrayBuffer,
 ): Promise<{ iv: string; ciphertext: string }> {
   const key = await prfKey(prfOutput);
+  // 12-byte (96-bit) nonce: the size recommended for AES-GCM, fresh per wrap.
   const iv = randomBytes(12);
   const ct = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv: iv as unknown as BufferSource },
