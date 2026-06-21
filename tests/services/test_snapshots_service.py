@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -206,6 +206,66 @@ def test_warm_range_skips_already_cached_days(session: Session) -> None:
 
 def test_warm_range_empty_when_end_before_start(session: Session) -> None:
     assert snapshots_service.warm_range(session, date(2024, 5, 2), date(2024, 5, 1)) == 0
+
+
+def test_warm_range_force_overwrites_stale_cached_days(session: Session) -> None:
+    """``force=True`` rebuilds cached historical days in place (no delete-all).
+
+    Simulates the boot scenario: a render before the price/FX backfill cached a
+    bogus value for a historical day. The forced rebuild recomputes and
+    overwrites it without ever leaving the row missing, so a full-history reader
+    never sees an empty cache.
+    """
+    start = date(2024, 4, 1)
+    end = date(2024, 4, 3)
+    # Seed obviously-wrong values (e.g. the pre-backfill ``0``-but-here a marker).
+    for d in range(1, 4):
+        snapshots_repo.upsert_snapshot(session, date(2024, 4, d), Decimal("9999.99"))
+    session.flush()
+    # Without force these are treated as already-cached and skipped.
+    assert snapshots_service.warm_range(session, start, end) == 0
+    # With force every historical day is recomputed and overwritten in place.
+    assert snapshots_service.warm_range(session, start, end, force=True) == 3
+    for d in range(1, 4):
+        stored = snapshots_repo.get_snapshot(session, date(2024, 4, d))
+        assert stored is not None  # never deleted, just overwritten
+        assert stored.total_value_eur == Decimal(0)  # empty portfolio ⇒ recomputed
+
+
+def test_get_or_compute_force_recomputes_historical_day(session: Session) -> None:
+    past = date(2020, 6, 15)
+    snapshots_repo.upsert_snapshot(session, past, Decimal("1234.56"))
+    session.flush()
+    # Default read returns the cached value…
+    assert snapshots_service.get_or_compute(session, past) == Decimal("1234.56")
+    # …but force recomputes against current data (empty portfolio ⇒ 0).
+    assert snapshots_service.get_or_compute(session, past, force=True) == Decimal(0)
+    assert snapshots_repo.get_snapshot(session, past).total_value_eur == Decimal(0)
+
+
+def test_series_in_currency_tail_budget_skips_uncached_old_days(session: Session) -> None:
+    """``recompute_tail_days`` bounds synchronous recompute to today + the tail.
+
+    Uncached historical days older than the tail window are omitted rather than
+    recomputed on the request thread (the background warm fills them in later),
+    while a day already in the cache is always included.
+    """
+    today = date.today()
+    old_cached = today - timedelta(days=60)
+    snapshots_repo.upsert_snapshot(session, old_cached, Decimal("500.00"))
+    session.flush()
+    start = today - timedelta(days=90)
+    series = snapshots_service.series_in_currency(
+        session, start, today, "EUR", recompute_tail_days=7
+    )
+    days = {d for d, _ in series}
+    # Cached old day survives; today is always present.
+    assert old_cached in days
+    assert today in days
+    # An uncached day well outside the tail window is skipped (not recomputed).
+    assert (today - timedelta(days=45)) not in days
+    # No new historical snapshot rows were written for the skipped old days.
+    assert snapshots_repo.get_snapshot(session, today - timedelta(days=45)) is None
 
 
 def test_get_or_compute_many_matches_per_date(session: Session) -> None:
