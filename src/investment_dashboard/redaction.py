@@ -15,21 +15,26 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 #: Replacement marker used for every redacted secret.
 REDACTED = "«redacted»"
 
-#: Known secret shapes. GitHub personal-access tokens (classic ``ghp_…`` and the
-#: fine-grained ``github_pat_…`` form) plus OAuth tokens (``gho_…``) are the
-#: secrets this app actually handles for the live-web companion.
-_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"\bghp_[A-Za-z0-9]{20,}"),
-    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"),
-    re.compile(r"\bgho_[A-Za-z0-9]{20,}"),
-    # ``bearer <token>`` / ``token <token>`` — mask the credential but keep the
-    # scheme word so the log still reads sensibly.
-    re.compile(r"(?i)(bearer|token)\s+[A-Za-z0-9._~+/=-]{8,}"),
+#: Known secret shapes paired with their replacement. Each entry is
+#: ``(pattern, replacement)`` where ``replacement`` is a string or a callable
+#: passed straight to :meth:`re.Pattern.sub`. GitHub personal-access tokens
+#: (classic ``ghp_…`` and the fine-grained ``github_pat_…`` form) plus OAuth
+#: tokens (``gho_…``) are the secrets this app actually handles for the live-web
+#: companion. The ``bearer``/``token`` rule keeps the scheme word so the log
+#: still reads sensibly while masking only the credential.
+_PATTERNS: tuple[tuple[re.Pattern[str], str | Callable[[re.Match[str]], str]], ...] = (
+    (re.compile(r"\bghp_[A-Za-z0-9]{20,}"), REDACTED),
+    (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"), REDACTED),
+    (re.compile(r"\bgho_[A-Za-z0-9]{20,}"), REDACTED),
+    (
+        re.compile(r"(?i)(bearer|token)\s+[A-Za-z0-9._~+/=-]{8,}"),
+        lambda m: f"{m.group(1)} {REDACTED}",
+    ),
 )
 
 
@@ -48,11 +53,8 @@ def redact_secrets(text: str, *, extra: Iterable[str] = ()) -> str:
     # rewritten by a shape pattern before we get to it.
     for secret in sorted((s for s in extra if s and s.strip()), key=len, reverse=True):
         out = out.replace(secret, REDACTED)
-    for pattern in _PATTERNS:
-        if "bearer|token" in pattern.pattern:
-            out = pattern.sub(lambda m: f"{m.group(1)} {REDACTED}", out)
-        else:
-            out = pattern.sub(REDACTED, out)
+    for pattern, replacement in _PATTERNS:
+        out = pattern.sub(replacement, out)
     return out
 
 
