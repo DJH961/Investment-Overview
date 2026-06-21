@@ -24,6 +24,7 @@ import {
 import {
   formatAsOf,
   formatCurrency,
+  formatCurrencyWhole,
   formatNativePrice,
   formatPercent,
   formatShares,
@@ -959,18 +960,18 @@ function renderProjection(
     const pct = `${new Decimal(rate).times(100).toNumber()}%/yr`;
     return h("div", { class: "stat" }, [
       h("span", { class: "stat-label" }, [pct]),
-      h("span", { class: "stat-value pos" }, [formatCurrency(value)]),
+      h("span", { class: "stat-value pos" }, [formatCurrencyWhole(value)]),
       h("span", { class: "stat-sub muted" }, [`in ${last.year}`]),
     ]);
   });
 
   const tableRows = rows.map((row) => {
     const cells = PROJECTION_SCENARIOS.map((rate) =>
-      h("span", { class: "proj-cell" }, [formatCurrency(row.valuesByRate.get(rate) ?? startingValue)]),
+      h("span", { class: "proj-cell" }, [formatCurrencyWhole(row.valuesByRate.get(rate) ?? startingValue)]),
     );
     return h("li", { class: "proj-row" }, [
       h("span", { class: "proj-year" }, [String(row.year)]),
-      h("span", { class: "proj-contrib muted" }, [`+${formatCurrency(row.contributedEur)}`]),
+      h("span", { class: "proj-contrib muted" }, [`+${formatCurrencyWhole(row.contributedEur)}`]),
       h("div", { class: "proj-values" }, cells),
     ]);
   });

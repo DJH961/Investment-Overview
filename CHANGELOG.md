@@ -81,6 +81,43 @@ free-tier data limits, and polish for charts, tables, and shutdown behavior.
   no usable price/FX/fallback are excluded, in which case the chart stops at the
   last fully valued exported point.
 
+## [3.0.1] — 2026-06-21
+
+A patch release polishing the **v3.0 live-web companion** UI: a first pass at
+de-cluttering the mobile dashboard, followed by fixes for the spacing
+regressions that pass introduced.
+
+### Added — web companion UI: spacing, collapsible lists, period overview, settings (PR #35)
+- **Roomier spacing.** Widened the topbar button gaps and the overall
+  content/section gaps, and switched the contributions stat grid to
+  `minmax(0, 1fr)` columns so the three figures can shrink to fit instead of
+  colliding on narrow phones.
+- **Collapsible sections.** A `collapsibleSection()` helper (native
+  `<details>` + summary header/chevron) now wraps holdings, the monthly/yearly
+  period tables, and attribution, so long lists can be folded away; each
+  section remembers its open/closed state per device via `localStorage`.
+- **Fuller period overview.** The live current month is synthesised when the
+  export omits it (carrying the prior period's closing value forward), and a
+  missing first-period growth number falls back to a Modified Dietz computation
+  mirroring the desktop app's `_period_query` semantics.
+- **In-app settings.** A new gear (⚙) topbar button opens a Settings panel that
+  is editable while logged in (data source, cache, blob URL); saving re-runs the
+  load pipeline in place. The light/dark/system theme control moved into it.
+
+### Fixed — web companion UI regressions from PR #35 (PR #36)
+- **Overview cards no longer bleed together.** `.panel-overview` only received
+  its grid (with gaps) inside the desktop media query, so on phones the hero,
+  return horizons, KPIs, holdings, and allocation stacked flush against each
+  other. A base `display: grid; gap` rule now separates them on mobile too.
+- **Contribution rows align with their header.** The recent-contributions
+  ledger nested inside the allocation `<details>` panel had no horizontal
+  padding, so the "Deposit" label sat flush against the card edge instead of
+  lining up with the padded summary header.
+- **Clearer projection table.** The Plan projection table gained more row
+  spacing and zebra striping for visual separation, and its hypothetical
+  figures are now rounded to whole currency units (no misleading cents) via a
+  new `formatCurrencyWhole` helper.
+
 ## [3.0.0] — 2026-06-21
 
 The **v3.0 live-web companion** lands: an encrypted publish pipeline and an
