@@ -14,6 +14,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.1.1] — 2026-06-21
+
 ### Added — visible feedback for manual and automatic price refresh
 
 - **Manual refresh now shows in-progress feedback.** On the web app, tapping
