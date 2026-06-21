@@ -141,7 +141,7 @@ function renderNotes(o: OverviewView): HTMLElement[] {
   if (o.missingPriceSymbols.length > 0) {
     notes.push(
       h("p", { class: "note warn" }, [
-        `No live price for ${o.missingPriceSymbols.join(", ")} — no last-known value either, so they are excluded from totals.`,
+        `No live price or last-known value for ${o.missingPriceSymbols.join(", ")}, so they are excluded from totals.`,
       ]),
     );
   }
@@ -707,7 +707,7 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
   const cls = signClass(o.todayMoveEur);
   const note = o.totalValueIsComplete
     ? `${dates[0]} → today · live tip from your current total value.`
-    : `${dates[0]} → ${dates[dates.length - 1]} · live total is incomplete (missing prices/FX), so the curve stops at the last fully-valued day.`;
+    : `${dates[0]} → ${dates[dates.length - 1]} · live total is incomplete (missing prices or FX rates), so the curve stops at the last fully-valued day.`;
   return h("section", { class: "card value-chart" }, [
     h("div", { class: "section-head" }, [
       h("h2", {}, ["Value over time"]),
