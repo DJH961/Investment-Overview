@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
@@ -63,8 +63,6 @@ def delete_from(session: Session, start: date) -> int:
     rebuild (any change to a transaction on/after ``start`` invalidates
     every cached value on/after that date).
     """
-    stmt = select(PositionSnapshot).where(PositionSnapshot.snapshot_date >= start)
-    rows = session.scalars(stmt).all()
-    for row in rows:
-        session.delete(row)
-    return len(rows)
+    stmt = delete(PositionSnapshot).where(PositionSnapshot.snapshot_date >= start)
+    result = session.execute(stmt)
+    return int(result.rowcount or 0)

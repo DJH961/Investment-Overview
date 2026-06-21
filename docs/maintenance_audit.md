@@ -1,249 +1,270 @@
-# Maintenance Audit — bugs, legacy material & open TODOs
+# Maintenance Audit — resolution pass & remaining backlog
 
 _Generated 2026-05-31 against `v2.9.4`._
-_Re-baselined 2026-06-21 against `v2.11.1` (see the status block below)._
+_Re-baselined 2026-06-21 against `v3.0.0` (see the status block below)._
 
-> ## ♻️ Re-baseline against v2.11.1 (F3)
+> ## ♻️ Re-baseline against v3.0.0 (F3)
 >
 > Most of the §0 "do-this-soon" list has since shipped. Current status:
 >
-> | Item | Status @ 2.11.1 | Evidence |
+> | Item | Status @ 3.0.0 | Evidence |
 > | --- | --- | --- |
 > | 🔴 1 — risk-free tooltip | ✅ **closed** | The code default *is* `^IRX` now (`services/risk_free_service.py:46`, `DEFAULT_SYMBOL = "^IRX"`), and the tooltip text matches (`ui/copy/tooltips.py:116`). The earlier "should be `^TNX`" note is obsolete — yfinance's `Ticker.history` serves `^IRX` reliably, so the workaround was reverted. |
 > | 🔴 2 — EUR-as-USD fallback | ✅ **mostly closed** (A1) | `_overview_query.py` degrades a missing USD leg to `None` (`cv_usd = cv_eur * today_rate if today_rate not in (None, 0) else None`), and `metrics_service` no longer relabels EUR as USD. The remaining policy-level fallback in `positions_service::_eur_rate_for` is tracked as **A2** in `pre_v3_audit_remaining.md` (latent until a third currency lands). |
-> | 🔴 3 — docs that lie | ⏳ **partial** | README status pill re-synced to 2.11.1; `docs/architecture.md`, `CONTRIBUTING.md`, `docs/user_guide.md`, `requirements_and_project_overview.md` re-sync tracked as **F1** in `pre_v3_audit_remaining.md`. |
-> | 🟠 4 — CHANGELOG / version | ✅ **closed** | `pyproject.toml` and `__init__.__version__` are `2.11.1`; the CHANGELOG tracks through 2.11.x. |
+> | 🔴 3 — docs that lie | ✅ **closed** (F1) | README status pill re-synced to 3.0.0; `docs/architecture.md`, `CONTRIBUTING.md` and `requirements_and_project_overview.md` now state that read-heavy UI pages may read ledger-tier repositories directly (the old "UI never touches repos" claim is gone). |
+> | 🟠 4 — CHANGELOG / version | ✅ **closed** | `pyproject.toml` and `__init__.__version__` are `3.0.0`; the CHANGELOG documents the `3.0.0` release. |
 > | 🟠 5 — per-tier Alembic | ✅ **closed** (already noted below). |
 > | 🟠 6 — onboarding passphrase | ✅ **closed** (already noted below). |
-> | 🟢 7 — true daily-snapshot TWR | ⏳ **open** | Still a Modified-Dietz approximation; tracked as **G** in `pre_v3_audit_remaining.md`. Daily snapshots now exist, so the exact-TWR follow-up remains cheap but unstarted. |
+> | 🟢 7 — true daily-snapshot TWR | ✅ **closed** | Per-period growth on Monthly/Yearly is now a true daily-chained TWR (`ui/pages/_period_query.py::_chained_twr` geometrically links each sub-period's Modified-Dietz return across stored daily snapshots, degrading to a single Modified-Dietz only when interior snapshots are sparse). Tracked as **G2** in `pre_v3_audit_remaining.md`. |
 >
 > The detailed sections below are preserved verbatim as the original
 > 2.9.4 first-pass; treat this block as the authoritative current status.
 
 
-This is the single source-of-truth backlog for three things that had drifted
+This was the single source-of-truth backlog for three things that had drifted
 out of sight across the project's many iterations:
 
-1. **Bugs** that were not previously caught (flagged here — **not fixed**).
-2. **Legacy material** — outdated or incoherent comments, code and markdown
-   (flagged here — **not changed**, except outdated *code comments*, which were
-   resolved immediately; see the bottom section for the list).
-3. **TODOs / caveats / deferred work** scattered across code and docs,
-   consolidated with a recommended **"do soon"** action plan.
+1. **Bugs** that were not previously caught.
+2. **Legacy material** — outdated comments, code and markdown.
+3. **TODOs / caveats / deferred work** scattered across code and docs.
 
-Nothing in sections 1–2B has been changed in code/markdown — they are waiting
-on your go-ahead. Pick what you want and I'll execute.
+## Resolution status (2026-06-21, `v2.11.1`)
 
----
+The original audit was written against `v2.9.4`. Five releases shipped since
+(`2.9.6`–`2.11.1`), and a re-verification of every item against the current
+tree shows that **all of the actionable §0/§1/§2 items have been resolved** —
+either by the intervening releases or in this pass. Only the explicitly
+large / future-version items in §3 remain open; they are carried forward below
+as the live backlog.
 
-## 0. Do-this-soon action plan (the short list)
-
-These are the items that actually improve correctness / user-facing
-functionality. Ordered by impact.
-
-| Priority | What | Where | Why it matters |
-|---|---|---|---|
-| 🔴 1 | Fix the wrong risk-free tooltip (`^IRX` → `^TNX`) | `ui/copy/tooltips.py:116` | User-facing text states the wrong default; the actual default has been `^TNX` since v2.4. One-line content fix. |
-| 🔴 2 | Decide on the silent **EUR-as-USD fallback** | `_overview_query.py:268,278`; `metrics_service.py:249`; `_period_query.py:250-258` | When an FX rate is missing the USD column shows the EUR number *relabelled* as USD instead of blank — silently wrong figures. Should degrade to `None`/blank. (Bug #1, #2.) |
-| 🔴 3 | Refresh the user-facing docs that now lie | `README.md`, `docs/user_guide.md`, `CONTRIBUTING.md` | Status pill says v2.0.0, risk-free shown as `^IRX`, "Storage is not editable", "UI never calls repositories" — all now false. Misleads the only reader (you). |
-| 🟠 4 | Wire the **v2.9.4 CHANGELOG entry** | `CHANGELOG.md` | `pyproject.toml` is `2.9.4` but the changelog tops out at `2.9.3` and even has a stale `2.9.1 — Unreleased` block below it. Version history is incoherent. |
-| 🟠 5 | Per-tier **Alembic** version tables | `boot.py:349-363`; plan doc | Migrations only run against the ledger DB in split-DB mode. The next schema migration to config/cache tiers will silently not apply for split-DB users. _(done — see CHANGELOG)_ |
-| 🟠 6 | Onboarding **passphrase + recovery-file** prompts | `storage/encryption.py:12,84` | Plumbing (`store_passphrase_in_keyring`) exists but no UI calls it; encrypted-mode users can lose data with no recovery path. _(done — Settings → Storage + onboarding now collect the passphrase and offer a recovery file)_ |
-| 🟢 7 | True daily-snapshot **TWR per period** | see TODO #12 | Currently a Modified-Dietz approximation; daily snapshots now exist, so the "easy follow-up" is finally cheap. |
-
-Everything below is the full detail behind this list.
-
----
-
-## 1. Bugs found (flagged, not fixed)
-
-Confidence/severity are first-pass estimates — verify before fixing. Items 5–6
-are **latent** (only bite once a third currency is added).
-
-### 1.1 — Silent "EUR value relabelled as USD" fallback  ·  Medium · High confidence
-- **Where:** `ui/pages/_overview_query.py:268,278`, `services/metrics_service.py:249`
-- When the EUR→USD rate is `None`/`0`, the code does
-  `cv_usd = cv_eur * rate if rate else cv_eur` — i.e. it returns the **EUR**
-  amount as the USD amount. XIRR(USD), total growth(USD) and YTD growth(USD)
-  are then computed against a terminal value that is EUR pretending to be USD.
-- **Effect:** wrong USD metrics instead of a clean blank/`None`.
-
-### 1.2 — `_convert_to_usd` / `_display_value` return EUR as USD  ·  Medium · High
-- **Where:** `ui/pages/_period_query.py:250-258`
-- Same shape as 1.1: on missing FX the EUR value is shown in the USD column.
-
-### 1.3 — Modified-Dietz on padded **future** periods  ·  Medium · Medium
-- **Where:** `ui/pages/_period_query.py:362-376`
-- For periods that haven't started, opening (and closing) are forced to `ZERO`.
-  `_modified_dietz(0, 0, contrib)` evaluates to `-2` (−200 %) rather than
-  `None` for any padded future month that carries a contribution. Unlikely in
-  practice (future months rarely have contributions) but it's a real edge.
-
-### 1.4 — Wrong `native_to_eur_rate` for USD (latent / dead path)  ·  Low · High
-- **Where:** `services/transaction_fx_service.py:88`
-- `native_to_eur_rate = eur_to_usd` is the **EUR→USD** rate (~1.08) where a
-  "native→EUR" rate should be its inverse (~0.92). Currently harmless because
-  `split_native_to_dual_legs` short-circuits for USD before consuming it, but
-  it will break if that control flow ever changes.
-
-### 1.5 — Single FX rate used for **all** non-EUR accounts  ·  Medium · High (latent)
-- **Where:** `services/positions_service.py:103,126`
-- `get_rate_eur_to_quote(...)` defaults to `quote="USD"`. Every non-EUR
-  position is then divided by that one USD rate. A GBP/CHF/DKK account would be
-  mis-converted. Safe today (only EUR+USD supported since DKK was dropped in
-  v2.4) but a correctness trap for any future currency.
-
-### 1.6 — Same single-rate issue for cash balances  ·  Medium · High (latent)
-- **Where:** `services/positions_service.py:177-185` — identical to 1.5 for cash.
-
-### 1.7 — CAGR rejects a total loss (`end_value == 0`)  ·  Low · High
-- **Where:** `domain/returns.py:233`
-- `if start_value <= 0 or end_value <= 0 ...: return None`. A €10k→€0 wipeout
-  returns `None` instead of a well-defined −100 % CAGR.
-
-### 1.8 — `_amount_eur` returns `ZERO` instead of `None`  ·  Low · Medium
-- **Where:** `ui/pages/_period_query.py:169-172`
-- The comment says "leave the figure out" but it returns `ZERO`, which is
-  *included* in the bucket — shrinking the Modified-Dietz denominator and
-  inflating growth % for unconvertible non-EUR/USD transactions.
-
----
-
-## 2. Legacy material (flagged — awaiting your go-ahead)
-
-### 2A. Markdown docs that are now stale
-
-| Doc | What's wrong |
-|---|---|
-| `README.md:10` | Status line says **v2.0.0** (should be 2.9.4). |
-| `README.md:276-291` | Roadmap "⏳ follow-ups" lists the Settings sync-folder editor, which shipped in v2.8. |
-| `docs/user_guide.md:64-65` | Says risk-free default is **^IRX**; it's **^TNX** since v2.4. |
-| `docs/user_guide.md:73-82` | "Storage… nothing here is editable" — v2.8 made the cloud/sync link editable. |
-| `docs/user_guide.md:43` | Describes the "Calculator" as the projection tool; projection is now its own `/projection` page (v2.8). |
-| `docs/architecture.md:32-35` | "UI never reaches past services" — UI pages now import repositories directly. |
-| `CONTRIBUTING.md:39-42` | Same false "UI only calls services, never repositories" claim. |
-| `requirements_and_project_overview.md:48,90-92` | Describes a single SQLite DB; system is now 3-tier (ledger/config/cache). |
-| `requirements_and_project_overview.md:561-584` | Projection described as embedded in monthly/yearly; now standalone. |
-| `requirements_and_project_overview.md:767-816` | Implementation roadmap / "open questions" — all completed work. |
-| `CHANGELOG.md` | Missing the **2.9.4** entry; a stale `2.9.1 — Unreleased` block sits *below* the 2.9.3 entry. |
-| `docs/v2.0_split_cloud_security_plan.md` | Fully-shipped plan (Phases 1-5). Only stragglers remain — see TODO #1/#2/#3. Candidate to archive. |
-| `docs/v2.2-feature-bump-plan.md` | Fully shipped; still mentions DKK and `^IRX` (both replaced in v2.4). Candidate to archive. |
-| `docs/v2.8-cleanup-plan.md` | Every checklist box is ticked. Candidate to archive. |
-
-> **Suggestion:** keep the three completed plan docs but move them under a
-> `docs/history/` (or prepend a "✅ COMPLETED — historical" banner) so they're
-> clearly archival, and bring `README` / `user_guide` / `CONTRIBUTING` /
-> `requirements_and_project_overview` back in line with the current code.
-
-### 2B. Legacy / likely-dead code (verify callers before removing)
-
-| Where | What | Assessment |
+| Section | Status | Notes |
 |---|---|---|
-| `db.py:186-193` | `get_engine()`, `get_session_factory()` | Marked "Legacy"; **zero callers** in `src/` or `tests/`. Safe to remove. |
-| `repositories/snapshots_repo.py:20` | `list_snapshots()` | No callers found — verify no CLI/API use. |
-| `repositories/transactions_repo.py:67` | `delete_transaction()` | No callers found. |
-| `services/transaction_fx_service.py:223` | `list_accounts_currency_map()` | No callers found. |
-| `storage/encryption.py:61` | `driver_available()` | No callers found. |
-| `ui/money_format.py:46` | `fmt_pair()` | No callers — superseded by v2.9.1 single-currency display. |
+| §0 do-soon list | ✅ Done | Items 1–7 resolved (see per-item notes below). |
+| §1 bugs (1.1–1.8) | ✅ Done | Every site now degrades to `None`/blank or is correct-and-documented. |
+| §2A stale docs | ✅ Done | README/user_guide/architecture/CONTRIBUTING/requirements all refreshed. |
+| §2B dead code | ✅ Done | All six flagged symbols removed from the tree. |
+| §2C code comments | ✅ Done | Resolved in the original pass. |
+| §3 remaining backlog | ⏳ Open | Large / future-version features — see §3 below. |
 
-**Intentionally kept (NOT legacy — leave alone):**
-- `_overview_query.py:127-132,299` — native-currency fields kept for
-  `readmodels/overview.py` + `/api/overview` back-compat.
-- `_period_query.py` EUR/USD spot-rate fallback — still the active
-  degrade-gracefully path when FX history is unavailable.
+### §0 — do-soon list (all resolved)
 
-### 2C. Outdated code comments — ✅ already fixed in this pass
+1. **Risk-free tooltip `^IRX`** — _no change needed (audit obsolete)._ The
+   recommendation was to switch the tooltip to `^TNX`, but the live default is
+   `^IRX` again (`services/risk_free_service.py:46`, `DEFAULT_SYMBOL = "^IRX"`;
+   the module docstring explains the `^TNX` work-around is no longer needed).
+   The tooltip (`ui/copy/tooltips.py:116`) and the docs that say `^IRX` are
+   therefore **correct**.
+2. **Silent EUR-as-USD fallback** — ✅ fixed. All sites now return `None`/blank
+   when the FX rate is missing (`_overview_query.py:283-288`,
+   `_period_query.py:_display_value/_convert_to_usd`, `metrics_service.py:102`).
+3. **User-facing docs** — ✅ refreshed (README status is `v2.11.1`; user_guide
+   describes the standalone Projection page and editable storage; architecture
+   and CONTRIBUTING state "UI may read repositories directly").
+4. **CHANGELOG coherence** — ✅ the `2.9.4` entry exists and history is
+   continuous through `2.11.1`; the orphaned `2.11.1` portable-bundle bug-fix
+   block was given its missing `## [2.11.1]` heading in this pass, and a
+   regression test now guards it (`tests/test_changelog_version.py`).
+5. **Per-tier Alembic version tables** — ✅ done (boot stamps each tier).
+6. **Onboarding passphrase + recovery file** — ✅ done (Settings → Storage).
+7. **True daily-snapshot TWR per period** — ✅ done
+   (`_period_query._chained_twr` geometrically links per-sub-period
+   Modified-Dietz across stored daily snapshots).
 
-Per your instruction these were resolved immediately (comment/docstring text
-only — no logic touched):
+### §1 — bugs (all resolved)
 
-| File | Change |
-|---|---|
-| `ui/pages/_projection_model.py:1-5` | Docstring said the tool lived on `/monthly` + `/yearly`; updated to the standalone `/projection` page (v2.8). |
-| `ui/pages/_overview_query.py:454` | `# pragma: no cover - DKK removed in v2.4` → `defensive: unsupported native currency`. |
-| `ui/pages/_period_query.py:107` | "legacy v1.3 behaviour" reworded to "degrade-gracefully fallback… still active". |
-| `ui/style.py:1` | Dropped the stale "v1.5" version label from the module docstring. |
-| `ui/layout.py:12` | "v1.5 rebuild" → "introduced in the v1.5 rebuild, iterated since". |
-| `db.py:75` | "(or the legacy db_url)" → "(defaults to the configured ledger URL)". |
+- **1.1 / 1.2 EUR-relabelled-as-USD** — fixed; see §0 #2.
+- **1.3 Modified-Dietz on padded future periods** — fixed: future periods are
+  guarded (`_period_query.py` — `if period_open > today: growth = None`).
+- **1.4 `native_to_eur_rate` for USD** — correct-and-documented: it is the
+  quote-per-1-EUR (EUR→native) rate consumed as `net_native / rate`, matching
+  the general branch; a clarifying comment now prevents a future inversion.
+- **1.5 / 1.6 single FX rate for non-EUR positions/cash** — fixed:
+  `positions_service` now keys a per-currency `rate_cache` and fetches
+  `quote=ccy`.
+- **1.7 CAGR total loss** — fixed: `end_value == 0` returns a clean −100 %
+  (`domain/returns.py`).
+- **1.8 `_amount_eur` returns `ZERO`** — fixed: unconvertible non-EUR/USD rows
+  return `None` so they are skipped rather than poisoning the bucket.
 
-> `ui/copy/tooltips.py:116` (`^IRX` → `^TNX`) is **user-facing string content**,
-> not a comment, so it is flagged under §0 item 1 / §2A rather than auto-fixed.
+### §2 — legacy material (all resolved)
+
+- **2A docs** — every stale claim in the original table has been corrected.
+- **2B dead code** — `get_engine`, `get_session_factory`, `list_snapshots`,
+  `delete_transaction`, `list_accounts_currency_map`, `driver_available`, and
+  `fmt_pair` are all gone from `src/`.
 
 ---
 
-## 3. Full TODO / caveat backlog
+## 3. Remaining backlog (carried forward)
 
-### 3.1 Outstanding — SOON / IMMEDIATE
-1. ~~**Per-tier Alembic version tables**~~ — _done._ Boot now stamps each tier's
-   `alembic_version` table in split-DB mode (`boot.py`).
-2. ~~**Onboarding passphrase screen**~~ — _done._ Settings → Storage and the
-   first-run onboarding page now collect the synced-tier passphrase and store
-   it via `store_passphrase_in_keyring` (`storage/encryption.py:84`).
-3. ~~**Recovery-file save prompt**~~ — _done._ Both surfaces offer a downloadable
-   recovery document (`storage.encryption.build_recovery_file`), giving
-   encrypted-mode users a key-recovery path.
+These are the only open items. They are intentionally large / future-version
+and are **not** quick fixes — track them here until scheduled.
 
-### 3.2 Outstanding — MEDIUM
-4. ~~Settings "Move ledger…" picker~~ — _done._ Settings → Storage now has a
-   "Move ledger…" folder picker that relocates the ledger + config tiers via a
-   safe copy-verify-delete move (rolling backup + integrity check), persists the
-   new paths to `app_config`, and prompts for a restart
-   (`storage/move.py`, `ui/pages/settings.py`).
-5. Auto-populate instrument category/asset-class from market-data metadata,
-   downgrading the Settings field to read-only + "refresh" —
-   `docs/v2.0_split_cloud_security_plan.md:80-82`.
-6. Surface remaining spreadsheet-parity KPIs (MTD profit, weighted expense
-   ratio, expense cost, div yield, market verdict) —
-   `docs/spreadsheet_parity_comparison.md:220-223`.
-7. Android app (Phase 3), Settings→Mobile panel, optional snapshot encryption —
-   `docs/mobile_android_app_proposal.md:179-186`.
-8. In-app mobile update check — `docs/mobile_android_app_proposal.md:160`
-   (depends on #7).
-9. Multi-device write queue / "secondary device" mode (explicitly v3) —
-   `docs/v2.0_split_cloud_security_plan.md:452-453`.
-10. Document/support Tailscale mesh-VPN exposure path —
-    `docs/mobile_android_app_proposal.md:112` (docs-only).
-11. Implement `transfer_in` / `transfer_out` transaction kinds — enum reserved
-    but no importer/UI logic — `requirements_and_project_overview.md:170`.
-12. **True daily-snapshot TWR per period** (currently Modified-Dietz approx) —
-    `CHANGELOG.md:940-943`. Daily snapshots now exist, so this is cheap.
+### 3.1 Medium
 
-### 3.3 Outstanding — LOW (someday / large effort)
-13. Planned-purchase persistence + execution tracking (`planned_transactions`
-    table) — `requirements_and_project_overview.md:596,804`.
-14. Savings Bank **PDF** Kontoauszug parser —
-    `requirements_and_project_overview.md:803`. (Note: the *CSV* importer is
-    permanently out of scope — the broker has no CSV export.)
-15. APScheduler background daily refresh —
-    `requirements_and_project_overview.md:806`. Currently a deferred boot
-    thread.
+- **Auto-populate instrument category/asset-class** beyond the current
+  yfinance `category`/`sector` capture — downgrade the Settings field to
+  read-only + "refresh" (`docs/v2.0_split_cloud_security_plan.md:80-82`).
+  _(Partially done: `yfinance_client` already captures `category`; the
+  read-only UI flip is the remainder.)_
 
-### 3.4 Permanent caveats / non-goals (won't be "done" — kept for reference)
-- No real-time intraday quotes (EOD prices only) — `requirements…:23`.
-- No multi-user / no auth beyond local-network binding — `requirements…:24`.
-- No tax-lot / capital-gains accounting — `requirements…:25`.
-- No trading execution (read-only re: brokers) — `requirements…:26`.
+### 3.2 Low / large effort
+
+- **Android app (Phase 3)**, Settings→Mobile panel, optional snapshot
+  encryption — `docs/mobile_android_app_proposal.md:179-186`.
+- **In-app mobile update check** — `docs/mobile_android_app_proposal.md:160`
+  (depends on the Android app).
+- **Multi-device write queue / "secondary device" mode** (explicitly v3) —
+  `docs/v2.0_split_cloud_security_plan.md:452-453`.
+- **Document the Tailscale mesh-VPN exposure path** (docs-only) —
+  `docs/mobile_android_app_proposal.md:112`.
+- **Planned-purchase persistence + execution tracking** (`planned_transactions`
+  table) — `requirements_and_project_overview.md:596,804`.
+- **Savings Bank PDF Kontoauszug parser** —
+  `requirements_and_project_overview.md:803`. (The *CSV* importer is
+  permanently out of scope — the broker has no CSV export.)
+- **APScheduler background daily refresh** —
+  `requirements_and_project_overview.md:806`. Currently a deferred boot thread.
+
+### 3.3 Permanent caveats / non-goals (kept for reference)
+
+- No real-time intraday quotes (EOD prices only).
+- No multi-user / no auth beyond local-network binding.
+- No tax-lot / capital-gains accounting.
+- No trading execution (read-only re: brokers).
 - Fidelity 2-decimal price granularity since May 2024 (handled by recompute in
-  `adapters/fidelity/parser.py:117`) — `requirements…:267-268`.
-- Vanguard 18-month export window — `requirements…:300-301`.
-- Savings CSV importer out of scope (no broker export) — `CHANGELOG.md:945`.
-- `ytd_start_value` best-effort when no Jan-1 tick (graceful fallback in
-  `metrics_service.py:316`) — `CHANGELOG.md:979-984`.
-
-### 3.5 Obsolete deferred-notes (safe to delete from docs/CHANGELOG)
-- Monthly/yearly closing balances "deferred to v1.1" — shipped v1.1.0.
-- Yearly hypothetical-projection sub-table "not yet wired" — shipped v1.1.0.
-- Settings inline editing "comes in v1.1" — shipped v1.1.0.
-- "No snapshots table yet" — table exists (`models/position_snapshot.py`).
-- `split` transaction kind "reserved for v1.1" — implemented
-  (`positions_service.py:96`).
-- Cache-tier `session_scope()` back-compat note — already struck through &
-  marked resolved in `docs/v2.0_split_cloud_security_plan.md:409-418`.
+  `adapters/fidelity/parser.py`).
+- Vanguard 18-month export window.
+- Savings CSV importer out of scope (no broker export).
 
 ---
+
+## 4. Suggested next maintenance improvements (proposed, not yet scheduled)
+
+Beyond clearing the backlog, two guard-rails would stop this audit's two most
+common failure modes from recurring:
+
+1. **CHANGELOG-vs-version guard** — ✅ added this pass.
+   `tests/test_changelog_version.py` fails CI if `pyproject.toml`'s version has
+   no matching `## [x.y.z]` heading in `CHANGELOG.md`, which is exactly the
+   orphaned-`2.11.1`-block bug that prompted §0 #4.
+2. **Audit-freshness check (idea)** — a tiny test (or pre-commit hook) that
+   asserts the `_Re-verified … against vX.Y.Z_` line at the top of this file
+   matches the current `pyproject` version, so a stale backlog can't silently
+   drift more than one release behind the code again.
 
 ### How to use this file
-Tell me which sections to action and I'll do them in order. My default
-recommendation is to clear §0 items 1–4 first (all small, all user-visible),
-then tackle the latent FX-fallback bugs (§1.1/1.2) and the Alembic/encryption
-follow-ups (§3.1).
+Pick items from §3 and they'll be actioned in order. The §3.1 instrument
+category read-only flip is the smallest remaining piece; everything else in
+§3.2 is a deliberate future-version feature.
+
+---
+
+## 5. Performance / efficiency backlog (added 2026-06-21 — ✅ fully cleared)
+
+A profiling pass over the hot render path, the synchronous cold-start path and
+the repository layer surfaced the following inefficiencies. They were tracked
+here as a live checklist; **every item below is now resolved** (5A–5D batched /
+gated / indexed, 5E closed — see per-item notes), so the performance audit is
+complete. Add any newly-found inefficiency here as a fresh `5x.N ⏳` item.
+
+### 5A — Hot-path inefficiencies (run on every page render)
+
+- **5A.1 Overview N+1 daily-growth price lookups** — ✅ done.
+  `_instrument_daily_growth` (`ui/pages/_overview_query.py`) issued
+  `recent_price_dates` + two `close_as_of` per held position (3 DB round-trips ×
+  N). Now the print dates and closes are batched once for all instruments and
+  the per-row helper indexes into the prebuilt dicts.
+- **5A.2 Analytics computes `compute_portfolio_metrics` twice** — ✅ done.
+  `build_bundle` already computed `portfolio_metrics` internally, then
+  `analytics.py` called `compute_portfolio_metrics(session)` again — a full
+  XIRR/contribution recompute per render. The metrics are now returned on
+  `AnalyticsBundle.metrics` and reused.
+- **5A.3 Periods page double ledger walk + per-period snapshot reads** — ✅ done.
+  `_period_query.aggregate` now fills the EUR **and** display-currency buckets
+  in a single ledger walk (previously it iterated the full `txns` list a second
+  time whenever the display currency ≠ EUR) and batches every period boundary
+  snapshot through `snapshots_service.get_or_compute_many` plus one bulk
+  interior-range read, replacing the `get_or_compute` per period inside the
+  bucket loop (2N cache round-trips). Display-currency boundaries are derived
+  from the EUR batch in memory rather than re-read.
+- **5A.4 Overview YTD second `compute_positions` walk** — ✅ done.
+  `compute_instrument_metrics` now passes its already-loaded ledger to
+  `compute_positions(as_of=year_start, transactions=…)`, so the start-of-year
+  valuation reuses the in-memory `txns` (filtered to `date <= year_start`)
+  instead of issuing a second full ledger query.
+
+### 5B — Startup-path inefficiencies (synchronous, before the UI opens)
+
+These run inside `run_boot_sequence(skip_network=True)` on the cold-start path.
+
+- **5B.5 Rolling backup copies the full ledger + config DB on every boot** —
+  ✅ done. `storage/backup.snapshot` always performed a complete
+  `backup_database()` copy (decrypt+re-encrypt through SQLCipher) on every
+  launch. Added a `min_interval` gate so a backup taken recently is skipped.
+- **5B.6 Full `PRAGMA integrity_check` on every boot** — ✅ done.
+  `boot._integrity_check_tiers` ran a whole-database scan of each tier
+  synchronously before the UI. Now gated by a daily cadence via a marker file;
+  it runs at most once per day per process.
+- **5B.7 `detect_cloud_sync_root()` is uncached** — ✅ done. It re-ran every
+  OneDrive/iCloud/Dropbox/Google-Drive detector (filesystem stats + a Dropbox
+  JSON parse + a gdrive `iterdir`) with no memoization even though the result is
+  deterministic per process. Now `@lru_cache`d.
+
+### 5C — Repository-layer N+1s (background refresh, still wasteful)
+
+- **5C.8 `prices_service` refresh loops issue per-instrument queries** — ✅ done.
+  `refresh_prices` (`latest_price_date` + `earliest_price_date` per instrument →
+  2N), `instruments_due_for_refresh` (`get_last_refreshed_at` per instrument →
+  N) and `refresh_due_prices` (`latest_price_date` per due instrument) now use
+  batched `GROUP BY instrument_id` (MAX/MIN date) / `IN (...)` queries.
+- **5C.9 Load-then-filter-in-Python repo helpers** — ✅ done.
+  `snapshots_repo.delete_from` SELECTed all matching rows and deleted them
+  one-by-one; now a single `DELETE … WHERE`. `allocations_repo.set_active`
+  loaded all allocations and flipped `active` in Python; now two bulk
+  `UPDATE`s.
+- **5C.11 `compute_positions` historical valuation N+1** — ✅ done.
+  When `as_of < today` (every YTD start-of-year valuation and every cached
+  period-closing snapshot), `compute_positions` issued
+  `prices_service.close_as_of(instr.id, as_of)` **and**
+  `cumulative_split_factor_after(instr.id, as_of)` once per held instrument — an
+  N+1 over the holdings table on top of the already-batched daily-growth path
+  (5A.1). Both are now batched by `instrument_id`: a single window query
+  (`prices_repo.closes_as_of`) forward-fills every held instrument's close as of
+  the date, and one grouped lookup (`splits_repo.cumulative_factors_after`)
+  returns each instrument's post-`as_of` split factor (absent ⇒ "no cached split
+  data, fall back to ledger rows"). _Found along the way:_ the **today** path
+  (`as_of == today`) shared the identical N+1 via per-instrument `latest_close`,
+  so it was batched too (`prices_repo.latest_closes`). Historical and live
+  valuation are now O(1) round-trips, completing the spirit of 5A.4 / 5E.B.
+
+### 5D — Missing index (low–medium impact)
+
+- **5D.10 `fx_history` index for its actual query shape** — ✅ done. The PK is
+  `(date, base, quote)` (date leading) but every lookup filters
+  `WHERE base=? AND quote=?` then orders by `date` (`fx_repo.py`). Added an
+  index on `(base, quote, date)`. (`price_history` was re-checked and its
+  `(instrument_id, date)` PK already covers its queries — no change needed.)
+
+### 5E — Cross-cutting ideas (resolved)
+
+- **5E.A Defer slow cold-start work off the critical path** — ✅ resolved by
+  cadence-gating. `5B.5`/`5B.6` interval-gate the rolling backup (hourly) and
+  the integrity check (daily), so on the overwhelming majority of cold starts
+  both are skipped entirely and cost nothing on the path before the UI opens.
+  The further step of moving them onto the deferred background thread is
+  **deliberately declined**: both currently run _before_ `_run_migrations()`, so
+  they act as a pre-migration safety net (a clean-integrity snapshot taken
+  before any schema mutation). Relocating them after the UI opens would run them
+  post-migration and forfeit that guarantee — a real safety regression for only
+  a few milliseconds of perceived-startup gain. The gating already captured the
+  win at no risk.
+- **5E.B Request-scoped valuation cache** — ✅ resolved (made moot). The idea was
+  a shared per-session memo to collapse the overlapping N+1s that 5A.1–5A.4 each
+  recomputed. With every one of those paths — plus 5C.11's historical/live
+  valuation — now individually batched to O(1) round-trips, the per-instrument
+  fan-out the cache was meant to absorb no longer exists. A request-scoped cache
+  would now save only whole-call recomputes across pages within one navigation,
+  which the existing snapshot cache (`snapshots_service`) already covers for the
+  expensive historical series. No further work needed; revisit only if profiling
+  surfaces a new shared hot path.

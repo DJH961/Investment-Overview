@@ -6,7 +6,7 @@ rows on the fly. v1.1 will introduce a ``snapshots`` cache (spec §4.1).
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
@@ -111,16 +111,31 @@ class Position:
     effective: EffectiveInstrument | None = None
 
 
-def compute_positions(session: Session, *, as_of: date | None = None) -> list[Position]:  # noqa: PLR0912, PLR0915
+def compute_positions(  # noqa: PLR0912, PLR0915
+    session: Session,
+    *,
+    as_of: date | None = None,
+    transactions: Sequence[Transaction] | None = None,
+) -> list[Position]:
     """Return one :class:`Position` per non-zero (account, instrument) pair.
 
     Cash-account holdings (Savings) appear with ``shares = 1`` and
     ``current_value = current_price`` (the price column stores the daily
     balance, per spec §4.1 ``price_history``).
+
+    When ``transactions`` is supplied (already ordered date-asc, id-asc) the
+    ledger roll-up reuses it instead of re-querying the database — callers that
+    have already loaded the ledger (e.g. the overview's year-start valuation)
+    can avoid a second full walk. The list is filtered to ``date <= as_of`` so
+    a superset (loaded for a later ``as_of``) yields exactly the same rows the
+    scoped query would.
     """
     as_of = as_of or date.today()
     is_historical = as_of < date.today()
-    txns = transactions_repo.list_transactions(session, end=as_of)
+    if transactions is None:
+        txns: Sequence[Transaction] = transactions_repo.list_transactions(session, end=as_of)
+    else:
+        txns = [t for t in transactions if t.date <= as_of]
 
     # Cash dividends that were immediately reinvested arrive as a pair of
     # ledger rows (DIVIDEND_CASH + DIVIDEND_REINVEST, same instrument & date).
@@ -191,7 +206,7 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
         for t in transactions_repo.list_transactions(session, start=as_of + timedelta(days=1)):
             future_by_key.setdefault((t.account_id, t.instrument_id), []).append(t)
         # One batched feed lookup for every held instrument instead of an N+1
-        # per-instrument query (B2). A missing key means "no split data cached"
+        # per-instrument query. A missing key means "no split data cached"
         # (fall back to ledger rows), matching the singular helper's ``None``.
         split_ids = [iid for (_acct, iid) in holdings if iid is not None]
         feed_factors = prices_service.cumulative_split_factors_after(session, split_ids, as_of)
@@ -253,7 +268,7 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
         # ``as_of`` (forward-filled), not today's price — otherwise YTD/MTD
         # start values and the equity curve are all priced at today's close.
         # For "today" we keep the latest close so intraday refreshes show.
-        # Both come from the single batched lookup above (B2).
+        # Both come from the single batched lookup above.
         else:
             current_price = closes_by_id.get(instr.id)
         current_value_native = agg["shares"] * current_price if current_price is not None else ZERO

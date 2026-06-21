@@ -1195,8 +1195,8 @@ def _save_passphrase(passphrase: str, confirm: str) -> None:  # pragma: no cover
         )
     else:
         ui.notify(
-            "Could not reach the OS keychain (the `keyring` package may be "
-            "missing — install the `[encrypted]` extra).",
+            "Could not reach the OS keychain. Check that a keyring backend is "
+            "available for your operating system.",
             type="negative",
         )
 
@@ -1479,8 +1479,8 @@ def _save_live_web_passphrase(passphrase: str, confirm: str) -> None:  # pragma:
         )
     else:
         ui.notify(
-            "Could not reach the OS keychain (install the `[encrypted]` extra "
-            "to add the `keyring` package).",
+            "Could not reach the OS keychain. Check that a keyring backend "
+            "is available for your operating system.",
             type="negative",
         )
 
@@ -1498,8 +1498,8 @@ def _save_publish_token(token: str) -> None:  # pragma: no cover - UI
         ui.notify("GitHub token saved to the OS keychain.", type="positive")
     else:
         ui.notify(
-            "Could not reach the OS keychain (install the `[encrypted]` extra "
-            "to add the `keyring` package).",
+            "Could not reach the OS keychain. Check that a keyring backend "
+            "is available for your operating system.",
             type="negative",
         )
 

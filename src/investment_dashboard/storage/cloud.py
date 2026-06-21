@@ -15,6 +15,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -141,11 +142,17 @@ _DETECTORS: list[tuple[str, callable[[], Path | None]]] = [
 ]
 
 
+@lru_cache(maxsize=1)
 def detect_cloud_sync_root() -> CloudFolder | None:
     """Return the first detected cloud-sync root, or ``None``.
 
     Order matches the spec (OneDrive → iCloud → Dropbox → Google Drive);
     the first detector that returns an existing path wins.
+
+    The result is deterministic for the life of the process (the cloud root
+    cannot change mid-run) and each detection performs several filesystem
+    probes plus a Dropbox JSON parse, so it is memoized. Tests that vary the
+    environment should call ``detect_cloud_sync_root.cache_clear()``.
     """
     for provider, fn in _DETECTORS:
         try:

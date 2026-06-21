@@ -7,12 +7,13 @@ enabled encryption (``Settings.encrypt_synced_tiers`` or one of the
 tier files ends with ``.enc.sqlite`` etc.); a vanilla install must
 keep working without the dependency.
 
-Key material lives in the OS keychain via the ``keyring`` package and
-is **never** persisted to disk by us. Loss of passphrase = loss of
-data, so :func:`build_recovery_file` produces a printable recovery
-document the user can save somewhere safe; the onboarding/Settings UI
-collects the passphrase (:func:`store_passphrase_in_keyring`) and
-offers the recovery file as a download.
+Key material lives in the OS keychain via the ``keyring`` package (a core
+dependency, so it is always available) and is **never** persisted to disk by
+us. Loss of passphrase = loss of data, so :func:`build_recovery_file` produces
+a printable recovery document the user can save somewhere safe; the
+onboarding/Settings UI collects the passphrase
+(:func:`store_passphrase_in_keyring`) and offers the recovery file as a
+download.
 """
 
 from __future__ import annotations

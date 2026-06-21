@@ -3,7 +3,7 @@
 This document tracks what the pre-v3.0 deep audit identified but that has **not
 yet been implemented**. It is the companion to the work already landed.
 
-It re-baselines the audit against the current code (app version **2.11.1**) and
+It re-baselines the audit against the current code (app version **3.0.0**) and
 records, for each cluster, what is done, what is deferred, and why.
 
 ---
@@ -22,7 +22,7 @@ records, for each cluster, what is done, what is deferred, and why.
 | **C4** | `--passphrase` is no longer the only non-interactive path: one shared resolver prefers the env var, falls back to a `getpass` prompt on a TTY, and warns that the CLI flag leaks into `ps`/shell history. | `tools/_passphrase.py`, `tools/backup.py`, `tools/split_db.py`, `tools/repair_sidecar.py` |
 | **D2** (partial) | The Vanguard XLSX parser now refuses an import when a data cell lands under a column the header doesn't name (mis-aligned layout), instead of silently dropping it via `zip(strict=False)`. | `adapters/vanguard/xlsx_parser.py` |
 | **H2** | Full-metrics golden-master regression harness for `compute_portfolio_metrics`. | `tests/services/test_metrics_golden_master.py`, `tests/services/golden/portfolio_metrics.json` |
-| **F1** (partial) | README status pill re-synced from v2.9.4 → v2.11.1. | `README.md` |
+| **F1** | README status pill re-synced from v2.9.4 → v3.0.0; the false "UI never reaches into repos" claim corrected. | `README.md`, `requirements_and_project_overview.md` |
 | **A2** | The silent 1:1 FX fallback is gone: `positions_service._eur_rate_for` now returns `None` when a rate is missing, and a non-EUR holding/cash with no rate values to **blank** (ZERO + `value_warning`) in EUR — never the native amount relabelled at par. `total_portfolio_value` omits unconvertible cash instead of adding a par figure. | `services/positions_service.py`, `tests/services/test_services.py` |
 | **B1** | `compute_portfolio_metrics` now threads a per-request `_ValuationCache` memoising `compute_positions`/`total_portfolio_value` by date, so today/year-start/month-start/daily-growth/expense roll-ups are computed once each instead of repeatedly. Byte-stable under H2. | `services/metrics_service.py` |
 | **B2** | The N+1 `close_as_of`/`latest_close`/`cumulative_split_factor_after` per held instrument in `compute_positions` is replaced by three batched lookups (`prices_repo.latest_closes` window query, `splits_repo.cumulative_factors_after`). Parity tests assert batched == singular. | `repositories/prices_repo.py`, `repositories/splits_repo.py`, `services/prices_service.py`, `services/positions_service.py` |
@@ -210,15 +210,17 @@ fewer round-trips). Direct parity tests back the batched primitives.
 
 ### F. Documentation & version hygiene
 
-* **F1** (partial) — README pill done. Still to re-sync: `docs/architecture.md`,
-  `CONTRIBUTING.md`, `docs/user_guide.md`, `requirements_and_project_overview.md`
-  (the "UI never calls repositories" claim is false; the single-file-DB /
-  embedded-projection description is stale).
+* **F1** — ✅ done. README status pill re-synced to v3.0.0. The false "UI layer
+  only calls services, never reaches into repos" claim in
+  `requirements_and_project_overview.md` is corrected to match reality (and
+  `docs/architecture.md` / `CONTRIBUTING.md`, which already documented that
+  read-heavy UI pages may read ledger-tier repositories directly). Stale version
+  baselines (v2.9.4 / v2.11.1) in the docs were bumped to v3.0.0.
 * **F2** — ✅ done. Delivered plan docs (`v2.0_split_cloud_security_plan.md`,
   `v2.2-feature-bump-plan.md`, `v2.8-cleanup-plan.md`, and the also-shipped
   `v2.10.1-plan.md`) moved under `docs/history/` with an index `README.md`;
   the remaining live references (`README.md`, `CHANGELOG.md`) were repointed.
-* **F3** — ✅ done. `docs/maintenance_audit.md` re-baselined against 2.11.1: a
+* **F3** — ✅ done. `docs/maintenance_audit.md` re-baselined against 3.0.0: a
   status block at the top records each §0 "do-soon" item's current state — the
   `^IRX` tooltip (now correct: the code default *is* `^IRX`), the EUR-as-USD
   fallback (closed by A1, residual A2 cross-referenced), CHANGELOG/version,

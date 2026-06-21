@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from investment_dashboard.storage.encryption import EncryptionConfig, connect_sqlite
@@ -97,25 +97,53 @@ def _latest_ts(backup_dir: Path, stem: str, bucket: str) -> datetime | None:
     return datetime.strptime(m.group("ts"), "%Y%m%d-%H%M%S")
 
 
+def _latest_ts_any(backup_dir: Path, stem: str) -> datetime | None:
+    """Most recent backup timestamp for ``stem`` across all buckets."""
+    candidates = [
+        ts
+        for bucket in ("hourly", "daily", "monthly")
+        if (ts := _latest_ts(backup_dir, stem, bucket)) is not None
+    ]
+    return max(candidates) if candidates else None
+
+
 def snapshot(
     db_path: Path,
     *,
     policy: RetentionPolicy | None = None,
     now: datetime | None = None,
     encryption: EncryptionConfig | None = None,
+    min_interval: timedelta | None = None,
 ) -> Path | None:
     """Snapshot ``db_path`` into ``<dir>/backups/`` and prune old files.
 
     Returns the new backup path, or ``None`` if ``db_path`` does not
-    exist yet (first boot before migrations run).
+    exist yet (first boot before migrations run), or if ``min_interval``
+    is set and a backup already exists newer than ``now - min_interval``.
+
+    ``min_interval`` lets the cold-start path skip the full
+    decrypt+re-encrypt copy when a recent backup is already on disk —
+    through SQLCipher a complete copy of a large encrypted DB can add
+    seconds to every launch, and an hourly cadence is plenty for a
+    rolling backup.
     """
     if not db_path.exists():
         return None
     policy = policy or RetentionPolicy()
     now = now or datetime.now()
     backup_dir = _backup_dir_for(db_path)
-    backup_dir.mkdir(parents=True, exist_ok=True)
     stem = db_path.stem
+    if min_interval is not None:
+        last = _latest_ts_any(backup_dir, stem)
+        if last is not None and now - last < min_interval:
+            log.debug(
+                "skipping backup of %s: last backup %s is within %s",
+                db_path,
+                last,
+                min_interval,
+            )
+            return None
+    backup_dir.mkdir(parents=True, exist_ok=True)
     bucket = _bucket_for(
         now,
         _latest_ts(backup_dir, stem, "daily"),

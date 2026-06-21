@@ -72,7 +72,7 @@ def cumulative_factors_after(
     callers should treat a missing key the same as ``instrument_ids_with_splits``
     excluding it (no split data ⇒ fall back to ledger rows). Instruments that
     the feed confirms have splits but none after ``as_of`` map to ``Decimal(1)``.
-    One grouped query replaces the N+1 per-instrument lookups (B2).
+    One grouped query replaces the N+1 per-instrument lookups.
     """
     if not instrument_ids:
         return {}
