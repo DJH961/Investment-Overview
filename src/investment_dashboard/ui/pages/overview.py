@@ -10,6 +10,7 @@ from investment_dashboard.db import session_scope
 from investment_dashboard.domain.returns import years_between
 from investment_dashboard.services import display_currency_service, prices_service
 from investment_dashboard.ui.components import (
+    deferred,
     empty_state,
     kpi_card,
     page_header,
@@ -359,204 +360,216 @@ def _value_over_time_section(value_series, *, range_label, display_ccy):  # type
 
 def register() -> None:  # noqa: PLR0915
     @ui.page(PATH)
-    def _overview(value_range: str | None = None) -> None:  # pragma: no cover - rendered by NiceGUI
+    def _overview(value_range: str | None = None) -> None:  # noqa: PLR0915  # pragma: no cover - rendered by NiceGUI
         with page_frame("Overview", current=PATH):
             page_header("Overview", subtitle="Portfolio at a glance")
-            range_label, _ = resolve_range_days(value_range)
-            with session_scope() as session:
-                metrics = get_metrics(session)
-                positions = get_positions(session)
-                instrument_metrics = compute_instrument_metrics(session, positions)
-                price_anomaly_ids = prices_service.instruments_with_price_anomalies(
-                    session, [p.instrument.id for p in positions]
-                )
-                verdict = compute_market_verdict(
-                    session,
-                    portfolio_xirr=metrics.xirr,
-                    years=(
-                        years_between(metrics.first_cashflow_date, metrics.as_of)
-                        if metrics.first_cashflow_date
-                        else None
-                    ),
-                    as_of=metrics.as_of,
-                )
-                display_ccy = display_currency_service.get_display_currency(session)
-                value_series = build_value_series(
-                    session, currency=display_ccy, range_label=range_label
-                )
-                # Display-currency FX (EUR→display). For EUR display we
-                # still fetch EUR→USD so the secondary USD column on the
-                # positions table stays populated; for USD display
-                # we use the matching rate so KPIs convert correctly.
-                display_quote = display_ccy if display_ccy != "EUR" else "USD"
-                fx_rate = display_currency_service.current_rate(session, quote=display_quote)
-                usd_rate = (
-                    fx_rate
-                    if display_quote == "USD"
-                    else display_currency_service.current_rate(session, quote="USD")
-                )
-            # Hide fully-sold instruments from the positions table — anything
-            # with a residual share count below 1e-7 (a tenth of a millionth
-            # of a share) is effectively zero and just clutters the overview.
-            _min_shares = Decimal("0.0000001")
-            held_positions = [p for p in positions if p.shares >= _min_shares]
-            rows = position_rows(
-                held_positions,
-                display_currency=display_ccy,
-                fx_rate=usd_rate,
-                metrics=instrument_metrics,
-                price_anomaly_ids=price_anomaly_ids,
-            )
-            treemap_data = allocation_treemap(positions)
 
-            # Total Value is the headline money figure; Total Growth shows the
-            # compounded (1 + XIRR) ^ years return per currency.
-            total_value_eur = metrics.total_value_eur
-            total_value_usd = metrics.total_value_usd
-            gain_eur = metrics.capital_gain_eur
-            gain_usd = metrics.capital_gain_usd
-            tg_eur = metrics.total_growth_compounded_eur
-            tg_usd = metrics.total_growth_compounded_usd
+            def _build() -> None:
+                range_label, _ = resolve_range_days(value_range)
+                with session_scope() as session:
+                    metrics = get_metrics(session)
+                    positions = get_positions(session)
+                    instrument_metrics = compute_instrument_metrics(session, positions)
+                    price_anomaly_ids = prices_service.instruments_with_price_anomalies(
+                        session, [p.instrument.id for p in positions]
+                    )
+                    verdict = compute_market_verdict(
+                        session,
+                        portfolio_xirr=metrics.xirr,
+                        years=(
+                            years_between(metrics.first_cashflow_date, metrics.as_of)
+                            if metrics.first_cashflow_date
+                            else None
+                        ),
+                        as_of=metrics.as_of,
+                    )
+                    display_ccy = display_currency_service.get_display_currency(session)
+                    value_series = build_value_series(
+                        session, currency=display_ccy, range_label=range_label
+                    )
+                    # Display-currency FX (EUR→display). For EUR display we
+                    # still fetch EUR→USD so the secondary USD column on the
+                    # positions table stays populated; for USD display
+                    # we use the matching rate so KPIs convert correctly.
+                    display_quote = display_ccy if display_ccy != "EUR" else "USD"
+                    fx_rate = display_currency_service.current_rate(session, quote=display_quote)
+                    usd_rate = (
+                        fx_rate
+                        if display_quote == "USD"
+                        else display_currency_service.current_rate(session, quote="USD")
+                    )
+                # Hide fully-sold instruments from the positions table — anything
+                # with a residual share count below 1e-7 (a tenth of a millionth
+                # of a share) is effectively zero and just clutters the overview.
+                _min_shares = Decimal("0.0000001")
+                held_positions = [p for p in positions if p.shares >= _min_shares]
+                rows = position_rows(
+                    held_positions,
+                    display_currency=display_ccy,
+                    fx_rate=usd_rate,
+                    metrics=instrument_metrics,
+                    price_anomaly_ids=price_anomaly_ids,
+                )
+                treemap_data = allocation_treemap(positions)
 
-            with ui.element("div").classes("inv-kpi-grid w-full"):
-                # Total Value is the headline money figure (shown first).
-                dual_kpi_card(
-                    "Total Value",
-                    fmt_money(total_value_eur, "EUR"),
-                    fmt_money(total_value_usd, "USD"),
-                    primary=display_ccy,
-                    tooltip_key="total_value",
-                )
-                # Total Growth shows *growth* — the compounded (1+XIRR)^years
-                # return per currency. The capital-gain money lives on its own
-                # "Capital Gain" card, so it is no longer duplicated as a sub
-                # here (v2.8.1).
-                _pct_card(
-                    "Total Growth",
-                    tg_eur,
-                    tg_usd,
-                    display_ccy=display_ccy,
-                    tooltip_key="total_growth_compounded",
-                )
-                dual_kpi_card(
-                    "Capital Gain",
-                    fmt_money(gain_eur, "EUR"),
-                    fmt_money(gain_usd, "USD"),
-                    primary=display_ccy,
-                    tooltip_key="total_gain",
-                )
-                _pct_card(
-                    "XIRR",
-                    metrics.xirr,
-                    metrics.xirr_usd,
-                    display_ccy=display_ccy,
-                    tooltip_key="xirr",
-                )
-                # YTD → MTD → Daily are kept adjacent and in this order so the
-                # period-growth metrics read as a consistent group (v2.8.1).
-                _pct_card(
-                    "YTD Growth",
-                    metrics.ytd_growth_pct,
-                    metrics.ytd_growth_pct_usd,
-                    display_ccy=display_ccy,
-                    tooltip_key="ytd_growth",
-                )
-                _pct_card(
-                    "MTD Growth",
-                    metrics.mtd_growth_pct,
-                    metrics.mtd_growth_pct_usd,
-                    display_ccy=display_ccy,
-                    tooltip_key="mtd_growth",
-                )
-                _daily_sub = (
-                    f"as of {metrics.daily_growth_as_of.isoformat()}"
-                    if metrics.daily_growth_as_of is not None
-                    else "awaiting two priced days"
-                )
-                _pct_card(
-                    "Daily Growth",
-                    metrics.daily_growth_pct,
-                    metrics.daily_growth_pct_usd,
-                    display_ccy=display_ccy,
-                    tooltip_key="daily_growth",
-                    sub=_daily_sub,
-                )
-                _verdict_card(verdict)
-            # Expense ratio moved out of the KPI grid (kept the grid a clean
-            # 4×2) and surfaced as text alongside the FX line below.
-            expense_text = (
-                f"Weighted expense ratio: {fmt_pct(metrics.weighted_expense_ratio)}  "
-                f"(≈ {fmt_money(_convert(metrics.annual_expense_cost_eur, display_ccy, fx_rate), display_ccy)} / yr)"
-            )
-            div_yield_text = f"Dividend yield: {fmt_pct(metrics.dividend_yield_pct)}"
-            if fx_rate is not None:
-                ui.label(
-                    f"FX (EUR→{display_quote}): {fx_rate:,.4f}  ·  "
-                    f"Display currency: {display_ccy} (switch from the header toggle)  ·  "
-                    f"{expense_text}  ·  {div_yield_text}",
-                ).classes("text-caption opacity-70")
-            else:
-                ui.label(f"{expense_text}  ·  {div_yield_text}").classes("text-caption opacity-70")
+                # Total Value is the headline money figure; Total Growth shows the
+                # compounded (1 + XIRR) ^ years return per currency.
+                total_value_eur = metrics.total_value_eur
+                total_value_usd = metrics.total_value_usd
+                gain_eur = metrics.capital_gain_eur
+                gain_usd = metrics.capital_gain_usd
+                tg_eur = metrics.total_growth_compounded_eur
+                tg_usd = metrics.total_growth_compounded_usd
 
-            _value_over_time_section(value_series, range_label=range_label, display_ccy=display_ccy)
-
-            if not rows:
-                empty_state(
-                    "insights",
-                    "No positions yet",
-                    hint="Go to Transactions → Import CSV to load broker data, "
-                    "or seed defaults from Settings.",
+                with ui.element("div").classes("inv-kpi-grid w-full"):
+                    # Total Value is the headline money figure (shown first).
+                    dual_kpi_card(
+                        "Total Value",
+                        fmt_money(total_value_eur, "EUR"),
+                        fmt_money(total_value_usd, "USD"),
+                        primary=display_ccy,
+                        tooltip_key="total_value",
+                    )
+                    # Total Growth shows *growth* — the compounded (1+XIRR)^years
+                    # return per currency. The capital-gain money lives on its own
+                    # "Capital Gain" card, so it is no longer duplicated as a sub
+                    # here (v2.8.1).
+                    _pct_card(
+                        "Total Growth",
+                        tg_eur,
+                        tg_usd,
+                        display_ccy=display_ccy,
+                        tooltip_key="total_growth_compounded",
+                    )
+                    dual_kpi_card(
+                        "Capital Gain",
+                        fmt_money(gain_eur, "EUR"),
+                        fmt_money(gain_usd, "USD"),
+                        primary=display_ccy,
+                        tooltip_key="total_gain",
+                    )
+                    _pct_card(
+                        "XIRR",
+                        metrics.xirr,
+                        metrics.xirr_usd,
+                        display_ccy=display_ccy,
+                        tooltip_key="xirr",
+                    )
+                    # YTD → MTD → Daily are kept adjacent and in this order so the
+                    # period-growth metrics read as a consistent group (v2.8.1).
+                    _pct_card(
+                        "YTD Growth",
+                        metrics.ytd_growth_pct,
+                        metrics.ytd_growth_pct_usd,
+                        display_ccy=display_ccy,
+                        tooltip_key="ytd_growth",
+                    )
+                    _pct_card(
+                        "MTD Growth",
+                        metrics.mtd_growth_pct,
+                        metrics.mtd_growth_pct_usd,
+                        display_ccy=display_ccy,
+                        tooltip_key="mtd_growth",
+                    )
+                    _daily_sub = (
+                        f"as of {metrics.daily_growth_as_of.isoformat()}"
+                        if metrics.daily_growth_as_of is not None
+                        else "awaiting two priced days"
+                    )
+                    _pct_card(
+                        "Daily Growth",
+                        metrics.daily_growth_pct,
+                        metrics.daily_growth_pct_usd,
+                        display_ccy=display_ccy,
+                        tooltip_key="daily_growth",
+                        sub=_daily_sub,
+                    )
+                    _verdict_card(verdict)
+                # Expense ratio moved out of the KPI grid (kept the grid a clean
+                # 4×2) and surfaced as text alongside the FX line below.
+                expense_text = (
+                    f"Weighted expense ratio: {fmt_pct(metrics.weighted_expense_ratio)}  "
+                    f"(≈ {fmt_money(_convert(metrics.annual_expense_cost_eur, display_ccy, fx_rate), display_ccy)} / yr)"
                 )
-            else:
-                _zero_value_warning(rows)
-                _price_data_warning(rows)
-                with section("Positions"):
-                    ui.aggrid(
-                        {
-                            "columnDefs": [
-                                {"headerName": "Symbol", "field": "symbol", "pinned": "left"},
-                                {"headerName": "Name", "field": "name"},
-                                {"headerName": "Category", "field": "category", "filter": True},
-                                {"headerName": "Shares", "field": "shares", "type": "rightAligned"},
-                                {
-                                    "headerName": "Avg Price",
-                                    "field": "avg_price",
-                                    "type": "rightAligned",
+                div_yield_text = f"Dividend yield: {fmt_pct(metrics.dividend_yield_pct)}"
+                if fx_rate is not None:
+                    ui.label(
+                        f"FX (EUR→{display_quote}): {fx_rate:,.4f}  ·  "
+                        f"Display currency: {display_ccy} (switch from the header toggle)  ·  "
+                        f"{expense_text}  ·  {div_yield_text}",
+                    ).classes("text-caption opacity-70")
+                else:
+                    ui.label(f"{expense_text}  ·  {div_yield_text}").classes(
+                        "text-caption opacity-70"
+                    )
+
+                _value_over_time_section(
+                    value_series, range_label=range_label, display_ccy=display_ccy
+                )
+
+                if not rows:
+                    empty_state(
+                        "insights",
+                        "No positions yet",
+                        hint="Go to Transactions → Import CSV to load broker data, "
+                        "or seed defaults from Settings.",
+                    )
+                else:
+                    _zero_value_warning(rows)
+                    _price_data_warning(rows)
+                    with section("Positions"):
+                        ui.aggrid(
+                            {
+                                "columnDefs": [
+                                    {"headerName": "Symbol", "field": "symbol", "pinned": "left"},
+                                    {"headerName": "Name", "field": "name"},
+                                    {"headerName": "Category", "field": "category", "filter": True},
+                                    {
+                                        "headerName": "Shares",
+                                        "field": "shares",
+                                        "type": "rightAligned",
+                                    },
+                                    {
+                                        "headerName": "Avg Price",
+                                        "field": "avg_price",
+                                        "type": "rightAligned",
+                                    },
+                                    {
+                                        "headerName": "Current Price",
+                                        "field": "current_price",
+                                        "type": "rightAligned",
+                                    },
+                                    {
+                                        "headerName": "Expense",
+                                        "field": "expense_ratio",
+                                        "type": "rightAligned",
+                                    },
+                                    # One currency at a time (the display toggle).
+                                    _money_column("Cost Basis", "cost_basis", display_ccy),
+                                    _money_column("Value", "value", display_ccy),
+                                    _money_column("Capital Gain", "capital_gain", display_ccy),
+                                    _pct_column("Total Growth", "total_growth", display_ccy),
+                                    _pct_column("XIRR", "xirr", display_ccy),
+                                    _pct_column("Daily Growth", "daily", display_ccy),
+                                    _pct_column("YTD Growth", "ytd", display_ccy),
+                                ],
+                                "rowData": rows,
+                                "defaultColDef": {
+                                    "resizable": True,
+                                    "sortable": True,
+                                    "flex": 1,
+                                    "minWidth": 110,
+                                    "wrapHeaderText": True,
+                                    "autoHeaderHeight": True,
                                 },
-                                {
-                                    "headerName": "Current Price",
-                                    "field": "current_price",
-                                    "type": "rightAligned",
-                                },
-                                {
-                                    "headerName": "Expense",
-                                    "field": "expense_ratio",
-                                    "type": "rightAligned",
-                                },
-                                # One currency at a time (the display toggle).
-                                _money_column("Cost Basis", "cost_basis", display_ccy),
-                                _money_column("Value", "value", display_ccy),
-                                _money_column("Capital Gain", "capital_gain", display_ccy),
-                                _pct_column("Total Growth", "total_growth", display_ccy),
-                                _pct_column("XIRR", "xirr", display_ccy),
-                                _pct_column("Daily Growth", "daily", display_ccy),
-                                _pct_column("YTD Growth", "ytd", display_ccy),
-                            ],
-                            "rowData": rows,
-                            "defaultColDef": {
-                                "resizable": True,
-                                "sortable": True,
-                                "flex": 1,
-                                "minWidth": 110,
-                                "wrapHeaderText": True,
-                                "autoHeaderHeight": True,
-                            },
-                        }
-                    ).classes("ag-theme-alpine w-full h-[55vh]")
-                with section("Allocation"):
-                    ui.plotly(
-                        _treemap_figure(treemap_data, currency=display_ccy, fx_rate=fx_rate),
-                    ).classes("w-full h-[40vh]")
+                            }
+                        ).classes("ag-theme-alpine w-full h-[55vh]")
+                    with section("Allocation"):
+                        ui.plotly(
+                            _treemap_figure(treemap_data, currency=display_ccy, fx_rate=fx_rate),
+                        ).classes("w-full h-[40vh]")
+
+            deferred(_build)
 
 
 def _convert(amount_eur: Decimal | None, target: str, fx_rate: Decimal | None) -> Decimal | None:

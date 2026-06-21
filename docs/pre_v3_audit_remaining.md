@@ -137,8 +137,11 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
   missing a EUR/USD leg, instruments with missing/stale/corrupt prices,
   holdings that value to nothing, and provider failures — in one actionable
   view. The overview's existing zero-value / corrupt-price banners remain.
-* **E2** — Loading indicators on heavy pages (Overview, Analytics, Projection)
-  — less necessary once B lands.
+* **E2** — ✅ done. A reusable `deferred` component (`ui/components/deferred.py`)
+  paints a centered spinner immediately, then runs the heavy build on a one-shot
+  timer so the page shell appears before the metrics/positions/projection crunch
+  finishes. Wired on the three heaviest pages — Overview, Analytics and
+  Projection — replacing their previously synchronous up-front render.
 * **E3** — ✅ done. The per-instrument attribution table on `/analytics` now
   respects the display-currency switch: every monetary column is converted from
   EUR to the chosen currency (at the window's as-of rate) and the headers are
