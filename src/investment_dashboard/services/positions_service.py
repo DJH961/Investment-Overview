@@ -190,21 +190,33 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
         future_by_key: dict[tuple[int, int | None], list[Transaction]] = {}
         for t in transactions_repo.list_transactions(session, start=as_of + timedelta(days=1)):
             future_by_key.setdefault((t.account_id, t.instrument_id), []).append(t)
-        feed_factor: dict[int, Decimal | None] = {}
+        # One batched feed lookup for every held instrument instead of an N+1
+        # per-instrument query (B2). A missing key means "no split data cached"
+        # (fall back to ledger rows), matching the singular helper's ``None``.
+        split_ids = [iid for (_acct, iid) in holdings if iid is not None]
+        feed_factors = prices_service.cumulative_split_factors_after(session, split_ids, as_of)
         for key, agg in holdings.items():
             account_id, instrument_id = key
             if instrument_id is None:
                 continue
-            if instrument_id not in feed_factor:
-                feed_factor[instrument_id] = prices_service.cumulative_split_factor_after(
-                    session, instrument_id, as_of
-                )
-            factor = feed_factor[instrument_id]
+            factor = feed_factors.get(instrument_id)
             if factor is None:
                 future = future_by_key.get(key)
                 factor = _split_factor_after(agg["shares"], future) if future else Decimal(1)
             if factor != 1:
                 split_factors[key] = factor
+
+    # Batch every held instrument's valuation close in a single query rather
+    # than calling ``close_as_of`` / ``latest_close`` once per instrument (B2).
+    valued_ids = [
+        iid
+        for (_acct, iid), agg in holdings.items()
+        if iid is not None and not (agg["shares"] == ZERO and agg["cost_basis"] == ZERO)
+    ]
+    if is_historical:
+        closes_by_id = prices_service.closes_as_of(session, valued_ids, as_of)
+    else:
+        closes_by_id = prices_service.latest_closes(session, valued_ids)
 
     # Each non-EUR account converts with the EUR→*its own* native currency
     # rate, not a single shared USD rate — a GBP/CHF account must not be
@@ -240,11 +252,10 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
         # Historical valuations must use the close that was in effect on
         # ``as_of`` (forward-filled), not today's price — otherwise YTD/MTD
         # start values and the equity curve are all priced at today's close.
-        # For "today" we keep ``latest_close`` so intraday refreshes show.
-        elif is_historical:
-            current_price = prices_service.close_as_of(session, instr.id, as_of)
+        # For "today" we keep the latest close so intraday refreshes show.
+        # Both come from the single batched lookup above (B2).
         else:
-            current_price = prices_service.latest_close(session, instr.id)
+            current_price = closes_by_id.get(instr.id)
         current_value_native = agg["shares"] * current_price if current_price is not None else ZERO
         # Scale by the cumulative post-as-of split factor so a pre-split date
         # values the adjusted share count against the adjusted close. ``shares``
