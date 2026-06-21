@@ -720,7 +720,8 @@ function renderPlanPanel(plan: PlanView): HTMLElement {
   const years = numberField("Years", "10", { min: "1", max: "40", step: "1" });
   const contribution = numberField("Annual contribution (EUR)", defaultContribution, { min: "0", step: "100" });
 
-  const output = h("div", { class: "plan-output" }, []);
+  const summaryOut = h("div", { class: "plan-summary-wrap" }, []);
+  const tableOut = h("div", { class: "plan-table-wrap" }, []);
 
   const recompute = (): void => {
     const yearsValue = Math.max(1, Math.min(40, Math.round(Number(years.input.value) || 0)));
@@ -731,7 +732,7 @@ function renderPlanPanel(plan: PlanView): HTMLElement {
       yearsValue,
       baseYear,
     );
-    renderProjection(output, rows, plan.startingValueEur);
+    renderProjection(summaryOut, tableOut, rows, plan.startingValueEur);
   };
 
   years.input.addEventListener("input", recompute);
@@ -748,7 +749,8 @@ function renderPlanPanel(plan: PlanView): HTMLElement {
   recompute();
   return h("section", { class: "panel-stack panel-plan" }, [
     form,
-    output,
+    summaryOut,
+    tableOut,
     h("p", { class: "disclaimer" }, [
       "Projections are hypothetical, assume constant returns, and are not advice. Real markets vary year to year.",
     ]),
@@ -756,12 +758,14 @@ function renderPlanPanel(plan: PlanView): HTMLElement {
 }
 
 function renderProjection(
-  target: HTMLElement,
+  summaryTarget: HTMLElement,
+  tableTarget: HTMLElement,
   rows: ReturnType<typeof projectForward>,
   startingValue: Decimal,
 ): void {
   if (rows.length === 0) {
-    target.replaceChildren();
+    summaryTarget.replaceChildren();
+    tableTarget.replaceChildren();
     return;
   }
   const last = rows[rows.length - 1];
@@ -786,8 +790,10 @@ function renderProjection(
     ]);
   });
 
-  target.replaceChildren(
+  summaryTarget.replaceChildren(
     h("section", { class: "stats" }, [h("div", { class: "stat-grid plan-summary" }, cards)]),
+  );
+  tableTarget.replaceChildren(
     h("section", { class: "card" }, [
       h("div", { class: "proj-head" }, [
         h("span", { class: "proj-year muted" }, ["Year"]),
