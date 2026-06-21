@@ -64,7 +64,9 @@ responses, or any decrypted data (that lives in memory only) — see
 2. downloads the encrypted `portfolio.enc` blob and decrypts it **in the
    browser** with your mobile passphrase via WebCrypto (PBKDF2-HMAC-SHA256 →
    AES-256-GCM, mirroring `storage/blob_crypto.py`),
-3. fetches live quotes (Twelve Data) + EUR FX (Frankfurter),
+3. fetches live quotes (Twelve Data) + EUR FX (Frankfurter), **engineered around
+   the Twelve Data free tier** (see "Free-tier economy" below) so it degrades
+   gracefully instead of dead-ending on a rate limit,
 4. computes KPIs and per-holding stats with the **ported** `domain/returns`
    maths, guarded by a parity suite, and
 5. renders a mobile-first dashboard split into four tabbed sections:
@@ -83,6 +85,40 @@ responses, or any decrypted data (that lives in memory only) — see
 The sections switch via a **tab bar** that is a fixed, thumb-reachable bottom
 navigation on phones and reflows to a top tab strip on desktop/widescreen — the
 markup is identical at every breakpoint.
+
+## Free-tier economy (Twelve Data)
+
+The companion is **built for the Twelve Data free tier** and never assumes a
+paid plan. The free limits are the binding constraint everywhere in the
+live-data layer:
+
+- **8 API credits per minute**, **800 per day**,
+- a batched `/quote` call spends **one credit per symbol** — so a portfolio with
+  more than eight market holdings would blow the per-minute cap in a *single*
+  refresh, which is exactly what produces an `HTTP 429` "Couldn't load live
+  data" error.
+
+To stay comfortably inside that budget the app (`src/cache.ts`, `src/quotes.ts`):
+
+1. **Caches quotes** in `localStorage` with a freshness window (default **15
+   min**, adjustable in Settings → *Quote cache (minutes)*). A tab reload,
+   currency toggle, or quick re-open re-uses the cache and spends **zero
+   credits**. FX is cached too (~12 h, since Frankfurter updates daily).
+2. **Budgets itself across reloads** via a rolling credit-spend log: it spends
+   at most the credits left in the current minute/day windows and **defers** any
+   overflow symbols to their last cached (or exported last-known) value,
+   refreshing them on a later update. A larger portfolio therefore fills in over
+   a few refreshes instead of 429-ing.
+3. **Retries a 429/5xx/network blip** with capped exponential backoff (honouring
+   any `Retry-After` header) before giving up.
+4. **Degrades, never dead-ends**: whatever can't be fetched falls back to cached
+   / exported values and a non-blocking banner explains exactly what is stale and
+   why (e.g. *"3 symbols deferred to stay within your free-tier limit"*). Only a
+   genuine config error (a rejected/over-quota API key) shows the blocking error
+   screen with a route to Settings.
+
+A longer **Quote cache** means fewer refetches and fewer credits spent, at the
+cost of slightly older prices — tune it to taste.
 
 ## Preview the UI (sample data — no key, passphrase, or blob)
 

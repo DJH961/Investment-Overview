@@ -16,9 +16,11 @@ import {
   loadConfig,
   resolveBlobUrl,
   saveConfig,
+  DEFAULT_QUOTE_CACHE_MINUTES,
   type AppConfig,
 } from "./config";
-import { fetchFxRates, fetchQuotes } from "./prices";
+import { PriceError } from "./prices";
+import { FREE_TIER, loadFxRates, loadQuotes, type QuoteLoadReport } from "./quotes";
 import { setEurUsdRate } from "./currency";
 import type { MobileExport } from "./types";
 import { h, renderDashboard } from "./ui";
@@ -97,6 +99,16 @@ export class App {
       placeholder: "(optional) direct blob URL override",
       value: config.blobUrl,
     });
+    const cacheMinutes = h("input", {
+      type: "number",
+      id: "f-cache",
+      min: "1",
+      max: "240",
+      step: "1",
+      autocomplete: "off",
+      placeholder: String(DEFAULT_QUOTE_CACHE_MINUTES),
+      value: String(config.quoteCacheMinutes),
+    });
 
     const form = h("form", { class: "panel", novalidate: "novalidate" }, [
       h("h1", {}, ["Set up the companion"]),
@@ -107,6 +119,7 @@ export class App {
       field("Data repository", repo, "The repo that hosts your published portfolio.enc release asset."),
       field("Release tag", tag, "Defaults to live-data."),
       field("Blob URL override", blobUrl, "Advanced: a direct, CORS-enabled URL (e.g. your web/proxy Worker) to fetch the encrypted blob from, instead of the release asset."),
+      field("Quote cache (minutes)", cacheMinutes, "Free tier is 8 credits/min, 800/day (1 per symbol). A longer cache means fewer refetches and fewer credits spent."),
       error ? h("p", { class: "note err" }, [error]) : document.createTextNode(""),
       h("button", { class: "btn", type: "submit" }, ["Save & continue"]),
       h("button", { class: "btn ghost", type: "button", "data-action": "demo" }, [
@@ -123,6 +136,7 @@ export class App {
         repo: (repo as HTMLInputElement).value.trim(),
         releaseTag: (tag as HTMLInputElement).value.trim() || "live-data",
         blobUrl: (blobUrl as HTMLInputElement).value.trim(),
+        quoteCacheMinutes: clampCacheMinutes((cacheMinutes as HTMLInputElement).value),
       };
       if (!next.apiKey) return this.showSetup("Enter your price API key.");
       const hasSource = next.blobUrl.length > 0 || isValidRepo(next.repo);
@@ -223,22 +237,61 @@ export class App {
     const { data, config } = this.state;
     if (!data) return this.showUnlock();
     this.showStatus("Fetching live prices…");
-    try {
-      const symbols = data.holdings
-        .filter((holding) => holding.price_type === "market")
-        .map((holding) => holding.price_symbol);
-      const [quotes, fx] = await Promise.all([
-        symbols.length > 0 ? fetchQuotes(symbols, config.apiKey) : Promise.resolve(new Map()),
-        fetchFxRates("EUR"),
-      ]);
-      const model = buildDashboard(data, quotes, fx);
-      // Prefer the live EUR→USD rate; fall back to the export meta rate.
-      setEurUsdRate(fx.rates.USD ?? model.overview.fxRateEurUsd);
-      this.renderDashboard(model);
-    } catch (err) {
-      this.renderLoadError((err as Error).message);
+
+    const symbols = data.holdings
+      .filter((holding) => holding.price_type === "market")
+      .map((holding) => holding.price_symbol);
+
+    // Free-tier-aware loaders: quotes economise on Twelve Data credits (cache +
+    // per-minute/day budgeting + retry-with-backoff); FX prefers a daily cache.
+    const cacheTtlMs = config.quoteCacheMinutes * 60 * 1000;
+    const [quoteLoad, fxLoad] = await Promise.all([
+      loadQuotes(symbols, config.apiKey, { cacheTtlMs }),
+      loadFxRates(),
+    ]);
+
+    // A non-retryable quote failure (e.g. a bad/rejected API key) is a config
+    // problem the user must act on, so keep the explicit error screen with a
+    // route to Settings.
+    if (quoteLoad.report.error && !quoteLoad.report.error.retryable) {
+      return this.renderLoadError(quoteLoad.report.error.message);
     }
+
+    const fx = fxLoad.fx;
+    const degradedReason = this.describeDegradation(quoteLoad.report, fxLoad);
+    const model = buildDashboard(data, quoteLoad.quotes, fx, new Date(), degradedReason);
+    // Prefer the live EUR→USD rate; fall back to the export meta rate.
+    setEurUsdRate(fx.rates.USD ?? model.overview.fxRateEurUsd);
+    this.renderDashboard(model);
     return undefined;
+  }
+
+  /**
+   * Summarise any live-data gaps for a non-blocking banner, framed around the
+   * free-tier budget. Returns null when everything was fresh and within budget.
+   */
+  private describeDegradation(
+    quote: QuoteLoadReport,
+    fx: { cached: boolean; error: PriceError | null },
+  ): string | null {
+    const reasons: string[] = [];
+    if (quote.error) {
+      reasons.push(`live prices hit a snag (${quote.error.message})`);
+    }
+    if (quote.deferred.length > 0) {
+      const n = quote.deferred.length;
+      reasons.push(
+        `${n} symbol${n === 1 ? "" : "s"} deferred to stay within your free-tier limit ` +
+          `(${FREE_TIER.creditsPerMinute}/min) — they'll refresh on the next update`,
+      );
+    }
+    if (fx.error) {
+      reasons.push(
+        fx.cached ? "FX rates are using the last cached values" : `FX rates unavailable (${fx.error.message})`,
+      );
+    }
+    if (reasons.length === 0) return null;
+    return `${reasons.join("; ")}. Showing your last known values where needed.`;
   }
 
   private renderDashboard(model: DashboardModel): void {
@@ -283,4 +336,11 @@ function field(label: string, input: HTMLElement, hint?: string): HTMLElement {
   const children: Array<Node | string> = [h("span", { class: "field-label" }, [label]), input];
   if (hint) children.push(h("span", { class: "field-hint" }, [hint]));
   return h("label", { class: "field" }, children);
+}
+
+/** Parse + clamp the quote-cache minutes input to a sane 1–240 range. */
+function clampCacheMinutes(raw: string): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_QUOTE_CACHE_MINUTES;
+  return Math.min(240, Math.round(n));
 }
