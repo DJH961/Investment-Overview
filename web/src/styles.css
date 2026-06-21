@@ -581,6 +581,11 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .tab-panel[hidden] { display: none; }
 .panel-stack { display: grid; gap: 1.15rem; }
+/* Mobile-first: the overview is a single stacked column. Without an explicit
+ * gap its cards (hero, return horizons, KPIs, holdings, allocation) butt up
+ * against each other and read as one undivided block. The desktop media query
+ * below replaces this with a full grid layout. */
+.panel-overview { display: grid; gap: 1.15rem; }
 
 /* --- Generic card --------------------------------------------------------- */
 .card {
@@ -608,6 +613,10 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ledger-kind { font-weight: 600; }
 .ledger-sub { font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ledger-amount { font-weight: 700; font-variant-numeric: tabular-nums; flex: none; }
+/* When a ledger list is nested inside an allocation/details panel (e.g. the
+ * recent contributions list), indent its rows to line up with the panel's
+ * padded summary header instead of sitting flush against the card edge. */
+.allocation .ledger-list { padding: 0 0.95rem 0.95rem; }
 
 .deposits { display: grid; gap: 0.9rem; }
 /* The contributions summary is a natural triplet (total / this year / this
@@ -788,16 +797,24 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   display: grid;
   grid-template-columns: 3.2rem 1fr;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.7rem;
 }
-.proj-head { padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); }
-.proj-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
-.proj-row { padding: 0.35rem 0; }
-.proj-row + .proj-row { border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+.proj-head {
+  padding: 0 0.4rem 0.55rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.proj-list { list-style: none; margin: 0.35rem 0 0; padding: 0; display: grid; gap: 0; }
+.proj-row { padding: 0.6rem 0.4rem; border-radius: var(--radius-sm); }
+/* Zebra striping gives each year a clear band so the three projection columns
+ * stay legible without crowding the row with hairlines. */
+.proj-row:nth-child(odd) { background: color-mix(in srgb, var(--card-2) 55%, transparent); }
 .proj-year { font-weight: 700; font-variant-numeric: tabular-nums; }
 .proj-contrib { font-size: 0.78rem; font-variant-numeric: tabular-nums; display: none; }
-.proj-values { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.3rem; text-align: right; min-width: 0; }
-.proj-cell { font-size: 0.82rem; font-variant-numeric: tabular-nums; min-width: 0; }
+.proj-values { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; text-align: right; min-width: 0; }
+.proj-cell { font-size: 0.9rem; font-variant-numeric: tabular-nums; min-width: 0; }
 
 /* --- Desktop / tablet enhancements ---------------------------------------- */
 /* On the narrowest phones, collapse the glyph buttons (refresh/theme) to icons
@@ -1011,7 +1028,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .panel-plan > .plan-table-wrap .proj-head,
   .panel-plan > .plan-table-wrap .proj-row { grid-template-columns: 4rem 10rem 1fr; gap: 0.6rem; }
   .panel-plan > .plan-table-wrap .proj-values { gap: 0.6rem; }
-  .panel-plan > .plan-table-wrap .proj-row { padding: 0.5rem 0; }
+  .panel-plan > .plan-table-wrap .proj-row { padding: 0.5rem; }
 }
 
 /* On true widescreen, give the content a little more room. */
