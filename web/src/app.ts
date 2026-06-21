@@ -20,10 +20,17 @@ import {
   type AppConfig,
 } from "./config";
 import { PriceError } from "./prices";
-import { FREE_TIER, loadFxRates, loadQuotes, type QuoteLoadReport } from "./quotes";
+import { DEFAULT_NAV_CACHE_TTL_MS, FREE_TIER, loadFxRates, loadQuotes, type QuoteLoadReport } from "./quotes";
 import { setEurUsdRate } from "./currency";
 import type { MobileExport } from "./types";
 import { h, renderDashboard } from "./ui";
+
+/**
+ * NAV-priced asset classes that are real, tickered funds and so can be priced
+ * live (their NAV publishes ~once a day). Synthetic `cash`/`savings` rows are
+ * deliberately excluded — they have no market ticker.
+ */
+const FETCHABLE_NAV_CLASSES = new Set(["mutual_fund", "money_market", "money-market"]);
 
 interface SessionState {
   config: AppConfig;
@@ -238,15 +245,33 @@ export class App {
     if (!data) return this.showUnlock();
     this.showStatus("Fetching live prices…");
 
+    // Market holdings always fetch live; NAV holdings that are real funds
+    // (mutual / money-market) also fetch, so their once-a-day NAV tracks the
+    // latest published value instead of being frozen at the export. Synthetic
+    // cash/savings rows have no ticker and are left to their exported value.
+    const navFetchSymbols = new Set<string>();
     const symbols = data.holdings
-      .filter((holding) => holding.price_type === "market")
+      .filter((holding) => {
+        if (holding.price_type === "market") return true;
+        if (FETCHABLE_NAV_CLASSES.has(holding.asset_class)) {
+          navFetchSymbols.add(holding.price_symbol);
+          return true;
+        }
+        return false;
+      })
       .map((holding) => holding.price_symbol);
 
     // Free-tier-aware loaders: quotes economise on Twelve Data credits (cache +
     // per-minute/day budgeting + retry-with-backoff); FX prefers a daily cache.
+    // NAV symbols use a long (daily-ish) freshness window so they barely touch
+    // the credit budget.
     const cacheTtlMs = config.quoteCacheMinutes * 60 * 1000;
     const [quoteLoad, fxLoad] = await Promise.all([
-      loadQuotes(symbols, config.apiKey, { cacheTtlMs }),
+      loadQuotes(symbols, config.apiKey, {
+        cacheTtlMs,
+        cacheTtlMsForSymbol: (symbol) =>
+          navFetchSymbols.has(symbol) ? DEFAULT_NAV_CACHE_TTL_MS : cacheTtlMs,
+      }),
       loadFxRates(),
     ]);
 

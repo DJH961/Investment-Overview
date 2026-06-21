@@ -92,6 +92,7 @@ export function readCachedQuotes(storage: StorageLike | null = defaultStorage())
         price: toDecimal(stored.price),
         previousClose: toDecimal(stored.previousClose),
         currency: stored.currency,
+        at: stored.at,
       },
     });
   }

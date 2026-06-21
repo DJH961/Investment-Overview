@@ -54,6 +54,13 @@ const BACKOFF_JITTER_MS = 250;
 /** Default freshness window before a cached quote is considered stale. */
 export const DEFAULT_CACHE_TTL_MS = 15 * MINUTE_MS;
 
+/**
+ * Freshness window for NAV-priced holdings (mutual funds / money-market).
+ * Their NAV publishes only ~once per business day, so a long window keeps the
+ * latest available value on screen while barely touching the free-tier budget.
+ */
+export const DEFAULT_NAV_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+
 /** Tunables + injectable seams (tests supply deterministic clock/sleep/storage). */
 export interface LoadQuotesOptions {
   fetchImpl?: FetchLike;
@@ -62,6 +69,12 @@ export interface LoadQuotesOptions {
   sleep?: (ms: number) => Promise<void>;
   /** How long a cached quote stays fresh; older entries are re-fetched. */
   cacheTtlMs?: number;
+  /**
+   * Per-symbol override of {@link cacheTtlMs}. Lets NAV-priced symbols use a
+   * longer (daily-ish) window than market symbols in a single call. Falls back
+   * to `cacheTtlMs` when omitted or when it returns a non-positive value.
+   */
+  cacheTtlMsForSymbol?: (symbol: string) => number;
   creditsPerMinute?: number;
   creditsPerDay?: number;
   /** Backoff retries for a transient (429/5xx/network) failure. */
@@ -107,6 +120,7 @@ export async function loadQuotes(
     now = () => Date.now(),
     sleep = defaultSleep,
     cacheTtlMs = DEFAULT_CACHE_TTL_MS,
+    cacheTtlMsForSymbol,
     creditsPerMinute = FREE_TIER.creditsPerMinute,
     creditsPerDay = FREE_TIER.creditsPerDay,
     maxRetries = 3,
@@ -121,9 +135,13 @@ export async function loadQuotes(
   const stale: string[] = [];
 
   const t0 = now();
+  const ttlFor = (symbol: string): number => {
+    const override = cacheTtlMsForSymbol?.(symbol);
+    return override !== undefined && override > 0 ? override : cacheTtlMs;
+  };
   for (const symbol of unique) {
     const cached = cache.get(symbol);
-    if (cached && t0 - cached.at < cacheTtlMs && cached.quote.price !== null) {
+    if (cached && t0 - cached.at < ttlFor(symbol) && cached.quote.price !== null) {
       result.set(symbol, cached.quote);
       servedFresh.push(symbol);
     } else {
@@ -166,7 +184,8 @@ export async function loadQuotes(
         for (const symbol of toFetch) {
           const q = quotes.get(symbol);
           if (q) {
-            result.set(symbol, q);
+            // Stamp the observation time so the UI can show how fresh it is.
+            result.set(symbol, { ...q, at });
             fetched.push(symbol);
           }
         }

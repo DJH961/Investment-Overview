@@ -96,3 +96,32 @@ export function formatTimestamp(iso: string): string {
   if (Number.isNaN(parsed.getTime())) return iso;
   return parsed.toLocaleString();
 }
+
+/**
+ * A compact "how fresh is this price" label for a holding row.
+ *
+ * `at` is the epoch ms a live/cached price was observed; when null the price
+ * came from the export and `fallbackDate` (the export's `as_of`, `YYYY-MM-DD`)
+ * is shown instead. A same-day live price shows the clock time; an older one
+ * shows the date, so it is always transparent how current each value is.
+ */
+export function formatAsOf(
+  at: number | null | undefined,
+  fallbackDate: string,
+  now: Date = new Date(),
+): string {
+  if (at === null || at === undefined) {
+    const parsed = new Date(fallbackDate);
+    if (Number.isNaN(parsed.getTime())) return fallbackDate;
+    return parsed.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  }
+  const when = new Date(at);
+  if (Number.isNaN(when.getTime())) return "—";
+  const sameDay =
+    when.getFullYear() === now.getFullYear() &&
+    when.getMonth() === now.getMonth() &&
+    when.getDate() === now.getDate();
+  return sameDay
+    ? when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+    : when.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}

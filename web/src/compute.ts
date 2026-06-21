@@ -39,6 +39,14 @@ export interface HoldingView {
   priceNative: Decimal | null;
   /** True when a fresh live quote supplied the price (vs. exported fallback). */
   priceIsLive: boolean;
+  /**
+   * Epoch ms the displayed price was observed (live fetch or cache hit), or
+   * null when it came from the export's last-known value. Drives the per-row
+   * "as of" freshness indicator.
+   */
+  priceAsOf: number | null;
+  /** The export's valuation date (`meta.as_of`), shown when `priceAsOf` is null. */
+  priceFallbackDate: string;
   valueEur: Decimal | null;
   costBasisEur: Decimal | null;
   todayMoveEur: Decimal | null;
@@ -148,12 +156,13 @@ function holdingCashflows(holding: ExportHolding): Cashflow[] {
 function priceForHolding(holding: ExportHolding, quote: Quote | undefined): {
   price: Decimal | null;
   isLive: boolean;
+  at: number | null;
 } {
-  if (quote && quote.price) return { price: quote.price, isLive: true };
+  if (quote && quote.price) return { price: quote.price, isLive: true, at: quote.at ?? null };
   if (holding.last_known_price_native !== null) {
-    return { price: new Decimal(holding.last_known_price_native), isLive: false };
+    return { price: new Decimal(holding.last_known_price_native), isLive: false, at: null };
   }
-  return { price: null, isLive: false };
+  return { price: null, isLive: false, at: null };
 }
 
 function buildHolding(
@@ -162,9 +171,10 @@ function buildHolding(
   fx: FxRates,
   asOf: string,
   fxMissing: Set<string>,
+  exportAsOf: string,
 ): HoldingView {
   const shares = new Decimal(holding.shares);
-  const { price, isLive } = priceForHolding(holding, quote);
+  const { price, isLive, at } = priceForHolding(holding, quote);
   const currency = holding.native_currency;
 
   let valueEur: Decimal | null = null;
@@ -205,6 +215,8 @@ function buildHolding(
     shares,
     priceNative: price,
     priceIsLive: isLive,
+    priceAsOf: at,
+    priceFallbackDate: exportAsOf,
     valueEur,
     costBasisEur,
     todayMoveEur,
@@ -224,11 +236,12 @@ export function buildDashboard(
   liveDegradedReason: string | null = null,
 ): DashboardModel {
   const asOf = todayIso(now);
+  const exportAsOf = data.meta.as_of || asOf;
   const fxMissing = new Set<string>();
   const missingPrice: string[] = [];
 
   const holdings = data.holdings.map((h) => {
-    const view = buildHolding(h, quotes.get(h.price_symbol), fx, asOf, fxMissing);
+    const view = buildHolding(h, quotes.get(h.price_symbol), fx, asOf, fxMissing, exportAsOf);
     if (view.priceNative === null) missingPrice.push(h.symbol);
     return view;
   });

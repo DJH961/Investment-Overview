@@ -86,6 +86,48 @@ describe("loadQuotes — caching", () => {
     expect(quotes.get("VTI")?.price?.toString()).toBe("100");
     expect(report.fetched).toEqual(["VTI"]);
   });
+
+  it("stamps the observation time on fetched and cached quotes", async () => {
+    const storage = memStorage();
+    writeCachedQuotes(
+      new Map([["OLD", { symbol: "OLD", price: new Decimal("5"), previousClose: null, currency: "USD" }]]),
+      1234,
+      storage,
+    );
+    const fetchImpl = vi.fn<FetchLike>(async (url) => quoteResponse(url));
+    const fetchAt = 10 * 60_000; // OLD still fresh (15-min TTL), NEW fetched now
+    const { quotes } = await loadQuotes(["OLD", "NEW"], "key", {
+      fetchImpl,
+      storage,
+      now: clock(fetchAt),
+      sleep: noSleep,
+    });
+    expect(quotes.get("OLD")?.at).toBe(1234); // carried from the cache entry
+    expect(quotes.get("NEW")?.at).toBe(fetchAt); // stamped at fetch time
+  });
+
+  it("keeps NAV symbols fresh under a longer per-symbol TTL", async () => {
+    const storage = memStorage();
+    // Both cached at t=0; market's 15-min TTL is blown by t=1h, NAV's 12h isn't.
+    writeCachedQuotes(
+      new Map([
+        ["VTI", { symbol: "VTI", price: new Decimal("1"), previousClose: null, currency: "USD" }],
+        ["FXAIX", { symbol: "FXAIX", price: new Decimal("2"), previousClose: null, currency: "USD" }],
+      ]),
+      0,
+      storage,
+    );
+    const fetchImpl = vi.fn<FetchLike>(async (url) => quoteResponse(url));
+    const { report } = await loadQuotes(["VTI", "FXAIX"], "key", {
+      fetchImpl,
+      storage,
+      now: clock(60 * 60_000), // 1 hour later
+      sleep: noSleep,
+      cacheTtlMsForSymbol: (s) => (s === "FXAIX" ? 12 * 60 * 60_000 : 15 * 60_000),
+    });
+    expect(report.servedFresh).toEqual(["FXAIX"]);
+    expect(report.fetched).toEqual(["VTI"]);
+  });
 });
 
 describe("loadQuotes — free-tier budget", () => {
