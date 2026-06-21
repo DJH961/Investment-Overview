@@ -34,11 +34,14 @@ and :data:`HEADER_DOT_HTML` (embedded in the header by :mod:`layout`).
 from __future__ import annotations
 
 #: Markup for the always-visible connection dot embedded in the page header.
-#: The class/title are driven entirely from JavaScript in :func:`_script` so it
-#: stays in lock-step with the live socket state without any server round-trip.
+#: The dot is purely decorative (``aria-hidden``) — status changes are announced
+#: to assistive technology via the dedicated ``#inv-a11y-status`` live region in
+#: :func:`_body_html`. The class/title are driven from JavaScript in
+#: :func:`_script` so the dot stays in lock-step with the live socket state
+#: without any server round-trip.
 HEADER_DOT_HTML: str = (
     '<span id="inv-conn-dot" class="inv-conn-dot is-ok" '
-    'role="status" aria-live="polite" title="Connected"></span>'
+    'aria-hidden="true" title="Connected"></span>'
 )
 
 
@@ -149,6 +152,20 @@ def _css() -> str:
 
 @keyframes inv-spin { to { transform: rotate(360deg); } }
 
+/* Visually-hidden live region — announces connection/loading state to screen
+   readers (the dot and banner are otherwise silent/decorative). */
+.inv-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Always-visible header status dot. */
 .inv-conn-dot {
   display: inline-block;
@@ -187,11 +204,12 @@ def _body_html() -> str:
     """Return the banner + progress-bar markup injected into every page body."""
     return """
 <div id="inv-loadbar"></div>
+<div id="inv-a11y-status" class="inv-sr-only" role="status" aria-live="assertive"></div>
 <div id="inv-loadhint">
   <span class="inv-connbar-spinner" aria-hidden="true"></span>
   <span>Still working&hellip;</span>
 </div>
-<div id="inv-connbar" role="alert" aria-live="assertive">
+<div id="inv-connbar">
   <span class="inv-connbar-spinner" aria-hidden="true"></span>
   <span id="inv-connbar-text">Connection lost &mdash; reconnecting&hellip;</span>
   <button type="button" class="inv-connbar-btn" id="inv-connbar-reload">Reconnect now</button>
@@ -220,6 +238,11 @@ def _script() -> str:
   function showHint(v) {
     hint = hint || el('inv-loadhint');
     if (hint) hint.classList.toggle('is-visible', !!v);
+    if (v) announce('Still working\\u2026');
+  }
+  function announce(msg) {
+    var n = el('inv-a11y-status');
+    if (n) n.textContent = msg;
   }
 
   function barStart() {
@@ -293,6 +316,7 @@ def _script() -> str:
     if (stateClass) b.classList.add(stateClass);
     b.classList.add('is-visible');
     setText(text);
+    announce(text);
   }
   function hideBar() {
     var b = el('inv-connbar');

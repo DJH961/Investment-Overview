@@ -32,6 +32,20 @@ def test_body_html_exposes_stable_ids() -> None:
     assert 'id="inv-connbar"' in body
     assert 'id="inv-connbar-text"' in body
     assert 'id="inv-connbar-reload"' in body
+    # Screen-reader live region for connection/loading status.
+    assert 'id="inv-a11y-status"' in body
+    assert 'aria-live="assertive"' in body
+
+
+def test_status_changes_are_announced_to_screen_readers() -> None:
+    css = connectivity._css()
+    js = connectivity._script()
+    assert ".inv-sr-only" in css
+    # The decorative dot is hidden from assistive tech; the live region speaks.
+    assert 'aria-hidden="true"' in connectivity.HEADER_DOT_HTML
+    assert "role=" not in connectivity.HEADER_DOT_HTML
+    assert "function announce" in js
+    assert "inv-a11y-status" in js
 
 
 def test_stall_hint_is_wired_to_show_and_hide() -> None:
