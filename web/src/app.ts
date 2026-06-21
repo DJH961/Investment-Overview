@@ -21,6 +21,7 @@ import { buildDemoModel } from "./demo";
 import {
   isValidRepo,
   loadConfig,
+  parseAutoLockMinutes,
   resolveBlobUrl,
   resolveMetaUrl,
   saveConfig,
@@ -307,7 +308,7 @@ export class App {
         blobUrl: (blobUrl as HTMLInputElement).value.trim(),
         metaUrl: (metaUrl as HTMLInputElement).value.trim(),
         quoteCacheMinutes: clampCacheMinutes((cacheMinutes as HTMLInputElement).value),
-        autoLockMinutes: clampAutoLockMinutes((autoLock as HTMLInputElement).value),
+        autoLockMinutes: parseAutoLockMinutes((autoLock as HTMLInputElement).value),
       };
       if (!next.apiKey) return this.showSetup("Enter your price API key.", mode);
       const hasSource = next.blobUrl.length > 0 || isValidRepo(next.repo);
@@ -1070,16 +1071,4 @@ function clampCacheMinutes(raw: string): number {
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_QUOTE_CACHE_MINUTES;
   return Math.min(240, Math.round(n));
-}
-
-/**
- * Parse + clamp the idle auto-lock minutes input. A blank field falls back to
- * the preset default; `0` (or anything non-positive) means "never lock".
- */
-function clampAutoLockMinutes(raw: string): number {
-  const trimmed = raw.trim();
-  if (trimmed === "") return DEFAULT_AUTO_LOCK_MINUTES;
-  const n = Number(trimmed);
-  if (!Number.isFinite(n) || n <= 0) return 0;
-  return Math.min(MAX_AUTO_LOCK_MINUTES, Math.round(n));
 }

@@ -95,18 +95,18 @@ function parseCacheMinutes(raw: string): number {
 
 /**
  * Clamp a parsed auto-lock value to `0`–{@link MAX_AUTO_LOCK_MINUTES}. A blank
- * key (never set) falls back to the preset {@link DEFAULT_AUTO_LOCK_MINUTES}; an
- * explicit `0` (or any non-positive value) means "never lock".
+ * value (never set, or a field the user cleared) falls back to the preset
+ * {@link DEFAULT_AUTO_LOCK_MINUTES}; an explicit `0` — or any other non-positive
+ * value — means "never lock". Exported so the Settings UI clamps identically.
  */
-function parseAutoLockMinutes(raw: string): number {
-  if (raw === "") return DEFAULT_AUTO_LOCK_MINUTES;
+export function parseAutoLockMinutes(raw: string): number {
+  if (raw.trim() === "") return DEFAULT_AUTO_LOCK_MINUTES;
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return 0;
   return Math.min(MAX_AUTO_LOCK_MINUTES, Math.round(n));
 }
 
-export function loadConfig(): AppConfig {
-  return {
+export function loadConfig(): AppConfig {  return {
     apiKey: read(KEYS.apiKey),
     repo: read(KEYS.repo),
     releaseTag: read(KEYS.releaseTag) || DEFAULT_RELEASE_TAG,
