@@ -12,11 +12,13 @@ import {
   readCachedQuotes,
   readCreditLog,
   readNavPublishStats,
+  readSymbolPlan,
   recordCredits,
   recordNavPublish,
   writeCachedEnvelope,
   writeCachedFx,
   writeCachedQuotes,
+  writeSymbolPlan,
   NAV_PUBLISH_SAMPLES,
   type StorageLike,
 } from "../src/cache";
@@ -212,5 +214,43 @@ describe("encrypted-blob cache", () => {
     expect(readCachedEnvelope(s)).toBeNull();
     s.setItem("iv.web.blob_cache", JSON.stringify({ envelope }));
     expect(readCachedEnvelope(s)).toBeNull();
+  });
+});
+
+describe("symbol plan cache", () => {
+  it("round-trips a priority plan", () => {
+    const s = memStorage();
+    const plan = [
+      { symbol: "BIG_ETF", priceType: "market", assetClass: "etf", sizeEur: 9000 },
+      { symbol: "FUND", priceType: "nav", assetClass: "mutual_fund", sizeEur: 500 },
+    ];
+    writeSymbolPlan(plan, s);
+    expect(readSymbolPlan(s)).toEqual(plan);
+  });
+
+  it("returns an empty array for missing/corrupt storage", () => {
+    const s = memStorage();
+    expect(readSymbolPlan(s)).toEqual([]);
+    s.setItem("iv.web.symbol_plan", "{ not json");
+    expect(readSymbolPlan(s)).toEqual([]);
+    s.setItem("iv.web.symbol_plan", JSON.stringify({ not: "an array" }));
+    expect(readSymbolPlan(s)).toEqual([]);
+  });
+
+  it("skips malformed entries and defaults missing fields", () => {
+    const s = memStorage();
+    s.setItem(
+      "iv.web.symbol_plan",
+      JSON.stringify([
+        { symbol: "OK" },
+        { symbol: "" },
+        { notASymbol: true },
+        { symbol: "TYPED", priceType: "nav", assetClass: "mutual_fund", sizeEur: 12 },
+      ]),
+    );
+    expect(readSymbolPlan(s)).toEqual([
+      { symbol: "OK", priceType: "market", assetClass: "", sizeEur: 0 },
+      { symbol: "TYPED", priceType: "nav", assetClass: "mutual_fund", sizeEur: 12 },
+    ]);
   });
 });

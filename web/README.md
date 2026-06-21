@@ -104,9 +104,25 @@ game**. Everything slow happens *after* you're already looking at your numbers:
 - **Cache-first unlock.** The encrypted blob is opaque, public-safe ciphertext,
   so it's cached locally on first download. Unlocking decrypts that **cached copy
   first** and renders immediately; the fresh blob is re-downloaded in the
-  background and the view updates only if it actually changed. If the cache was
-  fetched in the last couple of minutes (you just closed the app), the
-  re-download is skipped entirely — a quick re-open can't have a newer export.
+  background and the view updates only if it actually changed.
+- **Only re-download when there's a newer version.** The background refresh no
+  longer pulls the whole blob just to compare it. It first checks a tiny
+  `portfolio.meta.json` version stamp the desktop app publishes alongside the
+  blob, then falls back to an HTTP **conditional GET** (`If-None-Match` /
+  `If-Modified-Since`). An unchanged export comes back as a few-byte **304 Not
+  Modified** — no transfer, no decrypt. A genuinely new publish is picked up
+  automatically within minutes via the slow background cadence, at essentially
+  zero bandwidth. (Requires the one-time CORS-proxy redeploy; see below.)
+- **Warm-on-login prefetch.** The moment the unlock screen appears, the app
+  starts fetching live quotes for the symbols it already knows about (from a
+  cached, tickers-only *symbol plan*) **while you type your passphrase and the
+  blob decrypts** — and pulls EUR FX in parallel. By the time you're in, the
+  first per-minute credit window is already spent on the data you care about, so
+  the dashboard paints live instead of starting the rate-limit clock from zero.
+- **Biggest first.** Quotes are fetched in priority order — ETFs/stocks
+  (largest EUR value first), then mutual funds (largest first); money-market
+  funds are never requested (their NAV is pinned at $1). Under the per-minute
+  cap, the prices that move your total the most always land first.
 - **Cache-first prices.** The dashboard paints from your last cached quotes with
   zero network on the hot path, then live prices refresh in the background.
 - **Fingerprint unlock (optional).** On a device with a platform authenticator
@@ -261,6 +277,15 @@ blob through a small CORS proxy you deploy once — a Cloudflare Worker under
 [`web/proxy/`](proxy/README.md). After deploying it, paste the Worker URL into
 **Settings -> Blob URL override** in the app. See `web/proxy/README.md` for the
 full, copy-pasteable deploy steps.
+
+The Worker also forwards conditional-request headers (`If-None-Match` /
+`If-Modified-Since`), relays upstream **304**s, exposes `ETag` / `Last-Modified`
+to the browser, and serves the tiny `portfolio.meta.json` version stamp on a
+`?meta` query — all of which power the "only re-download when there's a newer
+version" behaviour above. **If you are upgrading from v3.0, redeploy the Worker
+once** (`cd web/proxy && wrangler deploy`) to pick these up. The companion
+derives the version-stamp URL from your Blob URL automatically; you only need
+**Settings -> Version-file URL override** if the meta file lives elsewhere.
 
 ## Security invariant
 

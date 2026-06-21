@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { BlobError, fetchEnvelope } from "../src/blob";
+import { BlobError, fetchBlobMeta, fetchEnvelope, fetchEnvelopeConditional } from "../src/blob";
 import { ENVELOPE_VERSION, KDF_NAME, type Envelope } from "../src/crypto";
 
 const VALID_ENVELOPE: Envelope = {
@@ -72,5 +72,69 @@ describe("fetchEnvelope", () => {
     const envelope = await fetchEnvelope("https://example/blob.enc", fetchImpl);
     expect(envelope.v).toBe(ENVELOPE_VERSION);
     expect(envelope.kdf).toBe(KDF_NAME);
+  });
+});
+
+describe("fetchEnvelopeConditional", () => {
+  it("sends cached validators as conditional headers", async () => {
+    let seen: Headers | undefined;
+    const fetchImpl = ((_url: string, init?: RequestInit) => {
+      seen = new Headers(init?.headers);
+      return Promise.resolve(new Response(null, { status: 304 }));
+    }) as typeof fetch;
+    const result = await fetchEnvelopeConditional(
+      "https://example/blob.enc",
+      { etag: 'W/"v1"', lastModified: "Wed, 21 Oct 2026 07:28:00 GMT" },
+      fetchImpl,
+    );
+    expect(result.status).toBe("not-modified");
+    expect(seen?.get("If-None-Match")).toBe('W/"v1"');
+    expect(seen?.get("If-Modified-Since")).toBe("Wed, 21 Oct 2026 07:28:00 GMT");
+  });
+
+  it("returns the new envelope and validators on a 200", async () => {
+    const fetchImpl = (() =>
+      Promise.resolve(
+        jsonResponse(VALID_ENVELOPE, { headers: { ETag: 'W/"v2"', "Last-Modified": "Thu, 22 Oct 2026 00:00:00 GMT" } }),
+      )) as typeof fetch;
+    const result = await fetchEnvelopeConditional("https://example/blob.enc", null, fetchImpl);
+    expect(result.status).toBe("modified");
+    if (result.status === "modified") {
+      expect(result.envelope.v).toBe(ENVELOPE_VERSION);
+      expect(result.etag).toBe('W/"v2"');
+      expect(result.lastModified).toBe("Thu, 22 Oct 2026 00:00:00 GMT");
+    }
+  });
+
+  it("surfaces a CORS failure as a BlobError", async () => {
+    const fetchImpl = (() => Promise.reject(new TypeError("Failed to fetch"))) as typeof fetch;
+    const err = await fetchEnvelopeConditional("https://example/blob.enc", null, fetchImpl).catch((e) => e);
+    expect(err).toBeInstanceOf(BlobError);
+    expect((err as BlobError).message).toMatch(/CORS/);
+  });
+});
+
+describe("fetchBlobMeta", () => {
+  it("parses a valid version sidecar", async () => {
+    const fetchImpl = (() =>
+      Promise.resolve(jsonResponse({ version: "abc123", size: 42, published_at: "2026-01-01T00:00:00+00:00" }))) as typeof fetch;
+    const meta = await fetchBlobMeta("https://example/portfolio.meta.json", fetchImpl);
+    expect(meta?.version).toBe("abc123");
+    expect(meta?.size).toBe(42);
+    expect(meta?.publishedAt).toBe("2026-01-01T00:00:00+00:00");
+  });
+
+  it("returns null (never throws) for any failure", async () => {
+    const reject = (() => Promise.reject(new TypeError("Failed to fetch"))) as typeof fetch;
+    expect(await fetchBlobMeta("https://example/meta", reject)).toBeNull();
+
+    const notFound = (() => Promise.resolve(new Response("", { status: 404 }))) as typeof fetch;
+    expect(await fetchBlobMeta("https://example/meta", notFound)).toBeNull();
+
+    const badJson = (() => Promise.resolve(new Response("nope", { status: 200 }))) as typeof fetch;
+    expect(await fetchBlobMeta("https://example/meta", badJson)).toBeNull();
+
+    const noVersion = (() => Promise.resolve(jsonResponse({ size: 1 }))) as typeof fetch;
+    expect(await fetchBlobMeta("https://example/meta", noVersion)).toBeNull();
   });
 });
