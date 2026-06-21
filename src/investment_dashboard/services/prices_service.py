@@ -332,7 +332,7 @@ def instruments_due_for_refresh(
 ) -> list[Instrument]:
     """Return the active, non-synthetic instruments whose cache TTL has expired.
 
-    The background ``ui.timer`` in :mod:`investment_dashboard.main` calls
+    The background ``app.timer`` in :mod:`investment_dashboard.main` calls
     this every few minutes; whatever it returns is what we pull from
     yfinance — so the smaller this list, the cheaper the refresh.
     """
