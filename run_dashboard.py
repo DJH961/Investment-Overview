@@ -25,8 +25,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 PROJECT_NAME = "investment-dashboard"
 MIN_PYTHON = (3, 12)
-MIN_NICEGUI = (2, 10, 0)
-MAX_NICEGUI = (3, 0, 0)
+MIN_NICEGUI = (3, 12, 0)
+MAX_NICEGUI = (4, 0, 0)
 VENV_DIR = ROOT / ".venv"
 VENV_PYTHON = VENV_DIR / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 REQUIRED_MODULES = (
