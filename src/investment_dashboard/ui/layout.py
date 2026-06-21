@@ -159,6 +159,39 @@ def _data_health_badge() -> None:
     btn.tooltip(tip)
 
 
+def _quit_clicked() -> None:  # pragma: no cover - UI callback
+    """Confirm, then cleanly stop the server (releases the writer lock)."""
+    from investment_dashboard import shutdown  # noqa: PLC0415
+    from investment_dashboard.ui.components import confirm_dialog  # noqa: PLC0415
+
+    def _confirm() -> None:
+        ui.notify("Shutting down… you can close this tab.", type="warning")
+        # Let the toast paint before the server stops serving, then release the
+        # writer lock and exit. ``request_shutdown`` is safe to call repeatedly.
+        ui.timer(0.6, shutdown.request_shutdown, once=True)
+
+    confirm_dialog(
+        "Leave and shut down?",
+        "This stops the background server and releases the writer lock, fully "
+        "closing the app. You'll need to relaunch it to use the dashboard again.",
+        on_confirm=_confirm,
+        confirm_label="Shut down",
+        confirm_icon="power_settings_new",
+    )
+
+
+def _quit_button() -> None:
+    """Header control to cleanly leave and shut the whole app down.
+
+    Available on every page's banner so the user always has a one-click,
+    no-console way to stop the background server (and free the single-writer
+    lock) rather than hunting for it in Settings or killing the process.
+    """
+    btn = ui.button(icon="power_settings_new", on_click=_quit_clicked)
+    btn.props("flat round dense color=negative")
+    btn.tooltip("Leave & shut down the app")
+
+
 def _header(title: str, *, current_currency: str, now_label: str, dark: ui.dark_mode) -> None:
     with (
         ui.header(elevated=False).classes("inv-header q-px-md").style("min-height:56px"),
@@ -200,6 +233,7 @@ def _header(title: str, *, current_currency: str, now_label: str, dark: ui.dark_
             ui.html(
                 '<span style="font-size:.75rem;color:var(--inv-muted)">' + now_label + "</span>"
             )
+            _quit_button()
 
 
 def _sidebar(current: str) -> None:

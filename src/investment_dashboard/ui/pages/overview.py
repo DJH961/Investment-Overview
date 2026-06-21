@@ -90,22 +90,40 @@ _PCT_FORMATTER = (
 )
 
 
-def _money_column(label: str, field: str, primary: str) -> dict[str, object]:
+def _money_column(
+    label: str,
+    field: str,
+    primary: str,
+    *,
+    sort: str | None = None,
+    color_by_sign: bool = False,
+) -> dict[str, object]:
     """A single numeric money column for the *display* currency only.
 
     The user's executive decision (v2.8.2): show one currency at a time and
     flip the whole table with the header toggle, rather than doubling every
     money column. The column binds to the ``{field}_{ccy}_num`` numeric row key
     so it still sorts by value, and a ``valueFormatter`` renders the number.
+
+    ``sort`` (``"asc"`` / ``"desc"``) seeds the grid's initial sort so the table
+    can open ordered by this column. ``color_by_sign`` tints the value with the
+    colourblind-safe gain/loss classes so money figures like Capital Gain read
+    as winners/losers at a glance.
     """
     primary = primary.upper()
-    return {
+    numeric_field = f"{field}_{primary.lower()}_num"
+    column: dict[str, object] = {
         "headerName": f"{label} ({primary})",
-        "field": f"{field}_{primary.lower()}_num",
+        "field": numeric_field,
         "type": "rightAligned",
         "valueFormatter": aggrid_money_formatter(primary),
         "minWidth": 130,
     }
+    if sort is not None:
+        column["sort"] = sort
+    if color_by_sign:
+        column["cellClassRules"] = _SIGN_RULES(numeric_field)
+    return column
 
 
 def _pct_column(label: str, base_field: str, primary: str) -> dict[str, object]:
@@ -518,6 +536,7 @@ def register() -> None:  # noqa: PLR0915
                     _zero_value_warning(rows)
                     _price_data_warning(rows)
                     with section("Positions"):
+                        ccy_key = display_ccy.lower()
                         ui.aggrid(
                             {
                                 "columnDefs": [
@@ -546,14 +565,31 @@ def register() -> None:  # noqa: PLR0915
                                     },
                                     # One currency at a time (the display toggle).
                                     _money_column("Cost Basis", "cost_basis", display_ccy),
-                                    _money_column("Value", "value", display_ccy),
-                                    _money_column("Capital Gain", "capital_gain", display_ccy),
+                                    # Open sorted by Value (largest holdings first) so
+                                    # the table reads top-down by importance.
+                                    _money_column("Value", "value", display_ccy, sort="desc"),
+                                    # Money gain/loss tinted by sign so winners and
+                                    # losers stand out, not just the percentage columns.
+                                    _money_column(
+                                        "Capital Gain",
+                                        "capital_gain",
+                                        display_ccy,
+                                        color_by_sign=True,
+                                    ),
                                     _pct_column("Total Growth", "total_growth", display_ccy),
                                     _pct_column("XIRR", "xirr", display_ccy),
                                     _pct_column("Daily Growth", "daily", display_ccy),
                                     _pct_column("YTD Growth", "ytd", display_ccy),
                                 ],
                                 "rowData": rows,
+                                # A coloured stripe down the left edge of each row,
+                                # keyed on total growth in the displayed currency, lets
+                                # you scan the whole table for winners vs losers at a
+                                # glance — independent of which column is sorted.
+                                "rowClassRules": {
+                                    "inv-row-gain": f"data.total_growth_{ccy_key}_signed > 0",
+                                    "inv-row-loss": f"data.total_growth_{ccy_key}_signed < 0",
+                                },
                                 "defaultColDef": {
                                     "resizable": True,
                                     "sortable": True,
