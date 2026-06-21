@@ -236,20 +236,23 @@ function collapsibleSection(
 ): HTMLElement {
   const summaryChildren: Array<Node | string> = [h("h2", {}, [title])];
   if (sub) summaryChildren.push(h("span", { class: "muted" }, [sub]));
-  const id = (extraClass || title).trim().replace(/\s+/g, "-").toLowerCase();
+  // Combine the (stable) class and title so each section gets a distinct,
+  // collision-proof persistence key.
+  const id = `${extraClass} ${title}`.trim().replace(/\s+/g, "-").toLowerCase();
   const attrs: Attrs = { class: `collapsible ${extraClass}`.trim() };
-  if (loadCollapsed(id, open)) attrs.open = "open";
+  if (loadOpenState(id, open)) attrs.open = "open";
   const details = h("details", attrs, [
     h("summary", { class: "collapsible-summary" }, summaryChildren),
     body,
   ]) as HTMLDetailsElement;
-  details.addEventListener("toggle", () => saveCollapsed(id, details.open));
+  details.addEventListener("toggle", () => saveOpenState(id, details.open));
   return details;
 }
 
 const COLLAPSE_KEY_PREFIX = "iv.web.collapse.";
 
-function loadCollapsed(id: string, fallbackOpen: boolean): boolean {
+/** Read a section's remembered open state, defaulting to `fallbackOpen`. */
+function loadOpenState(id: string, fallbackOpen: boolean): boolean {
   try {
     const value = localStorage.getItem(COLLAPSE_KEY_PREFIX + id);
     if (value === "open") return true;
@@ -260,7 +263,8 @@ function loadCollapsed(id: string, fallbackOpen: boolean): boolean {
   return fallbackOpen;
 }
 
-function saveCollapsed(id: string, open: boolean): void {
+/** Persist a section's open state so it survives a re-render or refresh. */
+function saveOpenState(id: string, open: boolean): void {
   try {
     localStorage.setItem(COLLAPSE_KEY_PREFIX + id, open ? "open" : "closed");
   } catch {

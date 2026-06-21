@@ -184,13 +184,16 @@ function upsertCurrent(
   }
   // No exported bucket for the current period yet: synthesise a live-only row.
   // It sorts last chronologically, so after the reverse() it leads the list.
+  // Carry the previous period's close forward as the opening value so the row
+  // is continuous with the completed history rather than starting from zero.
+  const previousClosing = rows.length > 0 ? rows[rows.length - 1].closingValueEur : null;
   rows.push({
     label: currentLabel,
     netFlowEur: new Decimal(0),
     contributionsEur: new Decimal(0),
     dividendsEur: new Decimal(0),
     interestEur: new Decimal(0),
-    openingValueEur: new Decimal(0),
+    openingValueEur: previousClosing ?? new Decimal(0),
     closingValueEur: liveClosingEur,
     growthPct: liveGrowthPct,
     isCurrent: true,
