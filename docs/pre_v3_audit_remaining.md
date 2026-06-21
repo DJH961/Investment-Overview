@@ -23,6 +23,7 @@ records, for each cluster, what is done, what is deferred, and why.
 | **D2** (partial) | The Vanguard XLSX parser now refuses an import when a data cell lands under a column the header doesn't name (mis-aligned layout), instead of silently dropping it via `zip(strict=False)`. | `adapters/vanguard/xlsx_parser.py` |
 | **H2** | Full-metrics golden-master regression harness for `compute_portfolio_metrics`. | `tests/services/test_metrics_golden_master.py`, `tests/services/golden/portfolio_metrics.json` |
 | **F1** (partial) | README status pill re-synced from v2.9.4 → v2.11.1. | `README.md` |
+| **A2** | The silent 1:1 FX fallback is gone: `positions_service._eur_rate_for` now returns `None` when a rate is missing, and a non-EUR holding/cash with no rate values to **blank** (ZERO + `value_warning`) in EUR — never the native amount relabelled at par. `total_portfolio_value` omits unconvertible cash instead of adding a par figure. | `services/positions_service.py`, `tests/services/test_services.py` |
 
 ### Verified already fixed (no change needed)
 
@@ -48,16 +49,16 @@ records, for each cluster, what is done, what is deferred, and why.
 
 ### A. Correctness
 
-* **A2 — Silent 1:1 FX fallback for non-EUR holdings/cash.**
-  `services/positions_service.py::_eur_rate_for` still falls back to
-  `Decimal(1)` when a rate lookup fails, and `total_portfolio_value` does the
-  same for cash. Latent today (only EUR+USD are live) but a correctness trap
-  the moment a third currency is added for 3.0. **Deferred because** a correct
-  fix is a *policy* decision that ripples through the return types of
-  `compute_positions` / `total_portfolio_value` and every caller; it should
-  land together with the B-series valuation engine (below) under golden-master
-  protection, not as an isolated edit. Recommended policy: "FX missing ⇒
-  value unavailable (`None`/blank), never par."
+* **A2 — ✅ done.** The silent 1:1 FX fallback for non-EUR holdings/cash is
+  removed. `services/positions_service.py::_eur_rate_for` now returns `None`
+  (not `Decimal(1)`) when a rate lookup fails; a non-EUR holding with no rate
+  values to **blank** in EUR (`current_value_eur == 0` + `value_warning`) rather
+  than relabelling the native amount as EUR at par, and `total_portfolio_value`
+  omits an unconvertible non-EUR cash balance instead of adding a par figure.
+  Policy applied: "FX missing ⇒ value unavailable, never par." Regression tests:
+  `test_missing_fx_values_non_eur_holding_blank_not_par` /
+  `test_missing_fx_excludes_non_eur_cash_from_total`. (Tests that previously
+  leaned on the par fallback now seed an FX rate or use an EUR-native holding.)
 
 ### B. Performance / execution — the structural refactor
 

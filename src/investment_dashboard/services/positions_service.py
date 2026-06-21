@@ -93,11 +93,14 @@ class Position:
     #: ``instrument_overrides`` table. Default to "no category" / "active".
     category: str | None = None
     instrument_active: bool = True
-    #: True when the holding has a non-trivial share count but values to zero
-    #: because no price could be sourced (e.g. a ticker that stopped pricing).
-    #: A zero value on a held position is not normal — every figure derived
-    #: from it (totals, growth, allocation) is understated — so the UI raises a
-    #: visible warning. Money-market funds price at par and never trip this.
+    #: True when the holding has a non-trivial share count but its EUR value is
+    #: unavailable — either because no *price* could be sourced (e.g. a ticker
+    #: that stopped pricing) or because no EUR↔native *FX rate* was available to
+    #: convert a non-EUR holding. A zero/blank value on a held position is not
+    #: normal — every figure derived from it (totals, growth, allocation) is
+    #: understated — so the UI raises a visible warning. We never paper over a
+    #: missing rate by relabelling the native amount as EUR at par (1:1).
+    #: Money-market funds price at par and never trip this.
     value_warning: bool = False
     #: Override-merged view of the instrument. Read paths should prefer
     #: ``effective.name`` / ``effective.asset_class`` /
@@ -206,18 +209,16 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
     # Each non-EUR account converts with the EUR→*its own* native currency
     # rate, not a single shared USD rate — a GBP/CHF account must not be
     # divided by the USD rate. Rates are memoised per quote so we
-    # hit the FX cache at most once per distinct currency; a missing rate
-    # degrades to 1:1 (the long-standing "render something" fallback).
-    rate_cache: dict[str, Decimal] = {}
+    # hit the FX cache at most once per distinct currency. A missing rate
+    # yields ``None`` (value unavailable), never a par 1:1 figure (A2).
+    rate_cache: dict[str, Decimal | None] = {}
 
-    def _eur_rate_for(currency: str) -> Decimal:
+    def _eur_rate_for(currency: str) -> Decimal | None:
         ccy = currency.upper()
         if ccy == "EUR":
             return Decimal(1)
         if ccy not in rate_cache:
-            rate_cache[ccy] = fx_service.get_rate_eur_to_quote(
-                session, as_of, quote=ccy
-            ) or Decimal(1)
+            rate_cache[ccy] = fx_service.get_rate_eur_to_quote(session, as_of, quote=ccy)
         return rate_cache[ccy]
 
     results: list[Position] = []
@@ -254,18 +255,23 @@ def compute_positions(session: Session, *, as_of: date | None = None) -> list[Po
                 current_value_native = agg["shares"] * factor * current_price
         # Currency conversion to EUR using this account's own native rate.
         native_rate = _eur_rate_for(account.native_currency)
+        fx_unavailable = False
         if account.native_currency.upper() == "EUR":
             current_value_eur = current_value_native
-        elif native_rate != 0:
+        elif native_rate is not None and native_rate != 0:
             current_value_eur = current_value_native / native_rate
         else:
+            # FX rate missing ⇒ the holding's EUR value is unavailable. Leave it
+            # blank (ZERO) and flag it, rather than relabel the native amount as
+            # EUR at par — a par figure silently corrupts totals/growth (A2).
             current_value_eur = ZERO
-        # A held position (non-trivial shares) that values to zero means no
-        # price could be sourced — flag it so the UI can warn that downstream
-        # totals/growth are understated. Money-market funds price at par and
-        # never reach a zero value here.
+            fx_unavailable = True
+        # A held position (non-trivial shares) that can't be valued in EUR —
+        # because no price *or* no FX rate could be sourced — flags a warning so
+        # the UI can surface that downstream totals/growth are understated.
+        # Money-market funds price at par and never reach a zero value here.
         value_warning = agg["shares"] > _MIN_HELD_SHARES and (
-            current_price is None or current_value_native == ZERO
+            current_price is None or current_value_native == ZERO or fx_unavailable
         )
         results.append(
             Position(
@@ -316,8 +322,8 @@ def total_portfolio_value(session: Session, *, as_of: date | None = None) -> Dec
         (p.current_value_eur for p in compute_positions(session, as_of=as_of)), start=ZERO
     )
 
-    fx_rate = fx_service.get_rate_eur_to_quote(session, as_of) or Decimal(1)
-    rate_cache: dict[str, Decimal] = {"USD": fx_rate}
+    fx_rate = fx_service.get_rate_eur_to_quote(session, as_of)
+    rate_cache: dict[str, Decimal | None] = {"USD": fx_rate}
     for account in accounts_repo.list_accounts(session):
         if account.account_type not in {"savings", "cash"}:
             continue
@@ -326,14 +332,14 @@ def total_portfolio_value(session: Session, *, as_of: date | None = None) -> Dec
         if ccy == "EUR":
             total_eur += balance_native
             continue
-        # Convert with this account's own EUR→native rate, not a shared USD one;
-        # a missing rate degrades to 1:1.
+        # Convert with this account's own EUR→native rate, not a shared USD one.
+        # A missing rate means this balance can't be expressed in EUR, so omit
+        # it rather than add a par (1:1) figure that silently overstates the
+        # total (A2: FX missing ⇒ value unavailable, never par).
         if ccy not in rate_cache:
-            rate_cache[ccy] = fx_service.get_rate_eur_to_quote(
-                session, as_of, quote=ccy
-            ) or Decimal(1)
+            rate_cache[ccy] = fx_service.get_rate_eur_to_quote(session, as_of, quote=ccy)
         rate = rate_cache[ccy]
-        if rate != 0:
+        if rate is not None and rate != 0:
             total_eur += balance_native / rate
     return total_eur
 
