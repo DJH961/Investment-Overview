@@ -25,6 +25,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   in-flight auto-refresh is acknowledged instead of ignored, and every manual
   refresh ends with a brief toast stating the outcome (prices updated, already
   up to date, queued, or a fallback when live data couldn't be reached).
+- **The local app's Settings refresh spinner no longer flashes by.** The same
+  root cause applied on desktop: `Refresh prices` / `Refresh FX rates` early-
+  return without a network call when the data is already current, so the
+  button's in-place spinner could appear and vanish within a single frame. The
+  spinner is now held for a short minimum so a manual refresh is always
+  perceptible there too (the outcome toast was already shown).
 
 ## [3.1.1] — 2026-06-21
 

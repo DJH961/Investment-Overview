@@ -11,7 +11,9 @@ v1.3 adds:
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
@@ -50,6 +52,27 @@ PATH = "/settings"
 log = logging.getLogger(__name__)
 
 
+#: Minimum time the in-place "loading" spinner on a manual refresh button stays
+#: visible. When prices/FX are already current the service early-returns without
+#: any network round-trip (see ``refresh_prices`` / ``refresh_fx_history``), so
+#: the work finishes in a few milliseconds and — without a floor — the spinner
+#: would flash for less than a frame and the tap would look completely inert.
+#: This mirrors the web companion's ``MANUAL_REFRESH_MIN_FEEDBACK_MS`` so the
+#: same "nothing happens" bug can't recur on the local app either.
+MANUAL_REFRESH_MIN_FEEDBACK_SECONDS = 0.65
+
+
+def _remaining_feedback_delay(elapsed_seconds: float) -> float:
+    """Seconds to keep a manual-refresh spinner up after the work finished.
+
+    Floors the visible feedback at :data:`MANUAL_REFRESH_MIN_FEEDBACK_SECONDS`
+    so a refresh the service satisfies from cache (no network call) still shows
+    a perceptible spinner instead of flashing for less than a frame. Never
+    negative, so an already-slow refresh adds no artificial delay.
+    """
+    return max(0.0, MANUAL_REFRESH_MIN_FEEDBACK_SECONDS - elapsed_seconds)
+
+
 @asynccontextmanager
 async def _button_busy(button: ui.button) -> AsyncIterator[None]:  # pragma: no cover - UI
     """Show a spinner on ``button`` (disabled) while the wrapped work runs.
@@ -57,12 +80,21 @@ async def _button_busy(button: ui.button) -> AsyncIterator[None]:  # pragma: no 
     Gives an immediate, in-place visual cue that a manual refresh registered and
     is in progress — the work itself is offloaded to a worker thread so the
     spinner keeps animating instead of the click silently blocking the UI.
+
+    The spinner is held for at least :data:`MANUAL_REFRESH_MIN_FEEDBACK_SECONDS`:
+    a refresh whose data is already up to date returns almost instantly, so
+    without this floor the spinner would appear and vanish within a single frame
+    and the tap would look like nothing happened.
     """
     button.props("loading")
     button.disable()
+    started = time.monotonic()
     try:
         yield
     finally:
+        remaining = _remaining_feedback_delay(time.monotonic() - started)
+        if remaining > 0:
+            await asyncio.sleep(remaining)
         button.props(remove="loading")
         button.enable()
 
