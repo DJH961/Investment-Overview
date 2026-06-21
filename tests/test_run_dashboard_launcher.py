@@ -233,7 +233,7 @@ def test_venv_launch_python_uses_python_when_console(monkeypatch) -> None:
     assert run_dashboard._venv_launch_python() == run_dashboard.VENV_PYTHON
 
 
-def test_install_diagnostics_tees_to_log(tmp_path, monkeypatch) -> None:
+def test_install_diagnostics_writes_to_log(tmp_path, monkeypatch) -> None:
     log = tmp_path / "launcher.log"
     monkeypatch.setattr(run_dashboard, "LAUNCHER_LOG", log)
     original_out, original_err = sys.stdout, sys.stderr

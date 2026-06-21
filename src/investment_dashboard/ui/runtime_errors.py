@@ -16,8 +16,14 @@ Health page. :func:`install_client_watch` is called once per page from
 from __future__ import annotations
 
 #: How often each client checks for new background errors. Cheap (an in-memory
-#: counter read), so a short interval keeps the toast feeling immediate.
+#: counter read), so a short interval keeps the toast feeling immediate without
+#: meaningful cost; kept at 5s to avoid redundant work on idle pages.
 POLL_INTERVAL_SECONDS = 5.0
+
+#: How long the error toast stays up (ms) before auto-dismissing — long enough
+#: to read and act on, short enough not to linger; it is also manually
+#: dismissable via its close button.
+TOAST_TIMEOUT_MS = 8000
 
 
 def install_client_watch() -> None:
@@ -44,7 +50,7 @@ def install_client_watch() -> None:
             f"{latest.source} failed — see Data Health for details.",
             type="negative",
             position="top",
-            timeout=8000,
+            timeout=TOAST_TIMEOUT_MS,
             close_button="Dismiss",
         )
 

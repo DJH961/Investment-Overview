@@ -23,6 +23,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+#: Cap on retained errors. A handful is plenty for the UI's "recent failures"
+#: view; older entries are evicted (the monotonic ``seq`` keeps counting).
 _MAX_LOG_ENTRIES = 50
 
 
