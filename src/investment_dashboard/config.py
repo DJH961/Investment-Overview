@@ -56,6 +56,16 @@ class Settings(BaseSettings):
     port: int = 8080
     log_level: str = "INFO"
 
+    #: Optional override for where rotating log files are written. When
+    #: ``None`` (default) logs land in a ``logs/`` folder beside the active
+    #: database file so they're easy to find and share. Set via
+    #: ``INV_DASHBOARD_LOG_DIR`` to relocate them.
+    log_dir: Path | None = None
+    #: Max size of a single log file before it rolls over (bytes).
+    log_max_bytes: int = 2_000_000
+    #: How many rolled-over log files to keep alongside the active one.
+    log_backup_count: int = 5
+
     #: Encryption passphrase for the ledger/config tiers. Normally
     #: ``None`` (driver fetches it from the OS keyring); set via the
     #: ``INV_DASHBOARD_DB_PASSPHRASE`` env var for CI/test only.
@@ -158,6 +168,27 @@ class Settings(BaseSettings):
         if as_str == ":memory:":
             return "sqlite:///:memory:"
         return f"sqlite:///{as_str}"
+
+    @property
+    def resolved_log_dir(self) -> Path:
+        """Directory that holds the rotating log files.
+
+        Uses ``log_dir`` when set, otherwise a ``logs/`` folder beside the
+        active database so logs sit next to the data they describe. In-memory
+        databases (tests) fall back to the default data dir so nothing is
+        written into the working tree.
+        """
+        if self.log_dir is not None:
+            return self.log_dir
+        base = self.db_path
+        if base.as_posix() == ":memory:":
+            return _default_data_dir() / "logs"
+        return base.parent / "logs"
+
+    @property
+    def log_file_path(self) -> Path:
+        """Absolute path of the active (non-rotated) log file."""
+        return self.resolved_log_dir / "dashboard.log"
 
     @property
     def db_url(self) -> str:
