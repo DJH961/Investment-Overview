@@ -14,6 +14,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added — local app: every error surfaces in the browser, not just the console
+- **All warnings/errors now reach the in-app tracker.** Previously only two
+  hand-wired background tasks (live price refresh / startup refresh) showed up as
+  an in-app toast and on Data Health; every *other* failure was written to the
+  log but stayed invisible once the app runs with no console window. A logging
+  handler (`logging._RuntimeStatusHandler`) now mirrors every `WARNING`/`ERROR`
+  log record into `services.runtime_status`, so anything that gets logged —
+  wherever it comes from — also toasts and is listed on Data Health.
+- **Uncaught exceptions are caught too.** `services.error_reporting` installs
+  `sys.excepthook`, `threading.excepthook`, `sys.unraisablehook` and an asyncio
+  event-loop exception handler that route uncaught failures (on any thread, in
+  the event loop, or in finalizers) into the same tracker — while still logging
+  them, so the on-disk log and support bundle stay complete.
+- **Stray `stderr` writes are captured.** A `stderr` tee records bare
+  tracebacks/prints from libraries that bypass logging entirely. It wraps the
+  stream *after* logging binds its handler, so normal log output is never
+  double-recorded.
+- **De-duplication.** `runtime_status.record_error` now suppresses an identical
+  `(source, message)` repeated within a short window, so a repeatedly-failing
+  tick or a chatty library can't flood the toast queue. The Data Health section
+  is renamed *Recent errors* to reflect its broader scope.
+
 ### Added — local app: live connection & navigation feedback
 - **Top progress bar.** A thin accent bar appears the instant you click a nav
   item or link (and on every page load/unload), so navigation always feels

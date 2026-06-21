@@ -52,3 +52,29 @@ def test_reset_clears_everything() -> None:
     runtime_status.reset()
     assert runtime_status.sequence() == 0
     assert runtime_status.latest() is None
+
+
+def test_identical_errors_are_deduplicated_within_window() -> None:
+    first = runtime_status.record_error("stderr", "same message")
+    second = runtime_status.record_error("stderr", "same message")
+    # The repeat is suppressed: same event returned, counter unchanged.
+    assert second.seq == first.seq
+    assert runtime_status.sequence() == 1
+    assert len(runtime_status.recent()) == 1
+
+
+def test_distinct_messages_are_not_deduplicated() -> None:
+    runtime_status.record_error("stderr", "message one")
+    runtime_status.record_error("stderr", "message two")
+    assert runtime_status.sequence() == 2
+
+
+def test_dedup_expires_after_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    from datetime import timedelta
+
+    runtime_status.record_error("stderr", "recurring")
+    assert runtime_status.sequence() == 1
+    # Shrink the window so the next identical error is treated as new.
+    monkeypatch.setattr(runtime_status, "_DEDUP_WINDOW", timedelta(seconds=0))
+    runtime_status.record_error("stderr", "recurring")
+    assert runtime_status.sequence() == 2

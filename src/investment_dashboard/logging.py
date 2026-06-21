@@ -10,6 +10,12 @@ recoverable after the fact:
 
 Both sinks share the secret-redacting filter so nothing sensitive is ever
 written to disk.
+
+A third, non-file handler (:class:`_RuntimeStatusHandler`) mirrors every
+``WARNING``/``ERROR`` record into
+:mod:`investment_dashboard.services.runtime_status`, so any logged problem also
+surfaces in the browser (a toast plus the Data Health page) — vital now that the
+app runs with no console window to watch.
 """
 
 from __future__ import annotations
@@ -23,6 +29,34 @@ from investment_dashboard.redaction import SecretRedactingFilter
 
 _FORMAT = "%(asctime)s %(levelname)-7s %(name)s — %(message)s"
 _DATEFMT = "%Y-%m-%d %H:%M:%S"
+
+
+class _RuntimeStatusHandler(logging.Handler):
+    """Funnel ``WARNING``/``ERROR`` log records into the in-app error tracker.
+
+    The app runs with no console window, so anything that only reaches the log
+    used to be invisible. Mirroring every warning/error into
+    :mod:`investment_dashboard.services.runtime_status` makes *all* of them show
+    up in the browser (a toast plus the Data Health page), not just the two
+    hand-wired background tasks that called ``record_error`` directly.
+
+    A record can opt out by setting ``extra={"runtime_status_skip": True}`` (used
+    by callers that record into the tracker themselves, to avoid double entries),
+    and can override the displayed label with ``extra={"runtime_status_source"}``.
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if getattr(record, "runtime_status_skip", False):
+            return
+        # Defer the import so this module stays importable very early in boot and
+        # to avoid any import cycle through the services package.
+        try:
+            from investment_dashboard.services import runtime_status  # noqa: PLC0415
+
+            source = getattr(record, "runtime_status_source", None) or record.name
+            runtime_status.record_error(str(source), record.getMessage())
+        except Exception:  # pragma: no cover - logging must never crash callers
+            self.handleError(record)
 
 
 def _build_file_handler(
@@ -69,6 +103,14 @@ def configure_logging() -> None:
     file_handler = _build_file_handler(settings, formatter, redactor)
     if file_handler is not None:
         root.addHandler(file_handler)
+
+    # Mirror warnings/errors into the in-app tracker so they surface in the
+    # browser (toast + Data Health), not just on disk. It only needs the
+    # redactor — it stores messages, not formatted lines — and is capped at
+    # WARNING so routine info/debug chatter never toasts.
+    status_handler = _RuntimeStatusHandler(level=logging.WARNING)
+    status_handler.addFilter(redactor)
+    root.addHandler(status_handler)
 
     root.setLevel(settings.log_level)
 

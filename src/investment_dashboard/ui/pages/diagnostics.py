@@ -88,19 +88,22 @@ def _download_support_bundle() -> None:  # pragma: no cover - UI
 
 
 def _render_background_errors() -> None:  # pragma: no cover - UI
-    """List recent background-task failures (live/startup refresh), if any.
+    """List recent recorded errors (any source), if any.
 
-    These run off the request path and previously surfaced only in the log;
-    showing them here keeps them visible now that the app has no console window.
+    Fed by :mod:`services.runtime_status`, which now collects *every*
+    warning/error: logged problems, uncaught exceptions on any thread, asyncio
+    loop errors and stray ``stderr`` writes — not just the live/startup refresh.
+    Showing them here keeps them visible now that the app has no console window.
     """
     errors = runtime_status.recent(limit=10)
     if not errors:
         return
-    with section(f"Background tasks ({len(errors)})"):
+    with section(f"Recent errors ({len(errors)})"):
         ui.label(
-            "These ran in the background (live price refresh / startup refresh) "
-            "and failed. They are best-effort, so the dashboard keeps working "
-            "from cached data — but the underlying issue is worth a look.",
+            "Problems the app recorded recently — background refresh failures, "
+            "logged warnings/errors and uncaught exceptions. Most are best-effort, "
+            "so the dashboard keeps working from cached data, but the underlying "
+            "issue is worth a look.",
         ).classes("text-body2 opacity-80 q-mb-sm")
         for event in errors:
             with ui.element("div").classes("inv-section w-full"):
