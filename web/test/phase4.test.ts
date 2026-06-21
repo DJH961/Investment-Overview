@@ -166,6 +166,14 @@ describe("buildPlan + projectForward", () => {
     expect(plan.defaultAnnualContributionEur.toString()).toBe("9000");
   });
 
+  it("anchors the projection base year to the export as_of date", () => {
+    const plan = buildPlan(baseExport(), overview());
+    expect(plan.baseYear).toBe(2026); // meta.as_of = 2026-06-19
+    const rows = projectForward(new Decimal("1000"), new Decimal("0"), 2, plan.baseYear, ["0"]);
+    expect(rows[0].year).toBe(2027);
+    expect(rows[1].year).toBe(2028);
+  });
+
   it("projects an ordinary annuity: grow by the rate, then add the contribution", () => {
     // One year, 0% growth, 1000 contribution → starting + 1000.
     const rows = projectForward(new Decimal("10000"), new Decimal("1000"), 1, 2026, ["0"]);

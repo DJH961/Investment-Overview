@@ -603,7 +603,7 @@ function numberField(label: string, value: string, attrs: Attrs): { wrap: HTMLEl
  * network) as the user adjusts the years and annual-contribution inputs.
  */
 function renderPlanPanel(plan: PlanView): HTMLElement {
-  const baseYear = new Date().getUTCFullYear();
+  const baseYear = plan.baseYear;
   const defaultContribution = plan.defaultAnnualContributionEur.toDecimalPlaces(0).toString();
 
   const years = numberField("Years", "10", { min: "1", max: "40", step: "1" });

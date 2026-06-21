@@ -102,6 +102,8 @@ export interface PlanView {
   startingValueEur: Decimal;
   /** Average historical yearly contribution (EUR), the default the form seeds. */
   defaultAnnualContributionEur: Decimal;
+  /** Valuation year the projection counts forward from (anchored to `as_of`). */
+  baseYear: number;
 }
 
 function dec(value: string | null | undefined): Decimal | null {
@@ -274,9 +276,15 @@ function averageYearlyContribution(data: MobileExport): Decimal {
 
 /** Build the projection calculator inputs from the live total + history. */
 export function buildPlan(data: MobileExport, overview: OverviewView): PlanView {
+  // Anchor the projection's first year to the valuation date (`as_of`), matching
+  // the desktop `project_from_session` (which counts from the context year) and
+  // keeping the live recompute and the projection on the same calendar.
+  const anchor = data.meta.as_of || overview.asOf;
+  const baseYear = Number(anchor.slice(0, 4)) || new Date().getUTCFullYear();
   return {
     startingValueEur: overview.totalValueEur,
     defaultAnnualContributionEur: averageYearlyContribution(data),
+    baseYear,
   };
 }
 
