@@ -46,6 +46,15 @@ def test_supported_nicegui_bounds_fall_back_when_unreadable(monkeypatch) -> None
     )
 
 
+def test_supported_nicegui_bounds_pick_tightest_constraints(monkeypatch) -> None:
+    monkeypatch.setattr(
+        run_dashboard,
+        "_read_pyproject",
+        lambda: {"project": {"dependencies": ["nicegui>=3.12,<5,>=3.12.4,<4.1"]}},
+    )
+    assert run_dashboard._supported_nicegui_bounds() == ((3, 12, 4), (4, 1, 0))
+
+
 def test_dependency_problems_report_unsupported_nicegui(monkeypatch) -> None:
     monkeypatch.setattr(run_dashboard, "REQUIRED_MODULES", ())
     monkeypatch.setattr(run_dashboard, "_nicegui_is_supported", lambda: False)

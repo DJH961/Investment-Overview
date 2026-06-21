@@ -29,8 +29,9 @@ PROJECT_NAME = "investment-dashboard"
 MIN_PYTHON = (3, 12)
 # The supported NiceGUI range is derived from the ``nicegui`` requirement in
 # pyproject.toml at runtime so it can never drift out of sync with the pin. The
-# constants below are only a last-resort fallback if that requirement cannot be
-# read or parsed; keep them in step with pyproject.toml's ``nicegui`` specifier.
+# constants below are only a last-resort fallback used when that requirement
+# cannot be read or parsed (e.g. a corrupted or missing pyproject.toml); they
+# should stay a safe default range but do not need to track every pin bump.
 FALLBACK_MIN_NICEGUI = (3, 12, 0)
 FALLBACK_MAX_NICEGUI = (4, 0, 0)
 VENV_DIR = ROOT / ".venv"
@@ -252,9 +253,11 @@ def _supported_nicegui_bounds() -> tuple[tuple[int, int, int], tuple[int, int, i
             operator, raw_version = match.group(1), match.group(2)
             version = _version_tuple(raw_version)
             if operator in {">=", "==", "~="}:
-                lower = version
+                # Tightest (highest) lower bound wins across multiple constraints.
+                lower = version if lower is None else max(lower, version)
             elif operator == "<":
-                upper = version
+                # Tightest (lowest) upper bound wins across multiple constraints.
+                upper = version if upper is None else min(upper, version)
         break
 
     return lower or FALLBACK_MIN_NICEGUI, upper or FALLBACK_MAX_NICEGUI
@@ -323,7 +326,9 @@ def _venv_dependency_problems() -> list[str]:
     try:
         problems = json.loads(result.stdout)
     except (ValueError, TypeError):
-        return ["the virtual environment could not be inspected"]
+        stderr = result.stderr.strip()
+        detail = f": {stderr}" if stderr else ""
+        return [f"the virtual environment could not be inspected{detail}"]
     return [str(problem) for problem in problems]
 
 
