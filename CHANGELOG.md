@@ -64,6 +64,24 @@ freshness correct around market closures.
   the price's actual date or time, so the top of the screen always states when
   the figure is from.
 
+### Added — live-web companion: fingerprint-first unlock & idle auto-lock
+
+- **Fingerprint-first unlock.** Once fingerprint unlock is enrolled, the unlock
+  screen leads with a single prominent "Unlock with fingerprint" button (with the
+  passphrase tucked behind "Use passphrase instead") and **auto-prompts** the
+  platform authenticator on load, so a returning user is in with one touch and no
+  extra tap.
+- **Idle auto-lock.** After a configurable period of inactivity (default **5
+  min**, `0` disables) the session clears the in-memory passphrase and returns to
+  the unlock screen, so an unattended phone doesn't sit on an open dashboard.
+
+### Changed — live-web companion: Settings reorganised, dark-mode-friendly defaults
+
+- **Settings are grouped and reordered** to lead with **Appearance** (the
+  System → Light → Dark theme control), then **Security** (the idle auto-lock
+  timeout and a fingerprint-unlock toggle), and finally **Data source** (data
+  source, quote cache, blob URL override), so the most-used controls come first.
+
 ## [3.0.1] — 2026-06-21
 
 Patch release collecting the post-v3.0.0 follow-up work through PR #36: local-app
