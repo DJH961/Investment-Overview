@@ -179,6 +179,61 @@ describe("buildDashboard", () => {
     expect(m.overview.totalValueIsComplete).toBe(true);
     approx(m.overview.totalValueEur, 909 + 454 + 200);
   });
+  it("shows a NAV holding's real strike time, not the fetch time, as its price as-of", () => {
+    const priceTime = Date.parse("2024-05-31T20:00:00Z"); // yesterday's NAV strike
+    const navQuotes = new Map<string, Quote>([
+      ["VTI", { symbol: "VTI", price: new Decimal("100"), previousClose: new Decimal("95"), currency: "USD" }],
+      // A genuinely newer NAV (value-date after the export) with its own strike time.
+      [
+        "FXAIX",
+        {
+          symbol: "FXAIX",
+          price: new Decimal("101"),
+          previousClose: null,
+          currency: "USD",
+          at: Date.parse("2024-06-01T12:00:00Z"), // fetched "now"
+          priceTime, // but the NAV actually struck yesterday evening
+          valueDate: "2024-05-31",
+        },
+      ],
+    ]);
+    // Export as_of is 2024-06-01, so a 2024-05-31 NAV is NOT newer → kept as
+    // last-known (consistent basis); but if it WERE newer we'd surface priceTime.
+    const expNewer = makeExport();
+    expNewer.meta.as_of = "2024-05-30"; // make the fetched NAV strictly newer
+    const m = buildDashboard(expNewer, navQuotes, fx, new Date("2024-06-01T12:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.priceIsLive).toBe(true);
+    // The as-of reflects the price's real strike time, not the fetch time.
+    expect(fxaix.priceAsOf).toBe(priceTime);
+  });
+
+  it("does not let a same-or-older live NAV override the consistent exported price", () => {
+    const exp = makeExport(); // as_of 2024-06-01
+    const navQuotes = new Map<string, Quote>([
+      ["VTI", { symbol: "VTI", price: new Decimal("100"), previousClose: new Decimal("95"), currency: "USD" }],
+      // A live NAV whose value-date is NOT newer than the export, and on a wildly
+      // different (wrong) basis — must be ignored to avoid cratering the total.
+      [
+        "FXAIX",
+        {
+          symbol: "FXAIX",
+          price: new Decimal("1"), // bogus / off-basis NAV
+          previousClose: null,
+          currency: "USD",
+          at: Date.parse("2024-06-01T12:00:00Z"),
+          priceTime: Date.parse("2024-06-01T00:00:00Z"),
+          valueDate: "2024-06-01", // same day as export → not newer
+        },
+      ],
+    ]);
+    const m = buildDashboard(exp, navQuotes, fx, new Date("2024-06-01T12:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    // Kept the exported last-known price (100), not the bogus live 1.
+    expect(fxaix.priceIsLive).toBe(false);
+    approx(fxaix.priceNative, 100);
+    approx(fxaix.valueEur, (5 * 100) / 1.1, 1e-3);
+  });
 });
 
 function makeAnalyticsWith(
