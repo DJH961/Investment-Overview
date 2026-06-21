@@ -108,6 +108,41 @@ describe("buildPeriods", () => {
     expect(monthly).toEqual([]);
     expect(yearly).toEqual([]);
   });
+
+  it("synthesises the current month when the export omits it", () => {
+    const noCurrent = baseExport({
+      monthly: {
+        rows: [
+          { label: "2026-04", contributions_eur: "1200", dividends_eur: "0", interest_eur: "0", net_flow_eur: "1200", opening_value_eur: "35000", closing_value_eur: "37000", growth_pct: "0.02" },
+          { label: "2026-05", contributions_eur: "1200", dividends_eur: "0", interest_eur: "0", net_flow_eur: "1200", opening_value_eur: "37000", closing_value_eur: "38400", growth_pct: "0.006" },
+        ],
+      },
+    });
+    const { monthly } = buildPeriods(noCurrent, overview());
+    // Newest first: the synthesised live current month leads the list.
+    expect(monthly[0].label).toBe("2026-06");
+    expect(monthly[0].isCurrent).toBe(true);
+    expect(monthly[0].isLive).toBe(true);
+    expect(monthly[0].closingValueEur!.toString()).toBe("39000");
+    expect(monthly[0].growthPct!.toString()).toBe("0.05");
+  });
+
+  it("fills a missing first-period growth via a Modified Dietz fallback", () => {
+    const firstYearMissing = baseExport({
+      yearly: {
+        rows: [
+          // Opens at 0 with no exported growth — the very first period.
+          { label: "2024", contributions_eur: "7650", dividends_eur: "0", interest_eur: "0", net_flow_eur: "7650", opening_value_eur: "0", closing_value_eur: "8200", growth_pct: null },
+          { label: "2025", contributions_eur: "9000", dividends_eur: "0", interest_eur: "0", net_flow_eur: "9000", opening_value_eur: "8200", closing_value_eur: "20000", growth_pct: "0.10" },
+        ],
+      },
+    });
+    const { yearly } = buildPeriods(firstYearMissing, overview());
+    const first = yearly.find((r) => r.label === "2024")!;
+    // (8200 - 0 - 7650) / (0 + 7650/2) = 550 / 3825 ≈ 0.1438
+    expect(first.growthPct).not.toBeNull();
+    expect(first.growthPct!.toDecimalPlaces(4).toString()).toBe("0.1438");
+  });
 });
 
 describe("buildAnalytics / buildDeposits", () => {
