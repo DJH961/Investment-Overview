@@ -26,6 +26,7 @@ timestamps) — never payload contents or secrets.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -52,6 +53,15 @@ log = logging.getLogger(__name__)
 
 #: Fixed asset name overwritten on every publish. The web app fetches this.
 ASSET_NAME = "portfolio.enc"
+
+#: Tiny sidecar published next to the blob on every publish. It carries only a
+#: version stamp (a hash of the encrypted blob) plus size/timestamp, so the web
+#: companion can detect "is there a newer export?" by downloading a few bytes
+#: instead of the whole ciphertext. It contains NO decrypted data and no secret.
+META_ASSET_NAME = "portfolio.meta.json"
+
+#: Schema version of the meta sidecar, so the companion can evolve it safely.
+_META_SCHEMA = 1
 
 #: GitHub REST API roots.
 _API_ROOT = "https://api.github.com"
@@ -87,6 +97,25 @@ class PublishResult:
     size_bytes: int
     published_at: datetime
     created_release: bool
+    #: Version stamp of the published blob, mirrored in the meta sidecar.
+    version: str = ""
+
+
+def build_meta(blob: bytes, *, published_at: datetime) -> dict[str, Any]:
+    """Build the version-sidecar payload describing ``blob``.
+
+    ``version`` is the SHA-256 of the exact published ciphertext, so it changes
+    if and only if the encrypted export changes — the most reliable "is there a
+    newer version?" signal, fully under the publisher's control. The payload is
+    deliberately tiny and free of any decrypted data or secret.
+    """
+    return {
+        "schema": _META_SCHEMA,
+        "version": hashlib.sha256(blob).hexdigest(),
+        "size": len(blob),
+        "published_at": published_at.astimezone(UTC).isoformat(),
+        "asset": ASSET_NAME,
+    }
 
 
 def resolve_mobile_passphrase(settings: Settings) -> str | None:
@@ -309,9 +338,13 @@ def publish_envelope(
     release_tag: str,
     token: str,
     asset_name: str = ASSET_NAME,
+    meta_asset_name: str = META_ASSET_NAME,
     client: httpx.Client | None = None,
 ) -> PublishResult:
     """Upload ``envelope`` as the single release asset, overwriting any prior.
+
+    A tiny ``portfolio.meta.json`` sidecar (a hash of the encrypted blob) is
+    uploaded alongside it so the web companion can cheaply detect new exports.
 
     Opens (and closes) its own :class:`httpx.Client` unless one is supplied
     (tests inject a mocked client).
@@ -320,6 +353,9 @@ def publish_envelope(
 
     validate_repo(repo)
     blob = json.dumps(envelope, separators=(",", ":")).encode("utf-8")
+    published_at = datetime.now(tz=UTC)
+    meta = build_meta(blob, published_at=published_at)
+    meta_blob = json.dumps(meta, separators=(",", ":")).encode("utf-8")
 
     owns_client = client is None
     client = client or httpx.Client(timeout=_HTTP_TIMEOUT)
@@ -328,17 +364,32 @@ def publish_envelope(
         release, created = _get_or_create_release(
             client, repo=repo, release_tag=release_tag, token=token
         )
+        # Replace the blob first (the asset that matters), then the sidecar. The
+        # release's asset list was read once above, so both deletes see it.
         _delete_existing_asset(
             client, repo=repo, release=release, asset_name=asset_name, token=token
         )
+        _delete_existing_asset(
+            client, repo=repo, release=release, asset_name=meta_asset_name, token=token
+        )
         asset = _upload_asset(
             client, release=release, asset_name=asset_name, blob=blob, token=token
+        )
+        _upload_asset(
+            client, release=release, asset_name=meta_asset_name, blob=meta_blob, token=token
         )
     finally:
         if owns_client:
             client.close()
 
-    log.info("published %s (%d bytes) to %s@%s", asset_name, len(blob), repo, release_tag)
+    log.info(
+        "published %s (%d bytes) + %s to %s@%s",
+        asset_name,
+        len(blob),
+        meta_asset_name,
+        repo,
+        release_tag,
+    )
     return PublishResult(
         repo=repo,
         release_tag=release_tag,
@@ -346,8 +397,9 @@ def publish_envelope(
         asset_id=int(asset.get("id", 0)),
         browser_download_url=asset.get("browser_download_url"),
         size_bytes=len(blob),
-        published_at=datetime.now(tz=UTC),
+        published_at=published_at,
         created_release=created,
+        version=meta["version"],
     )
 
 

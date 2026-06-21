@@ -115,6 +115,44 @@ def test_publish_envelope_overwrites_existing_asset() -> None:
     assert upload.calls.last.request.headers["authorization"] == "Bearer " + TOKEN
 
 
+def test_build_meta_stamps_blob_hash() -> None:
+    import hashlib
+
+    blob = b'{"ciphertext":"AA=="}'
+    published = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    meta = publish_service.build_meta(blob, published_at=published)
+    assert meta["version"] == hashlib.sha256(blob).hexdigest()
+    assert meta["size"] == len(blob)
+    assert meta["asset"] == publish_service.ASSET_NAME
+    assert meta["published_at"] == "2026-01-02T03:04:05+00:00"
+    # The sidecar must never carry decrypted data — only the stamp fields.
+    assert set(meta) == {"schema", "version", "size", "published_at", "asset"}
+
+
+@respx.mock
+def test_publish_envelope_uploads_meta_sidecar() -> None:
+    _mock_preflight()
+    respx.get(f"{API}/repos/{REPO}/releases/tags/{TAG}").mock(
+        return_value=httpx.Response(200, json=_release_body())
+    )
+    upload = respx.post(f"{UPLOADS}/repos/{REPO}/releases/99/assets").mock(
+        return_value=httpx.Response(201, json=_asset_body(asset_id=8))
+    )
+
+    result = publish_service.publish_envelope(ENVELOPE, repo=REPO, release_tag=TAG, token=TOKEN)
+
+    # Two uploads: the blob, then the meta sidecar (with the right asset names).
+    names = [call.request.url.params.get("name") for call in upload.calls]
+    assert names == [publish_service.ASSET_NAME, publish_service.META_ASSET_NAME]
+    # The published meta body stamps the exact blob hash, mirrored on the result.
+    import hashlib
+
+    blob = json.dumps(ENVELOPE, separators=(",", ":")).encode()
+    meta_body = json.loads(upload.calls[1].request.content)
+    assert meta_body["version"] == hashlib.sha256(blob).hexdigest()
+    assert result.version == meta_body["version"]
+
+
 @respx.mock
 def test_publish_envelope_creates_release_when_missing() -> None:
     _mock_preflight()
