@@ -18,9 +18,16 @@ from typing import Any
 
 import yfinance as yf
 
+from investment_dashboard.adapters._retry import retry_call
+
 log = logging.getLogger(__name__)
 
 _PROVIDER = "yfinance"
+
+#: Bounded retry budget for transient yfinance download failures. yfinance
+#: hides the underlying HTTP status, so we retry any download exception a
+#: small number of times with backoff before surfacing a ``YFinanceError``.
+_DOWNLOAD_ATTEMPTS = 3
 
 
 def _record_status(status: str, message: str) -> None:
@@ -180,15 +187,19 @@ def _download_window(
 ) -> dict[str, dict[date, Decimal]]:
     """Single yfinance ``download`` call, parsed into the adapter's shape."""
     try:
-        frame = download(
-            tickers=symbols,
-            start=start.isoformat(),
-            end=end.isoformat(),
-            auto_adjust=adjusted,
-            actions=False,
-            progress=False,
-            group_by="ticker",
-            threads=False,
+        frame = retry_call(
+            lambda: download(
+                tickers=symbols,
+                start=start.isoformat(),
+                end=end.isoformat(),
+                auto_adjust=adjusted,
+                actions=False,
+                progress=False,
+                group_by="ticker",
+                threads=False,
+            ),
+            attempts=_DOWNLOAD_ATTEMPTS,
+            description="yfinance.download",
         )
     except Exception as exc:
         raise YFinanceError(f"yfinance.download failed: {exc}") from exc
@@ -253,15 +264,19 @@ def fetch_splits(
 
     download = downloader or yf.download
     try:
-        frame = download(
-            tickers=symbols,
-            start=start.isoformat(),
-            end=end.isoformat(),
-            auto_adjust=False,
-            actions=True,
-            progress=False,
-            group_by="ticker",
-            threads=False,
+        frame = retry_call(
+            lambda: download(
+                tickers=symbols,
+                start=start.isoformat(),
+                end=end.isoformat(),
+                auto_adjust=False,
+                actions=True,
+                progress=False,
+                group_by="ticker",
+                threads=False,
+            ),
+            attempts=_DOWNLOAD_ATTEMPTS,
+            description="yfinance.download (splits)",
         )
     except Exception as exc:
         raise YFinanceError(f"yfinance.download (splits) failed: {exc}") from exc
