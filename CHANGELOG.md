@@ -83,7 +83,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `publish_include_transactions`. All additive and off by default.
 - New dependency: `cryptography>=48.0.1` for AES-GCM.
 
-
+## [2.11.1] — 2026-05-31
 
 Bug-fix release for the portable bundle's first-start experience.
 
