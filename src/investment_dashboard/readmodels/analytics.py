@@ -78,9 +78,17 @@ def build(
 ) -> dict[str, Any]:
     """Return the JSON-serializable analytics read-model."""
     ctx = context or build_context(session)
+    # The equity curve must be exported in EUR — the live-web companion is
+    # EUR-native (every ``*_eur`` figure, the live total, and the per-holding
+    # marks are all EUR) and converts to the user's chosen display currency at
+    # render time. Exporting the curve in the desktop's display currency made
+    # the web double-convert it, inflating the line by the EUR→display factor
+    # and dragging a ~16% cliff onto the value chart where the (correctly-EUR)
+    # live tip joined the (display-currency) history. Risk/return metrics are
+    # scale-invariant, so EUR vs display currency does not change them.
     bundle = build_bundle(
         session,
-        currency=ctx.display_currency,
+        currency="EUR",
         lookback_days=lookback_days,
         as_of=ctx.as_of,
     )

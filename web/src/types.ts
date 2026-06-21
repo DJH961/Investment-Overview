@@ -36,6 +36,14 @@ export interface ExportHolding {
   price_symbol: string;
   price_type: PriceType;
   last_known_price_native: DecimalString | null;
+  /**
+   * Trading day (`YYYY-MM-DD`) the exported `last_known_price_native` came from
+   * — the latest cached close on/before the export date. Lets the UI show when
+   * a holding's value was actually last updated (e.g. a fund's last NAV strike)
+   * instead of the export date. Null/absent for rows with no price history
+   * (older exports, or money-market funds pinned at a constant NAV).
+   */
+  last_price_date?: string | null;
   cashflows: ExportCashflow[];
 }
 

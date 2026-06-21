@@ -30,7 +30,7 @@ from investment_dashboard.readmodels import analytics, deposits, periods, transa
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec, iso, now_utc_iso
 from investment_dashboard.repositories import accounts_repo, transactions_repo
-from investment_dashboard.services import metrics_service, positions_service
+from investment_dashboard.services import metrics_service, positions_service, prices_service
 from investment_dashboard.services.positions_service import Position
 
 SCHEMA_VERSION = 1
@@ -89,6 +89,7 @@ def _holding_dict(
     position: Position,
     *,
     cashflows: dict[int, list[Cashflow]],
+    price_dates: dict[int, date],
 ) -> dict[str, Any]:
     return {
         "symbol": position.instrument.symbol,
@@ -103,6 +104,13 @@ def _holding_dict(
         "price_symbol": position.instrument.symbol,
         "price_type": _price_type(position),
         "last_known_price_native": dec(position.current_price_native),
+        # The trading day the exported ``last_known_price_native`` actually came
+        # from (the latest cached close on/before the export date), so the web
+        # companion can show *when the value was last updated* — e.g. a fund's
+        # last NAV strike — instead of stamping the export date on a price that
+        # is really days old. ``null`` for rows with no cached price history
+        # (e.g. money-market funds pinned at their constant NAV).
+        "last_price_date": iso(price_dates.get(position.instrument.id)),
         "cashflows": [_cashflow_dict(flow) for flow in cashflows.get(position.instrument.id, [])],
     }
 
@@ -178,11 +186,21 @@ def build_mobile_export(
         session,
         as_of=context.as_of,
     )
+    # The trading day each holding's exported price actually came from, so the
+    # web can show "value last updated on …" rather than the export date.
+    instrument_ids = [p.instrument.id for p in positions]
+    recent_closes = prices_service.recent_closes_by_instrument(
+        session, instrument_ids, on_or_before=context.as_of, limit=1
+    )
+    price_dates: dict[int, date] = {
+        instr_id: rows[0][0] for instr_id, rows in recent_closes.items() if rows
+    }
     txns = list(transactions_repo.list_transactions(session, end=context.as_of))
     export: dict[str, Any] = {
         "meta": build_meta(context),
         "holdings": [
-            _holding_dict(position, cashflows=instrument_cashflows_eur) for position in positions
+            _holding_dict(position, cashflows=instrument_cashflows_eur, price_dates=price_dates)
+            for position in positions
         ],
         "portfolio_cashflows": _portfolio_cashflows(session, txns),
         "cash": _cash_balances(session, as_of=context.as_of),

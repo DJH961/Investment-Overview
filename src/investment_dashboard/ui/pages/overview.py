@@ -1,8 +1,10 @@
-"""Overview page (spec §8.1) — KPIs, per-instrument table, allocation treemap."""
+"""Overview page (spec §8.1) — KPIs, per-holding cards, allocation treemap."""
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
+from html import escape
 
 from nicegui import ui
 
@@ -19,21 +21,23 @@ from investment_dashboard.ui.components import (
 from investment_dashboard.ui.components.kpi_card import dual_kpi_card, dual_pct_kpi_card
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import (
-    aggrid_money_formatter,
     currency_symbol,
     fmt_money,
     fmt_pct,
+    fmt_shares,
 )
 from investment_dashboard.ui.pages._overview_query import (
     VALUE_RANGES,
+    HoldingCard,
     MarketVerdict,
     allocation_treemap,
+    build_holding_cards,
     build_value_series,
     compute_instrument_metrics,
     compute_market_verdict,
     get_metrics,
     get_positions,
-    position_rows,
+    holding_freshness,
     resolve_range_days,
 )
 from investment_dashboard.ui.theme import (
@@ -45,6 +49,9 @@ from investment_dashboard.ui.theme import (
 )
 
 PATH = "/overview"
+#: Sibling Holdings page route (defined on :mod:`...ui.pages.holdings`); kept as
+#: a literal here to avoid a circular import between the two page modules.
+HOLDINGS_PATH = "/holdings"
 
 
 def _pct_card(
@@ -80,80 +87,6 @@ def _pct_card(
     )
 
 
-#: AG-Grid ``valueFormatter`` (JS expression) rendering a numeric fraction as a
-#: signed percentage, e.g. ``0.0455`` -> ``"4.55 %"``; blanks out ``null``. The
-#: value is the AG-Grid expression variable ``value`` (there is no ``params``
-#: object for string expressions — using it leaves the cell unformatted).
-_PCT_FORMATTER = (
-    "value == null ? '' : (value * 100).toLocaleString("
-    "undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) + ' %'"
-)
-
-
-def _money_column(
-    label: str,
-    field: str,
-    primary: str,
-    *,
-    sort: str | None = None,
-    color_by_sign: bool = False,
-) -> dict[str, object]:
-    """A single numeric money column for the *display* currency only.
-
-    The user's executive decision (v2.8.2): show one currency at a time and
-    flip the whole table with the header toggle, rather than doubling every
-    money column. The column binds to the ``{field}_{ccy}_num`` numeric row key
-    so it still sorts by value, and a ``valueFormatter`` renders the number.
-
-    ``sort`` (``"asc"`` / ``"desc"``) seeds the grid's initial sort so the table
-    can open ordered by this column. ``color_by_sign`` tints the value with the
-    colourblind-safe gain/loss classes so money figures like Capital Gain read
-    as winners/losers at a glance.
-    """
-    primary = primary.upper()
-    numeric_field = f"{field}_{primary.lower()}_num"
-    column: dict[str, object] = {
-        "headerName": f"{label} ({primary})",
-        "field": numeric_field,
-        "type": "rightAligned",
-        "valueFormatter": aggrid_money_formatter(primary),
-        "minWidth": 130,
-    }
-    if sort is not None:
-        column["sort"] = sort
-    if color_by_sign:
-        column["cellClassRules"] = _SIGN_RULES(numeric_field)
-    return column
-
-
-def _pct_column(label: str, base_field: str, primary: str) -> dict[str, object]:
-    """A single percentage column for the display currency, coloured by sign."""
-    primary = primary.upper()
-    field = f"{base_field}_{primary.lower()}_signed"
-    return {
-        "headerName": f"{label} ({primary})",
-        "field": field,
-        "type": "rightAligned",
-        "valueFormatter": _PCT_FORMATTER,
-        "cellClassRules": _SIGN_RULES(field),
-        "minWidth": 120,
-    }
-
-
-def _SIGN_RULES(signed_field: str) -> dict[str, str]:  # noqa: N802 - config-style constant
-    """AG-Grid ``cellClassRules`` colouring a cell by the sign of a companion field.
-
-    ``signed_field`` is a numeric field on the row (e.g. ``xirr_signed``)
-    that carries the raw float; the visible field stays a formatted string.
-    Colours come from the colorblind-safe ``.inv-cell-pos`` / ``.inv-cell-neg``
-    rules in :mod:`investment_dashboard.ui.style`.
-    """
-    return {
-        "inv-cell-pos": f"data.{signed_field} > 0",
-        "inv-cell-neg": f"data.{signed_field} < 0",
-    }
-
-
 def _verdict_card(verdict: MarketVerdict) -> None:
     """KPI card form of the spreadsheet's "Beating / Losing the market" cell."""
     if verdict.beating is None:
@@ -180,15 +113,143 @@ def _verdict_card(verdict: MarketVerdict) -> None:
     )
 
 
-def _zero_value_warning(rows: list[dict[str, object]]) -> None:  # pragma: no cover - UI
+def _by_ccy(eur: Decimal | None, usd: Decimal | None, ccy: str) -> Decimal | None:
+    """Pick the EUR or USD figure for the active display currency."""
+    return eur if ccy.upper() == "EUR" else usd
+
+
+def format_price_freshness(card: HoldingCard) -> str:
+    """One-line "as of / updated" freshness string for a holding card.
+
+    Mirrors the web companion's per-row transparency:
+
+    * money-market funds price at a fixed $1.00 par with no feed → say so;
+    * a priced holding shows the close's observation date ("as of …") and,
+      when known, the saved last-refresh time ("updated …");
+    * a held holding with no cached price at all reads "no price".
+    """
+    if card.is_money_market:
+        return "par $1.00 · fixed"
+    if card.price_as_of is None:
+        return "no price"
+    parts = [f"as of {_fmt_asof_date(card.price_as_of)}"]
+    if card.updated_at is not None:
+        parts.append(f"updated {_fmt_updated(card.updated_at)}")
+    return " · ".join(parts)
+
+
+def _fmt_asof_date(value: date) -> str:
+    return value.strftime("%d %b %Y")
+
+
+def _fmt_updated(value: datetime) -> str:
+    return value.strftime("%d %b %H:%M")
+
+
+def _holding_card(card: HoldingCard, *, display_ccy: str) -> None:  # pragma: no cover - UI
+    """Render one redesigned holding box (web-style headline + detail grid).
+
+    The top mirrors the web app — symbol, name, value and today's (daily) move —
+    while the detail grid below leans into the desktop's space with the full
+    per-holding statistics (total growth, P/L, XIRR, YTD, price, shares, cost
+    basis, expense) plus the saved price freshness the user asked to surface.
+    """
+    ccy = display_ccy.upper()
+    value = _by_ccy(card.value_eur, card.value_usd, ccy)
+    value_other = _by_ccy(card.value_usd, card.value_eur, ccy)
+    other_ccy = "USD" if ccy == "EUR" else "EUR"
+    daily = _by_ccy(card.daily_growth_eur, card.daily_growth_usd, ccy)
+    growth = _by_ccy(card.total_growth_eur, card.total_growth_usd, ccy)
+    gain = _by_ccy(card.capital_gain_eur, card.capital_gain_usd, ccy)
+    xirr_v = _by_ccy(card.xirr_eur, card.xirr_usd, ccy)
+    ytd = _by_ccy(card.ytd_growth_eur, card.ytd_growth_usd, ccy)
+    cost_basis = _by_ccy(card.cost_basis_eur, card.cost_basis_usd, ccy)
+
+    rail = ""
+    if growth is not None and growth > 0:
+        rail = " inv-holding-gain"
+    elif growth is not None and growth < 0:
+        rail = " inv-holding-loss"
+
+    with ui.element("div").classes(f"inv-holding-card{rail}"):
+        # Top line: symbol (+ status pills) on the left, freshness on the right.
+        pills = ""
+        if card.is_money_market:
+            pills += '<span class="inv-holding-pill">PAR</span>'
+        if card.value_warning:
+            pills += '<span class="inv-holding-pill inv-holding-pill-warn">stale value</span>'
+        if card.price_data_warning:
+            pills += '<span class="inv-holding-pill inv-holding-pill-warn">bad history</span>'
+        ui.html(
+            '<div class="inv-holding-topline">'
+            f'<span class="inv-holding-sym">{escape(card.symbol)}{pills}</span>'
+            f'<span class="inv-holding-asof">{escape(format_price_freshness(card))}</span>'
+            "</div>"
+        )
+        ui.html(
+            f'<div class="inv-holding-name" title="{escape(card.name)}">{escape(card.name)}</div>'
+        )
+
+        daily_color = color_for_signed(float(daily)) if daily is not None else "var(--inv-muted)"
+        daily_txt = (
+            f"{arrow_for_signed(float(daily))} {fmt_pct(daily)}" if daily is not None else "—"
+        )
+        ui.html(
+            '<div class="inv-holding-figures">'
+            f'<span class="inv-holding-value">{escape(fmt_money(value, ccy))}</span>'
+            f'<span class="inv-holding-change" style="color:{daily_color}">{escape(daily_txt)}</span>'
+            "</div>"
+        )
+        if value_other is not None:
+            ui.html(
+                f'<div class="inv-holding-value-sub">{escape(fmt_money(value_other, other_ccy))}</div>'
+            )
+
+        # Detail statistics grid — the "more detailed" desktop-native block.
+        with ui.element("div").classes("inv-holding-stats"):
+            _stat("Total Growth", fmt_pct(growth), _signed_color(growth))
+            _stat(f"P/L ({ccy})", fmt_money(gain, ccy), _signed_color(gain))
+            _stat("XIRR", fmt_pct(xirr_v), _signed_color(xirr_v))
+            _stat("YTD", fmt_pct(ytd), _signed_color(ytd))
+            _stat(
+                "Price",
+                (
+                    f"{currency_symbol(card.native_currency)}{card.current_price_native:,.2f}"
+                    if card.current_price_native is not None
+                    else "—"
+                ),
+            )
+            _stat("Shares", fmt_shares(card.shares))
+            _stat(f"Cost basis ({ccy})", fmt_money(cost_basis, ccy))
+            _stat("Expense", fmt_pct(card.expense_ratio) if card.expense_ratio is not None else "—")
+
+
+def _signed_color(value: Decimal | None) -> str | None:
+    """Gain/loss colour for a signed figure, or ``None`` (theme ink) for zero."""
+    if value is None or value == 0:
+        return None
+    return color_for_signed(float(value))
+
+
+def _stat(label: str, value: str, color: str | None = None) -> None:  # pragma: no cover - UI
+    """Render one label/value cell in a holding card's detail grid."""
+    style = f' style="color:{color}"' if color else ""
+    ui.html(
+        '<div class="inv-holding-stat">'
+        f'<span class="inv-holding-stat-label">{escape(label)}</span>'
+        f'<span class="inv-holding-stat-value"{style}>{escape(value)}</span>'
+        "</div>"
+    )
+
+
+def _zero_value_warning(symbols: list[str]) -> None:  # pragma: no cover - UI
     """Banner warning that held positions value to zero (no price sourced).
 
     A held holding worth zero understates every downstream figure (total
     value, growth, allocation), so the numbers can't be trusted until the
     ticker prices again — repoint it from Settings → Instruments if the
-    symbol is wrong. No-op when nothing is flagged.
+    symbol is wrong. No-op when ``symbols`` is empty.
     """
-    symbols = [str(r["symbol"]) for r in rows if r.get("value_warning")]
     if not symbols:
         return
     listed = ", ".join(symbols)
@@ -206,16 +267,15 @@ def _zero_value_warning(rows: list[dict[str, object]]) -> None:  # pragma: no co
         ).classes("text-body2")
 
 
-def _price_data_warning(rows: list[dict[str, object]]) -> None:  # pragma: no cover - UI
+def _price_data_warning(symbols: list[str]) -> None:  # pragma: no cover - UI
     """Banner warning that an instrument's price *history* is corrupt.
 
     A non-positive (zero/negative) close in the cached history is never a real
     price — it forward-fills into every historical valuation that lands on it
     and silently understates past balances and growth. We name the affected
     symbols so the user can re-fetch or repoint them before trusting the
-    historic numbers. No-op when nothing is flagged.
+    historic numbers. No-op when ``symbols`` is empty.
     """
-    symbols = [str(r["symbol"]) for r in rows if r.get("price_data_warning")]
     if not symbols:
         return
     listed = ", ".join(symbols)
@@ -382,7 +442,7 @@ def register() -> None:  # noqa: PLR0915
         with page_frame("Overview", current=PATH):
             page_header("Overview", subtitle="Portfolio at a glance")
 
-            def _build() -> None:
+            def _build() -> None:  # noqa: PLR0915
                 range_label, _ = resolve_range_days(value_range)
                 with session_scope() as session:
                     metrics = get_metrics(session)
@@ -391,6 +451,7 @@ def register() -> None:  # noqa: PLR0915
                     price_anomaly_ids = prices_service.instruments_with_price_anomalies(
                         session, [p.instrument.id for p in positions]
                     )
+                    freshness = holding_freshness(session, positions)
                     verdict = compute_market_verdict(
                         session,
                         portfolio_xirr=metrics.xirr,
@@ -405,27 +466,19 @@ def register() -> None:  # noqa: PLR0915
                     value_series = build_value_series(
                         session, currency=display_ccy, range_label=range_label
                     )
-                    # Display-currency FX (EUR→display). For EUR display we
-                    # still fetch EUR→USD so the secondary USD column on the
-                    # positions table stays populated; for USD display
-                    # we use the matching rate so KPIs convert correctly.
+                    # Display-currency FX (EUR→display) used to convert the
+                    # portfolio-level expense cost and the allocation treemap.
                     display_quote = display_ccy if display_ccy != "EUR" else "USD"
                     fx_rate = display_currency_service.current_rate(session, quote=display_quote)
-                    usd_rate = (
-                        fx_rate
-                        if display_quote == "USD"
-                        else display_currency_service.current_rate(session, quote="USD")
-                    )
-                # Hide fully-sold instruments from the positions table — anything
+                # Hide fully-sold instruments from the holdings view — anything
                 # with a residual share count below 1e-7 (a tenth of a millionth
                 # of a share) is effectively zero and just clutters the overview.
                 _min_shares = Decimal("0.0000001")
                 held_positions = [p for p in positions if p.shares >= _min_shares]
-                rows = position_rows(
+                cards = build_holding_cards(
                     held_positions,
-                    display_currency=display_ccy,
-                    fx_rate=usd_rate,
                     metrics=instrument_metrics,
+                    freshness=freshness,
                     price_anomaly_ids=price_anomaly_ids,
                 )
                 treemap_data = allocation_treemap(positions)
@@ -525,7 +578,7 @@ def register() -> None:  # noqa: PLR0915
                     value_series, range_label=range_label, display_ccy=display_ccy
                 )
 
-                if not rows:
+                if not cards:
                     empty_state(
                         "insights",
                         "No positions yet",
@@ -533,73 +586,23 @@ def register() -> None:  # noqa: PLR0915
                         "or seed defaults from Settings.",
                     )
                 else:
-                    _zero_value_warning(rows)
-                    _price_data_warning(rows)
-                    with section("Positions"):
-                        ccy_key = display_ccy.lower()
-                        ui.aggrid(
-                            {
-                                "columnDefs": [
-                                    {"headerName": "Symbol", "field": "symbol", "pinned": "left"},
-                                    {"headerName": "Name", "field": "name"},
-                                    {"headerName": "Category", "field": "category", "filter": True},
-                                    {
-                                        "headerName": "Shares",
-                                        "field": "shares",
-                                        "type": "rightAligned",
-                                    },
-                                    {
-                                        "headerName": "Avg Price",
-                                        "field": "avg_price",
-                                        "type": "rightAligned",
-                                    },
-                                    {
-                                        "headerName": "Current Price",
-                                        "field": "current_price",
-                                        "type": "rightAligned",
-                                    },
-                                    {
-                                        "headerName": "Expense",
-                                        "field": "expense_ratio",
-                                        "type": "rightAligned",
-                                    },
-                                    # One currency at a time (the display toggle).
-                                    _money_column("Cost Basis", "cost_basis", display_ccy),
-                                    # Open sorted by Value (largest holdings first) so
-                                    # the table reads top-down by importance.
-                                    _money_column("Value", "value", display_ccy, sort="desc"),
-                                    # Money gain/loss tinted by sign so winners and
-                                    # losers stand out, not just the percentage columns.
-                                    _money_column(
-                                        "Capital Gain",
-                                        "capital_gain",
-                                        display_ccy,
-                                        color_by_sign=True,
-                                    ),
-                                    _pct_column("Total Growth", "total_growth", display_ccy),
-                                    _pct_column("XIRR", "xirr", display_ccy),
-                                    _pct_column("Daily Growth", "daily", display_ccy),
-                                    _pct_column("YTD Growth", "ytd", display_ccy),
-                                ],
-                                "rowData": rows,
-                                # A coloured stripe down the left edge of each row,
-                                # keyed on total growth in the displayed currency, lets
-                                # you scan the whole table for winners vs losers at a
-                                # glance — independent of which column is sorted.
-                                "rowClassRules": {
-                                    "inv-row-gain": f"data.total_growth_{ccy_key}_signed > 0",
-                                    "inv-row-loss": f"data.total_growth_{ccy_key}_signed < 0",
-                                },
-                                "defaultColDef": {
-                                    "resizable": True,
-                                    "sortable": True,
-                                    "flex": 1,
-                                    "minWidth": 110,
-                                    "wrapHeaderText": True,
-                                    "autoHeaderHeight": True,
-                                },
-                            }
-                        ).classes("ag-theme-alpine w-full h-[55vh]")
+                    _zero_value_warning([c.symbol for c in cards if c.value_warning])
+                    _price_data_warning([c.symbol for c in cards if c.price_data_warning])
+                    with section("Holdings"):
+                        with ui.row().classes("items-center justify-between w-full no-wrap"):
+                            ui.label(
+                                f"{len(cards)} "
+                                f"{'position' if len(cards) == 1 else 'positions'} "
+                                "· largest first"
+                            ).classes("text-caption opacity-70")
+                            ui.button(
+                                "Full table & detail",
+                                icon="table_rows",
+                                on_click=lambda: ui.navigate.to(HOLDINGS_PATH),
+                            ).props("flat dense no-caps color=primary")
+                        with ui.element("div").classes("inv-holding-grid w-full q-mt-sm"):
+                            for card in cards:
+                                _holding_card(card, display_ccy=display_ccy)
                     with section("Allocation"):
                         ui.plotly(
                             _treemap_figure(treemap_data, currency=display_ccy, fx_rate=fx_rate),

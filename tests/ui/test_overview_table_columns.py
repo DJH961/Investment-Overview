@@ -7,7 +7,7 @@ open the table sorted by Value: the ``_money_column`` helper's ``sort`` and
 
 from __future__ import annotations
 
-from investment_dashboard.ui.pages.overview import _money_column
+from investment_dashboard.ui.pages.holdings import _money_column
 
 
 def test_money_column_default_has_no_sort_or_sign_colour() -> None:
@@ -30,3 +30,13 @@ def test_money_column_colour_by_sign_targets_numeric_companion() -> None:
         "inv-cell-pos": "data.capital_gain_usd_num > 0",
         "inv-cell-neg": "data.capital_gain_usd_num < 0",
     }
+
+
+def test_weight_column_binds_to_weight_num_fraction() -> None:
+    from investment_dashboard.ui.pages.holdings import _weight_column
+
+    col = _weight_column()
+    assert col["field"] == "weight_num"
+    assert col["headerName"] == "Weight"
+    # Renders the fraction as a percent (shared with the other ratio columns).
+    assert "100" in str(col["valueFormatter"])
