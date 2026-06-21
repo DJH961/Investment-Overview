@@ -33,6 +33,7 @@ from nicegui import ui
 from investment_dashboard import __version__
 from investment_dashboard.db import session_scope
 from investment_dashboard.services import (
+    diagnostics_service,
     display_currency_service,
     theme_service,
     timezone_service,
@@ -63,6 +64,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem("Projection", "/projection", "trending_up"),
     NavItem("Analytics", "/analytics", "insights"),
     NavItem("Calculator", "/calculator", "calculate"),
+    NavItem("Data Health", "/diagnostics", "health_and_safety"),
     NavItem("Settings", "/settings", "settings"),
 )
 
@@ -129,6 +131,33 @@ def _cycle_theme(
         pass
 
 
+def _data_health_badge() -> None:
+    """Header entry point to the Data Health page, tinted by current severity.
+
+    Surfaces the app's *silent* degradations (missing FX/prices, incomplete
+    legs, provider failures) on every page so they can't go unnoticed (audit
+    E1). Uses the cheap :func:`diagnostics_service.quick_status` probe so it
+    stays light enough for the header; the page itself runs the full sweep.
+    """
+    severity, count = "ok", 0
+    try:
+        with session_scope() as session:
+            severity, count = diagnostics_service.quick_status(session)
+    except Exception:  # pragma: no cover - defensive (read-only / fresh DB)
+        severity, count = "ok", 0
+
+    icon = {"ok": "health_and_safety", "warning": "warning", "error": "error"}[severity]
+    color = {"ok": "", "warning": "warning", "error": "negative"}[severity]
+    tip = (
+        "Data Health — all clear"
+        if severity == "ok"
+        else f"Data Health — {count} item(s) need attention"
+    )
+    btn = ui.button(icon=icon, on_click=lambda: ui.navigate.to("/diagnostics"))
+    btn.props("flat round dense" + (f" color={color}" if color else ""))
+    btn.tooltip(tip)
+
+
 def _header(title: str, *, current_currency: str, now_label: str, dark: ui.dark_mode) -> None:
     with (
         ui.header(elevated=False).classes("inv-header q-px-md").style("min-height:56px"),
@@ -158,6 +187,7 @@ def _header(title: str, *, current_currency: str, now_label: str, dark: ui.dark_
                 icon="help_outline",
                 on_click=lambda: ui.navigate.to("/help"),
             ).props("flat round dense").tooltip("Help & user guide")
+            _data_health_badge()
             ui.button(
                 icon="refresh",
                 on_click=ui.navigate.reload,

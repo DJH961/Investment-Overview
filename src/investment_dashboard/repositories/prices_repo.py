@@ -112,64 +112,40 @@ def close_as_of(session: Session, instrument_id: int, as_of: date) -> Decimal | 
     return session.scalars(stmt).one_or_none()
 
 
-def latest_closes(session: Session, instrument_ids: Sequence[int]) -> dict[int, Decimal]:
-    """Last known close per instrument in one window query.
-
-    Batched form of :func:`latest_close` so valuing "today" across a whole
-    portfolio is a single round-trip instead of one lookup per holding.
-    Instruments with no cached history are absent from the mapping.
-    """
-    if not instrument_ids:
-        return {}
-    ranked = (
-        select(
-            PriceHistory.instrument_id,
-            PriceHistory.close_native,
-            func.row_number()
-            .over(
-                partition_by=PriceHistory.instrument_id,
-                order_by=PriceHistory.date.desc(),
-            )
-            .label("rn"),
-        )
-        .where(PriceHistory.instrument_id.in_(instrument_ids))
-        .subquery()
-    )
-    stmt = select(ranked.c.instrument_id, ranked.c.close_native).where(ranked.c.rn == 1)
-    return {iid: close for iid, close in session.execute(stmt).all()}
-
-
-def closes_as_of(
-    session: Session, instrument_ids: Sequence[int], as_of: date
+def latest_closes(
+    session: Session,
+    instrument_ids: Sequence[int],
+    *,
+    on_or_before: date | None = None,
 ) -> dict[int, Decimal]:
-    """Most recent close on or before ``as_of`` per instrument in one query.
+    """Batched :func:`latest_close` / :func:`close_as_of` for many instruments.
 
-    Batched form of :func:`close_as_of`: a single window query partitions by
-    ``instrument_id`` and keeps each instrument's newest print at or before
-    ``as_of``, replacing the per-instrument N+1 that historical valuations
-    (YTD/MTD start, period-closing snapshots) otherwise issue. Instruments with
-    no print on or before ``as_of`` are absent from the mapping.
+    Returns ``{instrument_id: close_native}`` holding each instrument's most
+    recent print (forward-filled) at or before ``on_or_before`` — or its
+    overall latest print when ``on_or_before`` is ``None``. Instruments with no
+    qualifying print are simply absent from the mapping (mirroring the ``None``
+    returned by the per-instrument helpers). One window query replaces the N+1
+    per-instrument lookups in ``compute_positions`` (B2).
     """
     if not instrument_ids:
         return {}
-    ranked = (
-        select(
-            PriceHistory.instrument_id,
-            PriceHistory.close_native,
-            func.row_number()
-            .over(
-                partition_by=PriceHistory.instrument_id,
-                order_by=PriceHistory.date.desc(),
-            )
-            .label("rn"),
+    row_number = (
+        func.row_number()
+        .over(
+            partition_by=PriceHistory.instrument_id,
+            order_by=PriceHistory.date.desc(),
         )
-        .where(
-            PriceHistory.instrument_id.in_(instrument_ids),
-            PriceHistory.date <= as_of,
-        )
-        .subquery()
+        .label("rn")
     )
-    stmt = select(ranked.c.instrument_id, ranked.c.close_native).where(ranked.c.rn == 1)
+    inner = select(
+        PriceHistory.instrument_id.label("instrument_id"),
+        PriceHistory.close_native.label("close_native"),
+        row_number,
+    ).where(PriceHistory.instrument_id.in_(instrument_ids))
+    if on_or_before is not None:
+        inner = inner.where(PriceHistory.date <= on_or_before)
+    subq = inner.subquery()
+    stmt = select(subq.c.instrument_id, subq.c.close_native).where(subq.c.rn == 1)
     return {iid: close for iid, close in session.execute(stmt).all()}
 
 

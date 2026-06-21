@@ -16,13 +16,14 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 
+from investment_dashboard.storage.atomic_io import atomic_write_text
 from investment_dashboard.storage.backup import snapshot, verify_backup
 from investment_dashboard.storage.encryption import resolve_encryption
 from investment_dashboard.storage.integrity import IntegrityCheckFailed
+from investment_dashboard.tools._passphrase import resolve_passphrase
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +39,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--passphrase",
         default=None,
-        help=("SQLCipher passphrase. If omitted, reads INV_DASHBOARD_DB_PASSPHRASE."),
+        help=(
+            "SQLCipher passphrase (insecure: leaks into ps/shell history). Prefer the "
+            "INV_DASHBOARD_DB_PASSPHRASE env var or the interactive prompt."
+        ),
     )
     p.add_argument("-v", "--verbose", action="store_true")
     return p
@@ -51,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
         format="%(levelname)s %(name)s: %(message)s",
     )
     db: Path = args.db
-    passphrase = args.passphrase or os.environ.get("INV_DASHBOARD_DB_PASSPHRASE")
+    passphrase = resolve_passphrase(args.passphrase)
     encryption = resolve_encryption(
         encrypt_synced_tiers=bool(passphrase),
         env_passphrase=passphrase,
@@ -69,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
         log.error("backup verification FAILED: %s", exc)
         return 3
     manifest_path = out.with_suffix(out.suffix + ".manifest.json")
-    manifest_path.write_text(json.dumps({"counts": counts}, indent=2))
+    atomic_write_text(manifest_path, json.dumps({"counts": counts}, indent=2))
     log.info("verified backup: %s", manifest_path)
     return 0
 

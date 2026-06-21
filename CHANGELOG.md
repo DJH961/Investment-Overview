@@ -107,6 +107,23 @@ Bug-fix release for the portable bundle's first-start experience.
   compression. This removes thousands of tiny files, the main cause of the slow
   unzip.
 
+### Added — broker import: structured per-row reporting (audit D2–D5)
+- **Imports no longer abort on the first bad row (D3).** The Fidelity / Vanguard
+  CSV and Vanguard XLSX parsers now collect per-row problems into a structured
+  `ParseReport` and keep going, so a single unknown transaction type no longer
+  discards an otherwise-good 100-row import. Skipped rows (with their source
+  line numbers) are reported in the Transactions import summary.
+- **Light row validation (D4).** Parsed rows are checked for a non-negative
+  price and that `amount ≈ quantity × price` (± fees) on trade rows; failures
+  are surfaced as warnings while the row is still imported.
+- **US-locale assumption documented and enforced (D5).** Decimal/date parsing
+  is centralised in `adapters/locale_parsing.py`; an EU-locale value (comma
+  decimal, `DD/MM` date) now raises `LocaleError` and is reported per-row
+  instead of being silently mis-parsed.
+- **Unresolved symbols surfaced (D2).** When the data provider returns nothing
+  for a symbol (delisted, a typo, or offline), the enrichment service reports it
+  and the importer lists it under `unresolved_symbols` in the import summary.
+
 ## [2.11.0] — 2026-05-31
 
 Performance pass: the same numbers, computed with far fewer round-trips, and
@@ -204,7 +221,7 @@ instruments whose cached price feed is corrupt.
   in the data (SCHK 2:1 on 2024-10-11, VUG on 2026-04-21) each leave a visible
   step in the spreadsheet-vs-dashboard gap, and the gap vanishes once both
   splits are reached — fully explaining the historic understatement. The fix is
-  scoped in `docs/v2.10.1-plan.md` and shipped below (Option A).
+  scoped in `docs/history/v2.10.1-plan.md` and shipped below (Option A).
 
 ### Fixed
 - **Split back-adjustment in historical valuation.** Past-date holdings are now
@@ -617,7 +634,7 @@ This release lands the full **v2.8 whole-app cleanup** — a broad sweep of
 correctness and UX fixes spanning Overview, Deposits, Transactions, Monthly,
 Yearly, Projection, Analytics, Settings and onboarding. The work was delivered
 as one branch / one PR organised into seven themed steps; the step-by-step
-plan and root-cause analysis live in `docs/v2.8-cleanup-plan.md`.
+plan and root-cause analysis live in `docs/history/v2.8-cleanup-plan.md`.
 
 ### Added
 - **Standalone Projection page.** The interactive dual-currency projection

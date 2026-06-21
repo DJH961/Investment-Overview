@@ -39,7 +39,7 @@ from investment_dashboard.services import (
 from investment_dashboard.services.fx_service import refresh_fx_history
 from investment_dashboard.services.onboarding_service import seed_default_setup
 from investment_dashboard.services.prices_service import refresh_prices
-from investment_dashboard.ui.components import page_header, section
+from investment_dashboard.ui.components import confirm_dialog, page_header, section
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import fmt_pct
 
@@ -330,7 +330,7 @@ def _add_instrument_dialog() -> None:  # pragma: no cover - UI
     dialog.open()
 
 
-def _add_allocation_dialog() -> None:  # pragma: no cover - UI
+def _add_allocation_dialog() -> None:  # noqa: PLR0915  # pragma: no cover - UI
     with session_scope() as session:
         instruments = list(instruments_repo.list_instruments(session))
 
@@ -351,6 +351,36 @@ def _add_allocation_dialog() -> None:  # pragma: no cover - UI
                     weight_inputs[instr.id] = ui.input("Weight %", value="").classes(
                         "min-w-[8rem]",
                     )
+
+        total_label = ui.label().classes("text-body2 q-mt-xs")
+
+        def _update_total() -> None:
+            total = Decimal(0)
+            invalid = False
+            for widget in weight_inputs.values():
+                raw = (widget.value or "").strip()
+                if not raw:
+                    continue
+                try:
+                    total += Decimal(raw)
+                except InvalidOperation:
+                    invalid = True
+            if invalid:
+                total_label.set_text("Live total: — (fix invalid weights)")
+                total_label.style("color: var(--inv-loss, #f44336)")
+                return
+            on_target = abs(total - Decimal(100)) <= Decimal("0.01")
+            total_label.set_text(
+                f"Live total: {total:g} %"
+                + ("  ✓" if on_target else f"  (need {Decimal(100) - total:g} % more)")
+            )
+            total_label.style(
+                "color: var(--inv-gain, #21ba45)" if on_target else "color: var(--inv-muted, #888)"
+            )
+
+        for widget in weight_inputs.values():
+            widget.on_value_change(_update_total)
+        _update_total()
 
         def _save() -> None:
             name = (name_in.value or "").strip()
@@ -829,6 +859,30 @@ def _render_display_prefs(
         ).classes("text-caption opacity-70")
 
 
+def _confirm_recalc_fx_legs() -> None:  # pragma: no cover - UI
+    confirm_dialog(
+        "Recalculate FX-derived values?",
+        "This rebuilds every transaction's FX legs at trade-date rates, "
+        "overwriting the currently stored values. It cannot be undone.",
+        on_confirm=_recalc_fx_legs_clicked,
+        confirm_label="Recalculate",
+        confirm_icon="calculate",
+        confirm_color="primary",
+    )
+
+
+def _confirm_seed() -> None:  # pragma: no cover - UI
+    confirm_dialog(
+        "Seed default setup?",
+        "This adds the preset accounts and instruments to your ledger. "
+        "Run it on a fresh ledger; on an existing one it may create duplicates.",
+        on_confirm=_seed_clicked,
+        confirm_label="Seed",
+        confirm_icon="auto_fix_high",
+        confirm_color="primary",
+    )
+
+
 def _render_data_refresh() -> None:  # pragma: no cover - UI
     with ui.row().classes("gap-md"):
         ui.button("Refresh FX rates", icon="currency_exchange", on_click=_refresh_fx_clicked).props(
@@ -840,9 +894,9 @@ def _render_data_refresh() -> None:  # pragma: no cover - UI
         ui.button(
             "Recalculate FX-derived values",
             icon="calculate",
-            on_click=_recalc_fx_legs_clicked,
+            on_click=_confirm_recalc_fx_legs,
         ).props("flat color=primary no-caps")
-        ui.button("Seed default setup", icon="auto_fix_high", on_click=_seed_clicked).props(
+        ui.button("Seed default setup", icon="auto_fix_high", on_click=_confirm_seed).props(
             "flat no-caps"
         )
 

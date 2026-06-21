@@ -18,7 +18,13 @@ documentation**).
      Fidelity, Savings Bank) and instruments, or
    - **Start empty / add manually** to build your own from Settings.
 2. **Add your data** — import or enter your transactions so there is something
-   to analyse.
+   to analyse. Broker CSV/XLSX exports are expected to be **US-locale**
+   (`MM/DD/YYYY` dates, `.` decimal and `,` thousands separators, e.g.
+   `1,234.56`). The importer reads each row independently: an unknown
+   transaction type, an un-parseable cell or an EU-locale value is reported and
+   skipped rather than aborting the whole file, and rows that look inconsistent
+   (e.g. an amount that doesn't match quantity × price) are imported but flagged
+   in the import summary.
 3. **Pick your currency** — open **Settings → Display preferences** and choose
    **EUR** or **USD**.
 4. **Explore** — browse **Overview** and **Analytics**. Hover any ⓘ icon to

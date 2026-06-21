@@ -14,10 +14,15 @@ from sqlalchemy.orm import Session
 from investment_dashboard.adapters.frankfurter_client import FrankfurterError
 from investment_dashboard.models import Transaction
 from investment_dashboard.repositories import accounts_repo, fx_repo
-from investment_dashboard.services import fx_service
+from investment_dashboard.services import fx_service, instrument_enrichment_service
 from investment_dashboard.services.importer_service import Broker, import_csv
 
 FIXTURE_DIR = Path(__file__).parents[1] / "adapters" / "fixtures"
+
+_FIDELITY_HEADER = (
+    "Run Date,Action,Symbol,Description,Type,Quantity,Price ($),Commission ($),"
+    "Fees ($),Accrued Interest ($),Amount ($),Cash Balance ($),Settlement Date\n"
+)
 
 
 def _seed_usd_account(session: Session) -> int:
@@ -128,6 +133,81 @@ class TestImportFidelity:
         assert buy.net_usd == buy.net_native * Decimal("1.08")
         # fx_rate_to_eur is the EUR→native rate, which for an EUR account is 1.
         assert buy.fx_rate_to_eur == Decimal(1)
+
+
+class TestRowLevelReporting:
+    """Audit D2–D5: per-row errors/warnings are collected, not fatal."""
+
+    def test_unknown_action_does_not_discard_the_batch(
+        self, session: Session, usd_account: int, fx_seeded: None
+    ) -> None:
+        # Audit D3: one MERGER row used to abort the whole import. Now the
+        # other rows still land and the offender is reported.
+        content = _FIDELITY_HEADER + (
+            "01/05/2024,YOU BOUGHT VTI,VTI,VANGUARD TOTAL STOCK MARKET ETF,Cash,"
+            "1.00000,100.00,0.00,0.00,0.00,-100.00,0.00,01/07/2024\n"
+            "01/06/2024,MERGER OF SOMETHING,FOO,Some merger,Cash,,,,,,0,0,01/06/2024\n"
+            "01/07/2024,INTEREST EARNED,,Interest,Cash,,,,,,5.00,5.00,01/07/2024\n"
+        )
+        result = import_csv(
+            session, broker=Broker.FIDELITY, account_id=usd_account, content=content
+        )
+        assert result.inserted == 2  # buy + interest survive
+        assert result.unknown_actions == ["MERGER OF SOMETHING"]
+        assert len(result.errors) == 1
+        assert result.errors[0].line is not None
+
+    def test_eu_locale_amount_reported(
+        self, session: Session, usd_account: int, fx_seeded: None
+    ) -> None:
+        # Audit D5: an EU-locale amount is reported, not silently mis-parsed.
+        content = _FIDELITY_HEADER + (
+            '01/05/2024,INTEREST EARNED,,Interest,Cash,,,,,,"1.234,56",0,01/05/2024\n'
+        )
+        result = import_csv(
+            session, broker=Broker.FIDELITY, account_id=usd_account, content=content
+        )
+        assert result.inserted == 0
+        assert any("EU-locale" in e.message for e in result.errors)
+
+    def test_reconciliation_warning_still_imports(
+        self, session: Session, usd_account: int, fx_seeded: None
+    ) -> None:
+        # Audit D4: a buy whose Net Amount doesn't reconcile with
+        # Shares × Share Price is imported but flagged. Use Vanguard, whose
+        # parser takes the price from the file verbatim (Fidelity recomputes
+        # price from the amount, so its trades always self-reconcile).
+        content = (
+            "Account Number,Trade Date,Settlement Date,Transaction Type,"
+            "Transaction Description,Investment Name,Symbol,Shares,Share Price,"
+            "Principal Amount,Commission Fees,Net Amount\n"
+            "123,01/05/2024,01/07/2024,Buy,Bought,VANGUARD TOTAL STOCK MARKET ETF,"
+            "VTI,5,100,,0,-5000\n"
+        )
+        result = import_csv(
+            session, broker=Broker.VANGUARD, account_id=usd_account, content=content
+        )
+        assert result.inserted >= 1
+        assert any("reconcile" in w.message for w in result.warnings)
+
+    def test_unresolved_symbol_surfaced(
+        self, session: Session, usd_account: int, fx_seeded: None
+    ) -> None:
+        # Audit D2: a symbol the data provider can't resolve (delisted/typo) is
+        # surfaced rather than left as a silent ``unknown`` stub. Simulate an
+        # empty yfinance payload by patching the enrichment fetch to None.
+        content = _FIDELITY_HEADER + (
+            "01/05/2024,YOU BOUGHT ZZZZ,ZZZZ,Delisted thing,Cash,"
+            "1.00000,100.00,0.00,0.00,0.00,-100.00,0.00,01/07/2024\n"
+        )
+        with patch.object(
+            instrument_enrichment_service, "fetch_instrument_info", return_value=None
+        ):
+            result = import_csv(
+                session, broker=Broker.FIDELITY, account_id=usd_account, content=content
+            )
+        assert result.inserted == 1
+        assert "ZZZZ" in result.unresolved_symbols
 
 
 class TestImportVanguard:

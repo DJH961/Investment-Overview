@@ -246,12 +246,13 @@ def close_as_of(session: Session, instrument_id: int, as_of: date) -> Decimal | 
 
 
 def latest_closes(session: Session, instrument_ids: Sequence[int]) -> dict[int, Decimal]:
-    """Batched :func:`latest_close` (cache tier).
+    """Batched :func:`latest_close` across ``instrument_ids`` (cache tier).
 
-    Values a whole portfolio "today" in one round-trip; instruments with no
-    cached history are absent from the mapping (the ``None`` of the per-row
-    helper).
+    One window query instead of a per-instrument lookup; instruments with no
+    cached price are absent from the result (treat as ``None``).
     """
+    if not instrument_ids:
+        return {}
     from investment_dashboard.db import cache_read_session  # noqa: PLC0415
 
     with cache_read_session(session) as cache:
@@ -261,16 +262,17 @@ def latest_closes(session: Session, instrument_ids: Sequence[int]) -> dict[int, 
 def closes_as_of(
     session: Session, instrument_ids: Sequence[int], as_of: date
 ) -> dict[int, Decimal]:
-    """Batched :func:`close_as_of` (cache tier).
+    """Batched :func:`close_as_of` across ``instrument_ids`` (cache tier).
 
-    Values a whole portfolio as of a past date in one round-trip, replacing the
-    per-instrument N+1 in historical valuations. Instruments with no print on
-    or before ``as_of`` are absent from the mapping.
+    Forward-filled most-recent close on or before ``as_of`` per instrument;
+    instruments with no qualifying print are absent from the result.
     """
+    if not instrument_ids:
+        return {}
     from investment_dashboard.db import cache_read_session  # noqa: PLC0415
 
     with cache_read_session(session) as cache:
-        return prices_repo.closes_as_of(cache, instrument_ids, as_of)
+        return prices_repo.latest_closes(cache, instrument_ids, on_or_before=as_of)
 
 
 def invalidate_instrument_prices(session: Session, instrument_id: int) -> int:
@@ -359,7 +361,7 @@ def instruments_due_for_refresh(
 ) -> list[Instrument]:
     """Return the active, non-synthetic instruments whose cache TTL has expired.
 
-    The background ``ui.timer`` in :mod:`investment_dashboard.main` calls
+    The background ``app.timer`` in :mod:`investment_dashboard.main` calls
     this every few minutes; whatever it returns is what we pull from
     yfinance — so the smaller this list, the cheaper the refresh.
     """

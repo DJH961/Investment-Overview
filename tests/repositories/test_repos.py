@@ -143,6 +143,45 @@ class TestTransactionsRepo:
         deposits = transactions_repo.list_transactions(session, kinds=["deposit"])
         assert {t.kind for t in deposits} == {"deposit"}
 
+    def test_list_transactions_missing_legs(self, session: Session) -> None:
+        acct_id = _seed_account(session)
+        # One healthy row (both legs frozen) and two with a NULL leg.
+        session.add(
+            Transaction(
+                account_id=acct_id,
+                date=date(2024, 1, 1),
+                kind="deposit",
+                net_native=Decimal("100"),
+                net_eur=Decimal("90"),
+                net_usd=Decimal("100"),
+                source="manual",
+            )
+        )
+        session.add(
+            Transaction(
+                account_id=acct_id,
+                date=date(2024, 1, 2),
+                kind="deposit",
+                net_native=Decimal("50"),
+                net_usd=Decimal("50"),  # net_eur NULL
+                source="manual",
+            )
+        )
+        session.add(
+            Transaction(
+                account_id=acct_id,
+                date=date(2024, 1, 3),
+                kind="deposit",
+                net_native=Decimal("25"),
+                net_eur=Decimal("23"),  # net_usd NULL
+                source="manual",
+            )
+        )
+        session.flush()
+        missing = transactions_repo.list_transactions_missing_legs(session)
+        # Only the two rows with a NULL leg, ordered by date asc.
+        assert [t.date for t in missing] == [date(2024, 1, 2), date(2024, 1, 3)]
+
 
 class TestPricesRepo:
     def test_upsert_and_lookup(self, session: Session) -> None:
@@ -158,35 +197,31 @@ class TestPricesRepo:
         prices_repo.upsert_closes(session, instr_id, {date(2024, 1, 3): Decimal("222.00")})
         assert prices_repo.latest_close(session, instr_id) == Decimal("222.00")
 
-    def test_batched_closes_match_per_instrument(self, session: Session) -> None:
-        a = _seed_instrument(session, symbol="AAA")
-        b = _seed_instrument(session, symbol="BBB")
-        empty = _seed_instrument(session, symbol="EMPTY")
+    def test_latest_closes_batch_matches_singular(self, session: Session) -> None:
+        a = _seed_instrument(session, symbol="VTI")
+        b = _seed_instrument(session, symbol="VXUS")
+        c = _seed_instrument(session, symbol="BND")  # no prices ⇒ absent
         prices_repo.upsert_closes(
-            session,
-            a,
-            {date(2024, 1, 2): Decimal("10"), date(2024, 1, 4): Decimal("12")},
+            session, a, {date(2024, 1, 2): Decimal("10"), date(2024, 1, 5): Decimal("12")}
         )
-        prices_repo.upsert_closes(session, b, {date(2024, 1, 3): Decimal("20")})
-        session.flush()
+        prices_repo.upsert_closes(
+            session, b, {date(2024, 1, 3): Decimal("20"), date(2024, 1, 6): Decimal("25")}
+        )
+        ids = [a, b, c]
+        # Batched "latest" equals the per-instrument helper for every id.
+        batched_latest = prices_repo.latest_closes(session, ids)
+        assert batched_latest == {a: Decimal("12"), b: Decimal("25")}
+        for iid in ids:
+            assert batched_latest.get(iid) == prices_repo.latest_close(session, iid)
+        # Batched "as-of" forward-fills exactly like ``close_as_of`` per id.
+        as_of = date(2024, 1, 5)
+        batched_as_of = prices_repo.latest_closes(session, ids, on_or_before=as_of)
+        assert batched_as_of == {a: Decimal("12"), b: Decimal("20")}
+        for iid in ids:
+            assert batched_as_of.get(iid) == prices_repo.close_as_of(session, iid, as_of)
 
-        ids = [a, b, empty]
-        # latest_closes mirrors latest_close per instrument; EMPTY (no history)
-        # is absent.
-        assert prices_repo.latest_closes(session, ids) == {
-            a: Decimal("12"),
-            b: Decimal("20"),
-        }
-        # closes_as_of forward-fills: on 2024-01-03 AAA still shows its 01-02
-        # close (no print on 01-03 yet); BBB shows its 01-03 close.
-        as_of = date(2024, 1, 3)
-        batched = prices_repo.closes_as_of(session, ids, as_of)
-        assert batched == {
-            a: prices_repo.close_as_of(session, a, as_of),
-            b: prices_repo.close_as_of(session, b, as_of),
-        }
-        assert batched[a] == Decimal("10")
-        assert empty not in batched
+    def test_latest_closes_empty_ids(self, session: Session) -> None:
+        assert prices_repo.latest_closes(session, []) == {}
 
 
 class TestFxRepo:

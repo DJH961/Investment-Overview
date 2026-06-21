@@ -30,6 +30,11 @@ from investment_dashboard.services.instrument_enrichment_service import (
 )
 from investment_dashboard.ui.components import page_header, section
 from investment_dashboard.ui.components.kpi_card import dual_kpi_card, kpi_card
+from investment_dashboard.ui.forms import (
+    validate_date,
+    validate_decimal,
+    validate_symbol,
+)
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import fmt_money
 from investment_dashboard.ui.pages._ledger_query import (
@@ -183,24 +188,47 @@ def register() -> None:
             _refresh()
 
 
-def _open_new_modal(accounts: list[Account]) -> None:  # pragma: no cover - UI
+def _open_new_modal(accounts: list[Account]) -> None:  # noqa: PLR0915  # pragma: no cover - UI
     with ui.dialog() as dlg, ui.card().classes("min-w-[28rem]"):
         ui.label("New Transaction").classes("text-h6")
         account_sel = ui.select({a.id: a.account_label for a in accounts}, label="Account").classes(
             "w-full"
         )
         kind_sel = ui.select(_kinds(), value="buy", label="Kind").classes("w-full")
-        date_in = ui.input("Date (YYYY-MM-DD)", value=date.today().isoformat()).classes("w-full")
+        date_in = (
+            ui.input("Date (YYYY-MM-DD)", value=date.today().isoformat())
+            .classes("w-full")
+            .props("hide-bottom-space")
+        )
+        date_in.validation = validate_date
         symbol_in = ui.input("Symbol (blank for cash kinds)").classes("w-full")
+        symbol_in.validation = lambda v: validate_symbol(v, kind=kind_sel.value)
         qty_in = ui.input("Quantity").classes("w-full")
+        qty_in.validation = lambda v: validate_decimal(v, field="Quantity")
         price_in = ui.input("Price (native ccy)").classes("w-full")
+        price_in.validation = lambda v: validate_decimal(v, field="Price", allow_negative=False)
         fees_in = ui.input("Fees (native ccy)").classes("w-full")
+        fees_in.validation = lambda v: validate_decimal(v, field="Fees", allow_negative=False)
         net_in = ui.input("Net amount (native, signed)").classes("w-full")
+        net_in.validation = lambda v: validate_decimal(v, field="Net amount")
         desc_in = ui.input("Description").classes("w-full")
+
+        # Re-run the symbol validator when the kind changes (its rule depends
+        # on whether the chosen kind is a cash or a security kind).
+        def _revalidate_symbol() -> None:
+            symbol_in.validate()
+
+        kind_sel.on_value_change(_revalidate_symbol)
 
         def _save() -> None:
             if account_sel.value is None:
                 ui.notify("Pick an account", type="warning")
+                return
+            # Inline validators are the source of truth; re-run them so a
+            # straight-to-Save click can't bypass the field-level checks.
+            inputs = (date_in, symbol_in, qty_in, price_in, fees_in, net_in)
+            if not all(field.validate() for field in inputs):
+                ui.notify("Fix the highlighted fields first", type="negative")
                 return
             try:
                 txn_date = date.fromisoformat((date_in.value or "").strip())
@@ -295,13 +323,37 @@ def _open_import_modal(accounts: list[Account]) -> None:  # pragma: no cover - U
                 f"Inserted {result.inserted}, duplicates {result.duplicates}, "
                 f"sweeps dropped {result.sweeps_dropped}"
             )
-            if result.unknown_actions:
-                status.text += f", unknown actions: {sorted(result.unknown_actions)}"
+            # Rows the parser had to skip (unknown action, un-parseable or
+            # EU-locale cell) — surfaced so a single bad row no longer
+            # silently shrinks the import (audit D3/D5).
+            if result.errors:
+                preview = "; ".join(
+                    f"line {e.line}: {e.message}" if e.line else e.message
+                    for e in result.errors[:5]
+                )
+                more = "" if len(result.errors) <= 5 else f" (+{len(result.errors) - 5} more)"
+                status.text += f", skipped {len(result.errors)} row(s): {preview}{more}"
+            # Rows imported but worth eyeballing (audit D4).
+            if result.warnings:
+                wpreview = "; ".join(
+                    f"line {w.line}: {w.message}" if w.line else w.message
+                    for w in result.warnings[:5]
+                )
+                wmore = "" if len(result.warnings) <= 5 else f" (+{len(result.warnings) - 5} more)"
+                status.text += f", {len(result.warnings)} warning(s): {wpreview}{wmore}"
+            # Symbols the data provider couldn't resolve (audit D2).
+            if result.unresolved_symbols:
+                status.text += (
+                    f", unresolved symbol(s): {result.unresolved_symbols} "
+                    "(delisted, a typo, or the data provider was offline)"
+                )
             if result.fx_missing_dates:
                 status.text += (
                     f", FX missing for {len(result.fx_missing_dates)} date(s) — "
                     "refresh FX rates then Settings → Recalculate FX-derived values"
                 )
+                ui.notify(status.text, type="warning")
+            elif result.errors or result.warnings or result.unresolved_symbols:
                 ui.notify(status.text, type="warning")
             else:
                 ui.notify(status.text, type="positive")

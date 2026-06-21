@@ -66,13 +66,13 @@ def cumulative_factors_after(
 ) -> dict[int, Decimal]:
     """Batched :func:`cumulative_factor_after` for many instruments.
 
-    Returns ``{instrument_id: factor}`` for every instrument that has at least
-    one cached split, where ``factor`` is the product of its split ratios
-    strictly after ``as_of`` (``Decimal(1)`` when the feed confirms it split
-    but not after ``as_of``). Instruments with *no* cached split data are
-    **absent** from the mapping — the same "fall back to ledger split rows"
-    signal that :func:`cumulative_factor_after` conveys via ``None`` per call,
-    so a caller can distinguish "never fetched" from "confirmed no later split".
+    Returns ``{instrument_id: factor}`` with the product of every split ratio
+    strictly after ``as_of`` per instrument. Only instruments that have at
+    least one cached split (after *or* before ``as_of``) appear in the mapping;
+    callers should treat a missing key the same as ``instrument_ids_with_splits``
+    excluding it (no split data ⇒ fall back to ledger rows). Instruments that
+    the feed confirms have splits but none after ``as_of`` map to ``Decimal(1)``.
+    One grouped query replaces the N+1 per-instrument lookups.
     """
     if not instrument_ids:
         return {}
@@ -84,9 +84,9 @@ def cumulative_factors_after(
         PriceSplit.instrument_id.in_(with_splits),
         PriceSplit.date > as_of,
     )
-    for iid, ratio in session.execute(stmt).all():
+    for instrument_id, ratio in session.execute(stmt).all():
         if ratio and ratio > 0:
-            factors[iid] *= ratio
+            factors[instrument_id] *= ratio
     return factors
 
 
