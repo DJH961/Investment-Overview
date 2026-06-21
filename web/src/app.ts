@@ -592,6 +592,7 @@ export class App {
     const navStats = readNavPublishStats();
     return {
       cacheTtlMs,
+      navSymbols: navFetchSymbols,
       cacheTtlMsForSymbol: (symbol, cached) => {
         if (!navFetchSymbols.has(symbol)) return cacheTtlMs;
         const { publishHour, catchUpWindowHours } = navPublishWindow(navStats.get(symbol)?.hours);

@@ -106,6 +106,39 @@ describe("loadQuotes — caching", () => {
     expect(quotes.get("NEW")?.at).toBe(fetchAt); // stamped at fetch time
   });
 
+  it("fetches NAV symbols from time_series and market symbols from quote", async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn<FetchLike>(async (url) => {
+      calls.push(url);
+      if (url.includes("/time_series")) {
+        const requested = new URL(url).searchParams.get("symbol")!.split(",");
+        const node = (): Record<string, unknown> => ({
+          meta: { currency: "USD" },
+          values: [{ datetime: "2024-06-20", close: "200" }],
+          status: "ok",
+        });
+        if (requested.length === 1) return jsonResponse(node());
+        const out: Record<string, unknown> = {};
+        for (const s of requested) out[s] = node();
+        return jsonResponse(out);
+      }
+      return quoteResponse(url);
+    });
+    const { quotes } = await loadQuotes(["VTI", "FXAIX"], "key", {
+      fetchImpl,
+      storage: memStorage(),
+      now: clock(0),
+      sleep: noSleep,
+      navSymbols: new Set(["FXAIX"]),
+    });
+    // Two endpoints were hit: quote (market) and time_series (NAV).
+    expect(calls.some((u) => u.includes("/quote"))).toBe(true);
+    expect(calls.some((u) => u.includes("/time_series"))).toBe(true);
+    expect(quotes.get("VTI")?.price?.toString()).toBe("100");
+    expect(quotes.get("FXAIX")?.price?.toString()).toBe("200");
+    expect(quotes.get("FXAIX")?.valueDate).toBe("2024-06-20");
+  });
+
   it("keeps NAV symbols fresh under a longer per-symbol TTL", async () => {
     const storage = memStorage();
     // Both cached at t=0; market's 15-min TTL is blown by t=1h, NAV's 12h isn't.
