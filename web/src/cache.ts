@@ -248,8 +248,6 @@ export function writeCachedEnvelope(
   });
 }
 
-
-
 /** A single recorded spend of `n` API credits at epoch-ms `at`. */
 export interface CreditSpend {
   at: number;

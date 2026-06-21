@@ -529,6 +529,9 @@ export class App {
         metaVersion: meta?.version,
       });
       // Nothing to do if the ciphertext is byte-for-byte what we already have.
+      // For AES-256-GCM the (nonce, ciphertext) pair uniquely identifies the
+      // plaintext: a fresh export always re-encrypts under a new random nonce,
+      // so matching both fields means the decrypted portfolio is unchanged.
       if (this.envelope && envelope.ciphertext === this.envelope.ciphertext && envelope.nonce === this.envelope.nonce) {
         return;
       }

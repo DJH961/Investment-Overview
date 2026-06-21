@@ -38,7 +38,7 @@ const DEFAULT_RELEASE_URL =
  * setups where the sidecar lives elsewhere.
  */
 function defaultMetaUrl(releaseUrl) {
-  return releaseUrl.replace(/portfolio\.enc(\?.*)?$/, "portfolio.meta.json");
+  return releaseUrl.replace(/portfolio\.enc(\?|$)/, "portfolio.meta.json$1");
 }
 
 function corsHeaders() {
