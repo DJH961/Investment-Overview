@@ -48,6 +48,8 @@ export const FREE_TIER = {
 
 const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Random jitter added to each backoff wait, to de-synchronise retriers. */
+const BACKOFF_JITTER_MS = 250;
 
 /** Default freshness window before a cached quote is considered stale. */
 export const DEFAULT_CACHE_TTL_MS = 15 * MINUTE_MS;
@@ -146,8 +148,8 @@ export async function loadQuotes(
     // windows can afford right now; the rest is deferred rather than risking a
     // 429. Because `minute` never exceeds the per-minute cap (≤ 8 on the free
     // tier) this is always a single batched call.
-    const affordable = Math.min(stale.length, minute, day);
-    const toFetch = stale.slice(0, affordable);
+    const affordableCount = Math.min(stale.length, minute, day);
+    const toFetch = stale.slice(0, affordableCount);
 
     if (toFetch.length > 0) {
       try {
@@ -263,7 +265,7 @@ async function fetchWithBackoff(
       if (!pe || !pe.retryable || attempt >= deps.maxRetries) throw err;
       const backoff = Math.min(deps.backoffCapMs, deps.backoffBaseMs * 2 ** attempt);
       // Prefer the server's advice, then our schedule, plus jitter to de-sync.
-      const wait = (pe.retryAfterMs ?? backoff) + Math.floor(Math.random() * 250);
+      const wait = (pe.retryAfterMs ?? backoff) + Math.floor(Math.random() * BACKOFF_JITTER_MS);
       await deps.sleep(wait);
       attempt += 1;
     }

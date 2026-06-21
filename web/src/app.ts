@@ -279,9 +279,10 @@ export class App {
       reasons.push(`live prices hit a snag (${quote.error.message})`);
     }
     if (quote.deferred.length > 0) {
+      const n = quote.deferred.length;
       reasons.push(
-        `${quote.deferred.length} symbol${quote.deferred.length === 1 ? "" : "s"} deferred to stay within ` +
-          `your free-tier limit (${FREE_TIER.creditsPerMinute}/min) — they'll refresh on the next update`,
+        `${n} symbol${n === 1 ? "" : "s"} deferred to stay within your free-tier limit ` +
+          `(${FREE_TIER.creditsPerMinute}/min) — they'll refresh on the next update`,
       );
     }
     if (fx.error) {
