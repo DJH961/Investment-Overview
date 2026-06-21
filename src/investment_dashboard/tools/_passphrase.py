@@ -51,7 +51,7 @@ def resolve_passphrase(
     if env_value:
         return env_value
 
-    if allow_prompt and sys.stdin is not None and sys.stdin.isatty():
+    if allow_prompt and getattr(sys.stdin, "isatty", lambda: False)():
         entered = getpass.getpass(prompt)
         return entered or None
 
