@@ -287,6 +287,33 @@ describe("buildDashboard", () => {
     // No intraday strike time → the row shows the NAV's value-date as a date.
     expect(fxaix.priceAsOf).toBeNull();
     expect(fxaix.priceFallbackDate).toBe("2024-05-31");
+    // A live NAV with a prior daily bar shows a today's move, just like a stock:
+    // (110 − 108) × 5 = 10 USD → 9.0909 EUR; pct = 2/108.
+    approx(fxaix.todayMoveEur, 10 / 1.1, 1e-3);
+    approx(fxaix.todayMovePct, 2 / 108, 1e-4);
+  });
+
+  it("gives a NAV fund no today's move while it stays on the exported price", () => {
+    // Live NAV bar is not newer than the export, so the row keeps its exported
+    // price — and must not derive a move from the quote we deliberately ignored.
+    const exp = makeExport(); // as_of 2024-06-01
+    const navQuotes = new Map<string, Quote>([
+      [
+        "FXAIX",
+        {
+          symbol: "FXAIX",
+          price: new Decimal("110"),
+          previousClose: new Decimal("108"),
+          currency: "USD",
+          valueDate: "2024-06-01", // same day as export → not newer
+        },
+      ],
+    ]);
+    const m = buildDashboard(exp, navQuotes, fx, new Date("2024-06-01T12:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.priceIsLive).toBe(false);
+    expect(fxaix.todayMoveEur).toBeNull();
+    expect(fxaix.todayMovePct).toBeNull();
   });
 });
 
