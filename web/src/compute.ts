@@ -200,6 +200,68 @@ function lastExportedValues(data: MobileExport): Map<string, Decimal> {
   return values;
 }
 
+/**
+ * One symbol the live layer will request, with the context needed to order the
+ * fetch *before* any live quote arrives.
+ */
+export interface FetchPlanEntry {
+  /** The ticker passed to Twelve Data (`price_symbol`). */
+  symbol: string;
+  /** `market` for ETFs/stocks, or the NAV class for funds. */
+  priceType: string;
+  /** Asset class (e.g. `equity_etf`, `mutual_fund`), for downstream routing. */
+  assetClass: string;
+  /** Aggregated last-known EUR size across holdings sharing this ticker. */
+  sizeEur: number;
+}
+
+/**
+ * Build the priority-ordered list of symbols to price live, newest sizing first.
+ *
+ * Order (matching the app's own "biggest first" instinct, and so the most
+ * impactful prices land first under the free-tier per-minute cap):
+ *   1. **market** holdings (ETFs / stocks), largest EUR size first;
+ *   2. then **NAV** holdings in `fetchableNavClasses` (mutual funds), largest first.
+ *
+ * Money-market / cash rows are excluded by passing only the genuinely fetchable
+ * NAV classes in `fetchableNavClasses` (their NAV is pinned and never requested).
+ * Sizes come from the last exported per-holding EUR value, so the order is
+ * available without a fresh quote and is safe to cache between sessions.
+ */
+export function buildFetchPlan(data: MobileExport, fetchableNavClasses: Set<string>): FetchPlanEntry[] {
+  const sizes = lastExportedValues(data);
+  // Aggregate by ticker: multiple holdings can map to one price symbol.
+  const bySymbol = new Map<string, FetchPlanEntry>();
+  for (const holding of data.holdings) {
+    const isMarket = holding.price_type === "market";
+    const isFetchableNav = fetchableNavClasses.has(holding.asset_class);
+    if (!isMarket && !isFetchableNav) continue;
+    const symbol = holding.price_symbol;
+    if (!symbol) continue;
+    const sizeEur = sizes.get(holding.symbol)?.toNumber() ?? 0;
+    const existing = bySymbol.get(symbol);
+    if (existing) {
+      existing.sizeEur += sizeEur;
+      // Market priority wins if any holding on this ticker is market-priced.
+      if (isMarket) existing.priceType = "market";
+    } else {
+      bySymbol.set(symbol, {
+        symbol,
+        priceType: holding.price_type,
+        assetClass: holding.asset_class,
+        sizeEur,
+      });
+    }
+  }
+
+  const rank = (e: FetchPlanEntry): number => (e.priceType === "market" ? 0 : 1);
+  return [...bySymbol.values()].sort((a, b) => {
+    if (rank(a) !== rank(b)) return rank(a) - rank(b);
+    if (b.sizeEur !== a.sizeEur) return b.sizeEur - a.sizeEur;
+    return a.symbol.localeCompare(b.symbol); // stable, deterministic tiebreak
+  });
+}
+
 function priceForHolding(
   holding: ExportHolding,
   quote: Quote | undefined,

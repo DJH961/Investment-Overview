@@ -180,11 +180,29 @@ describe("encrypted-blob cache", () => {
 
   it("round-trips an envelope with its download timestamp", () => {
     const s = memStorage();
-    writeCachedEnvelope(envelope, 1_700_000_000_000, s);
+    writeCachedEnvelope(envelope, 1_700_000_000_000, {}, s);
     const got = readCachedEnvelope(s);
     expect(got?.at).toBe(1_700_000_000_000);
     expect(got?.envelope.ciphertext).toBe("Y2lwaGVy");
     expect(got?.envelope.kdf_params.iterations).toBe(200000);
+  });
+
+  it("round-trips HTTP validators and the meta version stamp", () => {
+    const s = memStorage();
+    writeCachedEnvelope(envelope, 1, { etag: 'W/"abc"', lastModified: "Wed, 21 Oct 2026 07:28:00 GMT", metaVersion: "v123" }, s);
+    const got = readCachedEnvelope(s);
+    expect(got?.etag).toBe('W/"abc"');
+    expect(got?.lastModified).toBe("Wed, 21 Oct 2026 07:28:00 GMT");
+    expect(got?.metaVersion).toBe("v123");
+  });
+
+  it("defaults validators to null when none are supplied", () => {
+    const s = memStorage();
+    writeCachedEnvelope(envelope, 1, {}, s);
+    const got = readCachedEnvelope(s);
+    expect(got?.etag).toBeNull();
+    expect(got?.lastModified).toBeNull();
+    expect(got?.metaVersion).toBeNull();
   });
 
   it("returns null when nothing is cached or the store is corrupt", () => {

@@ -14,14 +14,15 @@
  * (`localStorage`); the mobile passphrase is kept in memory only for the active
  * session and dropped on "Lock". Decrypted figures never leave the browser.
  */
-import { fetchEnvelope } from "./blob";
-import { buildDashboard, type DashboardModel } from "./compute";
+import { fetchBlobMeta, fetchEnvelopeConditional } from "./blob";
+import { buildDashboard, buildFetchPlan, type DashboardModel } from "./compute";
 import { decryptEnvelopeToJson, type Envelope } from "./crypto";
 import { buildDemoModel } from "./demo";
 import {
   isValidRepo,
   loadConfig,
   resolveBlobUrl,
+  resolveMetaUrl,
   saveConfig,
   DEFAULT_QUOTE_CACHE_MINUTES,
   type AppConfig,
@@ -31,8 +32,10 @@ import {
   readCachedEnvelope,
   readCachedFx,
   readNavPublishStats,
+  readSymbolPlan,
   recordNavPublish,
   writeCachedEnvelope,
+  writeSymbolPlan,
 } from "./cache";
 import {
   DEFAULT_NAV_CACHE_TTL_MS,
@@ -54,13 +57,6 @@ import {
 import { setEurUsdRate } from "./currency";
 import type { MobileExport } from "./types";
 import { h, renderDashboard, renderThemeToggle } from "./ui";
-
-/**
- * Skip the background re-download of the encrypted blob if the copy we have was
- * fetched within this window. Re-opening the app seconds after closing it can't
- * have a newer export, so there's nothing to fetch — go straight to the data.
- */
-const BLOB_REFETCH_MIN_INTERVAL_MS = 2 * 60 * 1000;
 
 /** How long an auto-dismissing status toast stays on screen. */
 const TOAST_DURATION_MS = 4500;
@@ -91,6 +87,8 @@ export class App {
   /** The decrypted-from envelope and when it was downloaded (for re-download skip). */
   private envelope: Envelope | null = null;
   private envelopeAt: number | null = null;
+  /** Last `portfolio.meta.json` version stamp seen, for the cheap freshness probe. */
+  private metaVersion: string | null = null;
   /**
    * Monotonic session token. Bumped on every unlock and on lock so that
    * in-flight background work (timers, fetches) from a previous session is
@@ -111,8 +109,40 @@ export class App {
 
   start(): void {
     if (this.demoRequested()) this.showDemo();
-    else if (!this.isConfigured()) this.showSetup();
-    else this.showUnlock();
+    else if (!this.isConfigured()) {
+      this.showSetup();
+    } else {
+      // Warm live quotes for the symbols we already know about *before* the user
+      // finishes unlocking, so the first post-login paint is live rather than
+      // starting the per-minute clock from zero. Fire-and-forget; honours the
+      // shared credit budget so it can't double-spend with the later refresh.
+      void this.prefetchLiveData();
+      this.showUnlock();
+    }
+  }
+
+  /**
+   * Login-time prefetch (idea B): using the cached priority plan from the last
+   * session, start filling the quote + FX caches while the passphrase is typed
+   * and the blob decrypts. No decrypted data is needed — the plan is just
+   * tickers + coarse sizes — and {@link loadQuotes}/{@link loadFxRates} write
+   * straight into the same caches the real refresh reads, so the work is shared,
+   * never duplicated. Best-effort: any failure is swallowed.
+   */
+  private async prefetchLiveData(): Promise<void> {
+    const { config } = this.state;
+    if (!config.apiKey) return;
+    const plan = readSymbolPlan();
+    if (plan.length === 0) {
+      // No plan yet (first ever run): we can still warm FX cheaply.
+      void loadFxRates().catch(() => undefined);
+      return;
+    }
+    const symbols = plan.map((e) => e.symbol);
+    const navFetchSymbols = new Set(plan.filter((e) => e.priceType !== "market").map((e) => e.symbol));
+    const options = this.buildQuoteOptions(navFetchSymbols, config);
+    // FX in parallel so the very first paint can be fully valued, not just priced.
+    await Promise.allSettled([loadQuotes(symbols, config.apiKey, options), loadFxRates()]);
   }
 
   /** Demo mode is opt-in via a `?demo` (or `?preview`) query flag in the URL. */
@@ -167,6 +197,13 @@ export class App {
       placeholder: "(optional) direct blob URL override",
       value: config.blobUrl,
     });
+    const metaUrl = h("input", {
+      type: "url",
+      id: "f-metaurl",
+      autocomplete: "off",
+      placeholder: "(optional) version-file URL override",
+      value: config.metaUrl,
+    });
     const cacheMinutes = h("input", {
       type: "number",
       id: "f-cache",
@@ -202,6 +239,7 @@ export class App {
       field("Data repository", repo, "The repo that hosts your published portfolio.enc release asset."),
       field("Release tag", tag, "Defaults to live-data."),
       field("Blob URL override", blobUrl, "Advanced: a direct, CORS-enabled URL (e.g. your web/proxy Worker) to fetch the encrypted blob from, instead of the release asset."),
+      field("Version-file URL override", metaUrl, "Advanced: where to read the tiny portfolio.meta.json version stamp. Leave blank to derive it from the blob URL — set it only if the sidecar lives elsewhere."),
       field("Quote cache (minutes)", cacheMinutes, "Free tier is 8 credits/min, 800/day (1 per symbol). A longer cache means fewer refetches and fewer credits spent."),
     ];
     // Appearance (light / dark / system) lives in Settings instead of crowding
@@ -228,6 +266,7 @@ export class App {
         repo: (repo as HTMLInputElement).value.trim(),
         releaseTag: (tag as HTMLInputElement).value.trim() || "live-data",
         blobUrl: (blobUrl as HTMLInputElement).value.trim(),
+        metaUrl: (metaUrl as HTMLInputElement).value.trim(),
         quoteCacheMinutes: clampCacheMinutes((cacheMinutes as HTMLInputElement).value),
       };
       if (!next.apiKey) return this.showSetup("Enter your price API key.", mode);
@@ -381,6 +420,7 @@ export class App {
         this.state.data = data;
         this.envelope = cached.envelope;
         this.envelopeAt = cached.at;
+        this.metaVersion = cached.metaVersion;
         await this.afterUnlock(enrolRequested);
         return;
       } catch {
@@ -392,14 +432,18 @@ export class App {
     const url = resolveBlobUrl(this.state.config);
     if (!url) return this.showSetup("No data source configured.");
     try {
-      const envelope = await fetchEnvelope(url);
+      const result = await fetchEnvelopeConditional(url, null);
+      // A first download has no cached validators, so the server can only answer
+      // 200; treat the (impossible here) 304 defensively by falling back.
+      if (result.status === "not-modified") return this.showUnlock("No data available.");
+      const envelope = result.envelope;
       this.showStatus("Decrypting…");
       const data = await decryptEnvelopeToJson<MobileExport>(envelope, passphrase);
       this.state.passphrase = passphrase;
       this.state.data = data;
       this.envelope = envelope;
-      this.envelopeAt = Date.now();
-      writeCachedEnvelope(envelope, this.envelopeAt);
+      this.metaVersion = null;
+      this.persistEnvelope(envelope, { etag: result.etag, lastModified: result.lastModified });
       await this.afterUnlock(enrolRequested);
     } catch (err) {
       this.showUnlock((err as Error).message);
@@ -437,22 +481,53 @@ export class App {
   }
 
   /**
-   * Re-download the encrypted blob in the background and, if it actually
-   * changed, decrypt and re-render. Skipped when the cached blob is only seconds
-   * old (a quick re-open can't have a newer export). Failures are swallowed —
-   * the already-rendered cached data stands.
+   * Background check for a newer encrypted export, cheapest-signal-first:
+   *
+   *   1. the tiny `portfolio.meta.json` version stamp (a few bytes) — if its
+   *      version matches what we already have, there is nothing new and we stop
+   *      without touching the blob at all;
+   *   2. otherwise a **conditional** blob GET (`If-None-Match` /
+   *      `If-Modified-Since`) — a `304 Not Modified` likewise costs no transfer
+   *      and no decrypt;
+   *   3. only a genuine change pulls the new ciphertext, decrypts and re-renders.
+   *
+   * Because the check is now near-free it runs on demand (no 2-minute guard).
+   * Failures are swallowed — the already-rendered cached data stands.
    */
   private async maybeRefreshBlob(session: number): Promise<void> {
     const { config, passphrase } = this.state;
     if (!passphrase) return;
-    if (this.envelopeAt !== null && Date.now() - this.envelopeAt < BLOB_REFETCH_MIN_INTERVAL_MS) return;
     const url = resolveBlobUrl(config);
     if (!url) return;
     try {
-      const envelope = await fetchEnvelope(url);
+      // 1. Lightweight version probe. A matching stamp means "no newer export".
+      const metaUrl = resolveMetaUrl(config);
+      const meta = metaUrl ? await fetchBlobMeta(metaUrl) : null;
       if (session !== this.sessionId) return;
-      this.envelopeAt = Date.now();
-      writeCachedEnvelope(envelope, this.envelopeAt);
+      if (meta && this.metaVersion !== null && meta.version === this.metaVersion) return;
+
+      // 2. Conditional download: an unchanged blob comes back as 304.
+      const cached = readCachedEnvelope();
+      const result = await fetchEnvelopeConditional(url, {
+        etag: cached?.etag,
+        lastModified: cached?.lastModified,
+      });
+      if (session !== this.sessionId) return;
+
+      if (result.status === "not-modified") {
+        // Nothing changed on the wire; just remember the latest meta version so
+        // the next probe can short-circuit on step 1.
+        if (meta) this.persistEnvelope(this.envelope, { metaVersion: meta.version, etag: cached?.etag, lastModified: cached?.lastModified });
+        return;
+      }
+
+      const envelope = result.envelope;
+      this.metaVersion = meta?.version ?? null;
+      this.persistEnvelope(envelope, {
+        etag: result.etag,
+        lastModified: result.lastModified,
+        metaVersion: meta?.version,
+      });
       // Nothing to do if the ciphertext is byte-for-byte what we already have.
       if (this.envelope && envelope.ciphertext === this.envelope.ciphertext && envelope.nonce === this.envelope.nonce) {
         return;
@@ -469,29 +544,50 @@ export class App {
     }
   }
 
-  /** The symbols to price live, and the (NAV-aware) loadQuotes options. */
-  private quoteRequest(data: MobileExport, config: AppConfig): { symbols: string[]; options: LoadQuotesOptions } {
-    // Market holdings always fetch live; NAV holdings that are real funds
-    // (mutual / money-market) also fetch, so their once-a-day NAV tracks the
-    // latest published value instead of being frozen at the export. Synthetic
-    // cash/savings rows have no ticker and are left to their exported value.
-    const navFetchSymbols = new Set<string>();
-    const symbols = data.holdings
-      .filter((holding) => {
-        if (holding.price_type === "market") return true;
-        if (FETCHABLE_NAV_CLASSES.has(holding.asset_class)) {
-          navFetchSymbols.add(holding.price_symbol);
-          return true;
-        }
-        return false;
-      })
-      .map((holding) => holding.price_symbol);
+  /** Persist the envelope + validators and stamp the in-memory download time. */
+  private persistEnvelope(
+    envelope: Envelope | null,
+    validators: { etag?: string | null; lastModified?: string | null; metaVersion?: string | null },
+  ): void {
+    if (!envelope) return;
+    this.envelopeAt = Date.now();
+    writeCachedEnvelope(envelope, this.envelopeAt, validators);
+  }
 
+  /** The symbols to price live (priority-ordered), and the loadQuotes options. */
+  private quoteRequest(data: MobileExport, config: AppConfig): { symbols: string[]; options: LoadQuotesOptions } {
+    // Priority-ordered fetch plan: ETFs/stocks (largest first), then mutual
+    // funds (largest first). Money-market/cash rows are excluded — their NAV is
+    // pinned at $1 and never requested. The leading symbols are the ones that
+    // most move the headline, so they land first under the per-minute cap.
+    const plan = buildFetchPlan(data, FETCHABLE_NAV_CLASSES);
+    const navFetchSymbols = new Set(plan.filter((e) => e.priceType !== "market").map((e) => e.symbol));
+    const symbols = plan.map((e) => e.symbol);
+
+    // Cache the plan so the next login can start warming these quotes *before*
+    // the blob is decrypted (sizes change slowly, so a slightly stale order is
+    // fine). Tickers/sizes only — never anything decrypted or secret.
+    writeSymbolPlan(plan.map((e) => ({
+      symbol: e.symbol,
+      priceType: e.priceType,
+      assetClass: e.assetClass,
+      sizeEur: e.sizeEur,
+    })));
+
+    return { symbols, options: this.buildQuoteOptions(navFetchSymbols, config) };
+  }
+
+  /**
+   * Build the (NAV-aware) {@link loadQuotes} options for a set of symbols. Shared
+   * by the live refresh and the login-time prefetch so both honour the same
+   * per-symbol cache windows and publish-time learning.
+   */
+  private buildQuoteOptions(navFetchSymbols: Set<string>, config: AppConfig): LoadQuotesOptions {
     const cacheTtlMs = config.quoteCacheMinutes * 60 * 1000;
     // Per-symbol learned publish windows: when each fund's NAV has historically
     // landed, so we poll within that tight band instead of a fixed evening guess.
     const navStats = readNavPublishStats();
-    const options: LoadQuotesOptions = {
+    return {
       cacheTtlMs,
       cacheTtlMsForSymbol: (symbol, cached) => {
         if (!navFetchSymbols.has(symbol)) return cacheTtlMs;
@@ -508,7 +604,6 @@ export class App {
         if (navFetchSymbols.has(symbol)) recordNavPublish(symbol, valueDate, at);
       },
     };
-    return { symbols, options };
   }
 
   /**
@@ -583,7 +678,14 @@ export class App {
       this.setUpdating(false);
     }
     if (session !== this.sessionId || report === null) return;
-    this.scheduleNext(session, nextRefreshDelayMs({ deferred: report.deferred }));
+    const delayMs = nextRefreshDelayMs({ deferred: report.deferred });
+    // Idea A — near-free freshness polling: once we've settled into the slow
+    // steady-state cadence (nothing deferred), piggy-back the cheap meta/304
+    // blob check so a fresh desktop publish is picked up automatically within a
+    // few minutes, without the user reopening the app. While still bursting to
+    // fill in deferred prices we skip it to avoid competing with that work.
+    if (report.deferred.length === 0) void this.maybeRefreshBlob(session);
+    this.scheduleNext(session, delayMs);
   }
 
   /** Arm the next auto-refresh tick, replacing any pending one. */

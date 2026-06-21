@@ -174,10 +174,30 @@ export function writeCachedFx(
 
 // --- Encrypted-blob cache ---------------------------------------------------
 
+/**
+ * HTTP cache validators captured alongside a downloaded blob so the next check
+ * can be a *conditional* request (`If-None-Match` / `If-Modified-Since`). When
+ * the server answers `304 Not Modified` the companion skips both the download
+ * and the decrypt entirely. `metaVersion` is the version stamp from the
+ * `portfolio.meta.json` sidecar (see {@link resolveMetaUrl}), an even cheaper
+ * "is there a newer export?" signal that the desktop app controls directly.
+ */
+export interface BlobValidators {
+  etag?: string | null;
+  lastModified?: string | null;
+  metaVersion?: string | null;
+}
+
 /** A cached encrypted envelope together with the moment it was downloaded. */
 export interface CachedEnvelope {
   envelope: Envelope;
   at: number;
+  /** Last `ETag` seen for this blob, or null. */
+  etag: string | null;
+  /** Last `Last-Modified` seen for this blob, or null. */
+  lastModified: string | null;
+  /** Last `portfolio.meta.json` version stamp seen, or null. */
+  metaVersion: string | null;
 }
 
 /**
@@ -189,20 +209,43 @@ export interface CachedEnvelope {
  * background. Missing/corrupt cache → null.
  */
 export function readCachedEnvelope(storage: StorageLike | null = defaultStorage()): CachedEnvelope | null {
-  const stored = readJson<{ envelope: Envelope; at: number }>(storage, BLOB_KEY);
+  const stored = readJson<{
+    envelope: Envelope;
+    at: number;
+    etag?: unknown;
+    lastModified?: unknown;
+    metaVersion?: unknown;
+  }>(storage, BLOB_KEY);
   if (!stored || typeof stored.at !== "number" || typeof stored.envelope !== "object" || stored.envelope === null) {
     return null;
   }
-  return { envelope: stored.envelope, at: stored.at };
+  return {
+    envelope: stored.envelope,
+    at: stored.at,
+    etag: typeof stored.etag === "string" ? stored.etag : null,
+    lastModified: typeof stored.lastModified === "string" ? stored.lastModified : null,
+    metaVersion: typeof stored.metaVersion === "string" ? stored.metaVersion : null,
+  };
 }
 
-/** Persist the encrypted envelope downloaded at `at` (best-effort). */
+/**
+ * Persist the encrypted envelope downloaded at `at` (best-effort), together with
+ * any HTTP validators / meta version so the next refresh can ask the server
+ * "has this changed?" instead of blindly re-downloading.
+ */
 export function writeCachedEnvelope(
   envelope: Envelope,
   at: number,
+  validators: BlobValidators = {},
   storage: StorageLike | null = defaultStorage(),
 ): void {
-  writeJson(storage, BLOB_KEY, { envelope, at });
+  writeJson(storage, BLOB_KEY, {
+    envelope,
+    at,
+    etag: validators.etag ?? null,
+    lastModified: validators.lastModified ?? null,
+    metaVersion: validators.metaVersion ?? null,
+  });
 }
 
 
@@ -311,4 +354,61 @@ export function recordNavPublish(
   writeJson(storage, NAV_PUBLISH_KEY, file);
 }
 
-export const CACHE_KEYS = { QUOTE_KEY, FX_KEY, CREDIT_KEY, NAV_PUBLISH_KEY, BLOB_KEY } as const;
+// --- Live-data prefetch plan ------------------------------------------------
+
+const SYMBOL_PLAN_KEY = "iv.web.symbol_plan";
+
+/**
+ * A single symbol the companion knows it will want to price, with just enough
+ * context to order and route the fetch *before* the encrypted blob is decrypted.
+ * Holds only tickers + coarse sizing — never any decrypted figure or secret.
+ */
+export interface PlannedSymbol {
+  /** The Twelve Data ticker to request. */
+  symbol: string;
+  /** `market` (ETF/stock) or a NAV class (`mutual_fund`); drives priority. */
+  priceType: string;
+  /** Asset class, retained for routing (e.g. NAV cache TTL). */
+  assetClass: string;
+  /** Last-known EUR size, used only to order the fetch (largest first). */
+  sizeEur: number;
+}
+
+/**
+ * Read the cached prefetch plan — the priority-ordered symbols from the last
+ * successful refresh. Lets the app start warming live quotes at login, before
+ * the blob is even decrypted. Missing/corrupt cache → empty array. Sizing is
+ * deliberately allowed to be slightly stale: holdings rarely change size, so an
+ * approximate order is fine and avoids blocking on a fresh decrypt.
+ */
+export function readSymbolPlan(storage: StorageLike | null = defaultStorage()): PlannedSymbol[] {
+  const raw = readJson<unknown>(storage, SYMBOL_PLAN_KEY);
+  if (!Array.isArray(raw)) return [];
+  const out: PlannedSymbol[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.symbol !== "string" || e.symbol.length === 0) continue;
+    out.push({
+      symbol: e.symbol,
+      priceType: typeof e.priceType === "string" ? e.priceType : "market",
+      assetClass: typeof e.assetClass === "string" ? e.assetClass : "",
+      sizeEur: typeof e.sizeEur === "number" && Number.isFinite(e.sizeEur) ? e.sizeEur : 0,
+    });
+  }
+  return out;
+}
+
+/** Persist the priority-ordered prefetch plan (best-effort). */
+export function writeSymbolPlan(plan: PlannedSymbol[], storage: StorageLike | null = defaultStorage()): void {
+  writeJson(storage, SYMBOL_PLAN_KEY, plan);
+}
+
+export const CACHE_KEYS = {
+  QUOTE_KEY,
+  FX_KEY,
+  CREDIT_KEY,
+  NAV_PUBLISH_KEY,
+  BLOB_KEY,
+  SYMBOL_PLAN_KEY,
+} as const;

@@ -12,11 +12,19 @@ const KEYS = {
   repo: "iv.web.repo",
   releaseTag: "iv.web.release_tag",
   blobUrl: "iv.web.blob_url",
+  metaUrl: "iv.web.meta_url",
   quoteCacheMinutes: "iv.web.quote_cache_minutes",
 } as const;
 
 const DEFAULT_RELEASE_TAG = "live-data";
 const ASSET_NAME = "portfolio.enc";
+/**
+ * Tiny sidecar published next to {@link ASSET_NAME} by the desktop app. It holds
+ * just a version stamp (a hash of the encrypted blob) so the companion can ask
+ * "is there a newer export?" by downloading a few bytes instead of the whole
+ * ciphertext. See `web/proxy/` and the desktop `publish_service`.
+ */
+const META_ASSET_NAME = "portfolio.meta.json";
 /**
  * Default quote-cache freshness (minutes). Tuned for the Twelve Data free tier
  * (8 credits/min, 800/day, 1 credit per symbol): a longer window means fewer
@@ -52,6 +60,12 @@ export interface AppConfig {
   repo: string;
   releaseTag: string;
   blobUrl: string;
+  /**
+   * Advanced override for the version-stamp (`portfolio.meta.json`) endpoint.
+   * Empty by default — it is then derived from {@link resolveBlobUrl}. Set it
+   * only when the meta sidecar lives somewhere the derivation can't guess.
+   */
+  metaUrl: string;
   /** Quote-cache freshness in minutes (free-tier credit economy knob). */
   quoteCacheMinutes: number;
 }
@@ -69,6 +83,7 @@ export function loadConfig(): AppConfig {
     repo: read(KEYS.repo),
     releaseTag: read(KEYS.releaseTag) || DEFAULT_RELEASE_TAG,
     blobUrl: read(KEYS.blobUrl),
+    metaUrl: read(KEYS.metaUrl),
     quoteCacheMinutes: parseCacheMinutes(read(KEYS.quoteCacheMinutes)),
   };
 }
@@ -78,6 +93,7 @@ export function saveConfig(config: AppConfig): void {
   write(KEYS.repo, config.repo.trim());
   write(KEYS.releaseTag, config.releaseTag.trim());
   write(KEYS.blobUrl, config.blobUrl.trim());
+  write(KEYS.metaUrl, config.metaUrl.trim());
   write(KEYS.quoteCacheMinutes, String(config.quoteCacheMinutes));
 }
 
@@ -109,4 +125,32 @@ export function resolveBlobUrl(config: AppConfig): string | null {
   return `https://github.com/${config.repo}/releases/download/${tag}/${ASSET_NAME}`;
 }
 
-export { DEFAULT_RELEASE_TAG, ASSET_NAME, DEFAULT_QUOTE_CACHE_MINUTES };
+/**
+ * Resolve the URL of the lightweight version sidecar (`portfolio.meta.json`),
+ * used to cheaply detect "is there a newer export?" before pulling the full
+ * blob. Precedence:
+ *
+ *  1. an explicit {@link AppConfig.metaUrl} override, if set;
+ *  2. otherwise *derive* it from {@link resolveBlobUrl}:
+ *     - when a `blobUrl` proxy override is in play, the same endpoint with a
+ *       `?meta` flag (the `web/proxy/` Worker serves the sidecar that way), or
+ *     - the release-asset default with the filename swapped to the meta asset.
+ *
+ * Returns `null` only when there is no data source at all. The meta check is
+ * best-effort: callers fall back to a conditional/full blob download if the
+ * sidecar can't be fetched (e.g. an older proxy, or the desktop app hasn't
+ * published a meta file yet).
+ */
+export function resolveMetaUrl(config: AppConfig): string | null {
+  if (config.metaUrl) return config.metaUrl;
+  if (config.blobUrl) {
+    // A custom blob endpoint (typically the CORS proxy Worker) exposes the
+    // sidecar via a `?meta` flag rather than a sibling path.
+    return config.blobUrl + (config.blobUrl.includes("?") ? "&" : "?") + "meta";
+  }
+  if (!isValidRepo(config.repo)) return null;
+  const tag = encodeURIComponent(config.releaseTag || DEFAULT_RELEASE_TAG);
+  return `https://github.com/${config.repo}/releases/download/${tag}/${META_ASSET_NAME}`;
+}
+
+export { DEFAULT_RELEASE_TAG, ASSET_NAME, META_ASSET_NAME, DEFAULT_QUOTE_CACHE_MINUTES };
