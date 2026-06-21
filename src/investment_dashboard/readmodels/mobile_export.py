@@ -206,6 +206,9 @@ def build_mobile_export(
     # always present (alongside the always-present ``*_eur``), so the browser
     # never has to rescale a historical EUR total by today's rate. The deposits
     # read-model already emits per-date-FX ``*_usd`` figures unconditionally.
+    # When no EUR→USD history exists (``fx_rate_eur_usd is None``) the period
+    # aggregation simply leaves the ``*_display`` fields null and the browser
+    # falls back to the always-present ``*_eur`` figures.
     usd_context = replace(
         context,
         display_currency="USD",
