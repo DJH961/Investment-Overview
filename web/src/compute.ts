@@ -61,6 +61,9 @@ export interface HoldingView {
   todayMovePct: Decimal | null;
   weight: Decimal | null;
   unrealisedPlEur: Decimal | null;
+  /** Simple total growth on cost: unrealised P/L ÷ cost basis (null when no
+   * cost basis to grow from). Shown on the holding card in place of weight. */
+  totalGrowthPct: Decimal | null;
   xirr: Decimal | null;
 }
 
@@ -325,6 +328,14 @@ function buildHolding(
   const unrealisedPlEur =
     valueEur !== null && costBasisEur !== null ? valueEur.minus(costBasisEur) : null;
 
+  // Simple total growth on cost (price-based, dividends excluded): the
+  // holding's unrealised P/L as a fraction of what it cost. Null when there is
+  // no cost basis to grow from (e.g. a fully gifted/spun-off position).
+  const totalGrowthPct =
+    unrealisedPlEur !== null && costBasisEur !== null && costBasisEur.greaterThan(0)
+      ? unrealisedPlEur.dividedBy(costBasisEur)
+      : null;
+
   const xirrRate =
     valueEur !== null && valueEur.greaterThan(0)
       ? xirr(holdingCashflows(holding), asOf, { terminalValue: valueEur })
@@ -350,6 +361,7 @@ function buildHolding(
     todayMovePct,
     weight: null, // filled once the portfolio total is known
     unrealisedPlEur,
+    totalGrowthPct,
     xirr: xirrRate,
   };
 }

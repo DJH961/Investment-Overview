@@ -315,7 +315,15 @@ function renderHoldingRow(holding: HoldingView): HTMLElement {
         : "Px —",
     ),
     chip(`${formatShares(holding.shares)} sh`),
-    chip(holding.weight !== null ? `${formatPercent(holding.weight)} wt` : "— wt"),
+    // Weight (% of portfolio) is a secondary stat — it now lives in the desktop
+    // Holdings table. The card instead leads with total growth on cost, the
+    // headline performance figure, coloured by sign.
+    chip(
+      holding.totalGrowthPct !== null
+        ? `${formatSignedPercent(holding.totalGrowthPct)} growth`
+        : "— growth",
+      signClass(holding.totalGrowthPct),
+    ),
     chip(`P/L ${formatSignedCurrency(holding.unrealisedPlEur)}`, signClass(holding.unrealisedPlEur)),
     chip(`XIRR ${formatPercent(holding.xirr)}`, signClass(holding.xirr)),
   ]);

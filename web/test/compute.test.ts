@@ -129,6 +129,19 @@ describe("buildDashboard", () => {
     expect(sum).toBeLessThan(1);
   });
 
+  it("exposes per-holding total growth on cost (P/L ÷ cost basis)", () => {
+    for (const holding of model.holdings) {
+      if (
+        holding.unrealisedPlEur !== null &&
+        holding.costBasisEur !== null &&
+        holding.costBasisEur.greaterThan(0)
+      ) {
+        expect(holding.totalGrowthPct).not.toBeNull();
+        approx(holding.totalGrowthPct, holding.unrealisedPlEur.dividedBy(holding.costBasisEur).toNumber());
+      }
+    }
+  });
+
   it("produces a portfolio XIRR (sign change present)", () => {
     expect(model.overview.portfolioXirr).not.toBeNull();
   });
