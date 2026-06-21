@@ -25,6 +25,8 @@ import {
   resolveMetaUrl,
   saveConfig,
   DEFAULT_QUOTE_CACHE_MINUTES,
+  DEFAULT_AUTO_LOCK_MINUTES,
+  MAX_AUTO_LOCK_MINUTES,
   type AppConfig,
 } from "./config";
 import { PriceError, type FxRates } from "./prices";
@@ -49,6 +51,7 @@ import {
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
 import {
+  clearBiometricEnrolment,
   enrolBiometric,
   hasBiometricEnrolment,
   isBiometricSupported,
@@ -101,6 +104,10 @@ export class App {
   private visibilityHandler: (() => void) | null = null;
   /** Guards against overlapping price refreshes. */
   private refreshing = false;
+  /** Pending idle auto-lock timer, if any. */
+  private autoLockTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Installed activity listeners that reset the idle auto-lock timer. */
+  private activityHandler: (() => void) | null = null;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -117,7 +124,10 @@ export class App {
       // starting the per-minute clock from zero. Fire-and-forget; honours the
       // shared credit budget so it can't double-spend with the later refresh.
       void this.prefetchLiveData();
-      this.showUnlock();
+      // First unlock of the session: auto-prompt the fingerprint sheet when the
+      // device is enrolled, so a returning user can unlock with a single touch
+      // and no extra tap.
+      this.showUnlock(undefined, { autoPrompt: true });
     }
   }
 
@@ -214,6 +224,16 @@ export class App {
       placeholder: String(DEFAULT_QUOTE_CACHE_MINUTES),
       value: String(config.quoteCacheMinutes),
     });
+    const autoLock = h("input", {
+      type: "number",
+      id: "f-autolock",
+      min: "0",
+      max: String(MAX_AUTO_LOCK_MINUTES),
+      step: "1",
+      autocomplete: "off",
+      placeholder: String(DEFAULT_AUTO_LOCK_MINUTES),
+      value: String(config.autoLockMinutes),
+    });
 
     const actions: Array<Node | string> = [
       h("button", { class: "btn", type: "submit" }, [settingsMode ? "Save & reload" : "Save & continue"]),
@@ -235,20 +255,39 @@ export class App {
     const formChildren: Array<Node | string> = [
       h("h1", {}, [settingsMode ? "Settings" : "Set up the companion"]),
       h("p", { class: "muted" }, [intro]),
+    ];
+    // Preferences (appearance, security) come first in Settings so the most
+    // commonly-touched controls — starting with dark mode — are right at the top,
+    // above the rarely-changed data-source plumbing.
+    if (settingsMode) {
+      formChildren.push(
+        h("h2", { class: "settings-section" }, ["Appearance"]),
+        field("Theme", renderThemeToggle(), "Switch between system, light and dark themes."),
+        h("h2", { class: "settings-section" }, ["Security"]),
+        field(
+          "Auto-lock (minutes)",
+          autoLock,
+          `Lock the dashboard after this many minutes of inactivity. Set 0 to never auto-lock. Default is ${DEFAULT_AUTO_LOCK_MINUTES}.`,
+        ),
+      );
+      // Fingerprint unlock toggle — only meaningful while unlocked (we need the
+      // in-memory passphrase to enrol) and on a device with a platform
+      // authenticator, so it's revealed asynchronously below.
+      if (this.state.passphrase) {
+        const fingerprintSlot = h("div", { class: "settings-slot", hidden: "hidden" });
+        formChildren.push(fingerprintSlot);
+        void this.addFingerprintSetting(fingerprintSlot);
+      }
+      formChildren.push(h("h2", { class: "settings-section" }, ["Data source"]));
+    }
+    formChildren.push(
       field("Price API key", apiKey, "Free key from twelvedata.com — never leaves this device."),
       field("Data repository", repo, "The repo that hosts your published portfolio.enc release asset."),
       field("Release tag", tag, "Defaults to live-data."),
       field("Blob URL override", blobUrl, "Advanced: a direct, CORS-enabled URL (e.g. your web/proxy Worker) to fetch the encrypted blob from, instead of the release asset."),
       field("Version-file URL override", metaUrl, "Advanced: where to read the tiny portfolio.meta.json version stamp. Leave blank to derive it from the blob URL — set it only if the sidecar lives elsewhere."),
       field("Quote cache (minutes)", cacheMinutes, "Free tier is 8 credits/min, 800/day (1 per symbol). A longer cache means fewer refetches and fewer credits spent."),
-    ];
-    // Appearance (light / dark / system) lives in Settings instead of crowding
-    // the dashboard topbar.
-    if (settingsMode) {
-      formChildren.push(
-        field("Appearance", renderThemeToggle(), "Switch between system, light and dark themes."),
-      );
-    }
+    );
     formChildren.push(
       error ? h("p", { class: "note err" }, [error]) : document.createTextNode(""),
       h("div", { class: "row" }, actions),
@@ -268,6 +307,7 @@ export class App {
         blobUrl: (blobUrl as HTMLInputElement).value.trim(),
         metaUrl: (metaUrl as HTMLInputElement).value.trim(),
         quoteCacheMinutes: clampCacheMinutes((cacheMinutes as HTMLInputElement).value),
+        autoLockMinutes: clampAutoLockMinutes((autoLock as HTMLInputElement).value),
       };
       if (!next.apiKey) return this.showSetup("Enter your price API key.", mode);
       const hasSource = next.blobUrl.length > 0 || isValidRepo(next.repo);
@@ -299,72 +339,149 @@ export class App {
 
   // --- Unlock screen ----------------------------------------------------------
 
-  private showUnlock(error?: string): void {
+  private showUnlock(error?: string, options: { autoPrompt?: boolean } = {}): void {
+    const enrolled = hasBiometricEnrolment();
+
     const pass = h("input", {
       type: "password",
       id: "f-pass",
       autocomplete: "off",
       placeholder: "Mobile passphrase",
-    });
-    // Optional "remember with fingerprint" enrolment — revealed only on devices
-    // with a platform authenticator (see addBiometricControls).
-    const enrol = h("input", { type: "checkbox", id: "f-bio" }) as HTMLInputElement;
-    const enrolField = h("label", { class: "field check", hidden: "hidden" }, [
-      enrol,
-      h("span", {}, ["Enable fingerprint unlock on this device"]),
+    }) as HTMLInputElement;
+
+    // Optional "remember with fingerprint" enrolment — only offered on the
+    // passphrase-first screen (device not yet enrolled) and only when a platform
+    // authenticator is present (revealed async by revealEnrolToggle).
+    const enrol = h("input", { type: "checkbox", id: "f-bio", class: "switch-input", role: "switch" }) as HTMLInputElement;
+    const enrolField = switchField("Enable fingerprint unlock on this device", enrol);
+    enrolField.hidden = true;
+
+    const actions = h("div", { class: "row" }, [
+      h("button", { class: "btn", type: "submit" }, ["Unlock"]),
+      h("button", { class: "btn ghost", type: "button", "data-action": "settings" }, ["Settings"]),
     ]);
-    const form = h("form", { class: "panel", novalidate: "novalidate" }, [
-      h("h1", {}, ["Unlock"]),
-      h("p", { class: "muted" }, ["Your passphrase decrypts the data in this browser. It is never stored or sent."]),
-      field("Passphrase", pass),
-      enrolField,
-      error ? h("p", { class: "note err" }, [error]) : document.createTextNode(""),
-      h("div", { class: "row" }, [
-        h("button", { class: "btn", type: "submit" }, ["Unlock"]),
-        h("button", { class: "btn ghost", type: "button", "data-action": "settings" }, ["Settings"]),
+
+    // The passphrase fields. On an enrolled device this is the secondary fallback
+    // path, hidden until the user explicitly opts into it.
+    const passBlock = h("div", { class: "unlock-pass" }, [field("Passphrase", pass), enrolField, actions]);
+
+    const formChildren: Array<Node | string> = [
+      h("h1", {}, [enrolled ? "Welcome back" : "Unlock"]),
+      h("p", { class: "muted" }, [
+        enrolled
+          ? "Unlock with your fingerprint. Your data is decrypted on this device only — never stored or sent."
+          : "Your passphrase decrypts the data in this browser. It is never stored or sent.",
       ]),
-    ]);
+    ];
+
+    if (enrolled) {
+      // Biometric-first layout: one prominent fingerprint CTA, with the
+      // passphrase tucked behind a quiet "Use passphrase instead" link.
+      const bioBtn = h("button", { class: "btn bio bio-primary", type: "button" }, [
+        fingerprintIcon(),
+        h("span", {}, ["Unlock with fingerprint"]),
+      ]);
+      bioBtn.addEventListener("click", () => void this.unlockBiometric());
+
+      const usePass = h("button", { class: "linkish", type: "button" }, ["Use passphrase instead"]);
+      passBlock.hidden = true;
+      usePass.addEventListener("click", () => {
+        passBlock.hidden = false;
+        usePass.hidden = true;
+        pass.focus();
+      });
+
+      formChildren.push(bioBtn);
+      if (error) formChildren.push(h("p", { class: "note err" }, [error]));
+      formChildren.push(usePass, passBlock);
+    } else {
+      if (error) formChildren.push(h("p", { class: "note err" }, [error]));
+      formChildren.push(passBlock);
+    }
+
+    const form = h("form", { class: "panel unlock", novalidate: "novalidate" }, formChildren);
     form.querySelector('[data-action="settings"]')?.addEventListener("click", () => this.showSetup());
     form.addEventListener("submit", (event) => {
       event.preventDefault();
-      const passphrase = (pass as HTMLInputElement).value;
+      const passphrase = pass.value;
       if (!passphrase) return this.showUnlock("Enter your passphrase.");
       void this.unlock(passphrase, enrol.checked);
       return undefined;
     });
+
     this.mount(h("div", { class: "screen" }, [form]));
-    (pass as HTMLInputElement).focus();
-    void this.addBiometricControls(form, enrolField);
+
+    if (enrolled) {
+      (form.querySelector(".bio-primary") as HTMLElement | null)?.focus();
+      // Auto-prompt the platform sheet on the first unlock so a returning user
+      // gets straight in with a single touch and no extra tap.
+      if (options.autoPrompt) void this.unlockBiometric(true);
+    } else {
+      pass.focus();
+      void this.revealEnrolToggle(enrolField);
+    }
   }
 
-  /**
-   * Progressively enhance the unlock screen with biometrics: a one-touch
-   * "Unlock with fingerprint" button when already enrolled, or the enrolment
-   * checkbox when the device has a platform authenticator but isn't set up yet.
-   * Done async so an unsupported device just shows the plain passphrase form.
-   */
-  private async addBiometricControls(form: HTMLElement, enrolField: HTMLElement): Promise<void> {
-    if (hasBiometricEnrolment()) {
-      const btn = h("button", { class: "btn bio", type: "button" }, [
-        h("span", { "aria-hidden": "true" }, ["☝ "]),
-        "Unlock with fingerprint",
-      ]);
-      btn.addEventListener("click", () => void this.unlockBiometric());
-      form.querySelector("h1")?.after(btn);
-      // Auto-prompt: most users who enrolled want the touch immediately.
-      btn.focus();
-      return;
-    }
+  /** Reveal the enrolment toggle once we confirm the device has an authenticator. */
+  private async revealEnrolToggle(enrolField: HTMLElement): Promise<void> {
     if (await isBiometricSupported()) enrolField.hidden = false;
   }
 
-  /** Attempt a fingerprint unlock, then run the normal decrypt pipeline. */
-  private async unlockBiometric(): Promise<void> {
+  /**
+   * Attempt a fingerprint unlock, then run the normal decrypt pipeline. An
+   * auto-prompt (page load) that the user dismisses — or that the browser blocks
+   * for want of a user gesture — must not shout an error; it quietly falls back
+   * to the manual button. An explicit tap does surface the reason.
+   */
+  private async unlockBiometric(auto = false): Promise<void> {
     try {
       const passphrase = await unlockWithBiometric();
       await this.unlock(passphrase, false);
     } catch (err) {
-      this.showUnlock((err as Error).message);
+      if (auto) this.showUnlock();
+      else this.showUnlock((err as Error).message);
+    }
+  }
+
+  /**
+   * Settings: a fingerprint unlock toggle. Shown only on a capable device (or
+   * one already enrolled). Turning it on enrols using the in-memory passphrase;
+   * turning it off forgets the enrolment. Wired into a slot that stays hidden on
+   * devices that can't offer it.
+   */
+  private async addFingerprintSetting(slot: HTMLElement): Promise<void> {
+    const enrolled = hasBiometricEnrolment();
+    if (!enrolled && !(await isBiometricSupported())) return;
+    const input = h("input", { type: "checkbox", class: "switch-input", role: "switch" }) as HTMLInputElement;
+    input.checked = enrolled;
+    const fieldEl = switchField(
+      "Fingerprint unlock",
+      input,
+      "Use this device's fingerprint sensor to unlock instead of typing your passphrase.",
+    );
+    input.addEventListener("change", () => void this.toggleFingerprint(input));
+    slot.replaceChildren(fieldEl);
+    slot.hidden = false;
+  }
+
+  /** Enrol/forget biometric unlock when the Settings toggle flips. */
+  private async toggleFingerprint(input: HTMLInputElement): Promise<void> {
+    if (input.checked) {
+      const passphrase = this.state.passphrase;
+      if (!passphrase) {
+        input.checked = false;
+        return;
+      }
+      try {
+        await enrolBiometric(passphrase);
+        this.toast("Fingerprint unlock enabled on this device.");
+      } catch (err) {
+        input.checked = false;
+        this.toast((err as Error).message);
+      }
+    } else {
+      clearBiometricEnrolment();
+      this.toast("Fingerprint unlock disabled on this device.");
     }
   }
 
@@ -478,6 +595,51 @@ export class App {
     void this.maybeRefreshBlob(session);
     this.installVisibilityRefresh(session);
     void this.runScheduledRefresh(session);
+    // 5. Arm the idle auto-lock so an unattended session locks itself.
+    this.installAutoLock();
+  }
+
+  // --- Idle auto-lock ---------------------------------------------------------
+
+  /**
+   * Arm an inactivity timer that locks the session after
+   * {@link AppConfig.autoLockMinutes} minutes without interaction. Pointer, key,
+   * touch and scroll activity (plus tab re-focus) reset the countdown. A value of
+   * `0` disables the feature. Safe to call repeatedly — it tears down any prior
+   * wiring first, so a Settings change re-arms with the new timeout.
+   */
+  private installAutoLock(): void {
+    this.removeAutoLock();
+    const minutes = this.state.config.autoLockMinutes;
+    if (minutes <= 0) return;
+    const timeoutMs = minutes * 60_000;
+    const reset = (): void => {
+      if (this.autoLockTimer) clearTimeout(this.autoLockTimer);
+      // Only keep counting while a session is actually unlocked.
+      if (!this.state.passphrase) return;
+      this.autoLockTimer = setTimeout(() => {
+        if (this.state.passphrase) this.lock();
+      }, timeoutMs);
+    };
+    this.activityHandler = reset;
+    for (const event of AUTO_LOCK_ACTIVITY_EVENTS) {
+      window.addEventListener(event, reset, { passive: true });
+    }
+    reset();
+  }
+
+  /** Tear down the idle auto-lock timer and its activity listeners. */
+  private removeAutoLock(): void {
+    if (this.autoLockTimer) {
+      clearTimeout(this.autoLockTimer);
+      this.autoLockTimer = null;
+    }
+    if (this.activityHandler) {
+      for (const event of AUTO_LOCK_ACTIVITY_EVENTS) {
+        window.removeEventListener(event, this.activityHandler);
+      }
+      this.activityHandler = null;
+    }
   }
 
   /**
@@ -819,6 +981,7 @@ export class App {
     this.sessionId += 1;
     this.clearRefreshTimer();
     this.removeVisibilityRefresh();
+    this.removeAutoLock();
     this.setUpdating(false);
     this.refreshing = false;
     this.state.passphrase = null;
@@ -827,10 +990,63 @@ export class App {
   }
 }
 
+/**
+ * Interaction events that count as "activity" and reset the idle auto-lock
+ * countdown. Kept passive and broad enough to cover touch, mouse and keyboard
+ * use without interfering with the page's own handlers.
+ */
+const AUTO_LOCK_ACTIVITY_EVENTS = [
+  "pointerdown",
+  "keydown",
+  "scroll",
+  "touchstart",
+  "focus",
+] as const;
+
 function field(label: string, input: HTMLElement, hint?: string): HTMLElement {
   const children: Array<Node | string> = [h("span", { class: "field-label" }, [label]), input];
   if (hint) children.push(h("span", { class: "field-hint" }, [hint]));
   return h("label", { class: "field" }, children);
+}
+
+/**
+ * A labelled on/off switch row (checkbox styled as a slider). The passed
+ * `input` is the underlying checkbox — read `.checked` and listen for `change`
+ * on it. `role="switch"` should be set by the caller for assistive tech.
+ */
+function switchField(label: string, input: HTMLInputElement, hint?: string): HTMLElement {
+  const slider = h("span", { class: "slider", "aria-hidden": "true" });
+  const sw = h("span", { class: "switch" }, [input, slider]);
+  const head = h("div", { class: "toggle-head" }, [h("span", { class: "field-label" }, [label]), sw]);
+  const children: Array<Node | string> = [head];
+  if (hint) children.push(h("span", { class: "field-hint" }, [hint]));
+  return h("label", { class: "field toggle" }, children);
+}
+
+/**
+ * Line-art fingerprint glyph (Lucide "fingerprint", MIT). Inlined as a static,
+ * trusted SVG string — no user data — so it can scale and inherit `currentColor`
+ * for a clean, broker-style unlock CTA.
+ */
+const FINGERPRINT_SVG =
+  '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
+  '<path d="M2 12C2 6.5 6.5 2 12 2a10 10 0 0 1 8 4"/>' +
+  '<path d="M5 19.5C5.5 18 6 15 6 12c0-.7.12-1.37.34-2"/>' +
+  '<path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/>' +
+  '<path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/>' +
+  '<path d="M8.65 22c.21-.66.45-1.32.57-2"/>' +
+  '<path d="M14 13.12c0 2.38 0 6.38-1 8.88"/>' +
+  '<path d="M2 16h.01"/>' +
+  '<path d="M21.8 16c.2-2 .131-5.354 0-6"/>' +
+  '<path d="M9 6.8a6 6 0 0 1 9 5.2c0 .47 0 1.17-.02 2"/>' +
+  "</svg>";
+
+/** A standalone fingerprint icon element for the unlock CTA. */
+function fingerprintIcon(): HTMLElement {
+  const span = h("span", { class: "bio-icon" });
+  // Static, trusted markup (no interpolation): safe to assign as innerHTML.
+  span.innerHTML = FINGERPRINT_SVG;
+  return span;
 }
 
 /** Parse + clamp the quote-cache minutes input to a sane 1–240 range. */
@@ -838,4 +1054,16 @@ function clampCacheMinutes(raw: string): number {
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_QUOTE_CACHE_MINUTES;
   return Math.min(240, Math.round(n));
+}
+
+/**
+ * Parse + clamp the idle auto-lock minutes input. A blank field falls back to
+ * the preset default; `0` (or anything non-positive) means "never lock".
+ */
+function clampAutoLockMinutes(raw: string): number {
+  const trimmed = raw.trim();
+  if (trimmed === "") return DEFAULT_AUTO_LOCK_MINUTES;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(MAX_AUTO_LOCK_MINUTES, Math.round(n));
 }

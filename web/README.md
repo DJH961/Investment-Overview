@@ -47,11 +47,17 @@ Concretely, that means:
   contributions / benchmark legend.
 - A topbar **currency toggle** flips the whole dashboard between **EUR and USD**
   (using the live EUR→USD rate), persisted per device. A **Settings** button in
-  the topbar opens the editable configuration **while logged in** (data source,
-  quote cache, blob URL override) and hosts the **theme** control, which cycles
-  System → Light → Dark, persisted in `localStorage`; "System" follows the OS
-  `prefers-color-scheme`. The modern **Inter** typeface is bundled
+  the topbar opens the editable configuration **while logged in**. Settings lead
+  with **Appearance** (the **theme** control, which cycles System → Light → Dark,
+  persisted in `localStorage`; "System" follows the OS `prefers-color-scheme`),
+  then **Security** (an idle **auto-lock** timeout and a **fingerprint unlock**
+  toggle), and finally the **Data source** plumbing (data source, quote cache,
+  blob URL override). The modern **Inter** typeface is bundled
   (self-hosted — no third-party font requests).
+- **Idle auto-lock.** After a configurable period of inactivity (default **5
+  min**; Settings → Security → *Auto-lock (minutes)*, set `0` to disable) the
+  session clears the in-memory passphrase and returns to the unlock screen, so an
+  unattended phone doesn't sit on an open dashboard.
 
 ## Status
 
@@ -126,13 +132,18 @@ game**. Everything slow happens *after* you're already looking at your numbers:
 - **Cache-first prices.** The dashboard paints from your last cached quotes with
   zero network on the hot path, then live prices refresh in the background.
 - **Fingerprint unlock (optional).** On a device with a platform authenticator
-  (your phone's fingerprint / Face ID reader), tick *"Enable fingerprint unlock"*
-  when you unlock and the passphrase is wrapped behind the authenticator via the
-  WebAuthn **PRF** extension (`src/webauthn.ts`). After that, one touch unlocks —
-  no typing. The passphrase is only ever stored AES-256-GCM-encrypted under a key
-  the hardware re-derives on a successful fingerprint touch; without that touch
-  on *this* device the stored blob is inert. Unsupported devices simply never see
-  the option and keep using the passphrase.
+  (your phone's fingerprint / Face ID reader), flip on *"Enable fingerprint
+  unlock"* when you unlock — or the **Fingerprint unlock** toggle in Settings →
+  Security — and the passphrase is wrapped behind the authenticator via the
+  WebAuthn **PRF** extension (`src/webauthn.ts`). After that the unlock screen
+  goes **fingerprint-first**: it shows a single prominent "Unlock with
+  fingerprint" button (with the passphrase tucked behind "Use passphrase
+  instead") and **auto-prompts** the platform sheet on load, so a returning user
+  is in with one touch and no extra tap. The passphrase is only ever stored
+  AES-256-GCM-encrypted under a key the hardware re-derives on a successful
+  fingerprint touch; without that touch on *this* device the stored blob is
+  inert. Unsupported devices simply never see the option and keep using the
+  passphrase.
 - **Burst-then-slow auto-refresh.** Prices now refresh **automatically**
   (`src/refresh-policy.ts`). On startup, while the free-tier per-minute budget
   forces some symbols to be deferred, it **bursts roughly once a minute** so the
