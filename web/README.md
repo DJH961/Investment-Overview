@@ -64,7 +64,8 @@ responses, or any decrypted data (that lives in memory only) — see
 `public/sw.js`. A Vite + TypeScript single-page app that:
 
 1. collects a Twelve Data API key + the data repository on a setup screen
-   (stored in `localStorage`, never in the repo),
+   (the key is **encrypted at rest** in `localStorage` with a non-extractable
+   per-device key in IndexedDB — see `secret-store.ts` — never in the repo),
 2. downloads the encrypted `portfolio.enc` blob and decrypts it **in the
    browser** with your mobile passphrase via WebCrypto (PBKDF2-HMAC-SHA256 →
    AES-256-GCM, mirroring `storage/blob_crypto.py`),
@@ -230,3 +231,6 @@ No plaintext financial data is ever committed here or served from Pages. The
 ledger is delivered as an encrypted blob and decrypted in-browser with a
 passphrase held only by the user; the decrypted figures live in memory only.
 The CORS proxy only ever relays opaque ciphertext and cannot decrypt anything.
+The one device-local secret, the Twelve Data API key, is encrypted at rest with
+a non-extractable per-device key (IndexedDB), so `localStorage` never holds the
+raw token.

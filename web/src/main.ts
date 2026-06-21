@@ -14,7 +14,7 @@ initTheme();
 
 const root = document.getElementById("app");
 if (root) {
-  new App(root).start();
+  void new App(root).start();
 }
 
 // Make the companion installable and offline-capable in production builds only.
