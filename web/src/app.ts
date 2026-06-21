@@ -19,6 +19,7 @@ import {
   type AppConfig,
 } from "./config";
 import { fetchFxRates, fetchQuotes } from "./prices";
+import { setEurUsdRate } from "./currency";
 import type { MobileExport } from "./types";
 import { h, renderDashboard } from "./ui";
 
@@ -31,6 +32,8 @@ interface SessionState {
 export class App {
   private readonly root: HTMLElement;
   private readonly state: SessionState;
+  /** The last computed model, kept so the currency toggle can re-render it. */
+  private model: DashboardModel | null = null;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -175,6 +178,9 @@ export class App {
    */
   private showDemo(): void {
     const model = buildDemoModel();
+    // Seed the EUR→USD rate from the sample export so the currency toggle works.
+    setEurUsdRate(model.overview.fxRateEurUsd);
+    this.model = model;
     const banner = h("div", { class: "demo-banner" }, [
       h("strong", {}, ["Demo mode"]),
       " — sample data, no real portfolio. Figures are illustrative.",
@@ -188,6 +194,7 @@ export class App {
         if (this.isConfigured()) this.showUnlock();
         else this.showSetup();
       },
+      () => this.showDemo(),
       "Exit demo",
     );
     this.mount(h("div", { class: "demo-shell" }, [banner, dashboard]));
@@ -225,6 +232,8 @@ export class App {
         fetchFxRates("EUR"),
       ]);
       const model = buildDashboard(data, quotes, fx);
+      // Prefer the live EUR→USD rate; fall back to the export meta rate.
+      setEurUsdRate(fx.rates.USD ?? model.overview.fxRateEurUsd);
       this.renderDashboard(model);
     } catch (err) {
       this.renderLoadError((err as Error).message);
@@ -233,13 +242,20 @@ export class App {
   }
 
   private renderDashboard(model: DashboardModel): void {
+    this.model = model;
     this.mount(
       renderDashboard(
         model,
         () => void this.refresh(),
         () => this.lock(),
+        () => this.reRenderCurrentModel(),
       ),
     );
+  }
+
+  /** Re-render the current model in place (e.g. after a currency toggle). */
+  private reRenderCurrentModel(): void {
+    if (this.model) this.renderDashboard(this.model);
   }
 
   private renderLoadError(message: string): void {

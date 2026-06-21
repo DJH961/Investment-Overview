@@ -8,8 +8,9 @@ in both **USD** and **EUR**, and serves them over a NiceGUI web UI accessible
 from the host laptop and any device on the same Wi-Fi network.
 
 > **Status: v2.11.1 — split storage, cloud-aware paths, optional SQLCipher,
-> intraday price refresh, SQLite file-safety tooling, an equity-curve
-> performance pass, and the v3.0 live-web companion (encrypted publish + an
+> intraday price refresh, bulk/background snapshot performance, SQLite
+> file-safety tooling, an equity-curve performance pass, structured per-row
+> broker imports, and the v3.0 live-web companion (encrypted publish + an
 > in-browser dashboard, see [`web/`](web/)).** The app remains a
 > local-first, single-user dashboard with onboarding, EUR/USD display switching,
 > CSV/XLSX imports, live overview/deposits/transactions/monthly/yearly/calculator

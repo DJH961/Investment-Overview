@@ -36,6 +36,32 @@ def test_cumulative_factor_after_products_only_later_splits(session: Session) ->
     assert splits_repo.cumulative_factor_after(session, instr.id, date(2025, 6, 1)) == Decimal("1")
 
 
+def test_cumulative_factors_after_batch_matches_singular(session: Session) -> None:
+    # ``a`` has later splits, ``b`` is feed-confirmed-no-later-split, ``c`` has
+    # no cached split data at all (must be absent from the batch result).
+    a = instruments_repo.get_or_create(session, symbol="AAA", asset_class="etf")
+    b = instruments_repo.get_or_create(session, symbol="BBB", asset_class="etf")
+    c = instruments_repo.get_or_create(session, symbol="CCC", asset_class="etf")
+    splits_repo.upsert_splits(
+        session, a.id, {date(2024, 1, 1): Decimal("2"), date(2025, 1, 1): Decimal("3")}
+    )
+    splits_repo.upsert_splits(session, b.id, {date(2020, 1, 1): Decimal("2")})
+    session.flush()
+
+    as_of = date(2023, 6, 1)
+    batched = splits_repo.cumulative_factors_after(session, [a.id, b.id, c.id], as_of)
+    # ``a``: 2 × 3 = 6; ``b``: feed-confirmed, no later split ⇒ 1; ``c``: absent.
+    assert batched == {a.id: Decimal("6"), b.id: Decimal("1")}
+    # Parity with the per-instrument helper for the ids that have split data.
+    for instr_id in (a.id, b.id):
+        assert batched[instr_id] == splits_repo.cumulative_factor_after(session, instr_id, as_of)
+    assert c.id not in batched
+
+
+def test_cumulative_factors_after_empty_ids(session: Session) -> None:
+    assert splits_repo.cumulative_factors_after(session, [], date(2024, 1, 1)) == {}
+
+
 def test_cumulative_split_factor_after_none_when_no_data(session: Session) -> None:
     instr = instruments_repo.get_or_create(session, symbol="NONE", asset_class="etf")
     session.flush()

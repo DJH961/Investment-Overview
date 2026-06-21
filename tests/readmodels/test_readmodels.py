@@ -16,6 +16,7 @@ from investment_dashboard.readmodels import overview as overview_rm
 from investment_dashboard.readmodels._serialize import dec, iso
 from investment_dashboard.repositories import (
     accounts_repo,
+    fx_repo,
     instrument_overrides_repo,
     instruments_repo,
     prices_repo,
@@ -41,6 +42,9 @@ def seeded(session: Session) -> None:
     vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
     instrument_overrides_repo.set_category(session, vti.id, "US Stocks")
     prices_repo.upsert_closes(session, vti.id, {date.today(): Decimal("230.00")})
+    # The USD brokerage holding needs an EUR↔USD rate to be valued in EUR; the
+    # par 1:1 fallback is gone (A2), so seed a rate or its EUR value is blank.
+    fx_repo.upsert_rates(session, {date(2024, 1, 1): Decimal("1.10")})
     session.add_all(
         [
             Transaction(

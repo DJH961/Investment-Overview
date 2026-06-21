@@ -107,6 +107,23 @@ Bug-fix release for the portable bundle's first-start experience.
   compression. This removes thousands of tiny files, the main cause of the slow
   unzip.
 
+### Added — broker import: structured per-row reporting (audit D2–D5)
+- **Imports no longer abort on the first bad row (D3).** The Fidelity / Vanguard
+  CSV and Vanguard XLSX parsers now collect per-row problems into a structured
+  `ParseReport` and keep going, so a single unknown transaction type no longer
+  discards an otherwise-good 100-row import. Skipped rows (with their source
+  line numbers) are reported in the Transactions import summary.
+- **Light row validation (D4).** Parsed rows are checked for a non-negative
+  price and that `amount ≈ quantity × price` (± fees) on trade rows; failures
+  are surfaced as warnings while the row is still imported.
+- **US-locale assumption documented and enforced (D5).** Decimal/date parsing
+  is centralised in `adapters/locale_parsing.py`; an EU-locale value (comma
+  decimal, `DD/MM` date) now raises `LocaleError` and is reported per-row
+  instead of being silently mis-parsed.
+- **Unresolved symbols surfaced (D2).** When the data provider returns nothing
+  for a symbol (delisted, a typo, or offline), the enrichment service reports it
+  and the importer lists it under `unresolved_symbols` in the import summary.
+
 ## [2.11.0] — 2026-05-31
 
 Performance pass: the same numbers, computed with far fewer round-trips, and

@@ -9,14 +9,13 @@ from pathlib import Path
 import pytest
 
 from investment_dashboard.adapters.fidelity.parser import parse_fidelity_csv
-from investment_dashboard.adapters.importer_types import UnknownActionError
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "fidelity_sample.csv"
 
 
 @pytest.fixture
 def sample_rows() -> list:  # type: ignore[type-arg]
-    return list(parse_fidelity_csv(FIXTURE.read_text()))
+    return parse_fidelity_csv(FIXTURE.read_text()).rows
 
 
 def test_row_count(sample_rows: list) -> None:  # type: ignore[type-arg]
@@ -63,15 +62,39 @@ def test_external_ids_unique(sample_rows: list) -> None:  # type: ignore[type-ar
 def test_parser_skips_disclaimer_preamble() -> None:
     """Lines before the header are ignored."""
     content = '"some preamble"\n\nRun Date,Action,Symbol,Description,Type,Quantity,Price ($),Commission ($),Fees ($),Accrued Interest ($),Amount ($),Cash Balance ($),Settlement Date\n01/05/2024,INTEREST EARNED,,,Cash,,,,,,5.00,5.00,01/05/2024\n'
-    rows = list(parse_fidelity_csv(content))
+    rows = parse_fidelity_csv(content).rows
     assert len(rows) == 1
     assert rows[0].kind == "interest"
 
 
-def test_unknown_action_raises() -> None:
-    content = "Run Date,Action,Symbol,Description,Type,Quantity,Price ($),Commission ($),Fees ($),Accrued Interest ($),Amount ($),Cash Balance ($),Settlement Date\n01/05/2024,MERGER FOOBAR,,,Cash,,,,,,0,0,01/05/2024\n"
-    with pytest.raises(UnknownActionError):
-        list(parse_fidelity_csv(content))
+def test_unknown_action_is_collected_not_raised() -> None:
+    """Audit D3: an unknown action is reported, not fatal — other rows survive."""
+    content = (
+        "Run Date,Action,Symbol,Description,Type,Quantity,Price ($),Commission ($),"
+        "Fees ($),Accrued Interest ($),Amount ($),Cash Balance ($),Settlement Date\n"
+        "01/05/2024,MERGER FOOBAR,,,Cash,,,,,,0,0,01/05/2024\n"
+        "01/06/2024,INTEREST EARNED,,,Cash,,,,,,5.00,5.00,01/06/2024\n"
+    )
+    report = parse_fidelity_csv(content)
+    # The good row still parses; the MERGER row is collected as an error.
+    assert len(report.rows) == 1
+    assert report.rows[0].kind == "interest"
+    assert report.unknown_actions == ["MERGER FOOBAR"]
+    assert len(report.errors) == 1
+    assert report.errors[0].line is not None
+
+
+def test_eu_locale_amount_collected_as_error() -> None:
+    """Audit D5: an EU-locale decimal is reported, not silently mis-parsed."""
+    content = (
+        "Run Date,Action,Symbol,Description,Type,Quantity,Price ($),Commission ($),"
+        "Fees ($),Accrued Interest ($),Amount ($),Cash Balance ($),Settlement Date\n"
+        '01/05/2024,INTEREST EARNED,,,Cash,,,,,,"1.234,56",0,01/05/2024\n'
+    )
+    report = parse_fidelity_csv(content)
+    assert report.rows == []
+    assert len(report.errors) == 1
+    assert "EU-locale" in report.errors[0].message
 
 
 def test_share_distribution_becomes_split_not_dividend() -> None:
@@ -91,7 +114,7 @@ def test_share_distribution_becomes_split_not_dividend() -> None:
         "10/11/2024,DISTRIBUTION SCHWAB STRATEGIC TR 1000 INDEX ETF (SCHK),"
         "SCHK,SCHWAB STRATEGIC TR 1000 INDEX ETF,Shares,26.1,,,,,728.97,0.00,\n"
     )
-    rows = list(parse_fidelity_csv(header + row))
+    rows = parse_fidelity_csv(header + row).rows
     assert len(rows) == 1
     split = rows[0]
     assert split.kind == "split"
@@ -114,7 +137,7 @@ def test_cash_distribution_stays_dividend() -> None:
         "10/11/2024,DISTRIBUTION SCHWAB US DIVIDEND EQUITY ETF (SCHD),"
         "SCHD,SCHWAB US DIVIDEND EQUITY ETF,Cash,0,,,,,12.34,12.34,\n"
     )
-    rows = list(parse_fidelity_csv(header + row))
+    rows = parse_fidelity_csv(header + row).rows
     assert len(rows) == 1
     assert rows[0].kind == "dividend_cash"
     assert rows[0].net_native == Decimal("12.34")

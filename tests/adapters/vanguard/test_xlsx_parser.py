@@ -10,7 +10,6 @@ from pathlib import Path
 import openpyxl
 import pytest
 
-from investment_dashboard.adapters.importer_types import UnknownActionError
 from investment_dashboard.adapters.vanguard.xlsx_parser import (
     VanguardXlsxParseResult,
     parse_vanguard_xlsx,
@@ -211,7 +210,8 @@ class TestSyntheticWorkbook:
         assert result.rows[0].kind == "deposit"
         assert result.rows[0].net_native == Decimal("-25.0100")
 
-    def test_unknown_action_raises(self) -> None:
+    def test_unknown_action_is_collected_not_raised(self) -> None:
+        # Audit D3: an unknown transaction type is reported, not fatal.
         data = _build_xlsx(
             [
                 (
@@ -228,8 +228,11 @@ class TestSyntheticWorkbook:
                 ),
             ]
         )
-        with pytest.raises(UnknownActionError):
-            parse_vanguard_xlsx(data)
+        report = parse_vanguard_xlsx(data)
+        assert report.rows == []
+        assert report.unknown_actions == ["Some Brand New Type"]
+        assert len(report.errors) == 1
+        assert report.errors[0].line is not None
 
     def test_missing_header_raises(self) -> None:
         wb = openpyxl.Workbook()

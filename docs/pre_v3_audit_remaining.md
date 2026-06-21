@@ -23,6 +23,13 @@ records, for each cluster, what is done, what is deferred, and why.
 | **D2** (partial) | The Vanguard XLSX parser now refuses an import when a data cell lands under a column the header doesn't name (mis-aligned layout), instead of silently dropping it via `zip(strict=False)`. | `adapters/vanguard/xlsx_parser.py` |
 | **H2** | Full-metrics golden-master regression harness for `compute_portfolio_metrics`. | `tests/services/test_metrics_golden_master.py`, `tests/services/golden/portfolio_metrics.json` |
 | **F1** (partial) | README status pill re-synced from v2.9.4 → v2.11.1. | `README.md` |
+| **A2** | The silent 1:1 FX fallback is gone: `positions_service._eur_rate_for` now returns `None` when a rate is missing, and a non-EUR holding/cash with no rate values to **blank** (ZERO + `value_warning`) in EUR — never the native amount relabelled at par. `total_portfolio_value` omits unconvertible cash instead of adding a par figure. | `services/positions_service.py`, `tests/services/test_services.py` |
+| **B1** | `compute_portfolio_metrics` now threads a per-request `_ValuationCache` memoising `compute_positions`/`total_portfolio_value` by date, so today/year-start/month-start/daily-growth/expense roll-ups are computed once each instead of repeatedly. Byte-stable under H2. | `services/metrics_service.py` |
+| **B2** | The N+1 `close_as_of`/`latest_close`/`cumulative_split_factor_after` per held instrument in `compute_positions` is replaced by three batched lookups (`prices_repo.latest_closes` window query, `splits_repo.cumulative_factors_after`). Parity tests assert batched == singular. | `repositories/prices_repo.py`, `repositories/splits_repo.py`, `services/prices_service.py`, `services/positions_service.py` |
+| **B3** | `_best_effort_ytd_start_value` prefers the earliest positive stored daily snapshot in the window, falling back to the bounded live loop only when no snapshots cover it. | `services/metrics_service.py` |
+| **B4** | `snapshots_service.warm_range` bulk-reads the window once and skips already-cached historical days instead of reopening a cache session per day. | `services/snapshots_service.py` |
+| **B5** | `build_portfolio_cashflows_dual` builds the EUR and USD cashflow streams in a single ledger pass; `compute_portfolio_metrics` uses it for both the full-ledger and YTD legs. | `services/metrics_service.py` |
+| **B6** | `backfill_missing_legs` (non-force) and `missing_fx_dates` now select only rows with a NULL leg via `transactions_repo.list_transactions_missing_legs` instead of loading the whole ledger and filtering in Python. | `repositories/transactions_repo.py`, `services/transaction_fx_service.py` |
 
 ### Verified already fixed (no change needed)
 
@@ -48,39 +55,63 @@ records, for each cluster, what is done, what is deferred, and why.
 
 ### A. Correctness
 
-* **A2 — Silent 1:1 FX fallback for non-EUR holdings/cash.**
-  `services/positions_service.py::_eur_rate_for` still falls back to
-  `Decimal(1)` when a rate lookup fails, and `total_portfolio_value` does the
-  same for cash. Latent today (only EUR+USD are live) but a correctness trap
-  the moment a third currency is added for 3.0. **Deferred because** a correct
-  fix is a *policy* decision that ripples through the return types of
-  `compute_positions` / `total_portfolio_value` and every caller; it should
-  land together with the B-series valuation engine (below) under golden-master
-  protection, not as an isolated edit. Recommended policy: "FX missing ⇒
-  value unavailable (`None`/blank), never par."
+* **A2 — ✅ done.** The silent 1:1 FX fallback for non-EUR holdings/cash is
+  removed. `services/positions_service.py::_eur_rate_for` now returns `None`
+  (not `Decimal(1)`) when a rate lookup fails; a non-EUR holding with no rate
+  values to **blank** in EUR (`current_value_eur == 0` + `value_warning`) rather
+  than relabelling the native amount as EUR at par, and `total_portfolio_value`
+  omits an unconvertible non-EUR cash balance instead of adding a par figure.
+  Policy applied: "FX missing ⇒ value unavailable, never par." Regression tests:
+  `test_missing_fx_values_non_eur_holding_blank_not_par` /
+  `test_missing_fx_excludes_non_eur_cash_from_total`. (Tests that previously
+  leaned on the par fallback now seed an FX rate or use an EUR-native holding.)
 
-### B. Performance / execution — the structural refactor
+### B. Performance / execution — the structural refactor — ✅ done
 
-The metrics path re-rolls the whole ledger from inception many times per
-render, with nested N+1 price/FX lookups. The single recommended fix is **a
-reusable, in-request portfolio-valuation engine that walks the ledger once and
-exposes value-at-date, holdings, and cashflows**, reused across the metric set.
+The metrics path used to re-roll the whole ledger from inception many times per
+render, with nested N+1 price/FX lookups. The B-series lands the targeted fixes
+below; all stay **byte-stable under the H2 golden-master** (same KPI numbers,
+fewer round-trips). Direct parity tests back the batched primitives.
 
-* **B1** — `compute_portfolio_metrics` calls `total_portfolio_value()` for
-  today, year-start, month-start, and inside daily-growth — each a full
-  recompute. Memoise `(session, as_of) → value` / single-pass valuation.
-* **B2** — N+1 `latest_close` / `close_as_of` / `cumulative_split_factor_after`
-  per held instrument in `compute_positions`. Replace with batched
-  "closes/splits for these instrument-ids as-of date" queries.
-* **B3** — `_best_effort_ytd_start_value` day-by-day loop (up to 31 full
-  valuations). Replace the linear scan with a nearest-snapshot lookup (daily
-  snapshots now exist).
-* **B4** — `snapshots_service.warm_range` walks day-by-day from inception each
-  day. Carry the prior day's holdings forward incrementally.
-* **B5** — `build_portfolio_cashflows` loops the full ledger twice (EUR then
-  USD). Build both legs in one pass.
-* **B6** — `backfill_missing_legs` / deposit queries load whole tables then
-  filter in Python. Push the filter into the query.
+* **B1 — ✅ done.** `compute_portfolio_metrics` threads a per-request
+  `_ValuationCache` that memoises `compute_positions` and
+  `total_portfolio_value` by date. The terminal value, daily-growth holdings
+  and expense figures now reuse the single `as_of` roll-up, and year-start /
+  month-start / daily-growth dates are valued once each. `total_portfolio_value`
+  gained an optional `positions=` parameter so a precomputed roll-up is reused.
+* **B2 — ✅ done.** The per-instrument `close_as_of` / `latest_close` /
+  `cumulative_split_factor_after` calls in `compute_positions` are replaced by
+  batched lookups: `prices_repo.latest_closes` (a single `ROW_NUMBER()` window
+  query, with/without an `on_or_before` bound) and
+  `splits_repo.cumulative_factors_after` (one grouped query). Service wrappers
+  `prices_service.latest_closes` / `closes_as_of` /
+  `cumulative_split_factors_after` keep the cache-tier routing. Parity tests
+  (`test_latest_closes_batch_matches_singular`,
+  `test_cumulative_factors_after_batch_matches_singular`) assert the batched
+  results equal the singular helpers id-for-id.
+* **B3 — ✅ done.** `_best_effort_ytd_start_value` first consults
+  `snapshots_repo.list_in_range` for the earliest positive stored snapshot in
+  the bounded window (persisted snapshots already hold the EUR total), only
+  falling back to the original day-by-day live valuation when no snapshot covers
+  the window (brand-new portfolios).
+* **B4 — ✅ done (round-trip reduction).** `snapshots_service.warm_range`
+  bulk-reads the window via `stored_snapshots_in_range` and skips
+  already-cached historical days instead of reopening a cache-tier session per
+  day; today is still always recomputed. *Deferred:* the deeper
+  "carry-holdings-forward" incremental engine — it would have to reproduce
+  `compute_positions`' split/FX/money-market valuation per day exactly, which is
+  outside the golden-master safety net and higher-risk than the round-trip win
+  justifies right now.
+* **B5 — ✅ done.** `build_portfolio_cashflows_dual` emits the EUR and USD
+  streams in one ledger pass; `compute_portfolio_metrics` uses it for both the
+  full-ledger and YTD legs (replacing four single-currency passes with two
+  dual passes). The original `build_portfolio_cashflows` stays for other
+  callers.
+* **B6 — ✅ done.** `transactions_repo.list_transactions_missing_legs` pushes
+  the `net_eur IS NULL OR net_usd IS NULL` predicate into SQL;
+  `backfill_missing_legs` (non-force path) and `missing_fx_dates` use it instead
+  of loading the whole ledger and filtering in Python. `force=True` still
+  recomputes every row.
 
 > ⚠️ **Land B under the H2 golden-master.** The harness committed in this pass
 > (`tests/services/test_metrics_golden_master.py`) exists precisely so the
@@ -119,15 +150,23 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
 * **D1** — ✅ done (retry/backoff + 429).
 * **D2** (partial) — ✅ XLSX misalignment now fails loudly: a data cell under an
   unnamed header column raises rather than being dropped by `zip(strict=False)`.
-  *Still to do:* surface yfinance empty-dict (delisted/typo) results to the user
-  via the import/diagnostics surface.
-* **D3** — Import aborts on the first unknown action. Collect row-level errors
-  and report them together so one `MERGER` row doesn't discard a 100-row
-  import.
-* **D4** — No input validation on parsed rows. Add light consistency checks
-  (positive price; `amount ≈ quantity × price` for non-dividend rows).
-* **D5** — US-only decimal/date assumptions. Document the assumption explicitly
-  and fail loudly rather than silently mis-parse an EU-locale export.
+  ✅ yfinance empty-dict (delisted/typo) results now surface to the user:
+  `enrich_instrument` reports the symbol via an `on_unresolved` callback and the
+  importer collects them into `ImportResult.unresolved_symbols`, shown in the
+  Transactions import status.
+* **D3** — ✅ done. The parsers no longer abort on the first unknown action: each
+  unmapped/`un-parseable` row is collected as a `RowIssue` (and skipped) so one
+  `MERGER` row no longer discards a 100-row import. Reported via
+  `ParseReport.errors` / `ImportResult.errors`.
+* **D4** — ✅ done. Light per-row consistency checks (`adapters/row_validation.py`):
+  non-negative price, non-zero quantity on trade rows, and
+  `amount ≈ quantity × price` (± fees) for buy/sell/reinvest. Failures are
+  *warnings* — the row is still imported but flagged in
+  `ImportResult.warnings`.
+* **D5** — ✅ done. The US-locale decimal/date assumption is documented and
+  enforced in one place (`adapters/locale_parsing.py`): an EU-locale value
+  (comma decimal, `DD/MM` date) now raises `LocaleError` and is reported as a
+  per-row error instead of being silently mis-parsed by `replace(",", "")`.
 
 ### E. UI / UX
 
@@ -260,11 +299,13 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
    credential. (The mobile/SQLCipher passphrases are masked at the call sites
    that hold them via the `extra=` argument.)
 
-4. **Make the Vanguard/Fidelity importers report a structured row-ledger.** D2/D3
-   /D4 all want the importer to *collect* per-row outcomes (imported, dropped,
-   unknown-action, validation-failed) instead of aborting on the first problem.
-   A single `ImportReport(rows_ok, skipped, errors[])` value object returned from
-   the parsers would let the UI render one reconciliation table and feed the H1
-   Data-Health page — turning today's all-or-nothing import into an auditable
-   one. The XLSX misalignment guard added in this pass is a fail-fast stopgap
-   that this report would later upgrade to a per-row diagnostic.
+4. **Make the Vanguard/Fidelity importers report a structured row-ledger.** ✅
+   **Landed.** D2/D3/D4 all wanted the importer to *collect* per-row outcomes
+   (imported, dropped, unknown-action, validation-failed) instead of aborting on
+   the first problem. `adapters/importer_types.ParseReport` (rows, sweeps,
+   `unknown_actions`, `errors[]`, `warnings[]`) is now returned by all three
+   parsers and folded into `ImportResult` (plus `unresolved_symbols` from
+   enrichment), so the Transactions import surface renders one reconciliation
+   summary. The XLSX misalignment guard remains a fail-fast structural stop on
+   top of this per-row reporting. This is the natural feed for the H1
+   Data-Health page when it lands.

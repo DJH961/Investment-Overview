@@ -6,7 +6,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
@@ -76,6 +76,43 @@ def close_as_of(session: Session, instrument_id: int, as_of: date) -> Decimal | 
         .limit(1)
     )
     return session.scalars(stmt).one_or_none()
+
+
+def latest_closes(
+    session: Session,
+    instrument_ids: Sequence[int],
+    *,
+    on_or_before: date | None = None,
+) -> dict[int, Decimal]:
+    """Batched :func:`latest_close` / :func:`close_as_of` for many instruments.
+
+    Returns ``{instrument_id: close_native}`` holding each instrument's most
+    recent print (forward-filled) at or before ``on_or_before`` — or its
+    overall latest print when ``on_or_before`` is ``None``. Instruments with no
+    qualifying print are simply absent from the mapping (mirroring the ``None``
+    returned by the per-instrument helpers). One window query replaces the N+1
+    per-instrument lookups in ``compute_positions`` (B2).
+    """
+    if not instrument_ids:
+        return {}
+    row_number = (
+        func.row_number()
+        .over(
+            partition_by=PriceHistory.instrument_id,
+            order_by=PriceHistory.date.desc(),
+        )
+        .label("rn")
+    )
+    inner = select(
+        PriceHistory.instrument_id.label("instrument_id"),
+        PriceHistory.close_native.label("close_native"),
+        row_number,
+    ).where(PriceHistory.instrument_id.in_(instrument_ids))
+    if on_or_before is not None:
+        inner = inner.where(PriceHistory.date <= on_or_before)
+    subq = inner.subquery()
+    stmt = select(subq.c.instrument_id, subq.c.close_native).where(subq.c.rn == 1)
+    return {iid: close for iid, close in session.execute(stmt).all()}
 
 
 def instrument_ids_with_nonpositive_close(
