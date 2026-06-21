@@ -252,7 +252,6 @@ def _venv_launch_python() -> Path:
     return VENV_PYTHON
 
 
-
 def _run_checked(args: list[str], step: str) -> None:
     try:
         subprocess.check_call(args, cwd=ROOT)

@@ -38,7 +38,8 @@ class BackgroundError:
 
 _lock = threading.Lock()
 _log: deque[BackgroundError] = deque(maxlen=_MAX_LOG_ENTRIES)
-_seq = 0
+#: Monotonic error counter, boxed in a dict so updates need no ``global``.
+_state: dict[str, int] = {"seq": 0}
 
 
 def record_error(source: str, message: str) -> BackgroundError:
@@ -48,10 +49,9 @@ def record_error(source: str, message: str) -> BackgroundError:
     monotonically increasing counter the UI uses to detect *new* errors without
     holding a reference to the event itself.
     """
-    global _seq
     with _lock:
-        _seq += 1
-        event = BackgroundError(source=source, message=message, seq=_seq)
+        _state["seq"] += 1
+        event = BackgroundError(source=source, message=message, seq=_state["seq"])
         _log.append(event)
     return event
 
@@ -75,12 +75,11 @@ def recent(limit: int | None = None) -> list[BackgroundError]:
 def sequence() -> int:
     """Return the current error counter (0 when nothing has failed yet)."""
     with _lock:
-        return _seq
+        return _state["seq"]
 
 
 def reset() -> None:
     """Clear all recorded errors. Test-only helper."""
-    global _seq
     with _lock:
         _log.clear()
-        _seq = 0
+        _state["seq"] = 0
