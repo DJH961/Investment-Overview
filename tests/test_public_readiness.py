@@ -1,9 +1,9 @@
 """Public-readiness guard (proposal §7.5).
 
-This repository is intended to go **public**, which exposes every tracked file.
-The §7.5 pre-flip checklist is otherwise a manual ritual; this test turns the
-"no secrets or real data files are tracked" items into a regression that fails
-fast in CI if such a file is ever committed.
+This repository is **public**, so every tracked file is world-readable. The
+§7.5 checklist is otherwise a manual ritual; this test turns the "no secrets or
+real data files are tracked" items into a regression that fails fast in CI if
+such a file is ever committed.
 
 It deliberately does **not** flag the anonymized synthetic fixtures under
 ``docs/Comparison Files/`` (those are intentionally tracked) — it only catches
