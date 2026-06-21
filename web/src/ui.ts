@@ -145,6 +145,13 @@ function renderNotes(o: OverviewView): HTMLElement[] {
       ]),
     );
   }
+  if (o.staleValueSymbols.length > 0) {
+    notes.push(
+      h("p", { class: "note" }, [
+        `Using the last exported value for ${o.staleValueSymbols.join(", ")} (no live price available).`,
+      ]),
+    );
+  }
   if (o.fxMissingCurrencies.length > 0) {
     notes.push(
       h("p", { class: "note warn" }, [
@@ -212,7 +219,9 @@ function chip(text: string, cls = ""): HTMLElement {
 function renderHoldingRow(holding: HoldingView): HTMLElement {
   const symChildren: Array<Node | string> = [holding.symbol];
   if (holding.priceType === "nav") symChildren.push(h("span", { class: "pill" }, ["NAV"]));
-  if (holding.priceNative !== null && !holding.priceIsLive) {
+  if (holding.valueIsStale) {
+    symChildren.push(h("span", { class: "pill stale" }, ["stale value"]));
+  } else if (holding.priceNative !== null && !holding.priceIsLive) {
     symChildren.push(h("span", { class: "pill stale" }, ["last known"]));
   }
 
@@ -705,9 +714,14 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
   if (!chart) return null;
 
   const cls = signClass(o.todayMoveEur);
-  const note = o.totalValueIsComplete
-    ? `${dates[0]} → today · live tip from your current total value.`
-    : `${dates[0]} → ${dates[dates.length - 1]} · live total is incomplete (missing prices or FX rates), so the curve stops at the last fully-valued day.`;
+  let note: string;
+  if (!o.totalValueIsComplete) {
+    note = `${dates[0]} → ${dates[dates.length - 1]} · live total is incomplete (missing prices or FX rates), so the curve stops at the last fully-valued day.`;
+  } else if (o.staleValueSymbols.length > 0) {
+    note = `${dates[0]} → today · live tip from your current total value (last exported value used for ${o.staleValueSymbols.join(", ")}).`;
+  } else {
+    note = `${dates[0]} → today · live tip from your current total value.`;
+  }
   return h("section", { class: "card value-chart" }, [
     h("div", { class: "section-head" }, [
       h("h2", {}, ["Value over time"]),

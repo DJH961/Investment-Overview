@@ -56,6 +56,7 @@ function overview(extra: Partial<OverviewView> = {}): OverviewView {
     fxRateEurUsd: null,
     holdingsCount: 0,
     missingPriceSymbols: [],
+    staleValueSymbols: [],
     fxMissingCurrencies: [],
     totalValueIsComplete: true,
     liveDegradedReason: null,

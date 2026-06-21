@@ -39,6 +39,12 @@ export interface HoldingView {
   priceNative: Decimal | null;
   /** True when a fresh live quote supplied the price (vs. exported fallback). */
   priceIsLive: boolean;
+  /**
+   * True when `valueEur` could not be computed from any price (no live quote,
+   * no last-known price, or no FX leg) and instead falls back to the last value
+   * exported for this holding. The figure is then stale, not live.
+   */
+  valueIsStale: boolean;
   valueEur: Decimal | null;
   costBasisEur: Decimal | null;
   todayMoveEur: Decimal | null;
@@ -72,17 +78,23 @@ export interface OverviewView {
   fxRateEurUsd: Decimal | null;
   holdingsCount: number;
   /**
-   * Symbols with no usable price at all — no live quote and no
-   * `last_known_price_native` fallback — so they are excluded from totals.
+   * Symbols with no value at all — no live quote, no `last_known_price_native`,
+   * and no exported fallback value — so they are excluded from totals.
    */
   missingPriceSymbols: string[];
+  /**
+   * Symbols whose value could not be computed live (no quote/last-known price,
+   * or no FX leg) and instead falls back to the last exported value. They are
+   * still counted in totals, but the figure is stale rather than live.
+   */
+  staleValueSymbols: string[];
   /** Currencies with no FX leg, so their EUR value could not be computed. */
   fxMissingCurrencies: string[];
   /**
-   * True when every holding could be valued in EUR, so `totalValueEur` is a
-   * complete figure. False when some holdings fell out of the sum because they
-   * had no usable price or no FX rate — in that case the total under-counts the
-   * portfolio and must not be drawn as a live tip on the value chart.
+   * True when every holding contributes a value to `totalValueEur` (live,
+   * last-known, or exported fallback), so the total is a complete figure that
+   * can be drawn as the live tip on the value chart. False only when a holding
+   * dropped out entirely (no price, FX, or fallback), under-counting the total.
    */
   totalValueIsComplete: boolean;
   /**
@@ -155,6 +167,30 @@ function holdingCashflows(holding: ExportHolding): Cashflow[] {
   return holding.cashflows.map((cf) => ({ date: cf.date, amount: new Decimal(cf.amount) }));
 }
 
+/**
+ * The most recent value (EUR) exported per holding symbol, used as a fallback
+ * when live data cannot value a holding. Prefers the analytics attribution end
+ * value (as of export); falls back to the holding's start-of-month/year opening
+ * so a value is still available even when no analytics block was exported.
+ */
+function lastExportedValues(data: MobileExport): Map<string, Decimal> {
+  const values = new Map<string, Decimal>();
+  for (const [symbol, opening] of Object.entries(data.period_openings?.holdings ?? {})) {
+    const candidate = opening.month_start_value_eur ?? opening.year_start_value_eur;
+    if (candidate !== undefined && candidate !== null && candidate !== "") {
+      values.set(symbol, new Decimal(candidate));
+    }
+  }
+  // Attribution end values are as-of-export (newer than the period openings),
+  // so they take precedence when present.
+  for (const row of data.analytics?.attribution ?? []) {
+    if (row.end_value !== null && row.end_value !== undefined) {
+      values.set(row.symbol, new Decimal(row.end_value));
+    }
+  }
+  return values;
+}
+
 function priceForHolding(holding: ExportHolding, quote: Quote | undefined): {
   price: Decimal | null;
   isLive: boolean;
@@ -172,6 +208,7 @@ function buildHolding(
   fx: FxRates,
   asOf: string,
   fxMissing: Set<string>,
+  fallbackValueEur: Decimal | null,
 ): HoldingView {
   const shares = new Decimal(holding.shares);
   const { price, isLive } = priceForHolding(holding, quote);
@@ -181,11 +218,22 @@ function buildHolding(
   if (price !== null) {
     const valueNative = shares.times(price);
     valueEur = convert(valueNative, currency, EUR, fx);
-    if (valueEur === null && currency !== EUR) fxMissing.add(currency);
   }
 
+  // When no price/FX could value the holding, fall back to the last value
+  // exported for it so it still counts toward the total (with a stale flag),
+  // rather than silently dropping out and dragging the headline/chart down.
+  let valueIsStale = false;
+  if (valueEur === null && fallbackValueEur !== null) {
+    valueEur = fallbackValueEur;
+    valueIsStale = true;
+  }
+
+  // Only flag a genuinely missing FX leg when it actually left the holding
+  // unvalued (no fallback recovered it).
+  if (valueEur === null && price !== null && currency !== EUR) fxMissing.add(currency);
+
   const costBasisEur = convert(new Decimal(holding.cost_basis_native), currency, EUR, fx);
-  if (costBasisEur === null && currency !== EUR) fxMissing.add(currency);
 
   // Today's move only applies to market-priced rows with a live previous close.
   let todayMoveEur: Decimal | null = null;
@@ -215,6 +263,7 @@ function buildHolding(
     shares,
     priceNative: price,
     priceIsLive: isLive,
+    valueIsStale,
     valueEur,
     costBasisEur,
     todayMoveEur,
@@ -236,10 +285,25 @@ export function buildDashboard(
   const asOf = todayIso(now);
   const fxMissing = new Set<string>();
   const missingPrice: string[] = [];
+  const staleValue: string[] = [];
+
+  // Last value exported per holding (EUR), used as a fallback when no live
+  // price/FX can value it. Sourced from the analytics attribution end values.
+  const fallbackValues = lastExportedValues(data);
 
   const holdings = data.holdings.map((h) => {
-    const view = buildHolding(h, quotes.get(h.price_symbol), fx, asOf, fxMissing);
-    if (view.priceNative === null) missingPrice.push(h.symbol);
+    const view = buildHolding(
+      h,
+      quotes.get(h.price_symbol),
+      fx,
+      asOf,
+      fxMissing,
+      fallbackValues.get(h.symbol) ?? null,
+    );
+    // A holding with no value at all (no price, FX, or fallback) is dropped from
+    // totals; one valued from the export fallback is counted but flagged stale.
+    if (view.valueEur === null) missingPrice.push(h.symbol);
+    else if (view.valueIsStale) staleValue.push(h.symbol);
     return view;
   });
 
@@ -364,6 +428,7 @@ export function buildDashboard(
     fxRateEurUsd,
     holdingsCount: holdings.length,
     missingPriceSymbols: missingPrice,
+    staleValueSymbols: staleValue,
     fxMissingCurrencies: [...fxMissing],
     totalValueIsComplete: missingPrice.length === 0 && fxMissing.size === 0,
     liveDegradedReason,
