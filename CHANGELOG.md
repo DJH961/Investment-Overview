@@ -14,6 +14,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added — local app: live connection & navigation feedback
+- **Top progress bar.** A thin accent bar appears the instant you click a nav
+  item or link (and on every page load/unload), so navigation always feels
+  responsive even while the server builds the next page synchronously. Lives in
+  `ui/connectivity.py` and is injected on every page from `main._register_pages`.
+- **Immediate "connection lost" banner + header status dot.** The websocket to
+  the local server is now surfaced continuously: an always-on header dot
+  (green connected / amber reconnecting / red offline) and a prominent
+  full-width banner that shows the **moment** the socket drops — replacing
+  NiceGUI's easy-to-miss bottom-corner popup, which only fades in after a 2 s
+  delay. The banner includes a **Reconnect now** escape hatch so a wedged tab is
+  never a dead end. Driven from the real `window.socket` plus the browser
+  `online`/`offline` events, attached additively so NiceGUI's own handlers keep
+  working.
+- **Longer reconnect window.** `ui.run(reconnect_timeout=10.0)` lets the existing
+  tab ride out brief local stalls (a heavy metrics build, a slow cloud-synced DB
+  read) and resume with its state intact, instead of being discarded after 3 s
+  and forced into a full reload — the "I seemingly disconnect and get stuck"
+  symptom.
+
 ## [3.0.0] — 2026-06-21
 
 The **v3.0 live-web companion** lands: an encrypted publish pipeline and an
