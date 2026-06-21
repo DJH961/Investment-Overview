@@ -11,6 +11,7 @@ from investment_dashboard import __version__
 from investment_dashboard.boot import run_boot_sequence, run_deferred_network_refresh
 from investment_dashboard.config import get_settings
 from investment_dashboard.logging import configure_logging
+from investment_dashboard.ui import connectivity
 from investment_dashboard.ui import style as ui_style
 from investment_dashboard.ui.pages import (
     analytics,
@@ -43,6 +44,9 @@ _LIVE_REFRESH_INTERVAL_SECONDS = 60.0
 def _register_pages() -> None:
     """Register every page module with NiceGUI."""
     ui_style.install()
+    # Inject the live connection + navigation feedback layer (top progress bar,
+    # immediate "connection lost" banner, header status dot) on every page.
+    connectivity.install()
     overview.register()
     deposits.register()
     transactions.register()
@@ -152,6 +156,13 @@ def run() -> None:
         title="Investment Dashboard",
         reload=False,
         show=True,
+        # The local server occasionally stalls briefly (a heavy metrics build,
+        # a slow disk/cloud-synced DB read). The default 3s reconnect window is
+        # short enough that such a stall discards the client and forces a full
+        # reload — which is exactly the "I seemingly disconnect and get stuck"
+        # symptom. A longer window lets the existing tab ride out the stall and
+        # resume with its state intact.
+        reconnect_timeout=10.0,
     )
 
 
