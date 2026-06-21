@@ -14,7 +14,12 @@ explicit goal too, but whenever the two are in tension, **mobile wins**.
 Concretely, that means:
 
 - Single-column, thumb-reachable layout by default; wider screens get more
-  breathing room and multi-column KPI grids via `min-width` media queries.
+  breathing room, multi-column KPI grids, and — on desktop/widescreen — a
+  multi-column dashboard grid (headline value beside the return horizons, a
+  full-width KPI strip, and the holdings list as the main column with the
+  allocation panel beside it) so the extra space isn't wasted. This is layered
+  on with `min-width` media queries only; the markup and mobile source order
+  never change.
 - Holdings render as a scannable **list** (symbol · name · value · today's
   move), never a wide horizontal-scrolling spreadsheet table.
 - The headline portfolio value and today's move are the hero of the screen;

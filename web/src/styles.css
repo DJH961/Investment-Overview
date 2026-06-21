@@ -88,7 +88,16 @@ body {
   font: 16px/1.5 "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     sans-serif;
   color: var(--fg);
-  background: var(--bg) var(--bg-grad) fixed;
+  /* Keep colour and gradient as separate properties: `--bg-grad` is a
+   * multi-layer image (two radial gradients), so folding it into the
+   * `background` shorthand alongside `--bg` would push the colour off the last
+   * layer and make the whole declaration invalid — which left the page
+   * background transparent (white) in pinned dark mode while only the cards
+   * changed. Splitting them keeps the page background theme-aware. */
+  background-color: var(--bg);
+  background-image: var(--bg-grad);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -421,6 +430,11 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .demo-banner strong { color: var(--warn); }
 
+/* Demo wrapper: a plain full-width block so the sample dashboard flows exactly
+ * like the live app (the centred `.screen` layout is only for setup/unlock and
+ * would shrink-wrap the dashboard to its content width, overflowing on phones). */
+.demo-shell { min-height: 100vh; }
+
 /* --- Allocation (de-emphasised, collapsible) ------------------------------ */
 .allocation {
   background: var(--card);
@@ -503,4 +517,40 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .topbar-inner { padding: 0.85rem 1.4rem; }
   .hero-value { font-size: 3.1rem; }
   .holding-main { align-items: center; }
+}
+
+/* --- Widescreen: a smart multi-column dashboard --------------------------- */
+/* Mobile-first still wins: the single-column stack above is the default and the
+ * source order (hero → return horizons → KPIs → holdings → allocation) is kept
+ * intact. On wide viewports we lay the *same* markup out as a dashboard grid so
+ * the space isn't wasted on huge empty side margins: the headline value and the
+ * return horizons share the top row, the KPIs span a full-width strip, and the
+ * holdings list runs as the main column with the allocation panel beside it. */
+@media (min-width: 64rem) {
+  .topbar-inner,
+  .content { max-width: 78rem; }
+  .content {
+    grid-template-columns: minmax(0, 1fr) 22rem;
+    grid-template-areas:
+      "hero     returns"
+      "stats    stats"
+      "holdings allocation"
+      "disc     disc";
+    align-items: start;
+    column-gap: 1.25rem;
+    row-gap: 1.2rem;
+  }
+  .content > .hero { grid-area: hero; }
+  .content > .segment { grid-area: returns; align-self: stretch; align-content: center; }
+  .content > .stats { grid-area: stats; }
+  .content > .holdings { grid-area: holdings; }
+  .content > .allocation { grid-area: allocation; align-self: start; }
+  .content > .disclaimer { grid-area: disc; }
+}
+
+/* On true widescreen, give the content a little more room and a wider sidebar. */
+@media (min-width: 100rem) {
+  .topbar-inner,
+  .content { max-width: 88rem; }
+  .content { grid-template-columns: minmax(0, 1fr) 24rem; }
 }

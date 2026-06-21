@@ -190,7 +190,7 @@ export class App {
       },
       "Exit demo",
     );
-    this.mount(h("div", { class: "screen demo" }, [banner, dashboard]));
+    this.mount(h("div", { class: "demo-shell" }, [banner, dashboard]));
   }
 
   // --- Load pipeline ----------------------------------------------------------
