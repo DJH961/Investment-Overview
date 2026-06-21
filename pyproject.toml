@@ -5,7 +5,7 @@ description = "Single-user, locally-hosted investment tracking dashboard unifyin
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [{ name = "D. Henke" }]
-license = { text = "Proprietary" }
+license = { text = "PolyForm-Noncommercial-1.0.0" }
 keywords = ["investing", "portfolio", "xirr", "twr", "nicegui"]
 classifiers = [
     "Private :: Do Not Upload",

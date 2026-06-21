@@ -331,4 +331,10 @@ GitHub's private vulnerability reporting rather than a public issue.
 
 ## License
 
-Proprietary, private repository. No public license granted.
+Licensed under the **[PolyForm Noncommercial License 1.0.0](LICENSE.md)**.
+
+In short: you may use, copy, modify, and share this software freely for **any
+noncommercial purpose** — personal use, hobby projects, study, research, and use
+by nonprofits, schools, and government bodies. **Commercial use is not
+permitted.** See [`LICENSE.md`](LICENSE.md) for the authoritative terms. This is
+a source-available license, not an OSI-approved "open source" license.
