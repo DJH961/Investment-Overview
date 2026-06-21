@@ -217,6 +217,10 @@ def test_mobile_export_holdings_cash_and_transactions(session: Session) -> None:
     assert by_symbol["VTI"]["price_type"] == "market"
     assert by_symbol["FXAIX"]["price_type"] == "nav"
     assert by_symbol["TG-CASH"]["price_type"] == "nav"
+    # Each priced holding carries the trading day its exported price came from,
+    # so the web can show when the value was last updated (not the export date).
+    assert by_symbol["VTI"]["last_price_date"] == AS_OF.isoformat()
+    assert by_symbol["FXAIX"]["last_price_date"] == AS_OF.isoformat()
     assert export["cash"] == [
         {
             "account_label": "Tagesgeld",

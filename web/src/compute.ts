@@ -237,6 +237,12 @@ function priceForHolding(
   /** Date to show when `at` is null (a NAV's value-date, or the export date). */
   asOfDate: string;
 } {
+  // When we fall back to the exported price, show *when that price was actually
+  // struck* (the holding's last cached close date) rather than the export date —
+  // a fund's NAV exported on a Sunday still applies to the Friday it last
+  // published, never "today". Older exports omit `last_price_date`, so default
+  // to the export's as-of date.
+  const fallbackDate = holding.last_price_date ?? exportAsOf;
   if (quote && quote.price) {
     // NAV-priced holdings (mutual funds / money-market) publish only ~once a
     // trading day. Their live mark comes from the daily `time_series` endpoint,
@@ -262,14 +268,14 @@ function priceForHolding(
         price: quote.price,
         isLive: true,
         at: isNav ? (quote.priceTime ?? null) : (quote.priceTime ?? quote.at ?? null),
-        asOfDate: quote.valueDate ?? exportAsOf,
+        asOfDate: quote.valueDate ?? fallbackDate,
       };
     }
   }
   if (holding.last_known_price_native !== null) {
-    return { price: new Decimal(holding.last_known_price_native), isLive: false, at: null, asOfDate: exportAsOf };
+    return { price: new Decimal(holding.last_known_price_native), isLive: false, at: null, asOfDate: fallbackDate };
   }
-  return { price: null, isLive: false, at: null, asOfDate: exportAsOf };
+  return { price: null, isLive: false, at: null, asOfDate: fallbackDate };
 }
 
 function buildHolding(

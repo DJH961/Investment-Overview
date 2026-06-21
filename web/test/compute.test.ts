@@ -288,6 +288,27 @@ describe("buildDashboard", () => {
     expect(fxaix.priceAsOf).toBeNull();
     expect(fxaix.priceFallbackDate).toBe("2024-05-31");
   });
+
+  it("shows a fallback NAV's real last-update date (last_price_date), not the export date", () => {
+    // Export taken on a Sunday, but FXAIX's NAV last published the prior Friday.
+    const exp = makeExport();
+    exp.meta.as_of = "2024-06-02"; // Sunday export
+    exp.holdings[1].last_price_date = "2024-05-31"; // Friday's NAV strike
+    // No live quote for FXAIX → falls back to the exported last-known price.
+    const m = buildDashboard(exp, quotes, fx, new Date("2024-06-02T12:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.priceIsLive).toBe(false);
+    expect(fxaix.priceAsOf).toBeNull();
+    // The row dates to when the value was actually updated, not the export day.
+    expect(fxaix.priceFallbackDate).toBe("2024-05-31");
+  });
+
+  it("falls back to the export date when last_price_date is absent (older exports)", () => {
+    const exp = makeExport(); // as_of 2024-06-01, no last_price_date
+    const m = buildDashboard(exp, quotes, fx, new Date("2024-06-01T12:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.priceFallbackDate).toBe("2024-06-01");
+  });
 });
 
 function makeAnalyticsWith(

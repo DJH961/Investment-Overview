@@ -424,6 +424,11 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   gap: 0.75rem;
 }
 .holding-id { min-width: 0; display: grid; gap: 0.1rem; }
+.holding-topline {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
 .holding-sym {
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -431,6 +436,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   align-items: center;
   gap: 0.35rem;
   flex-wrap: wrap;
+  min-width: 0;
 }
 .holding-name {
   color: var(--muted);
@@ -439,7 +445,14 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.holding-asof { color: var(--faint); font-size: 0.72rem; font-weight: 500; }
+.holding-asof {
+  color: var(--faint);
+  font-size: 0.72rem;
+  font-weight: 500;
+  margin-left: auto;
+  white-space: nowrap;
+  flex: none;
+}
 .holding-figures { text-align: right; display: grid; gap: 0.1rem; flex: none; }
 .holding-value { font-weight: 700; font-variant-numeric: tabular-nums; }
 .holding-change { font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums; }

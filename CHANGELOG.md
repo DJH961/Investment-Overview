@@ -14,6 +14,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed — live-web companion: value chart & holding dates
+
+- **The "Value over time" chart no longer drops off a cliff at the live tip.**
+  The exported analytics equity curve was serialized in the desktop's *display*
+  currency, but the web companion is EUR-native and converts to the display
+  currency at render time — so the curve was effectively converted twice,
+  inflating the whole line by the EUR→display factor and leaving a ~16% vertical
+  drop where the (correctly-EUR) live total joined the (display-currency)
+  history. The export now always emits the curve in EUR, matching every other
+  figure in the bundle. Risk/return metrics are scale-invariant, so they are
+  unchanged.
+- **Removed the redundant date stamp under the chart.** The
+  "`<date>` → today · live tip from your current total value." caption is gone;
+  a note now appears only when there is something to flag (an incomplete live
+  total or a stale holding).
+- **Each holding's "as of" date moved to the top row.** It now sits in the space
+  between the symbol/NAV pill and the price, instead of on a line under the name.
+- **Fallback (non-live) holding dates now show when the value was actually last
+  updated.** The export carries a per-holding `last_price_date` (the trading day
+  the exported price came from); the web uses it instead of the export date, so
+  a fund priced from Friday's NAV no longer reads as "today" when the export was
+  taken on a weekend.
+
 ## [3.1.0] — 2026-06-21
 
 Live-web companion (`web/`): mutual-fund (NAV) pricing, the value-over-time
