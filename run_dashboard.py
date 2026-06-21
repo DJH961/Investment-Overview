@@ -27,11 +27,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 PROJECT_NAME = "investment-dashboard"
 MIN_PYTHON = (3, 12)
-# The supported NiceGUI range is derived from the ``nicegui`` requirement in
-# pyproject.toml at runtime so it can never drift out of sync with the pin. The
-# constants below are only a last-resort fallback used when that requirement
-# cannot be read or parsed (e.g. a corrupted or missing pyproject.toml); they
-# should stay a safe default range but do not need to track every pin bump.
+# Installed versions of the runtime dependencies are validated at startup
+# against the version pins declared in pyproject.toml, so an out-of-date package
+# in an existing .venv can't silently run the app (the bug this guards against
+# was a stale NiceGUI floor). The constants below are a last-resort safety net
+# for NiceGUI (the most breakage-prone pin) used only when pyproject.toml itself
+# can't be read or parsed; they need not track every pin bump.
 FALLBACK_MIN_NICEGUI = (3, 12, 0)
 FALLBACK_MAX_NICEGUI = (4, 0, 0)
 VENV_DIR = ROOT / ".venv"
@@ -186,14 +187,13 @@ def _dependency_problems() -> list[str]:
     if missing:
         problems.append(f"missing modules: {', '.join(sorted(missing))}")
 
-    if not _nicegui_is_supported():
-        minimum, maximum = _supported_nicegui_bounds()
-        wanted = f">={'.'.join(map(str, minimum))},<{'.'.join(map(str, maximum))}"
-        try:
-            found = importlib_metadata.version("nicegui")
-        except importlib_metadata.PackageNotFoundError:
-            found = "not installed"
-        problems.append(f"nicegui {found} does not satisfy {wanted}")
+    # Validate every runtime dependency's installed version against the pins in
+    # pyproject.toml so version drift can't slip through for any package, not
+    # just NiceGUI.
+    for name, lower, upper in _pyproject_requirements():
+        problem = _version_problem(name, lower, upper)
+        if problem:
+            problems.append(problem)
 
     if not _installed_project_is_current():
         try:
@@ -229,38 +229,72 @@ def _project_version() -> str:
     return version
 
 
-def _supported_nicegui_bounds() -> tuple[tuple[int, int, int], tuple[int, int, int]]:
-    """Return the (inclusive lower, exclusive upper) NiceGUI versions we accept.
+_Bound = tuple[int, int, int] | None
 
-    Parsed from the ``nicegui`` requirement in pyproject.toml so the launcher's
-    notion of a supported NiceGUI stays in lock-step with the declared pin.
-    Falls back to module constants if the requirement can't be read or parsed.
+
+def _parse_requirement(entry: str) -> tuple[str, _Bound, _Bound] | None:
+    """Parse a PEP 508 dependency string into (name, lower, exclusive upper).
+
+    ``lower`` is the tightest ``>=``/``==``/``~=`` floor and ``upper`` the
+    tightest ``<`` ceiling found; either may be ``None`` when unconstrained.
+    Returns ``None`` when no package name can be extracted.
+    """
+    name = re.split(r"[<>=!~;\s\[]", entry, maxsplit=1)[0].strip().lower().replace("_", "-")
+    if not name:
+        return None
+
+    lower: _Bound = None
+    upper: _Bound = None
+    for operator, raw_version in re.findall(r"(>=|<=|==|~=|<|>)\s*([0-9][0-9.]*)", entry):
+        version = _version_tuple(raw_version)
+        if operator in {">=", "==", "~="}:
+            lower = version if lower is None else max(lower, version)
+        elif operator == "<":
+            upper = version if upper is None else min(upper, version)
+    return name, lower, upper
+
+
+def _pyproject_requirements() -> list[tuple[str, _Bound, _Bound]]:
+    """Parsed runtime dependencies from pyproject.toml (name + version bounds).
+
+    Falls back to the NiceGUI safety-net bounds if pyproject.toml can't be read
+    or parsed, so the most breakage-prone pin is still enforced.
     """
     try:
         dependencies = _read_pyproject().get("project", {}).get("dependencies", [])
     except RuntimeError:
-        return FALLBACK_MIN_NICEGUI, FALLBACK_MAX_NICEGUI
+        return [("nicegui", FALLBACK_MIN_NICEGUI, FALLBACK_MAX_NICEGUI)]
 
-    lower: tuple[int, int, int] | None = None
-    upper: tuple[int, int, int] | None = None
+    requirements: list[tuple[str, _Bound, _Bound]] = []
     for entry in dependencies:
         if not isinstance(entry, str):
             continue
-        name = re.split(r"[<>=!~ \[]", entry, maxsplit=1)[0].strip().lower()
-        if name.replace("_", "-") != "nicegui":
-            continue
-        for match in re.finditer(r"(>=|<=|==|~=|<|>)\s*([0-9][0-9.]*)", entry):
-            operator, raw_version = match.group(1), match.group(2)
-            version = _version_tuple(raw_version)
-            if operator in {">=", "==", "~="}:
-                # Tightest (highest) lower bound wins across multiple constraints.
-                lower = version if lower is None else max(lower, version)
-            elif operator == "<":
-                # Tightest (lowest) upper bound wins across multiple constraints.
-                upper = version if upper is None else min(upper, version)
-        break
+        parsed = _parse_requirement(entry)
+        if parsed is not None:
+            requirements.append(parsed)
+    return requirements
 
-    return lower or FALLBACK_MIN_NICEGUI, upper or FALLBACK_MAX_NICEGUI
+
+def _format_bounds(lower: _Bound, upper: _Bound) -> str:
+    parts: list[str] = []
+    if lower is not None:
+        parts.append(f">={'.'.join(map(str, lower))}")
+    if upper is not None:
+        parts.append(f"<{'.'.join(map(str, upper))}")
+    return ",".join(parts) if parts else "any version"
+
+
+def _version_problem(name: str, lower: _Bound, upper: _Bound) -> str | None:
+    """Return a problem description if ``name``'s installed version is unsupported."""
+    try:
+        installed = importlib_metadata.version(name)
+    except importlib_metadata.PackageNotFoundError:
+        return f"{name} is not installed (requires {_format_bounds(lower, upper)})"
+
+    parsed = _version_tuple(installed)
+    if (lower is not None and parsed < lower) or (upper is not None and parsed >= upper):
+        return f"{name} {installed} does not satisfy {_format_bounds(lower, upper)}"
+    return None
 
 
 def _installed_project_is_current() -> bool:
@@ -287,16 +321,6 @@ def _version_tuple(version: str) -> tuple[int, int, int]:
     while len(parts) < 3:
         parts.append(0)
     return tuple(parts[:3])
-
-
-def _nicegui_is_supported() -> bool:
-    try:
-        version = importlib_metadata.version("nicegui")
-    except importlib_metadata.PackageNotFoundError:
-        return False
-    parsed = _version_tuple(version)
-    minimum, maximum = _supported_nicegui_bounds()
-    return minimum <= parsed < maximum
 
 
 def _venv_has_dependencies() -> bool:
