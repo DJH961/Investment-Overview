@@ -342,8 +342,8 @@ function renderTabs(tabs: TabDef[]): { nav: HTMLElement; content: HTMLElement } 
   const content = h("div", { class: "content" }, panels);
   // Reopen the section the user last viewed (e.g. across a refresh or currency
   // toggle re-render); default to the first tab when none is remembered.
-  const savedIndex = Math.max(0, tabs.findIndex((t) => t.id === loadActiveTab()));
-  select(savedIndex, false);
+  const savedIndex = tabs.findIndex((t) => t.id === loadActiveTab());
+  select(savedIndex >= 0 ? savedIndex : 0, false);
   return { nav, content };
 }
 

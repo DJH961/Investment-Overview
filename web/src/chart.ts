@@ -124,18 +124,18 @@ export function buildLineChart(options: LineChartOptions): SVGSVGElement | null 
 
   // --- Series paths (drawn back-to-front so the primary sits on top) ------
   for (let s = series.length - 1; s >= 0; s -= 1) {
-    const sEries = series[s];
-    const d = linePath(sEries.values, x, y);
+    const current = series[s];
+    const d = linePath(current.values, x, y);
     if (d === "") continue;
-    if (sEries.area) {
+    if (current.area) {
       const areaPath = svgEl("path");
       areaPath.setAttribute("d", `${d} L${x(n - 1).toFixed(1)} ${(padT + plotH).toFixed(1)} L${x(0).toFixed(1)} ${(padT + plotH).toFixed(1)} Z`);
-      areaPath.setAttribute("class", `${sEries.className}-area`);
+      areaPath.setAttribute("class", `${current.className}-area`);
       svg.appendChild(areaPath);
     }
     const path = svgEl("path");
     path.setAttribute("d", d);
-    path.setAttribute("class", sEries.className);
+    path.setAttribute("class", current.className);
     path.setAttribute("fill", "none");
     svg.appendChild(path);
   }
