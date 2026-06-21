@@ -5,7 +5,7 @@
 import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 
-import { buildDashboard } from "../src/compute";
+import { buildDashboard, buildFetchPlan } from "../src/compute";
 import type { FxRates, Quote } from "../src/prices";
 import type { MobileExport } from "../src/types";
 
@@ -301,6 +301,33 @@ describe("buildDashboard", () => {
     // No intraday strike time → the row shows the NAV's value-date as a date.
     expect(fxaix.priceAsOf).toBeNull();
     expect(fxaix.priceFallbackDate).toBe("2024-05-31");
+    // A live NAV with a prior daily bar shows a today's move, just like a stock:
+    // (110 − 108) × 5 = 10 USD → 9.0909 EUR; pct = 2/108.
+    approx(fxaix.todayMoveEur, 10 / 1.1, 1e-3);
+    approx(fxaix.todayMovePct, 2 / 108, 1e-4);
+  });
+
+  it("gives a NAV fund no today's move while it stays on the exported price", () => {
+    // Live NAV bar is not newer than the export, so the row keeps its exported
+    // price — and must not derive a move from the quote we deliberately ignored.
+    const exp = makeExport(); // as_of 2024-06-01
+    const navQuotes = new Map<string, Quote>([
+      [
+        "FXAIX",
+        {
+          symbol: "FXAIX",
+          price: new Decimal("110"),
+          previousClose: new Decimal("108"),
+          currency: "USD",
+          valueDate: "2024-06-01", // same day as export → not newer
+        },
+      ],
+    ]);
+    const m = buildDashboard(exp, navQuotes, fx, new Date("2024-06-01T12:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.priceIsLive).toBe(false);
+    expect(fxaix.todayMoveEur).toBeNull();
+    expect(fxaix.todayMovePct).toBeNull();
   });
 
   it("shows a fallback NAV's real last-update date (last_price_date), not the export date", () => {
@@ -461,5 +488,58 @@ describe("buildDashboard overview parity features", () => {
     // makeExport()'s period_openings are zero → no positive base to grow from.
     expect(m.overview.mtdGrowthPct).toBeNull();
     expect(m.overview.ytdGrowthPct).toBeNull();
+  });
+});
+
+describe("buildFetchPlan", () => {
+  function planExport(): MobileExport {
+    const base = makeExport();
+    base.holdings = [
+      { ...base.holdings[0], symbol: "SMALL_ETF", price_symbol: "SMALL_ETF", asset_class: "etf", price_type: "market" },
+      { ...base.holdings[0], symbol: "BIG_ETF", price_symbol: "BIG_ETF", asset_class: "etf", price_type: "market" },
+      { ...base.holdings[1], symbol: "BIG_FUND", price_symbol: "BIG_FUND", asset_class: "mutual_fund", price_type: "nav" },
+      { ...base.holdings[1], symbol: "SMALL_FUND", price_symbol: "SMALL_FUND", asset_class: "mutual_fund", price_type: "nav" },
+      { ...base.holdings[1], symbol: "MMF", price_symbol: "MMF", asset_class: "money_market", price_type: "nav" },
+    ];
+    base.period_openings = {
+      month_start_value_eur: "0",
+      year_start_value_eur: "0",
+      holdings: {
+        SMALL_ETF: { month_start_value_eur: "100", year_start_value_eur: "100" },
+        BIG_ETF: { month_start_value_eur: "9000", year_start_value_eur: "9000" },
+        BIG_FUND: { month_start_value_eur: "5000", year_start_value_eur: "5000" },
+        SMALL_FUND: { month_start_value_eur: "50", year_start_value_eur: "50" },
+        MMF: { month_start_value_eur: "9999", year_start_value_eur: "9999" },
+      },
+    };
+    return base;
+  }
+
+  it("orders ETFs/stocks first (largest first), then mutual funds (largest first)", () => {
+    const plan = buildFetchPlan(planExport(), new Set(["mutual_fund"]));
+    expect(plan.map((e) => e.symbol)).toEqual(["BIG_ETF", "SMALL_ETF", "BIG_FUND", "SMALL_FUND"]);
+  });
+
+  it("excludes money-market (never-requested) holdings", () => {
+    const plan = buildFetchPlan(planExport(), new Set(["mutual_fund"]));
+    expect(plan.map((e) => e.symbol)).not.toContain("MMF");
+  });
+
+  it("aggregates size across holdings sharing one ticker and prefers market priority", () => {
+    const data = planExport();
+    // A second holding on BIG_FUND's ticker, but market-priced and large.
+    data.holdings.push({
+      ...data.holdings[0],
+      symbol: "DUP",
+      price_symbol: "BIG_FUND",
+      asset_class: "etf",
+      price_type: "market",
+    });
+    data.period_openings.holdings.DUP = { month_start_value_eur: "1", year_start_value_eur: "1" };
+    const plan = buildFetchPlan(data, new Set(["mutual_fund"]));
+    const bigFund = plan.find((e) => e.symbol === "BIG_FUND")!;
+    // Market priority wins, so the ticker now ranks among the market group.
+    expect(bigFund.priceType).toBe("market");
+    expect(bigFund.sizeEur).toBe(5001);
   });
 });

@@ -47,11 +47,17 @@ Concretely, that means:
   contributions / benchmark legend.
 - A topbar **currency toggle** flips the whole dashboard between **EUR and USD**
   (using the live EUR→USD rate), persisted per device. A **Settings** button in
-  the topbar opens the editable configuration **while logged in** (data source,
-  quote cache, blob URL override) and hosts the **theme** control, which cycles
-  System → Light → Dark, persisted in `localStorage`; "System" follows the OS
-  `prefers-color-scheme`. The modern **Inter** typeface is bundled
+  the topbar opens the editable configuration **while logged in**. Settings lead
+  with **Appearance** (the **theme** control, which cycles System → Light → Dark,
+  persisted in `localStorage`; "System" follows the OS `prefers-color-scheme`),
+  then **Security** (an idle **auto-lock** timeout and a **fingerprint unlock**
+  toggle), and finally the **Data source** plumbing (data source, quote cache,
+  blob URL override). The modern **Inter** typeface is bundled
   (self-hosted — no third-party font requests).
+- **Idle auto-lock.** After a configurable period of inactivity (default **5
+  min**; Settings → Security → *Auto-lock (minutes)*, set `0` to disable) the
+  session clears the in-memory passphrase and returns to the unlock screen, so an
+  unattended phone doesn't sit on an open dashboard.
 
 ## Status
 
@@ -64,10 +70,16 @@ responses, or any decrypted data (that lives in memory only) — see
 `public/sw.js`. A Vite + TypeScript single-page app that:
 
 1. collects a Twelve Data API key + the data repository on a setup screen
-   (stored in `localStorage`, never in the repo),
+   (the key is **encrypted at rest** in `localStorage` with a non-extractable
+   per-device key in IndexedDB — see `secret-store.ts` — never in the repo),
 2. downloads the encrypted `portfolio.enc` blob and decrypts it **in the
    browser** with your mobile passphrase via WebCrypto (PBKDF2-HMAC-SHA256 →
-   AES-256-GCM, mirroring `storage/blob_crypto.py`),
+   AES-256-GCM, mirroring `storage/blob_crypto.py`) — and to make a quick
+   re-open feel instant, it caches that (opaque, public-safe) ciphertext locally
+   and decrypts the **cached copy first**, then re-downloads the blob in the
+   background (skipping the re-download entirely if it was fetched seconds ago).
+   On a phone you can also **unlock with your fingerprint** (see "Fast, easy
+   login" below) instead of typing the passphrase,
 3. fetches live quotes (Twelve Data) + EUR FX (Frankfurter), **engineered around
    the Twelve Data free tier** (see "Free-tier economy" below) so it degrades
    gracefully instead of dead-ending on a rate limit,
@@ -90,6 +102,58 @@ The sections switch via a **tab bar** that is a fixed, thumb-reachable bottom
 navigation on phones and reflows to a top tab strip on desktop/widescreen — the
 markup is identical at every breakpoint.
 
+## Fast, easy login
+
+The companion is built for the common case of opening it for a minute or two to
+glance at what's happening, then closing it — so the **first paint is the whole
+game**. Everything slow happens *after* you're already looking at your numbers:
+
+- **Cache-first unlock.** The encrypted blob is opaque, public-safe ciphertext,
+  so it's cached locally on first download. Unlocking decrypts that **cached copy
+  first** and renders immediately; the fresh blob is re-downloaded in the
+  background and the view updates only if it actually changed.
+- **Only re-download when there's a newer version.** The background refresh no
+  longer pulls the whole blob just to compare it. It first checks a tiny
+  `portfolio.meta.json` version stamp the desktop app publishes alongside the
+  blob, then falls back to an HTTP **conditional GET** (`If-None-Match` /
+  `If-Modified-Since`). An unchanged export comes back as a few-byte **304 Not
+  Modified** — no transfer, no decrypt. A genuinely new publish is picked up
+  automatically within minutes via the slow background cadence, at essentially
+  zero bandwidth. (Requires the one-time CORS-proxy redeploy; see below.)
+- **Warm-on-login prefetch.** The moment the unlock screen appears, the app
+  starts fetching live quotes for the symbols it already knows about (from a
+  cached, tickers-only *symbol plan*) **while you type your passphrase and the
+  blob decrypts** — and pulls EUR FX in parallel. By the time you're in, the
+  first per-minute credit window is already spent on the data you care about, so
+  the dashboard paints live instead of starting the rate-limit clock from zero.
+- **Biggest first.** Quotes are fetched in priority order — ETFs/stocks
+  (largest EUR value first), then mutual funds (largest first); money-market
+  funds are never requested (their NAV is pinned at $1). Under the per-minute
+  cap, the prices that move your total the most always land first.
+- **Cache-first prices.** The dashboard paints from your last cached quotes with
+  zero network on the hot path, then live prices refresh in the background.
+- **Fingerprint unlock (optional).** On a device with a platform authenticator
+  (your phone's fingerprint / Face ID reader), flip on *"Enable fingerprint
+  unlock"* when you unlock — or the **Fingerprint unlock** toggle in Settings →
+  Security — and the passphrase is wrapped behind the authenticator via the
+  WebAuthn **PRF** extension (`src/webauthn.ts`). After that the unlock screen
+  goes **fingerprint-first**: it shows a single prominent "Unlock with
+  fingerprint" button (with the passphrase tucked behind "Use passphrase
+  instead") and **auto-prompts** the platform sheet on load, so a returning user
+  is in with one touch and no extra tap. The passphrase is only ever stored
+  AES-256-GCM-encrypted under a key the hardware re-derives on a successful
+  fingerprint touch; without that touch on *this* device the stored blob is
+  inert. Unsupported devices simply never see the option and keep using the
+  passphrase.
+- **Burst-then-slow auto-refresh.** Prices now refresh **automatically**
+  (`src/refresh-policy.ts`). On startup, while the free-tier per-minute budget
+  forces some symbols to be deferred, it **bursts roughly once a minute** so the
+  next minute fetches the remainder — every holding reaches its latest price as
+  fast as the rate limit allows. Once nothing is deferred it relaxes to a slow,
+  rate-limit-friendly cadence, and it **pauses entirely while the tab is hidden**
+  (then does one cheap, cache-first refresh when you return), so nothing is
+  wasted in the background.
+
 ## Free-tier economy (Twelve Data)
 
 The companion is **built for the Twelve Data free tier** and never assumes a
@@ -108,7 +172,7 @@ To stay comfortably inside that budget the app (`src/cache.ts`, `src/quotes.ts`)
    min**, adjustable in Settings → *Quote cache (minutes)*). A tab reload,
    currency toggle, or quick re-open re-uses the cache and spends **zero
    credits**. FX is cached too (~12 h, since Frankfurter updates daily).
-   Mutual-fund / money-market **NAV** holdings are also priced live, but on a
+   **Mutual-fund NAV** holdings are also priced live, but on a
    long ~12 h window (their NAV only publishes ~once a business day), so they
    track the latest available value while barely touching the credit budget.
    Their NAV is pulled from Twelve Data's daily **`time_series`** endpoint, not
@@ -128,8 +192,10 @@ To stay comfortably inside that budget the app (`src/cache.ts`, `src/quotes.ts`)
    fund that strikes its NAV late and in a tight band is polled only in that band
    rather than all evening. Before any history is observed it falls back to the
    European market close (~22:00), since a EUR-listed fund's NAV can't strike
-   before its market shuts. Synthetic cash/savings rows have no ticker and keep
-   their exported value.
+   before its market shuts. **Money-market funds are never requested** — their
+   NAV is pinned at $1 by design, so a quote always returns the same dollar and
+   would only waste a credit; they keep their exported value, like the synthetic
+   cash/savings rows (which have no ticker at all).
 2. **Budgets itself across reloads** via a rolling credit-spend log: it spends
    at most the credits left in the current minute/day windows and **defers** any
    overflow symbols to their last cached (or exported last-known) value,
@@ -235,9 +301,25 @@ blob through a small CORS proxy you deploy once — a Cloudflare Worker under
 **Settings -> Blob URL override** in the app. See `web/proxy/README.md` for the
 full, copy-pasteable deploy steps.
 
+The Worker also forwards conditional-request headers (`If-None-Match` /
+`If-Modified-Since`), relays upstream **304**s, exposes `ETag` / `Last-Modified`
+to the browser, and serves the tiny `portfolio.meta.json` version stamp on a
+`?meta` query — all of which power the "only re-download when there's a newer
+version" behaviour above. **If you are upgrading from v3.0, redeploy the Worker
+once** (`cd web/proxy && wrangler deploy`) to pick these up. The companion
+derives the version-stamp URL from your Blob URL automatically; you only need
+**Settings -> Version-file URL override** if the meta file lives elsewhere.
+
 ## Security invariant
 
 No plaintext financial data is ever committed here or served from Pages. The
 ledger is delivered as an encrypted blob and decrypted in-browser with a
 passphrase held only by the user; the decrypted figures live in memory only.
 The CORS proxy only ever relays opaque ciphertext and cannot decrypt anything.
+The locally-cached blob (for cache-first unlock) is that same opaque ciphertext,
+and the optional fingerprint unlock stores only the passphrase **encrypted**
+under a key the device's authenticator re-derives on a verified touch — so
+`localStorage` still never holds plaintext financial data or a usable passphrase.
+The one device-local secret, the Twelve Data API key, is likewise encrypted at
+rest with a non-extractable per-device key (IndexedDB), so `localStorage` never
+holds the raw token.

@@ -1050,3 +1050,168 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .content,
   .tabbar { max-width: 88rem; }
 }
+
+/* --- Biometric unlock, "updating" pill & toast ---------------------------- */
+
+/* The fingerprint unlock CTA sits just under the Unlock heading, full width so
+ * it's an easy thumb target on a phone. */
+.btn.bio {
+  width: 100%;
+  margin: 0.4rem 0 0.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+/* The primary, biometric-first CTA on a returning (enrolled) device: a taller,
+ * confident touch target with the fingerprint glyph leading. */
+.btn.bio-primary {
+  margin-top: 0.9rem;
+  padding: 0.95rem 1.1rem;
+  font-size: 1.02rem;
+  gap: 0.55rem;
+}
+.bio-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.bio-icon svg { display: block; }
+
+/* A quiet, link-styled button — used for the "Use passphrase instead" fallback
+ * and other low-emphasis affordances on the unlock screen. */
+.linkish {
+  display: inline-block;
+  margin: 0.85rem auto 0;
+  padding: 0.3rem 0.4rem;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.linkish:hover { text-decoration: underline; }
+.linkish:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
+
+/* On the biometric-first screen, centre the heading/blurb and the fallback link
+ * so the fingerprint CTA reads as the clear primary action. */
+.panel.unlock { text-align: center; }
+.panel.unlock .field,
+.panel.unlock .note { text-align: left; }
+.unlock-pass[hidden] { display: none; }
+.unlock-pass { margin-top: 0.6rem; }
+
+/* A toggle switch (checkbox styled as an iOS-style slider) for on/off settings
+ * like fingerprint unlock and the enrolment opt-in. */
+.field.toggle { gap: 0.35rem; }
+.toggle-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.switch {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  width: 2.7rem;
+  height: 1.55rem;
+}
+.switch .switch-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+.switch .slider {
+  position: absolute;
+  inset: 0;
+  background: var(--border);
+  border-radius: 999px;
+  transition: background 0.15s ease;
+}
+.switch .slider::before {
+  content: "";
+  position: absolute;
+  top: 0.175rem;
+  left: 0.2rem;
+  width: 1.2rem;
+  height: 1.2rem;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s ease;
+}
+.switch .switch-input:checked + .slider {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
+.switch .switch-input:checked + .slider::before { transform: translateX(1.1rem); }
+.switch .switch-input:focus-visible + .slider {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Section dividers inside the Settings panel. */
+.settings-section {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 1.4rem 0 0.2rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
+}
+.settings-section:first-of-type { margin-top: 1rem; }
+.settings-slot[hidden] { display: none; }
+
+/* A small, non-blocking "Updating…" pill while a live refresh runs in the
+ * background. Bottom-centred so it clears the fixed mobile tab bar. */
+.updating-pill {
+  position: fixed;
+  left: 50%;
+  bottom: 5.2rem;
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  backdrop-filter: saturate(1.4) blur(10px);
+  pointer-events: none;
+}
+
+/* Brief auto-dismissing status toast (e.g. biometric enrolment result). */
+.app-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 5.2rem;
+  transform: translateX(-50%);
+  z-index: 60;
+  max-width: min(90vw, 28rem);
+  padding: 0.6rem 1rem;
+  font-size: 0.88rem;
+  text-align: center;
+  color: var(--fg);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+
+/* On desktop the tab bar is a top strip, so nudge these clear of the bottom. */
+@media (min-width: 64rem) {
+  .updating-pill,
+  .app-toast { bottom: 1.5rem; }
+}

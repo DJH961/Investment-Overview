@@ -1,28 +1,57 @@
 /**
  * Per-device configuration, persisted in `localStorage`.
  *
- * Only non-secret, device-local preferences live here: the Twelve Data API key
- * (entered once per device per the proposal §6.2), the source repository, and
- * the release tag the encrypted blob is published under. The mobile passphrase
- * is NEVER persisted — it is held in memory only for the current session.
+ * Device-local preferences live here: the Twelve Data API key (entered once per
+ * device per the proposal §6.2), the source repository, and the release tag the
+ * encrypted blob is published under. The mobile passphrase is NEVER persisted —
+ * it is held in memory only for the current session.
+ *
+ * The API key is the one secret among these, so it is encrypted at rest (see
+ * `secret-store.ts`): `localStorage` holds only ciphertext, never the raw token.
+ * Reading/writing the key is therefore async, which is why `loadConfig` and
+ * `saveConfig` return promises.
  */
+
+import { createSecretBox, looksEncrypted } from "./secret-store";
 
 const KEYS = {
   apiKey: "iv.web.twelvedata_api_key",
   repo: "iv.web.repo",
   releaseTag: "iv.web.release_tag",
   blobUrl: "iv.web.blob_url",
+  metaUrl: "iv.web.meta_url",
   quoteCacheMinutes: "iv.web.quote_cache_minutes",
+  autoLockMinutes: "iv.web.auto_lock_minutes",
 } as const;
 
 const DEFAULT_RELEASE_TAG = "live-data";
 const ASSET_NAME = "portfolio.enc";
+/**
+ * Tiny sidecar published next to {@link ASSET_NAME} by the desktop app. It holds
+ * just a version stamp (a hash of the encrypted blob) so the companion can ask
+ * "is there a newer export?" by downloading a few bytes instead of the whole
+ * ciphertext. See `web/proxy/` and the desktop `publish_service`.
+ */
+const META_ASSET_NAME = "portfolio.meta.json";
 /**
  * Default quote-cache freshness (minutes). Tuned for the Twelve Data free tier
  * (8 credits/min, 800/day, 1 credit per symbol): a longer window means fewer
  * refetches and fewer credits spent, at the cost of slightly older prices.
  */
 const DEFAULT_QUOTE_CACHE_MINUTES = 15;
+/**
+ * Default idle auto-lock timeout (minutes). After this many minutes without any
+ * interaction the companion clears the in-memory passphrase and returns to the
+ * unlock screen, so an unattended phone doesn't sit on an unlocked dashboard.
+ * Tuned as a sensible preset for a quick-check companion; configurable, and
+ * `0` disables auto-lock entirely.
+ */
+const DEFAULT_AUTO_LOCK_MINUTES = 5;
+/** Upper bound for the configurable idle auto-lock timeout, in minutes. */
+const MAX_AUTO_LOCK_MINUTES = 240;
+
+/** Wraps/unwraps the API key with a non-extractable per-device key (IndexedDB). */
+const secrets = createSecretBox();
 
 function read(key: string): string {
   try {
@@ -32,12 +61,6 @@ function read(key: string): string {
   }
 }
 
-// SECURITY (accepted, intentional — proposal §6.2): the Twelve Data price API
-// key is deliberately persisted in localStorage so it is entered only once per
-// device. It is a low-sensitivity, rate-limited, free price-data token scoped to
-// the user's own account — NOT a credential to any financial data — and it never
-// leaves the device or enters the repo. CodeQL's clear-text-storage rule flags
-// this write; the trade-off is accepted for this token class.
 function write(key: string, value: string): void {
   try {
     if (value) localStorage.setItem(key, value);
@@ -52,8 +75,19 @@ export interface AppConfig {
   repo: string;
   releaseTag: string;
   blobUrl: string;
+  /**
+   * Advanced override for the version-stamp (`portfolio.meta.json`) endpoint.
+   * Empty by default — it is then derived from {@link resolveBlobUrl}. Set it
+   * only when the meta sidecar lives somewhere the derivation can't guess.
+   */
+  metaUrl: string;
   /** Quote-cache freshness in minutes (free-tier credit economy knob). */
   quoteCacheMinutes: number;
+  /**
+   * Idle auto-lock timeout in minutes. After this long without interaction the
+   * session locks itself; `0` disables auto-lock.
+   */
+  autoLockMinutes: number;
 }
 
 /** Clamp a parsed cache-minutes value to a sane 1–240 range, with a default. */
@@ -63,22 +97,85 @@ function parseCacheMinutes(raw: string): number {
   return Math.min(240, Math.round(n));
 }
 
-export function loadConfig(): AppConfig {
+/**
+ * Clamp a parsed auto-lock value to `0`–{@link MAX_AUTO_LOCK_MINUTES}. A blank
+ * value (never set, or a field the user cleared) falls back to the preset
+ * {@link DEFAULT_AUTO_LOCK_MINUTES}; an explicit `0` — or any other non-positive
+ * value — means "never lock". Exported so the Settings UI clamps identically.
+ */
+export function parseAutoLockMinutes(raw: string): number {
+  if (raw.trim() === "") return DEFAULT_AUTO_LOCK_MINUTES;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(MAX_AUTO_LOCK_MINUTES, Math.round(n));
+}
+
+/** A blank, unconfigured config — used as the initial in-memory state. */
+export function defaultConfig(): AppConfig {
   return {
-    apiKey: read(KEYS.apiKey),
-    repo: read(KEYS.repo),
-    releaseTag: read(KEYS.releaseTag) || DEFAULT_RELEASE_TAG,
-    blobUrl: read(KEYS.blobUrl),
-    quoteCacheMinutes: parseCacheMinutes(read(KEYS.quoteCacheMinutes)),
+    apiKey: "",
+    repo: "",
+    releaseTag: DEFAULT_RELEASE_TAG,
+    blobUrl: "",
+    metaUrl: "",
+    quoteCacheMinutes: DEFAULT_QUOTE_CACHE_MINUTES,
+    autoLockMinutes: DEFAULT_AUTO_LOCK_MINUTES,
   };
 }
 
-export function saveConfig(config: AppConfig): void {
-  write(KEYS.apiKey, config.apiKey.trim());
+/**
+ * Decrypt the persisted API key. Returns "" when none is stored or the stored
+ * ciphertext can't be read (e.g. the device key is gone, or crypto/IndexedDB is
+ * unavailable). A legacy plaintext key written by an older build is adopted and
+ * transparently upgraded to ciphertext on read.
+ */
+async function loadApiKey(): Promise<string> {
+  const stored = read(KEYS.apiKey);
+  if (!stored) return "";
+  if (!looksEncrypted(stored)) {
+    await saveApiKey(stored); // migrate the legacy plaintext token to ciphertext
+    return stored;
+  }
+  try {
+    return await secrets.decrypt(stored);
+  } catch {
+    return "";
+  }
+}
+
+/** Encrypt and persist the API key, or clear it when blank. */
+async function saveApiKey(apiKey: string): Promise<void> {
+  if (!apiKey) {
+    write(KEYS.apiKey, "");
+    return;
+  }
+  try {
+    write(KEYS.apiKey, await secrets.encrypt(apiKey));
+  } catch {
+    /* crypto/IndexedDB unavailable (e.g. private mode); skip persisting the key. */
+  }
+}
+
+export async function loadConfig(): Promise<AppConfig> {
+  return {
+    apiKey: await loadApiKey(),
+    repo: read(KEYS.repo),
+    releaseTag: read(KEYS.releaseTag) || DEFAULT_RELEASE_TAG,
+    blobUrl: read(KEYS.blobUrl),
+    metaUrl: read(KEYS.metaUrl),
+    quoteCacheMinutes: parseCacheMinutes(read(KEYS.quoteCacheMinutes)),
+    autoLockMinutes: parseAutoLockMinutes(read(KEYS.autoLockMinutes)),
+  };
+}
+
+export async function saveConfig(config: AppConfig): Promise<void> {
+  await saveApiKey(config.apiKey.trim());
   write(KEYS.repo, config.repo.trim());
   write(KEYS.releaseTag, config.releaseTag.trim());
   write(KEYS.blobUrl, config.blobUrl.trim());
+  write(KEYS.metaUrl, config.metaUrl.trim());
   write(KEYS.quoteCacheMinutes, String(config.quoteCacheMinutes));
+  write(KEYS.autoLockMinutes, String(config.autoLockMinutes));
 }
 
 /** A loosely-validated `owner/name` slug, matching the publisher's guard. */
@@ -109,4 +206,32 @@ export function resolveBlobUrl(config: AppConfig): string | null {
   return `https://github.com/${config.repo}/releases/download/${tag}/${ASSET_NAME}`;
 }
 
-export { DEFAULT_RELEASE_TAG, ASSET_NAME, DEFAULT_QUOTE_CACHE_MINUTES };
+/**
+ * Resolve the URL of the lightweight version sidecar (`portfolio.meta.json`),
+ * used to cheaply detect "is there a newer export?" before pulling the full
+ * blob. Precedence:
+ *
+ *  1. an explicit {@link AppConfig.metaUrl} override, if set;
+ *  2. otherwise *derive* it from {@link resolveBlobUrl}:
+ *     - when a `blobUrl` proxy override is in play, the same endpoint with a
+ *       `?meta` flag (the `web/proxy/` Worker serves the sidecar that way), or
+ *     - the release-asset default with the filename swapped to the meta asset.
+ *
+ * Returns `null` only when there is no data source at all. The meta check is
+ * best-effort: callers fall back to a conditional/full blob download if the
+ * sidecar can't be fetched (e.g. an older proxy, or the desktop app hasn't
+ * published a meta file yet).
+ */
+export function resolveMetaUrl(config: AppConfig): string | null {
+  if (config.metaUrl) return config.metaUrl;
+  if (config.blobUrl) {
+    // A custom blob endpoint (typically the CORS proxy Worker) exposes the
+    // sidecar via a `?meta` flag rather than a sibling path.
+    return config.blobUrl + (config.blobUrl.includes("?") ? "&" : "?") + "meta";
+  }
+  if (!isValidRepo(config.repo)) return null;
+  const tag = encodeURIComponent(config.releaseTag || DEFAULT_RELEASE_TAG);
+  return `https://github.com/${config.repo}/releases/download/${tag}/${META_ASSET_NAME}`;
+}
+
+export { DEFAULT_RELEASE_TAG, ASSET_NAME, META_ASSET_NAME, DEFAULT_QUOTE_CACHE_MINUTES, DEFAULT_AUTO_LOCK_MINUTES, MAX_AUTO_LOCK_MINUTES };

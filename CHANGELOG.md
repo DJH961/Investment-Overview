@@ -100,6 +100,24 @@ freshness correct around market closures.
   the price's actual date or time, so the top of the screen always states when
   the figure is from.
 
+### Added — live-web companion: fingerprint-first unlock & idle auto-lock
+
+- **Fingerprint-first unlock.** Once fingerprint unlock is enrolled, the unlock
+  screen leads with a single prominent "Unlock with fingerprint" button (with the
+  passphrase tucked behind "Use passphrase instead") and **auto-prompts** the
+  platform authenticator on load, so a returning user is in with one touch and no
+  extra tap.
+- **Idle auto-lock.** After a configurable period of inactivity (default **5
+  min**, `0` disables) the session clears the in-memory passphrase and returns to
+  the unlock screen, so an unattended phone doesn't sit on an open dashboard.
+
+### Changed — live-web companion: Settings reorganised, dark-mode-friendly defaults
+
+- **Settings are grouped and reordered** to lead with **Appearance** (the
+  System → Light → Dark theme control), then **Security** (the idle auto-lock
+  timeout and a fingerprint-unlock toggle), and finally **Data source** (data
+  source, quote cache, blob URL override), so the most-used controls come first.
+
 ## [3.0.1] — 2026-06-21
 
 Patch release collecting the post-v3.0.0 follow-up work through PR #36: local-app
@@ -198,6 +216,61 @@ shutdown behavior.
   spacing and zebra striping for visual separation, and its hypothetical
   figures are now rounded to whole currency units (no misleading cents) via a
   new `formatCurrencyWhole` helper.
+
+## [3.1.0] — 2026-06-21
+
+Smarter, cheaper data movement for the live-web companion: the encrypted blob is
+only re-downloaded when it has actually changed, live quotes start warming up
+**during login** so the dashboard fills in faster, and quotes are fetched in
+priority order (biggest ETFs/stocks first, then mutual funds). Includes one
+Cloudflare Worker redeploy and an automatic, publisher-controlled version stamp.
+
+### Added — only re-download the blob when there is a newer version
+- **HTTP conditional fetch.** `web/src/blob.ts` gains `fetchEnvelopeConditional`,
+  which sends `If-None-Match` / `If-Modified-Since` from the cached validators so
+  an unchanged blob comes back as a bodyless **304 Not Modified** — no transfer,
+  no decrypt. Validators (`ETag`, `Last-Modified`) are cached alongside the
+  envelope (`cache.ts` `writeCachedEnvelope`/`readCachedEnvelope`).
+- **Publisher-controlled version stamp (robust fallback).** The desktop publisher
+  (`services/publish_service.py`) now uploads a tiny `portfolio.meta.json`
+  sidecar next to `portfolio.enc` on every publish, carrying a SHA-256 of the
+  encrypted blob (`build_meta`). The companion fetches this few-byte file first
+  (`fetchBlobMeta`) and skips the blob entirely when the version is unchanged —
+  the most reliable "is there a newer export?" signal, fully under your control.
+- **Cheapest-signal-first refresh.** `App.maybeRefreshBlob` now checks the meta
+  stamp, then a conditional GET, and only pulls ciphertext on a genuine change.
+  The old fixed 2-minute re-download guard is removed (the check is now near-free).
+- **Near-free freshness polling.** Once the auto-refresh settles into its slow
+  steady-state cadence, it piggy-backs the cheap meta/304 check so a fresh
+  publish is picked up automatically within minutes — without reopening the app.
+- **CORS proxy update (`web/proxy/`).** The Cloudflare Worker forwards the
+  conditional headers, relays upstream **304**s, exposes `ETag`/`Last-Modified`
+  via `Access-Control-Expose-Headers`, and serves the sidecar on `?meta`. **You
+  must redeploy the Worker once** (`wrangler deploy`) — see `web/proxy/README.md`.
+
+### Added — faster live data at login
+- **Warm-on-login prefetch.** `App.prefetchLiveData` starts fetching quotes for
+  the symbols it already knows about (from a cached plan) **while you type your
+  passphrase and the blob decrypts**, so the first post-login paint is live
+  instead of starting the per-minute clock from zero. EUR FX is fetched in
+  parallel. The work writes into the same caches the real refresh reads and
+  honours the shared free-tier credit budget, so it can never double-spend.
+- **Cached symbol plan.** A small `iv.web.symbol_plan` cache (`cache.ts`
+  `readSymbolPlan`/`writeSymbolPlan`) persists the priority-ordered tickers +
+  coarse sizes from the last refresh — tickers/sizes only, never decrypted data.
+
+### Changed — prioritised fetch order
+- **Biggest first, ETFs/stocks before funds.** `compute.buildFetchPlan` orders
+  the live fetch as: market holdings (ETFs/stocks) largest-EUR-first, then
+  fetchable mutual funds largest-first. Money-market funds remain never-requested
+  (NAV pinned at $1). Under the free-tier per-minute cap, the most impactful
+  prices now land first.
+
+### Settings
+- **New "Version-file URL override" field** in the Settings menu, mirroring the
+  existing Blob URL override. Leave it blank to derive the sidecar URL from the
+  blob URL automatically; set it only if the meta file lives elsewhere
+  (`config.ts` `resolveMetaUrl`, new `metaUrl` config key).
 
 ## [3.0.0] — 2026-06-21
 
