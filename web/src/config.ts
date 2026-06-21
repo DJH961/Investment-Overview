@@ -74,6 +74,15 @@ export function isValidRepo(repo: string): boolean {
  * Resolve the URL to download the encrypted blob from. An explicit `blobUrl`
  * override wins; otherwise it is the release-asset download URL built from the
  * repo + tag (the route the desktop publisher uploads to).
+ *
+ * NOTE (CORS): the release-asset download URL is NOT readable from a browser on
+ * a different origin — GitHub's `releases/download/...` endpoint redirects to
+ * `release-assets.githubusercontent.com`, which sends no `Access-Control-Allow-Origin`
+ * header, so a cross-origin `fetch()` fails with "Failed to fetch". To serve the
+ * blob to the hosted web app, set `blobUrl` to a CORS-enabled source — e.g. the
+ * Cloudflare Worker proxy in `web/proxy/`, which fetches the release asset
+ * server-side and re-emits it with permissive CORS headers. The release-asset
+ * default below is kept for same-origin/local use and as a documented fallback.
  */
 export function resolveBlobUrl(config: AppConfig): string | null {
   if (config.blobUrl) return config.blobUrl;
