@@ -21,6 +21,10 @@ export class BlobError extends Error {}
  */
 function describeFetchFailure(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
+  // Browsers signal a network/CORS failure with a `TypeError` whose message
+  // differs by engine: Chromium → "Failed to fetch", Firefox → "NetworkError
+  // when attempting to fetch resource", WebKit/Safari → "Load failed". Match all
+  // three so the actionable hint is shown regardless of browser.
   if (err instanceof TypeError || /failed to fetch|load failed|networkerror/i.test(message)) {
     return (
       "could not reach the encrypted data. The browser was blocked from " +
