@@ -100,6 +100,13 @@ Bug-fix release for the portable bundle's first-start experience.
   resolve. `create_all` stays idempotent, so existing installs are unaffected.
 
 ### Changed
+- **The live-web companion now works out of the box — no `[encrypted]` extra
+  needed.** The OS-keychain dependency (`keyring`), used to store the mobile
+  passphrase and GitHub publish token, moved from the optional `[encrypted]`
+  extra into the core dependencies. The `[encrypted]` extra is now *only* the
+  SQLCipher driver (`pysqlcipher3`) for optional encryption-at-rest of the local
+  synced database tiers. Keychain-related UI messages no longer tell you to
+  install an extra.
 - **The portable ZIP extracts much faster.** The bundle is now slimmed before
   zipping — bundled `pip`/`setuptools`/`wheel` (unused at runtime; the portable
   launcher never self-updates) and all `__pycache__` bytecode caches
