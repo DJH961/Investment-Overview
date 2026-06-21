@@ -26,6 +26,7 @@ to be retried on the next refresh.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -168,6 +169,7 @@ def enrich_instrument(
     instrument_id: int,
     *,
     fetcher: Any = None,
+    on_unresolved: Callable[[str], None] | None = None,
 ) -> Instrument:
     """Fill missing metadata on ``instrument_id`` from yfinance.
 
@@ -175,6 +177,12 @@ def enrich_instrument(
     test injection. Only **missing** fields are written — already-set
     values (including manual ones) are preserved. The function returns
     the (possibly-updated) instrument row.
+
+    ``on_unresolved`` (audit D2) is invoked with the symbol when yfinance
+    returns nothing for a row that still needs metadata — i.e. a symbol
+    the data provider can't resolve (delisted, a typo, or the provider is
+    offline). The importer uses it to surface those symbols to the user
+    instead of leaving them as a silent ``unknown`` stub.
 
     Synthetic asset classes (``cash`` / ``savings``) are never
     enriched — they have no yfinance ticker.
@@ -200,6 +208,8 @@ def enrich_instrument(
         log.warning("enrichment fetch failed for %s", instr.symbol, exc_info=True)
         info = None
     if info is None:
+        if on_unresolved is not None and instr.symbol:
+            on_unresolved(instr.symbol)
         return instr
 
     updated = False
@@ -232,6 +242,7 @@ def ensure_instrument(
     parsed_native_currency: str | None = None,
     parsed_expense_ratio: Decimal | None = None,
     fetcher: Any = None,
+    on_unresolved: Callable[[str], None] | None = None,
 ) -> Instrument:
     """Get-or-create an :class:`Instrument` and run enrichment in one call.
 
@@ -264,4 +275,4 @@ def ensure_instrument(
         instr.native_currency = parsed_native_currency
     session.flush()
 
-    return enrich_instrument(session, instr.id, fetcher=fetcher)
+    return enrich_instrument(session, instr.id, fetcher=fetcher, on_unresolved=on_unresolved)

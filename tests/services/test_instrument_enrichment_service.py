@@ -122,6 +122,28 @@ class TestEnrichInstrument:
         assert out.asset_class == "unknown"
         assert out.name is None
 
+    def test_yfinance_miss_reports_unresolved(self, session: Session) -> None:
+        # Audit D2: a symbol yfinance can't resolve is reported via the
+        # ``on_unresolved`` callback so the importer can surface it.
+        instr = instruments_repo.get_or_create(session, symbol="ZZZ", asset_class="unknown")
+        seen: list[str] = []
+        enrich_instrument(
+            session,
+            instr.id,
+            fetcher=_fake_fetcher({"ZZZ": None}),
+            on_unresolved=seen.append,
+        )
+        assert seen == ["ZZZ"]
+
+    def test_resolved_symbol_not_reported_unresolved(self, session: Session) -> None:
+        instr = instruments_repo.get_or_create(session, symbol="VTI", asset_class="unknown")
+        fetcher = _fake_fetcher(
+            {"VTI": InstrumentInfo("VTI", "Vanguard Total", "ETF", "USD", None)}
+        )
+        seen: list[str] = []
+        enrich_instrument(session, instr.id, fetcher=fetcher, on_unresolved=seen.append)
+        assert seen == []
+
     def test_skips_synthetic_cash(self, session: Session) -> None:
         instr = instruments_repo.get_or_create(
             session, symbol="SAVINGS_CASH", asset_class="cash", native_currency="EUR"
