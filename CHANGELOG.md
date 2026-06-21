@@ -14,6 +14,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed — manual refresh feedback was invisible on mobile
+
+- **Tapping the web Refresh button now always shows feedback.** Two gaps made a
+  phone tap look completely inert: (1) a refresh fully served from cache resolves
+  in a few milliseconds, so the spinner + "Refreshing prices…" pill flashed for
+  less than a frame, and (2) a tap that landed while an automatic background pull
+  was already running was silently dropped. The manual feedback is now held on
+  screen for a short minimum so it is always perceptible, a tap during an
+  in-flight auto-refresh is acknowledged instead of ignored, and every manual
+  refresh ends with a brief toast stating the outcome (prices updated, already
+  up to date, queued, or a fallback when live data couldn't be reached).
+
 ## [3.1.1] — 2026-06-21
 
 ### Added — visible feedback for manual and automatic price refresh
