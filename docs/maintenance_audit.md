@@ -139,3 +139,83 @@ common failure modes from recurring:
 Pick items from §3 and they'll be actioned in order. The §3.1 instrument
 category read-only flip is the smallest remaining piece; everything else in
 §3.2 is a deliberate future-version feature.
+
+---
+
+## 5. Performance / efficiency backlog (added 2026-06-21)
+
+A profiling pass over the hot render path, the synchronous cold-start path and
+the repository layer surfaced the following inefficiencies. They are tracked
+here as a live checklist; status is updated as each is resolved.
+
+### 5A — Hot-path inefficiencies (run on every page render)
+
+- **5A.1 Overview N+1 daily-growth price lookups** — ✅ done.
+  `_instrument_daily_growth` (`ui/pages/_overview_query.py`) issued
+  `recent_price_dates` + two `close_as_of` per held position (3 DB round-trips ×
+  N). Now the print dates and closes are batched once for all instruments and
+  the per-row helper indexes into the prebuilt dicts.
+- **5A.2 Analytics computes `compute_portfolio_metrics` twice** — ✅ done.
+  `build_bundle` already computed `portfolio_metrics` internally, then
+  `analytics.py` called `compute_portfolio_metrics(session)` again — a full
+  XIRR/contribution recompute per render. The metrics are now returned on
+  `AnalyticsBundle.metrics` and reused.
+- **5A.3 Periods page double ledger walk + per-period snapshot reads** — ⏳ open.
+  `_period_query.aggregate` iterates the full `txns` list twice when the display
+  currency ≠ EUR (build EUR + display buckets in one pass) and calls
+  `get_or_compute` per period inside the bucket loop (collect unique boundary
+  dates and batch-load instead).
+- **5A.4 Overview YTD second `compute_positions` walk** — ⏳ open.
+  `compute_positions(session, as_of=year_start)` re-walks the whole ledger a
+  second time just to seed YTD start values; fold into a single valuation pass.
+
+### 5B — Startup-path inefficiencies (synchronous, before the UI opens)
+
+These run inside `run_boot_sequence(skip_network=True)` on the cold-start path.
+
+- **5B.5 Rolling backup copies the full ledger + config DB on every boot** —
+  ✅ done. `storage/backup.snapshot` always performed a complete
+  `backup_database()` copy (decrypt+re-encrypt through SQLCipher) on every
+  launch. Added a `min_interval` gate so a backup taken recently is skipped.
+- **5B.6 Full `PRAGMA integrity_check` on every boot** — ✅ done.
+  `boot._integrity_check_tiers` ran a whole-database scan of each tier
+  synchronously before the UI. Now gated by a daily cadence via a marker file;
+  it runs at most once per day per process.
+- **5B.7 `detect_cloud_sync_root()` is uncached** — ✅ done. It re-ran every
+  OneDrive/iCloud/Dropbox/Google-Drive detector (filesystem stats + a Dropbox
+  JSON parse + a gdrive `iterdir`) with no memoization even though the result is
+  deterministic per process. Now `@lru_cache`d.
+
+### 5C — Repository-layer N+1s (background refresh, still wasteful)
+
+- **5C.8 `prices_service` refresh loops issue per-instrument queries** — ✅ done.
+  `refresh_prices` (`latest_price_date` + `earliest_price_date` per instrument →
+  2N), `instruments_due_for_refresh` (`get_last_refreshed_at` per instrument →
+  N) and `refresh_due_prices` (`latest_price_date` per due instrument) now use
+  batched `GROUP BY instrument_id` (MAX/MIN date) / `IN (...)` queries.
+- **5C.9 Load-then-filter-in-Python repo helpers** — ✅ done.
+  `snapshots_repo.delete_from` SELECTed all matching rows and deleted them
+  one-by-one; now a single `DELETE … WHERE`. `allocations_repo.set_active`
+  loaded all allocations and flipped `active` in Python; now two bulk
+  `UPDATE`s.
+
+### 5D — Missing index (low–medium impact)
+
+- **5D.10 `fx_history` index for its actual query shape** — ✅ done. The PK is
+  `(date, base, quote)` (date leading) but every lookup filters
+  `WHERE base=? AND quote=?` then orders by `date` (`fx_repo.py`). Added an
+  index on `(base, quote, date)`. (`price_history` was re-checked and its
+  `(instrument_id, date)` PK already covers its queries — no change needed.)
+
+### 5E — Cross-cutting ideas (proposed, larger refactors)
+
+- **5E.A Defer slow cold-start work off the critical path** — partially via
+  5B.5/5B.6 interval-gating. The next step is to also move the rolling backup +
+  integrity check onto the existing deferred background thread (the network
+  refresh already proved the pattern), shaving the most wall-clock off perceived
+  startup for the least risk.
+- **5E.B Request-scoped valuation cache** keyed by `(as_of, ledger-revision)`
+  would let 5A.1–5A.4 collapse into shared work: Overview, Periods and Analytics
+  each independently recompute positions/metrics/snapshots for overlapping dates
+  within a single navigation. A tiny per-session memo (invalidated whenever the
+  ledger is written) is a lighter first step than the full valuation engine.
