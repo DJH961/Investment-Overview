@@ -67,6 +67,15 @@ import { h, renderDashboard, renderThemeToggle } from "./ui";
 const TOAST_DURATION_MS = 4500;
 
 /**
+ * What triggered a price refresh: a `manual` tap of the Refresh button or an
+ * `auto` background pull by the scheduler. Drives the distinct visual feedback
+ * each gets (a spinning button + "Refreshing…" pill vs. an "Auto-updating…"
+ * pill) so the user can tell their tap registered *and* that the automatic
+ * refresh keeps working on its own.
+ */
+type RefreshKind = "manual" | "auto";
+
+/**
  * NAV-priced asset classes that are real, tickered funds and so can be priced
  * live (their NAV publishes ~once a day). Only genuine `mutual_fund` holdings
  * qualify.
@@ -835,18 +844,20 @@ export class App {
    * nothing is deferred it relaxes to a slow steady-state cadence. Paused while
    * the tab is hidden (resumed by the visibility listener).
    */
-  private async runScheduledRefresh(session: number): Promise<void> {
+  private async runScheduledRefresh(session: number, kind: RefreshKind = "auto"): Promise<void> {
     if (session !== this.sessionId) return;
-    if (typeof document !== "undefined" && document.hidden) return;
+    // A manual tap should refresh even when the tab is technically "hidden"
+    // (e.g. mid-transition); only the automatic scheduler skips hidden tabs.
+    if (kind === "auto" && typeof document !== "undefined" && document.hidden) return;
     if (this.refreshing) return;
     this.refreshing = true;
-    this.setUpdating(true);
+    this.setUpdating(true, kind);
     let report: QuoteLoadReport | null = null;
     try {
       report = await this.refreshPrices(session, true);
     } finally {
       this.refreshing = false;
-      this.setUpdating(false);
+      this.setUpdating(false, kind);
     }
     if (session !== this.sessionId || report === null) return;
     const delayMs = nextRefreshDelayMs({ deferred: report.deferred });
@@ -896,16 +907,36 @@ export class App {
     this.visibilityHandler = null;
   }
 
-  /** Toggle a small, unobtrusive "Updating…" pill while a live refresh runs. */
-  private setUpdating(on: boolean): void {
+  /**
+   * Toggle a small status pill while a live refresh runs, distinguishing a
+   * manual tap of the Refresh button from an automatic background pull so the
+   * user can see *both* that their tap registered and that the auto-refresh
+   * keeps working on its own. A manual refresh additionally spins the Refresh
+   * button's glyph for immediate, in-place feedback at the point of the tap.
+   */
+  private setUpdating(on: boolean, kind: RefreshKind = "auto"): void {
     if (typeof document === "undefined") return;
+    const glyph = document.querySelector('[data-action="refresh"] .icon-btn-glyph');
+    if (kind === "manual") glyph?.classList.toggle("is-spinning", on);
     const id = "updating-pill";
     const existing = document.getElementById(id);
     if (on) {
-      if (existing) return;
-      document.body.append(
-        h("div", { id, class: "updating-pill", role: "status", "aria-live": "polite" }, ["Updating…"]),
+      const label = kind === "manual" ? "Refreshing prices…" : "Auto-updating prices…";
+      if (existing) {
+        existing.classList.toggle("is-auto", kind === "auto");
+        const text = existing.querySelector(".updating-pill-text");
+        if (text) text.textContent = label;
+        return;
+      }
+      const pill = h(
+        "div",
+        { id, class: kind === "auto" ? "updating-pill is-auto" : "updating-pill", role: "status", "aria-live": "polite" },
+        [
+          h("span", { class: "updating-pill-spinner", "aria-hidden": "true" }, []),
+          h("span", { class: "updating-pill-text" }, [label]),
+        ],
       );
+      document.body.append(pill);
     } else {
       existing?.remove();
     }
@@ -952,7 +983,7 @@ export class App {
     this.mount(
       renderDashboard(
         model,
-        () => void this.runScheduledRefresh(this.sessionId),
+        () => void this.runScheduledRefresh(this.sessionId, "manual"),
         () => this.lock(),
         () => this.reRenderCurrentModel(),
         () => this.showSettings(),
@@ -976,7 +1007,7 @@ export class App {
     ]);
     panel
       .querySelector('[data-action="retry"]')
-      ?.addEventListener("click", () => void this.runScheduledRefresh(this.sessionId));
+      ?.addEventListener("click", () => void this.runScheduledRefresh(this.sessionId, "manual"));
     panel.querySelector('[data-action="settings"]')?.addEventListener("click", () => this.showSetup());
     this.mount(h("div", { class: "screen" }, [panel]));
   }

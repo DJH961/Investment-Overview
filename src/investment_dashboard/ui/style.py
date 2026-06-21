@@ -122,6 +122,33 @@ html, body {{
   letter-spacing: 0.02em;
 }}
 
+/* Auto-refresh activity chip (header): always-on "Live", spins + reads
+   "Updating…" while a background price pull runs (see refresh_indicator). */
+.inv-refresh-chip {{
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: var(--inv-radius-pill);
+  background: var(--inv-surface-alt);
+  color: var(--inv-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}}
+.inv-refresh-chip .inv-refresh-icon {{
+  font-size: 0.95rem;
+}}
+.inv-refresh-chip.inv-refresh-active {{
+  background: var(--inv-accent-soft);
+  color: var(--inv-accent);
+}}
+.inv-refresh-icon.inv-refresh-spin {{
+  animation: inv-refresh-spin 0.9s linear infinite;
+}}
+@keyframes inv-refresh-spin {{ to {{ transform: rotate(360deg); }} }}
+@media (prefers-reduced-motion: reduce) {{
+  .inv-refresh-icon.inv-refresh-spin {{ animation: none; }}
+}}
+
 /* ------------------------------------------------------------------ */
 /* Sidebar                                                             */
 /* ------------------------------------------------------------------ */

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import tzinfo
 from typing import TYPE_CHECKING
 
 from nicegui import ui
@@ -192,7 +193,14 @@ def _quit_button() -> None:
     btn.tooltip("Leave & shut down the app")
 
 
-def _header(title: str, *, current_currency: str, now_label: str, dark: ui.dark_mode) -> None:
+def _header(
+    title: str,
+    *,
+    current_currency: str,
+    now_label: str,
+    dark: ui.dark_mode,
+    now_tz: tzinfo | None = None,
+) -> None:
     with (
         ui.header(elevated=False).classes("inv-header q-px-md").style("min-height:56px"),
         ui.row().classes("items-center justify-between w-full no-wrap"),
@@ -226,6 +234,12 @@ def _header(title: str, *, current_currency: str, now_label: str, dark: ui.dark_
                 icon="refresh",
                 on_click=ui.navigate.reload,
             ).props("flat round dense").tooltip("Refresh page")
+            # Always-on cue that the app's *automatic* price refresh is alive:
+            # it spins/says "Updating…" while a background pull runs and shows
+            # the last auto-update time when idle (see refresh_indicator).
+            from investment_dashboard.ui import refresh_indicator  # noqa: PLC0415
+
+            refresh_indicator.install_header_indicator(tz=now_tz)
             # Always-visible live connection indicator (green/amber/red),
             # driven from the websocket by ui.connectivity so a dropped local
             # connection can never go unnoticed.
@@ -286,12 +300,15 @@ def page_frame(title: str, *, current: str) -> Iterator[None]:
             initial_theme = theme_service.get_theme(session)
             onboarded = is_onboarded(session)
             current_currency = display_currency_service.get_display_currency(session)
-            now_label = timezone_service.now(session).strftime("%Y-%m-%d %H:%M %Z")
+            now = timezone_service.now(session)
+            now_label = now.strftime("%Y-%m-%d %H:%M %Z")
+            now_tz = now.tzinfo
     except Exception:  # pragma: no cover - defensive
         initial_theme = None
         onboarded = True
         current_currency = display_currency_service.DEFAULT_CURRENCY
         now_label = ""
+        now_tz = None
     dark = ui.dark_mode(value=initial_theme)
 
     if _maybe_redirect_to_onboarding(current, onboarded=onboarded):
@@ -300,7 +317,13 @@ def page_frame(title: str, *, current: str) -> Iterator[None]:
             yield
         return
 
-    _header(title, current_currency=current_currency, now_label=now_label, dark=dark)
+    _header(
+        title,
+        current_currency=current_currency,
+        now_label=now_label,
+        dark=dark,
+        now_tz=now_tz,
+    )
     _sidebar(current)
     # Surface any *new* background-task failure (live refresh / startup refresh)
     # as a toast while this page is open — the app runs with no console window.
