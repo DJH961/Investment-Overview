@@ -15,7 +15,7 @@ _Re-baselined 2026-06-21 against `v3.0.0` (see the status block below)._
 > | 🟠 4 — CHANGELOG / version | ✅ **closed** | `pyproject.toml` and `__init__.__version__` are `3.0.0`; the CHANGELOG documents the `3.0.0` release. |
 > | 🟠 5 — per-tier Alembic | ✅ **closed** (already noted below). |
 > | 🟠 6 — onboarding passphrase | ✅ **closed** (already noted below). |
-> | 🟢 7 — true daily-snapshot TWR | ⏳ **open** | Still a Modified-Dietz approximation; tracked as **G** in `pre_v3_audit_remaining.md`. Daily snapshots now exist, so the exact-TWR follow-up remains cheap but unstarted. |
+> | 🟢 7 — true daily-snapshot TWR | ✅ **closed** | Per-period growth on Monthly/Yearly is now a true daily-chained TWR (`ui/pages/_period_query.py::_chained_twr` geometrically links each sub-period's Modified-Dietz return across stored daily snapshots, degrading to a single Modified-Dietz only when interior snapshots are sparse). Tracked as **G2** in `pre_v3_audit_remaining.md`. |
 >
 > The detailed sections below are preserved verbatim as the original
 > 2.9.4 first-pass; treat this block as the authoritative current status.
