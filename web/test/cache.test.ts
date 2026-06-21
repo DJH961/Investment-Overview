@@ -7,17 +7,20 @@ import { describe, expect, it } from "vitest";
 
 import {
   creditsSpentWithin,
+  readCachedEnvelope,
   readCachedFx,
   readCachedQuotes,
   readCreditLog,
   readNavPublishStats,
   recordCredits,
   recordNavPublish,
+  writeCachedEnvelope,
   writeCachedFx,
   writeCachedQuotes,
   NAV_PUBLISH_SAMPLES,
   type StorageLike,
 } from "../src/cache";
+import type { Envelope } from "../src/crypto";
 import type { Quote } from "../src/prices";
 
 function memStorage(): StorageLike {
@@ -144,5 +147,34 @@ describe("learned NAV publish stats", () => {
     expect(readNavPublishStats(s).size).toBe(0);
     s.setItem("iv.web.nav_publish", "{ not json");
     expect(readNavPublishStats(s).size).toBe(0);
+  });
+});
+
+describe("encrypted-blob cache", () => {
+  const envelope: Envelope = {
+    v: 1,
+    kdf: "PBKDF2-HMAC-SHA256",
+    kdf_params: { salt: "c2FsdA==", iterations: 200000 },
+    nonce: "bm9uY2U=",
+    ciphertext: "Y2lwaGVy",
+    tag: "dGFn",
+  };
+
+  it("round-trips an envelope with its download timestamp", () => {
+    const s = memStorage();
+    writeCachedEnvelope(envelope, 1_700_000_000_000, s);
+    const got = readCachedEnvelope(s);
+    expect(got?.at).toBe(1_700_000_000_000);
+    expect(got?.envelope.ciphertext).toBe("Y2lwaGVy");
+    expect(got?.envelope.kdf_params.iterations).toBe(200000);
+  });
+
+  it("returns null when nothing is cached or the store is corrupt", () => {
+    const s = memStorage();
+    expect(readCachedEnvelope(s)).toBeNull();
+    s.setItem("iv.web.blob_cache", "{ not json");
+    expect(readCachedEnvelope(s)).toBeNull();
+    s.setItem("iv.web.blob_cache", JSON.stringify({ envelope }));
+    expect(readCachedEnvelope(s)).toBeNull();
   });
 });

@@ -1,7 +1,14 @@
 /**
  * Application controller: a small state machine wiring the screens together.
  *
- *   setup ─▶ unlock ─▶ (fetch blob ▶ decrypt ▶ fetch live data ▶ compute) ─▶ dashboard
+ *   setup ─▶ unlock ─▶ (decrypt cached blob ▶ render from cache ─▶ dashboard)
+ *                         └─▶ in background: re-download blob + refresh prices
+ *
+ * Speed comes from doing the slow, networked work *after* the first paint: the
+ * unlock screen decrypts the encrypted blob we already cached and renders the
+ * dashboard from cached prices immediately, then a background pass re-downloads
+ * the blob and refreshes live prices. Optional biometric unlock (see
+ * `webauthn.ts`) lets a fingerprint stand in for typing the passphrase.
  *
  * Secrets handling: the Twelve Data API key is device-local config
  * (`localStorage`); the mobile passphrase is kept in memory only for the active
@@ -9,7 +16,7 @@
  */
 import { fetchEnvelope } from "./blob";
 import { buildDashboard, type DashboardModel } from "./compute";
-import { decryptEnvelopeToJson } from "./crypto";
+import { decryptEnvelopeToJson, type Envelope } from "./crypto";
 import { buildDemoModel } from "./demo";
 import {
   isValidRepo,
@@ -19,8 +26,14 @@ import {
   DEFAULT_QUOTE_CACHE_MINUTES,
   type AppConfig,
 } from "./config";
-import { PriceError } from "./prices";
-import { readNavPublishStats, recordNavPublish } from "./cache";
+import { PriceError, type FxRates } from "./prices";
+import {
+  readCachedEnvelope,
+  readCachedFx,
+  readNavPublishStats,
+  recordNavPublish,
+  writeCachedEnvelope,
+} from "./cache";
 import {
   DEFAULT_NAV_CACHE_TTL_MS,
   FREE_TIER,
@@ -28,18 +41,38 @@ import {
   loadQuotes,
   navCacheTtlMs,
   navPublishWindow,
+  type LoadQuotesOptions,
   type QuoteLoadReport,
 } from "./quotes";
+import { nextRefreshDelayMs } from "./refresh-policy";
+import {
+  enrolBiometric,
+  hasBiometricEnrolment,
+  isBiometricSupported,
+  unlockWithBiometric,
+} from "./webauthn";
 import { setEurUsdRate } from "./currency";
 import type { MobileExport } from "./types";
 import { h, renderDashboard } from "./ui";
 
 /**
- * NAV-priced asset classes that are real, tickered funds and so can be priced
- * live (their NAV publishes ~once a day). Synthetic `cash`/`savings` rows are
- * deliberately excluded — they have no market ticker.
+ * Skip the background re-download of the encrypted blob if the copy we have was
+ * fetched within this window. Re-opening the app seconds after closing it can't
+ * have a newer export, so there's nothing to fetch — go straight to the data.
  */
-const FETCHABLE_NAV_CLASSES = new Set(["mutual_fund", "money_market", "money-market"]);
+const BLOB_REFETCH_MIN_INTERVAL_MS = 2 * 60 * 1000;
+
+/**
+ * NAV-priced asset classes that are real, tickered funds and so can be priced
+ * live (their NAV publishes ~once a day). Only genuine `mutual_fund` holdings
+ * qualify.
+ *
+ * `money_market` funds are deliberately excluded: their NAV is pinned at $1 by
+ * design, so it never moves — requesting a quote for them only ever returns the
+ * same dollar and wastes a free-tier credit. They keep their exported value,
+ * like synthetic `cash`/`savings` rows (which have no ticker at all).
+ */
+const FETCHABLE_NAV_CLASSES = new Set(["mutual_fund"]);
 
 interface SessionState {
   config: AppConfig;
@@ -52,6 +85,21 @@ export class App {
   private readonly state: SessionState;
   /** The last computed model, kept so the currency toggle can re-render it. */
   private model: DashboardModel | null = null;
+  /** The decrypted-from envelope and when it was downloaded (for re-download skip). */
+  private envelope: Envelope | null = null;
+  private envelopeAt: number | null = null;
+  /**
+   * Monotonic session token. Bumped on every unlock and on lock so that
+   * in-flight background work (timers, fetches) from a previous session is
+   * recognised as stale and discarded.
+   */
+  private sessionId = 0;
+  /** Pending auto-refresh timer, if any. */
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Installed visibility listener, kept so it can be removed on lock. */
+  private visibilityHandler: (() => void) | null = null;
+  /** Guards against overlapping price refreshes. */
+  private refreshing = false;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -174,10 +222,18 @@ export class App {
       autocomplete: "off",
       placeholder: "Mobile passphrase",
     });
+    // Optional "remember with fingerprint" enrolment — revealed only on devices
+    // with a platform authenticator (see addBiometricControls).
+    const enrol = h("input", { type: "checkbox", id: "f-bio" }) as HTMLInputElement;
+    const enrolField = h("label", { class: "field check", hidden: "hidden" }, [
+      enrol,
+      h("span", {}, ["Enable fingerprint unlock on this device"]),
+    ]);
     const form = h("form", { class: "panel", novalidate: "novalidate" }, [
       h("h1", {}, ["Unlock"]),
       h("p", { class: "muted" }, ["Your passphrase decrypts the data in this browser. It is never stored or sent."]),
       field("Passphrase", pass),
+      enrolField,
       error ? h("p", { class: "note err" }, [error]) : document.createTextNode(""),
       h("div", { class: "row" }, [
         h("button", { class: "btn", type: "submit" }, ["Unlock"]),
@@ -189,11 +245,43 @@ export class App {
       event.preventDefault();
       const passphrase = (pass as HTMLInputElement).value;
       if (!passphrase) return this.showUnlock("Enter your passphrase.");
-      void this.unlock(passphrase);
+      void this.unlock(passphrase, enrol.checked);
       return undefined;
     });
     this.mount(h("div", { class: "screen" }, [form]));
     (pass as HTMLInputElement).focus();
+    void this.addBiometricControls(form, enrolField);
+  }
+
+  /**
+   * Progressively enhance the unlock screen with biometrics: a one-touch
+   * "Unlock with fingerprint" button when already enrolled, or the enrolment
+   * checkbox when the device has a platform authenticator but isn't set up yet.
+   * Done async so an unsupported device just shows the plain passphrase form.
+   */
+  private async addBiometricControls(form: HTMLElement, enrolField: HTMLElement): Promise<void> {
+    if (hasBiometricEnrolment()) {
+      const btn = h("button", { class: "btn bio", type: "button" }, [
+        h("span", { "aria-hidden": "true" }, ["☝ "]),
+        "Unlock with fingerprint",
+      ]);
+      btn.addEventListener("click", () => void this.unlockBiometric());
+      form.querySelector("h1")?.after(btn);
+      // Auto-prompt: most users who enrolled want the touch immediately.
+      btn.focus();
+      return;
+    }
+    if (await isBiometricSupported()) enrolField.hidden = false;
+  }
+
+  /** Attempt a fingerprint unlock, then run the normal decrypt pipeline. */
+  private async unlockBiometric(): Promise<void> {
+    try {
+      const passphrase = await unlockWithBiometric();
+      await this.unlock(passphrase, false);
+    } catch (err) {
+      this.showUnlock((err as Error).message);
+    }
   }
 
   private showStatus(message: string): void {
@@ -232,7 +320,28 @@ export class App {
 
   // --- Load pipeline ----------------------------------------------------------
 
-  private async unlock(passphrase: string): Promise<void> {
+  /**
+   * Unlock the dashboard. To make a quick re-open feel instant, we decrypt the
+   * encrypted blob we already cached *first* and render from cached prices, then
+   * re-download the blob and refresh prices in the background. Only when there is
+   * no usable cached blob do we block on a fresh download.
+   */
+  private async unlock(passphrase: string, enrolRequested = false): Promise<void> {
+    const cached = readCachedEnvelope();
+    if (cached) {
+      try {
+        const data = await decryptEnvelopeToJson<MobileExport>(cached.envelope, passphrase);
+        this.state.passphrase = passphrase;
+        this.state.data = data;
+        this.envelope = cached.envelope;
+        this.envelopeAt = cached.at;
+        await this.afterUnlock(enrolRequested);
+        return;
+      } catch {
+        // The cached blob didn't decrypt — usually it was re-encrypted with a
+        // new passphrase. Fall through to a fresh download and try again there.
+      }
+    }
     this.showStatus("Downloading encrypted data…");
     const url = resolveBlobUrl(this.state.config);
     if (!url) return this.showSetup("No data source configured.");
@@ -242,18 +351,80 @@ export class App {
       const data = await decryptEnvelopeToJson<MobileExport>(envelope, passphrase);
       this.state.passphrase = passphrase;
       this.state.data = data;
-      await this.refresh();
+      this.envelope = envelope;
+      this.envelopeAt = Date.now();
+      writeCachedEnvelope(envelope, this.envelopeAt);
+      await this.afterUnlock(enrolRequested);
     } catch (err) {
       this.showUnlock((err as Error).message);
     }
     return undefined;
   }
 
-  private async refresh(): Promise<void> {
-    const { data, config } = this.state;
-    if (!data) return this.showUnlock();
-    this.showStatus("Fetching live prices…");
+  /**
+   * Post-unlock: paint the dashboard from cached prices immediately, then kick
+   * off the background passes (optional biometric enrolment, blob re-download,
+   * and the live-price auto-refresh) that don't need to block the first paint.
+   */
+  private async afterUnlock(enrolRequested: boolean): Promise<void> {
+    this.sessionId += 1;
+    const session = this.sessionId;
 
+    // 1. Instant first paint from cached quotes — no network on the hot path.
+    await this.refreshPrices(session, false);
+
+    // 2. Optionally remember the verified passphrase behind the fingerprint.
+    if (enrolRequested && this.state.passphrase) {
+      try {
+        await enrolBiometric(this.state.passphrase);
+        this.toast("Fingerprint unlock enabled on this device.");
+      } catch (err) {
+        this.toast((err as Error).message);
+      }
+    }
+
+    // 3. Re-download the encrypted blob in the background (skipped on a quick
+    //    re-open) and 4. start the live-price auto-refresh (burst then slow).
+    void this.maybeRefreshBlob(session);
+    this.installVisibilityRefresh(session);
+    void this.runScheduledRefresh(session);
+  }
+
+  /**
+   * Re-download the encrypted blob in the background and, if it actually
+   * changed, decrypt and re-render. Skipped when the cached blob is only seconds
+   * old (a quick re-open can't have a newer export). Failures are swallowed —
+   * the already-rendered cached data stands.
+   */
+  private async maybeRefreshBlob(session: number): Promise<void> {
+    const { config, passphrase } = this.state;
+    if (!passphrase) return;
+    if (this.envelopeAt !== null && Date.now() - this.envelopeAt < BLOB_REFETCH_MIN_INTERVAL_MS) return;
+    const url = resolveBlobUrl(config);
+    if (!url) return;
+    try {
+      const envelope = await fetchEnvelope(url);
+      if (session !== this.sessionId) return;
+      this.envelopeAt = Date.now();
+      writeCachedEnvelope(envelope, this.envelopeAt);
+      // Nothing to do if the ciphertext is byte-for-byte what we already have.
+      if (this.envelope && envelope.ciphertext === this.envelope.ciphertext && envelope.nonce === this.envelope.nonce) {
+        return;
+      }
+      const data = await decryptEnvelopeToJson<MobileExport>(envelope, passphrase);
+      if (session !== this.sessionId) return;
+      this.envelope = envelope;
+      this.state.data = data;
+      // Re-render the (possibly new) holdings from cache instantly; the running
+      // price scheduler will fetch anything freshly added on its next tick.
+      await this.refreshPrices(session, false);
+    } catch {
+      /* background, best-effort: keep showing the cached data. */
+    }
+  }
+
+  /** The symbols to price live, and the (NAV-aware) loadQuotes options. */
+  private quoteRequest(data: MobileExport, config: AppConfig): { symbols: string[]; options: LoadQuotesOptions } {
     // Market holdings always fetch live; NAV holdings that are real funds
     // (mutual / money-market) also fetch, so their once-a-day NAV tracks the
     // latest published value instead of being frozen at the export. Synthetic
@@ -270,51 +441,163 @@ export class App {
       })
       .map((holding) => holding.price_symbol);
 
-    // Free-tier-aware loaders: quotes economise on Twelve Data credits (cache +
-    // per-minute/day budgeting + retry-with-backoff); FX prefers a daily cache.
-    // NAV symbols normally sit on a long (daily-ish) freshness window, but
-    // within each fund's learned publish window they poll harder until today's
-    // fresh NAV lands — then relax again — so updates are caught promptly
-    // without burning the credit budget the rest of the day.
     const cacheTtlMs = config.quoteCacheMinutes * 60 * 1000;
     // Per-symbol learned publish windows: when each fund's NAV has historically
     // landed, so we poll within that tight band instead of a fixed evening guess.
     const navStats = readNavPublishStats();
-    const [quoteLoad, fxLoad] = await Promise.all([
-      loadQuotes(symbols, config.apiKey, {
-        cacheTtlMs,
-        cacheTtlMsForSymbol: (symbol, cached) => {
-          if (!navFetchSymbols.has(symbol)) return cacheTtlMs;
-          const { publishHour, catchUpWindowHours } = navPublishWindow(navStats.get(symbol)?.hours);
-          return navCacheTtlMs(cached?.quote, {
-            shortTtlMs: cacheTtlMs,
-            longTtlMs: DEFAULT_NAV_CACHE_TTL_MS,
-            publishHour,
-            catchUpWindowHours,
-          });
-        },
-        // Learn each fund's real publish time from when its value-date advances.
-        onValueDateAdvance: (symbol, valueDate, at) => {
-          if (navFetchSymbols.has(symbol)) recordNavPublish(symbol, valueDate, at);
-        },
-      }),
-      loadFxRates(),
-    ]);
+    const options: LoadQuotesOptions = {
+      cacheTtlMs,
+      cacheTtlMsForSymbol: (symbol, cached) => {
+        if (!navFetchSymbols.has(symbol)) return cacheTtlMs;
+        const { publishHour, catchUpWindowHours } = navPublishWindow(navStats.get(symbol)?.hours);
+        return navCacheTtlMs(cached?.quote, {
+          shortTtlMs: cacheTtlMs,
+          longTtlMs: DEFAULT_NAV_CACHE_TTL_MS,
+          publishHour,
+          catchUpWindowHours,
+        });
+      },
+      // Learn each fund's real publish time from when its value-date advances.
+      onValueDateAdvance: (symbol, valueDate, at) => {
+        if (navFetchSymbols.has(symbol)) recordNavPublish(symbol, valueDate, at);
+      },
+    };
+    return { symbols, options };
+  }
+
+  /**
+   * Build and render the dashboard.
+   *
+   * When `network` is false this is a zero-credit paint straight from cache
+   * (used for the instant first paint and after a blob change) — no quotes or FX
+   * are fetched, and the staleness banner is suppressed because a real refresh
+   * follows. When `network` is true it does a budgeted live refresh and returns
+   * the load report so the auto-refresh scheduler can decide what to do next.
+   */
+  private async refreshPrices(session: number, network: boolean): Promise<QuoteLoadReport | null> {
+    const { data, config } = this.state;
+    if (!data) return null;
+
+    const { symbols, options } = this.quoteRequest(data, config);
+    const apiKey = network ? config.apiKey : "";
+    const quotePromise = loadQuotes(symbols, apiKey, options);
+
+    let fx: FxRates;
+    let fxReport: { cached: boolean; error: PriceError | null };
+    if (network) {
+      const fxLoad = await loadFxRates();
+      fx = fxLoad.fx;
+      fxReport = fxLoad;
+    } else {
+      // Cache-only paint: don't touch the network for FX either.
+      const cachedFx = readCachedFx();
+      fx = cachedFx?.fx ?? { base: "EUR", rates: {} };
+      fxReport = { cached: cachedFx !== null, error: null };
+    }
+
+    const quoteLoad = await quotePromise;
+    // A superseded session (lock, or a newer unlock) must not paint over the UI.
+    if (session !== this.sessionId) return quoteLoad.report;
 
     // A non-retryable quote failure (e.g. a bad/rejected API key) is a config
     // problem the user must act on, so keep the explicit error screen with a
     // route to Settings.
-    if (quoteLoad.report.error && !quoteLoad.report.error.retryable) {
-      return this.renderLoadError(quoteLoad.report.error.message);
+    if (network && quoteLoad.report.error && !quoteLoad.report.error.retryable) {
+      this.renderLoadError(quoteLoad.report.error.message);
+      return null;
     }
 
-    const fx = fxLoad.fx;
-    const degradedReason = this.describeDegradation(quoteLoad.report, fxLoad);
+    const degradedReason = network ? this.describeDegradation(quoteLoad.report, fxReport) : null;
     const model = buildDashboard(data, quoteLoad.quotes, fx, new Date(), degradedReason);
     // Prefer the live EUR→USD rate; fall back to the export meta rate.
     setEurUsdRate(fx.rates.USD ?? model.overview.fxRateEurUsd);
     this.renderDashboard(model);
-    return undefined;
+    return quoteLoad.report;
+  }
+
+  /**
+   * One auto-refresh tick: do a live refresh and schedule the next one. On
+   * startup, while symbols are still being filled in (deferred to stay within
+   * the free-tier per-minute budget), it bursts roughly once a minute so every
+   * holding reaches its latest price as fast as the rate limit allows; once
+   * nothing is deferred it relaxes to a slow steady-state cadence. Paused while
+   * the tab is hidden (resumed by the visibility listener).
+   */
+  private async runScheduledRefresh(session: number): Promise<void> {
+    if (session !== this.sessionId) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    if (this.refreshing) return;
+    this.refreshing = true;
+    this.setUpdating(true);
+    let report: QuoteLoadReport | null = null;
+    try {
+      report = await this.refreshPrices(session, true);
+    } finally {
+      this.refreshing = false;
+      this.setUpdating(false);
+    }
+    if (session !== this.sessionId || report === null) return;
+    this.scheduleNext(session, nextRefreshDelayMs({ deferred: report.deferred }));
+  }
+
+  /** Arm the next auto-refresh tick, replacing any pending one. */
+  private scheduleNext(session: number, delayMs: number): void {
+    this.clearRefreshTimer();
+    this.refreshTimer = setTimeout(() => void this.runScheduledRefresh(session), delayMs);
+  }
+
+  private clearRefreshTimer(): void {
+    if (this.refreshTimer !== null) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+  }
+
+  /**
+   * Pause auto-refresh while the tab is hidden (no wasted credits in the
+   * background) and do an immediate, cache-cheap refresh when it returns to the
+   * foreground — exactly when the user wants the freshest data.
+   */
+  private installVisibilityRefresh(session: number): void {
+    this.removeVisibilityRefresh();
+    if (typeof document === "undefined") return;
+    const handler = (): void => {
+      if (session !== this.sessionId) return;
+      if (document.hidden) this.clearRefreshTimer();
+      else void this.runScheduledRefresh(session);
+    };
+    document.addEventListener("visibilitychange", handler);
+    this.visibilityHandler = handler;
+  }
+
+  private removeVisibilityRefresh(): void {
+    if (this.visibilityHandler && typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", this.visibilityHandler);
+    }
+    this.visibilityHandler = null;
+  }
+
+  /** Toggle a small, unobtrusive "Updating…" pill while a live refresh runs. */
+  private setUpdating(on: boolean): void {
+    if (typeof document === "undefined") return;
+    const id = "updating-pill";
+    const existing = document.getElementById(id);
+    if (on) {
+      if (existing) return;
+      document.body.append(
+        h("div", { id, class: "updating-pill", role: "status", "aria-live": "polite" }, ["Updating…"]),
+      );
+    } else {
+      existing?.remove();
+    }
+  }
+
+  /** A brief, auto-dismissing status message (e.g. biometric enrolment result). */
+  private toast(message: string): void {
+    if (typeof document === "undefined") return;
+    const node = h("div", { class: "app-toast", role: "status", "aria-live": "polite" }, [message]);
+    document.body.append(node);
+    setTimeout(() => node.remove(), 4500);
   }
 
   /**
@@ -350,7 +633,7 @@ export class App {
     this.mount(
       renderDashboard(
         model,
-        () => void this.refresh(),
+        () => void this.runScheduledRefresh(this.sessionId),
         () => this.lock(),
         () => this.reRenderCurrentModel(),
       ),
@@ -371,12 +654,20 @@ export class App {
         h("button", { class: "btn ghost", type: "button", "data-action": "settings" }, ["Settings"]),
       ]),
     ]);
-    panel.querySelector('[data-action="retry"]')?.addEventListener("click", () => void this.refresh());
+    panel
+      .querySelector('[data-action="retry"]')
+      ?.addEventListener("click", () => void this.runScheduledRefresh(this.sessionId));
     panel.querySelector('[data-action="settings"]')?.addEventListener("click", () => this.showSetup());
     this.mount(h("div", { class: "screen" }, [panel]));
   }
 
   private lock(): void {
+    // Invalidate any in-flight background work and tear down the auto-refresh.
+    this.sessionId += 1;
+    this.clearRefreshTimer();
+    this.removeVisibilityRefresh();
+    this.setUpdating(false);
+    this.refreshing = false;
     this.state.passphrase = null;
     this.state.data = null;
     this.showUnlock();

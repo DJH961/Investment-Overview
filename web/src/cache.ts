@@ -15,6 +15,7 @@
  */
 
 import { Decimal } from "./decimal-config";
+import type { Envelope } from "./crypto";
 import type { FxRates, Quote } from "./prices";
 
 /** Subset of the Web Storage API we depend on (injectable for tests). */
@@ -23,6 +24,7 @@ export type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 const QUOTE_KEY = "iv.web.quote_cache";
 const FX_KEY = "iv.web.fx_cache";
 const CREDIT_KEY = "iv.web.credit_log";
+const BLOB_KEY = "iv.web.blob_cache";
 
 function defaultStorage(): StorageLike | null {
   try {
@@ -162,7 +164,40 @@ export function writeCachedFx(
   writeJson(storage, FX_KEY, { base: fx.base, rates, at });
 }
 
-// --- Credit-spend log (rolling-window budget bookkeeping) -------------------
+// --- Encrypted-blob cache ---------------------------------------------------
+
+/** A cached encrypted envelope together with the moment it was downloaded. */
+export interface CachedEnvelope {
+  envelope: Envelope;
+  at: number;
+}
+
+/**
+ * Read the last-downloaded encrypted envelope, if any. The envelope is opaque
+ * AES-256-GCM ciphertext — exactly the public, safe-to-serve blob — so caching
+ * it locally leaks nothing: it can only be decrypted with the passphrase, which
+ * is never stored. Caching it lets the app decrypt the copy it already has
+ * *first* (instant unlock) and only then re-download a fresh blob in the
+ * background. Missing/corrupt cache → null.
+ */
+export function readCachedEnvelope(storage: StorageLike | null = defaultStorage()): CachedEnvelope | null {
+  const stored = readJson<{ envelope: Envelope; at: number }>(storage, BLOB_KEY);
+  if (!stored || typeof stored.at !== "number" || typeof stored.envelope !== "object" || stored.envelope === null) {
+    return null;
+  }
+  return { envelope: stored.envelope, at: stored.at };
+}
+
+/** Persist the encrypted envelope downloaded at `at` (best-effort). */
+export function writeCachedEnvelope(
+  envelope: Envelope,
+  at: number,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  writeJson(storage, BLOB_KEY, { envelope, at });
+}
+
+
 
 /** A single recorded spend of `n` API credits at epoch-ms `at`. */
 export interface CreditSpend {
@@ -268,4 +303,4 @@ export function recordNavPublish(
   writeJson(storage, NAV_PUBLISH_KEY, file);
 }
 
-export const CACHE_KEYS = { QUOTE_KEY, FX_KEY, CREDIT_KEY, NAV_PUBLISH_KEY } as const;
+export const CACHE_KEYS = { QUOTE_KEY, FX_KEY, CREDIT_KEY, NAV_PUBLISH_KEY, BLOB_KEY } as const;
