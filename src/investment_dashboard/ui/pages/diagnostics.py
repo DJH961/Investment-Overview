@@ -19,6 +19,7 @@ from nicegui import ui
 from investment_dashboard.db import session_scope
 from investment_dashboard.services import diagnostics_service
 from investment_dashboard.services.diagnostics_service import HealthItem, HealthReport
+from investment_dashboard.services.support_bundle import build_support_bundle, bundle_filename
 from investment_dashboard.ui.components import empty_state, page_header, section
 from investment_dashboard.ui.layout import page_frame
 
@@ -80,6 +81,28 @@ def _render_report(report: HealthReport) -> None:  # pragma: no cover - UI
             _render_item(item)
 
 
+def _download_support_bundle() -> None:  # pragma: no cover - UI
+    """Build the logs-plus-context bundle and offer it as a text download."""
+    ui.download.content(build_support_bundle(), bundle_filename())
+    ui.notify("Support bundle downloaded — attach it when reporting an issue.", type="positive")
+
+
+def _render_support_section() -> None:  # pragma: no cover - UI
+    """Surface a one-click "download logs to share" action."""
+    with section("Report an issue"):
+        ui.label(
+            "Hit something slow or broken? Download a support bundle — it packages "
+            "the recent log file plus your app version and (secret-free) settings "
+            "into one text file you can share directly so the problem can be "
+            "diagnosed from the actual logs.",
+        ).classes("text-body2 opacity-80 q-mb-sm")
+        ui.button(
+            "Download support bundle",
+            icon="download",
+            on_click=_download_support_bundle,
+        ).props("unelevated color=primary")
+
+
 def render_body() -> None:  # pragma: no cover - UI
     """Render the page body (factored out so the route stays thin)."""
     page_header(
@@ -93,6 +116,7 @@ def render_body() -> None:  # pragma: no cover - UI
         "Settings → Data refresh (prices/FX) or Settings → Instruments (tickers).",
     ).classes("text-body2 opacity-70 q-mb-sm")
     _render_report(report)
+    _render_support_section()
 
 
 def register() -> None:
