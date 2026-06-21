@@ -103,6 +103,8 @@ describe("buildDashboard", () => {
     expect(fxaix.todayMoveEur).toBeNull();
     expect(model.overview.missingPriceSymbols).toEqual([]);
     expect(model.overview.fxMissingCurrencies).toEqual([]);
+    // Every holding could be valued, so the live total is complete.
+    expect(model.overview.totalValueIsComplete).toBe(true);
   });
 
   it("weights sum to ~1 across priced holdings + cash share", () => {
@@ -120,6 +122,18 @@ describe("buildDashboard", () => {
     const noFx: FxRates = { base: "EUR", rates: {} };
     const m = buildDashboard(makeExport(), quotes, noFx, new Date("2024-06-01T12:00:00Z"));
     expect(m.overview.fxMissingCurrencies).toContain("USD");
+    // The USD holdings drop out of the EUR total, so it is incomplete.
+    expect(m.overview.totalValueIsComplete).toBe(false);
+  });
+
+  it("marks the total incomplete when a holding has no usable price", () => {
+    const exp = makeExport();
+    // FXAIX has no live quote (absent from `quotes`) and no last-known price,
+    // so it cannot be valued and falls out of the total.
+    exp.holdings[1].last_known_price_native = null;
+    const m = buildDashboard(exp, quotes, fx, new Date("2024-06-01T12:00:00Z"));
+    expect(m.overview.missingPriceSymbols).toEqual(["FXAIX"]);
+    expect(m.overview.totalValueIsComplete).toBe(false);
   });
 });
 

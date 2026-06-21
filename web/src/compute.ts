@@ -71,10 +71,20 @@ export interface OverviewView {
   /** EUR→USD reference rate carried in the export meta (for the FX line). */
   fxRateEurUsd: Decimal | null;
   holdingsCount: number;
-  /** Symbols whose live price was unavailable (NAV stale or unsupported). */
+  /**
+   * Symbols with no usable price at all — no live quote and no
+   * `last_known_price_native` fallback — so they are excluded from totals.
+   */
   missingPriceSymbols: string[];
   /** Currencies with no FX leg, so their EUR value could not be computed. */
   fxMissingCurrencies: string[];
+  /**
+   * True when every holding could be valued in EUR, so `totalValueEur` is a
+   * complete figure. False when some holdings fell out of the sum because they
+   * had no usable price or no FX rate — in that case the total under-counts the
+   * portfolio and must not be drawn as a live tip on the value chart.
+   */
+  totalValueIsComplete: boolean;
   /**
    * Set when live quotes/FX could not be fetched (e.g. rate limited) and the
    * dashboard fell back to the exported last-known values; null otherwise.
@@ -355,6 +365,7 @@ export function buildDashboard(
     holdingsCount: holdings.length,
     missingPriceSymbols: missingPrice,
     fxMissingCurrencies: [...fxMissing],
+    totalValueIsComplete: missingPrice.length === 0 && fxMissing.size === 0,
     liveDegradedReason,
   };
 
