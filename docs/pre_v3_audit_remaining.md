@@ -154,14 +154,25 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
   `CONTRIBUTING.md`, `docs/user_guide.md`, `requirements_and_project_overview.md`
   (the "UI never calls repositories" claim is false; the single-file-DB /
   embedded-projection description is stale).
-* **F2** — Archive delivered plan docs (`v2.0_split_cloud_security_plan.md`,
-  `v2.2-feature-bump-plan.md`, `v2.8-cleanup-plan.md`) under `docs/history/`.
-* **F3** — Re-baseline `docs/maintenance_audit.md` against 2.11.1 (several of
-  its items — `^IRX` tooltip, CAGR total-loss, most EUR-as-USD sites, per-tier
-  Alembic + onboarding passphrase — are now closed).
-* **F4** — Remove confirmed dead code after a final caller check
-  (`db.py` legacy `get_engine`/`get_session_factory`, `money_format.fmt_pair`,
-  unused repo helpers).
+* **F2** — ✅ done. Delivered plan docs (`v2.0_split_cloud_security_plan.md`,
+  `v2.2-feature-bump-plan.md`, `v2.8-cleanup-plan.md`, and the also-shipped
+  `v2.10.1-plan.md`) moved under `docs/history/` with an index `README.md`;
+  the remaining live references (`README.md`, `CHANGELOG.md`) were repointed.
+* **F3** — ✅ done. `docs/maintenance_audit.md` re-baselined against 2.11.1: a
+  status block at the top records each §0 "do-soon" item's current state — the
+  `^IRX` tooltip (now correct: the code default *is* `^IRX`), the EUR-as-USD
+  fallback (closed by A1, residual A2 cross-referenced), CHANGELOG/version,
+  per-tier Alembic and onboarding passphrase (all closed), with true-TWR (G)
+  and the doc re-sync (F1) flagged as still open.
+* **F4** — ✅ verified complete. The named symbols (`db.py` legacy
+  `get_engine`/`get_session_factory`, `money_format.fmt_pair`) were already
+  removed by the v3.0 work that landed on `main`; a repo-wide search confirms
+  zero remaining references. A `vulture` pass (≥80 % confidence) reports no
+  remaining dead code, and the lower-confidence hits are NiceGUI page
+  callbacks, enum members consumed by `.value`, or repo/service helpers still
+  exercised by the test-suite — i.e. not *confirmed* dead. No removal made:
+  the only candidates left are covered by tests, so deleting them would mean
+  deleting their tests.
 
 ### G. Functionality gaps for 3.0
 

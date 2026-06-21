@@ -204,7 +204,7 @@ instruments whose cached price feed is corrupt.
   in the data (SCHK 2:1 on 2024-10-11, VUG on 2026-04-21) each leave a visible
   step in the spreadsheet-vs-dashboard gap, and the gap vanishes once both
   splits are reached — fully explaining the historic understatement. The fix is
-  scoped in `docs/v2.10.1-plan.md` and shipped below (Option A).
+  scoped in `docs/history/v2.10.1-plan.md` and shipped below (Option A).
 
 ### Fixed
 - **Split back-adjustment in historical valuation.** Past-date holdings are now
@@ -617,7 +617,7 @@ This release lands the full **v2.8 whole-app cleanup** — a broad sweep of
 correctness and UX fixes spanning Overview, Deposits, Transactions, Monthly,
 Yearly, Projection, Analytics, Settings and onboarding. The work was delivered
 as one branch / one PR organised into seven themed steps; the step-by-step
-plan and root-cause analysis live in `docs/v2.8-cleanup-plan.md`.
+plan and root-cause analysis live in `docs/history/v2.8-cleanup-plan.md`.
 
 ### Added
 - **Standalone Projection page.** The interactive dual-currency projection
