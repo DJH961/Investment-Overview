@@ -105,15 +105,30 @@ the SmartScreen unsigned-`.exe` block.
 The fastest path — works on a fresh clone without any prior Python
 setup beyond having Python 3.12+ on `PATH`.
 
-- **Windows:** double-click `run_dashboard.bat`. First run bootstraps
-  a local `.venv` and installs dependencies (≈1 minute); subsequent
-  runs are instant.
+- **Windows (no console window):** double-click `run_dashboard.vbs`. It
+  launches the app under the windowless `pythonw.exe`, opens your browser,
+  and does everything else in the background — no command window. First run
+  bootstraps a local `.venv` and installs dependencies (≈1 minute);
+  subsequent runs are instant.
+- **Windows (console / diagnostic mode):** double-click `run_dashboard.bat`
+  to keep a window open with live output — handy when something goes wrong.
 - **macOS / Linux:** `./run_dashboard.sh` (already executable).
 - **From any IDE / shell:** `python run_dashboard.py`.
 
-The launcher opens the dashboard in your default browser
-automatically; close the terminal window (or press Ctrl+C in it) to
-stop the server.
+The launcher opens the dashboard in your default browser automatically.
+
+**If startup fails before the server is up** (e.g. a broken `.venv`, a
+port already in use), the no-console launcher shows a **native error
+dialog** and writes the full traceback to **`launcher.log`** beside the
+launcher, so a silent double-click never just "does nothing". The running
+app's own log stays in `logs/dashboard.log` (relocatable via
+`INV_DASHBOARD_LOG_DIR`), and background-task failures (live/startup
+refresh) are surfaced in-app as a toast and on the **Data Health** page.
+
+Because the no-console launcher detaches, closing a window no longer stops
+the server. Stop it from your browser tab (enable *auto-shutdown on tab
+close* in Settings) or end the `pythonw.exe` process; re-running the
+launcher also stops any previous instance first.
 
 ### Manual / development install
 

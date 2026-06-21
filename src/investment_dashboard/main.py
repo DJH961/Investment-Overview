@@ -77,8 +77,30 @@ def _live_refresh_tick() -> None:  # pragma: no cover - background loop
             refreshed = refresh_due_prices(session)
         if refreshed:
             log.debug("live refresh updated %s", list(refreshed.keys()))
-    except Exception:
-        log.warning("live price refresh tick failed", exc_info=True)
+    except Exception as exc:
+        # The explicit record_error below gives this a friendly label, so skip
+        # the logging handler's mirror to avoid a duplicate (uglier) entry.
+        log.warning(
+            "live price refresh tick failed", exc_info=True, extra={"runtime_status_skip": True}
+        )
+        # Make the failure visible in-app (toast + Data Health), not just in the
+        # log — the local app now runs with no console window to watch.
+        from investment_dashboard.services import runtime_status  # noqa: PLC0415
+
+        runtime_status.record_error("Live price refresh", f"{type(exc).__name__}: {exc}")
+
+
+def _run_deferred_network_refresh_guarded() -> None:  # pragma: no cover - thread body
+    """Run the deferred refresh, recording any unexpected failure for the UI."""
+    try:
+        run_deferred_network_refresh()
+    except Exception as exc:
+        log.warning(
+            "deferred startup refresh failed", exc_info=True, extra={"runtime_status_skip": True}
+        )
+        from investment_dashboard.services import runtime_status  # noqa: PLC0415
+
+        runtime_status.record_error("Startup data refresh", f"{type(exc).__name__}: {exc}")
 
 
 def _start_deferred_network_refresh() -> None:
@@ -90,7 +112,7 @@ def _start_deferred_network_refresh() -> None:
     never keeps the process alive on shutdown.
     """
     thread = threading.Thread(
-        target=run_deferred_network_refresh,
+        target=_run_deferred_network_refresh_guarded,
         name="inv-dashboard-startup-refresh",
         daemon=True,
     )
@@ -119,6 +141,15 @@ def _resolve_auto_shutdown() -> bool:
 
 def run() -> None:
     configure_logging()
+    # Catch failures that never reach logging (uncaught exceptions on any
+    # thread, asyncio loop errors, stray stderr writes) and surface them in-app
+    # too. Installed after configure_logging so the stderr tee doesn't capture
+    # normal log output. The asyncio handler needs a running loop, so it's
+    # attached from an app.on_startup hook below.
+    from investment_dashboard.services import error_reporting  # noqa: PLC0415
+
+    error_reporting.install()
+    app.on_startup(error_reporting.install_asyncio_handler)
     settings = get_settings()
     log.info(
         "Starting Investment Dashboard %s on %s:%s",

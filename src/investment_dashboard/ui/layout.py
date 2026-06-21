@@ -302,6 +302,11 @@ def page_frame(title: str, *, current: str) -> Iterator[None]:
 
     _header(title, current_currency=current_currency, now_label=now_label, dark=dark)
     _sidebar(current)
+    # Surface any *new* background-task failure (live refresh / startup refresh)
+    # as a toast while this page is open — the app runs with no console window.
+    from investment_dashboard.ui import runtime_errors  # noqa: PLC0415
+
+    runtime_errors.install_client_watch()
     with ui.column().classes("inv-page q-pa-lg gap-md") as col:
         yield
     del col

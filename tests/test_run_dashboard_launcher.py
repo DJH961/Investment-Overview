@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -155,3 +156,93 @@ def test_ensure_venv_has_pip_skips_bootstrap_when_present(monkeypatch) -> None:
     run_dashboard._ensure_venv_has_pip()
 
     assert calls == []
+
+
+def test_console_attached_true_with_real_streams(monkeypatch) -> None:
+    monkeypatch.delenv(run_dashboard._CONSOLE_ENV, raising=False)
+    monkeypatch.setattr(run_dashboard, "_ORIGINAL_STDOUT", object())
+    monkeypatch.setattr(run_dashboard, "_ORIGINAL_STDERR", object())
+    assert run_dashboard._console_attached() is True
+
+
+def test_console_attached_false_without_streams(monkeypatch) -> None:
+    monkeypatch.delenv(run_dashboard._CONSOLE_ENV, raising=False)
+    monkeypatch.setattr(run_dashboard, "_ORIGINAL_STDOUT", None)
+    monkeypatch.setattr(run_dashboard, "_ORIGINAL_STDERR", None)
+    assert run_dashboard._console_attached() is False
+
+
+def test_console_attached_honours_env_override(monkeypatch) -> None:
+    monkeypatch.setattr(run_dashboard, "_ORIGINAL_STDOUT", None)
+    monkeypatch.setattr(run_dashboard, "_ORIGINAL_STDERR", None)
+    monkeypatch.setenv(run_dashboard._CONSOLE_ENV, "1")
+    assert run_dashboard._console_attached() is True
+
+
+def test_report_startup_failure_prompts_when_console(monkeypatch) -> None:
+    prompts: list[str] = []
+    dialogs: list[tuple[str, object]] = []
+    monkeypatch.setattr(run_dashboard, "_console_attached", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": prompts.append(prompt))
+    monkeypatch.setattr(
+        run_dashboard, "_show_error_dialog", lambda summary, path: dialogs.append((summary, path))
+    )
+
+    run_dashboard._report_startup_failure(RuntimeError("boom"))
+
+    assert prompts
+    assert dialogs == []
+
+
+def test_report_startup_failure_shows_dialog_without_console(monkeypatch) -> None:
+    prompts: list[str] = []
+    dialogs: list[tuple[str, object]] = []
+    monkeypatch.setattr(run_dashboard, "_console_attached", lambda: False)
+    monkeypatch.setattr("builtins.input", lambda prompt="": prompts.append(prompt))
+    monkeypatch.setattr(
+        run_dashboard, "_show_error_dialog", lambda summary, path: dialogs.append((summary, path))
+    )
+
+    run_dashboard._report_startup_failure(RuntimeError("boom"))
+
+    assert prompts == []
+    assert dialogs == [("RuntimeError: boom", run_dashboard.LAUNCHER_LOG)]
+
+
+def test_show_error_dialog_never_raises(monkeypatch) -> None:
+    def _explode(text: str) -> None:
+        raise OSError("no display")
+
+    monkeypatch.setattr(run_dashboard.os, "name", "nt")
+    monkeypatch.setattr(run_dashboard, "_message_box_windows", _explode)
+    # Must swallow the failure — the reporter can never crash the launcher.
+    run_dashboard._show_error_dialog("RuntimeError: boom", run_dashboard.LAUNCHER_LOG)
+
+
+def test_venv_launch_python_prefers_pythonw_without_console(monkeypatch) -> None:
+    monkeypatch.setattr(run_dashboard.os, "name", "nt")
+    monkeypatch.setattr(run_dashboard, "_console_attached", lambda: False)
+    monkeypatch.setattr(type(run_dashboard.VENV_PYTHONW), "exists", lambda self: True)
+    assert run_dashboard._venv_launch_python() == run_dashboard.VENV_PYTHONW
+
+
+def test_venv_launch_python_uses_python_when_console(monkeypatch) -> None:
+    monkeypatch.setattr(run_dashboard.os, "name", "nt")
+    monkeypatch.setattr(run_dashboard, "_console_attached", lambda: True)
+    monkeypatch.setattr(type(run_dashboard.VENV_PYTHONW), "exists", lambda self: True)
+    assert run_dashboard._venv_launch_python() == run_dashboard.VENV_PYTHON
+
+
+def test_install_diagnostics_writes_to_log(tmp_path, monkeypatch) -> None:
+    log = tmp_path / "launcher.log"
+    monkeypatch.setattr(run_dashboard, "LAUNCHER_LOG", log)
+    original_out, original_err = sys.stdout, sys.stderr
+    stream = run_dashboard.install_diagnostics()
+    try:
+        assert stream is not None
+        print("hello-from-launcher")
+        sys.stdout.flush()
+    finally:
+        sys.stdout, sys.stderr = original_out, original_err
+        stream.close()
+    assert "hello-from-launcher" in log.read_text(encoding="utf-8")
