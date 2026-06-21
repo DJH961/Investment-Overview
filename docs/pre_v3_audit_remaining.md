@@ -23,6 +23,13 @@ records, for each cluster, what is done, what is deferred, and why.
 | **D2** (partial) | The Vanguard XLSX parser now refuses an import when a data cell lands under a column the header doesn't name (mis-aligned layout), instead of silently dropping it via `zip(strict=False)`. | `adapters/vanguard/xlsx_parser.py` |
 | **H2** | Full-metrics golden-master regression harness for `compute_portfolio_metrics`. | `tests/services/test_metrics_golden_master.py`, `tests/services/golden/portfolio_metrics.json` |
 | **F1** (partial) | README status pill re-synced from v2.9.4 → v2.11.1. | `README.md` |
+| **A2** | The silent 1:1 FX fallback is gone: `positions_service._eur_rate_for` now returns `None` when a rate is missing, and a non-EUR holding/cash with no rate values to **blank** (ZERO + `value_warning`) in EUR — never the native amount relabelled at par. `total_portfolio_value` omits unconvertible cash instead of adding a par figure. | `services/positions_service.py`, `tests/services/test_services.py` |
+| **B1** | `compute_portfolio_metrics` now threads a per-request `_ValuationCache` memoising `compute_positions`/`total_portfolio_value` by date, so today/year-start/month-start/daily-growth/expense roll-ups are computed once each instead of repeatedly. Byte-stable under H2. | `services/metrics_service.py` |
+| **B2** | The N+1 `close_as_of`/`latest_close`/`cumulative_split_factor_after` per held instrument in `compute_positions` is replaced by three batched lookups (`prices_repo.latest_closes` window query, `splits_repo.cumulative_factors_after`). Parity tests assert batched == singular. | `repositories/prices_repo.py`, `repositories/splits_repo.py`, `services/prices_service.py`, `services/positions_service.py` |
+| **B3** | `_best_effort_ytd_start_value` prefers the earliest positive stored daily snapshot in the window, falling back to the bounded live loop only when no snapshots cover it. | `services/metrics_service.py` |
+| **B4** | `snapshots_service.warm_range` bulk-reads the window once and skips already-cached historical days instead of reopening a cache session per day. | `services/snapshots_service.py` |
+| **B5** | `build_portfolio_cashflows_dual` builds the EUR and USD cashflow streams in a single ledger pass; `compute_portfolio_metrics` uses it for both the full-ledger and YTD legs. | `services/metrics_service.py` |
+| **B6** | `backfill_missing_legs` (non-force) and `missing_fx_dates` now select only rows with a NULL leg via `transactions_repo.list_transactions_missing_legs` instead of loading the whole ledger and filtering in Python. | `repositories/transactions_repo.py`, `services/transaction_fx_service.py` |
 
 ### Verified already fixed (no change needed)
 
@@ -48,39 +55,63 @@ records, for each cluster, what is done, what is deferred, and why.
 
 ### A. Correctness
 
-* **A2 — Silent 1:1 FX fallback for non-EUR holdings/cash.**
-  `services/positions_service.py::_eur_rate_for` still falls back to
-  `Decimal(1)` when a rate lookup fails, and `total_portfolio_value` does the
-  same for cash. Latent today (only EUR+USD are live) but a correctness trap
-  the moment a third currency is added for 3.0. **Deferred because** a correct
-  fix is a *policy* decision that ripples through the return types of
-  `compute_positions` / `total_portfolio_value` and every caller; it should
-  land together with the B-series valuation engine (below) under golden-master
-  protection, not as an isolated edit. Recommended policy: "FX missing ⇒
-  value unavailable (`None`/blank), never par."
+* **A2 — ✅ done.** The silent 1:1 FX fallback for non-EUR holdings/cash is
+  removed. `services/positions_service.py::_eur_rate_for` now returns `None`
+  (not `Decimal(1)`) when a rate lookup fails; a non-EUR holding with no rate
+  values to **blank** in EUR (`current_value_eur == 0` + `value_warning`) rather
+  than relabelling the native amount as EUR at par, and `total_portfolio_value`
+  omits an unconvertible non-EUR cash balance instead of adding a par figure.
+  Policy applied: "FX missing ⇒ value unavailable, never par." Regression tests:
+  `test_missing_fx_values_non_eur_holding_blank_not_par` /
+  `test_missing_fx_excludes_non_eur_cash_from_total`. (Tests that previously
+  leaned on the par fallback now seed an FX rate or use an EUR-native holding.)
 
-### B. Performance / execution — the structural refactor
+### B. Performance / execution — the structural refactor — ✅ done
 
-The metrics path re-rolls the whole ledger from inception many times per
-render, with nested N+1 price/FX lookups. The single recommended fix is **a
-reusable, in-request portfolio-valuation engine that walks the ledger once and
-exposes value-at-date, holdings, and cashflows**, reused across the metric set.
+The metrics path used to re-roll the whole ledger from inception many times per
+render, with nested N+1 price/FX lookups. The B-series lands the targeted fixes
+below; all stay **byte-stable under the H2 golden-master** (same KPI numbers,
+fewer round-trips). Direct parity tests back the batched primitives.
 
-* **B1** — `compute_portfolio_metrics` calls `total_portfolio_value()` for
-  today, year-start, month-start, and inside daily-growth — each a full
-  recompute. Memoise `(session, as_of) → value` / single-pass valuation.
-* **B2** — N+1 `latest_close` / `close_as_of` / `cumulative_split_factor_after`
-  per held instrument in `compute_positions`. Replace with batched
-  "closes/splits for these instrument-ids as-of date" queries.
-* **B3** — `_best_effort_ytd_start_value` day-by-day loop (up to 31 full
-  valuations). Replace the linear scan with a nearest-snapshot lookup (daily
-  snapshots now exist).
-* **B4** — `snapshots_service.warm_range` walks day-by-day from inception each
-  day. Carry the prior day's holdings forward incrementally.
-* **B5** — `build_portfolio_cashflows` loops the full ledger twice (EUR then
-  USD). Build both legs in one pass.
-* **B6** — `backfill_missing_legs` / deposit queries load whole tables then
-  filter in Python. Push the filter into the query.
+* **B1 — ✅ done.** `compute_portfolio_metrics` threads a per-request
+  `_ValuationCache` that memoises `compute_positions` and
+  `total_portfolio_value` by date. The terminal value, daily-growth holdings
+  and expense figures now reuse the single `as_of` roll-up, and year-start /
+  month-start / daily-growth dates are valued once each. `total_portfolio_value`
+  gained an optional `positions=` parameter so a precomputed roll-up is reused.
+* **B2 — ✅ done.** The per-instrument `close_as_of` / `latest_close` /
+  `cumulative_split_factor_after` calls in `compute_positions` are replaced by
+  batched lookups: `prices_repo.latest_closes` (a single `ROW_NUMBER()` window
+  query, with/without an `on_or_before` bound) and
+  `splits_repo.cumulative_factors_after` (one grouped query). Service wrappers
+  `prices_service.latest_closes` / `closes_as_of` /
+  `cumulative_split_factors_after` keep the cache-tier routing. Parity tests
+  (`test_latest_closes_batch_matches_singular`,
+  `test_cumulative_factors_after_batch_matches_singular`) assert the batched
+  results equal the singular helpers id-for-id.
+* **B3 — ✅ done.** `_best_effort_ytd_start_value` first consults
+  `snapshots_repo.list_in_range` for the earliest positive stored snapshot in
+  the bounded window (persisted snapshots already hold the EUR total), only
+  falling back to the original day-by-day live valuation when no snapshot covers
+  the window (brand-new portfolios).
+* **B4 — ✅ done (round-trip reduction).** `snapshots_service.warm_range`
+  bulk-reads the window via `stored_snapshots_in_range` and skips
+  already-cached historical days instead of reopening a cache-tier session per
+  day; today is still always recomputed. *Deferred:* the deeper
+  "carry-holdings-forward" incremental engine — it would have to reproduce
+  `compute_positions`' split/FX/money-market valuation per day exactly, which is
+  outside the golden-master safety net and higher-risk than the round-trip win
+  justifies right now.
+* **B5 — ✅ done.** `build_portfolio_cashflows_dual` emits the EUR and USD
+  streams in one ledger pass; `compute_portfolio_metrics` uses it for both the
+  full-ledger and YTD legs (replacing four single-currency passes with two
+  dual passes). The original `build_portfolio_cashflows` stays for other
+  callers.
+* **B6 — ✅ done.** `transactions_repo.list_transactions_missing_legs` pushes
+  the `net_eur IS NULL OR net_usd IS NULL` predicate into SQL;
+  `backfill_missing_legs` (non-force path) and `missing_fx_dates` use it instead
+  of loading the whole ledger and filtering in Python. `force=True` still
+  recomputes every row.
 
 > ⚠️ **Land B under the H2 golden-master.** The harness committed in this pass
 > (`tests/services/test_metrics_golden_master.py`) exists precisely so the
@@ -139,22 +170,43 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
 
 ### E. UI / UX
 
-* **E1** — Make silent degradation (missing FX/prices, dropped rows, failed
-  enrichment) visible in the UI.
-* **E2** — Loading indicators on heavy pages (Overview, Analytics, Projection)
-  — less necessary once B lands.
-* **E3** — Currency-toggle inconsistency: attribution tables are hard-coded to
-  EUR; make them respect the display-currency switch.
-* **E4** — Inline form validation (symbol existence, decimal/date bounds, live
-  allocation-weight total) instead of save-time-only.
+* **E1** — ✅ done. A new **Data Health** page (`/diagnostics`, **H1**) plus a
+  header shield badge (tinted amber/red, present on every page via
+  `ui/layout.py`) surface the previously-silent degradations — transactions
+  missing a EUR/USD leg, instruments with missing/stale/corrupt prices,
+  holdings that value to nothing, and provider failures — in one actionable
+  view. The overview's existing zero-value / corrupt-price banners remain.
+* **E2** — ✅ done. A reusable `deferred` component (`ui/components/deferred.py`)
+  paints a centered spinner immediately, then runs the heavy build on a one-shot
+  timer so the page shell appears before the metrics/positions/projection crunch
+  finishes. Wired on the three heaviest pages — Overview, Analytics and
+  Projection — replacing their previously synchronous up-front render.
+* **E3** — ✅ done. The per-instrument attribution table on `/analytics` now
+  respects the display-currency switch: every monetary column is converted from
+  EUR to the chosen currency (at the window's as-of rate) and the headers are
+  relabelled accordingly; the rate-invariant `% of total return` column is
+  unchanged. EUR display keeps the values unconverted.
+* **E4** — ✅ done. New pure, unit-tested validators (`ui/forms.py`:
+  `validate_date`/`validate_decimal`/`validate_symbol`) are wired as NiceGUI
+  inline `validation=` callbacks on the manual "New Transaction" form (date
+  bounds, numeric/sign bounds, and symbol presence/shape per kind, re-checked
+  when the kind changes), gating Save instead of validating only on submit.
+  The "Create target allocation" dialog gained a live running weight total that
+  turns green at 100 %.
 * **E5** — ✅ verified already guarded (see "Verified already fixed" above):
   the projection seed gates the implied-FX ratio on a positive EUR value and
   `_render_implied_fx` returns early on a non-positive horizon value, so a
   zero-value portfolio can't drive a division/`inf`.
-* **E6** — Consolidate duplicated `_fmt_pct` and inline `f"€{…}"` formatting in
-  `overview.py` / `analytics.py` / `calculator.py` onto `money_format`.
-* **E7** — Confirmation dialogs for destructive actions (e.g. "Seed default
-  setup" overwriting allocations).
+* **E6** — ✅ done. The duplicated local `_fmt_pct` in `overview.py` and
+  `analytics.py` was removed in favour of `money_format.fmt_pct`, and the inline
+  `f"€{…}"` / `f"${…}"` literals in `calculator.py` now route through
+  `money_format.fmt_money`, so currency/percent rendering has a single source.
+* **E7** — ✅ done. A reusable `confirm_dialog` component
+  (`ui/components/confirm.py`) now gates the overwriting/irreversible data
+  actions on Settings: "Seed default setup" (may duplicate on a populated
+  ledger) and "Recalculate FX-derived values" (`backfill_missing_legs(force)`
+  overwrites every stored leg) both pop a Cancel/confirm modal before running.
+  The factory-reset flow already had its own typed-`RESET` confirmation.
 
 ### F. Documentation & version hygiene
 
@@ -162,30 +214,58 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
   `CONTRIBUTING.md`, `docs/user_guide.md`, `requirements_and_project_overview.md`
   (the "UI never calls repositories" claim is false; the single-file-DB /
   embedded-projection description is stale).
-* **F2** — Archive delivered plan docs (`v2.0_split_cloud_security_plan.md`,
-  `v2.2-feature-bump-plan.md`, `v2.8-cleanup-plan.md`) under `docs/history/`.
-* **F3** — Re-baseline `docs/maintenance_audit.md` against 2.11.1 (several of
-  its items — `^IRX` tooltip, CAGR total-loss, most EUR-as-USD sites, per-tier
-  Alembic + onboarding passphrase — are now closed).
-* **F4** — Remove confirmed dead code after a final caller check
-  (`db.py` legacy `get_engine`/`get_session_factory`, `money_format.fmt_pair`,
-  unused repo helpers).
+* **F2** — ✅ done. Delivered plan docs (`v2.0_split_cloud_security_plan.md`,
+  `v2.2-feature-bump-plan.md`, `v2.8-cleanup-plan.md`, and the also-shipped
+  `v2.10.1-plan.md`) moved under `docs/history/` with an index `README.md`;
+  the remaining live references (`README.md`, `CHANGELOG.md`) were repointed.
+* **F3** — ✅ done. `docs/maintenance_audit.md` re-baselined against 2.11.1: a
+  status block at the top records each §0 "do-soon" item's current state — the
+  `^IRX` tooltip (now correct: the code default *is* `^IRX`), the EUR-as-USD
+  fallback (closed by A1, residual A2 cross-referenced), CHANGELOG/version,
+  per-tier Alembic and onboarding passphrase (all closed), with true-TWR (G)
+  and the doc re-sync (F1) flagged as still open.
+* **F4** — ✅ verified complete. The named symbols (`db.py` legacy
+  `get_engine`/`get_session_factory`, `money_format.fmt_pair`) were already
+  removed by the v3.0 work that landed on `main`; a repo-wide search confirms
+  zero remaining references. A `vulture` pass (≥80 % confidence) reports no
+  remaining dead code, and the lower-confidence hits are NiceGUI page
+  callbacks, enum members consumed by `.value`, or repo/service helpers still
+  exercised by the test-suite — i.e. not *confirmed* dead. No removal made:
+  the only candidates left are covered by tests, so deleting them would mean
+  deleting their tests.
 
 ### G. Functionality gaps for 3.0
 
-* `transfer_in` / `transfer_out` enum kinds are reserved but have no
-  importer/UI logic — implement or remove from the enum.
-* True daily-snapshot TWR per period (currently a Modified-Dietz approximation;
-  daily snapshots now exist, so exact TWR is cheap).
+* **G1** — ✅ resolved (kept + documented, not removed). `transfer_in` /
+  `transfer_out` are *not* dead: they are offered in the manual "New
+  Transaction" form (`transactions._kinds()` enumerates the whole enum) and are
+  treated as external contributions / withdrawals everywhere flows matter
+  (`metrics_service`, `benchmark_service`, `_deposits_query`, `_period_query`).
+  CSV importers deliberately normalise broker "transfer in/out" rows to
+  `deposit` / `withdrawal` via the per-broker action maps, so the kinds exist
+  for manual inter-account moves. A class-level comment on `TransactionKind`
+  now records this contract so they aren't mistaken for dead code again.
+* **G2** — ✅ resolved (already implemented; stale labels corrected). The
+  per-period growth on Monthly/Yearly is a true daily-snapshot TWR:
+  `_period_query._chained_twr` geometrically links each sub-period's
+  Modified-Dietz return across the stored daily snapshots, degrading to a single
+  Modified-Dietz only when interior snapshots are sparse. The user-facing
+  footnotes on `/monthly` and `/yearly` (which still called it "Modified Dietz")
+  were corrected to describe the chained TWR.
 * ~~Stale split-cache after a manual ticker change~~ — ✅ done (see "Verified
   already fixed" above): the symbol-edit path invalidates closes and splits.
 
 ### H. Cross-cutting ideas
 
-* **H1 — "Data Health / Diagnostics" page.** A single surface listing FX-coverage
-  gaps, instruments with stale/missing prices, unmapped import actions, and
-  incomplete transaction legs — converting today's *silent* degradations into
-  one actionable view. (Larger feature; deferred.)
+* **H1 — "Data Health / Diagnostics" page.** ✅ done. `services/diagnostics_service.py`
+  runs one **read-only** sweep (`check_health` for the page, the lighter
+  `quick_status` for the header badge) that reuses the live services, and
+  `ui/pages/diagnostics.py` renders it at `/diagnostics` (in the sidebar nav,
+  with a header shield badge that tints amber/red). It lists FX-coverage gaps /
+  incomplete legs, missing/stale/corrupt prices, zero-value holdings, and the
+  last provider outcome. Unmapped import actions remain surfaced at import time
+  (`ImportResult.unknown_actions`); persisting them for the page is a future
+  extension noted under the importer row-ledger recommendation (#4 below).
 * **H2** — ✅ done (golden-master harness).
 
 ---

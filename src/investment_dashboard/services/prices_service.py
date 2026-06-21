@@ -220,6 +220,53 @@ def close_as_of(session: Session, instrument_id: int, as_of: date) -> Decimal | 
         return prices_repo.close_as_of(cache, instrument_id, as_of)
 
 
+def latest_closes(session: Session, instrument_ids: Sequence[int]) -> dict[int, Decimal]:
+    """Batched :func:`latest_close` across ``instrument_ids`` (cache tier).
+
+    One window query instead of a per-instrument lookup; instruments with no
+    cached price are absent from the result (treat as ``None``).
+    """
+    if not instrument_ids:
+        return {}
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return prices_repo.latest_closes(cache, instrument_ids)
+
+
+def closes_as_of(
+    session: Session, instrument_ids: Sequence[int], as_of: date
+) -> dict[int, Decimal]:
+    """Batched :func:`close_as_of` across ``instrument_ids`` (cache tier).
+
+    Forward-filled most-recent close on or before ``as_of`` per instrument;
+    instruments with no qualifying print are absent from the result.
+    """
+    if not instrument_ids:
+        return {}
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return prices_repo.latest_closes(cache, instrument_ids, on_or_before=as_of)
+
+
+def cumulative_split_factors_after(
+    session: Session, instrument_ids: Sequence[int], as_of: date
+) -> dict[int, Decimal]:
+    """Batched :func:`cumulative_split_factor_after` (cache tier).
+
+    Returns ``{instrument_id: factor}`` only for instruments that have cached
+    split data; a missing key carries the same meaning as a ``None`` return
+    from the singular helper (no feed data ⇒ fall back to ledger split rows).
+    """
+    if not instrument_ids:
+        return {}
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return splits_repo.cumulative_factors_after(cache, instrument_ids, as_of)
+
+
 def invalidate_instrument_prices(session: Session, instrument_id: int) -> int:
     """Drop an instrument's cached closes + refresh timestamp (cache tier).
 
@@ -285,7 +332,7 @@ def instruments_due_for_refresh(
 ) -> list[Instrument]:
     """Return the active, non-synthetic instruments whose cache TTL has expired.
 
-    The background ``ui.timer`` in :mod:`investment_dashboard.main` calls
+    The background ``app.timer`` in :mod:`investment_dashboard.main` calls
     this every few minutes; whatever it returns is what we pull from
     yfinance — so the smaller this list, the cheaper the refresh.
     """

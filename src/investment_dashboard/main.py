@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 
-from nicegui import ui
+from nicegui import app, ui
 
 from investment_dashboard import __version__
 from investment_dashboard.boot import run_boot_sequence, run_deferred_network_refresh
@@ -16,6 +16,7 @@ from investment_dashboard.ui.pages import (
     analytics,
     calculator,
     deposits,
+    diagnostics,
     monthly,
     onboarding,
     overview,
@@ -50,6 +51,7 @@ def _register_pages() -> None:
     projection.register()
     analytics.register()
     calculator.register()
+    diagnostics.register()
     settings_page.register()
     onboarding.register()
     help_page.register()
@@ -138,7 +140,12 @@ def run() -> None:
 
     _shutdown.install(auto_shutdown=_resolve_auto_shutdown())
     _start_deferred_network_refresh()
-    ui.timer(_LIVE_REFRESH_INTERVAL_SECONDS, _live_refresh_tick)
+    # Use ``app.timer`` (not ``ui.timer``) so the background refresh is a
+    # client-independent, server-side timer. ``ui.timer`` would create a UI
+    # element on the auto-index page in the global scope, which NiceGUI rejects
+    # alongside ``@ui.page`` routes ("ui.page cannot be used ... in the global
+    # scope").
+    app.timer(_LIVE_REFRESH_INTERVAL_SECONDS, _live_refresh_tick)
     ui.run(
         host=settings.host,
         port=settings.port,

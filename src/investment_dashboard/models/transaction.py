@@ -42,6 +42,13 @@ class TransactionKind(StrEnum):
     WITHDRAWAL = "withdrawal"
     INTEREST = "interest"
     FEE = "fee"
+    # ``transfer_in`` / ``transfer_out`` are external-cash-flow kinds for moving
+    # money between accounts (or in/out of the portfolio) without a buy/sell.
+    # They are offered in the manual-add form (``_kinds()``) and counted as a
+    # contribution / withdrawal everywhere external flows matter (metrics_service,
+    # benchmark_service, _deposits_query, _period_query). CSV importers don't emit
+    # them directly — broker "transfer in/out" rows normalise to deposit/withdrawal
+    # in the per-broker action maps — but the kinds are first-class for manual use.
     TRANSFER_IN = "transfer_in"
     TRANSFER_OUT = "transfer_out"
     SPLIT = "split"

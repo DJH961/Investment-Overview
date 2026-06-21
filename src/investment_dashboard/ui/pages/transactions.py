@@ -30,6 +30,11 @@ from investment_dashboard.services.instrument_enrichment_service import (
 )
 from investment_dashboard.ui.components import page_header, section
 from investment_dashboard.ui.components.kpi_card import dual_kpi_card, kpi_card
+from investment_dashboard.ui.forms import (
+    validate_date,
+    validate_decimal,
+    validate_symbol,
+)
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import fmt_money
 from investment_dashboard.ui.pages._ledger_query import (
@@ -183,24 +188,47 @@ def register() -> None:
             _refresh()
 
 
-def _open_new_modal(accounts: list[Account]) -> None:  # pragma: no cover - UI
+def _open_new_modal(accounts: list[Account]) -> None:  # noqa: PLR0915  # pragma: no cover - UI
     with ui.dialog() as dlg, ui.card().classes("min-w-[28rem]"):
         ui.label("New Transaction").classes("text-h6")
         account_sel = ui.select({a.id: a.account_label for a in accounts}, label="Account").classes(
             "w-full"
         )
         kind_sel = ui.select(_kinds(), value="buy", label="Kind").classes("w-full")
-        date_in = ui.input("Date (YYYY-MM-DD)", value=date.today().isoformat()).classes("w-full")
+        date_in = (
+            ui.input("Date (YYYY-MM-DD)", value=date.today().isoformat())
+            .classes("w-full")
+            .props("hide-bottom-space")
+        )
+        date_in.validation = validate_date
         symbol_in = ui.input("Symbol (blank for cash kinds)").classes("w-full")
+        symbol_in.validation = lambda v: validate_symbol(v, kind=kind_sel.value)
         qty_in = ui.input("Quantity").classes("w-full")
+        qty_in.validation = lambda v: validate_decimal(v, field="Quantity")
         price_in = ui.input("Price (native ccy)").classes("w-full")
+        price_in.validation = lambda v: validate_decimal(v, field="Price", allow_negative=False)
         fees_in = ui.input("Fees (native ccy)").classes("w-full")
+        fees_in.validation = lambda v: validate_decimal(v, field="Fees", allow_negative=False)
         net_in = ui.input("Net amount (native, signed)").classes("w-full")
+        net_in.validation = lambda v: validate_decimal(v, field="Net amount")
         desc_in = ui.input("Description").classes("w-full")
+
+        # Re-run the symbol validator when the kind changes (its rule depends
+        # on whether the chosen kind is a cash or a security kind).
+        def _revalidate_symbol() -> None:
+            symbol_in.validate()
+
+        kind_sel.on_value_change(_revalidate_symbol)
 
         def _save() -> None:
             if account_sel.value is None:
                 ui.notify("Pick an account", type="warning")
+                return
+            # Inline validators are the source of truth; re-run them so a
+            # straight-to-Save click can't bypass the field-level checks.
+            inputs = (date_in, symbol_in, qty_in, price_in, fees_in, net_in)
+            if not all(field.validate() for field in inputs):
+                ui.notify("Fix the highlighted fields first", type="negative")
                 return
             try:
                 txn_date = date.fromisoformat((date_in.value or "").strip())

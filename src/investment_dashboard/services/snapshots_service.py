@@ -150,13 +150,26 @@ def warm_range(session: Session, start: date, end: date) -> int:
     the slow first load (and occasional reconnect) the user sees. Warming the
     range from a background thread moves that work off the UI: the page then
     reads cached values. Best-effort and idempotent; returns the number of days
-    warmed.
+    actually (re)computed.
+
+    Already-cached historical days are skipped after a single bulk read of the
+    window instead of reopening a cache-tier session per day (B4); only the
+    still-missing days — plus today, which always recomputes against live
+    intra-day prices — fall through to :func:`get_or_compute`.
     """
     if end < start:
         return 0
+    today = date.today()
+    # One bulk read of the window instead of a per-day cache round-trip.
+    stored = stored_snapshots_in_range(session, start, end)
     warmed = 0
     day = start
     while day <= end:
+        # Historical days already cached need no recompute; today is always
+        # recomputed because its intra-day price marks keep moving.
+        if day < today and day in stored:
+            day += timedelta(days=1)
+            continue
         get_or_compute(session, day)
         warmed += 1
         day += timedelta(days=1)

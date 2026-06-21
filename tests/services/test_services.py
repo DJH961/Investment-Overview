@@ -73,6 +73,67 @@ class TestPositions:
         # 2500 USD at 1.10 EUR/USD ⇒ 2272.727… EUR
         assert abs(p.current_value_eur - Decimal("2272.72")) < Decimal("0.5")
 
+    def test_missing_fx_values_non_eur_holding_blank_not_par(self, session: Session) -> None:
+        """A2: a non-EUR holding with no EUR↔native rate values to blank in EUR
+        (ZERO + ``value_warning``), never the native amount relabelled as EUR at
+        par (1:1). The total excludes it rather than overstating with a par
+        figure."""
+        acct_id = _seed_usd_brokerage(session)
+        instr = instruments_repo.get_or_create(session, symbol="VTI", native_currency="USD")
+        session.add(
+            Transaction(
+                account_id=acct_id,
+                instrument_id=instr.id,
+                date=date(2024, 1, 5),
+                kind="buy",
+                quantity=Decimal("10"),
+                price_native=Decimal("220.00"),
+                net_native=Decimal("-2200.00"),
+                source="manual",
+            )
+        )
+        prices_repo.upsert_closes(session, instr.id, {date(2024, 2, 1): Decimal("220.00")})
+        # Deliberately NO FX row.
+        session.flush()
+
+        p = next(
+            pos
+            for pos in positions_service.compute_positions(session, as_of=date(2024, 2, 1))
+            if pos.instrument.symbol == "VTI"
+        )
+        assert p.current_value_native == Decimal("2200.000000")
+        # Blank in EUR — not the native 2200 relabelled as EUR at par.
+        assert p.current_value_eur == Decimal("0")
+        assert p.value_warning is True
+        # The total omits the unconvertible holding instead of adding par 2200.
+        assert positions_service.total_portfolio_value(session, as_of=date(2024, 2, 1)) == Decimal(
+            "0"
+        )
+
+    def test_missing_fx_excludes_non_eur_cash_from_total(self, session: Session) -> None:
+        """A2: a non-EUR cash balance with no rate is omitted from the EUR total
+        rather than added at par (1:1)."""
+        acct = accounts_repo.create_account(
+            session,
+            broker="fidelity",
+            account_label="USD Cash",
+            native_currency="USD",
+            account_type="savings",
+        )
+        session.add(
+            Transaction(
+                account_id=acct.id,
+                date=date(2024, 1, 2),
+                kind="deposit",
+                net_native=Decimal("1000.00"),
+                source="manual",
+            )
+        )
+        session.flush()
+        # No FX ⇒ the 1000 USD can't be expressed in EUR, so it is excluded
+        # (would have been a bogus 1000 EUR under the old par fallback).
+        assert positions_service.total_portfolio_value(session) == Decimal("0")
+
     def test_savings_cash_balance(self, session: Session) -> None:
         acct_id = _seed_eur_account(session)
         for kind, amt in [("deposit", "1000"), ("interest", "5"), ("withdrawal", "-100")]:
@@ -132,35 +193,45 @@ class TestMetrics:
         assert abs(m.xirr - Decimal("0.10")) < Decimal("0.001")
 
     def test_daily_growth_usd_is_none_when_fx_missing(self, session: Session) -> None:
-        """A1: with no EUR→USD rate on file, the daily-growth USD leg degrades
-        to ``None`` instead of relabelling the EUR figure as USD."""
-        from investment_dashboard.repositories import instruments_repo, prices_repo
+        """A1: with no EUR→USD rate on file, the daily-growth USD *display* leg
+        degrades to ``None`` instead of relabelling the EUR figure as USD.
 
-        acct_id = _seed_usd_brokerage(session)
-        vti = instruments_repo.get_or_create(session, symbol="VTI", native_currency="USD")
+        The holding is EUR-denominated, so its EUR base value needs no FX and
+        stays meaningful; only the USD conversion is unavailable. (Under A2 a
+        *non-EUR* holding with no rate values to blank itself, so an EUR holding
+        is used here to isolate the USD-display leg.)
+        """
+        acct_id = accounts_repo.create_account(
+            session,
+            broker="fidelity",
+            account_label="EUR Brokerage",
+            native_currency="EUR",
+            account_type="brokerage",
+        ).id
+        eunl = instruments_repo.get_or_create(session, symbol="EUNL", native_currency="EUR")
         session.add(
             Transaction(
                 account_id=acct_id,
-                instrument_id=vti.id,
+                instrument_id=eunl.id,
                 date=date(2024, 1, 5),
                 kind="buy",
                 quantity=Decimal("10"),
                 price_native=Decimal("200.00"),
                 net_native=Decimal("-2000.00"),
-                net_eur=Decimal("-1800.00"),
+                net_eur=Decimal("-2000.00"),
                 source="manual",
             )
         )
         # Two priced dates so daily growth is computable, but NO FX rows at all.
         prices_repo.upsert_closes(
             session,
-            vti.id,
+            eunl.id,
             {date(2024, 1, 31): Decimal("210.00"), date(2024, 2, 1): Decimal("220.00")},
         )
         session.flush()
 
         m = metrics_service.compute_portfolio_metrics(session, as_of=date(2024, 2, 1))
-        # EUR leg is still meaningful (positions value in EUR at 1:1 fallback).
+        # EUR leg is computed natively (no FX needed) and stays meaningful.
         assert m.daily_growth_pct is not None
         # USD leg must be blank, not an EUR value relabelled as USD.
         assert m.daily_growth_pct_usd is None

@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from datetime import date
 from typing import Any
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -38,6 +38,21 @@ def list_transactions(
     if conds:
         stmt = stmt.where(and_(*conds))
     stmt = stmt.order_by(Transaction.date, Transaction.id)
+    return session.scalars(stmt).all()
+
+
+def list_transactions_missing_legs(session: Session) -> Sequence[Transaction]:
+    """Rows still lacking a frozen FX leg (``net_eur`` or ``net_usd`` is NULL).
+
+    Pushes the "needs backfill" predicate into the query instead of loading the
+    whole ledger and filtering in Python (B6). Ordered like
+    :func:`list_transactions` (date asc, id asc) so callers stay deterministic.
+    """
+    stmt = (
+        select(Transaction)
+        .where(or_(Transaction.net_eur.is_(None), Transaction.net_usd.is_(None)))
+        .order_by(Transaction.date, Transaction.id)
+    )
     return session.scalars(stmt).all()
 
 
