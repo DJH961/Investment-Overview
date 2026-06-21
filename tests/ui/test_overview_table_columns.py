@@ -17,7 +17,7 @@ def test_money_column_default_has_no_sort_or_sign_colour() -> None:
     assert "cellClassRules" not in col
 
 
-def test_money_column_value_sorts_descending_by_default() -> None:
+def test_money_column_accepts_desc_sort_parameter() -> None:
     col = _money_column("Value", "value", "EUR", sort="desc")
     assert col["field"] == "value_eur_num"
     assert col["sort"] == "desc"
