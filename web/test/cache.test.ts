@@ -10,9 +10,12 @@ import {
   readCachedFx,
   readCachedQuotes,
   readCreditLog,
+  readNavPublishStats,
   recordCredits,
+  recordNavPublish,
   writeCachedFx,
   writeCachedQuotes,
+  NAV_PUBLISH_SAMPLES,
   type StorageLike,
 } from "../src/cache";
 import type { Quote } from "../src/prices";
@@ -96,5 +99,50 @@ describe("credit log", () => {
     const s = memStorage();
     recordCredits(0, 1000, s);
     expect(readCreditLog(1000, 60_000, s).length).toBe(0);
+  });
+});
+
+describe("learned NAV publish stats", () => {
+  // Local-time constructor keeps the derived hour timezone-independent.
+  const at = (y: number, mo: number, d: number, h: number, mi = 0) => new Date(y, mo, d, h, mi).getTime();
+
+  it("records the local hour a new value-date is first seen", () => {
+    const s = memStorage();
+    recordNavPublish("IE00FUND", "2024-01-10", at(2024, 0, 10, 22, 15), s);
+    const stat = readNavPublishStats(s).get("IE00FUND");
+    expect(stat?.lastValueDate).toBe("2024-01-10");
+    expect(stat?.hours).toEqual([22.25]);
+  });
+
+  it("appends a new value-date but ignores repeats of one already held", () => {
+    const s = memStorage();
+    recordNavPublish("IE00FUND", "2024-01-10", at(2024, 0, 10, 22, 0), s);
+    // Same value-date seen again later the same day — not a fresh publish.
+    recordNavPublish("IE00FUND", "2024-01-10", at(2024, 0, 10, 23, 30), s);
+    recordNavPublish("IE00FUND", "2024-01-11", at(2024, 0, 11, 22, 30), s);
+    // An out-of-order older value-date is ignored too.
+    recordNavPublish("IE00FUND", "2024-01-09", at(2024, 0, 9, 21, 0), s);
+    const stat = readNavPublishStats(s).get("IE00FUND");
+    expect(stat?.lastValueDate).toBe("2024-01-11");
+    expect(stat?.hours).toEqual([22, 22.5]);
+  });
+
+  it("keeps only the most recent samples", () => {
+    const s = memStorage();
+    for (let i = 0; i < NAV_PUBLISH_SAMPLES + 5; i++) {
+      const day = 1 + i;
+      recordNavPublish("IE00FUND", `2024-02-${`${day}`.padStart(2, "0")}`, at(2024, 1, day, 22, 0), s);
+    }
+    const stat = readNavPublishStats(s).get("IE00FUND");
+    expect(stat?.hours.length).toBe(NAV_PUBLISH_SAMPLES);
+  });
+
+  it("ignores empty symbols / value-dates and survives a corrupt store", () => {
+    const s = memStorage();
+    recordNavPublish("", "2024-01-10", at(2024, 0, 10, 22, 0), s);
+    recordNavPublish("IE00FUND", "", at(2024, 0, 10, 22, 0), s);
+    expect(readNavPublishStats(s).size).toBe(0);
+    s.setItem("iv.web.nav_publish", "{ not json");
+    expect(readNavPublishStats(s).size).toBe(0);
   });
 });

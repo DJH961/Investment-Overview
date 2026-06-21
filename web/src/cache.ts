@@ -201,4 +201,71 @@ export function creditsSpentWithin(log: CreditSpend[], now: number, windowMs: nu
   return log.reduce((acc, e) => (now - e.at < windowMs ? acc + e.n : acc), 0);
 }
 
-export const CACHE_KEYS = { QUOTE_KEY, FX_KEY, CREDIT_KEY } as const;
+// --- Learned NAV publish times ---------------------------------------------
+
+const NAV_PUBLISH_KEY = "iv.web.nav_publish";
+
+/**
+ * How many recent NAV publishes to remember per symbol. A few weeks of business
+ * days is plenty to pin down a fund's habitual publish window without letting a
+ * one-off late day skew it forever.
+ */
+export const NAV_PUBLISH_SAMPLES = 16;
+
+/**
+ * What we've observed about *when* a given fund's once-a-day NAV actually lands.
+ * The refresh layer compares each fresh quote's value-date against the last one
+ * we recorded; when it advances we log the local hour we first saw the new NAV,
+ * building an empirical picture of the fund's real publish window instead of a
+ * fixed guess.
+ */
+export interface NavPublishStat {
+  /** Most recent value-date (`YYYY-MM-DD`) we've recorded for this symbol. */
+  lastValueDate: string;
+  /**
+   * Local clock hours (fractional, e.g. `22.25` for 22:15) at which the most
+   * recent value-date flips were first observed, oldest first, newest last.
+   */
+  hours: number[];
+}
+
+type NavPublishFile = Record<string, NavPublishStat>;
+
+/** Read the learned NAV publish-time stats, keyed by symbol. */
+export function readNavPublishStats(storage: StorageLike | null = defaultStorage()): Map<string, NavPublishStat> {
+  const file = readJson<NavPublishFile>(storage, NAV_PUBLISH_KEY) ?? {};
+  const out = new Map<string, NavPublishStat>();
+  for (const [symbol, stat] of Object.entries(file)) {
+    if (!stat || typeof stat.lastValueDate !== "string" || !Array.isArray(stat.hours)) continue;
+    const hours = stat.hours.filter((h) => typeof h === "number" && h >= 0 && h <= 24);
+    out.set(symbol, { lastValueDate: stat.lastValueDate, hours });
+  }
+  return out;
+}
+
+/**
+ * Note that `symbol` now reports NAV value-date `valueDate`, first seen at epoch
+ * `at`. Only a *new* (later) value-date is recorded — a repeat of the value-date
+ * we already hold is not a fresh publish and is ignored — so the stored hours
+ * track when this fund's NAV genuinely becomes available. Best-effort: storage
+ * failures are swallowed, matching the rest of this module.
+ */
+export function recordNavPublish(
+  symbol: string,
+  valueDate: string,
+  at: number,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  if (!symbol || !valueDate) return;
+  const file = readJson<NavPublishFile>(storage, NAV_PUBLISH_KEY) ?? {};
+  const existing = file[symbol];
+  // Only a strictly-later value-date counts as a fresh publish to time.
+  if (existing && existing.lastValueDate >= valueDate) return;
+  const d = new Date(at);
+  const hour = d.getHours() + d.getMinutes() / 60;
+  const hours = [...(existing?.hours ?? []), hour].slice(-NAV_PUBLISH_SAMPLES);
+  file[symbol] = { lastValueDate: valueDate, hours };
+  writeJson(storage, NAV_PUBLISH_KEY, file);
+}
+
+export const CACHE_KEYS = { QUOTE_KEY, FX_KEY, CREDIT_KEY, NAV_PUBLISH_KEY } as const;

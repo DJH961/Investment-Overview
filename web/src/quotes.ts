@@ -64,17 +64,26 @@ export const DEFAULT_NAV_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
 /**
  * Local hour (0–23) by which a fund's once-a-day NAV is expected to be
- * published. NAV strike/publish times vary by fund and timezone, so this is a
- * deliberately generous evening default rather than a per-fund schedule.
+ * published, used only as the *bootstrap* default before we've learned the
+ * fund's real habit (see {@link navPublishWindow}). It defaults to the European
+ * market close (~22:00): for a EUR-listed fund the NAV can't strike until the
+ * underlying market shuts, so an earlier guess just burns credits polling for a
+ * price that cannot exist yet.
  */
-export const NAV_PUBLISH_HOUR = 18;
+export const NAV_PUBLISH_HOUR = 22;
 
 /**
  * How many hours after {@link NAV_PUBLISH_HOUR} the refresh layer keeps polling
  * hard for a not-yet-seen NAV before relaxing again. Bounds the credit cost of
  * a fund that publishes late (or skips a day) to one evening window.
  */
-export const NAV_CATCHUP_WINDOW_HOURS = 6;
+export const NAV_CATCHUP_WINDOW_HOURS = 2;
+
+/**
+ * Trailing slack (hours) added past the latest *observed* publish time when
+ * deriving a learned window, so an occasional late NAV is still caught.
+ */
+export const NAV_PUBLISH_LAG_HOURS = 1;
 
 /** Tunables for {@link navCacheTtlMs} (all optional; sensible defaults apply). */
 export interface NavRefreshOptions {
@@ -156,6 +165,36 @@ export function navCacheTtlMs(
   return longTtlMs;
 }
 
+/** A NAV polling window: when to start, and for how many hours to keep at it. */
+export interface NavWindow {
+  /** Local hour the catch-up polling window opens (also the "expected by" gate). */
+  publishHour: number;
+  /** Hours the window stays open past {@link publishHour}. */
+  catchUpWindowHours: number;
+}
+
+/**
+ * Derive a fund's NAV polling window from the local hours at which its NAV
+ * value-date was actually observed to advance (see {@link recordNavPublish}).
+ *
+ * Rather than a fixed evening guess, the window brackets the observed publish
+ * times: it opens at the start of the earliest hour a new NAV has landed and
+ * stays open until just past the latest, plus a little slack
+ * ({@link NAV_PUBLISH_LAG_HOURS}) for the odd late day. With no observations yet
+ * it falls back to the {@link NAV_PUBLISH_HOUR}/{@link NAV_CATCHUP_WINDOW_HOURS}
+ * bootstrap defaults. The result is a tighter, fund-specific window that wastes
+ * fewer credits polling for a price that cannot exist yet.
+ */
+export function navPublishWindow(observedHours?: readonly number[] | null): NavWindow {
+  const hours = (observedHours ?? []).filter((h) => Number.isFinite(h) && h >= 0 && h <= 24);
+  if (hours.length === 0) {
+    return { publishHour: NAV_PUBLISH_HOUR, catchUpWindowHours: NAV_CATCHUP_WINDOW_HOURS };
+  }
+  const start = Math.min(23, Math.max(0, Math.floor(Math.min(...hours))));
+  const end = Math.min(24, Math.ceil(Math.max(...hours)) + NAV_PUBLISH_LAG_HOURS);
+  return { publishHour: start, catchUpWindowHours: Math.max(1, end - start) };
+}
+
 /** Tunables + injectable seams (tests supply deterministic clock/sleep/storage). */
 export interface LoadQuotesOptions {
   fetchImpl?: FetchLike;
@@ -172,6 +211,13 @@ export interface LoadQuotesOptions {
    * value.
    */
   cacheTtlMsForSymbol?: (symbol: string, cached?: CachedQuote) => number;
+  /**
+   * Called when a freshly-fetched symbol reports a value-date later than the one
+   * already cached (or has none cached yet). Lets callers learn *when* a fund's
+   * once-a-day NAV actually lands; see {@link navPublishWindow}. `at` is the
+   * fetch time, suitable for {@link recordNavPublish}.
+   */
+  onValueDateAdvance?: (symbol: string, valueDate: string, at: number) => void;
   creditsPerMinute?: number;
   creditsPerDay?: number;
   /** Backoff retries for a transient (429/5xx/network) failure. */
@@ -218,6 +264,7 @@ export async function loadQuotes(
     sleep = defaultSleep,
     cacheTtlMs = DEFAULT_CACHE_TTL_MS,
     cacheTtlMsForSymbol,
+    onValueDateAdvance,
     creditsPerMinute = FREE_TIER.creditsPerMinute,
     creditsPerDay = FREE_TIER.creditsPerDay,
     maxRetries = 3,
@@ -284,6 +331,12 @@ export async function loadQuotes(
             // Stamp the observation time so the UI can show how fresh it is.
             result.set(symbol, { ...q, at });
             fetched.push(symbol);
+            // Notify when this symbol's NAV value-date has moved on, so callers
+            // can learn the fund's real publish window.
+            if (onValueDateAdvance && q.valueDate) {
+              const prev = cache.get(symbol)?.quote.valueDate ?? null;
+              if (!prev || q.valueDate > prev) onValueDateAdvance(symbol, q.valueDate, at);
+            }
           }
         }
       } catch (err) {

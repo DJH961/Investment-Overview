@@ -10,7 +10,7 @@ import {
   writeCachedQuotes,
   type StorageLike,
 } from "../src/cache";
-import { loadFxRates, loadQuotes, navCacheTtlMs, DEFAULT_NAV_CACHE_TTL_MS, DEFAULT_CACHE_TTL_MS } from "../src/quotes";
+import { loadFxRates, loadQuotes, navCacheTtlMs, navPublishWindow, DEFAULT_NAV_CACHE_TTL_MS, DEFAULT_CACHE_TTL_MS } from "../src/quotes";
 import { PriceError, type FetchLike, type Quote } from "../src/prices";
 import Decimal from "decimal.js";
 
@@ -248,51 +248,58 @@ describe("loadFxRates", () => {
 
 describe("navCacheTtlMs — adaptive NAV refresh", () => {
   // Local-time constructors keep these assertions timezone-independent, matching
-  // the helper's use of local getters. 2024-01-10 is a Wednesday.
+  // the helper's use of local getters. 2024-01-10 is a Wednesday. The default
+  // publish hour is now 22:00 (European market close), so evening checks use 22+.
   const wed = (h: number, m = 0) => new Date(2024, 0, 10, h, m).getTime();
   const sat = (h: number) => new Date(2024, 0, 13, h).getTime();
 
   it("relaxes to the long window once today's NAV is in hand", () => {
-    const ttl = navCacheTtlMs({ valueDate: "2024-01-10" }, { now: wed(19) });
+    const ttl = navCacheTtlMs({ valueDate: "2024-01-10" }, { now: wed(22, 30) });
     expect(ttl).toBe(DEFAULT_NAV_CACHE_TTL_MS);
   });
 
   it("polls hard during the evening window while the new NAV is still missing", () => {
-    const ttl = navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(19) });
+    const ttl = navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(22, 30) });
     expect(ttl).toBe(DEFAULT_CACHE_TTL_MS);
   });
 
   it("chases an unknown (uncached) value-date during the window", () => {
-    expect(navCacheTtlMs(null, { now: wed(19) })).toBe(DEFAULT_CACHE_TTL_MS);
-    expect(navCacheTtlMs({ valueDate: null }, { now: wed(19) })).toBe(DEFAULT_CACHE_TTL_MS);
+    expect(navCacheTtlMs(null, { now: wed(22, 30) })).toBe(DEFAULT_CACHE_TTL_MS);
+    expect(navCacheTtlMs({ valueDate: null }, { now: wed(22, 30) })).toBe(DEFAULT_CACHE_TTL_MS);
   });
 
   it("stays on the long window outside the publish window even if behind", () => {
-    // 12:00 is before the 18:00 publish hour; expected = previous business day.
+    // 12:00 is before the 22:00 publish hour; expected = previous business day.
     const ttl = navCacheTtlMs({ valueDate: "2024-01-08" }, { now: wed(12) });
     expect(ttl).toBe(DEFAULT_NAV_CACHE_TTL_MS);
   });
 
   it("never polls on a weekend (no NAV publishes)", () => {
     // Saturday evening: latest expected is Friday's NAV, which we already hold.
-    expect(navCacheTtlMs({ valueDate: "2024-01-12" }, { now: sat(19) })).toBe(DEFAULT_NAV_CACHE_TTL_MS);
+    expect(navCacheTtlMs({ valueDate: "2024-01-12" }, { now: sat(22) })).toBe(DEFAULT_NAV_CACHE_TTL_MS);
     // Even missing, a weekend evening is never a publish window.
-    expect(navCacheTtlMs({ valueDate: "2024-01-05" }, { now: sat(19) })).toBe(DEFAULT_NAV_CACHE_TTL_MS);
+    expect(navCacheTtlMs({ valueDate: "2024-01-05" }, { now: sat(22) })).toBe(DEFAULT_NAV_CACHE_TTL_MS);
   });
 
   it("backs off again past the catch-up window", () => {
-    // publishHour 18 + 6h window ends at 24:00; 23:00 is inside, but a 2h window
-    // would already be closed.
-    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(23), catchUpWindowHours: 2 })).toBe(
+    // publishHour 22 + 1h window ends at 23:00; 22:30 is inside, 23:30 is past it.
+    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(23, 30), catchUpWindowHours: 1 })).toBe(
       DEFAULT_NAV_CACHE_TTL_MS,
     );
-    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(23), catchUpWindowHours: 6 })).toBe(
+    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(22, 30), catchUpWindowHours: 1 })).toBe(
       DEFAULT_CACHE_TTL_MS,
     );
   });
 
+  it("honours an explicit (learned) publish hour", () => {
+    // A fund taught to publish at 18:00: 18:30 polls hard, 21:00 is past its 1h window.
+    const opts = { publishHour: 18, catchUpWindowHours: 1 };
+    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { ...opts, now: wed(18, 30) })).toBe(DEFAULT_CACHE_TTL_MS);
+    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { ...opts, now: wed(21) })).toBe(DEFAULT_NAV_CACHE_TTL_MS);
+  });
+
   it("honours custom short/long TTL overrides", () => {
-    const opts = { now: wed(19), shortTtlMs: 1234, longTtlMs: 5678 };
+    const opts = { now: wed(22, 30), shortTtlMs: 1234, longTtlMs: 5678 };
     expect(navCacheTtlMs({ valueDate: "2024-01-09" }, opts)).toBe(1234);
     expect(navCacheTtlMs({ valueDate: "2024-01-10" }, opts)).toBe(5678);
   });
@@ -307,5 +314,40 @@ describe("navCacheTtlMs — adaptive NAV refresh", () => {
       sleep: noSleep,
     });
     expect(quotes.get("VTI")?.valueDate).toBe("2024-01-10");
+  });
+});
+
+describe("navPublishWindow — learning the window from observed data", () => {
+  it("falls back to the bootstrap default with no observations", () => {
+    expect(navPublishWindow()).toEqual({ publishHour: 22, catchUpWindowHours: 2 });
+    expect(navPublishWindow([])).toEqual({ publishHour: 22, catchUpWindowHours: 2 });
+  });
+
+  it("brackets a tight observed band into a tight window", () => {
+    // Always seen at ~22:00 → opens 22:00, closes one hour past (lag) → 1h window.
+    expect(navPublishWindow([22, 22, 22])).toEqual({ publishHour: 22, catchUpWindowHours: 1 });
+  });
+
+  it("widens to span the observed spread plus trailing slack", () => {
+    // Seen between 21:54 and 22:18 → opens 21:00, ceil(22.3)+1 lag → closes 24:00.
+    expect(navPublishWindow([21.9, 22.3, 22.1])).toEqual({ publishHour: 21, catchUpWindowHours: 3 });
+  });
+
+  it("ignores out-of-range / non-finite samples", () => {
+    expect(navPublishWindow([Number.NaN, -3, 25, 22])).toEqual({ publishHour: 22, catchUpWindowHours: 1 });
+  });
+
+  it("reports an advancing value-date so callers can learn the publish time", async () => {
+    const storage = memStorage();
+    const seen: Array<[string, string, number]> = [];
+    const fetchImpl = vi.fn<FetchLike>(async (url) => quoteResponse(url));
+    await loadQuotes(["VTI"], "key", {
+      fetchImpl,
+      storage,
+      now: clock(0),
+      sleep: noSleep,
+      onValueDateAdvance: (symbol, valueDate, at) => seen.push([symbol, valueDate, at]),
+    });
+    expect(seen).toEqual([["VTI", "2024-01-10", 0]]);
   });
 });
