@@ -241,6 +241,8 @@ def _parse_requirement(entry: str) -> tuple[str, _Bound, _Bound] | None:
     is a coarse minimum-version check, not a full PEP 440 evaluator.
     Returns ``None`` when no package name can be extracted.
     """
+    # Split on the first operator/extras/marker/whitespace char to isolate the
+    # distribution name; the specific operator doesn't matter here.
     name = re.split(r"[<>=!~;\s\[]", entry, maxsplit=1)[0].strip().lower().replace("_", "-")
     if not name:
         return None
