@@ -1,21 +1,21 @@
 # Maintenance Audit — resolution pass & remaining backlog
 
 _Generated 2026-05-31 against `v2.9.4`._
-_Re-baselined 2026-06-21 against `v2.11.1` (see the status block below)._
+_Re-baselined 2026-06-21 against `v3.0.0` (see the status block below)._
 
-> ## ♻️ Re-baseline against v2.11.1 (F3)
+> ## ♻️ Re-baseline against v3.0.0 (F3)
 >
 > Most of the §0 "do-this-soon" list has since shipped. Current status:
 >
-> | Item | Status @ 2.11.1 | Evidence |
+> | Item | Status @ 3.0.0 | Evidence |
 > | --- | --- | --- |
 > | 🔴 1 — risk-free tooltip | ✅ **closed** | The code default *is* `^IRX` now (`services/risk_free_service.py:46`, `DEFAULT_SYMBOL = "^IRX"`), and the tooltip text matches (`ui/copy/tooltips.py:116`). The earlier "should be `^TNX`" note is obsolete — yfinance's `Ticker.history` serves `^IRX` reliably, so the workaround was reverted. |
 > | 🔴 2 — EUR-as-USD fallback | ✅ **mostly closed** (A1) | `_overview_query.py` degrades a missing USD leg to `None` (`cv_usd = cv_eur * today_rate if today_rate not in (None, 0) else None`), and `metrics_service` no longer relabels EUR as USD. The remaining policy-level fallback in `positions_service::_eur_rate_for` is tracked as **A2** in `pre_v3_audit_remaining.md` (latent until a third currency lands). |
-> | 🔴 3 — docs that lie | ⏳ **partial** | README status pill re-synced to 2.11.1; `docs/architecture.md`, `CONTRIBUTING.md`, `docs/user_guide.md`, `requirements_and_project_overview.md` re-sync tracked as **F1** in `pre_v3_audit_remaining.md`. |
-> | 🟠 4 — CHANGELOG / version | ✅ **closed** | `pyproject.toml` and `__init__.__version__` are `2.11.1`; the CHANGELOG tracks through 2.11.x. |
+> | 🔴 3 — docs that lie | ✅ **closed** (F1) | README status pill re-synced to 3.0.0; `docs/architecture.md`, `CONTRIBUTING.md` and `requirements_and_project_overview.md` now state that read-heavy UI pages may read ledger-tier repositories directly (the old "UI never touches repos" claim is gone). |
+> | 🟠 4 — CHANGELOG / version | ✅ **closed** | `pyproject.toml` and `__init__.__version__` are `3.0.0`; the CHANGELOG documents the `3.0.0` release. |
 > | 🟠 5 — per-tier Alembic | ✅ **closed** (already noted below). |
 > | 🟠 6 — onboarding passphrase | ✅ **closed** (already noted below). |
-> | 🟢 7 — true daily-snapshot TWR | ⏳ **open** | Still a Modified-Dietz approximation; tracked as **G** in `pre_v3_audit_remaining.md`. Daily snapshots now exist, so the exact-TWR follow-up remains cheap but unstarted. |
+> | 🟢 7 — true daily-snapshot TWR | ✅ **closed** | Per-period growth on Monthly/Yearly is now a true daily-chained TWR (`ui/pages/_period_query.py::_chained_twr` geometrically links each sub-period's Modified-Dietz return across stored daily snapshots, degrading to a single Modified-Dietz only when interior snapshots are sparse). Tracked as **G2** in `pre_v3_audit_remaining.md`. |
 >
 > The detailed sections below are preserved verbatim as the original
 > 2.9.4 first-pass; treat this block as the authoritative current status.

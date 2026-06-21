@@ -7,7 +7,7 @@ return metrics — XIRR, TWR, CAGR, YTD variants, drawdown, Sharpe, Sortino —
 in both **USD** and **EUR**, and serves them over a NiceGUI web UI accessible
 from the host laptop and any device on the same Wi-Fi network.
 
-> **Status: v2.11.1 — split storage, cloud-aware paths, optional SQLCipher,
+> **Status: v3.0.0 — split storage, cloud-aware paths, optional SQLCipher,
 > intraday price refresh, bulk/background snapshot performance, SQLite
 > file-safety tooling, an equity-curve performance pass, structured per-row
 > broker imports, and the v3.0 live-web companion (encrypted publish + an
@@ -29,7 +29,9 @@ from the host laptop and any device on the same Wi-Fi network.
 - **Cloud-aware local-first storage** — ledger/config can live in OneDrive,
   iCloud, Dropbox, or Google Drive; cache stays device-local by default.
 - **Optional encryption at rest** for synced tiers via the `[encrypted]` extra
-  (`pysqlcipher3`/`sqlcipher3` + keyring).
+  (the `pysqlcipher3`/`sqlcipher3` SQLCipher driver). The live-web companion's
+  own encryption (browser-side AES-256-GCM) and the OS-keychain secret storage
+  need no extra — they work out of the box.
 - **SQLite file safety** — cloud-located DBs use TRUNCATE journaling; boot
   guards against stray `-wal`/`-shm` sidecars and takes rolling backups.
 - **FX-aware** — every USD cashflow stored with the EUR rate of its trade
@@ -199,6 +201,28 @@ uv sync --extra encrypted
 set INV_DASHBOARD_ENCRYPT_SYNCED_TIERS=true
 set INV_DASHBOARD_DB_PASSPHRASE=your-local-passphrase   # or store it in keyring
 ```
+
+> The `[encrypted]` extra above is **only** the SQLCipher driver for encrypting
+> the local synced database files. It is **not** required for the live-web
+> companion below — that works out of the box.
+
+### Live-web companion: encrypted phone view
+
+Publish an end-to-end-encrypted snapshot of your portfolio to a GitHub release
+and read it on your phone in the browser. Nothing extra to install — the
+browser decrypts with WebCrypto and the desktop app stores your secrets in the
+OS keychain (the `keyring` package ships as a core dependency).
+
+1. Open the desktop app → **Settings → Live web companion**.
+2. Set the **GitHub repo** to publish to.
+3. Set a **Mobile passphrase** (≥ 8 chars) — this is the key that encrypts the
+   published snapshot. You enter the same phrase in the browser to unlock it.
+4. Paste a **GitHub Personal Access Token** with *Contents: write* on that repo.
+5. Enable publishing and publish (or run `uv run inv-dashboard-publish-web`).
+6. Open the published web app and enter the same mobile passphrase to decrypt.
+
+Secrets (passphrase + token) never leave the OS keychain, and the only data
+ever uploaded is encrypted under your passphrase.
 
 ### Mobile companion: read-only JSON API + snapshot export
 
