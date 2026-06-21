@@ -66,11 +66,25 @@ def request_shutdown() -> None:
     if _state["shutting_down"]:
         return
     _state["shutting_down"] = True
+    # v3.0 §5.4: graceful close is an auto-publish trigger. Do this before
+    # releasing the lock / stopping so the DB is still fully available. It is
+    # best-effort and never raises, so a publish failure can't block shutdown.
+    _publish_on_shutdown()
     # Release eagerly so a waiting instance can acquire the lock even while the
     # server drains; the ``on_shutdown`` hook releases again (idempotent).
     boot.release_writer_lock()
     log.info("shutdown requested; stopping server")
     app.shutdown()
+
+
+def _publish_on_shutdown() -> None:
+    """Best-effort live-web republish on graceful close (gated by Settings)."""
+    try:
+        from investment_dashboard.services import auto_publish  # noqa: PLC0415
+
+        auto_publish.publish_on_trigger(auto_publish.TRIGGER_SHUTDOWN)
+    except Exception:  # pragma: no cover - defensive; publish_on_trigger swallows its own errors
+        log.warning("auto-publish on shutdown failed", exc_info=False)
 
 
 def release_writer_lock_for_handoff() -> bool:

@@ -17,6 +17,11 @@ in the OS keyring (see :mod:`investment_dashboard.storage.encryption`); they
 are never written to the repo, ``.env``, or logs.
 
 Everything here is additive and inert until the user enables publishing.
+
+SECURITY — this repository is PUBLIC (proposal §7.4). Never log, commit, or
+persist decrypted data, the GitHub token, or the mobile passphrase. The publish
+path must log only non-sensitive metadata (repo, tag, asset name, byte counts,
+timestamps) — never payload contents or secrets.
 """
 
 from __future__ import annotations
