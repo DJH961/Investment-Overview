@@ -293,7 +293,7 @@ docs/                  # architecture notes
 ## Roadmap
 
 See [`requirements_and_project_overview.md`](requirements_and_project_overview.md)
-and [`docs/v2.0_split_cloud_security_plan.md`](docs/v2.0_split_cloud_security_plan.md)
+and [`docs/history/v2.0_split_cloud_security_plan.md`](docs/history/v2.0_split_cloud_security_plan.md)
 for the full roadmap. Current status:
 
 - ✅ v1.x — schema, adapters/importers, domain math, repositories/services,

@@ -170,22 +170,43 @@ fewer round-trips). Direct parity tests back the batched primitives.
 
 ### E. UI / UX
 
-* **E1** — Make silent degradation (missing FX/prices, dropped rows, failed
-  enrichment) visible in the UI.
-* **E2** — Loading indicators on heavy pages (Overview, Analytics, Projection)
-  — less necessary once B lands.
-* **E3** — Currency-toggle inconsistency: attribution tables are hard-coded to
-  EUR; make them respect the display-currency switch.
-* **E4** — Inline form validation (symbol existence, decimal/date bounds, live
-  allocation-weight total) instead of save-time-only.
+* **E1** — ✅ done. A new **Data Health** page (`/diagnostics`, **H1**) plus a
+  header shield badge (tinted amber/red, present on every page via
+  `ui/layout.py`) surface the previously-silent degradations — transactions
+  missing a EUR/USD leg, instruments with missing/stale/corrupt prices,
+  holdings that value to nothing, and provider failures — in one actionable
+  view. The overview's existing zero-value / corrupt-price banners remain.
+* **E2** — ✅ done. A reusable `deferred` component (`ui/components/deferred.py`)
+  paints a centered spinner immediately, then runs the heavy build on a one-shot
+  timer so the page shell appears before the metrics/positions/projection crunch
+  finishes. Wired on the three heaviest pages — Overview, Analytics and
+  Projection — replacing their previously synchronous up-front render.
+* **E3** — ✅ done. The per-instrument attribution table on `/analytics` now
+  respects the display-currency switch: every monetary column is converted from
+  EUR to the chosen currency (at the window's as-of rate) and the headers are
+  relabelled accordingly; the rate-invariant `% of total return` column is
+  unchanged. EUR display keeps the values unconverted.
+* **E4** — ✅ done. New pure, unit-tested validators (`ui/forms.py`:
+  `validate_date`/`validate_decimal`/`validate_symbol`) are wired as NiceGUI
+  inline `validation=` callbacks on the manual "New Transaction" form (date
+  bounds, numeric/sign bounds, and symbol presence/shape per kind, re-checked
+  when the kind changes), gating Save instead of validating only on submit.
+  The "Create target allocation" dialog gained a live running weight total that
+  turns green at 100 %.
 * **E5** — ✅ verified already guarded (see "Verified already fixed" above):
   the projection seed gates the implied-FX ratio on a positive EUR value and
   `_render_implied_fx` returns early on a non-positive horizon value, so a
   zero-value portfolio can't drive a division/`inf`.
-* **E6** — Consolidate duplicated `_fmt_pct` and inline `f"€{…}"` formatting in
-  `overview.py` / `analytics.py` / `calculator.py` onto `money_format`.
-* **E7** — Confirmation dialogs for destructive actions (e.g. "Seed default
-  setup" overwriting allocations).
+* **E6** — ✅ done. The duplicated local `_fmt_pct` in `overview.py` and
+  `analytics.py` was removed in favour of `money_format.fmt_pct`, and the inline
+  `f"€{…}"` / `f"${…}"` literals in `calculator.py` now route through
+  `money_format.fmt_money`, so currency/percent rendering has a single source.
+* **E7** — ✅ done. A reusable `confirm_dialog` component
+  (`ui/components/confirm.py`) now gates the overwriting/irreversible data
+  actions on Settings: "Seed default setup" (may duplicate on a populated
+  ledger) and "Recalculate FX-derived values" (`backfill_missing_legs(force)`
+  overwrites every stored leg) both pop a Cancel/confirm modal before running.
+  The factory-reset flow already had its own typed-`RESET` confirmation.
 
 ### F. Documentation & version hygiene
 
@@ -193,30 +214,58 @@ fewer round-trips). Direct parity tests back the batched primitives.
   `CONTRIBUTING.md`, `docs/user_guide.md`, `requirements_and_project_overview.md`
   (the "UI never calls repositories" claim is false; the single-file-DB /
   embedded-projection description is stale).
-* **F2** — Archive delivered plan docs (`v2.0_split_cloud_security_plan.md`,
-  `v2.2-feature-bump-plan.md`, `v2.8-cleanup-plan.md`) under `docs/history/`.
-* **F3** — Re-baseline `docs/maintenance_audit.md` against 2.11.1 (several of
-  its items — `^IRX` tooltip, CAGR total-loss, most EUR-as-USD sites, per-tier
-  Alembic + onboarding passphrase — are now closed).
-* **F4** — Remove confirmed dead code after a final caller check
-  (`db.py` legacy `get_engine`/`get_session_factory`, `money_format.fmt_pair`,
-  unused repo helpers).
+* **F2** — ✅ done. Delivered plan docs (`v2.0_split_cloud_security_plan.md`,
+  `v2.2-feature-bump-plan.md`, `v2.8-cleanup-plan.md`, and the also-shipped
+  `v2.10.1-plan.md`) moved under `docs/history/` with an index `README.md`;
+  the remaining live references (`README.md`, `CHANGELOG.md`) were repointed.
+* **F3** — ✅ done. `docs/maintenance_audit.md` re-baselined against 2.11.1: a
+  status block at the top records each §0 "do-soon" item's current state — the
+  `^IRX` tooltip (now correct: the code default *is* `^IRX`), the EUR-as-USD
+  fallback (closed by A1, residual A2 cross-referenced), CHANGELOG/version,
+  per-tier Alembic and onboarding passphrase (all closed), with true-TWR (G)
+  and the doc re-sync (F1) flagged as still open.
+* **F4** — ✅ verified complete. The named symbols (`db.py` legacy
+  `get_engine`/`get_session_factory`, `money_format.fmt_pair`) were already
+  removed by the v3.0 work that landed on `main`; a repo-wide search confirms
+  zero remaining references. A `vulture` pass (≥80 % confidence) reports no
+  remaining dead code, and the lower-confidence hits are NiceGUI page
+  callbacks, enum members consumed by `.value`, or repo/service helpers still
+  exercised by the test-suite — i.e. not *confirmed* dead. No removal made:
+  the only candidates left are covered by tests, so deleting them would mean
+  deleting their tests.
 
 ### G. Functionality gaps for 3.0
 
-* `transfer_in` / `transfer_out` enum kinds are reserved but have no
-  importer/UI logic — implement or remove from the enum.
-* True daily-snapshot TWR per period (currently a Modified-Dietz approximation;
-  daily snapshots now exist, so exact TWR is cheap).
+* **G1** — ✅ resolved (kept + documented, not removed). `transfer_in` /
+  `transfer_out` are *not* dead: they are offered in the manual "New
+  Transaction" form (`transactions._kinds()` enumerates the whole enum) and are
+  treated as external contributions / withdrawals everywhere flows matter
+  (`metrics_service`, `benchmark_service`, `_deposits_query`, `_period_query`).
+  CSV importers deliberately normalise broker "transfer in/out" rows to
+  `deposit` / `withdrawal` via the per-broker action maps, so the kinds exist
+  for manual inter-account moves. A class-level comment on `TransactionKind`
+  now records this contract so they aren't mistaken for dead code again.
+* **G2** — ✅ resolved (already implemented; stale labels corrected). The
+  per-period growth on Monthly/Yearly is a true daily-snapshot TWR:
+  `_period_query._chained_twr` geometrically links each sub-period's
+  Modified-Dietz return across the stored daily snapshots, degrading to a single
+  Modified-Dietz only when interior snapshots are sparse. The user-facing
+  footnotes on `/monthly` and `/yearly` (which still called it "Modified Dietz")
+  were corrected to describe the chained TWR.
 * ~~Stale split-cache after a manual ticker change~~ — ✅ done (see "Verified
   already fixed" above): the symbol-edit path invalidates closes and splits.
 
 ### H. Cross-cutting ideas
 
-* **H1 — "Data Health / Diagnostics" page.** A single surface listing FX-coverage
-  gaps, instruments with stale/missing prices, unmapped import actions, and
-  incomplete transaction legs — converting today's *silent* degradations into
-  one actionable view. (Larger feature; deferred.)
+* **H1 — "Data Health / Diagnostics" page.** ✅ done. `services/diagnostics_service.py`
+  runs one **read-only** sweep (`check_health` for the page, the lighter
+  `quick_status` for the header badge) that reuses the live services, and
+  `ui/pages/diagnostics.py` renders it at `/diagnostics` (in the sidebar nav,
+  with a header shield badge that tints amber/red). It lists FX-coverage gaps /
+  incomplete legs, missing/stale/corrupt prices, zero-value holdings, and the
+  last provider outcome. Unmapped import actions remain surfaced at import time
+  (`ImportResult.unknown_actions`); persisting them for the page is a future
+  extension noted under the importer row-ledger recommendation (#4 below).
 * **H2** — ✅ done (golden-master harness).
 
 ---

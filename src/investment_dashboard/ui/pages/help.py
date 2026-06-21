@@ -63,6 +63,16 @@ _PAGE_GUIDE: tuple[tuple[str, str], ...] = (
         "inputs, data refresh, storage and your accounts/instruments. See the "
         "section below for a control-by-control explanation.",
     ),
+    (
+        "Data Health",
+        "One place that lists silent data problems: transactions missing a "
+        "currency leg, instruments with missing, stale or corrupt prices, "
+        "holdings that value to nothing, and whether the last call to each data "
+        "provider succeeded. It never changes your data — it only names the "
+        "problem and points you at the fix (Settings → Data refresh or "
+        "Instruments). The shield icon in the header turns amber/red and links "
+        "here whenever something needs attention.",
+    ),
 )
 
 

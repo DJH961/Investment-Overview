@@ -17,6 +17,7 @@ from investment_dashboard.db import session_scope
 from investment_dashboard.services import display_currency_service
 from investment_dashboard.services.metrics_service import compute_portfolio_metrics
 from investment_dashboard.ui.components import (
+    deferred,
     empty_state,
     kpi_card,
     page_header,
@@ -24,7 +25,12 @@ from investment_dashboard.ui.components import (
 )
 from investment_dashboard.ui.components.kpi_card import dual_kpi_card
 from investment_dashboard.ui.layout import page_frame
-from investment_dashboard.ui.money_format import aggrid_money_formatter, dual_pct, fmt_money
+from investment_dashboard.ui.money_format import (
+    aggrid_money_formatter,
+    dual_pct,
+    fmt_money,
+    fmt_pct,
+)
 from investment_dashboard.ui.pages._analytics_query import (
     AnalyticsBundle,
     build_bundle,
@@ -44,12 +50,6 @@ _LOOKBACKS: tuple[tuple[str, int], ...] = (
     ("3Y", 365 * 3),
     ("5Y", 365 * 5),
 )
-
-
-def _fmt_pct(value: Decimal | None) -> str:
-    if value is None:
-        return "—"
-    return f"{value * Decimal(100):,.2f} %"
 
 
 def _fmt_ratio(value: Decimal | None) -> str:
@@ -152,8 +152,8 @@ def _render_kpis(
                 tooltip_key="total_growth_compounded",
             )
     with ui.row().classes("gap-md flex-wrap"):
-        kpi_card("CAGR", _fmt_pct(bundle.cagr), tooltip_key="cagr")
-        kpi_card("TWR", _fmt_pct(bundle.twr), tooltip_key="twr")
+        kpi_card("CAGR", fmt_pct(bundle.cagr), tooltip_key="cagr")
+        kpi_card("TWR", fmt_pct(bundle.twr), tooltip_key="twr")
         kpi_card(
             "XIRR",
             dual_pct(
@@ -165,7 +165,7 @@ def _render_kpis(
         )
         kpi_card(
             "Volatility",
-            _fmt_pct(bundle.volatility),
+            fmt_pct(bundle.volatility),
             tooltip_key="volatility",
         )
         kpi_card(
@@ -185,19 +185,19 @@ def _render_kpis(
     with ui.row().classes("gap-md flex-wrap"):
         kpi_card(
             "Max Drawdown",
-            _fmt_pct(bundle.max_drawdown),
+            fmt_pct(bundle.max_drawdown),
             tooltip_key="max_drawdown",
             color="#c0392b" if bundle.max_drawdown < 0 else None,
         )
         kpi_card("Calmar", _fmt_ratio(bundle.calmar), tooltip_key="calmar")
-        kpi_card("Ulcer Index", _fmt_pct(bundle.ulcer), tooltip_key="ulcer")
-        kpi_card("VaR (95%)", _fmt_pct(bundle.var_95), tooltip_key="var")
-        kpi_card("CVaR (95%)", _fmt_pct(bundle.cvar_95), tooltip_key="cvar")
+        kpi_card("Ulcer Index", fmt_pct(bundle.ulcer), tooltip_key="ulcer")
+        kpi_card("VaR (95%)", fmt_pct(bundle.var_95), tooltip_key="var")
+        kpi_card("CVaR (95%)", fmt_pct(bundle.cvar_95), tooltip_key="cvar")
         kpi_card("Skew", _fmt_ratio(bundle.skew), tooltip_key="skew")
         kpi_card("Excess Kurtosis", _fmt_ratio(bundle.kurtosis), tooltip_key="kurtosis")
     with ui.row().classes("gap-md flex-wrap"):
         kpi_card("Beta", _fmt_ratio(bundle.beta), tooltip_key="beta")
-        kpi_card("Alpha", _fmt_pct(bundle.alpha), tooltip_key="alpha")
+        kpi_card("Alpha", fmt_pct(bundle.alpha), tooltip_key="alpha")
         rf_sub = (
             f"source: {bundle.risk_free_symbol}"
             if bundle.risk_free_rate is not None
@@ -205,7 +205,7 @@ def _render_kpis(
         )
         kpi_card(
             "Risk-free rate",
-            _fmt_pct(bundle.risk_free_rate),
+            fmt_pct(bundle.risk_free_rate),
             sub=rf_sub,
             tooltip_key="risk_free",
         )
@@ -217,14 +217,24 @@ def _render_kpis(
         )
 
 
-def _attribution_rows(bundle: AnalyticsBundle) -> list[dict[str, str | float]]:
+def _attribution_rows(
+    bundle: AnalyticsBundle, *, rate: Decimal | None
+) -> list[dict[str, str | float]]:
+    """Attribution rows in the display currency.
+
+    The underlying :class:`AttributionRow` values are in EUR; ``rate`` is the
+    EUR→display-currency factor (``None`` ⇒ show EUR unconverted). All monetary
+    columns are scaled by the same factor so the relative attribution — and the
+    ``% of total return`` column — is unchanged by the currency switch.
+    """
+    factor = rate if rate is not None else Decimal(1)
     return [
         {
             "symbol": r.symbol,
-            "start_value": float(r.start_value),
-            "end_value": float(r.end_value),
-            "net_contribution": float(r.net_contribution),
-            "absolute_pnl": float(r.absolute_pnl),
+            "start_value": float(r.start_value * factor),
+            "end_value": float(r.end_value * factor),
+            "net_contribution": float(r.net_contribution * factor),
+            "absolute_pnl": float(r.absolute_pnl * factor),
             "pct_of_total_return": (
                 float(r.pct_of_total_return * Decimal(100))
                 if r.pct_of_total_return is not None
@@ -256,90 +266,101 @@ def register() -> None:
                 "Analytics",
                 subtitle="Risk, attribution, benchmark comparison",
             )
-            with session_scope() as session:
-                display_ccy = display_currency_service.get_display_currency(session)
-                bundle = build_bundle(session, currency=display_ccy, lookback_days=days)
-                metrics = compute_portfolio_metrics(session)
-            with ui.row().classes("items-center gap-sm"):
-                ui.label("Lookback:").classes("text-caption opacity-70")
-                ui.toggle(
-                    {d: lbl for lbl, d in _LOOKBACKS},
-                    value=days,
-                    on_change=lambda e: _on_lookback_change(int(e.value)),
-                ).props("dense unelevated no-caps")
-                ui.label(
-                    f"{bundle.start.isoformat()} → {bundle.as_of.isoformat()}",
-                ).classes("text-caption opacity-60 q-ml-md")
 
-            _render_kpis(bundle, display_ccy=display_ccy, metrics=metrics)
-
-            with section("Equity curve"):
-                if not bundle.curve:
-                    empty_state(
-                        "insights",
-                        "Not enough history yet",
-                        hint="Import some transactions or wait for the daily snapshot to populate.",
+            def _build() -> None:
+                with session_scope() as session:
+                    display_ccy = display_currency_service.get_display_currency(session)
+                    bundle = build_bundle(session, currency=display_ccy, lookback_days=days)
+                    metrics = compute_portfolio_metrics(session)
+                    attribution_rate = (
+                        display_currency_service.current_rate(
+                            session, quote=display_ccy, as_of=bundle.as_of
+                        )
+                        if display_ccy != "EUR"
+                        else None
                     )
-                else:
-                    ui.plotly(_curve_figure(bundle)).classes("w-full").style("height:420px")
-                    last = bundle.curve[-1]
+                with ui.row().classes("items-center gap-sm"):
+                    ui.label("Lookback:").classes("text-caption opacity-70")
+                    ui.toggle(
+                        {d: lbl for lbl, d in _LOOKBACKS},
+                        value=days,
+                        on_change=lambda e: _on_lookback_change(int(e.value)),
+                    ).props("dense unelevated no-caps")
                     ui.label(
-                        f"Latest value: {fmt_money(last.portfolio_value, display_ccy)} · "
-                        f"cumulative contributions: {fmt_money(last.cumulative_contributions, display_ccy)}",
-                    ).classes("text-caption opacity-70")
+                        f"{bundle.start.isoformat()} → {bundle.as_of.isoformat()}",
+                    ).classes("text-caption opacity-60 q-ml-md")
 
-            with section("Per-instrument attribution"):
-                rows = _attribution_rows(bundle)
-                if not rows:
-                    empty_state(
-                        "insights",
-                        "No attribution data",
-                        hint="Once you hold any instruments for at least the lookback window, "
-                        "this table shows each one's contribution to the total return.",
-                    )
-                else:
-                    ui.aggrid(
-                        {
-                            "columnDefs": [
-                                {"headerName": "Symbol", "field": "symbol", "pinned": "left"},
-                                {
-                                    "headerName": "Start value (EUR)",
-                                    "field": "start_value",
-                                    "type": "rightAligned",
-                                    "valueFormatter": aggrid_money_formatter("EUR"),
+                _render_kpis(bundle, display_ccy=display_ccy, metrics=metrics)
+
+                with section("Equity curve"):
+                    if not bundle.curve:
+                        empty_state(
+                            "insights",
+                            "Not enough history yet",
+                            hint="Import some transactions or wait for the daily snapshot to populate.",
+                        )
+                    else:
+                        ui.plotly(_curve_figure(bundle)).classes("w-full").style("height:420px")
+                        last = bundle.curve[-1]
+                        ui.label(
+                            f"Latest value: {fmt_money(last.portfolio_value, display_ccy)} · "
+                            f"cumulative contributions: {fmt_money(last.cumulative_contributions, display_ccy)}",
+                        ).classes("text-caption opacity-70")
+
+                with section("Per-instrument attribution"):
+                    rows = _attribution_rows(bundle, rate=attribution_rate)
+                    if not rows:
+                        empty_state(
+                            "insights",
+                            "No attribution data",
+                            hint="Once you hold any instruments for at least the lookback window, "
+                            "this table shows each one's contribution to the total return.",
+                        )
+                    else:
+                        ui.aggrid(
+                            {
+                                "columnDefs": [
+                                    {"headerName": "Symbol", "field": "symbol", "pinned": "left"},
+                                    {
+                                        "headerName": f"Start value ({display_ccy})",
+                                        "field": "start_value",
+                                        "type": "rightAligned",
+                                        "valueFormatter": aggrid_money_formatter(display_ccy),
+                                    },
+                                    {
+                                        "headerName": f"End value ({display_ccy})",
+                                        "field": "end_value",
+                                        "type": "rightAligned",
+                                        "valueFormatter": aggrid_money_formatter(display_ccy),
+                                    },
+                                    {
+                                        "headerName": f"Net contribution ({display_ccy})",
+                                        "field": "net_contribution",
+                                        "type": "rightAligned",
+                                        "valueFormatter": aggrid_money_formatter(display_ccy),
+                                    },
+                                    {
+                                        "headerName": f"P&L ({display_ccy})",
+                                        "field": "absolute_pnl",
+                                        "type": "rightAligned",
+                                        "valueFormatter": aggrid_money_formatter(display_ccy),
+                                    },
+                                    {
+                                        "headerName": "% of total return",
+                                        "field": "pct_of_total_return",
+                                        "type": "rightAligned",
+                                        "valueFormatter": "value == null ? '' : value.toFixed(2) + ' %'",
+                                    },
+                                ],
+                                "rowData": rows,
+                                "domLayout": "autoHeight",
+                                "defaultColDef": {
+                                    "sortable": True,
+                                    "resizable": True,
+                                    "flex": 1,
+                                    "minWidth": 130,
                                 },
-                                {
-                                    "headerName": "End value (EUR)",
-                                    "field": "end_value",
-                                    "type": "rightAligned",
-                                    "valueFormatter": aggrid_money_formatter("EUR"),
-                                },
-                                {
-                                    "headerName": "Net contribution (EUR)",
-                                    "field": "net_contribution",
-                                    "type": "rightAligned",
-                                    "valueFormatter": aggrid_money_formatter("EUR"),
-                                },
-                                {
-                                    "headerName": "P&L (EUR)",
-                                    "field": "absolute_pnl",
-                                    "type": "rightAligned",
-                                    "valueFormatter": aggrid_money_formatter("EUR"),
-                                },
-                                {
-                                    "headerName": "% of total return",
-                                    "field": "pct_of_total_return",
-                                    "type": "rightAligned",
-                                    "valueFormatter": "value == null ? '' : value.toFixed(2) + ' %'",
-                                },
-                            ],
-                            "rowData": rows,
-                            "domLayout": "autoHeight",
-                            "defaultColDef": {
-                                "sortable": True,
-                                "resizable": True,
-                                "flex": 1,
-                                "minWidth": 130,
                             },
-                        },
-                    ).classes("w-full")
+                        ).classes("w-full")
+
+            deferred(_build)

@@ -13,7 +13,7 @@ from nicegui import ui
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.services import display_currency_service
-from investment_dashboard.ui.components import page_header, section
+from investment_dashboard.ui.components import deferred, page_header, section
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.pages._projection_view import build_seed
 from investment_dashboard.ui.pages._projection_view import render as render_projection
@@ -33,13 +33,17 @@ def register() -> None:
             state = {"monthly": False}
             body = ui.column().classes("w-full")
 
-            def _render() -> None:
-                body.clear()
+            def _build() -> None:
                 with session_scope() as session:
                     display_ccy = display_currency_service.get_display_currency(session)
                     seed = build_seed(session, monthly=state["monthly"], primary=display_ccy)
-                with body, section("Projection"):
+                with section("Projection"):
                     render_projection(seed)
+
+            def _render() -> None:
+                body.clear()
+                with body:
+                    deferred(_build, label="Projecting…")
 
             def _on_toggle(value: str) -> None:
                 state["monthly"] = value == "Monthly"

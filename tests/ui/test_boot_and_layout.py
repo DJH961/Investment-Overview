@@ -293,6 +293,7 @@ def test_nav_items_cover_all_pages() -> None:
         "/projection",
         "/analytics",
         "/calculator",
+        "/diagnostics",
         "/settings",
     }
 

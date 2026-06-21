@@ -20,7 +20,7 @@ from investment_dashboard.services.positions_service import compute_positions
 from investment_dashboard.services.prices_service import latest_close
 from investment_dashboard.ui.components import page_header, section
 from investment_dashboard.ui.layout import page_frame
-from investment_dashboard.ui.money_format import currency_symbol, fmt_shares
+from investment_dashboard.ui.money_format import currency_symbol, fmt_money, fmt_shares
 
 PATH = "/calculator"
 
@@ -125,10 +125,10 @@ def register() -> None:
                     {
                         "symbol": symbol_by_id.get(r.instrument_id, f"#{r.instrument_id}"),
                         "target_pct": f"{r.target_pct:.2f} %",
-                        "current_value_eur": f"€{r.current_value:,.2f}",
-                        "current_value_usd": f"${_from_eur(r.current_value, 'USD'):,.2f}",
-                        "add_value_eur": f"€{r.add_value:,.2f}",
-                        "add_value_usd": f"${_from_eur(r.add_value, 'USD'):,.2f}",
+                        "current_value_eur": fmt_money(r.current_value, "EUR"),
+                        "current_value_usd": fmt_money(_from_eur(r.current_value, "USD"), "USD"),
+                        "add_value_eur": fmt_money(r.add_value, "EUR"),
+                        "add_value_usd": fmt_money(_from_eur(r.add_value, "USD"), "USD"),
                         "add_shares": fmt_shares(r.add_shares),
                     }
                     for r in plan.rows
@@ -139,11 +139,11 @@ def register() -> None:
                     with section("Plan summary"):
                         ui.label(
                             f"Input: {sym_in}{cash_raw:,.2f} ({source_ccy})  →  "
-                            f"€{cash_eur:,.2f} EUR internally",
+                            f"{fmt_money(cash_eur, 'EUR')} EUR internally",
                         ).classes("text-subtitle2 opacity-80")
                         ui.label(
-                            f"Residual cash after plan: €{plan.residual_cash:,.2f} "
-                            f"(${_from_eur(plan.residual_cash, 'USD'):,.2f})",
+                            f"Residual cash after plan: {fmt_money(plan.residual_cash, 'EUR')} "
+                            f"({fmt_money(_from_eur(plan.residual_cash, 'USD'), 'USD')})",
                         ).classes("text-subtitle1")
                     with section("Buy plan"):
                         ui.aggrid(
