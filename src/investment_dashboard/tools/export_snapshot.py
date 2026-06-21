@@ -24,9 +24,10 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import sys
 from pathlib import Path
+
+from investment_dashboard.storage.atomic_io import atomic_write_text
 
 log = logging.getLogger(__name__)
 
@@ -56,14 +57,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _atomic_write(path: Path, text: str) -> None:
-    """Write ``text`` to ``path`` via a temp file + rename.
+    """Write ``text`` to ``path`` via a temp file + rename + fsync.
 
-    Avoids the cloud-sync agent ever uploading a half-written file.
+    Avoids the cloud-sync agent ever uploading a half-written file, and makes
+    the write durable across a crash/power-loss via the shared atomic helper.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp.{os.getpid()}")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    atomic_write_text(path, text)
 
 
 def main(argv: list[str] | None = None) -> int:

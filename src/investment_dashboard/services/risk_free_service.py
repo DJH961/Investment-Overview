@@ -154,6 +154,18 @@ def refresh(
     # in (0, 1) are assumed to already be a decimal fraction.
     raw = record.close
     rate = raw / Decimal(100) if raw > Decimal(1) else raw
+    # Sanity bounds: a risk-free *rate* is a decimal fraction in [0, 1]. A bad
+    # upstream tick (a negative print, or an absurd value that survives the
+    # percent/fraction heuristic) would otherwise flow straight into
+    # Sharpe/Sortino/Alpha. Reject it and keep the last good cached value.
+    if rate < Decimal(0) or rate > Decimal(1):
+        log.warning(
+            "risk-free fetch for %s produced out-of-range rate %s (raw %s); keeping cached value",
+            symbol,
+            rate,
+            raw,
+        )
+        return snapshot
     stamp = (now or datetime.now(UTC)).isoformat()
     app_config_repo.set_value(session, KEY_VALUE, str(rate))
     app_config_repo.set_value(session, KEY_FETCHED_AT, stamp)

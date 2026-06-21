@@ -240,6 +240,29 @@ class TestSyntheticWorkbook:
         with pytest.raises(ValueError, match="header"):
             parse_vanguard_xlsx(buf.getvalue())
 
+    def test_data_row_wider_than_header_raises(self) -> None:
+        # A data row carrying populated cells beyond the header width would be
+        # silently truncated by zip(); the parser must refuse instead.
+        data = _build_xlsx(
+            [
+                (
+                    "01/05/2024",
+                    "01/03/2024",
+                    "VTI",
+                    "VANGUARD TOTAL STOCK MARKET ETF",
+                    "Buy",
+                    "CASH",
+                    "5.0000",
+                    "$220.0000",
+                    "Free",
+                    "-$1,100.0000",
+                    "STRAY EXTRA COLUMN",
+                ),
+            ]
+        )
+        with pytest.raises(ValueError, match="no header"):
+            parse_vanguard_xlsx(data)
+
     def test_external_ids_unique_per_row(self) -> None:
         data = _build_xlsx(
             [
