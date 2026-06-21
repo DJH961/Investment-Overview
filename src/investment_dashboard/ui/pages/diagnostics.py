@@ -17,7 +17,7 @@ from __future__ import annotations
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
-from investment_dashboard.services import diagnostics_service
+from investment_dashboard.services import diagnostics_service, runtime_status
 from investment_dashboard.services.diagnostics_service import HealthItem, HealthReport
 from investment_dashboard.services.support_bundle import build_support_bundle, bundle_filename
 from investment_dashboard.ui.components import empty_state, page_header, section
@@ -87,6 +87,32 @@ def _download_support_bundle() -> None:  # pragma: no cover - UI
     ui.notify("Support bundle downloaded — attach it when reporting an issue.", type="positive")
 
 
+def _render_background_errors() -> None:  # pragma: no cover - UI
+    """List recent background-task failures (live/startup refresh), if any.
+
+    These run off the request path and previously surfaced only in the log;
+    showing them here keeps them visible now that the app has no console window.
+    """
+    errors = runtime_status.recent(limit=10)
+    if not errors:
+        return
+    with section(f"Background tasks ({len(errors)})"):
+        ui.label(
+            "These ran in the background (live price refresh / startup refresh) "
+            "and failed. They are best-effort, so the dashboard keeps working "
+            "from cached data — but the underlying issue is worth a look.",
+        ).classes("text-body2 opacity-80 q-mb-sm")
+        for event in errors:
+            with ui.element("div").classes("inv-section w-full"):
+                with ui.row().classes("items-center gap-sm no-wrap w-full"):
+                    ui.icon("error", color="negative")
+                    ui.label(event.source).classes("text-subtitle2")
+                    ui.label(event.at.strftime("%Y-%m-%d %H:%M UTC")).classes(
+                        "text-caption opacity-60"
+                    )
+                ui.label(event.message).classes("text-body2 opacity-80 q-mt-xs")
+
+
 def _render_support_section() -> None:  # pragma: no cover - UI
     """Surface a one-click "download logs to share" action."""
     with section("Report an issue"):
@@ -116,6 +142,7 @@ def render_body() -> None:  # pragma: no cover - UI
         "Settings → Data refresh (prices/FX) or Settings → Instruments (tickers).",
     ).classes("text-body2 opacity-70 q-mb-sm")
     _render_report(report)
+    _render_background_errors()
     _render_support_section()
 
 

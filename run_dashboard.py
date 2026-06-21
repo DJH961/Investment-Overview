@@ -5,8 +5,18 @@ would put on the desktop or in a Windows Startup folder.
 
 On first run it creates ``.venv`` and installs the project dependencies,
 then re-launches itself with the virtualenv Python before importing the
-application. If anything fails before the server starts, the exception is
-printed and the window stays open until the user presses Enter.
+application.
+
+The launcher is designed to run **without a console window** (e.g. double-clicked
+via ``run_dashboard.vbs`` / a ``pythonw.exe`` shortcut). Under ``pythonw.exe``
+``sys.stdout`` / ``sys.stderr`` are ``None``, so every ``print`` and traceback
+would otherwise vanish. To keep failures diagnosable the launcher tees all of
+its output to a rotating ``launcher.log`` beside this file, and if anything
+fails before the server starts it shows a **native error dialog** (pointing at
+the log) so a silent double-click never just "does nothing". When a real console
+*is* attached (``run_dashboard.bat`` / running from a shell, which sets
+``INV_DASHBOARD_CONSOLE``), the familiar "Press Enter to close" prompt is kept
+instead so power users can read the output live.
 """
 
 from __future__ import annotations
@@ -17,12 +27,14 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
 import tomllib
 import traceback
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent
 PROJECT_NAME = "investment-dashboard"
@@ -37,6 +49,27 @@ FALLBACK_MIN_NICEGUI = (3, 12, 0)
 FALLBACK_MAX_NICEGUI = (4, 0, 0)
 VENV_DIR = ROOT / ".venv"
 VENV_PYTHON = VENV_DIR / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+#: Windows-only windowless interpreter. Relaunching into this (instead of
+#: ``python.exe``) keeps the no-console experience: a console-subsystem
+#: ``python.exe`` spawned from a windowless parent would pop a fresh console.
+VENV_PYTHONW = VENV_DIR / "Scripts" / "pythonw.exe"
+
+#: Diagnostics log beside this launcher. Mirrors the installer's launcher.log so
+#: a failed no-console start always leaves a trail (see ``install_diagnostics``).
+LAUNCHER_LOG = ROOT / "launcher.log"
+#: Truncate the diagnostics log once it grows past this size so it never balloons
+#: across many launches.
+_LOG_MAX_BYTES = 1_000_000
+#: Set by the console/diagnostic launchers (``run_dashboard.bat`` / a shell) so
+#: the interactive "Press Enter" prompt is kept instead of the native dialog.
+_CONSOLE_ENV = "INV_DASHBOARD_CONSOLE"
+
+#: Original interpreter streams captured at import time. Under ``pythonw.exe``
+#: these are ``None``; under ``python.exe`` they are real streams we still want
+#: to write to *in addition* to the log file.
+_ORIGINAL_STDOUT = sys.stdout
+_ORIGINAL_STDERR = sys.stderr
+
 REQUIRED_MODULES = (
     "alembic",
     "dateutil",
@@ -58,6 +91,166 @@ def _ensure_src_on_path() -> None:
     src = ROOT / "src"
     if src.exists() and str(src) not in sys.path:
         sys.path.insert(0, str(src))
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics + visible error reporting (work even with no console)
+# ---------------------------------------------------------------------------
+
+
+class _Tee:
+    """Write-only stream that fans output out to several sinks.
+
+    Mirrors ``sys.stdout`` / ``sys.stderr`` to the diagnostics log file *and*,
+    when present, to the real console stream. Every method is defensive: a sink
+    that is ``None`` or raises (e.g. the absent ``pythonw`` console) is skipped
+    so logging can never crash the launcher.
+    """
+
+    def __init__(self, *sinks: Any) -> None:
+        self._sinks = [sink for sink in sinks if sink is not None]
+
+    def write(self, data: str) -> int:
+        for sink in self._sinks:
+            with contextlib.suppress(Exception):
+                sink.write(data)
+        return len(data)
+
+    def flush(self) -> None:
+        for sink in self._sinks:
+            with contextlib.suppress(Exception):
+                sink.flush()
+
+    def isatty(self) -> bool:
+        return False
+
+
+def _console_attached() -> bool:
+    """Whether a usable text console is attached to this process.
+
+    Under ``pythonw.exe`` (the no-console launch path) the *original*
+    ``sys.stdout`` / ``sys.stderr`` are ``None``; the console/diagnostic
+    launchers set ``INV_DASHBOARD_CONSOLE`` so the interactive prompt is kept
+    even if a redirected stream looks unusual.
+    """
+    if os.environ.get(_CONSOLE_ENV):
+        return True
+    return _ORIGINAL_STDOUT is not None and _ORIGINAL_STDERR is not None
+
+
+def _open_log_stream() -> Any | None:
+    """Open (and size-cap) the diagnostics log. Returns ``None`` on failure."""
+    try:
+        with contextlib.suppress(OSError):
+            if LAUNCHER_LOG.exists() and LAUNCHER_LOG.stat().st_size > _LOG_MAX_BYTES:
+                LAUNCHER_LOG.unlink()
+        # Line-buffered so a hard crash still flushes the most recent lines.
+        return open(LAUNCHER_LOG, "a", encoding="utf-8", buffering=1)
+    except OSError:
+        return None
+
+
+def install_diagnostics() -> Any | None:
+    """Tee stdout/stderr to the diagnostics log so no-console runs are debuggable.
+
+    Returns the opened log stream, or ``None`` if the log could not be created
+    (in which case the launcher still runs — just without file diagnostics).
+    """
+    stream = _open_log_stream()
+    if stream is None:
+        return None
+    sys.stdout = _Tee(stream, _ORIGINAL_STDOUT)
+    sys.stderr = _Tee(stream, _ORIGINAL_STDERR)
+    return stream
+
+
+def _message_box_windows(text: str) -> None:  # pragma: no cover - Windows only
+    import ctypes  # noqa: PLC0415
+
+    mb_iconerror = 0x10
+    mb_systemmodal = 0x1000
+    ctypes.windll.user32.MessageBoxW(  # type: ignore[attr-defined]
+        None, text, "Investment Dashboard", mb_iconerror | mb_systemmodal
+    )
+
+
+def _message_box_macos(text: str) -> None:  # pragma: no cover - macOS only
+    safe = text.replace("\\", "\\\\").replace('"', '\\"')
+    script = (
+        f'display dialog "{safe}" with title "Investment Dashboard" '
+        'buttons {"OK"} default button "OK" with icon stop'
+    )
+    subprocess.run(["osascript", "-e", script], check=False, capture_output=True)
+
+
+def _message_box_linux(text: str) -> None:  # pragma: no cover - Linux GUI only
+    if shutil.which("zenity"):
+        subprocess.run(
+            ["zenity", "--error", "--title=Investment Dashboard", f"--text={text}"],
+            check=False,
+            capture_output=True,
+        )
+    elif shutil.which("kdialog"):
+        subprocess.run(
+            ["kdialog", "--title", "Investment Dashboard", "--error", text],
+            check=False,
+            capture_output=True,
+        )
+    elif shutil.which("notify-send"):
+        subprocess.run(
+            ["notify-send", "Investment Dashboard", text], check=False, capture_output=True
+        )
+
+
+def _show_error_dialog(summary: str, log_path: Path) -> None:
+    """Best-effort native modal error dialog. Never raises.
+
+    Shown only when there is no console to read the traceback from, so a
+    windowless double-click that fails still surfaces *something* visible and
+    points the user at the log file with the full details.
+    """
+    detail = (
+        "Investment Dashboard could not start.\n\n"
+        f"{summary}\n\n"
+        f"Details were written to:\n{log_path}"
+    )
+    try:
+        if os.name == "nt":
+            _message_box_windows(detail)
+        elif sys.platform == "darwin":
+            _message_box_macos(detail)
+        else:
+            _message_box_linux(detail)
+    except Exception:
+        # The error reporter must never raise — the log already has the trace.
+        pass
+
+
+def _report_startup_failure(error: BaseException) -> None:
+    """Surface a startup failure: native dialog with no console, prompt with one.
+
+    The full traceback is already in ``launcher.log`` (and on the console when
+    attached) via :func:`install_diagnostics`; this adds the *visible* signal.
+    """
+    summary = f"{type(error).__name__}: {error}".strip()
+    if _console_attached():
+        with contextlib.suppress(EOFError):
+            input("\nPress Enter to close…")
+    else:
+        _show_error_dialog(summary, LAUNCHER_LOG)
+
+
+def _venv_launch_python() -> Path:
+    """Interpreter to relaunch into.
+
+    Picks the windowless ``pythonw.exe`` when this process has no console (the
+    no-console launch path) so the relaunched child stays console-less; otherwise
+    the standard ``python.exe`` so console output keeps flowing.
+    """
+    if os.name == "nt" and not _console_attached() and VENV_PYTHONW.exists():
+        return VENV_PYTHONW
+    return VENV_PYTHON
+
 
 
 def _run_checked(args: list[str], step: str) -> None:
@@ -174,9 +367,14 @@ def _stop_existing_dashboard_instances() -> None:
 
 def _is_running_from_venv() -> bool:
     try:
-        return Path(sys.executable).resolve() == VENV_PYTHON.resolve()
+        executable = Path(sys.executable).resolve()
     except OSError:
         return False
+    candidates = {VENV_PYTHON.resolve()}
+    if VENV_PYTHONW.exists():
+        with contextlib.suppress(OSError):
+            candidates.add(VENV_PYTHONW.resolve())
+    return executable in candidates
 
 
 def _dependency_problems() -> list[str]:
@@ -405,12 +603,14 @@ def _relaunch_from_venv_if_needed() -> None:
             + "\nDelete the .venv folder and re-run this launcher to rebuild it."
         )
     if not _is_running_from_venv() or not _current_python_has_dependencies():
+        launch_python = _venv_launch_python()
         os.execv(
-            str(VENV_PYTHON), [str(VENV_PYTHON), str(ROOT / "run_dashboard.py"), *sys.argv[1:]]
+            str(launch_python), [str(launch_python), str(ROOT / "run_dashboard.py"), *sys.argv[1:]]
         )
 
 
 def main() -> int:
+    log_stream = install_diagnostics()
     try:
         _ensure_supported_python()
         _relaunch_from_venv_if_needed()
@@ -422,11 +622,14 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\nDashboard stopped (Ctrl+C).")
         return 0
-    except Exception:
+    except Exception as exc:
         traceback.print_exc()
-        with contextlib.suppress(EOFError):
-            input("\nPress Enter to close…")
+        _report_startup_failure(exc)
         return 1
+    finally:
+        if log_stream is not None:
+            with contextlib.suppress(Exception):
+                log_stream.flush()
     return 0
 
 

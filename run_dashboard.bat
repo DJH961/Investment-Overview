@@ -1,5 +1,9 @@
 @echo off
-REM Double-clickable launcher for the Investment Dashboard (Windows).
+REM Console / diagnostic launcher for the Investment Dashboard (Windows).
+REM
+REM This window stays open and shows live output — handy when something goes
+REM wrong. For the everyday, no-console experience double-click
+REM `run_dashboard.vbs` instead (it launches the same app with no window).
 REM
 REM First run setup is handled by run_dashboard.py, which creates .venv and
 REM installs dependencies if needed. Subsequent runs reuse that environment.
@@ -9,6 +13,11 @@ REM then `python`).
 
 setlocal enableextensions
 cd /d "%~dp0"
+
+REM Tell run_dashboard.py a real console is attached so it keeps the
+REM interactive "Press Enter to close" prompt (and live output) on failure
+REM instead of popping a native error dialog.
+set "INV_DASHBOARD_CONSOLE=1"
 
 set "PY_EXE="
 

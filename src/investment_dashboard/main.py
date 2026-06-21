@@ -77,8 +77,24 @@ def _live_refresh_tick() -> None:  # pragma: no cover - background loop
             refreshed = refresh_due_prices(session)
         if refreshed:
             log.debug("live refresh updated %s", list(refreshed.keys()))
-    except Exception:
+    except Exception as exc:
         log.warning("live price refresh tick failed", exc_info=True)
+        # Make the failure visible in-app (toast + Data Health), not just in the
+        # log — the local app now runs with no console window to watch.
+        from investment_dashboard.services import runtime_status  # noqa: PLC0415
+
+        runtime_status.record_error("Live price refresh", f"{type(exc).__name__}: {exc}")
+
+
+def _run_deferred_network_refresh_guarded() -> None:  # pragma: no cover - thread body
+    """Run the deferred refresh, recording any unexpected failure for the UI."""
+    try:
+        run_deferred_network_refresh()
+    except Exception as exc:
+        log.warning("deferred startup refresh failed", exc_info=True)
+        from investment_dashboard.services import runtime_status  # noqa: PLC0415
+
+        runtime_status.record_error("Startup data refresh", f"{type(exc).__name__}: {exc}")
 
 
 def _start_deferred_network_refresh() -> None:
@@ -90,7 +106,7 @@ def _start_deferred_network_refresh() -> None:
     never keeps the process alive on shutdown.
     """
     thread = threading.Thread(
-        target=run_deferred_network_refresh,
+        target=_run_deferred_network_refresh_guarded,
         name="inv-dashboard-startup-refresh",
         daemon=True,
     )

@@ -49,3 +49,15 @@ it on top of (or alongside) your existing folder. Your data lives in
 ``%LOCALAPPDATA%\InvestmentDashboard`` (or the path you configured via
 ``INV_DASHBOARD_*`` environment variables) and is not touched by the
 upgrade.
+
+If it does not start
+--------------------
+The launcher runs with no console window, so if a launch fails it leaves a
+trail instead of vanishing silently:
+- ``launcher.log`` (next to ``Run-InvestmentDashboard.cmd``) captures the
+  launcher's own output and any startup traceback.
+- ``logs\dashboard.log`` under your data folder captures the running app's
+  log (relocatable via ``INV_DASHBOARD_LOG_DIR``).
+Open the Data Health page in the app (or its "Download support bundle"
+button) to package these logs when reporting an issue. Background refreshes
+that fail are also shown in-app as a toast and on Data Health.
