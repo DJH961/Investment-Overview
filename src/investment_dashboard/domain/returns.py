@@ -113,6 +113,15 @@ def xirr(
     if len(signs) < 2:
         return None  # degenerate: all same sign
 
+    # Zero-span guard: if every cashflow (including the terminal) falls on a
+    # single date, the discount factor ``(1 + rate) ** years`` is identical
+    # (``years`` is constant) for all of them, so NPV is rate-independent and
+    # there is no unique IRR. The Newton loop below would otherwise return the
+    # initial ``guess`` (0.10) on the first iteration whenever the amounts net
+    # to ~0, silently inventing a rate. Report "undefined" instead.
+    if len({cf.date for cf in flows}) < 2:
+        return None
+
     # --- Newton-Raphson ---
     rate = guess
     for _ in range(max_iter):
