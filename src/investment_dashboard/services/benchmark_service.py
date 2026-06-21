@@ -128,7 +128,15 @@ def refresh_history(
     if end <= start:
         return 0
     instrument = _ensure_benchmark_instrument(session, symbol)
-    fetch = fetcher or yfinance_client.fetch_closes
+    # The benchmark is never held and its dividends are *not* in the ledger, so
+    # we fetch dividend/split-adjusted (total-return) closes. That makes the
+    # "what if I'd bought the index instead?" comparison reflect the index's
+    # real total return (price + reinvested distributions) rather than price
+    # alone — otherwise the benchmark is understated by its dividend yield and
+    # the portfolio looks like it beats the market when it doesn't.
+    fetch = fetcher or (
+        lambda syms, s, e: yfinance_client.fetch_closes(syms, s, e, adjusted=True)
+    )
     try:
         closes = fetch([symbol], start, end).get(symbol, {})
     except Exception as exc:  # pragma: no cover - network churn

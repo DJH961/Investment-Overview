@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
-
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
@@ -11,6 +9,7 @@ from investment_dashboard.services import display_currency_service
 from investment_dashboard.ui.components import page_header, section
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import currency_symbol
+from investment_dashboard.ui.pages._overview_query import build_value_series
 from investment_dashboard.ui.pages._period_query import (
     aggregate,
     money_column,
@@ -26,46 +25,49 @@ def _money_columns(label: str, field: str, primary: str) -> list[dict[str, objec
     return [money_column(label, field, primary)]
 
 
-def _figure(rows, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no-untyped-def]
-    """Cumulative portfolio value as a line over time, in display currency.
+def _figure(points, *, currency: str):  # type: ignore[no-untyped-def]
+    """Daily portfolio value as a line over the whole history, in display currency.
 
-    The user asked to replace the per-year growth *bars* with a line
-    chart "to see how it goes up over time" — a full growth-over-time
-    trajectory. We plot the end-of-year mark-to-market portfolio value
-    (the ``closing_value`` series), which rises as the portfolio grows.
-    It is FX-aware: ``closing_value_display`` (per-period-end FX) is
-    used when present, otherwise the EUR value is scaled by today's spot.
+    The user asked to replace the per-year growth *bars* with a line chart "to
+    see how it goes up over time". Plotting one mark per year leaves the line
+    badly over-smoothed (a straight segment between year-ends), so we plot the
+    **daily** mark-to-market value series instead — the real trajectory. Long
+    histories are thinned for rendering speed but keep their shape. The y-axis
+    is fitted to the data (not anchored to zero) and uses compact SI ticks so
+    the price flow is legible even for large balances.
     """
     import plotly.graph_objects as go  # noqa: PLC0415
 
+    from investment_dashboard.ui.charts import downsample, padded_range  # noqa: PLC0415
+
+    symbol = currency_symbol(currency)
     fig = go.Figure()
-    if rows:
-        labels = [r.label for r in rows]
-        values: list[float] = []
-        for r in rows:
-            if r.closing_value_display is not None:
-                value = r.closing_value_display
-            elif currency.upper() == "EUR" or fx_rate is None or fx_rate == 0:
-                value = r.closing_value_eur
-            else:
-                value = r.closing_value_eur * fx_rate
-            values.append(float(value))
+    if points:
+        points = downsample(points)
+        dates = [p.date for p in points]
+        values = [float(p.value) for p in points]
         fig.add_scatter(
-            x=labels,
+            x=dates,
             y=values,
-            mode="lines+markers",
+            mode="lines",
             name=f"Portfolio value ({currency})",
             line={"width": 2.5, "color": "#0072B2"},
-            marker={"size": 7},
             fill="tozeroy",
             fillcolor="rgba(0,114,178,0.08)",
+            hovertemplate=(f"%{{x|%d %b %Y}}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"),
+        )
+        yrange = padded_range(values)
+        fig.update_yaxes(
+            title=f"Value ({currency})",
+            tickprefix=symbol,
+            tickformat=".3s",
+            range=list(yrange) if yrange is not None else None,
         )
     fig.update_layout(
         title=f"Portfolio value over time ({currency})",
         template="colorblind_modern",
         margin={"l": 60, "r": 20, "t": 40, "b": 50},
-        xaxis={"title": "Year"},
-        yaxis={"title": f"Value ({currency})"},
+        xaxis={"title": "Date"},
     )
     return fig
 
@@ -78,11 +80,12 @@ def register() -> None:
             with session_scope() as session:
                 display_ccy = display_currency_service.get_display_currency(session)
                 rows = aggregate(session, monthly=False, display_currency=display_ccy)
+                value_series = build_value_series(session, currency=display_ccy, range_label="All")
                 display_quote = display_ccy if display_ccy != "EUR" else "USD"
                 fx_rate = display_currency_service.current_rate(session, quote=display_quote)
             sym = currency_symbol(display_ccy)
             with section("Growth over time"):
-                ui.plotly(_figure(rows, currency=display_ccy, fx_rate=fx_rate)).classes(
+                ui.plotly(_figure(value_series, currency=display_ccy)).classes(
                     "w-full h-[40vh]",
                 )
             with section("Aggregation table"):

@@ -58,6 +58,24 @@ def test_refresh_creates_instrument_and_persists_closes(session) -> None:
     assert series.closes[date(2026, 1, 3)] == Decimal("101")
 
 
+def test_refresh_history_requests_total_return_closes(session, monkeypatch) -> None:
+    """The benchmark is never held and its dividends aren't in the ledger, so
+    ``refresh_history`` must pull dividend-adjusted (total-return) closes;
+    otherwise the index is understated by its yield and the "did I beat the
+    market?" verdict is wrong."""
+    captured: dict[str, object] = {}
+
+    def fake_fetch_closes(symbols, start, end, *, adjusted=False):
+        captured["adjusted"] = adjusted
+        return {s: {date(2026, 1, 2): Decimal("100")} for s in symbols}
+
+    monkeypatch.setattr(
+        "investment_dashboard.adapters.yfinance_client.fetch_closes", fake_fetch_closes
+    )
+    svc.refresh_history(session, start=date(2026, 1, 2), end=date(2026, 1, 3))
+    assert captured["adjusted"] is True
+
+
 def test_refresh_empty_returns_zero(session) -> None:
     n = svc.refresh_history(
         session,
