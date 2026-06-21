@@ -72,6 +72,38 @@ These values are live-recompute inputs for the current month/year. Completed
 periods remain in `monthly` and `yearly` as-of-export; the browser decides which
 current period to recompute.
 
+## `monthly` / `yearly`
+
+Each is `{ "rows": [...] }`. Every row carries (EUR figures are what the web
+companion renders; `*_display` fields exist for the desktop's display currency
+and are ignored by the web build):
+
+- `label`: `YYYY-MM` for monthly rows, `YYYY` for yearly rows.
+- `contributions_eur`, `dividends_eur`, `interest_eur`, `net_flow_eur`.
+- `opening_value_eur`, `closing_value_eur`.
+- `growth_pct`: string decimal ratio or `null`.
+
+The browser **overlays the current period live** (proposal §3.C): the row whose
+`label` matches `meta.as_of`'s month/year is recomputed against live prices, so
+its growth and closing value reflect today; completed prior rows stay frozen.
+
+## `analytics`
+
+The as-of-export risk bundle (`readmodels/analytics.py`), shown stamped "as of
+export". Notable fields: `as_of`, `start`, `currency`, the return metrics
+(`cagr`, `twr`, `xirr`, `alpha`, `beta`, `risk_free_rate`), the risk metrics
+(`volatility`, `sharpe`, `sortino`, `max_drawdown`, `calmar`, `ulcer`, `var_95`,
+`cvar_95`, `skew`, `kurtosis`), `benchmark_symbol`, `risk_free_symbol`, a
+`curve[]` equity series (`date`, `portfolio_value`, `cumulative_contributions`,
+`benchmark_value`) and an `attribution[]` list (`symbol`, `absolute_pnl`,
+`pct_of_total_return`, …). Any metric may be `null`.
+
+## `deposits`
+
+Contributions read-model (`readmodels/deposits.py`): a `summary`
+(`total_contrib_eur`, `ytd_contrib_eur`, `mtd_contrib_eur`, …) and `rows[]`
+(`date`, `account`, `kind`, `amount_eur`, `currency`, `description`, …).
+
 ## Precision targets
 
 Browser parity should compare money within `1e-6`, rates/percentages within

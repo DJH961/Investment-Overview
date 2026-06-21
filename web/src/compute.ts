@@ -13,6 +13,16 @@
 import { Decimal } from "./decimal-config";
 import { convert, type FxRates, type Quote } from "./prices";
 import { xirr, totalGrowthPctCompounded, yearsBetween, type Cashflow } from "./returns";
+import {
+  buildAnalytics,
+  buildDeposits,
+  buildPeriods,
+  buildPlan,
+  type AnalyticsView,
+  type DepositsView,
+  type PeriodsView,
+  type PlanView,
+} from "./phase4";
 import type { ExportCashflow, ExportHolding, MobileExport } from "./types";
 
 const EUR = "EUR";
@@ -78,6 +88,14 @@ export interface DashboardModel {
   overview: OverviewView;
   holdings: HoldingView[];
   allocation: AllocationSlice[];
+  /** Phase 4: monthly/yearly periods (current period recomputed live). */
+  periods: PeriodsView;
+  /** Phase 4: as-of-export analytics / risk display (null if not exported). */
+  analytics: AnalyticsView | null;
+  /** Phase 4: contributions / deposits summary (null if not exported). */
+  deposits: DepositsView | null;
+  /** Phase 4: forward-projection calculator seed inputs. */
+  plan: PlanView;
 }
 
 /** Today's date as an ISO `YYYY-MM-DD` string in UTC (the live XIRR "now"). */
@@ -333,7 +351,12 @@ export function buildDashboard(
     fxMissingCurrencies: [...fxMissing],
   };
 
-  return { overview, holdings, allocation };
+  const periods = buildPeriods(data, overview);
+  const analytics = buildAnalytics(data);
+  const deposits = buildDeposits(data);
+  const plan = buildPlan(data, overview);
+
+  return { overview, holdings, allocation, periods, analytics, deposits, plan };
 }
 
 /** Group holding values by asset class into descending allocation slices. */

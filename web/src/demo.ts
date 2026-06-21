@@ -126,6 +126,99 @@ const DEMO_EXPORT: MobileExport = {
     year_start_value_eur: "33000",
     holdings: {},
   },
+  monthly: {
+    rows: [
+      {
+        label: "2026-01",
+        contributions_eur: "1200", dividends_eur: "0", interest_eur: "5",
+        net_flow_eur: "1205", opening_value_eur: "33000", closing_value_eur: "34800", growth_pct: "0.018",
+      },
+      {
+        label: "2026-02",
+        contributions_eur: "1200", dividends_eur: "60", interest_eur: "4",
+        net_flow_eur: "1264", opening_value_eur: "34800", closing_value_eur: "35200", growth_pct: "-0.025",
+      },
+      {
+        label: "2026-03",
+        contributions_eur: "1200", dividends_eur: "0", interest_eur: "5",
+        net_flow_eur: "1205", opening_value_eur: "35200", closing_value_eur: "37100", growth_pct: "0.020",
+      },
+      {
+        label: "2026-04",
+        contributions_eur: "1200", dividends_eur: "90", interest_eur: "4",
+        net_flow_eur: "1294", opening_value_eur: "37100", closing_value_eur: "37000", growth_pct: "-0.038",
+      },
+      {
+        label: "2026-05",
+        contributions_eur: "1200", dividends_eur: "0", interest_eur: "6",
+        net_flow_eur: "1206", opening_value_eur: "37000", closing_value_eur: "38400", growth_pct: "0.006",
+      },
+      {
+        label: "2026-06",
+        contributions_eur: "1200", dividends_eur: "0", interest_eur: "5",
+        net_flow_eur: "1205", opening_value_eur: "35800", closing_value_eur: "39000", growth_pct: "0.040",
+      },
+    ],
+  },
+  yearly: {
+    rows: [
+      {
+        label: "2023",
+        contributions_eur: "7500", dividends_eur: "120", interest_eur: "30",
+        net_flow_eur: "7650", opening_value_eur: "0", closing_value_eur: "8200", growth_pct: "0.072",
+      },
+      {
+        label: "2024",
+        contributions_eur: "13500", dividends_eur: "240", interest_eur: "85",
+        net_flow_eur: "13825", opening_value_eur: "8200", closing_value_eur: "24800", growth_pct: "0.118",
+      },
+      {
+        label: "2025",
+        contributions_eur: "9000", dividends_eur: "300", interest_eur: "110",
+        net_flow_eur: "9410", opening_value_eur: "24800", closing_value_eur: "33000", growth_pct: "0.094",
+      },
+      {
+        label: "2026",
+        contributions_eur: "7200", dividends_eur: "150", interest_eur: "29",
+        net_flow_eur: "7379", opening_value_eur: "33000", closing_value_eur: "39000", growth_pct: "0.061",
+      },
+    ],
+  },
+  analytics: {
+    as_of: "2026-06-19", start: "2025-06-19", currency: "EUR",
+    cagr: "0.112", twr: "0.118", xirr: "0.121",
+    volatility: "0.142", sharpe: "0.92", sortino: "1.31",
+    max_drawdown: "-0.168", calmar: "0.67", ulcer: "4.8",
+    var_95: "-0.021", cvar_95: "-0.032", skew: "-0.35", kurtosis: "1.8",
+    beta: "0.94", alpha: "0.021", risk_free_rate: "0.025",
+    risk_free_symbol: "EURIBOR", benchmark_symbol: "VWCE",
+    curve: [
+      { date: "2025-06-30", portfolio_value: "31000", cumulative_contributions: "29000", benchmark_value: "31000" },
+      { date: "2025-08-31", portfolio_value: "32200", cumulative_contributions: "30200", benchmark_value: "32000" },
+      { date: "2025-10-31", portfolio_value: "31500", cumulative_contributions: "31400", benchmark_value: "31800" },
+      { date: "2025-12-31", portfolio_value: "33000", cumulative_contributions: "32600", benchmark_value: "33200" },
+      { date: "2026-02-28", portfolio_value: "35200", cumulative_contributions: "35000", benchmark_value: "35600" },
+      { date: "2026-04-30", portfolio_value: "37000", cumulative_contributions: "37400", benchmark_value: "37100" },
+      { date: "2026-06-19", portfolio_value: "39000", cumulative_contributions: "39800", benchmark_value: "39200" },
+    ],
+    attribution: [
+      { instrument_id: 1, symbol: "VWCE", start_value: "11000", end_value: "14568", net_contribution: "0", absolute_pnl: "3568", pct_of_total_return: "0.52" },
+      { instrument_id: 2, symbol: "MSFT", start_value: "5100", end_value: "6720", net_contribution: "0", absolute_pnl: "1620", pct_of_total_return: "0.24" },
+      { instrument_id: 3, symbol: "AAPL", start_value: "6800", end_value: "8492", net_contribution: "0", absolute_pnl: "1692", pct_of_total_return: "0.25" },
+      { instrument_id: 4, symbol: "AGGH", start_value: "1500", end_value: "1494", net_contribution: "0", absolute_pnl: "-6", pct_of_total_return: "-0.01" },
+    ],
+  },
+  deposits: {
+    summary: { total_contrib_eur: "37200", ytd_contrib_eur: "7200", mtd_contrib_eur: "1200" },
+    rows: [
+      { id: 6, date: "2026-06-01", account: "Taxable", kind: "contribution", amount_eur: "1200", currency: "EUR", description: "Monthly savings" },
+      { id: 5, date: "2026-05-01", account: "Taxable", kind: "contribution", amount_eur: "1200", currency: "EUR", description: "Monthly savings" },
+      { id: 4, date: "2026-04-01", account: "Taxable", kind: "contribution", amount_eur: "1200", currency: "EUR", description: "Monthly savings" },
+      { id: 3, date: "2024-05-20", account: "Taxable", kind: "contribution", amount_eur: "5400", currency: "EUR", description: "Lump sum" },
+      { id: 2, date: "2023-09-01", account: "Taxable", kind: "contribution", amount_eur: "6800", currency: "EUR", description: "Initial AAPL buy" },
+      { id: 1, date: "2023-02-15", account: "Taxable", kind: "contribution", amount_eur: "6000", currency: "EUR", description: "Initial VWCE buy" },
+    ],
+  },
 };
 
 /** Baked-in EUR-based FX (rates[X] = units of X per 1 EUR). */
