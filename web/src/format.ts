@@ -23,6 +23,22 @@ export function formatCurrency(value: Decimal | null): string {
   }).format(amount.toNumber());
 }
 
+/**
+ * A whole-currency amount (no cents). Used where the precision of cents is
+ * noise rather than signal — e.g. the forward-projection table, whose figures
+ * are hypothetical estimates and read more clearly rounded to the nearest unit.
+ */
+export function formatCurrencyWhole(value: Decimal | null): string {
+  if (value === null) return "—";
+  const { value: amount, code } = convertFromEur(value);
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: code,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount.toNumber());
+}
+
 export function formatSignedCurrency(value: Decimal | null): string {
   if (value === null) return "—";
   const base = formatCurrency(value.abs());
