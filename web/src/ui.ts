@@ -551,6 +551,77 @@ function renderMetricGrid(metrics: RiskMetric[]): HTMLElement {
 }
 
 /**
+ * Selectable look-back windows for the time-series charts. A preset is only
+ * offered when the data actually spans longer than it (so we never show a "1Y"
+ * button next to three months of history); "All" is always available. Works the
+ * same on phone and desktop — it is just a row of buttons above the chart.
+ */
+const CHART_TIMEFRAMES: Array<{ label: string; days: number }> = [
+  { label: "1M", days: 31 },
+  { label: "3M", days: 91 },
+  { label: "6M", days: 182 },
+  { label: "1Y", days: 365 },
+];
+
+/** Whole days between two ISO `YYYY-MM-DD` dates (b assumed ≥ a). */
+function daysBetween(a: string, b: string): number {
+  return (Date.parse(b) - Date.parse(a)) / 86_400_000;
+}
+
+/**
+ * A line chart wrapped with time-range presets. Builds the full chart, then —
+ * when there is enough history to make a shorter window meaningful — adds a
+ * small button group that re-slices the same series to the chosen look-back and
+ * redraws in place (no re-fetch; purely a view of the already-loaded points).
+ */
+function chartWithTimeframe(dates: string[], series: ChartSeries[]): HTMLElement | null {
+  const full = buildLineChart({ dates, series });
+  if (!full) return null;
+  const wrap = h("div", { class: "chart-wrap" }, [full as unknown as HTMLElement]);
+
+  const span = dates.length >= 2 ? daysBetween(dates[0], dates[dates.length - 1]) : 0;
+  const presets = CHART_TIMEFRAMES.filter((t) => span > t.days + 5);
+  // Nothing worth toggling (history shorter than the smallest preset): plain chart.
+  if (presets.length === 0) return wrap;
+  const options: Array<{ label: string; days: number | null }> = [...presets, { label: "All", days: null }];
+
+  const lastMs = Date.parse(dates[dates.length - 1]);
+  const buttons: HTMLButtonElement[] = [];
+
+  const apply = (days: number | null, index: number): void => {
+    let start = 0;
+    if (days !== null) {
+      const cutoff = lastMs - days * 86_400_000;
+      start = dates.findIndex((d) => Date.parse(d) >= cutoff);
+      if (start < 0) start = 0;
+      // Always keep at least two points so the chart can still draw a line.
+      if (dates.length - start < 2) start = Math.max(0, dates.length - 2);
+    }
+    const slicedDates = dates.slice(start);
+    const slicedSeries = series.map((s) => ({ ...s, values: s.values.slice(start) }));
+    const chart = buildLineChart({ dates: slicedDates, series: slicedSeries });
+    if (chart) wrap.replaceChildren(chart as unknown as HTMLElement);
+    buttons.forEach((button, i) => {
+      const active = i === index;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+  };
+
+  const controls = h("div", { class: "chart-range", role: "group", "aria-label": "Chart time range" }, []);
+  options.forEach((option, index) => {
+    const button = h("button", { class: "chart-range-btn", type: "button" }, [option.label]) as HTMLButtonElement;
+    button.addEventListener("click", () => apply(option.days, index));
+    buttons.push(button);
+    controls.appendChild(button);
+  });
+  // Default to the full history (the last option).
+  apply(null, options.length - 1);
+
+  return h("div", { class: "chart-block" }, [controls, wrap]);
+}
+
+/**
  * The Risk-tab equity curve: portfolio value vs. the cumulative-contributions
  * baseline and (when present) the benchmark, drawn with the shared axis-aware
  * line chart. Stamped as-of-export — history-bound, it does not move intraday.
@@ -572,7 +643,7 @@ function renderEquityCurve(curve: AnalyticsView["curve"], benchmarkSymbol: strin
     series.push({ values: points.map((p) => p.benchmarkValue), className: "series-benchmark" });
   }
 
-  const chart = buildLineChart({ dates, series });
+  const chart = chartWithTimeframe(dates, series);
   if (!chart) return null;
 
   const legend: Array<Node | string> = [legendItem("series-portfolio", "Portfolio")];
@@ -584,7 +655,7 @@ function renderEquityCurve(curve: AnalyticsView["curve"], benchmarkSymbol: strin
       h("h2", {}, ["Equity curve"]),
       h("span", { class: "muted" }, ["value over time"]),
     ]),
-    h("div", { class: "chart-wrap" }, [chart as unknown as HTMLElement]),
+    chart,
     h("div", { class: "chart-legend" }, legend),
   ]);
 }
@@ -621,10 +692,7 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
   }
   if (values.filter((v) => v !== null).length < 2) return null;
 
-  const chart = buildLineChart({
-    dates,
-    series: [{ values, className: "series-portfolio", area: true }],
-  });
+  const chart = chartWithTimeframe(dates, [{ values, className: "series-portfolio", area: true }]);
   if (!chart) return null;
 
   const cls = signClass(o.todayMoveEur);
@@ -635,7 +703,7 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
         o.todayMovePct !== null ? `${formatSignedPercent(o.todayMovePct)} today` : "today",
       ]),
     ]),
-    h("div", { class: "chart-wrap" }, [chart as unknown as HTMLElement]),
+    chart,
     h("p", { class: "note" }, [`${dates[0]} → today · live tip from your current total value.`]),
   ]);
 }
