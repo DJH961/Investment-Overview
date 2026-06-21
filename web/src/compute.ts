@@ -200,12 +200,37 @@ function lastExportedValues(data: MobileExport): Map<string, Decimal> {
   return values;
 }
 
-function priceForHolding(holding: ExportHolding, quote: Quote | undefined): {
+function priceForHolding(
+  holding: ExportHolding,
+  quote: Quote | undefined,
+  exportAsOf: string,
+): {
   price: Decimal | null;
   isLive: boolean;
   at: number | null;
 } {
-  if (quote && quote.price) return { price: quote.price, isLive: true, at: quote.at ?? null };
+  if (quote && quote.price) {
+    // NAV-priced holdings (mutual funds / money-market) publish only ~once a
+    // business day, and the live feed and the desktop export draw their NAVs
+    // from different providers. Adopting a live NAV that is *not* genuinely
+    // newer than the export's mark therefore swaps the value onto a different
+    // basis for no new information — which is exactly what made the value chart
+    // appear to crash on its final point and mislabelled a day-old NAV as "now".
+    // So for NAV rows we only supersede the exported value with a live quote
+    // whose value-date is strictly newer than the export; otherwise we keep the
+    // consistent exported last-known price.
+    const navNotNewer =
+      holding.price_type === "nav" &&
+      holding.last_known_price_native !== null &&
+      !(quote.valueDate != null && quote.valueDate > exportAsOf);
+    if (!navNotNewer) {
+      // "as of" should be when the price actually struck (Twelve Data
+      // `timestamp`), not when we happened to fetch it — so a stale-but-latest
+      // price reads as e.g. "yesterday", never "now". Fall back to fetch time
+      // only when the API gave no usable timestamp.
+      return { price: quote.price, isLive: true, at: quote.priceTime ?? quote.at ?? null };
+    }
+  }
   if (holding.last_known_price_native !== null) {
     return { price: new Decimal(holding.last_known_price_native), isLive: false, at: null };
   }
@@ -222,7 +247,7 @@ function buildHolding(
   fallbackValueEur: Decimal | null,
 ): HoldingView {
   const shares = new Decimal(holding.shares);
-  const { price, isLive, at } = priceForHolding(holding, quote);
+  const { price, isLive, at } = priceForHolding(holding, quote, exportAsOf);
   const currency = holding.native_currency;
 
   let valueEur: Decimal | null = null;

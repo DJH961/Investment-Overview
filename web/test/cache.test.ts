@@ -52,6 +52,24 @@ describe("quote cache", () => {
     expect(got.quote.currency).toBe("USD");
   });
 
+  it("persists the price's real strike time (priceTime) across the cache", () => {
+    const s = memStorage();
+    const q: Quote = {
+      symbol: "FXAIX",
+      price: new Decimal("101"),
+      previousClose: null,
+      currency: "USD",
+      priceTime: 1_717_000_000_000,
+      valueDate: "2024-05-31",
+    };
+    writeCachedQuotes(new Map([["FXAIX", q]]), 5000, s);
+    const got = readCachedQuotes(s).get("FXAIX")!;
+    // The fetch time and the price's own strike time are distinct and both kept.
+    expect(got.at).toBe(5000);
+    expect(got.quote.priceTime).toBe(1_717_000_000_000);
+    expect(got.quote.valueDate).toBe("2024-05-31");
+  });
+
   it("does not store a null-price quote (keeps the prior good value)", () => {
     const s = memStorage();
     writeCachedQuotes(new Map([["VTI", quote("VTI", "100")]]), 1000, s);

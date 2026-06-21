@@ -71,6 +71,12 @@ interface StoredQuote {
   currency: string | null;
   /** Epoch ms when this quote was fetched. */
   at: number;
+  /**
+   * Epoch ms the price actually applies to (Twelve Data `timestamp`); see
+   * {@link Quote.priceTime}. Optional for backward compatibility with caches
+   * written before this field existed.
+   */
+  priceTime?: number | null;
   /** Trading day the price applies to (`YYYY-MM-DD`); see {@link Quote.valueDate}. */
   valueDate?: string | null;
 }
@@ -97,6 +103,7 @@ export function readCachedQuotes(storage: StorageLike | null = defaultStorage())
         previousClose: toDecimal(stored.previousClose),
         currency: stored.currency,
         at: stored.at,
+        priceTime: stored.priceTime ?? null,
         valueDate: stored.valueDate ?? null,
       },
     });
@@ -123,6 +130,7 @@ export function writeCachedQuotes(
       previousClose: quote.previousClose ? quote.previousClose.toString() : null,
       currency: quote.currency,
       at,
+      priceTime: quote.priceTime ?? null,
       valueDate: quote.valueDate ?? null,
     };
   }

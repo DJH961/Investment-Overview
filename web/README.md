@@ -25,7 +25,9 @@ Concretely, that means:
   top tab strip on desktop — same markup, `min-width` media queries only. The
   last-viewed tab is remembered per device.
 - Holdings render as a scannable **list** (symbol · name · value · today's
-  move), never a wide horizontal-scrolling spreadsheet table.
+  move), never a wide horizontal-scrolling spreadsheet table. Long lists
+  (holdings and the by-month / by-year period tables) are **collapsible** so you
+  can fold one away and reach the content below without scrolling past every row.
 - The headline portfolio value and today's move are the hero of the screen;
   month- and year-to-date growth sit right beneath (and, on desktop, beside the
   big total value), and a **value-over-time chart** (with labelled axes, running
@@ -44,9 +46,11 @@ Concretely, that means:
   definition, and the equity curve has labelled axes plus a portfolio /
   contributions / benchmark legend.
 - A topbar **currency toggle** flips the whole dashboard between **EUR and USD**
-  (using the live EUR→USD rate), persisted per device. A **theme toggle** cycles
-  System → Light → Dark, also persisted in `localStorage`; "System" follows the
-  OS `prefers-color-scheme`. The modern **Inter** typeface is bundled
+  (using the live EUR→USD rate), persisted per device. A **Settings** button in
+  the topbar opens the editable configuration **while logged in** (data source,
+  quote cache, blob URL override) and hosts the **theme** control, which cycles
+  System → Light → Dark, persisted in `localStorage`; "System" follows the OS
+  `prefers-color-scheme`. The modern **Inter** typeface is bundled
   (self-hosted — no third-party font requests).
 
 ## Status

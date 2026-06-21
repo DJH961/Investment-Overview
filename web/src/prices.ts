@@ -28,8 +28,23 @@ export interface Quote {
    * cache hit, when it was originally stored. Lets the UI say how fresh each
    * holding's price is. Null when unknown (e.g. a freshly parsed API node
    * before {@link loadQuotes} stamps it).
+   *
+   * NOTE: this is *fetch* time, not the time the price itself applies to. It is
+   * what the credit-budget cache uses to decide freshness. For the moment the
+   * price actually struck — what the UI should show as "as of" — use
+   * {@link priceTime}, which is honest even when the market is closed and the
+   * latest available price is hours or days old.
    */
   at?: number | null;
+  /**
+   * Epoch ms the price *actually applies to* — parsed from Twelve Data's
+   * `timestamp` (or `last_quote_at`) field, i.e. when the latest bar/quote was
+   * struck. For a NAV-priced fund whose market is shut this is the NAV's strike
+   * time (yesterday, last Friday, …), never "now". This is what the UI shows so
+   * a stale-but-latest price is never mislabelled as fresh. Null when the API
+   * omitted a usable timestamp.
+   */
+  priceTime?: number | null;
   /**
    * The trading day this price applies to (`YYYY-MM-DD`), parsed from the
    * quote's `datetime`. For a NAV-priced fund this is the date its once-a-day
@@ -124,16 +139,32 @@ function parseValueDate(value: unknown): string | null {
   return match ? match[1] : null;
 }
 
+/**
+ * Parse a Twelve Data epoch field (`timestamp` / `last_quote_at`) — Unix
+ * *seconds* — into epoch milliseconds. Accepts a numeric string too. Returns
+ * null for anything missing or non-finite.
+ */
+function parseEpochSeconds(value: unknown): number | null {
+  const seconds = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  return Math.round(seconds * 1000);
+}
+
 function quoteFromNode(symbol: string, node: Record<string, unknown>): Quote {
   if (node.status === "error") {
-    return { symbol, price: null, previousClose: null, currency: null, at: null, valueDate: null };
+    return { symbol, price: null, previousClose: null, currency: null, at: null, priceTime: null, valueDate: null };
   }
+  // The price's real time: prefer `timestamp` (the latest bar's datetime), then
+  // `last_quote_at`. Both are Unix seconds. This is what makes the "as of"
+  // honest when the market is closed and the latest price is stale.
+  const priceTime = parseEpochSeconds(node.timestamp) ?? parseEpochSeconds(node.last_quote_at);
   return {
     symbol,
     price: parseDecimal(node.close ?? node.price),
     previousClose: parseDecimal(node.previous_close),
     currency: typeof node.currency === "string" ? node.currency : null,
     at: null,
+    priceTime,
     valueDate: parseValueDate(node.datetime),
   };
 }
@@ -188,7 +219,7 @@ export async function fetchQuotes(
     if (node && typeof node === "object") {
       result.set(symbol, quoteFromNode(symbol, node as Record<string, unknown>));
     } else {
-      result.set(symbol, { symbol, price: null, previousClose: null, currency: null, at: null });
+      result.set(symbol, { symbol, price: null, previousClose: null, currency: null, at: null, priceTime: null });
     }
   }
   return result;

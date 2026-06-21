@@ -206,7 +206,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.topbar-actions { display: flex; gap: 0.45rem; flex: none; }
+.topbar-actions { display: flex; align-items: center; gap: 0.6rem; flex: none; }
 .icon-btn {
   font: inherit;
   font-weight: 600;
@@ -226,15 +226,19 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .icon-btn:active { transform: translateY(1px); }
 .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .icon-btn.ghost { background: transparent; color: var(--muted); }
+/* Icon-only actions (e.g. Settings) stay a comfortable, tappable circle without
+ * a text label crowding the topbar. */
+.icon-btn.icon-only { padding: 0.45rem; aspect-ratio: 1; justify-content: center; }
+.icon-btn.icon-only .icon-btn-glyph { font-size: 1.05rem; }
 .icon-btn-glyph { font-size: 1rem; line-height: 1; }
 
 .content {
   max-width: 64rem;
   margin: 0 auto;
   width: 100%;
-  padding: 1.1rem 1.1rem 5.5rem; /* room for the fixed bottom tab bar */
+  padding: 1.2rem 1.1rem 5.5rem; /* room for the fixed bottom tab bar */
   display: grid;
-  gap: 1rem;
+  gap: 1.15rem;
 }
 
 /* --- Hero (headline value + today's move) --------------------------------- */
@@ -358,6 +362,44 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .section-head .muted { font-size: 0.82rem; }
 
+/* --- Collapsible sections (holdings, period tables, attribution) ----------- */
+/* Long lists fold away so the user can collapse one and reach the content below
+ * without scrolling past every row. The header doubles as the section head; a
+ * chevron rotates to show open/closed. Transparent by default so the existing
+ * look is preserved (`.card` variant keeps the card chrome, e.g. attribution). */
+.collapsible { display: block; }
+.collapsible > .collapsible-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0.5rem 0.15rem 0.55rem;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.collapsible > .collapsible-summary::-webkit-details-marker { display: none; }
+.collapsible > .collapsible-summary .muted { font-size: 0.82rem; }
+.collapsible > .collapsible-summary::after {
+  content: "›";
+  margin-left: auto;
+  align-self: center;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 1.15rem;
+  line-height: 1;
+  transform: rotate(90deg);
+  transition: transform 0.15s ease;
+}
+.collapsible:not([open]) > .collapsible-summary::after { transform: rotate(0deg); }
+.collapsible > .collapsible-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+/* Card variant (attribution): keep the card padding/background and drop the
+ * section-head margins so the summary lines up with the card edges. */
+.collapsible.card > .collapsible-summary { margin: 0; }
+
 .holding-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
 .holding {
   background: var(--card);
@@ -390,6 +432,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.holding-asof { color: var(--faint); font-size: 0.72rem; font-weight: 500; }
 .holding-figures { text-align: right; display: grid; gap: 0.1rem; flex: none; }
 .holding-value { font-weight: 700; font-variant-numeric: tabular-nums; }
 .holding-change { font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -537,7 +580,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .tab-panel[hidden] { display: none; }
-.panel-stack { display: grid; gap: 1rem; }
+.panel-stack { display: grid; gap: 1.15rem; }
 
 /* --- Generic card --------------------------------------------------------- */
 .card {
@@ -566,14 +609,15 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ledger-sub { font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ledger-amount { font-weight: 700; font-variant-numeric: tabular-nums; flex: none; }
 
-.deposits { display: grid; gap: 0.75rem; }
+.deposits { display: grid; gap: 0.9rem; }
 /* The contributions summary is a natural triplet (total / this year / this
  * month); keep all three on one row so the last figure never orphans onto a
- * line of its own in the 2- and 4-column stat grids. Tighten the padding and
- * value size a touch so the currency figures fit three-up even on phones. */
-.deposits > .stats .stat-grid { grid-template-columns: repeat(3, 1fr); }
-.deposits > .stats .stat { padding: 0.7rem 0.55rem; }
-.deposits > .stats .stat-value { font-size: 1.02rem; }
+ * line of its own in the 2- and 4-column stat grids. Tighten the value size a
+ * touch (and let cards shrink) so the currency figures fit three-up even on the
+ * narrowest phones without clipping. */
+.deposits > .stats .stat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
+.deposits > .stats .stat { padding: 0.75rem 0.55rem; }
+.deposits > .stats .stat-value { font-size: 0.98rem; letter-spacing: -0.02em; }
 
 /* Periods groups: frame each of the three blocks (by-month, by-year,
  * contributions) as a softly-tinted zone so they read as distinct sections
@@ -589,6 +633,8 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .panel-periods > .periods-monthly > .section-head,
 .panel-periods > .periods-yearly > .section-head,
+.panel-periods > .periods-monthly > .collapsible-summary,
+.panel-periods > .periods-yearly > .collapsible-summary,
 .panel-periods > .deposits > .section-head {
   margin: 0.5rem 0.1rem 0.6rem;
   padding-bottom: 0.5rem;
@@ -759,7 +805,6 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
  * screens; the lock button keeps its label (it has no glyph). */
 @media (max-width: 30rem) {
   .icon-btn[data-action="refresh"] .icon-btn-text,
-  .icon-btn[data-action="theme"] .icon-btn-text,
   .icon-btn[data-action="currency"] .icon-btn-text {
     position: absolute;
     width: 1px;
