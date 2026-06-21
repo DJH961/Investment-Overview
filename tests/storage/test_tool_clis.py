@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from pathlib import Path
 
@@ -109,6 +110,10 @@ def test_resolve_passphrase_prefers_cli_value_with_warning(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     monkeypatch.delenv(ENV_VAR, raising=False)
+    # Another test may have run dictConfig(disable_existing_loggers=True), which
+    # disables this module's logger and would swallow the warning. Re-enable it
+    # so the assertion is order-independent.
+    logging.getLogger("investment_dashboard.tools._passphrase").disabled = False
     with caplog.at_level("WARNING"):
         assert resolve_passphrase("hunter2") == "hunter2"
     assert any("--passphrase" in r.getMessage() for r in caplog.records)

@@ -17,6 +17,7 @@ records, for each cluster, what is done, what is deferred, and why.
 | **A6** | The fetched risk-free rate is range-checked (`0 ≤ rate ≤ 1`); a bad tick keeps the last good cached value. | `services/risk_free_service.py` |
 | **D1** | Bounded retry/backoff for the yfinance and Frankfurter clients; HTTP 429 handled distinctly with `Retry-After`. | `adapters/_retry.py`, `adapters/yfinance_client.py`, `adapters/frankfurter_client.py` |
 | **C2** | Backup manifests, the `publish-web` blob, and the snapshot export now write through one atomic-write (+ fsync) helper. | `storage/atomic_io.py`, `tools/backup.py`, `tools/publish_web.py`, `tools/export_snapshot.py` |
+| **C5** | Publishing now pre-flights the GitHub PAT (token validity, repo reachability, `Contents: write`, and expiry) before any release write, and a process-wide log filter plus per-message sanitising keep tokens out of logs/error text. | `services/publish_service.py`, `redaction.py`, `logging.py` |
 | **C1** | Durable tiers (ledger/config) now commit with `PRAGMA synchronous=FULL`; the rebuildable cache keeps `NORMAL`. Survives power loss in cloud-sync folders without slowing the cache. | `db.py` |
 | **C4** | `--passphrase` is no longer the only non-interactive path: one shared resolver prefers the env var, falls back to a `getpass` prompt on a TTY, and warns that the CLI flag leaks into `ps`/shell history. | `tools/_passphrase.py`, `tools/backup.py`, `tools/split_db.py`, `tools/repair_sidecar.py` |
 | **D2** (partial) | The Vanguard XLSX parser now refuses an import when a data cell lands under a column the header doesn't name (mis-aligned layout), instead of silently dropping it via `zip(strict=False)`. | `adapters/vanguard/xlsx_parser.py` |
@@ -103,9 +104,15 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
   `INV_DASHBOARD_DB_PASSPHRASE` env var, falls back to an interactive `getpass`
   prompt on a TTY, and warns when the leak-prone `--passphrase` flag is used.
   Wired into `backup`, `split_db`, and `repair_sidecar`.
-* **C5** — Pre-flight validation for publish (`services/publish_service.py`):
-  validate the GitHub PAT scope/expiry *before* upload, and sanitise HTTP error
-  bodies so a token can't be echoed into logs.
+* **C5** — ✅ done. `publish_service.preflight_token` does one cheap
+  `GET /repos/{repo}` before any write and fails fast with an actionable message
+  when the PAT is invalid (401), can't reach the repo (404), lacks
+  `Contents: write` (`permissions.push` false), or has already expired — warning
+  when expiry is imminent. Surfaced/logged API messages are run through
+  `redaction.redact_secrets` (with the live token masked), and a process-wide
+  `SecretRedactingFilter` installed by `configure_logging` scrubs GitHub PAT
+  shapes (`ghp_…`/`github_pat_…`/`gho_…`) and `Bearer`/`token` credentials from
+  every log record as defence-in-depth (the audit's recommendation #3).
 
 ### D. Adapters / importers
 
@@ -193,13 +200,16 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
    `[-1, ∞)`." Byte-stability locks the *current* numbers; invariants lock the
    *relationships*, catching a wider class of B-series regressions.
 
-3. **A process-wide secret-redaction log filter.** C4 (passphrase-on-CLI) and C5
-   (token echoed in HTTP error bodies) are two instances of the same hazard: a
-   secret reaching a log sink. Rather than fixing each call site, install one
-   `logging.Filter` at app/CLI start-up that scrubs known secret shapes (GitHub
-   PATs `ghp_…`/`github_pat_…`, the SQLCipher passphrase, the mobile passphrase)
-   from every record. It's a small, central, defence-in-depth net that keeps the
-   *next* accidental `log.exception(resp.text)` from leaking a credential.
+3. **A process-wide secret-redaction log filter.** ✅ **Landed with C5.** C4
+   (passphrase-on-CLI) and C5 (token echoed in HTTP error bodies) are two
+   instances of the same hazard: a secret reaching a log sink. `redaction.py`
+   now provides `redact_secrets` plus a `SecretRedactingFilter` that
+   `configure_logging` installs on the root handler, scrubbing known secret
+   shapes (GitHub PATs `ghp_…`/`github_pat_…`/`gho_…`, `Bearer`/`token`
+   credentials) from every record — a small, central, defence-in-depth net that
+   keeps the *next* accidental `log.exception(resp.text)` from leaking a
+   credential. (The mobile/SQLCipher passphrases are masked at the call sites
+   that hold them via the `extra=` argument.)
 
 4. **Make the Vanguard/Fidelity importers report a structured row-ledger.** D2/D3
    /D4 all want the importer to *collect* per-row outcomes (imported, dropped,

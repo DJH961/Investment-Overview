@@ -25,9 +25,10 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from investment_dashboard.redaction import redact_secrets
 from investment_dashboard.storage import blob_crypto
 from investment_dashboard.storage.encryption import (
     load_mobile_passphrase_from_keyring,
@@ -57,6 +58,12 @@ _REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"
 
 #: Per-request network timeout (seconds). Uploads are tiny (a few KB).
 _HTTP_TIMEOUT = 30.0
+
+#: Warn (don't fail) when a fine-grained PAT expires within this window.
+_EXPIRY_WARN_WINDOW = timedelta(days=7)
+
+#: Header GitHub returns for fine-grained PATs (and expiring classic tokens).
+_EXPIRY_HEADER = "github-authentication-token-expiration"
 
 
 class PublishError(RuntimeError):
@@ -124,6 +131,85 @@ def _headers(token: str) -> dict[str, str]:
     }
 
 
+def _parse_expiry(raw: str) -> datetime | None:
+    """Parse GitHub's token-expiration header into an aware UTC ``datetime``.
+
+    The header looks like ``2025-01-31 23:59:59 UTC`` or ``… +0000``. Returns
+    ``None`` when the value is absent, ``never``, or unparseable — a missing
+    expiry must never block a publish.
+    """
+    value = raw.strip()
+    if not value or value.lower() == "never":
+        return None
+    normalised = value.replace(" UTC", " +0000")
+    for fmt in ("%Y-%m-%d %H:%M:%S %z", "%Y-%m-%d %H:%M %z"):
+        try:
+            return datetime.strptime(normalised, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def preflight_token(client: httpx.Client, *, repo: str, token: str) -> None:
+    """Validate the PAT *before* any write, failing fast with a clear message.
+
+    Performs one cheap read (``GET /repos/{repo}``) and checks, in order:
+
+    * the token is accepted (not 401 / revoked / expired);
+    * it can reach this repo (not 404 / wrong-scoped fine-grained PAT);
+    * it grants write access (``permissions.push``); and
+    * it isn't already expired (warns when expiry is imminent).
+
+    Raises :class:`PublishError` on any hard failure so the user fixes the token
+    instead of getting a half-finished publish (e.g. a created-but-empty release).
+    """
+    resp = client.get(f"{_API_ROOT}/repos/{repo}", headers=_headers(token))
+
+    if resp.status_code == 401:
+        raise PublishError(
+            "GitHub rejected the token (HTTP 401). It is invalid, revoked, or "
+            "expired — generate a fresh fine-grained PAT with 'Contents: write' "
+            "on the publish repo and save it in Settings → Live web companion."
+        )
+    if resp.status_code == 404:
+        raise PublishError(
+            f"GitHub could not find {repo!r} for this token (HTTP 404). Check the "
+            "owner/name spelling and that the fine-grained PAT lists this exact "
+            "repository under 'Repository access'."
+        )
+    if resp.status_code != 200:
+        raise PublishError(_api_error("verify the token", resp, token=token))
+
+    _check_expiry(resp)
+
+    body = resp.json()
+    permissions = body.get("permissions") if isinstance(body, dict) else None
+    if isinstance(permissions, dict) and permissions.get("push") is False:
+        raise PublishError(
+            f"The token can read {repo!r} but not write to it. Grant the "
+            "fine-grained PAT 'Contents: write' (or 'Read and write') so it can "
+            "create the release and upload the encrypted asset."
+        )
+
+
+def _check_expiry(resp: httpx.Response) -> None:
+    expires_at = _parse_expiry(resp.headers.get(_EXPIRY_HEADER, ""))
+    if expires_at is None:
+        return
+    now = datetime.now(tz=UTC)
+    if expires_at <= now:
+        raise PublishError(
+            f"The GitHub token expired on {expires_at:%Y-%m-%d %H:%M %Z}. "
+            "Generate a new fine-grained PAT and save it in Settings → Live web "
+            "companion."
+        )
+    if expires_at - now <= _EXPIRY_WARN_WINDOW:
+        log.warning(
+            "GitHub token expires soon (%s); renew it to avoid a failed publish.",
+            f"{expires_at:%Y-%m-%d %H:%M %Z}",
+        )
+
+
 def _get_or_create_release(
     client: httpx.Client,
     *,
@@ -137,7 +223,7 @@ def _get_or_create_release(
     if resp.status_code == 200:
         return resp.json(), False
     if resp.status_code != 404:
-        raise PublishError(_api_error("look up the release", resp))
+        raise PublishError(_api_error("look up the release", resp, token=token))
 
     create = client.post(
         f"{_API_ROOT}/repos/{repo}/releases",
@@ -152,7 +238,7 @@ def _get_or_create_release(
         },
     )
     if create.status_code not in (200, 201):
-        raise PublishError(_api_error("create the release", create))
+        raise PublishError(_api_error("create the release", create, token=token))
     return create.json(), True
 
 
@@ -172,7 +258,7 @@ def _delete_existing_asset(
             headers=_headers(token),
         )
         if resp.status_code not in (200, 204):
-            raise PublishError(_api_error("delete the previous asset", resp))
+            raise PublishError(_api_error("delete the previous asset", resp, token=token))
 
 
 def _upload_asset(
@@ -193,11 +279,11 @@ def _upload_asset(
     headers["Content-Type"] = "application/octet-stream"
     resp = client.post(base, params={"name": asset_name}, content=blob, headers=headers)
     if resp.status_code not in (200, 201):
-        raise PublishError(_api_error("upload the encrypted asset", resp))
+        raise PublishError(_api_error("upload the encrypted asset", resp, token=token))
     return resp.json()
 
 
-def _api_error(action: str, resp: httpx.Response) -> str:
+def _api_error(action: str, resp: httpx.Response, *, token: str | None = None) -> str:
     detail = ""
     try:
         body = resp.json()
@@ -205,7 +291,10 @@ def _api_error(action: str, resp: httpx.Response) -> str:
             detail = f": {body['message']}"
     except ValueError:  # pragma: no cover - non-JSON error body
         detail = ""
-    return f"GitHub API failed to {action} (HTTP {resp.status_code}){detail}"
+    message = f"GitHub API failed to {action} (HTTP {resp.status_code}){detail}"
+    # Sanitise the surfaced/logged message: an error body (or future change that
+    # echoes more of it) must never carry the caller's token.
+    return redact_secrets(message, extra=(token,) if token else ())
 
 
 def publish_envelope(
@@ -230,6 +319,7 @@ def publish_envelope(
     owns_client = client is None
     client = client or httpx.Client(timeout=_HTTP_TIMEOUT)
     try:
+        preflight_token(client, repo=repo, token=token)
         release, created = _get_or_create_release(
             client, repo=repo, release_tag=release_tag, token=token
         )

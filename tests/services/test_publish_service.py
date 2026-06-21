@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -35,6 +37,16 @@ def _asset_body(asset_id: int = 1) -> dict:
         "name": publish_service.ASSET_NAME,
         "browser_download_url": f"https://github.com/{REPO}/releases/download/{TAG}/portfolio.enc",
     }
+
+
+def _mock_preflight(*, push: bool = True, expires: str | None = None) -> None:
+    """Stub the ``GET /repos/{repo}`` pre-flight with optional expiry header."""
+    headers = {}
+    if expires is not None:
+        headers["github-authentication-token-expiration"] = expires
+    respx.get(f"{API}/repos/{REPO}").mock(
+        return_value=httpx.Response(200, json={"permissions": {"push": push}}, headers=headers)
+    )
 
 
 # --- validation / resolution -------------------------------------------------
@@ -80,6 +92,7 @@ def test_publish_now_requires_repo_passphrase_token(session) -> None:  # type: i
 @respx.mock
 def test_publish_envelope_overwrites_existing_asset() -> None:
     existing = _asset_body(asset_id=7)
+    _mock_preflight()
     get = respx.get(f"{API}/repos/{REPO}/releases/tags/{TAG}").mock(
         return_value=httpx.Response(200, json=_release_body(assets=[existing]))
     )
@@ -104,6 +117,7 @@ def test_publish_envelope_overwrites_existing_asset() -> None:
 
 @respx.mock
 def test_publish_envelope_creates_release_when_missing() -> None:
+    _mock_preflight()
     respx.get(f"{API}/repos/{REPO}/releases/tags/{TAG}").mock(
         return_value=httpx.Response(404, json={"message": "Not Found"})
     )
@@ -124,6 +138,7 @@ def test_publish_envelope_creates_release_when_missing() -> None:
 
 @respx.mock
 def test_publish_envelope_surfaces_api_error() -> None:
+    _mock_preflight()
     respx.get(f"{API}/repos/{REPO}/releases/tags/{TAG}").mock(
         return_value=httpx.Response(403, json={"message": "Forbidden"})
     )
@@ -139,6 +154,7 @@ def test_publish_now_end_to_end(session, monkeypatch: pytest.MonkeyPatch) -> Non
         "build_envelope",
         lambda *a, **k: ENVELOPE,
     )
+    _mock_preflight()
     respx.get(f"{API}/repos/{REPO}/releases/tags/{TAG}").mock(
         return_value=httpx.Response(200, json=_release_body())
     )
@@ -154,6 +170,122 @@ def test_publish_now_end_to_end(session, monkeypatch: pytest.MonkeyPatch) -> Non
     result = publish_service.publish_now(session, settings=settings)
     assert result.repo == REPO
     assert result.asset_name == publish_service.ASSET_NAME
+
+
+# --- pre-flight token validation (C5) ----------------------------------------
+
+
+@respx.mock
+def test_preflight_rejects_invalid_token() -> None:
+    respx.get(f"{API}/repos/{REPO}").mock(
+        return_value=httpx.Response(401, json={"message": "Bad credentials"})
+    )
+    with pytest.raises(publish_service.PublishError, match="401"):
+        publish_service.publish_envelope(ENVELOPE, repo=REPO, release_tag=TAG, token=TOKEN)
+
+
+@respx.mock
+def test_preflight_rejects_unreachable_repo() -> None:
+    respx.get(f"{API}/repos/{REPO}").mock(
+        return_value=httpx.Response(404, json={"message": "Not Found"})
+    )
+    with pytest.raises(publish_service.PublishError, match="404"):
+        publish_service.publish_envelope(ENVELOPE, repo=REPO, release_tag=TAG, token=TOKEN)
+
+
+@respx.mock
+def test_preflight_rejects_read_only_token() -> None:
+    _mock_preflight(push=False)
+    with pytest.raises(publish_service.PublishError, match="not write"):
+        publish_service.publish_envelope(ENVELOPE, repo=REPO, release_tag=TAG, token=TOKEN)
+
+
+@respx.mock
+def test_preflight_rejects_expired_token() -> None:
+    _mock_preflight(expires="2000-01-01 00:00:00 UTC")
+    with pytest.raises(publish_service.PublishError, match="expired"):
+        publish_service.publish_envelope(ENVELOPE, repo=REPO, release_tag=TAG, token=TOKEN)
+
+
+@respx.mock
+def test_preflight_allows_imminent_but_valid_expiry() -> None:
+    """A soon-but-not-yet-expired token still publishes (it only warns)."""
+    soon = (datetime.now(tz=UTC) + timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S %z")
+    _mock_preflight(expires=soon)
+    respx.get(f"{API}/repos/{REPO}/releases/tags/{TAG}").mock(
+        return_value=httpx.Response(200, json=_release_body())
+    )
+    respx.post(f"{UPLOADS}/repos/{REPO}/releases/99/assets").mock(
+        return_value=httpx.Response(201, json=_asset_body())
+    )
+    result = publish_service.publish_envelope(ENVELOPE, repo=REPO, release_tag=TAG, token=TOKEN)
+    assert result.asset_name == publish_service.ASSET_NAME
+
+
+def test_check_expiry_warns_when_imminent() -> None:
+    soon = (datetime.now(tz=UTC) + timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S %z")
+    resp = httpx.Response(200, headers={"github-authentication-token-expiration": soon}, json={})
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.emit = records.append  # type: ignore[method-assign]
+    previous_level = publish_service.log.level
+    previous_disabled = publish_service.log.disabled
+    publish_service.log.addHandler(handler)
+    publish_service.log.setLevel(logging.WARNING)
+    # Another test may have run dictConfig(disable_existing_loggers=True); undo
+    # that for the duration of this assertion so the warning actually emits.
+    publish_service.log.disabled = False
+    try:
+        publish_service._check_expiry(resp)
+    finally:
+        publish_service.log.removeHandler(handler)
+        publish_service.log.setLevel(previous_level)
+        publish_service.log.disabled = previous_disabled
+    assert any("expires soon" in r.getMessage() for r in records)
+
+
+def test_check_expiry_raises_when_past() -> None:
+    resp = httpx.Response(
+        200,
+        headers={"github-authentication-token-expiration": "2000-01-01 00:00:00 UTC"},
+        json={},
+    )
+    with pytest.raises(publish_service.PublishError, match="expired"):
+        publish_service._check_expiry(resp)
+
+
+def test_check_expiry_noop_without_header() -> None:
+    publish_service._check_expiry(httpx.Response(200, json={}))  # no raise
+
+
+def test_parse_expiry_handles_formats_and_garbage() -> None:
+    assert publish_service._parse_expiry("2030-01-02 03:04:05 UTC") is not None
+    assert publish_service._parse_expiry("2030-01-02 03:04 +0000") is not None
+    assert publish_service._parse_expiry("") is None
+    assert publish_service._parse_expiry("never") is None
+    assert publish_service._parse_expiry("not-a-date") is None
+
+
+@respx.mock
+def test_preflight_aborts_before_any_write() -> None:
+    """A bad token must not create a release / leave half-finished state."""
+    respx.get(f"{API}/repos/{REPO}").mock(
+        return_value=httpx.Response(401, json={"message": "Bad credentials"})
+    )
+    create = respx.post(f"{API}/repos/{REPO}/releases").mock(
+        return_value=httpx.Response(201, json=_release_body())
+    )
+    with pytest.raises(publish_service.PublishError):
+        publish_service.publish_envelope(ENVELOPE, repo=REPO, release_tag=TAG, token=TOKEN)
+    assert not create.called
+
+
+def test_api_error_redacts_token_in_message() -> None:
+    leaky_token = "ghp_" + "A" * 36
+    resp = httpx.Response(403, json={"message": f"token {leaky_token} is forbidden"})
+    message = publish_service._api_error("upload", resp, token=leaky_token)
+    assert leaky_token not in message
+    assert "«redacted»" in message
 
 
 def test_build_envelope_round_trips_through_export(session) -> None:  # type: ignore[no-untyped-def]
