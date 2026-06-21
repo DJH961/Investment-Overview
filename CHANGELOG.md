@@ -14,6 +14,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed — web companion: correct USD contribution / period figures
+
+- **Contributions and monthly/yearly figures are now correct in USD.** The
+  web companion previously took every figure in EUR and rescaled it to USD by
+  *today's* spot rate. For sums of historical cash flows (contributions, period
+  net flows/dividends/interest) and point-in-time valuations this double-
+  converted any amount originally booked in USD, so the totals did not match
+  the desktop. The companion now uses the per-trade-date USD figures the export
+  already carries: the `deposits` read-model's `*_usd` / `amount_usd` fields,
+  and — newly — the monthly/yearly `*_display` (USD) fields, which the mobile
+  export now always emits (it builds the period read-models against a USD
+  context) regardless of the desktop's own display currency. When FX history is
+  too sparse to convert a figure, the companion falls back to the EUR value.
+
 ## [3.1.1] — 2026-06-21
 
 Desktop price-freshness transparency and a holdings redesign that mirrors the

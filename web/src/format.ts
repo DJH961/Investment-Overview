@@ -3,9 +3,45 @@
  * with `Intl.NumberFormat` for locale-aware grouping and currency symbols.
  */
 import type { Decimal } from "./decimal-config";
-import { convertFromEur } from "./currency";
+import { convertFromEur, displayAmount } from "./currency";
 
 const NBSP = "\u00a0";
+
+function formatMoneyValue(value: Decimal, code: string, fractionDigits = 2): string {
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: code,
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value.toNumber());
+}
+
+/**
+ * Format a figure that carries both an EUR value and a pre-computed value in
+ * the display currency (USD), preferring the latter so sums of historical
+ * flows / point-in-time valuations are never rescaled by today's spot rate.
+ * See {@link displayAmount}.
+ */
+export function formatDualCurrency(
+  valueEur: Decimal | null,
+  valueDisplay: Decimal | null,
+): string {
+  const picked = displayAmount(valueEur, valueDisplay);
+  if (picked === null) return "—";
+  return formatMoneyValue(picked.value, picked.code);
+}
+
+/** Signed (`+`/`−`) variant of {@link formatDualCurrency}. */
+export function formatSignedDualCurrency(
+  valueEur: Decimal | null,
+  valueDisplay: Decimal | null,
+): string {
+  const picked = displayAmount(valueEur, valueDisplay);
+  if (picked === null) return "—";
+  const base = formatMoneyValue(picked.value.abs(), picked.code);
+  if (picked.value.isZero()) return base;
+  return picked.value.isNegative() ? `−${NBSP}${base}` : `+${NBSP}${base}`;
+}
 
 /**
  * Format an **EUR-denominated** amount in the active display currency (EUR or

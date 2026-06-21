@@ -38,6 +38,17 @@ export interface PeriodRowView {
   openingValueEur: Decimal;
   closingValueEur: Decimal | null;
   growthPct: Decimal | null;
+  /**
+   * Per-trade-date FX USD figures from the export (null when FX history is too
+   * sparse, or for live-recomputed current-period overlays). Used so USD
+   * readers see the contributions/flows their wallet actually moved rather than
+   * the EUR figure rescaled by today's spot.
+   */
+  netFlowUsd: Decimal | null;
+  contributionsUsd: Decimal | null;
+  dividendsUsd: Decimal | null;
+  interestUsd: Decimal | null;
+  closingValueUsd: Decimal | null;
   /** True for the current (still-open) month/year. */
   isCurrent: boolean;
   /** True when the growth/closing value was recomputed live in the browser. */
@@ -86,6 +97,8 @@ export interface DepositRowView {
   account: string;
   kind: string;
   amountEur: Decimal | null;
+  /** USD value of this cash flow on its own trade date (per-date FX). */
+  amountUsd: Decimal | null;
   currency: string;
   description: string | null;
 }
@@ -94,6 +107,10 @@ export interface DepositsView {
   totalEur: Decimal | null;
   ytdEur: Decimal | null;
   mtdEur: Decimal | null;
+  /** Per-date-FX USD contribution KPIs (null when FX history is unavailable). */
+  totalUsd: Decimal | null;
+  ytdUsd: Decimal | null;
+  mtdUsd: Decimal | null;
   rows: DepositRowView[];
 }
 
@@ -144,6 +161,10 @@ function mapPeriodRow(row: ExportPeriodRow): PeriodRowView {
   if (growthPct === null && closingValueEur !== null) {
     growthPct = modifiedDietzGrowth(openingValueEur, closingValueEur, contributionsEur);
   }
+  // The mobile export builds period read-models against a USD context, so the
+  // `*_display` fields are per-trade-date USD. Only trust them when the row
+  // actually says so; otherwise leave null and let the formatter fall back.
+  const usd = (row.display_currency ?? "").toUpperCase() === "USD";
   return {
     label: row.label,
     netFlowEur: decOr0(row.net_flow_eur),
@@ -153,6 +174,11 @@ function mapPeriodRow(row: ExportPeriodRow): PeriodRowView {
     openingValueEur,
     closingValueEur,
     growthPct,
+    netFlowUsd: usd ? dec(row.net_flow_display) : null,
+    contributionsUsd: usd ? dec(row.contributions_display) : null,
+    dividendsUsd: usd ? dec(row.dividends_display) : null,
+    interestUsd: usd ? dec(row.interest_display) : null,
+    closingValueUsd: usd ? dec(row.closing_value_display) : null,
     isCurrent: false,
     isLive: false,
   };
@@ -176,6 +202,9 @@ function upsertCurrent(
   if (existing) {
     existing.isCurrent = true;
     existing.closingValueEur = liveClosingEur;
+    // Live close is recomputed in EUR; drop the frozen USD close so the
+    // formatter spot-converts the live value (correct for a *current* value).
+    existing.closingValueUsd = null;
     if (liveGrowthPct !== null) {
       existing.growthPct = liveGrowthPct;
       existing.isLive = true;
@@ -196,6 +225,11 @@ function upsertCurrent(
     openingValueEur: previousClosing ?? new Decimal(0),
     closingValueEur: liveClosingEur,
     growthPct: liveGrowthPct,
+    netFlowUsd: null,
+    contributionsUsd: null,
+    dividendsUsd: null,
+    interestUsd: null,
+    closingValueUsd: null,
     isCurrent: true,
     isLive: liveGrowthPct !== null,
   });
@@ -284,6 +318,7 @@ function mapDepositRecord(r: ExportDepositRecord): DepositRowView {
     account: r.account,
     kind: r.kind,
     amountEur: dec(r.amount_eur),
+    amountUsd: dec(r.amount_usd),
     currency: r.currency,
     description: r.description,
   };
@@ -300,6 +335,9 @@ export function buildDeposits(data: MobileExport): DepositsView | null {
     totalEur: dec(d.summary?.total_contrib_eur),
     ytdEur: dec(d.summary?.ytd_contrib_eur),
     mtdEur: dec(d.summary?.mtd_contrib_eur),
+    totalUsd: dec(d.summary?.total_contrib_usd),
+    ytdUsd: dec(d.summary?.ytd_contrib_usd),
+    mtdUsd: dec(d.summary?.mtd_contrib_usd),
     rows,
   };
 }

@@ -83,3 +83,25 @@ export function convertFromEur(valueEur: Decimal): { value: Decimal; code: Displ
   }
   return { value: valueEur, code: "EUR" };
 }
+
+/**
+ * Pick the right figure for the active display currency for an amount that is a
+ * sum of *historical* flows or a point-in-time valuation (e.g. contributions,
+ * period flows). Such figures must not be rescaled by today's spot rate, so
+ * when USD is selected we use the pre-computed `valueUsd` (converted at the FX
+ * rate in force on each underlying date by the desktop). Only when USD is
+ * selected but no `valueUsd` is available do we fall back to spot-converting
+ * the EUR figure — better an approximation than a blank. EUR display always
+ * uses `valueEur`.
+ */
+export function displayAmount(
+  valueEur: Decimal | null,
+  valueUsd: Decimal | null,
+): { value: Decimal; code: DisplayCurrency } | null {
+  if (current === "USD" && eurUsdRate !== null) {
+    if (valueUsd !== null) return { value: valueUsd, code: "USD" };
+    if (valueEur !== null) return { value: valueEur.times(eurUsdRate), code: "USD" };
+    return null;
+  }
+  return valueEur === null ? null : { value: valueEur, code: "EUR" };
+}
