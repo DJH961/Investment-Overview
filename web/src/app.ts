@@ -238,7 +238,7 @@ export class App {
       // In Settings (already unlocked) re-run the load pipeline with the new
       // config; otherwise continue the first-run flow to the unlock screen.
       if (settingsMode && this.state.data) {
-        void this.refresh();
+        void this.afterUnlock(false);
         return;
       }
       return this.showUnlock();
