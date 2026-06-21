@@ -188,7 +188,7 @@ export class App {
       // config; otherwise continue the first-run flow to the unlock screen.
       if (settingsMode && this.state.data) {
         void this.refresh();
-        return undefined;
+        return;
       }
       return this.showUnlock();
     });
