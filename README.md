@@ -7,8 +7,10 @@ return metrics — XIRR, TWR, CAGR, YTD variants, drawdown, Sharpe, Sortino —
 in both **USD** and **EUR**, and serves them over a NiceGUI web UI accessible
 from the host laptop and any device on the same Wi-Fi network.
 
-> **Status: v2.9.4 — split storage, cloud-aware paths, optional SQLCipher,
-> intraday price refresh, and SQLite file-safety tooling.** The app remains a
+> **Status: v2.11.1 — split storage, cloud-aware paths, optional SQLCipher,
+> intraday price refresh, SQLite file-safety tooling, an equity-curve
+> performance pass, and the v3.0 live-web companion (encrypted publish + an
+> in-browser dashboard, see [`web/`](web/)).** The app remains a
 > local-first, single-user dashboard with onboarding, EUR/USD display switching,
 > CSV/XLSX imports, live overview/deposits/transactions/monthly/yearly/calculator
 > pages, a standalone projection page, and editable settings. It runs separate
@@ -33,7 +35,9 @@ from the host laptop and any device on the same Wi-Fi network.
   date, so EUR returns reflect when the money actually moved.
 - **Modern colorblind-safe UI** with light/dark chrome and a Settings →
   Storage panel showing each tier path/source.
-- **Private**, single-user, $0 hosting. Runs on `0.0.0.0:8080`.
+- **Private deployment**, single-user, $0 hosting. Runs on `0.0.0.0:8080` and is
+  LAN-only by design (the *deployment* is private even though this source
+  repository is public — see [`SECURITY.md`](SECURITY.md)).
 
 ## Tech stack
 
@@ -302,6 +306,37 @@ for the full roadmap. Current status:
 - ✅ Onboarding/Settings passphrase prompt + recovery file, per-tier Alembic
   version tables, and the Settings “Move ledger…” relocation picker (v2.9.4).
 
+## Security & privacy
+
+This is a **local-first, single-user** app and your real financial data is
+designed to never leave your control:
+
+- **Your data stays on your machine.** The SQLite tiers, `.env`, and any real
+  brokerage exports are gitignored and never committed. The one anonymized
+  fixture set under [`docs/Comparison Files/`](docs/Comparison%20Files/) contains
+  **fabricated** figures only — no real positions.
+- **The server is LAN-only by design.** It binds `0.0.0.0:8080` so your own
+  phone/laptop on the same Wi-Fi can reach it. Do **not** expose it directly to
+  the internet; if you must, set `INV_DASHBOARD_API_TOKEN` and put it behind a
+  VPN or authenticating reverse proxy first.
+- **The only thing ever published is user-encrypted.** The optional live-web
+  companion uploads a single `portfolio.enc` blob (AES-256-GCM, PBKDF2-HMAC-
+  SHA256 at 600,000 iterations) that is decrypted **in your browser** with a
+  passphrase that is never committed, logged, or written to disk. The blob is
+  world-downloadable, so choose a long, unique passphrase.
+- **Secrets live in your OS keychain**, not in the repo. SQLCipher/publish/
+  mobile passphrases are read from the keyring by default; the `INV_DASHBOARD_`
+  env keys exist only for headless/CI use.
+
+Found a security problem? Please follow [`SECURITY.md`](SECURITY.md) and use
+GitHub's private vulnerability reporting rather than a public issue.
+
 ## License
 
-Proprietary, private repository. No public license granted.
+Licensed under the **[PolyForm Noncommercial License 1.0.0](LICENSE.md)**.
+
+In short: you may use, copy, modify, and share this software freely for **any
+noncommercial purpose** — personal use, hobby projects, study, research, and use
+by nonprofits, schools, and government bodies. **Commercial use is not
+permitted.** See [`LICENSE.md`](LICENSE.md) for the authoritative terms. This is
+a source-available license, not an OSI-approved "open source" license.
