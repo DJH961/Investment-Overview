@@ -134,9 +134,7 @@ def refresh_history(
     # real total return (price + reinvested distributions) rather than price
     # alone — otherwise the benchmark is understated by its dividend yield and
     # the portfolio looks like it beats the market when it doesn't.
-    fetch = fetcher or (
-        lambda syms, s, e: yfinance_client.fetch_closes(syms, s, e, adjusted=True)
-    )
+    fetch = fetcher or (lambda syms, s, e: yfinance_client.fetch_closes(syms, s, e, adjusted=True))
     try:
         closes = fetch([symbol], start, end).get(symbol, {})
     except Exception as exc:  # pragma: no cover - network churn

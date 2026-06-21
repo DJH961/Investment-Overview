@@ -134,7 +134,9 @@ def fetch_closes(
                 fallback_start,
             )
             try:
-                fallback = _download_window(download, missing, fallback_start, end, adjusted=adjusted)
+                fallback = _download_window(
+                    download, missing, fallback_start, end, adjusted=adjusted
+                )
             except YFinanceError as exc:
                 _record_status(
                     "error",
