@@ -162,10 +162,19 @@ def test_portfolio_metrics_golden_master(session: Session) -> None:
     _seed_fixture_portfolio(session)
     snapshot = _metrics_snapshot(session)
 
-    if os.environ.get("UPDATE_GOLDEN") == "1" or not GOLDEN_PATH.exists():
+    # Only (re)write the golden file on an explicit opt-in. A missing committed
+    # golden file is treated as a hard failure rather than silently
+    # auto-created, so a lost fixture can never make this regression gate pass
+    # vacuously in CI.
+    if os.environ.get("UPDATE_GOLDEN") == "1":
         GOLDEN_PATH.parent.mkdir(parents=True, exist_ok=True)
         GOLDEN_PATH.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n")
 
+    assert GOLDEN_PATH.exists(), (
+        f"Golden master file missing: {GOLDEN_PATH}. Generate it with "
+        "UPDATE_GOLDEN=1 python -m pytest "
+        "tests/services/test_metrics_golden_master.py and commit the result."
+    )
     golden = json.loads(GOLDEN_PATH.read_text())
     assert snapshot == golden, (
         "compute_portfolio_metrics output drifted from the golden master. "

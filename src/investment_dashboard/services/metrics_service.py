@@ -543,7 +543,7 @@ def _value_in_both(
     """
     eur = positions_service.total_portfolio_value(session, as_of=on)
     fx = lookup_rate_with_forward_fill(eur_to_usd, on) or ZERO
-    usd: Decimal | None = eur * fx if fx != 0 else None
+    usd: Decimal | None = eur * fx if fx != ZERO else None
     return eur, usd
 
 
