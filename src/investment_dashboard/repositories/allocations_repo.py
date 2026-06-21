@@ -38,15 +38,11 @@ def set_active(session: Session, allocation_id: int) -> None:
     instances already loaded in this session consistent with the change.
     """
     session.execute(
-        update(TargetAllocation)
-        .where(TargetAllocation.id != allocation_id)
-        .values(active=False),
+        update(TargetAllocation).where(TargetAllocation.id != allocation_id).values(active=False),
         execution_options={"synchronize_session": "evaluate"},
     )
     session.execute(
-        update(TargetAllocation)
-        .where(TargetAllocation.id == allocation_id)
-        .values(active=True),
+        update(TargetAllocation).where(TargetAllocation.id == allocation_id).values(active=True),
         execution_options={"synchronize_session": "evaluate"},
     )
     session.flush()

@@ -206,6 +206,48 @@ def _acquire_writer_lock() -> None:
         _boot_state["read_only"] = True
 
 
+def _integrity_marker_path() -> Path | None:
+    """Path of the per-install daily integrity-check marker, or ``None``.
+
+    Lives next to the ledger (falling back to the config tier). Returns
+    ``None`` for in-memory / unset layouts so tests always run the check.
+    """
+    settings = get_settings()
+    for path in (settings.ledger_path, settings.config_path):
+        if path is not None and path.as_posix() != ":memory:":
+            return path.parent / ".integrity_check"
+    return None
+
+
+def _integrity_check_due(marker: Path | None, *, today: date | None = None) -> bool:
+    """Whether the daily integrity check should run for ``today``.
+
+    The whole-database ``PRAGMA integrity_check`` is expensive and ran on every
+    cold start; gating it to once per calendar day keeps the safety net without
+    paying the scan on every relaunch. ``None`` marker (in-memory layout) is
+    always due.
+    """
+    if marker is None:
+        return True
+    today = today or date.today()
+    try:
+        return marker.read_text(encoding="utf-8").strip() != today.isoformat()
+    except OSError:
+        return True
+
+
+def _record_integrity_check(marker: Path | None, *, today: date | None = None) -> None:
+    """Stamp the marker so the integrity check is skipped until tomorrow."""
+    if marker is None:
+        return
+    today = today or date.today()
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(today.isoformat(), encoding="utf-8")
+    except OSError:  # pragma: no cover - best-effort, never block boot
+        log.warning("could not write integrity-check marker %s", marker, exc_info=True)
+
+
 def _integrity_check_tiers() -> None:
     import sqlite3  # noqa: PLC0415
 
@@ -223,6 +265,14 @@ def _integrity_check_tiers() -> None:
     # ``sqlite3.OperationalError: disk I/O error``. Skip the check.
     if is_read_only():
         log.info("read-only mode; skipping integrity check (writer owns validation)")
+        return
+
+    # Run the whole-database scan at most once per calendar day rather than on
+    # every cold start — it is a heavyweight synchronous step on the path
+    # before the UI opens.
+    marker = _integrity_marker_path()
+    if not _integrity_check_due(marker):
+        log.info("integrity check already ran today; skipping (daily cadence)")
         return
 
     settings = get_settings()
@@ -251,11 +301,13 @@ def _integrity_check_tiers() -> None:
                 path,
                 exc_info=True,
             )
+    # Only stamp once every tier validated cleanly (a raised
+    # ``IntegrityCheckFailed`` above never reaches here, so a corrupt DB is
+    # re-checked on the next launch).
+    _record_integrity_check(marker)
 
 
 def _rolling_backup() -> None:
-    from datetime import timedelta  # noqa: PLC0415
-
     from investment_dashboard.db import get_active_encryption  # noqa: PLC0415
     from investment_dashboard.storage.backup import snapshot  # noqa: PLC0415
 

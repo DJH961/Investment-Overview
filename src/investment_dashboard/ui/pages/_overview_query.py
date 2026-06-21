@@ -275,6 +275,15 @@ def compute_instrument_metrics(  # noqa: PLR0915
     }
 
     out: dict[int, InstrumentMetrics] = {}
+    # Batch the daily-growth price lookups once for every held instrument
+    # instead of issuing recent_price_dates + two close_as_of per position
+    # (an N+1 over the holdings table).
+    recent_closes = prices_service.recent_closes_by_instrument(
+        session,
+        [p.instrument.id for p in positions],
+        on_or_before=as_of,
+        limit=2,
+    )
     for p in positions:
         iid = p.instrument.id
         native = p.account.native_currency
@@ -318,13 +327,12 @@ def compute_instrument_metrics(  # noqa: PLR0915
         eff_class = p.effective.asset_class if p.effective is not None else p.instrument.asset_class
         is_mm = is_money_market(p.instrument.symbol, asset_class=eff_class, name=eff_name)
         daily_eur, daily_usd = _instrument_daily_growth(
-            session,
             instrument_id=iid,
             shares=p.shares,
             native_currency=native,
-            as_of=as_of,
             eur_to_usd=eur_to_usd,
             today_rate=today_rate,
+            recent_closes=recent_closes,
             is_money_market=is_mm,
         )
         ter = p.effective.expense_ratio if p.effective is not None else p.instrument.expense_ratio
@@ -362,14 +370,13 @@ def _round_cent(value: Decimal) -> Decimal:
 
 
 def _instrument_daily_growth(
-    session: Session,
     *,
     instrument_id: int,
     shares: Decimal,
     native_currency: str,
-    as_of: date,
     eur_to_usd: dict[date, Decimal],
     today_rate: Decimal | None,
+    recent_closes: dict[int, list[tuple[date, Decimal]]],
     is_money_market: bool = False,
 ) -> tuple[Decimal | None, Decimal | None]:
     """Single-day growth for one instrument, in EUR and USD.
@@ -379,6 +386,11 @@ def _instrument_daily_growth(
     EUR figures differ only by the (small) intraday FX move — exactly the
     per-currency daily growth the KPI strip shows, but per instrument.
 
+    ``recent_closes`` is the batched ``{instrument_id: [(date, close), …]}``
+    map built once for every held instrument, so this helper does no DB I/O of
+    its own (the previous per-instrument ``recent_price_dates`` + two
+    ``close_as_of`` calls were an N+1 over the holdings table).
+
     Money-market / settlement funds hold a constant $1.00 NAV with no price
     feed, so they have no print dates to diff. Rather than render an em dash
     (which looked inconsistent next to their other, computed figures) their
@@ -386,12 +398,10 @@ def _instrument_daily_growth(
     """
     if is_money_market:
         return ZERO, ZERO
-    dates = prices_service.recent_price_dates(session, [instrument_id], on_or_before=as_of, limit=2)
-    if len(dates) < 2:
+    pairs = recent_closes.get(instrument_id, [])
+    if len(pairs) < 2:
         return None, None
-    last_date, prev_date = dates[0], dates[1]
-    close_last = prices_service.close_as_of(session, instrument_id, last_date)
-    close_prev = prices_service.close_as_of(session, instrument_id, prev_date)
+    (last_date, close_last), (prev_date, close_prev) = pairs[0], pairs[1]
     if close_last is None or close_prev is None:
         return None, None
     e_last, u_last = _convert_native(

@@ -15,6 +15,33 @@ def test_skip_network_does_not_raise() -> None:
     run_boot_sequence(skip_network=True)
 
 
+def test_integrity_check_cadence_gates_to_one_run_per_day(tmp_path: Path) -> None:
+    """The daily integrity-check marker suppresses repeat runs on the same day."""
+    from datetime import date
+
+    from investment_dashboard.boot import (
+        _integrity_check_due,
+        _record_integrity_check,
+    )
+
+    marker = tmp_path / ".integrity_check"
+    today = date(2026, 6, 21)
+    # No marker yet → due.
+    assert _integrity_check_due(marker, today=today) is True
+    _record_integrity_check(marker, today=today)
+    # Same day → not due.
+    assert _integrity_check_due(marker, today=today) is False
+    # Next day → due again.
+    assert _integrity_check_due(marker, today=date(2026, 6, 22)) is True
+
+
+def test_integrity_check_due_when_marker_is_none() -> None:
+    """In-memory layouts (no marker path) always run the check."""
+    from investment_dashboard.boot import _integrity_check_due
+
+    assert _integrity_check_due(None) is True
+
+
 def test_boot_creates_db_parent_for_migrations(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

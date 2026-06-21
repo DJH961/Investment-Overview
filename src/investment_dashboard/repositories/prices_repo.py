@@ -6,7 +6,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
@@ -28,6 +28,40 @@ def latest_price_date(session: Session, instrument_id: int) -> date | None:
         .limit(1)
     )
     return session.scalars(stmt).one_or_none()
+
+
+def latest_price_dates(session: Session, instrument_ids: Sequence[int]) -> dict[int, date]:
+    """Newest cached print date per instrument in one ``GROUP BY`` query.
+
+    Batched form of :func:`latest_price_date` to avoid N round-trips when the
+    refresh inspects every instrument's cached tail. Instruments with no cached
+    history are simply absent from the returned mapping.
+    """
+    if not instrument_ids:
+        return {}
+
+    stmt = (
+        select(PriceHistory.instrument_id, func.max(PriceHistory.date))
+        .where(PriceHistory.instrument_id.in_(instrument_ids))
+        .group_by(PriceHistory.instrument_id)
+    )
+    return {iid: d for iid, d in session.execute(stmt).all()}
+
+
+def earliest_price_dates(session: Session, instrument_ids: Sequence[int]) -> dict[int, date]:
+    """Oldest cached print date per instrument in one ``GROUP BY`` query.
+
+    Batched form of :func:`earliest_price_date`.
+    """
+    if not instrument_ids:
+        return {}
+
+    stmt = (
+        select(PriceHistory.instrument_id, func.min(PriceHistory.date))
+        .where(PriceHistory.instrument_id.in_(instrument_ids))
+        .group_by(PriceHistory.instrument_id)
+    )
+    return {iid: d for iid, d in session.execute(stmt).all()}
 
 
 def earliest_price_date(session: Session, instrument_id: int) -> date | None:
@@ -132,6 +166,52 @@ def recent_price_dates(
         .limit(limit)
     )
     return list(session.scalars(stmt).all())
+
+
+def recent_closes_by_instrument(
+    session: Session,
+    instrument_ids: Sequence[int],
+    *,
+    on_or_before: date,
+    limit: int = 2,
+) -> dict[int, list[tuple[date, Decimal]]]:
+    """Per-instrument ``limit`` most recent ``(date, close)`` pairs ≤ ``on_or_before``.
+
+    Batched form of the daily-growth lookup: instead of calling
+    :func:`recent_price_dates` + :func:`close_as_of` once per instrument (3
+    round-trips × N), a single window query partitions by ``instrument_id`` and
+    keeps each instrument's newest ``limit`` prints. The pairs are newest-first
+    within each instrument. Instruments with no history are absent.
+    """
+    if not instrument_ids:
+        return {}
+    ranked = (
+        select(
+            PriceHistory.instrument_id,
+            PriceHistory.date,
+            PriceHistory.close_native,
+            func.row_number()
+            .over(
+                partition_by=PriceHistory.instrument_id,
+                order_by=PriceHistory.date.desc(),
+            )
+            .label("rn"),
+        )
+        .where(
+            PriceHistory.instrument_id.in_(instrument_ids),
+            PriceHistory.date <= on_or_before,
+        )
+        .subquery()
+    )
+    stmt = (
+        select(ranked.c.instrument_id, ranked.c.date, ranked.c.close_native)
+        .where(ranked.c.rn <= limit)
+        .order_by(ranked.c.instrument_id, ranked.c.date.desc())
+    )
+    out: dict[int, list[tuple[date, Decimal]]] = {}
+    for iid, d, close in session.execute(stmt).all():
+        out.setdefault(iid, []).append((d, close))
+    return out
 
 
 def upsert_closes(

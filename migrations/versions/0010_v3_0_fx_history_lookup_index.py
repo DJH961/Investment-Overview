@@ -39,10 +39,7 @@ def upgrade() -> None:
     if "fx_history" not in set(inspector.get_table_names()):
         return
     op.execute(
-        sa.text(
-            f"CREATE INDEX IF NOT EXISTS {_INDEX_NAME} "
-            "ON fx_history (base, quote, date)"
-        )
+        sa.text(f"CREATE INDEX IF NOT EXISTS {_INDEX_NAME} ON fx_history (base, quote, date)")
     )
 
 
