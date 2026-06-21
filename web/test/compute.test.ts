@@ -103,6 +103,8 @@ describe("buildDashboard", () => {
     expect(fxaix.todayMoveEur).toBeNull();
     expect(model.overview.missingPriceSymbols).toEqual([]);
     expect(model.overview.fxMissingCurrencies).toEqual([]);
+    // Every holding could be valued, so the live total is complete.
+    expect(model.overview.totalValueIsComplete).toBe(true);
   });
 
   it("exposes per-holding price freshness (live timestamp vs. export fallback)", () => {
@@ -135,8 +137,87 @@ describe("buildDashboard", () => {
     const noFx: FxRates = { base: "EUR", rates: {} };
     const m = buildDashboard(makeExport(), quotes, noFx, new Date("2024-06-01T12:00:00Z"));
     expect(m.overview.fxMissingCurrencies).toContain("USD");
+    // The USD holdings drop out of the EUR total, so it is incomplete.
+    expect(m.overview.totalValueIsComplete).toBe(false);
+  });
+
+  it("marks the total incomplete when a holding has no usable price", () => {
+    const exp = makeExport();
+    // FXAIX has no live quote (absent from `quotes`) and no last-known price,
+    // so it cannot be valued and falls out of the total.
+    exp.holdings[1].last_known_price_native = null;
+    const m = buildDashboard(exp, quotes, fx, new Date("2024-06-01T12:00:00Z"));
+    expect(m.overview.missingPriceSymbols).toEqual(["FXAIX"]);
+    expect(m.overview.totalValueIsComplete).toBe(false);
+  });
+
+  it("falls back to the last exported value when a holding has no live price", () => {
+    const exp = makeExport();
+    // No live quote and no last-known price, but a value was exported for it.
+    exp.holdings[1].last_known_price_native = null;
+    exp.analytics = makeAnalyticsWith([{ symbol: "FXAIX", end_value: "500" }]);
+    const m = buildDashboard(exp, quotes, fx, new Date("2024-06-01T12:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.valueIsStale).toBe(true);
+    approx(fxaix.valueEur, 500);
+    // Recovered, so it no longer drops out and the total is complete again.
+    expect(m.overview.missingPriceSymbols).toEqual([]);
+    expect(m.overview.staleValueSymbols).toEqual(["FXAIX"]);
+    expect(m.overview.totalValueIsComplete).toBe(true);
+  });
+
+  it("falls back to the last exported value when the FX leg is missing", () => {
+    const noFx: FxRates = { base: "EUR", rates: {} };
+    const exp = makeExport();
+    exp.analytics = makeAnalyticsWith([
+      { symbol: "VTI", end_value: "909" },
+      { symbol: "FXAIX", end_value: "454" },
+    ]);
+    const m = buildDashboard(exp, quotes, noFx, new Date("2024-06-01T12:00:00Z"));
+    expect(m.overview.fxMissingCurrencies).toEqual([]);
+    expect(m.overview.staleValueSymbols).toEqual(["VTI", "FXAIX"]);
+    expect(m.overview.totalValueIsComplete).toBe(true);
+    approx(m.overview.totalValueEur, 909 + 454 + 200);
   });
 });
+
+function makeAnalyticsWith(
+  rows: Array<{ symbol: string; end_value: string }>,
+): MobileExport["analytics"] {
+  return {
+    as_of: "2024-06-01",
+    start: "2023-01-01",
+    currency: "EUR",
+    cagr: null,
+    twr: null,
+    xirr: null,
+    volatility: null,
+    sharpe: null,
+    sortino: null,
+    max_drawdown: null,
+    calmar: null,
+    ulcer: null,
+    var_95: null,
+    cvar_95: null,
+    skew: null,
+    kurtosis: null,
+    beta: null,
+    alpha: null,
+    risk_free_rate: null,
+    risk_free_symbol: null,
+    benchmark_symbol: null,
+    curve: [],
+    attribution: rows.map((r, i) => ({
+      instrument_id: i + 1,
+      symbol: r.symbol,
+      start_value: null,
+      end_value: r.end_value,
+      net_contribution: null,
+      absolute_pnl: null,
+      pct_of_total_return: null,
+    })),
+  };
+}
 
 function makePeriodExport(): MobileExport {
   return {

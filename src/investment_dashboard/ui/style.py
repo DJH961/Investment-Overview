@@ -498,6 +498,18 @@ html, body {{
    AG-Grid ``cellClassRules`` on the overview positions table. */
 .ag-cell.inv-cell-pos {{ color: var(--inv-gain); font-weight: 600; }}
 .ag-cell.inv-cell-neg {{ color: var(--inv-loss); font-weight: 600; }}
+/* Whole-row winner/loser cue: a coloured stripe down the leading edge so the
+   overview positions table can be scanned for gainers vs losers at a glance,
+   regardless of which column is sorted (paired with AG-Grid ``rowClassRules``
+   keyed on total growth in the displayed currency). ``inset`` box-shadow keeps
+   the stripe inside the row so it survives horizontal scroll and pinned
+   columns. */
+.ag-theme-alpine .ag-row.inv-row-gain {{
+  box-shadow: inset 4px 0 0 0 var(--inv-gain);
+}}
+.ag-theme-alpine .ag-row.inv-row-loss {{
+  box-shadow: inset 4px 0 0 0 var(--inv-loss);
+}}
 /* ------------------------------------------------------------------ */
 .q-btn {{
   border-radius: var(--inv-radius-md) !important;

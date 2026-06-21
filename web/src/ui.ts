@@ -142,7 +142,14 @@ function renderNotes(o: OverviewView): HTMLElement[] {
   if (o.missingPriceSymbols.length > 0) {
     notes.push(
       h("p", { class: "note warn" }, [
-        `No live price for ${o.missingPriceSymbols.join(", ")} — showing the last known value.`,
+        `No live price or last-known value for ${o.missingPriceSymbols.join(", ")}, so they are excluded from totals.`,
+      ]),
+    );
+  }
+  if (o.staleValueSymbols.length > 0) {
+    notes.push(
+      h("p", { class: "note" }, [
+        `Using the last exported value for ${o.staleValueSymbols.join(", ")} (no live price available).`,
       ]),
     );
   }
@@ -213,7 +220,9 @@ function chip(text: string, cls = ""): HTMLElement {
 function renderHoldingRow(holding: HoldingView): HTMLElement {
   const symChildren: Array<Node | string> = [holding.symbol];
   if (holding.priceType === "nav") symChildren.push(h("span", { class: "pill" }, ["NAV"]));
-  if (holding.priceNative !== null && !holding.priceIsLive) {
+  if (holding.valueIsStale) {
+    symChildren.push(h("span", { class: "pill stale" }, ["stale value"]));
+  } else if (holding.priceNative !== null && !holding.priceIsLive) {
     symChildren.push(h("span", { class: "pill stale" }, ["last known"]));
   }
 
@@ -689,13 +698,19 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
   const values: Array<Decimal | null> = points.map((p) => p.portfolioValue);
 
   // Append today's live total as the latest point when it is newer than the
-  // last exported point, so the curve runs right up to "today".
+  // last exported point, so the curve runs right up to "today" — but only when
+  // the live total is complete. If some holdings could not be valued live (no
+  // price or no FX rate) they fall out of the sum, so the tip would under-count
+  // the portfolio and draw a false dip; in that case stop at the last
+  // fully-valued exported point.
   const lastDate = dates[dates.length - 1];
-  if (o.asOf > lastDate) {
-    dates.push(o.asOf);
-    values.push(o.totalValueEur);
-  } else if (o.asOf === lastDate) {
-    values[values.length - 1] = o.totalValueEur;
+  if (o.totalValueIsComplete) {
+    if (o.asOf > lastDate) {
+      dates.push(o.asOf);
+      values.push(o.totalValueEur);
+    } else if (o.asOf === lastDate) {
+      values[values.length - 1] = o.totalValueEur;
+    }
   }
   if (values.filter((v) => v !== null).length < 2) return null;
 
@@ -703,6 +718,14 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
   if (!chart) return null;
 
   const cls = signClass(o.todayMoveEur);
+  let note: string;
+  if (!o.totalValueIsComplete) {
+    note = `${dates[0]} → ${dates[dates.length - 1]} · live total is incomplete (missing prices or FX rates), so the curve stops at the last fully-valued day.`;
+  } else if (o.staleValueSymbols.length > 0) {
+    note = `${dates[0]} → today · live tip from your current total value (last exported value used for ${o.staleValueSymbols.join(", ")}).`;
+  } else {
+    note = `${dates[0]} → today · live tip from your current total value.`;
+  }
   return h("section", { class: "card value-chart" }, [
     h("div", { class: "section-head" }, [
       h("h2", {}, ["Value over time"]),
@@ -711,7 +734,7 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
       ]),
     ]),
     chart,
-    h("p", { class: "note" }, [`${dates[0]} → today · live tip from your current total value.`]),
+    h("p", { class: "note" }, [note]),
   ]);
 }
 
