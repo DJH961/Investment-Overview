@@ -268,7 +268,7 @@ export class App {
           this.state.config = await loadConfig();
           if (this.isConfigured()) this.showUnlock();
           else this.showSetup();
-        })();
+        })().catch(() => this.showSetup());
       },
       () => this.showDemo(),
       () => this.showSettings(),
