@@ -14,7 +14,9 @@ from __future__ import annotations
 import contextlib
 import importlib.metadata as importlib_metadata
 import importlib.util
+import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -25,8 +27,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 PROJECT_NAME = "investment-dashboard"
 MIN_PYTHON = (3, 12)
-MIN_NICEGUI = (3, 12, 0)
-MAX_NICEGUI = (4, 0, 0)
+# The supported NiceGUI range is derived from the ``nicegui`` requirement in
+# pyproject.toml at runtime so it can never drift out of sync with the pin. The
+# constants below are only a last-resort fallback if that requirement cannot be
+# read or parsed; keep them in step with pyproject.toml's ``nicegui`` specifier.
+FALLBACK_MIN_NICEGUI = (3, 12, 0)
+FALLBACK_MAX_NICEGUI = (4, 0, 0)
 VENV_DIR = ROOT / ".venv"
 VENV_PYTHON = VENV_DIR / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 REQUIRED_MODULES = (
@@ -171,25 +177,87 @@ def _is_running_from_venv() -> bool:
         return False
 
 
+def _dependency_problems() -> list[str]:
+    """Return human-readable reasons the current interpreter isn't ready, if any."""
+    problems: list[str] = []
+
+    missing = [m for m in REQUIRED_MODULES if importlib.util.find_spec(m) is None]
+    if missing:
+        problems.append(f"missing modules: {', '.join(sorted(missing))}")
+
+    if not _nicegui_is_supported():
+        minimum, maximum = _supported_nicegui_bounds()
+        wanted = f">={'.'.join(map(str, minimum))},<{'.'.join(map(str, maximum))}"
+        try:
+            found = importlib_metadata.version("nicegui")
+        except importlib_metadata.PackageNotFoundError:
+            found = "not installed"
+        problems.append(f"nicegui {found} does not satisfy {wanted}")
+
+    if not _installed_project_is_current():
+        try:
+            installed = importlib_metadata.version(PROJECT_NAME)
+        except importlib_metadata.PackageNotFoundError:
+            installed = "not installed"
+        problems.append(
+            f"{PROJECT_NAME} {installed} does not match project version {_project_version()}"
+        )
+
+    return problems
+
+
 def _current_python_has_dependencies() -> bool:
-    return (
-        all(importlib.util.find_spec(module) is not None for module in REQUIRED_MODULES)
-        and _nicegui_is_supported()
-        and _installed_project_is_current()
-    )
+    return not _dependency_problems()
+
+
+def _read_pyproject() -> dict:
+    pyproject = ROOT / "pyproject.toml"
+    try:
+        return tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise RuntimeError(f"Unable to read {pyproject}.") from exc
 
 
 def _project_version() -> str:
     pyproject = ROOT / "pyproject.toml"
-    try:
-        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        raise RuntimeError(f"Unable to read project version from {pyproject}.") from exc
+    data = _read_pyproject()
 
     version = data.get("project", {}).get("version")
     if not isinstance(version, str) or not version:
         raise RuntimeError(f"Unable to read project version from {pyproject}.")
     return version
+
+
+def _supported_nicegui_bounds() -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    """Return the (inclusive lower, exclusive upper) NiceGUI versions we accept.
+
+    Parsed from the ``nicegui`` requirement in pyproject.toml so the launcher's
+    notion of a supported NiceGUI stays in lock-step with the declared pin.
+    Falls back to module constants if the requirement can't be read or parsed.
+    """
+    try:
+        dependencies = _read_pyproject().get("project", {}).get("dependencies", [])
+    except RuntimeError:
+        return FALLBACK_MIN_NICEGUI, FALLBACK_MAX_NICEGUI
+
+    lower: tuple[int, int, int] | None = None
+    upper: tuple[int, int, int] | None = None
+    for entry in dependencies:
+        if not isinstance(entry, str):
+            continue
+        name = re.split(r"[<>=!~ \[]", entry, maxsplit=1)[0].strip().lower()
+        if name.replace("_", "-") != "nicegui":
+            continue
+        for match in re.finditer(r"(>=|<=|==|~=|<|>)\s*([0-9][0-9.]*)", entry):
+            operator, raw_version = match.group(1), match.group(2)
+            version = _version_tuple(raw_version)
+            if operator in {">=", "==", "~="}:
+                lower = version
+            elif operator == "<":
+                upper = version
+        break
+
+    return lower or FALLBACK_MIN_NICEGUI, upper or FALLBACK_MAX_NICEGUI
 
 
 def _installed_project_is_current() -> bool:
@@ -224,7 +292,8 @@ def _nicegui_is_supported() -> bool:
     except importlib_metadata.PackageNotFoundError:
         return False
     parsed = _version_tuple(version)
-    return MIN_NICEGUI <= parsed < MAX_NICEGUI
+    minimum, maximum = _supported_nicegui_bounds()
+    return minimum <= parsed < maximum
 
 
 def _venv_has_dependencies() -> bool:
@@ -233,6 +302,29 @@ def _venv_has_dependencies() -> bool:
 
     code = "import run_dashboard, sys; sys.exit(0 if run_dashboard._current_python_has_dependencies() else 1)"
     return subprocess.run([str(VENV_PYTHON), "-c", code], cwd=ROOT, check=False).returncode == 0
+
+
+def _venv_dependency_problems() -> list[str]:
+    """Ask the venv interpreter which dependency checks fail (for diagnostics)."""
+    if not VENV_PYTHON.exists():
+        return [f"virtual environment interpreter is missing at {VENV_PYTHON}"]
+
+    code = (
+        "import run_dashboard, json, sys; "
+        "sys.stdout.write(json.dumps(run_dashboard._dependency_problems()))"
+    )
+    result = subprocess.run(
+        [str(VENV_PYTHON), "-c", code],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    try:
+        problems = json.loads(result.stdout)
+    except (ValueError, TypeError):
+        return ["the virtual environment could not be inspected"]
+    return [str(problem) for problem in problems]
 
 
 def _ensure_supported_python() -> None:
@@ -270,7 +362,13 @@ def _relaunch_from_venv_if_needed() -> None:
 
     _ensure_venv_ready()
     if not _venv_has_dependencies():
-        raise RuntimeError("The virtual environment is missing required dependencies after setup.")
+        problems = _venv_dependency_problems()
+        detail = ("\n  - " + "\n  - ".join(problems)) if problems else ""
+        raise RuntimeError(
+            "The virtual environment is missing required dependencies after setup."
+            + detail
+            + "\nDelete the .venv folder and re-run this launcher to rebuild it."
+        )
     if not _is_running_from_venv() or not _current_python_has_dependencies():
         os.execv(
             str(VENV_PYTHON), [str(VENV_PYTHON), str(ROOT / "run_dashboard.py"), *sys.argv[1:]]

@@ -20,6 +20,44 @@ def _load_launcher_module() -> ModuleType:
 run_dashboard = _load_launcher_module()
 
 
+def test_supported_nicegui_bounds_match_pyproject_pin() -> None:
+    minimum, maximum = run_dashboard._supported_nicegui_bounds()
+    assert minimum == (3, 12, 0)
+    assert maximum == (4, 0, 0)
+
+
+def test_supported_nicegui_bounds_parsed_from_dependencies(monkeypatch) -> None:
+    monkeypatch.setattr(
+        run_dashboard,
+        "_read_pyproject",
+        lambda: {"project": {"dependencies": ["nicegui>=5.4.0,<6", "fastapi>=0.110"]}},
+    )
+    assert run_dashboard._supported_nicegui_bounds() == ((5, 4, 0), (6, 0, 0))
+
+
+def test_supported_nicegui_bounds_fall_back_when_unreadable(monkeypatch) -> None:
+    def _raise() -> dict:
+        raise RuntimeError("unreadable")
+
+    monkeypatch.setattr(run_dashboard, "_read_pyproject", _raise)
+    assert run_dashboard._supported_nicegui_bounds() == (
+        run_dashboard.FALLBACK_MIN_NICEGUI,
+        run_dashboard.FALLBACK_MAX_NICEGUI,
+    )
+
+
+def test_dependency_problems_report_unsupported_nicegui(monkeypatch) -> None:
+    monkeypatch.setattr(run_dashboard, "REQUIRED_MODULES", ())
+    monkeypatch.setattr(run_dashboard, "_nicegui_is_supported", lambda: False)
+    monkeypatch.setattr(run_dashboard, "_installed_project_is_current", lambda: True)
+    monkeypatch.setattr(run_dashboard, "_supported_nicegui_bounds", lambda: ((3, 12, 0), (4, 0, 0)))
+    monkeypatch.setattr(run_dashboard.importlib_metadata, "version", lambda name: "2.10.0")
+
+    problems = run_dashboard._dependency_problems()
+
+    assert any("nicegui 2.10.0" in problem and ">=3.12.0,<4" in problem for problem in problems)
+
+
 def test_dependency_check_rejects_stale_project_install(monkeypatch) -> None:
     monkeypatch.setattr(run_dashboard, "REQUIRED_MODULES", ())
     monkeypatch.setattr(run_dashboard, "_nicegui_is_supported", lambda: True)
