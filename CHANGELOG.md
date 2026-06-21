@@ -56,6 +56,56 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and forced into a full reload — the "I seemingly disconnect and get stuck"
   symptom.
 
+## [3.1.0] — 2026-06-21
+
+Live-web companion (`web/`): mutual-fund (NAV) pricing, the value-over-time
+chart, and the benchmark line. This release lands the work from PR #34 (which
+had not been recorded here) **and** the follow-up fixes that finally make NAV
+freshness correct around market closures.
+
+### Fixed — live-web companion: mutual-fund NAV pricing
+
+- **NAV is now priced from the daily `time_series` endpoint, not `quote`.**
+  Twelve Data's `/quote` carries a fund's last NAV forward and stamps it with
+  *today's* date even when the market is closed — so on a Sunday (or a mid-week
+  market holiday) it looked like a fresh price and revalued the fund onto the
+  wrong basis. NAV symbols are now fetched from `/time_series`
+  (`interval=1day`), which only emits a bar for a **real trading day**. A
+  weekend or holiday produces no new bar, so the exported NAV is correctly kept
+  until the fund actually re-strikes. This needs no hand-maintained holiday
+  calendar.
+- **The exported NAV is only superseded by a strictly newer value-date** (PR
+  #34), and a live value is never stamped with the fetch time — its "as of" is
+  the NAV's real strike date. Together with the `time_series` source this fixes
+  the "Twelve Data says the fund updated today even though markets are closed"
+  bug.
+- **Per-fund publish window is learned from observed value-date flips** (PR
+  #34) rather than a fixed guess, with a sensible Europe-close bootstrap, so
+  NAV polling happens around when each fund actually publishes.
+
+### Fixed — live-web companion: value-over-time chart & benchmark
+
+- **The end-of-line "cliff" is gone.** The chart's final, live point no longer
+  drops far below the historical line. It was caused by the bogus closed-day NAV
+  above revaluing a fund onto a wrong basis; with NAV freshness fixed the live
+  tip sits on the same basis as history.
+- **The live tip is only appended when today's total is complete** (PR #34).
+  If a holding drops out (missing price/FX), the incomplete sum is no longer
+  drawn as a false final-day dip.
+- **The benchmark series is rebased to the portfolio's scale** (PR #34) so the
+  comparison line is visible alongside the portfolio instead of being pinned to
+  the axis floor.
+
+### Changed — live-web companion: freshness shown at the top
+
+- **The last-updated time/date now appears at the very top of the screen.** It
+  shows the **exact market time** when a live holding (stock/ETF) updated today
+  and live-refreshes, and falls back to a **date** for mutual funds and for
+  markets that are closed — matching how a neobroker shows freshness.
+- **The "last known" badge is removed.** That bubble is replaced everywhere by
+  the price's actual date or time, so the top of the screen always states when
+  the figure is from.
+
 ## [3.0.0] — 2026-06-21
 
 The **v3.0 live-web companion** lands: an encrypted publish pipeline and an
