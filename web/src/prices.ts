@@ -31,7 +31,40 @@ export interface FxRates {
   rates: Record<string, Decimal>;
 }
 
-export class PriceError extends Error {}
+export class PriceError extends Error {
+  /** HTTP status that produced this error, when it came from a response. */
+  readonly status: number | null;
+  /**
+   * True when the failure is likely transient — a network blip, a rate limit
+   * (HTTP 429), or a server-side error (5xx). Callers can then retry or fall
+   * back to the exported last-known prices instead of dead-ending the screen.
+   */
+  readonly retryable: boolean;
+
+  constructor(
+    message: string,
+    options: { status?: number | null; retryable?: boolean } = {},
+  ) {
+    super(message);
+    this.name = "PriceError";
+    this.status = options.status ?? null;
+    this.retryable = options.retryable ?? false;
+  }
+}
+
+/** Translate a non-OK HTTP response into a classified PriceError. */
+function httpError(service: string, status: number): PriceError {
+  if (status === 429) {
+    return new PriceError(
+      `the ${service} is rate limited (HTTP 429) — too many requests, try again shortly`,
+      { status, retryable: true },
+    );
+  }
+  return new PriceError(`${service} returned HTTP ${status}`, {
+    status,
+    retryable: status >= 500,
+  });
+}
 
 /** Minimal injectable fetch so callers/tests can supply their own transport. */
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -80,17 +113,23 @@ export async function fetchQuotes(
   try {
     resp = await fetchImpl(url.toString());
   } catch (err) {
-    throw new PriceError(`could not reach the price service: ${(err as Error).message}`);
+    throw new PriceError(`could not reach the price service: ${(err as Error).message}`, {
+      retryable: true,
+    });
   }
   if (!resp.ok) {
-    throw new PriceError(`price service returned HTTP ${resp.status}`);
+    throw httpError("price service", resp.status);
   }
   const body = (await resp.json()) as Record<string, unknown>;
 
   // A top-level {"code":..,"status":"error"} means the whole call failed
   // (usually a bad/over-quota API key).
   if (body.status === "error" && !("symbol" in body)) {
-    throw new PriceError(typeof body.message === "string" ? body.message : "price request rejected");
+    const code = typeof body.code === "number" ? body.code : null;
+    throw new PriceError(
+      typeof body.message === "string" ? body.message : "price request rejected",
+      { status: code, retryable: code === 429 },
+    );
   }
 
   if (unique.length === 1) {
@@ -120,10 +159,12 @@ export async function fetchFxRates(
   try {
     resp = await fetchImpl(url.toString());
   } catch (err) {
-    throw new PriceError(`could not reach the FX service: ${(err as Error).message}`);
+    throw new PriceError(`could not reach the FX service: ${(err as Error).message}`, {
+      retryable: true,
+    });
   }
   if (!resp.ok) {
-    throw new PriceError(`FX service returned HTTP ${resp.status}`);
+    throw httpError("FX service", resp.status);
   }
   const body = (await resp.json()) as { base?: string; rates?: Record<string, unknown> };
   const rates: Record<string, Decimal> = {};

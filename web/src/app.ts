@@ -18,7 +18,7 @@ import {
   saveConfig,
   type AppConfig,
 } from "./config";
-import { fetchFxRates, fetchQuotes } from "./prices";
+import { fetchFxRates, fetchQuotes, PriceError, type FxRates, type Quote } from "./prices";
 import { setEurUsdRate } from "./currency";
 import type { MobileExport } from "./types";
 import { h, renderDashboard } from "./ui";
@@ -223,22 +223,60 @@ export class App {
     const { data, config } = this.state;
     if (!data) return this.showUnlock();
     this.showStatus("Fetching live prices…");
-    try {
-      const symbols = data.holdings
-        .filter((holding) => holding.price_type === "market")
-        .map((holding) => holding.price_symbol);
-      const [quotes, fx] = await Promise.all([
-        symbols.length > 0 ? fetchQuotes(symbols, config.apiKey) : Promise.resolve(new Map()),
-        fetchFxRates("EUR"),
-      ]);
-      const model = buildDashboard(data, quotes, fx);
-      // Prefer the live EUR→USD rate; fall back to the export meta rate.
-      setEurUsdRate(fx.rates.USD ?? model.overview.fxRateEurUsd);
-      this.renderDashboard(model);
-    } catch (err) {
-      this.renderLoadError((err as Error).message);
+
+    const symbols = data.holdings
+      .filter((holding) => holding.price_type === "market")
+      .map((holding) => holding.price_symbol);
+
+    // Fetch quotes and FX independently so one rate-limited service does not
+    // sink the other (and so we can still degrade gracefully on a partial miss).
+    const [quoteResult, fxResult] = await Promise.allSettled([
+      symbols.length > 0
+        ? fetchQuotes(symbols, config.apiKey)
+        : Promise.resolve(new Map<string, Quote>()),
+      fetchFxRates("EUR"),
+    ]);
+
+    // A non-retryable quote failure (e.g. a bad/rejected API key) is a config
+    // problem the user must act on, so keep the explicit error screen with a
+    // route to Settings. Transient failures (rate limit, network, 5xx) fall
+    // through to the exported last-known prices below.
+    if (quoteResult.status === "rejected") {
+      const err = quoteResult.reason as Error;
+      if (!(err instanceof PriceError) || !err.retryable) {
+        return this.renderLoadError(err.message);
+      }
     }
+
+    const quotes = quoteResult.status === "fulfilled" ? quoteResult.value : new Map<string, Quote>();
+    const fx: FxRates =
+      fxResult.status === "fulfilled" ? fxResult.value : { base: "EUR", rates: {} };
+
+    const degradedReason = this.describeDegradation(quoteResult, fxResult);
+    const model = buildDashboard(data, quotes, fx, new Date(), degradedReason);
+    // Prefer the live EUR→USD rate; fall back to the export meta rate.
+    setEurUsdRate(fx.rates.USD ?? model.overview.fxRateEurUsd);
+    this.renderDashboard(model);
     return undefined;
+  }
+
+  /**
+   * Summarise which live feeds fell back to exported values, for a non-blocking
+   * banner. Returns null when both quotes and FX loaded cleanly.
+   */
+  private describeDegradation(
+    quoteResult: PromiseSettledResult<Map<string, Quote>>,
+    fxResult: PromiseSettledResult<FxRates>,
+  ): string | null {
+    const reasons: string[] = [];
+    if (quoteResult.status === "rejected") {
+      reasons.push(`live prices unavailable (${(quoteResult.reason as Error).message})`);
+    }
+    if (fxResult.status === "rejected") {
+      reasons.push(`FX rates unavailable (${(fxResult.reason as Error).message})`);
+    }
+    if (reasons.length === 0) return null;
+    return `${reasons.join("; ")} — showing your last known values.`;
   }
 
   private renderDashboard(model: DashboardModel): void {

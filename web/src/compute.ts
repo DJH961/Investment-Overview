@@ -75,6 +75,11 @@ export interface OverviewView {
   missingPriceSymbols: string[];
   /** Currencies with no FX leg, so their EUR value could not be computed. */
   fxMissingCurrencies: string[];
+  /**
+   * Set when live quotes/FX could not be fetched (e.g. rate limited) and the
+   * dashboard fell back to the exported last-known values; null otherwise.
+   */
+  liveDegradedReason: string | null;
 }
 
 /** Portfolio allocation by asset class (holdings only, excludes cash). */
@@ -216,6 +221,7 @@ export function buildDashboard(
   quotes: Map<string, Quote>,
   fx: FxRates,
   now: Date = new Date(),
+  liveDegradedReason: string | null = null,
 ): DashboardModel {
   const asOf = todayIso(now);
   const fxMissing = new Set<string>();
@@ -349,6 +355,7 @@ export function buildDashboard(
     holdingsCount: holdings.length,
     missingPriceSymbols: missingPrice,
     fxMissingCurrencies: [...fxMissing],
+    liveDegradedReason,
   };
 
   const periods = buildPeriods(data, overview);

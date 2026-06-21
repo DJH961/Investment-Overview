@@ -135,6 +135,9 @@ function renderStats(o: OverviewView): HTMLElement {
 
 function renderNotes(o: OverviewView): HTMLElement[] {
   const notes: HTMLElement[] = [];
+  if (o.liveDegradedReason) {
+    notes.push(h("p", { class: "note warn" }, [o.liveDegradedReason]));
+  }
   if (o.missingPriceSymbols.length > 0) {
     notes.push(
       h("p", { class: "note warn" }, [

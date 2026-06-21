@@ -64,7 +64,10 @@ responses, or any decrypted data (that lives in memory only) — see
 2. downloads the encrypted `portfolio.enc` blob and decrypts it **in the
    browser** with your mobile passphrase via WebCrypto (PBKDF2-HMAC-SHA256 →
    AES-256-GCM, mirroring `storage/blob_crypto.py`),
-3. fetches live quotes (Twelve Data) + EUR FX (Frankfurter),
+3. fetches live quotes (Twelve Data) + EUR FX (Frankfurter) — and when a feed
+   is briefly unavailable (e.g. Twelve Data's free tier returns **HTTP 429**
+   when rate limited, ~8 requests/min), it falls back to the exported
+   last-known values and shows a non-blocking banner instead of dead-ending,
 4. computes KPIs and per-holding stats with the **ported** `domain/returns`
    maths, guarded by a parity suite, and
 5. renders a mobile-first dashboard split into four tabbed sections:

@@ -10,6 +10,16 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return { ok, status, json: async () => body } as Response;
 }
 
+/** Run `fn`, expecting it to reject, and return the thrown PriceError. */
+async function captureError(fn: () => Promise<unknown>): Promise<PriceError> {
+  try {
+    await fn();
+  } catch (err) {
+    return err as PriceError;
+  }
+  throw new Error("expected the call to reject");
+}
+
 describe("fetchQuotes", () => {
   it("parses a single-symbol response", async () => {
     const fetchImpl: FetchLike = async () =>
@@ -36,6 +46,35 @@ describe("fetchQuotes", () => {
     const fetchImpl: FetchLike = async () =>
       jsonResponse({ code: 401, status: "error", message: "bad key" });
     await expect(fetchQuotes(["VTI"], "key", fetchImpl)).rejects.toBeInstanceOf(PriceError);
+  });
+
+  it("flags a 429 response as retryable with a friendly message", async () => {
+    const fetchImpl: FetchLike = async () => jsonResponse({}, false, 429);
+    const err = await captureError(() => fetchQuotes(["VTI"], "key", fetchImpl));
+    expect(err).toBeInstanceOf(PriceError);
+    expect(err.status).toBe(429);
+    expect(err.retryable).toBe(true);
+    expect(err.message).toMatch(/rate limited/i);
+  });
+
+  it("treats a 5xx response as retryable but a 401 as not", async () => {
+    const server = await captureError(() =>
+      fetchQuotes(["VTI"], "key", async () => jsonResponse({}, false, 503)),
+    );
+    expect(server.retryable).toBe(true);
+    const auth = await captureError(() =>
+      fetchQuotes(["VTI"], "key", async () => jsonResponse({}, false, 401)),
+    );
+    expect(auth.retryable).toBe(false);
+  });
+
+  it("treats a network failure as retryable", async () => {
+    const fetchImpl: FetchLike = async () => {
+      throw new Error("network down");
+    };
+    const err = await captureError(() => fetchQuotes(["VTI"], "key", fetchImpl));
+    expect(err).toBeInstanceOf(PriceError);
+    expect(err.retryable).toBe(true);
   });
 });
 
