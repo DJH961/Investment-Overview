@@ -62,6 +62,9 @@ def _curve_figure(bundle: AnalyticsBundle):  # type: ignore[no-untyped-def]
     """Equity curve + cumulative-contributions + (rebased) benchmark overlay."""
     import plotly.graph_objects as go  # noqa: PLC0415
 
+    from investment_dashboard.ui.charts import downsample  # noqa: PLC0415
+    from investment_dashboard.ui.money_format import currency_symbol  # noqa: PLC0415
+
     fig = go.Figure()
     if not bundle.curve:
         fig.update_layout(
@@ -70,9 +73,10 @@ def _curve_figure(bundle: AnalyticsBundle):  # type: ignore[no-untyped-def]
         )
         return fig
 
-    dates = [p.date for p in bundle.curve]
-    values = [float(p.portfolio_value) for p in bundle.curve]
-    contribs = [float(p.cumulative_contributions) for p in bundle.curve]
+    curve = downsample(list(bundle.curve))
+    dates = [p.date for p in curve]
+    values = [float(p.portfolio_value) for p in curve]
+    contribs = [float(p.cumulative_contributions) for p in curve]
 
     fig.add_trace(
         go.Scatter(
@@ -97,7 +101,7 @@ def _curve_figure(bundle: AnalyticsBundle):  # type: ignore[no-untyped-def]
     # "what if I'd bought VT instead?" curve.
     bench_pairs = [
         (p.date, p.benchmark_value, p.portfolio_value)
-        for p in bundle.curve
+        for p in curve
         if p.benchmark_value is not None
     ]
     if bench_pairs:
@@ -114,6 +118,7 @@ def _curve_figure(bundle: AnalyticsBundle):  # type: ignore[no-untyped-def]
                     line={"width": 1.5, "dash": "dot"},
                 )
             )
+    fig.update_yaxes(tickprefix=currency_symbol(bundle.currency), tickformat=".3s")
     fig.update_layout(
         title=f"Equity curve ({bundle.currency})",
         template="colorblind_modern",

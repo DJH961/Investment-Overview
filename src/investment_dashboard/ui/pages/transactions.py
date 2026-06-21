@@ -18,7 +18,11 @@ from investment_dashboard.repositories import (
     instruments_repo,
     transactions_repo,
 )
-from investment_dashboard.services import display_currency_service, transaction_fx_service
+from investment_dashboard.services import (
+    auto_publish,
+    display_currency_service,
+    transaction_fx_service,
+)
 from investment_dashboard.services.importer_service import Broker, import_csv
 from investment_dashboard.services.instrument_enrichment_service import (
     QUOTE_TYPE_MAP,
@@ -325,6 +329,11 @@ def _open_import_modal(accounts: list[Account]) -> None:  # pragma: no cover - U
                 ui.notify(status.text, type="warning")
             else:
                 ui.notify(status.text, type="positive")
+
+            # v3.0 §5.4: republish the live-web blob after a successful import.
+            # Best-effort and gated by Settings → Live web companion; never
+            # raises, so a publish hiccup can't undo the import above.
+            auto_publish.publish_on_trigger(auto_publish.TRIGGER_IMPORT)
 
         ui.upload(on_upload=_on_upload, auto_upload=True).props("accept=.csv,.xlsx").classes(
             "w-full"

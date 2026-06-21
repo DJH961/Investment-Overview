@@ -234,5 +234,11 @@ htmlcov/
 
 
 # Real (un-anonymized) financial exports must never be committed.
+# The anonymized synthetic fixtures already tracked under
+# "docs/Comparison Files/" stay tracked (git ignore never untracks); now that
+# the repo is public, these patterns block real broker exports / audit snapshots
+# from being (re-)added to that directory (proposal §7.1).
+docs/Comparison Files/audit-export-*.json
+docs/Comparison Files/*.xlsx
 # The personal master workbook was removed as un-fakeable; keep it local only.
 docs/Comparison Files/Investments.xlsx

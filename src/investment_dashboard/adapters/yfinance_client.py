@@ -80,6 +80,7 @@ def fetch_closes(
     end: date,
     *,
     downloader: Any = None,
+    adjusted: bool = False,
 ) -> dict[str, dict[date, Decimal]]:
     """Return ``{symbol: {date: close_decimal}}`` for the half-open range.
 
@@ -96,6 +97,15 @@ def fetch_closes(
     downloader
         Optional callable matching ``yfinance.download``'s signature, for
         injection in tests.
+    adjusted
+        When ``True`` the closes are dividend- and split-adjusted
+        (``auto_adjust=True``), i.e. a *total-return* series. The default
+        ``False`` keeps raw closes — required for held instruments whose
+        dividends we already track as ledger rows (adjusting would
+        double-count them). Pass ``True`` only for instruments we never hold
+        and whose distributions are *not* in the ledger (e.g. the benchmark
+        overlay), so "what if I'd bought the index?" reflects its real
+        total return rather than price alone.
     """
     if end <= start:
         raise ValueError(f"end ({end}) must be strictly after start ({start})")
@@ -105,7 +115,7 @@ def fetch_closes(
     download = downloader or yf.download
 
     try:
-        result = _download_window(download, symbols, start, end)
+        result = _download_window(download, symbols, start, end, adjusted=adjusted)
     except YFinanceError as exc:
         _record_status(
             "error",
@@ -131,7 +141,9 @@ def fetch_closes(
                 fallback_start,
             )
             try:
-                fallback = _download_window(download, missing, fallback_start, end)
+                fallback = _download_window(
+                    download, missing, fallback_start, end, adjusted=adjusted
+                )
             except YFinanceError as exc:
                 _record_status(
                     "error",
@@ -170,6 +182,8 @@ def _download_window(
     symbols: list[str],
     start: date,
     end: date,
+    *,
+    adjusted: bool = False,
 ) -> dict[str, dict[date, Decimal]]:
     """Single yfinance ``download`` call, parsed into the adapter's shape."""
     try:
@@ -178,7 +192,7 @@ def _download_window(
                 tickers=symbols,
                 start=start.isoformat(),
                 end=end.isoformat(),
-                auto_adjust=False,
+                auto_adjust=adjusted,
                 actions=False,
                 progress=False,
                 group_by="ticker",

@@ -16,31 +16,44 @@ Concretely, that means:
 - Single-column, thumb-reachable layout by default; wider screens get more
   breathing room, multi-column KPI grids, and — on desktop/widescreen — a
   multi-column dashboard grid (headline value beside the return horizons, a
-  full-width KPI strip, and the holdings list as the main column with the
-  allocation panel beside it) so the extra space isn't wasted. This is layered
-  on with `min-width` media queries only; the markup and mobile source order
-  never change.
+  full-width single-row KPI strip, a two-column holdings grid with the
+  allocation panel underneath, and two-column Periods/Risk/Plan panels) so the
+  extra space isn't wasted. This is layered on with `min-width` media queries
+  only; the markup and mobile source order never change.
 - Sections (Overview / Periods / Risk / Plan) switch through a **tab bar** that
   is a fixed bottom navigation on phones (within thumb reach) and reflows to a
-  top tab strip on desktop — same markup, `min-width` media queries only.
+  top tab strip on desktop — same markup, `min-width` media queries only. The
+  last-viewed tab is remembered per device.
 - Holdings render as a scannable **list** (symbol · name · value · today's
   move), never a wide horizontal-scrolling spreadsheet table.
 - The headline portfolio value and today's move are the hero of the screen;
-  month- and year-to-date growth sit right beneath so the three return horizons
-  are visible at a glance without scrolling on a phone.
+  month- and year-to-date growth sit right beneath, and a **value-over-time
+  chart** (with labelled axes, running to today's live value) sits on the
+  Overview so the three return horizons are visible at a glance on a phone.
 - The gain/loss colours stay the colourblind-safe **blue ↔ orange** pair (never
   red/green) — see proposal §7.3.
 - The headline value, return horizons and KPIs lead; **asset-class allocation is
   intentionally de-emphasised** into a collapsed panel below the holdings (a
   fixed, lopsided allocation does not need to be front-and-centre).
-- A topbar **theme toggle** cycles System → Light → Dark, persisted per device
-  in `localStorage`; "System" follows the OS `prefers-color-scheme`. The modern
-  **Inter** typeface is bundled (self-hosted — no third-party font requests).
+- The **Risk** tab spells out its abbreviations: each metric carries a tappable
+  info dot (hover/focus on desktop, tap on mobile) with a plain-language
+  definition, and the equity curve has labelled axes plus a portfolio /
+  contributions / benchmark legend.
+- A topbar **currency toggle** flips the whole dashboard between **EUR and USD**
+  (using the live EUR→USD rate), persisted per device. A **theme toggle** cycles
+  System → Light → Dark, also persisted in `localStorage`; "System" follows the
+  OS `prefers-color-scheme`. The modern **Inter** typeface is bundled
+  (self-hosted — no third-party font requests).
 
 ## Status
 
-**Phase 4 (Periods + projection + analytics) implemented**, building on the
-Phase 3 web hero. A Vite + TypeScript single-page app that:
+**Phase 5 (PWA) implemented**, building on the Phase 4 periods/projection/
+analytics work. The companion is now an installable **progressive web app**: a
+web manifest + icon make it add-to-home-screen capable, and a service worker
+caches **only the public, static app shell** so the UI opens instantly and works
+offline. The service worker never caches the encrypted blob, the live price/FX
+responses, or any decrypted data (that lives in memory only) — see
+`public/sw.js`. A Vite + TypeScript single-page app that:
 
 1. collects a Twelve Data API key + the data repository on a setup screen
    (stored in `localStorage`, never in the repo),
