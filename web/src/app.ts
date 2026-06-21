@@ -369,7 +369,7 @@ export class App {
       h("h1", {}, [enrolled ? "Welcome back" : "Unlock"]),
       h("p", { class: "muted" }, [
         enrolled
-          ? "Unlock with your fingerprint. Your data is decrypted on this device only — never stored or sent."
+          ? "Touch the sensor to unlock — your data is decrypted on this device only."
           : "Your passphrase decrypts the data in this browser. It is never stored or sent.",
       ]),
     ];
@@ -1024,28 +1024,44 @@ function switchField(label: string, input: HTMLInputElement, hint?: string): HTM
 }
 
 /**
- * Line-art fingerprint glyph (Lucide "fingerprint", MIT). Inlined as a static,
- * trusted SVG string — no user data — so it can scale and inherit `currentColor`
- * for a clean, broker-style unlock CTA.
+ * Line-art fingerprint glyph (paths from Lucide "fingerprint", MIT). Built with
+ * the DOM API (no `innerHTML`) so it inherits `currentColor` for a clean,
+ * broker-style unlock CTA.
  */
-const FINGERPRINT_SVG =
-  '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
-  '<path d="M2 12C2 6.5 6.5 2 12 2a10 10 0 0 1 8 4"/>' +
-  '<path d="M5 19.5C5.5 18 6 15 6 12c0-.7.12-1.37.34-2"/>' +
-  '<path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/>' +
-  '<path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/>' +
-  '<path d="M8.65 22c.21-.66.45-1.32.57-2"/>' +
-  '<path d="M14 13.12c0 2.38 0 6.38-1 8.88"/>' +
-  '<path d="M2 16h.01"/>' +
-  '<path d="M21.8 16c.2-2 .131-5.354 0-6"/>' +
-  '<path d="M9 6.8a6 6 0 0 1 9 5.2c0 .47 0 1.17-.02 2"/>' +
-  "</svg>";
+const FINGERPRINT_PATHS = [
+  "M2 12C2 6.5 6.5 2 12 2a10 10 0 0 1 8 4",
+  "M5 19.5C5.5 18 6 15 6 12c0-.7.12-1.37.34-2",
+  "M17.29 21.02c.12-.6.43-2.3.5-3.02",
+  "M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4",
+  "M8.65 22c.21-.66.45-1.32.57-2",
+  "M14 13.12c0 2.38 0 6.38-1 8.88",
+  "M2 16h.01",
+  "M21.8 16c.2-2 .131-5.354 0-6",
+  "M9 6.8a6 6 0 0 1 9 5.2c0 .47 0 1.17-.02 2",
+];
+
+const SVG_NS = "http://www.w3.org/2000/svg";
 
 /** A standalone fingerprint icon element for the unlock CTA. */
 function fingerprintIcon(): HTMLElement {
   const span = h("span", { class: "bio-icon" });
-  // Static, trusted markup (no interpolation): safe to assign as innerHTML.
-  span.innerHTML = FINGERPRINT_SVG;
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "22");
+  svg.setAttribute("height", "22");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  for (const d of FINGERPRINT_PATHS) {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", d);
+    svg.appendChild(path);
+  }
+  span.appendChild(svg);
   return span;
 }
 

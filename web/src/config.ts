@@ -94,9 +94,9 @@ function parseCacheMinutes(raw: string): number {
 }
 
 /**
- * Clamp a parsed auto-lock value to `0`–{@link MAX_AUTO_LOCK_MINUTES}. `0` (or a
- * blank/invalid value when the user explicitly cleared it) means "never lock";
- * an unset key falls back to {@link DEFAULT_AUTO_LOCK_MINUTES}.
+ * Clamp a parsed auto-lock value to `0`–{@link MAX_AUTO_LOCK_MINUTES}. A blank
+ * key (never set) falls back to the preset {@link DEFAULT_AUTO_LOCK_MINUTES}; an
+ * explicit `0` (or any non-positive value) means "never lock".
  */
 function parseAutoLockMinutes(raw: string): number {
   if (raw === "") return DEFAULT_AUTO_LOCK_MINUTES;
