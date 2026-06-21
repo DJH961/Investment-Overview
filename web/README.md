@@ -27,9 +27,13 @@ Concretely, that means:
 - Holdings render as a scannable **list** (symbol · name · value · today's
   move), never a wide horizontal-scrolling spreadsheet table.
 - The headline portfolio value and today's move are the hero of the screen;
-  month- and year-to-date growth sit right beneath, and a **value-over-time
-  chart** (with labelled axes, running to today's live value) sits on the
-  Overview so the three return horizons are visible at a glance on a phone.
+  month- and year-to-date growth sit right beneath (and, on desktop, beside the
+  big total value), and a **value-over-time chart** (with labelled axes, running
+  to today's live value) sits on the Overview so the three return horizons are
+  visible at a glance on a phone. The Overview and Risk charts carry small
+  **time-range presets** (e.g. 1M / 3M / 6M / All — only those the history is
+  long enough for are shown) that re-slice the already-loaded points in place,
+  on phone and desktop alike.
 - The gain/loss colours stay the colourblind-safe **blue ↔ orange** pair (never
   red/green) — see proposal §7.3.
 - The headline value, return horizons and KPIs lead; **asset-class allocation is
