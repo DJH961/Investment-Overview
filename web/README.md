@@ -70,7 +70,8 @@ responses, or any decrypted data (that lives in memory only) — see
 `public/sw.js`. A Vite + TypeScript single-page app that:
 
 1. collects a Twelve Data API key + the data repository on a setup screen
-   (stored in `localStorage`, never in the repo),
+   (the key is **encrypted at rest** in `localStorage` with a non-extractable
+   per-device key in IndexedDB — see `secret-store.ts` — never in the repo),
 2. downloads the encrypted `portfolio.enc` blob and decrypts it **in the
    browser** with your mobile passphrase via WebCrypto (PBKDF2-HMAC-SHA256 →
    AES-256-GCM, mirroring `storage/blob_crypto.py`) — and to make a quick
@@ -319,3 +320,6 @@ The locally-cached blob (for cache-first unlock) is that same opaque ciphertext,
 and the optional fingerprint unlock stores only the passphrase **encrypted**
 under a key the device's authenticator re-derives on a verified touch — so
 `localStorage` still never holds plaintext financial data or a usable passphrase.
+The one device-local secret, the Twelve Data API key, is likewise encrypted at
+rest with a non-extractable per-device key (IndexedDB), so `localStorage` never
+holds the raw token.

@@ -368,10 +368,23 @@ function buildHolding(
 
   const costBasisEur = convert(new Decimal(holding.cost_basis_native), currency, EUR, fx);
 
-  // Today's move only applies to market-priced rows with a live previous close.
+  // Today's move is the change from the prior published close to the price we
+  // actually display. It applies to any holding whose live quote is the one on
+  // screen (`isLive`) and that carries a previous close:
+  //   - market rows (stocks / ETFs): the latest session's move from the `quote`
+  //     endpoint's `previous_close`;
+  //   - NAV rows (mutual funds): the latest published NAV's move from the prior
+  //     daily `time_series` bar — so a fund shows a move on the same days a stock
+  //     does (e.g. last Friday's move when viewed over a weekend), instead of a
+  //     blank.
+  // We deliberately key the move off `quote.price` only when it is the displayed
+  // price (`isLive`): a NAV bar that was rejected as not-newer (stale carry, off
+  // basis) leaves the row on its exported price, so we must not derive a move
+  // from a quote we chose to ignore. Money-market NAVs are pinned at $1 and never
+  // fetched, so they have no previous close and correctly contribute no move.
   let todayMoveEur: Decimal | null = null;
   let todayMovePct: Decimal | null = null;
-  if (holding.price_type === "market" && quote?.price && quote.previousClose && !quote.previousClose.isZero()) {
+  if (isLive && quote?.price && quote.previousClose && !quote.previousClose.isZero()) {
     const moveNative = quote.price.minus(quote.previousClose).times(shares);
     todayMoveEur = convert(moveNative, currency, EUR, fx);
     todayMovePct = quote.price.minus(quote.previousClose).dividedBy(quote.previousClose);

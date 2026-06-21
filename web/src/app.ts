@@ -19,6 +19,7 @@ import { buildDashboard, buildFetchPlan, type DashboardModel } from "./compute";
 import { decryptEnvelopeToJson, type Envelope } from "./crypto";
 import { buildDemoModel } from "./demo";
 import {
+  defaultConfig,
   isValidRepo,
   loadConfig,
   parseAutoLockMinutes,
@@ -112,10 +113,11 @@ export class App {
 
   constructor(root: HTMLElement) {
     this.root = root;
-    this.state = { config: loadConfig(), passphrase: null, data: null };
+    this.state = { config: defaultConfig(), passphrase: null, data: null };
   }
 
-  start(): void {
+  async start(): Promise<void> {
+    this.state.config = await loadConfig();
     if (this.demoRequested()) this.showDemo();
     else if (!this.isConfigured()) {
       this.showSetup();
@@ -314,14 +316,14 @@ export class App {
       const hasSource = next.blobUrl.length > 0 || isValidRepo(next.repo);
       if (!hasSource) return this.showSetup("Enter a valid owner/repository or a direct blob URL.", mode);
       this.state.config = next;
-      saveConfig(next);
-      // In Settings (already unlocked) re-run the load pipeline with the new
-      // config; otherwise continue the first-run flow to the unlock screen.
-      if (settingsMode && this.state.data) {
-        void this.afterUnlock(false);
-        return;
-      }
-      return this.showUnlock();
+      // Persist (the API key is encrypted at rest) before advancing. In Settings
+      // (already unlocked) re-run the load pipeline with the new config; otherwise
+      // continue the first-run flow to the unlock screen.
+      void saveConfig(next).then(() => {
+        if (settingsMode && this.state.data) void this.afterUnlock(false);
+        else this.showUnlock();
+      });
+      return undefined;
     });
 
     this.mount(h("div", { class: "screen" }, [form]));
@@ -510,9 +512,11 @@ export class App {
       () => this.showDemo(),
       () => {
         // Leave the preview for the real app, regardless of a `?demo` URL flag.
-        this.state.config = loadConfig();
-        if (this.isConfigured()) this.showUnlock();
-        else this.showSetup();
+        void (async () => {
+          this.state.config = await loadConfig();
+          if (this.isConfigured()) this.showUnlock();
+          else this.showSetup();
+        })().catch(() => this.showSetup());
       },
       () => this.showDemo(),
       () => this.showSettings(),
