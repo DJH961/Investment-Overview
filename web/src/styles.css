@@ -598,6 +598,30 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* --- Charts (shared line chart: value-over-time + equity curve) ------------ */
 .chart-wrap { width: 100%; }
+/* Time-range presets above a chart (mobile-first: a small wrapping button row). */
+.chart-block { display: grid; gap: 0.5rem; }
+.chart-range { display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: flex-end; }
+.chart-range-btn {
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  transition: filter 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.chart-range-btn:hover { filter: brightness(0.99); color: var(--fg); }
+.chart-range-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chart-range-btn.active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--card));
+}
 .chart-svg {
   display: block;
   width: 100%;
@@ -824,6 +848,19 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     row-gap: 1.2rem;
   }
   .panel-overview > .hero { grid-area: hero; }
+  /* Use the wide hero card: put today's move to the right of the big total
+   * value instead of stacked underneath it. */
+  .panel-overview > .hero {
+    grid-template-columns: max-content auto;
+    grid-template-areas:
+      "label  label"
+      "value  change";
+    align-items: center;
+    column-gap: 1.4rem;
+  }
+  .panel-overview > .hero .hero-label { grid-area: label; }
+  .panel-overview > .hero .hero-value { grid-area: value; }
+  .panel-overview > .hero .hero-change { grid-area: change; margin-top: 0; align-self: center; }
   .panel-overview > .segment { grid-area: returns; align-self: stretch; align-content: center; }
   .panel-overview > .value-chart { grid-area: value; }
   .panel-overview > .stats { grid-area: stats; }
@@ -836,16 +873,18 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   /* Holdings as a two-column list on widescreen. */
   .panel-overview > .holdings .holding-list { grid-template-columns: 1fr 1fr; }
 
-  /* Other panels: two-column where it reads well, centred max width. */
-  .panel-stack { max-width: 60rem; margin: 0 auto; }
-  /* The two-column panels get a little more room to breathe. */
+  /* All desktop pages share the same content width so switching tabs never
+   * makes the layout jump narrower/wider. */
+  .panel-overview,
   .panel-periods,
   .panel-analytics,
-  .panel-plan { max-width: 72rem; }
+  .panel-plan,
+  .panel-stack { max-width: 76rem; margin: 0 auto; }
 
   /* Charts otherwise scale to their (very wide) container and tower over the
-   * page; cap and centre them so they stay a comfortable, readable size. */
-  .chart-wrap { max-width: 46rem; margin-inline: auto; }
+   * page; cap and centre them so they stay a comfortable, readable size while
+   * still using more of the extra desktop width than before. */
+  .chart-wrap { max-width: 60rem; margin-inline: auto; }
 
   /* Periods: by-month on the left; by-year and contributions stacked right. */
   .panel-periods {
@@ -855,7 +894,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
       "month contrib"
       "month disc";
     align-items: start;
-    column-gap: 1.75rem;
+    column-gap: 2.75rem;
     row-gap: 1.5rem;
   }
   .panel-periods > .periods-monthly { grid-area: month; }
@@ -885,25 +924,48 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .panel-analytics > .analytics-returns .stat-grid { grid-template-columns: repeat(3, 1fr); }
   .panel-analytics > .analytics-risk .stat-grid { grid-template-columns: repeat(5, 1fr); }
 
-  /* Plan: inputs and the headline projections on the left, the year-by-year
-   * table on the right. Stacking the summary under the form fills what used to
-   * be a tall empty gap beneath the (short) input card. */
+  /* Keep the info "i" tooltips inside the cards: the centred popover on a
+   * right-column metric used to spill past the card edge. Anchor the tooltip to
+   * the dot's right edge in the last grid column and to its left edge in the
+   * first, so it always opens back over the card instead of off it. */
+  .panel-analytics > .analytics-risk .stat:nth-child(5n) .info-tip,
+  .panel-analytics > .analytics-returns .stat:nth-child(3n) .info-tip {
+    left: auto;
+    right: 0;
+    transform: none;
+  }
+  .panel-analytics > .analytics-risk .stat:nth-child(5n + 1) .info-tip,
+  .panel-analytics > .analytics-returns .stat:nth-child(3n + 1) .info-tip {
+    left: 0;
+    right: auto;
+    transform: none;
+  }
+
+  /* Plan: the three headline projections become a full-width banner of cards
+   * across the top (so each big number gets room), with the input form on the
+   * left and the year-by-year table filling the rest of the width beneath. This
+   * spreads the (otherwise sparse) content across the whole page. */
   .panel-plan {
-    grid-template-columns: 22rem minmax(0, 1fr);
+    grid-template-columns: 24rem minmax(0, 1fr);
     grid-template-areas:
+      "summary summary"
       "form    table"
-      "summary table"
       "disc    disc";
     align-items: start;
-    column-gap: 1.25rem;
-    row-gap: 1rem;
+    column-gap: 1.5rem;
+    row-gap: 1.25rem;
   }
   .panel-plan > .plan-form { grid-area: form; }
   .panel-plan > .plan-summary-wrap { grid-area: summary; }
   .panel-plan > .plan-table-wrap { grid-area: table; }
   .panel-plan > .disclaimer { grid-area: disc; }
-  /* In the narrow left column the three projections stack vertically. */
-  .panel-plan > .plan-summary-wrap .plan-summary { grid-template-columns: 1fr; }
+  /* Three projections side by side across the full-width banner. */
+  .panel-plan > .plan-summary-wrap .plan-summary { grid-template-columns: repeat(3, 1fr); }
+  /* Give the year table room to breathe across the full width. */
+  .panel-plan > .plan-table-wrap .proj-head,
+  .panel-plan > .plan-table-wrap .proj-row { grid-template-columns: 4rem 10rem 1fr; gap: 0.6rem; }
+  .panel-plan > .plan-table-wrap .proj-values { gap: 0.6rem; }
+  .panel-plan > .plan-table-wrap .proj-row { padding: 0.5rem 0; }
 }
 
 /* On true widescreen, give the content a little more room. */

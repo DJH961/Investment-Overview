@@ -53,10 +53,10 @@ export function buildLineChart(options: LineChartOptions): SVGSVGElement | null 
   const plottable = primary.filter((v) => v !== null).length;
   if (n < 2 || plottable < 2) return null;
 
-  const width = 480;
+  const width = 600;
   const height = 220;
   const padL = 52;
-  const padR = 12;
+  const padR = 14;
   const padT = 12;
   const padB = 28;
   const plotW = width - padL - padR;

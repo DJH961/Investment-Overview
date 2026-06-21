@@ -39,6 +39,7 @@ from investment_dashboard.services import (
     timezone_service,
 )
 from investment_dashboard.services.onboarding_service import is_onboarded
+from investment_dashboard.ui import connectivity
 from investment_dashboard.ui import style as ui_style
 
 if TYPE_CHECKING:
@@ -192,6 +193,10 @@ def _header(title: str, *, current_currency: str, now_label: str, dark: ui.dark_
                 icon="refresh",
                 on_click=ui.navigate.reload,
             ).props("flat round dense").tooltip("Refresh page")
+            # Always-visible live connection indicator (green/amber/red),
+            # driven from the websocket by ui.connectivity so a dropped local
+            # connection can never go unnoticed.
+            ui.html(connectivity.HEADER_DOT_HTML)
             ui.html(
                 '<span style="font-size:.75rem;color:var(--inv-muted)">' + now_label + "</span>"
             )
