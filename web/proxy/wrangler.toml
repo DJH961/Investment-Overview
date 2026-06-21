@@ -1,0 +1,15 @@
+# wrangler.toml — deploy config for the live-web blob CORS proxy.
+#
+# This Worker fetches the encrypted `portfolio.enc` GitHub release asset
+# server-side and re-serves it with permissive CORS headers, so the GitHub
+# Pages companion can download it from the browser. See README.md to deploy.
+
+name = "investment-overview-blob-proxy"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+# The single upstream this proxy is allowed to fetch. Change the owner/repo or
+# release tag here if you ever rename them. Keeping it pinned makes this a
+# closed (non-SSRF) proxy: it can only ever return *your* encrypted blob.
+[vars]
+RELEASE_URL = "https://github.com/DJH961/Investment-Overview/releases/download/live-data/portfolio.enc"

@@ -106,7 +106,7 @@ export class App {
       field("Price API key", apiKey, "Free key from twelvedata.com — never leaves this device."),
       field("Data repository", repo, "The repo that hosts your published portfolio.enc release asset."),
       field("Release tag", tag, "Defaults to live-data."),
-      field("Blob URL override", blobUrl, "Advanced: use a direct URL instead of the release asset."),
+      field("Blob URL override", blobUrl, "Advanced: a direct, CORS-enabled URL (e.g. your web/proxy Worker) to fetch the encrypted blob from, instead of the release asset."),
       error ? h("p", { class: "note err" }, [error]) : document.createTextNode(""),
       h("button", { class: "btn", type: "submit" }, ["Save & continue"]),
       h("button", { class: "btn ghost", type: "button", "data-action": "demo" }, [

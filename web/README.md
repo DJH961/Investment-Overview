@@ -149,8 +149,21 @@ and publishes `web/dist` to GitHub Pages on every push to `main` that touches
 **Settings -> Pages -> Source: "GitHub Actions"**. Keep that disabled while the
 repo is private and the encrypted-ledger front-end is incomplete.
 
+## Serving the encrypted blob (CORS proxy)
+
+The app shell is served by Pages, but the encrypted `portfolio.enc` blob is
+**not**. It is a GitHub *release asset* the desktop app overwrites on each
+publish (this keeps old ciphertext out of git history and lets you re-push the
+blob frequently without rebuilding the Pages site). Release-asset downloads,
+however, are **not CORS-readable** from a browser, so the companion fetches the
+blob through a small CORS proxy you deploy once — a Cloudflare Worker under
+[`web/proxy/`](proxy/README.md). After deploying it, paste the Worker URL into
+**Settings -> Blob URL override** in the app. See `web/proxy/README.md` for the
+full, copy-pasteable deploy steps.
+
 ## Security invariant
 
 No plaintext financial data is ever committed here or served from Pages. The
 ledger is delivered as an encrypted blob and decrypted in-browser with a
 passphrase held only by the user; the decrypted figures live in memory only.
+The CORS proxy only ever relays opaque ciphertext and cannot decrypt anything.
