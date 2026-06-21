@@ -562,21 +562,107 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .pill.live { color: var(--pos); background: var(--pos-soft); }
 
-/* --- Equity curve (inline SVG sparkline) ---------------------------------- */
-.equity-svg {
+/* --- Charts (shared line chart: value-over-time + equity curve) ------------ */
+.chart-wrap { width: 100%; }
+.chart-svg {
   display: block;
   width: 100%;
-  height: 96px;
+  height: auto;
   overflow: visible;
 }
-.equity-line { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
-.equity-base {
-  fill: none;
-  stroke: var(--faint);
-  stroke-width: 1.5;
-  stroke-dasharray: 3 3;
+.chart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
+.chart-axis-label {
+  fill: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+/* Series strokes share the colourblind-safe accent/neutral palette. */
+.series-portfolio { stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.series-portfolio-area { fill: color-mix(in srgb, var(--accent) 14%, transparent); stroke: none; }
+.series-contrib {
+  stroke: var(--faint);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+.series-benchmark {
+  stroke: var(--accent-2);
+  stroke-width: 1.5;
+  stroke-dasharray: 1 3;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.legend-item { display: inline-flex; align-items: center; gap: 0.35rem; }
+.legend-swatch { width: 0.85rem; height: 0; border-top-width: 3px; border-top-style: solid; border-radius: 2px; }
+.legend-swatch.series-portfolio { border-top-color: var(--accent); }
+.legend-swatch.series-contrib { border-top-color: var(--faint); border-top-style: dashed; }
+.legend-swatch.series-benchmark { border-top-color: var(--accent-2); border-top-style: dotted; }
+
+/* --- Info dots (risk-metric definitions) ---------------------------------- */
+.stat-label { position: relative; display: inline-flex; align-items: center; gap: 0.3rem; }
+.info-dot {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--pill);
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  flex: none;
+}
+.info-dot:hover, .info-dot:focus-visible { color: var(--accent); border-color: var(--accent); }
+.info-dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.info-tip {
+  position: absolute;
+  bottom: calc(100% + 0.4rem);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(16rem, 78vw);
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--fg);
+  box-shadow: 0 6px 20px -8px rgba(16, 22, 35, 0.5);
+  font-size: 0.74rem;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 1.35;
+  text-transform: none;
+  letter-spacing: normal;
+  text-align: left;
+  z-index: 20;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease;
+}
+.info-dot:hover .info-tip,
+.info-dot:focus-visible .info-tip,
+.info-dot.open .info-tip { opacity: 1; visibility: visible; }
+/* Keep the popover on-screen for dots near the left/right edges of the grid. */
+.stat:first-child .info-tip { left: 0; transform: none; }
 
 /* --- Projection (plan) ---------------------------------------------------- */
 .plan-fields { display: grid; gap: 0.75rem; grid-template-columns: 1fr 1.4fr; }
@@ -606,7 +692,8 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
  * screens; the lock button keeps its label (it has no glyph). */
 @media (max-width: 30rem) {
   .icon-btn[data-action="refresh"] .icon-btn-text,
-  .icon-btn[data-action="theme"] .icon-btn-text {
+  .icon-btn[data-action="theme"] .icon-btn-text,
+  .icon-btn[data-action="currency"] .icon-btn-text {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -676,14 +763,19 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .tab-label { font-size: 0.85rem; }
   .tab.active { background: color-mix(in srgb, var(--accent) 14%, var(--card)); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
 
-  /* The overview panel becomes the multi-column dashboard grid. */
+  /* The overview panel becomes a full-width dashboard: the headline value and
+   * return horizons share the top row, then a value-over-time chart, a single
+   * full-width KPI strip, a two-column holdings grid, and the allocation panel
+   * underneath (no longer a cramped sidebar). */
   .panel-overview {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 22rem;
     grid-template-areas:
       "hero     returns"
+      "value    value"
       "stats    stats"
-      "holdings allocation"
+      "holdings holdings"
+      "alloc    alloc"
       "disc     disc";
     align-items: start;
     column-gap: 1.25rem;
@@ -691,19 +783,73 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   }
   .panel-overview > .hero { grid-area: hero; }
   .panel-overview > .segment { grid-area: returns; align-self: stretch; align-content: center; }
+  .panel-overview > .value-chart { grid-area: value; }
   .panel-overview > .stats { grid-area: stats; }
   .panel-overview > .holdings { grid-area: holdings; }
-  .panel-overview > .allocation { grid-area: allocation; align-self: start; }
+  .panel-overview > .allocation { grid-area: alloc; align-self: start; }
   .panel-overview > .disclaimer { grid-area: disc; }
+
+  /* KPIs in a single row so the wide screen isn't wasted. */
+  .panel-overview > .stats .stat-grid { grid-template-columns: repeat(6, 1fr); }
+  /* Holdings as a two-column list on widescreen. */
+  .panel-overview > .holdings .holding-list { grid-template-columns: 1fr 1fr; }
 
   /* Other panels: two-column where it reads well, centred max width. */
   .panel-stack { max-width: 60rem; margin: 0 auto; }
+  /* The two-column panels get a little more room to breathe. */
+  .panel-periods,
+  .panel-analytics,
+  .panel-plan { max-width: 72rem; }
+
+  /* Periods: by-month on the left; by-year and contributions stacked right. */
+  .panel-periods {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "month year"
+      "month contrib"
+      "month disc";
+    align-items: start;
+    column-gap: 1.25rem;
+  }
+  .panel-periods > .periods-monthly { grid-area: month; }
+  .panel-periods > .periods-yearly { grid-area: year; }
+  .panel-periods > .deposits { grid-area: contrib; }
+  .panel-periods > .disclaimer { grid-area: disc; align-self: end; }
+
+  /* Risk: returns and risk metrics side by side, chart + attribution below. */
+  .panel-analytics {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "returns risk"
+      "equity  equity"
+      "attr    attr"
+      "disc    disc";
+    align-items: start;
+    column-gap: 1.25rem;
+  }
+  .panel-analytics > .analytics-returns { grid-area: returns; }
+  .panel-analytics > .analytics-risk { grid-area: risk; }
+  .panel-analytics > .equity { grid-area: equity; }
+  .panel-analytics > .card:not(.analytics-returns):not(.analytics-risk):not(.equity) { grid-area: attr; }
+  .panel-analytics > .disclaimer { grid-area: disc; }
+
+  /* Plan: inputs on the left, the projected outputs on the right. */
+  .panel-plan {
+    grid-template-columns: 22rem minmax(0, 1fr);
+    grid-template-areas:
+      "form output"
+      "disc disc";
+    align-items: start;
+    column-gap: 1.25rem;
+  }
+  .panel-plan > .plan-form { grid-area: form; position: sticky; top: 5rem; }
+  .panel-plan > .plan-output { grid-area: output; }
+  .panel-plan > .disclaimer { grid-area: disc; }
 }
 
-/* On true widescreen, give the content a little more room and a wider sidebar. */
+/* On true widescreen, give the content a little more room. */
 @media (min-width: 100rem) {
   .topbar-inner,
   .content,
   .tabbar { max-width: 88rem; }
-  .panel-overview { grid-template-columns: minmax(0, 1fr) 24rem; }
 }
