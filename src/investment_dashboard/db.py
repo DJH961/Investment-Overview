@@ -70,9 +70,19 @@ def _url_path(url: str) -> Path | None:
 
 
 def make_engine(
-    url: str | None = None, *, encryption_config: EncryptionConfig | None = None
+    url: str | None = None,
+    *,
+    encryption_config: EncryptionConfig | None = None,
+    durable: bool = True,
 ) -> Engine:
-    """Create a SQLAlchemy engine for ``url`` (defaults to the configured ledger URL)."""
+    """Create a SQLAlchemy engine for ``url`` (defaults to the configured ledger URL).
+
+    ``durable`` selects the SQLite ``synchronous`` level: durable tiers
+    (ledger/config — the irreplaceable record) use ``FULL`` so a commit is
+    fsync'd before it's acknowledged, which matters when the file lives in a
+    cloud-sync folder exposed to power loss. The rebuildable cache tier passes
+    ``durable=False`` and stays on ``NORMAL`` for speed.
+    """
     if url is None:
         settings = get_settings()
         _ensure_parent(settings.db_path)
@@ -86,7 +96,7 @@ def make_engine(
         connect_args={"check_same_thread": False} if "sqlite" in engine_url else {},
     )
     if engine_url.startswith("sqlite"):
-        _install_sqlite_pragmas(engine, _url_path(engine_url), encryption)
+        _install_sqlite_pragmas(engine, _url_path(engine_url), encryption, durable=durable)
     return engine
 
 
@@ -94,8 +104,11 @@ def _install_sqlite_pragmas(
     engine: Engine,
     db_path: Path | None,
     encryption: EncryptionConfig,
+    *,
+    durable: bool = True,
 ) -> None:
     use_truncate = db_path is not None and should_use_truncate_journal(db_path)
+    synchronous = "FULL" if durable else "NORMAL"
 
     @event.listens_for(engine, "connect")
     def _set_sqlite_pragmas(dbapi_conn: Any, _conn_record: Any) -> None:
@@ -107,7 +120,7 @@ def _install_sqlite_pragmas(
         else:
             cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute(f"PRAGMA synchronous={synchronous}")
         cursor.close()
 
 
@@ -121,10 +134,11 @@ def _get_or_create_for_url(
     url: str,
     *,
     encryption_config: EncryptionConfig | None = None,
+    durable: bool = True,
 ) -> tuple[Engine, sessionmaker[Session]]:
     eng = _engines_by_url.get(url)
     if eng is None:
-        eng = make_engine(url, encryption_config=encryption_config)
+        eng = make_engine(url, encryption_config=encryption_config, durable=durable)
         _engines_by_url[url] = eng
         _factories_by_url[url] = sessionmaker(bind=eng, autoflush=False, expire_on_commit=False)
     return eng, _factories_by_url[url]
@@ -159,7 +173,13 @@ def get_cache_engine() -> Engine:
         if settings.cache_url in {settings.ledger_url, settings.config_url}
         else EncryptionConfig(enabled=False)
     )
-    return _get_or_create_for_url(settings.cache_url, encryption_config=encryption)[0]
+    # Cache is rebuildable; it can stay on synchronous=NORMAL for speed unless
+    # it shares a physical file with a durable tier (legacy/single-file mode),
+    # in which case the shared engine's FULL setting already governs it.
+    durable = settings.cache_url in {settings.ledger_url, settings.config_url}
+    return _get_or_create_for_url(
+        settings.cache_url, encryption_config=encryption, durable=durable
+    )[0]
 
 
 def get_ledger_session_factory() -> sessionmaker[Session]:

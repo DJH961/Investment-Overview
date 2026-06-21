@@ -10,7 +10,6 @@ from pathlib import Path
 import openpyxl
 import pytest
 
-from investment_dashboard.adapters.importer_types import UnknownActionError
 from investment_dashboard.adapters.vanguard.xlsx_parser import (
     VanguardXlsxParseResult,
     parse_vanguard_xlsx,
@@ -211,7 +210,8 @@ class TestSyntheticWorkbook:
         assert result.rows[0].kind == "deposit"
         assert result.rows[0].net_native == Decimal("-25.0100")
 
-    def test_unknown_action_raises(self) -> None:
+    def test_unknown_action_is_collected_not_raised(self) -> None:
+        # Audit D3: an unknown transaction type is reported, not fatal.
         data = _build_xlsx(
             [
                 (
@@ -228,8 +228,11 @@ class TestSyntheticWorkbook:
                 ),
             ]
         )
-        with pytest.raises(UnknownActionError):
-            parse_vanguard_xlsx(data)
+        report = parse_vanguard_xlsx(data)
+        assert report.rows == []
+        assert report.unknown_actions == ["Some Brand New Type"]
+        assert len(report.errors) == 1
+        assert report.errors[0].line is not None
 
     def test_missing_header_raises(self) -> None:
         wb = openpyxl.Workbook()
@@ -239,6 +242,29 @@ class TestSyntheticWorkbook:
         wb.save(buf)
         with pytest.raises(ValueError, match="header"):
             parse_vanguard_xlsx(buf.getvalue())
+
+    def test_data_row_wider_than_header_raises(self) -> None:
+        # A data row carrying populated cells beyond the header width would be
+        # silently truncated by zip(); the parser must refuse instead.
+        data = _build_xlsx(
+            [
+                (
+                    "01/05/2024",
+                    "01/03/2024",
+                    "VTI",
+                    "VANGUARD TOTAL STOCK MARKET ETF",
+                    "Buy",
+                    "CASH",
+                    "5.0000",
+                    "$220.0000",
+                    "Free",
+                    "-$1,100.0000",
+                    "STRAY EXTRA COLUMN",
+                ),
+            ]
+        )
+        with pytest.raises(ValueError, match="no header"):
+            parse_vanguard_xlsx(data)
 
     def test_external_ids_unique_per_row(self) -> None:
         data = _build_xlsx(

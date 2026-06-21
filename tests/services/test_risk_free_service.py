@@ -124,3 +124,27 @@ def test_fetch_failure_keeps_cached_value(session) -> None:
     # Older than TTL so we'd normally refetch; but fetcher now returns None.
     snap = svc.refresh(session, fetcher=_make_fetcher(None))
     assert snap.rate == Decimal("0.05")
+
+
+def test_negative_tick_is_rejected_and_keeps_cached_value(session) -> None:
+    # Seed a good cached rate, then receive a bad (negative) upstream tick.
+    svc.get_risk_free_rate(session, fetcher=_make_fetcher(Decimal("4.0")))
+    snap = svc.refresh(session, fetcher=_make_fetcher(Decimal("-3.0")))
+    # The out-of-range value must not overwrite the last good rate.
+    assert snap.rate == Decimal("0.04")
+    assert app_config_repo.get(session, svc.KEY_VALUE) == "0.04"
+
+
+def test_absurd_tick_above_one_is_rejected(session) -> None:
+    # A garbage percent-quoted tick of 150 normalises to 1.5 (150%), which is
+    # outside [0, 1] and must be rejected.
+    snap = svc.refresh(session, fetcher=_make_fetcher(Decimal("150")))
+    # No prior cached value ⇒ rate stays unavailable rather than 1.5.
+    assert snap.rate is None
+    assert app_config_repo.get(session, svc.KEY_VALUE) is None
+
+
+def test_boundary_rate_of_one_is_accepted(session) -> None:
+    # Exactly 1.0 (100%) sits on the inclusive boundary and is valid.
+    snap = svc.refresh(session, fetcher=_make_fetcher(Decimal("1.0")))
+    assert snap.rate == Decimal("1.0")

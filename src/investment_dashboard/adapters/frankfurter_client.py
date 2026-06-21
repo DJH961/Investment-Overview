@@ -17,8 +17,53 @@ from typing import Any
 
 import httpx
 
+from investment_dashboard.adapters._retry import RateLimitedError, retry_call
+
 BASE_URL = "https://api.frankfurter.dev/v1"
 DEFAULT_TIMEOUT_SECONDS = 10.0
+#: Bounded retry budget for transient Frankfurter failures (network blips,
+#: 5xx, HTTP 429). Kept small so a genuinely-down API fails fast.
+DEFAULT_ATTEMPTS = 3
+
+
+def _get_with_retry(
+    http: httpx.Client,
+    url: str,
+    params: dict[str, str],
+    *,
+    attempts: int,
+) -> httpx.Response:
+    """GET ``url`` with bounded retry/backoff.
+
+    Network errors and HTTP 429/5xx are treated as transient and retried;
+    a 429 is surfaced as :class:`RateLimitedError` so the backoff honours any
+    ``Retry-After`` header. Non-retryable 4xx responses are returned as-is for
+    the caller to translate into a :class:`FrankfurterError`.
+    """
+
+    def _attempt() -> httpx.Response:
+        try:
+            response = http.get(url, params=params)
+        except httpx.HTTPError as exc:
+            raise FrankfurterError(f"Network error contacting Frankfurter: {exc}") from exc
+        if response.status_code == 429:
+            retry_after = response.headers.get("Retry-After")
+            raise RateLimitedError(
+                "Frankfurter returned HTTP 429 (rate limited)",
+                retry_after=float(retry_after) if retry_after and retry_after.isdigit() else None,
+            )
+        if response.status_code >= 500:
+            raise FrankfurterError(
+                f"Frankfurter returned HTTP {response.status_code}: {response.text[:200]}"
+            )
+        return response
+
+    return retry_call(
+        _attempt,
+        attempts=attempts,
+        retry_on=(FrankfurterError,),
+        description="Frankfurter request",
+    )
 
 
 class FrankfurterError(RuntimeError):
@@ -66,9 +111,7 @@ def fetch_rates(
     owns_client = client is None
     http = client or httpx.Client(timeout=timeout)
     try:
-        response = http.get(url, params=params)
-    except httpx.HTTPError as exc:
-        raise FrankfurterError(f"Network error contacting Frankfurter: {exc}") from exc
+        response = _get_with_retry(http, url, params, attempts=DEFAULT_ATTEMPTS)
     finally:
         if owns_client:
             http.close()
@@ -112,9 +155,7 @@ def fetch_latest(
     owns_client = client is None
     http = client or httpx.Client(timeout=timeout)
     try:
-        response = http.get(url, params=params)
-    except httpx.HTTPError as exc:
-        raise FrankfurterError(f"Network error contacting Frankfurter: {exc}") from exc
+        response = _get_with_retry(http, url, params, attempts=DEFAULT_ATTEMPTS)
     finally:
         if owns_client:
             http.close()

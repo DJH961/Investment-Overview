@@ -203,7 +203,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--passphrase",
         default=None,
-        help=("Passphrase for encryption. If omitted, reads INV_DASHBOARD_DB_PASSPHRASE."),
+        help=(
+            "Passphrase for encryption (insecure: leaks into ps/shell history). "
+            "Prefer the INV_DASHBOARD_DB_PASSPHRASE env var or the interactive prompt."
+        ),
     )
     p.add_argument("-v", "--verbose", action="store_true")
     return p
@@ -215,9 +218,9 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)s %(name)s: %(message)s",
     )
-    import os  # noqa: PLC0415
+    from investment_dashboard.tools._passphrase import resolve_passphrase  # noqa: PLC0415
 
-    passphrase = args.passphrase or os.environ.get("INV_DASHBOARD_DB_PASSPHRASE")
+    passphrase = resolve_passphrase(args.passphrase)
     try:
         counts = split_db(
             args.source,

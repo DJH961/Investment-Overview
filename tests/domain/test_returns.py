@@ -80,6 +80,21 @@ class TestXirrBasic:
         assert xirr([], as_of=date(2024, 1, 1)) is None
         assert xirr([Cashflow(date(2024, 1, 1), Decimal(1))], as_of=date(2024, 1, 1)) is None
 
+    def test_all_cashflows_on_one_date_returns_none(self) -> None:
+        # Contribution and terminal both land on ``as_of``: NPV is
+        # rate-independent (zero time span), so there is no unique IRR. The
+        # solver must report ``None`` rather than the seed guess (0.10).
+        cfs = [Cashflow(date(2024, 1, 1), Decimal(-100))]
+        assert xirr(cfs, as_of=date(2024, 1, 1), terminal_value=Decimal(100)) is None
+
+    def test_all_cashflows_on_same_non_as_of_date_returns_none(self) -> None:
+        # Same single trade date, sign change present, but a zero span ⇒ None.
+        cfs = [
+            Cashflow(date(2023, 5, 1), Decimal(-100)),
+            Cashflow(date(2023, 5, 1), Decimal(120)),
+        ]
+        assert xirr(cfs, as_of=date(2024, 1, 1)) is None
+
 
 class TestTwr:
     def test_no_cashflows_just_growth(self) -> None:
