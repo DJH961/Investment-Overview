@@ -16,6 +16,7 @@ from investment_dashboard.ui.pages import (
     analytics,
     calculator,
     deposits,
+    diagnostics,
     monthly,
     onboarding,
     overview,
@@ -50,6 +51,7 @@ def _register_pages() -> None:
     projection.register()
     analytics.register()
     calculator.register()
+    diagnostics.register()
     settings_page.register()
     onboarding.register()
     help_page.register()

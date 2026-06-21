@@ -131,8 +131,12 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
 
 ### E. UI / UX
 
-* **E1** — Make silent degradation (missing FX/prices, dropped rows, failed
-  enrichment) visible in the UI.
+* **E1** — ✅ done. A new **Data Health** page (`/diagnostics`, **H1**) plus a
+  header shield badge (tinted amber/red, present on every page via
+  `ui/layout.py`) surface the previously-silent degradations — transactions
+  missing a EUR/USD leg, instruments with missing/stale/corrupt prices,
+  holdings that value to nothing, and provider failures — in one actionable
+  view. The overview's existing zero-value / corrupt-price banners remain.
 * **E2** — Loading indicators on heavy pages (Overview, Analytics, Projection)
   — less necessary once B lands.
 * **E3** — Currency-toggle inconsistency: attribution tables are hard-coded to
@@ -185,10 +189,15 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
 
 ### H. Cross-cutting ideas
 
-* **H1 — "Data Health / Diagnostics" page.** A single surface listing FX-coverage
-  gaps, instruments with stale/missing prices, unmapped import actions, and
-  incomplete transaction legs — converting today's *silent* degradations into
-  one actionable view. (Larger feature; deferred.)
+* **H1 — "Data Health / Diagnostics" page.** ✅ done. `services/diagnostics_service.py`
+  runs one **read-only** sweep (`check_health` for the page, the lighter
+  `quick_status` for the header badge) that reuses the live services, and
+  `ui/pages/diagnostics.py` renders it at `/diagnostics` (in the sidebar nav,
+  with a header shield badge that tints amber/red). It lists FX-coverage gaps /
+  incomplete legs, missing/stale/corrupt prices, zero-value holdings, and the
+  last provider outcome. Unmapped import actions remain surfaced at import time
+  (`ImportResult.unknown_actions`); persisting them for the page is a future
+  extension noted under the importer row-ledger recommendation (#4 below).
 * **H2** — ✅ done (golden-master harness).
 
 ---
