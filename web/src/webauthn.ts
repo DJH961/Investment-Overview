@@ -59,14 +59,14 @@ function randomBytes(length: number): Uint8Array {
   return bytes;
 }
 
-// --- passphrase wrap / unwrap (pure crypto, exported for tests) -------------
+// --- passphrase encrypt / decrypt (pure crypto, exported for tests) ---------
 
 async function prfKey(prfOutput: ArrayBuffer): Promise<CryptoKey> {
   return crypto.subtle.importKey("raw", prfOutput, "AES-GCM", false, ["encrypt", "decrypt"]);
 }
 
 /** Encrypt `passphrase` under the PRF-derived key. */
-export async function wrapPassphrase(
+export async function encryptPassphrase(
   passphrase: string,
   prfOutput: ArrayBuffer,
 ): Promise<{ iv: string; ciphertext: string }> {
@@ -82,7 +82,7 @@ export async function wrapPassphrase(
 }
 
 /** Decrypt a wrapped passphrase with the PRF-derived key. */
-export async function unwrapPassphrase(
+export async function decryptPassphrase(
   ciphertextB64: string,
   ivB64: string,
   prfOutput: ArrayBuffer,
@@ -202,20 +202,19 @@ export async function enrolBiometric(passphrase: string): Promise<void> {
     throw new Error("This device couldn't derive the secure key needed for fingerprint unlock.");
   }
 
-  const { iv, ciphertext } = await wrapPassphrase(passphrase, prfOutput);
+  const { iv, ciphertext } = await encryptPassphrase(passphrase, prfOutput);
   const stored: StoredBiometric = {
     credentialId: bytesToBase64(new Uint8Array(credential.rawId)),
     prfSalt: bytesToBase64(prfSalt),
     iv,
     ciphertext,
   };
-  // SECURITY (accepted, intentional): CodeQL's clear-text-storage rule flags
-  // this write because `ciphertext` flows from the passphrase. It is NOT clear
-  // text — it is the passphrase AES-256-GCM-encrypted under a key that only the
-  // device's authenticator can re-derive (via the WebAuthn PRF secret, gated on
-  // a verified fingerprint touch). The persisted record (credential id, PRF
-  // salt, nonce, ciphertext) is inert without that hardware-backed touch, so no
-  // usable passphrase or plaintext is stored. The trade-off is accepted here.
+  // SECURITY: this persists only the passphrase *encrypted* with AES-256-GCM
+  // (via `encryptPassphrase`) under a key that only this device's authenticator
+  // can re-derive (the WebAuthn PRF secret, gated on a verified fingerprint
+  // touch). The stored record (credential id, PRF salt, nonce, ciphertext) is
+  // inert without that hardware-backed touch — no usable passphrase or plaintext
+  // is stored.
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(stored));
   } catch {
@@ -234,7 +233,7 @@ export async function unlockWithBiometric(): Promise<string> {
   const prfOutput = await evaluatePrf(base64ToBytes(stored.credentialId), base64ToBytes(stored.prfSalt));
   if (!prfOutput) throw new Error("Fingerprint unlock failed — couldn't derive the key.");
   try {
-    return await unwrapPassphrase(stored.ciphertext, stored.iv, prfOutput);
+    return await decryptPassphrase(stored.ciphertext, stored.iv, prfOutput);
   } catch {
     // A mismatch means the wrapped passphrase is stale (e.g. it was re-enrolled
     // elsewhere); drop it so the UI falls back to the passphrase field.

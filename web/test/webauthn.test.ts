@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { unwrapPassphrase, wrapPassphrase } from "../src/webauthn";
+import { decryptPassphrase, encryptPassphrase } from "../src/webauthn";
 
 /** A stand-in for a 32-byte WebAuthn PRF output. */
 function prfSecret(seed: number): ArrayBuffer {
@@ -17,20 +17,20 @@ function prfSecret(seed: number): ArrayBuffer {
 describe("biometric passphrase wrap/unwrap", () => {
   it("round-trips a passphrase under the same PRF secret", async () => {
     const secret = prfSecret(1);
-    const { iv, ciphertext } = await wrapPassphrase("correct horse battery staple", secret);
-    const out = await unwrapPassphrase(ciphertext, iv, prfSecret(1));
+    const { iv, ciphertext } = await encryptPassphrase("correct horse battery staple", secret);
+    const out = await decryptPassphrase(ciphertext, iv, prfSecret(1));
     expect(out).toBe("correct horse battery staple");
   });
 
   it("fails to unwrap with a different PRF secret", async () => {
-    const { iv, ciphertext } = await wrapPassphrase("hunter2", prfSecret(2));
-    await expect(unwrapPassphrase(ciphertext, iv, prfSecret(99))).rejects.toThrow();
+    const { iv, ciphertext } = await encryptPassphrase("hunter2", prfSecret(2));
+    await expect(decryptPassphrase(ciphertext, iv, prfSecret(99))).rejects.toThrow();
   });
 
   it("produces a fresh nonce each time (no ciphertext reuse)", async () => {
     const secret = prfSecret(3);
-    const a = await wrapPassphrase("same", secret);
-    const b = await wrapPassphrase("same", secret);
+    const a = await encryptPassphrase("same", secret);
+    const b = await encryptPassphrase("same", secret);
     expect(a.iv).not.toBe(b.iv);
     expect(a.ciphertext).not.toBe(b.ciphertext);
   });
