@@ -20,6 +20,7 @@ import os
 import sys
 from pathlib import Path
 
+from investment_dashboard.storage.atomic_io import atomic_write_text
 from investment_dashboard.storage.backup import snapshot, verify_backup
 from investment_dashboard.storage.encryption import resolve_encryption
 from investment_dashboard.storage.integrity import IntegrityCheckFailed
@@ -69,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
         log.error("backup verification FAILED: %s", exc)
         return 3
     manifest_path = out.with_suffix(out.suffix + ".manifest.json")
-    manifest_path.write_text(json.dumps({"counts": counts}, indent=2))
+    atomic_write_text(manifest_path, json.dumps({"counts": counts}, indent=2))
     log.info("verified backup: %s", manifest_path)
     return 0
 
