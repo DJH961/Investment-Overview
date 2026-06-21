@@ -16,9 +16,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [3.0.1] — 2026-06-21
 
-Patch release collecting the post-v3.0.0 follow-up work through PR #33: local-app
+Patch release collecting the post-v3.0.0 follow-up work through PR #36: local-app
 responsiveness and diagnostics, live-web companion fixes for real-world hosting and
-free-tier data limits, and polish for charts, tables, and shutdown behavior.
+free-tier data limits, and polish for charts, tables, mobile spacing, settings, and
+shutdown behavior.
 
 ### Added — local app reliability and diagnostics
 - **Live navigation and connection feedback.** A top progress bar, long-load hint,
@@ -80,12 +81,6 @@ free-tier data limits, and polish for charts, tables, and shutdown behavior.
   get a `stale value` label, and still contribute to totals; only holdings with
   no usable price/FX/fallback are excluded, in which case the chart stops at the
   last fully valued exported point.
-
-## [3.0.1] — 2026-06-21
-
-A patch release polishing the **v3.0 live-web companion** UI: a first pass at
-de-cluttering the mobile dashboard, followed by fixes for the spacing
-regressions that pass introduced.
 
 ### Added — web companion UI: spacing, collapsible lists, period overview, settings (PR #35)
 - **Roomier spacing.** Widened the topbar button gaps and the overall
