@@ -1,0 +1,22 @@
+{
+  "name": "Investment Overview — Live Web Companion",
+  "short_name": "Investments",
+  "description": "Read-only, mobile-first live view of your portfolio. Decrypts an encrypted blob in your browser and computes KPIs against live prices — nothing is written and no decrypted data ever leaves the device.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0e14",
+  "theme_color": "#4f46e5",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    }
+  ]
+}

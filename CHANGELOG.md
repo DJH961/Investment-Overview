@@ -14,6 +14,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added — v3.0 live-web companion, Phase 5 "PWA + auto-publish + public scrub"
+- **Installable PWA (`web/`).** A web manifest (`public/manifest.webmanifest`),
+  a brand SVG icon (`public/icon.svg`), and a service worker (`public/sw.js`)
+  make the companion add-to-home-screen capable and offline-ready. The worker
+  caches **only the public, static app shell** — never the encrypted blob, the
+  live price/FX responses, or any decrypted data (which stays in memory). It is
+  registered (production builds only) by `src/pwa.ts`.
+- **Auto-publish triggers (desktop).** `services/auto_publish.py` republishes the
+  encrypted live-web blob **after every successful import** and **on graceful app
+  close** (proposal §5.4). Both triggers are individually toggleable in
+  **Settings → Live web companion** and stay dormant until the master switch is
+  on. Publishing is best-effort and never raises, so a publish hiccup can never
+  break an import or block shutdown.
+- **Public-repo security scrub (proposal §7).** Added `SECURITY.md` documenting
+  the encrypted-blob trust model ("the ciphertext is public, the passphrase is
+  everything"), `.gitignore` blocks so real broker exports / audit snapshots
+  can't be re-added, "this repo is PUBLIC" guard-rail headers on
+  `mobile_export.py` / `publish_service.py` (§7.4), and an automated
+  public-readiness guard (`tests/test_public_readiness.py`) that fails if a
+  secret or real-data file is ever tracked.
+
 ### Added — v3.0 live-web companion, Phase 3 "web hero"
 - **Browser front-end (`web/`).** A Vite + TypeScript single-page app deployed
   to GitHub Pages that downloads the encrypted `portfolio.enc` blob, decrypts it
