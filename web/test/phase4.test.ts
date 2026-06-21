@@ -40,6 +40,8 @@ function overview(extra: Partial<OverviewView> = {}): OverviewView {
   return {
     generatedAt: "2026-06-19T08:00:00+00:00",
     asOf: "2026-06-19",
+    liveAsOf: null,
+    liveAsOfFallbackDate: "2026-06-19",
     totalValueEur: new Decimal("39000"),
     cashValueEur: new Decimal(0),
     totalCostBasisEur: new Decimal(0),

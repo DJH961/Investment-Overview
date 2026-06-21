@@ -79,7 +79,16 @@ function renderHero(o: OverviewView): HTMLElement {
     ]),
   ]);
 
+  // Freshness lives at the very top: the exact market time when the data is
+  // live from today (a stock/ETF tick), or a date when the latest mark is older
+  // (a NAV fund or a closed market). It always shows a time/date here — there is
+  // no vague "last known" bubble.
+  const updated = h("span", { class: "hero-updated" }, [
+    `Updated ${formatAsOf(o.liveAsOf, o.liveAsOfFallbackDate)}`,
+  ]);
+
   return h("section", { class: "hero" }, [
+    updated,
     h("span", { class: "hero-label" }, ["Total value"]),
     h("span", { class: "hero-value" }, [formatCurrency(o.totalValueEur)]),
     change,
@@ -220,10 +229,11 @@ function chip(text: string, cls = ""): HTMLElement {
 function renderHoldingRow(holding: HoldingView): HTMLElement {
   const symChildren: Array<Node | string> = [holding.symbol];
   if (holding.priceType === "nav") symChildren.push(h("span", { class: "pill" }, ["NAV"]));
+  // A genuinely stale fallback (no price at all) is still flagged; the milder
+  // "price came from the export" case is conveyed by the "as of" date/time below
+  // rather than a vague "last known" bubble.
   if (holding.valueIsStale) {
     symChildren.push(h("span", { class: "pill stale" }, ["stale value"]));
-  } else if (holding.priceNative !== null && !holding.priceIsLive) {
-    symChildren.push(h("span", { class: "pill stale" }, ["last known"]));
   }
 
   const todayCls = signClass(holding.todayMovePct);

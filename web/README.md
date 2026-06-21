@@ -107,6 +107,14 @@ To stay comfortably inside that budget the app (`src/cache.ts`, `src/quotes.ts`)
    Mutual-fund / money-market **NAV** holdings are also priced live, but on a
    long ~12 h window (their NAV only publishes ~once a business day), so they
    track the latest available value while barely touching the credit budget.
+   Their NAV is pulled from Twelve Data's daily **`time_series`** endpoint, not
+   `quote`: `quote` carries a fund's last NAV forward and stamps it with *today's*
+   date even on a closed day (a weekend **or a mid-week market holiday**), which
+   made a stale NAV masquerade as "today's" and dropped the value chart off a
+   cliff. The daily series only ever has a bar for a real trading day, so its
+   latest bar is the authentic last-published NAV — and we only adopt it over the
+   exported value when that bar's value-date is strictly newer, so a closed-day
+   carry-forward is never trusted (no holiday calendar of our own required).
    Within each fund's **publish window** (`navCacheTtlMs` / `navPublishWindow`
    in `src/quotes.ts`), though, a NAV whose latest value-date is still behind
    today's expected one temporarily drops to the short market window so refreshes
@@ -131,10 +139,13 @@ To stay comfortably inside that budget the app (`src/cache.ts`, `src/quotes.ts`)
    genuine config error (a rejected/over-quota API key) shows the blocking error
    screen with a route to Settings.
 
-Every holding row carries an **"as of" indicator** so it is always transparent
-how current that price is — a clock time for a live/cached quote pulled today, a
-date for an older one, or the export date when a row is showing its last-known
-value. This applies to stocks, ETFs and funds alike.
+The freshness of the data is shown **at the very top**, by the total value: the
+exact market **time** when it was pulled live today (a stock/ETF tick), or a
+**date** when the latest mark is older — a NAV fund or a closed market. Every
+holding row carries the same **"as of" indicator** so it is always transparent
+how current each price is — a clock time for a live quote pulled today, a date
+for a fund's once-a-day NAV or an older quote. There is no vague "last known"
+badge: a price is always labelled with the date or time it actually applies to.
 
 A longer **Quote cache** means fewer refetches and fewer credits spent, at the
 cost of slightly older prices — tune it to taste.
