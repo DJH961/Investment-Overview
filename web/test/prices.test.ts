@@ -43,6 +43,28 @@ describe("fetchQuotes", () => {
     expect(quotes.get("BAD")?.price).toBeNull();
   });
 
+  it("parses the price's real strike time from `timestamp` (Unix seconds → ms)", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({ symbol: "VTI", close: "100.5", previous_close: "99.0", currency: "USD", datetime: "2024-01-10", timestamp: 1704844800 });
+    const quotes = await fetchQuotes(["VTI"], "key", fetchImpl);
+    // 1704844800s → ms; this is the price's own time, not "now".
+    expect(quotes.get("VTI")?.priceTime).toBe(1704844800 * 1000);
+  });
+
+  it("falls back to `last_quote_at` when `timestamp` is absent", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({ symbol: "VTI", close: "100.5", currency: "USD", last_quote_at: 1704844800 });
+    const quotes = await fetchQuotes(["VTI"], "key", fetchImpl);
+    expect(quotes.get("VTI")?.priceTime).toBe(1704844800 * 1000);
+  });
+
+  it("leaves priceTime null when the API omits any usable timestamp", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({ symbol: "VTI", close: "100.5", currency: "USD", datetime: "2024-01-10" });
+    const quotes = await fetchQuotes(["VTI"], "key", fetchImpl);
+    expect(quotes.get("VTI")?.priceTime ?? null).toBeNull();
+  });
+
   it("throws on a top-level API error", async () => {
     const fetchImpl: FetchLike = async () =>
       jsonResponse({ code: 401, status: "error", message: "bad key" });
