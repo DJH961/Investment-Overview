@@ -76,6 +76,7 @@ def build_value_series(
     currency: str,
     range_label: str | None = None,
     as_of: date | None = None,
+    recompute_tail_days: int | None = None,
 ) -> list[ValueSeriesPoint]:
     """Daily portfolio-value series for the selected range, in ``currency``.
 
@@ -83,6 +84,14 @@ def build_value_series(
     now that historical valuations price with the as-of close (v2.8 item 1) —
     the curve reflects how the portfolio actually moved rather than today's
     prices projected backwards. Returns ``[]`` when there is no history.
+
+    ``recompute_tail_days`` is forwarded to
+    :func:`snapshots_service.series_in_currency` to bound how many uncached
+    historical days are recomputed on the request thread. The full-history
+    Yearly chart passes a small value so it renders straight from the persistent
+    snapshot cache (plus a few fresh recent days) instead of cold-rebuilding the
+    whole daily curve synchronously — which used to block the event loop long
+    enough to trip NiceGUI's reconnect window and "crash" the app.
     """
     end = as_of or date.today()
     _, days = resolve_range_days(range_label)
@@ -96,7 +105,9 @@ def build_value_series(
 
     return [
         ValueSeriesPoint(date=day, value=value)
-        for day, value in snapshots_service.series_in_currency(session, start, end, currency)
+        for day, value in snapshots_service.series_in_currency(
+            session, start, end, currency, recompute_tail_days=recompute_tail_days
+        )
     ]
 
 
