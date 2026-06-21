@@ -99,7 +99,7 @@ Layering rules:
 - `domain/` contains pure functions: no DB, no HTTP, no I/O. Easy to property-test.
 - `adapters/` wraps every external thing (yfinance, Frankfurter, broker CSVs). One module per provider. Each adapter returns plain dataclasses, never ORM models.
 - `repositories/` is the only layer that touches the DB. Returns and accepts ORM models.
-- `services/` orchestrates use-cases by composing domain + adapters + repos. The UI layer only calls services, never reaches into repos or adapters directly.
+- `services/` orchestrates use-cases by composing domain + adapters + repos. The UI layer prefers services for any mutation or multi-step use-case, but read-heavy pages may also read ledger-tier repositories directly for simple queries.
 - `ui/` (NiceGUI pages and components) is thin: read user input, call a service, render result.
 
 ---
@@ -775,9 +775,10 @@ Optionally: a Windows `.bat` file + a Task Scheduler entry to auto-start on logi
 
 > **Historical (✅ delivered).** This phased plan is the *original* v1 build
 > roadmap and is preserved for context. All of Phases 0–6 shipped long ago; the
-> project is now at v2.9.4 with split storage, cloud-aware paths, optional
-> encryption, intraday price refresh, a standalone projection page, and an
-> analytics page. See `CHANGELOG.md` for the authoritative history.
+> project is now at v3.0.0 with split storage, cloud-aware paths, optional
+> encryption, intraday price refresh, a standalone projection page, an
+> analytics page, and the live-web companion. See `CHANGELOG.md` for the
+> authoritative history.
 
 ### Phase 0 — scaffolding (≈ 1 weekend)
 - Repo, pyproject, ruff/mypy/pytest config, Alembic init, empty migration.
