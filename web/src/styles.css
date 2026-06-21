@@ -1180,6 +1180,9 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   bottom: 5.2rem;
   transform: translateX(-50%);
   z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
   padding: 0.35rem 0.8rem;
   font-size: 0.8rem;
   font-weight: 600;
@@ -1190,6 +1193,39 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   box-shadow: var(--shadow);
   backdrop-filter: saturate(1.4) blur(10px);
   pointer-events: none;
+}
+
+/* The automatic background pull is tinted with the accent so it reads as a
+   distinct, app-driven event rather than the user's own manual refresh. */
+.updating-pill.is-auto {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.updating-pill-spinner {
+  width: 0.8rem;
+  height: 0.8rem;
+  border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  animation: pill-spin 0.7s linear infinite;
+}
+
+/* Spin the Refresh button's glyph while a manual refresh is in flight, so the
+   feedback appears right where the user tapped. */
+.icon-btn-glyph.is-spinning {
+  display: inline-block;
+  animation: pill-spin 0.7s linear infinite;
+}
+
+@keyframes pill-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .updating-pill-spinner,
+  .icon-btn-glyph.is-spinning { animation: none; }
 }
 
 /* Brief auto-dismissing status toast (e.g. biometric enrolment result). */

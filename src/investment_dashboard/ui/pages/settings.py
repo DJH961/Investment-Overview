@@ -12,10 +12,12 @@ v1.3 adds:
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
-from nicegui import ui
+from nicegui import run, ui
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.repositories import (
@@ -48,25 +50,50 @@ PATH = "/settings"
 log = logging.getLogger(__name__)
 
 
-def _refresh_fx_clicked() -> None:  # pragma: no cover - UI
+@asynccontextmanager
+async def _button_busy(button: ui.button) -> AsyncIterator[None]:  # pragma: no cover - UI
+    """Show a spinner on ``button`` (disabled) while the wrapped work runs.
+
+    Gives an immediate, in-place visual cue that a manual refresh registered and
+    is in progress — the work itself is offloaded to a worker thread so the
+    spinner keeps animating instead of the click silently blocking the UI.
+    """
+    button.props("loading")
+    button.disable()
     try:
+        yield
+    finally:
+        button.props(remove="loading")
+        button.enable()
+
+
+async def _refresh_fx_clicked(button: ui.button) -> None:  # pragma: no cover - UI
+    def _work() -> int:
         with session_scope() as session:
-            n = refresh_fx_history(session, earliest_needed=date.today() - timedelta(days=30))
-        ui.notify(f"FX refresh: {n} new rate(s)", type="positive")
-    except Exception as exc:
-        log.exception("FX refresh failed")
-        ui.notify(f"FX refresh failed: {exc}", type="negative")
+            return refresh_fx_history(session, earliest_needed=date.today() - timedelta(days=30))
+
+    async with _button_busy(button):
+        try:
+            n = await run.io_bound(_work)
+            ui.notify(f"FX refresh: {n} new rate(s)", type="positive")
+        except Exception as exc:
+            log.exception("FX refresh failed")
+            ui.notify(f"FX refresh failed: {exc}", type="negative")
 
 
-def _refresh_prices_clicked() -> None:  # pragma: no cover - UI
-    try:
+async def _refresh_prices_clicked(button: ui.button) -> None:  # pragma: no cover - UI
+    def _work() -> int:
         with session_scope() as session:
             result = refresh_prices(session, earliest_needed=date.today() - timedelta(days=30))
-        total = sum(result.values())
-        ui.notify(f"Price refresh: {total} new close(s)", type="positive")
-    except Exception as exc:
-        log.exception("Price refresh failed")
-        ui.notify(f"Price refresh failed: {exc}", type="negative")
+        return sum(result.values())
+
+    async with _button_busy(button):
+        try:
+            total = await run.io_bound(_work)
+            ui.notify(f"Price refresh: {total} new close(s)", type="positive")
+        except Exception as exc:
+            log.exception("Price refresh failed")
+            ui.notify(f"Price refresh failed: {exc}", type="negative")
 
 
 def _recalc_fx_legs_clicked() -> None:  # pragma: no cover - UI
@@ -885,12 +912,14 @@ def _confirm_seed() -> None:  # pragma: no cover - UI
 
 def _render_data_refresh() -> None:  # pragma: no cover - UI
     with ui.row().classes("gap-md"):
-        ui.button("Refresh FX rates", icon="currency_exchange", on_click=_refresh_fx_clicked).props(
+        fx_btn = ui.button("Refresh FX rates", icon="currency_exchange").props(
             "flat color=primary no-caps"
         )
-        ui.button("Refresh prices", icon="trending_up", on_click=_refresh_prices_clicked).props(
+        fx_btn.on_click(lambda: _refresh_fx_clicked(fx_btn))
+        prices_btn = ui.button("Refresh prices", icon="trending_up").props(
             "flat color=primary no-caps"
         )
+        prices_btn.on_click(lambda: _refresh_prices_clicked(prices_btn))
         ui.button(
             "Recalculate FX-derived values",
             icon="calculate",

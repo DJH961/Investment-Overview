@@ -69,6 +69,10 @@ def _register_pages() -> None:
 
 def _live_refresh_tick() -> None:  # pragma: no cover - background loop
     """Refresh due-by-TTL prices once. Logs and swallows any error."""
+    from investment_dashboard.services import refresh_status  # noqa: PLC0415
+
+    refresh_status.begin("Live price refresh")
+    updated = False
     try:
         from investment_dashboard.db import session_scope  # noqa: PLC0415
         from investment_dashboard.services.prices_service import (  # noqa: PLC0415
@@ -77,6 +81,7 @@ def _live_refresh_tick() -> None:  # pragma: no cover - background loop
 
         with session_scope() as session:
             refreshed = refresh_due_prices(session)
+        updated = bool(refreshed)
         if refreshed:
             log.debug("live refresh updated %s", list(refreshed.keys()))
     except Exception as exc:
@@ -90,12 +95,19 @@ def _live_refresh_tick() -> None:  # pragma: no cover - background loop
         from investment_dashboard.services import runtime_status  # noqa: PLC0415
 
         runtime_status.record_error("Live price refresh", f"{type(exc).__name__}: {exc}")
+    finally:
+        refresh_status.finish("Live price refresh", updated=updated)
 
 
 def _run_deferred_network_refresh_guarded() -> None:  # pragma: no cover - thread body
     """Run the deferred refresh, recording any unexpected failure for the UI."""
+    from investment_dashboard.services import refresh_status  # noqa: PLC0415
+
+    refresh_status.begin("Startup data refresh")
+    updated = False
     try:
         run_deferred_network_refresh()
+        updated = True
     except Exception as exc:
         log.warning(
             "deferred startup refresh failed", exc_info=True, extra={"runtime_status_skip": True}
@@ -103,6 +115,8 @@ def _run_deferred_network_refresh_guarded() -> None:  # pragma: no cover - threa
         from investment_dashboard.services import runtime_status  # noqa: PLC0415
 
         runtime_status.record_error("Startup data refresh", f"{type(exc).__name__}: {exc}")
+    finally:
+        refresh_status.finish("Startup data refresh", updated=updated)
 
 
 def _start_deferred_network_refresh() -> None:

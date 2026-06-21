@@ -18,7 +18,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Desktop price-freshness transparency and a holdings redesign that mirrors the
 live-web companion, plus a small web tweak so the per-holding chip shows the
-stat that actually matters.
+stat that actually matters — and visible feedback for manual and automatic
+price refresh across both apps.
 
 ### Added — desktop: price-freshness transparency
 
@@ -46,6 +47,22 @@ stat that actually matters.
 - **The per-holding chip now shows total growth instead of portfolio weight.**
   Growth (unrealised P/L over cost) is the primary read; weight is a secondary
   stat and now lives in the desktop Holdings table.
+
+### Added — visible feedback for manual and automatic price refresh
+
+- **Manual refresh now shows in-progress feedback.** On the web app, tapping
+  the header **Refresh** button spins the button glyph and shows a
+  "Refreshing prices…" pill until the live data lands. On the local app, the
+  Settings **Refresh prices** (and **Refresh FX rates**) buttons show a spinner
+  and disable while the refresh runs — the work is offloaded to a worker thread
+  so the spinner keeps animating instead of the click silently blocking.
+- **Automatic background price pulls are now visible too, and distinct from a
+  manual refresh.** On the web app the scheduler's auto-refresh shows a separate
+  accent-tinted "Auto-updating prices…" pill. On the local app a new header
+  "Live / Auto-updating…" chip (backed by a small `refresh_status` service)
+  spins while the post-boot deferred refresh or the periodic live-price tick is
+  running and shows the last automatic-update time when idle — so it's clear the
+  automatic features are working.
 
 ## [3.1.0] — 2026-06-21
 
