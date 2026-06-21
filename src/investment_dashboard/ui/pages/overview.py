@@ -21,6 +21,7 @@ from investment_dashboard.ui.money_format import (
     aggrid_money_formatter,
     currency_symbol,
     fmt_money,
+    fmt_pct,
 )
 from investment_dashboard.ui.pages._overview_query import (
     VALUE_RANGES,
@@ -45,12 +46,6 @@ from investment_dashboard.ui.theme import (
 PATH = "/overview"
 
 
-def _fmt_pct(value: Decimal | None) -> str:
-    if value is None:
-        return "—"
-    return f"{value * Decimal(100):,.2f} %"
-
-
 def _pct_card(
     label: str,
     eur_pct: Decimal | None,
@@ -73,8 +68,8 @@ def _pct_card(
         primary_pct, primary_ccy, secondary_pct, secondary_ccy = usd_pct, "USD", eur_pct, "EUR"
     dual_pct_kpi_card(
         label,
-        _fmt_pct(primary_pct),
-        _fmt_pct(secondary_pct),
+        fmt_pct(primary_pct),
+        fmt_pct(secondary_pct),
         primary_ccy=primary_ccy,
         secondary_ccy=secondary_ccy,
         tooltip_key=tooltip_key,
@@ -157,8 +152,8 @@ def _verdict_card(verdict: MarketVerdict) -> None:
         "Vs Market",
         headline,
         sub=(
-            f"You {_fmt_pct(verdict.portfolio_return)} · "
-            f"{verdict.benchmark_symbol} {_fmt_pct(verdict.benchmark_return)}"
+            f"You {fmt_pct(verdict.portfolio_return)} · "
+            f"{verdict.benchmark_symbol} {fmt_pct(verdict.benchmark_return)}"
         ),
         tooltip_key="market_verdict",
         color=color,
@@ -490,10 +485,10 @@ def register() -> None:  # noqa: PLR0915
             # Expense ratio moved out of the KPI grid (kept the grid a clean
             # 4×2) and surfaced as text alongside the FX line below.
             expense_text = (
-                f"Weighted expense ratio: {_fmt_pct(metrics.weighted_expense_ratio)}  "
+                f"Weighted expense ratio: {fmt_pct(metrics.weighted_expense_ratio)}  "
                 f"(≈ {fmt_money(_convert(metrics.annual_expense_cost_eur, display_ccy, fx_rate), display_ccy)} / yr)"
             )
-            div_yield_text = f"Dividend yield: {_fmt_pct(metrics.dividend_yield_pct)}"
+            div_yield_text = f"Dividend yield: {fmt_pct(metrics.dividend_yield_pct)}"
             if fx_rate is not None:
                 ui.label(
                     f"FX (EUR→{display_quote}): {fx_rate:,.4f}  ·  "

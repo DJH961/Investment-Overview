@@ -139,16 +139,21 @@ exposes value-at-date, holdings, and cashflows**, reused across the metric set.
   view. The overview's existing zero-value / corrupt-price banners remain.
 * **E2** — Loading indicators on heavy pages (Overview, Analytics, Projection)
   — less necessary once B lands.
-* **E3** — Currency-toggle inconsistency: attribution tables are hard-coded to
-  EUR; make them respect the display-currency switch.
+* **E3** — ✅ done. The per-instrument attribution table on `/analytics` now
+  respects the display-currency switch: every monetary column is converted from
+  EUR to the chosen currency (at the window's as-of rate) and the headers are
+  relabelled accordingly; the rate-invariant `% of total return` column is
+  unchanged. EUR display keeps the values unconverted.
 * **E4** — Inline form validation (symbol existence, decimal/date bounds, live
   allocation-weight total) instead of save-time-only.
 * **E5** — ✅ verified already guarded (see "Verified already fixed" above):
   the projection seed gates the implied-FX ratio on a positive EUR value and
   `_render_implied_fx` returns early on a non-positive horizon value, so a
   zero-value portfolio can't drive a division/`inf`.
-* **E6** — Consolidate duplicated `_fmt_pct` and inline `f"€{…}"` formatting in
-  `overview.py` / `analytics.py` / `calculator.py` onto `money_format`.
+* **E6** — ✅ done. The duplicated local `_fmt_pct` in `overview.py` and
+  `analytics.py` was removed in favour of `money_format.fmt_pct`, and the inline
+  `f"€{…}"` / `f"${…}"` literals in `calculator.py` now route through
+  `money_format.fmt_money`, so currency/percent rendering has a single source.
 * **E7** — Confirmation dialogs for destructive actions (e.g. "Seed default
   setup" overwriting allocations).
 
