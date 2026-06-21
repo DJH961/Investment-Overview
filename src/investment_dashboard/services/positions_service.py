@@ -315,12 +315,22 @@ def compute_cash_balance(
     return total
 
 
-def total_portfolio_value(session: Session, *, as_of: date | None = None) -> Decimal:
-    """Sum of all positions' EUR value + Savings cash balance in EUR."""
+def total_portfolio_value(
+    session: Session,
+    *,
+    as_of: date | None = None,
+    positions: list[Position] | None = None,
+) -> Decimal:
+    """Sum of all positions' EUR value + Savings cash balance in EUR.
+
+    ``positions`` may be passed to reuse an already-computed roll-up for the
+    same ``as_of`` date (avoids a redundant :func:`compute_positions` pass when
+    a caller has already built it).
+    """
     as_of = as_of or date.today()
-    total_eur = sum(
-        (p.current_value_eur for p in compute_positions(session, as_of=as_of)), start=ZERO
-    )
+    if positions is None:
+        positions = compute_positions(session, as_of=as_of)
+    total_eur = sum((p.current_value_eur for p in positions), start=ZERO)
 
     fx_rate = fx_service.get_rate_eur_to_quote(session, as_of)
     rate_cache: dict[str, Decimal | None] = {"USD": fx_rate}
