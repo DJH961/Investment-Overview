@@ -258,6 +258,13 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   letter-spacing: 0.06em;
   font-weight: 600;
 }
+.hero-updated {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
 .hero-value {
   font-size: clamp(2.1rem, 9vw, 2.9rem);
   font-weight: 800;

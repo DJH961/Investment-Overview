@@ -234,6 +234,60 @@ describe("buildDashboard", () => {
     approx(fxaix.priceNative, 100);
     approx(fxaix.valueEur, (5 * 100) / 1.1, 1e-3);
   });
+
+  it("ignores a NAV value-date that is not newer than the export (e.g. a mid-week holiday carry-forward)", () => {
+    const exp = makeExport();
+    exp.meta.as_of = "2024-05-31"; // Friday export
+    const navQuotes = new Map<string, Quote>([
+      ["VTI", { symbol: "VTI", price: new Decimal("100"), previousClose: new Decimal("95"), currency: "USD" }],
+      // The daily time_series has no bar for a closed day, so the latest NAV bar
+      // is still Friday's — not newer than the export, so the export price stands.
+      [
+        "FXAIX",
+        {
+          symbol: "FXAIX",
+          price: new Decimal("1"), // off-basis value must never be adopted
+          previousClose: null,
+          currency: "USD",
+          at: Date.parse("2024-06-03T12:00:00Z"),
+          priceTime: null,
+          valueDate: "2024-05-31", // same trading day as the export
+        },
+      ],
+    ]);
+    // Monday 2024-06-03 (imagine a holiday); no newer NAV has published.
+    const m = buildDashboard(exp, navQuotes, fx, new Date("2024-06-03T12:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.priceIsLive).toBe(false);
+    approx(fxaix.priceNative, 100);
+  });
+
+  it("adopts a genuinely newer NAV bar and shows its value-date (not the fetch time)", () => {
+    const exp = makeExport();
+    exp.meta.as_of = "2024-05-30"; // Thursday export
+    const navQuotes = new Map<string, Quote>([
+      ["VTI", { symbol: "VTI", price: new Decimal("100"), previousClose: new Decimal("95"), currency: "USD" }],
+      [
+        "FXAIX",
+        {
+          symbol: "FXAIX",
+          price: new Decimal("110"),
+          previousClose: new Decimal("108"),
+          currency: "USD",
+          at: Date.parse("2024-06-03T12:00:00Z"),
+          priceTime: null, // daily bar: no intraday time
+          valueDate: "2024-05-31", // Friday — newer than the Thursday export
+        },
+      ],
+    ]);
+    const m = buildDashboard(exp, navQuotes, fx, new Date("2024-06-03T12:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.priceIsLive).toBe(true);
+    approx(fxaix.priceNative, 110);
+    // No intraday strike time → the row shows the NAV's value-date as a date.
+    expect(fxaix.priceAsOf).toBeNull();
+    expect(fxaix.priceFallbackDate).toBe("2024-05-31");
+  });
 });
 
 function makeAnalyticsWith(

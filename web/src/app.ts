@@ -326,6 +326,7 @@ export class App {
     const [quoteLoad, fxLoad] = await Promise.all([
       loadQuotes(symbols, config.apiKey, {
         cacheTtlMs,
+        navSymbols: navFetchSymbols,
         cacheTtlMsForSymbol: (symbol, cached) => {
           if (!navFetchSymbols.has(symbol)) return cacheTtlMs;
           const { publishHour, catchUpWindowHours } = navPublishWindow(navStats.get(symbol)?.hours);

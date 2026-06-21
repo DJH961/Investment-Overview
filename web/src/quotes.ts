@@ -30,6 +30,7 @@ import {
 } from "./cache";
 import {
   fetchFxRates,
+  fetchNavQuotes,
   fetchQuotes,
   PriceError,
   type FetchLike,
@@ -218,6 +219,12 @@ export interface LoadQuotesOptions {
    * fetch time, suitable for {@link recordNavPublish}.
    */
   onValueDateAdvance?: (symbol: string, valueDate: string, at: number) => void;
+  /**
+   * Symbols that are NAV-priced funds (mutual / money-market). These are fetched
+   * from Twelve Data's daily `time_series` endpoint (authoritative trading-day
+   * NAV) rather than `quote`, which fabricates a "today" date on closed days.
+   */
+  navSymbols?: ReadonlySet<string>;
   creditsPerMinute?: number;
   creditsPerDay?: number;
   /** Backoff retries for a transient (429/5xx/network) failure. */
@@ -265,6 +272,7 @@ export async function loadQuotes(
     cacheTtlMs = DEFAULT_CACHE_TTL_MS,
     cacheTtlMsForSymbol,
     onValueDateAdvance,
+    navSymbols,
     creditsPerMinute = FREE_TIER.creditsPerMinute,
     creditsPerDay = FREE_TIER.creditsPerDay,
     maxRetries = 3,
@@ -304,6 +312,8 @@ export async function loadQuotes(
   const fetched: string[] = [];
   let error: PriceError | null = null;
 
+  const backoffDeps: BackoffDeps = { fetchImpl, sleep, maxRetries, backoffBaseMs, backoffCapMs };
+
   if (stale.length > 0 && apiKey.length > 0) {
     const { minute, day } = budget();
     // One credit per symbol. Fetch only what both the per-minute and per-day
@@ -315,13 +325,21 @@ export async function loadQuotes(
 
     if (toFetch.length > 0) {
       try {
-        const quotes = await fetchWithBackoff(toFetch, apiKey, {
-          fetchImpl,
-          sleep,
-          maxRetries,
-          backoffBaseMs,
-          backoffCapMs,
-        });
+        // Market symbols come from `quote`; NAV funds from the daily
+        // `time_series` (authoritative trading-day mark) — see fetchNavQuotes.
+        const navBatch = navSymbols ? toFetch.filter((s) => navSymbols.has(s)) : [];
+        const marketBatch = navSymbols ? toFetch.filter((s) => !navSymbols.has(s)) : toFetch;
+        const quotes = new Map<string, Quote>();
+        if (marketBatch.length > 0) {
+          for (const [s, q] of await fetchWithBackoff(marketBatch, apiKey, backoffDeps, fetchQuotes)) {
+            quotes.set(s, q);
+          }
+        }
+        if (navBatch.length > 0) {
+          for (const [s, q] of await fetchWithBackoff(navBatch, apiKey, backoffDeps, fetchNavQuotes)) {
+            quotes.set(s, q);
+          }
+        }
         const at = now();
         writeCachedQuotes(quotes, at, storage ?? undefined);
         recordCredits(toFetch.length, at, storage ?? undefined);
@@ -424,11 +442,12 @@ async function fetchWithBackoff(
   batch: string[],
   apiKey: string,
   deps: BackoffDeps,
+  fetcher: (batch: string[], apiKey: string, fetchImpl: FetchLike) => Promise<Map<string, Quote>> = fetchQuotes,
 ): Promise<Map<string, Quote>> {
   let attempt = 0;
   for (;;) {
     try {
-      return await fetchQuotes(batch, apiKey, deps.fetchImpl);
+      return await fetcher(batch, apiKey, deps.fetchImpl);
     } catch (err) {
       const pe = err instanceof PriceError ? err : null;
       if (!pe || !pe.retryable || attempt >= deps.maxRetries) throw err;

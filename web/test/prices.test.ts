@@ -4,7 +4,7 @@
 import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 
-import { convert, fetchFxRates, fetchQuotes, PriceError, type FetchLike } from "../src/prices";
+import { convert, fetchFxRates, fetchNavQuotes, fetchQuotes, PriceError, type FetchLike } from "../src/prices";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return { ok, status, json: async () => body } as Response;
@@ -98,6 +98,51 @@ describe("fetchQuotes", () => {
     const err = await captureError(() => fetchQuotes(["VTI"], "key", fetchImpl));
     expect(err).toBeInstanceOf(PriceError);
     expect(err.retryable).toBe(true);
+  });
+});
+
+describe("fetchNavQuotes", () => {
+  it("parses the latest daily NAV bar (single symbol) as price + value-date", async () => {
+    const fetchImpl: FetchLike = async (url) => {
+      // Pulls from time_series, not quote, and asks for daily bars newest-first.
+      expect(url).toContain("/time_series");
+      expect(url).toContain("interval=1day");
+      return jsonResponse({
+        meta: { symbol: "FXAIX", currency: "USD" },
+        values: [
+          { datetime: "2024-06-20", close: "101.00" },
+          { datetime: "2024-06-19", close: "100.00" },
+        ],
+        status: "ok",
+      });
+    };
+    const quotes = await fetchNavQuotes(["FXAIX"], "key", fetchImpl);
+    const fxaix = quotes.get("FXAIX")!;
+    expect(fxaix.price?.toString()).toBe("101");
+    expect(fxaix.previousClose?.toString()).toBe("100");
+    expect(fxaix.currency).toBe("USD");
+    expect(fxaix.valueDate).toBe("2024-06-20");
+    // A daily bar has no intraday strike time → the UI shows it as a date.
+    expect(fxaix.priceTime).toBeNull();
+  });
+
+  it("parses a multi-symbol time_series response and flags empty ones", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({
+        FXAIX: { meta: { currency: "USD" }, values: [{ datetime: "2024-06-20", close: "101" }], status: "ok" },
+        BAD: { status: "error", message: "not found" },
+      });
+    const quotes = await fetchNavQuotes(["FXAIX", "BAD"], "key", fetchImpl);
+    expect(quotes.get("FXAIX")?.price?.toString()).toBe("101");
+    expect(quotes.get("BAD")?.price).toBeNull();
+  });
+
+  it("rejects a whole-call error (e.g. a bad key) as a PriceError", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({ code: 401, message: "bad key", status: "error" });
+    const err = await captureError(() => fetchNavQuotes(["FXAIX"], "key", fetchImpl));
+    expect(err).toBeInstanceOf(PriceError);
+    expect(err.status).toBe(401);
   });
 });
 
