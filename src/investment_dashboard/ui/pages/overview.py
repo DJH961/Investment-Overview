@@ -267,9 +267,12 @@ def _value_curve_figure(points, *, currency: str):  # type: ignore[no-untyped-de
     """
     import plotly.graph_objects as go  # noqa: PLC0415
 
+    from investment_dashboard.ui.charts import downsample, padded_range  # noqa: PLC0415
+
     symbol = currency_symbol(currency)
     fig = go.Figure()
     if points:
+        points = downsample(points)
         dates = [p.date for p in points]
         values = [float(p.value) for p in points]
         # Adapt the x-axis tick density/format to the span so a one-day range
@@ -308,14 +311,20 @@ def _value_curve_figure(points, *, currency: str):  # type: ignore[no-untyped-de
             spikedash="dot",
             spikecolor="rgba(91,107,124,0.5)",
         )
+        # Fit the axis to the data (with headroom) instead of anchoring it to
+        # zero, so the real price flow is visible rather than a near-flat line
+        # squashed against a huge zero-based scale. The area still fills down
+        # to the (off-screen) zero baseline, giving the familiar area look.
+        yrange = padded_range(values)
         fig.update_yaxes(
             tickprefix=symbol,
-            tickformat=",.0f",
+            tickformat=".3s",
             ticks="outside",
             ticklen=5,
             nticks=6,
             separatethousands=True,
             automargin=True,
+            range=list(yrange) if yrange is not None else None,
         )
     fig.update_layout(
         title=f"Portfolio value over time ({currency})",

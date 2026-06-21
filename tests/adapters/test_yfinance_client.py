@@ -38,6 +38,25 @@ def _single_symbol_frame() -> pd.DataFrame:
     return pd.DataFrame({"Open": [240.0, 241.0], "Close": [240.10, 241.55]}, index=idx)
 
 
+def test_fetch_closes_passes_auto_adjust_flag() -> None:
+    """``adjusted`` toggles yfinance's ``auto_adjust`` so the benchmark overlay
+    can request a total-return (dividend-adjusted) series while held
+    instruments keep raw closes."""
+    seen: dict[str, object] = {}
+
+    def fake_download(**kwargs: Any) -> pd.DataFrame:
+        seen["auto_adjust"] = kwargs.get("auto_adjust")
+        return _single_symbol_frame()
+
+    fetch_closes(["VTI"], date(2024, 1, 2), date(2024, 1, 4), downloader=fake_download)
+    assert seen["auto_adjust"] is False
+
+    fetch_closes(
+        ["VTI"], date(2024, 1, 2), date(2024, 1, 4), downloader=fake_download, adjusted=True
+    )
+    assert seen["auto_adjust"] is True
+
+
 def test_fetch_closes_multi_symbol() -> None:
     def fake_download(**_: Any) -> pd.DataFrame:
         return _multi_symbol_frame()
