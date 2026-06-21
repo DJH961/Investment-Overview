@@ -268,10 +268,13 @@ def compute_instrument_metrics(  # noqa: PLR0915
             ytd_invested_usd[iid] = ytd_invested_usd.get(iid, ZERO) - usd
 
     # Start-of-year value per instrument in EUR (best-effort, for YTD growth);
-    # USD parallel uses the FX rate on the first of the year.
+    # USD parallel uses the FX rate on the first of the year. Reuse the ledger
+    # already loaded above (``txns`` spans through ``as_of`` ⊇ year-start) so the
+    # year-start roll-up does not issue a second full ledger query.
     fx_year_start = lookup_rate_with_forward_fill(eur_to_usd, year_start) or today_rate
     start_value_eur: dict[int, Decimal] = {
-        p.instrument.id: p.current_value_eur for p in compute_positions(session, as_of=year_start)
+        p.instrument.id: p.current_value_eur
+        for p in compute_positions(session, as_of=year_start, transactions=txns)
     }
 
     out: dict[int, InstrumentMetrics] = {}

@@ -160,14 +160,19 @@ here as a live checklist; status is updated as each is resolved.
   `analytics.py` called `compute_portfolio_metrics(session)` again — a full
   XIRR/contribution recompute per render. The metrics are now returned on
   `AnalyticsBundle.metrics` and reused.
-- **5A.3 Periods page double ledger walk + per-period snapshot reads** — ⏳ open.
-  `_period_query.aggregate` iterates the full `txns` list twice when the display
-  currency ≠ EUR (build EUR + display buckets in one pass) and calls
-  `get_or_compute` per period inside the bucket loop (collect unique boundary
-  dates and batch-load instead).
-- **5A.4 Overview YTD second `compute_positions` walk** — ⏳ open.
-  `compute_positions(session, as_of=year_start)` re-walks the whole ledger a
-  second time just to seed YTD start values; fold into a single valuation pass.
+- **5A.3 Periods page double ledger walk + per-period snapshot reads** — ✅ done.
+  `_period_query.aggregate` now fills the EUR **and** display-currency buckets
+  in a single ledger walk (previously it iterated the full `txns` list a second
+  time whenever the display currency ≠ EUR) and batches every period boundary
+  snapshot through `snapshots_service.get_or_compute_many` plus one bulk
+  interior-range read, replacing the `get_or_compute` per period inside the
+  bucket loop (2N cache round-trips). Display-currency boundaries are derived
+  from the EUR batch in memory rather than re-read.
+- **5A.4 Overview YTD second `compute_positions` walk** — ✅ done.
+  `compute_instrument_metrics` now passes its already-loaded ledger to
+  `compute_positions(as_of=year_start, transactions=…)`, so the start-of-year
+  valuation reuses the in-memory `txns` (filtered to `date <= year_start`)
+  instead of issuing a second full ledger query.
 
 ### 5B — Startup-path inefficiencies (synchronous, before the UI opens)
 
@@ -198,6 +203,15 @@ These run inside `run_boot_sequence(skip_network=True)` on the cold-start path.
   one-by-one; now a single `DELETE … WHERE`. `allocations_repo.set_active`
   loaded all allocations and flipped `active` in Python; now two bulk
   `UPDATE`s.
+- **5C.11 `compute_positions` historical valuation N+1 (found 2026-06-21)** —
+  ⏳ open. When `as_of < today` (every YTD start-of-year valuation and every
+  cached period-closing snapshot), `compute_positions` issues
+  `prices_service.close_as_of(instr.id, as_of)` **and**
+  `cumulative_split_factor_after(instr.id, as_of)` once per held instrument — an
+  N+1 over the holdings table on top of the already-batched daily-growth path
+  (5A.1). Batching these by `instrument_id` (a `close_as_of`-style window query
+  + a grouped split-factor lookup) would cut the historical valuation to O(1)
+  round-trips, completing the spirit of 5A.4 / 5E.B.
 
 ### 5D — Missing index (low–medium impact)
 

@@ -195,3 +195,23 @@ def test_warm_range_computes_and_caches_each_day(session: Session) -> None:
 
 def test_warm_range_empty_when_end_before_start(session: Session) -> None:
     assert snapshots_service.warm_range(session, date(2024, 5, 2), date(2024, 5, 1)) == 0
+
+
+def test_get_or_compute_many_matches_per_date(session: Session) -> None:
+    """v2.11.x — the batched read returns exactly what per-date calls do."""
+    cached = date(2022, 3, 4)
+    snapshots_repo.upsert_snapshot(session, cached, Decimal("4321.00"))
+    session.flush()
+    missing = date(2021, 7, 1)  # not cached ⇒ computed (empty portfolio ⇒ 0)
+    today = date.today()
+    wanted = [cached, missing, today, cached]  # includes a duplicate
+    batched = snapshots_service.get_or_compute_many(session, wanted)
+    expected = {d: snapshots_service.get_or_compute(session, d) for d in set(wanted)}
+    assert batched == expected
+    assert batched[cached] == Decimal("4321.00")
+    assert batched[missing] == Decimal(0)
+
+
+def test_get_or_compute_many_empty() -> None:
+    # No session touched for an empty request.
+    assert snapshots_service.get_or_compute_many(None, []) == {}  # type: ignore[arg-type]

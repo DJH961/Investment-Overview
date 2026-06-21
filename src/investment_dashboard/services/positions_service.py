@@ -6,7 +6,7 @@ rows on the fly. v1.1 will introduce a ``snapshots`` cache (spec §4.1).
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
@@ -108,16 +108,31 @@ class Position:
     effective: EffectiveInstrument | None = None
 
 
-def compute_positions(session: Session, *, as_of: date | None = None) -> list[Position]:  # noqa: PLR0912, PLR0915
+def compute_positions(  # noqa: PLR0912, PLR0915
+    session: Session,
+    *,
+    as_of: date | None = None,
+    transactions: Sequence[Transaction] | None = None,
+) -> list[Position]:
     """Return one :class:`Position` per non-zero (account, instrument) pair.
 
     Cash-account holdings (Savings) appear with ``shares = 1`` and
     ``current_value = current_price`` (the price column stores the daily
     balance, per spec §4.1 ``price_history``).
+
+    When ``transactions`` is supplied (already ordered date-asc, id-asc) the
+    ledger roll-up reuses it instead of re-querying the database — callers that
+    have already loaded the ledger (e.g. the overview's year-start valuation)
+    can avoid a second full walk. The list is filtered to ``date <= as_of`` so
+    a superset (loaded for a later ``as_of``) yields exactly the same rows the
+    scoped query would.
     """
     as_of = as_of or date.today()
     is_historical = as_of < date.today()
-    txns = transactions_repo.list_transactions(session, end=as_of)
+    if transactions is None:
+        txns: Sequence[Transaction] = transactions_repo.list_transactions(session, end=as_of)
+    else:
+        txns = [t for t in transactions if t.date <= as_of]
 
     # Cash dividends that were immediately reinvested arrive as a pair of
     # ledger rows (DIVIDEND_CASH + DIVIDEND_REINVEST, same instrument & date).
