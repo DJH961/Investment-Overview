@@ -1400,6 +1400,8 @@ def _live_web_config(session) -> dict[str, str | None]:  # pragma: no cover - UI
         "repo": app_config_repo.get(session, "live_web_repo"),
         "enabled": app_config_repo.get(session, "live_web_enabled"),
         "include_transactions": app_config_repo.get(session, "live_web_include_transactions"),
+        "publish_on_import": app_config_repo.get(session, "live_web_publish_on_import"),
+        "publish_on_shutdown": app_config_repo.get(session, "live_web_publish_on_shutdown"),
         "last_published_at": app_config_repo.get(session, "live_web_last_published_at"),
     }
 
@@ -1448,7 +1450,13 @@ def _save_publish_token(token: str) -> None:  # pragma: no cover - UI
         )
 
 
-def _save_live_web_prefs(repo: str, enabled: bool, include_transactions: bool) -> None:
+def _save_live_web_prefs(
+    repo: str,
+    enabled: bool,
+    include_transactions: bool,
+    publish_on_import: bool,
+    publish_on_shutdown: bool,
+) -> None:
     # pragma: no cover - UI
     """Persist the non-secret live-web preferences to app_config."""
     try:
@@ -1459,6 +1467,16 @@ def _save_live_web_prefs(repo: str, enabled: bool, include_transactions: bool) -
                 session,
                 "live_web_include_transactions",
                 "true" if include_transactions else "false",
+            )
+            app_config_repo.set_value(
+                session,
+                "live_web_publish_on_import",
+                "true" if publish_on_import else "false",
+            )
+            app_config_repo.set_value(
+                session,
+                "live_web_publish_on_shutdown",
+                "true" if publish_on_shutdown else "false",
             )
     except Exception as exc:
         ui.notify(f"Could not save preferences: {exc}", type="negative")
@@ -1516,11 +1534,25 @@ def _render_live_web_companion_section() -> None:  # pragma: no cover - UI
         "Include transactions in the export",
         value=cfg["include_transactions"] == "true",
     )
+    ui.label("Auto-publish (only fires while publishing is enabled)").classes("text-subtitle2")
+    on_import_sw = ui.switch(
+        "Publish after every successful import",
+        # Auto-triggers default on when the master switch is enabled (§8.2).
+        value=cfg["publish_on_import"] != "false",
+    )
+    on_shutdown_sw = ui.switch(
+        "Publish on graceful app close",
+        value=cfg["publish_on_shutdown"] != "false",
+    )
     ui.button(
         "Save preferences",
         icon="save",
         on_click=lambda: _save_live_web_prefs(
-            repo_in.value or "", bool(enabled_sw.value), bool(include_sw.value)
+            repo_in.value or "",
+            bool(enabled_sw.value),
+            bool(include_sw.value),
+            bool(on_import_sw.value),
+            bool(on_shutdown_sw.value),
         ),
     ).props("flat no-caps")
 

@@ -20,6 +20,9 @@ Concretely, that means:
   allocation panel beside it) so the extra space isn't wasted. This is layered
   on with `min-width` media queries only; the markup and mobile source order
   never change.
+- Sections (Overview / Periods / Risk / Plan) switch through a **tab bar** that
+  is a fixed bottom navigation on phones (within thumb reach) and reflows to a
+  top tab strip on desktop — same markup, `min-width` media queries only.
 - Holdings render as a scannable **list** (symbol · name · value · today's
   move), never a wide horizontal-scrolling spreadsheet table.
 - The headline portfolio value and today's move are the hero of the screen;
@@ -36,7 +39,13 @@ Concretely, that means:
 
 ## Status
 
-**Phase 3 (Web hero) implemented.** A Vite + TypeScript single-page app that:
+**Phase 5 (PWA) implemented**, building on the Phase 4 periods/projection/
+analytics work. The companion is now an installable **progressive web app**: a
+web manifest + icon make it add-to-home-screen capable, and a service worker
+caches **only the public, static app shell** so the UI opens instantly and works
+offline. The service worker never caches the encrypted blob, the live price/FX
+responses, or any decrypted data (that lives in memory only) — see
+`public/sw.js`. A Vite + TypeScript single-page app that:
 
 1. collects a Twelve Data API key + the data repository on a setup screen
    (stored in `localStorage`, never in the repo),
@@ -46,13 +55,22 @@ Concretely, that means:
 3. fetches live quotes (Twelve Data) + EUR FX (Frankfurter),
 4. computes KPIs and per-holding stats with the **ported** `domain/returns`
    maths, guarded by a parity suite, and
-5. renders a mobile-first Overview (headline value + today/month/year growth and
-   parity-matched KPIs) and a holdings list.
+5. renders a mobile-first dashboard split into four tabbed sections:
+   - **Overview** — headline value + today/month/year growth, parity-matched
+     KPIs, the holdings list and the collapsible allocation panel.
+   - **Periods** — monthly and yearly tables, with the **current** month and
+     year **recomputed live** (badged "live") and completed periods frozen as of
+     export, plus the contributions summary.
+   - **Risk** — the as-of-export analytics bundle (returns, risk metrics, an
+     inline equity-curve sparkline and per-holding attribution), clearly stamped
+     "as of <export>" because history-bound stats do not move intraday.
+   - **Plan** — an interactive forward-projection calculator seeded from the
+     live total value and the average historical contribution; it recomputes
+     in-browser at 4% / 7% / 10% scenarios as you adjust the inputs.
 
-Per-holding analytics and completed-period *history* display land in Phase 4;
-those blocks already ride along in the export. Month- and year-to-date growth
-are recomputed live in the browser from `period_openings` + the exported
-cashflows.
+The sections switch via a **tab bar** that is a fixed, thumb-reachable bottom
+navigation on phones and reflows to a top tab strip on desktop/widescreen — the
+markup is identical at every breakpoint.
 
 ## Preview the UI (sample data — no key, passphrase, or blob)
 

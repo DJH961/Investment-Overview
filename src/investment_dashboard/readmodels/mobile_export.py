@@ -8,6 +8,10 @@ against live prices.
 ``meta.fx_pivot`` is not a portfolio base currency. It only names the FX
 reference pair used by existing valuation/read-model code; USD-native booked
 amounts remain lossless and each holding declares its own native currency.
+
+SECURITY — this repository is PUBLIC (proposal §7.4). The dict assembled here is
+encrypted before it ever leaves the machine. Never log, commit, or persist its
+contents, and never add tokens or passphrases to it.
 """
 
 from __future__ import annotations
