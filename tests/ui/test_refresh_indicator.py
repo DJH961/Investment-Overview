@@ -7,7 +7,7 @@ running NiceGUI client.
 
 from __future__ import annotations
 
-from investment_dashboard.ui.refresh_indicator import decide_reload
+from investment_dashboard.ui.refresh_indicator import decide_reload, is_live_now
 
 
 def _pending(
@@ -51,3 +51,48 @@ def test_disabled_repaint_deadline_never_repaints() -> None:
     # repaint_at == 0 disables the early repaint; while still running, wait.
     pending = _pending(since_seq=3, repaint_at=0.0)
     assert decide_reload(pending, current_seq=3, active=True, now=10_000.0) is None
+
+
+# -- is_live_now ----------------------------------------------------------
+
+
+from datetime import UTC, datetime, timedelta  # noqa: E402
+
+_NOW = datetime(2026, 6, 22, 18, 0, tzinfo=UTC)
+
+
+def test_live_when_market_open_and_price_fresh() -> None:
+    assert is_live_now(
+        market_open=True,
+        last_update_at=_NOW - timedelta(seconds=60),
+        now=_NOW,
+    )
+
+
+def test_not_live_when_market_closed_even_if_fresh() -> None:
+    assert not is_live_now(
+        market_open=False,
+        last_update_at=_NOW - timedelta(seconds=60),
+        now=_NOW,
+    )
+
+
+def test_not_live_when_price_stale() -> None:
+    assert not is_live_now(
+        market_open=True,
+        last_update_at=_NOW - timedelta(seconds=2000),
+        now=_NOW,
+    )
+
+
+def test_not_live_when_no_update_recorded() -> None:
+    assert not is_live_now(market_open=True, last_update_at=None, now=_NOW)
+
+
+def test_future_timestamp_is_not_live() -> None:
+    # A clock skew that puts the last update in the future should not read live.
+    assert not is_live_now(
+        market_open=True,
+        last_update_at=_NOW + timedelta(seconds=30),
+        now=_NOW,
+    )
