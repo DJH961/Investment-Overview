@@ -12,6 +12,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [3.6.2] — 2026-06-22
+
+A clearer Daily Growth caption.
+
+### Fixed
+
+- **Daily Growth caption stamps when a settled price is from.** When the US
+  market is closed but today's close is already in (the "TODAY" state), the
+  caption now stamps *when the price is from* — the moment we last pulled it
+  from the data provider, e.g. "as of 22:07" in your display timezone — instead
+  of the vague "as of today" (falling back to the modelled 16:00 session close
+  when no pull time is recorded). The clock is omitted only while the session is
+  *live*, where it would merely echo the "· live" flag.
+- **Exchange rate kept under Daily Growth, just tightened — now with its move.**
+  The display-relative spot is no longer dropped from the caption; it returns in
+  a compact form with its percentage change versus the prior trading day
+  (`€1≈$1.0830 (+0.10%)` for USD users, `$1≈€0.9234 (−0.10%)` for EUR users).
+  The move is a *percentage only* (no absolute) and reads live while the session
+  is open, dropping the verbose absolute/“live FX” detail that made the line
+  noisy.
+
 ## [3.6.1] — 2026-06-22
 
 A calmer, more legible Analytics tab.

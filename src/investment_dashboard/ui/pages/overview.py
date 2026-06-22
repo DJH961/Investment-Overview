@@ -87,6 +87,7 @@ class _OverviewData:
     verdict: MarketVerdict
     cards: list[HoldingCard]
     treemap_data: list[TreemapDatum]
+    price_observed_at: datetime | None = None
 
 
 def _pct_card(
@@ -555,6 +556,13 @@ def register() -> None:  # noqa: PLR0915
                     price_anomaly_ids=price_anomaly_ids,
                 )
                 treemap_data = allocation_treemap(positions)
+                # "When the price is from": the most recent moment we pulled a
+                # fresh price from the provider, used to stamp the settled-today
+                # Daily Growth caption.
+                _refresh_times = [
+                    f.updated_at for f in freshness.values() if f.updated_at is not None
+                ]
+                price_observed_at = max(_refresh_times) if _refresh_times else None
                 return _OverviewData(
                     range_label=range_label,
                     metrics=metrics,
@@ -566,6 +574,7 @@ def register() -> None:  # noqa: PLR0915
                     verdict=verdict,
                     cards=cards,
                     treemap_data=treemap_data,
+                    price_observed_at=price_observed_at,
                 )
 
             def _render(data: _OverviewData) -> None:
@@ -639,17 +648,22 @@ def register() -> None:  # noqa: PLR0915
                         display_ccy=display_ccy,
                         tooltip_key="mtd_growth",
                     )
-                    # Caption: a tight "as of …" line, flagged live while the
-                    # NYSE session is open. The exchange rate moved out of this
-                    # caption (it duplicated the FX line below the KPI grid).
+                    # Caption: a tight "as of …" line. While the NYSE session
+                    # is open the figure is flagged "· live" and the clock is
+                    # omitted (it just tracks now); once closed the caption
+                    # stamps when the price is from — the moment we last pulled
+                    # it from the provider — so the settled figure is dated. A
+                    # compact, display-relative exchange rate trails it.
                     _now = datetime.now(UTC)
                     _caption = build_daily_growth_caption(
                         last_date=metrics.daily_growth_as_of,
+                        fx_eur_usd=metrics.daily_growth_fx_eur_usd,
+                        fx_eur_usd_prev=metrics.daily_growth_fx_eur_usd_prev,
                         display_ccy=display_ccy,
                         today=date.today(),
-                        now=_now,
                         tz=display_tz,
                         market_open=is_us_market_open(_now),
+                        price_observed_at=data.price_observed_at,
                     )
                     _pct_card(
                         "Daily Growth",

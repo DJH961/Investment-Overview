@@ -7,7 +7,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from investment_dashboard.domain.market_hours import is_us_market_open, previous_trading_day
+from investment_dashboard.domain.market_hours import (
+    is_us_market_open,
+    previous_trading_day,
+    regular_session_close,
+)
 
 NY = ZoneInfo("America/New_York")
 
@@ -63,3 +67,16 @@ class TestPreviousTradingDay:
     def test_weekend_rolls_back_to_friday(self) -> None:
         assert previous_trading_day(date(2024, 6, 22)) == date(2024, 6, 21)  # Saturday
         assert previous_trading_day(date(2024, 6, 23)) == date(2024, 6, 21)  # Sunday
+
+
+class TestRegularSessionClose:
+    def test_close_is_16_00_exchange_time(self) -> None:
+        close = regular_session_close(date(2024, 6, 24))
+        assert close == datetime(2024, 6, 24, 16, 0, tzinfo=NY)
+
+    def test_close_converts_to_display_timezone(self) -> None:
+        # 16:00 New York (EDT) is 22:00 in Central Europe.
+        cet = ZoneInfo("Europe/Berlin")
+        close = regular_session_close(date(2024, 6, 24), tz=cet)
+        assert (close.hour, close.minute) == (22, 0)
+        assert close == datetime(2024, 6, 24, 16, 0, tzinfo=NY)

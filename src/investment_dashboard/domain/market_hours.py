@@ -18,7 +18,7 @@ pure is worth that small imprecision.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from zoneinfo import ZoneInfo
 
 #: The exchange whose regular session defines "the market is open" for the
@@ -67,3 +67,18 @@ def previous_trading_day(today: date) -> date:
     while day.weekday() >= _SATURDAY:
         day -= timedelta(days=1)
     return day
+
+
+def regular_session_close(day: date, *, tz: tzinfo | None = None) -> datetime:
+    """The NYSE regular-session close (16:00 America/New_York) on ``day``.
+
+    Returns a timezone-aware instant marking "the last market action" of a
+    settled trading day — the moment a same-day-but-closed price is *from*. When
+    ``tz`` is given the instant is converted to that display timezone (so a CET
+    user reads the 22:00 local close); otherwise it stays in exchange time.
+
+    Like the rest of this module it ignores holidays and half-days (see the
+    module docstring): the close is always modelled as 16:00 exchange time.
+    """
+    close = datetime.combine(day, _CLOSE, tzinfo=_MARKET_TZ)
+    return close.astimezone(tz) if tz is not None else close
