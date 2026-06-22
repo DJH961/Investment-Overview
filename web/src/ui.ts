@@ -760,7 +760,7 @@ function renderPeriodsProjection(plan: PlanView): HTMLElement[] {
   const projectionBody = h("div", { class: "periods-projection-body" }, [kpiOut, goalOut, tableOut]);
   // Build the projection collapsible by hand (rather than collapsibleSection) so
   // the summary can carry the live `projSub` element instead of a static string.
-  const id = "periods-projection-projection";
+  const id = "periods-projection";
   const attrs: Attrs = { class: "collapsible periods-projection" };
   if (loadOpenState(id, true)) attrs.open = "open";
   const projection = h("details", attrs, [
@@ -1589,9 +1589,10 @@ function buildCalculator(plan: PlanView, opts: CalculatorOptions = {}): Calculat
     // Feed a one-line collapsed summary (where the "Expected" scenario lands at
     // the horizon) to any caller that wants to show it without unfolding.
     if (opts.onSummary) {
-      const expectedFinal = last
-        ? convertFromEur(useReal ? last.realByScenario[SCENARIO_EXPECTED] : last.nominalByScenario[SCENARIO_EXPECTED]).value
+      const expectedScenario = last
+        ? (useReal ? last.realByScenario[SCENARIO_EXPECTED] : last.nominalByScenario[SCENARIO_EXPECTED])
         : null;
+      const expectedFinal = expectedScenario !== null ? convertFromEur(expectedScenario).value : null;
       opts.onSummary(
         expectedFinal !== null
           ? `~${formatCurrencyWhole(expectedFinal)} expected by ${last!.label}`
