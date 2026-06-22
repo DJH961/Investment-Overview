@@ -51,6 +51,8 @@ to the web companion, and a smarter update button.
   "connection lost" reconnect screen.
 
 
+## [3.2.1] — 2026-06-22
+
 Web companion: a batch of mobile-first UI polish around the chart axis, the live
 update animation, and free-tier budget awareness, plus a desktop equity-curve fix.
 
