@@ -279,7 +279,7 @@ html, body {{
    ragged flex-wrap rows that left odd gaps and mismatched sizes. */
 .inv-kpi-grid {{
   display: grid;
-  /* v2.8.2 — fit five tiles per row (risk / drawdown / currency bands have
+  /* v3.6.1 — fit five tiles per row (risk / drawdown / currency bands have
      five metrics each) instead of wrapping the 5th onto a lonely second row.
      ``auto-fit`` collapses unused tracks so smaller bands (the 3-tile hero /
      Returns groups) still stretch to fill the row. */
@@ -341,7 +341,7 @@ html, body {{
   font-weight: 600;
 }}
 .inv-kpi-value {{
-  /* v2.8.2 — fluid headline so the five-up tiles keep big money figures
+  /* v3.6.1 — fluid headline so the five-up tiles keep big money figures
      (Portfolio value, Capital gain and the like) on one line in the now
      narrower cards. Scales between a compact and the original size. */
   font-size: clamp(1.2rem, 1.1rem + 0.5vw, 1.6rem);
