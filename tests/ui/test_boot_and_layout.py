@@ -10,6 +10,30 @@ import sqlalchemy as sa
 from investment_dashboard.boot import run_boot_sequence
 
 
+@pytest.fixture(autouse=True)
+def _release_boot_writer_lock() -> object:
+    """Release any writer lock the boot sequence acquired.
+
+    ``run_boot_sequence`` stores the held lock in a module-global; without an
+    explicit release each boot test leaks the ``<ledger>.lock`` file handle
+    until garbage collection, which surfaces as a ``ResourceWarning``. We
+    close the handle and reset the boot state directly (rather than calling
+    ``release_writer_lock``, which would flip the global to read-only and
+    leak that state into the next test).
+    """
+    yield
+    from contextlib import suppress
+
+    from investment_dashboard import boot
+
+    lock = boot._boot_state.get("held_lock")
+    if lock is not None:
+        with suppress(Exception):
+            lock.release()
+    boot._boot_state["held_lock"] = None
+    boot._boot_state["read_only"] = False
+
+
 def test_skip_network_does_not_raise() -> None:
     """Calling boot in offline mode must not raise even with no DB seeded."""
     run_boot_sequence(skip_network=True)
@@ -302,6 +326,12 @@ def test_integrity_check_tolerates_transient_disk_io_error(
     try:
         run_boot_sequence(skip_network=True)
     finally:
+        from contextlib import suppress
+
+        lock = boot._boot_state.get("held_lock")
+        if lock is not None:
+            with suppress(Exception):
+                lock.release()
         boot._boot_state.update(saved)
         dispose_engines()
         get_settings.cache_clear()
