@@ -6,7 +6,11 @@ from decimal import Decimal
 
 import pytest
 
-from investment_dashboard.domain.allocation import plan_rebalance
+from investment_dashboard.domain.allocation import (
+    current_weights_pct,
+    expand_category_weights,
+    plan_rebalance,
+)
 
 
 def test_rebalance_pure_proportional_no_holdings() -> None:
@@ -106,3 +110,85 @@ def test_negative_cash_raises() -> None:
             target_weights_pct={1: Decimal(100)},
             current_values={},
         )
+
+
+# --- current_weights_pct -------------------------------------------------
+
+
+def test_current_weights_pct_basic() -> None:
+    weights = current_weights_pct({1: Decimal(75), 2: Decimal(25)})
+    assert weights[1] == Decimal(75)
+    assert weights[2] == Decimal(25)
+    assert sum(weights.values()) == Decimal(100)
+
+
+def test_current_weights_pct_zero_total_is_all_zero() -> None:
+    weights = current_weights_pct({1: Decimal(0), 2: Decimal(0)})
+    assert weights == {1: Decimal(0), 2: Decimal(0)}
+
+
+# --- expand_category_weights --------------------------------------------
+
+
+def test_expand_category_split_by_value() -> None:
+    # "International" gets 10 %, split across two funds by current value (3:1).
+    weights = expand_category_weights(
+        category_weights_pct={"International": Decimal(10), "US": Decimal(90)},
+        selected_by_category={"International": [1, 2], "US": [3]},
+        current_values={1: Decimal(300), 2: Decimal(100), 3: Decimal(1000)},
+        split="value",
+    )
+    assert weights[1] == Decimal("7.5")
+    assert weights[2] == Decimal("2.5")
+    assert weights[3] == Decimal(90)
+    assert sum(weights.values()) == Decimal(100)
+
+
+def test_expand_category_split_equal() -> None:
+    weights = expand_category_weights(
+        category_weights_pct={"International": Decimal(10)},
+        selected_by_category={"International": [1, 2]},
+        current_values={1: Decimal(300), 2: Decimal(100)},
+        split="equal",
+    )
+    assert weights[1] == Decimal(5)
+    assert weights[2] == Decimal(5)
+
+
+def test_expand_category_value_falls_back_to_equal_when_no_value() -> None:
+    # Brand-new category — funds carry no value yet, so split evenly.
+    weights = expand_category_weights(
+        category_weights_pct={"New": Decimal(20)},
+        selected_by_category={"New": [1, 2]},
+        current_values={},
+        split="value",
+    )
+    assert weights[1] == Decimal(10)
+    assert weights[2] == Decimal(10)
+
+
+def test_expand_category_skips_zero_weight_categories() -> None:
+    weights = expand_category_weights(
+        category_weights_pct={"A": Decimal(100), "B": Decimal(0)},
+        selected_by_category={"A": [1], "B": []},
+        current_values={1: Decimal(50)},
+    )
+    assert weights == {1: Decimal(100)}
+
+
+def test_expand_category_empty_selection_raises() -> None:
+    with pytest.raises(ValueError, match="no funds selected"):
+        expand_category_weights(
+            category_weights_pct={"A": Decimal(100)},
+            selected_by_category={"A": []},
+            current_values={},
+        )
+
+
+def test_expand_category_instrument_in_two_categories_accumulates() -> None:
+    weights = expand_category_weights(
+        category_weights_pct={"A": Decimal(40), "B": Decimal(60)},
+        selected_by_category={"A": [1], "B": [1]},
+        current_values={1: Decimal(10)},
+    )
+    assert weights == {1: Decimal(100)}
