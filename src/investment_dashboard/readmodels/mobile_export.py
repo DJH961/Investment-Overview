@@ -24,6 +24,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from investment_dashboard import __version__
+from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.money_market import is_money_market
 from investment_dashboard.domain.returns import Cashflow
 from investment_dashboard.models import Transaction
@@ -31,8 +32,14 @@ from investment_dashboard.readmodels import analytics, deposits, periods, transa
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec, iso, now_utc_iso
 from investment_dashboard.repositories import accounts_repo, transactions_repo
-from investment_dashboard.services import metrics_service, positions_service, prices_service
+from investment_dashboard.services import (
+    fx_service,
+    metrics_service,
+    positions_service,
+    prices_service,
+)
 from investment_dashboard.services.positions_service import Position
+from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
 
 SCHEMA_VERSION = 1
 
@@ -42,6 +49,25 @@ _CASH_ACCOUNT_TYPES = {"savings", "cash"}
 
 def _cashflow_dict(flow: Cashflow) -> dict[str, str | None]:
     return {"date": iso(flow.date), "amount": dec(flow.amount)}
+
+
+def _paired_cashflows(
+    eur_flows: list[Cashflow],
+    usd_flows: list[Cashflow],
+) -> list[dict[str, str | None]]:
+    """Serialize aligned EUR/USD cashflow streams into per-flow dicts.
+
+    The dual builders emit the EUR and USD legs in a single ledger pass, so the
+    two lists are index-aligned (same transactions, same order). Each USD leg is
+    converted at its own trade-date FX rate, letting the web recompute currency-
+    correct growth (XIRR, total gain) in USD without rescaling at today's spot.
+    """
+    rows: list[dict[str, str | None]] = []
+    for eur, usd in zip(eur_flows, usd_flows, strict=True):
+        rows.append(
+            {"date": iso(eur.date), "amount": dec(eur.amount), "amount_usd": dec(usd.amount)}
+        )
+    return rows
 
 
 def _position_name(position: Position) -> str | None:
@@ -90,8 +116,11 @@ def _holding_dict(
     position: Position,
     *,
     cashflows: dict[int, list[Cashflow]],
+    cashflows_usd: dict[int, list[Cashflow]],
+    cost_basis_usd: dict[int, Decimal],
     price_dates: dict[int, date],
 ) -> dict[str, Any]:
+    iid = position.instrument.id
     return {
         "symbol": position.instrument.symbol,
         "name": _position_name(position),
@@ -101,6 +130,10 @@ def _holding_dict(
         "native_currency": position.account.native_currency,
         "shares": dec(position.shares),
         "cost_basis_native": dec(position.cost_basis_native),
+        # Cost basis converted at each buy's own trade-date FX (not today's
+        # spot), so the web can show a currency-correct USD total gain. Falls
+        # back to ``null`` when no USD figure is available.
+        "cost_basis_usd": dec(cost_basis_usd.get(iid)),
         "cumulative_dividends_cash_native": dec(position.cumulative_dividends_cash_native),
         "price_symbol": position.instrument.symbol,
         "price_type": _price_type(position),
@@ -111,8 +144,11 @@ def _holding_dict(
         # last NAV strike — instead of stamping the export date on a price that
         # is really days old. ``null`` for rows with no cached price history
         # (e.g. money-market funds pinned at their constant NAV).
-        "last_price_date": iso(price_dates.get(position.instrument.id)),
-        "cashflows": [_cashflow_dict(flow) for flow in cashflows.get(position.instrument.id, [])],
+        "last_price_date": iso(price_dates.get(iid)),
+        "cashflows": _paired_cashflows(
+            cashflows.get(iid, []),
+            cashflows_usd.get(iid, []),
+        ),
     }
 
 
@@ -139,11 +175,17 @@ def _portfolio_cashflows(
     txns: list[Transaction],
 ) -> list[dict[str, str | None]]:
     retained_ids = metrics_service.build_retained_cash_account_ids(session, txns)
-    flows = metrics_service.build_portfolio_cashflows(
+    eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
+
+    def _usd_amount(t: Transaction) -> Decimal:
+        return metrics_service._txn_usd_amount(t, eur_to_usd=eur_to_usd)
+
+    eur_flows, usd_flows = metrics_service.build_portfolio_cashflows_dual(
         txns,
         retained_cash_account_ids=retained_ids,
+        usd_amount_fn=_usd_amount,
     )
-    return [_cashflow_dict(flow) for flow in flows]
+    return _paired_cashflows(eur_flows, usd_flows)
 
 
 def _position_values_by_symbol(positions: list[Position]) -> dict[str, Decimal]:
@@ -161,13 +203,36 @@ def _period_openings(session: Session, *, as_of: date) -> dict[str, Any]:
     year_positions = positions_service.compute_positions(session, as_of=year_start)
     month_by_symbol = _position_values_by_symbol(month_positions)
     year_by_symbol = _position_values_by_symbol(year_positions)
+    # Convert each boundary's EUR opening value at the EUR→USD rate in force on
+    # that boundary date (forward-filled), mirroring the desktop's
+    # ``sv_usd = sv_eur * fx_boundary``. This lets the web compute currency-
+    # correct MTD/YTD growth in USD instead of rescaling at today's spot. When
+    # no rate is available the USD figure is ``null`` and the web falls back to
+    # the always-present EUR opening.
+    eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
+    month_rate = lookup_rate_with_forward_fill(eur_to_usd, month_start)
+    year_rate = lookup_rate_with_forward_fill(eur_to_usd, year_start)
+
+    def _usd(value: Decimal, rate: Decimal | None) -> Decimal | None:
+        return value * rate if rate is not None else None
+
+    month_total = sum(month_by_symbol.values(), start=Decimal(0))
+    year_total = sum(year_by_symbol.values(), start=Decimal(0))
     return {
-        "month_start_value_eur": dec(sum(month_by_symbol.values(), start=Decimal(0))),
-        "year_start_value_eur": dec(sum(year_by_symbol.values(), start=Decimal(0))),
+        "month_start_value_eur": dec(month_total),
+        "year_start_value_eur": dec(year_total),
+        "month_start_value_usd": dec(_usd(month_total, month_rate)),
+        "year_start_value_usd": dec(_usd(year_total, year_rate)),
         "holdings": {
             symbol: {
                 "month_start_value_eur": dec(month_by_symbol.get(symbol, Decimal(0))),
                 "year_start_value_eur": dec(year_by_symbol.get(symbol, Decimal(0))),
+                "month_start_value_usd": dec(
+                    _usd(month_by_symbol.get(symbol, Decimal(0)), month_rate)
+                ),
+                "year_start_value_usd": dec(
+                    _usd(year_by_symbol.get(symbol, Decimal(0)), year_rate)
+                ),
             }
             for symbol in sorted(set(month_by_symbol) | set(year_by_symbol))
         },
@@ -183,10 +248,15 @@ def build_mobile_export(
     """Assemble the minimized, JSON-serializable live-web export."""
     context = build_context(session, as_of=as_of)
     positions = positions_service.compute_positions(session, as_of=context.as_of)
-    instrument_cashflows_eur, _ = metrics_service.build_instrument_cashflows(
+    instrument_cashflows_eur, instrument_cashflows_usd = metrics_service.build_instrument_cashflows(
         session,
         as_of=context.as_of,
     )
+    # Per-instrument cost basis in USD at each buy's own trade-date FX, so the
+    # web can show a currency-correct USD total gain (mirrors the desktop's
+    # per-currency InstrumentMetrics rather than rescaling EUR at today's spot).
+    instrument_metrics = compute_instrument_metrics(session, positions, as_of=context.as_of)
+    cost_basis_usd = {iid: m.cost_basis_usd for iid, m in instrument_metrics.items()}
     # The trading day each holding's exported price actually came from, so the
     # web can show "value last updated on …" rather than the export date.
     instrument_ids = [p.instrument.id for p in positions]
@@ -218,7 +288,13 @@ def build_mobile_export(
     export: dict[str, Any] = {
         "meta": build_meta(context),
         "holdings": [
-            _holding_dict(position, cashflows=instrument_cashflows_eur, price_dates=price_dates)
+            _holding_dict(
+                position,
+                cashflows=instrument_cashflows_eur,
+                cashflows_usd=instrument_cashflows_usd,
+                cost_basis_usd=cost_basis_usd,
+                price_dates=price_dates,
+            )
             for position in positions
         ],
         "portfolio_cashflows": _portfolio_cashflows(session, txns),
@@ -226,7 +302,7 @@ def build_mobile_export(
         "period_openings": _period_openings(session, as_of=context.as_of),
         "monthly": periods.build_monthly(session, context=usd_context),
         "yearly": periods.build_yearly(session, context=usd_context),
-        "analytics": analytics.build(session, context=context),
+        "analytics": analytics.build(session, context=context, full_history_curve=True),
         "deposits": deposits.build(session, context=context),
     }
     if include_transactions:

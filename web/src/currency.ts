@@ -77,6 +77,23 @@ export function canConvertToUsd(): boolean {
 }
 
 /**
+ * Pick the figure for the active display currency for a value that is *already*
+ * denominated in its currency and must NOT be FX-rescaled — chiefly growth
+ * percentages and rates (total gain %, MTD/YTD growth, XIRR), where the EUR and
+ * USD figures genuinely differ because of FX drift between the cash-flow dates
+ * and now (mirroring the desktop's per-currency KPIs). When USD is selected and
+ * a USD figure is available, it is used verbatim; otherwise the EUR figure is
+ * used (USD display with no USD figure falls back to EUR rather than blanking).
+ */
+export function pickByCurrency(
+  valueEur: Decimal | null,
+  valueUsd: Decimal | null,
+): Decimal | null {
+  if (current === "USD" && eurUsdRate !== null && valueUsd !== null) return valueUsd;
+  return valueEur;
+}
+
+/**
  * Convert an EUR amount into the active display currency, returning both the
  * converted value and the ISO currency code to format it with. When USD is
  * selected but no rate is known, the value stays in EUR.
@@ -86,6 +103,19 @@ export function convertFromEur(valueEur: Decimal): { value: Decimal; code: Displ
     return { value: valueEur.times(eurUsdRate), code: "USD" };
   }
   return { value: valueEur, code: "EUR" };
+}
+
+/**
+ * Inverse of {@link convertFromEur}: turn an amount the user entered in the
+ * active display currency back into EUR, the currency the projection maths runs
+ * in. When USD is selected with a known rate we divide by it; otherwise the
+ * amount is already EUR and passes through unchanged.
+ */
+export function convertToEur(displayValue: Decimal): Decimal {
+  if (current === "USD" && eurUsdRate !== null && !eurUsdRate.isZero()) {
+    return displayValue.div(eurUsdRate);
+  }
+  return displayValue;
 }
 
 /**

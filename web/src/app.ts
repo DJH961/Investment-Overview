@@ -35,10 +35,12 @@ import { PriceError, type FxRates } from "./prices";
 import {
   readCachedEnvelope,
   readCachedFx,
+  readLastPull,
   readNavPublishStats,
   readSymbolPlan,
   recordNavPublish,
   writeCachedEnvelope,
+  writeLastPull,
   writeSymbolPlan,
 } from "./cache";
 import {
@@ -112,6 +114,12 @@ export class App {
   private envelopeAt: number | null = null;
   /** Last `portfolio.meta.json` version stamp seen, for the cheap freshness probe. */
   private metaVersion: string | null = null;
+  /**
+   * Epoch ms of the last successful network data pull (fresh quotes or FX),
+   * loaded from persistent storage at startup so the very first cache-only
+   * paint can already show when the data was last pulled.
+   */
+  private lastDataPullAt: number | null = readLastPull();
   /**
    * Monotonic session token. Bumped on every unlock and on lock so that
    * in-flight background work (timers, fetches) from a previous session is
@@ -846,7 +854,16 @@ export class App {
     }
 
     const degradedReason = network ? this.describeDegradation(quoteLoad.report, fxReport) : null;
+    // Record when fresh market data actually landed: a live quote fetch, or a
+    // live (non-cached) FX pull. This is "when we last pulled", independent of
+    // how old the prices themselves are — so even over a closed-market weekend
+    // it reflects today's pull. Persisted so it survives reload / re-open.
+    if (network && (quoteLoad.report.fetched.length > 0 || !fxReport.cached)) {
+      this.lastDataPullAt = Date.now();
+      writeLastPull(this.lastDataPullAt);
+    }
     const model = buildDashboard(data, quoteLoad.quotes, fx, new Date(), degradedReason);
+    model.overview.lastDataPullAt = this.lastDataPullAt;
     // Prefer the live EUR→USD rate; fall back to the export meta rate.
     setEurUsdRate(fx.rates.USD ?? model.overview.fxRateEurUsd);
     this.renderDashboard(model);

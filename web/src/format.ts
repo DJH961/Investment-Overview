@@ -122,6 +122,38 @@ export function formatSignedPercent(value: Decimal | null, digits = 2): string {
   return `${sign}${Math.abs(pct).toFixed(digits)}%`;
 }
 
+/**
+ * The "data last pulled …" stamp for the overview footer and the Refresh
+ * button tooltip. Unlike {@link formatUpdatedAt} (which describes *when the
+ * prices themselves apply to*), this describes *when the app last pulled data
+ * from the network* — so even over a closed-market weekend, where the prices
+ * are Friday's, the user can see the pull happened "today". Adds the relative
+ * keyword "today"/"yesterday" when applicable, else the date, always with the
+ * clock time of the pull. Falls back to "not yet" when no live pull has
+ * happened yet (first run, offline).
+ */
+export function formatLastPull(
+  at: number | null | undefined,
+  now: Date = new Date(),
+): string {
+  if (at === null || at === undefined) return "not yet";
+  const when = new Date(at);
+  if (Number.isNaN(when.getTime())) return "—";
+  const time = when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const dayDiff = calendarDayDiff(when, now);
+  if (dayDiff === 0) return `today at ${time}`;
+  if (dayDiff === 1) return `yesterday at ${time}`;
+  const date = when.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  return `${date} at ${time}`;
+}
+
+/** Whole calendar days between `then` and `now` (now − then), local time. */
+function calendarDayDiff(then: Date, now: Date): number {
+  const a = new Date(then.getFullYear(), then.getMonth(), then.getDate()).getTime();
+  const b = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return Math.round((b - a) / 86_400_000);
+}
+
 export function formatShares(value: Decimal): string {
   return new Intl.NumberFormat(undefined, {
     minimumFractionDigits: 0,
