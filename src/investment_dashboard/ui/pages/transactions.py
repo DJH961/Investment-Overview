@@ -306,11 +306,18 @@ def _open_txn_modal(  # noqa: PLR0915  # pragma: no cover - UI
         desc_in = ui.input("Description", value=existing["description"] if is_edit else "").classes(
             "w-full"
         )
-        route_mm = ui.checkbox("Auto-fill the money-market fund for cash transfers", value=True)
-        route_mm.tooltip(
-            "Deposits / withdrawals / transfers also buy or sell the account's "
-            "settlement (money-market) fund so you don't log it twice."
-        )
+        # The auto money-market leg is only created on insert (editing an
+        # existing row never re-derives its paired settlement leg), so the
+        # control would be a no-op when editing — only show it for new rows.
+        route_mm = None
+        if not is_edit:
+            route_mm = ui.checkbox(
+                "Auto-fill the money-market fund for cash transfers", value=True
+            )
+            route_mm.tooltip(
+                "Deposits / withdrawals / transfers also buy or sell the account's "
+                "settlement (money-market) fund so you don't log it twice."
+            )
         hint = ui.label("").classes("text-caption opacity-70")
 
         def _reconcile_hint() -> None:
@@ -418,7 +425,7 @@ def _open_txn_modal(  # noqa: PLR0915  # pragma: no cover - UI
                     transactions_repo.insert_transaction(session, txn)
                     _maybe_money_market_leg(
                         session,
-                        enabled=bool(route_mm.value),
+                        enabled=bool(route_mm.value) if route_mm is not None else False,
                         account_id=account_sel.value,
                         kind=kind,
                         net_native=net_native,
