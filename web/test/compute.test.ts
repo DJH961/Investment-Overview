@@ -431,6 +431,69 @@ describe("buildDashboard", () => {
     approx(m.overview.todayMovePct, (50 / 1.1) / (950 / 1.1 + 550 / 1.1 + 200), 1e-4);
   });
 
+  it("flags a lagging holding's daily move as stale when a peer has repriced more recently", () => {
+    const exp = makeExport();
+    exp.meta.as_of = "2024-05-31";
+    const mixedQuotes = new Map<string, Quote>([
+      [
+        "VTI",
+        {
+          symbol: "VTI",
+          price: new Decimal("100"),
+          previousClose: new Decimal("95"),
+          currency: "USD",
+          valueDate: "2024-06-03",
+        },
+      ],
+      [
+        "FXAIX",
+        {
+          symbol: "FXAIX",
+          price: new Decimal("110"),
+          previousClose: new Decimal("108"),
+          currency: "USD",
+          valueDate: "2024-05-31",
+        },
+      ],
+    ]);
+    const m = buildDashboard(exp, mixedQuotes, fx, new Date("2024-06-03T12:00:00Z"));
+    const vti = m.holdings.find((h) => h.symbol === "VTI")!;
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    // VTI printed on the freshest date; FXAIX still sits on the older NAV, so its
+    // daily figure is last session's move and must be greyed (stale) — VTI's not.
+    expect(vti.todayMoveIsStale).toBe(false);
+    expect(fxaix.todayMoveIsStale).toBe(true);
+  });
+
+  it("marks no daily move as stale before peers diverge (all on the same close)", () => {
+    const exp = makeExport();
+    exp.meta.as_of = "2024-05-31";
+    const sameDayQuotes = new Map<string, Quote>([
+      [
+        "VTI",
+        {
+          symbol: "VTI",
+          price: new Decimal("100"),
+          previousClose: new Decimal("95"),
+          currency: "USD",
+          valueDate: "2024-05-31",
+        },
+      ],
+      [
+        "FXAIX",
+        {
+          symbol: "FXAIX",
+          price: new Decimal("110"),
+          previousClose: new Decimal("108"),
+          currency: "USD",
+          valueDate: "2024-05-31",
+        },
+      ],
+    ]);
+    const m = buildDashboard(exp, sameDayQuotes, fx, new Date("2024-05-31T20:00:00Z"));
+    expect(m.holdings.every((h) => !h.todayMoveIsStale)).toBe(true);
+  });
+
   it("keeps FX revaluation on lagged holdings while dropping their stale price move from the overview", () => {
     const exp = makeExport();
     exp.meta.as_of = "2024-05-31";

@@ -14,13 +14,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [3.7.3] — 2026-06-22
+## [3.8.1] — 2026-06-22
 
 ### Fixed
 
 - Desktop daily-growth FX caption now matches the web app's rolled-back FX
   display: USD view shows EUR/USD (`€1≈$…`) and EUR view shows USD/EUR
   (`$1≈€…`). The foreign-currency strength percentage convention is unchanged.
+
+## [3.8.0] — 2026-06-22
+
+### Added
+
+- **"Today's movers" overview (web + desktop).** A new dedicated section near the
+  top of the Overview gives an at-a-glance read of the day's winners and losers
+  without scrolling. Each side shows up to two names: the **biggest money move**
+  and the **biggest percentage move** — and when one holding tops both, the
+  second slot becomes the **percentage runner-up** so two distinct names always
+  show. The board is measured on the freshest price date across the book, so
+  before the market opens it reflects the last completed session, and during the
+  session only holdings that have already printed today.
+
+### Changed
+
+- **Today's growth is greyed out for holdings that haven't updated yet.** When
+  some holdings have repriced more recently than others (e.g. ETFs printing
+  intraday while a mutual fund is still on yesterday's NAV), the lagging
+  holdings' daily-move figure is greyed with a "not updated today" hint, so a
+  glance cleanly separates today's numbers from the ones still to refresh.
+  Before the market opens every holding shares the same close, so nothing is
+  greyed. Applies to both the web companion and the desktop app.
 
 ## [3.7.2] — 2026-06-22
 
