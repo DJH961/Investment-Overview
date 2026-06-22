@@ -682,9 +682,25 @@ describe("buildDashboard overview parity features", () => {
     approx(model.overview.totalGrowthCompoundedPct, 11000 / 8900 - 1, 2e-3);
   });
 
-  it("computes the trailing dividend yield from per-holding dividend cash", () => {
-    approx(model.overview.totalDividendsEur, 200);
-    approx(model.overview.dividendYieldPct, 200 / 11000);
+  it("computes the year-to-date dividend yield from the current yearly period", () => {
+    const exp = makePeriodExport();
+    exp.yearly = {
+      rows: [
+        {
+          label: "2024",
+          contributions_eur: "0",
+          dividends_eur: "75",
+          interest_eur: "0",
+          net_flow_eur: "0",
+          opening_value_eur: "8800",
+          closing_value_eur: "11000",
+          growth_pct: null,
+        },
+      ],
+    };
+    const m = buildDashboard(exp, flatQuotes, eurFx, new Date("2024-06-15T12:00:00Z"));
+    approx(m.overview.totalDividendsEur, 75);
+    approx(m.overview.dividendYieldPct, 75 / 11000);
   });
 
   it("surfaces the EUR→USD reference rate", () => {

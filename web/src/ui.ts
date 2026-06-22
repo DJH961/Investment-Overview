@@ -185,31 +185,14 @@ function valueBasisLabel(o: OverviewView, now: Date = new Date()): string {
 /**
  * The live FX context under today's move: the current spot and how far it has
  * moved today (the % deviation), plus an honest "end-of-day FX" tag when only
- * the ECB daily rate was available. Both display currencies show the rate from
- * the user's own side as a "spend my currency, get the other" conversion: USD
- * display quotes USD/EUR (how much EUR one dollar buys), EUR display quotes the
- * reciprocal EUR/USD (how much USD one euro buys). The percentage tracks the
- * strength of the *foreign* currency you'd convert into — euro in USD display,
- * dollar in EUR display — so a positive figure always means "that currency went
- * up". This is deliberately counter-intuitive against the rate number (which
- * moves the opposite way), because it answers "did the euro or the dollar rise?"
- * rather than "did this digit go up?". We do *not* print any "how much the swing
- * made you in EUR" money line — the FX P/L slice lives in the Risk tab's currency
- * panel, not on the hero. Returns null when there's no rate to show.
+ * the ECB daily rate was available. Returns null when there's no rate to show.
  */
 function renderHeroFx(o: OverviewView): HTMLElement | null {
   const inUsd = getDisplayCurrency() === "USD";
   const parts: HTMLElement[] = [];
   if (o.fxRateEurUsd !== null) {
-    // The spot rate, plus how far the FX moved today. The stored spot is EUR/USD
-    // (USD per 1 EUR), and `devPct` is the euro's move. In USD display we invert
-    // the rate to USD/EUR (EUR per 1 USD); the percentage keeps the euro's sign
-    // so "+" = euro stronger. In EUR display we show EUR/USD as-is but negate the
-    // percentage so it reads the dollar's strength, "+" = dollar stronger.
-    // Example: EUR/USD 1.07 → 1.08 (euro up). USD display shows USD/EUR ticking
-    // *down* (0.9346 → 0.9259) yet a +% because the euro strengthened.
     const devPct = fxTodayDeviationPct(o);
-    const rate = inUsd ? new Decimal(1).dividedBy(o.fxRateEurUsd) : o.fxRateEurUsd;
+    const rate = inUsd ? o.fxRateEurUsd : new Decimal(1).dividedBy(o.fxRateEurUsd);
     const dev = devPct === null ? null : inUsd ? devPct : devPct.negated();
     const pair = inUsd ? "USD/EUR" : "EUR/USD";
     const rateLabel =
@@ -278,40 +261,17 @@ function renderStats(o: OverviewView): HTMLElement {
     stat("XIRR", formatPercent(xirr), signClass(xirr)),
     stat("Div. yield", o.dividendYieldPct !== null ? formatPercent(o.dividendYieldPct) : "—"),
     stat("Invested", formatDualCurrency(o.totalCostBasisEur, o.totalCostBasisUsd)),
-    stat("Cash & savings", formatCurrency(o.cashValueEur)),
+    stat("Dividends YTD", formatCurrency(o.totalDividendsEur)),
   ]);
   return h("section", { class: "stats" }, [grid, ...renderNotes(o)]);
-}
-
-/**
- * A short provenance tag for the EUR→USD rate shown on the coverage line:
- * "(live)" for the intraday Twelve Data spot, "(cached)" for a recently-stored
- * live spot reused without a re-fetch (so a quick app re-open stays instant),
- * "(end-of-day)" for the ECB daily fallback, and nothing for an export rate.
- */
-function fxSourceTag(o: OverviewView): string {
-  if (o.eurUsdSource === "live") return " (live)";
-  if (o.eurUsdSource === "cache") return " (cached)";
-  if (o.eurUsdSource === "eod") return " (end-of-day)";
-  return "";
 }
 
 function renderNotes(o: OverviewView): HTMLElement[] {
   const notes: HTMLElement[] = [];
   // Lead with the live-coverage line: a calm, descriptive "how much is fresh"
-  // status. The live FX spot rides along here (prioritised over the ECB
-  // end-of-day rate) so the single most-watched live number sits with the
-  // freshness summary rather than reflowing a separate line below. It is quoted
-  // from the display currency's side (EUR→USD in USD display, the reciprocal
-  // USD→EUR in EUR display) so it matches the hero's inverted FX line.
+  // status.
   const coverageParts: string[] = [];
   if (o.liveCoverage) coverageParts.push(o.liveCoverage);
-  if (o.fxRateEurUsd !== null) {
-    const inUsd = getDisplayCurrency() === "USD";
-    const rate = inUsd ? o.fxRateEurUsd : new Decimal(1).dividedBy(o.fxRateEurUsd);
-    const pair = inUsd ? "EUR→USD" : "USD→EUR";
-    coverageParts.push(`${pair} ${formatFxRate(rate)}${fxSourceTag(o)}`);
-  }
   if (coverageParts.length > 0) {
     notes.push(h("p", { class: "note coverage" }, [coverageParts.join(" · ")]));
   }
@@ -336,13 +296,6 @@ function renderNotes(o: OverviewView): HTMLElement[] {
     notes.push(
       h("p", { class: "note warn" }, [
         `Missing FX rate for ${o.fxMissingCurrencies.join(", ")}; those holdings are excluded from totals.`,
-      ]),
-    );
-  }
-  if (o.fxRateEurUsd !== null) {
-    notes.push(
-      h("p", { class: "note" }, [
-        `Dividends ${formatCurrency(o.totalDividendsEur)} to date.`,
       ]),
     );
   }
