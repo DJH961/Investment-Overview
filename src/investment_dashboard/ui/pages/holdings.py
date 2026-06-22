@@ -10,7 +10,9 @@ concentrated position, weighted expense and the per-currency totals.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
 from nicegui import ui
 
@@ -32,6 +34,7 @@ from investment_dashboard.ui.money_format import (
 )
 from investment_dashboard.ui.pages._overview_query import (
     HoldingCard,
+    PortfolioMetrics,
     build_holding_cards,
     compute_instrument_metrics,
     get_metrics,
@@ -48,6 +51,17 @@ from investment_dashboard.ui.theme import color_for_signed
 PATH = "/holdings"
 
 ZERO = Decimal(0)
+
+
+@dataclass(frozen=True)
+class _HoldingsData:
+    """Everything the holdings body needs, gathered off the event loop."""
+
+    metrics: PortfolioMetrics
+    display_ccy: str
+    rows: list[dict[str, Any]]
+    cards: list[HoldingCard]
+
 
 #: AG-Grid ``valueFormatter`` (JS expression) rendering a numeric fraction as a
 #: signed percentage, e.g. ``0.0455`` -> ``"4.55 %"``; blanks out ``null``.
@@ -195,7 +209,9 @@ def register() -> None:
         with page_frame("Holdings", current=PATH):
             page_header("Holdings", subtitle="Every position in full detail")
 
-            def _build() -> None:
+            def _gather() -> _HoldingsData:
+                # Heavy DB + metrics work runs off the event loop so the
+                # websocket stays responsive while it crunches.
                 with session_scope() as session:
                     metrics = get_metrics(session)
                     positions = get_positions(session)
@@ -222,6 +238,15 @@ def register() -> None:
                     freshness=freshness,
                     price_anomaly_ids=price_anomaly_ids,
                 )
+                return _HoldingsData(
+                    metrics=metrics, display_ccy=display_ccy, rows=rows, cards=cards
+                )
+
+            def _build(data: _HoldingsData) -> None:
+                metrics = data.metrics
+                display_ccy = data.display_ccy
+                rows = data.rows
+                cards = data.cards
 
                 if not rows:
                     empty_state(
@@ -336,4 +361,4 @@ def register() -> None:
                         }
                     ).classes("ag-theme-alpine w-full h-[65vh]")
 
-            deferred(_build)
+            deferred(_build, compute=_gather)

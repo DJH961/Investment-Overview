@@ -154,6 +154,13 @@ def run() -> None:
 
     error_reporting.install()
     app.on_startup(error_reporting.install_asyncio_handler)
+    # Safety net: warn (in-app + log) when a long synchronous calculation blocks
+    # the event loop, instead of letting the resulting websocket stall silently
+    # disconnect every tab. The durable fix is to keep heavy work off the loop
+    # (see ui.components.deferred's compute hook); this makes a freeze visible.
+    from investment_dashboard.services import loop_watchdog  # noqa: PLC0415
+
+    loop_watchdog.install()
     settings = get_settings()
     log.info(
         "Starting Investment Dashboard %s on %s:%s",
