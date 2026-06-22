@@ -231,3 +231,41 @@ def test_install_asyncio_handler_attaches_to_running_loop() -> None:
 
     handler = asyncio.run(_run())
     assert handler is error_reporting.loop_exception_handler
+
+
+def test_stderr_tee_records_warning_line_as_warning_severity() -> None:
+    """A stray WARNING-level line surfaces as an amber warning, not a red error."""
+    import io
+
+    tee = error_reporting._StderrTee(io.StringIO())
+    tee.write("WARNI [yfinance_client] AAPL returned no data\n")
+    latest = runtime_status.latest()
+    assert latest is not None
+    assert latest.source == "stderr"
+    assert latest.is_warning is True
+
+
+def test_stderr_tee_records_full_warning_token_with_timestamp() -> None:
+    import io
+
+    tee = error_reporting._StderrTee(io.StringIO())
+    tee.write("2026-06-22 13:31:40 WARNING loop_watchdog — UI stalled\n")
+    latest = runtime_status.latest()
+    assert latest is not None
+    assert latest.is_warning is True
+
+
+def test_stderr_tee_warning_mixed_with_traceback_stays_error() -> None:
+    """If anything non-warning is mixed in, the chunk records as an error."""
+    import io
+
+    tee = error_reporting._StderrTee(io.StringIO())
+    tee.write("WARNING something\nTraceback (most recent call last):\n")
+    latest = runtime_status.latest()
+    assert latest is not None
+    assert latest.is_warning is False
+
+
+def test_chunk_severity_classifies_warning_and_error() -> None:
+    assert error_reporting._chunk_severity("WARNING foo") == runtime_status.SEVERITY_WARNING
+    assert error_reporting._chunk_severity("boom") == runtime_status.SEVERITY_ERROR

@@ -42,14 +42,32 @@ _MAX_LOG_ENTRIES = 50
 _DEDUP_WINDOW = timedelta(seconds=30)
 
 
+#: Severity levels a recorded event can carry. ``"warning"`` is for non-fatal
+#: chatter (a single missing-data ``WARNING`` log line, a UI-responsiveness
+#: stall) that the UI shows in amber rather than as a red error.
+SEVERITY_WARNING = "warning"
+SEVERITY_ERROR = "error"
+
+
 @dataclass(frozen=True)
 class BackgroundError:
-    """One failed background task."""
+    """One recorded background problem (a failure *or* a warning).
+
+    ``severity`` is ``"error"`` for genuine failures and ``"warning"`` for
+    non-fatal chatter (e.g. a single ``WARNING`` log line). The UI renders the
+    two differently — red vs amber — instead of treating everything as an error.
+    """
 
     source: str
     message: str
     seq: int
     at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    severity: str = SEVERITY_ERROR
+
+    @property
+    def is_warning(self) -> bool:
+        """True when this event is a non-fatal warning rather than an error."""
+        return self.severity == SEVERITY_WARNING
 
 
 _lock = threading.Lock()
@@ -62,12 +80,15 @@ _state: dict[str, int] = {"seq": 0}
 _last_seen: dict[tuple[str, str], datetime] = {}
 
 
-def record_error(source: str, message: str) -> BackgroundError:
-    """Store a background failure and return the resulting event.
+def record_error(source: str, message: str, *, severity: str = SEVERITY_ERROR) -> BackgroundError:
+    """Store a background problem and return the resulting event.
 
     Thread-safe: background refreshes run on separate threads/tasks. ``seq`` is a
     monotonically increasing counter the UI uses to detect *new* errors without
     holding a reference to the event itself.
+
+    ``severity`` is ``"error"`` (the default) for genuine failures or
+    ``"warning"`` for non-fatal chatter; the UI styles the two differently.
 
     An identical ``(source, message)`` seen again within :data:`_DEDUP_WINDOW` is
     suppressed: the previously recorded event is returned unchanged and ``seq``
@@ -88,12 +109,21 @@ def record_error(source: str, message: str) -> BackgroundError:
             for event in reversed(_log):
                 if event.source == source and event.message == message:
                     return event
-            return BackgroundError(source=source, message=message, seq=_state["seq"], at=now)
+            return BackgroundError(
+                source=source, message=message, seq=_state["seq"], at=now, severity=severity
+            )
         _last_seen[key] = now
         _state["seq"] += 1
-        event = BackgroundError(source=source, message=message, seq=_state["seq"], at=now)
+        event = BackgroundError(
+            source=source, message=message, seq=_state["seq"], at=now, severity=severity
+        )
         _log.append(event)
     return event
+
+
+def record_warning(source: str, message: str) -> BackgroundError:
+    """Convenience wrapper for :func:`record_error` with ``severity="warning"``."""
+    return record_error(source, message, severity=SEVERITY_WARNING)
 
 
 def latest() -> BackgroundError | None:

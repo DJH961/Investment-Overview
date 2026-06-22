@@ -122,7 +122,7 @@ def _render_background_errors() -> None:  # pragma: no cover - UI
         runtime_status.dismiss_all()
         _reload()
 
-    with section(f"Recent errors ({len(errors)})"):
+    with section(f"Recent problems ({len(errors)})"):
         with ui.row().classes("items-center justify-between w-full no-wrap q-mb-sm"):
             ui.label(
                 "Problems the app recorded recently — background refresh failures, "
@@ -135,9 +135,10 @@ def _render_background_errors() -> None:  # pragma: no cover - UI
                 "flat dense no-caps color=primary"
             )
         for event in errors:
+            severity = "warning" if event.is_warning else "error"
             with ui.element("div").classes("inv-section w-full"):
                 with ui.row().classes("items-center gap-sm no-wrap w-full"):
-                    ui.icon("error", color="negative")
+                    ui.icon(SEVERITY_ICON[severity], color=SEVERITY_COLOR[severity])
                     ui.label(event.source).classes("text-subtitle2")
                     ui.label(event.at.strftime("%Y-%m-%d %H:%M UTC")).classes(
                         "text-caption opacity-60"

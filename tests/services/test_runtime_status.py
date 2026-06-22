@@ -80,6 +80,32 @@ def test_dedup_expires_after_window(monkeypatch: pytest.MonkeyPatch) -> None:
     assert runtime_status.sequence() == 2
 
 
+def test_record_error_defaults_to_error_severity() -> None:
+    event = runtime_status.record_error("stderr", "boom")
+    assert event.severity == runtime_status.SEVERITY_ERROR
+    assert event.is_warning is False
+
+
+def test_record_warning_marks_event_as_warning() -> None:
+    event = runtime_status.record_warning("yfinance_client", "returned no data")
+    assert event.severity == runtime_status.SEVERITY_WARNING
+    assert event.is_warning is True
+
+
+def test_record_error_accepts_explicit_warning_severity() -> None:
+    event = runtime_status.record_error(
+        "loop_watchdog", "stall", severity=runtime_status.SEVERITY_WARNING
+    )
+    assert event.is_warning is True
+
+
+def test_deduped_warning_preserves_severity() -> None:
+    first = runtime_status.record_warning("stderr", "same warning")
+    second = runtime_status.record_warning("stderr", "same warning")
+    assert second.seq == first.seq
+    assert second.is_warning is True
+
+
 def test_dismiss_removes_single_error_but_keeps_sequence() -> None:
     first = runtime_status.record_error("src", "msg-1")
     runtime_status.record_error("src", "msg-2")

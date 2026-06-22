@@ -326,6 +326,13 @@ def page_frame(title: str, *, current: str) -> Iterator[None]:
         now_tz=now_tz,
     )
     _sidebar(current)
+    # Keep the user where they were after a full-page reload (the Update chip
+    # and the chart range toggles both reload), rather than jumping to the top.
+    from investment_dashboard.ui.scroll_restore import (  # noqa: PLC0415
+        install_scroll_restoration,
+    )
+
+    install_scroll_restoration(current)
     # Surface any *new* background-task failure (live refresh / startup refresh)
     # as a toast while this page is open — the app runs with no console window.
     from investment_dashboard.ui import runtime_errors  # noqa: PLC0415
