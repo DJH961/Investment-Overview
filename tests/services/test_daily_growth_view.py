@@ -40,7 +40,7 @@ def test_live_says_live_only() -> None:
     # Live: the single state word "live", no "today" and no clock; FX trails.
     assert cap.as_of_text == "live"
     assert cap.updated_text is None
-    assert cap.combined() == "live \u00b7 \u20ac1\u2248$1.0800"
+    assert cap.combined() == "live \u00b7 $1\u2248\u20ac0.9259"
 
 
 def test_today_closed_says_today_and_stamps_the_market_close_time() -> None:
@@ -107,7 +107,7 @@ def test_today_closed_prefers_market_time_and_trails_pull_time() -> None:
     assert cap.updated_text == "as of 21:59 \u00b7 updated 22:16"
     assert (
         cap.combined()
-        == "today \u00b7 as of 21:59 \u00b7 updated 22:16 \u00b7 \u20ac1\u2248$1.0800"
+        == "today \u00b7 as of 21:59 \u00b7 updated 22:16 \u00b7 $1\u2248\u20ac0.9259"
     )
 
 
@@ -150,25 +150,24 @@ def test_closed_past_date_is_formatted() -> None:
 
 def test_fx_detail_is_tight_and_display_relative() -> None:
     # No comparison mark -> spot only, no percentage move.
-    # EUR user sees how much USD one euro buys (the rate as-is)…
+    # EUR user prices the foreign USD unit in EUR (the inverse, USD/EUR)…
     eur = _caption()
-    assert eur.fx_text == "\u20ac1\u2248$1.0800"
-    # …USD user sees how much EUR one dollar buys (the inverse).
+    assert eur.fx_text == "$1\u2248\u20ac0.9259"
+    # …USD user prices EUR in USD (the rate as-is, EUR/USD).
     usd = _caption(display_ccy="USD")
-    assert usd.fx_text == "$1\u2248\u20ac0.9259"
+    assert usd.fx_text == "\u20ac1\u2248$1.0800"
 
 
 def test_fx_detail_appends_percentage_move_versus_prior_day() -> None:
-    # The percentage tracks the foreign (converted-into) currency, so it moves
-    # opposite to the displayed rate number — counter-intuitive by design.
-    # USD display shows $1≈€ (into euros): EUR rose 1.0700 → 1.0800 ⇒ +0.93%,
-    # even though the € figure (1/eur_usd) ticked down.
+    # The percentage tracks the foreign (converted-into) currency's strength.
+    # USD display shows €1≈$ (EUR priced in USD): EUR rose 1.0700 → 1.0800 ⇒
+    # +0.93%, in step with the € figure ticking up.
     usd = _caption(display_ccy="USD", fx_eur_usd=Decimal("1.08"), fx_eur_usd_prev=Decimal("1.07"))
-    assert usd.fx_text == "$1\u2248\u20ac0.9259 (+0.93%)"
-    # EUR display shows €1≈$ (into dollars): the dollar weakened as the euro rose,
-    # so the same move reads −0.93% even though the $ figure ticked up.
+    assert usd.fx_text == "\u20ac1\u2248$1.0800 (+0.93%)"
+    # EUR display shows $1≈€ (USD priced in EUR): the dollar weakened as the euro
+    # rose, so the same move reads −0.93%, in step with the € figure ticking down.
     eur = _caption(fx_eur_usd=Decimal("1.08"), fx_eur_usd_prev=Decimal("1.07"))
-    assert eur.fx_text == "\u20ac1\u2248$1.0800 (\u22120.93%)"
+    assert eur.fx_text == "$1\u2248\u20ac0.9259 (\u22120.93%)"
 
 
 def test_fx_percentage_omitted_without_prior_mark() -> None:

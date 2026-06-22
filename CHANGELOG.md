@@ -14,6 +14,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.7.3] — 2026-06-22
+
+### Fixed
+
+- Desktop daily-growth FX caption now matches the web app's rolled-back FX
+  display: USD view shows EUR/USD (`€1≈$…`) and EUR view shows USD/EUR
+  (`$1≈€…`). The foreign-currency strength percentage convention is unchanged.
+
 ## [3.7.2] — 2026-06-22
 
 ### Fixed
