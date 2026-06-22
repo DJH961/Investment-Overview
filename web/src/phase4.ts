@@ -228,6 +228,7 @@ function upsertCurrent(
   liveGrowthPct: Decimal | null,
   liveGrowthPctUsd: Decimal | null,
   liveClosingEur: Decimal,
+  live: boolean,
 ): void {
   const existing = rows.find((row) => row.label === currentLabel);
   if (existing) {
@@ -239,7 +240,10 @@ function upsertCurrent(
     if (liveGrowthPct !== null) {
       existing.growthPct = liveGrowthPct;
       existing.growthPctUsd = liveGrowthPctUsd;
-      existing.isLive = true;
+      // Only flag the row "live" when prices are genuinely live right now (the
+      // session is open and the freshest mark is from today). Otherwise the
+      // value still updates to the latest close — it just isn't badged "live".
+      existing.isLive = live;
     }
     return;
   }
@@ -264,7 +268,7 @@ function upsertCurrent(
     interestUsd: null,
     closingValueUsd: null,
     isCurrent: true,
-    isLive: liveGrowthPct !== null,
+    isLive: live && liveGrowthPct !== null,
   });
 }
 
@@ -284,6 +288,7 @@ export function buildPeriods(data: MobileExport, overview: OverviewView): Period
       overview.mtdGrowthPct,
       overview.mtdGrowthPctUsd,
       overview.totalValueEur,
+      overview.pricesAreLive,
     );
   }
   if (yearlySource) {
@@ -293,6 +298,7 @@ export function buildPeriods(data: MobileExport, overview: OverviewView): Period
       overview.ytdGrowthPct,
       overview.ytdGrowthPctUsd,
       overview.totalValueEur,
+      overview.pricesAreLive,
     );
   }
   // Newest period first (neobroker reverse-chronological list).

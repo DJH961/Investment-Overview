@@ -43,6 +43,7 @@ function overview(extra: Partial<OverviewView> = {}): OverviewView {
     generatedAt: "2026-06-19T08:00:00+00:00",
     asOf: "2026-06-19",
     liveAsOf: null,
+    pricesAreLive: false,
     liveAsOfFallbackDate: "2026-06-19",
     lastDataPullAt: null,
     totalValueEur: new Decimal("39000"),
@@ -101,7 +102,7 @@ describe("buildPeriods", () => {
   });
 
   it("overlays the live current month with the live MTD growth + value", () => {
-    const { monthly } = buildPeriods(data, overview());
+    const { monthly } = buildPeriods(data, overview({ pricesAreLive: true }));
     const current = monthly.find((r) => r.label === "2026-06")!;
     expect(current.isCurrent).toBe(true);
     expect(current.isLive).toBe(true);
@@ -117,7 +118,7 @@ describe("buildPeriods", () => {
   });
 
   it("overlays the live current year with YTD growth and lists newest first", () => {
-    const { yearly } = buildPeriods(data, overview());
+    const { yearly } = buildPeriods(data, overview({ pricesAreLive: true }));
     expect(yearly[0].label).toBe("2026");
     expect(yearly[0].isLive).toBe(true);
     expect(yearly[0].growthPct!.toString()).toBe("0.11");
@@ -138,13 +139,24 @@ describe("buildPeriods", () => {
         ],
       },
     });
-    const { monthly } = buildPeriods(noCurrent, overview());
+    const { monthly } = buildPeriods(noCurrent, overview({ pricesAreLive: true }));
     // Newest first: the synthesised live current month leads the list.
     expect(monthly[0].label).toBe("2026-06");
     expect(monthly[0].isCurrent).toBe(true);
     expect(monthly[0].isLive).toBe(true);
     expect(monthly[0].closingValueEur!.toString()).toBe("39000");
     expect(monthly[0].growthPct!.toString()).toBe("0.05");
+  });
+
+  it("updates the current month value but does NOT badge it live when prices aren't live", () => {
+    // Market closed / no fresh same-day data: the row still overlays the latest
+    // value and growth, but must not claim to be "live".
+    const { monthly } = buildPeriods(data, overview({ pricesAreLive: false }));
+    const current = monthly.find((r) => r.label === "2026-06")!;
+    expect(current.isCurrent).toBe(true);
+    expect(current.isLive).toBe(false);
+    expect(current.closingValueEur!.toString()).toBe("39000");
+    expect(current.growthPct!.toString()).toBe("0.05");
   });
 
   it("maps the per-trade-date USD period growth when the row is a USD context", () => {
@@ -182,7 +194,7 @@ describe("buildPeriods", () => {
         ],
       },
     });
-    const { monthly } = buildPeriods(data, overview({ mtdGrowthPctUsd: new Decimal("0.07") }));
+    const { monthly } = buildPeriods(data, overview({ mtdGrowthPctUsd: new Decimal("0.07"), pricesAreLive: true }));
     const current = monthly.find((r) => r.label === "2026-06")!;
     expect(current.isLive).toBe(true);
     expect(current.growthPct!.toString()).toBe("0.05");
