@@ -60,6 +60,25 @@ logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 # fallback — even when the live bar hasn't published yet.
 _FALLBACK_LOOKBACK_DAYS = 10
 
+#: How many tickers to name inline in a status message before truncating, so the
+#: connectivity log says *which* symbols were pulled without growing unbounded
+#: for a full-portfolio refresh.
+_STATUS_SYMBOL_LIMIT = 12
+
+
+def _format_symbols(symbols: list[str]) -> str:
+    """Render a tickers list for a status message (sorted, capped, deduped).
+
+    Names up to :data:`_STATUS_SYMBOL_LIMIT` symbols inline so the connectivity
+    log shows exactly *what* was fetched, then summarises the remainder as
+    "… +N more" to keep the line short on a full-portfolio refresh.
+    """
+    unique = sorted(dict.fromkeys(symbols))
+    if len(unique) <= _STATUS_SYMBOL_LIMIT:
+        return ", ".join(unique)
+    shown = ", ".join(unique[:_STATUS_SYMBOL_LIMIT])
+    return f"{shown}, … +{len(unique) - _STATUS_SYMBOL_LIMIT} more"
+
 
 class YFinanceError(RuntimeError):
     """Raised when yfinance returns a fundamentally unusable payload."""
@@ -157,7 +176,7 @@ def fetch_closes(
 
     still_missing = [s for s in symbols if not result.get(s)]
     if not still_missing:
-        msg = f"Fetched {len(symbols)} symbol(s) for {start}..{end}"
+        msg = f"Fetched {len(symbols)} symbol(s) for {start}..{end}: {_format_symbols(symbols)}"
         if used_fallback:
             msg += " (last-close fallback used)"
         _record_status("ok", msg)
