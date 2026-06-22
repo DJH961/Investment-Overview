@@ -815,8 +815,9 @@ function renderYearGroup(
   months: PeriodRowView[],
   isCurrent: boolean,
 ): HTMLElement {
-  // Headline: growth % and closing value, shifted to the left of the summary and
-  // given a touch more emphasis than the muted sub-labels elsewhere.
+  // Headline: growth % and closing value, pushed to the right of the summary
+  // (right-aligned, with space after the year) and given a touch more emphasis
+  // than the muted sub-labels elsewhere.
   const growthPct = yearRow ? pickByCurrency(yearRow.growthPct, yearRow.growthPctUsd) : null;
   const valuePart =
     yearRow && yearRow.closingValueEur !== null
@@ -1447,17 +1448,18 @@ function renderAnalyticsPanel(
     ]),
   ];
 
-  // The headline USD/EUR comparison for a euro investor — always visible, never
-  // dependent on the toggle (it shows both currencies at once).
-  const currencyEffect = renderCurrencyEffect(overview, deposits);
-  if (currencyEffect) children.push(currencyEffect);
-
+  // Risk-tab body order: equity curve, then the currency comparison, then
+  // attribution, and finally the drawdown chart (see the matching desktop grid
+  // areas in styles.css). The currency comparison is always visible (it shows
+  // both EUR and USD at once), never gated on the toggle.
   const curve = renderEquityCurve(analytics.curve, analytics.benchmarkSymbol);
   if (curve) children.push(curve);
-  const drawdown = renderDrawdownChart(analytics.curve);
-  if (drawdown) children.push(drawdown);
+  const currencyEffect = renderCurrencyEffect(overview, deposits);
+  if (currencyEffect) children.push(currencyEffect);
   const attribution = renderAttribution(analytics.attribution);
   if (attribution) children.push(attribution);
+  const drawdown = renderDrawdownChart(analytics.curve);
+  if (drawdown) children.push(drawdown);
 
   children.push(
     h("p", { class: "disclaimer" }, [
