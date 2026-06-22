@@ -168,26 +168,31 @@ function valueBasisLabel(o: OverviewView, now: Date = new Date()): string {
 }
 
 /**
- * The live EUR/USD context under today's move: the current spot, how much of
- * today's move came from the EUR/USD swing (the FX-aware part), and an honest
- * "end-of-day FX" tag when only the ECB daily rate was available. Returns null
- * when there's nothing useful to show (no rate and no FX contribution).
+ * The live FX context under today's move: the current spot and how far it has
+ * moved today (the % deviation), plus an honest "end-of-day FX" tag when only
+ * the ECB daily rate was available. Both display currencies show the rate — they
+ * just look at it from their own side: USD display quotes EUR/USD, EUR display
+ * quotes the reciprocal USD/EUR with the deviation flipped, so a EUR-thinking
+ * user sees the same swing inverted rather than a foreign EUR/USD figure. We do
+ * *not* print any "how much the swing made you in EUR" money line — the FX P/L
+ * slice lives in the Risk tab's currency panel, not on the hero. Returns null
+ * when there's no rate to show.
  */
 function renderHeroFx(o: OverviewView): HTMLElement | null {
   const inUsd = getDisplayCurrency() === "USD";
-  // In EUR display we deliberately show no FX context at all: a EUR-thinking user
-  // asked for the FX text to be removed entirely, so the hero stays clean and the
-  // headline EUR figures speak for themselves. The FX rate / swing context is
-  // surfaced only in USD display (where the dollar view makes EUR/USD relevant).
-  if (!inUsd) return null;
   const parts: HTMLElement[] = [];
   if (o.fxRateEurUsd !== null) {
     // The spot rate, plus how far it has moved today (the % the FX has deviated).
+    // In EUR display we invert the quote (USD/EUR = 1 / EUR/USD) and flip the
+    // deviation sign so the same swing reads from the EUR holder's side.
     const devPct = fxTodayDeviationPct(o);
+    const rate = inUsd ? o.fxRateEurUsd : new Decimal(1).dividedBy(o.fxRateEurUsd);
+    const dev = devPct === null ? null : inUsd ? devPct : devPct.negated();
+    const pair = inUsd ? "EUR/USD" : "USD/EUR";
     const rateLabel =
-      devPct !== null
-        ? `EUR/USD ${formatFxRate(o.fxRateEurUsd)} (${formatSignedPercent(devPct)} today)`
-        : `EUR/USD ${formatFxRate(o.fxRateEurUsd)}`;
+      dev !== null
+        ? `${pair} ${formatFxRate(rate)} (${formatSignedPercent(dev)} today)`
+        : `${pair} ${formatFxRate(rate)}`;
     parts.push(h("span", { class: "hero-fx-rate" }, [rateLabel]));
   }
   if (o.eurUsdSource === "eod") {
@@ -271,12 +276,19 @@ function fxSourceTag(o: OverviewView): string {
 function renderNotes(o: OverviewView): HTMLElement[] {
   const notes: HTMLElement[] = [];
   // Lead with the live-coverage line: a calm, descriptive "how much is fresh"
-  // status. The live EUR→USD spot rides along here (prioritised over the ECB
+  // status. The live FX spot rides along here (prioritised over the ECB
   // end-of-day rate) so the single most-watched live number sits with the
-  // freshness summary rather than reflowing a separate line below.
+  // freshness summary rather than reflowing a separate line below. It is quoted
+  // from the display currency's side (EUR→USD in USD display, the reciprocal
+  // USD→EUR in EUR display) so it matches the hero's inverted FX line.
   const coverageParts: string[] = [];
   if (o.liveCoverage) coverageParts.push(o.liveCoverage);
-  if (o.fxRateEurUsd !== null) coverageParts.push(`EUR→USD ${formatFxRate(o.fxRateEurUsd)}${fxSourceTag(o)}`);
+  if (o.fxRateEurUsd !== null) {
+    const inUsd = getDisplayCurrency() === "USD";
+    const rate = inUsd ? o.fxRateEurUsd : new Decimal(1).dividedBy(o.fxRateEurUsd);
+    const pair = inUsd ? "EUR→USD" : "USD→EUR";
+    coverageParts.push(`${pair} ${formatFxRate(rate)}${fxSourceTag(o)}`);
+  }
   if (coverageParts.length > 0) {
     notes.push(h("p", { class: "note coverage" }, [coverageParts.join(" · ")]));
   }
