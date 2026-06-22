@@ -396,6 +396,78 @@ describe("buildDashboard", () => {
     expect(fxaix.todayMovePct).toBeNull();
   });
 
+  it("aggregates the overview move on one global price date instead of summing a lagged NAV session", () => {
+    const exp = makeExport();
+    exp.meta.as_of = "2024-05-31";
+    const mixedQuotes = new Map<string, Quote>([
+      [
+        "VTI",
+        {
+          symbol: "VTI",
+          price: new Decimal("100"),
+          previousClose: new Decimal("95"),
+          currency: "USD",
+          valueDate: "2024-06-03",
+        },
+      ],
+      [
+        "FXAIX",
+        {
+          symbol: "FXAIX",
+          price: new Decimal("110"),
+          previousClose: new Decimal("108"),
+          currency: "USD",
+          valueDate: "2024-05-31",
+        },
+      ],
+    ]);
+    const m = buildDashboard(exp, mixedQuotes, fx, new Date("2024-06-03T12:00:00Z"));
+    // Desktop methodology values the whole book on 2024-06-03 and the prior
+    // global print date. FXAIX has not repriced since 2024-05-31, so its Friday
+    // 108→110 move must not leak into Monday's overview move.
+    approx(m.overview.todayMoveUsd, 50, 1e-6);
+    approx(m.overview.todayMoveEur, 50 / 1.1, 1e-3);
+    approx(m.overview.todayMovePctUsd, 50 / (950 + 550 + 220), 1e-4);
+    approx(m.overview.todayMovePct, (50 / 1.1) / (950 / 1.1 + 550 / 1.1 + 200), 1e-4);
+  });
+
+  it("keeps FX revaluation on lagged holdings while dropping their stale price move from the overview", () => {
+    const exp = makeExport();
+    exp.meta.as_of = "2024-05-31";
+    exp.cash = [];
+    const mixedQuotes = new Map<string, Quote>([
+      [
+        "VTI",
+        {
+          symbol: "VTI",
+          price: new Decimal("100"),
+          previousClose: new Decimal("100"),
+          currency: "USD",
+          valueDate: "2024-06-03",
+        },
+      ],
+      [
+        "FXAIX",
+        {
+          symbol: "FXAIX",
+          price: new Decimal("110"),
+          previousClose: new Decimal("108"),
+          currency: "USD",
+          valueDate: "2024-05-31",
+        },
+      ],
+    ]);
+    const m = buildDashboard(exp, mixedQuotes, fx, new Date("2024-06-03T12:00:00Z"), null, {
+      fxPrevEurUsd: new Decimal("1.05"),
+    });
+    // On the 2024-06-03 global step, both holdings keep their current native
+    // prices in USD. EUR still feels the FX swing on the whole 1550 USD book, but
+    // FXAIX's older 108→110 price move must not be counted again.
+    approx(m.overview.todayMoveUsd, 0, 1e-6);
+    approx(m.overview.todayMoveEur, 1550 / 1.1 - 1550 / 1.05, 1e-3);
+    approx(m.overview.todayFxMoveEur, 1550 / 1.1 - 1550 / 1.05, 1e-3);
+  });
+
   it("shows a fallback NAV's real last-update date (last_price_date), not the export date", () => {
     // Export taken on a Sunday, but FXAIX's NAV last published the prior Friday.
     const exp = makeExport();
@@ -450,8 +522,13 @@ describe("FX-aware today's move", () => {
     approx(vti.todayMoveUsd, 50, 1e-6);
     // Price-only EUR move at today's rate = 50/1.10; FX part is the remainder.
     approx(vti.todayFxMoveEur, 1000 / 1.1 - 950 / 1.05 - 50 / 1.1, 1e-3);
-    // Overview aggregates the FX slice.
-    approx(m.overview.todayFxMoveEur, 1000 / 1.1 - 950 / 1.05 - 50 / 1.1, 1e-3);
+    // Overview now values the whole book on one global step, so it also includes
+    // the FX-only revaluation of FXAIX's unchanged 500 USD fallback mark.
+    approx(
+      m.overview.todayFxMoveEur,
+      1000 / 1.1 - 950 / 1.05 - 50 / 1.1 + (500 / 1.1 - 500 / 1.05),
+      1e-3,
+    );
     expect(m.overview.eurUsdSource).toBe("none"); // not set in opts here
   });
 

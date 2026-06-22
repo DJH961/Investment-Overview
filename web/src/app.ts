@@ -256,8 +256,10 @@ export class App {
     const symbols = plan.map((e) => e.symbol);
     const navFetchSymbols = new Set(plan.filter((e) => e.priceType !== "market").map((e) => e.symbol));
     const options = this.buildQuoteOptions(navFetchSymbols, config);
-    // FX in parallel so the very first paint can be fully valued, not just priced.
-    await Promise.allSettled([loadQuotes(symbols, config.apiKey, options), loadFxRates()]);
+    // Currency first: warm the FX cache before the tickers so the rate that
+    // values the whole book always wins the per-minute budget, then prime quotes.
+    await loadFxRates().catch(() => undefined);
+    await Promise.allSettled([loadQuotes(symbols, config.apiKey, options)]);
   }
 
   /** Demo mode is opt-in via a `?demo` (or `?preview`) query flag in the URL. */
@@ -935,8 +937,10 @@ export class App {
     // say "stocks & ETFs done, N funds still refreshing" rather than a bare count.
     this.lastNavSymbols = options.navSymbols ?? new Set();
     const apiKey = network ? config.apiKey : "";
-    const quotePromise = loadQuotes(symbols, apiKey, options);
 
+    // Pull the live currency (FX + EUR/USD spot) FIRST — before any stock, ETF or
+    // fund quote — so the per-minute free-tier budget always funds the rate that
+    // values the whole book, never spending it all on tickers and leaving FX last.
     let fx: FxRates;
     let fxReport: { cached: boolean; error: PriceError | null };
     let eurUsdNow: Decimal | null = null;
@@ -969,6 +973,9 @@ export class App {
     if (eurUsdNow !== null && eurUsdNow.greaterThan(0)) {
       fx = { base: fx.base, rates: { ...fx.rates, USD: eurUsdNow } };
     }
+
+    // Now fetch the stock / ETF / fund quotes with whatever budget remains.
+    const quotePromise = loadQuotes(symbols, apiKey, options);
 
     const quoteLoad = await quotePromise;
     // A superseded session (lock, or a newer unlock) must not paint over the UI.

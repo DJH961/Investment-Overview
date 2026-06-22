@@ -479,8 +479,11 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .year-summary > .year-meta { grid-area: tiles; }
 .year-summary::after { grid-area: chev; margin-left: 0; }
 
-/* The headline (closing value + growth %) sits left, right after the year, and
- * stands out a touch more than the muted sub-labels used elsewhere. */
+/* The headline (closing value + growth %) is pushed to the right edge of the
+ * title row — `margin-left: auto` opens up space between the year number and the
+ * stats and right-aligns them so they line up across every year (and with the
+ * right-aligned monthly growth below). Stands out a touch more than the muted
+ * sub-labels used elsewhere. */
 .year-title-row {
   display: flex;
   align-items: baseline;
@@ -492,7 +495,10 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .year-headline {
   display: flex;
   align-items: baseline;
+  justify-content: flex-end;
   gap: 0.5rem;
+  margin-left: auto;
+  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 .year-headline .year-value { font-weight: 650; font-size: 0.95rem; }
@@ -1253,18 +1259,18 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .panel-periods > .periods-right { grid-area: right; }
   .panel-periods > .disclaimer { grid-area: disc; align-self: end; }
 
-  /* Risk: returns and risk metrics side by side, then the full-width currency
-   * panel, the charts, and finally attribution — each in its own row so opening
-   * the collapsible attribution grows its row and pushes the disclaimer down
-   * instead of overlapping the charts. */
+  /* Risk: returns and risk metrics side by side, then the equity curve, the
+   * full-width currency panel, attribution, and finally the drawdown chart —
+   * each in its own row so opening the collapsible attribution grows its own
+   * row and pushes the drawdown/disclaimer down instead of overlapping them. */
   .panel-analytics {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas:
       "returns  risk"
-      "currency currency"
       "equity   equity"
-      "drawdown drawdown"
+      "currency currency"
       "attr     attr"
+      "drawdown drawdown"
       "disc     disc";
     align-items: start;
     column-gap: 1.25rem;

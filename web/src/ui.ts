@@ -184,25 +184,33 @@ function valueBasisLabel(o: OverviewView, now: Date = new Date()): string {
 /**
  * The live FX context under today's move: the current spot and how far it has
  * moved today (the % deviation), plus an honest "end-of-day FX" tag when only
- * the ECB daily rate was available. Both display currencies show the rate — they
- * just look at it from their own side: USD display quotes EUR/USD, EUR display
- * quotes the reciprocal USD/EUR with the deviation flipped, so a EUR-thinking
- * user sees the same swing inverted rather than a foreign EUR/USD figure. We do
- * *not* print any "how much the swing made you in EUR" money line — the FX P/L
- * slice lives in the Risk tab's currency panel, not on the hero. Returns null
- * when there's no rate to show.
+ * the ECB daily rate was available. Both display currencies show the rate from
+ * the user's own side as a "spend my currency, get the other" conversion: USD
+ * display quotes USD/EUR (how much EUR one dollar buys), EUR display quotes the
+ * reciprocal EUR/USD (how much USD one euro buys). The percentage tracks the
+ * strength of the *foreign* currency you'd convert into — euro in USD display,
+ * dollar in EUR display — so a positive figure always means "that currency went
+ * up". This is deliberately counter-intuitive against the rate number (which
+ * moves the opposite way), because it answers "did the euro or the dollar rise?"
+ * rather than "did this digit go up?". We do *not* print any "how much the swing
+ * made you in EUR" money line — the FX P/L slice lives in the Risk tab's currency
+ * panel, not on the hero. Returns null when there's no rate to show.
  */
 function renderHeroFx(o: OverviewView): HTMLElement | null {
   const inUsd = getDisplayCurrency() === "USD";
   const parts: HTMLElement[] = [];
   if (o.fxRateEurUsd !== null) {
-    // The spot rate, plus how far it has moved today (the % the FX has deviated).
-    // In EUR display we invert the quote (USD/EUR = 1 / EUR/USD) and flip the
-    // deviation sign so the same swing reads from the EUR holder's side.
+    // The spot rate, plus how far the FX moved today. The stored spot is EUR/USD
+    // (USD per 1 EUR), and `devPct` is the euro's move. In USD display we invert
+    // the rate to USD/EUR (EUR per 1 USD); the percentage keeps the euro's sign
+    // so "+" = euro stronger. In EUR display we show EUR/USD as-is but negate the
+    // percentage so it reads the dollar's strength, "+" = dollar stronger.
+    // Example: EUR/USD 1.07 → 1.08 (euro up). USD display shows USD/EUR ticking
+    // *down* (0.9346 → 0.9259) yet a +% because the euro strengthened.
     const devPct = fxTodayDeviationPct(o);
-    const rate = inUsd ? o.fxRateEurUsd : new Decimal(1).dividedBy(o.fxRateEurUsd);
+    const rate = inUsd ? new Decimal(1).dividedBy(o.fxRateEurUsd) : o.fxRateEurUsd;
     const dev = devPct === null ? null : inUsd ? devPct : devPct.negated();
-    const pair = inUsd ? "EUR/USD" : "USD/EUR";
+    const pair = inUsd ? "USD/EUR" : "EUR/USD";
     const rateLabel =
       dev !== null
         ? `${pair} ${formatFxRate(rate)} (${formatSignedPercent(dev)} today)`
@@ -854,8 +862,9 @@ function renderYearGroup(
   months: PeriodRowView[],
   isCurrent: boolean,
 ): HTMLElement {
-  // Headline: growth % and closing value, shifted to the left of the summary and
-  // given a touch more emphasis than the muted sub-labels elsewhere.
+  // Headline: growth % and closing value, pushed to the right of the summary
+  // (right-aligned, with space after the year) and given a touch more emphasis
+  // than the muted sub-labels elsewhere.
   const growthPct = yearRow ? pickByCurrency(yearRow.growthPct, yearRow.growthPctUsd) : null;
   const valuePart =
     yearRow && yearRow.closingValueEur !== null
@@ -1486,17 +1495,18 @@ function renderAnalyticsPanel(
     ]),
   ];
 
-  // The headline USD/EUR comparison for a euro investor — always visible, never
-  // dependent on the toggle (it shows both currencies at once).
-  const currencyEffect = renderCurrencyEffect(overview, deposits);
-  if (currencyEffect) children.push(currencyEffect);
-
+  // Risk-tab body order: equity curve, then the currency comparison, then
+  // attribution, and finally the drawdown chart (see the matching desktop grid
+  // areas in styles.css). The currency comparison is always visible (it shows
+  // both EUR and USD at once), never gated on the toggle.
   const curve = renderEquityCurve(analytics.curve, analytics.benchmarkSymbol);
   if (curve) children.push(curve);
-  const drawdown = renderDrawdownChart(analytics.curve);
-  if (drawdown) children.push(drawdown);
+  const currencyEffect = renderCurrencyEffect(overview, deposits);
+  if (currencyEffect) children.push(currencyEffect);
   const attribution = renderAttribution(analytics.attribution);
   if (attribution) children.push(attribution);
+  const drawdown = renderDrawdownChart(analytics.curve);
+  if (drawdown) children.push(drawdown);
 
   children.push(
     h("p", { class: "disclaimer" }, [

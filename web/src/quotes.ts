@@ -509,13 +509,31 @@ export interface LoadEurUsdOptions {
 }
 
 /**
+ * Are two epoch-ms instants on the same UTC calendar day? Used to decide whether
+ * a cached EUR/USD reading is still "from today" — matching the UTC day boundary
+ * the today's-move logic uses (`todayIso`), so the FX mark and the move it feeds
+ * agree on what counts as today.
+ */
+function isSameUtcDay(aMs: number, bMs: number): boolean {
+  const a = new Date(aMs);
+  const b = new Date(bMs);
+  return (
+    a.getUTCFullYear() === b.getUTCFullYear() &&
+    a.getUTCMonth() === b.getUTCMonth() &&
+    a.getUTCDate() === b.getUTCDate()
+  );
+}
+
+/**
  * Load the live EUR→USD pair (current spot + prior close) for an FX-aware
  * today's move. Order of preference:
  *   1. a still-fresh cached reading (zero credits),
  *   2. a live Twelve Data `quote` on `EUR/USD` (one credit, budget-permitting),
- *   3. the end-of-day ECB rate from {@link loadFxRates} (`eodFallback`) — no
+ *   3. a cached reading from *today* even if past its TTL — keep using today's
+ *      real intraday spot + prior close rather than collapsing to end-of-day,
+ *   4. the end-of-day ECB rate from {@link loadFxRates} (`eodFallback`) — no
  *      prior close, so callers fall back to the FX-unaware move,
- *   4. the last cached reading even if expired,
+ *   5. the last cached reading even if from before today,
  * degrading gracefully at every step rather than dead-ending the screen.
  */
 export async function loadEurUsd(
@@ -559,11 +577,20 @@ export async function loadEurUsd(
     }
   }
 
+  // Prefer a cached live reading from *today* over the end-of-day ECB rate.
+  // An expired-but-same-day cache still carries a genuine intraday spot and a
+  // real prior close, so it is a far better mark than collapsing to the flat
+  // end-of-day fallback (which has no prior close). Only drop to end-of-day
+  // when we have nothing from today at all.
+  if (cached && cached.now !== null && isSameUtcDay(cached.at, now())) {
+    return { now: cached.now, previousClose: cached.previousClose, source: "cache", cached: true, error: liveError };
+  }
+
   // Fall back to the end-of-day ECB rate (keyless, no prior close).
   if (eodFallback !== null && eodFallback.greaterThan(0)) {
     return { now: eodFallback, previousClose: null, source: "eod", cached: false, error: liveError };
   }
-  // Last resort: a stale cached reading keeps the spot populated.
+  // Last resort: a stale (pre-today) cached reading keeps the spot populated.
   if (cached && cached.now !== null) {
     return { now: cached.now, previousClose: cached.previousClose, source: "cache", cached: true, error: liveError };
   }

@@ -756,6 +756,14 @@ export interface BuildDashboardOptions {
   fxEurUsdSource?: EurUsdSourceLabel;
 }
 
+interface HoldingAggregationContext {
+  view: HoldingView;
+  /** Current native mark (`shares × displayed price`), when one exists. */
+  currentValueNative: Decimal | null;
+  /** The date this holding's own `todayMove*` spans, if any. */
+  moveDate: string | null;
+}
+
 /** Build the full dashboard model from the decrypted export + live data. */
 export function buildDashboard(
   data: MobileExport,
@@ -785,7 +793,7 @@ export function buildDashboard(
   // price/FX can value it. Sourced from the analytics attribution end values.
   const fallbackValues = lastExportedValues(data);
 
-  const holdings = data.holdings.map((h) => {
+  const holdingContexts: HoldingAggregationContext[] = data.holdings.map((h) => {
     const view = buildHolding(
       h,
       quotes.get(h.price_symbol),
@@ -800,18 +808,36 @@ export function buildDashboard(
     // totals; one valued from the export fallback is counted but flagged stale.
     if (view.valueEur === null) missingPrice.push(h.symbol);
     else if (view.valueIsStale) staleValue.push(h.symbol);
-    return view;
+    return {
+      view,
+      currentValueNative: view.priceNative !== null ? view.shares.times(view.priceNative) : null,
+      moveDate:
+        view.todayMoveEur !== null || view.todayMoveUsd !== null
+          ? view.priceFallbackDate
+          : null,
+    };
   });
+  const holdings = holdingContexts.map((ctx) => ctx.view);
 
   // Cash / savings balances count toward total value as-is (converted to EUR).
   let cashValueEur = new Decimal(0);
+  let cashPrevValueEur = new Decimal(0);
+  let cashPrevValueUsd: Decimal | null = new Decimal(0);
   for (const row of data.cash) {
-    const eur = convert(new Decimal(row.balance_native), row.native_currency, EUR, fx);
+    const native = new Decimal(row.balance_native);
+    const eur = convert(native, row.native_currency, EUR, fx);
     if (eur === null) {
       if (row.native_currency !== EUR) fxMissing.add(row.native_currency);
       continue;
     }
     cashValueEur = cashValueEur.plus(eur);
+    cashPrevValueEur = cashPrevValueEur.plus(
+      convert(native, row.native_currency, EUR, fxPrev) ?? eur,
+    );
+    if (cashPrevValueUsd !== null) {
+      const prevUsd = convert(native, row.native_currency, USD, fxPrev);
+      cashPrevValueUsd = prevUsd !== null ? cashPrevValueUsd.plus(prevUsd) : null;
+    }
   }
 
   const holdingsValueEur = holdings.reduce(
@@ -828,16 +854,41 @@ export function buildDashboard(
     (acc, h) => (h.costBasisEur !== null ? acc.plus(h.costBasisEur) : acc),
     new Decimal(0),
   );
-  const todayMoveEur = holdings.reduce(
-    (acc, h) => (h.todayMoveEur !== null ? acc.plus(h.todayMoveEur) : acc),
+  const latestPriceDate = holdingContexts.reduce<string | null>(
+    (latest, { view }) =>
+      view.priceNative !== null && (latest === null || view.priceFallbackDate > latest)
+        ? view.priceFallbackDate
+        : latest,
+    null,
+  );
+  const prevHoldingsValueEur = holdingContexts.reduce(
+    (acc, { view, currentValueNative, moveDate }) => {
+      if (view.valueEur === null) return acc;
+      if (latestPriceDate !== null && moveDate === latestPriceDate && view.todayMoveEur !== null) {
+        return acc.plus(view.valueEur.minus(view.todayMoveEur));
+      }
+      if (currentValueNative !== null) {
+        return acc.plus(convert(currentValueNative, view.nativeCurrency, EUR, fxPrev) ?? view.valueEur);
+      }
+      return acc.plus(view.valueEur);
+    },
     new Decimal(0),
   );
-  // The FX-revaluation slice of today's move, summed across holdings; the
-  // remainder (`todayMoveEur − todayFxMoveEur`) is the price-only contribution.
-  const todayFxMoveEur = holdings.reduce(
-    (acc, h) => (h.todayFxMoveEur !== null ? acc.plus(h.todayFxMoveEur) : acc),
+  const prevTotal = prevHoldingsValueEur.plus(cashPrevValueEur);
+  const todayMoveEur = totalValueEur.minus(prevTotal);
+  const priceOnlyMoveEur = holdingContexts.reduce(
+    (acc, { view, moveDate }) =>
+      latestPriceDate !== null &&
+      moveDate === latestPriceDate &&
+      view.todayMoveEur !== null &&
+      view.todayFxMoveEur !== null
+        ? acc.plus(view.todayMoveEur.minus(view.todayFxMoveEur))
+        : acc,
     new Decimal(0),
   );
+  // Today's EUR move is computed on one consistent global price step; any holding
+  // not on that latest date is forward-filled, so its contribution is FX-only.
+  const todayFxMoveEur = todayMoveEur.minus(priceOnlyMoveEur);
 
   // Gain reflects the market holdings' unrealised P/L (value − cost basis);
   // cash carries no cost basis so it is excluded from the gain figure.
@@ -846,7 +897,6 @@ export function buildDashboard(
     ? totalGainEur.dividedBy(totalCostBasisEur)
     : null;
 
-  const prevTotal = totalValueEur.minus(todayMoveEur);
   const todayMovePct = prevTotal.greaterThan(0) ? todayMoveEur.dividedBy(prevTotal) : null;
 
   // Month/year-to-date growth, recomputed live against the exported period
@@ -920,23 +970,32 @@ export function buildDashboard(
     (acc, h) => (acc !== null && h.costBasisUsd !== null ? acc.plus(h.costBasisUsd) : acc),
     holdingsValueUsd === null ? null : new Decimal(0),
   );
-  // FX-aware USD today's move: the sum of each holding's USD move (each valued at
-  // its own date's spot), so an EUR holding's EUR/USD swing is felt from the USD
-  // side just as the desktop's USD daily growth does. Null when no holding could
-  // be valued in USD.
-  const todayMoveUsd = holdings.reduce<Decimal | null>(
-    (acc, h) => (acc !== null && h.todayMoveUsd !== null ? acc.plus(h.todayMoveUsd) : acc),
+  // USD daily growth mirrors the EUR logic: value the whole book on one global
+  // price step, forward-filling any holding that did not itself reprice there.
+  const prevHoldingsValueUsd = holdingContexts.reduce<Decimal | null>(
+    (acc, { view, currentValueNative, moveDate }) => {
+      if (acc === null || view.valueUsd === null) return acc;
+      if (latestPriceDate !== null && moveDate === latestPriceDate && view.todayMoveUsd !== null) {
+        return acc.plus(view.valueUsd.minus(view.todayMoveUsd));
+      }
+      if (currentValueNative !== null) {
+        return acc.plus(convert(currentValueNative, view.nativeCurrency, USD, fxPrev) ?? view.valueUsd);
+      }
+      return acc.plus(view.valueUsd);
+    },
     holdingsValueUsd === null ? null : new Decimal(0),
   );
-  // Portfolio today's move as a USD fraction, mirroring the EUR aggregation
-  // (move ÷ prior total). Currency-correct, so the headline "today" figure
-  // changes honestly with the currency toggle.
+  const prevTotalUsd =
+    prevHoldingsValueUsd !== null && cashPrevValueUsd !== null
+      ? prevHoldingsValueUsd.plus(cashPrevValueUsd)
+      : null;
+  const todayMoveUsd =
+    totalValueUsd !== null && prevTotalUsd !== null
+      ? totalValueUsd.minus(prevTotalUsd)
+      : null;
   const todayMovePctUsd =
-    todayMoveUsd !== null && totalValueUsd !== null
-      ? (() => {
-          const prevTotalUsd = totalValueUsd.minus(todayMoveUsd);
-          return prevTotalUsd.greaterThan(0) ? todayMoveUsd.dividedBy(prevTotalUsd) : null;
-        })()
+    todayMoveUsd !== null && prevTotalUsd !== null
+      ? prevTotalUsd.greaterThan(0) ? todayMoveUsd.dividedBy(prevTotalUsd) : null
       : null;
   const totalGainUsd =
     holdingsValueUsd !== null && totalCostBasisUsd !== null

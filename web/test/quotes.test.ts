@@ -514,6 +514,44 @@ describe("loadEurUsd", () => {
     expect(res.previousClose).toBeNull();
   });
 
+  it("prefers an expired cached reading from today over the end-of-day rate", async () => {
+    const storage = memStorage();
+    // Cached at t=1000ms (1970-01-01 UTC); read at t=120_000ms (120s), still the
+    // same UTC day but past the 60s TTL, so it is no longer "fresh".
+    writeCachedEurUsd({ now: new Decimal("1.084"), previousClose: new Decimal("1.071") }, 1000, storage);
+    const fetchImpl = vi.fn<FetchLike>();
+    const res = await loadEurUsd("", {
+      fetchImpl,
+      storage,
+      now: clock(120_000),
+      ttlMs: 60_000,
+      eodFallback: new Decimal("1.07"),
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    // Today's real intraday spot + prior close win over the flat ECB rate.
+    expect(res.source).toBe("cache");
+    expect(res.now?.toString()).toBe("1.084");
+    expect(res.previousClose?.toString()).toBe("1.071");
+  });
+
+  it("drops to the end-of-day rate when the cache is from before today", async () => {
+    const storage = memStorage();
+    // Cached on 1970-01-01 UTC; read on 1970-01-02 UTC (≈ +25h) — a different
+    // calendar day, so the stale reading must not pre-empt the EOD fallback.
+    writeCachedEurUsd({ now: new Decimal("1.084"), previousClose: new Decimal("1.071") }, 1000, storage);
+    const fetchImpl = vi.fn<FetchLike>();
+    const res = await loadEurUsd("", {
+      fetchImpl,
+      storage,
+      now: clock(90_000_000),
+      ttlMs: 60_000,
+      eodFallback: new Decimal("1.07"),
+    });
+    expect(res.source).toBe("eod");
+    expect(res.now?.toString()).toBe("1.07");
+    expect(res.previousClose).toBeNull();
+  });
+
   it("reports source none when nothing is available", async () => {
     const fetchImpl = vi.fn<FetchLike>(async () =>
       jsonResponse({ symbol: "EUR/USD", status: "error", message: "no data" }),
