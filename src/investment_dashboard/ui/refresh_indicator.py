@@ -4,11 +4,14 @@ The local app pulls fresh prices on its own (the post-boot deferred refresh and
 the periodic live-price tick — see
 :mod:`investment_dashboard.services.refresh_status`). Those run in the
 background with no visible cue, so the user can't tell the automatic features
-are working. This module renders a small "Live / Auto-updating…" chip into the
-header: a per-page :func:`nicegui.ui.timer` polls
+are working. This module renders a small "Live / Updated / Updating…" chip into
+the header: a per-page :func:`nicegui.ui.timer` polls
 :func:`investment_dashboard.services.refresh_status.snapshot` and reflects it —
-the icon spins and the label reads "Updating…" while a refresh runs, and it
-falls back to "Live" (with the last-update time once one has landed) when idle.
+the icon spins and the label reads "Updating…" while a refresh runs. When idle
+the chip reads **"Live"** (tinted with the gain accent, mirroring the web
+companion's "market open" badge) only while the US market is open *and* a fresh
+price has landed recently; otherwise it reads a neutral **"Updated"** with the
+last-update time, because the figures on screen are settled rather than moving.
 
 It is the always-on, "things are working" counterpart to
 :mod:`investment_dashboard.ui.runtime_errors`, which only speaks up on failure.
@@ -17,11 +20,19 @@ It is the always-on, "things are working" counterpart to
 from __future__ import annotations
 
 import time
-from datetime import tzinfo
+from datetime import UTC, datetime, tzinfo
 
 #: How often each client re-reads the refresh state. Cheap (an in-memory read),
 #: so a short interval keeps the chip feeling live without meaningful cost.
 POLL_INTERVAL_SECONDS = 1.5
+
+#: How recently a background price pull must have landed for the chip to read
+#: "Live" while the market is open. The live-price tick runs about once a minute
+#: (``main._LIVE_REFRESH_INTERVAL_SECONDS``); a generous window keeps a brief
+#: provider hiccup from flickering the chip out of "Live", while a genuinely
+#: stalled feed (no fresh prices for many minutes) correctly falls back to
+#: "Updated".
+LIVE_PRICE_WINDOW_SECONDS = 900.0
 
 #: If a user-initiated refresh hasn't finished within this window, repaint the
 #: page anyway ("page first") so it never feels stuck, then reload once more when
@@ -64,6 +75,28 @@ def decide_reload(
     return None
 
 
+def is_live_now(
+    *,
+    market_open: bool,
+    last_update_at: datetime | None,
+    now: datetime,
+    window_seconds: float = LIVE_PRICE_WINDOW_SECONDS,
+) -> bool:
+    """Decide whether the header chip should read "Live" (vs. "Updated").
+
+    Pure (no side effects) so it can be unit-tested. The feed is considered
+    *live* only when the market is open **and** at least one fresh price has
+    landed within ``window_seconds`` — i.e. the automatic refresh is actively
+    pulling current prices. Outside the session, or once the prices we hold have
+    gone stale, the chip falls back to "Updated" (the last figures are settled,
+    not moving).
+    """
+    if not market_open or last_update_at is None:
+        return False
+    age = (now - last_update_at).total_seconds()
+    return 0 <= age <= window_seconds
+
+
 def install_header_indicator(tz: tzinfo | None = None) -> None:  # noqa: PLR0915 - one cohesive widget builder
     """Render the auto-refresh chip and a timer that keeps it in sync.
 
@@ -81,6 +114,7 @@ def install_header_indicator(tz: tzinfo | None = None) -> None:  # noqa: PLR0915
     """
     from nicegui import ui  # noqa: PLC0415 - needs a NiceGUI page context
 
+    from investment_dashboard.domain.market_hours import is_us_market_open  # noqa: PLC0415
     from investment_dashboard.services import refresh_status  # noqa: PLC0415
 
     # Thin top-of-page progress bar — pulses while a refresh runs. Rendered once
@@ -125,11 +159,15 @@ def install_header_indicator(tz: tzinfo | None = None) -> None:  # noqa: PLR0915
         .on("click", _force_refresh) as chip
     ):
         icon = ui.icon("sync").classes("inv-refresh-icon")
-        label = ui.label("Live").classes("inv-refresh-label")
+        label = ui.label("Updated").classes("inv-refresh-label")
     tip = ui.tooltip("Automatic price updates are on — click to refresh now")
 
-    # Force a first paint regardless of the initial sequence value.
-    state = {"seq": -1}
+    # Force a first paint regardless of the initial sequence value. ``view``
+    # caches the last applied idle visual ("live"/"updated") so the idle branch
+    # — which must re-run every poll because liveness depends on the wall clock,
+    # not just the activity ``seq`` — only touches the DOM when it actually
+    # changes.
+    state: dict[str, object] = {"seq": -1, "view": None}
 
     def _set_topbar(active: bool) -> None:
         # Toggle the top bar's active class straight on the DOM node so it
@@ -157,34 +195,63 @@ def install_header_indicator(tz: tzinfo | None = None) -> None:  # noqa: PLR0915
         ui.navigate.reload()
         return True
 
+    def _apply_active() -> None:
+        if state["view"] == "active":
+            return
+        state["view"] = "active"
+        icon.classes(remove="inv-refresh-live", add="inv-refresh-spin")
+        label.set_text("Updating\u2026")
+        chip.classes(remove="inv-refresh-live", add="inv-refresh-active")
+        tip.set_text("Pulling fresh prices\u2026")
+        _set_topbar(True)
+
+    def _apply_idle(*, live: bool, last_update_at: datetime | None) -> None:
+        view = "live" if live else "updated"
+        if state["view"] == view:
+            return
+        state["view"] = view
+        icon.classes(remove="inv-refresh-spin")
+        chip.classes(remove="inv-refresh-active")
+        # Live: tint the chip with the gain accent (matching the web companion's
+        # pulsing "market open" badge) so the user can see at a glance that the
+        # prices are moving. Settled: the neutral muted chip.
+        if live:
+            icon.classes(add="inv-refresh-live")
+            chip.classes(add="inv-refresh-live")
+            label.set_text("Live")
+        else:
+            icon.classes(remove="inv-refresh-live")
+            chip.classes(remove="inv-refresh-live")
+            label.set_text("Updated")
+        _set_topbar(False)
+        if last_update_at is not None:
+            when = last_update_at
+            if tz is not None:
+                when = when.astimezone(tz)
+            lead = "Live · prices updating" if live else "Automatic price updates on"
+            tip.set_text(f"{lead} \u00b7 last update {when:%H:%M:%S} \u00b7 click to refresh now")
+        else:
+            tip.set_text("Automatic price updates are on — click to refresh now")
+
     def _poll() -> None:
         if _maybe_handle_pending():
             return
         snap = refresh_status.snapshot()
-        if snap.seq == state["seq"]:
-            return
-        state["seq"] = snap.seq
         if snap.active:
-            icon.classes(add="inv-refresh-spin")
-            label.set_text("Updating\u2026")
-            chip.classes(add="inv-refresh-active")
-            tip.set_text("Pulling fresh prices\u2026")
-            _set_topbar(True)
+            state["seq"] = snap.seq
+            _apply_active()
             return
-        icon.classes(remove="inv-refresh-spin")
-        chip.classes(remove="inv-refresh-active")
-        label.set_text("Live")
-        _set_topbar(False)
-        if snap.last_update_at is not None:
-            when = snap.last_update_at
-            if tz is not None:
-                when = when.astimezone(tz)
-            tip.set_text(
-                f"Automatic price updates on \u00b7 last update {when:%H:%M:%S} "
-                "\u00b7 click to refresh now"
-            )
-        else:
-            tip.set_text("Automatic price updates are on — click to refresh now")
+        # Idle: re-evaluate "Live vs Updated" every tick because it turns on the
+        # wall clock (market open + a recent price pull), not just on the
+        # activity counter advancing.
+        now = datetime.now(UTC)
+        live = is_live_now(
+            market_open=is_us_market_open(now),
+            last_update_at=snap.last_update_at,
+            now=now,
+        )
+        state["seq"] = snap.seq
+        _apply_idle(live=live, last_update_at=snap.last_update_at)
 
     _poll()
     ui.timer(POLL_INTERVAL_SECONDS, _poll)

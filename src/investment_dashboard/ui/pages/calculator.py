@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
 from nicegui import ui
+from sqlalchemy.orm import Session
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.domain.allocation import (
@@ -27,6 +28,7 @@ from investment_dashboard.domain.allocation import (
     plan_rebalance,
 )
 from investment_dashboard.repositories import allocations_repo
+from investment_dashboard.services import chart_prefs_service
 from investment_dashboard.ui.components import (
     deferred,
     empty_state,
@@ -49,6 +51,24 @@ PATH = "/calculator"
 ZERO = Decimal(0)
 HUNDRED = Decimal(100)
 TENTH = Decimal("0.1")
+
+#: Persisted-setting keys (reused via :mod:`chart_prefs_service`'s app_config
+#: key/value store) so the calculator's "allow fractional shares" / "rebalance"
+#: toggles stick across reloads, like the display-currency and chart prefs.
+_PREF_ALLOW_FRACTIONAL = "calc.allow_fractional"
+_PREF_REBALANCE = "calc.rebalance"
+
+
+def _get_bool_pref(session: Session, key: str) -> bool:
+    """Read a persisted boolean calculator setting (defaults to ``False``)."""
+    return chart_prefs_service.get_pref(session, key, default="0", allowed=["0", "1"]) == "1"
+
+
+def _set_bool_pref(key: str, value: bool) -> None:
+    """Persist a boolean calculator setting in its own DB session."""
+    with session_scope() as session:
+        chart_prefs_service.set_pref(session, key, "1" if value else "0")
+
 
 #: Accent ramp for the per-row bars (kept in sync with the overview palette).
 _TARGET_COLOR = "var(--inv-accent, #0F4C81)"
@@ -137,6 +157,10 @@ class _CalculatorPayload:
     active_no_buy: set[int]
     active_allow_sell: bool
     active_display_currency: str | None
+    #: Persisted calculator settings (independent of any saved target) so the
+    #: "allow fractional shares" / "rebalance" toggles survive reloads.
+    pref_allow_fractional: bool = False
+    pref_rebalance: bool = False
 
 
 def register() -> None:
@@ -168,12 +192,16 @@ def register() -> None:
                         active_no_buy = set()
                         active_allow_sell = False
                         active_display_currency = None
+                    pref_allow_fractional = _get_bool_pref(session, _PREF_ALLOW_FRACTIONAL)
+                    pref_rebalance = _get_bool_pref(session, _PREF_REBALANCE)
                 return _CalculatorPayload(
                     data=data,
                     active_weights=active_weights,
                     active_no_buy=active_no_buy,
                     active_allow_sell=active_allow_sell,
                     active_display_currency=active_display_currency,
+                    pref_allow_fractional=pref_allow_fractional,
+                    pref_rebalance=pref_rebalance,
                 )
 
             def _render(payload: _CalculatorPayload) -> None:
@@ -202,14 +230,19 @@ class _CalculatorView:  # pragma: no cover - UI wiring
         self.active_no_buy = payload.active_no_buy
         self.active_allow_sell = payload.active_allow_sell
         self.active_display_currency = payload.active_display_currency
+        #: True when a saved target is available to auto-load on open.
+        self.has_saved_target = bool(payload.active_weights)
         self.fx = data.fx_rate_usd_per_eur
         # Display/entry currency (drives the portfolio + per-holding values and
         # the cash amount). Toggling it re-renders the figures live.
         self.display_ccy = (
             data.default_currency if data.default_currency in ("EUR", "USD") else "EUR"
         )
-        # Whether the plan may sell over-weight funds to rebalance (off = buy-only).
-        self.allow_sell = False
+        # Persisted toggles (survive reloads): whether the plan may sell
+        # over-weight funds to rebalance (off = buy-only) and whether buys may
+        # use fractional shares.
+        self.allow_sell = payload.pref_rebalance
+        self.allow_fractional = payload.pref_allow_fractional
         # Builder state.
         self.mode = "category"  # or "fund"
         self.cat_targets: dict[str, float] = {}
@@ -255,6 +288,11 @@ class _CalculatorView:  # pragma: no cover - UI wiring
         self._render_cash_section()
         self._render_target_section()
         self.result_box = ui.column().classes("w-full gap-md")
+        # Auto-load the saved target weighting (if any) so the user's last saved
+        # mix is ready immediately — no "Load" click needed. Runs after all the
+        # widgets exist because it pushes values back into them.
+        if self.has_saved_target:
+            self._preset_saved()
 
     def _on_ccy_change(self, e: object) -> None:
         self.display_ccy = e.value  # type: ignore[attr-defined]
@@ -294,13 +332,22 @@ class _CalculatorView:  # pragma: no cover - UI wiring
                 value=self.display_ccy,
                 on_change=self._on_ccy_change,
             ).props("dense unelevated")
-            self.fractional = ui.checkbox("Allow fractional shares", value=False)
+            self.fractional = ui.checkbox(
+                "Allow fractional shares",
+                value=self.allow_fractional,
+                on_change=self._on_fractional,
+            )
             self.rebalance = ui.checkbox(
                 "Rebalance (allow selling)", value=self.allow_sell, on_change=self._on_rebalance
             ).tooltip("Off = buy only. On = sell over-weight funds to balance precisely.")
 
+    def _on_fractional(self, e: object) -> None:
+        self.allow_fractional = bool(e.value)  # type: ignore[attr-defined]
+        _set_bool_pref(_PREF_ALLOW_FRACTIONAL, self.allow_fractional)
+
     def _on_rebalance(self, e: object) -> None:
         self.allow_sell = bool(e.value)  # type: ignore[attr-defined]
+        _set_bool_pref(_PREF_REBALANCE, self.allow_sell)
 
     def _render_target_section(self) -> None:
         with section("2 · Set your target mix"):
@@ -317,10 +364,14 @@ class _CalculatorView:  # pragma: no cover - UI wiring
                 ui.button("Equal weight", icon="balance", on_click=self._preset_equal).props(
                     "flat dense no-caps"
                 )
-                if self.active_weights:
+                if self.has_saved_target:
+                    # The saved target auto-loads on open, but keep a manual
+                    # "Load saved target" button to re-apply it after the user
+                    # tweaks or clears the inputs. Forgetting the saved target is
+                    # covered by the existing "Clear" button below.
                     ui.button(
                         "Load saved target", icon="bookmark", on_click=self._preset_saved
-                    ).props("flat dense no-caps")
+                    ).props("flat dense no-caps").tooltip("Re-apply your saved target weighting.")
                 ui.button("Clear", icon="clear", on_click=self._preset_clear).props(
                     "flat dense no-caps"
                 )
@@ -393,8 +444,9 @@ class _CalculatorView:  # pragma: no cover - UI wiring
                         on_change=lambda e, n=name: self.cat_split.__setitem__(n, e.value),
                     ).props("dense unelevated")
                 ui.label(
-                    "Untick a fund to keep its current holding counted in this "
-                    "category's % while sending no new cash into it.",
+                    "Untick a fund you don't invest in: the funds you do tick "
+                    "share this category's whole % between them, and the un-ticked "
+                    "fund just keeps its current holding (left to dilute over time).",
                 ).classes("text-caption opacity-70")
                 for member in cat.members:
                     self._render_member_checkbox(name, member)
@@ -590,25 +642,34 @@ class _CalculatorView:  # pragma: no cover - UI wiring
             return None
         current_values = {i.instrument_id: i.current_value_eur for i in self.data.instruments}
         weights: dict[int, Decimal] = {}
-        no_buy: set[int] = set()
         for name, weight in cat_weights.items():
-            # Split the category's % across *all* its members so each fund —
-            # ticked or not — keeps its share of the category percentage.
+            # Split the category's % across only the funds the user actually
+            # invests in (the ticked ones). Funds left un-ticked don't get a
+            # slice — the invested funds "pick up the slack" and absorb the whole
+            # category target between them. The un-ticked funds simply keep their
+            # current holding, whose share of the portfolio is left to dilute as
+            # more cash flows into the funds the user does buy. (Previously the
+            # category % was split across *all* members, which wrongly raised the
+            # target of funds the user never tops up.)
             members = self.cat_members.get(name, [])
             if not members:
                 continue
+            selected = [mid for mid in members if mid in self.cat_selected.get(name, set())]
+            if not selected:
+                ui.notify(
+                    f"Tick at least one fund to invest in for “{name}”, or set its target to 0.",
+                    type="warning",
+                )
+                return None
             expanded = expand_category_weights(
                 {name: weight},
-                {name: members},
+                {name: selected},
                 current_values,
                 split=self.cat_split.get(name, "value"),
             )
             for mid, w in expanded.items():
                 weights[mid] = weights.get(mid, ZERO) + w
-            # Members the user un-ticked are accounted for but never bought.
-            selected = self.cat_selected.get(name, set())
-            no_buy.update(mid for mid in members if mid not in selected)
-        return weights, no_buy
+        return weights, set()
 
     def _compute(self) -> None:
         built = self._build_weights()
@@ -784,12 +845,12 @@ class _CalculatorView:  # pragma: no cover - UI wiring
             ui.row()
             .classes("items-center gap-md w-full no-wrap")
             .style(
-                "padding:0.55rem 0.8rem;margin-top:0.5rem;border-radius:0.5rem;"
+                "padding:0.65rem 0.85rem;margin-top:1.25rem;border-radius:0.5rem;"
                 "background:var(--inv-surface-2,#eef1f5)"
             )
         ):
             with ui.column().classes("gap-none").style("min-width:9rem"):
-                ui.label(name).classes("text-subtitle2").style("font-weight:700")
+                ui.label(name).classes("text-subtitle1").style("font-weight:800")
                 ui.html(
                     '<span class="text-caption opacity-70">'
                     f"now {current_pct:.1f} % → {after_pct:.1f} % after "
@@ -799,16 +860,13 @@ class _CalculatorView:  # pragma: no cover - UI wiring
             with ui.column().classes("gap-none items-end").style("min-width:11rem"):
                 if add_value > ZERO:
                     ui.html(
-                        '<span style="color:var(--inv-gain,#21ba45);font-weight:700">'
+                        '<span class="inv-plan-amount" style="color:var(--inv-gain,#21ba45)">'
                         f"+ {self._fmt(add_value)}</span>"
                     )
-                    ui.html(
-                        '<span class="text-caption opacity-70">'
-                        f"+ {self._fmt_other(add_value)}</span>"
-                    )
+                    ui.html(f'<span class="inv-plan-sub">+ {self._fmt_other(add_value)}</span>')
                 elif add_value < ZERO:
                     ui.html(
-                        '<span style="color:var(--inv-loss,#c10015);font-weight:700">'
+                        '<span class="inv-plan-amount" style="color:var(--inv-loss,#c10015)">'
                         f"- {self._fmt(-add_value)} net</span>"
                     )
                 else:
@@ -830,13 +888,13 @@ class _CalculatorView:  # pragma: no cover - UI wiring
         row_style = "padding:0.5rem 0.8rem"
         if indent:
             row_style = (
-                "padding:0.3rem 0.8rem;margin-left:1.6rem;"
+                "padding:0.28rem 0.8rem;margin-left:1.9rem;"
                 "border-left:2px solid var(--inv-hairline,#e2e6eb)"
             )
-        name_class = "text-body2 opacity-90" if indent else "text-body1"
+        name_class = "text-caption opacity-80" if indent else "text-body1"
         label_min = "min-width:7rem" if indent else "min-width:8rem"
         value_min = "min-width:10rem" if indent else "min-width:11rem"
-        value_weight = "600" if not indent else "500"
+        amount_class = "inv-plan-amount inv-plan-amount--member" if indent else "inv-plan-amount"
         with ui.row().classes("items-center gap-md w-full no-wrap inv-section").style(row_style):
             with ui.column().classes("gap-none").style(label_min):
                 ui.label(name).classes(name_class)
@@ -848,26 +906,29 @@ class _CalculatorView:  # pragma: no cover - UI wiring
             ui.html(_bar(after_pct, r.target_pct, added_from=before_pct)).classes("flex-1")
             with ui.column().classes("gap-none items-end").style(value_min):
                 if r.add_value > ZERO:
-                    shares = f" · {fmt_shares(r.add_shares)} sh" if r.add_shares > ZERO else ""
                     ui.html(
-                        f'<span style="color:var(--inv-gain,#21ba45);font-weight:{value_weight}">'
+                        f'<span class="{amount_class}" '
+                        'style="color:var(--inv-gain,#21ba45)">'
                         f"+ {self._fmt(r.add_value)}</span>"
                     )
-                    ui.html(
-                        '<span class="text-caption opacity-70">'
-                        f"+ {self._fmt_other(r.add_value)}{shares}</span>"
-                    )
+                    ui.html(f'<span class="inv-plan-sub">+ {self._fmt_other(r.add_value)}</span>')
+                    if r.add_shares > ZERO:
+                        ui.html(
+                            f'<span class="inv-plan-shares">{fmt_shares(r.add_shares)} shares</span>'
+                        )
                 elif r.add_value < ZERO:
                     sell_value = -r.add_value
-                    shares = f" · {fmt_shares(-r.add_shares)} sh" if r.add_shares < ZERO else ""
                     ui.html(
-                        f'<span style="color:var(--inv-loss,#c10015);font-weight:{value_weight}">'
+                        f'<span class="{amount_class}" '
+                        'style="color:var(--inv-loss,#c10015)">'
                         f"- {self._fmt(sell_value)} sell</span>"
                     )
-                    ui.html(
-                        '<span class="text-caption opacity-70">'
-                        f"- {self._fmt_other(sell_value)}{shares}</span>"
-                    )
+                    ui.html(f'<span class="inv-plan-sub">- {self._fmt_other(sell_value)}</span>')
+                    if r.add_shares < ZERO:
+                        ui.html(
+                            '<span class="inv-plan-shares">'
+                            f"{fmt_shares(-r.add_shares)} shares</span>"
+                        )
                 elif r.no_buy:
                     ui.html('<span class="text-caption opacity-50">held · no new cash</span>')
                 else:

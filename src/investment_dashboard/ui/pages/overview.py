@@ -27,7 +27,6 @@ from investment_dashboard.ui.components import (
     deferred,
     empty_state,
     kpi_card,
-    page_header,
     section,
 )
 from investment_dashboard.ui.components.kpi_card import dual_kpi_card, dual_pct_kpi_card
@@ -164,6 +163,112 @@ def _verdict_card(verdict: MarketVerdict) -> None:
 def _by_ccy(eur: Decimal | None, usd: Decimal | None, ccy: str) -> Decimal | None:
     """Pick the EUR or USD figure for the active display currency."""
     return eur if ccy.upper() == "EUR" else usd
+
+
+def _hero_total_value(
+    eur: Decimal | None,
+    usd: Decimal | None,
+    *,
+    display_ccy: str,
+    daily_pct: Decimal | None,
+) -> None:  # pragma: no cover - UI
+    """Render the header's big Total Value hero box.
+
+    Leads the page with the headline money figure (neobroker style): the display
+    currency large, the other currency just under it, and a small coloured
+    "today" badge with the latest single-day move so the number reads as *live*
+    rather than static.
+    """
+    primary = display_ccy.upper()
+    if primary == "EUR":
+        first_v, first_c = fmt_money(eur, "EUR"), "EUR"
+        second_v, second_c = fmt_money(usd, "USD"), "USD"
+    else:
+        first_v, first_c = fmt_money(usd, "USD"), "USD"
+        second_v, second_c = fmt_money(eur, "EUR"), "EUR"
+    ui.html('<div class="inv-hero-label">Total Value</div>')
+    ui.html(
+        f'<div class="inv-hero-value"><span class="inv-kpi-dual-ccy">{first_c}</span> '
+        f"{first_v}</div>"
+    )
+    ui.html(
+        f'<div class="inv-hero-secondary"><span class="inv-kpi-dual-ccy">{second_c}</span> '
+        f"{second_v}</div>"
+    )
+    if daily_pct is not None:
+        color = color_for_signed(float(daily_pct))
+        arrow = arrow_for_signed(float(daily_pct))
+        ui.html(
+            f'<div class="inv-hero-change" style="color:{color}">{arrow} '
+            f'{fmt_pct(daily_pct)} <span style="opacity:0.7;font-weight:600">today</span></div>'
+        )
+
+
+def _render_kpi_grid(
+    metrics: PortfolioMetrics,
+    verdict: object,
+    *,
+    display_ccy: str,
+    today_sub: str,
+) -> None:  # pragma: no cover - UI
+    """Render the 4×2 KPI grid beneath the hero.
+
+    Row 1 — the money story: how much went in, what it made, the annualised
+    return, and how that stacks up to the market. Row 2 — the growth story:
+    cumulative, then the YTD → MTD → Today period ladder, read as one group.
+    """
+    with ui.element("div").classes("inv-kpi-grid inv-kpi-grid--hero w-full"):
+        dual_kpi_card(
+            "Total Invested",
+            fmt_money(metrics.total_contributions_eur, "EUR"),
+            fmt_money(metrics.total_contributions_usd, "USD"),
+            primary=display_ccy,
+            tooltip_key="total_invested",
+        )
+        dual_kpi_card(
+            "Capital Gain",
+            fmt_money(metrics.capital_gain_eur, "EUR"),
+            fmt_money(metrics.capital_gain_usd, "USD"),
+            primary=display_ccy,
+            tooltip_key="total_gain",
+        )
+        _pct_card(
+            "XIRR",
+            metrics.xirr,
+            metrics.xirr_usd,
+            display_ccy=display_ccy,
+            tooltip_key="xirr",
+        )
+        _verdict_card(verdict)
+        _pct_card(
+            "Total Growth",
+            metrics.total_growth_compounded_eur,
+            metrics.total_growth_compounded_usd,
+            display_ccy=display_ccy,
+            tooltip_key="total_growth_compounded",
+        )
+        _pct_card(
+            "YTD Growth",
+            metrics.ytd_growth_pct,
+            metrics.ytd_growth_pct_usd,
+            display_ccy=display_ccy,
+            tooltip_key="ytd_growth",
+        )
+        _pct_card(
+            "MTD Growth",
+            metrics.mtd_growth_pct,
+            metrics.mtd_growth_pct_usd,
+            display_ccy=display_ccy,
+            tooltip_key="mtd_growth",
+        )
+        _pct_card(
+            "Today",
+            metrics.daily_growth_pct,
+            metrics.daily_growth_pct_usd,
+            display_ccy=display_ccy,
+            tooltip_key="daily_growth",
+            sub=today_sub,
+        )
 
 
 def format_price_freshness(card: HoldingCard, *, tz: tzinfo | None = None) -> str:
@@ -644,7 +749,15 @@ def register() -> None:  # noqa: PLR0915
     @ui.page(PATH)
     def _overview(value_range: str | None = None) -> None:  # noqa: PLR0915  # pragma: no cover - rendered by NiceGUI
         with page_frame("Overview", current=PATH):
-            page_header("Overview", subtitle="Portfolio at a glance")
+            # Header: page title on the left, a big Total Value "hero" box on the
+            # right. The value isn't known until the deferred compute lands, so
+            # the hero slot is created here (next to the title) and filled in
+            # ``_render`` once the metrics are in.
+            with ui.element("div").classes("inv-overview-header w-full q-mb-md"):
+                with ui.element("div").classes("inv-page-header"):
+                    ui.html("<h1>Overview</h1>")
+                    ui.html('<div class="inv-page-subtitle">Portfolio at a glance</div>')
+                hero_slot = ui.element("div").classes("inv-hero-total")
 
             def _gather() -> _OverviewData:
                 with session_scope() as session:
@@ -760,94 +873,48 @@ def register() -> None:  # noqa: PLR0915
                 cards = data.cards
                 treemap_data = data.treemap_data
 
-                # Total Value is the headline money figure; Total Growth shows the
-                # compounded (1 + XIRR) ^ years return per currency.
+                # Total Value is the headline money figure — it now leads the
+                # page from the hero box in the header.
                 total_value_eur = metrics.total_value_eur
                 total_value_usd = metrics.total_value_usd
-                gain_eur = metrics.capital_gain_eur
-                gain_usd = metrics.capital_gain_usd
-                tg_eur = metrics.total_growth_compounded_eur
-                tg_usd = metrics.total_growth_compounded_usd
 
-                with ui.element("div").classes("inv-kpi-grid inv-kpi-grid--hero w-full"):
-                    # Total Value is the headline money figure (shown first).
-                    dual_kpi_card(
-                        "Total Value",
-                        fmt_money(total_value_eur, "EUR"),
-                        fmt_money(total_value_usd, "USD"),
-                        primary=display_ccy,
-                        tooltip_key="total_value",
-                    )
-                    # Total Growth shows *growth* — the compounded (1+XIRR)^years
-                    # return per currency. The capital-gain money lives on its own
-                    # "Capital Gain" card, so it is no longer duplicated as a sub
-                    # here (v2.8.1).
-                    _pct_card(
-                        "Total Growth",
-                        tg_eur,
-                        tg_usd,
+                # Daily-growth caption (shared by the hero "today" badge and the
+                # Today card): while the NYSE session is open the figure is
+                # flagged "· live" and the clock is omitted (it just tracks now);
+                # once closed the caption stamps when the price is from — the
+                # provider's market time — with our pull instant trailing as
+                # "· updated …". A compact, display-relative FX rate trails it.
+                _now = datetime.now(UTC)
+                _caption = build_daily_growth_caption(
+                    last_date=metrics.daily_growth_as_of,
+                    fx_eur_usd=metrics.daily_growth_fx_eur_usd,
+                    fx_eur_usd_prev=metrics.daily_growth_fx_eur_usd_prev,
+                    display_ccy=display_ccy,
+                    today=date.today(),
+                    tz=display_tz,
+                    market_open=is_us_market_open(_now),
+                    price_observed_at=data.price_observed_at,
+                    price_market_at=data.price_market_at,
+                )
+
+                # Fill the header's Total Value hero box (created in register()).
+                hero_slot.clear()
+                with hero_slot:
+                    _hero_total_value(
+                        total_value_eur,
+                        total_value_usd,
                         display_ccy=display_ccy,
-                        tooltip_key="total_growth_compounded",
+                        daily_pct=_by_ccy(
+                            metrics.daily_growth_pct, metrics.daily_growth_pct_usd, display_ccy
+                        ),
                     )
-                    dual_kpi_card(
-                        "Capital Gain",
-                        fmt_money(gain_eur, "EUR"),
-                        fmt_money(gain_usd, "USD"),
-                        primary=display_ccy,
-                        tooltip_key="total_gain",
-                    )
-                    _pct_card(
-                        "XIRR",
-                        metrics.xirr,
-                        metrics.xirr_usd,
-                        display_ccy=display_ccy,
-                        tooltip_key="xirr",
-                    )
-                    # YTD → MTD → Daily are kept adjacent and in this order so the
-                    # period-growth metrics read as a consistent group (v2.8.1).
-                    _pct_card(
-                        "YTD Growth",
-                        metrics.ytd_growth_pct,
-                        metrics.ytd_growth_pct_usd,
-                        display_ccy=display_ccy,
-                        tooltip_key="ytd_growth",
-                    )
-                    _pct_card(
-                        "MTD Growth",
-                        metrics.mtd_growth_pct,
-                        metrics.mtd_growth_pct_usd,
-                        display_ccy=display_ccy,
-                        tooltip_key="mtd_growth",
-                    )
-                    # Caption: a tight "as of …" line. While the NYSE session
-                    # is open the figure is flagged "· live" and the clock is
-                    # omitted (it just tracks now); once closed the caption
-                    # stamps when the price is from — the provider's market time
-                    # (e.g. when the day's NAV published), with our pull instant
-                    # trailing as "· updated …" — so the settled figure is dated
-                    # by the exchange, not by our fetch. A compact,
-                    # display-relative exchange rate trails it.
-                    _now = datetime.now(UTC)
-                    _caption = build_daily_growth_caption(
-                        last_date=metrics.daily_growth_as_of,
-                        fx_eur_usd=metrics.daily_growth_fx_eur_usd,
-                        fx_eur_usd_prev=metrics.daily_growth_fx_eur_usd_prev,
-                        display_ccy=display_ccy,
-                        today=date.today(),
-                        tz=display_tz,
-                        market_open=is_us_market_open(_now),
-                        price_observed_at=data.price_observed_at,
-                        price_market_at=data.price_market_at,
-                    )
-                    _pct_card(
-                        "Daily Growth",
-                        metrics.daily_growth_pct,
-                        metrics.daily_growth_pct_usd,
-                        display_ccy=display_ccy,
-                        tooltip_key="daily_growth",
-                        sub=_caption.combined(),
-                    )
-                    _verdict_card(verdict)
+
+                _render_kpi_grid(
+                    metrics,
+                    verdict,
+                    display_ccy=display_ccy,
+                    today_sub=_caption.combined(),
+                )
                 # Expense ratio moved out of the KPI grid (kept the grid a clean
                 # 4×2) and surfaced as text alongside the FX line below.
                 expense_text = (

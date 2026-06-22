@@ -350,12 +350,16 @@ def register() -> None:
                                 "inv-row-gain": f"data.total_growth_{ccy_key}_signed > 0",
                                 "inv-row-loss": f"data.total_growth_{ccy_key}_signed < 0",
                             },
-                            # ``autoHeight`` grows the grid to fit *every* row, so
-                            # the whole table reads top-to-bottom with no inner
-                            # vertical scrollbar; the columns keep their natural
-                            # widths (no ``flex``) so a wide table scrolls only
-                            # left↔right — the layout the user asked for.
+                            # The table is wider than the page (≈17 columns), so
+                            # it must scroll left↔right. ``domLayout:autoHeight``
+                            # grows the grid to fit *every* row, so the holdings
+                            # table is shown in full with no vertical scrolling —
+                            # the user prefers seeing all holdings at once over a
+                            # capped viewport. The left↔right scrollbar still sits
+                            # at the bottom of the (now full-height) grid.
                             "domLayout": "autoHeight",
+                            "alwaysShowHorizontalScroll": True,
+                            "suppressHorizontalScroll": False,
                             "defaultColDef": {
                                 "resizable": True,
                                 "sortable": True,

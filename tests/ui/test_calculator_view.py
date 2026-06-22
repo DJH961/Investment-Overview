@@ -69,23 +69,35 @@ def _view() -> _CalculatorView:
     return _CalculatorView(_payload(_data()))
 
 
-def test_unticked_member_is_accounted_but_marked_no_buy() -> None:
+def test_unticked_member_gets_no_weight_invested_picks_up_slack() -> None:
     view = _view()
     view.mode = "category"
     view.cat_targets = {"US": 50.0, "International": 50.0}
     view.cat_split = {"US": "equal", "International": "equal"}
-    # Untick VEU (id 3) in International — keep it counted, don't invest into it.
+    # Untick VEU (id 3) in International — it should get NO target; the ticked
+    # member (VXUS) absorbs the whole category %, and VEU naturally dilutes.
     view.cat_selected["International"].discard(3)
 
     built = view._build_category_weights()
     assert built is not None
     weights, no_buy = built
-    # Both International members carry weight (even split of the 50 %).
-    assert weights[2] == Decimal(25)
-    assert weights[3] == Decimal(25)
+    # VXUS (ticked) takes the full 50 % of the International category.
+    assert weights[2] == Decimal(50)
     assert weights[1] == Decimal(50)
-    # VEU is accounted for in the percentages but flagged no-buy.
-    assert no_buy == {3}
+    # VEU (unticked) gets no target at all — not raised proportionally.
+    assert 3 not in weights
+    # Nothing is flagged no-buy any more: unticked funds are simply excluded.
+    assert no_buy == set()
+
+
+def test_category_with_target_but_no_ticked_funds_is_rejected() -> None:
+    view = _view()
+    view.mode = "category"
+    view.cat_targets = {"US": 50.0, "International": 50.0}
+    # Untick every International member while it still has a positive target.
+    view.cat_selected["International"].clear()
+
+    assert view._build_category_weights() is None
 
 
 def test_all_ticked_yields_no_no_buy() -> None:
