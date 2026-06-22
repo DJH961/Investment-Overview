@@ -73,27 +73,27 @@ class DailyGrowthCaption:
 
 
 def _display_rate(eur_usd: Decimal, display_ccy: str) -> Decimal:
-    """The spot quoted relative to the display currency.
+    """The spot quoted as a "spend my currency, get the other" conversion.
 
-    ``eur_usd`` is USD per 1 EUR (the storage convention). USD users price EUR
-    in USD (the rate as-is); EUR users price the foreign USD unit in EUR (its
-    inverse).
+    ``eur_usd`` is USD per 1 EUR (the storage convention). USD users see how much
+    EUR one dollar buys (its inverse); EUR users see how much USD one euro buys
+    (the rate as-is).
     """
     if display_ccy.upper() == "USD":
-        return eur_usd
-    return Decimal(1) / eur_usd
+        return Decimal(1) / eur_usd
+    return eur_usd
 
 
 def _format_fx_tight(eur_usd: Decimal, eur_usd_prev: Decimal | None, display_ccy: str) -> str:
     """Compact display-relative spot plus its percentage move.
 
-    USD users read ``€1≈$1.0830 (+0.10%)``; EUR users read ``$1≈€0.9234
-    (−0.10%)``. The move is a *percentage only* (no absolute) versus the prior
+    USD users read ``$1≈€0.9234 (−0.10%)``; EUR users read ``€1≈$1.0830
+    (+0.10%)``. The move is a *percentage only* (no absolute) versus the prior
     trading day's mark; it is omitted when no comparison mark is available.
     """
     rate = _display_rate(eur_usd, display_ccy)
     text = (
-        f"\u20ac1\u2248${rate:.4f}" if display_ccy.upper() == "USD" else f"$1\u2248\u20ac{rate:.4f}"
+        f"$1\u2248\u20ac{rate:.4f}" if display_ccy.upper() == "USD" else f"\u20ac1\u2248${rate:.4f}"
     )
     if eur_usd_prev is not None and eur_usd_prev > 0:
         prev = _display_rate(eur_usd_prev, display_ccy)

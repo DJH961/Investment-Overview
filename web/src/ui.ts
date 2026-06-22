@@ -170,25 +170,26 @@ function valueBasisLabel(o: OverviewView, now: Date = new Date()): string {
 /**
  * The live FX context under today's move: the current spot and how far it has
  * moved today (the % deviation), plus an honest "end-of-day FX" tag when only
- * the ECB daily rate was available. Both display currencies show the rate — they
- * just look at it from their own side: USD display quotes EUR/USD, EUR display
- * quotes the reciprocal USD/EUR with the deviation flipped, so a EUR-thinking
- * user sees the same swing inverted rather than a foreign EUR/USD figure. We do
- * *not* print any "how much the swing made you in EUR" money line — the FX P/L
- * slice lives in the Risk tab's currency panel, not on the hero. Returns null
- * when there's no rate to show.
+ * the ECB daily rate was available. Both display currencies show the rate from
+ * the user's own side as a "spend my currency, get the other" conversion: USD
+ * display quotes USD/EUR (how much EUR one dollar buys), EUR display quotes the
+ * reciprocal EUR/USD (how much USD one euro buys), each with the deviation
+ * flipped to match its quote. We do *not* print any "how much the swing made you
+ * in EUR" money line — the FX P/L slice lives in the Risk tab's currency panel,
+ * not on the hero. Returns null when there's no rate to show.
  */
 function renderHeroFx(o: OverviewView): HTMLElement | null {
   const inUsd = getDisplayCurrency() === "USD";
   const parts: HTMLElement[] = [];
   if (o.fxRateEurUsd !== null) {
     // The spot rate, plus how far it has moved today (the % the FX has deviated).
-    // In EUR display we invert the quote (USD/EUR = 1 / EUR/USD) and flip the
-    // deviation sign so the same swing reads from the EUR holder's side.
+    // The stored spot is EUR/USD (USD per 1 EUR). In USD display we invert it to
+    // USD/EUR (EUR per 1 USD) and flip the deviation sign so the rate reads from
+    // the dollar holder's side; EUR display shows the EUR/USD quote as-is.
     const devPct = fxTodayDeviationPct(o);
-    const rate = inUsd ? o.fxRateEurUsd : new Decimal(1).dividedBy(o.fxRateEurUsd);
-    const dev = devPct === null ? null : inUsd ? devPct : devPct.negated();
-    const pair = inUsd ? "EUR/USD" : "USD/EUR";
+    const rate = inUsd ? new Decimal(1).dividedBy(o.fxRateEurUsd) : o.fxRateEurUsd;
+    const dev = devPct === null ? null : inUsd ? devPct.negated() : devPct;
+    const pair = inUsd ? "USD/EUR" : "EUR/USD";
     const rateLabel =
       dev !== null
         ? `${pair} ${formatFxRate(rate)} (${formatSignedPercent(dev)} today)`
