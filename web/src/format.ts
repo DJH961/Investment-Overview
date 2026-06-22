@@ -129,7 +129,7 @@ export function formatSignedPercent(value: Decimal | null, digits = 2): string {
  * from the network* — so even over a closed-market weekend, where the prices
  * are Friday's, the user can see the pull happened "today". Adds the relative
  * keyword "today"/"yesterday" when applicable, else the date, always with the
- * clock time of the pull. Falls back to a date string when no live pull has
+ * clock time of the pull. Falls back to "not yet" when no live pull has
  * happened yet (first run, offline).
  */
 export function formatLastPull(

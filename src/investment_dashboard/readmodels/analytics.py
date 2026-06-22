@@ -19,8 +19,8 @@ from investment_dashboard.services import benchmark_service
 from investment_dashboard.ui.pages._analytics_query import (
     AnalyticsBundle,
     EquityCurvePoint,
-    _build_curve,
     build_bundle,
+    build_curve,
 )
 
 
@@ -115,7 +115,7 @@ def build(
         inception = transactions_repo.earliest_transaction_date(session)
         if inception is not None and inception < bundle.start:
             benchmark_series = benchmark_service.get_series(session, start=inception, end=ctx.as_of)
-            full_curve = _build_curve(
+            full_curve = build_curve(
                 session,
                 start=inception,
                 end=ctx.as_of,

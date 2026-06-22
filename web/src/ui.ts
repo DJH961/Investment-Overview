@@ -988,10 +988,9 @@ function renderPlanPanel(plan: PlanView): HTMLElement {
   // The projection runs in EUR, but the user sees and types in the active
   // display currency — so seed the default and the field label in that currency
   // and convert what they enter back to EUR before projecting.
-  const displayCode = getDisplayCurrency();
-  const defaultContributionDisplay = convertFromEur(plan.defaultAnnualContributionEur)
-    .value.toDecimalPlaces(0)
-    .toString();
+  const defaultContribution = convertFromEur(plan.defaultAnnualContributionEur);
+  const displayCode = defaultContribution.code;
+  const defaultContributionDisplay = defaultContribution.value.toDecimalPlaces(0).toString();
 
   const years = numberField("Years", "10", { min: "1", max: "40", step: "1" });
   const contribution = numberField(`Annual contribution (${displayCode})`, defaultContributionDisplay, {
@@ -1005,7 +1004,8 @@ function renderPlanPanel(plan: PlanView): HTMLElement {
   const recompute = (): void => {
     const yearsValue = Math.max(1, Math.min(40, Math.round(Number(years.input.value) || 0)));
     const contribDisplay = Math.max(0, Number(contribution.input.value) || 0);
-    const contribEur = convertToEur(new Decimal(contribDisplay));
+    const contribInput = new Decimal(contribDisplay);
+    const contribEur = displayCode === "USD" ? convertToEur(contribInput) : contribInput;
     const rows = projectForward(plan.startingValueEur, contribEur, yearsValue, baseYear);
     renderProjection(summaryOut, tableOut, rows, plan.startingValueEur);
   };
