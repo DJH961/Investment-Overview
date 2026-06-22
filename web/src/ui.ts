@@ -451,6 +451,31 @@ function saveOpenState(id: string, open: boolean): void {
   }
 }
 
+/** Read a persisted boolean flag, defaulting to `fallback` when unset/unreadable. */
+function loadBoolPref(key: string, fallback = false): boolean {
+  try {
+    const value = localStorage.getItem(key);
+    if (value === "1") return true;
+    if (value === "0") return false;
+  } catch {
+    /* No storage access; fall back to the default. */
+  }
+  return fallback;
+}
+
+/** Persist a boolean flag so it survives a refresh (mirrors the desktop prefs). */
+function saveBoolPref(key: string, value: boolean): void {
+  try {
+    localStorage.setItem(key, value ? "1" : "0");
+  } catch {
+    /* Preference just won't persist; the in-memory state still applies. */
+  }
+}
+
+/** Persisted calculator toggle keys (parity with the desktop's `calc.*` prefs). */
+const CALC_FRACTIONAL_KEY = "iv.web.calc.allowFractional";
+const CALC_REBALANCE_KEY = "iv.web.calc.rebalance";
+
 /** A single holding as a list row (mobile-first, no wide horizontal table). */
 function renderHoldingRow(holding: HoldingView): HTMLElement {
   const symChildren: Array<Node | string> = [holding.symbol];
@@ -1813,8 +1838,10 @@ function renderCalculatorPanel(data: CalcData): HTMLElement {
 
   // --- Builder state ---
   let mode: "category" | "fund" = "category";
-  let allowSell = false;
-  let fractional = false;
+  // Persisted toggles (survive reloads, like the desktop's calc.* prefs): allow
+  // the plan to sell over-weight funds, and allow buying fractional shares.
+  let allowSell = loadBoolPref(CALC_REBALANCE_KEY);
+  let fractional = loadBoolPref(CALC_FRACTIONAL_KEY);
   const catTargets = new Map<string, number>();
   const catSplit = new Map<string, "value" | "equal">();
   const catSelected = new Map<string, Set<string>>();
@@ -2000,7 +2027,9 @@ function renderCalculatorPanel(data: CalcData): HTMLElement {
       h("div", { class: "calc2-funds-body" }, [
         h("div", { class: "calc2-split" }, [h("span", { class: "muted" }, ["Split:"]), splitToggle]),
         h("p", { class: "note" }, [
-          "Untick a fund to keep its current holding counted in this category's % while sending no new cash into it.",
+          "Untick a fund you don't invest in: the funds you do tick share this " +
+            "category's whole % between them, and the un-ticked fund just keeps " +
+            "its current holding (left to dilute over time).",
         ]),
         ...memberRows,
       ]),
@@ -2152,21 +2181,29 @@ function renderCalculatorPanel(data: CalcData): HTMLElement {
         return null;
       }
       const weights = new Map<string, Decimal>();
-      const noBuy = new Set<string>();
       for (const [name, weight] of catWeights) {
         const members = catMembers.get(name) ?? [];
         if (members.length === 0) continue;
+        // Split the category's % across only the funds the user actually invests
+        // in (the ticked ones). Funds left un-ticked don't get a slice — the
+        // invested funds "pick up the slack" and absorb the whole category target
+        // between them, while the un-ticked funds simply keep their current
+        // holding (left to dilute as more cash flows into the funds the user does
+        // buy). A positive-target category with nothing ticked is rejected.
+        const selected = members.filter((sym) => (catSelected.get(name) ?? new Set()).has(sym));
+        if (selected.length === 0) {
+          notify(`Tick at least one fund to invest in for “${name}”, or set its target to 0.`);
+          return null;
+        }
         const expanded = expandCategoryWeights(
           new Map([[name, weight]]),
-          new Map([[name, members]]),
+          new Map([[name, selected]]),
           valueOf,
           catSplit.get(name) ?? "value",
         );
         for (const [sym, w] of expanded) weights.set(sym, (weights.get(sym) ?? ZERO).plus(w));
-        const selected = catSelected.get(name) ?? new Set<string>();
-        for (const sym of members) if (!selected.has(sym)) noBuy.add(sym);
       }
-      return { raw: weights, noBuy };
+      return { raw: weights, noBuy: new Set() };
     }
     const weights = new Map<string, Decimal>();
     for (const [sym, v] of fundTargets) {
@@ -2365,9 +2402,17 @@ function renderCalculatorPanel(data: CalcData): HTMLElement {
   cashInput.addEventListener("input", clearNotice);
 
   const fractionalCb = h("input", { type: "checkbox", id: "calc2-fractional" }) as HTMLInputElement;
-  fractionalCb.addEventListener("change", () => (fractional = fractionalCb.checked));
+  fractionalCb.checked = fractional;
+  fractionalCb.addEventListener("change", () => {
+    fractional = fractionalCb.checked;
+    saveBoolPref(CALC_FRACTIONAL_KEY, fractional);
+  });
   const rebalanceCb = h("input", { type: "checkbox", id: "calc2-rebalance" }) as HTMLInputElement;
-  rebalanceCb.addEventListener("change", () => (allowSell = rebalanceCb.checked));
+  rebalanceCb.checked = allowSell;
+  rebalanceCb.addEventListener("change", () => {
+    allowSell = rebalanceCb.checked;
+    saveBoolPref(CALC_REBALANCE_KEY, allowSell);
+  });
 
   const modeToggle = makeModeToggle((m) => {
     mode = m;
@@ -2399,6 +2444,12 @@ function renderCalculatorPanel(data: CalcData): HTMLElement {
 
   renderSummary();
   renderBuilder();
+
+  // Auto-load the active saved target on open (parity with the desktop), so the
+  // user's last-saved mix is ready immediately — no manual "Load" needed. The
+  // dropdown above stays available to re-apply it after tweaks or to pick another.
+  const activeSaved = data.savedTargets.find((t) => t.active);
+  if (activeSaved) loadSaved(activeSaved);
 
   return h("section", { class: "panel-stack panel-calc2" }, [
     h("section", { class: "card" }, [
