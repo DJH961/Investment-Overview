@@ -148,3 +148,87 @@ def test_unexpected_error_is_swallowed(
 
 def test_unknown_trigger_returns_none(patched_scope: Session) -> None:
     assert auto_publish.publish_on_trigger("nonsense") is None
+
+
+def test_run_trigger_outcome_published(
+    patched_scope: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _enable(patched_scope)
+    monkeypatch.setattr(
+        publish_service, "publish_now", lambda *a, **k: _fake_result(), raising=True
+    )
+    outcome = auto_publish.run_trigger(auto_publish.TRIGGER_MANUAL_EDIT)
+    assert outcome.status == "published"
+    assert outcome.result is not None
+    described = auto_publish.describe_outcome(outcome)
+    assert described is not None
+    message, kind = described
+    assert kind == "positive"
+    assert "octo/portfolio" in message
+
+
+def test_run_trigger_outcome_skipped_when_disabled(patched_scope: Session) -> None:
+    # Master switch never set → disabled.
+    outcome = auto_publish.run_trigger(auto_publish.TRIGGER_MANUAL_EDIT)
+    assert outcome.status == "skipped"
+    # A skipped publish never bothers the user with a notification.
+    assert auto_publish.describe_outcome(outcome) is None
+
+
+def test_run_trigger_outcome_failed_is_describable(
+    patched_scope: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _enable(patched_scope)
+
+    def _boom(*_a: object, **_k: object) -> publish_service.PublishResult:
+        raise publish_service.PublishError("no token configured")
+
+    monkeypatch.setattr(publish_service, "publish_now", _boom, raising=True)
+    outcome = auto_publish.run_trigger(auto_publish.TRIGGER_IMPORT)
+    assert outcome.status == "failed"
+    described = auto_publish.describe_outcome(outcome)
+    assert described is not None
+    message, kind = described
+    assert kind == "negative"
+    assert "no token configured" in message
+
+
+def test_schedule_publish_after_edit_debounces_to_one_publish(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A burst of edits re-arms one timer ⇒ exactly one publish after the last."""
+    calls = {"n": 0}
+    monkeypatch.setattr(
+        auto_publish,
+        "run_trigger",
+        lambda trigger: (
+            calls.__setitem__("n", calls["n"] + 1)
+            or auto_publish.PublishOutcome(trigger, "skipped")
+        ),
+        raising=True,
+    )
+
+    auto_publish.schedule_publish_after_edit(delay=0.05)
+    auto_publish.schedule_publish_after_edit(delay=0.05)
+    auto_publish.schedule_publish_after_edit(delay=0.05)
+    import time
+
+    time.sleep(0.3)
+    assert calls["n"] == 1
+
+
+def test_cancel_pending_edit_publish_prevents_fire(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cancelling (e.g. on shutdown) stops the debounced publish from firing."""
+    monkeypatch.setattr(
+        auto_publish,
+        "run_trigger",
+        lambda trigger: pytest.fail("cancelled publish should not fire"),
+        raising=True,
+    )
+    auto_publish.schedule_publish_after_edit(delay=0.2)
+    auto_publish.cancel_pending_edit_publish()
+    import time
+
+    time.sleep(0.4)  # would have fired by now if not cancelled

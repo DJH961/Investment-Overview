@@ -300,7 +300,9 @@ def page_frame(title: str, *, current: str) -> Iterator[None]:
             onboarded = is_onboarded(session)
             current_currency = display_currency_service.get_display_currency(session)
             now = timezone_service.now(session)
-            now_label = now.strftime("%Y-%m-%d %H:%M %Z")
+            # Drop the zone suffix (``%Z``) from the header clock — the user
+            # picks the zone in Settings, so repeating it on every page is noise.
+            now_label = now.strftime("%Y-%m-%d %H:%M")
             now_tz = now.tzinfo
     except Exception:  # pragma: no cover - defensive
         initial_theme = None
