@@ -39,7 +39,6 @@ import {
   formatLastPull,
   formatCurrency,
   formatCurrencyWhole,
-  formatDailyGrowthAsOf,
   formatDualCurrency,
   formatFxRate,
   formatMoneyEur,
@@ -53,7 +52,6 @@ import {
   formatTimestamp,
   signClass,
 } from "./format";
-import { isUsMarketHoliday, isUsMarketOpen } from "./market-hours";
 import { computeCurrencyEffect } from "./currency-effect";
 import { cycleTheme, loadTheme, themeButtonContent } from "./theme";
 import { getTimeFormat, setTimeFormat, type TimeFormat } from "./time-format";
@@ -95,26 +93,25 @@ function signedPercentOrDash(value: Decimal | null): string {
 
 /** The headline portfolio value + today's move — the hero of the screen. */
 function renderHero(o: OverviewView, now: Date = new Date()): HTMLElement {
-  const cls = signClass(o.todayMoveEur);
-  // Market-situation-aware caption: a live clock time while the NYSE session is
-  // open, else the latest settled trading day — mirroring the desktop's Daily
-  // Growth caption so "today's move" is never mislabelled as live after hours.
-  const asOf = formatDailyGrowthAsOf(o.liveAsOf, o.liveAsOfFallbackDate, o.asOf, isUsMarketOpen(now), now);
+  // Today's move is currency-correct: in USD display we prefer the USD figures so
+  // the headline daily change reflects the dollar view, not the EUR view rescaled.
+  const todayMovePct = pickByCurrency(o.todayMovePct, o.todayMovePctUsd);
+  const cls = signClass(pickByCurrency(o.todayMoveEur, o.todayMoveUsd));
   const change = h("div", { class: `hero-change ${cls}` }, [
     h("span", { class: "hero-badge" }, [
       h("span", { class: "hero-arrow", "aria-hidden": "true" }, [trendGlyph(cls)]),
-      formatSignedCurrency(o.todayMoveEur),
+      formatSignedDualCurrency(o.todayMoveEur, o.todayMoveUsd),
     ]),
     h("span", { class: "hero-change-pct" }, [
-      o.todayMovePct !== null ? `${formatSignedPercent(o.todayMovePct)} today` : "today",
+      todayMovePct !== null ? `${formatSignedPercent(todayMovePct)} today` : "today",
     ]),
-    h("span", { class: "hero-asof" }, [asOf]),
   ]);
 
-  // The headline value and today's move, with a market-aware "as of" caption so
-  // the total value reads correctly as live (session open) or settled (closed).
+  // The headline value and today's move. The "as of" date/time caption is no
+  // longer shown here — the value-basis chip (top right) carries that signal,
+  // reading "Live" while the session is open or a "Today"/date tag otherwise.
   const children: Array<Node | string> = [
-    renderMarketStatusChip(o, now),
+    renderValueBasisChip(o, now),
     h("span", { class: "hero-label" }, ["Total value"]),
     h("span", { class: "hero-value" }, [formatCurrency(o.totalValueEur)]),
     change,
@@ -125,31 +122,49 @@ function renderHero(o: OverviewView, now: Date = new Date()): HTMLElement {
 }
 
 /**
- * An honest market-status chip for the hero. It tells the truth about *why* the
- * numbers are or aren't moving: a green "Live" only when the NYSE session is
- * open AND we actually hold a same-day quote (`pricesAreLive`); otherwise an
- * amber "Holiday" / "Weekend" / "Market closed" so a stale weekend or holiday
- * price is never dressed up as live. This is the user-visible counterpart to
- * the `pricesAreLive` gate that already governs the Periods "live" pill.
+ * The value-basis chip that sits at the top-right of the hero. It tells the user
+ * what the headline total is based on:
+ *   - a green pulsing "Live" while the NYSE session is open AND we hold a
+ *     same-day quote (`pricesAreLive`);
+ *   - otherwise a calm "Today" tag when the freshest price the value is built
+ *     from is from today, or the date it is from ("20 Jun") when it is older —
+ *     so a settled close, weekend, or holiday value reads honestly as the day it
+ *     applies to rather than being dressed up as live.
  */
-function renderMarketStatusChip(o: OverviewView, now: Date = new Date()): HTMLElement {
-  let cls: string;
-  let label: string;
+function renderValueBasisChip(o: OverviewView, now: Date = new Date()): HTMLElement {
   if (o.pricesAreLive) {
-    cls = "live";
-    label = "Live";
-  } else if (isUsMarketHoliday(now)) {
-    cls = "closed";
-    label = "Market holiday";
-  } else {
-    const day = now.getDay();
-    cls = "closed";
-    label = day === 0 || day === 6 ? "Weekend · last close" : "Market closed";
+    return h("span", { class: "market-status market-status-live", role: "status" }, [
+      h("span", { class: "market-status-dot", "aria-hidden": "true" }, []),
+      "Live",
+    ]);
   }
-  return h("span", { class: `market-status market-status-${cls}`, role: "status" }, [
-    h("span", { class: "market-status-dot", "aria-hidden": "true" }, []),
-    label,
+  return h("span", { class: "market-status market-status-closed", role: "status" }, [
+    valueBasisLabel(o, now),
   ]);
+}
+
+/**
+ * The short date label for a non-live value-basis chip: "Today" when the value's
+ * freshest price is from today, else the day it is from ("Fri 20 Jun"). Uses the
+ * latest live observation when present, falling back to the latest known
+ * value-date (`liveAsOfFallbackDate`).
+ */
+function valueBasisLabel(o: OverviewView, now: Date = new Date()): string {
+  const isToday = (d: Date): boolean =>
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  if (o.liveAsOf !== null && o.liveAsOf !== undefined) {
+    const when = new Date(o.liveAsOf);
+    if (!Number.isNaN(when.getTime())) {
+      if (isToday(when)) return "Today";
+      return when.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+    }
+  }
+  const parsed = new Date(o.liveAsOfFallbackDate);
+  if (Number.isNaN(parsed.getTime())) return o.liveAsOfFallbackDate;
+  if (isToday(parsed)) return "Today";
+  return parsed.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
 }
 
 /**
@@ -159,31 +174,21 @@ function renderMarketStatusChip(o: OverviewView, now: Date = new Date()): HTMLEl
  * when there's nothing useful to show (no rate and no FX contribution).
  */
 function renderHeroFx(o: OverviewView): HTMLElement | null {
-  const parts: HTMLElement[] = [];
   const inUsd = getDisplayCurrency() === "USD";
+  // In EUR display we deliberately show no FX context at all: a EUR-thinking user
+  // asked for the FX text to be removed entirely, so the hero stays clean and the
+  // headline EUR figures speak for themselves. The FX rate / swing context is
+  // surfaced only in USD display (where the dollar view makes EUR/USD relevant).
+  if (!inUsd) return null;
+  const parts: HTMLElement[] = [];
   if (o.fxRateEurUsd !== null) {
-    // The spot rate, plus how far it has moved today (the % the FX has
-    // deviated) — the cause behind the FX P/L slice below.
+    // The spot rate, plus how far it has moved today (the % the FX has deviated).
     const devPct = fxTodayDeviationPct(o);
     const rateLabel =
       devPct !== null
         ? `EUR/USD ${formatFxRate(o.fxRateEurUsd)} (${formatSignedPercent(devPct)} today)`
         : `EUR/USD ${formatFxRate(o.fxRateEurUsd)}`;
     parts.push(h("span", { class: "hero-fx-rate" }, [rateLabel]));
-  }
-  // The FX-revaluation slice of today's move. It is intrinsically a *EUR-side*
-  // effect: a USD-booked holding only changes in EUR when EUR/USD moves; its USD
-  // value is unaffected. So in USD display there is — correctly — no FX P/L to
-  // book (you can't "make money on FX" when everything is already in USD); we
-  // simply omit the line rather than printing a reminder that reflows the page.
-  // In EUR display we show the actual EUR the swing added or removed today.
-  if (!o.todayFxMoveEur.isZero() && !inUsd) {
-    const fxCls = signClass(o.todayFxMoveEur);
-    parts.push(
-      h("span", { class: `hero-fx-split ${fxCls}` }, [
-        `incl. ${formatSignedCurrency(o.todayFxMoveEur)} from FX`,
-      ]),
-    );
   }
   if (o.eurUsdSource === "eod") {
     parts.push(h("span", { class: "hero-fx-eod" }, ["end-of-day FX"]));
@@ -203,7 +208,7 @@ function segment(label: string, value: Decimal | null): HTMLElement {
 /** Today / month / year return horizons, side by side. */
 function renderReturns(o: OverviewView): HTMLElement {
   return h("section", { class: "segment", "aria-label": "Return by period" }, [
-    segment("Today", o.todayMovePct),
+    segment("Today", pickByCurrency(o.todayMovePct, o.todayMovePctUsd)),
     segment("This month", pickByCurrency(o.mtdGrowthPct, o.mtdGrowthPctUsd)),
     segment("This year", pickByCurrency(o.ytdGrowthPct, o.ytdGrowthPctUsd)),
   ]);
@@ -431,7 +436,8 @@ function renderHoldingRow(holding: HoldingView): HTMLElement {
     symChildren.push(h("span", { class: "pill stale" }, ["stale value"]));
   }
 
-  const todayCls = signClass(holding.todayMovePct);
+  const todayPct = pickByCurrency(holding.todayMovePct, holding.todayMovePctUsd);
+  const todayCls = signClass(todayPct);
   const main = h("div", { class: "holding-main" }, [
     h("div", { class: "holding-id" }, [
       // Top line: symbol (+ NAV/stale pills) on the left, and the price's
@@ -448,7 +454,7 @@ function renderHoldingRow(holding: HoldingView): HTMLElement {
     ]),
     h("div", { class: "holding-figures" }, [
       h("span", { class: "holding-value" }, [formatCurrency(holding.valueEur)]),
-      h("span", { class: `holding-change ${todayCls}` }, [signedPercentOrDash(holding.todayMovePct)]),
+      h("span", { class: `holding-change ${todayCls}` }, [signedPercentOrDash(todayPct)]),
     ]),
   ]);
 
@@ -1244,7 +1250,8 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
   const chart = chartWithTimeframe(dates, [{ values, className: "series-portfolio", area: true }]);
   if (!chart) return null;
 
-  const cls = signClass(o.todayMoveEur);
+  const todayPct = pickByCurrency(o.todayMovePct, o.todayMovePctUsd);
+  const cls = signClass(pickByCurrency(o.todayMoveEur, o.todayMoveUsd));
   // Only surface a note when there is something the user actually needs to know
   // about the curve's honesty — not a redundant date stamp on every render.
   let note: string | null = null;
@@ -1257,7 +1264,7 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
     h("div", { class: "section-head" }, [
       h("h2", {}, ["Value over time"]),
       h("span", { class: `muted ${cls}` }, [
-        o.todayMovePct !== null ? `${formatSignedPercent(o.todayMovePct)} today` : "today",
+        todayPct !== null ? `${formatSignedPercent(todayPct)} today` : "today",
       ]),
     ]),
     chart,

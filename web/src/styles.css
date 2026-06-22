@@ -259,7 +259,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   font-weight: 600;
 }
 .market-status {
-  justify-self: start;
+  justify-self: end;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
