@@ -65,8 +65,11 @@ export const DEFAULT_CACHE_TTL_MS = 15 * MINUTE_MS;
  * Freshness window for NAV-priced holdings (mutual funds / money-market).
  * Their NAV publishes only ~once per business day, so a long window keeps the
  * latest available value on screen while barely touching the free-tier budget.
+ * Set to 24h so that, outside the evening publish window, a NAV is never
+ * re-fetched until its cached value is more than a day old — there is no new
+ * price to chase in between, and polling for one only wastes credits.
  */
-export const DEFAULT_NAV_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+export const DEFAULT_NAV_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Local hour (0–23) by which a fund's once-a-day NAV is expected to be
@@ -218,6 +221,15 @@ export interface LoadQuotesOptions {
    */
   cacheTtlMsForSymbol?: (symbol: string, cached?: CachedQuote) => number;
   /**
+   * Force a fresh fetch of **market** (non-NAV) symbols regardless of how fresh
+   * their cached quote is — the "pull new prices now" path behind a manual
+   * Refresh tap. NAV symbols are deliberately exempt: their once-a-day NAV is
+   * governed by {@link cacheTtlMsForSymbol} alone, so a manual tap never burns
+   * credits chasing a NAV that cannot have changed. Budget limits still apply,
+   * so a forced refresh defers rather than exceeding the free-tier cap.
+   */
+  forceMarketFetch?: boolean;
+  /**
    * Called when a freshly-fetched symbol reports a value-date later than the one
    * already cached (or has none cached yet). Lets callers learn *when* a fund's
    * once-a-day NAV actually lands; see {@link navPublishWindow}. `at` is the
@@ -276,6 +288,7 @@ export async function loadQuotes(
     sleep = defaultSleep,
     cacheTtlMs = DEFAULT_CACHE_TTL_MS,
     cacheTtlMsForSymbol,
+    forceMarketFetch = false,
     onValueDateAdvance,
     navSymbols,
     creditsPerMinute = FREE_TIER.creditsPerMinute,
@@ -298,7 +311,11 @@ export async function loadQuotes(
   };
   for (const symbol of unique) {
     const cached = cache.get(symbol);
-    if (cached && t0 - cached.at < ttlFor(symbol, cached) && cached.quote.price !== null) {
+    // A manual "refresh now" forces market symbols to re-fetch even if their
+    // cached quote is still inside its window; NAV symbols keep their adaptive
+    // (once-a-day) freshness so a tap never wastes credits on an unchanged NAV.
+    const forced = forceMarketFetch && !(navSymbols?.has(symbol) ?? false);
+    if (!forced && cached && t0 - cached.at < ttlFor(symbol, cached) && cached.quote.price !== null) {
       result.set(symbol, cached.quote);
       servedFresh.push(symbol);
     } else {
