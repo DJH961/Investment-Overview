@@ -749,11 +749,13 @@ function renderOverviewPanel(model: DashboardModel): HTMLElement {
     renderHero(model.overview),
     renderReturns(model.overview),
   ];
+  // Today's winners/losers sit high up — a quick glimpse of the day's movers
+  // without scrolling past the chart and KPIs to the holdings list.
+  const movers = renderMovers(model.holdings);
+  if (movers) content.push(movers);
   const valueChart = renderValueChart(model.analytics, model.overview);
   if (valueChart) content.push(valueChart);
   content.push(renderStats(model.overview));
-  const movers = renderMovers(model.holdings);
-  if (movers) content.push(movers);
   content.push(renderHoldings(model.holdings));
   const allocation = renderAllocation(model.allocation);
   if (allocation) content.push(allocation);
