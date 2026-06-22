@@ -121,7 +121,13 @@ def test_to_table_rows_includes_dual_total_growth_columns(session: Session) -> N
 
 def test_fill_gaps_pads_contiguous_calendar_months(session: Session) -> None:
     _seed(session)
-    rows = aggregate(session, monthly=True, with_closing_value=False, fill_gaps=True)
+    rows = aggregate(
+        session,
+        monthly=True,
+        with_closing_value=False,
+        fill_gaps=True,
+        today=date(2025, 3, 15),
+    )
     labels = [r.label for r in rows]
     # Padded from January of the first active year (2024) through the
     # last active month (2025-03), every month present and contiguous.
@@ -132,6 +138,26 @@ def test_fill_gaps_pads_contiguous_calendar_months(session: Session) -> None:
     feb_2025 = next(r for r in rows if r.label == "2025-02")
     assert feb_2025.contributions == Decimal("0")
     assert feb_2025.net_flow == Decimal("0")
+
+
+def test_fill_gaps_extends_to_current_month(session: Session) -> None:
+    """The in-progress month is always shown (with live MTD growth) even when
+    it has no transactions yet — months between the last active month and
+    today are padded."""
+    _seed(session)
+    rows = aggregate(
+        session,
+        monthly=True,
+        with_closing_value=False,
+        fill_gaps=True,
+        today=date(2025, 6, 10),
+    )
+    labels = [r.label for r in rows]
+    # Last active transaction is 2025-03, but the grid runs through today's
+    # month (2025-06), with the gap months padded in.
+    assert labels[-1] == "2025-06"
+    assert "2025-04" in labels
+    assert "2025-05" in labels
 
 
 def test_to_table_rows_emits_numeric_companions_for_one_currency_columns(
