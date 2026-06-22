@@ -350,15 +350,20 @@ def register() -> None:
                                 "inv-row-gain": f"data.total_growth_{ccy_key}_signed > 0",
                                 "inv-row-loss": f"data.total_growth_{ccy_key}_signed < 0",
                             },
+                            # ``autoHeight`` grows the grid to fit *every* row, so
+                            # the whole table reads top-to-bottom with no inner
+                            # vertical scrollbar; the columns keep their natural
+                            # widths (no ``flex``) so a wide table scrolls only
+                            # left↔right — the layout the user asked for.
+                            "domLayout": "autoHeight",
                             "defaultColDef": {
                                 "resizable": True,
                                 "sortable": True,
-                                "flex": 1,
                                 "minWidth": 124,
                                 "wrapHeaderText": True,
                                 "autoHeaderHeight": True,
                             },
                         }
-                    ).classes("ag-theme-alpine w-full h-[65vh]")
+                    ).classes("ag-theme-alpine w-full")
 
             deferred(_build, compute=_gather)

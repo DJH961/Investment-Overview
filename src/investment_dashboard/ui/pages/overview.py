@@ -54,6 +54,7 @@ from investment_dashboard.ui.pages._overview_query import (
     get_metrics,
     get_positions,
     holding_freshness,
+    previous_session_close_value,
     resolve_range_days,
 )
 from investment_dashboard.ui.theme import (
@@ -96,6 +97,9 @@ class _OverviewData:
     treemap_data: list[TreemapDatum]
     price_observed_at: datetime | None = None
     price_market_at: datetime | None = None
+    #: Previous-session settled value (display currency) — the "1 Day" chart's
+    #: reference line. ``None`` outside the Day range or when not computable.
+    intraday_prev_close: Decimal | None = None
 
 
 def _pct_card(
@@ -397,7 +401,7 @@ def _treemap_figure(data, *, currency: str, fx_rate: Decimal | None):  # type: i
     return fig
 
 
-def _value_curve_figure(points, *, currency: str, intraday: bool = False):  # type: ignore[no-untyped-def]
+def _value_curve_figure(points, *, currency: str, intraday: bool = False, prev_close=None):  # type: ignore[no-untyped-def]
     """Classic portfolio-value area graph over the selected time range.
 
     Styled the way mainstream investing apps present value-over-time:
@@ -408,6 +412,15 @@ def _value_curve_figure(points, *, currency: str, intraday: bool = False):  # ty
 
     ``intraday`` switches the x-axis + hover to a time-of-day read-out for the
     "1 Day" range, whose points are timestamps within a single session.
+
+    ``prev_close`` (intraday only) is the previous session's settled value: when
+    given, a neutral dashed reference line marks it and the curve is tinted with
+    the colourblind-safe Wong palette — **blue** above the close, **orange**
+    below — never red/green. The direction is also encoded redundantly (not by
+    colour alone) by the curve's position versus the dashed line and by an
+    up/down triangle marker at the latest point, so a profitable day that drifts
+    down from the open still reads as a gain over yesterday's close rather than
+    looking like a loss.
     """
     import plotly.graph_objects as go  # noqa: PLC0415
 
@@ -435,15 +448,29 @@ def _value_curve_figure(points, *, currency: str, intraday: bool = False):  # ty
             if intraday
             else f"%{{x|%d %b %Y}}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"
         )
+        # Tint the intraday curve by its position versus the previous close, so
+        # the day's direction *relative to yesterday* is read at a glance. The
+        # palette is the colourblind-safe Wong blue (up) / orange (down) — never
+        # red/green — and the direction is reinforced below by the dashed
+        # reference line and an up/down triangle marker (non-colour cues).
+        line_color = GAIN_COLOR
+        fill_color = "rgba(0,114,178,0.12)"  # Wong blue #0072B2 @ 12%
+        prev_close_f = float(prev_close) if prev_close is not None else None
+        up = True
+        if intraday and prev_close_f is not None and values:
+            up = values[-1] >= prev_close_f
+            line_color = GAIN_COLOR if up else LOSS_COLOR
+            # Wong orange #E69F00 @ 12% for the loss fill (matches LOSS_COLOR).
+            fill_color = "rgba(0,114,178,0.12)" if up else "rgba(230,159,0,0.12)"
         fig.add_trace(
             go.Scatter(
                 x=dates,
                 y=values,
                 mode="lines",
                 name=f"Portfolio value ({currency})",
-                line={"width": 2.4, "color": GAIN_COLOR},
+                line={"width": 2.4, "color": line_color},
                 fill="tozeroy",
-                fillcolor="rgba(0,114,178,0.12)",
+                fillcolor=fill_color,
                 hovertemplate=hovertemplate,
             )
         )
@@ -464,7 +491,12 @@ def _value_curve_figure(points, *, currency: str, intraday: bool = False):  # ty
         # zero, so the real price flow is visible rather than a near-flat line
         # squashed against a huge zero-based scale. The area still fills down
         # to the (off-screen) zero baseline, giving the familiar area look.
-        yrange = padded_range(values)
+        # The previous close is folded into the range so its reference line is
+        # always on-screen even when the day stayed entirely above/below it.
+        range_values = (
+            [*values, prev_close_f] if (intraday and prev_close_f is not None) else values
+        )
+        yrange = padded_range(range_values)
         fig.update_yaxes(
             tickprefix=symbol,
             tickformat=".3s",
@@ -475,6 +507,36 @@ def _value_curve_figure(points, *, currency: str, intraday: bool = False):  # ty
             automargin=True,
             range=list(yrange) if yrange is not None else None,
         )
+        # Previous-session close: a neutral dashed reference line + a directional
+        # triangle marker at the latest point so "are we up or down on the day?"
+        # reads without relying on colour (the line itself is a muted slate, not
+        # a gain/loss hue, so it carries no directional meaning of its own).
+        if intraday and prev_close_f is not None:
+            ref_color = "rgba(91,107,124,0.85)"
+            fig.add_hline(
+                y=prev_close_f,
+                line={"color": ref_color, "width": 1.4, "dash": "dash"},
+                annotation_text=f"Prev close {symbol}{prev_close_f:,.2f}",
+                annotation_position="top left",
+                annotation_font={"size": 11, "color": ref_color},
+                opacity=0.9,
+            )
+            arrow = "▲" if up else "▼"
+            fig.add_trace(
+                go.Scatter(
+                    x=[dates[-1]],
+                    y=[values[-1]],
+                    mode="markers",
+                    marker={
+                        "size": 11,
+                        "symbol": "triangle-up" if up else "triangle-down",
+                        "color": line_color,
+                        "line": {"width": 1, "color": "white"},
+                    },
+                    hovertemplate=(f"now {arrow}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"),
+                    showlegend=False,
+                )
+            )
     fig.update_layout(
         title=(
             f"Portfolio value today ({currency})"
@@ -502,6 +564,18 @@ def _value_over_time_section(value_series, *, range_label, display_ccy, display_
     refresh lands, so the intraday curve keeps growing live without a page
     reload.
     """
+
+
+def _value_over_time_section(  # type: ignore[no-untyped-def]
+    value_series, *, range_label, display_ccy, display_tz=None, prev_close=None
+):
+    """Render the value-over-time line chart + Day/Month/Year/All selector.
+
+    On the "Day" range the chart redraws itself in place whenever a price
+    refresh lands, so the intraday curve keeps growing live without a page
+    reload. ``prev_close`` is the previous session's settled value used to mark
+    the "1 Day" reference line.
+    """
     intraday = range_label == "Day"
     with section("Value over time"):
         with ui.row().classes("items-center gap-sm"):
@@ -520,16 +594,23 @@ def _value_over_time_section(value_series, *, range_label, display_ccy, display_
         else:
             plot = (
                 ui.plotly(
-                    _value_curve_figure(value_series, currency=display_ccy, intraday=intraday)
+                    _value_curve_figure(
+                        value_series,
+                        currency=display_ccy,
+                        intraday=intraday,
+                        prev_close=prev_close,
+                    )
                 )
                 .classes("w-full")
                 .style("height:360px")
             )
             if intraday:
-                _install_intraday_live_update(plot, display_ccy=display_ccy, tz=display_tz)
+                _install_intraday_live_update(
+                    plot, display_ccy=display_ccy, tz=display_tz, prev_close=prev_close
+                )
 
 
-def _install_intraday_live_update(plot, *, display_ccy, tz):  # type: ignore[no-untyped-def]  # pragma: no cover - UI timer
+def _install_intraday_live_update(plot, *, display_ccy, tz, prev_close=None):  # type: ignore[no-untyped-def]  # pragma: no cover - UI timer
     """Redraw the "1 Day" chart in place each time a price refresh lands.
 
     Polls the shared refresh-activity counter (cheap, in-memory) and only does
@@ -548,7 +629,11 @@ def _install_intraday_live_update(plot, *, display_ccy, tz):  # type: ignore[no-
             with session_scope() as session:
                 series = build_intraday_value_series(session, currency=display_ccy, tz=tz)
             if series:
-                plot.update_figure(_value_curve_figure(series, currency=display_ccy, intraday=True))
+                plot.update_figure(
+                    _value_curve_figure(
+                        series, currency=display_ccy, intraday=True, prev_close=prev_close
+                    )
+                )
         except Exception:  # pragma: no cover - best-effort live redraw
             log.warning("intraday chart live update failed", exc_info=True)
 
@@ -604,10 +689,15 @@ def register() -> None:  # noqa: PLR0915
                         value_series = build_intraday_value_series(
                             session, currency=display_ccy, tz=display_tz
                         )
+                        # The reference line marking yesterday's settled close.
+                        intraday_prev_close = previous_session_close_value(
+                            session, currency=display_ccy
+                        )
                     else:
                         value_series = build_value_series(
                             session, currency=display_ccy, range_label=range_label
                         )
+                        intraday_prev_close = None
                     # Display-currency FX (EUR→display) used to convert the
                     # portfolio-level expense cost and the allocation treemap.
                     display_quote = display_ccy if display_ccy != "EUR" else "USD"
@@ -655,6 +745,7 @@ def register() -> None:  # noqa: PLR0915
                     treemap_data=treemap_data,
                     price_observed_at=price_observed_at,
                     price_market_at=price_market_at,
+                    intraday_prev_close=intraday_prev_close,
                 )
 
             def _render(data: _OverviewData) -> None:
@@ -779,6 +870,7 @@ def register() -> None:  # noqa: PLR0915
                     range_label=range_label,
                     display_ccy=display_ccy,
                     display_tz=display_tz,
+                    prev_close=data.intraday_prev_close,
                 )
 
                 if not cards:
