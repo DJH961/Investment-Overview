@@ -32,7 +32,8 @@ import {
   type AppConfig,
 } from "./config";
 import { PriceError, type FxRates } from "./prices";
-import type { Decimal } from "./decimal-config";import {
+import type { Decimal } from "./decimal-config";
+import {
   readCachedEnvelope,
   readCachedEurUsd,
   readCachedFx,
