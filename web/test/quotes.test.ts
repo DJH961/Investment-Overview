@@ -195,6 +195,63 @@ describe("loadQuotes — free-tier budget", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(report.deferred).toEqual(["VTI"]);
   });
+
+  it("reserves credits before the fetch resolves, so an overlapping load can't double-spend", async () => {
+    const storage = memStorage();
+    // A slow fetch that doesn't resolve until we let it, modelling a prefetch
+    // still in flight while a second refresh starts.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const slow = vi.fn<FetchLike>(async (url) => {
+      await gate;
+      return quoteResponse(url);
+    });
+    const first = loadQuotes(
+      Array.from({ length: 8 }, (_, i) => `A${i}`),
+      "key",
+      { fetchImpl: slow, storage, now: clock(0), sleep: noSleep, creditsPerMinute: 8 },
+    );
+    // The first load has synchronously reserved its 8 credits before awaiting
+    // the network, so a second load starting now sees a spent minute budget and
+    // defers entirely instead of firing another full batch (→ HTTP 429).
+    const second = await loadQuotes(["B0"], "key", {
+      fetchImpl: vi.fn<FetchLike>(async (url) => quoteResponse(url)),
+      storage,
+      now: clock(0),
+      sleep: noSleep,
+      creditsPerMinute: 8,
+    });
+    expect(second.report.deferred).toEqual(["B0"]);
+    expect(second.report.fetched).toEqual([]);
+    release();
+    await first;
+  });
+
+  it("keeps last-known values (not a dead-end) on a non-fatal HTTP error like 404", async () => {
+    const storage = memStorage();
+    // A cached value exists from an earlier successful pull.
+    writeCachedQuotes(
+      new Map<string, Quote>([
+        ["VTI", { symbol: "VTI", price: new Decimal("123"), previousClose: null, currency: "USD" }],
+      ]),
+      0,
+      storage,
+    );
+    const fetchImpl = vi.fn<FetchLike>(async () => jsonResponse({}, false, 404));
+    const { quotes, report } = await loadQuotes(["VTI"], "key", {
+      fetchImpl,
+      storage,
+      now: clock(20 * 60 * 1000), // past the cache TTL, so a refetch is attempted
+      sleep: noSleep,
+    });
+    // Non-fatal: the error is reported but the cached value is still returned,
+    // and the caller is *not* handed an empty result to dead-end on.
+    expect(report.error).toBeInstanceOf(PriceError);
+    expect(report.error?.fatal).toBe(false);
+    expect(quotes.get("VTI")?.price?.toString()).toBe("123");
+  });
 });
 
 describe("loadQuotes — retry/backoff", () => {

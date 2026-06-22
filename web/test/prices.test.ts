@@ -91,6 +91,21 @@ describe("fetchQuotes", () => {
     expect(auth.retryable).toBe(false);
   });
 
+  it("flags 401/403 as fatal (Settings) but a 404 as a non-fatal transient gap", async () => {
+    const auth = await captureError(() =>
+      fetchQuotes(["VTI"], "key", async () => jsonResponse({}, false, 403)),
+    );
+    expect(auth.fatal).toBe(true);
+    // A 404 must not dead-end the screen — non-fatal so the app keeps last-known
+    // values and shows a soft banner instead.
+    const notFound = await captureError(() =>
+      fetchQuotes(["VTI"], "key", async () => jsonResponse({}, false, 404)),
+    );
+    expect(notFound.status).toBe(404);
+    expect(notFound.fatal).toBe(false);
+    expect(notFound.retryable).toBe(false);
+  });
+
   it("treats a network failure as retryable", async () => {
     const fetchImpl: FetchLike = async () => {
       throw new Error("network down");
