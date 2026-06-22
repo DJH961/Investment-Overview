@@ -219,6 +219,28 @@ export interface ExportDeposits {
   rows: ExportDepositRecord[];
 }
 
+/** A single fund inside a saved target allocation. */
+export interface ExportTargetAllocationItem {
+  instrument_id: number;
+  symbol: string;
+  weight_pct: DecimalString;
+  /** Counted toward the target % but never bought with fresh cash (the
+   * Calculator's "no-buy" distinction). */
+  no_buy: boolean;
+}
+
+/** A saved Calculator target allocation, with its no-buy flags and the
+ * rebalance/currency settings it was built under. */
+export interface ExportTargetAllocation {
+  name: string;
+  active: boolean;
+  /** Rebalance toggle: off = buy-only, on = may sell over-weight funds. */
+  allow_sell: boolean;
+  /** Entry/display currency the target was built in (`EUR`/`USD`), or null. */
+  display_currency: string | null;
+  items: ExportTargetAllocationItem[];
+}
+
 /**
  * The full export. The as-of-export read-models (`monthly`, `yearly`,
  * `analytics`, `deposits`) are surfaced in Phase 4 (periods, projection and the
@@ -234,5 +256,8 @@ export interface MobileExport {
   yearly?: ExportPeriods;
   analytics?: ExportAnalytics;
   deposits?: ExportDeposits;
+  /** Saved Calculator targets with their no-buy flags + settings. Absent on
+   * exports generated before v3.5.3. */
+  target_allocations?: ExportTargetAllocation[];
   transactions?: unknown;
 }

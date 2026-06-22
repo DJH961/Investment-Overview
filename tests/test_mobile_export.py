@@ -11,7 +11,13 @@ from sqlalchemy.orm import Session
 from investment_dashboard.models import Transaction
 from investment_dashboard.models.transaction import TransactionSource
 from investment_dashboard.readmodels.mobile_export import build_mobile_export
-from investment_dashboard.repositories import accounts_repo, fx_repo, instruments_repo, prices_repo
+from investment_dashboard.repositories import (
+    accounts_repo,
+    allocations_repo,
+    fx_repo,
+    instruments_repo,
+    prices_repo,
+)
 
 AS_OF = date(2024, 6, 15)
 
@@ -171,6 +177,7 @@ def test_mobile_export_shape_and_default_sensitivity(session: Session) -> None:
         "yearly",
         "analytics",
         "deposits",
+        "target_allocations",
     }
     assert "transactions" not in export
     assert export["meta"]["fx_pivot"] == "EUR"
@@ -238,6 +245,39 @@ def test_mobile_export_holdings_cash_and_transactions(session: Session) -> None:
             "balance_native": "1010.000000",
         }
     ]
+
+
+def test_mobile_export_target_allocations(session: Session) -> None:
+    _seed_mobile_portfolio(session)
+    vti = instruments_repo.get_by_symbol(session, "VTI")
+    fxaix = instruments_repo.get_by_symbol(session, "FXAIX")
+    assert vti is not None
+    assert fxaix is not None
+    allocations_repo.create_allocation(
+        session,
+        name="Core",
+        weights_by_instrument_id={vti.id: Decimal("70"), fxaix.id: Decimal("30")},
+        active=True,
+        no_buy_ids={fxaix.id},
+        allow_sell=True,
+        display_currency="USD",
+    )
+
+    export = build_mobile_export(session, as_of=AS_OF)
+    targets = export["target_allocations"]
+
+    assert len(targets) == 1
+    target = targets[0]
+    assert target["name"] == "Core"
+    assert target["active"] is True
+    assert target["allow_sell"] is True
+    assert target["display_currency"] == "USD"
+    by_symbol = {item["symbol"]: item for item in target["items"]}
+    assert by_symbol["VTI"]["no_buy"] is False
+    assert by_symbol["FXAIX"]["no_buy"] is True
+    for item in target["items"]:
+        _assert_decimal_string_or_null(item["weight_pct"])
+        assert isinstance(item["instrument_id"], int)
 
 
 def test_mobile_export_period_openings(session: Session) -> None:
