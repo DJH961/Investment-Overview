@@ -1000,6 +1000,115 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .proj-values { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; text-align: right; min-width: 0; }
 .proj-cell { font-size: 0.9rem; font-variant-numeric: tabular-nums; min-width: 0; }
 
+/* --- Allocation calculator (calc2) ---------------------------------------- */
+.panel-calc2 { gap: 1rem; }
+.calc2-summary { grid-template-columns: repeat(3, 1fr); }
+.calc2-cash { display: grid; gap: 0.6rem; }
+.calc2-cash .field { margin: 0; }
+.calc2-check { display: flex; align-items: center; gap: 0.45rem; font-size: 0.9rem; color: var(--muted); cursor: pointer; }
+.calc2-check input { width: auto; min-width: 0; padding: 0; }
+
+.calc2-controls { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; justify-content: space-between; margin-bottom: 0.8rem; }
+.calc2-presets { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.calc2-preset {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.calc2-preset:hover { background: var(--card-2); }
+.calc2-saved-select {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card-2);
+  color: var(--fg);
+}
+
+/* Pill toggles (mode + split). */
+.calc2-minitoggle { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.calc2-pill {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.35rem 0.8rem;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.calc2-pill.active { background: var(--accent); color: #fff; }
+
+/* Live total bar. */
+.calc2-total { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.7rem; }
+.calc2-total-bar { flex: 1; height: 8px; border-radius: 999px; background: var(--card-2); overflow: hidden; }
+.calc2-total-fill { height: 100%; width: 0; background: var(--accent); transition: width 0.15s ease; }
+.calc2-total-label { font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.calc2-total-label.on-target { color: var(--pos); font-weight: 600; }
+
+/* Builder + plan rows. */
+.calc2-builder { display: grid; gap: 0.5rem; }
+.calc2-row { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.6rem 0.7rem; }
+.calc2-row-main { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
+.calc2-row-label { display: grid; gap: 0.1rem; min-width: 8rem; flex: 1; }
+.calc2-row-name { font-size: 0.92rem; font-weight: 600; }
+.calc2-row-sub { font-size: 0.74rem; }
+.calc2-bar-holder { flex: 1; min-width: 6rem; }
+.calc2-target { display: inline-flex; align-items: center; gap: 0.2rem; }
+.calc2-target-input { width: 4.5rem; padding: 0.4rem 0.5rem; text-align: right; }
+.calc2-suffix { color: var(--muted); font-size: 0.85rem; }
+
+/* The current/target overlay bar. */
+.calc2-bar { position: relative; height: 10px; border-radius: 5px; background: var(--card-2); overflow: hidden; min-width: 5rem; }
+.calc2-bar-cur { position: absolute; inset: 0; background: var(--muted); opacity: 0.4; }
+.calc2-bar-add { position: absolute; top: 0; bottom: 0; background: var(--pos); opacity: 0.85; }
+.calc2-bar-target { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); }
+
+/* Per-category fund pickers. */
+.calc2-funds { margin-top: 0.5rem; }
+.calc2-funds > summary { font-size: 0.8rem; color: var(--muted); cursor: pointer; }
+.calc2-funds-body { display: grid; gap: 0.4rem; padding-top: 0.5rem; }
+.calc2-split { display: flex; align-items: center; gap: 0.5rem; }
+.calc2-member { display: flex; align-items: center; gap: 0.45rem; font-size: 0.84rem; }
+.calc2-member input { width: auto; min-width: 0; padding: 0; }
+
+.calc2-actions { margin-top: 0.9rem; display: flex; gap: 0.6rem; }
+.calc2-compute, .btn-primary {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.6rem 1.1rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+.calc2-compute:hover, .btn-primary:hover { filter: brightness(1.05); }
+.calc2-notice { color: var(--warn); margin-top: 0.6rem; }
+
+/* Result plan. */
+.calc2-result { display: grid; gap: 1rem; }
+.calc2-plan { display: grid; gap: 0.4rem; }
+.calc2-plan-head { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; padding: 0.55rem 0.7rem; border-radius: var(--radius-sm); background: var(--card-2); margin-top: 0.4rem; }
+.calc2-plan-head .calc2-row-name { font-weight: 700; }
+.calc2-plan-row { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; padding: 0.45rem 0.7rem; }
+.calc2-plan-row.indent { margin-left: 1rem; border-left: 2px solid var(--border); }
+.calc2-add { font-size: 0.88rem; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; min-width: 7rem; }
+.calc2-add.pos { color: var(--pos); }
+.calc2-add.neg { color: var(--neg); }
+.calc2-add.muted { color: var(--muted); font-weight: 400; }
+
+@media (max-width: 35rem) {
+  .calc2-summary { grid-template-columns: repeat(3, 1fr); }
+  .calc2-add { min-width: 0; flex: 1; }
+}
+
+
 /* --- Desktop / tablet enhancements ---------------------------------------- */
 /* On the narrowest phones, collapse the glyph buttons (refresh/theme) to icons
  * so the sticky topbar never crowds the brand. The text returns on wider
@@ -1200,30 +1309,9 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     transform: none;
   }
 
-  /* Calculator: form on the left, KPI summary + table on the right. */
-  .panel-calc {
-    grid-template-columns: 26rem minmax(0, 1fr);
-    grid-template-areas:
-      "form    summary"
-      "form    goal"
-      "form    table"
-      "disc    disc";
-    align-items: start;
-    column-gap: 1.5rem;
-    row-gap: 1.25rem;
-  }
-  .panel-calc > .calc-form { grid-area: form; }
-  .panel-calc > .calc-kpi-wrap { grid-area: summary; }
-  .panel-calc > .calc-goal-wrap { grid-area: goal; }
-  .panel-calc > .calc-table-wrap { grid-area: table; }
-  .panel-calc > .disclaimer { grid-area: disc; }
-  /* Four KPI cards side by side in widescreen. */
-  .panel-calc .calc-summary { grid-template-columns: repeat(4, 1fr); }
-  /* Give the year table room to breathe across the full width. */
-  .panel-calc .proj-head,
-  .panel-calc .proj-row { grid-template-columns: 4rem 10rem 1fr; gap: 0.6rem; }
-  .panel-calc .proj-values { gap: 0.6rem; }
-  .panel-calc .proj-row { padding: 0.5rem; }
+  /* Allocation calculator: KPI summary spreads to four across on widescreen;
+     the rest stays a comfortable single column of cards. */
+  .panel-calc2 .calc2-summary { grid-template-columns: repeat(4, 1fr); }
 }
 
 /* On true widescreen, give the content a little more room. */
