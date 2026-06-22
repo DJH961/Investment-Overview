@@ -411,3 +411,83 @@ def test_warm_snapshots_populates_cache_for_seeded_ledger(
     finally:
         dispose_engines()
         get_settings.cache_clear()
+
+
+# --- writer-lock / read-only fallback ---------------------------------------
+
+
+class _FakeLock:
+    """Minimal stand-in for a ``WriteLock`` handle."""
+
+    def __init__(self) -> None:
+        self.released = False
+
+    def release(self) -> None:
+        self.released = True
+
+
+def test_acquire_writer_lock_skips_memory_ledger(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import types
+
+    monkeypatch.setattr(
+        boot, "get_settings", lambda: types.SimpleNamespace(ledger_path=Path(":memory:"))
+    )
+    boot._acquire_writer_lock()
+    assert boot.holds_writer_lock() is False
+    assert boot.is_read_only() is False
+
+
+def test_acquire_writer_lock_success_holds_lock(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import types
+
+    fake = _FakeLock()
+    monkeypatch.setattr(
+        boot,
+        "get_settings",
+        lambda: types.SimpleNamespace(ledger_path=tmp_path / "ledger.sqlite"),
+    )
+    monkeypatch.setattr("investment_dashboard.storage.lock.acquire_write_lock", lambda _p: fake)
+
+    boot._acquire_writer_lock()
+
+    assert boot.holds_writer_lock() is True
+    assert boot.is_read_only() is False
+
+
+def test_acquire_writer_lock_contention_falls_back_to_read_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import types
+
+    from investment_dashboard.storage.lock import WriteLockError
+
+    def _busy(_path: Path) -> object:
+        raise WriteLockError("held by another instance")
+
+    monkeypatch.setattr(
+        boot,
+        "get_settings",
+        lambda: types.SimpleNamespace(ledger_path=tmp_path / "ledger.sqlite"),
+    )
+    monkeypatch.setattr("investment_dashboard.storage.lock.acquire_write_lock", _busy)
+
+    boot._acquire_writer_lock()
+
+    assert boot.holds_writer_lock() is False
+    assert boot.is_read_only() is True
+
+
+def test_release_writer_lock_handoff_flips_to_read_only() -> None:
+    fake = _FakeLock()
+    boot._boot_state["held_lock"] = fake
+
+    assert boot.release_writer_lock() is True
+    assert fake.released is True
+    assert boot.holds_writer_lock() is False
+    assert boot.is_read_only() is True
+    # Idempotent: a second release reports nothing left to hand off.
+    assert boot.release_writer_lock() is False

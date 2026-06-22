@@ -145,3 +145,63 @@ def test_logging_output_bypasses_stderr_tee() -> None:
     finally:
         logger.removeHandler(handler)
         error_reporting.uninstall()
+
+
+def test_unraisablehook_records_unraisable_exception() -> None:
+    class _Unraisable:
+        exc_type = ValueError
+        exc_value = ValueError("during __del__")
+        exc_traceback = None
+        object = "some-object"
+        err_msg = None
+
+    error_reporting._unraisablehook(_Unraisable())
+    latest = runtime_status.latest()
+    assert latest is not None
+    assert latest.source == "Unraisable error"
+    assert "ValueError: during __del__" in latest.message
+
+
+def test_unraisablehook_ignores_missing_exc_value() -> None:
+    class _Unraisable:
+        exc_type = None
+        exc_value = None
+        exc_traceback = None
+        object = None
+        err_msg = None
+
+    before = runtime_status.sequence()
+    error_reporting._unraisablehook(_Unraisable())
+    assert runtime_status.sequence() == before
+
+
+def test_loop_exception_handler_without_exception_records_message() -> None:
+    # The else branch: no exception object, only a message string.
+    error_reporting.loop_exception_handler(loop=None, context={"message": "socket closed"})
+    latest = runtime_status.latest()
+    assert latest is not None
+    assert latest.source == "Async task"
+    assert latest.message == "socket closed"
+
+
+def test_loop_exception_handler_defaults_message() -> None:
+    error_reporting.loop_exception_handler(loop=None, context={})
+    latest = runtime_status.latest()
+    assert latest is not None
+    assert latest.message == "event loop error"
+
+
+def test_install_asyncio_handler_without_loop_is_noop() -> None:
+    # No running event loop -> silently no-ops (does not raise).
+    error_reporting.install_asyncio_handler()
+
+
+def test_install_asyncio_handler_attaches_to_running_loop() -> None:
+    import asyncio
+
+    async def _run() -> object:
+        error_reporting.install_asyncio_handler()
+        return asyncio.get_running_loop().get_exception_handler()
+
+    handler = asyncio.run(_run())
+    assert handler is error_reporting.loop_exception_handler
