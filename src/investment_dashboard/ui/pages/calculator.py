@@ -19,7 +19,12 @@ from decimal import Decimal, InvalidOperation
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
-from investment_dashboard.domain.allocation import expand_category_weights, plan_rebalance
+from investment_dashboard.domain.allocation import (
+    RebalancePlan,
+    RebalanceRow,
+    expand_category_weights,
+    plan_rebalance,
+)
 from investment_dashboard.repositories import allocations_repo
 from investment_dashboard.ui.components import empty_state, kpi_card, page_header, section
 from investment_dashboard.ui.layout import page_frame
@@ -465,7 +470,13 @@ class _CalculatorView:  # pragma: no cover - UI wiring
         self._render_result(plan, cash_raw, cash_eur, source_ccy)
 
     # -- result ------------------------------------------------------------
-    def _render_result(self, plan, cash_raw, cash_eur, source_ccy) -> None:
+    def _render_result(
+        self,
+        plan: RebalancePlan,
+        cash_raw: Decimal,
+        cash_eur: Decimal,
+        source_ccy: str,
+    ) -> None:
         self.result_box.clear()
         with self.result_box:
             sym = currency_symbol(source_ccy)
@@ -498,7 +509,7 @@ class _CalculatorView:  # pragma: no cover - UI wiring
                     )
                     self._render_plan_row(sym_name, r, after_pct)
 
-    def _render_plan_row(self, name: str, r, after_pct: Decimal) -> None:
+    def _render_plan_row(self, name: str, r: RebalanceRow, after_pct: Decimal) -> None:
         with (
             ui.row()
             .classes("items-center gap-md w-full no-wrap inv-section")
