@@ -87,6 +87,19 @@ def _asset_class(position: Position) -> str:
     return position.instrument.asset_class
 
 
+def _category(position: Position) -> str | None:
+    """The override/effective category for this holding (``None`` when unset).
+
+    Mirrors the desktop calculator's grouping key, where a holding falls back to
+    its ``asset_class`` (then ``"Uncategorized"``) when no explicit category has
+    been assigned — that fallback is applied on the web so the calculator can
+    group funds into the same category buckets the desktop shows.
+    """
+    if position.effective is not None:
+        return position.effective.category
+    return position.category
+
+
 def _price_type(position: Position) -> str:
     asset_class = _asset_class(position)
     name = _position_name(position)
@@ -131,6 +144,10 @@ def _holding_dict(
         "symbol": position.instrument.symbol,
         "name": _position_name(position),
         "asset_class": _asset_class(position),
+        # The holding's category (an Overview/Calculator grouping key). May be
+        # ``null`` when no explicit category was assigned; the web falls back to
+        # ``asset_class`` then "Uncategorized", mirroring the desktop calculator.
+        "category": _category(position),
         "broker": position.account.broker,
         "account": position.account.account_label,
         "native_currency": position.account.native_currency,

@@ -31,6 +31,12 @@ export interface ExportHolding {
   symbol: string;
   name: string | null;
   asset_class: string;
+  /**
+   * The holding's category grouping key (Overview/Calculator buckets). `null`
+   * when no explicit category was assigned, in which case the calculator falls
+   * back to `asset_class` then `"Uncategorized"`, mirroring the desktop. Absent
+   * on exports generated before this field was added (treated as `null`). */
+  category?: string | null;
   broker: string;
   account: string;
   native_currency: string;
