@@ -37,8 +37,12 @@ export interface ExportHolding {
   shares: DecimalString;
   cost_basis_native: DecimalString;
   /** Cost basis converted at each buy's own trade-date EUR→USD rate (not
-   * today's spot), for a currency-correct USD total gain. Absent on older
-   * exports, in which case the browser falls back to a spot conversion. */
+   * today's spot), for a currency-correct total gain *and growth*. `*_eur` is
+   * the EUR the buys actually cost and `*_usd` the USD; deriving the EUR cost
+   * basis from today's spot instead made EUR and USD growth collapse to the
+   * same number. Absent on older exports, in which case the browser falls back
+   * to a spot conversion. */
+  cost_basis_eur?: DecimalString | null;
   cost_basis_usd?: DecimalString | null;
   cumulative_dividends_cash_native: DecimalString;
   price_symbol: string;
@@ -136,6 +140,27 @@ export interface ExportAnalytics {
   kurtosis: DecimalString | null;
   beta: DecimalString | null;
   alpha: DecimalString | null;
+  /**
+   * USD companions for the currency-sensitive scalar metrics (computed on the
+   * USD-denominated equity curve). Present when the export carries them; the
+   * web prefers these when USD is the display currency so the Risk tab responds
+   * to the currency toggle. Absent on older exports (the EUR figure is shown).
+   */
+  cagr_usd?: DecimalString | null;
+  twr_usd?: DecimalString | null;
+  xirr_usd?: DecimalString | null;
+  volatility_usd?: DecimalString | null;
+  sharpe_usd?: DecimalString | null;
+  sortino_usd?: DecimalString | null;
+  max_drawdown_usd?: DecimalString | null;
+  calmar_usd?: DecimalString | null;
+  ulcer_usd?: DecimalString | null;
+  var_95_usd?: DecimalString | null;
+  cvar_95_usd?: DecimalString | null;
+  skew_usd?: DecimalString | null;
+  kurtosis_usd?: DecimalString | null;
+  beta_usd?: DecimalString | null;
+  alpha_usd?: DecimalString | null;
   risk_free_rate: DecimalString | null;
   risk_free_symbol: string | null;
   benchmark_symbol: string | null;

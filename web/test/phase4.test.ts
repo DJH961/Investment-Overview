@@ -75,6 +75,7 @@ function overview(extra: Partial<OverviewView> = {}): OverviewView {
     fxMissingCurrencies: [],
     totalValueIsComplete: true,
     liveDegradedReason: null,
+    liveCoverage: null,
     dailyCreditsUsed: null,
     dailyCreditLimit: 800,
     ...extra,
@@ -144,8 +145,49 @@ describe("buildPeriods", () => {
     expect(monthly[0].growthPct!.toString()).toBe("0.05");
   });
 
-  it("fills a missing first-period growth via a Modified Dietz fallback", () => {
-    const firstYearMissing = baseExport({
+  it("maps the per-trade-date USD period growth when the row is a USD context", () => {
+    const data = baseExport({
+      monthly: {
+        rows: [
+          { label: "2026-05", contributions_eur: "1200", dividends_eur: "0", interest_eur: "6", net_flow_eur: "1206", opening_value_eur: "37000", closing_value_eur: "38400", growth_pct: "0.006", display_currency: "USD", growth_pct_display: "0.009" },
+        ],
+      },
+    });
+    const { monthly } = buildPeriods(data, overview());
+    const may = monthly.find((r) => r.label === "2026-05")!;
+    expect(may.growthPct!.toString()).toBe("0.006");
+    expect(may.growthPctUsd!.toString()).toBe("0.009");
+  });
+
+  it("ignores the *_display USD fields unless the row declares a USD context", () => {
+    const data = baseExport({
+      monthly: {
+        rows: [
+          { label: "2026-05", contributions_eur: "1200", dividends_eur: "0", interest_eur: "6", net_flow_eur: "1206", opening_value_eur: "37000", closing_value_eur: "38400", growth_pct: "0.006", growth_pct_display: "0.009" },
+        ],
+      },
+    });
+    const { monthly } = buildPeriods(data, overview());
+    const may = monthly.find((r) => r.label === "2026-05")!;
+    expect(may.growthPctUsd).toBeNull();
+  });
+
+  it("carries the live USD MTD growth onto the current month overlay", () => {
+    const data = baseExport({
+      monthly: {
+        rows: [
+          { label: "2026-06", contributions_eur: "1200", dividends_eur: "0", interest_eur: "5", net_flow_eur: "1205", opening_value_eur: "35800", closing_value_eur: "38000", growth_pct: "0.02" },
+        ],
+      },
+    });
+    const { monthly } = buildPeriods(data, overview({ mtdGrowthPctUsd: new Decimal("0.07") }));
+    const current = monthly.find((r) => r.label === "2026-06")!;
+    expect(current.isLive).toBe(true);
+    expect(current.growthPct!.toString()).toBe("0.05");
+    expect(current.growthPctUsd!.toString()).toBe("0.07");
+  });
+
+  it("fills a missing first-period growth via a Modified Dietz fallback", () => {    const firstYearMissing = baseExport({
       yearly: {
         rows: [
           // Opens at 0 with no exported growth — the very first period.
@@ -188,6 +230,30 @@ describe("buildAnalytics / buildDeposits", () => {
     expect(a.benchmarkSymbol).toBe("VWCE");
     expect(a.attribution[0].symbol).toBe("B"); // higher P/L first
     expect(a.returns.find((m) => m.label === "CAGR")?.value?.toString()).toBe("0.11");
+  });
+
+  it("maps USD companion metrics alongside their EUR values", () => {
+    const data = baseExport({
+      analytics: {
+        as_of: "2026-06-19", start: "2025-06-19", currency: "EUR",
+        cagr: "0.11", twr: null, xirr: "0.12", volatility: "0.14", sharpe: "0.9",
+        sortino: null, max_drawdown: "-0.16", calmar: null, ulcer: null,
+        var_95: "-0.02", cvar_95: null, skew: null, kurtosis: null,
+        beta: "0.94", alpha: "0.02", risk_free_rate: "0.025",
+        risk_free_symbol: "EURIBOR", benchmark_symbol: "VWCE",
+        cagr_usd: "0.13", volatility_usd: "0.17", xirr_usd: "0.15",
+        curve: [], attribution: [],
+      },
+    });
+    const a = buildAnalytics(data)!;
+    const cagr = a.returns.find((r) => r.label === "CAGR")!;
+    expect(cagr.value?.toString()).toBe("0.11");
+    expect(cagr.valueUsd?.toString()).toBe("0.13");
+    const vol = a.risk.find((r) => r.label === "Volatility")!;
+    expect(vol.value?.toString()).toBe("0.14");
+    expect(vol.valueUsd?.toString()).toBe("0.17");
+    // The risk-free rate is a market input with no per-currency companion.
+    expect(a.returns.find((r) => r.label === "Risk-free")!.valueUsd).toBeNull();
   });
 
   it("maps deposit summary + records (newest first)", () => {

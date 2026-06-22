@@ -106,6 +106,7 @@ class AnalyticsBundle:
     risk_free_rate: Decimal | None
     risk_free_symbol: str
     benchmark_symbol: str
+    benchmark_is_funded: bool
     attribution: list[AttributionRow]
     metrics: metrics_service.PortfolioMetrics
 
@@ -126,6 +127,7 @@ def _build_curve(
     end: date,
     currency: str,
     benchmark_closes: dict[date, Decimal],
+    benchmark_values: dict[date, Decimal] | None = None,
     recompute_tail_days: int | None = CURVE_RECOMPUTE_TAIL_DAYS,
 ) -> list[EquityCurvePoint]:
     """One point per calendar day in ``[start, end]`` (inclusive).
@@ -133,8 +135,13 @@ def _build_curve(
     Daily granularity keeps drawdown / vol math honest. The portfolio
     valuation is read-through-cached and loaded in bulk via
     :func:`snapshots_service.series_in_currency`, so historical days are O(1).
-    Benchmark closes are forward-filled across weekends and holidays from the
-    most recent available print.
+
+    ``benchmark_value`` on each point is the **funded** benchmark simulation
+    (``benchmark_values``) when supplied — a "same contributions into the index"
+    line already expressed in ``currency`` and directly comparable to the
+    portfolio value. When it is ``None`` the raw ``benchmark_closes`` are
+    forward-filled instead (the web export rebases those itself). Either series
+    is forward-filled across weekends and holidays from the most recent print.
     """
     # Cashflows by date for the cumulative-contributions overlay. Counts the
     # same external-flow kinds as the rest of the app (deposits/withdrawals *and*
@@ -149,7 +156,11 @@ def _build_curve(
         amt = t.net_eur if t.net_eur is not None else (t.net_native or ZERO)
         contribs_by_date[t.date] = contribs_by_date.get(t.date, ZERO) + amt
 
-    sorted_benchmark = sorted(benchmark_closes)
+    # The benchmark overlay source: prefer the funded simulation (already in the
+    # display currency, comparable to the portfolio value); otherwise fall back
+    # to raw closes for the caller to rebase.
+    bench_source = benchmark_values if benchmark_values is not None else benchmark_closes
+    sorted_benchmark = sorted(bench_source)
     bench_idx = 0
     last_bench: Decimal | None = None
 
@@ -182,7 +193,7 @@ def _build_curve(
             cumulative += contribs_by_date[sorted_contrib_dates[contrib_idx]]
             contrib_idx += 1
         while bench_idx < len(sorted_benchmark) and sorted_benchmark[bench_idx] <= day:
-            last_bench = benchmark_closes[sorted_benchmark[bench_idx]]
+            last_bench = bench_source[sorted_benchmark[bench_idx]]
             bench_idx += 1
         points.append(
             EquityCurvePoint(
@@ -302,12 +313,21 @@ def build_bundle(
     start = as_of - timedelta(days=lookback_days)
 
     benchmark_series = benchmark_service.get_series(session, start=start, end=as_of)
+    # Fund the benchmark with the portfolio's own contribution schedule so the
+    # overlay is an apples-to-apples "same money into the index" line rather than
+    # a lump sum invested at the window start (which made long horizons look like
+    # an automatic win for a dollar-cost-averaged portfolio).
+    benchmark_values = benchmark_service.simulate_benchmark_value_series(
+        session, start=start, end=as_of, currency=currency
+    )
+    benchmark_is_funded = bool(benchmark_values)
     curve = _build_curve(
         session,
         start=start,
         end=as_of,
         currency=currency,
         benchmark_closes=benchmark_series.closes,
+        benchmark_values=benchmark_values or None,
     )
 
     portfolio_values = [p.portfolio_value for p in curve]
@@ -390,6 +410,7 @@ def build_bundle(
         risk_free_rate=rf_rate,
         risk_free_symbol=rf_snapshot.symbol,
         benchmark_symbol=benchmark_series.symbol,
+        benchmark_is_funded=benchmark_is_funded,
         attribution=attribution,
         metrics=portfolio_metrics,
     )

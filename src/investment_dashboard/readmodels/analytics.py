@@ -73,6 +73,41 @@ def _bundle_dict(b: AnalyticsBundle) -> dict[str, Any]:
     }
 
 
+# The scalar risk/return metrics that genuinely differ between EUR and USD
+# (they are computed on the daily-return series of the equity curve, which is
+# denominated in the chosen currency — FX varies day to day, so the returns,
+# and hence every metric derived from them, differ by currency). The curve,
+# attribution and risk-free/benchmark labels are *not* currency companions:
+# the curve stays EUR (the web's FX-pivot) and is converted at render time.
+_CURRENCY_SENSITIVE_METRICS = (
+    "cagr",
+    "twr",
+    "xirr",
+    "volatility",
+    "sharpe",
+    "sortino",
+    "max_drawdown",
+    "calmar",
+    "ulcer",
+    "var_95",
+    "cvar_95",
+    "skew",
+    "kurtosis",
+    "beta",
+    "alpha",
+)
+
+
+def _usd_companion_metrics(bundle: AnalyticsBundle) -> dict[str, Any]:
+    """Serialize the USD companions for the currency-sensitive scalar metrics.
+
+    Lets the web's Risk tab respond to the EUR/USD toggle just like the headline
+    and per-stock growth, instead of always showing the EUR figures regardless
+    of the chosen display currency.
+    """
+    return {f"{name}_usd": dec(getattr(bundle, name)) for name in _CURRENCY_SENSITIVE_METRICS}
+
+
 def build(
     session: Session,
     *,
@@ -111,6 +146,17 @@ def build(
     )
     result = _bundle_dict(bundle)
     result["curve_start"] = bundle.start.isoformat()
+    # USD companions for the currency-sensitive scalar metrics, computed over the
+    # same window on the USD-denominated curve. The curve itself stays EUR (see
+    # above); only the risk/return numbers gain a `*_usd` twin so the web can
+    # show currency-correct risk stats when USD is selected.
+    usd_bundle = build_bundle(
+        session,
+        currency="USD",
+        lookback_days=lookback_days,
+        as_of=ctx.as_of,
+    )
+    result.update(_usd_companion_metrics(usd_bundle))
     if full_history_curve:
         inception = transactions_repo.earliest_transaction_date(session)
         if inception is not None and inception < bundle.start:
