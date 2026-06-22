@@ -60,6 +60,11 @@ _WITHDRAWAL_KINDS = {
     TransactionKind.WITHDRAWAL.value,
     TransactionKind.TRANSFER_OUT.value,
 }
+# External cash-flow kinds (contributions + withdrawals): the moves that change
+# the cumulative-contributions baseline. Exposed so other read-models (e.g. the
+# analytics equity curve) count exactly the same set of ledger kinds rather than
+# drifting to a narrower one.
+EXTERNAL_FLOW_KINDS = _CONTRIBUTION_KINDS | _WITHDRAWAL_KINDS
 _RETAINED_CASH_ACCOUNT_TYPES = {"savings", "cash"}
 # Kinds that receive cash not represented in the current portfolio value.
 _DISTRIBUTION_KINDS = {
