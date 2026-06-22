@@ -14,9 +14,12 @@ from sqlalchemy.orm import Session
 from investment_dashboard.domain.attribution import AttributionRow
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec
+from investment_dashboard.repositories import transactions_repo
+from investment_dashboard.services import benchmark_service
 from investment_dashboard.ui.pages._analytics_query import (
     AnalyticsBundle,
     EquityCurvePoint,
+    _build_curve,
     build_bundle,
 )
 
@@ -75,8 +78,20 @@ def build(
     *,
     context: ReadModelContext | None = None,
     lookback_days: int = 365,
+    full_history_curve: bool = False,
 ) -> dict[str, Any]:
-    """Return the JSON-serializable analytics read-model."""
+    """Return the JSON-serializable analytics read-model.
+
+    Risk/return metrics (and the ``start`` field that labels their window) are
+    always computed over ``lookback_days``. When ``full_history_curve`` is set,
+    the equity ``curve`` alone is rebuilt from the portfolio's inception so the
+    value-over-time chart can offer an honest "All" range and the cumulative
+    contributions line accumulates from the very first deposit (otherwise, over
+    a 1-year window, it starts at zero and reads as a flatline next to a large
+    pre-existing portfolio). Risk metrics deliberately stay on the shorter
+    window; only the drawn curve grows. ``curve_start`` records the curve's
+    actual first date for callers that want it.
+    """
     ctx = context or build_context(session)
     # The equity curve must be exported in EUR — the live-web companion carries
     # every figure in EUR as its internal FX-pivot (the ``*_eur`` figures, the
@@ -94,4 +109,19 @@ def build(
         lookback_days=lookback_days,
         as_of=ctx.as_of,
     )
-    return _bundle_dict(bundle)
+    result = _bundle_dict(bundle)
+    result["curve_start"] = bundle.start.isoformat()
+    if full_history_curve:
+        inception = transactions_repo.earliest_transaction_date(session)
+        if inception is not None and inception < bundle.start:
+            benchmark_series = benchmark_service.get_series(session, start=inception, end=ctx.as_of)
+            full_curve = _build_curve(
+                session,
+                start=inception,
+                end=ctx.as_of,
+                currency="EUR",
+                benchmark_closes=benchmark_series.closes,
+            )
+            result["curve"] = [_curve_point(p) for p in full_curve]
+            result["curve_start"] = inception.isoformat()
+    return result

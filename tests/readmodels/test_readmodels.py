@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard import readmodels
 from investment_dashboard.models import Transaction
 from investment_dashboard.models.transaction import TransactionSource
+from investment_dashboard.readmodels import analytics as analytics_rm
 from investment_dashboard.readmodels import overview as overview_rm
 from investment_dashboard.readmodels._serialize import dec, iso
 from investment_dashboard.repositories import (
@@ -161,3 +162,24 @@ def test_snapshot_on_empty_db(session: Session) -> None:
     snap = readmodels.build_snapshot(session)
     assert snap["overview"]["positions"] == []
     json.dumps(snap)
+
+
+def test_analytics_full_history_curve_extends_back_to_inception(
+    session: Session, seeded: None
+) -> None:
+    # The default 1-year curve starts at as_of - 365d; the full-history curve
+    # rebuilds the curve alone back to the first transaction (2024-01-02) so the
+    # "All" range is honest and contributions accumulate from inception, while
+    # the risk-metrics window (``start``) stays put.
+    default = analytics_rm.build(session)
+    full = analytics_rm.build(session, full_history_curve=True)
+
+    assert default["start"] == full["start"]  # risk window unchanged
+    assert full["curve_start"] == "2024-01-02"
+    assert full["curve_start"] < default["curve_start"]
+    assert full["curve"][0]["date"] == "2024-01-02"
+    assert len(full["curve"]) > len(default["curve"])
+    # Cumulative contributions grow from the first deposit, not from zero at a
+    # 1-year window edge.
+    assert Decimal(full["curve"][0]["cumulative_contributions"]) != Decimal(0)
+

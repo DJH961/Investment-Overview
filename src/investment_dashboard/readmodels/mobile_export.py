@@ -226,7 +226,7 @@ def build_mobile_export(
         "period_openings": _period_openings(session, as_of=context.as_of),
         "monthly": periods.build_monthly(session, context=usd_context),
         "yearly": periods.build_yearly(session, context=usd_context),
-        "analytics": analytics.build(session, context=context),
+        "analytics": analytics.build(session, context=context, full_history_curve=True),
         "deposits": deposits.build(session, context=context),
     }
     if include_transactions:
