@@ -19,6 +19,7 @@
 import { Decimal } from "./decimal-config";
 import type { OverviewView } from "./compute";
 import type {
+  DecimalString,
   ExportAnalytics,
   ExportAttributionRow,
   ExportDepositRecord,
@@ -38,6 +39,14 @@ export interface PeriodRowView {
   openingValueEur: Decimal;
   closingValueEur: Decimal | null;
   growthPct: Decimal | null;
+  /**
+   * Period growth recomputed against per-trade-date USD figures (the export's
+   * `growth_pct_display` when the row is built against a USD context, or the
+   * live USD MTD/YTD growth for the current period). Lets the periods list
+   * respond to the currency toggle just like the per-stock and headline growth.
+   * Null when no USD figure is available, in which case the EUR growth is shown.
+   */
+  growthPctUsd: Decimal | null;
   /**
    * Per-trade-date FX USD figures from the export (null when FX history is too
    * sparse, or for live-recomputed current-period overlays). Used so USD
@@ -63,6 +72,13 @@ export interface PeriodsView {
 export interface RiskMetric {
   label: string;
   value: Decimal | null;
+  /**
+   * USD companion of the metric (computed on the USD-denominated equity curve
+   * in the export). Preferred when USD is the display currency so the Risk tab
+   * tracks the currency toggle. Null when the export didn't carry it (older
+   * exports) or the metric isn't currency-sensitive (e.g. the risk-free rate).
+   */
+  valueUsd: Decimal | null;
   /** How to format: ratio→percent, plain number, or money. */
   kind: "pct" | "num" | "money";
 }
@@ -174,6 +190,7 @@ function mapPeriodRow(row: ExportPeriodRow): PeriodRowView {
     openingValueEur,
     closingValueEur,
     growthPct,
+    growthPctUsd: usd ? dec(row.growth_pct_display) : null,
     netFlowUsd: usd ? dec(row.net_flow_display) : null,
     contributionsUsd: usd ? dec(row.contributions_display) : null,
     dividendsUsd: usd ? dec(row.dividends_display) : null,
@@ -196,6 +213,7 @@ function upsertCurrent(
   rows: PeriodRowView[],
   currentLabel: string,
   liveGrowthPct: Decimal | null,
+  liveGrowthPctUsd: Decimal | null,
   liveClosingEur: Decimal,
 ): void {
   const existing = rows.find((row) => row.label === currentLabel);
@@ -207,6 +225,7 @@ function upsertCurrent(
     existing.closingValueUsd = null;
     if (liveGrowthPct !== null) {
       existing.growthPct = liveGrowthPct;
+      existing.growthPctUsd = liveGrowthPctUsd;
       existing.isLive = true;
     }
     return;
@@ -225,6 +244,7 @@ function upsertCurrent(
     openingValueEur: previousClosing ?? new Decimal(0),
     closingValueEur: liveClosingEur,
     growthPct: liveGrowthPct,
+    growthPctUsd: liveGrowthPctUsd,
     netFlowUsd: null,
     contributionsUsd: null,
     dividendsUsd: null,
@@ -245,10 +265,22 @@ export function buildPeriods(data: MobileExport, overview: OverviewView): Period
   // Only surface a current period when the export actually carries that table;
   // with no period read-model at all we leave the tables empty.
   if (monthlySource) {
-    upsertCurrent(monthly, anchor.slice(0, 7), overview.mtdGrowthPct, overview.totalValueEur);
+    upsertCurrent(
+      monthly,
+      anchor.slice(0, 7),
+      overview.mtdGrowthPct,
+      overview.mtdGrowthPctUsd,
+      overview.totalValueEur,
+    );
   }
   if (yearlySource) {
-    upsertCurrent(yearly, anchor.slice(0, 4), overview.ytdGrowthPct, overview.totalValueEur);
+    upsertCurrent(
+      yearly,
+      anchor.slice(0, 4),
+      overview.ytdGrowthPct,
+      overview.ytdGrowthPctUsd,
+      overview.totalValueEur,
+    );
   }
   // Newest period first (neobroker reverse-chronological list).
   monthly.reverse();
@@ -277,25 +309,33 @@ function mapAttribution(r: ExportAttributionRow): AttributionRowView {
 export function buildAnalytics(data: MobileExport): AnalyticsView | null {
   const a: ExportAnalytics | undefined = data.analytics;
   if (!a) return null;
+  const m = (
+    label: string,
+    value: DecimalString | null | undefined,
+    valueUsd: DecimalString | null | undefined,
+    kind: RiskMetric["kind"],
+  ): RiskMetric => ({ label, value: dec(value), valueUsd: dec(valueUsd), kind });
   const returns: RiskMetric[] = [
-    { label: "CAGR", value: dec(a.cagr), kind: "pct" },
-    { label: "TWR", value: dec(a.twr), kind: "pct" },
-    { label: "XIRR", value: dec(a.xirr), kind: "pct" },
-    { label: "Alpha", value: dec(a.alpha), kind: "pct" },
-    { label: "Beta", value: dec(a.beta), kind: "num" },
-    { label: "Risk-free", value: dec(a.risk_free_rate), kind: "pct" },
+    m("CAGR", a.cagr, a.cagr_usd, "pct"),
+    m("TWR", a.twr, a.twr_usd, "pct"),
+    m("XIRR", a.xirr, a.xirr_usd, "pct"),
+    m("Alpha", a.alpha, a.alpha_usd, "pct"),
+    m("Beta", a.beta, a.beta_usd, "num"),
+    // The risk-free rate is a market input, not a portfolio return, so it has
+    // no per-currency companion — it reads the same regardless of display.
+    m("Risk-free", a.risk_free_rate, null, "pct"),
   ];
   const risk: RiskMetric[] = [
-    { label: "Volatility", value: dec(a.volatility), kind: "pct" },
-    { label: "Sharpe", value: dec(a.sharpe), kind: "num" },
-    { label: "Sortino", value: dec(a.sortino), kind: "num" },
-    { label: "Max drawdown", value: dec(a.max_drawdown), kind: "pct" },
-    { label: "Calmar", value: dec(a.calmar), kind: "num" },
-    { label: "Ulcer index", value: dec(a.ulcer), kind: "num" },
-    { label: "VaR 95%", value: dec(a.var_95), kind: "pct" },
-    { label: "CVaR 95%", value: dec(a.cvar_95), kind: "pct" },
-    { label: "Skew", value: dec(a.skew), kind: "num" },
-    { label: "Kurtosis", value: dec(a.kurtosis), kind: "num" },
+    m("Volatility", a.volatility, a.volatility_usd, "pct"),
+    m("Sharpe", a.sharpe, a.sharpe_usd, "num"),
+    m("Sortino", a.sortino, a.sortino_usd, "num"),
+    m("Max drawdown", a.max_drawdown, a.max_drawdown_usd, "pct"),
+    m("Calmar", a.calmar, a.calmar_usd, "num"),
+    m("Ulcer index", a.ulcer, a.ulcer_usd, "num"),
+    m("VaR 95%", a.var_95, a.var_95_usd, "pct"),
+    m("CVaR 95%", a.cvar_95, a.cvar_95_usd, "pct"),
+    m("Skew", a.skew, a.skew_usd, "num"),
+    m("Kurtosis", a.kurtosis, a.kurtosis_usd, "num"),
   ];
   return {
     asOf: a.as_of,

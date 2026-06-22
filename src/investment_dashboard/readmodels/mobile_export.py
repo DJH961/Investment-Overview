@@ -117,6 +117,7 @@ def _holding_dict(
     *,
     cashflows: dict[int, list[Cashflow]],
     cashflows_usd: dict[int, list[Cashflow]],
+    cost_basis_eur: dict[int, Decimal],
     cost_basis_usd: dict[int, Decimal],
     price_dates: dict[int, date],
 ) -> dict[str, Any]:
@@ -131,8 +132,14 @@ def _holding_dict(
         "shares": dec(position.shares),
         "cost_basis_native": dec(position.cost_basis_native),
         # Cost basis converted at each buy's own trade-date FX (not today's
-        # spot), so the web can show a currency-correct USD total gain. Falls
-        # back to ``null`` when no USD figure is available.
+        # spot), so the web can show a currency-correct total gain *and growth*
+        # independently per currency. ``cost_basis_eur`` mirrors the desktop's
+        # per-currency ``InstrumentMetrics`` so EUR growth reflects the EUR the
+        # buys actually cost; without it the web derived the EUR cost basis at
+        # today's spot, which made EUR and USD growth collapse to the same
+        # (native) number. Both fall back to ``null`` when no figure is
+        # available.
+        "cost_basis_eur": dec(cost_basis_eur.get(iid)),
         "cost_basis_usd": dec(cost_basis_usd.get(iid)),
         "cumulative_dividends_cash_native": dec(position.cumulative_dividends_cash_native),
         "price_symbol": position.instrument.symbol,
@@ -256,6 +263,7 @@ def build_mobile_export(
     # web can show a currency-correct USD total gain (mirrors the desktop's
     # per-currency InstrumentMetrics rather than rescaling EUR at today's spot).
     instrument_metrics = compute_instrument_metrics(session, positions, as_of=context.as_of)
+    cost_basis_eur = {iid: m.cost_basis_eur for iid, m in instrument_metrics.items()}
     cost_basis_usd = {iid: m.cost_basis_usd for iid, m in instrument_metrics.items()}
     # The trading day each holding's exported price actually came from, so the
     # web can show "value last updated on …" rather than the export date.
@@ -292,6 +300,7 @@ def build_mobile_export(
                 position,
                 cashflows=instrument_cashflows_eur,
                 cashflows_usd=instrument_cashflows_usd,
+                cost_basis_eur=cost_basis_eur,
                 cost_basis_usd=cost_basis_usd,
                 price_dates=price_dates,
             )
