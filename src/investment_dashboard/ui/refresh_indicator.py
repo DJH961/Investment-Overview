@@ -22,17 +22,19 @@ from __future__ import annotations
 import time
 from datetime import UTC, datetime, tzinfo
 
+from investment_dashboard.domain.market_hours import (
+    LIVE_PRICE_WINDOW_SECONDS,
+    feed_is_fresh,
+)
+
 #: How often each client re-reads the refresh state. Cheap (an in-memory read),
 #: so a short interval keeps the chip feeling live without meaningful cost.
 POLL_INTERVAL_SECONDS = 1.5
 
-#: How recently a background price pull must have landed for the chip to read
-#: "Live" while the market is open. The live-price tick runs about once a minute
-#: (``main._LIVE_REFRESH_INTERVAL_SECONDS``); a generous window keeps a brief
-#: provider hiccup from flickering the chip out of "Live", while a genuinely
-#: stalled feed (no fresh prices for many minutes) correctly falls back to
-#: "Updated".
-LIVE_PRICE_WINDOW_SECONDS = 900.0
+#: Re-exported from :mod:`domain.market_hours` so the header chip, the per-row
+#: "As Of" badge and the Daily Growth caption all share one definition of how
+#: recently a price must have landed to count as "live".
+__all__ = ["LIVE_PRICE_WINDOW_SECONDS", "decide_reload", "is_live_now"]
 
 #: If a user-initiated refresh hasn't finished within this window, repaint the
 #: page anyway ("page first") so it never feels stuck, then reload once more when
@@ -91,10 +93,9 @@ def is_live_now(
     gone stale, the chip falls back to "Updated" (the last figures are settled,
     not moving).
     """
-    if not market_open or last_update_at is None:
+    if not market_open:
         return False
-    age = (now - last_update_at).total_seconds()
-    return 0 <= age <= window_seconds
+    return feed_is_fresh(last_update_at, now, window_seconds=window_seconds)
 
 
 def install_header_indicator(tz: tzinfo | None = None) -> None:  # noqa: PLR0915 - one cohesive widget builder

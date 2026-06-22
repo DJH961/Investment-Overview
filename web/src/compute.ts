@@ -29,7 +29,7 @@ import {
 import type { ExportCashflow, ExportHolding, MobileExport } from "./types";
 import { buildCalculatorData, type CalcData } from "./calculator";
 import { isMoneyMarketHolding } from "./money-market";
-import { isUsMarketOpen } from "./market-hours";
+import { LIVE_PRICE_MAX_STALENESS_MS, isUsMarketOpen } from "./market-hours";
 
 const EUR = "EUR";
 const USD = "USD";
@@ -57,6 +57,12 @@ export interface HoldingView {
   /** True when a fresh live quote supplied the price (vs. exported fallback). */
   priceIsLive: boolean;
   /**
+   * The provider's market-state flag for this holding's exchange at fetch time
+   * (Twelve Data `is_market_open`), or null when unknown (a fallback/exported
+   * price, or an endpoint that omits the field). A `false` is ground truth that
+   * the exchange is shut and suppresses the headline "Live" badge.
+   */
+  priceMarketOpen: boolean | null;
   /**
    * Epoch ms the displayed price was observed (live fetch or cache hit), or
    * null when it came from the export's last-known value. Drives the per-row
@@ -767,6 +773,7 @@ function buildHolding(
     shares,
     priceNative: price,
     priceIsLive: isLive,
+    priceMarketOpen: isLive ? (quote?.marketOpen ?? null) : null,
     priceAsOf: at,
     priceFallbackDate: asOfDate,
     valueIsStale,
@@ -1112,11 +1119,27 @@ export function buildDashboard(
       h.priceAsOf !== null && (latest === null || h.priceAsOf > latest) ? h.priceAsOf : latest,
     null,
   );
-  // "Live" is an honest claim, not a default: figures are live only while the
-  // NYSE session is actually open (holiday-aware) AND the freshest observation
-  // is from *today*. A weekend, a market holiday, after-hours, or a failed pull
-  // that left a stale carry-forward all read as a settled close, never "live".
-  const pricesAreLive = isUsMarketOpen(now) && liveAsOf !== null && isSameLocalDay(liveAsOf, now);
+  // "Live" is an honest claim, not a default: figures are live only when *all*
+  // of these hold, so the badge never overstates how fresh the total is:
+  //   1. the NYSE session is actually open right now (holiday-aware clock);
+  //   2. the freshest observation is from *today* — a weekend, holiday, or
+  //      after-hours carry-forward reads as a settled close, never "live";
+  //   3. that observation is recent (within the live window) — a failed or
+  //      unreachable feed leaves a stale cache whose age exceeds the window, so
+  //      "cannot access live data right now" honestly stops reading "live"; and
+  //   4. no live quote's provider flag says its market is shut — Twelve Data's
+  //      own `is_market_open=false` is ground truth for an unscheduled close or
+  //      an early half-day close our modelled clock would miss.
+  const liveFeedAge = liveAsOf !== null ? now.getTime() - liveAsOf : null;
+  const liveFeedIsFresh =
+    liveFeedAge !== null && liveFeedAge >= 0 && liveFeedAge <= LIVE_PRICE_MAX_STALENESS_MS;
+  const providerSaysClosed = holdings.some((h) => h.priceIsLive && h.priceMarketOpen === false);
+  const pricesAreLive =
+    isUsMarketOpen(now) &&
+    liveAsOf !== null &&
+    isSameLocalDay(liveAsOf, now) &&
+    liveFeedIsFresh &&
+    !providerSaysClosed;
 
   const overview: OverviewView = {
     generatedAt: data.meta.generated_at,

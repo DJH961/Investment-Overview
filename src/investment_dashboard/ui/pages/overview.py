@@ -966,6 +966,7 @@ def register() -> None:  # noqa: PLR0915
                     market_open=is_us_market_open(_now),
                     price_observed_at=data.price_observed_at,
                     price_market_at=data.price_market_at,
+                    now=_now,
                 )
 
                 # Fill the header's Total Value hero box (created in register()).

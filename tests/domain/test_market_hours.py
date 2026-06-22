@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
 
 from investment_dashboard.domain.market_hours import (
+    feed_is_fresh,
+    is_us_market_holiday,
     is_us_market_open,
     previous_trading_day,
     regular_session_close,
@@ -50,10 +52,89 @@ def test_naive_datetime_treated_as_exchange_local() -> None:
     assert is_us_market_open(datetime(2024, 6, 24, 8, 0)) is False
 
 
+@pytest.mark.parametrize(
+    "holiday",
+    [
+        date(2024, 1, 1),  # New Year's Day
+        date(2024, 1, 15),  # MLK Day (3rd Monday Jan)
+        date(2024, 2, 19),  # Washington's Birthday (3rd Monday Feb)
+        date(2024, 3, 29),  # Good Friday
+        date(2024, 5, 27),  # Memorial Day (last Monday May)
+        date(2024, 6, 19),  # Juneteenth
+        date(2024, 7, 4),  # Independence Day
+        date(2024, 9, 2),  # Labor Day (1st Monday Sep)
+        date(2024, 11, 28),  # Thanksgiving (4th Thursday Nov)
+        date(2024, 12, 25),  # Christmas Day
+        date(2025, 1, 1),  # New Year's Day (another year)
+        date(2026, 4, 3),  # Good Friday 2026
+    ],
+)
+def test_known_nyse_holidays(holiday: date) -> None:
+    assert is_us_market_holiday(holiday) is True
+
+
+@pytest.mark.parametrize(
+    "observed",
+    [
+        date(2021, 12, 31),  # New Year's Day 2022 (Sat) observed Friday before
+        date(2021, 7, 5),  # Independence Day 2021 (Sun) observed Monday after
+        date(2022, 6, 20),  # Juneteenth 2022 (Sun) observed Monday after
+    ],
+)
+def test_weekend_holidays_use_observed_day(observed: date) -> None:
+    assert is_us_market_holiday(observed) is True
+
+
+def test_juneteenth_not_a_holiday_before_2022() -> None:
+    assert is_us_market_holiday(date(2021, 6, 19)) is False
+
+
+def test_holiday_during_session_hours_is_closed() -> None:
+    # Independence Day 2024 (Thursday) at 11:00 ET would be "open" by the
+    # weekday-and-clock rule, but the market is closed — must not read live.
+    july_4 = datetime(2024, 7, 4, 11, 0, tzinfo=NY)
+    assert july_4.weekday() < 5  # a weekday inside 09:30–16:00
+    assert is_us_market_open(july_4) is False
+
+
+def test_regular_weekday_is_not_a_holiday() -> None:
+    assert is_us_market_holiday(date(2024, 6, 24)) is False
+    assert is_us_market_open(datetime(2024, 6, 24, 10, 0, tzinfo=NY)) is True
+
+
 def test_default_now_uses_current_time() -> None:
     # With no argument the helper reads the wall clock; it must not raise and
     # must return a plain bool (the exact value depends on when the suite runs).
     assert isinstance(is_us_market_open(), bool)
+
+
+class TestFeedIsFresh:
+    _NOW = datetime(2024, 6, 24, 18, 0, tzinfo=UTC)
+
+    def test_recent_pull_is_fresh(self) -> None:
+        recent = self._NOW - timedelta(seconds=60)
+        assert feed_is_fresh(recent, self._NOW) is True
+
+    def test_stale_pull_is_not_fresh(self) -> None:
+        # No fresh price for an hour → we cannot access live data, not live.
+        stale = self._NOW - timedelta(hours=1)
+        assert feed_is_fresh(stale, self._NOW) is False
+
+    def test_no_pull_is_not_fresh(self) -> None:
+        assert feed_is_fresh(None, self._NOW) is False
+
+    def test_no_clock_skips_the_gate(self) -> None:
+        # now=None means "no clock to judge against": keep legacy behaviour.
+        assert feed_is_fresh(None, None) is True
+        assert feed_is_fresh(self._NOW - timedelta(days=5), None) is True
+
+    def test_naive_timestamp_is_treated_as_utc(self) -> None:
+        naive_recent = self._NOW.replace(tzinfo=None) - timedelta(seconds=30)
+        assert feed_is_fresh(naive_recent, self._NOW) is True
+
+    def test_future_timestamp_is_not_fresh(self) -> None:
+        # A clock-skew timestamp from the future is not a valid "just landed".
+        assert feed_is_fresh(self._NOW + timedelta(hours=1), self._NOW) is False
 
 
 class TestPreviousTradingDay:

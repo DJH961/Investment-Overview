@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, tzinfo
 from decimal import Decimal
 
-from investment_dashboard.domain.market_hours import regular_session_close
+from investment_dashboard.domain.market_hours import feed_is_fresh, regular_session_close
 
 
 @dataclass(frozen=True)
@@ -130,6 +130,7 @@ def build_daily_growth_caption(
     market_open: bool,
     price_observed_at: datetime | None = None,
     price_market_at: datetime | None = None,
+    now: datetime | None = None,
 ) -> DailyGrowthCaption:
     """Build the caption for the Daily Growth card.
 
@@ -147,11 +148,24 @@ def build_daily_growth_caption(
     "· updated …", so the user sees the exchange's stamp, not our fetch. When the
     provider does not publish a market time the caption falls back to the pull
     instant, and then to the modelled regular-session close.
+
+    ``now`` enables the recency gate: a figure is only called *live* when a fresh
+    price actually landed within the live window of ``now`` (judged by the most
+    recent of ``price_observed_at`` / ``price_market_at``). This means a stalled
+    or unreachable feed — even while the market is nominally open — settles to
+    "today" rather than dishonestly claiming "live". When ``now`` is ``None`` the
+    gate is skipped (the legacy ``market open and price is today`` rule).
     """
     if last_date is None:
         return DailyGrowthCaption("awaiting two priced days", None, is_live=False)
 
-    is_live = market_open and last_date == today
+    # The freshest proof we have that the feed is genuinely live right now: prefer
+    # the most recent of our last successful pull and the exchange strike time.
+    freshest_pull = max(
+        (t for t in (price_observed_at, price_market_at) if t is not None),
+        default=None,
+    )
+    is_live = market_open and last_date == today and feed_is_fresh(freshest_pull, now)
     updated_text: str | None = None
     if is_live:
         # Live: the figure tracks the open session. The state is fully conveyed

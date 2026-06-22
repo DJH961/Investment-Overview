@@ -79,6 +79,8 @@ interface StoredQuote {
   priceTime?: number | null;
   /** Trading day the price applies to (`YYYY-MM-DD`); see {@link Quote.valueDate}. */
   valueDate?: string | null;
+  /** Provider market-state flag at fetch time; see {@link Quote.marketOpen}. */
+  marketOpen?: boolean | null;
 }
 
 type QuoteCacheFile = Record<string, StoredQuote>;
@@ -105,6 +107,7 @@ export function readCachedQuotes(storage: StorageLike | null = defaultStorage())
         at: stored.at,
         priceTime: stored.priceTime ?? null,
         valueDate: stored.valueDate ?? null,
+        marketOpen: stored.marketOpen ?? null,
       },
     });
   }
@@ -132,6 +135,7 @@ export function writeCachedQuotes(
       at,
       priceTime: quote.priceTime ?? null,
       valueDate: quote.valueDate ?? null,
+      marketOpen: quote.marketOpen ?? null,
     };
   }
   writeJson(storage, QUOTE_KEY, file);
