@@ -2,12 +2,42 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
 
+from investment_dashboard import boot
 from investment_dashboard.boot import run_boot_sequence
+
+
+def _release_held_writer_lock() -> None:
+    """Close and forget the writer-lock handle stored in the boot global.
+
+    ``run_boot_sequence`` stashes the acquired lock in a module-global; if it
+    is not released the ``<ledger>.lock`` file handle leaks until garbage
+    collection, surfacing as a ``ResourceWarning``.
+    """
+    lock = boot._boot_state.get("held_lock")
+    if lock is not None:
+        with suppress(Exception):
+            lock.release()  # type: ignore[attr-defined]
+    boot._boot_state["held_lock"] = None
+
+
+@pytest.fixture(autouse=True)
+def _release_boot_writer_lock() -> Iterator[None]:
+    """Release any writer lock a boot test acquired, and reset boot state.
+
+    We reset the handle directly rather than calling ``release_writer_lock``,
+    which would flip the global to read-only and leak that state into the
+    next test.
+    """
+    yield
+    _release_held_writer_lock()
+    boot._boot_state["read_only"] = False
 
 
 def test_skip_network_does_not_raise() -> None:
@@ -302,6 +332,7 @@ def test_integrity_check_tolerates_transient_disk_io_error(
     try:
         run_boot_sequence(skip_network=True)
     finally:
+        _release_held_writer_lock()
         boot._boot_state.update(saved)
         dispose_engines()
         get_settings.cache_clear()
@@ -380,3 +411,83 @@ def test_warm_snapshots_populates_cache_for_seeded_ledger(
     finally:
         dispose_engines()
         get_settings.cache_clear()
+
+
+# --- writer-lock / read-only fallback ---------------------------------------
+
+
+class _FakeLock:
+    """Minimal stand-in for a ``WriteLock`` handle."""
+
+    def __init__(self) -> None:
+        self.released = False
+
+    def release(self) -> None:
+        self.released = True
+
+
+def test_acquire_writer_lock_skips_memory_ledger(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import types
+
+    monkeypatch.setattr(
+        boot, "get_settings", lambda: types.SimpleNamespace(ledger_path=Path(":memory:"))
+    )
+    boot._acquire_writer_lock()
+    assert boot.holds_writer_lock() is False
+    assert boot.is_read_only() is False
+
+
+def test_acquire_writer_lock_success_holds_lock(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import types
+
+    fake = _FakeLock()
+    monkeypatch.setattr(
+        boot,
+        "get_settings",
+        lambda: types.SimpleNamespace(ledger_path=tmp_path / "ledger.sqlite"),
+    )
+    monkeypatch.setattr("investment_dashboard.storage.lock.acquire_write_lock", lambda _p: fake)
+
+    boot._acquire_writer_lock()
+
+    assert boot.holds_writer_lock() is True
+    assert boot.is_read_only() is False
+
+
+def test_acquire_writer_lock_contention_falls_back_to_read_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import types
+
+    from investment_dashboard.storage.lock import WriteLockError
+
+    def _busy(_path: Path) -> object:
+        raise WriteLockError("held by another instance")
+
+    monkeypatch.setattr(
+        boot,
+        "get_settings",
+        lambda: types.SimpleNamespace(ledger_path=tmp_path / "ledger.sqlite"),
+    )
+    monkeypatch.setattr("investment_dashboard.storage.lock.acquire_write_lock", _busy)
+
+    boot._acquire_writer_lock()
+
+    assert boot.holds_writer_lock() is False
+    assert boot.is_read_only() is True
+
+
+def test_release_writer_lock_handoff_flips_to_read_only() -> None:
+    fake = _FakeLock()
+    boot._boot_state["held_lock"] = fake
+
+    assert boot.release_writer_lock() is True
+    assert fake.released is True
+    assert boot.holds_writer_lock() is False
+    assert boot.is_read_only() is True
+    # Idempotent: a second release reports nothing left to hand off.
+    assert boot.release_writer_lock() is False

@@ -8,7 +8,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.orm import Session
 
-from investment_dashboard.repositories import fx_repo
+from investment_dashboard.repositories import app_config_repo, fx_repo
 from investment_dashboard.services import display_currency_service
 
 
@@ -43,3 +43,15 @@ def test_convert_from_eur_uses_latest_rate(session: Session) -> None:
     )
     out = display_currency_service.convert_from_eur(session, Decimal("100"), target="USD")
     assert out == Decimal("120.00")
+
+
+def test_unknown_stored_value_falls_back_to_eur(session: Session) -> None:
+    # A corrupted / unsupported stored currency degrades to the default.
+    app_config_repo.set_value(session, "display_currency", "GBP")
+    assert display_currency_service.get_display_currency(session) == "EUR"
+
+
+def test_convert_from_eur_passthrough_when_no_rate(session: Session) -> None:
+    # No FX rate available -> return the input unchanged (degrade gracefully).
+    out = display_currency_service.convert_from_eur(session, Decimal("100"), target="USD")
+    assert out == Decimal("100")
