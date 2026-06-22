@@ -19,6 +19,7 @@ function holding(over: Partial<HoldingView> & { symbol: string }): HoldingView {
     shares: over.shares ?? new Decimal(0),
     priceNative: null,
     priceIsLive: false,
+    priceMarketOpen: null,
     priceAsOf: null,
     priceFallbackDate: "2024-01-01",
     valueIsStale: false,

@@ -52,6 +52,15 @@ export interface Quote {
    * published NAV is already in hand. Null when the API omits it.
    */
   valueDate?: string | null;
+  /**
+   * The provider's own market-state flag for the quote's exchange at fetch time
+   * (Twelve Data's `is_market_open`). `true`/`false` when the API reports it,
+   * `null`/absent when the endpoint omits it (e.g. the `time_series` NAV
+   * fallback). A `false` here is ground truth that the exchange is shut — used
+   * to suppress a dishonest "Live" even when our own modelled clock thinks the
+   * session is open (an unscheduled close, an early half-day close, …).
+   */
+  marketOpen?: boolean | null;
 }
 
 export interface FxRates {
@@ -204,6 +213,7 @@ function quoteFromNode(symbol: string, node: Record<string, unknown>): Quote {
     at: null,
     priceTime,
     valueDate: parseValueDate(node.datetime),
+    marketOpen: typeof node.is_market_open === "boolean" ? node.is_market_open : null,
   };
 }
 

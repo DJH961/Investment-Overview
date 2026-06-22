@@ -1140,3 +1140,61 @@ describe("EUR vs USD growth genuinely diverge (regression for identical figures)
     expect(Math.abs(o.totalGainPct!.toNumber() - o.totalGainPctUsd!.toNumber())).toBeGreaterThan(0.01);
   });
 });
+
+describe("pricesAreLive honesty", () => {
+  // A weekday inside the NYSE regular session (Mon 2024-06-03, 10:00 ET).
+  const openNow = new Date("2024-06-03T14:00:00Z");
+
+  function liveQuotes(over: Partial<Quote> = {}): Map<string, Quote> {
+    return new Map<string, Quote>([
+      [
+        "VTI",
+        {
+          symbol: "VTI",
+          price: new Decimal("100"),
+          previousClose: new Decimal("95"),
+          currency: "USD",
+          at: openNow.getTime(),
+          ...over,
+        },
+      ],
+    ]);
+  }
+
+  it("is live when the market is open and a fresh quote just landed", () => {
+    const m = buildDashboard(makeExport(), liveQuotes(), fx, openNow);
+    expect(m.overview.pricesAreLive).toBe(true);
+  });
+
+  it("is not live when the market is closed (weekend), even with a fresh quote", () => {
+    const sat = new Date("2024-06-01T14:00:00Z");
+    const m = buildDashboard(makeExport(), liveQuotes({ at: sat.getTime() }), fx, sat);
+    expect(m.overview.pricesAreLive).toBe(false);
+  });
+
+  it("is not live on a market holiday (Juneteenth), even during session hours", () => {
+    const juneteenth = new Date("2024-06-19T14:00:00Z");
+    const m = buildDashboard(makeExport(), liveQuotes({ at: juneteenth.getTime() }), fx, juneteenth);
+    expect(m.overview.pricesAreLive).toBe(false);
+  });
+
+  it("is not live when the freshest quote is stale (feed unreachable)", () => {
+    // The cached quote is 20 minutes old — beyond the live window — so even
+    // though the market is open we can no longer claim a live price.
+    const stale = openNow.getTime() - 20 * 60 * 1000;
+    const m = buildDashboard(makeExport(), liveQuotes({ at: stale }), fx, openNow);
+    expect(m.overview.pricesAreLive).toBe(false);
+  });
+
+  it("is not live when the provider reports the market closed (is_market_open=false)", () => {
+    // Twelve Data's own ground truth overrides our modelled open session — e.g.
+    // an unscheduled close or an early half-day close the calendar misses.
+    const m = buildDashboard(makeExport(), liveQuotes({ marketOpen: false }), fx, openNow);
+    expect(m.overview.pricesAreLive).toBe(false);
+  });
+
+  it("stays live when the provider confirms the market is open", () => {
+    const m = buildDashboard(makeExport(), liveQuotes({ marketOpen: true }), fx, openNow);
+    expect(m.overview.pricesAreLive).toBe(true);
+  });
+});
