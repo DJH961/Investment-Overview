@@ -17,7 +17,7 @@ from decimal import Decimal
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
-from investment_dashboard.services import display_currency_service
+from investment_dashboard.services import analytics_prefs_service, display_currency_service
 from investment_dashboard.services.metrics_service import (
     PortfolioMetrics,
     compute_portfolio_metrics,
@@ -33,7 +33,6 @@ from investment_dashboard.ui.components.kpi_card import dual_kpi_card
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import (
     aggrid_money_formatter,
-    dual_pct,
     fmt_money,
     fmt_pct,
 )
@@ -57,6 +56,7 @@ class _AnalyticsData:
     bundle: AnalyticsBundle
     metrics: PortfolioMetrics
     attribution_rate: Decimal | None
+    lookback_days: int
 
 
 _LOOKBACKS: tuple[tuple[str, int], ...] = (
@@ -275,13 +275,16 @@ def _render_kpis(
     with _kpi_group("Returns"):
         kpi_card("CAGR", fmt_pct(bundle.cagr), tooltip_key="cagr")
         kpi_card("TWR", fmt_pct(bundle.twr), tooltip_key="twr")
+        # XIRR only in the selected display currency — the second-currency
+        # figure added noise without insight (the headline already implies the
+        # currency lens), so we show a single value here.
+        if metrics is not None:
+            xirr_value = metrics.xirr_usd if display_ccy != "EUR" else metrics.xirr
+        else:
+            xirr_value = bundle.xirr
         kpi_card(
             "XIRR",
-            dual_pct(
-                metrics.xirr if metrics is not None else bundle.xirr,
-                metrics.xirr_usd if metrics is not None else None,
-                primary=display_ccy,
-            ),
+            fmt_pct(xirr_value),
             tooltip_key="xirr",
         )
     with _kpi_group("Risk & volatility"):
@@ -510,16 +513,15 @@ def _on_lookback_change(days: int) -> None:  # pragma: no cover - UI callback
 
 def _parse_lookback(raw: str | None) -> int:
     try:
-        v = int(raw) if raw is not None else 365
+        v = int(raw) if raw is not None else analytics_prefs_service.DEFAULT_LOOKBACK_DAYS
     except ValueError:
-        v = 365
-    return max(7, min(v, 365 * 10))
+        v = analytics_prefs_service.DEFAULT_LOOKBACK_DAYS
+    return analytics_prefs_service.clamp_lookback_days(v)
 
 
 def register() -> None:
     @ui.page(PATH)
     def _analytics(lookback: str | None = None) -> None:  # pragma: no cover - rendered
-        days = _parse_lookback(lookback)
         with page_frame("Analytics", current=PATH):
             page_header(
                 "Analytics",
@@ -530,6 +532,15 @@ def register() -> None:
                 # Heavy bundle/metrics work runs off the event loop so the
                 # websocket stays responsive while it crunches.
                 with session_scope() as session:
+                    # Remember the picked time frame: an explicit ?lookback in
+                    # the URL is the user's new choice (persist it); a plain
+                    # /analytics visit reopens on the last persisted window.
+                    if lookback is not None:
+                        days = analytics_prefs_service.set_lookback_days(
+                            session, _parse_lookback(lookback)
+                        )
+                    else:
+                        days = analytics_prefs_service.get_lookback_days(session)
                     display_ccy = display_currency_service.get_display_currency(session)
                     bundle = build_bundle(session, currency=display_ccy, lookback_days=days)
                     metrics = compute_portfolio_metrics(session)
@@ -545,6 +556,7 @@ def register() -> None:
                     bundle=bundle,
                     metrics=metrics,
                     attribution_rate=attribution_rate,
+                    lookback_days=days,
                 )
 
             def _build(data: _AnalyticsData) -> None:
@@ -556,7 +568,7 @@ def register() -> None:
                     ui.label("Lookback:").classes("text-caption opacity-70")
                     ui.toggle(
                         {d: lbl for lbl, d in _LOOKBACKS},
-                        value=days,
+                        value=data.lookback_days,
                         on_change=lambda e: _on_lookback_change(int(e.value)),
                     ).props("dense unelevated no-caps")
                     ui.label(
@@ -671,12 +683,15 @@ def register() -> None:
                                 ],
                                 "rowData": rows,
                                 # A pinned totals row that ties the per-instrument
-                                # P&L back to the portfolio headline.
+                                # P&L back to the portfolio headline. It stays
+                                # pinned across pages.
                                 "pinnedBottomRowData": [totals],
-                                # Show every instrument (autoHeight grows the grid
-                                # to fit all rows) instead of clipping to a fixed
-                                # viewport that hid most holdings behind a scrollbar.
-                                "domLayout": "autoHeight",
+                                # Paginate (like the other tables) so a long
+                                # holdings list scrolls through pages instead of
+                                # growing the grid until it overflows and blocks
+                                # the surrounding text.
+                                "pagination": True,
+                                "paginationAutoPageSize": True,
                                 "defaultColDef": {
                                     "sortable": True,
                                     "resizable": True,
@@ -687,7 +702,7 @@ def register() -> None:
                                     "minWidth": 96,
                                 },
                             },
-                        ).classes("ag-theme-alpine w-full")
+                        ).classes("ag-theme-alpine w-full").style("height:480px")
                         ui.label(
                             "P&L is each holding's gain after removing your own buys "
                             "and sells in the window; the rows sum to the portfolio "

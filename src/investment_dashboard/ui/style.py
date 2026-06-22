@@ -279,7 +279,11 @@ html, body {{
    ragged flex-wrap rows that left odd gaps and mismatched sizes. */
 .inv-kpi-grid {{
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+  /* v2.8.2 — fit five tiles per row (risk / drawdown / currency bands have
+     five metrics each) instead of wrapping the 5th onto a lonely second row.
+     ``auto-fit`` collapses unused tracks so smaller bands (the 3-tile hero /
+     Returns groups) still stretch to fill the row. */
+  grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
   gap: 1rem;
   align-items: stretch;
 }}
@@ -337,9 +341,10 @@ html, body {{
   font-weight: 600;
 }}
 .inv-kpi-value {{
-  /* Trimmed from 2rem so long figures (e.g. a big YTD %) stay on one line
-     and every tile keeps a uniform headline size (v2.8.1). */
-  font-size: 1.6rem;
+  /* v2.8.2 — fluid headline so the five-up tiles keep big money figures
+     (Portfolio value, Capital gain and the like) on one line in the now
+     narrower cards. Scales between a compact and the original size. */
+  font-size: clamp(1.2rem, 1.1rem + 0.5vw, 1.6rem);
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--inv-ink);
@@ -362,7 +367,7 @@ html, body {{
   margin-top: 4px;
 }}
 .inv-kpi-dual-secondary {{
-  font-size: 1.15rem;
+  font-size: clamp(0.95rem, 0.85rem + 0.35vw, 1.15rem);
   font-weight: 600;
   color: var(--inv-ink);
   font-variant-numeric: tabular-nums;
