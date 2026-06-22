@@ -576,6 +576,14 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .holding-figures { text-align: right; display: grid; gap: 0.1rem; flex: none; }
 .holding-value { font-weight: 700; font-variant-numeric: tabular-nums; }
 .holding-change { font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* A daily move still on an older print than its peers (e.g. a fund yet to strike
+   today's NAV) is greyed: it shows last session's move, not today's. The muted
+   colour overrides the gain/loss tint and a softer weight signals "not yet". */
+.holding-change-stale {
+  color: var(--faint) !important;
+  font-weight: 500;
+  opacity: 0.65;
+}
 
 .holding-meta { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .chip {
@@ -606,6 +614,41 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   vertical-align: middle;
 }
 .pill.stale { color: var(--warn); }
+
+/* --- Today's movers (winners / losers) ----------------------------------- */
+.mover-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  padding: 0.2rem 0 0.1rem;
+}
+.mover-col { display: grid; gap: 0.35rem; align-content: start; }
+.mover-col-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+}
+.mover-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
+.mover {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  padding: 0.35rem 0.5rem;
+}
+.mover-id { display: grid; gap: 0.05rem; min-width: 0; }
+.mover-sym { font-weight: 700; font-size: 0.85rem; }
+.mover-tag { color: var(--faint); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.mover-figures { text-align: right; display: grid; gap: 0.05rem; flex: none; }
+.mover-pct { font-weight: 700; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.mover-money { font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+.mover-empty { color: var(--faint); font-size: 0.8rem; margin: 0.1rem 0; }
 
 .note { color: var(--muted); font-size: 0.85rem; margin: 0.2rem 0.15rem 0; }
 .note.warn { color: var(--warn); }
