@@ -191,6 +191,8 @@ function renderHeroFx(o: OverviewView): HTMLElement | null {
     // the rate to USD/EUR (EUR per 1 USD); the percentage keeps the euro's sign
     // so "+" = euro stronger. In EUR display we show EUR/USD as-is but negate the
     // percentage so it reads the dollar's strength, "+" = dollar stronger.
+    // Example: EUR/USD 1.07 → 1.08 (euro up). USD display shows USD/EUR ticking
+    // *down* (0.9346 → 0.9259) yet a +% because the euro strengthened.
     const devPct = fxTodayDeviationPct(o);
     const rate = inUsd ? new Decimal(1).dividedBy(o.fxRateEurUsd) : o.fxRateEurUsd;
     const dev = devPct === null ? null : inUsd ? devPct : devPct.negated();
