@@ -88,6 +88,7 @@ class _OverviewData:
     cards: list[HoldingCard]
     treemap_data: list[TreemapDatum]
     price_observed_at: datetime | None = None
+    price_market_at: datetime | None = None
 
 
 def _pct_card(
@@ -557,12 +558,23 @@ def register() -> None:  # noqa: PLR0915
                 )
                 treemap_data = allocation_treemap(positions)
                 # "When the price is from": the most recent moment we pulled a
-                # fresh price from the provider, used to stamp the settled-today
-                # Daily Growth caption.
+                # fresh price from the provider, used as a fallback to stamp the
+                # settled-today Daily Growth caption.
                 _refresh_times = [
                     f.updated_at for f in freshness.values() if f.updated_at is not None
                 ]
                 price_observed_at = max(_refresh_times) if _refresh_times else None
+                # The most recent *market* time across holdings — when the served
+                # prices were last struck on the exchange (the provider's
+                # ``regularMarketTime``). This is the stamp the settled-today
+                # caption prefers, so it reads "as of <market time>" (e.g. the
+                # moment the day's NAV published) rather than our pull instant.
+                _market_times = [
+                    f.price_market_time
+                    for f in freshness.values()
+                    if f.price_market_time is not None
+                ]
+                price_market_at = max(_market_times) if _market_times else None
                 return _OverviewData(
                     range_label=range_label,
                     metrics=metrics,
@@ -575,6 +587,7 @@ def register() -> None:  # noqa: PLR0915
                     cards=cards,
                     treemap_data=treemap_data,
                     price_observed_at=price_observed_at,
+                    price_market_at=price_market_at,
                 )
 
             def _render(data: _OverviewData) -> None:
@@ -651,9 +664,11 @@ def register() -> None:  # noqa: PLR0915
                     # Caption: a tight "as of …" line. While the NYSE session
                     # is open the figure is flagged "· live" and the clock is
                     # omitted (it just tracks now); once closed the caption
-                    # stamps when the price is from — the moment we last pulled
-                    # it from the provider — so the settled figure is dated. A
-                    # compact, display-relative exchange rate trails it.
+                    # stamps when the price is from — the provider's market time
+                    # (e.g. when the day's NAV published), with our pull instant
+                    # trailing as "· updated …" — so the settled figure is dated
+                    # by the exchange, not by our fetch. A compact,
+                    # display-relative exchange rate trails it.
                     _now = datetime.now(UTC)
                     _caption = build_daily_growth_caption(
                         last_date=metrics.daily_growth_as_of,
@@ -664,6 +679,7 @@ def register() -> None:  # noqa: PLR0915
                         tz=display_tz,
                         market_open=is_us_market_open(_now),
                         price_observed_at=data.price_observed_at,
+                        price_market_at=data.price_market_at,
                     )
                     _pct_card(
                         "Daily Growth",

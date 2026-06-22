@@ -11,9 +11,12 @@ Three shapes, mirroring the user's mental model:
   the figure tracks the moving session, so a clock time is redundant next to the
   ``· live`` flag — it is omitted ("as of today · live").
 * **Closed, but today's close is in** (TODAY): the price is settled, so the
-  caption stamps *when it is from* — the moment we last pulled the price from the
-  provider (``price_observed_at``), e.g. "as of 22:07", falling back to the
-  modelled regular-session close when that timestamp is unavailable.
+  caption stamps *when it is from* on the exchange — the provider's market time
+  (``price_market_at``, e.g. when a mutual fund's NAV published) — and trails
+  our own pull instant as "· updated …" so the figure is dated by the market,
+  not by our fetch. When the provider publishes no market time it falls back to
+  the pull instant (``price_observed_at``) and then to the modelled
+  regular-session close.
 * **Older close**: the caption pins to that date ("as of Fri 20 Jun").
 
 A compact exchange-rate detail trails the caption when an EUR/USD mark is
@@ -39,18 +42,28 @@ from investment_dashboard.domain.market_hours import regular_session_close
 class DailyGrowthCaption:
     """Rendered pieces of the Daily Growth caption.
 
-    ``as_of_text`` is always present; ``fx_text`` is ``None`` only when no FX
-    mark is available (e.g. a brand-new portfolio with no EUR/USD history).
-    ``is_live`` drives the small "live" affordance in the combined line.
+    ``as_of_text`` is always present; ``updated_text`` carries the optional
+    "updated …" pull-time stamp shown next to a market-dated settled figure;
+    ``fx_text`` is ``None`` only when no FX mark is available (e.g. a brand-new
+    portfolio with no EUR/USD history). ``is_live`` drives the small "live"
+    affordance in the combined line.
     """
 
     as_of_text: str
     fx_text: str | None
     is_live: bool
+    updated_text: str | None = None
 
     def combined(self) -> str:
-        """Single tight caption line: ``as of … · live · €1≈$…`` (parts optional)."""
+        """Single tight caption line: ``as of … · updated … · live · €1≈$…``.
+
+        All parts after ``as of …`` are optional; ``updated …`` only appears in
+        the settled-today state when the figure is dated by the exchange's market
+        time and we also know our own pull instant.
+        """
         parts = [self.as_of_text]
+        if self.updated_text is not None:
+            parts.append(self.updated_text)
         if self.is_live:
             parts.append("live")
         if self.fx_text is not None:
@@ -111,6 +124,7 @@ def build_daily_growth_caption(
     tz: tzinfo | None,
     market_open: bool,
     price_observed_at: datetime | None = None,
+    price_market_at: datetime | None = None,
 ) -> DailyGrowthCaption:
     """Build the caption for the Daily Growth card.
 
@@ -120,23 +134,34 @@ def build_daily_growth_caption(
     mark; ``display_ccy`` flips them to the display-relative quote and percentage
     move. ``tz`` is the user's display timezone for the time stamp.
     ``market_open`` is the NYSE session state (see :mod:`domain.market_hours`).
-    ``price_observed_at`` is when the price was last pulled from the provider
-    (the saved last-refresh instant); in the settled-today state it is the
-    "when the price is from" stamp, falling back to the modelled session close.
+
+    ``price_market_at`` is *when the price is from* on the exchange — the
+    provider's ``regularMarketTime`` (e.g. when a mutual fund's NAV published).
+    In the settled-today state the caption dates the figure by this market time
+    and trails our own ``price_observed_at`` (when we last pulled the price) as
+    "· updated …", so the user sees the exchange's stamp, not our fetch. When the
+    provider does not publish a market time the caption falls back to the pull
+    instant, and then to the modelled regular-session close.
     """
     if last_date is None:
         return DailyGrowthCaption("awaiting two priced days", None, is_live=False)
 
     is_live = market_open and last_date == today
+    updated_text: str | None = None
     if is_live:
         # Live: the figure tracks the open session, so a clock time is redundant
         # next to the "· live" flag — omit it (see combined()).
         as_of_text = "as of today"
     elif last_date == today:
-        # Settled, but today's close is in: stamp *when the price is from* — the
-        # moment we last pulled it from the provider, falling back to the
-        # modelled regular-session close when that timestamp is unknown.
-        if price_observed_at is not None:
+        # Settled, but today's close is in: stamp *when the price is from*.
+        # Prefer the exchange's market time (e.g. the NAV publish instant) and
+        # trail our own pull time as "updated …"; fall back to the pull time,
+        # then to the modelled regular-session close, when no market time exists.
+        if price_market_at is not None:
+            as_of_text = f"as of {_local_hhmm(price_market_at, tz)}"
+            if price_observed_at is not None:
+                updated_text = f"updated {_local_hhmm(price_observed_at, tz)}"
+        elif price_observed_at is not None:
             as_of_text = f"as of {_local_hhmm(price_observed_at, tz)}"
         else:
             close_at = regular_session_close(last_date, tz=tz)
@@ -147,4 +172,4 @@ def build_daily_growth_caption(
     fx_text: str | None = None
     if fx_eur_usd is not None and fx_eur_usd > 0:
         fx_text = _format_fx_tight(fx_eur_usd, fx_eur_usd_prev, display_ccy)
-    return DailyGrowthCaption(as_of_text, fx_text, is_live=is_live)
+    return DailyGrowthCaption(as_of_text, fx_text, is_live=is_live, updated_text=updated_text)
