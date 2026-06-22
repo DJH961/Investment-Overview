@@ -164,6 +164,46 @@ function calendarDayDiff(then: Date, now: Date): number {
   return Math.round((b - a) / 86_400_000);
 }
 
+/**
+ * The market-situation-aware "as of" caption for the hero's total value and
+ * today's move — the browser mirror of the desktop's Daily Growth caption
+ * (`services/daily_growth_view.build_daily_growth_caption`).
+ *
+ * While the US market is open and we hold an intraday observation dated today,
+ * it reads as a live clock time ("as of 3:42 PM"). Once the session is closed it
+ * pins to the latest settled trading day instead — "as of today" when that day
+ * is today, else the weekday + date ("as of Fri 20 Jun") — so the figure is
+ * never mislabelled as live when it is really a settled close.
+ *
+ * `liveAsOf` is the freshest intraday market observation (epoch ms; null when
+ * nothing priced intraday), `settledDate` the latest known trading day
+ * (`YYYY-MM-DD`), and `today` the local `YYYY-MM-DD`.
+ */
+export function formatDailyGrowthAsOf(
+  liveAsOf: number | null | undefined,
+  settledDate: string,
+  today: string,
+  marketOpen: boolean,
+  now: Date = new Date(),
+): string {
+  if (marketOpen && liveAsOf !== null && liveAsOf !== undefined) {
+    const when = new Date(liveAsOf);
+    const sameDay =
+      !Number.isNaN(when.getTime()) &&
+      when.getFullYear() === now.getFullYear() &&
+      when.getMonth() === now.getMonth() &&
+      when.getDate() === now.getDate();
+    if (sameDay) {
+      const time = when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", ...clockOptions() });
+      return `as of ${time}`;
+    }
+  }
+  if (settledDate === today) return "as of today";
+  const parsed = new Date(settledDate);
+  if (Number.isNaN(parsed.getTime())) return `as of ${settledDate}`;
+  return `as of ${parsed.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}`;
+}
+
 export function formatShares(value: Decimal): string {
   return new Intl.NumberFormat(undefined, {
     minimumFractionDigits: 0,

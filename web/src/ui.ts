@@ -27,6 +27,7 @@ import {
   formatLastPull,
   formatCurrency,
   formatCurrencyWhole,
+  formatDailyGrowthAsOf,
   formatDualCurrency,
   formatFxRate,
   formatNativePrice,
@@ -38,6 +39,7 @@ import {
   formatTimestamp,
   signClass,
 } from "./format";
+import { isUsMarketOpen } from "./market-hours";
 import { cycleTheme, loadTheme, themeButtonContent } from "./theme";
 import { getTimeFormat, setTimeFormat, type TimeFormat } from "./time-format";
 import {
@@ -77,8 +79,12 @@ function signedPercentOrDash(value: Decimal | null): string {
 }
 
 /** The headline portfolio value + today's move — the hero of the screen. */
-function renderHero(o: OverviewView): HTMLElement {
+function renderHero(o: OverviewView, now: Date = new Date()): HTMLElement {
   const cls = signClass(o.todayMoveEur);
+  // Market-situation-aware caption: a live clock time while the NYSE session is
+  // open, else the latest settled trading day — mirroring the desktop's Daily
+  // Growth caption so "today's move" is never mislabelled as live after hours.
+  const asOf = formatDailyGrowthAsOf(o.liveAsOf, o.liveAsOfFallbackDate, o.asOf, isUsMarketOpen(now), now);
   const change = h("div", { class: `hero-change ${cls}` }, [
     h("span", { class: "hero-badge" }, [
       h("span", { class: "hero-arrow", "aria-hidden": "true" }, [trendGlyph(cls)]),
@@ -87,11 +93,11 @@ function renderHero(o: OverviewView): HTMLElement {
     h("span", { class: "hero-change-pct" }, [
       o.todayMovePct !== null ? `${formatSignedPercent(o.todayMovePct)} today` : "today",
     ]),
+    h("span", { class: "hero-asof" }, [asOf]),
   ]);
 
-  // Per-holding rows and the footer note both carry "as of" freshness, so the
-  // hero stays clean: just the headline value and today's move, with no date
-  // stamped above "Total value" at the very top of the screen.
+  // The headline value and today's move, with a market-aware "as of" caption so
+  // the total value reads correctly as live (session open) or settled (closed).
   const children: Array<Node | string> = [
     h("span", { class: "hero-label" }, ["Total value"]),
     h("span", { class: "hero-value" }, [formatCurrency(o.totalValueEur)]),
@@ -200,13 +206,28 @@ function renderStats(o: OverviewView): HTMLElement {
   return h("section", { class: "stats" }, [grid, ...renderNotes(o)]);
 }
 
+/**
+ * A short provenance tag for the EUR→USD rate shown on the coverage line:
+ * "(live)" for the intraday Twelve Data spot, "(end-of-day)" for the ECB daily
+ * fallback, and nothing for a cached/export rate (it speaks for itself).
+ */
+function fxSourceTag(o: OverviewView): string {
+  if (o.eurUsdSource === "live") return " (live)";
+  if (o.eurUsdSource === "eod") return " (end-of-day)";
+  return "";
+}
+
 function renderNotes(o: OverviewView): HTMLElement[] {
   const notes: HTMLElement[] = [];
   // Lead with the live-coverage line: a calm, descriptive "how much is fresh"
-  // status that replaces both the opaque "some prices not updated" and the old
-  // floating banner — it stays on the page, but doesn't hover or nag.
-  if (o.liveCoverage) {
-    notes.push(h("p", { class: "note coverage" }, [o.liveCoverage]));
+  // status. The live EUR→USD spot rides along here (prioritised over the ECB
+  // end-of-day rate) so the single most-watched live number sits with the
+  // freshness summary rather than reflowing a separate line below.
+  const coverageParts: string[] = [];
+  if (o.liveCoverage) coverageParts.push(o.liveCoverage);
+  if (o.fxRateEurUsd !== null) coverageParts.push(`EUR→USD ${formatFxRate(o.fxRateEurUsd)}${fxSourceTag(o)}`);
+  if (coverageParts.length > 0) {
+    notes.push(h("p", { class: "note coverage" }, [coverageParts.join(" · ")]));
   }
   if (o.liveDegradedReason) {
     notes.push(h("p", { class: "note warn" }, [o.liveDegradedReason]));
@@ -235,7 +256,7 @@ function renderNotes(o: OverviewView): HTMLElement[] {
   if (o.fxRateEurUsd !== null) {
     notes.push(
       h("p", { class: "note" }, [
-        `FX EUR→USD ${o.fxRateEurUsd.toFixed(4)} · dividends ${formatCurrency(o.totalDividendsEur)} to date.`,
+        `Dividends ${formatCurrency(o.totalDividendsEur)} to date.`,
       ]),
     );
   }
