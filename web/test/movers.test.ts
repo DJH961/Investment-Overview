@@ -34,6 +34,7 @@ function holding(over: Over): HoldingView {
     shares: new Decimal(0),
     priceNative: new Decimal(1),
     priceIsLive: false,
+    priceMarketOpen: null,
     priceAsOf: null,
     priceFallbackDate: over.priceFallbackDate ?? "2024-06-03",
     valueIsStale: false,

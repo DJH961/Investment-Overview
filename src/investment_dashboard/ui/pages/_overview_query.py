@@ -13,7 +13,7 @@ from investment_dashboard.domain.currency import (
     dual_currency_amounts,
     lookup_rate_with_forward_fill,
 )
-from investment_dashboard.domain.market_hours import is_us_market_open
+from investment_dashboard.domain.market_hours import feed_is_fresh, is_us_market_open
 from investment_dashboard.domain.money_market import is_money_market
 from investment_dashboard.domain.returns import (
     total_growth_pct_compounded,
@@ -844,7 +844,7 @@ def position_rows(
                 "price_data_warning": p.instrument.id in anomalies,
                 # Price freshness ("as of" the observation date) for the table's
                 # transparency column. Money-market par funds have no feed date.
-                "price_as_of": _fmt_asof(fr),
+                "price_as_of": _fmt_asof(fr, now=datetime.now(UTC)),
                 "name": (eff.name if eff is not None else p.instrument.name) or "",
                 "category": p.category or "",
                 "shares": fmt_shares(p.shares),
@@ -907,18 +907,28 @@ def _fmt_pct(value: Decimal | None) -> str:
     return f"{value * Decimal(100):,.2f} %"
 
 
-def _fmt_asof(freshness: HoldingFreshness | None, *, today: date | None = None) -> str:
+def _fmt_asof(
+    freshness: HoldingFreshness | None,
+    *,
+    today: date | None = None,
+    now: datetime | None = None,
+) -> str:
     """Compact freshness string for a holding's "As Of" cell.
 
     Today's price is promoted to a status word so the row reads at a glance,
-    using the *same* "is it live?" rule as the Daily Growth caption
-    (``market open and the price is from today``):
+    using the *same* "is it live?" rule as the header chip and the Daily Growth
+    caption (``market open`` **and** ``a fresh price landed recently``):
 
-    * ``LIVE``  — the price is from today and the US market is open right now, so
-      it is a genuinely current, moving quote.
-    * ``TODAY`` — the price is from today but the market is closed (a settled
-      close that is current yet no longer moving).
+    * ``LIVE``  — the price is from today, the US market is open right now, and a
+      fresh pull landed within the live window, so it is a genuinely current,
+      moving quote we can still access.
+    * ``TODAY`` — the price is from today but the market is closed *or* the feed
+      has gone stale/unreachable (a settled close that is current yet no longer
+      moving). A stale feed never claims to be live.
     * ``as of <date>`` — anything older falls back to the observation date.
+
+    ``now`` enables the recency gate; when omitted (``None``) the gate is skipped
+    so a same-day, market-open price reads ``LIVE`` on the date check alone.
 
     Money-market funds price at a fixed par with no feed, so they keep "par".
     """
@@ -930,7 +940,9 @@ def _fmt_asof(freshness: HoldingFreshness | None, *, today: date | None = None) 
         return "—"
     today = today or date.today()
     if freshness.price_as_of == today:
-        return "LIVE" if freshness.market_open else "TODAY"
+        if freshness.market_open and feed_is_fresh(freshness.updated_at, now):
+            return "LIVE"
+        return "TODAY"
     return freshness.price_as_of.strftime("%d %b %Y")
 
 

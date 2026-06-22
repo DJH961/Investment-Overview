@@ -104,11 +104,66 @@ describe("planRebalance", () => {
     expect(byId.get("B")!.addValue.greaterThan(0)).toBe(true);
   });
 
-  it("default buy-only mode never sells", () => {
-    const plan = planRebalance(new Decimal(100), map({ A: 50, B: 50 }), map({ A: 1000, B: 0 }), {
-      currentPrices: map({ A: 10, B: 10 }),
-    });
-    for (const r of plan.rows) expect(r.addValue.greaterThanOrEqualTo(0)).toBe(true);
+  it("credits an un-bought member toward its category's funding", () => {
+    // US holds VTI (#A, ticked) and a much larger un-bought VTSAX (#B); the
+    // category is already well over its 50 % target, so all the cash flows to
+    // the under-funded Intl fund (#C) — VTI is not topped up.
+    const plan = planRebalance(
+      new Decimal(1000),
+      map({ A: 50, B: 0, C: 50 }),
+      map({ A: 1000, B: 20000, C: 0 }),
+      {
+        currentPrices: map({ A: 1, B: 1, C: 1 }),
+        noBuyIds: new Set(["B"]),
+        categoryOf: new Map([
+          ["A", "US"],
+          ["B", "US"],
+          ["C", "Intl"],
+        ]),
+      },
+    );
+    const byId = new Map(plan.rows.map((r) => [r.symbol, r]));
+    expect(byId.get("A")!.addValue.toString()).toBe("0");
+    expect(byId.get("B")!.addValue.toString()).toBe("0");
+    expect(byId.get("C")!.addValue.toString()).toBe("1000");
+  });
+
+  it("buys the ticked fund up to the category target counting held members", () => {
+    // US held = VTI 1000 (ticked) + VTSAX 2000 (un-bought) = 3000; Intl 7000;
+    // 1000 cash → total 11000, US target 5500 → US needs 2500, all into VTI.
+    const plan = planRebalance(
+      new Decimal(1000),
+      map({ A: 50, B: 0, C: 50 }),
+      map({ A: 1000, B: 2000, C: 7000 }),
+      {
+        currentPrices: map({ A: 1, B: 1, C: 1 }),
+        noBuyIds: new Set(["B"]),
+        categoryOf: new Map([
+          ["A", "US"],
+          ["B", "US"],
+          ["C", "Intl"],
+        ]),
+      },
+    );
+    const byId = new Map(plan.rows.map((r) => [r.symbol, r]));
+    expect(byId.get("A")!.addValue.toString()).toBe("1000");
+    expect(byId.get("B")!.addValue.toString()).toBe("0");
+    expect(byId.get("C")!.addValue.toString()).toBe("0");
+  });
+
+  it("falls back to per-fund gaps without categoryOf", () => {
+    const plan = planRebalance(
+      new Decimal(1000),
+      map({ A: 50, B: 0, C: 50 }),
+      map({ A: 1000, B: 20000, C: 0 }),
+      {
+        currentPrices: map({ A: 1, B: 1, C: 1 }),
+        noBuyIds: new Set(["B"]),
+      },
+    );
+    const byId = new Map(plan.rows.map((r) => [r.symbol, r]));
+    // Per-fund, VTI looks under-weight and grabs a share of the cash.
+    expect(byId.get("A")!.addValue.greaterThan(0)).toBe(true);
   });
 });
 

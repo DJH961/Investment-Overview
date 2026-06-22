@@ -2307,12 +2307,33 @@ function renderCalculatorPanel(data: CalcData): HTMLElement {
       return;
     }
     const cashEur = convertToEur(cashDisplay);
+    // In buy-only "by category" mode, credit funds the user holds but left
+    // un-ticked toward their category's funding: they join the plan as held,
+    // never-bought rows (0 % target) so an already well-funded category —
+    // counting those held funds — asks for no fresh cash even when the ticked
+    // fund alone still looks under-weight.
+    const noBuy = new Set([...built.noBuy].filter((s) => targetPct.has(s)));
+    let planCategoryOf: Map<string, string> | undefined;
+    if (mode === "category" && !allowSell) {
+      for (const [name, v] of catTargets) {
+        if (!new Decimal(v || 0).greaterThan(0)) continue;
+        const selected = catSelected.get(name) ?? new Set<string>();
+        for (const sym of catMembers.get(name) ?? []) {
+          if (selected.has(sym) || targetPct.has(sym)) continue;
+          if (!(valueOf.get(sym) ?? ZERO).greaterThan(0)) continue;
+          targetPct.set(sym, ZERO);
+          noBuy.add(sym);
+        }
+      }
+      planCategoryOf = new Map(
+        [...targetPct.keys()].map((sym) => [sym, categoryOf.get(sym) ?? UNCATEGORIZED]),
+      );
+    }
     const currentPrices = new Map<string, Decimal>();
     for (const sym of targetPct.keys()) {
       const p = priceOf.get(sym);
       if (p) currentPrices.set(sym, p);
     }
-    const noBuy = new Set([...built.noBuy].filter((s) => targetPct.has(s)));
     let plan: RebalancePlan;
     try {
       plan = planRebalance(cashEur, targetPct, valueOf, {
@@ -2320,6 +2341,7 @@ function renderCalculatorPanel(data: CalcData): HTMLElement {
         allowFractionalShares: fractional,
         allowSell,
         noBuyIds: noBuy,
+        categoryOf: planCategoryOf,
       });
     } catch (err) {
       notify(`Cannot rebalance: ${err instanceof Error ? err.message : String(err)}`);
