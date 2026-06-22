@@ -14,7 +14,6 @@ from investment_dashboard.db import session_scope
 from investment_dashboard.domain.market_hours import is_us_market_open
 from investment_dashboard.domain.returns import years_between
 from investment_dashboard.services import (
-    chart_prefs_service,
     display_currency_service,
     intraday_snapshots_service,
     prices_service,
@@ -53,10 +52,12 @@ from investment_dashboard.ui.pages._overview_query import (
     build_value_series,
     compute_instrument_metrics,
     compute_market_verdict,
+    effective_overview_range,
     get_metrics,
     get_positions,
     holding_freshness,
     previous_session_close_value,
+    remember_overview_range,
     resolve_range_days,
 )
 from investment_dashboard.ui.theme import (
@@ -70,8 +71,6 @@ from investment_dashboard.ui.theme import (
 log = logging.getLogger(__name__)
 
 PATH = "/overview"
-#: Persisted-preference key for the value-over-time range toggle.
-_OVERVIEW_RANGE_PREF = "overview_value_range"
 #: Sibling Holdings page route (defined on :mod:`...ui.pages.holdings`); kept as
 #: a literal here to avoid a circular import between the two page modules.
 HOLDINGS_PATH = "/holdings"
@@ -733,7 +732,7 @@ def _value_curve_figure(points, *, currency: str, intraday: bool = False, prev_c
 
 def _on_value_range_change(label: str) -> None:  # pragma: no cover - UI callback
     with session_scope() as session:
-        chart_prefs_service.set_pref(session, _OVERVIEW_RANGE_PREF, label)
+        remember_overview_range(session, label)
     ui.navigate.to(f"{PATH}?value_range={label}")
 
 
@@ -836,16 +835,13 @@ def register() -> None:  # noqa: PLR0915
 
             def _gather() -> _OverviewData:
                 with session_scope() as session:
-                    # No explicit query param ⇒ fall back to the last range the
-                    # user picked (persisted), so the selection sticks.
+                    # No explicit query param ⇒ fall back to the market-aware
+                    # selection: the live "Day" curve while the market is open
+                    # (reset to Day each session, but remembering a mid-session
+                    # switch), and the user's sticky standard range once closed.
                     effective_range = value_range
                     if effective_range is None:
-                        effective_range = chart_prefs_service.get_pref(
-                            session,
-                            _OVERVIEW_RANGE_PREF,
-                            default=resolve_range_days(None)[0],
-                            allowed=[name for name, _ in VALUE_RANGES],
-                        )
+                        effective_range = effective_overview_range(session)
                     range_label, _ = resolve_range_days(effective_range)
                     metrics = get_metrics(session)
                     positions = get_positions(session)

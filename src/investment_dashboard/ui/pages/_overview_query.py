@@ -23,6 +23,7 @@ from investment_dashboard.domain.returns import (
 from investment_dashboard.models import TransactionKind
 from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import (
+    chart_prefs_service,
     fx_service,
     intraday_snapshots_service,
     prices_service,
@@ -74,6 +75,69 @@ def resolve_range_days(label: str | None) -> tuple[str, int | None]:
         if name == _DEFAULT_RANGE:
             return name, days
     return VALUE_RANGES[0]
+
+
+#: Sticky range used *outside* market hours (the historical pref key — kept so
+#: an existing standard selection migrates seamlessly).
+_RANGE_STANDARD_KEY = "overview_value_range"
+
+#: Range used *during* a market session, plus the session date it was set for so
+#: a stored choice only counts for the session it was made in (the next session
+#: opens on Day again without us actively clearing anything overnight).
+_RANGE_MARKET_KEY = "overview_value_range_market"
+_RANGE_MARKET_SESSION_KEY = "overview_value_range_market_session"
+
+#: The range the market view always opens on at the start of a session.
+_RANGE_MARKET_DEFAULT = "Day"
+
+
+def _range_allowed() -> list[str]:
+    return [name for name, _ in VALUE_RANGES]
+
+
+def _range_session_token(now: datetime | None) -> str:
+    return intraday_snapshots_service.last_session_date(now).isoformat()
+
+
+def effective_overview_range(session: Session, *, now: datetime | None = None) -> str:
+    """Canonical range label the Overview should lead with right now.
+
+    Layers a market-hours-aware behaviour over the plain sticky toggle so the
+    page shows the live intraday "Day" curve exactly when it is interesting:
+
+    * **Market open** → the *market* selection, reset to ``Day`` at the start of
+      every session (and whenever the app is first opened mid-session), but
+      remembering a manual mid-session switch until the close.
+    * **Market closed** → the *standard* selection — whatever the user last had
+      outside trading hours (untouched while the market was open).
+    """
+    if is_us_market_open(now):
+        stored_session = chart_prefs_service.get_pref(
+            session, _RANGE_MARKET_SESSION_KEY, default=""
+        )
+        if stored_session != _range_session_token(now):
+            # A fresh (or not-yet-touched) session always opens on Day.
+            return _RANGE_MARKET_DEFAULT
+        return chart_prefs_service.get_pref(
+            session, _RANGE_MARKET_KEY, default=_RANGE_MARKET_DEFAULT, allowed=_range_allowed()
+        )
+    return chart_prefs_service.get_pref(
+        session, _RANGE_STANDARD_KEY, default=resolve_range_days(None)[0], allowed=_range_allowed()
+    )
+
+
+def remember_overview_range(session: Session, label: str, *, now: datetime | None = None) -> None:
+    """Persist a manual range change against the relevant selection.
+
+    During market hours the choice updates the *market* selection (stamped with
+    the current session so it resets next session); outside market hours it
+    updates the sticky *standard* selection.
+    """
+    if is_us_market_open(now):
+        chart_prefs_service.set_pref(session, _RANGE_MARKET_KEY, label)
+        chart_prefs_service.set_pref(session, _RANGE_MARKET_SESSION_KEY, _range_session_token(now))
+    else:
+        chart_prefs_service.set_pref(session, _RANGE_STANDARD_KEY, label)
 
 
 def _earliest_transaction_date(session: Session) -> date | None:
@@ -155,6 +219,11 @@ def build_intraday_value_series(
     # and a zero live value) there is nothing to plot.
     live_eur = total_portfolio_value(session)
     live_at = now.astimezone(UTC).replace(tzinfo=None) if now.tzinfo is not None else now
+    # Stop the curve at the market close: once the session is over the live
+    # value is just the settled close, so pin its point to 16:00 ET instead of
+    # trailing a flat line out to the current time (overnight, or all weekend).
+    session_close = intraday_snapshots_service.session_close_utc(now)
+    live_at = min(live_at, session_close)
     if (not samples and live_eur != 0) or (samples and samples[-1][0] < live_at):
         samples = [*samples, (live_at, live_eur)]
 
