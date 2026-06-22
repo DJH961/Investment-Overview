@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -301,6 +301,77 @@ def fetch_splits(
             day = ts.date() if hasattr(ts, "date") else ts
             result[symbol][day] = ratio
     return result
+
+
+def fetch_intraday_closes(
+    symbols: list[str],
+    day: date,
+    *,
+    interval: str = "30m",
+    downloader: Any = None,
+) -> dict[str, dict[datetime, Decimal]]:
+    """Return ``{symbol: {bar_time_utc: close}}`` of intraday bars on ``day``.
+
+    Used to *reconstruct* the most recent trading session's portfolio curve when
+    the app was closed for part (or all) of it — e.g. logging in late in the day,
+    after the close, or over a weekend. ``interval`` is a yfinance bar width
+    (``"30m"`` by default, matching the dashboard's ~half-hour reconstruction
+    granularity). Bar timestamps are normalised to **naive UTC** so they store
+    and compare uniformly with the live intraday samples.
+
+    yfinance only serves intraday history for roughly the last 60 days, so this
+    is for the *recent* session, not deep history. Symbols with no intraday data
+    in the window map to an empty dict. ``downloader`` injects a stub matching
+    ``yfinance.download`` in tests.
+    """
+    if not symbols:
+        return {}
+
+    download = downloader or yf.download
+    # yfinance treats ``end`` as exclusive; +1 day captures the whole session.
+    try:
+        frame = retry_call(
+            lambda: download(
+                tickers=symbols,
+                start=day.isoformat(),
+                end=(day + timedelta(days=1)).isoformat(),
+                interval=interval,
+                auto_adjust=False,
+                actions=False,
+                progress=False,
+                group_by="ticker",
+                threads=False,
+            ),
+            attempts=_DOWNLOAD_ATTEMPTS,
+            description="yfinance.download (intraday)",
+        )
+    except Exception as exc:
+        raise YFinanceError(f"yfinance.download (intraday) failed: {exc}") from exc
+
+    result: dict[str, dict[datetime, Decimal]] = {s: {} for s in symbols}
+    if frame is None or getattr(frame, "empty", True):
+        return result
+
+    import pandas as pd  # noqa: PLC0415
+
+    columns = getattr(frame, "columns", None)
+    is_grouped = isinstance(columns, pd.MultiIndex)
+    for symbol in symbols:
+        try:
+            close_series = frame[symbol]["Close"] if is_grouped else frame["Close"]
+        except KeyError:
+            continue
+        for ts, value in close_series.dropna().items():
+            result[symbol][_to_naive_utc(ts)] = Decimal(repr(float(value)))
+    return result
+
+
+def _to_naive_utc(ts: Any) -> datetime:
+    """Normalise a (possibly tz-aware) pandas/py timestamp to a naive UTC datetime."""
+    as_dt = ts.to_pydatetime() if hasattr(ts, "to_pydatetime") else ts
+    if isinstance(as_dt, datetime) and as_dt.tzinfo is not None:
+        return as_dt.astimezone(UTC).replace(tzinfo=None)
+    return as_dt
 
 
 def fetch_latest_close(
