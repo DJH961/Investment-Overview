@@ -4,7 +4,7 @@
 import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 
-import { convert, fetchFxRates, fetchNavQuotes, fetchQuotes, PriceError, type FetchLike } from "../src/prices";
+import { convert, fetchEurUsd, fetchFxRates, fetchNavQuotes, fetchQuotes, PriceError, type FetchLike } from "../src/prices";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return { ok, status, json: async () => body } as Response;
@@ -91,6 +91,21 @@ describe("fetchQuotes", () => {
     expect(auth.retryable).toBe(false);
   });
 
+  it("flags 401/403 as fatal (Settings) but a 404 as a non-fatal transient gap", async () => {
+    const auth = await captureError(() =>
+      fetchQuotes(["VTI"], "key", async () => jsonResponse({}, false, 403)),
+    );
+    expect(auth.fatal).toBe(true);
+    // A 404 must not dead-end the screen — non-fatal so the app keeps last-known
+    // values and shows a soft banner instead.
+    const notFound = await captureError(() =>
+      fetchQuotes(["VTI"], "key", async () => jsonResponse({}, false, 404)),
+    );
+    expect(notFound.status).toBe(404);
+    expect(notFound.fatal).toBe(false);
+    expect(notFound.retryable).toBe(false);
+  });
+
   it("treats a network failure as retryable", async () => {
     const fetchImpl: FetchLike = async () => {
       throw new Error("network down");
@@ -169,5 +184,23 @@ describe("convert", () => {
 
   it("returns null when an FX leg is missing", () => {
     expect(convert(new Decimal("100"), "JPY", "EUR", fx)).toBeNull();
+  });
+});
+
+describe("fetchEurUsd", () => {
+  it("parses the live spot and prior close from the quote endpoint", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({ symbol: "EUR/USD", close: "1.0850", previous_close: "1.0725", currency: "USD" });
+    const eurusd = await fetchEurUsd("key", fetchImpl);
+    expect(eurusd.now?.toString()).toBe("1.085");
+    expect(eurusd.previousClose?.toString()).toBe("1.0725");
+  });
+
+  it("returns nulls (no throw) when the pair is unavailable", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({ symbol: "EUR/USD", status: "error", message: "no data" });
+    const eurusd = await fetchEurUsd("key", fetchImpl);
+    expect(eurusd.now).toBeNull();
+    expect(eurusd.previousClose).toBeNull();
   });
 });

@@ -12,6 +12,52 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [3.4.1] — 2026-06-22
+
+Minor reliability fixes to the main app: timezone-aware "last update" stamps, a
+live refresh that actually advances those stamps, per-holding total growth that
+matches the compounded XIRR figure, and an analytics tab that loads again.
+
+### Fixed
+
+- **Timezone-aware "last update" times.** The overview holding card's price
+  freshness and the connectivity section's timestamps now render in the user's
+  configured timezone instead of naive/hard-coded UTC.
+- **Live price refresh advances the "updated" time.** The live tick now writes
+  cached closes and the per-symbol `last_refreshed_at` stamps through the cache
+  database tier (the one the overview reads under split-DB layouts), so the
+  on-screen prices and "updated" time move when live prices update.
+- **Per-holding total growth uses the compounded XIRR formula.** Each holding's
+  total growth is now the compounded `(1 + XIRR) ^ years` figure (matching the
+  portfolio headline) rather than a plain gain/cost ratio, which had badly
+  deflated the growth of holdings funded by regular, ongoing contributions. The
+  same fix is mirrored in the web companion.
+- **Analytics tab loads again.** The equity-curve build now bounds its live
+  recompute to a recent trailing window (filling deeper history from the
+  background snapshot warm) instead of synchronously revaluing every uncached
+  day on the request thread, which had hung the tab on long lookbacks / a cold
+  cache.
+
+## [3.4.0] — 2026-06-22
+
+FX-aware, live "today's growth". Today's move now captures the EUR↔USD
+revaluation of held positions, not just the security's price move, and tracks
+live intraday EUR/USD on both apps.
+
+- **Desktop** sources the live EUR/USD spot keylessly from yfinance
+  (`EURUSD=X`) during each price refresh and overlays it onto the ECB daily
+  history for *today only* — the headline and per-holding "today" figures move
+  intraday with the currency, while every historical mark (and the
+  golden-master daily figures) stays byte-stable. The live spot is in-memory
+  only and never written to `fx_history`.
+- **Web companion** fetches live EUR/USD from Twelve Data (the same provider as
+  prices, one credit/min within the free-tier budget) with a graceful fallback
+  to the ECB daily rate. Today's move is recomputed as a value delta
+  (`value_now` at the live rate minus `value_prevClose` at the prior-close
+  rate), the USD move stays FX-neutral, and the hero surfaces the live EUR/USD,
+  an "incl. … from FX" split, and an "end-of-day FX" tag when the live rate is
+  unavailable.
+
 ## [3.3.0] — 2026-06-22
 
 Desktop live-web companion workflow polish — quieter, smarter auto-publishing
@@ -49,6 +95,24 @@ to the web companion, and a smarter update button.
 - **Cleaner log-off.** Shutting down now auto-closes the tab and shows a calm
   "Shutting down… you can close this tab." message instead of the alarming
   "connection lost" reconnect screen.
+
+### Fixed
+
+- **Web: a transient HTTP 404 no longer dead-ends the dashboard.** Only true
+  config/auth failures (HTTP 401/403) now route to the Settings error screen;
+  every other live-price hiccup keeps the last-known values and shows a soft
+  banner, so a refresh can't strand the app on a full-screen error.
+- **Web: guard against rate-limit (HTTP 429) self-inflicted bursts.** Free-tier
+  credits are now reserved *before* the network fetch, so the login prefetch and
+  the first scheduled refresh can no longer each spend a full per-minute budget
+  at once (the concurrent double-spend that tripped the 429).
+- **Web: quieter refresh status.** The live-degradation banner is now a single,
+  non-duplicative line, and the auto-update pill no longer lingers on screen
+  between staged burst rounds.
+- **Desktop: today's EUR growth no longer inflated by a stale FX gap.** When the
+  prior price date's exchange rate is forward-filled from far in the past, the
+  EUR daily-growth figure is neutralised to the USD figure instead of absorbing
+  months of currency drift into a single day's move.
 
 
 ## [3.2.1] — 2026-06-22

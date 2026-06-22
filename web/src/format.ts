@@ -123,6 +123,15 @@ export function formatSignedPercent(value: Decimal | null, digits = 2): string {
 }
 
 /**
+ * An FX pair rate to 4 decimals (e.g. `1.0856`), the convention for EUR/USD.
+ * Returns an em dash when the rate is unknown.
+ */
+export function formatFxRate(value: Decimal | null): string {
+  if (value === null) return "—";
+  return value.toNumber().toFixed(4);
+}
+
+/**
  * The "data last pulled …" stamp for the overview footer and the Refresh
  * button tooltip. Unlike {@link formatUpdatedAt} (which describes *when the
  * prices themselves apply to*), this describes *when the app last pulled data

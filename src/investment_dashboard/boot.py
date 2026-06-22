@@ -637,6 +637,23 @@ def _refresh_prices() -> None:
         log.warning("Price refresh failed; continuing with cached prices", exc_info=True)
 
 
+def _refresh_live_fx() -> None:
+    """Warm the live EUR/USD spot so the FX-aware "today" figures start live.
+
+    Best-effort and keyless (yfinance ``EURUSD=X``): a failure just leaves the
+    ECB daily rate in place. Kept separate from :func:`_refresh_fx` (which
+    persists the ECB history) because the live spot is in-memory only.
+    """
+    try:
+        from investment_dashboard.services.fx_service import refresh_live_spot  # noqa: PLC0415
+
+        rate = refresh_live_spot()
+        if rate is not None:
+            log.info("Live EUR/USD spot refreshed (%s)", rate)
+    except Exception:
+        log.warning("Live EUR/USD refresh failed; using ECB daily rate", exc_info=True)
+
+
 def _refresh_splits() -> None:
     try:
         from investment_dashboard.db import (  # noqa: PLC0415
@@ -741,6 +758,7 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
     _refresh_fx()
     _backfill_transaction_legs()
     _refresh_prices()
+    _refresh_live_fx()
     _refresh_splits()
     _refresh_benchmark()
     # Rebuild the snapshot cache in place (no delete-all window — see
@@ -766,6 +784,7 @@ def run_deferred_network_refresh() -> None:
     _refresh_fx()
     _backfill_transaction_legs()
     _refresh_prices()
+    _refresh_live_fx()
     _refresh_splits()
     _refresh_benchmark()
     # Rebuild the snapshot cache in place (no delete-all window — see

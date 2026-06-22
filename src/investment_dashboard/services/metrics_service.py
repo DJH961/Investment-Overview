@@ -589,6 +589,29 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     )
 
 
+#: How much further (in days) the FX marks behind the two daily-growth dates may
+#: reach back than the price dates themselves before the EUR/USD gap is treated
+#: as a stale-data artefact rather than a genuine one-day currency move. A few
+#: days of slack absorbs the normal weekend / holiday forward-fill (Frankfurter
+#: publishes business days only) without letting a real gap in FX history leak
+#: weeks of drift into a single day's growth.
+_DAILY_GROWTH_FX_TOLERANCE_DAYS = 4
+
+
+def _fx_mark_date(rates_by_date: dict[date, Decimal], target: date) -> date | None:
+    """Date of the FX mark :func:`lookup_rate_with_forward_fill` would use.
+
+    Returns ``target`` itself when a rate is stored on that day, otherwise the
+    most recent prior date carrying a rate (the value forward-fill inherits), or
+    ``None`` when no rate on or before ``target`` exists. Lets the daily-growth
+    guard tell how far back the rate behind a date was actually sourced.
+    """
+    if target in rates_by_date:
+        return target
+    prior = [d for d in rates_by_date if d <= target]
+    return max(prior) if prior else None
+
+
 def _value_in_both(
     session: Session,
     on: date,
@@ -654,6 +677,24 @@ def _compute_daily_growth(
         growth_usd = (last_usd - prev_usd) / prev_usd
     else:
         growth_usd = None
+    # Guard against a *fabricated* one-day currency swing. The EUR leg differs
+    # from the USD leg only by the EUR→USD change between the two dates' FX
+    # marks. FX rates are forward-filled (Frankfurter publishes business days
+    # only), so when the rate history has a gap the mark backing ``prev_date``
+    # can be sourced from weeks or months earlier than ``last_date``'s — and the
+    # EUR daily-growth then inherits all of that drift as if it were a single
+    # day's move, reading far larger than any realistic intraday FX change. When
+    # the FX marks span materially more calendar time than the price dates do,
+    # the difference is a stale-data artefact rather than a genuine same-day
+    # move, so fall back to the FX-neutral (USD) move for the EUR leg too.
+    if growth_eur is not None and growth_usd is not None:
+        src_prev = _fx_mark_date(eur_to_usd, prev_date)
+        src_last = _fx_mark_date(eur_to_usd, last_date)
+        if src_prev is not None and src_last is not None:
+            fx_span_days = (src_last - src_prev).days
+            price_span_days = (last_date - prev_date).days
+            if fx_span_days > price_span_days + _DAILY_GROWTH_FX_TOLERANCE_DAYS:
+                growth_eur = growth_usd
     return growth_eur, growth_usd, last_date
 
 
