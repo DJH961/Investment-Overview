@@ -58,15 +58,20 @@ describe("buildCalculatorData", () => {
     expect(bySymbol.get("VTI")!.priceEur!.toString()).toBe("100");
   });
 
-  it("falls back category → asset_class → Uncategorized", () => {
+  it("falls back category → humanised asset_class → Uncategorized", () => {
     const data = buildCalculatorData([
       holding({ symbol: "A", category: "US Stocks", valueEur: new Decimal(10), shares: new Decimal(1) }),
       holding({ symbol: "B", category: null, assetClass: "bond", valueEur: new Decimal(10), shares: new Decimal(1) }),
       holding({ symbol: "C", category: null, assetClass: "", valueEur: new Decimal(10), shares: new Decimal(1) }),
+      holding({ symbol: "D", category: null, assetClass: "money_market", valueEur: new Decimal(10), shares: new Decimal(1) }),
     ]);
     const bySymbol = new Map(data.instruments.map((i) => [i.symbol, i]));
+    // An explicit main-app category always wins.
     expect(bySymbol.get("A")!.category).toBe("US Stocks");
-    expect(bySymbol.get("B")!.category).toBe("bond");
+    // Raw asset-class slugs read as friendly category labels.
+    expect(bySymbol.get("B")!.category).toBe("Bonds");
+    expect(bySymbol.get("D")!.category).toBe("Money market");
+    // Nothing to fall back to ⇒ Uncategorized.
     expect(bySymbol.get("C")!.category).toBe(UNCATEGORIZED);
   });
 

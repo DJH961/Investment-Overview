@@ -65,6 +65,7 @@ import {
   type DisplayCurrency,
 } from "./currency";
 import { buildLineChart, type ChartSeries } from "./chart";
+import { APP_VERSION } from "./version";
 import {
   expandCategoryWeights,
   planRebalance,
@@ -653,6 +654,7 @@ export function renderDashboard(
       h("div", { class: "brand" }, [
         h("span", { class: "brand-mark", "aria-hidden": "true" }, []),
         h("span", { class: "brand-name" }, ["Investment Overview"]),
+        h("span", { class: "brand-version", title: `Web app version ${APP_VERSION}` }, [`v${APP_VERSION}`]),
       ]),
       h("div", { class: "topbar-actions" }, [currency, refresh, settings, lock]),
     ]),

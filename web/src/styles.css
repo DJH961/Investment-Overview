@@ -206,6 +206,18 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.brand-version {
+  flex: none;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.05rem 0.4rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .topbar-actions { display: flex; align-items: center; gap: 0.6rem; flex: none; }
 .icon-btn {
   font: inherit;
@@ -412,7 +424,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   letter-spacing: 0.04em;
   font-weight: 600;
 }
-.stat-value { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.stat-value { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; min-width: 0; overflow-wrap: anywhere; }
 .stat-sub { font-size: 0.82rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* --- Holdings list -------------------------------------------------------- */
@@ -1072,6 +1084,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   border-radius: var(--radius-sm);
   background: var(--card-2);
   color: var(--fg);
+  max-width: 100%;
 }
 
 /* Pill toggles (mode + split). */
@@ -1088,20 +1101,20 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .calc2-pill.active { background: var(--accent); color: #fff; }
 
 /* Live total bar. */
-.calc2-total { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.7rem; }
-.calc2-total-bar { flex: 1; height: 8px; border-radius: 999px; background: var(--card-2); overflow: hidden; }
+.calc2-total { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.7rem; flex-wrap: wrap; }
+.calc2-total-bar { flex: 1 1 8rem; height: 8px; border-radius: 999px; background: var(--card-2); overflow: hidden; }
 .calc2-total-fill { height: 100%; width: 0; background: var(--accent); transition: width 0.15s ease; }
-.calc2-total-label { font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.calc2-total-label { font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
 .calc2-total-label.on-target { color: var(--pos); font-weight: 600; }
 
 /* Builder + plan rows. */
 .calc2-builder { display: grid; gap: 0.5rem; }
 .calc2-row { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.6rem 0.7rem; }
 .calc2-row-main { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
-.calc2-row-label { display: grid; gap: 0.1rem; min-width: 8rem; flex: 1; }
-.calc2-row-name { font-size: 0.92rem; font-weight: 600; }
-.calc2-row-sub { font-size: 0.74rem; }
-.calc2-bar-holder { flex: 1; min-width: 6rem; }
+.calc2-row-label { display: grid; gap: 0.1rem; min-width: 8rem; flex: 1 1 8rem; }
+.calc2-row-name { font-size: 0.92rem; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.calc2-row-sub { font-size: 0.74rem; min-width: 0; overflow-wrap: anywhere; }
+.calc2-bar-holder { flex: 1 1 6rem; min-width: 6rem; }
 .calc2-target { display: inline-flex; align-items: center; gap: 0.2rem; }
 .calc2-target-input { width: 4.5rem; padding: 0.4rem 0.5rem; text-align: right; }
 .calc2-suffix { color: var(--muted); font-size: 0.85rem; }
@@ -1116,9 +1129,10 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .calc2-funds { margin-top: 0.5rem; }
 .calc2-funds > summary { font-size: 0.8rem; color: var(--muted); cursor: pointer; }
 .calc2-funds-body { display: grid; gap: 0.4rem; padding-top: 0.5rem; }
-.calc2-split { display: flex; align-items: center; gap: 0.5rem; }
-.calc2-member { display: flex; align-items: center; gap: 0.45rem; font-size: 0.84rem; }
-.calc2-member input { width: auto; min-width: 0; padding: 0; }
+.calc2-split { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.calc2-member { display: flex; align-items: flex-start; gap: 0.45rem; font-size: 0.84rem; }
+.calc2-member input { width: auto; min-width: 0; padding: 0; flex: none; margin-top: 0.15rem; }
+.calc2-member span { min-width: 0; overflow-wrap: anywhere; }
 
 .calc2-actions { margin-top: 0.9rem; display: flex; gap: 0.6rem; }
 .calc2-compute, .btn-primary {
@@ -1141,14 +1155,15 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .calc2-plan-head .calc2-row-name { font-weight: 700; }
 .calc2-plan-row { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; padding: 0.45rem 0.7rem; }
 .calc2-plan-row.indent { margin-left: 1rem; border-left: 2px solid var(--border); }
-.calc2-add { font-size: 0.88rem; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; min-width: 7rem; }
+.calc2-add { font-size: 0.88rem; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; min-width: 7rem; overflow-wrap: anywhere; }
 .calc2-add.pos { color: var(--pos); }
 .calc2-add.neg { color: var(--neg); }
 .calc2-add.muted { color: var(--muted); font-weight: 400; }
 
 @media (max-width: 35rem) {
   .calc2-summary { grid-template-columns: repeat(3, 1fr); }
-  .calc2-add { min-width: 0; flex: 1; }
+  .calc2-summary .stat-value { font-size: 0.9rem; letter-spacing: -0.02em; }
+  .calc2-add { min-width: 0; flex: 1 1 6rem; }
 }
 
 
