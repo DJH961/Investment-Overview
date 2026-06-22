@@ -1269,8 +1269,8 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
 const ATTRIBUTION_PAGE_SIZE = 8;
 
 /** A single attribution row (P/L by holding) as a compact ledger line. */
-function attributionRowEl(symbol: string, pnl: Decimal | null, pct: Decimal | null, total = false): HTMLElement {
-  return h("li", { class: `ledger-row${total ? " attr-total" : ""}` }, [
+function attributionRowEl(symbol: string, pnl: Decimal | null, pct: Decimal | null, isTotalRow = false): HTMLElement {
+  return h("li", { class: `ledger-row${isTotalRow ? " attr-total" : ""}` }, [
     h("div", { class: "ledger-id" }, [
       h("span", { class: "ledger-kind" }, [symbol]),
       h("span", { class: "ledger-sub muted" }, [pct !== null ? `${formatPercent(pct)} of return` : "—"]),
@@ -1403,10 +1403,7 @@ function renderCurrencyEffect(overview: OverviewView, deposits: DepositsView | n
     );
   }
   if (effect.repatriationValueEur !== null) {
-    const usdNote =
-      overview.totalValueUsd !== null && effect.currentRate !== null
-        ? `${formatMoneyEur(overview.totalValueUsd)} USD @ ${formatFxRate(effect.currentRate)}`
-        : "value back in EUR";
+    const usdNote = effect.currentRate !== null ? `at ${formatFxRate(effect.currentRate)}` : "value back in EUR";
     cards.push(effectStat("If cashed out now", formatMoneyEur(effect.repatriationValueEur), usdNote));
   }
 
