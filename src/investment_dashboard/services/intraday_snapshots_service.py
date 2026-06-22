@@ -19,7 +19,16 @@ keeps the *within-day* shape instead, from two complementary sources:
 
 :func:`day_series_eur` returns the current session's merged samples (EUR), which
 the Overview "Day" range converts to the display currency, localises to the
-user's timezone, and caps with the live current value.
+user's timezone, and caps with the live current value — *pinned to the market
+close* (:func:`session_close_utc`) once the session is over, so the curve ends
+when the market closes rather than trailing a flat line overnight or all weekend.
+
+Holdings without intraday prices stay **constant** through the session, so they
+neither distort the intraday shape nor drop out of the total, and the curve
+still closes on the correct settled value. Cash and money-market funds ride in
+the reconstruction's anchored ``base``; mutual funds (which only print one NAV
+at the close) are carried at a flat ratio of 1 because the feed serves them no
+intraday bars.
 
 Only the most recent session is retained; older samples are pruned as fresh ones
 land (the data is pure cache, regenerable as the app keeps running).
@@ -113,6 +122,26 @@ def session_window_utc(now: datetime | None = None) -> tuple[datetime, datetime]
     session_end = _session_start_utc(session + timedelta(days=1))
     end = min(_to_naive_utc(now), session_end)
     return start, end
+
+
+def session_close_utc(now: datetime | None = None) -> datetime:
+    """Naive-UTC instant of the regular-session close (16:00 ET) for the "Day" session.
+
+    The "1 Day" curve must *end when the market closes* rather than trailing a
+    flat line out to the current wall-clock time. Once the session has shut the
+    live portfolio value is simply the settled close, so its point is pinned
+    here — which also bounds the curve neatly overnight and over a weekend (a
+    Saturday shows Friday's session ending at Friday 16:00, not running into
+    Saturday). Holidays/half-days are not modelled (see
+    :mod:`investment_dashboard.domain.market_hours`).
+    """
+    from investment_dashboard.domain.market_hours import (  # noqa: PLC0415
+        regular_session_close,
+    )
+
+    now = now or datetime.now(UTC)
+    close = regular_session_close(last_session_date(now))
+    return close.astimezone(UTC).replace(tzinfo=None)
 
 
 def record_if_market_open(*, now: datetime | None = None) -> bool:

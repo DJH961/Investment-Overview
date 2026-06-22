@@ -64,6 +64,18 @@ class TestSessionWindow:
         # 00:00 ET on the session day, expressed in UTC (EDT = UTC-4).
         assert start == datetime(2024, 6, 3, 4, 0)
 
+    def test_session_close_utc_is_16_00_et(self) -> None:
+        # 16:00 ET on the Monday session == 20:00 UTC (EDT = UTC-4), naive.
+        assert iss.session_close_utc(_NOW) == datetime(2024, 6, 3, 20, 0)
+        # After the close (19:00 ET) still resolves to the same day's 16:00 ET.
+        after = datetime(2024, 6, 3, 23, 0, tzinfo=UTC)
+        assert iss.session_close_utc(after) == datetime(2024, 6, 3, 20, 0)
+
+    def test_session_close_utc_rolls_back_over_weekend(self) -> None:
+        saturday = datetime(2024, 6, 8, 18, 0, tzinfo=UTC)
+        # Friday 2024-06-07 16:00 ET == 20:00 UTC.
+        assert iss.session_close_utc(saturday) == datetime(2024, 6, 7, 20, 0)
+
 
 class TestForwardFill:
     def test_picks_latest_bar_at_or_before(self) -> None:
@@ -140,3 +152,38 @@ class TestBuildIntradaySeries:
 
     def test_empty_portfolio_has_no_points(self, session: Session) -> None:
         assert build_intraday_value_series(session, currency="EUR", now=_NOW) == []
+
+    def test_live_tip_is_capped_at_market_close(self, session: Session) -> None:
+        _seed_eur_holding(session)
+        iss.reconstruct_last_session(
+            session,
+            now=_NOW,
+            fetcher=_fake_fetcher({datetime(2024, 6, 3, 13, 30): Decimal("100")}),
+        )
+        session.flush()
+        # Build well after the close (19:00 ET) — the curve must end at 16:00 ET
+        # (20:00 UTC), not trail a flat line out to "now".
+        after_close = datetime(2024, 6, 3, 23, 0, tzinfo=UTC)
+        points = build_intraday_value_series(session, currency="EUR", now=after_close)
+        assert points[-1].date == datetime(2024, 6, 3, 20, 0)
+
+    def test_weekend_curve_ends_on_friday_close(self, session: Session) -> None:
+        _seed_eur_holding(session)
+        # The Friday before the seeded Monday — reconstruct + build over the weekend.
+        friday_now = datetime(2024, 6, 7, 19, 0, tzinfo=UTC)  # 15:00 ET Friday
+        prices_repo.upsert_closes(
+            session,
+            instruments_repo.get_or_create(session, symbol="ACME", native_currency="EUR").id,
+            {date(2024, 6, 7): Decimal("100.00")},
+        )
+        session.flush()
+        iss.reconstruct_last_session(
+            session,
+            now=friday_now,
+            fetcher=_fake_fetcher({datetime(2024, 6, 7, 17, 30): Decimal("100")}),
+        )
+        session.flush()
+        saturday = datetime(2024, 6, 8, 18, 0, tzinfo=UTC)
+        points = build_intraday_value_series(session, currency="EUR", now=saturday)
+        # Last point pinned to Friday's 16:00 ET close, never bleeding into Saturday.
+        assert points[-1].date == datetime(2024, 6, 7, 20, 0)

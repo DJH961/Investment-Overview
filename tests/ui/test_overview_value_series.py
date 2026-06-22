@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -97,3 +97,65 @@ class TestPreviousSessionCloseValue:
 
         now = datetime(2024, 6, 5, 18, 0)
         assert previous_session_close_value(session, currency="EUR", now=now) is None
+
+
+class TestMarketAwareRange:
+    """The Overview range auto-switches to Day in-session and restores after close."""
+
+    # Mon 2024-06-03: 14:00 UTC == 10:00 ET (open); 23:00 UTC == 19:00 ET (closed).
+    OPEN = datetime(2024, 6, 3, 14, 0, tzinfo=UTC)
+    CLOSED = datetime(2024, 6, 3, 23, 0, tzinfo=UTC)
+    NEXT_OPEN = datetime(2024, 6, 4, 14, 0, tzinfo=UTC)
+
+    def test_market_open_fresh_session_defaults_to_day(self, session: Session) -> None:
+        from investment_dashboard.services import chart_prefs_service
+        from investment_dashboard.ui.pages._overview_query import effective_overview_range
+
+        # Even with a standard "Year" pref, an open (untouched) session opens on Day.
+        chart_prefs_service.set_pref(session, "overview_value_range", "Year")
+        assert effective_overview_range(session, now=self.OPEN) == "Day"
+
+    def test_market_closed_uses_standard_selection(self, session: Session) -> None:
+        from investment_dashboard.services import chart_prefs_service
+        from investment_dashboard.ui.pages._overview_query import effective_overview_range
+
+        chart_prefs_service.set_pref(session, "overview_value_range", "Month")
+        assert effective_overview_range(session, now=self.CLOSED) == "Month"
+
+    def test_market_closed_default_when_unset(self, session: Session) -> None:
+        from investment_dashboard.ui.pages._overview_query import effective_overview_range
+
+        assert effective_overview_range(session, now=self.CLOSED) == "Year"
+
+    def test_mid_session_change_is_remembered_for_that_session(self, session: Session) -> None:
+        from investment_dashboard.ui.pages._overview_query import (
+            effective_overview_range,
+            remember_overview_range,
+        )
+
+        remember_overview_range(session, "Year", now=self.OPEN)
+        # Sticks for the rest of the same session …
+        assert effective_overview_range(session, now=self.OPEN) == "Year"
+        # … but resets to Day at the next session.
+        assert effective_overview_range(session, now=self.NEXT_OPEN) == "Day"
+
+    def test_mid_session_change_does_not_touch_standard(self, session: Session) -> None:
+        from investment_dashboard.ui.pages._overview_query import (
+            effective_overview_range,
+            remember_overview_range,
+        )
+
+        remember_overview_range(session, "Month", now=self.OPEN)
+        # After the close the standard (untouched, default Year) is restored.
+        assert effective_overview_range(session, now=self.CLOSED) == "Year"
+
+    def test_change_while_closed_updates_standard(self, session: Session) -> None:
+        from investment_dashboard.ui.pages._overview_query import (
+            effective_overview_range,
+            remember_overview_range,
+        )
+
+        remember_overview_range(session, "All", now=self.CLOSED)
+        assert effective_overview_range(session, now=self.CLOSED) == "All"
+        # And the in-session view is unaffected (still Day).
+        assert effective_overview_range(session, now=self.OPEN) == "Day"
