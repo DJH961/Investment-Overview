@@ -827,13 +827,10 @@ export function buildDashboard(
     cashPrevValueEur = cashPrevValueEur.plus(
       convert(native, row.native_currency, EUR, fxPrev) ?? eur,
     );
-    cashPrevValueUsd =
-      cashPrevValueUsd !== null
-        ? (() => {
-            const prevUsd = convert(native, row.native_currency, USD, fxPrev);
-            return prevUsd !== null ? cashPrevValueUsd.plus(prevUsd) : null;
-          })()
-        : null;
+    if (cashPrevValueUsd !== null) {
+      const prevUsd = convert(native, row.native_currency, USD, fxPrev);
+      cashPrevValueUsd = prevUsd !== null ? cashPrevValueUsd.plus(prevUsd) : null;
+    }
   }
 
   const holdingsValueEur = holdings.reduce(
