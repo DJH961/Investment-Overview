@@ -12,6 +12,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [3.4.0] — 2026-06-22
+
+FX-aware, live "today's growth". Today's move now captures the EUR↔USD
+revaluation of held positions, not just the security's price move, and tracks
+live intraday EUR/USD on both apps.
+
+- **Desktop** sources the live EUR/USD spot keylessly from yfinance
+  (`EURUSD=X`) during each price refresh and overlays it onto the ECB daily
+  history for *today only* — the headline and per-holding "today" figures move
+  intraday with the currency, while every historical mark (and the
+  golden-master daily figures) stays byte-stable. The live spot is in-memory
+  only and never written to `fx_history`.
+- **Web companion** fetches live EUR/USD from Twelve Data (the same provider as
+  prices, one credit/min within the free-tier budget) with a graceful fallback
+  to the ECB daily rate. Today's move is recomputed as a value delta
+  (`value_now` at the live rate minus `value_prevClose` at the prior-close
+  rate), the USD move stays FX-neutral, and the hero surfaces the live EUR/USD,
+  an "incl. … from FX" split, and an "end-of-day FX" tag when the live rate is
+  unavailable.
+
 ## [3.3.0] — 2026-06-22
 
 Desktop live-web companion workflow polish — quieter, smarter auto-publishing
