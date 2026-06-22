@@ -38,7 +38,6 @@ def _release_boot_writer_lock() -> Iterator[None]:
     yield
     _release_held_writer_lock()
     boot._boot_state["read_only"] = False
-    boot._boot_state["read_only"] = False
 
 
 def test_skip_network_does_not_raise() -> None:
