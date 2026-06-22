@@ -56,6 +56,13 @@ export interface ExportHolding {
    * (older exports, or money-market funds pinned at a constant NAV).
    */
   last_price_date?: string | null;
+  /**
+   * Whether this row is a money-market / settlement fund (Vanguard `VMFXX`,
+   * Fidelity `SPAXX`, …). Such funds hold a constant $1.00 NAV by design, so
+   * they are never sent to the price provider (it would only ever return the
+   * same dollar and waste a free-tier credit). Absent on older exports, in
+   * which case the browser falls back to a ticker/name heuristic. */
+  is_money_market?: boolean;
   cashflows: ExportCashflow[];
 }
 

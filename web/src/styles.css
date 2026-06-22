@@ -258,6 +258,45 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   letter-spacing: 0.06em;
   font-weight: 600;
 }
+.market-status {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+.market-status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+.market-status-live {
+  color: var(--pos, #16a34a);
+  background: color-mix(in srgb, var(--pos, #16a34a) 12%, transparent);
+  border-color: color-mix(in srgb, var(--pos, #16a34a) 35%, transparent);
+}
+.market-status-live .market-status-dot {
+  box-shadow: 0 0 0 0 currentColor;
+  animation: market-pulse 2s ease-out infinite;
+}
+.market-status-closed {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 10%, transparent);
+}
+@keyframes market-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 55%, transparent); }
+  70% { box-shadow: 0 0 0 0.4rem transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .market-status-live .market-status-dot { animation: none; }
+}
 .hero-value {
   font-size: clamp(2.1rem, 9vw, 2.9rem);
   font-weight: 800;
@@ -290,6 +329,8 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .hero-change-pct { color: var(--muted); font-size: 0.9rem; font-weight: 600; }
 .hero-change.pos .hero-change-pct { color: var(--pos); }
 .hero-change.neg .hero-change-pct { color: var(--neg); }
+/* Market-situation caption ("as of 3:42 PM" live, "as of Fri 20 Jun" settled). */
+.hero-asof { color: var(--muted); font-size: 0.78rem; font-weight: 600; }
 
 /* Live EUR/USD context under today's move (rate, FX split, end-of-day tag). */
 .hero-fx {
@@ -423,6 +464,16 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* Card variant (attribution): keep the card padding/background and drop the
  * section-head margins so the summary lines up with the card edges. */
 .collapsible.card > .collapsible-summary { margin: 0; }
+
+/* Periods → per-year group: the months + that year's contributions, stacked
+ * under one collapsible year header (current year open by default). */
+.periods-year > .year-group-body {
+  display: grid;
+  gap: 0.6rem;
+  padding-top: 0.4rem;
+}
+.year-group-body .year-meta { margin-bottom: 0.1rem; }
+.year-group-body .year-contribs { margin-top: 0.2rem; }
 
 .holding-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
 .holding {
@@ -747,6 +798,12 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
 }
+.series-drawdown {
+  stroke: var(--neg);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.series-drawdown-area { fill: color-mix(in srgb, var(--neg) 15%, transparent); stroke: none; }
 
 .chart-legend {
   display: flex;
@@ -760,6 +817,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .legend-swatch.series-portfolio { border-top-color: var(--accent); }
 .legend-swatch.series-contrib { border-top-color: var(--faint); border-top-style: dashed; }
 .legend-swatch.series-benchmark { border-top-color: var(--accent-2); border-top-style: dotted; }
+.legend-swatch.series-drawdown { border-top-color: var(--neg); }
 
 /* --- Info dots (risk-metric definitions) ---------------------------------- */
 .stat-label { position: relative; display: inline-flex; align-items: center; gap: 0.3rem; }
@@ -818,16 +876,22 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* Keep the popover on-screen for dots near the left/right edges of the grid. */
 .stat:first-child .info-tip { left: 0; transform: none; }
 
-/* --- Projection (plan) ---------------------------------------------------- */
-.plan-fields { display: grid; gap: 0.75rem; grid-template-columns: 1fr 1.4fr; }
-.plan-fields .field { margin: 0; min-width: 0; }
-.plan-summary { grid-template-columns: repeat(3, 1fr); }
-/* Phones are too narrow for three side-by-side six-figure projections; stack
- * them so each headline number has room to breathe. They return to a row at
- * the 560px breakpoint below. */
+/* --- Calculator (plan) tab ------------------------------------------------- */
+.calc-fields { display: grid; gap: 0.75rem; grid-template-columns: 1fr 1fr; }
+.calc-fields .field { margin: 0; min-width: 0; }
+.calc-period-toggle { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin-bottom: 0.9rem; }
+.calc-toggle-label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--muted); cursor: pointer; }
+.calc-summary { grid-template-columns: repeat(4, 1fr); }
+/* On narrow phones stack the four KPI cards into two columns. */
 @media (max-width: 35rem) {
-  .plan-summary { grid-template-columns: 1fr; }
+  .calc-summary { grid-template-columns: repeat(2, 1fr); }
+  .calc-fields { grid-template-columns: 1fr; }
 }
+/* Goal callout */
+.calc-goal-body { display: grid; gap: 0.75rem; }
+.calc-hit-list { display: grid; gap: 0.25rem; font-size: 0.88rem; color: var(--muted); }
+.calc-req { display: flex; flex-direction: column; gap: 0.2rem; }
+.calc-hit-row { font-variant-numeric: tabular-nums; }
 
 .proj-head,
 .proj-row {
@@ -953,11 +1017,13 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .panel-overview > .hero {
     grid-template-columns: max-content auto;
     grid-template-areas:
+      "status status"
       "label  label"
       "value  change";
     align-items: center;
     column-gap: 1.4rem;
   }
+  .panel-overview > .hero .market-status { grid-area: status; }
   .panel-overview > .hero .hero-label { grid-area: label; }
   .panel-overview > .hero .hero-value { grid-area: value; }
   .panel-overview > .hero .hero-change { grid-area: change; margin-top: 0; align-self: center; }
@@ -978,7 +1044,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .panel-overview,
   .panel-periods,
   .panel-analytics,
-  .panel-plan,
+  .panel-calc,
   .panel-stack { max-width: 76rem; margin: 0 auto; }
 
   /* Charts otherwise scale to their (very wide) container and tower over the
@@ -1041,31 +1107,40 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     transform: none;
   }
 
-  /* Plan: the three headline projections become a full-width banner of cards
-   * across the top (so each big number gets room), with the input form on the
-   * left and the year-by-year table filling the rest of the width beneath. This
-   * spreads the (otherwise sparse) content across the whole page. */
-  .panel-plan {
-    grid-template-columns: 24rem minmax(0, 1fr);
+  /* Calculator: form on the left, KPI summary + table on the right. */
+  .panel-calc {
+    grid-template-columns: 26rem minmax(0, 1fr);
     grid-template-areas:
-      "summary summary"
+      "form    summary"
+      "form    goal"
       "form    table"
       "disc    disc";
     align-items: start;
     column-gap: 1.5rem;
     row-gap: 1.25rem;
   }
-  .panel-plan > .plan-form { grid-area: form; }
-  .panel-plan > .plan-summary-wrap { grid-area: summary; }
-  .panel-plan > .plan-table-wrap { grid-area: table; }
-  .panel-plan > .disclaimer { grid-area: disc; }
-  /* Three projections side by side across the full-width banner. */
-  .panel-plan > .plan-summary-wrap .plan-summary { grid-template-columns: repeat(3, 1fr); }
+  .panel-calc > .calc-form { grid-area: form; }
+  .panel-calc > .calc-kpi-wrap { grid-area: summary; }
+  .panel-calc > .calc-goal-wrap { grid-area: goal; }
+  .panel-calc > .calc-table-wrap { grid-area: table; }
+  .panel-calc > .disclaimer { grid-area: disc; }
+  /* Four KPI cards side by side in widescreen. */
+  .panel-calc .calc-summary { grid-template-columns: repeat(4, 1fr); }
   /* Give the year table room to breathe across the full width. */
-  .panel-plan > .plan-table-wrap .proj-head,
-  .panel-plan > .plan-table-wrap .proj-row { grid-template-columns: 4rem 10rem 1fr; gap: 0.6rem; }
-  .panel-plan > .plan-table-wrap .proj-values { gap: 0.6rem; }
-  .panel-plan > .plan-table-wrap .proj-row { padding: 0.5rem; }
+  .panel-calc .proj-head,
+  .panel-calc .proj-row { grid-template-columns: 4rem 10rem 1fr; gap: 0.6rem; }
+  .panel-calc .proj-values { gap: 0.6rem; }
+  .panel-calc .proj-row { padding: 0.5rem; }
+
+  /* Drawdown chart sits in the analytics grid below the equity curve. */
+  .panel-analytics > .drawdown { grid-area: equity; margin-top: 0.5rem; }
+  .panel-analytics {
+    grid-template-areas:
+      "returns risk"
+      "equity  equity"
+      "attr    attr"
+      "disc    disc";
+  }
 }
 
 /* On true widescreen, give the content a little more room. */

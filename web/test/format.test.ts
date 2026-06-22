@@ -4,7 +4,36 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { formatAsOf, formatLastPull, formatUpdatedAt } from "../src/format";
+import { formatAsOf, formatDailyGrowthAsOf, formatLastPull, formatUpdatedAt } from "../src/format";
+
+describe("formatDailyGrowthAsOf", () => {
+  const today = "2026-06-22";
+
+  it("shows a live clock time when the market is open and we have today's intraday obs", () => {
+    const liveAsOf = new Date("2026-06-22T18:11:00Z").getTime();
+    const out = formatDailyGrowthAsOf(liveAsOf, today, today, true, new Date("2026-06-22T18:12:00Z"));
+    expect(out).toMatch(/^as of \d{1,2}:\d{2}/);
+  });
+
+  it("pins to the settled day ('as of today') when the market is closed", () => {
+    const liveAsOf = new Date("2026-06-22T18:11:00Z").getTime();
+    const out = formatDailyGrowthAsOf(liveAsOf, today, today, false, new Date("2026-06-22T22:00:00Z"));
+    expect(out).toBe("as of today");
+  });
+
+  it("shows the weekday + date for an earlier settled day", () => {
+    const out = formatDailyGrowthAsOf(null, "2026-06-19", today, false, new Date("2026-06-22T12:00:00Z"));
+    expect(out).toMatch(/^as of /);
+    expect(out).not.toBe("as of today");
+    expect(out).not.toMatch(/\d{1,2}:\d{2}/);
+  });
+
+  it("does not claim live wording when the freshest obs predates today even if open", () => {
+    const liveAsOf = new Date("2026-06-19T18:11:00Z").getTime();
+    const out = formatDailyGrowthAsOf(liveAsOf, "2026-06-19", today, true, new Date("2026-06-22T14:00:00Z"));
+    expect(out).not.toMatch(/\d{1,2}:\d{2}/);
+  });
+});
 
 describe("formatAsOf", () => {
   const now = new Date("2024-06-01T15:30:00Z");

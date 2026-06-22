@@ -149,6 +149,11 @@ def _holding_dict(
         "cumulative_dividends_cash_native": dec(position.cumulative_dividends_cash_native),
         "price_symbol": position.instrument.symbol,
         "price_type": _price_type(position),
+        "is_money_market": is_money_market(
+            position.instrument.symbol,
+            asset_class=_asset_class(position),
+            name=_position_name(position),
+        ),
         "last_known_price_native": dec(position.current_price_native),
         # The trading day the exported ``last_known_price_native`` actually came
         # from (the latest cached close on/before the export date), so the web

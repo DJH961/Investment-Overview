@@ -14,31 +14,49 @@ import type { AllocationSlice, DashboardModel, HoldingView, OverviewView } from 
 import { fxTodayDeviationPct } from "./compute";
 import {
   type AnalyticsView,
+  type DepositRowView,
   type DepositsView,
   type PeriodRowView,
   type PeriodsView,
   type PlanView,
   type RiskMetric,
-  projectForward,
-  PROJECTION_SCENARIOS,
+  computeDrawdownSeries,
 } from "./phase4";
+import {
+  bandRates,
+  finalPoint,
+  requiredContribution,
+  simulate,
+  timeToTarget,
+  totalContributed,
+  type ProjectionParams,
+  SCENARIO_EXPECTED,
+  SCENARIO_OPTIMISTIC,
+  SCENARIO_PESSIMISTIC,
+} from "./projection";
 import {
   formatAsOf,
   formatLastPull,
   formatCurrency,
   formatCurrencyWhole,
+  formatDailyGrowthAsOf,
   formatDualCurrency,
   formatFxRate,
+  formatMoneyEur,
   formatNativePrice,
   formatPercent,
   formatShares,
   formatSignedCurrency,
   formatSignedDualCurrency,
+  formatSignedMoneyEur,
   formatSignedPercent,
   formatTimestamp,
   signClass,
 } from "./format";
+import { isUsMarketHoliday, isUsMarketOpen } from "./market-hours";
+import { computeCurrencyEffect } from "./currency-effect";
 import { cycleTheme, loadTheme, themeButtonContent } from "./theme";
+import { getTimeFormat, setTimeFormat, type TimeFormat } from "./time-format";
 import {
   canConvertToUsd,
   convertFromEur,
@@ -76,8 +94,12 @@ function signedPercentOrDash(value: Decimal | null): string {
 }
 
 /** The headline portfolio value + today's move — the hero of the screen. */
-function renderHero(o: OverviewView): HTMLElement {
+function renderHero(o: OverviewView, now: Date = new Date()): HTMLElement {
   const cls = signClass(o.todayMoveEur);
+  // Market-situation-aware caption: a live clock time while the NYSE session is
+  // open, else the latest settled trading day — mirroring the desktop's Daily
+  // Growth caption so "today's move" is never mislabelled as live after hours.
+  const asOf = formatDailyGrowthAsOf(o.liveAsOf, o.liveAsOfFallbackDate, o.asOf, isUsMarketOpen(now), now);
   const change = h("div", { class: `hero-change ${cls}` }, [
     h("span", { class: "hero-badge" }, [
       h("span", { class: "hero-arrow", "aria-hidden": "true" }, [trendGlyph(cls)]),
@@ -86,12 +108,13 @@ function renderHero(o: OverviewView): HTMLElement {
     h("span", { class: "hero-change-pct" }, [
       o.todayMovePct !== null ? `${formatSignedPercent(o.todayMovePct)} today` : "today",
     ]),
+    h("span", { class: "hero-asof" }, [asOf]),
   ]);
 
-  // Per-holding rows and the footer note both carry "as of" freshness, so the
-  // hero stays clean: just the headline value and today's move, with no date
-  // stamped above "Total value" at the very top of the screen.
+  // The headline value and today's move, with a market-aware "as of" caption so
+  // the total value reads correctly as live (session open) or settled (closed).
   const children: Array<Node | string> = [
+    renderMarketStatusChip(o, now),
     h("span", { class: "hero-label" }, ["Total value"]),
     h("span", { class: "hero-value" }, [formatCurrency(o.totalValueEur)]),
     change,
@@ -99,6 +122,34 @@ function renderHero(o: OverviewView): HTMLElement {
   const fxLine = renderHeroFx(o);
   if (fxLine) children.push(fxLine);
   return h("section", { class: "hero" }, children);
+}
+
+/**
+ * An honest market-status chip for the hero. It tells the truth about *why* the
+ * numbers are or aren't moving: a green "Live" only when the NYSE session is
+ * open AND we actually hold a same-day quote (`pricesAreLive`); otherwise an
+ * amber "Holiday" / "Weekend" / "Market closed" so a stale weekend or holiday
+ * price is never dressed up as live. This is the user-visible counterpart to
+ * the `pricesAreLive` gate that already governs the Periods "live" pill.
+ */
+function renderMarketStatusChip(o: OverviewView, now: Date = new Date()): HTMLElement {
+  let cls: string;
+  let label: string;
+  if (o.pricesAreLive) {
+    cls = "live";
+    label = "Live";
+  } else if (isUsMarketHoliday(now)) {
+    cls = "closed";
+    label = "Market holiday";
+  } else {
+    const day = now.getDay();
+    cls = "closed";
+    label = day === 0 || day === 6 ? "Weekend · last close" : "Market closed";
+  }
+  return h("span", { class: `market-status market-status-${cls}`, role: "status" }, [
+    h("span", { class: "market-status-dot", "aria-hidden": "true" }, []),
+    label,
+  ]);
 }
 
 /**
@@ -123,24 +174,16 @@ function renderHeroFx(o: OverviewView): HTMLElement | null {
   // The FX-revaluation slice of today's move. It is intrinsically a *EUR-side*
   // effect: a USD-booked holding only changes in EUR when EUR/USD moves; its USD
   // value is unaffected. So in USD display there is — correctly — no FX P/L to
-  // book (you can't "make money on FX" when everything is already in USD), and
-  // we say so plainly instead of rescaling a meaningless number into USD. In EUR
-  // display we show the actual EUR the swing added or removed today.
-  if (!o.todayFxMoveEur.isZero()) {
-    if (inUsd) {
-      parts.push(
-        h("span", { class: "hero-fx-split flat" }, [
-          "FX moves your EUR value, not USD",
-        ]),
-      );
-    } else {
-      const fxCls = signClass(o.todayFxMoveEur);
-      parts.push(
-        h("span", { class: `hero-fx-split ${fxCls}` }, [
-          `incl. ${formatSignedCurrency(o.todayFxMoveEur)} from FX`,
-        ]),
-      );
-    }
+  // book (you can't "make money on FX" when everything is already in USD); we
+  // simply omit the line rather than printing a reminder that reflows the page.
+  // In EUR display we show the actual EUR the swing added or removed today.
+  if (!o.todayFxMoveEur.isZero() && !inUsd) {
+    const fxCls = signClass(o.todayFxMoveEur);
+    parts.push(
+      h("span", { class: `hero-fx-split ${fxCls}` }, [
+        `incl. ${formatSignedCurrency(o.todayFxMoveEur)} from FX`,
+      ]),
+    );
   }
   if (o.eurUsdSource === "eod") {
     parts.push(h("span", { class: "hero-fx-eod" }, ["end-of-day FX"]));
@@ -207,13 +250,30 @@ function renderStats(o: OverviewView): HTMLElement {
   return h("section", { class: "stats" }, [grid, ...renderNotes(o)]);
 }
 
+/**
+ * A short provenance tag for the EUR→USD rate shown on the coverage line:
+ * "(live)" for the intraday Twelve Data spot, "(cached)" for a recently-stored
+ * live spot reused without a re-fetch (so a quick app re-open stays instant),
+ * "(end-of-day)" for the ECB daily fallback, and nothing for an export rate.
+ */
+function fxSourceTag(o: OverviewView): string {
+  if (o.eurUsdSource === "live") return " (live)";
+  if (o.eurUsdSource === "cache") return " (cached)";
+  if (o.eurUsdSource === "eod") return " (end-of-day)";
+  return "";
+}
+
 function renderNotes(o: OverviewView): HTMLElement[] {
   const notes: HTMLElement[] = [];
   // Lead with the live-coverage line: a calm, descriptive "how much is fresh"
-  // status that replaces both the opaque "some prices not updated" and the old
-  // floating banner — it stays on the page, but doesn't hover or nag.
-  if (o.liveCoverage) {
-    notes.push(h("p", { class: "note coverage" }, [o.liveCoverage]));
+  // status. The live EUR→USD spot rides along here (prioritised over the ECB
+  // end-of-day rate) so the single most-watched live number sits with the
+  // freshness summary rather than reflowing a separate line below.
+  const coverageParts: string[] = [];
+  if (o.liveCoverage) coverageParts.push(o.liveCoverage);
+  if (o.fxRateEurUsd !== null) coverageParts.push(`EUR→USD ${formatFxRate(o.fxRateEurUsd)}${fxSourceTag(o)}`);
+  if (coverageParts.length > 0) {
+    notes.push(h("p", { class: "note coverage" }, [coverageParts.join(" · ")]));
   }
   if (o.liveDegradedReason) {
     notes.push(h("p", { class: "note warn" }, [o.liveDegradedReason]));
@@ -242,7 +302,7 @@ function renderNotes(o: OverviewView): HTMLElement[] {
   if (o.fxRateEurUsd !== null) {
     notes.push(
       h("p", { class: "note" }, [
-        `FX EUR→USD ${o.fxRateEurUsd.toFixed(4)} · dividends ${formatCurrency(o.totalDividendsEur)} to date.`,
+        `Dividends ${formatCurrency(o.totalDividendsEur)} to date.`,
       ]),
     );
   }
@@ -470,9 +530,9 @@ export function renderDashboard(
   // (no re-render, so live figures and form state survive a tab switch).
   const tabs: TabDef[] = [
     { id: "overview", label: "Overview", glyph: "◎", panel: renderOverviewPanel(model) },
-    { id: "periods", label: "Periods", glyph: "▦", panel: renderPeriodsPanel(model.periods, model.deposits) },
-    { id: "analytics", label: "Risk", glyph: "📈", panel: renderAnalyticsPanel(model.analytics) },
-    { id: "plan", label: "Plan", glyph: "🧭", panel: renderPlanPanel(model.plan) },
+    { id: "periods", label: "Periods", glyph: "▦", panel: renderPeriodsPanel(model.periods, model.deposits, model.plan) },
+    { id: "analytics", label: "Risk", glyph: "📈", panel: renderAnalyticsPanel(model.analytics, model.overview, model.deposits) },
+    { id: "plan", label: "Calculator", glyph: "🧮", panel: renderCalculatorPanel(model.plan) },
   ];
 
   const { nav, content } = renderTabs(tabs);
@@ -622,58 +682,235 @@ function renderPeriodRow(row: PeriodRowView): HTMLElement {
   return h("li", { class: "holding" }, [main, meta]);
 }
 
-function renderPeriodList(title: string, rows: PeriodRowView[], extraClass = ""): HTMLElement {
-  const cls = `holdings ${extraClass}`.trim();
-  if (rows.length === 0) {
-    return h("section", { class: cls }, [sectionHead(title), h("p", { class: "note" }, ["No periods yet."])]);
-  }
-  const list = h("ul", { class: "holding-list" }, rows.map(renderPeriodRow));
-  const sub = `${rows.length} ${rows.length === 1 ? "period" : "periods"}`;
-  return collapsibleSection(title, sub, list, cls);
-}
-
-function renderDepositsBlock(deposits: DepositsView): HTMLElement {
+function renderContributionsSummary(deposits: DepositsView): HTMLElement {
   const summary = h("div", { class: "stat-grid" }, [
     stat("Contributed", formatDualCurrency(deposits.totalEur, deposits.totalUsd)),
     stat("This year", formatDualCurrency(deposits.ytdEur, deposits.ytdUsd)),
     stat("This month", formatDualCurrency(deposits.mtdEur, deposits.mtdUsd)),
   ]);
+  return h("section", { class: "deposits" }, [sectionHead("Contributions"), h("div", { class: "stats" }, [summary])]);
+}
 
-  const recent = deposits.rows.slice(0, 12);
-  const rows = recent.map((row) =>
-    h("li", { class: "ledger-row" }, [
-      h("div", { class: "ledger-id" }, [
-        h("span", { class: "ledger-kind" }, [titleCase(row.kind)]),
-        h("span", { class: "ledger-sub muted" }, [`${row.date} · ${row.account}`]),
-      ]),
-      h("span", { class: "ledger-amount" }, [formatDualCurrency(row.amountEur, row.amountUsd)]),
+/** How many forward years the Periods-tab projection outlook looks ahead. */
+const PROJECTION_OUTLOOK_YEARS = 10;
+/** The ± band (in fractional points) for the outlook's optimistic/pessimistic scenarios. */
+const PROJECTION_OUTLOOK_BAND = new Decimal("0.03");
+
+/**
+ * A compact, read-only forward projection shown *underneath* the historical
+ * period tables — so Periods reads as one continuous timeline: settled months
+ * and years above, the projected next {@link PROJECTION_OUTLOOK_YEARS} years
+ * below. It is seeded straight from the portfolio (today's value, the average
+ * yearly contribution, and the XIRR-derived expected return) with no inputs of
+ * its own; the Calculator tab remains the place to tweak the assumptions.
+ */
+function renderProjectionOutlook(plan: PlanView): HTMLElement {
+  const isUsd = getDisplayCurrency() === "USD";
+  // Match the rest of the dashboard: in USD display, project on the USD-derived
+  // expected return so the outlook is consistent with the toggled currency.
+  const expected = isUsd && plan.expectedRateUsd !== null ? plan.expectedRateUsd : plan.expectedRateEur;
+  const params: ProjectionParams = {
+    startingValue: plan.startingValueEur,
+    baseContribution: plan.defaultAnnualContributionEur,
+    periods: PROJECTION_OUTLOOK_YEARS,
+    periodsPerYear: 1,
+    annualRates: bandRates(expected, PROJECTION_OUTLOOK_BAND),
+    start: new Date(Date.UTC(plan.baseYear, 0, 1)),
+  };
+  const result = simulate(params);
+  const last = finalPoint(result);
+
+  const scenarios = [
+    { key: SCENARIO_PESSIMISTIC, label: "Pessimistic" },
+    { key: SCENARIO_EXPECTED, label: "Expected" },
+    { key: SCENARIO_OPTIMISTIC, label: "Optimistic" },
+  ] as const;
+
+  // Headline scenario cards: where the portfolio could stand at the horizon.
+  const kpiCards = scenarios.map(({ key, label }) => {
+    const finalVal = last ? last.nominalByScenario[key] : plan.startingValueEur;
+    return h("div", { class: "stat" }, [
+      h("span", { class: "stat-label" }, [label]),
+      h("span", { class: "stat-value pos" }, [formatCurrencyWhole(convertFromEur(finalVal).value)]),
+      h("span", { class: "stat-sub muted" }, [last ? `by ${last.label}` : "—"]),
+    ]);
+  });
+  kpiCards.push(
+    h("div", { class: "stat" }, [
+      h("span", { class: "stat-label" }, ["Contributed"]),
+      h("span", { class: "stat-value" }, [formatCurrencyWhole(convertFromEur(totalContributed(result)).value)]),
+      h("span", { class: "stat-sub muted" }, ["total new money"]),
     ]),
   );
 
-  const children: Array<Node | string> = [h("div", { class: "stats" }, [summary])];
-  if (rows.length > 0) {
-    children.push(
-      h("details", { class: "allocation" }, [
-        h("summary", { class: "alloc-summary" }, [
-          h("span", { class: "alloc-summary-title" }, ["Recent contributions"]),
-          h("span", { class: "muted" }, [`${recent.length} shown`]),
-        ]),
-        h("ul", { class: "ledger-list" }, rows),
+  // Forward per-year table in the same style as the Calculator's projection.
+  const colHeaders = scenarios.map(({ label }) => h("span", { class: "proj-cell muted" }, [label.slice(0, 4)]));
+  const tableRows = result.points.map((pt) => {
+    const cells = scenarios.map(({ key }) =>
+      h("span", { class: "proj-cell" }, [formatCurrencyWhole(convertFromEur(pt.nominalByScenario[key]).value)]),
+    );
+    return h("li", { class: "proj-row" }, [
+      h("span", { class: "proj-year" }, [pt.label]),
+      h("span", { class: "proj-contrib muted" }, [`+${formatCurrencyWhole(convertFromEur(pt.contributed).value)}`]),
+      h("div", { class: "proj-values" }, cells),
+    ]);
+  });
+
+  const body = h("div", { class: "projection-outlook-body" }, [
+    h("p", { class: "note" }, [
+      `Seeded from today's portfolio: ${formatCurrency(plan.startingValueEur)} growing at ` +
+        `${expected.times(100).toDecimalPlaces(1)}% p.a. (±${PROJECTION_OUTLOOK_BAND.times(100)}pp), plus ` +
+        `${formatCurrency(plan.defaultAnnualContributionEur)}/yr of contributions. Adjust the assumptions on the Calculator tab.`,
+    ]),
+    h("section", { class: "stats" }, [h("div", { class: "stat-grid calc-summary" }, kpiCards)]),
+    h("section", { class: "card" }, [
+      h("div", { class: "proj-head" }, [
+        h("span", { class: "proj-year muted" }, ["Year"]),
+        h("span", { class: "proj-contrib muted" }, ["Contributed"]),
+        h("div", { class: "proj-values" }, colHeaders),
+      ]),
+      h("ul", { class: "proj-list" }, tableRows),
+    ]),
+  ]);
+
+  const expectedFinal = last ? convertFromEur(last.nominalByScenario[SCENARIO_EXPECTED]).value : null;
+  const sub = expectedFinal !== null
+    ? `~${formatCurrencyWhole(expectedFinal)} expected by ${last!.label}`
+    : `${PROJECTION_OUTLOOK_YEARS}-year outlook`;
+  return collapsibleSection("Projection", sub, body, "projection-outlook", true);
+}
+
+
+/** One contribution ledger row, used nested under its year group. */
+function renderDepositRow(row: DepositRowView): HTMLElement {
+  return h("li", { class: "ledger-row" }, [
+    h("div", { class: "ledger-id" }, [
+      h("span", { class: "ledger-kind" }, [titleCase(row.kind)]),
+      h("span", { class: "ledger-sub muted" }, [`${row.date} · ${row.account}`]),
+    ]),
+    h("span", { class: "ledger-amount" }, [formatDualCurrency(row.amountEur, row.amountUsd)]),
+  ]);
+}
+
+/**
+ * A single collapsible year group: the year's headline (growth + closing value),
+ * its months nested inside, and that year's contributions kept *under* the year
+ * rather than floating in a separate middle block. The current year defaults
+ * open; prior years stay condensed until tapped.
+ */
+function renderYearGroup(
+  year: string,
+  yearRow: PeriodRowView | undefined,
+  months: PeriodRowView[],
+  deposits: DepositRowView[],
+  isCurrent: boolean,
+): HTMLElement {
+  const body: Array<Node | string> = [];
+
+  if (yearRow) {
+    // The year's own flows/dividends/interest as a compact meta strip.
+    body.push(
+      h("div", { class: "holding-meta year-meta" }, [
+        chip(`Net flow ${formatSignedDualCurrency(yearRow.netFlowEur, yearRow.netFlowUsd)}`, signClass(yearRow.netFlowEur)),
+        chip(`Contrib ${formatDualCurrency(yearRow.contributionsEur, yearRow.contributionsUsd)}`),
+        chip(`Div ${formatDualCurrency(yearRow.dividendsEur, yearRow.dividendsUsd)}`),
+        chip(`Int ${formatDualCurrency(yearRow.interestEur, yearRow.interestUsd)}`),
       ]),
     );
   }
-  return h("section", { class: "deposits" }, [sectionHead("Contributions"), ...children]);
+
+  if (months.length > 0) {
+    body.push(h("ul", { class: "holding-list" }, months.map(renderPeriodRow)));
+  } else {
+    body.push(h("p", { class: "note" }, ["No monthly breakdown for this year."]));
+  }
+
+  if (deposits.length > 0) {
+    body.push(
+      h("details", { class: "allocation year-contribs" }, [
+        h("summary", { class: "alloc-summary" }, [
+          h("span", { class: "alloc-summary-title" }, ["Contributions"]),
+          h("span", { class: "muted" }, [`${deposits.length} in ${year}`]),
+        ]),
+        h("ul", { class: "ledger-list" }, deposits.map(renderDepositRow)),
+      ]),
+    );
+  }
+
+  // Year headline as the collapsible sub-text: growth % and closing value.
+  const growthPct = yearRow ? pickByCurrency(yearRow.growthPct, yearRow.growthPctUsd) : null;
+  const valuePart =
+    yearRow && yearRow.closingValueEur !== null
+      ? formatDualCurrency(yearRow.closingValueEur, yearRow.closingValueUsd)
+      : "—";
+  const sub = `${signedPercentOrDash(growthPct)} · ${valuePart}`;
+
+  const wrapped = h("div", { class: "year-group-body" }, body);
+  return collapsibleSection(year, sub, wrapped, "periods-year", isCurrent);
 }
 
-function renderPeriodsPanel(periods: PeriodsView, deposits: DepositsView | null): HTMLElement {
-  const children: Array<Node | string> = [
-    renderPeriodList("This year, by month", periods.monthly, "periods-monthly"),
-    renderPeriodList("By year", periods.yearly, "periods-yearly"),
-  ];
-  if (deposits) children.push(renderDepositsBlock(deposits));
+function renderPeriodsPanel(periods: PeriodsView, deposits: DepositsView | null, plan: PlanView): HTMLElement {
+  const children: Array<Node | string> = [];
+  if (deposits) children.push(renderContributionsSummary(deposits));
+
+  // Group the exported months and contribution rows by their calendar year so
+  // each year can be condensed independently (current year open by default).
+  const monthsByYear = new Map<string, PeriodRowView[]>();
+  for (const row of periods.monthly) {
+    const yr = row.label.slice(0, 4);
+    const bucket = monthsByYear.get(yr);
+    if (bucket) bucket.push(row);
+    else monthsByYear.set(yr, [row]);
+  }
+  const depositsByYear = new Map<string, DepositRowView[]>();
+  for (const row of deposits?.rows ?? []) {
+    const yr = row.date.slice(0, 4);
+    const bucket = depositsByYear.get(yr);
+    if (bucket) bucket.push(row);
+    else depositsByYear.set(yr, [row]);
+  }
+
+  // The current year is the live one (its yearly row is flagged current); fall
+  // back to today's year so a fresh export with no current row still opens one.
+  const currentYear =
+    periods.yearly.find((y) => y.isCurrent)?.label ?? String(new Date().getFullYear());
+
+  // Render newest year first; include any year that has a yearly row, months,
+  // or contributions so nothing is dropped.
+  const yearKeys = Array.from(
+    new Set<string>([
+      ...periods.yearly.map((y) => y.label),
+      ...monthsByYear.keys(),
+      ...depositsByYear.keys(),
+    ]),
+  )
+    .sort()
+    .reverse();
+
+  if (yearKeys.length === 0) {
+    children.push(h("p", { class: "note" }, ["No periods yet."]));
+  }
+  for (const year of yearKeys) {
+    const yearRow = periods.yearly.find((y) => y.label === year);
+    children.push(
+      renderYearGroup(
+        year,
+        yearRow,
+        monthsByYear.get(year) ?? [],
+        depositsByYear.get(year) ?? [],
+        year === currentYear,
+      ),
+    );
+  }
+
+  // Forward-looking projection, underneath the historical periods, so Periods
+  // reads as one continuous past → future timeline.
+  children.push(renderProjectionOutlook(plan));
+
   children.push(
     h("p", { class: "disclaimer" }, [
-      "The current month and year are recomputed live; completed periods are frozen as of the last export.",
+      "The current month and year are recomputed live; completed periods are frozen as of the last export. " +
+        "Projected years are hypothetical and assume constant returns.",
     ]),
   );
   return h("section", { class: "panel-stack panel-periods" }, children);
@@ -810,8 +1047,12 @@ function daysBetween(a: string, b: string): number {
  * small button group that re-slices the same series to the chosen look-back and
  * redraws in place (no re-fetch; purely a view of the already-loaded points).
  */
-function chartWithTimeframe(dates: string[], series: ChartSeries[]): HTMLElement | null {
-  const full = buildLineChart({ dates, series });
+function chartWithTimeframe(
+  dates: string[],
+  series: ChartSeries[],
+  chartOpts: { yAxisLabel?: (v: number) => string } = {},
+): HTMLElement | null {
+  const full = buildLineChart({ dates, series, ...chartOpts });
   if (!full) return null;
   const wrap = h("div", { class: "chart-wrap" }, [full as unknown as HTMLElement]);
 
@@ -835,7 +1076,7 @@ function chartWithTimeframe(dates: string[], series: ChartSeries[]): HTMLElement
     }
     const slicedDates = dates.slice(start);
     const slicedSeries = series.map((s) => ({ ...s, values: s.values.slice(start) }));
-    const chart = buildLineChart({ dates: slicedDates, series: slicedSeries });
+    const chart = buildLineChart({ dates: slicedDates, series: slicedSeries, ...chartOpts });
     if (chart) wrap.replaceChildren(chart as unknown as HTMLElement);
     buttons.forEach((button, i) => {
       const active = i === index;
@@ -933,6 +1174,44 @@ function legendItem(seriesClass: string, label: string): HTMLElement {
 }
 
 /**
+ * The Risk-tab drawdown (underwater) chart.
+ *
+ * Computes the running-peak drawdown series from the equity curve and plots
+ * it as a filled area (always ≤ 0) using the same SVG chart infrastructure
+ * as the equity curve. The y-axis is labelled in percent rather than currency.
+ * Returns null when there is insufficient data.
+ */
+function renderDrawdownChart(curve: AnalyticsView["curve"]): HTMLElement | null {
+  const dd = computeDrawdownSeries(curve);
+  // Only keep points where drawdown is defined and filter to those with usable dates.
+  const points = dd.filter((p) => p.drawdown !== null);
+  if (points.length < 2) return null;
+
+  const dates = points.map((p) => p.date);
+  const values: Array<Decimal | null> = points.map((p) => p.drawdown);
+
+  // Format y-axis as signed percent (e.g. "−15.3%").
+  const pctLabel = (v: number): string => {
+    const pct = (v * 100).toFixed(1);
+    return v < 0 ? `−${Math.abs(Number(pct))}%` : `${pct}%`;
+  };
+
+  const chart = chartWithTimeframe(dates, [{ values, className: "series-drawdown", area: true }], { yAxisLabel: pctLabel });
+  if (!chart) return null;
+
+  return h("section", { class: "card drawdown" }, [
+    h("div", { class: "section-head" }, [
+      h("h2", {}, ["Drawdown"]),
+      h("span", { class: "muted" }, ["underwater from peak"]),
+    ]),
+    chart,
+    h("div", { class: "chart-legend" }, [
+      legendItem("series-drawdown", "Drawdown from peak"),
+    ]),
+  ]);
+}
+
+/**
  * The Overview "value over time" graph. Reuses the exported equity curve and
  * appends today's live total value as the final point, so the headline figure
  * is the tip of the line. Returns null when no usable history was exported.
@@ -1004,7 +1283,98 @@ function renderAttribution(rows: AnalyticsView["attribution"]): HTMLElement | nu
   return collapsibleSection("Attribution", "P/L by holding", h("ul", { class: "ledger-list" }, items), "card attribution");
 }
 
-function renderAnalyticsPanel(analytics: AnalyticsView | null): HTMLElement {
+/**
+ * The Risk tab's "Currency (EUR ↔ USD)" panel — the browser port of the
+ * desktop analytics page's currency-effect section. It is the headline USD/EUR
+ * *comparison* for a euro investor holding dollar assets: it always shows both
+ * sides at once (the average rate you bought dollars at vs today's spot, and
+ * the slice of your return that came from the FX move rather than the assets),
+ * so it reads correctly whichever display currency is toggled. Returns null
+ * when there isn't enough cross-currency data to say anything useful.
+ */
+function renderCurrencyEffect(overview: OverviewView, deposits: DepositsView | null): HTMLElement | null {
+  const effect = computeCurrencyEffect({
+    contributionsEur: deposits?.totalEur ?? overview.totalCostBasisEur,
+    contributionsUsd: deposits?.totalUsd ?? overview.totalCostBasisUsd,
+    valueEur: overview.totalValueEur,
+    valueUsd: overview.totalValueUsd,
+    growthEur: overview.totalGrowthCompoundedPct,
+    growthUsd: overview.totalGrowthCompoundedPctUsd,
+  });
+  if (effect.currentRate === null && effect.avgInvestRate === null) return null;
+
+  const cards: HTMLElement[] = [];
+  const effectStat = (label: string, value: string, sub: string, cls = "flat"): HTMLElement =>
+    h("div", { class: "stat" }, [
+      h("span", { class: "stat-label" }, [label]),
+      h("span", { class: `stat-value ${cls}` }, [value]),
+      h("span", { class: "stat-sub muted" }, [sub]),
+    ]);
+
+  cards.push(
+    effectStat(
+      "EUR/USD now",
+      formatFxRate(effect.currentRate),
+      `avg when you invested: ${formatFxRate(effect.avgInvestRate)}`,
+    ),
+  );
+  if (effect.rateChangePct !== null) {
+    // A weaker euro (a *lower* rate, negative change) is a tailwind for a euro
+    // investor holding dollars, so colour by favourability (−change), not raw sign.
+    const weaker = effect.rateChangePct.isNegative();
+    cards.push(
+      effectStat(
+        "Euro move since investing",
+        formatSignedPercent(effect.rateChangePct),
+        weaker ? "euro weaker → tailwind for you" : "euro stronger → headwind",
+        signClass(effect.rateChangePct.negated()),
+      ),
+    );
+  }
+  if (effect.currencyEffectPp !== null) {
+    cards.push(
+      effectStat(
+        "Currency effect on return",
+        formatSignedPercent(effect.currencyEffectPp),
+        "your EUR return minus your USD return",
+        signClass(effect.currencyEffectPp),
+      ),
+    );
+  }
+  if (effect.fxPnlEur !== null) {
+    cards.push(
+      effectStat(
+        "FX gain / loss (EUR)",
+        formatSignedMoneyEur(effect.fxPnlEur),
+        "vs investing at your average rate",
+        signClass(effect.fxPnlEur),
+      ),
+    );
+  }
+  if (effect.repatriationValueEur !== null) {
+    const usdNote =
+      overview.totalValueUsd !== null && effect.currentRate !== null
+        ? `= ${formatMoneyEur(overview.totalValueUsd)} USD at ${formatFxRate(effect.currentRate)}`
+        : "convert the whole portfolio back to EUR";
+    cards.push(effectStat("If you transfer back now", formatMoneyEur(effect.repatriationValueEur), usdNote));
+  }
+
+  const body = h("div", { class: "currency-effect-body" }, [
+    h("p", { class: "note" }, [
+      "You fund in EUR, hold USD assets, and would convert back to EUR — so the EUR/USD move between " +
+        "paying in and cashing out is its own gain or loss on top of the assets. A weaker euro means each " +
+        "dollar buys back more euros, which is good for you.",
+    ]),
+    h("section", { class: "stats" }, [h("div", { class: "stat-grid" }, cards)]),
+  ]);
+  return collapsibleSection("Currency (EUR ↔ USD)", "FX effect on your return", body, "currency-effect", true);
+}
+
+function renderAnalyticsPanel(
+  analytics: AnalyticsView | null,
+  overview: OverviewView,
+  deposits: DepositsView | null,
+): HTMLElement {
   if (analytics === null) {
     return h("section", { class: "panel-stack" }, [
       h("section", { class: "card" }, [
@@ -1031,14 +1401,22 @@ function renderAnalyticsPanel(analytics: AnalyticsView | null): HTMLElement {
     ]),
   ];
 
+  // The headline USD/EUR comparison for a euro investor — always visible, never
+  // dependent on the toggle (it shows both currencies at once).
+  const currencyEffect = renderCurrencyEffect(overview, deposits);
+  if (currencyEffect) children.push(currencyEffect);
+
   const curve = renderEquityCurve(analytics.curve, analytics.benchmarkSymbol);
   if (curve) children.push(curve);
+  const drawdown = renderDrawdownChart(analytics.curve);
+  if (drawdown) children.push(drawdown);
   const attribution = renderAttribution(analytics.attribution);
   if (attribution) children.push(attribution);
 
   children.push(
     h("p", { class: "disclaimer" }, [
-      `History-bound risk metrics are computed on the desktop and shown as of the last export (${analytics.start} → ${analytics.asOf}). They do not move intraday.`,
+      `History-bound risk metrics are computed on the desktop and shown as of the last export (${analytics.start} → ${analytics.asOf}). ` +
+        "They do not move intraday. Risk/return figures switch between EUR and USD with the currency toggle.",
     ]),
   );
   return h("section", { class: "panel-stack panel-analytics" }, children);
@@ -1053,107 +1431,273 @@ function numberField(label: string, value: string, attrs: Attrs): { wrap: HTMLEl
 }
 
 /**
- * The forward-projection calculator. Seeded from the live total value and the
- * average historical yearly contribution, it recomputes (in-browser, no
- * network) as the user adjusts the years and annual-contribution inputs.
+ * The full Calculator tab, replacing the old Plan panel.
+ *
+ * All inputs are seeded from the encrypted export blob (starting value from
+ * the live portfolio total, contribution from average historical contribution,
+ * expected return from the portfolio XIRR). The user can adjust everything;
+ * the simulation re-runs in-browser on each keystroke with no network call.
+ *
+ * Mirrors the desktop's _projection_view / _projection_model (req 11).
  */
-function renderPlanPanel(plan: PlanView): HTMLElement {
-  const baseYear = plan.baseYear;
-  // The projection runs in EUR, but the user sees and types in the active
-  // display currency — so seed the default and the field label in that currency
-  // and convert what they enter back to EUR before projecting.
-  const defaultContribution = convertFromEur(plan.defaultAnnualContributionEur);
-  const displayCode = defaultContribution.code;
-  const defaultContributionDisplay = defaultContribution.value.toDecimalPlaces(0).toString();
+function renderCalculatorPanel(plan: PlanView): HTMLElement {
+  // The calculator runs in EUR internally; the user types in the active display
+  // currency and the values are converted before simulating.
+  const displayCurrency = getDisplayCurrency();
+  const isUsd = displayCurrency === "USD";
 
-  const years = numberField("Years", "10", { min: "1", max: "40", step: "1" });
-  const contribution = numberField(`Annual contribution (${displayCode})`, defaultContributionDisplay, {
-    min: "0",
-    step: "100",
-  });
+  // Seed the expected rate from the portfolio XIRR (EUR or USD depending on
+  // which display currency is active; fall back to FALLBACK_EXPECTED_RATE).
+  const seedRate = isUsd && plan.expectedRateUsd !== null
+    ? plan.expectedRateUsd
+    : plan.expectedRateEur;
+  const seedRatePct = seedRate.times(100).toDecimalPlaces(2).toString();
 
-  const summaryOut = h("div", { class: "plan-summary-wrap" }, []);
-  const tableOut = h("div", { class: "plan-table-wrap" }, []);
+  // Seed contribution from the average historical value (monthly or yearly).
+  // The horizon default is yearly (10 years / 120 months).
+  let monthly = false;
+  const seedYearlyContrib = convertFromEur(plan.defaultAnnualContributionEur);
+  const seedMonthlyContrib = convertFromEur(plan.defaultMonthlyContributionEur);
+  const code = seedYearlyContrib.code;
 
+  const getDefaultContrib = (): string =>
+    monthly
+      ? seedMonthlyContrib.value.toDecimalPlaces(0).toString()
+      : seedYearlyContrib.value.toDecimalPlaces(0).toString();
+
+  // --- Controls ---
+  const expectedRate = numberField(`Expected return % p.a.`, seedRatePct, { min: "-50", max: "40", step: "0.1" });
+  const band = numberField("± band (pp)", "3.0", { min: "0", max: "30", step: "0.5" });
+  const contribution = numberField(
+    `Contribution / ${monthly ? "month" : "year"} (${code})`,
+    getDefaultContrib(),
+    { min: "0", step: "10" },
+  );
+  const contribLabel = contribution.wrap.querySelector(".field-label");
+  const stepUp = numberField("Annual step-up %", "0", { min: "0", max: "100", step: "0.5" });
+  const inflation = numberField("Inflation %", "2.0", { min: "0", max: "30", step: "0.1" });
+  const target = numberField(`Target value (${code})`, "0", { min: "0", step: "1000" });
+
+  // Horizon: years (1–40) or months (1–480), default 10y / 120m.
+  const horizonInput = numberField("Horizon (years)", "10", { min: "1", max: "40", step: "1" });
+  const horizonLabel = horizonInput.wrap.querySelector(".field-label");
+
+  // Period toggle (yearly / monthly).
+  const btnYearly = h("button", { class: "chart-range-btn active", type: "button" }, ["Yearly"]) as HTMLButtonElement;
+  const btnMonthly = h("button", { class: "chart-range-btn", type: "button" }, ["Monthly"]) as HTMLButtonElement;
+  btnYearly.setAttribute("aria-pressed", "true");
+  btnMonthly.setAttribute("aria-pressed", "false");
+
+  // "Today's money" (real / nominal) toggle.
+  const realToggleInput = h("input", { type: "checkbox", id: "calc-real" }) as HTMLInputElement;
+  const realToggle = h("label", { class: "calc-toggle-label", for: "calc-real" }, [
+    realToggleInput,
+    " Show in today's money (real)",
+  ]);
+
+  // Output containers.
+  const kpiOut = h("div", { class: "calc-kpi-wrap" }, []);
+  const goalOut = h("div", { class: "calc-goal-wrap" }, []);
+  const tableOut = h("div", { class: "calc-table-wrap" }, []);
+
+  // --- Core simulation ---
   const recompute = (): void => {
-    const yearsValue = Math.max(1, Math.min(40, Math.round(Number(years.input.value) || 0)));
-    const contribDisplay = Math.max(0, Number(contribution.input.value) || 0);
-    const contribInput = new Decimal(contribDisplay);
-    const contribEur = displayCode === "EUR" ? contribInput : convertToEur(contribInput);
-    const rows = projectForward(plan.startingValueEur, contribEur, yearsValue, baseYear);
-    renderProjection(summaryOut, tableOut, rows, plan.startingValueEur);
+    const ratePct = parseFloat(expectedRate.input.value) || 7;
+    const bandPpt = Math.max(0, parseFloat(band.input.value) || 3);
+    const stepUpPct = Math.max(0, parseFloat(stepUp.input.value) || 0);
+    const inflationPct = Math.max(0, parseFloat(inflation.input.value) || 0);
+    const horizonRaw = Math.max(1, parseInt(horizonInput.input.value) || (monthly ? 120 : 10));
+    const periods = monthly ? Math.min(horizonRaw, 480) : Math.min(horizonRaw, 40);
+    const periodsPerYear = monthly ? 12 : 1;
+
+    // Parse contribution and target in display currency, convert to EUR.
+    const contribDisplay = Math.max(0, parseFloat(contribution.input.value) || 0);
+    const contribEur = isUsd
+      ? convertToEur(new Decimal(contribDisplay))
+      : new Decimal(contribDisplay);
+
+    const targetDisplay = Math.max(0, parseFloat(target.input.value) || 0);
+    const targetEur = isUsd
+      ? convertToEur(new Decimal(targetDisplay))
+      : new Decimal(targetDisplay);
+
+    const useReal = realToggleInput.checked;
+
+    const expectedDecimal = new Decimal(ratePct).dividedBy(100);
+    const bandDecimal = new Decimal(bandPpt).dividedBy(100);
+    const rates = bandRates(expectedDecimal, bandDecimal);
+
+    const params: ProjectionParams = {
+      startingValue: plan.startingValueEur,
+      baseContribution: contribEur,
+      periods,
+      periodsPerYear,
+      annualRates: rates,
+      annualContributionGrowth: new Decimal(stepUpPct).dividedBy(100),
+      inflationRate: new Decimal(inflationPct).dividedBy(100),
+      start: new Date(Date.UTC(plan.baseYear, 0, 1)),
+    };
+
+    const result = simulate(params);
+    const last = finalPoint(result);
+
+    // --- KPI cards ---
+    const scenarios = [
+      { key: SCENARIO_PESSIMISTIC, label: "Pessimistic" },
+      { key: SCENARIO_EXPECTED,    label: "Expected" },
+      { key: SCENARIO_OPTIMISTIC,  label: "Optimistic" },
+    ] as const;
+
+    const kpiCards = scenarios.map(({ key, label }) => {
+      const finalVal = last
+        ? (useReal ? last.realByScenario[key] : last.nominalByScenario[key])
+        : plan.startingValueEur;
+      const displayVal = convertFromEur(finalVal).value;
+      return h("div", { class: "stat" }, [
+        h("span", { class: "stat-label" }, [label]),
+        h("span", { class: "stat-value pos" }, [formatCurrencyWhole(displayVal)]),
+        h("span", { class: "stat-sub muted" }, [last ? `in ${last.label}` : "—"]),
+      ]);
+    });
+
+    const contribTotal = totalContributed(result);
+    const contribTotalDisplay = convertFromEur(contribTotal).value;
+    kpiCards.push(
+      h("div", { class: "stat" }, [
+        h("span", { class: "stat-label" }, ["Contributed"]),
+        h("span", { class: "stat-value" }, [formatCurrencyWhole(contribTotalDisplay)]),
+        h("span", { class: "stat-sub muted" }, ["total new money"]),
+      ]),
+    );
+
+    kpiOut.replaceChildren(
+      h("section", { class: "stats" }, [
+        h("div", { class: "stat-grid calc-summary" }, kpiCards),
+      ]),
+    );
+
+    // --- Goal-seeking callout (only when target > 0) ---
+    if (targetEur.greaterThan(0)) {
+      const hits = timeToTarget(result, targetEur, { real: useReal });
+      const reqContrib = requiredContribution(params, targetEur);
+      const reqDisplay = reqContrib !== null
+        ? `${formatCurrencyWhole(convertFromEur(reqContrib).value)} / ${monthly ? "month" : "year"}`
+        : "not reachable in this horizon";
+
+      const hitLines = scenarios.map(({ key, label }) => {
+        const hit = hits[key];
+        const text = hit ? `${label}: ${hit.label} (${hit.years.toDecimalPlaces(1)} yr)` : `${label}: not reached`;
+        return h("div", { class: "calc-hit-row" }, [text]);
+      });
+
+      goalOut.replaceChildren(
+        h("section", { class: "card calc-goal" }, [
+          h("div", { class: "section-head" }, [
+            h("h2", {}, ["Goal"]),
+            h("span", { class: "muted" }, [`target: ${formatCurrencyWhole(convertFromEur(targetEur).value)}`]),
+          ]),
+          h("div", { class: "calc-goal-body" }, [
+            h("div", { class: "calc-hit-list" }, hitLines),
+            h("div", { class: "calc-req" }, [
+              h("span", { class: "stat-label" }, ["Needed contribution"]),
+              h("span", { class: "stat-value" }, [reqDisplay]),
+            ]),
+          ]),
+        ]),
+      );
+    } else {
+      goalOut.replaceChildren();
+    }
+
+    // --- Per-period table ---
+    // In monthly mode only show annual milestones (every 12th row) to keep the
+    // table mobile-friendly; in yearly mode show every year.
+    const tablePoints = monthly
+      ? result.points.filter((p) => p.index % 12 === 0)
+      : result.points;
+
+    const colHeaders = scenarios.map(({ label }) =>
+      h("span", { class: "proj-cell muted" }, [label.slice(0, 4)]),
+    );
+
+    const tableRows = tablePoints.map((pt) => {
+      const cells = scenarios.map(({ key }) => {
+        const v = useReal ? pt.realByScenario[key] : pt.nominalByScenario[key];
+        return h("span", { class: "proj-cell" }, [formatCurrencyWhole(convertFromEur(v).value)]);
+      });
+      return h("li", { class: "proj-row" }, [
+        h("span", { class: "proj-year" }, [pt.label]),
+        h("span", { class: "proj-contrib muted" }, [`+${formatCurrencyWhole(convertFromEur(pt.contributed).value)}`]),
+        h("div", { class: "proj-values" }, cells),
+      ]);
+    });
+
+    tableOut.replaceChildren(
+      h("section", { class: "card" }, [
+        h("div", { class: "proj-head" }, [
+          h("span", { class: "proj-year muted" }, [monthly ? "Month" : "Year"]),
+          h("span", { class: "proj-contrib muted" }, ["Contributed"]),
+          h("div", { class: "proj-values" }, colHeaders),
+        ]),
+        h("ul", { class: "proj-list" }, tableRows),
+      ]),
+    );
   };
 
-  years.input.addEventListener("input", recompute);
-  contribution.input.addEventListener("input", recompute);
+  // --- Toggle handlers ---
+  const switchMode = (toMonthly: boolean): void => {
+    if (monthly === toMonthly) return;
+    monthly = toMonthly;
+    btnYearly.classList.toggle("active", !monthly);
+    btnMonthly.classList.toggle("active", monthly);
+    btnYearly.setAttribute("aria-pressed", monthly ? "false" : "true");
+    btnMonthly.setAttribute("aria-pressed", monthly ? "true" : "false");
+    horizonInput.input.max = monthly ? "480" : "40";
+    horizonInput.input.value = monthly ? "120" : "10";
+    if (horizonLabel) horizonLabel.textContent = monthly ? "Horizon (months)" : "Horizon (years)";
+    if (contribLabel) contribLabel.textContent = `Contribution / ${monthly ? "month" : "year"} (${code})`;
+    contribution.input.value = getDefaultContrib();
+    recompute();
+  };
 
-  const form = h("section", { class: "card plan-form" }, [
-    h("div", { class: "section-head" }, [h("h2", {}, ["Projection"]), h("span", { class: "muted" }, ["from today's value"])]),
-    h("p", { class: "note" }, [
-      `Starting from your live value of ${formatCurrency(plan.startingValueEur)}, growing at 4% / 7% / 10% a year with contributions added at year-end.`,
+  btnYearly.addEventListener("click", () => switchMode(false));
+  btnMonthly.addEventListener("click", () => switchMode(true));
+
+  // Wire all inputs to recompute.
+  for (const field of [expectedRate, band, contribution, stepUp, inflation, target, horizonInput]) {
+    field.input.addEventListener("input", recompute);
+  }
+  realToggleInput.addEventListener("change", recompute);
+
+  const form = h("section", { class: "card calc-form" }, [
+    h("div", { class: "section-head" }, [
+      h("h2", {}, ["Calculator"]),
+      h("span", { class: "muted" }, ["from today's portfolio"]),
     ]),
-    h("div", { class: "plan-fields" }, [years.wrap, contribution.wrap]),
+    h("p", { class: "note" }, [
+      `Seeded from your portfolio: starting value ${formatCurrency(plan.startingValueEur)}, ` +
+      `expected return ${seedRatePct}% p.a. (from portfolio XIRR). Adjust below.`,
+    ]),
+    h("div", { class: "calc-period-toggle" }, [
+      h("div", { class: "chart-range", role: "group", "aria-label": "Period type" }, [btnYearly, btnMonthly]),
+      realToggle,
+    ]),
+    h("div", { class: "calc-fields" }, [
+      expectedRate.wrap, band.wrap, contribution.wrap, stepUp.wrap,
+      inflation.wrap, target.wrap, horizonInput.wrap,
+    ]),
   ]);
 
   recompute();
-  return h("section", { class: "panel-stack panel-plan" }, [
+  return h("section", { class: "panel-stack panel-calc" }, [
     form,
-    summaryOut,
+    kpiOut,
+    goalOut,
     tableOut,
     h("p", { class: "disclaimer" }, [
-      "Projections are hypothetical, assume constant returns, and are not advice. Real markets vary year to year.",
+      "Projections are hypothetical, assume constant returns, and are not financial advice. Real markets vary year to year.",
     ]),
   ]);
-}
-
-function renderProjection(
-  summaryTarget: HTMLElement,
-  tableTarget: HTMLElement,
-  rows: ReturnType<typeof projectForward>,
-  startingValue: Decimal,
-): void {
-  if (rows.length === 0) {
-    summaryTarget.replaceChildren();
-    tableTarget.replaceChildren();
-    return;
-  }
-  const last = rows[rows.length - 1];
-  const cards = PROJECTION_SCENARIOS.map((rate) => {
-    const value = last.valuesByRate.get(rate) ?? startingValue;
-    const pct = `${new Decimal(rate).times(100).toNumber()}%/yr`;
-    return h("div", { class: "stat" }, [
-      h("span", { class: "stat-label" }, [pct]),
-      h("span", { class: "stat-value pos" }, [formatCurrencyWhole(value)]),
-      h("span", { class: "stat-sub muted" }, [`in ${last.year}`]),
-    ]);
-  });
-
-  const tableRows = rows.map((row) => {
-    const cells = PROJECTION_SCENARIOS.map((rate) =>
-      h("span", { class: "proj-cell" }, [formatCurrencyWhole(row.valuesByRate.get(rate) ?? startingValue)]),
-    );
-    return h("li", { class: "proj-row" }, [
-      h("span", { class: "proj-year" }, [String(row.year)]),
-      h("span", { class: "proj-contrib muted" }, [`+${formatCurrencyWhole(row.contributedEur)}`]),
-      h("div", { class: "proj-values" }, cells),
-    ]);
-  });
-
-  summaryTarget.replaceChildren(
-    h("section", { class: "stats" }, [h("div", { class: "stat-grid plan-summary" }, cards)]),
-  );
-  tableTarget.replaceChildren(
-    h("section", { class: "card" }, [
-      h("div", { class: "proj-head" }, [
-        h("span", { class: "proj-year muted" }, ["Year"]),
-        h("span", { class: "proj-contrib muted" }, ["Contributed"]),
-        h("div", { class: "proj-values" }, PROJECTION_SCENARIOS.map((rate) =>
-          h("span", { class: "proj-cell muted" }, [`${new Decimal(rate).times(100).toNumber()}%`]),
-        )),
-      ]),
-      h("ul", { class: "proj-list" }, tableRows),
-    ]),
-  );
 }
 
 /**
@@ -1179,6 +1723,30 @@ export function renderThemeToggle(): HTMLElement {
     sync();
   });
   return button;
+}
+
+/**
+ * Self-contained clock-format toggle (Auto / 12h / 24h). Like the theme toggle,
+ * it persists its own choice and updates its label in place; the new clock takes
+ * effect the next time the dashboard renders (e.g. on returning from Settings).
+ */
+export function renderTimeFormatToggle(): HTMLElement {
+  const labels: Record<TimeFormat, string> = {
+    auto: "Auto (locale)",
+    "12h": "12-hour (AM/PM)",
+    "24h": "24-hour",
+  };
+  const select = h("select", { class: "select", "data-action": "time-format" }, [
+    h("option", { value: "auto" }, [labels.auto]),
+    h("option", { value: "12h" }, [labels["12h"]]),
+    h("option", { value: "24h" }, [labels["24h"]]),
+  ]) as HTMLSelectElement;
+  select.value = getTimeFormat();
+  select.setAttribute("aria-label", "Clock format");
+  select.addEventListener("change", () => {
+    setTimeFormat((select.value as TimeFormat) || "auto");
+  });
+  return select;
 }
 
 /**
