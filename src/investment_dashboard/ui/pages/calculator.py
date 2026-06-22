@@ -53,6 +53,9 @@ TENTH = Decimal("0.1")
 #: Accent ramp for the per-row bars (kept in sync with the overview palette).
 _TARGET_COLOR = "var(--inv-accent, #0F4C81)"
 _CURRENT_COLOR = "var(--inv-muted, #9aa4b2)"
+#: Vivid colour for the *added* (contribution) slice of a bar, so even a small
+#: new contribution stands out against an already-large holding.
+_ADDED_COLOR = "var(--inv-gain, #21ba45)"
 
 
 def _decimal_or_zero(value: object) -> Decimal:
@@ -84,15 +87,34 @@ def _scale_to_100(weights: dict[int, Decimal]) -> dict[int, Decimal]:
     return {i: w * HUNDRED / total for i, w in weights.items() if w > ZERO}
 
 
-def _bar(current_pct: Decimal, target_pct: Decimal) -> str:
-    """A small HTML bar overlaying the current weight under the target marker."""
+def _bar(current_pct: Decimal, target_pct: Decimal, added_from: Decimal | None = None) -> str:
+    """A small HTML bar overlaying the current weight under the target marker.
+
+    When ``added_from`` is given it marks the fill level *before* this round's
+    contribution; the slice between ``added_from`` and ``current_pct`` is drawn
+    in a vivid colour with a guaranteed-visible minimum width, so the cash put
+    in this round is obvious even when it is tiny next to total wealth.
+    """
     cur = max(0.0, min(100.0, float(current_pct)))
     tgt = max(0.0, min(100.0, float(target_pct)))
+    added_html = ""
+    if added_from is not None:
+        start = max(0.0, min(cur, float(added_from)))
+        if cur - start > 1e-9:
+            # Guarantee a few px of visible width for tiny contributions while
+            # keeping the slice anchored at the post-contribution edge.
+            width = max(cur - start, 3.0)
+            left = max(0.0, cur - width)
+            added_html = (
+                f'<div style="position:absolute;top:0;bottom:0;left:{left}%;'
+                f'width:{width}%;background:{_ADDED_COLOR};opacity:0.85"></div>'
+            )
     return (
         '<div style="position:relative;height:10px;border-radius:5px;'
         'background:var(--inv-surface-2,#eef1f5);overflow:hidden;min-width:7rem">'
         f'<div style="position:absolute;inset:0;width:{cur}%;background:{_CURRENT_COLOR};'
         'opacity:0.45"></div>'
+        f"{added_html}"
         f'<div style="position:absolute;top:0;bottom:0;left:calc({tgt}% - 1px);width:2px;'
         f'background:{_TARGET_COLOR}"></div>'
         "</div>"
@@ -680,8 +702,13 @@ class _CalculatorView:  # pragma: no cover - UI wiring
                             if total_after > ZERO
                             else ZERO
                         )
+                        before_pct = (
+                            r.current_value * HUNDRED / total_after if total_after > ZERO else ZERO
+                        )
                         current_pct = current_pct_by_id.get(r.instrument_id, ZERO)
-                        self._render_plan_row(sym_name, r, current_pct, after_pct)
+                        self._render_plan_row(
+                            sym_name, r, current_pct, after_pct, before_pct=before_pct
+                        )
 
     def _render_category_plan(
         self,
@@ -709,10 +736,16 @@ class _CalculatorView:  # pragma: no cover - UI wiring
             current_pct = sum(
                 (current_pct_by_id.get(row.instrument_id, ZERO) for row in rows), start=ZERO
             )
+            before_value = sum((row.current_value for row in rows), start=ZERO)
             after_value = sum((row.current_value + row.add_value for row in rows), start=ZERO)
             add_value = sum((row.add_value for row in rows), start=ZERO)
             self._render_category_header(
-                category, target_pct, current_pct, _after_pct(after_value), add_value
+                category,
+                target_pct,
+                current_pct,
+                _after_pct(after_value),
+                add_value,
+                before_pct=_after_pct(before_value),
             )
             for r in sorted(rows, key=lambda row: row.add_value, reverse=True):
                 instr = self.by_id.get(r.instrument_id)
@@ -724,6 +757,7 @@ class _CalculatorView:  # pragma: no cover - UI wiring
                     member_current,
                     _after_pct(r.current_value + r.add_value),
                     indent=True,
+                    before_pct=_after_pct(r.current_value),
                 )
 
     def _render_category_header(
@@ -733,6 +767,8 @@ class _CalculatorView:  # pragma: no cover - UI wiring
         current_pct: Decimal,
         after_pct: Decimal,
         add_value: Decimal,
+        *,
+        before_pct: Decimal | None = None,
     ) -> None:
         with (
             ui.row()
@@ -749,7 +785,7 @@ class _CalculatorView:  # pragma: no cover - UI wiring
                     f"now {current_pct:.1f} % → {after_pct:.1f} % after "
                     f"· target {target_pct:.1f} %</span>"
                 )
-            ui.html(_bar(after_pct, target_pct)).classes("flex-1")
+            ui.html(_bar(after_pct, target_pct, added_from=before_pct)).classes("flex-1")
             with ui.column().classes("gap-none items-end").style("min-width:11rem"):
                 if add_value > ZERO:
                     ui.html(
@@ -776,29 +812,35 @@ class _CalculatorView:  # pragma: no cover - UI wiring
         after_pct: Decimal,
         *,
         indent: bool = False,
+        before_pct: Decimal | None = None,
     ) -> None:
-        # Member rows under a category header are inset with a left rail so the
-        # grouping reads at a glance.
+        # Member rows under a category header are inset with a left rail and
+        # rendered a notch smaller/quieter than the category header, so the
+        # individual funds sit clearly *below* their category in the hierarchy.
         row_style = "padding:0.5rem 0.8rem"
         if indent:
             row_style = (
-                "padding:0.4rem 0.8rem;margin-left:0.9rem;"
+                "padding:0.3rem 0.8rem;margin-left:1.6rem;"
                 "border-left:2px solid var(--inv-hairline,#e2e6eb)"
             )
+        name_class = "text-body2 opacity-90" if indent else "text-body1"
+        label_min = "min-width:7rem" if indent else "min-width:8rem"
+        value_min = "min-width:10rem" if indent else "min-width:11rem"
+        value_weight = "600" if not indent else "500"
         with ui.row().classes("items-center gap-md w-full no-wrap inv-section").style(row_style):
-            with ui.column().classes("gap-none").style("min-width:8rem"):
-                ui.label(name).classes("text-body1")
+            with ui.column().classes("gap-none").style(label_min):
+                ui.label(name).classes(name_class)
                 ui.html(
                     '<span class="text-caption opacity-70">'
                     f"now {current_pct:.1f} % → {after_pct:.1f} % after "
                     f"· target {r.target_pct:.1f} %</span>"
                 )
-            ui.html(_bar(after_pct, r.target_pct)).classes("flex-1")
-            with ui.column().classes("gap-none items-end").style("min-width:11rem"):
+            ui.html(_bar(after_pct, r.target_pct, added_from=before_pct)).classes("flex-1")
+            with ui.column().classes("gap-none items-end").style(value_min):
                 if r.add_value > ZERO:
                     shares = f" · {fmt_shares(r.add_shares)} sh" if r.add_shares > ZERO else ""
                     ui.html(
-                        '<span style="color:var(--inv-gain,#21ba45);font-weight:600">'
+                        f'<span style="color:var(--inv-gain,#21ba45);font-weight:{value_weight}">'
                         f"+ {self._fmt(r.add_value)}</span>"
                     )
                     ui.html(
@@ -809,7 +851,7 @@ class _CalculatorView:  # pragma: no cover - UI wiring
                     sell_value = -r.add_value
                     shares = f" · {fmt_shares(-r.add_shares)} sh" if r.add_shares < ZERO else ""
                     ui.html(
-                        '<span style="color:var(--inv-loss,#c10015);font-weight:600">'
+                        f'<span style="color:var(--inv-loss,#c10015);font-weight:{value_weight}">'
                         f"- {self._fmt(sell_value)} sell</span>"
                     )
                     ui.html(

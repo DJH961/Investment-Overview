@@ -105,7 +105,10 @@ def test_today_closed_prefers_market_time_and_trails_pull_time() -> None:
     assert cap.is_live is False
     assert cap.as_of_text == "today"
     assert cap.updated_text == "as of 21:59 \u00b7 updated 22:16"
-    assert cap.combined() == "today \u00b7 as of 21:59 \u00b7 updated 22:16 \u00b7 $1\u2248\u20ac0.9259"
+    assert (
+        cap.combined()
+        == "today \u00b7 as of 21:59 \u00b7 updated 22:16 \u00b7 $1\u2248\u20ac0.9259"
+    )
 
 
 def test_today_closed_market_time_without_pull_time_has_no_updated() -> None:
