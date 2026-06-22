@@ -73,32 +73,30 @@ class DailyGrowthCaption:
 
 
 def _display_rate(eur_usd: Decimal, display_ccy: str) -> Decimal:
-    """The spot quoted as a "spend my currency, get the other" conversion.
+    """The spot quoted relative to the display currency.
 
-    ``eur_usd`` is USD per 1 EUR (the storage convention). USD users see how much
-    EUR one dollar buys (its inverse); EUR users see how much USD one euro buys
-    (the rate as-is).
+    ``eur_usd`` is USD per 1 EUR (the storage convention). USD users price EUR in
+    USD (the rate as-is, EUR/USD); EUR users price the foreign USD unit in EUR
+    (its inverse, USD/EUR).
     """
     if display_ccy.upper() == "USD":
-        return Decimal(1) / eur_usd
-    return eur_usd
+        return eur_usd
+    return Decimal(1) / eur_usd
 
 
 def _format_fx_tight(eur_usd: Decimal, eur_usd_prev: Decimal | None, display_ccy: str) -> str:
     """Compact display-relative spot plus its percentage move.
 
-    USD users read ``$1≈€0.9234 (+0.10%)``; EUR users read ``€1≈$1.0830
-    (−0.10%)``. The percentage tracks the strength of the *foreign* currency you
-    convert into — the euro in USD display, the dollar in EUR display — so a
-    positive figure always means "that currency went up". It is deliberately
-    counter-intuitive against the rate number (which moves the opposite way): it
-    answers "did the euro or the dollar rise?", not "did this digit go up?". The
-    move is a percentage only (no absolute) versus the prior trading day's mark,
-    and is omitted when no comparison mark is available.
+    USD users read ``€1≈$1.0830 (+0.10%)``; EUR users read ``$1≈€0.9234
+    (−0.10%)``. The percentage still tracks the strength of the *foreign* currency
+    you convert into — the euro in USD display, the dollar in EUR display — so a
+    positive figure means "that currency went up". The move is a percentage only
+    (no absolute) versus the prior trading day's mark, and is omitted when no
+    comparison mark is available.
     """
     rate = _display_rate(eur_usd, display_ccy)
     text = (
-        f"$1\u2248\u20ac{rate:.4f}" if display_ccy.upper() == "USD" else f"\u20ac1\u2248${rate:.4f}"
+        f"\u20ac1\u2248${rate:.4f}" if display_ccy.upper() == "USD" else f"$1\u2248\u20ac{rate:.4f}"
     )
     if eur_usd_prev is not None and eur_usd_prev > 0:
         # The euro's own move (USD per 1 EUR). USD display reports it as-is (the
