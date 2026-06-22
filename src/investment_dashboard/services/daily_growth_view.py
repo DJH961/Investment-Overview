@@ -5,19 +5,19 @@ the surrounding context — which trading day the move lands on, the user's
 display currency and timezone, and whether the market is open right now — into
 the small, tight caption under the card.
 
-Three shapes, mirroring the user's mental model:
+Three shapes, mirroring the user's mental model — and the caption leads with
+**exactly one** state word, never a combination:
 
-* **Market open / live** (we have today's prints *and* the NYSE session is live):
-  the figure tracks the moving session, so a clock time is redundant next to the
-  ``· live`` flag — it is omitted ("as of today · live").
-* **Closed, but today's close is in** (TODAY): the price is settled, so the
-  caption stamps *when it is from* on the exchange — the provider's market time
-  (``price_market_at``, e.g. when a mutual fund's NAV published) — and trails
-  our own pull instant as "· updated …" so the figure is dated by the market,
-  not by our fetch. When the provider publishes no market time it falls back to
-  the pull instant (``price_observed_at``) and then to the modelled
-  regular-session close.
-* **Older close**: the caption pins to that date ("as of Fri 20 Jun").
+* **Market open / live**: the figure tracks the moving session, so the caption is
+  just ``live`` (no redundant "today" or clock next to it).
+* **Closed, but today's close is in** (``today``): the price is settled; the
+  caption leads with ``today`` and trails *when it is from* on the exchange — the
+  provider's market time (``price_market_at``, e.g. when a mutual fund's NAV
+  published) — plus our own pull instant as "· updated …", as a secondary detail.
+  When the provider publishes no market time it falls back to the pull instant
+  (``price_observed_at``) and then to the modelled regular-session close.
+* **Older close**: the caption pins to that date ("as of Fri 20 Jun"). On a
+  weekend, holiday or early morning this is the prior trading day.
 
 A compact exchange-rate detail trails the caption when an EUR/USD mark is
 available — quoted relative to the display currency and tightened to the spot
@@ -55,17 +55,18 @@ class DailyGrowthCaption:
     updated_text: str | None = None
 
     def combined(self) -> str:
-        """Single tight caption line: ``as of … · updated … · live · €1≈$…``.
+        """Single tight caption line: ``<live|today|as of …> · … · €1≈$…``.
 
-        All parts after ``as of …`` are optional; ``updated …`` only appears in
-        the settled-today state when the figure is dated by the exchange's market
-        time and we also know our own pull instant.
+        The leading token is exactly one of the three states — ``live`` (the
+        session is open now), ``today`` (settled, today's close is in) or ``as of
+        <date>`` (an older settled close) — never a combination. All parts after
+        it are optional details (not state descriptors): the settled-today
+        precise stamp (``as of <market time> · updated <pull time>``) and the FX
+        mark.
         """
         parts = [self.as_of_text]
         if self.updated_text is not None:
             parts.append(self.updated_text)
-        if self.is_live:
-            parts.append("live")
         if self.fx_text is not None:
             parts.append(self.fx_text)
         return " \u00b7 ".join(parts)
@@ -149,23 +150,27 @@ def build_daily_growth_caption(
     is_live = market_open and last_date == today
     updated_text: str | None = None
     if is_live:
-        # Live: the figure tracks the open session, so a clock time is redundant
-        # next to the "· live" flag — omit it (see combined()).
-        as_of_text = "as of today"
+        # Live: the figure tracks the open session. The state is fully conveyed
+        # by the single word "live" — a clock time or a redundant "today" next to
+        # it would be the "both/multiple" the caption deliberately avoids.
+        as_of_text = "live"
     elif last_date == today:
-        # Settled, but today's close is in: stamp *when the price is from*.
-        # Prefer the exchange's market time (e.g. the NAV publish instant) and
+        # Settled, but today's close is in: the state is "today". The precise
+        # stamp(s) trail as a secondary detail (not a competing state token):
+        # prefer the exchange's market time (e.g. the NAV publish instant) and
         # trail our own pull time as "updated …"; fall back to the pull time,
         # then to the modelled regular-session close, when no market time exists.
+        as_of_text = "today"
         if price_market_at is not None:
-            as_of_text = f"as of {_local_hhmm(price_market_at, tz)}"
+            detail = f"as of {_local_hhmm(price_market_at, tz)}"
             if price_observed_at is not None:
-                updated_text = f"updated {_local_hhmm(price_observed_at, tz)}"
+                detail += f" \u00b7 updated {_local_hhmm(price_observed_at, tz)}"
         elif price_observed_at is not None:
-            as_of_text = f"as of {_local_hhmm(price_observed_at, tz)}"
+            detail = f"as of {_local_hhmm(price_observed_at, tz)}"
         else:
             close_at = regular_session_close(last_date, tz=tz)
-            as_of_text = f"as of {close_at:%H:%M}"
+            detail = f"as of {close_at:%H:%M}"
+        updated_text = detail
     else:
         as_of_text = f"as of {last_date:%a %d %b}"
 

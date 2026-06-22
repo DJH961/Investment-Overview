@@ -44,6 +44,22 @@ _SEVERITY_RANK: dict[str, int] = {"ok": 0, "warning": 1, "error": 2}
 #: portfolio with hundreds of instruments.
 _MAX_EXAMPLES = 25
 
+#: Staleness grace, in *trading days*, before a price counts as genuinely stale.
+#: One settled day is normal (today's close may not be fetched yet); the second
+#: absorbs a single exchange holiday — which our weekday-only market clock would
+#: otherwise mistake for a missed session and flag the morning after a long
+#: weekend.
+_STALE_GRACE_TRADING_DAYS = 2
+
+#: Extra leeway for mutual funds (incl. money-market sweeps). Their NAV publishes
+#: only once a day and routinely lands a day late, so they are legitimately
+#: "behind" far more often than an exchange-traded instrument; flagging them on
+#: the equity cadence produces a warning the user can never clear.
+_MUTUAL_FUND_STALE_GRACE_TRADING_DAYS = 4
+
+#: ``asset_class`` value shared by mutual funds and money-market sweeps.
+_MUTUAL_FUND_ASSET_CLASS = "mutual_fund"
+
 
 @dataclass(frozen=True)
 class HealthItem:
@@ -155,23 +171,34 @@ def _check_prices(session: Session) -> list[HealthItem]:
         else:
             have_price_ids.append(instr.id)
 
-    # "Stale" = the newest cached close is more than one trading day behind, so
-    # a fresh price genuinely failed to land (the provider is likely failing for
-    # that symbol). A price that is merely past its short internal refresh TTL —
-    # the normal state overnight, at weekends, or seconds after a tick — is *not*
-    # stale: it still reflects the latest settled session, so flagging it just
-    # produces a permanent warning the user can never clear. We compare each
-    # instrument's latest close *date* against the previous trading day (a one
-    # trading-day grace that absorbs "today's close hasn't been fetched yet").
+    # "Stale" = the newest cached close is more than the staleness grace behind,
+    # so a fresh price genuinely failed to land (the provider is likely failing
+    # for that symbol). A price that is merely past its short internal refresh
+    # TTL — the normal state overnight, at weekends, or seconds after a tick — is
+    # *not* stale: it still reflects the latest settled session, so flagging it
+    # just produces a permanent warning the user can never clear. The grace is
+    # measured in trading days and absorbs a single exchange holiday (our clock
+    # ignores holidays); mutual funds get extra leeway because their NAV publishes
+    # only once a day and routinely lands a day late.
     price_dates = prices_service.latest_price_dates_for(session, have_price_ids)
-    cutoff = market_hours.previous_trading_day(date.today())
+    today = date.today()
+    general_cutoff = market_hours.trading_days_before(today, _STALE_GRACE_TRADING_DAYS)
+    mutual_fund_cutoff = market_hours.trading_days_before(
+        today, _MUTUAL_FUND_STALE_GRACE_TRADING_DAYS
+    )
+
+    def _cutoff_for(instr: Instrument) -> date:
+        if instr.asset_class == _MUTUAL_FUND_ASSET_CLASS:
+            return mutual_fund_cutoff
+        return general_cutoff
+
     have_price = set(have_price_ids)
     stale = sorted(
         instr.symbol
         for instr in actives
         if instr.id in have_price
         and (as_of := price_dates.get(instr.id)) is not None
-        and as_of < cutoff
+        and as_of < _cutoff_for(instr)
     )
 
     anomalies_ids = prices_service.instruments_with_price_anomalies(session, active_ids)
@@ -215,12 +242,15 @@ def _check_prices(session: Session) -> list[HealthItem]:
                 severity="warning",
                 count=len(stale),
                 detail=(
-                    f"{len(stale)} instrument(s) are more than a trading day "
+                    f"{len(stale)} instrument(s) are several trading days "
                     "behind: their newest cached close predates the last "
-                    "completed session, so a background refresh has not landed a "
-                    "fresh price. The dashboard keeps using the last good price "
-                    "meanwhile; a persistently stale instrument usually means the "
-                    "provider is failing for that symbol."
+                    "completed session by more than the staleness grace (which "
+                    "absorbs holidays, and gives mutual-fund NAVs extra leeway "
+                    "for their once-a-day, often-late publish), so a background "
+                    "refresh has not landed a fresh price. The dashboard keeps "
+                    "using the last good price meanwhile; a persistently stale "
+                    "instrument usually means the provider is failing for that "
+                    "symbol."
                 ),
                 examples=_examples(stale),
             )
