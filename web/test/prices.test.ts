@@ -43,9 +43,9 @@ describe("fetchQuotes", () => {
     expect(quotes.get("BAD")?.price).toBeNull();
   });
 
-  it("parses the price's real strike time from `timestamp` (Unix seconds → ms)", async () => {
+  it("parses the price's real strike time from `timestamp` for an intraday bar (Unix seconds → ms)", async () => {
     const fetchImpl: FetchLike = async () =>
-      jsonResponse({ symbol: "VTI", close: "100.5", previous_close: "99.0", currency: "USD", datetime: "2024-01-10", timestamp: 1704844800 });
+      jsonResponse({ symbol: "VTI", close: "100.5", previous_close: "99.0", currency: "USD", datetime: "2024-01-10 15:59:00", timestamp: 1704844800 });
     const quotes = await fetchQuotes(["VTI"], "key", fetchImpl);
     // 1704844800s → ms; this is the price's own time, not "now".
     expect(quotes.get("VTI")?.priceTime).toBe(1704844800 * 1000);
@@ -68,11 +68,13 @@ describe("fetchQuotes", () => {
     expect(quotes.get("VTI")?.priceTime).toBe(1704880000 * 1000);
   });
 
-  it("falls back to `timestamp` when `last_quote_at` is absent", async () => {
+  it("leaves priceTime null for a bare-date daily bar so a market price is dated by its fetch time", async () => {
+    // `timestamp` here is the session open of a daily bar — NOT a real strike
+    // time — so it must be ignored (compute then dates the price by quote.at).
     const fetchImpl: FetchLike = async () =>
-      jsonResponse({ symbol: "VTI", close: "100.5", currency: "USD", timestamp: 1704844800 });
+      jsonResponse({ symbol: "VTI", close: "100.5", currency: "USD", datetime: "2024-01-10", timestamp: 1704844800 });
     const quotes = await fetchQuotes(["VTI"], "key", fetchImpl);
-    expect(quotes.get("VTI")?.priceTime).toBe(1704844800 * 1000);
+    expect(quotes.get("VTI")?.priceTime ?? null).toBeNull();
   });
 
   it("leaves priceTime null when the API omits any usable timestamp", async () => {
