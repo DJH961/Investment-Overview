@@ -44,3 +44,9 @@ def test_converts_from_other_timezones() -> None:
 def test_naive_datetime_treated_as_exchange_local() -> None:
     assert is_us_market_open(datetime(2024, 6, 24, 10, 0)) is True
     assert is_us_market_open(datetime(2024, 6, 24, 8, 0)) is False
+
+
+def test_default_now_uses_current_time() -> None:
+    # With no argument the helper reads the wall clock; it must not raise and
+    # must return a plain bool (the exact value depends on when the suite runs).
+    assert isinstance(is_us_market_open(), bool)

@@ -18,7 +18,7 @@ pure is worth that small imprecision.
 
 from __future__ import annotations
 
-from datetime import datetime, time
+from datetime import UTC, datetime, time
 from zoneinfo import ZoneInfo
 
 #: The exchange whose regular session defines "the market is open" for the
@@ -34,13 +34,16 @@ _CLOSE = time(16, 0)
 _SATURDAY = 5
 
 
-def is_us_market_open(now: datetime) -> bool:
+def is_us_market_open(now: datetime | None = None) -> bool:
     """Return ``True`` when the NYSE regular session is open at ``now``.
 
-    ``now`` may be naive (interpreted as already being in exchange time) or
-    timezone-aware (converted to exchange time first). Weekends are always
-    closed; holidays are not modelled (see the module docstring).
+    ``now`` defaults to the current instant (UTC). It may be naive (interpreted
+    as already being in exchange time) or timezone-aware (converted to exchange
+    time first). Weekends are always closed; holidays are not modelled (see the
+    module docstring).
     """
+    if now is None:
+        now = datetime.now(UTC)
     local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
     if local.weekday() >= _SATURDAY:
         return False
