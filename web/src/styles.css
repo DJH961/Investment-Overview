@@ -706,6 +706,37 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
  * padded summary header instead of sitting flush against the card edge. */
 .allocation .ledger-list { padding: 0 0.95rem 0.95rem; }
 
+/* Attribution: a pinned "Total" row that foots the per-holding P/L, plus a
+ * compact pager so a long holdings list scrolls through pages instead of
+ * growing the section until it overlaps the surrounding charts. */
+.attr-total {
+  border-top: 2px solid var(--border);
+  border-bottom: 0;
+  margin-top: 0.2rem;
+  font-weight: 700;
+}
+.attr-total .ledger-kind { text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.82rem; }
+.attr-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.65rem;
+}
+.attr-page-btn {
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  min-width: 2rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.attr-page-btn:disabled { opacity: 0.4; cursor: default; }
+.attr-page-label { font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+
 .deposits { display: grid; gap: 0.9rem; }
 /* The contributions summary is a natural triplet (total / this year / this
  * month); keep all three on one row so the last figure never orphans onto a
@@ -1068,22 +1099,33 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .panel-periods > .deposits { grid-area: contrib; }
   .panel-periods > .disclaimer { grid-area: disc; align-self: end; }
 
-  /* Risk: returns and risk metrics side by side, chart + attribution below. */
+  /* Risk: returns and risk metrics side by side, then the full-width currency
+   * panel, the charts, and finally attribution — each in its own row so opening
+   * the collapsible attribution grows its row and pushes the disclaimer down
+   * instead of overlapping the charts. */
   .panel-analytics {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas:
-      "returns risk"
-      "equity  equity"
-      "attr    attr"
-      "disc    disc";
+      "returns  risk"
+      "currency currency"
+      "equity   equity"
+      "drawdown drawdown"
+      "attr     attr"
+      "disc     disc";
     align-items: start;
     column-gap: 1.25rem;
   }
   .panel-analytics > .analytics-returns { grid-area: returns; align-self: stretch; }
   .panel-analytics > .analytics-risk { grid-area: risk; align-self: stretch; }
+  .panel-analytics > .currency-effect { grid-area: currency; }
   .panel-analytics > .equity { grid-area: equity; }
-  .panel-analytics > .card:not(.analytics-returns):not(.analytics-risk):not(.equity) { grid-area: attr; }
+  .panel-analytics > .drawdown { grid-area: drawdown; }
+  .panel-analytics > .attribution { grid-area: attr; }
   .panel-analytics > .disclaimer { grid-area: disc; }
+  /* The currency panel spans the full width, so spread its stat cards across it. */
+  .panel-analytics > .currency-effect .stat-grid {
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  }
   /* Balance the two metric cards so neither leaves a ragged trailing row or a
    * weird empty gap beside the taller one: Returns (6 metrics) packs into 3
    * columns and Risk (10 metrics) into 5, giving both exactly two full rows. */
@@ -1131,16 +1173,6 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .panel-calc .proj-row { grid-template-columns: 4rem 10rem 1fr; gap: 0.6rem; }
   .panel-calc .proj-values { gap: 0.6rem; }
   .panel-calc .proj-row { padding: 0.5rem; }
-
-  /* Drawdown chart sits in the analytics grid below the equity curve. */
-  .panel-analytics > .drawdown { grid-area: equity; margin-top: 0.5rem; }
-  .panel-analytics {
-    grid-template-areas:
-      "returns risk"
-      "equity  equity"
-      "attr    attr"
-      "disc    disc";
-  }
 }
 
 /* On true widescreen, give the content a little more room. */
