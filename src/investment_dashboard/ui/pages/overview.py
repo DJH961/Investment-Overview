@@ -160,7 +160,8 @@ def format_price_freshness(card: HoldingCard, *, tz: tzinfo | None = None) -> st
 
     * money-market funds price at a fixed $1.00 par with no feed → say so;
     * a priced holding from today reads "LIVE" while the US market is open and
-      "TODAY" once it has closed (the same rule as the Daily Growth caption);
+      "TODAY" once it has closed (the same rule as the Daily Growth caption),
+      each followed by the saved last-refresh time ("updated …") when known;
     * an older priced holding shows the close's observation date ("as of …") and,
       when known, the saved last-refresh time ("updated …");
     * a held holding with no cached price at all reads "no price".
@@ -175,7 +176,13 @@ def format_price_freshness(card: HoldingCard, *, tz: tzinfo | None = None) -> st
     if card.price_as_of is None:
         return "no price"
     if card.price_as_of == date.today():
-        return "LIVE" if card.market_open else "TODAY"
+        # A today-dated price reads LIVE while the market is open, TODAY once it
+        # has closed — and (re)appends the saved last-refresh time so the user
+        # still sees *when* it last updated, exactly like the older-price line.
+        state = "LIVE" if card.market_open else "TODAY"
+        if card.updated_at is not None:
+            return f"{state} · updated {_fmt_updated(card.updated_at, tz=tz)}"
+        return state
     parts = [f"as of {_fmt_asof_date(card.price_as_of)}"]
     if card.updated_at is not None:
         parts.append(f"updated {_fmt_updated(card.updated_at, tz=tz)}")
@@ -582,7 +589,7 @@ def register() -> None:  # noqa: PLR0915
                 tg_eur = metrics.total_growth_compounded_eur
                 tg_usd = metrics.total_growth_compounded_usd
 
-                with ui.element("div").classes("inv-kpi-grid w-full"):
+                with ui.element("div").classes("inv-kpi-grid inv-kpi-grid--hero w-full"):
                     # Total Value is the headline money figure (shown first).
                     dual_kpi_card(
                         "Total Value",
@@ -632,17 +639,12 @@ def register() -> None:  # noqa: PLR0915
                         display_ccy=display_ccy,
                         tooltip_key="mtd_growth",
                     )
-                    # Caption: while the US market is open we show a live,
-                    # time-stamped figure with the live FX rate and its move;
-                    # once it is closed we pin to the last open-market date and
-                    # quote that day's settled FX rate (which falls back to the
-                    # live spot when Frankfurter has not published yet).
+                    # Caption: a tight "as of …" line, flagged live while the
+                    # NYSE session is open. The exchange rate moved out of this
+                    # caption (it duplicated the FX line below the KPI grid).
                     _now = datetime.now(UTC)
                     _caption = build_daily_growth_caption(
                         last_date=metrics.daily_growth_as_of,
-                        prev_date=metrics.daily_growth_prev_as_of,
-                        eur_usd_last=metrics.daily_growth_fx_eur_usd,
-                        eur_usd_prev=metrics.daily_growth_fx_eur_usd_prev,
                         display_ccy=display_ccy,
                         today=date.today(),
                         now=_now,
@@ -667,8 +669,7 @@ def register() -> None:  # noqa: PLR0915
                 div_yield_text = f"Dividend yield: {fmt_pct(metrics.dividend_yield_pct)}"
                 if fx_rate is not None:
                     ui.label(
-                        f"FX (EUR→{display_quote}): {fx_rate:,.4f}  ·  "
-                        f"Display currency: {display_ccy} (switch from the header toggle)  ·  "
+                        f"FX EUR→{display_quote} {fx_rate:,.4f}  ·  "
                         f"{expense_text}  ·  {div_yield_text}",
                     ).classes("text-caption opacity-70")
                 else:

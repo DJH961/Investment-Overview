@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain import market_hours
 from investment_dashboard.repositories import instrument_overrides_repo, instruments_repo
 from investment_dashboard.services import (
     positions_service,
@@ -154,11 +155,24 @@ def _check_prices(session: Session) -> list[HealthItem]:
         else:
             have_price_ids.append(instr.id)
 
-    # "Stale" = past its per-asset-class TTL *and* we already have a price for
-    # it (a price-less instrument is reported under "missing", not "stale").
-    due = prices_service.instruments_due_for_refresh(session)
+    # "Stale" = the newest cached close is more than one trading day behind, so
+    # a fresh price genuinely failed to land (the provider is likely failing for
+    # that symbol). A price that is merely past its short internal refresh TTL —
+    # the normal state overnight, at weekends, or seconds after a tick — is *not*
+    # stale: it still reflects the latest settled session, so flagging it just
+    # produces a permanent warning the user can never clear. We compare each
+    # instrument's latest close *date* against the previous trading day (a one
+    # trading-day grace that absorbs "today's close hasn't been fetched yet").
+    price_dates = prices_service.latest_price_dates_for(session, have_price_ids)
+    cutoff = market_hours.previous_trading_day(date.today())
     have_price = set(have_price_ids)
-    stale = sorted(i.symbol for i in due if i.id in have_price)
+    stale = sorted(
+        instr.symbol
+        for instr in actives
+        if instr.id in have_price
+        and (as_of := price_dates.get(instr.id)) is not None
+        and as_of < cutoff
+    )
 
     anomalies_ids = prices_service.instruments_with_price_anomalies(session, active_ids)
     by_id = {i.id: i for i in actives}
@@ -201,10 +215,12 @@ def _check_prices(session: Session) -> list[HealthItem]:
                 severity="warning",
                 count=len(stale),
                 detail=(
-                    f"{len(stale)} instrument(s) are past their refresh interval. "
-                    "The dashboard keeps using the last good price until the next "
-                    "background refresh succeeds; a persistently stale instrument "
-                    "usually means the provider is failing for that symbol."
+                    f"{len(stale)} instrument(s) are more than a trading day "
+                    "behind: their newest cached close predates the last "
+                    "completed session, so a background refresh has not landed a "
+                    "fresh price. The dashboard keeps using the last good price "
+                    "meanwhile; a persistently stale instrument usually means the "
+                    "provider is failing for that symbol."
                 ),
                 examples=_examples(stale),
             )

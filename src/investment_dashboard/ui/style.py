@@ -315,6 +315,28 @@ html, body {{
     grid-auto-columns: auto;
   }}
 }}
+/* Hero variant: the Overview headline band has eight tiles and reads best as a
+   tidy 4-by-2 block. ``auto-fit`` would otherwise pack six-plus tiles per row on
+   a wide screen and leave everything cramped, so we cap the track count at four
+   and step down on narrower viewports. */
+.inv-kpi-grid--hero {{
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}}
+@media (max-width: 64rem) {{
+  .inv-kpi-grid--hero {{
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }}
+}}
+@media (max-width: 48rem) {{
+  .inv-kpi-grid--hero {{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }}
+}}
+@media (max-width: 30rem) {{
+  .inv-kpi-grid--hero {{
+    grid-template-columns: 1fr;
+  }}
+}}
 .inv-kpi {{
   background: var(--inv-surface) !important;
   border: 1px solid var(--inv-hairline);
