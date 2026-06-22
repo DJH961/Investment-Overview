@@ -44,9 +44,11 @@ export function formatSignedDualCurrency(
 }
 
 /**
- * Format an **EUR-denominated** amount in the active display currency (EUR or
- * USD — see currency.ts). All compute-layer figures are in EUR, so the
- * conversion happens here at render time.
+ * Format a compute-layer amount in the active display currency (EUR or USD —
+ * see currency.ts). Compute-layer figures are carried in EUR purely as the
+ * internal FX-pivot (not because EUR is the base/primary currency — USD is the
+ * native booked currency), so the conversion to the chosen display currency
+ * happens here at render time.
  */
 export function formatCurrency(value: Decimal | null): string {
   if (value === null) return "—";

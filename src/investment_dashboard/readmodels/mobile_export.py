@@ -197,7 +197,8 @@ def build_mobile_export(
         instr_id: rows[0][0] for instr_id, rows in recent_closes.items() if rows
     }
     txns = list(transactions_repo.list_transactions(session, end=context.as_of))
-    # The web companion is EUR-native but lets the reader flip to USD on the
+    # The web companion carries figures in EUR as its internal FX-pivot (USD is
+    # the native booked currency) but lets the reader flip to USD on the
     # device, independently of whatever display currency the desktop happens to
     # be set to. Period figures are sums of *historical* flows / point-in-time
     # valuations, so they must be converted at the FX rate in force on each

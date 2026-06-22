@@ -104,7 +104,7 @@ freshness correct around market closures.
 
 - **The "Value over time" chart no longer drops off a cliff at the live tip.**
   The exported analytics equity curve was serialized in the desktop's *display*
-  currency, but the web companion is EUR-native and converts to the display
+  currency, but the web companion works in EUR internally (its FX pivot) and converts to the display
   currency at render time — so the curve was effectively converted twice,
   inflating the whole line by the EUR→display factor and leaving a ~16% vertical
   drop where the (correctly-EUR) live total joined the (display-currency)

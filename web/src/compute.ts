@@ -4,8 +4,11 @@
  *
  * Phase 3 scope (proposal §9): the live "how am I doing right now" view —
  * total value, today's move, total gain, and XIRR (portfolio and per holding),
- * all in EUR. Completed-period and analytics *display* is Phase 4; those blocks
- * ride along in the export but are not surfaced here yet.
+ * all carried in EUR as the internal FX-pivot — a common denominator for
+ * conversion, not a base/primary currency (USD is the native booked currency
+ * for almost every transaction; see currency.ts) — and converted to the chosen
+ * display currency at render time. Completed-period and analytics *display* is
+ * Phase 4; those blocks ride along in the export but are not surfaced here yet.
  *
  * All money maths uses decimal.js; the ported `returns` functions provide XIRR.
  */

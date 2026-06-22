@@ -43,6 +43,8 @@ def build_meta(context: ReadModelContext) -> dict[str, Any]:
         "app_version": __version__,
         "generated_at": now_utc_iso(),
         "as_of": context.as_of.isoformat(),
+        # FX pivot / conversion reference only — NOT the user's primary currency.
+        # USD is the native booked currency for almost every transaction.
         "base_currency": "EUR",
         "display_currency": context.display_currency,
         "fx_rate_eur_to_display": dec(context.fx_rate_eur_to_display),

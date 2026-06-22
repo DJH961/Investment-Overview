@@ -1,11 +1,15 @@
 /**
  * Display-currency preference (EUR ↔ USD), persisted per device.
  *
- * Every figure in the compute layer is denominated in EUR (see compute.ts). The
- * user can flip the whole dashboard to USD with one tap; this module holds the
- * chosen currency plus the live EUR→USD rate so the formatting helpers can
- * convert EUR amounts on the fly without re-running the compute pipeline. Like
- * the theme choice, this is a non-secret, device-local preference.
+ * EUR and USD are equal, first-class display currencies. Internally the compute
+ * layer denominates figures in EUR purely as a common FX-pivot (see compute.ts)
+ * — that is an implementation detail, NOT a claim that EUR is the base/primary
+ * currency. USD is the native booked currency for almost every transaction and
+ * is the figure that must stay exact. The user can flip the whole dashboard
+ * between the two with one tap; this module holds the chosen currency plus the
+ * live EUR→USD rate so the formatting helpers can convert the pivot amounts on
+ * the fly without re-running the compute pipeline. Like the theme choice, this
+ * is a non-secret, device-local preference.
  */
 
 import { Decimal } from "./decimal-config";

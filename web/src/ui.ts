@@ -1040,7 +1040,8 @@ export function renderThemeToggle(): HTMLElement {
 }
 
 /**
- * EUR ↔ USD display-currency toggle. The compute layer is EUR-only; flipping
+ * EUR ↔ USD display-currency toggle. The compute layer denominates figures in
+ * EUR as its internal FX-pivot (USD is the native booked currency); flipping
  * this re-renders the whole dashboard (via `onToggle`) so every figure reformats
  * in the chosen currency. Disabled when no EUR→USD rate is available.
  */
