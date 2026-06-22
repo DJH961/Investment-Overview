@@ -38,6 +38,9 @@ timestamps are ISO-8601 strings.
 Each row is sourced from `positions_service.compute_positions()`:
 
 - `symbol`, `name`, `asset_class`, `broker`, `account`, `native_currency`.
+- `category`: string or `null` — the holding's category grouping key (used by the
+  Calculator). `null` means no explicit category; consumers fall back to
+  `asset_class`, then `"Uncategorized"`.
 - `shares`: string decimal, split-adjusted as of `as_of`.
 - `cost_basis_native`: string decimal in the account native currency.
 - `cost_basis_usd`: string decimal (or `null`) — cost basis converted at each

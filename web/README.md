@@ -17,10 +17,10 @@ Concretely, that means:
   breathing room, multi-column KPI grids, and — on desktop/widescreen — a
   multi-column dashboard grid (headline value beside the return horizons, a
   full-width single-row KPI strip, a two-column holdings grid with the
-  allocation panel underneath, and two-column Periods/Risk/Plan panels) so the
+  allocation panel underneath, and two-column Periods/Risk/Calculator panels) so the
   extra space isn't wasted. This is layered on with `min-width` media queries
   only; the markup and mobile source order never change.
-- Sections (Overview / Periods / Risk / Plan) switch through a **tab bar** that
+- Sections (Overview / Periods / Risk / Calculator) switch through a **tab bar** that
   is a fixed bottom navigation on phones (within thumb reach) and reflows to a
   top tab strip on desktop — same markup, `min-width` media queries only. The
   last-viewed tab is remembered per device.
@@ -90,13 +90,17 @@ responses, or any decrypted data (that lives in memory only) — see
      KPIs, the holdings list and the collapsible allocation panel.
    - **Periods** — monthly and yearly tables, with the **current** month and
      year **recomputed live** (badged "live") and completed periods frozen as of
-     export, plus the contributions summary.
+     export, plus the contributions summary and a compact forward-projection
+     outlook ("if this pace holds") seeded from today's value and history.
    - **Risk** — the as-of-export analytics bundle (returns, risk metrics, an
      inline equity-curve sparkline and per-holding attribution), clearly stamped
      "as of <export>" because history-bound stats do not move intraday.
-   - **Plan** — an interactive forward-projection calculator seeded from the
-     live total value and the average historical contribution; it recomputes
-     in-browser at 4% / 7% / 10% scenarios as you adjust the inputs.
+   - **Calculator** — an interactive allocation/invest planner (a port of the
+     desktop app's calculator): you set a **target mix** (by category or by
+     fund) and turn a cash contribution into a concrete buy-only — or, with
+     rebalancing on, a buy/sell — plan that says **how much to invest** in each
+     fund. Saved target allocations exported in the encrypted blob can be loaded
+     with one tap.
 
 The sections switch via a **tab bar** that is a fixed, thumb-reachable bottom
 navigation on phones and reflows to a top tab strip on desktop/widescreen — the

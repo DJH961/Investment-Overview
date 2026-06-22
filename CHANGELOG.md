@@ -12,6 +12,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [Unreleased]
+
+## [3.7.0] — 2026-06-22
+
+### Changed
+
+- **Web Calculator tab is now an allocation/invest planner** (a port of the
+  desktop app's calculator), replacing the previous forward-projection
+  simulator. You set a **target mix** — by category (e.g. "20% International")
+  or by individual fund — and a cash contribution, and it returns a concrete
+  buy-only plan (or, with rebalancing enabled, a buy/sell plan) showing **how
+  much to invest** in each fund. It supports per-category value/equal splits,
+  fractional or whole shares, "match current mix" / "equal
+  weight" presets, and a one-tap **"Load saved target…"** picker that reads the
+  target allocations stored in the encrypted export blob. The forward
+  projection it replaced still lives **under the Periods tab** (Projection),
+  unchanged.
+- **Web Calculator now matches the desktop's selected-only category split.**
+  A category's % is divided across only the funds you tick — the funds you do
+  invest in absorb the whole category target between them, while an un-ticked
+  fund keeps its current holding (left to dilute over time) instead of being
+  handed a target it never tops up. A category with a positive target but no
+  ticked funds is now rejected with a clear prompt.
+- **Web Calculator remembers its "allow fractional shares" and "rebalance"
+  toggles across reloads** (parity with the desktop's persisted `calc.*`
+  settings), and **auto-loads the active saved target on open** so your
+  last-saved mix is ready without a manual "Load" click.
+- The mobile-export holdings payload now includes a nullable `category` field so
+  the web calculator can group holdings into the same category buckets the
+  desktop uses (falling back to `asset_class`, then "Uncategorized").
+
 ## [3.6.8] — 2026-06-22
 
 Desktop holdings and calculator polish from user feedback (T2, T4).

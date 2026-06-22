@@ -27,6 +27,7 @@ import {
   type PlanView,
 } from "./phase4";
 import type { ExportCashflow, ExportHolding, MobileExport } from "./types";
+import { buildCalculatorData, type CalcData } from "./calculator";
 import { isMoneyMarketHolding } from "./money-market";
 import { isUsMarketOpen } from "./market-hours";
 
@@ -44,6 +45,9 @@ export interface HoldingView {
   symbol: string;
   name: string;
   assetClass: string;
+  /** The holding's category grouping key, or `null` when unset (the calculator
+   * then falls back to `assetClass`, then "Uncategorized"). */
+  category: string | null;
   broker: string;
   account: string;
   nativeCurrency: string;
@@ -257,6 +261,8 @@ export interface DashboardModel {
   deposits: DepositsView | null;
   /** Phase 4: forward-projection calculator seed inputs. */
   plan: PlanView;
+  /** Allocation calculator: per-instrument/-category facts + saved targets. */
+  calculator: CalcData;
 }
 
 /** Today's date as an ISO `YYYY-MM-DD` string in UTC (the live XIRR "now"). */
@@ -689,6 +695,7 @@ function buildHolding(
     symbol: holding.symbol,
     name: holding.name ?? holding.symbol,
     assetClass: holding.asset_class,
+    category: holding.category ?? null,
     broker: holding.broker,
     account: holding.account,
     nativeCurrency: currency,
@@ -1045,8 +1052,9 @@ export function buildDashboard(
   const analytics = buildAnalytics(data);
   const deposits = buildDeposits(data);
   const plan = buildPlan(data, overview);
+  const calculator = buildCalculatorData(holdings, data.target_allocations);
 
-  return { overview, holdings, allocation, periods, analytics, deposits, plan };
+  return { overview, holdings, allocation, periods, analytics, deposits, plan, calculator };
 }
 
 /**

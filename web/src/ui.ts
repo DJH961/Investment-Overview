@@ -65,6 +65,20 @@ import {
   type DisplayCurrency,
 } from "./currency";
 import { buildLineChart, type ChartSeries } from "./chart";
+import {
+  expandCategoryWeights,
+  planRebalance,
+  scaleTo100,
+  type RebalancePlan,
+  type RebalanceRow,
+} from "./allocation";
+import {
+  UNCATEGORIZED,
+  type CalcCategory,
+  type CalcData,
+  type CalcInstrument,
+  type SavedTarget,
+} from "./calculator";
 
 type Attrs = Record<string, string>;
 
@@ -437,6 +451,31 @@ function saveOpenState(id: string, open: boolean): void {
   }
 }
 
+/** Read a persisted boolean flag, defaulting to `fallback` when unset/unreadable. */
+function loadBoolPref(key: string, fallback = false): boolean {
+  try {
+    const value = localStorage.getItem(key);
+    if (value === "1") return true;
+    if (value === "0") return false;
+  } catch {
+    /* No storage access; fall back to the default. */
+  }
+  return fallback;
+}
+
+/** Persist a boolean flag so it survives a refresh (mirrors the desktop prefs). */
+function saveBoolPref(key: string, value: boolean): void {
+  try {
+    localStorage.setItem(key, value ? "1" : "0");
+  } catch {
+    /* Preference just won't persist; the in-memory state still applies. */
+  }
+}
+
+/** Persisted calculator toggle keys (parity with the desktop's `calc.*` prefs). */
+const CALC_FRACTIONAL_KEY = "iv.web.calc.allowFractional";
+const CALC_REBALANCE_KEY = "iv.web.calc.rebalance";
+
 /** A single holding as a list row (mobile-first, no wide horizontal table). */
 function renderHoldingRow(holding: HoldingView): HTMLElement {
   const symChildren: Array<Node | string> = [holding.symbol];
@@ -550,7 +589,7 @@ export function renderDashboard(
     { id: "overview", label: "Overview", glyph: "◎", panel: renderOverviewPanel(model) },
     { id: "periods", label: "Periods", glyph: "▦", panel: renderPeriodsPanel(model.periods, model.deposits, model.plan) },
     { id: "analytics", label: "Risk", glyph: "📈", panel: renderAnalyticsPanel(model.analytics, model.overview, model.deposits) },
-    { id: "plan", label: "Calculator", glyph: "🧮", panel: renderCalculatorPanel(model.plan) },
+    { id: "plan", label: "Calculator", glyph: "🧮", panel: renderCalculatorPanel(model.calculator) },
   ];
 
   const { nav, content } = renderTabs(tabs);
@@ -1785,20 +1824,722 @@ function buildCalculator(plan: PlanView, opts: CalculatorOptions = {}): Calculat
 }
 
 /**
- * The standalone Calculator tab: the projection engine arranged as form on the
- * left, KPI summary + goal + table on the right (see {@link buildCalculator}).
+ * The standalone Calculator tab: an allocation/invest planner. The user sets
+ * a target mix (by category or fund) and a cash contribution; we turn it into
+ * a concrete buy-only — or, with rebalancing on, buy/sell — plan that says how
+ * much to invest in each fund. A TS port of the desktop app's calculator; saved
+ * target allocations from the encrypted blob can be loaded with one tap. (The
+ * forward projection lives under Periods via {@link renderPeriodsProjection}.)
  */
-function renderCalculatorPanel(plan: PlanView): HTMLElement {
-  const { form, kpiOut, goalOut, tableOut } = buildCalculator(plan);
-  return h("section", { class: "panel-stack panel-calc" }, [
-    form,
-    kpiOut,
-    goalOut,
-    tableOut,
+function renderCalculatorPanel(data: CalcData): HTMLElement {
+  const ZERO = new Decimal(0);
+  const HUNDRED = new Decimal(100);
+  const code = getDisplayCurrency();
+
+  // --- Builder state ---
+  let mode: "category" | "fund" = "category";
+  // Persisted toggles (survive reloads, like the desktop's calc.* prefs): allow
+  // the plan to sell over-weight funds, and allow buying fractional shares.
+  let allowSell = loadBoolPref(CALC_REBALANCE_KEY);
+  let fractional = loadBoolPref(CALC_FRACTIONAL_KEY);
+  const catTargets = new Map<string, number>();
+  const catSplit = new Map<string, "value" | "equal">();
+  const catSelected = new Map<string, Set<string>>();
+  const fundTargets = new Map<string, number>();
+  const catMembers = new Map<string, string[]>();
+  for (const c of data.categories) {
+    catSplit.set(c.name, "value");
+    catSelected.set(c.name, new Set(c.members.map((m) => m.symbol)));
+    catMembers.set(c.name, c.members.map((m) => m.symbol));
+  }
+  const categoryOf = new Map(data.instruments.map((i) => [i.symbol, i.category]));
+  const currentPctOf = new Map(data.instruments.map((i) => [i.symbol, i.currentPct]));
+  const nameOf = new Map(data.instruments.map((i) => [i.symbol, i.name]));
+  const valueOf = new Map(data.instruments.map((i) => [i.symbol, i.currentValueEur]));
+  const priceOf = new Map(data.instruments.map((i) => [i.symbol, i.priceEur]));
+
+  // --- Formatting helpers ---
+  const fmt = (eur: Decimal): string => formatCurrency(eur);
+  const pct1 = (d: Decimal): string => `${d.toDecimalPlaces(1).toFixed(1)}%`;
+  const numOr0 = (v: string): Decimal => {
+    if (v === "" || v === null) return ZERO;
+    try {
+      return new Decimal(v);
+    } catch {
+      return ZERO;
+    }
+  };
+
+  // --- Output containers ---
+  const summaryBox = h("div", {}, []);
+  const builderBox = h("div", { class: "calc2-builder" }, []);
+  const resultBox = h("div", { class: "calc2-result" }, []);
+  const noticeBox = h("p", { class: "note calc2-notice", hidden: "hidden" }, []);
+  const totalBar = h("div", { class: "calc2-total-bar" }, [
+    h("div", { class: "calc2-total-fill" }, []),
+  ]);
+  const totalLabel = h("span", { class: "calc2-total-label" }, []);
+
+  function notify(message: string): void {
+    noticeBox.textContent = message;
+    noticeBox.removeAttribute("hidden");
+  }
+  function clearNotice(): void {
+    noticeBox.textContent = "";
+    noticeBox.setAttribute("hidden", "hidden");
+  }
+
+  /** A small bar overlaying the current weight under the target marker. */
+  function bar(currentPct: Decimal, targetPct: Decimal, addedFrom: Decimal | null = null): HTMLElement {
+    const cur = Math.max(0, Math.min(100, currentPct.toNumber()));
+    const tgt = Math.max(0, Math.min(100, targetPct.toNumber()));
+    const children: HTMLElement[] = [
+      h("div", { class: "calc2-bar-cur", style: `width:${cur}%` }, []),
+    ];
+    if (addedFrom !== null) {
+      const start = Math.max(0, Math.min(cur, addedFrom.toNumber()));
+      if (cur - start > 1e-9) {
+        const width = Math.max(cur - start, 3);
+        const left = Math.max(0, cur - width);
+        children.push(h("div", { class: "calc2-bar-add", style: `left:${left}%;width:${width}%` }, []));
+      }
+    }
+    children.push(h("div", { class: "calc2-bar-target", style: `left:calc(${tgt}% - 1px)` }, []));
+    return h("div", { class: "calc2-bar" }, children);
+  }
+
+  // --- Summary ---
+  function renderSummary(): void {
+    const held = data.instruments.filter((i) => i.currentValueEur.greaterThan(0)).length;
+    summaryBox.replaceChildren(
+      h("section", { class: "stats" }, [
+        h("div", { class: "stat-grid calc2-summary" }, [
+          h("div", { class: "stat" }, [
+            h("span", { class: "stat-label" }, ["Portfolio value"]),
+            h("span", { class: "stat-value" }, [fmt(data.totalValueEur)]),
+          ]),
+          h("div", { class: "stat" }, [
+            h("span", { class: "stat-label" }, ["Holdings"]),
+            h("span", { class: "stat-value" }, [String(held)]),
+          ]),
+          h("div", { class: "stat" }, [
+            h("span", { class: "stat-label" }, ["Categories"]),
+            h("span", { class: "stat-value" }, [String(data.categories.length)]),
+          ]),
+        ]),
+      ]),
+    );
+  }
+
+  // --- Live total ---
+  function currentTotal(): Decimal {
+    let total = ZERO;
+    const src = mode === "category" ? catTargets : fundTargets;
+    for (const v of src.values()) total = total.plus(new Decimal(v || 0));
+    return total;
+  }
+  function updateTotal(): void {
+    const total = currentTotal();
+    const fill = totalBar.querySelector(".calc2-total-fill") as HTMLElement | null;
+    if (fill) fill.style.width = `${Math.min(100, total.toNumber())}%`;
+    const onTarget = total.minus(HUNDRED).abs().lessThanOrEqualTo(new Decimal("0.05"));
+    totalLabel.classList.toggle("on-target", onTarget && total.greaterThan(0));
+    if (total.isZero()) {
+      totalLabel.textContent = "No targets set yet";
+    } else if (onTarget) {
+      totalLabel.textContent = `${pct1(total)} ✓`;
+    } else {
+      const diff = HUNDRED.minus(total);
+      const verb = diff.greaterThan(0) ? "more" : "over";
+      totalLabel.textContent = `${pct1(total)} (normalised to 100% on compute; ${pct1(diff.abs())} ${verb})`;
+    }
+  }
+
+  // --- Builder rows ---
+  function setCatTarget(name: string, value: string): void {
+    catTargets.set(name, numOr0(value).toNumber());
+    updateBars();
+    updateTotal();
+  }
+  function setFundTarget(symbol: string, value: string): void {
+    fundTargets.set(symbol, numOr0(value).toNumber());
+    updateBars();
+    updateTotal();
+  }
+  // Re-paint just the bars in place (cheaper than a full builder re-render) so
+  // the target marker tracks typing without losing input focus.
+  function updateBars(): void {
+    for (const el of builderBox.querySelectorAll<HTMLElement>("[data-bar-row]")) {
+      const key = el.getAttribute("data-bar-row")!;
+      const current = el.getAttribute("data-bar-current")!;
+      const tgt =
+        mode === "category" ? catTargets.get(key) : fundTargets.get(key);
+      const fresh = bar(new Decimal(current), new Decimal(tgt ?? 0));
+      const holder = el.querySelector(".calc2-bar-holder");
+      if (holder) holder.replaceChildren(fresh);
+    }
+  }
+
+  function renderCategoryRow(cat: CalcCategory): HTMLElement {
+    const input = h("input", {
+      type: "number",
+      inputmode: "decimal",
+      min: "0",
+      step: "0.1",
+      class: "calc2-target-input",
+      "aria-label": `Target percent for ${cat.name}`,
+      value: catTargets.has(cat.name) ? String(catTargets.get(cat.name)) : "",
+    }) as HTMLInputElement;
+    input.addEventListener("input", () => setCatTarget(cat.name, input.value));
+
+    const barHolder = h("div", { class: "calc2-bar-holder" }, [
+      bar(cat.currentPct, new Decimal(catTargets.get(cat.name) ?? 0)),
+    ]);
+
+    const memberRows = cat.members.map((m) => {
+      const cb = h("input", {
+        type: "checkbox",
+        class: "calc2-member-cb",
+      }) as HTMLInputElement;
+      cb.checked = catSelected.get(cat.name)!.has(m.symbol);
+      cb.addEventListener("change", () => {
+        const set = catSelected.get(cat.name)!;
+        if (cb.checked) set.add(m.symbol);
+        else set.delete(m.symbol);
+      });
+      return h("label", { class: "calc2-member" }, [
+        cb,
+        h("span", {}, [`${m.symbol} · ${m.name} (${pct1(m.currentPct)})`]),
+      ]);
+    });
+
+    const splitToggle = makeMiniToggle(
+      [
+        { value: "value", label: "Fair by value" },
+        { value: "equal", label: "Even" },
+      ],
+      catSplit.get(cat.name) ?? "value",
+      (v) => catSplit.set(cat.name, v as "value" | "equal"),
+    );
+
+    const expansion = h("details", { class: "calc2-funds" }, [
+      h("summary", {}, ["Funds in this category"]),
+      h("div", { class: "calc2-funds-body" }, [
+        h("div", { class: "calc2-split" }, [h("span", { class: "muted" }, ["Split:"]), splitToggle]),
+        h("p", { class: "note" }, [
+          "Untick a fund you don't invest in: the funds you do tick share this " +
+            "category's whole % between them, and the un-ticked fund just keeps " +
+            "its current holding (left to dilute over time).",
+        ]),
+        ...memberRows,
+      ]),
+    ]);
+
+    return h(
+      "div",
+      {
+        class: "calc2-row",
+        "data-bar-row": cat.name,
+        "data-bar-current": cat.currentPct.toString(),
+      },
+      [
+        h("div", { class: "calc2-row-main" }, [
+          h("div", { class: "calc2-row-label" }, [
+            h("span", { class: "calc2-row-name" }, [cat.name]),
+            h("span", { class: "calc2-row-sub muted" }, [
+              `now ${pct1(cat.currentPct)} · ${fmt(cat.currentValueEur)}`,
+            ]),
+          ]),
+          barHolder,
+          h("label", { class: "calc2-target" }, [input, h("span", { class: "calc2-suffix" }, ["%"])]),
+        ]),
+        expansion,
+      ],
+    );
+  }
+
+  function renderFundRow(instr: CalcInstrument): HTMLElement {
+    const input = h("input", {
+      type: "number",
+      inputmode: "decimal",
+      min: "0",
+      step: "0.1",
+      class: "calc2-target-input",
+      "aria-label": `Target percent for ${instr.symbol}`,
+      value: fundTargets.has(instr.symbol) ? String(fundTargets.get(instr.symbol)) : "",
+    }) as HTMLInputElement;
+    input.addEventListener("input", () => setFundTarget(instr.symbol, input.value));
+
+    return h(
+      "div",
+      {
+        class: "calc2-row",
+        "data-bar-row": instr.symbol,
+        "data-bar-current": instr.currentPct.toString(),
+      },
+      [
+        h("div", { class: "calc2-row-main" }, [
+          h("div", { class: "calc2-row-label" }, [
+            h("span", { class: "calc2-row-name" }, [`${instr.symbol} · ${instr.name}`]),
+            h("span", { class: "calc2-row-sub muted" }, [
+              `${instr.category} · now ${pct1(instr.currentPct)}`,
+            ]),
+          ]),
+          h("div", { class: "calc2-bar-holder" }, [
+            bar(instr.currentPct, new Decimal(fundTargets.get(instr.symbol) ?? 0)),
+          ]),
+          h("label", { class: "calc2-target" }, [input, h("span", { class: "calc2-suffix" }, ["%"])]),
+        ]),
+      ],
+    );
+  }
+
+  function renderBuilder(): void {
+    const rows: HTMLElement[] =
+      mode === "category"
+        ? data.categories.map(renderCategoryRow)
+        : [...data.instruments]
+            .sort((a, b) => b.currentValueEur.comparedTo(a.currentValueEur))
+            .map(renderFundRow);
+    builderBox.replaceChildren(...rows);
+    updateTotal();
+  }
+
+  // --- Presets ---
+  function presetCurrent(): void {
+    if (mode === "category") {
+      catTargets.clear();
+      for (const c of data.categories) catTargets.set(c.name, c.currentPct.toDecimalPlaces(1).toNumber());
+    } else {
+      fundTargets.clear();
+      for (const i of data.instruments) {
+        if (i.currentPct.greaterThan(0)) fundTargets.set(i.symbol, i.currentPct.toDecimalPlaces(1).toNumber());
+      }
+    }
+    renderBuilder();
+  }
+  function presetEqual(): void {
+    if (mode === "category") {
+      const cats = data.categories;
+      const share = cats.length ? new Decimal(100).dividedBy(cats.length).toDecimalPlaces(1).toNumber() : 0;
+      catTargets.clear();
+      for (const c of cats) catTargets.set(c.name, share);
+    } else {
+      const held = data.instruments.filter((i) => i.currentValueEur.greaterThan(0));
+      const pool = held.length ? held : data.instruments;
+      const share = pool.length ? new Decimal(100).dividedBy(pool.length).toDecimalPlaces(1).toNumber() : 0;
+      fundTargets.clear();
+      for (const i of pool) fundTargets.set(i.symbol, share);
+    }
+    renderBuilder();
+  }
+  function presetClear(): void {
+    catTargets.clear();
+    fundTargets.clear();
+    renderBuilder();
+  }
+  function loadSaved(target: SavedTarget): void {
+    // Group each saved fund's weight under its category, ticking only funds the
+    // saved plan actually bought (no-buy members stay counted but un-ticked).
+    const catTotals = new Map<string, number>();
+    const selectedInSaved = new Map<string, Set<string>>();
+    for (const item of target.items) {
+      const category = categoryOf.get(item.symbol);
+      if (category === undefined) continue;
+      catTotals.set(category, (catTotals.get(category) ?? 0) + item.weightPct.toNumber());
+      if (!item.noBuy) {
+        if (!selectedInSaved.has(category)) selectedInSaved.set(category, new Set());
+        selectedInSaved.get(category)!.add(item.symbol);
+      }
+    }
+    catTargets.clear();
+    for (const [name, value] of catTotals) catTargets.set(name, new Decimal(value).toDecimalPlaces(1).toNumber());
+    for (const c of data.categories) catSelected.set(c.name, new Set(c.members.map((m) => m.symbol)));
+    for (const category of catTotals.keys()) {
+      if (catSelected.has(category)) catSelected.set(category, selectedInSaved.get(category) ?? new Set());
+    }
+    fundTargets.clear();
+    for (const item of target.items) fundTargets.set(item.symbol, item.weightPct.toDecimalPlaces(1).toNumber());
+    mode = "category";
+    allowSell = target.allowSell;
+    rebalanceCb.checked = allowSell;
+    modeToggle.select("category");
+    renderBuilder();
+    clearNotice();
+  }
+
+  // --- Build weights from the current state ---
+  function buildWeights(): { raw: Map<string, Decimal>; noBuy: Set<string> } | null {
+    if (mode === "category") {
+      const catWeights = new Map<string, Decimal>();
+      for (const [name, v] of catTargets) {
+        const d = new Decimal(v || 0);
+        if (d.greaterThan(0)) catWeights.set(name, d);
+      }
+      if (catWeights.size === 0) {
+        notify("Set at least one category target.");
+        return null;
+      }
+      const weights = new Map<string, Decimal>();
+      for (const [name, weight] of catWeights) {
+        const members = catMembers.get(name) ?? [];
+        if (members.length === 0) continue;
+        // Split the category's % across only the funds the user actually invests
+        // in (the ticked ones). Funds left un-ticked don't get a slice — the
+        // invested funds "pick up the slack" and absorb the whole category target
+        // between them, while the un-ticked funds simply keep their current
+        // holding (left to dilute as more cash flows into the funds the user does
+        // buy). A positive-target category with nothing ticked is rejected.
+        const selected = members.filter((sym) => (catSelected.get(name) ?? new Set()).has(sym));
+        if (selected.length === 0) {
+          notify(`Tick at least one fund to invest in for “${name}”, or set its target to 0.`);
+          return null;
+        }
+        const expanded = expandCategoryWeights(
+          new Map([[name, weight]]),
+          new Map([[name, selected]]),
+          valueOf,
+          catSplit.get(name) ?? "value",
+        );
+        for (const [sym, w] of expanded) weights.set(sym, (weights.get(sym) ?? ZERO).plus(w));
+      }
+      return { raw: weights, noBuy: new Set() };
+    }
+    const weights = new Map<string, Decimal>();
+    for (const [sym, v] of fundTargets) {
+      const d = new Decimal(v || 0);
+      if (d.greaterThan(0)) weights.set(sym, d);
+    }
+    if (weights.size === 0) {
+      notify("Set at least one fund target.");
+      return null;
+    }
+    return { raw: weights, noBuy: new Set() };
+  }
+
+  function compute(): void {
+    clearNotice();
+    const built = buildWeights();
+    if (built === null) return;
+    const targetPct = scaleTo100(built.raw);
+    if (targetPct.size === 0) {
+      notify("Targets must be positive.");
+      return;
+    }
+    const cashDisplay = numOr0(cashInput.value);
+    if (cashDisplay.lessThan(0) || (cashDisplay.isZero() && !allowSell)) {
+      notify("Enter a positive cash amount (or turn on rebalancing to sell only).");
+      return;
+    }
+    const cashEur = convertToEur(cashDisplay);
+    const currentPrices = new Map<string, Decimal>();
+    for (const sym of targetPct.keys()) {
+      const p = priceOf.get(sym);
+      if (p) currentPrices.set(sym, p);
+    }
+    const noBuy = new Set([...built.noBuy].filter((s) => targetPct.has(s)));
+    let plan: RebalancePlan;
+    try {
+      plan = planRebalance(cashEur, targetPct, valueOf, {
+        currentPrices,
+        allowFractionalShares: fractional,
+        allowSell,
+        noBuyIds: noBuy,
+      });
+    } catch (err) {
+      notify(`Cannot rebalance: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    renderResult(plan, cashEur);
+  }
+
+  // --- Result ---
+  function planRowEl(name: string, r: RebalanceRow, afterPct: Decimal, beforePct: Decimal, indent: boolean): HTMLElement {
+    const current = currentPctOf.get(r.symbol) ?? ZERO;
+    let valueEl: HTMLElement;
+    if (r.addValue.greaterThan(0)) {
+      const shares = r.addShares.greaterThan(0) ? ` · ${formatShares(r.addShares)} sh` : "";
+      valueEl = h("span", { class: "calc2-add pos" }, [`+ ${fmt(r.addValue)}${shares}`]);
+    } else if (r.addValue.lessThan(0)) {
+      const shares = r.addShares.lessThan(0) ? ` · ${formatShares(r.addShares.negated())} sh` : "";
+      valueEl = h("span", { class: "calc2-add neg" }, [`- ${fmt(r.addValue.negated())} sell${shares}`]);
+    } else if (r.noBuy) {
+      valueEl = h("span", { class: "calc2-add muted" }, ["held · no new cash"]);
+    } else {
+      valueEl = h("span", { class: "calc2-add muted" }, ["no buy"]);
+    }
+    return h("div", { class: indent ? "calc2-plan-row indent" : "calc2-plan-row" }, [
+      h("div", { class: "calc2-row-label" }, [
+        h("span", { class: "calc2-row-name" }, [name]),
+        h("span", { class: "calc2-row-sub muted" }, [
+          `now ${pct1(current)} → ${pct1(afterPct)} after · target ${pct1(r.targetPct)}`,
+        ]),
+      ]),
+      h("div", { class: "calc2-bar-holder" }, [bar(afterPct, r.targetPct, beforePct)]),
+      valueEl,
+    ]);
+  }
+
+  function renderResult(plan: RebalancePlan, cashEur: Decimal): void {
+    let buys = ZERO;
+    let sells = ZERO;
+    let totalAfter = ZERO;
+    for (const r of plan.rows) {
+      if (r.addValue.greaterThan(0)) buys = buys.plus(r.addValue);
+      else if (r.addValue.lessThan(0)) sells = sells.plus(r.addValue.negated());
+      totalAfter = totalAfter.plus(r.currentValue.plus(r.addValue));
+    }
+    const afterPct = (v: Decimal): Decimal => (totalAfter.greaterThan(0) ? v.times(100).dividedBy(totalAfter) : ZERO);
+
+    const kpis: HTMLElement[] = [
+      h("div", { class: "stat" }, [
+        h("span", { class: "stat-label" }, ["Investing"]),
+        h("span", { class: "stat-value" }, [fmt(cashEur)]),
+      ]),
+      h("div", { class: "stat" }, [
+        h("span", { class: "stat-label" }, ["Buying"]),
+        h("span", { class: "stat-value pos" }, [fmt(buys)]),
+      ]),
+    ];
+    if (sells.greaterThan(0)) {
+      kpis.push(
+        h("div", { class: "stat" }, [
+          h("span", { class: "stat-label" }, ["Selling"]),
+          h("span", { class: "stat-value neg" }, [fmt(sells)]),
+        ]),
+      );
+    }
+    kpis.push(
+      h("div", { class: "stat" }, [
+        h("span", { class: "stat-label" }, ["Left over"]),
+        h("span", { class: "stat-value" }, [fmt(plan.residualCash)]),
+      ]),
+    );
+
+    const heading = allowSell ? "Rebalance plan" : "Buy plan";
+    const planNodes: HTMLElement[] = [];
+    if (mode === "category") {
+      const groups = new Map<string, RebalanceRow[]>();
+      for (const r of plan.rows) {
+        const cat = categoryOf.get(r.symbol) ?? UNCATEGORIZED;
+        if (!groups.has(cat)) groups.set(cat, []);
+        groups.get(cat)!.push(r);
+      }
+      const buyOf = (rows: RebalanceRow[]): Decimal =>
+        rows.reduce((acc, r) => (r.addValue.greaterThan(0) ? acc.plus(r.addValue) : acc), ZERO);
+      const ordered = [...groups.entries()].sort((a, b) => buyOf(b[1]).comparedTo(buyOf(a[1])));
+      for (const [category, rows] of ordered) {
+        let targetPct = ZERO;
+        let beforeValue = ZERO;
+        let afterValue = ZERO;
+        let addValue = ZERO;
+        let currentPct = ZERO;
+        for (const r of rows) {
+          targetPct = targetPct.plus(r.targetPct);
+          beforeValue = beforeValue.plus(r.currentValue);
+          afterValue = afterValue.plus(r.currentValue.plus(r.addValue));
+          addValue = addValue.plus(r.addValue);
+          currentPct = currentPct.plus(currentPctOf.get(r.symbol) ?? ZERO);
+        }
+        let headValue: HTMLElement;
+        if (addValue.greaterThan(0)) headValue = h("span", { class: "calc2-add pos" }, [`+ ${fmt(addValue)}`]);
+        else if (addValue.lessThan(0)) headValue = h("span", { class: "calc2-add neg" }, [`- ${fmt(addValue.negated())} net`]);
+        else headValue = h("span", { class: "calc2-add muted" }, ["no new cash"]);
+        planNodes.push(
+          h("div", { class: "calc2-plan-head" }, [
+            h("div", { class: "calc2-row-label" }, [
+              h("span", { class: "calc2-row-name" }, [category]),
+              h("span", { class: "calc2-row-sub muted" }, [
+                `now ${pct1(currentPct)} → ${pct1(afterPct(afterValue))} after · target ${pct1(targetPct)}`,
+              ]),
+            ]),
+            h("div", { class: "calc2-bar-holder" }, [bar(afterPct(afterValue), targetPct, afterPct(beforeValue))]),
+            headValue,
+          ]),
+        );
+        for (const r of [...rows].sort((a, b) => b.addValue.comparedTo(a.addValue))) {
+          planNodes.push(
+            planRowEl(
+              `${r.symbol} · ${nameOf.get(r.symbol) ?? r.symbol}`,
+              r,
+              afterPct(r.currentValue.plus(r.addValue)),
+              afterPct(r.currentValue),
+              true,
+            ),
+          );
+        }
+      }
+    } else {
+      for (const r of [...plan.rows].sort((a, b) => b.addValue.comparedTo(a.addValue))) {
+        planNodes.push(
+          planRowEl(
+            `${r.symbol} · ${nameOf.get(r.symbol) ?? r.symbol}`,
+            r,
+            afterPct(r.currentValue.plus(r.addValue)),
+            afterPct(r.currentValue),
+            false,
+          ),
+        );
+      }
+    }
+
+    resultBox.replaceChildren(
+      h("section", { class: "card" }, [
+        h("div", { class: "section-head" }, [h("h2", {}, ["Plan summary"])]),
+        h("div", { class: "stat-grid calc2-summary" }, kpis),
+      ]),
+      h("section", { class: "card" }, [
+        h("div", { class: "section-head" }, [h("h2", {}, [heading])]),
+        h("div", { class: "calc2-plan" }, planNodes),
+      ]),
+    );
+    resultBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  // --- Controls ---
+  const cashField = numberField(`Cash to invest (${code})`, "1000", { min: "0", step: "10" });
+  const cashInput = cashField.input;
+  cashInput.addEventListener("input", clearNotice);
+
+  const fractionalCb = h("input", { type: "checkbox", id: "calc2-fractional" }) as HTMLInputElement;
+  fractionalCb.checked = fractional;
+  fractionalCb.addEventListener("change", () => {
+    fractional = fractionalCb.checked;
+    saveBoolPref(CALC_FRACTIONAL_KEY, fractional);
+  });
+  const rebalanceCb = h("input", { type: "checkbox", id: "calc2-rebalance" }) as HTMLInputElement;
+  rebalanceCb.checked = allowSell;
+  rebalanceCb.addEventListener("change", () => {
+    allowSell = rebalanceCb.checked;
+    saveBoolPref(CALC_REBALANCE_KEY, allowSell);
+  });
+
+  const modeToggle = makeModeToggle((m) => {
+    mode = m;
+    renderBuilder();
+  });
+
+  const presetRow = h("div", { class: "calc2-presets" }, [
+    presetBtn("Match current mix", presetCurrent),
+    presetBtn("Equal weight", presetEqual),
+    presetBtn("Clear", presetClear),
+  ]);
+  if (data.savedTargets.length > 0) {
+    const select = h("select", { class: "calc2-saved-select", "aria-label": "Load a saved target" }, [
+      h("option", { value: "" }, ["Load saved target…"]),
+      ...data.savedTargets.map((t, i) =>
+        h("option", { value: String(i) }, [t.active ? `${t.name} (active)` : t.name]),
+      ),
+    ]) as HTMLSelectElement;
+    select.addEventListener("change", () => {
+      const idx = Number(select.value);
+      if (select.value !== "" && data.savedTargets[idx]) loadSaved(data.savedTargets[idx]);
+      select.value = "";
+    });
+    presetRow.append(select);
+  }
+
+  const computeBtn = h("button", { class: "btn-primary calc2-compute", type: "button" }, ["Compute plan"]);
+  computeBtn.addEventListener("click", compute);
+
+  renderSummary();
+  renderBuilder();
+
+  // Auto-load the active saved target on open (parity with the desktop), so the
+  // user's last-saved mix is ready immediately — no manual "Load" needed. The
+  // dropdown above stays available to re-apply it after tweaks or to pick another.
+  const activeSaved = data.savedTargets.find((t) => t.active);
+  if (activeSaved) loadSaved(activeSaved);
+
+  return h("section", { class: "panel-stack panel-calc2" }, [
+    h("section", { class: "card" }, [
+      h("div", { class: "section-head" }, [
+        h("h2", {}, ["Calculator"]),
+        h("span", { class: "muted" }, ["how much to invest"]),
+      ]),
+      h("p", { class: "note" }, [
+        "Build a target mix and turn a contribution into a concrete buy-only plan. " +
+          "Set a target % per row — totals are normalised to 100% when you compute.",
+      ]),
+    ]),
+    summaryBox,
+    h("section", { class: "card" }, [
+      h("div", { class: "section-head" }, [h("h2", {}, ["1 · How much are you investing?"])]),
+      h("div", { class: "calc2-cash" }, [
+        cashField.wrap,
+        h("label", { class: "calc2-check" }, [fractionalCb, " Allow fractional shares"]),
+        h("label", { class: "calc2-check" }, [rebalanceCb, " Rebalance (allow selling)"]),
+      ]),
+    ]),
+    h("section", { class: "card" }, [
+      h("div", { class: "section-head" }, [h("h2", {}, ["2 · Set your target mix"])]),
+      h("div", { class: "calc2-controls" }, [modeToggle.el, presetRow]),
+      h("div", { class: "calc2-total" }, [totalBar, totalLabel]),
+      builderBox,
+      noticeBox,
+      h("div", { class: "calc2-actions" }, [computeBtn]),
+    ]),
+    resultBox,
     h("p", { class: "disclaimer" }, [
-      "Projections are hypothetical, assume constant returns, and are not financial advice. Real markets vary year to year.",
+      "Plans assume your live prices and are share-level estimates, not orders or financial advice.",
     ]),
   ]);
+}
+
+/** A small two/three-option pill toggle returning a setter to select a value. */
+function makeMiniToggle(
+  options: { value: string; label: string }[],
+  initial: string,
+  onChange: (value: string) => void,
+): HTMLElement {
+  const buttons: HTMLButtonElement[] = [];
+  const el = h("div", { class: "calc2-minitoggle", role: "group" }, []);
+  for (const opt of options) {
+    const btn = h("button", { class: "calc2-pill", type: "button" }, [opt.label]) as HTMLButtonElement;
+    if (opt.value === initial) btn.classList.add("active");
+    btn.addEventListener("click", () => {
+      for (const b of buttons) b.classList.remove("active");
+      btn.classList.add("active");
+      onChange(opt.value);
+    });
+    buttons.push(btn);
+    el.append(btn);
+  }
+  return el;
+}
+
+/** The category/fund mode toggle, exposing a `select` so presets can sync it. */
+function makeModeToggle(onChange: (mode: "category" | "fund") => void): {
+  el: HTMLElement;
+  select: (mode: "category" | "fund") => void;
+} {
+  const options: { value: "category" | "fund"; label: string }[] = [
+    { value: "category", label: "By category" },
+    { value: "fund", label: "By fund" },
+  ];
+  const buttons = new Map<string, HTMLButtonElement>();
+  const el = h("div", { class: "calc2-minitoggle", role: "group", "aria-label": "Target mode" }, []);
+  const select = (mode: "category" | "fund"): void => {
+    for (const [v, b] of buttons) b.classList.toggle("active", v === mode);
+  };
+  for (const opt of options) {
+    const btn = h("button", { class: "calc2-pill", type: "button" }, [opt.label]) as HTMLButtonElement;
+    if (opt.value === "category") btn.classList.add("active");
+    btn.addEventListener("click", () => {
+      select(opt.value);
+      onChange(opt.value);
+    });
+    buttons.set(opt.value, btn);
+    el.append(btn);
+  }
+  return { el, select };
+}
+
+/** A flat text button used for the calculator presets. */
+function presetBtn(label: string, onClick: () => void): HTMLButtonElement {
+  const btn = h("button", { class: "calc2-preset", type: "button" }, [label]) as HTMLButtonElement;
+  btn.addEventListener("click", onClick);
+  return btn;
 }
 
 /**

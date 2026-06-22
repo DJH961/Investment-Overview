@@ -15,6 +15,7 @@ from investment_dashboard.repositories import (
     accounts_repo,
     allocations_repo,
     fx_repo,
+    instrument_overrides_repo,
     instruments_repo,
     prices_repo,
 )
@@ -200,6 +201,7 @@ def test_mobile_export_holdings_cash_and_transactions(session: Session) -> None:
         "symbol",
         "name",
         "asset_class",
+        "category",
         "broker",
         "account",
         "native_currency",
@@ -250,6 +252,21 @@ def test_mobile_export_holdings_cash_and_transactions(session: Session) -> None:
             "balance_native": "1010.000000",
         }
     ]
+
+
+def test_mobile_export_holding_category(session: Session) -> None:
+    _seed_mobile_portfolio(session)
+    vti = instruments_repo.get_by_symbol(session, "VTI")
+    assert vti is not None
+    instrument_overrides_repo.set_category(session, vti.id, "US Stocks")
+
+    export = build_mobile_export(session, as_of=AS_OF)
+    by_symbol = {row["symbol"]: row for row in export["holdings"]}
+
+    # An explicit category override rides along for the Calculator's grouping.
+    assert by_symbol["VTI"]["category"] == "US Stocks"
+    # Holdings without an override carry ``null`` (web falls back to asset_class).
+    assert by_symbol["FXAIX"]["category"] is None
 
 
 def test_mobile_export_target_allocations(session: Session) -> None:
