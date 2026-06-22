@@ -329,8 +329,6 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .hero-change-pct { color: var(--muted); font-size: 0.9rem; font-weight: 600; }
 .hero-change.pos .hero-change-pct { color: var(--pos); }
 .hero-change.neg .hero-change-pct { color: var(--neg); }
-/* Market-situation caption ("as of 3:42 PM" live, "as of Fri 20 Jun" settled). */
-.hero-asof { color: var(--muted); font-size: 0.78rem; font-weight: 600; }
 
 /* Live EUR/USD context under today's move (rate, FX split, end-of-day tag). */
 .hero-fx {
