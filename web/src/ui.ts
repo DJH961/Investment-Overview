@@ -154,7 +154,7 @@ function valueBasisLabel(o: OverviewView, now: Date = new Date()): string {
     d.getFullYear() === now.getFullYear() &&
     d.getMonth() === now.getMonth() &&
     d.getDate() === now.getDate();
-  if (o.liveAsOf !== null && o.liveAsOf !== undefined) {
+  if (o.liveAsOf != null) {
     const when = new Date(o.liveAsOf);
     if (!Number.isNaN(when.getTime())) {
       if (isToday(when)) return "Today";
