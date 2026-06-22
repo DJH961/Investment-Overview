@@ -1247,21 +1247,72 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
   return h("section", { class: "card value-chart" }, children);
 }
 
-function renderAttribution(rows: AnalyticsView["attribution"]): HTMLElement | null {
-  const top = rows.filter((r) => r.absolutePnlEur !== null).slice(0, 8);
-  if (top.length === 0) return null;
-  const items = top.map((r) =>
-    h("li", { class: "ledger-row" }, [
-      h("div", { class: "ledger-id" }, [
-        h("span", { class: "ledger-kind" }, [r.symbol]),
-        h("span", { class: "ledger-sub muted" }, [
-          r.pctOfTotalReturn !== null ? `${formatPercent(r.pctOfTotalReturn)} of return` : "—",
-        ]),
-      ]),
-      h("span", { class: `ledger-amount ${signClass(r.absolutePnlEur)}` }, [formatSignedCurrency(r.absolutePnlEur)]),
+const ATTRIBUTION_PAGE_SIZE = 8;
+
+/** A single attribution row (P/L by holding) as a compact ledger line. */
+function attributionRowEl(symbol: string, pnl: Decimal | null, pct: Decimal | null, isTotalRow = false): HTMLElement {
+  return h("li", { class: `ledger-row${isTotalRow ? " attr-total" : ""}` }, [
+    h("div", { class: "ledger-id" }, [
+      h("span", { class: "ledger-kind" }, [symbol]),
+      h("span", { class: "ledger-sub muted" }, [pct !== null ? `${formatPercent(pct)} of return` : "—"]),
     ]),
-  );
-  return collapsibleSection("Attribution", "P/L by holding", h("ul", { class: "ledger-list" }, items), "card attribution");
+    h("span", { class: `ledger-amount ${signClass(pnl)}` }, [formatSignedCurrency(pnl)]),
+  ]);
+}
+
+/**
+ * Per-holding attribution — the browser port of the desktop analytics table.
+ * Mirrors the desktop by listing *every* valued holding (not just a top slice)
+ * and pinning a "Total" row that foots the per-holding P/L back to the window
+ * total. Long lists paginate so the section never grows tall enough to overlap
+ * the charts around it.
+ */
+function renderAttribution(rows: AnalyticsView["attribution"]): HTMLElement | null {
+  const valued = rows.filter((r) => r.absolutePnlEur !== null);
+  if (valued.length === 0) return null;
+
+  // Totals foot the table back to the window P/L and ~100 % of return.
+  const totalPnl = valued.reduce<Decimal>((acc, r) => acc.plus(r.absolutePnlEur ?? 0), new Decimal(0));
+  const hasPct = valued.some((r) => r.pctOfTotalReturn !== null);
+  const totalPct = hasPct
+    ? valued.reduce<Decimal>((acc, r) => acc.plus(r.pctOfTotalReturn ?? 0), new Decimal(0))
+    : null;
+  const totalRow = attributionRowEl("Total", totalPnl, totalPct, true);
+
+  const pageCount = Math.ceil(valued.length / ATTRIBUTION_PAGE_SIZE);
+  const list = h("ul", { class: "ledger-list" }, []);
+
+  const body: Array<Node | string> = [list];
+  let renderPage: (page: number) => void;
+
+  if (pageCount > 1) {
+    let page = 0;
+    const prev = h("button", { class: "attr-page-btn", type: "button", "aria-label": "Previous page" }, ["‹"]);
+    const next = h("button", { class: "attr-page-btn", type: "button", "aria-label": "Next page" }, ["›"]);
+    const label = h("span", { class: "attr-page-label muted" }, []);
+    renderPage = (p: number): void => {
+      page = Math.max(0, Math.min(p, pageCount - 1));
+      const start = page * ATTRIBUTION_PAGE_SIZE;
+      const slice = valued.slice(start, start + ATTRIBUTION_PAGE_SIZE);
+      const items = slice.map((r) => attributionRowEl(r.symbol, r.absolutePnlEur, r.pctOfTotalReturn));
+      list.replaceChildren(...items, totalRow);
+      label.textContent = `Page ${page + 1} / ${pageCount}`;
+      prev.toggleAttribute("disabled", page === 0);
+      next.toggleAttribute("disabled", page === pageCount - 1);
+    };
+    prev.addEventListener("click", () => renderPage(page - 1));
+    next.addEventListener("click", () => renderPage(page + 1));
+    body.push(h("div", { class: "attr-pager" }, [prev, label, next]));
+  } else {
+    renderPage = (): void => {
+      const items = valued.map((r) => attributionRowEl(r.symbol, r.absolutePnlEur, r.pctOfTotalReturn));
+      list.replaceChildren(...items, totalRow);
+    };
+  }
+  renderPage(0);
+
+  const sub = `${valued.length} ${valued.length === 1 ? "holding" : "holdings"}`;
+  return collapsibleSection("Attribution", sub, h("div", { class: "attribution-body" }, body), "card attribution");
 }
 
 /**
@@ -1296,7 +1347,7 @@ function renderCurrencyEffect(overview: OverviewView, deposits: DepositsView | n
     effectStat(
       "EUR/USD now",
       formatFxRate(effect.currentRate),
-      `avg when you invested: ${formatFxRate(effect.avgInvestRate)}`,
+      `avg in: ${formatFxRate(effect.avgInvestRate)}`,
     ),
   );
   if (effect.rateChangePct !== null) {
@@ -1305,9 +1356,9 @@ function renderCurrencyEffect(overview: OverviewView, deposits: DepositsView | n
     const weaker = effect.rateChangePct.isNegative();
     cards.push(
       effectStat(
-        "Euro move since investing",
+        "Euro since buying",
         formatSignedPercent(effect.rateChangePct),
-        weaker ? "euro weaker → tailwind for you" : "euro stronger → headwind",
+        weaker ? "weaker → tailwind" : "stronger → headwind",
         signClass(effect.rateChangePct.negated()),
       ),
     );
@@ -1315,9 +1366,9 @@ function renderCurrencyEffect(overview: OverviewView, deposits: DepositsView | n
   if (effect.currencyEffectPp !== null) {
     cards.push(
       effectStat(
-        "Currency effect on return",
+        "FX effect on return",
         formatSignedPercent(effect.currencyEffectPp),
-        "your EUR return minus your USD return",
+        "EUR − USD return",
         signClass(effect.currencyEffectPp),
       ),
     );
@@ -1325,30 +1376,25 @@ function renderCurrencyEffect(overview: OverviewView, deposits: DepositsView | n
   if (effect.fxPnlEur !== null) {
     cards.push(
       effectStat(
-        "FX gain / loss (EUR)",
+        "FX gain / loss",
         formatSignedMoneyEur(effect.fxPnlEur),
-        "vs investing at your average rate",
+        "vs your avg rate",
         signClass(effect.fxPnlEur),
       ),
     );
   }
   if (effect.repatriationValueEur !== null) {
-    const usdNote =
-      overview.totalValueUsd !== null && effect.currentRate !== null
-        ? `= ${formatMoneyEur(overview.totalValueUsd)} USD at ${formatFxRate(effect.currentRate)}`
-        : "convert the whole portfolio back to EUR";
-    cards.push(effectStat("If you transfer back now", formatMoneyEur(effect.repatriationValueEur), usdNote));
+    const usdNote = effect.currentRate !== null ? `at ${formatFxRate(effect.currentRate)}` : "value back in EUR";
+    cards.push(effectStat("If cashed out now", formatMoneyEur(effect.repatriationValueEur), usdNote));
   }
 
   const body = h("div", { class: "currency-effect-body" }, [
     h("p", { class: "note" }, [
-      "You fund in EUR, hold USD assets, and would convert back to EUR — so the EUR/USD move between " +
-        "paying in and cashing out is its own gain or loss on top of the assets. A weaker euro means each " +
-        "dollar buys back more euros, which is good for you.",
+      "You fund in EUR but hold USD assets, so the EUR/USD move is its own gain or loss. A weaker euro helps you.",
     ]),
     h("section", { class: "stats" }, [h("div", { class: "stat-grid" }, cards)]),
   ]);
-  return collapsibleSection("Currency (EUR ↔ USD)", "FX effect on your return", body, "currency-effect", true);
+  return collapsibleSection("Currency (EUR ↔ USD)", "FX effect", body, "currency-effect", true);
 }
 
 function renderAnalyticsPanel(
@@ -1396,8 +1442,7 @@ function renderAnalyticsPanel(
 
   children.push(
     h("p", { class: "disclaimer" }, [
-      `History-bound risk metrics are computed on the desktop and shown as of the last export (${analytics.start} → ${analytics.asOf}). ` +
-        "They do not move intraday. Risk/return figures switch between EUR and USD with the currency toggle.",
+      `Risk metrics are as of the last desktop export (${analytics.start} → ${analytics.asOf}) and don't move intraday.`,
     ]),
   );
   return h("section", { class: "panel-stack panel-analytics" }, children);

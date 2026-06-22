@@ -12,6 +12,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [3.6.4] — 2026-06-22
+
+### Fixed
+
+- **Patch release.** Routine bug-fix version bump; no functional changes to
+  existing behavior.
+
 ## [3.6.3] — 2026-06-22
 
 The settled-day caption is dated by the market, not by our fetch.
