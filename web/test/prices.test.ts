@@ -23,13 +23,28 @@ async function captureError(fn: () => Promise<unknown>): Promise<PriceError> {
 describe("fetchQuotes", () => {
   it("parses a single-symbol response", async () => {
     const fetchImpl: FetchLike = async () =>
-      jsonResponse({ symbol: "VTI", close: "100.5", previous_close: "99.0", currency: "USD", datetime: "2024-01-10 15:30:00" });
+      jsonResponse({ symbol: "VTI", close: "100.5", previous_close: "99.0", currency: "USD", datetime: "2024-01-10 15:30:00", is_market_open: true });
     const quotes = await fetchQuotes(["VTI"], "key", fetchImpl);
     const vti = quotes.get("VTI")!;
     expect(vti.price?.toString()).toBe("100.5");
     expect(vti.previousClose?.toString()).toBe("99");
     expect(vti.currency).toBe("USD");
     expect(vti.valueDate).toBe("2024-01-10"); // date extracted from `datetime`
+    expect(vti.marketOpen).toBe(true); // provider market-state flag
+  });
+
+  it("captures a provider-reported closed market", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({ symbol: "VTI", close: "100", previous_close: "99", currency: "USD", is_market_open: false });
+    const vti = (await fetchQuotes(["VTI"], "key", fetchImpl)).get("VTI")!;
+    expect(vti.marketOpen).toBe(false);
+  });
+
+  it("leaves marketOpen null when the provider omits is_market_open", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({ symbol: "VTI", close: "100", previous_close: "99", currency: "USD" });
+    const vti = (await fetchQuotes(["VTI"], "key", fetchImpl)).get("VTI")!;
+    expect(vti.marketOpen ?? null).toBeNull();
   });
 
   it("parses a multi-symbol response and flags per-symbol errors", async () => {
