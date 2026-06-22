@@ -179,3 +179,31 @@ export function formatAsOf(
     ? when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
     : when.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
+
+/**
+ * The "prices updated …" stamp for the overview footer. Unlike {@link formatAsOf}
+ * (which trades the time for a date once a price is a day old), this always keeps
+ * the clock time when a live observation exists — the time of the update is the
+ * point of the stamp — and adds the date only when that update was not today.
+ * Falls back to the export's `as_of` date when nothing was priced live.
+ */
+export function formatUpdatedAt(
+  at: number | null | undefined,
+  fallbackDate: string,
+  now: Date = new Date(),
+): string {
+  if (at === null || at === undefined) {
+    const parsed = new Date(fallbackDate);
+    if (Number.isNaN(parsed.getTime())) return fallbackDate;
+    return parsed.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  }
+  const when = new Date(at);
+  if (Number.isNaN(when.getTime())) return "—";
+  const time = when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const sameDay =
+    when.getFullYear() === now.getFullYear() &&
+    when.getMonth() === now.getMonth() &&
+    when.getDate() === now.getDate();
+  if (sameDay) return time;
+  return `${when.toLocaleDateString(undefined, { day: "numeric", month: "short" })}, ${time}`;
+}

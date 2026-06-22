@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { formatAsOf } from "../src/format";
+import { formatAsOf, formatUpdatedAt } from "../src/format";
 
 describe("formatAsOf", () => {
   const now = new Date("2024-06-01T15:30:00Z");
@@ -32,5 +32,29 @@ describe("formatAsOf", () => {
 
   it("returns the raw fallback string when it is not a parseable date", () => {
     expect(formatAsOf(undefined, "n/a", now)).toBe("n/a");
+  });
+});
+
+describe("formatUpdatedAt", () => {
+  const now = new Date("2024-06-01T15:30:00Z");
+
+  it("shows just a clock time when the update was today", () => {
+    const at = new Date("2024-06-01T09:05:00Z").getTime();
+    const out = formatUpdatedAt(at, "2024-05-01", now);
+    expect(out).toMatch(/\d{1,2}:\d{2}/);
+  });
+
+  it("keeps the clock time (with a date) even when the update was before today", () => {
+    const at = new Date("2024-05-20T09:05:00Z").getTime();
+    const out = formatUpdatedAt(at, "2024-05-01", now);
+    // Unlike formatAsOf, the time is never dropped for an older observation.
+    expect(out).toMatch(/\d{1,2}:\d{2}/);
+    expect(out.length).toBeGreaterThan(0);
+  });
+
+  it("falls back to the export date when nothing was priced live", () => {
+    const out = formatUpdatedAt(null, "2024-05-20", now);
+    expect(out).not.toMatch(/:/);
+    expect(out.length).toBeGreaterThan(0);
   });
 });

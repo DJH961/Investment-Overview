@@ -382,25 +382,37 @@ function buildHolding(
   const costBasisEur = convert(new Decimal(holding.cost_basis_native), currency, EUR, fx);
 
   // Today's move is the change from the prior published close to the price we
-  // actually display. It applies to any holding whose live quote is the one on
-  // screen (`isLive`) and that carries a previous close:
+  // actually display, for any holding that carries a previous close:
   //   - market rows (stocks / ETFs): the latest session's move from the `quote`
-  //     endpoint's `previous_close`;
+  //     endpoint's `previous_close`, but only while that live quote is the one on
+  //     screen (`isLive`);
   //   - NAV rows (mutual funds): the latest published NAV's move from the prior
-  //     daily `time_series` bar — so a fund shows a move on the same days a stock
-  //     does (e.g. last Friday's move when viewed over a weekend), instead of a
-  //     blank.
-  // We deliberately key the move off `quote.price` only when it is the displayed
-  // price (`isLive`): a NAV bar that was rejected as not-newer (stale carry, off
-  // basis) leaves the row on its exported price, so we must not derive a move
-  // from a quote we chose to ignore. Money-market NAVs are pinned at $1 and never
-  // fetched, so they have no previous close and correctly contribute no move.
+  //     daily `time_series` bar. A fund publishes ~once a day, so the export
+  //     usually already carries its newest NAV; we still want it to show the same
+  //     last-session move a stock does (e.g. last Friday's move over a weekend)
+  //     rather than a blank — even when the row stays on its exported price.
+  // The one quote we must never derive a move from is a *stale, older* NAV bar
+  // (its value-date is behind the price we display): then `previous_close` is two
+  // sessions back and would mislabel an old move as today's. We guard NAV moves
+  // on `valueDate >= asOfDate` (the bar is current with the displayed price) and
+  // take the fund's own session move (its daily bar vs that bar's prior close).
+  // Money-market NAVs are pinned at $1 and never fetched, so they have no
+  // previous close and correctly contribute no move.
   let todayMoveEur: Decimal | null = null;
   let todayMovePct: Decimal | null = null;
-  if (isLive && quote?.price && quote.previousClose && !quote.previousClose.isZero()) {
-    const moveNative = quote.price.minus(quote.previousClose).times(shares);
+  const previousClose = quote?.previousClose ?? null;
+  const quotePrice = quote?.price ?? null;
+  const hasPriorClose = previousClose !== null && !previousClose.isZero();
+  const moveApplies =
+    hasPriorClose &&
+    quotePrice !== null &&
+    (holding.price_type === "nav"
+      ? quote?.valueDate != null && quote.valueDate >= asOfDate
+      : isLive);
+  if (moveApplies && quotePrice !== null && previousClose !== null) {
+    const moveNative = quotePrice.minus(previousClose).times(shares);
     todayMoveEur = convert(moveNative, currency, EUR, fx);
-    todayMovePct = quote.price.minus(quote.previousClose).dividedBy(quote.previousClose);
+    todayMovePct = quotePrice.minus(previousClose).dividedBy(previousClose);
   }
 
   const unrealisedPlEur =
