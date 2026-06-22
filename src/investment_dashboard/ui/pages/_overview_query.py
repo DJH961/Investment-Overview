@@ -13,6 +13,7 @@ from investment_dashboard.domain.currency import (
     dual_currency_amounts,
     lookup_rate_with_forward_fill,
 )
+from investment_dashboard.domain.market_hours import is_market_open
 from investment_dashboard.domain.money_market import is_money_market
 from investment_dashboard.domain.returns import (
     total_growth_pct_compounded,
@@ -728,14 +729,33 @@ def _fmt_pct(value: Decimal | None) -> str:
     return f"{value * Decimal(100):,.2f} %"
 
 
-def _fmt_asof(freshness: HoldingFreshness | None) -> str:
-    """Compact "as of" string for a table row (date, par note, or em dash)."""
+def _fmt_asof(freshness: HoldingFreshness | None, *, today: date | None = None) -> str:
+    """Compact freshness string for a holding's "As Of" cell.
+
+    Today's price is promoted to a status word so the row reads at a glance:
+
+    * ``LIVE``  — the price is from today, was pulled in today's refresh, and the
+      instrument's market is open right now (a genuinely current quote).
+    * ``TODAY`` — the price is from today but the market has since closed (a
+      settled close that is current yet no longer moving).
+    * ``as of <date>`` — anything older falls back to the observation date.
+
+    Money-market funds price at a fixed par with no feed, so they keep "par".
+    """
     if freshness is None:
         return "—"
     if freshness.is_money_market:
         return "par"
     if freshness.price_as_of is None:
         return "—"
+    today = today or date.today()
+    if freshness.price_as_of == today:
+        pulled_today = (
+            freshness.updated_at is not None and freshness.updated_at.date() == today
+        )
+        if freshness.market_open and pulled_today:
+            return "LIVE"
+        return "TODAY"
     return freshness.price_as_of.strftime("%d %b %Y")
 
 
@@ -774,15 +794,19 @@ class HoldingFreshness:
     * ``updated_at`` — *when we last pulled* fresh prices for the instrument
       (the saved ``last_refreshed_at`` timestamp), so the user can tell a fresh
       fetch from a value that has simply not moved.
+    * ``market_open`` — whether the instrument's exchange is open *right now*
+      (best-effort, by quote currency). Lets a same-day price read "LIVE" while
+      the market trades and "TODAY" once it has closed.
 
     Money-market / settlement funds price at a fixed $1.00 par with no feed, so
-    both fields are ``None`` and ``is_money_market`` is set — the UI shows a
+    both date fields are ``None`` and ``is_money_market`` is set — the UI shows a
     "fixed par" note rather than a misleading date.
     """
 
     price_as_of: date | None
     updated_at: datetime | None
     is_money_market: bool
+    market_open: bool = False
 
 
 def holding_freshness(session: Session, positions: list[Position]) -> dict[int, HoldingFreshness]:
@@ -805,6 +829,9 @@ def holding_freshness(session: Session, positions: list[Position]) -> dict[int, 
             price_as_of=None if is_mm else as_of_dates.get(iid),
             updated_at=None if is_mm else refreshed.get(iid),
             is_money_market=is_mm,
+            market_open=(
+                False if is_mm else is_market_open(p.instrument.native_currency)
+            ),
         )
     return out
 
@@ -850,6 +877,7 @@ class HoldingCard:
     # Freshness / transparency.
     price_as_of: date | None
     updated_at: datetime | None
+    market_open: bool = False
 
 
 def build_holding_cards(
@@ -925,6 +953,7 @@ def build_holding_cards(
                 weight=None,
                 price_as_of=fr.price_as_of if fr is not None else None,
                 updated_at=fr.updated_at if fr is not None else None,
+                market_open=fr.market_open if fr is not None else False,
             )
         )
     # Portfolio weight: each card's EUR value as a share of the held total.

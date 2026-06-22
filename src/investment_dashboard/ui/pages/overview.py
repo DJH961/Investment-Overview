@@ -154,7 +154,9 @@ def format_price_freshness(card: HoldingCard, *, tz: tzinfo | None = None) -> st
     Mirrors the web companion's per-row transparency:
 
     * money-market funds price at a fixed $1.00 par with no feed → say so;
-    * a priced holding shows the close's observation date ("as of …") and,
+    * a priced holding from today reads "LIVE" while its market trades (and the
+      price came from today's refresh) or "TODAY" once the market has closed;
+    * an older priced holding shows the close's observation date ("as of …") and,
       when known, the saved last-refresh time ("updated …");
     * a held holding with no cached price at all reads "no price".
 
@@ -167,6 +169,11 @@ def format_price_freshness(card: HoldingCard, *, tz: tzinfo | None = None) -> st
         return "par $1.00 · fixed"
     if card.price_as_of is None:
         return "no price"
+    if card.price_as_of == date.today():
+        pulled_today = (
+            card.updated_at is not None and card.updated_at.date() == date.today()
+        )
+        return "LIVE" if (card.market_open and pulled_today) else "TODAY"
     parts = [f"as of {_fmt_asof_date(card.price_as_of)}"]
     if card.updated_at is not None:
         parts.append(f"updated {_fmt_updated(card.updated_at, tz=tz)}")

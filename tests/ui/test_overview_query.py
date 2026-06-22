@@ -513,8 +513,9 @@ def test_position_rows_as_of_date_from_freshness(session: Session, seeded: None)
     fresh = holding_freshness(session, positions)
     rows = position_rows(positions, freshness=fresh)
     vti = next(r for r in rows if r["symbol"] == "VTI")
-    # The "as of" string reflects the latest cached print date (today here).
-    assert vti["price_as_of"] == date.today().strftime("%d %b %Y")
+    # Today's price is promoted to a live status word ("LIVE" while the market
+    # trades, "TODAY" once it has closed) instead of the bare date.
+    assert vti["price_as_of"] in {"LIVE", "TODAY"}
     assert "instrument_id" in vti
 
 
