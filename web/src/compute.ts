@@ -31,6 +31,13 @@ import type { ExportCashflow, ExportHolding, MobileExport } from "./types";
 const EUR = "EUR";
 const USD = "USD";
 
+/**
+ * Twelve Data free-tier daily credit cap, mirrored here so the pure compute
+ * layer can default {@link OverviewView.dailyCreditLimit} without importing the
+ * network/quotes module. Keep in step with `quotes.ts` `FREE_TIER.creditsPerDay`.
+ */
+const FREE_TIER_CREDITS_PER_DAY = 800;
+
 export interface HoldingView {
   symbol: string;
   name: string;
@@ -167,6 +174,15 @@ export interface OverviewView {
    * dashboard fell back to the exported last-known values; null otherwise.
    */
   liveDegradedReason: string | null;
+  /**
+   * Free-tier data credits spent so far in the rolling daily window, and the
+   * daily cap. Populated by the app shell after the model is built (it owns the
+   * network/credit log), so the compute layer defaults `dailyCreditsUsed` to
+   * null. Drives the footer "data budget used today" line so the user can see
+   * how many pulls they've made against the limit.
+   */
+  dailyCreditsUsed: number | null;
+  dailyCreditLimit: number;
 }
 
 /** Portfolio allocation by asset class (holdings only, excludes cash). */
@@ -782,6 +798,8 @@ export function buildDashboard(
       exportAsOf,
     ),
     lastDataPullAt: null,
+    dailyCreditsUsed: null,
+    dailyCreditLimit: FREE_TIER_CREDITS_PER_DAY,
     totalValueEur,
     cashValueEur,
     totalCostBasisEur,
