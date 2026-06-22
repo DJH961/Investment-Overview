@@ -350,12 +350,17 @@ def register() -> None:
                                 "inv-row-gain": f"data.total_growth_{ccy_key}_signed > 0",
                                 "inv-row-loss": f"data.total_growth_{ccy_key}_signed < 0",
                             },
-                            # ``autoHeight`` grows the grid to fit *every* row, so
-                            # the whole table reads top-to-bottom with no inner
-                            # vertical scrollbar; the columns keep their natural
-                            # widths (no ``flex``) so a wide table scrolls only
-                            # left↔right — the layout the user asked for.
-                            "domLayout": "autoHeight",
+                            # The table is wider than the page (≈17 columns), so
+                            # it must scroll left↔right. ``autoHeight`` used to
+                            # grow the grid to fit every row, but that pushes the
+                            # horizontal scrollbar to the very bottom of a long
+                            # table — out of reach — so the right-hand columns
+                            # (YTD/MTD/Today) read as "cut off". A bounded
+                            # viewport keeps *both* scrollbars pinned and always
+                            # reachable, so the whole table is visible. The grid
+                            # height is set on the element below.
+                            "alwaysShowHorizontalScroll": True,
+                            "suppressHorizontalScroll": False,
                             "defaultColDef": {
                                 "resizable": True,
                                 "sortable": True,
@@ -364,6 +369,12 @@ def register() -> None:
                                 "autoHeaderHeight": True,
                             },
                         }
-                    ).classes("ag-theme-alpine w-full")
+                    ).classes("ag-theme-alpine w-full").style(
+                        # Cap the viewport so the grid keeps its own vertical and
+                        # (sticky) horizontal scrollbars within view; tall enough
+                        # to show many rows at once, but never taller than the
+                        # screen.
+                        "height:min(72vh, 60rem); min-height:24rem"
+                    )
 
             deferred(_build, compute=_gather)

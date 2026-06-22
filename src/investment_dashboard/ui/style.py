@@ -141,6 +141,21 @@ html, body {{
   background: var(--inv-accent-soft);
   color: var(--inv-accent);
 }}
+/* Live feed: market is open and fresh prices are landing. Tinted with the gain
+   accent and a gently pulsing icon so it reads as "moving right now" — the
+   desktop echo of the web companion's pulsing "market open" badge. */
+.inv-refresh-chip.inv-refresh-live {{
+  background: color-mix(in srgb, var(--inv-gain) 12%, transparent);
+  color: var(--inv-gain);
+}}
+.inv-refresh-icon.inv-refresh-live {{
+  animation: inv-refresh-pulse 2s ease-out infinite;
+}}
+@keyframes inv-refresh-pulse {{
+  0% {{ opacity: 1; }}
+  50% {{ opacity: 0.45; }}
+  100% {{ opacity: 1; }}
+}}
 .inv-refresh-icon.inv-refresh-spin {{
   animation: inv-refresh-spin 0.9s linear infinite;
 }}
@@ -172,6 +187,7 @@ html, body {{
 }}
 @media (prefers-reduced-motion: reduce) {{
   .inv-refresh-icon.inv-refresh-spin {{ animation: none; }}
+  .inv-refresh-icon.inv-refresh-live {{ animation: none; }}
   #inv-refreshbar.is-active {{ animation: none; }}
 }}
 
@@ -246,6 +262,73 @@ html, body {{
   color: var(--inv-muted);
   font-size: 0.9375rem;
   margin-top: 2px;
+}}
+
+/* Overview header: the page title sits on the left and a prominent Total Value
+   "hero" box on the right, the way a neobroker leads with the headline number.
+   Wraps to a stacked layout on narrow viewports. */
+.inv-overview-header {{
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  flex-wrap: wrap;
+}}
+.inv-hero-total {{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+  margin-left: auto;
+}}
+@media (max-width: 40rem) {{
+  .inv-hero-total {{
+    align-items: flex-start;
+    text-align: left;
+    margin-left: 0;
+  }}
+}}
+.inv-hero-total .inv-hero-label {{
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--inv-muted);
+  font-weight: 600;
+}}
+.inv-hero-total .inv-hero-value {{
+  font-size: clamp(1.9rem, 1.4rem + 2.2vw, 2.9rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  color: var(--inv-ink);
+  font-variant-numeric: tabular-nums;
+}}
+.inv-hero-total .inv-hero-value .inv-kpi-dual-ccy {{
+  font-size: 0.5em;
+}}
+.inv-hero-total .inv-hero-secondary {{
+  font-size: clamp(1rem, 0.9rem + 0.6vw, 1.3rem);
+  font-weight: 600;
+  color: var(--inv-ink);
+  opacity: 0.78;
+  font-variant-numeric: tabular-nums;
+  margin-top: 1px;
+}}
+.inv-hero-total .inv-hero-change {{
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.45rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--inv-radius-pill);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: var(--inv-surface-alt);
+}}
+/* A touch of breathing room between the hero/header and the KPI band below. */
+.inv-kpi-grid--hero {{
+  margin-top: 0.5rem;
 }}
 
 .inv-section {{
@@ -409,6 +492,37 @@ html, body {{
   font-size: 0.875rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  color: var(--inv-muted);
+}}
+
+/* ------------------------------------------------------------------ */
+/* Calculator plan rows                                                */
+/* ------------------------------------------------------------------ */
+.inv-plan-amount {{
+  display: block;
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}}
+.inv-plan-amount--member {{
+  font-size: 1.02rem;
+  font-weight: 700;
+}}
+.inv-plan-shares {{
+  display: block;
+  margin-top: 1px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--inv-text, #1f2430);
+  opacity: 0.85;
+}}
+.inv-plan-sub {{
+  display: block;
+  font-size: 0.74rem;
+  font-weight: 500;
   color: var(--inv-muted);
 }}
 

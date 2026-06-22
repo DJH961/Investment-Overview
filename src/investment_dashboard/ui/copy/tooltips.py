@@ -17,6 +17,10 @@ TOOLTIPS: Final[dict[str, str]] = {
         "Current portfolio value minus the sum of all your net contributions. "
         "Positive means you've made money; negative means you've lost money."
     ),
+    "total_invested": (
+        "The sum of all your net contributions — money paid in, less anything "
+        "withdrawn. This is the cost side that Capital Gain is measured against."
+    ),
     "total_growth": (
         "Total portfolio growth since inception, expressed as a percentage of net "
         "contributions. (Closing value + cumulative cash dividends) / net contributions - 1."
