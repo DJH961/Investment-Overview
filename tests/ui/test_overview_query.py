@@ -593,6 +593,46 @@ def test_fmt_asof_live_when_market_open() -> None:
     assert _fmt_asof(fr, today=today) == "LIVE"
 
 
+def test_fmt_asof_stale_feed_reads_today_not_live() -> None:
+    from datetime import UTC
+
+    from investment_dashboard.ui.pages._overview_query import (
+        HoldingFreshness,
+        _fmt_asof,
+    )
+
+    today = date(2024, 6, 19)
+    # Market open and the price is from today, but the last successful pull is an
+    # hour old — the feed has stalled/gone unreachable, so it must NOT read LIVE.
+    now = datetime(2024, 6, 19, 15, 0, tzinfo=UTC)
+    fr = HoldingFreshness(
+        price_as_of=today,
+        updated_at=datetime(2024, 6, 19, 14, 0),
+        is_money_market=False,
+        market_open=True,
+    )
+    assert _fmt_asof(fr, today=today, now=now) == "TODAY"
+
+
+def test_fmt_asof_fresh_feed_reads_live() -> None:
+    from datetime import UTC
+
+    from investment_dashboard.ui.pages._overview_query import (
+        HoldingFreshness,
+        _fmt_asof,
+    )
+
+    today = date(2024, 6, 19)
+    now = datetime(2024, 6, 19, 14, 5, tzinfo=UTC)
+    fr = HoldingFreshness(
+        price_as_of=today,
+        updated_at=datetime(2024, 6, 19, 14, 4),  # pulled a minute ago
+        is_money_market=False,
+        market_open=True,
+    )
+    assert _fmt_asof(fr, today=today, now=now) == "LIVE"
+
+
 def test_fmt_asof_today_when_market_closed() -> None:
     from investment_dashboard.ui.pages._overview_query import (
         HoldingFreshness,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -41,6 +41,43 @@ def test_live_says_live_only() -> None:
     assert cap.as_of_text == "live"
     assert cap.updated_text is None
     assert cap.combined() == "live \u00b7 $1\u2248\u20ac0.9259"
+
+
+def test_stale_feed_while_market_open_is_not_live() -> None:
+    # Market open and today's price is in, but our last successful pull is an
+    # hour old (the feed stalled / we cannot access live data) → settles to
+    # "today", never dishonestly "live".
+    now = datetime(2024, 6, 24, 18, 0, tzinfo=NY)
+    cap = _caption(
+        market_open=True,
+        price_observed_at=now.replace(hour=17),  # pulled an hour ago
+        now=now,
+    )
+    assert cap.is_live is False
+    assert cap.as_of_text == "today"
+
+
+def test_fresh_feed_while_market_open_is_live() -> None:
+    now = datetime(2024, 6, 24, 18, 0, tzinfo=NY)
+    cap = _caption(
+        market_open=True,
+        price_observed_at=now - timedelta(minutes=2),  # pulled 2 minutes ago
+        now=now,
+    )
+    assert cap.is_live is True
+    assert cap.as_of_text == "live"
+
+
+def test_market_open_recent_market_time_counts_as_live() -> None:
+    # No pull timestamp, but the exchange struck the price seconds ago → live.
+    now = datetime(2024, 6, 24, 18, 0, tzinfo=NY)
+    cap = _caption(
+        market_open=True,
+        price_observed_at=None,
+        price_market_at=now - timedelta(minutes=1),
+        now=now,
+    )
+    assert cap.is_live is True
 
 
 def test_today_closed_says_today_and_stamps_the_market_close_time() -> None:
