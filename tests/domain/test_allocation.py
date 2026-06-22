@@ -112,6 +112,97 @@ def test_negative_cash_raises() -> None:
         )
 
 
+# --- no_buy / allow_sell -------------------------------------------------
+
+
+def test_no_buy_fund_receives_no_cash_but_keeps_target() -> None:
+    # Two funds, 50/50, but #2 is no-buy. All cash must go to #1.
+    plan = plan_rebalance(
+        cash_to_invest=Decimal(100),
+        target_weights_pct={1: Decimal(50), 2: Decimal(50)},
+        current_values={1: Decimal(0), 2: Decimal(0)},
+        current_prices={1: Decimal(1), 2: Decimal(1)},
+        no_buy_ids={2},
+    )
+    by_id = {r.instrument_id: r for r in plan.rows}
+    assert by_id[1].add_value == Decimal(100)
+    assert by_id[2].add_value == Decimal(0)
+    # #2 still appears in the plan (accounted for) and is flagged no-buy.
+    assert by_id[2].target_pct == Decimal(50)
+    assert by_id[2].no_buy is True
+    assert by_id[1].no_buy is False
+
+
+def test_no_buy_slack_redistributes_to_buyable() -> None:
+    # #2 is no-buy and under target; its slice stays with #1 (the buyable fund).
+    plan = plan_rebalance(
+        cash_to_invest=Decimal(200),
+        target_weights_pct={1: Decimal(50), 2: Decimal(50)},
+        current_values={1: Decimal(0), 2: Decimal(0)},
+        current_prices={1: Decimal(1), 2: Decimal(1)},
+        no_buy_ids={2},
+    )
+    by_id = {r.instrument_id: r for r in plan.rows}
+    assert by_id[1].add_value == Decimal(200)
+    assert by_id[2].add_value == Decimal(0)
+    assert plan.residual_cash == Decimal(0)
+
+
+def test_allow_sell_trims_overweight_fund() -> None:
+    # Currently 100% in #1 (1000), want 60/40 with no fresh cash → sell #1, buy #2.
+    plan = plan_rebalance(
+        cash_to_invest=Decimal(0),
+        target_weights_pct={1: Decimal(60), 2: Decimal(40)},
+        current_values={1: Decimal(1000), 2: Decimal(0)},
+        current_prices={1: Decimal(10), 2: Decimal(10)},
+        allow_sell=True,
+    )
+    by_id = {r.instrument_id: r for r in plan.rows}
+    # total_after = 1000 → targets 600 / 400. #1 sells 400, #2 buys 400.
+    assert by_id[1].add_value == Decimal(-400)
+    assert by_id[1].add_shares == Decimal(-40)
+    assert by_id[2].add_value == Decimal(400)
+
+
+def test_allow_sell_default_off_never_sells() -> None:
+    plan = plan_rebalance(
+        cash_to_invest=Decimal(0),
+        target_weights_pct={1: Decimal(60), 2: Decimal(40)},
+        current_values={1: Decimal(1000), 2: Decimal(0)},
+        current_prices={1: Decimal(10), 2: Decimal(10)},
+    )
+    assert all(r.add_value >= Decimal(0) for r in plan.rows)
+
+
+def test_no_buy_can_be_sold_in_rebalance_mode() -> None:
+    # #1 is no-buy and over target: in rebalance mode it may still be trimmed.
+    plan = plan_rebalance(
+        cash_to_invest=Decimal(0),
+        target_weights_pct={1: Decimal(50), 2: Decimal(50)},
+        current_values={1: Decimal(1000), 2: Decimal(0)},
+        current_prices={1: Decimal(10), 2: Decimal(10)},
+        allow_sell=True,
+        no_buy_ids={1},
+    )
+    by_id = {r.instrument_id: r for r in plan.rows}
+    assert by_id[1].add_value == Decimal(-500)
+    assert by_id[2].add_value == Decimal(500)
+
+
+def test_no_buy_under_target_not_bought_in_rebalance_mode() -> None:
+    # #2 is no-buy and under target: rebalance must not buy it.
+    plan = plan_rebalance(
+        cash_to_invest=Decimal(0),
+        target_weights_pct={1: Decimal(50), 2: Decimal(50)},
+        current_values={1: Decimal(1000), 2: Decimal(0)},
+        current_prices={1: Decimal(10), 2: Decimal(10)},
+        allow_sell=True,
+        no_buy_ids={2},
+    )
+    by_id = {r.instrument_id: r for r in plan.rows}
+    assert by_id[2].add_value == Decimal(0)
+
+
 # --- current_weights_pct -------------------------------------------------
 
 
