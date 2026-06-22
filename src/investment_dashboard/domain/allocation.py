@@ -280,9 +280,9 @@ def plan_rebalance(
             quant = Decimal(10) ** -fractional_decimals
             shares = (add[i] / price).quantize(quant)
         else:
-            # Floor toward zero so we never over-buy or over-sell whole shares.
-            ratio = add[i] / price
-            shares = Decimal(math.floor(ratio)) if ratio >= 0 else -Decimal(math.floor(-ratio))
+            # Truncate toward zero so we never over-buy (positive) or
+            # over-sell (negative) a whole-share order.
+            shares = Decimal(math.trunc(add[i] / price))
         actual_add = shares * price if price is not None else add[i]
         # For floored shares, "spent" is shares * price; the residual rolls
         # up to the plan-wide unallocated cash.
