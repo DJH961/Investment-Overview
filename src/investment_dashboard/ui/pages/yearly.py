@@ -137,8 +137,9 @@ def _build_body(data: _YearlyData) -> None:  # pragma: no cover - heavy render, 
                     *_money_columns("Interest", "interest", display_ccy),
                     *_money_columns("Net flow", "net_flow", display_ccy),
                     *_money_columns("Closing value", "closing_value", display_ccy),
-                    # Period (Modified Dietz) growth, per currency.
-                    pct_column("Growth % (period)", "growth_pct", display_ccy),
+                    # Per-year money-weighted (XIRR) growth, per currency —
+                    # consistent with the cumulative Total Growth column.
+                    pct_column("Growth % (period)", "yearly_growth", display_ccy),
                     # Total Growth headline metric — kept last (v2.9.1).
                     pct_column("Total Growth", "total_growth", display_ccy),
                 ],
@@ -158,8 +159,8 @@ def _build_body(data: _YearlyData) -> None:  # pragma: no cover - heavy render, 
         ui.label(
             f"Values shown in {display_ccy} ({sym}); switch currency from the header "
             "toggle. Closing value is end-of-year mark-to-market (best-effort if "
-            "prices are missing). Growth % (period) is the per-year time-weighted "
-            "return, chained across daily snapshots (it degrades to a single "
-            "Modified-Dietz year when snapshots are sparse); Total Growth (last "
+            "prices are missing). Growth % (period) is the per-year money-weighted "
+            "(XIRR) return, compounded over the year's own span; for the first "
+            "invested year it equals Total Growth by construction. Total Growth (last "
             "column) is cumulative (1 + XIRR) ^ years to the end of the row.",
         ).classes("text-caption opacity-70")

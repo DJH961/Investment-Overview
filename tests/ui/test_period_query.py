@@ -196,6 +196,96 @@ def test_money_and_pct_columns_bind_to_display_currency() -> None:
     assert "cellClassRules" in pc
 
 
+def test_yearly_xirr_growth_year_one_equals_total_growth(session: Session) -> None:
+    """v3.x — the per-year XIRR "Growth %" equals cumulative Total Growth for
+    the first invested year (no opening balance to discount), and is populated
+    for every year. Later years carry their own money-weighted return."""
+    from investment_dashboard.repositories import snapshots_repo
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="savings_bank",
+        account_label="Direct Savings",
+        native_currency="EUR",
+        account_type="savings",
+    )
+    session.add_all(
+        [
+            Transaction(
+                account_id=acct.id,
+                date=date(2023, 6, 1),
+                kind="deposit",
+                net_eur=Decimal("1000"),
+                net_native=Decimal("1000"),
+                source=TransactionSource.MANUAL,
+            ),
+            Transaction(
+                account_id=acct.id,
+                date=date(2024, 6, 1),
+                kind="deposit",
+                net_eur=Decimal("500"),
+                net_native=Decimal("500"),
+                source=TransactionSource.MANUAL,
+            ),
+        ]
+    )
+    # Year-end marks: 2023 closes at 1100 (grew from 1000), 2024 at 1800.
+    snapshots_repo.upsert_snapshot(session, date(2023, 12, 31), Decimal("1100"))
+    snapshots_repo.upsert_snapshot(session, date(2024, 12, 31), Decimal("1800"))
+    session.flush()
+
+    rows = aggregate(session, monthly=False, today=date(2024, 12, 31))
+    y2023 = next(r for r in rows if r.label == "2023")
+    y2024 = next(r for r in rows if r.label == "2024")
+
+    # Year 1: yearly XIRR growth == cumulative Total Growth (both EUR), populated.
+    assert y2023.yearly_growth_eur is not None
+    assert y2023.total_growth_compounded_eur is not None
+    assert abs(y2023.yearly_growth_eur - y2023.total_growth_compounded_eur) < Decimal("1e-9")
+
+    # Every year carries a per-year figure (year 2 has an opening balance).
+    assert y2024.yearly_growth_eur is not None
+    # Year 2's own return differs from the cumulative since-inception figure.
+    assert y2024.yearly_growth_eur != y2024.total_growth_compounded_eur
+
+
+def test_yearly_xirr_growth_is_currency_dependent(session: Session) -> None:
+    """The per-year XIRR growth carries an EUR and a USD companion; with a
+    non-flat FX path the two figures differ (the wallet's FX drift shows)."""
+    from investment_dashboard.repositories import fx_repo, snapshots_repo
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Fidelity",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2023, 6, 1),
+            kind="deposit",
+            net_eur=Decimal("1000"),
+            net_native=Decimal("1100"),
+            source=TransactionSource.MANUAL,
+        )
+    )
+    snapshots_repo.upsert_snapshot(session, date(2023, 12, 31), Decimal("1200"))
+    # EUR→USD drifts across the year so the USD-denominated return diverges.
+    fx_repo.upsert_rates(
+        session,
+        {date(2023, 6, 1): Decimal("1.10"), date(2023, 12, 31): Decimal("1.25")},
+    )
+    session.flush()
+
+    rows = aggregate(session, monthly=False, today=date(2023, 12, 31), display_currency="USD")
+    y2023 = next(r for r in rows if r.label == "2023")
+    assert y2023.yearly_growth_eur is not None
+    assert y2023.yearly_growth_usd is not None
+    assert y2023.yearly_growth_eur != y2023.yearly_growth_usd
+
+
 def test_daily_chained_twr_compounds_interior_snapshots(session: Session) -> None:
     """§3.2.12 — when daily snapshots exist *inside* a period, the growth %
     chains each sub-period's return instead of a single Modified-Dietz over
