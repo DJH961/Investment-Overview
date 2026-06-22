@@ -93,6 +93,27 @@ describe("describeLiveCoverage", () => {
       "Showing last known prices (2/2)",
     );
   });
+
+  it("never claims 'up to date' when data was not freshly pulled", () => {
+    // The whole portfolio came straight from cache (no recent network pull): it
+    // must not be presented as "up to date".
+    expect(
+      describeLiveCoverage(report({ servedFresh: ["AAPL", "MSFT"] }), new Set(), {
+        freshlyPulled: false,
+      }),
+    ).toBe("Showing recent prices (2 holdings)");
+    expect(
+      describeLiveCoverage(report({ servedFresh: ["AAPL"] }), new Set(), { freshlyPulled: false }),
+    ).toBe("Showing recent prices");
+  });
+
+  it("does claim 'up to date' when freshly pulled", () => {
+    expect(
+      describeLiveCoverage(report({ fetched: ["AAPL", "MSFT"] }), new Set(), {
+        freshlyPulled: true,
+      }),
+    ).toBe("All 2 holdings up to date");
+  });
 });
 
 

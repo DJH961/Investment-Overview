@@ -65,6 +65,7 @@ function overview(extra: Partial<OverviewView> = {}): OverviewView {
     totalGainUsd: null,
     totalGainPctUsd: null,
     todayMoveUsd: null,
+    todayMovePctUsd: null,
     mtdGrowthPctUsd: null,
     ytdGrowthPctUsd: null,
     portfolioXirrUsd: null,

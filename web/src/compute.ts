@@ -96,6 +96,13 @@ export interface HoldingView {
   valueUsd: Decimal | null;
   costBasisUsd: Decimal | null;
   todayMoveUsd: Decimal | null;
+  /**
+   * Today's move as a fraction, recomputed in USD so the per-stock daily figure
+   * is currency-correct when USD is selected. A USD-native holding's USD move is
+   * the pure price tick; an EUR-native one's includes the EUR/USD swing seen from
+   * the USD side. Null when no today's move applies. See {@link buildHolding}.
+   */
+  todayMovePctUsd: Decimal | null;
   unrealisedPlUsd: Decimal | null;
   totalGrowthPctUsd: Decimal | null;
   xirrUsd: Decimal | null;
@@ -169,6 +176,13 @@ export interface OverviewView {
   totalGainUsd: Decimal | null;
   totalGainPctUsd: Decimal | null;
   todayMoveUsd: Decimal | null;
+  /**
+   * Today's move as a fraction, recomputed in USD so the headline daily figure is
+   * currency-correct when USD is selected (it differs from the EUR figure
+   * whenever EUR/USD moved between the prior close and now). Null when USD is
+   * unavailable, in which case the UI falls back to the EUR figure.
+   */
+  todayMovePctUsd: Decimal | null;
   mtdGrowthPctUsd: Decimal | null;
   ytdGrowthPctUsd: Decimal | null;
   portfolioXirrUsd: Decimal | null;
@@ -559,12 +573,17 @@ function buildHolding(
   // The EUR move is **FX-aware**: it revalues the current mark at today's EUR→USD
   // (`fx`) and the prior mark at the prior session's EUR→USD (`fxPrev`), so for a
   // USD holding it captures both the security move *and* the EUR/USD revaluation
-  // of the whole position — not just the price tick. The USD move stays
-  // FX-neutral (the native price change converted at a single rate), and the
-  // difference between the two is the FX contribution surfaced separately.
+  // of the whole position — not just the price tick. The USD move is computed the
+  // same way but from the USD side (current mark at `fx`, prior at `fxPrev`): for
+  // a USD-native holding that collapses to the pure price tick (FX cancels), while
+  // an EUR-native one picks up the EUR/USD swing as a USD investor would feel it.
+  // The two are therefore genuinely currency-correct, not one rescaled from the
+  // other, so the per-stock "today" figure changes honestly with the currency
+  // toggle. The price-only slice (`todayFxMoveEur`) is surfaced separately.
   let todayMoveEur: Decimal | null = null;
   let todayMovePct: Decimal | null = null;
   let todayMoveUsd: Decimal | null = null;
+  let todayMovePctUsd: Decimal | null = null;
   let todayFxMoveEur: Decimal | null = null;
   const previousClose = quote?.previousClose ?? null;
   const quotePrice = quote?.price ?? null;
@@ -596,8 +615,16 @@ function buildHolding(
       );
       todayFxMoveEur = priceMoveEur !== null ? todayMoveEur.minus(priceMoveEur) : null;
     }
-    // FX-neutral USD move: native price change at today's spot only.
-    todayMoveUsd = convert(quotePrice.minus(previousClose).times(shares), currency, USD, fx);
+    // FX-aware USD move: current mark at today's spot, prior mark at the prior
+    // session's spot — currency-correct from the USD side (see comment above).
+    const valueNowUsd = convert(valueNowNative, currency, USD, fx);
+    const valuePrevUsd = convert(valuePrevNative, currency, USD, fxPrev);
+    if (valueNowUsd !== null && valuePrevUsd !== null) {
+      todayMoveUsd = valueNowUsd.minus(valuePrevUsd);
+      todayMovePctUsd = valuePrevUsd.greaterThan(0)
+        ? todayMoveUsd.dividedBy(valuePrevUsd)
+        : null;
+    }
   }
 
   const unrealisedPlEur =
@@ -684,6 +711,7 @@ function buildHolding(
     valueUsd,
     costBasisUsd,
     todayMoveUsd,
+    todayMovePctUsd,
     unrealisedPlUsd,
     totalGrowthPctUsd,
     xirrUsd,
@@ -885,13 +913,24 @@ export function buildDashboard(
     (acc, h) => (acc !== null && h.costBasisUsd !== null ? acc.plus(h.costBasisUsd) : acc),
     holdingsValueUsd === null ? null : new Decimal(0),
   );
-  // FX-neutral USD today's move: the sum of each holding's native price change
-  // at today's spot (never a rescale of the FX-aware EUR move, which would
-  // double-count the EUR/USD swing). Null when no holding could be valued in USD.
+  // FX-aware USD today's move: the sum of each holding's USD move (each valued at
+  // its own date's spot), so an EUR holding's EUR/USD swing is felt from the USD
+  // side just as the desktop's USD daily growth does. Null when no holding could
+  // be valued in USD.
   const todayMoveUsd = holdings.reduce<Decimal | null>(
     (acc, h) => (acc !== null && h.todayMoveUsd !== null ? acc.plus(h.todayMoveUsd) : acc),
     holdingsValueUsd === null ? null : new Decimal(0),
   );
+  // Portfolio today's move as a USD fraction, mirroring the EUR aggregation
+  // (move ÷ prior total). Currency-correct, so the headline "today" figure
+  // changes honestly with the currency toggle.
+  const todayMovePctUsd =
+    todayMoveUsd !== null && totalValueUsd !== null
+      ? (() => {
+          const prevTotalUsd = totalValueUsd.minus(todayMoveUsd);
+          return prevTotalUsd.greaterThan(0) ? todayMoveUsd.dividedBy(prevTotalUsd) : null;
+        })()
+      : null;
   const totalGainUsd =
     holdingsValueUsd !== null && totalCostBasisUsd !== null
       ? holdingsValueUsd.minus(totalCostBasisUsd)
@@ -985,6 +1024,7 @@ export function buildDashboard(
     totalGainUsd,
     totalGainPctUsd,
     todayMoveUsd,
+    todayMovePctUsd,
     mtdGrowthPctUsd,
     ytdGrowthPctUsd,
     portfolioXirrUsd,

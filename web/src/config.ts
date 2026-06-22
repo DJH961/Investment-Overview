@@ -22,6 +22,7 @@ const KEYS = {
   metaUrl: "iv.web.meta_url",
   quoteCacheMinutes: "iv.web.quote_cache_minutes",
   autoLockMinutes: "iv.web.auto_lock_minutes",
+  autoRefreshMinutes: "iv.web.auto_refresh_minutes",
 } as const;
 
 const DEFAULT_RELEASE_TAG = "live-data";
@@ -49,6 +50,15 @@ const DEFAULT_QUOTE_CACHE_MINUTES = 15;
 const DEFAULT_AUTO_LOCK_MINUTES = 5;
 /** Upper bound for the configurable idle auto-lock timeout, in minutes. */
 const MAX_AUTO_LOCK_MINUTES = 240;
+/**
+ * Default steady-state auto-refresh interval (minutes). This is the cadence the
+ * background price refresh settles into once everything is fresh, and the gap
+ * before the next automatic refresh after an off-cycle manual tap. Five minutes
+ * keeps prices current without burning through the free-tier daily budget.
+ */
+const DEFAULT_AUTO_REFRESH_MINUTES = 5;
+/** Upper bound for the configurable auto-refresh interval, in minutes. */
+const MAX_AUTO_REFRESH_MINUTES = 120;
 
 /** Wraps/unwraps the API key with a non-extractable per-device key (IndexedDB). */
 const secrets = createSecretBox();
@@ -88,6 +98,12 @@ export interface AppConfig {
    * session locks itself; `0` disables auto-lock.
    */
   autoLockMinutes: number;
+  /**
+   * Steady-state auto-refresh interval in minutes. The background price refresh
+   * relaxes to this cadence once everything is fresh, and the next automatic
+   * refresh after an off-cycle manual tap is pushed out by this much.
+   */
+  autoRefreshMinutes: number;
 }
 
 /** Clamp a parsed cache-minutes value to a sane 1–240 range, with a default. */
@@ -110,6 +126,17 @@ export function parseAutoLockMinutes(raw: string): number {
   return Math.min(MAX_AUTO_LOCK_MINUTES, Math.round(n));
 }
 
+/**
+ * Clamp a parsed auto-refresh interval to `1`–{@link MAX_AUTO_REFRESH_MINUTES}
+ * minutes, falling back to {@link DEFAULT_AUTO_REFRESH_MINUTES} for a blank or
+ * non-positive value. Exported so the Settings UI clamps identically.
+ */
+export function parseAutoRefreshMinutes(raw: string): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_AUTO_REFRESH_MINUTES;
+  return Math.min(MAX_AUTO_REFRESH_MINUTES, Math.round(n));
+}
+
 /** A blank, unconfigured config — used as the initial in-memory state. */
 export function defaultConfig(): AppConfig {
   return {
@@ -120,6 +147,7 @@ export function defaultConfig(): AppConfig {
     metaUrl: "",
     quoteCacheMinutes: DEFAULT_QUOTE_CACHE_MINUTES,
     autoLockMinutes: DEFAULT_AUTO_LOCK_MINUTES,
+    autoRefreshMinutes: DEFAULT_AUTO_REFRESH_MINUTES,
   };
 }
 
@@ -165,6 +193,7 @@ export async function loadConfig(): Promise<AppConfig> {
     metaUrl: read(KEYS.metaUrl),
     quoteCacheMinutes: parseCacheMinutes(read(KEYS.quoteCacheMinutes)),
     autoLockMinutes: parseAutoLockMinutes(read(KEYS.autoLockMinutes)),
+    autoRefreshMinutes: parseAutoRefreshMinutes(read(KEYS.autoRefreshMinutes)),
   };
 }
 
@@ -176,6 +205,7 @@ export async function saveConfig(config: AppConfig): Promise<void> {
   write(KEYS.metaUrl, config.metaUrl.trim());
   write(KEYS.quoteCacheMinutes, String(config.quoteCacheMinutes));
   write(KEYS.autoLockMinutes, String(config.autoLockMinutes));
+  write(KEYS.autoRefreshMinutes, String(config.autoRefreshMinutes));
 }
 
 /** A loosely-validated `owner/name` slug, matching the publisher's guard. */
@@ -234,4 +264,4 @@ export function resolveMetaUrl(config: AppConfig): string | null {
   return `https://github.com/${config.repo}/releases/download/${tag}/${META_ASSET_NAME}`;
 }
 
-export { DEFAULT_RELEASE_TAG, ASSET_NAME, META_ASSET_NAME, DEFAULT_QUOTE_CACHE_MINUTES, DEFAULT_AUTO_LOCK_MINUTES, MAX_AUTO_LOCK_MINUTES };
+export { DEFAULT_RELEASE_TAG, ASSET_NAME, META_ASSET_NAME, DEFAULT_QUOTE_CACHE_MINUTES, DEFAULT_AUTO_LOCK_MINUTES, MAX_AUTO_LOCK_MINUTES, DEFAULT_AUTO_REFRESH_MINUTES, MAX_AUTO_REFRESH_MINUTES };

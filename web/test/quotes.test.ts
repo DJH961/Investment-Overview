@@ -162,6 +162,32 @@ describe("loadQuotes — caching", () => {
     expect(report.servedFresh).toEqual(["FXAIX"]);
     expect(report.fetched).toEqual(["VTI"]);
   });
+
+  it("forceMarketFetch re-fetches fresh market quotes but spares NAV symbols", async () => {
+    const storage = memStorage();
+    // Both cached and well within their TTLs.
+    writeCachedQuotes(
+      new Map([
+        ["VTI", { symbol: "VTI", price: new Decimal("1"), previousClose: null, currency: "USD" }],
+        ["FXAIX", { symbol: "FXAIX", price: new Decimal("2"), previousClose: null, currency: "USD" }],
+      ]),
+      0,
+      storage,
+    );
+    const fetchImpl = vi.fn<FetchLike>(async (url) => quoteResponse(url));
+    const { report } = await loadQuotes(["VTI", "FXAIX"], "key", {
+      fetchImpl,
+      storage,
+      now: clock(60_000), // 1 min later — both still cache-fresh
+      sleep: noSleep,
+      navSymbols: new Set(["FXAIX"]),
+      cacheTtlMsForSymbol: (s) => (s === "FXAIX" ? 12 * 60 * 60_000 : 15 * 60_000),
+      forceMarketFetch: true,
+    });
+    // The market symbol is force-refetched; the once-a-day NAV is left on cache.
+    expect(report.fetched).toEqual(["VTI"]);
+    expect(report.servedFresh).toEqual(["FXAIX"]);
+  });
 });
 
 describe("loadQuotes — free-tier budget", () => {
