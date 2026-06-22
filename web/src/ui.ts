@@ -1005,7 +1005,7 @@ function renderPlanPanel(plan: PlanView): HTMLElement {
     const yearsValue = Math.max(1, Math.min(40, Math.round(Number(years.input.value) || 0)));
     const contribDisplay = Math.max(0, Number(contribution.input.value) || 0);
     const contribInput = new Decimal(contribDisplay);
-    const contribEur = displayCode === "USD" ? convertToEur(contribInput) : contribInput;
+    const contribEur = displayCode === "EUR" ? contribInput : convertToEur(contribInput);
     const rows = projectForward(plan.startingValueEur, contribEur, yearsValue, baseYear);
     renderProjection(summaryOut, tableOut, rows, plan.startingValueEur);
   };
