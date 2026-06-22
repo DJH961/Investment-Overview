@@ -83,6 +83,15 @@ export interface OverviewView {
   liveAsOf: number | null;
   /** Export valuation date (`meta.as_of`), shown when `liveAsOf` is null. */
   liveAsOfFallbackDate: string;
+  /**
+   * Epoch ms of the last time fresh market data actually landed from the
+   * network (a live quote or FX pull), or null when none yet this device.
+   * Drives the "data last pulled …" footer + Refresh-button tooltip — *when we
+   * last checked*, distinct from `liveAsOf` (when the prices themselves apply
+   * to). Populated by the app shell after the model is built (it owns the
+   * network), so the compute layer defaults it to null.
+   */
+  lastDataPullAt: number | null;
   totalValueEur: Decimal;
   cashValueEur: Decimal;
   totalCostBasisEur: Decimal;
@@ -608,6 +617,7 @@ export function buildDashboard(
       (latest, h) => (h.priceFallbackDate > latest ? h.priceFallbackDate : latest),
       exportAsOf,
     ),
+    lastDataPullAt: null,
     totalValueEur,
     cashValueEur,
     totalCostBasisEur,

@@ -23,7 +23,7 @@ import {
 } from "./phase4";
 import {
   formatAsOf,
-  formatUpdatedAt,
+  formatLastPull,
   formatCurrency,
   formatCurrencyWhole,
   formatDualCurrency,
@@ -176,7 +176,7 @@ function renderNotes(o: OverviewView): HTMLElement[] {
   }
   notes.push(
     h("p", { class: "note" }, [
-      `Data exported ${formatTimestamp(o.generatedAt)} · prices updated ${formatUpdatedAt(o.liveAsOf, o.liveAsOfFallbackDate)}.`,
+      `Data exported ${formatTimestamp(o.generatedAt)} · data last pulled ${formatLastPull(o.lastDataPullAt)}.`,
     ]),
   );
   return notes;
@@ -359,6 +359,7 @@ export function renderDashboard(
     h("span", { class: "icon-btn-glyph", "aria-hidden": "true" }, ["↻"]),
     h("span", { class: "icon-btn-text" }, ["Refresh"]),
   ]);
+  refresh.title = `Last updated ${formatLastPull(model.overview.lastDataPullAt)}`;
   const lock = h("button", { class: "icon-btn ghost", type: "button", "data-action": "lock" }, [lockLabel]);
   refresh.addEventListener("click", onRefresh);
   lock.addEventListener("click", onLock);

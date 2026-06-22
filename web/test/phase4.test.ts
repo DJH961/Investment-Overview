@@ -42,6 +42,7 @@ function overview(extra: Partial<OverviewView> = {}): OverviewView {
     asOf: "2026-06-19",
     liveAsOf: null,
     liveAsOfFallbackDate: "2026-06-19",
+    lastDataPullAt: null,
     totalValueEur: new Decimal("39000"),
     cashValueEur: new Decimal(0),
     totalCostBasisEur: new Decimal(0),
