@@ -74,6 +74,19 @@ describe("quote cache", () => {
     expect(got.quote.valueDate).toBe("2024-05-31");
   });
 
+  it("persists the provider market-state flag (marketOpen) across the cache", () => {
+    const s = memStorage();
+    const q: Quote = {
+      symbol: "VTI",
+      price: new Decimal("100"),
+      previousClose: null,
+      currency: "USD",
+      marketOpen: false,
+    };
+    writeCachedQuotes(new Map([["VTI", q]]), 5000, s);
+    expect(readCachedQuotes(s).get("VTI")!.quote.marketOpen).toBe(false);
+  });
+
   it("does not store a null-price quote (keeps the prior good value)", () => {
     const s = memStorage();
     writeCachedQuotes(new Map([["VTI", quote("VTI", "100")]]), 1000, s);

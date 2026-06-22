@@ -25,6 +25,17 @@ const MARKET_TZ = "America/New_York";
 const OPEN_MINUTES = 9 * 60 + 30; // 09:30
 const CLOSE_MINUTES = 16 * 60; // 16:00
 
+/**
+ * How recently the freshest price must have been observed for the headline total
+ * to be called *live* (rather than merely a same-day settled figure) while the
+ * session is open. The auto-refresh runs on a ~1–5 min cadence, so a 15-minute
+ * ceiling keeps a normal between-refreshes gap (or a brief provider hiccup) from
+ * flickering "Live" off, while a genuinely stalled or unreachable feed — no
+ * fresh price for many minutes — correctly stops claiming to be live. Mirrors
+ * the desktop's `LIVE_PRICE_WINDOW_SECONDS` (900 s).
+ */
+export const LIVE_PRICE_MAX_STALENESS_MS = 15 * 60 * 1000;
+
 interface ExchangeMoment {
   /** Weekday 0–6 (Sun–Sat) in the exchange timezone. */
   weekday: number;

@@ -14,6 +14,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **"Live" now only shows when prices are genuinely live (web + desktop).** The
+  live badge/caption is suppressed unless the market is truly open *and* fresh
+  data was actually accessed:
+  - The Python market clock (`domain.market_hours`) is now **holiday-aware**
+    (full NYSE calendar incl. Good Friday, Juneteenth and the observed-day
+    rule), matching the web companion — so a randomly-closed (holiday) session
+    never reads "live".
+  - A shared **live-recency window** (`feed_is_fresh`, 15 min) now gates the
+    desktop per-row "As Of" badge and the Daily Growth caption (not just the
+    header chip), so a stalled or unreachable feed honestly settles to
+    "today"/"as of …" instead of claiming "live".
+  - The web headline "Live" badge gains a freshness ceiling (a stale cache no
+    longer reads live) and honours Twelve Data's own `is_market_open=false`
+    ground truth (catching unscheduled or early-close sessions the modelled
+    clock would miss).
+
 ## [3.8.1] — 2026-06-22
 
 ### Fixed
