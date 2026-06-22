@@ -31,10 +31,55 @@ export interface RefreshCadenceOptions {
 export interface RefreshSignal {
   /** Symbols that couldn't be fetched this round (free-tier budget exhausted). */
   deferred: readonly string[];
+  /**
+   * Credits left in the rolling **daily** window (Twelve Data free tier: 800/day).
+   * Omit to disable daily-budget pacing. As this shrinks the cadence stretches
+   * out so the remaining budget lasts the rest of the day instead of being burnt
+   * early; at zero, auto-refresh backs right off.
+   */
+  dayRemaining?: number;
+  /** Total daily credit budget; defaults to {@link DEFAULT_DAY_CREDIT_LIMIT}. */
+  dayLimit?: number;
 }
 
 export const DEFAULT_SLOW_INTERVAL_MS = 5 * MINUTE_MS;
 export const DEFAULT_BURST_INTERVAL_MS = MINUTE_MS;
+
+/** Twelve Data free-tier daily credit cap (1 credit/symbol). */
+export const DEFAULT_DAY_CREDIT_LIMIT = 800;
+
+/**
+ * Fraction of the daily budget that may be spent before the cadence starts to
+ * stretch. Below this we refresh at the normal burst/slow cadence; above it we
+ * progressively space refreshes out so the rest of the budget lasts the day.
+ */
+export const BUDGET_EASE_THRESHOLD = 0.75;
+
+/**
+ * Hardest the daily-budget backoff stretches the cadence (multiplier on the base
+ * interval) as the budget nears or reaches exhaustion. e.g. the 5-minute slow
+ * cadence relaxes towards ~40 minutes once almost no daily credits remain.
+ */
+export const MAX_BUDGET_SLOWDOWN = 8;
+
+/**
+ * How much to stretch the refresh cadence given the daily credit budget left.
+ *
+ * Returns a multiplier ≥ 1 applied to the base (burst/slow) interval: `1` while
+ * plenty of the daily budget remains, ramping up to {@link MAX_BUDGET_SLOWDOWN}
+ * as spend approaches the cap, and pinned at the max once nothing is left. This
+ * is what makes refreshes "space out automatically the closer we get to the
+ * limit" so a heavy day doesn't exhaust the free tier before the day is out.
+ */
+export function dailyBudgetSlowdown(dayRemaining?: number, dayLimit = DEFAULT_DAY_CREDIT_LIMIT): number {
+  if (dayRemaining === undefined || !Number.isFinite(dayRemaining) || dayLimit <= 0) return 1;
+  if (dayRemaining <= 0) return MAX_BUDGET_SLOWDOWN;
+  const used = 1 - Math.min(1, dayRemaining / dayLimit);
+  if (used <= BUDGET_EASE_THRESHOLD) return 1;
+  // Linear ramp from 1× at the ease threshold to MAX× at full exhaustion.
+  const t = (used - BUDGET_EASE_THRESHOLD) / (1 - BUDGET_EASE_THRESHOLD);
+  return 1 + t * (MAX_BUDGET_SLOWDOWN - 1);
+}
 
 /**
  * How long to wait before the next auto-refresh, given what the last refresh
@@ -45,6 +90,10 @@ export const DEFAULT_BURST_INTERVAL_MS = MINUTE_MS;
  *   This is the "fill in everything ASAP on startup" behaviour.
  * - **Nothing deferred** → everything reachable is fresh, so relax to the slow
  *   steady-state cadence and stop spending credits aggressively.
+ *
+ * Either base is then stretched by {@link dailyBudgetSlowdown} as the rolling
+ * daily credit budget runs low, so a long session paces itself instead of
+ * blowing the whole free-tier allowance early.
  */
 export function nextRefreshDelayMs(signal: RefreshSignal, options: RefreshCadenceOptions = {}): number {
   const {
@@ -53,5 +102,6 @@ export function nextRefreshDelayMs(signal: RefreshSignal, options: RefreshCadenc
     jitterMs = Math.floor(Math.random() * JITTER_MS),
   } = options;
   const base = signal.deferred.length > 0 ? burstIntervalMs : slowIntervalMs;
-  return base + jitterMs;
+  const slowdown = dailyBudgetSlowdown(signal.dayRemaining, signal.dayLimit);
+  return Math.round(base * slowdown) + jitterMs;
 }

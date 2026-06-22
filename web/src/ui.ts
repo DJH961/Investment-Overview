@@ -192,6 +192,13 @@ function renderNotes(o: OverviewView): HTMLElement[] {
       `Data exported ${formatTimestamp(o.generatedAt)} · data last pulled ${formatLastPull(o.lastDataPullAt)}.`,
     ]),
   );
+  if (o.dailyCreditsUsed !== null) {
+    notes.push(
+      h("p", { class: "note" }, [
+        `Live-data budget today: ${o.dailyCreditsUsed} / ${o.dailyCreditLimit} credits used.`,
+      ]),
+    );
+  }
   return notes;
 }
 

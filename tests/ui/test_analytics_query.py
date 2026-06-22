@@ -105,6 +105,36 @@ def test_bundle_safe_on_empty_db(session) -> None:  # type: ignore[no-untyped-de
     assert len(bundle.curve) == 8
 
 
+def test_curve_counts_transfer_in_as_a_contribution(populated_session) -> None:  # type: ignore[no-untyped-def]
+    """A transfer_in funds the portfolio just like a deposit, so the cumulative-
+    contributions overlay must climb when money arrives via transfer rather than
+    a plain deposit — otherwise the equity-curve contributions line stays flat.
+    """
+    session, as_of = populated_session
+    account = session.query(Account).first()
+    # Existing fixture deposits 1000 on day 0. Add a transfer_in mid-window.
+    session.add(
+        Transaction(
+            account_id=account.id,
+            instrument_id=None,
+            date=as_of - timedelta(days=10),
+            kind=TransactionKind.TRANSFER_IN.value,
+            quantity=None,
+            price_native=None,
+            net_native=Decimal(500),
+            net_eur=Decimal(500),
+            source="manual",
+        )
+    )
+    session.flush()
+    bundle = build_bundle(session, currency="EUR", lookback_days=29, as_of=as_of)
+    # Baseline starts at the day-0 deposit and ends at deposit + transfer_in.
+    assert bundle.curve[0].cumulative_contributions == Decimal(1000)
+    assert bundle.curve[-1].cumulative_contributions == Decimal(1500)
+    # The line genuinely steps up rather than staying flat across the window.
+    assert bundle.curve[-1].cumulative_contributions > bundle.curve[0].cumulative_contributions
+
+
 def test_risk_free_unavailable_yields_none_sharpe(populated_session) -> None:  # type: ignore[no-untyped-def]
     session, as_of = populated_session
     # Make sure no manual / cached rate is present.

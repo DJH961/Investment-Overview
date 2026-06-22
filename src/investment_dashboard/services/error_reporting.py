@@ -27,6 +27,7 @@ genuinely stray writes are captured.
 from __future__ import annotations
 
 import logging
+import re
 import sys
 import threading
 from types import TracebackType
@@ -36,6 +37,15 @@ log = logging.getLogger(__name__)
 
 #: Skip marker so our own log calls aren't re-recorded by the logging handler.
 _SKIP = {"runtime_status_skip": True}
+
+#: Benign, sub-warning library chatter that a few libraries (notably Alembic)
+#: write straight to ``stderr`` via a logging ``StreamHandler``. These are
+#: informational ("INFO"/"DEBUG") lines — not failures — so recording them as
+#: "Recent errors" in Data Health is misleading. We forward them to the real
+#: stream unchanged but never record them. Matches the common ``logging``
+#: ``levelname [logger] message`` shape, e.g.
+#: ``INFO  [alembic.runtime.migration] Will assume non-transactional DDL.``
+_BENIGN_STDERR_LINE = re.compile(r"^(?:INFO|DEBUG)\b")
 
 _install_lock = threading.Lock()
 _state: dict[str, Any] = {"installed": False}
@@ -58,6 +68,21 @@ def _record(source: str, message: str) -> None:
 def _describe(exc: BaseException) -> str:
     text = str(exc).strip()
     return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
+
+def _is_benign_noise(chunk: str) -> bool:
+    """True when every line of a stray ``stderr`` write is sub-warning chatter.
+
+    Some libraries route ``INFO``/``DEBUG`` logging to a ``stderr``
+    ``StreamHandler``; those are informational, not failures, so we forward but
+    don't record them. A chunk is only treated as benign when *all* of its
+    non-empty lines look informational — if anything else is mixed in we keep
+    recording so genuine errors are never swallowed.
+    """
+    lines = [line.strip() for line in chunk.splitlines() if line.strip()]
+    if not lines:
+        return True
+    return all(_BENIGN_STDERR_LINE.match(line) for line in lines)
 
 
 def _handle_uncaught(
@@ -176,7 +201,7 @@ class _StderrTee:
                     head, _, tail = self._buffer.rpartition("\n")
                     self._buffer = tail
                     chunk = head.strip()
-            if "\n" in data and chunk:
+            if "\n" in data and chunk and not _is_benign_noise(chunk):
                 _record("stderr", chunk)
         except Exception:  # pragma: no cover - never break a write
             pass

@@ -118,13 +118,17 @@ def refresh_prices(
 
     by_symbol = {i.symbol: i for i in instruments}
     now = datetime.now(UTC).replace(tzinfo=None)
-    for symbol, closes in closes_by_symbol.items():
+    for symbol in symbols_to_fetch:
         instr = by_symbol.get(symbol)
         if instr is None:
             continue
+        closes = closes_by_symbol.get(symbol, {})
         cutoff = earliest_per_symbol.get(symbol, earliest_needed)
         filtered = {d: c for d, c in closes.items() if d >= cutoff}
         result[symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
+        # Stamp every instrument we queried (see refresh_due_prices) so the
+        # overview's per-symbol "updated" time advances even when the feed
+        # returned nothing new for that symbol.
         price_cache_repo.upsert_last_refreshed_at(cache, instr.id, now)
     return result
 
@@ -455,13 +459,16 @@ def refresh_due_prices(
         return {}
 
     result: dict[str, int] = {}
-    by_symbol = {i.symbol: i for i in due}
-    for symbol, closes in closes_by_symbol.items():
-        instr = by_symbol.get(symbol)
-        if instr is None:
-            continue
-        cutoff = earliest_per_symbol.get(symbol, fetch_start)
+    for instr in due:
+        closes = closes_by_symbol.get(instr.symbol, {})
+        cutoff = earliest_per_symbol.get(instr.symbol, fetch_start)
         filtered = {d: c for d, c in closes.items() if d >= cutoff}
-        result[symbol] = prices_repo.upsert_closes(session, instr.id, filtered)
+        result[instr.symbol] = prices_repo.upsert_closes(session, instr.id, filtered)
+        # Stamp the refresh time for *every* instrument we successfully queried,
+        # not just those that returned new closes. Otherwise the per-symbol
+        # "updated" time on the overview freezes whenever the feed has nothing
+        # new (after hours / weekends / NAV not yet published), leaving it stuck
+        # at the last time a price actually changed. The "as of" date still
+        # reflects the real (possibly older) observation date.
         price_cache_repo.upsert_last_refreshed_at(session, instr.id, now)
     return result

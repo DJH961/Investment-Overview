@@ -78,6 +78,13 @@ const TOAST_DURATION_MS = 4500;
 const MANUAL_REFRESH_MIN_FEEDBACK_MS = 650;
 
 /**
+ * Daily free-tier credits remaining at or below which the UI warns the user it
+ * is close to the limit (and starts spacing refreshes out). Two per-minute
+ * windows' worth of headroom — enough warning to be useful without nagging.
+ */
+const DAILY_BUDGET_WARN_CREDITS = 2 * FREE_TIER.creditsPerMinute;
+
+/**
  * What triggered a price refresh: a `manual` tap of the Refresh button or an
  * `auto` background pull by the scheduler. Drives the distinct visual feedback
  * each gets (a spinning button + "Refreshing…" pill vs. an "Auto-updating…"
@@ -864,6 +871,11 @@ export class App {
     }
     const model = buildDashboard(data, quoteLoad.quotes, fx, new Date(), degradedReason);
     model.overview.lastDataPullAt = this.lastDataPullAt;
+    // Surface how much of the daily free-tier budget we've spent so far.
+    model.overview.dailyCreditsUsed = Math.max(
+      0,
+      model.overview.dailyCreditLimit - quoteLoad.report.dayRemaining,
+    );
     // Prefer the live EUR→USD rate; fall back to the export meta rate.
     setEurUsdRate(fx.rates.USD ?? model.overview.fxRateEurUsd);
     this.renderDashboard(model);
@@ -912,13 +924,34 @@ export class App {
       report = await this.refreshPrices(session, true);
     } finally {
       this.refreshing = false;
+    }
+    if (session !== this.sessionId || report === null) {
+      this.setUpdating(false, kind);
+      return;
+    }
+    // While a >per-minute-cap portfolio is still filling in (and we can actually
+    // make progress next round), keep the spinner + a live "N of M" count on
+    // screen *between* burst rounds, so the staged fill reads as continuous,
+    // satisfying progress instead of an indicator that flashes once and can
+    // never complete in a single minute's budget. Stop once everything reachable
+    // is fresh — or when nothing more can be fetched (a hard error, or the daily
+    // budget is spent), where a perpetual spinner would just mislead.
+    const canMakeProgress = report.deferred.length > 0 && report.dayRemaining > 0 && report.error === null;
+    if (canMakeProgress) {
+      const { live, total } = liveRefreshProgress(report);
+      this.setUpdating(true, kind, `${live} of ${total}`);
+    } else {
       this.setUpdating(false, kind);
     }
-    if (session !== this.sessionId || report === null) return;
     // Confirm the outcome of a manual tap so the user understands what happened
     // (fresh prices pulled, already up to date, or some deferred by the budget).
     if (kind === "manual") this.toast(manualRefreshSummary(report));
-    const delayMs = nextRefreshDelayMs({ deferred: report.deferred });
+    const delayMs = nextRefreshDelayMs({
+      deferred: report.deferred,
+      // Pace auto-refresh out as the rolling daily free-tier budget runs low.
+      dayRemaining: report.dayRemaining,
+      dayLimit: FREE_TIER.creditsPerDay,
+    });
     // Idea A — near-free freshness polling: once we've settled into the slow
     // steady-state cadence (nothing deferred), piggy-back the cheap meta/304
     // blob check so a fresh desktop publish is picked up automatically within a
@@ -978,7 +1011,7 @@ export class App {
    * would appear and vanish within a single frame and a phone tap would look
    * like nothing happened at all.
    */
-  private setUpdating(on: boolean, kind: RefreshKind = "auto"): void {
+  private setUpdating(on: boolean, kind: RefreshKind = "auto", detail: string | null = null): void {
     if (typeof document === "undefined") return;
     if (kind === "manual") {
       if (on) {
@@ -1000,7 +1033,7 @@ export class App {
         }
       }
     }
-    this.applyUpdating(on, kind);
+    this.applyUpdating(on, kind, detail);
   }
 
   private clearManualFeedbackTimer(): void {
@@ -1011,14 +1044,20 @@ export class App {
   }
 
   /** Actually add/remove the pill and toggle the glyph spin in the DOM. */
-  private applyUpdating(on: boolean, kind: RefreshKind = "auto"): void {
+  private applyUpdating(on: boolean, kind: RefreshKind = "auto", detail: string | null = null): void {
     if (typeof document === "undefined") return;
     const glyph = document.querySelector('[data-action="refresh"] .icon-btn-glyph');
-    if (kind === "manual") glyph?.classList.toggle("is-spinning", on);
+    // Spin the Refresh glyph for *any* in-flight update — automatic pulls too,
+    // not just a manual tap — so the button visibly rotates while data loads
+    // instead of the update being a silent, motionless pop-up.
+    glyph?.classList.toggle("is-spinning", on);
     const id = "updating-pill";
     const existing = document.getElementById(id);
     if (on) {
-      const label = kind === "manual" ? "Refreshing prices…" : "Auto-updating prices…";
+      const base = kind === "manual" ? "Refreshing prices…" : "Auto-updating prices…";
+      // Append a live "N of M" fill count when supplied, so a portfolio larger
+      // than the per-minute budget shows visible progress across burst rounds.
+      const label = detail ? `${base} ${detail}` : base;
       if (existing) {
         existing.classList.toggle("is-auto", kind === "auto");
         const text = existing.querySelector(".updating-pill-text");
@@ -1059,11 +1098,30 @@ export class App {
     if (quote.error) {
       reasons.push(`live prices hit a snag (${quote.error.message})`);
     }
-    if (quote.deferred.length > 0) {
+    // Daily free-tier budget: warn as it runs low, and clearly when it's gone,
+    // so the user understands why live updates are spacing out or paused.
+    if (quote.dayRemaining <= 0) {
+      reasons.push(
+        `you've used today's full free-tier data budget (${FREE_TIER.creditsPerDay}/day) — ` +
+          `live updates are paused until it resets`,
+      );
+    } else if (quote.dayRemaining <= DAILY_BUDGET_WARN_CREDITS) {
+      reasons.push(
+        `close to today's free-tier data limit (${quote.dayRemaining} of ` +
+          `${FREE_TIER.creditsPerDay} credits left) — updates are spacing out to last the day`,
+      );
+    }
+    // A genuine stall still surfaces above (over the daily budget, or a fetch
+    // error). The *ordinary* staged fill for a portfolio larger than the
+    // per-minute cap is not an error: the spinning Refresh glyph + live "N of M"
+    // pill already show it as progress, so don't also raise an alarming banner
+    // every burst round.
+    const stagedFill = quote.dayRemaining > 0 && quote.error === null;
+    if (quote.deferred.length > 0 && !stagedFill) {
       const n = quote.deferred.length;
       reasons.push(
-        `${n} symbol${n === 1 ? "" : "s"} deferred to stay within your free-tier limit ` +
-          `(${FREE_TIER.creditsPerMinute}/min) — they'll refresh on the next update`,
+        `${n} symbol${n === 1 ? "" : "s"} couldn't refresh right now ` +
+          `(${FREE_TIER.creditsPerMinute}/min free-tier limit) — showing last known values`,
       );
     }
     if (fx.error) {
@@ -1123,6 +1181,20 @@ export class App {
     this.state.data = null;
     this.showUnlock();
   }
+}
+
+/**
+ * Live-fill progress for the auto-refresh indicator: how many of the priceable
+ * symbols are now up to date (freshly fetched or still cache-fresh) versus the
+ * total requested this round. A portfolio with more market symbols than the
+ * free-tier per-minute cap can only be filled over several burst rounds, so
+ * showing "N of M" turns that unavoidable staging into visible, satisfying
+ * progress instead of an update that can never complete in one go.
+ */
+export function liveRefreshProgress(report: QuoteLoadReport): { live: number; total: number } {
+  const total = report.fetched.length + report.servedFresh.length + report.deferred.length;
+  const live = total - report.deferred.length;
+  return { live, total };
 }
 
 /**

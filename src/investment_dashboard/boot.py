@@ -419,6 +419,11 @@ def _run_alembic_upgrade() -> bool:
     settings = get_settings()
     settings.ledger_path.parent.mkdir(parents=True, exist_ok=True)  # type: ignore[union-attr]
     cfg.set_main_option("sqlalchemy.url", settings.ledger_url)
+    # Tell env.py this upgrade is driven by the app (not the CLI) so it leaves
+    # logging alone — the app already configured logging, and Alembic's
+    # ``fileConfig`` would otherwise dump migration INFO lines onto stderr where
+    # they surface as bogus "Recent errors" in Data Health.
+    cfg.attributes["embedded"] = True
     command.upgrade(cfg, "head")
     log.info("Alembic upgrade head applied")
     return True

@@ -97,6 +97,32 @@ def test_stderr_tee_records_stray_writes_and_forwards() -> None:
     assert latest.message == "a stray library complaint"
 
 
+def test_stderr_tee_skips_benign_alembic_info_lines() -> None:
+    """Benign INFO/DEBUG library chatter (e.g. Alembic migration logs) is
+    forwarded to the stream but never recorded as a 'Recent error'."""
+    import io
+
+    sink = io.StringIO()
+    tee = error_reporting._StderrTee(sink)
+    line = "INFO  [alembic.runtime.migration] Will assume non-transactional DDL.\n"
+    tee.write(line)
+    # Forwarded to the wrapped stream unchanged...
+    assert sink.getvalue() == line
+    # ...but not recorded as an error.
+    assert runtime_status.sequence() == 0
+
+
+def test_stderr_tee_records_real_error_mixed_with_info() -> None:
+    """A chunk that mixes a genuine error with INFO noise is still recorded."""
+    import io
+
+    tee = error_reporting._StderrTee(io.StringIO())
+    tee.write("INFO  [alembic] context\nTraceback (most recent call last):\n")
+    latest = runtime_status.latest()
+    assert latest is not None
+    assert latest.source == "stderr"
+
+
 def test_stderr_tee_buffers_until_newline() -> None:
     import io
 
