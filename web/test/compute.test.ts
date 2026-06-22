@@ -142,6 +142,37 @@ describe("buildDashboard", () => {
     }
   });
 
+  it("counts reinvested money-market dividends as gain (growth is not zero)", () => {
+    // A money-market fund prices at par ($1) and is never fetched, so its only
+    // return is the reinvested dividend. The export now excludes that reinvest
+    // from the cost basis, so value (shares × $1) exceeds cost and growth is
+    // positive instead of collapsing to zero (desktop + web parity).
+    const exp = makeExport();
+    exp.holdings = [
+      {
+        symbol: "VMFXX",
+        name: "Vanguard Federal Money Market",
+        asset_class: "money_market",
+        broker: "Broker",
+        account: "Settlement",
+        native_currency: "USD",
+        shares: "1005",
+        cost_basis_native: "1000",
+        cumulative_dividends_cash_native: "0",
+        price_symbol: "VMFXX",
+        price_type: "nav",
+        last_known_price_native: "1",
+        cashflows: [{ date: "2023-01-01", amount: "-1000" }],
+      },
+    ];
+    const m = buildDashboard(exp, new Map(), fx, new Date("2024-06-01T12:00:00Z"));
+    const vmfxx = m.holdings.find((h) => h.symbol === "VMFXX")!;
+    // 1005 shares × $1 − $1000 cost = $5 of earned dividends.
+    expect(vmfxx.unrealisedPlEur!.toNumber()).toBeGreaterThan(0);
+    expect(vmfxx.totalGrowthPct).not.toBeNull();
+    approx(vmfxx.totalGrowthPct, 0.005, 1e-4);
+  });
+
   it("produces a portfolio XIRR (sign change present)", () => {
     expect(model.overview.portfolioXirr).not.toBeNull();
   });

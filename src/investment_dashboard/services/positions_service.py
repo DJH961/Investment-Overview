@@ -150,6 +150,27 @@ def compute_positions(  # noqa: PLR0912, PLR0915
         if t.kind == TransactionKind.DIVIDEND_REINVEST.value
     }
 
+    accounts_by_id = {a.id: a for a in accounts_repo.list_accounts(session)}
+    instruments_by_id = {i.id: i for i in instruments_repo.list_instruments(session)}
+    overrides = instrument_overrides_repo.get_override_map(session, instruments_by_id.keys())
+
+    # Money-market / settlement funds (VMFXX, SPAXX …) price at a constant $1.00
+    # NAV, so every buy and reinvested dividend is at par. Their *only* return is
+    # the dividend itself, which the importer books as a ``dividend_reinvest``
+    # (see adapters/vanguard/settlement.py). Folding that into the cost basis like
+    # a normal fund makes cost == value and the gain/growth collapse to zero
+    # (user report). Excluding it from these funds' cost basis surfaces the
+    # accumulated dividends as the holding's gain instead.
+    mm_instrument_ids = {
+        iid
+        for iid, instr in instruments_by_id.items()
+        if is_money_market(
+            instr.symbol,
+            asset_class=(eff := effective_instrument(instr, overrides.get(iid))).asset_class,
+            name=eff.name,
+        )
+    }
+
     # Aggregate by (account_id, instrument_id).
     holdings: dict[tuple[int, int | None], dict[str, Decimal]] = {}
     for t in txns:
@@ -179,8 +200,11 @@ def compute_positions(  # noqa: PLR0912, PLR0915
         elif kind == TransactionKind.DIVIDEND_REINVEST.value:
             agg["shares"] += qty
             # Reinvested dividends raise the cost basis by the reinvestment
-            # value (spec §6.1).
-            if t.price_native is not None:
+            # value (spec §6.1) — except for money-market funds, whose NAV is
+            # pinned at par so the reinvested dividend *is* the return. Folding
+            # it into their cost basis would cancel cost against value and zero
+            # out the gain/growth; leaving it out surfaces the earned dividends.
+            if t.price_native is not None and t.instrument_id not in mm_instrument_ids:
                 agg["cost_basis"] += qty * t.price_native
         elif kind == TransactionKind.DIVIDEND_CASH.value:
             # Skip the cash leg of a reinvested dividend (already captured by
@@ -191,8 +215,6 @@ def compute_positions(  # noqa: PLR0912, PLR0915
             agg["shares"] += qty
 
     accounts_by_id = {a.id: a for a in accounts_repo.list_accounts(session)}
-    instruments_by_id = {i.id: i for i in instruments_repo.list_instruments(session)}
-    overrides = instrument_overrides_repo.get_override_map(session, instruments_by_id.keys())
 
     # Split back-adjustment: yfinance closes are adjusted for every split, so a
     # historical date must value the *adjusted* share count. The feed's split

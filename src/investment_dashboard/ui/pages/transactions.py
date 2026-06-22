@@ -469,6 +469,10 @@ def _open_txn_modal(  # noqa: PLR0915  # pragma: no cover - UI
                             txn_date=txn_date,
                         )
                     ui.notify("Saved", type="positive")
+            # v3.0 §5.4: a manual ledger edit republishes the live-web blob, but
+            # debounced — a burst of edits coalesces into one upload ~2 min after
+            # the last change (gated by Settings → Live web companion).
+            auto_publish.schedule_publish_after_edit()
             dlg.close()
             ui.navigate.to(PATH)  # cheap full refresh
 
@@ -634,6 +638,8 @@ def _confirm_delete(txn_id: int, dlg: Any) -> None:  # pragma: no cover - UI
                     session.flush()
             transactions_repo.delete_transaction(session, txn_id)
         ui.notify("Deleted", type="positive")
+        # Republish (debounced) after a manual deletion, like add/edit above.
+        auto_publish.schedule_publish_after_edit()
         dlg.close()
         ui.navigate.to(PATH)
 
@@ -746,8 +752,12 @@ def _open_import_modal(accounts: list[Account]) -> None:  # noqa: PLR0915  # pra
 
             # v3.0 §5.4: republish the live-web blob after a successful import.
             # Best-effort and gated by Settings → Live web companion; never
-            # raises, so a publish hiccup can't undo the import above.
-            auto_publish.publish_on_trigger(auto_publish.TRIGGER_IMPORT)
+            # raises, so a publish hiccup can't undo the import above. Tell the
+            # user whether the upload worked (but stay quiet when it is off).
+            outcome = auto_publish.run_trigger(auto_publish.TRIGGER_IMPORT)
+            note = auto_publish.describe_outcome(outcome)
+            if note is not None:
+                ui.notify(note[0], type=note[1])
 
         ui.upload(on_upload=_on_upload, auto_upload=True).props("accept=.csv,.xlsx").classes(
             "w-full"

@@ -134,6 +134,67 @@ def test_money_market_daily_growth_is_flat_zero(session: Session) -> None:
     assert im.daily_growth_eur == Decimal("0")
 
 
+def test_money_market_reinvested_dividends_count_as_gain(session: Session) -> None:
+    """Money-market funds price at par ($1), so a reinvested dividend is pure
+    return — it must surface as a positive gain/growth, not collapse to zero
+    by inflating the cost basis (user report: "growth should not be 0")."""
+    from investment_dashboard.models import Transaction
+    from investment_dashboard.models.transaction import TransactionSource
+    from investment_dashboard.ui.pages._overview_query import (
+        compute_instrument_metrics,
+        get_positions,
+    )
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Fidelity",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    spaxx = instruments_repo.get_or_create(session, symbol="SPAXX")
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2024, 1, 5),
+            kind="buy",
+            instrument_id=spaxx.id,
+            quantity=Decimal("1000"),
+            price_native=Decimal("1"),
+            net_native=Decimal("-1000"),
+            source=TransactionSource.MANUAL,
+        )
+    )
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2024, 2, 5),
+            kind="dividend_reinvest",
+            instrument_id=spaxx.id,
+            quantity=Decimal("5"),
+            price_native=Decimal("1"),
+            net_native=Decimal("0"),
+            source=TransactionSource.MANUAL,
+        )
+    )
+    session.flush()
+
+    positions = get_positions(session)
+    pos = next(p for p in positions if p.instrument.id == spaxx.id)
+    # 1005 shares at par minus a $1000 cost basis ⇒ $5 of earned dividends.
+    assert pos.cost_basis_native == Decimal("1000")
+    assert pos.current_value_native == Decimal("1005")
+
+    metrics = compute_instrument_metrics(session, positions)
+    im = metrics[spaxx.id]
+    # Native total growth is the earned dividends over principal: 5 / 1000.
+    assert im.total_growth_pct is not None
+    assert im.total_growth_pct > Decimal("0")
+    assert abs(im.total_growth_pct - Decimal("0.005")) < Decimal("0.001")
+    assert im.capital_gain_native is not None
+    assert im.capital_gain_native > Decimal("0")
+
+
 def test_positions_table_has_growth_pct(session: Session, seeded: None) -> None:
     from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
 

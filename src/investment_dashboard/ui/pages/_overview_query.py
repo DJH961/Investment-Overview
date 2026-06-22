@@ -191,7 +191,7 @@ def _convert_native(
     return (eur or ZERO), (usd or ZERO)
 
 
-def compute_instrument_metrics(  # noqa: PLR0915
+def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
     session: Session,
     positions: list[Position],
     *,
@@ -231,6 +231,21 @@ def compute_instrument_metrics(  # noqa: PLR0915
     reinvest_keys: set[tuple[int | None, date]] = {
         (t.instrument_id, t.date) for t in txns if t.kind == TransactionKind.DIVIDEND_REINVEST.value
     }
+    # Money-market funds price at par ($1), so their reinvested dividends are the
+    # actual return rather than a cost. Excluding those reinvest legs from the
+    # cost basis (mirroring positions_service) lets their gain/growth reflect the
+    # earned dividends instead of collapsing to zero.
+    mm_iids: set[int] = {
+        p.instrument.id
+        for p in positions
+        if is_money_market(
+            p.instrument.symbol,
+            asset_class=(
+                p.effective.asset_class if p.effective is not None else p.instrument.asset_class
+            ),
+            name=(p.effective.name if p.effective is not None else p.instrument.name),
+        )
+    }
     for t in txns:
         iid = t.instrument_id
         if iid is None:
@@ -265,11 +280,13 @@ def compute_instrument_metrics(  # noqa: PLR0915
                 cost_usd[iid] = cost_usd.get(iid, ZERO) * (1 - frac)
             shares_held[iid] = shares_before + qty
         elif kind == TransactionKind.DIVIDEND_REINVEST.value and t.price_native is not None:
-            val_native = qty * t.price_native
-            e, u = _convert_native(val_native, native, t.date, eur_to_usd, today_rate)
-            cost_eur[iid] = cost_eur.get(iid, ZERO) + e
-            cost_usd[iid] = cost_usd.get(iid, ZERO) + u
             shares_held[iid] = shares_held.get(iid, ZERO) + qty
+            # Money-market reinvests are return, not cost (see ``mm_iids`` above).
+            if iid not in mm_iids:
+                val_native = qty * t.price_native
+                e, u = _convert_native(val_native, native, t.date, eur_to_usd, today_rate)
+                cost_eur[iid] = cost_eur.get(iid, ZERO) + e
+                cost_usd[iid] = cost_usd.get(iid, ZERO) + u
         elif kind == TransactionKind.SPLIT.value:
             shares_held[iid] = shares_held.get(iid, ZERO) + qty
         elif kind == TransactionKind.DIVIDEND_CASH.value:
