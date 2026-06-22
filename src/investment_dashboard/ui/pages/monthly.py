@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
 
 from nicegui import ui
@@ -12,6 +13,7 @@ from investment_dashboard.ui.components import deferred, page_header, section
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import currency_symbol
 from investment_dashboard.ui.pages._period_query import (
+    PeriodRow,
     aggregate,
     money_column,
     pct_column,
@@ -19,6 +21,15 @@ from investment_dashboard.ui.pages._period_query import (
 )
 
 PATH = "/monthly"
+
+
+@dataclass(frozen=True)
+class _MonthlyData:
+    """Everything the monthly body needs, gathered off the event loop."""
+
+    display_ccy: str
+    rows: list[PeriodRow]
+    fx_rate: Decimal | None
 
 
 def _figure(rows, *, currency: str, fx_rate: Decimal | None):  # type: ignore[no-untyped-def]
@@ -81,15 +92,22 @@ def register() -> None:
     def _monthly() -> None:  # pragma: no cover
         with page_frame("Monthly Growth", current=PATH):
             page_header("Monthly Growth", subtitle="Aggregated cashflows and mark-to-market")
-            deferred(_build_body)
+            deferred(_build_body, compute=_gather)
 
 
-def _build_body() -> None:  # pragma: no cover - heavy render, run after first paint
+def _gather() -> _MonthlyData:  # pragma: no cover - heavy DB work, run off-loop
     with session_scope() as session:
         display_ccy = display_currency_service.get_display_currency(session)
         rows = aggregate(session, monthly=True, display_currency=display_ccy, fill_gaps=True)
         display_quote = display_ccy if display_ccy != "EUR" else "USD"
         fx_rate = display_currency_service.current_rate(session, quote=display_quote)
+    return _MonthlyData(display_ccy=display_ccy, rows=rows, fx_rate=fx_rate)
+
+
+def _build_body(data: _MonthlyData) -> None:  # pragma: no cover - heavy render, run after paint
+    display_ccy = data.display_ccy
+    rows = data.rows
+    fx_rate = data.fx_rate
     sym = currency_symbol(display_ccy)
 
     with section("Growth per month"):

@@ -12,6 +12,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [3.4.2] — 2026-06-22
+
+Keep the desktop UI responsive under load: every heavy page now gathers its
+data **off the event loop**, and the slow update/upload tasks were moved off it
+too — so one slow calculation, scan or import can no longer stall the websocket
+and trip the "disconnected" / reconnect storm on every open tab.
+
+### Changed
+
+- **All heavy pages now compute off the event loop.** The `deferred` `compute`
+  hook (introduced for Overview in 3.3.0) is now used by **Holdings**,
+  **Analytics**, **Monthly**, **Yearly** and **Projection** as well: each
+  page's DB + metrics gathering runs on a worker thread (via
+  `nicegui.run.io_bound`) and only the rendering happens back on the loop. The
+  websocket stays free to answer heartbeats while the numbers crunch.
+- **Data Health gathers off the loop too.** The page now paints its shell and
+  spinner first and runs the whole-database health scan on a worker thread,
+  instead of blocking the loop before the page could paint.
+- **CSV import runs off the loop.** Importing a broker history (parsing + DB
+  inserts) and the follow-up live-web republish now run on a worker thread, with
+  the Import button disabled and an "Importing…" status while it works — a long
+  history no longer freezes every connected tab mid-import.
+- **Support-bundle download builds off the loop.** Packaging the log file and
+  app context for the "Report an issue" download now runs on a worker thread, so
+  a large log can't stall the UI.
 ## [3.4.1] — 2026-06-22
 
 Minor reliability fixes to the main app: timezone-aware "last update" stamps, a
@@ -65,6 +90,21 @@ and shutdown — plus a money-market profit/loss correction that now flows throu
 to the web companion, and a smarter update button.
 
 ### Added
+
+- **Resilience against disconnects and long calculations.** Several safeguards
+  so a single slow calculation no longer takes the whole desktop app down:
+  - The **Reconnect now** button now first attempts an *in-place* socket
+    reconnect (preserving the page's state) and only falls back to a full reload
+    if the socket stays down — it no longer kills a page that was merely busy.
+  - A brief websocket stall is ridden out behind the calm "Still working…" hint
+    for a short grace window; the alarming "connection lost" banner only appears
+    if the drop persists, so it no longer flashes the instant something loads.
+  - Heavy page builds can now run their data gathering **off the event loop**
+    (new `compute` hook on the `deferred` helper), keeping the websocket
+    responsive while metrics crunch; the Overview page uses it.
+  - A new **event-loop stall watchdog** surfaces a heads-up (Data Health + log)
+    when a long synchronous calculation blocks the UI, turning an invisible
+    freeze into an explicit, actionable signal.
 
 - **Debounced auto-publish after manual edits.** Editing, adding or deleting a
   transaction now schedules a single live-web republish 120 seconds after the

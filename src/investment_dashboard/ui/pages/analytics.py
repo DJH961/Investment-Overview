@@ -11,13 +11,17 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from decimal import Decimal
 
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.services import display_currency_service
-from investment_dashboard.services.metrics_service import compute_portfolio_metrics
+from investment_dashboard.services.metrics_service import (
+    PortfolioMetrics,
+    compute_portfolio_metrics,
+)
 from investment_dashboard.ui.components import (
     deferred,
     empty_state,
@@ -43,6 +47,17 @@ from investment_dashboard.ui.theme import (
 )
 
 PATH = "/analytics"
+
+
+@dataclass(frozen=True)
+class _AnalyticsData:
+    """Everything the analytics body needs, gathered off the event loop."""
+
+    display_ccy: str
+    bundle: AnalyticsBundle
+    metrics: PortfolioMetrics
+    attribution_rate: Decimal | None
+
 
 _LOOKBACKS: tuple[tuple[str, int], ...] = (
     ("1M", 30),
@@ -304,7 +319,9 @@ def register() -> None:
                 subtitle="Risk, attribution, benchmark comparison",
             )
 
-            def _build() -> None:
+            def _gather() -> _AnalyticsData:
+                # Heavy bundle/metrics work runs off the event loop so the
+                # websocket stays responsive while it crunches.
                 with session_scope() as session:
                     display_ccy = display_currency_service.get_display_currency(session)
                     bundle = build_bundle(session, currency=display_ccy, lookback_days=days)
@@ -316,6 +333,18 @@ def register() -> None:
                         if display_ccy != "EUR"
                         else None
                     )
+                return _AnalyticsData(
+                    display_ccy=display_ccy,
+                    bundle=bundle,
+                    metrics=metrics,
+                    attribution_rate=attribution_rate,
+                )
+
+            def _build(data: _AnalyticsData) -> None:
+                display_ccy = data.display_ccy
+                bundle = data.bundle
+                metrics = data.metrics
+                attribution_rate = data.attribution_rate
                 with ui.row().classes("items-center gap-sm"):
                     ui.label("Lookback:").classes("text-caption opacity-70")
                     ui.toggle(
@@ -405,4 +434,4 @@ def register() -> None:
                             },
                         ).classes("ag-theme-alpine w-full")
 
-            deferred(_build)
+            deferred(_build, compute=_gather)
