@@ -14,6 +14,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.7.2] — 2026-06-22
+
+### Fixed
+
+- **Web Calculator no longer overflows its boxes.** Long fund names, category
+  labels, large currency amounts, share counts and the live-total hint now wrap
+  or shrink within their cards instead of spilling out, across the builder rows,
+  per-category fund pickers, summary stats and the generated buy/rebalance plan
+  (mobile-first). Achieved with `min-width: 0` / `overflow-wrap` and flexible
+  flex-basis on the affected rows.
+- **Calculator categories read like the main app.** A holding the user filed
+  under an explicit category in the desktop app keeps that category on the web
+  (it already rides along in the encrypted export blob); holdings with no
+  explicit category now fall back to a friendly, humanised asset-class label
+  ("Bonds", "Money market", "ETFs") instead of a raw lowercase slug.
+
+### Changed
+
+- **The web companion version is now shown on the site** (a small `vX.Y.Z` chip
+  next to the brand) and is kept in lock-step with the main app's version — both
+  are bumped together and a test fails if they ever drift.
+
 ## [3.7.1] — 2026-06-22
 
 ### Fixed
