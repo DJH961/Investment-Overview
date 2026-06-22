@@ -29,7 +29,7 @@ from investment_dashboard.services import (
     manual_entry,
     transaction_fx_service,
 )
-from investment_dashboard.services.importer_service import Broker, import_csv
+from investment_dashboard.services.importer_service import Broker, ImportResult, import_csv
 from investment_dashboard.services.instrument_enrichment_service import (
     QUOTE_TYPE_MAP,
     effective_instrument,
@@ -701,7 +701,7 @@ def _open_import_modal(accounts: list[Account]) -> None:  # noqa: PLR0915  # pra
                 content = raw.decode("utf-8-sig", errors="replace")
             account_id = account_sel.value
 
-            def _run_import():  # type: ignore[no-untyped-def]
+            def _run_import() -> ImportResult:
                 with session_scope() as session:
                     return import_csv(
                         session,

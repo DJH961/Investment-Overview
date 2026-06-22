@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
 from nicegui import ui
 
@@ -58,7 +59,7 @@ class _HoldingsData:
 
     metrics: PortfolioMetrics
     display_ccy: str
-    rows: list[dict]  # type: ignore[type-arg]
+    rows: list[dict[str, Any]]
     cards: list[HoldingCard]
 
 

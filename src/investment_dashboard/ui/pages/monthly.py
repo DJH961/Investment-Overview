@@ -13,6 +13,7 @@ from investment_dashboard.ui.components import deferred, page_header, section
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import currency_symbol
 from investment_dashboard.ui.pages._period_query import (
+    PeriodRow,
     aggregate,
     money_column,
     pct_column,
@@ -27,7 +28,7 @@ class _MonthlyData:
     """Everything the monthly body needs, gathered off the event loop."""
 
     display_ccy: str
-    rows: list  # type: ignore[type-arg]
+    rows: list[PeriodRow]
     fx_rate: Decimal | None
 
 
