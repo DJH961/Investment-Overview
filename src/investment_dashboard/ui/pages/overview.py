@@ -13,6 +13,7 @@ from investment_dashboard.db import session_scope
 from investment_dashboard.domain.market_hours import is_us_market_open
 from investment_dashboard.domain.returns import years_between
 from investment_dashboard.services import (
+    chart_prefs_service,
     display_currency_service,
     prices_service,
     timezone_service,
@@ -59,6 +60,8 @@ from investment_dashboard.ui.theme import (
 )
 
 PATH = "/overview"
+#: Persisted-preference key for the value-over-time range toggle.
+_OVERVIEW_RANGE_PREF = "overview_value_range"
 #: Sibling Holdings page route (defined on :mod:`...ui.pages.holdings`); kept as
 #: a literal here to avoid a circular import between the two page modules.
 HOLDINGS_PATH = "/holdings"
@@ -455,6 +458,8 @@ def _value_curve_figure(points, *, currency: str):  # type: ignore[no-untyped-de
 
 
 def _on_value_range_change(label: str) -> None:  # pragma: no cover - UI callback
+    with session_scope() as session:
+        chart_prefs_service.set_pref(session, _OVERVIEW_RANGE_PREF, label)
     ui.navigate.to(f"{PATH}?value_range={label}")
 
 
@@ -487,8 +492,18 @@ def register() -> None:  # noqa: PLR0915
             page_header("Overview", subtitle="Portfolio at a glance")
 
             def _gather() -> _OverviewData:
-                range_label, _ = resolve_range_days(value_range)
                 with session_scope() as session:
+                    # No explicit query param ⇒ fall back to the last range the
+                    # user picked (persisted), so the selection sticks.
+                    effective_range = value_range
+                    if effective_range is None:
+                        effective_range = chart_prefs_service.get_pref(
+                            session,
+                            _OVERVIEW_RANGE_PREF,
+                            default=resolve_range_days(None)[0],
+                            allowed=[name for name, _ in VALUE_RANGES],
+                        )
+                    range_label, _ = resolve_range_days(effective_range)
                     metrics = get_metrics(session)
                     positions = get_positions(session)
                     instrument_metrics = compute_instrument_metrics(session, positions)

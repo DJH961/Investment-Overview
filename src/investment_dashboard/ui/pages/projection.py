@@ -12,13 +12,15 @@ from __future__ import annotations
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
-from investment_dashboard.services import display_currency_service
+from investment_dashboard.services import chart_prefs_service, display_currency_service
 from investment_dashboard.ui.components import deferred, page_header, section
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.pages._projection_view import ProjectionSeed, build_seed
 from investment_dashboard.ui.pages._projection_view import render as render_projection
 
 PATH = "/projection"
+#: Persisted-preference key for the projection granularity toggle.
+_PROJECTION_GRANULARITY_PREF = "projection_granularity"
 
 
 def register() -> None:
@@ -30,7 +32,14 @@ def register() -> None:
                 subtitle="Project your portfolio forward in both currencies",
             )
 
-            state = {"monthly": False}
+            with session_scope() as session:
+                _initial_gran = chart_prefs_service.get_pref(
+                    session,
+                    _PROJECTION_GRANULARITY_PREF,
+                    default="Yearly",
+                    allowed=("Yearly", "Monthly"),
+                )
+            state = {"monthly": _initial_gran == "Monthly"}
             body = ui.column().classes("w-full")
 
             def _gather() -> ProjectionSeed:
@@ -51,13 +60,16 @@ def register() -> None:
 
             def _on_toggle(value: str) -> None:
                 state["monthly"] = value == "Monthly"
+                # Remember the granularity so it sticks across visits/reloads.
+                with session_scope() as session:
+                    chart_prefs_service.set_pref(session, _PROJECTION_GRANULARITY_PREF, value)
                 _render()
 
             with ui.row().classes("items-center gap-md q-mb-sm"):
                 ui.label("Granularity").classes("text-caption opacity-70")
                 ui.toggle(
                     ["Yearly", "Monthly"],
-                    value="Yearly",
+                    value=_initial_gran,
                     on_change=lambda e: _on_toggle(e.value),
                 ).props("no-caps")
 
