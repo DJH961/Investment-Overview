@@ -70,6 +70,13 @@ export interface HoldingView {
   costBasisEur: Decimal | null;
   todayMoveEur: Decimal | null;
   todayMovePct: Decimal | null;
+  /**
+   * The FX-revaluation portion of `todayMoveEur` — how much of today's EUR move
+   * came from the EUR/USD swing rather than the security's own price tick (the
+   * remainder being the price move). Null when no today's move applies, or zero
+   * for an EUR-native holding (FX cancels). See {@link buildHolding}.
+   */
+  todayFxMoveEur: Decimal | null;
   weight: Decimal | null;
   unrealisedPlEur: Decimal | null;
   /** Simple total growth on cost: unrealised P/L ÷ cost basis (null when no
@@ -120,6 +127,17 @@ export interface OverviewView {
   totalGainPct: Decimal | null;
   todayMoveEur: Decimal;
   todayMovePct: Decimal | null;
+  /**
+   * The FX-revaluation slice of `todayMoveEur` across all holdings — how much of
+   * today's EUR move came from the EUR/USD swing rather than security prices.
+   * The price-only contribution is `todayMoveEur − todayFxMoveEur`. Zero when
+   * the move is FX-unaware (no live prior EUR/USD) or the book is EUR-only.
+   */
+  todayFxMoveEur: Decimal;
+  /** Provenance of today's EUR/USD spot, for honest end-of-day-FX labelling. */
+  eurUsdSource: EurUsdSourceLabel;
+  /** EUR→USD at the prior session close used for the FX-aware move; null when unknown. */
+  fxRateEurUsdPrev: Decimal | null;
   /** Month-to-date growth on the start-of-month value + net flows since. */
   mtdGrowthPct: Decimal | null;
   /** Year-to-date growth on the start-of-year value + net flows since. */
@@ -440,6 +458,7 @@ function buildHolding(
   holding: ExportHolding,
   quote: Quote | undefined,
   fx: FxRates,
+  fxPrev: FxRates,
   asOf: string,
   fxMissing: Set<string>,
   exportAsOf: string,
@@ -470,8 +489,8 @@ function buildHolding(
 
   const costBasisEur = convert(new Decimal(holding.cost_basis_native), currency, EUR, fx);
 
-  // Today's move is the change from the prior published close to the price we
-  // actually display, for any holding that carries a previous close:
+  // Today's move is the change in the holding's *value* from the prior published
+  // close to the price we display, for any holding that carries a previous close:
   //   - market rows (stocks / ETFs): the latest session's move from the `quote`
   //     endpoint's `previous_close`, but only while that live quote is the one on
   //     screen (`isLive`);
@@ -487,8 +506,17 @@ function buildHolding(
   // take the fund's own session move (its daily bar vs that bar's prior close).
   // Money-market NAVs are pinned at $1 and never fetched, so they have no
   // previous close and correctly contribute no move.
+  //
+  // The EUR move is **FX-aware**: it revalues the current mark at today's EUR→USD
+  // (`fx`) and the prior mark at the prior session's EUR→USD (`fxPrev`), so for a
+  // USD holding it captures both the security move *and* the EUR/USD revaluation
+  // of the whole position — not just the price tick. The USD move stays
+  // FX-neutral (the native price change converted at a single rate), and the
+  // difference between the two is the FX contribution surfaced separately.
   let todayMoveEur: Decimal | null = null;
   let todayMovePct: Decimal | null = null;
+  let todayMoveUsd: Decimal | null = null;
+  let todayFxMoveEur: Decimal | null = null;
   const previousClose = quote?.previousClose ?? null;
   const quotePrice = quote?.price ?? null;
   const hasPriorClose = previousClose !== null && !previousClose.isZero();
@@ -499,9 +527,28 @@ function buildHolding(
       ? quote?.valueDate != null && quote.valueDate >= asOfDate
       : isLive);
   if (moveApplies && quotePrice !== null && previousClose !== null) {
-    const moveNative = quotePrice.minus(previousClose).times(shares);
-    todayMoveEur = convert(moveNative, currency, EUR, fx);
-    todayMovePct = quotePrice.minus(previousClose).dividedBy(previousClose);
+    const valueNowNative = quotePrice.times(shares);
+    const valuePrevNative = previousClose.times(shares);
+    // FX-aware EUR move: current mark at `fx`, prior mark at `fxPrev`.
+    const valueNowEur = convert(valueNowNative, currency, EUR, fx);
+    const valuePrevEur = convert(valuePrevNative, currency, EUR, fxPrev);
+    if (valueNowEur !== null && valuePrevEur !== null) {
+      todayMoveEur = valueNowEur.minus(valuePrevEur);
+      todayMovePct = valuePrevEur.greaterThan(0)
+        ? todayMoveEur.dividedBy(valuePrevEur)
+        : null;
+      // The price-only EUR move (both marks at today's FX) — the FX-neutral part
+      // expressed in EUR; the remainder of the FX-aware move is the FX swing.
+      const priceMoveEur = convert(
+        quotePrice.minus(previousClose).times(shares),
+        currency,
+        EUR,
+        fx,
+      );
+      todayFxMoveEur = priceMoveEur !== null ? todayMoveEur.minus(priceMoveEur) : null;
+    }
+    // FX-neutral USD move: native price change at today's spot only.
+    todayMoveUsd = convert(quotePrice.minus(previousClose).times(shares), currency, USD, fx);
   }
 
   const unrealisedPlEur =
@@ -530,7 +577,6 @@ function buildHolding(
       : costBasisEur !== null
         ? convert(costBasisEur, EUR, USD, fx)
         : null;
-  const todayMoveUsd = todayMoveEur !== null ? convert(todayMoveEur, EUR, USD, fx) : null;
   const unrealisedPlUsd =
     valueUsd !== null && costBasisUsd !== null ? valueUsd.minus(costBasisUsd) : null;
   const totalGrowthPctUsd =
@@ -561,6 +607,7 @@ function buildHolding(
     costBasisEur,
     todayMoveEur,
     todayMovePct,
+    todayFxMoveEur,
     weight: null, // filled once the portfolio total is known
     unrealisedPlEur,
     totalGrowthPct,
@@ -588,6 +635,23 @@ function buildPortfolioCashflowsUsd(cashflows: ExportCashflow[]): Cashflow[] | n
   return flows;
 }
 
+/** Provenance of the EUR/USD spot driving the live current marks + today's move. */
+export type EurUsdSourceLabel = "live" | "eod" | "cache" | "none";
+
+/** Optional live-FX inputs that make today's move FX-aware. */
+export interface BuildDashboardOptions {
+  /**
+   * EUR→USD at the prior session close (USD per 1 EUR). When provided, the
+   * prior mark of each holding's today's move is revalued at this rate while the
+   * current mark uses `fx` — capturing the intraday EUR/USD swing on the held
+   * position. When null/omitted the prior mark uses today's rate too, so the
+   * move stays FX-unaware (back-compatible).
+   */
+  fxPrevEurUsd?: Decimal | null;
+  /** Where today's EUR/USD spot came from, for honest UI labelling. */
+  fxEurUsdSource?: EurUsdSourceLabel;
+}
+
 /** Build the full dashboard model from the decrypted export + live data. */
 export function buildDashboard(
   data: MobileExport,
@@ -595,12 +659,23 @@ export function buildDashboard(
   fx: FxRates,
   now: Date = new Date(),
   liveDegradedReason: string | null = null,
+  opts: BuildDashboardOptions = {},
 ): DashboardModel {
   const asOf = todayIso(now);
   const exportAsOf = data.meta.as_of || asOf;
   const fxMissing = new Set<string>();
   const missingPrice: string[] = [];
   const staleValue: string[] = [];
+
+  // The previous-close FX snapshot for an FX-aware today's move: today's rates
+  // with EUR→USD swapped for the prior session's close. When no prior EUR/USD is
+  // known, `fxPrev` is just `fx`, so the move degrades to FX-unaware rather than
+  // inventing a swing.
+  const fxPrevEurUsd = opts.fxPrevEurUsd ?? null;
+  const fxPrev: FxRates =
+    fxPrevEurUsd !== null && fxPrevEurUsd.greaterThan(0)
+      ? { base: fx.base, rates: { ...fx.rates, USD: fxPrevEurUsd } }
+      : fx;
 
   // Last value exported per holding (EUR), used as a fallback when no live
   // price/FX can value it. Sourced from the analytics attribution end values.
@@ -611,6 +686,7 @@ export function buildDashboard(
       h,
       quotes.get(h.price_symbol),
       fx,
+      fxPrev,
       asOf,
       fxMissing,
       exportAsOf,
@@ -650,6 +726,12 @@ export function buildDashboard(
   );
   const todayMoveEur = holdings.reduce(
     (acc, h) => (h.todayMoveEur !== null ? acc.plus(h.todayMoveEur) : acc),
+    new Decimal(0),
+  );
+  // The FX-revaluation slice of today's move, summed across holdings; the
+  // remainder (`todayMoveEur − todayFxMoveEur`) is the price-only contribution.
+  const todayFxMoveEur = holdings.reduce(
+    (acc, h) => (h.todayFxMoveEur !== null ? acc.plus(h.todayFxMoveEur) : acc),
     new Decimal(0),
   );
 
@@ -717,9 +799,10 @@ export function buildDashboard(
     : null;
 
   const fxRateEurUsd =
-    data.meta.fx_rate_eur_usd !== null && data.meta.fx_rate_eur_usd !== undefined
+    fx.rates.USD ?? // the live/loaded spot that valued the current marks
+    (data.meta.fx_rate_eur_usd !== null && data.meta.fx_rate_eur_usd !== undefined
       ? new Decimal(data.meta.fx_rate_eur_usd)
-      : null;
+      : null);
 
   // --- USD companions for the growth KPIs -----------------------------------
   // Current marks (value, today's move) use today's spot; the cost basis uses
@@ -733,7 +816,13 @@ export function buildDashboard(
     (acc, h) => (acc !== null && h.costBasisUsd !== null ? acc.plus(h.costBasisUsd) : acc),
     holdingsValueUsd === null ? null : new Decimal(0),
   );
-  const todayMoveUsd = todayMoveEur !== null ? convert(todayMoveEur, EUR, USD, fx) : null;
+  // FX-neutral USD today's move: the sum of each holding's native price change
+  // at today's spot (never a rescale of the FX-aware EUR move, which would
+  // double-count the EUR/USD swing). Null when no holding could be valued in USD.
+  const todayMoveUsd = holdings.reduce<Decimal | null>(
+    (acc, h) => (acc !== null && h.todayMoveUsd !== null ? acc.plus(h.todayMoveUsd) : acc),
+    holdingsValueUsd === null ? null : new Decimal(0),
+  );
   const totalGainUsd =
     holdingsValueUsd !== null && totalCostBasisUsd !== null
       ? holdingsValueUsd.minus(totalCostBasisUsd)
@@ -807,6 +896,9 @@ export function buildDashboard(
     totalGainPct,
     todayMoveEur,
     todayMovePct,
+    todayFxMoveEur,
+    eurUsdSource: opts.fxEurUsdSource ?? "none",
+    fxRateEurUsdPrev: fxPrevEurUsd,
     mtdGrowthPct,
     ytdGrowthPct,
     portfolioXirr,

@@ -332,6 +332,31 @@ def fetch_latest_close(
     return PriceRecord(symbol=symbol, date=latest_day, close=closes[latest_day])
 
 
+#: yfinance forex symbol for the EUR→USD pair (USD per 1 EUR). Keyless — the
+#: free, no-token alternative to Twelve Data for the desktop app, whose live
+#: EUR/USD spot powers the FX-aware "today" figures (the web companion keeps
+#: using its own Twelve Data key). FX trades ~24/5, so intraday this row is
+#: dated today during the trading week and Friday's close over the weekend.
+EUR_USD_YF_SYMBOL = "EURUSD=X"
+
+
+def fetch_eur_usd_spot(
+    *,
+    lookback_days: int = 7,
+    ticker_factory: Any = None,
+) -> PriceRecord | None:
+    """Return the latest available EUR→USD spot (USD per 1 EUR), or ``None``.
+
+    Thin wrapper over :func:`fetch_latest_close` for :data:`EUR_USD_YF_SYMBOL`;
+    the returned record's ``date`` is the observation day, which the FX service
+    uses to decide whether the rate is fresh enough to overlay as *today's* live
+    mark (vs. falling back to the ECB daily close).
+    """
+    return fetch_latest_close(
+        EUR_USD_YF_SYMBOL, lookback_days=lookback_days, ticker_factory=ticker_factory
+    )
+
+
 def _history_closes(
     symbol: str,
     start: date,

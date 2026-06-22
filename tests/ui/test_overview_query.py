@@ -95,6 +95,34 @@ def test_instrument_daily_growth_per_currency(session: Session, seeded: None) ->
     assert im.daily_growth_eur != im.daily_growth_usd
 
 
+def test_live_eur_usd_spot_shifts_daily_growth_not_history(session: Session, seeded: None) -> None:
+    """A live intraday EUR/USD overlay moves *today's* FX leg of daily growth
+    while historical YTD figures (priced at past-date FX) stay put."""
+    from investment_dashboard.services import fx_service
+    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+
+    vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
+    yesterday = date.today() - timedelta(days=1)
+    prices_repo.upsert_closes(session, vti.id, {yesterday: Decimal("220.00")})
+    fx_repo.upsert_rates(session, {yesterday: Decimal("1.20")})
+    session.flush()
+
+    fx_service.clear_live_spot()
+    try:
+        base = compute_instrument_metrics(session, get_positions(session))[vti.id]
+        # Live spot: EUR/USD jumps from today's ECB 1.25 to 1.32 intraday.
+        fx_service.set_live_spot("USD", Decimal("1.32"), observed_on=date.today())
+        live = compute_instrument_metrics(session, get_positions(session))[vti.id]
+        # The EUR daily growth moved with the live FX; USD (FX-neutral) did not.
+        assert live.daily_growth_eur != base.daily_growth_eur
+        assert live.daily_growth_usd == base.daily_growth_usd
+        # The YTD growth's start value is priced at the Jan FX (1.25), untouched
+        # by the live spot — only the current mark revalues.
+        assert live.ytd_growth_usd == base.ytd_growth_usd
+    finally:
+        fx_service.clear_live_spot()
+
+
 def test_money_market_daily_growth_is_flat_zero(session: Session) -> None:
     """Settlement funds have no price feed; their single-day growth is a flat
     0 (par did not move) rather than an inconsistent em dash."""

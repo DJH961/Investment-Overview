@@ -412,6 +412,79 @@ describe("buildDashboard", () => {
   });
 });
 
+describe("FX-aware today's move", () => {
+  // VTI: 10 shares, price 100, prevClose 95, USD. fxNow = 1.10 USD/EUR.
+  it("captures the EUR/USD swing on a USD holding even with a flat price", () => {
+    // Price unchanged (prevClose == price) so the price-only move is zero, but
+    // EUR/USD strengthened from 1.05 → 1.10, revaluing the whole USD position.
+    const flat = new Map<string, Quote>([
+      ["VTI", { symbol: "VTI", price: new Decimal("100"), previousClose: new Decimal("100"), currency: "USD" }],
+    ]);
+    const m = buildDashboard(makeExport(), flat, fx, new Date("2024-06-01T12:00:00Z"), null, {
+      fxPrevEurUsd: new Decimal("1.05"),
+    });
+    const vti = m.holdings.find((h) => h.symbol === "VTI")!;
+    // value now = 1000/1.10 = 909.0909; value prev = 1000/1.05 = 952.3809.
+    approx(vti.todayMoveEur, 1000 / 1.1 - 1000 / 1.05, 1e-3);
+    // The whole move is FX (price didn't move).
+    approx(vti.todayFxMoveEur, 1000 / 1.1 - 1000 / 1.05, 1e-3);
+    // FX-neutral USD move is zero (no price change).
+    approx(vti.todayMoveUsd, 0, 1e-6);
+  });
+
+  it("splits a USD holding's move into price and FX parts", () => {
+    // Price 95 → 100 (+5×10 = +50 USD) and EUR/USD 1.05 → 1.10.
+    const m = buildDashboard(makeExport(), quotes, fx, new Date("2024-06-01T12:00:00Z"), null, {
+      fxPrevEurUsd: new Decimal("1.05"),
+    });
+    const vti = m.holdings.find((h) => h.symbol === "VTI")!;
+    // FX-aware EUR move = 1000/1.10 − 950/1.05.
+    approx(vti.todayMoveEur, 1000 / 1.1 - 950 / 1.05, 1e-3);
+    // FX-neutral USD move = (100−95)×10 = 50 USD.
+    approx(vti.todayMoveUsd, 50, 1e-6);
+    // Price-only EUR move at today's rate = 50/1.10; FX part is the remainder.
+    approx(vti.todayFxMoveEur, 1000 / 1.1 - 950 / 1.05 - 50 / 1.1, 1e-3);
+    // Overview aggregates the FX slice.
+    approx(m.overview.todayFxMoveEur, 1000 / 1.1 - 950 / 1.05 - 50 / 1.1, 1e-3);
+    expect(m.overview.eurUsdSource).toBe("none"); // not set in opts here
+  });
+
+  it("leaves an EUR-native holding unaffected by the EUR/USD swing", () => {
+    const exp = makeExport();
+    exp.holdings[0].native_currency = "EUR";
+    const eurQuotes = new Map<string, Quote>([
+      ["VTI", { symbol: "VTI", price: new Decimal("100"), previousClose: new Decimal("95"), currency: "EUR" }],
+    ]);
+    const m = buildDashboard(exp, eurQuotes, fx, new Date("2024-06-01T12:00:00Z"), null, {
+      fxPrevEurUsd: new Decimal("1.05"),
+    });
+    const vti = m.holdings.find((h) => h.symbol === "VTI")!;
+    // (100−95)×10 = 50 EUR, no FX component.
+    approx(vti.todayMoveEur, 50, 1e-6);
+    expect(vti.todayFxMoveEur!.toNumber()).toBeCloseTo(0, 9);
+  });
+
+  it("matches the FX-unaware figure when no prior EUR/USD is supplied", () => {
+    const withPrev = buildDashboard(makeExport(), quotes, fx, new Date("2024-06-01T12:00:00Z"), null, {
+      fxPrevEurUsd: new Decimal("1.10"), // prev == now ⇒ no FX swing
+    });
+    const without = buildDashboard(makeExport(), quotes, fx, new Date("2024-06-01T12:00:00Z"));
+    approx(withPrev.overview.todayMoveEur, without.overview.todayMoveEur.toNumber(), 1e-9);
+    expect(withPrev.holdings[0].todayFxMoveEur!.toNumber()).toBeCloseTo(0, 9);
+  });
+
+  it("carries the EUR/USD source label and prior rate for the UI", () => {
+    const m = buildDashboard(makeExport(), quotes, fx, new Date("2024-06-01T12:00:00Z"), null, {
+      fxPrevEurUsd: new Decimal("1.05"),
+      fxEurUsdSource: "eod",
+    });
+    expect(m.overview.eurUsdSource).toBe("eod");
+    approx(m.overview.fxRateEurUsdPrev, 1.05, 1e-9);
+    // fxRateEurUsd reflects the live spot that valued the marks (fx.rates.USD).
+    approx(m.overview.fxRateEurUsd, 1.1, 1e-9);
+  });
+});
+
 function makeAnalyticsWith(
   rows: Array<{ symbol: string; end_value: string }>,
 ): MobileExport["analytics"] {

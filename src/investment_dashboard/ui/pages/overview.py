@@ -594,6 +594,15 @@ def register() -> None:  # noqa: PLR0915
                         if metrics.daily_growth_as_of is not None
                         else "awaiting two priced days"
                     )
+                    # Be honest about which EUR/USD drove today's figure: a live
+                    # intraday spot (keyless yfinance) vs the ECB end-of-day rate
+                    # when the live fetch was unavailable/over budget.
+                    if metrics.daily_growth_as_of is not None:
+                        from investment_dashboard.services import fx_service  # noqa: PLC0415
+
+                        _live = fx_service.get_live_spot("USD")
+                        _fx_live = _live is not None and _live.observed_on == date.today()
+                        _daily_sub += " · live FX" if _fx_live else " · end-of-day FX"
                     _pct_card(
                         "Daily Growth",
                         metrics.daily_growth_pct,
