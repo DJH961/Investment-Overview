@@ -664,6 +664,36 @@ describe("buildFetchPlan", () => {
     expect(plan.map((e) => e.symbol)).not.toContain("MMF");
   });
 
+  it("excludes money-market funds even when they carry the mutual_fund class (VMFXX)", () => {
+    // The desktop keeps settlement funds in the broad mutual_fund class, so the
+    // asset_class alone won't exclude them; they must be caught by ticker/flag.
+    const data = planExport();
+    data.holdings.push({
+      ...data.holdings[0],
+      symbol: "VMFXX",
+      price_symbol: "VMFXX",
+      asset_class: "mutual_fund",
+      price_type: "nav",
+    });
+    data.period_openings.holdings.VMFXX = { month_start_value_eur: "8000", year_start_value_eur: "8000" };
+    const byTicker = buildFetchPlan(data, new Set(["mutual_fund"]));
+    expect(byTicker.map((e) => e.symbol)).not.toContain("VMFXX");
+
+    // And via the explicit export flag (e.g. a renamed/unknown settlement fund).
+    const flagged = planExport();
+    flagged.holdings.push({
+      ...flagged.holdings[0],
+      symbol: "CASHX",
+      price_symbol: "CASHX",
+      asset_class: "mutual_fund",
+      price_type: "nav",
+      is_money_market: true,
+    });
+    flagged.period_openings.holdings.CASHX = { month_start_value_eur: "8000", year_start_value_eur: "8000" };
+    const flagPlan = buildFetchPlan(flagged, new Set(["mutual_fund"]));
+    expect(flagPlan.map((e) => e.symbol)).not.toContain("CASHX");
+  });
+
   it("aggregates size across holdings sharing one ticker and prefers market priority", () => {
     const data = planExport();
     // A second holding on BIG_FUND's ticker, but market-priced and large.

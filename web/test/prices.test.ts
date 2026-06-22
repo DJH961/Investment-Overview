@@ -51,9 +51,26 @@ describe("fetchQuotes", () => {
     expect(quotes.get("VTI")?.priceTime).toBe(1704844800 * 1000);
   });
 
-  it("falls back to `last_quote_at` when `timestamp` is absent", async () => {
+  it("prefers `last_quote_at` over the daily-bar `timestamp` (which is the session open)", async () => {
+    // The default daily `/quote` stamps `timestamp` at the bar's open (09:30 ET),
+    // which a European user reads as "3:30 PM" even when pulled hours later;
+    // `last_quote_at` is the genuine last-trade time and must win.
     const fetchImpl: FetchLike = async () =>
-      jsonResponse({ symbol: "VTI", close: "100.5", currency: "USD", last_quote_at: 1704844800 });
+      jsonResponse({
+        symbol: "VTI",
+        close: "100.5",
+        currency: "USD",
+        datetime: "2024-01-10",
+        timestamp: 1704844800, // session open
+        last_quote_at: 1704880000, // genuine last trade, later in the day
+      });
+    const quotes = await fetchQuotes(["VTI"], "key", fetchImpl);
+    expect(quotes.get("VTI")?.priceTime).toBe(1704880000 * 1000);
+  });
+
+  it("falls back to `timestamp` when `last_quote_at` is absent", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({ symbol: "VTI", close: "100.5", currency: "USD", timestamp: 1704844800 });
     const quotes = await fetchQuotes(["VTI"], "key", fetchImpl);
     expect(quotes.get("VTI")?.priceTime).toBe(1704844800 * 1000);
   });

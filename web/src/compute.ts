@@ -27,6 +27,7 @@ import {
   type PlanView,
 } from "./phase4";
 import type { ExportCashflow, ExportHolding, MobileExport } from "./types";
+import { isMoneyMarketHolding } from "./money-market";
 
 const EUR = "EUR";
 const USD = "USD";
@@ -367,6 +368,10 @@ export function buildFetchPlan(data: MobileExport, fetchableNavClasses: Set<stri
   // Aggregate by ticker: multiple holdings can map to one price symbol.
   const bySymbol = new Map<string, FetchPlanEntry>();
   for (const holding of data.holdings) {
+    // Money-market / settlement funds hold a constant $1.00 NAV by design, so a
+    // quote only ever returns the same dollar and wastes a free-tier credit —
+    // never fetch them, regardless of how they are otherwise classified.
+    if (isMoneyMarketHolding(holding)) continue;
     const isMarket = holding.price_type === "market";
     const isFetchableNav = fetchableNavClasses.has(holding.asset_class);
     if (!isMarket && !isFetchableNav) continue;

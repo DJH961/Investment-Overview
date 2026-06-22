@@ -175,10 +175,15 @@ function quoteFromNode(symbol: string, node: Record<string, unknown>): Quote {
   if (node.status === "error") {
     return { symbol, price: null, previousClose: null, currency: null, at: null, priceTime: null, valueDate: null };
   }
-  // The price's real time: prefer `timestamp` (the latest bar's datetime), then
-  // `last_quote_at`. Both are Unix seconds. This is what makes the "as of"
-  // honest when the market is closed and the latest price is stale.
-  const priceTime = parseEpochSeconds(node.timestamp) ?? parseEpochSeconds(node.last_quote_at);
+  // The price's real time: prefer `last_quote_at` (the moment the latest quote
+  // actually struck), then fall back to `timestamp`. Both are Unix seconds.
+  // NOTE: for the default daily `/quote`, `timestamp` is the *bar's* datetime —
+  // i.e. the session open (09:30 ET), which a European user sees rendered as
+  // "3:30 PM" even though the data was pulled hours later. `last_quote_at` is
+  // the genuine last-trade time, so preferring it keeps the "as of" honest
+  // while the market is open. Falling back to `timestamp` keeps a stale-but-
+  // latest price honestly dated when the market is closed.
+  const priceTime = parseEpochSeconds(node.last_quote_at) ?? parseEpochSeconds(node.timestamp);
   return {
     symbol,
     price: parseDecimal(node.close ?? node.price),

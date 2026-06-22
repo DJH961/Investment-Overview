@@ -210,6 +210,7 @@ def test_mobile_export_holdings_cash_and_transactions(session: Session) -> None:
         "cumulative_dividends_cash_native",
         "price_symbol",
         "price_type",
+        "is_money_market",
         "last_known_price_native",
         "cashflows",
     }
@@ -233,6 +234,10 @@ def test_mobile_export_holdings_cash_and_transactions(session: Session) -> None:
     assert by_symbol["VTI"]["price_type"] == "market"
     assert by_symbol["FXAIX"]["price_type"] == "nav"
     assert by_symbol["TG-CASH"]["price_type"] == "nav"
+    # The export flags money-market / settlement funds so the web companion never
+    # spends a credit pricing their constant $1.00 NAV. Ordinary funds are not.
+    assert by_symbol["FXAIX"]["is_money_market"] is False
+    assert by_symbol["VTI"]["is_money_market"] is False
     # Each priced holding carries the trading day its exported price came from,
     # so the web can show when the value was last updated (not the export date).
     assert by_symbol["VTI"]["last_price_date"] == AS_OF.isoformat()

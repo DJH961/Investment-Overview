@@ -39,6 +39,7 @@ import {
   signClass,
 } from "./format";
 import { cycleTheme, loadTheme, themeButtonContent } from "./theme";
+import { getTimeFormat, setTimeFormat, type TimeFormat } from "./time-format";
 import {
   canConvertToUsd,
   convertFromEur,
@@ -123,24 +124,16 @@ function renderHeroFx(o: OverviewView): HTMLElement | null {
   // The FX-revaluation slice of today's move. It is intrinsically a *EUR-side*
   // effect: a USD-booked holding only changes in EUR when EUR/USD moves; its USD
   // value is unaffected. So in USD display there is — correctly — no FX P/L to
-  // book (you can't "make money on FX" when everything is already in USD), and
-  // we say so plainly instead of rescaling a meaningless number into USD. In EUR
-  // display we show the actual EUR the swing added or removed today.
-  if (!o.todayFxMoveEur.isZero()) {
-    if (inUsd) {
-      parts.push(
-        h("span", { class: "hero-fx-split flat" }, [
-          "FX moves your EUR value, not USD",
-        ]),
-      );
-    } else {
-      const fxCls = signClass(o.todayFxMoveEur);
-      parts.push(
-        h("span", { class: `hero-fx-split ${fxCls}` }, [
-          `incl. ${formatSignedCurrency(o.todayFxMoveEur)} from FX`,
-        ]),
-      );
-    }
+  // book (you can't "make money on FX" when everything is already in USD); we
+  // simply omit the line rather than printing a reminder that reflows the page.
+  // In EUR display we show the actual EUR the swing added or removed today.
+  if (!o.todayFxMoveEur.isZero() && !inUsd) {
+    const fxCls = signClass(o.todayFxMoveEur);
+    parts.push(
+      h("span", { class: `hero-fx-split ${fxCls}` }, [
+        `incl. ${formatSignedCurrency(o.todayFxMoveEur)} from FX`,
+      ]),
+    );
   }
   if (o.eurUsdSource === "eod") {
     parts.push(h("span", { class: "hero-fx-eod" }, ["end-of-day FX"]));
@@ -1179,6 +1172,30 @@ export function renderThemeToggle(): HTMLElement {
     sync();
   });
   return button;
+}
+
+/**
+ * Self-contained clock-format toggle (Auto / 12h / 24h). Like the theme toggle,
+ * it persists its own choice and updates its label in place; the new clock takes
+ * effect the next time the dashboard renders (e.g. on returning from Settings).
+ */
+export function renderTimeFormatToggle(): HTMLElement {
+  const labels: Record<TimeFormat, string> = {
+    auto: "Auto (locale)",
+    "12h": "12-hour (AM/PM)",
+    "24h": "24-hour",
+  };
+  const select = h("select", { class: "select", "data-action": "time-format" }, [
+    h("option", { value: "auto" }, [labels.auto]),
+    h("option", { value: "12h" }, [labels["12h"]]),
+    h("option", { value: "24h" }, [labels["24h"]]),
+  ]) as HTMLSelectElement;
+  select.value = getTimeFormat();
+  select.setAttribute("aria-label", "Clock format");
+  select.addEventListener("change", () => {
+    setTimeFormat((select.value as TimeFormat) || "auto");
+  });
+  return select;
 }
 
 /**

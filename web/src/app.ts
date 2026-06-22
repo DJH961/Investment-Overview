@@ -67,7 +67,7 @@ import {
 } from "./webauthn";
 import { setEurUsdRate } from "./currency";
 import type { MobileExport } from "./types";
-import { h, renderDashboard, renderThemeToggle } from "./ui";
+import { h, renderDashboard, renderThemeToggle, renderTimeFormatToggle } from "./ui";
 
 /** How long an auto-dismissing status toast stays on screen. */
 const TOAST_DURATION_MS = 4500;
@@ -346,6 +346,7 @@ export class App {
       formChildren.push(
         h("h2", { class: "settings-section" }, ["Appearance"]),
         field("Theme", renderThemeToggle(), "Switch between system, light and dark themes."),
+        field("Clock format", renderTimeFormatToggle(), "Show times as 12-hour (AM/PM) or 24-hour. Auto follows your device locale."),
         h("h2", { class: "settings-section" }, ["Security"]),
         field(
           "Auto-lock (minutes)",

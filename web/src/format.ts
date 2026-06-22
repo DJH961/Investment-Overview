@@ -4,6 +4,7 @@
  */
 import type { Decimal } from "./decimal-config";
 import { convertFromEur, displayAmount } from "./currency";
+import { clockOptions } from "./time-format";
 
 const NBSP = "\u00a0";
 
@@ -148,7 +149,7 @@ export function formatLastPull(
   if (at === null || at === undefined) return "not yet";
   const when = new Date(at);
   if (Number.isNaN(when.getTime())) return "—";
-  const time = when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const time = when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", ...clockOptions() });
   const dayDiff = calendarDayDiff(when, now);
   if (dayDiff === 0) return `today at ${time}`;
   if (dayDiff === 1) return `yesterday at ${time}`;
@@ -189,7 +190,7 @@ export function signClass(value: Decimal | null): "pos" | "neg" | "flat" {
 export function formatTimestamp(iso: string): string {
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return iso;
-  return parsed.toLocaleString();
+  return parsed.toLocaleString(undefined, clockOptions());
 }
 
 /**
@@ -217,7 +218,7 @@ export function formatAsOf(
     when.getMonth() === now.getMonth() &&
     when.getDate() === now.getDate();
   return sameDay
-    ? when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+    ? when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", ...clockOptions() })
     : when.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
@@ -240,7 +241,7 @@ export function formatUpdatedAt(
   }
   const when = new Date(at);
   if (Number.isNaN(when.getTime())) return "—";
-  const time = when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const time = when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", ...clockOptions() });
   const sameDay =
     when.getFullYear() === now.getFullYear() &&
     when.getMonth() === now.getMonth() &&
