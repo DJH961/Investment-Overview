@@ -409,105 +409,6 @@ def _add_instrument_dialog() -> None:  # pragma: no cover - UI
     dialog.open()
 
 
-def _add_allocation_dialog() -> None:  # noqa: PLR0915  # pragma: no cover - UI
-    with session_scope() as session:
-        instruments = list(instruments_repo.list_instruments(session))
-
-    with ui.dialog() as dialog, ui.card().classes("min-w-[32rem]"):
-        ui.label("Create target allocation").classes("text-h6")
-        name_in = ui.input("Name", value="Default").classes("w-full")
-        activate_in = ui.checkbox("Activate immediately", value=True)
-        ui.label("Weights (%) — must sum to 100. Leave blank to exclude.").classes(
-            "text-caption opacity-70",
-        )
-        weight_inputs: dict[int, ui.input] = {}
-        with ui.column().classes("w-full max-h-[40vh] overflow-auto"):
-            for instr in instruments:
-                with ui.row().classes("items-center gap-sm w-full"):
-                    ui.label(f"{instr.symbol} · {instr.name or ''}").classes(
-                        "text-body2",
-                    ).style("min-width: 18rem")
-                    weight_inputs[instr.id] = ui.input("Weight %", value="").classes(
-                        "min-w-[8rem]",
-                    )
-
-        total_label = ui.label().classes("text-body2 q-mt-xs")
-
-        def _update_total() -> None:
-            total = Decimal(0)
-            invalid = False
-            for widget in weight_inputs.values():
-                raw = (widget.value or "").strip()
-                if not raw:
-                    continue
-                try:
-                    total += Decimal(raw)
-                except InvalidOperation:
-                    invalid = True
-            if invalid:
-                total_label.set_text("Live total: — (fix invalid weights)")
-                total_label.style("color: var(--inv-loss, #f44336)")
-                return
-            on_target = abs(total - Decimal(100)) <= Decimal("0.01")
-            total_label.set_text(
-                f"Live total: {total:g} %"
-                + ("  ✓" if on_target else f"  (need {Decimal(100) - total:g} % more)")
-            )
-            total_label.style(
-                "color: var(--inv-gain, #21ba45)" if on_target else "color: var(--inv-muted, #888)"
-            )
-
-        for widget in weight_inputs.values():
-            widget.on_value_change(_update_total)
-        _update_total()
-
-        def _save() -> None:
-            name = (name_in.value or "").strip()
-            if not name:
-                ui.notify("Allocation name is required", type="warning")
-                return
-            weights: dict[int, Decimal] = {}
-            for instrument_id, widget in weight_inputs.items():
-                raw = (widget.value or "").strip()
-                if not raw:
-                    continue
-                try:
-                    weights[instrument_id] = Decimal(raw)
-                except InvalidOperation:
-                    ui.notify(f"Invalid weight: {raw!r}", type="negative")
-                    return
-            if not weights:
-                ui.notify("Pick at least one instrument", type="warning")
-                return
-            total = sum(weights.values(), start=Decimal(0))
-            if abs(total - Decimal(100)) > Decimal("0.01"):
-                ui.notify(
-                    f"Weights sum to {total} %, expected 100 %.",
-                    type="negative",
-                )
-                return
-            try:
-                with session_scope() as session:
-                    allocations_repo.create_allocation(
-                        session,
-                        name,
-                        weights,
-                        active=bool(activate_in.value),
-                    )
-            except Exception as exc:
-                log.exception("Allocation create failed")
-                ui.notify(f"Create failed: {exc}", type="negative")
-                return
-            ui.notify("Allocation created", type="positive")
-            dialog.close()
-            _settings_refresh()
-
-        with ui.row().classes("justify-end w-full gap-sm"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Save", on_click=_save).props("color=primary")
-    dialog.open()
-
-
 def _edit_instrument_dialog(
     instrument_id: int,
     current_symbol: str,
@@ -1070,12 +971,17 @@ def _render_instruments_section(
 def _render_allocations_section(allocations: list) -> None:  # pragma: no cover - UI
     with ui.row().classes("items-center w-full"):
         ui.space()
-        ui.button("New allocation", icon="add", on_click=_add_allocation_dialog).props(
-            "unelevated color=primary dense no-caps",
-        )
+        ui.button(
+            "Build a target in the Calculator",
+            icon="calculate",
+            on_click=lambda: ui.navigate.to("/calculator"),
+        ).props("unelevated color=primary dense no-caps")
     with ui.column().classes("w-full gap-xs q-mt-sm"):
         if not allocations:
-            ui.label("No allocations yet.").classes("text-caption opacity-70")
+            ui.label(
+                "No saved targets yet — head to the Calculator to build one by category "
+                "or by fund, then save it here.",
+            ).classes("text-caption opacity-70")
         for a in allocations:
             with ui.row().classes("items-center gap-md w-full"):
                 ui.label(f"{a.name}").classes("text-body1")

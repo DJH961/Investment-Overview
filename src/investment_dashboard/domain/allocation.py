@@ -12,12 +12,105 @@ is the natural choice for this app).
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 
 HUNDRED = Decimal(100)
 ZERO = Decimal(0)
+
+#: How a category-level weight is divided across the funds the user picked for
+#: that category. ``"value"`` mirrors the current portfolio (split proportional
+#: to each fund's current value); ``"equal"`` gives every picked fund the same
+#: share. ``"value"`` falls back to ``"equal"`` when the picked funds have no
+#: value yet (a brand-new category), so a target is never silently dropped.
+CategorySplit = str
+
+
+def current_weights_pct(values: Mapping[int, Decimal]) -> dict[int, Decimal]:
+    """Return each instrument's share of the total as a percentage.
+
+    ``{instrument_id: current_value}`` → ``{instrument_id: weight_pct}`` summing
+    to 100 (or all zeros when the total is zero). Used by the calculator to show
+    "how much percent each holding currently has" next to the target inputs.
+    """
+    total = sum((v for v in values.values()), start=ZERO)
+    if total <= ZERO:
+        return {i: ZERO for i in values}
+    return {i: v * HUNDRED / total for i, v in values.items()}
+
+
+def expand_category_weights(
+    category_weights_pct: Mapping[str, Decimal],
+    selected_by_category: Mapping[str, Sequence[int]],
+    current_values: Mapping[int, Decimal],
+    *,
+    split: CategorySplit = "value",
+) -> dict[int, Decimal]:
+    """Expand category-level target weights into per-instrument weights.
+
+    Lets the user think in categories ("10 % International") and have the funds
+    inside each category share that slice automatically.
+
+    Parameters
+    ----------
+    category_weights_pct
+        ``{category: weight_pct}`` — the target for each category. Values should
+        sum to 100, but this function does not enforce it (the caller validates,
+        so the live total can be shown while still being edited); the returned
+        per-instrument weights always sum to the same total as the input.
+    selected_by_category
+        ``{category: [instrument_id, ...]}`` — which funds the user picked to
+        actively invest in for each category.
+    current_values
+        ``{instrument_id: current_value}`` — used to split a category's weight
+        proportionally when ``split == "value"``.
+    split
+        ``"value"`` (default) splits a category's weight across its picked funds
+        in proportion to their current value, falling back to an equal split
+        when those funds have no value yet. ``"equal"`` always splits evenly.
+
+    Returns
+    -------
+    dict[int, Decimal]
+        ``{instrument_id: weight_pct}``. An instrument that appears under more
+        than one category accumulates the weight from each.
+
+    Raises
+    ------
+    ValueError
+        If a category carries a positive weight but no funds were picked for it
+        (its slice would otherwise vanish).
+    """
+    out: dict[int, Decimal] = {}
+    for category, weight in category_weights_pct.items():
+        if weight <= ZERO:
+            continue
+        members = list(selected_by_category.get(category, ()))
+        if not members:
+            raise ValueError(
+                f"Category {category!r} has a {weight} % target but no funds selected",
+            )
+        shares = _category_member_shares(members, current_values, split=split)
+        for instrument_id, share in shares.items():
+            out[instrument_id] = out.get(instrument_id, ZERO) + weight * share
+    return out
+
+
+def _category_member_shares(
+    members: Sequence[int],
+    current_values: Mapping[int, Decimal],
+    *,
+    split: CategorySplit,
+) -> dict[int, Decimal]:
+    """Fractional share (summing to 1) of a category's weight per member fund."""
+    count = len(members)
+    if split == "value":
+        total = sum((current_values.get(i, ZERO) for i in members), start=ZERO)
+        if total > ZERO:
+            return {i: current_values.get(i, ZERO) / total for i in members}
+    even = Decimal(1) / Decimal(count)
+    return {i: even for i in members}
 
 
 @dataclass(frozen=True)

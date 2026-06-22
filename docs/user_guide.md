@@ -47,7 +47,7 @@ You can change everything later, so it is safe to experiment.
 | **Yearly** | Performance broken down per calendar year. |
 | **Analytics** | Deeper risk/performance metrics (Sharpe, Sortino, drawdown, beta, alpha, allocation drift). |
 | **Projection** | Project your portfolio forward under different return, contribution and inflation assumptions. |
-| **Calculator** | "I have €X to invest" — works out how many shares of each holding to buy to move toward your target allocation (buy-only rebalance). |
+| **Calculator** | "I have €X to invest" — build a target mix right on the page (by category or by fund), then get a buy-only plan of how many shares of each holding to buy to move toward it. You can save the mix you build as a named target allocation. |
 | **Settings** | Where you change how the app behaves — see the next section. |
 
 ---
@@ -140,10 +140,12 @@ The funds, ETFs and cash lines you hold.
 
 Your desired mix of instruments, by percentage.
 
-- **New allocation** — set a weight for each instrument; the weights must add up
-  to **100%**.
-- **Activate** — choose which allocation the drift metrics compare against. Only
-  **one** allocation is active at a time.
+- **Build a target** — head to the **Calculator** tab to design a mix by
+  category or by fund, then **Save as target**. (The old per-instrument weight
+  form in Settings has moved there.)
+- **Activate** — choose which saved target the drift metrics compare against.
+  Only **one** is active at a time. You can activate the one you want either
+  from the Settings list or straight from the Calculator's save dialog.
 
 ### Help & documentation
 
