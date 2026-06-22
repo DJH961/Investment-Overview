@@ -12,6 +12,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [3.4.2] — 2026-06-22
+
+Keep the desktop UI responsive under load: every heavy page now gathers its
+data **off the event loop**, and the slow update/upload tasks were moved off it
+too — so one slow calculation, scan or import can no longer stall the websocket
+and trip the "disconnected" / reconnect storm on every open tab.
+
+### Changed
+
+- **All heavy pages now compute off the event loop.** The `deferred` `compute`
+  hook (introduced for Overview in 3.3.0) is now used by **Holdings**,
+  **Analytics**, **Monthly**, **Yearly** and **Projection** as well: each
+  page's DB + metrics gathering runs on a worker thread (via
+  `nicegui.run.io_bound`) and only the rendering happens back on the loop. The
+  websocket stays free to answer heartbeats while the numbers crunch.
+- **Data Health gathers off the loop too.** The page now paints its shell and
+  spinner first and runs the whole-database health scan on a worker thread,
+  instead of blocking the loop before the page could paint.
+- **CSV import runs off the loop.** Importing a broker history (parsing + DB
+  inserts) and the follow-up live-web republish now run on a worker thread, with
+  the Import button disabled and an "Importing…" status while it works — a long
+  history no longer freezes every connected tab mid-import.
+- **Support-bundle download builds off the loop.** Packaging the log file and
+  app context for the "Report an issue" download now runs on a worker thread, so
+  a large log can't stall the UI.
+
 ## [3.4.0] — 2026-06-22
 
 FX-aware, live "today's growth". Today's move now captures the EUR↔USD
