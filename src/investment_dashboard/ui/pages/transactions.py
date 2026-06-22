@@ -21,6 +21,7 @@ from investment_dashboard.repositories import (
 from investment_dashboard.services import (
     auto_publish,
     display_currency_service,
+    manual_entry,
     transaction_fx_service,
 )
 from investment_dashboard.services.importer_service import Broker, import_csv
@@ -28,7 +29,7 @@ from investment_dashboard.services.instrument_enrichment_service import (
     QUOTE_TYPE_MAP,
     effective_instrument,
 )
-from investment_dashboard.ui.components import page_header, section
+from investment_dashboard.ui.components import confirm_dialog, page_header, section
 from investment_dashboard.ui.components.kpi_card import dual_kpi_card, kpi_card
 from investment_dashboard.ui.forms import (
     validate_date,
@@ -143,6 +144,19 @@ def register() -> None:
                     {
                         "columnDefs": [
                             {
+                                "headerName": "",
+                                "field": "edit",
+                                "width": 56,
+                                "minWidth": 56,
+                                "maxWidth": 64,
+                                "pinned": "left",
+                                "sortable": False,
+                                "filter": False,
+                                "resizable": False,
+                                "cellClass": "inv-edit-cell",
+                                "headerTooltip": "Edit transaction",
+                            },
+                            {
                                 "headerName": "Date",
                                 "field": "date",
                                 "sortable": True,
@@ -165,6 +179,18 @@ def register() -> None:
                     }
                 ).classes("ag-theme-alpine w-full h-[60vh]")
 
+                def _on_cell_clicked(e: events.GenericEventArguments) -> None:
+                    # The pencil column is the only clickable action; ignore
+                    # clicks anywhere else so sorting/selection still works.
+                    if e.args.get("colId") != "edit":
+                        return
+                    row = e.args.get("data") or {}
+                    txn_id = row.get("id")
+                    if txn_id is not None:
+                        _open_edit_modal(accounts, int(txn_id))
+
+                grid.on("cellClicked", _on_cell_clicked)
+
             def _refresh() -> None:
                 with session_scope() as session:
                     fx_rate = display_currency_service.current_rate(session, quote="USD")
@@ -178,6 +204,10 @@ def register() -> None:
                         ),
                         fx_rate=fx_rate,
                     )
+                # A pencil glyph per row makes "edit" discoverable right in the
+                # table instead of a toolbar button (clicking it opens the editor).
+                for row in rows:
+                    row["edit"] = "✏️"
                 grid.options["rowData"] = rows
                 grid.update()
 
@@ -188,46 +218,133 @@ def register() -> None:
             _refresh()
 
 
-def _open_new_modal(accounts: list[Account]) -> None:  # noqa: PLR0915  # pragma: no cover - UI
+def _open_new_modal(accounts: list[Account]) -> None:  # pragma: no cover - UI
+    _open_txn_modal(accounts, existing=None)
+
+
+def _load_txn_snapshot(txn_id: int) -> dict[str, Any] | None:  # pragma: no cover - UI
+    with session_scope() as session:
+        txn = transactions_repo.get_transaction(session, txn_id)
+        if txn is None:
+            return None
+        symbol = txn.instrument.symbol if txn.instrument is not None else ""
+        return {
+            "id": txn.id,
+            "account_id": txn.account_id,
+            "date": txn.date.isoformat(),
+            "kind": txn.kind,
+            "symbol": symbol,
+            "quantity": txn.quantity,
+            "price_native": txn.price_native,
+            "gross_native": txn.gross_native,
+            "fees_native": txn.fees_native,
+            "net_native": txn.net_native,
+            "description": txn.description or "",
+            "source": txn.source,
+        }
+
+
+def _open_edit_modal(accounts: list[Account], txn_id: int) -> None:  # pragma: no cover - UI
+    snap = _load_txn_snapshot(txn_id)
+    if snap is None:
+        ui.notify("Transaction not found — it may have been deleted", type="warning")
+        return
+    _open_txn_modal(accounts, existing=snap)
+
+
+def _abs_str(value: Any) -> str:  # pragma: no cover - UI
+    return "" if value is None else str(abs(value))
+
+
+def _open_txn_modal(  # noqa: PLR0915  # pragma: no cover - UI
+    accounts: list[Account], *, existing: dict[str, Any] | None
+) -> None:
+    is_edit = existing is not None
     with ui.dialog() as dlg, ui.card().classes("min-w-[28rem]"):
-        ui.label("New Transaction").classes("text-h6")
-        account_sel = ui.select({a.id: a.account_label for a in accounts}, label="Account").classes(
-            "w-full"
-        )
-        kind_sel = ui.select(_kinds(), value="buy", label="Kind").classes("w-full")
+        ui.label("Edit Transaction" if is_edit else "New Transaction").classes("text-h6")
+        account_sel = ui.select(
+            {a.id: a.account_label for a in accounts},
+            value=existing["account_id"] if is_edit else None,
+            label="Account",
+        ).classes("w-full")
+        kind_sel = ui.select(
+            _kinds(), value=existing["kind"] if is_edit else "buy", label="Kind"
+        ).classes("w-full")
         date_in = (
-            ui.input("Date (YYYY-MM-DD)", value=date.today().isoformat())
+            ui.input(
+                "Date (YYYY-MM-DD)",
+                value=existing["date"] if is_edit else date.today().isoformat(),
+            )
             .classes("w-full")
             .props("hide-bottom-space")
         )
         date_in.validation = validate_date
-        symbol_in = ui.input("Symbol (blank for cash kinds)").classes("w-full")
+        symbol_in = ui.input(
+            "Symbol (blank for cash kinds)", value=existing["symbol"] if is_edit else ""
+        ).classes("w-full")
         symbol_in.validation = lambda v: validate_symbol(v, kind=kind_sel.value)
-        qty_in = ui.input("Quantity").classes("w-full")
-        qty_in.validation = lambda v: validate_decimal(v, field="Quantity")
-        price_in = ui.input("Price (native ccy)").classes("w-full")
+        # Quantity / price / total are entered as positive magnitudes — the
+        # kind decides the +/- sign at save time (a sale is cash in, a buy is
+        # cash out), so the user can't pick the wrong sign.
+        qty_in = ui.input(
+            "Quantity", value=_abs_str(existing["quantity"]) if is_edit else ""
+        ).classes("w-full")
+        qty_in.validation = lambda v: validate_decimal(v, field="Quantity", allow_negative=False)
+        price_in = ui.input(
+            "Price (native ccy)", value=_abs_str(existing["price_native"]) if is_edit else ""
+        ).classes("w-full")
         price_in.validation = lambda v: validate_decimal(v, field="Price", allow_negative=False)
-        fees_in = ui.input("Fees (native ccy)").classes("w-full")
+        total_default = ""
+        if is_edit:
+            total_default = _abs_str(existing["gross_native"] or existing["net_native"])
+        total_in = ui.input("Total cost / amount (native)", value=total_default).classes("w-full")
+        total_in.validation = lambda v: validate_decimal(v, field="Total", allow_negative=False)
+        fees_in = ui.input(
+            "Fees (native ccy)", value=_abs_str(existing["fees_native"]) if is_edit else ""
+        ).classes("w-full")
         fees_in.validation = lambda v: validate_decimal(v, field="Fees", allow_negative=False)
-        net_in = ui.input("Net amount (native, signed)").classes("w-full")
-        net_in.validation = lambda v: validate_decimal(v, field="Net amount")
-        desc_in = ui.input("Description").classes("w-full")
+        desc_in = ui.input("Description", value=existing["description"] if is_edit else "").classes(
+            "w-full"
+        )
+        route_mm = ui.checkbox("Auto-fill the money-market fund for cash transfers", value=True)
+        route_mm.tooltip(
+            "Deposits / withdrawals / transfers also buy or sell the account's "
+            "settlement (money-market) fund so you don't log it twice."
+        )
+        hint = ui.label("").classes("text-caption opacity-70")
 
-        # Re-run the symbol validator when the kind changes (its rule depends
-        # on whether the chosen kind is a cash or a security kind).
-        def _revalidate_symbol() -> None:
+        def _reconcile_hint() -> None:
+            if kind_sel.value not in manual_entry.TRADE_KINDS:
+                hint.text = ""
+                return
+            q = _decimal_or_none(qty_in.value or "")
+            p = _decimal_or_none(price_in.value or "")
+            t = _decimal_or_none(total_in.value or "")
+            figs = manual_entry.reconcile_trade(q, p, t)
+            # Fill whichever single field the user left blank.
+            if q is None and figs.quantity is not None:
+                qty_in.value = str(figs.quantity)
+            if p is None and figs.price is not None:
+                price_in.value = str(figs.price)
+            if t is None and figs.total is not None:
+                total_in.value = str(figs.total)
+            hint.text = figs.error or "Quantity x price = total OK"
+
+        for field in (qty_in, price_in, total_in):
+            field.on("blur", lambda _e: _reconcile_hint())
+
+        def _revalidate() -> None:
             symbol_in.validate()
+            _reconcile_hint()
 
-        kind_sel.on_value_change(_revalidate_symbol)
+        kind_sel.on_value_change(_revalidate)
 
-        def _save() -> None:
+        def _save() -> None:  # noqa: PLR0915 - one cohesive save handler
             if account_sel.value is None:
                 ui.notify("Pick an account", type="warning")
                 return
-            # Inline validators are the source of truth; re-run them so a
-            # straight-to-Save click can't bypass the field-level checks.
-            inputs = (date_in, symbol_in, qty_in, price_in, fees_in, net_in)
-            if not all(field.validate() for field in inputs):
+            inputs = (date_in, symbol_in, qty_in, price_in, total_in, fees_in)
+            if not all(f.validate() for f in inputs):
                 ui.notify("Fix the highlighted fields first", type="negative")
                 return
             try:
@@ -235,56 +352,167 @@ def _open_new_modal(accounts: list[Account]) -> None:  # noqa: PLR0915  # pragma
             except ValueError:
                 ui.notify("Bad date — use YYYY-MM-DD", type="negative")
                 return
+
+            kind = kind_sel.value
+            q_mag = _decimal_or_none(qty_in.value or "")
+            p_mag = _decimal_or_none(price_in.value or "")
+            t_mag = _decimal_or_none(total_in.value or "")
+            fee_mag = _decimal_or_none(fees_in.value or "")
+
+            quantity: Decimal | None = None
+            price_native: Decimal | None = None
+            gross_native: Decimal | None = None
+            if kind in manual_entry.TRADE_KINDS:
+                figs = manual_entry.reconcile_trade(q_mag, p_mag, t_mag)
+                if figs.error:
+                    hint.text = figs.error
+                    ui.notify(figs.error, type="negative")
+                    return
+                gross = figs.total
+                fee = abs(fee_mag) if fee_mag is not None else Decimal(0)
+                # A buy/reinvest costs gross + fees; a sale nets gross - fees.
+                if kind == TransactionKind.SELL.value:
+                    net_mag = (gross or Decimal(0)) - fee
+                else:
+                    net_mag = (gross or Decimal(0)) + fee
+                net_native = manual_entry.signed_net(kind, net_mag)
+                quantity = manual_entry.signed_quantity(kind, figs.quantity)
+                price_native = abs(figs.price) if figs.price is not None else None
+                gross_native = gross
+            else:
+                # Cash-only kind: the "Total" field is the cash amount.
+                net_native = manual_entry.signed_net(kind, t_mag)
+
+            account = next((a for a in accounts if a.id == account_sel.value), None)
+            native_ccy = account.native_currency if account else "EUR"
             with session_scope() as session:
                 instrument_id: int | None = None
                 sym = (symbol_in.value or "").strip().upper()
                 if sym:
                     instr = instruments_repo.get_or_create(session, symbol=sym)
                     instrument_id = instr.id
-                net_native = _decimal_or_none(net_in.value or "")
-                account = next((a for a in accounts if a.id == account_sel.value), None)
-                native_ccy = account.native_currency if account else "EUR"
-                # Freeze EUR + USD legs at the trade-date rate, just like the
-                # importer, so manual rows aren't the one place left deriving
-                # FX live on every render.
+                # Freeze EUR + USD legs at the trade-date rate, like the importer.
                 legs = transaction_fx_service.compute_legs(
-                    session,
-                    native_currency=native_ccy,
-                    net_native=net_native,
-                    on=txn_date,
+                    session, native_currency=native_ccy, net_native=net_native, on=txn_date
                 )
-                txn = Transaction(
-                    account_id=account_sel.value,
-                    date=txn_date,
-                    kind=kind_sel.value,
-                    instrument_id=instrument_id,
-                    quantity=_decimal_or_none(qty_in.value or ""),
-                    price_native=_decimal_or_none(price_in.value or ""),
-                    fees_native=_decimal_or_none(fees_in.value or ""),
-                    net_native=net_native,
-                    fx_rate_to_eur=legs.fx_rate_to_eur,
-                    net_eur=legs.net_eur,
-                    net_usd=legs.net_usd,
-                    description=(desc_in.value or "").strip() or None,
-                    source=TransactionSource.MANUAL,
-                )
-                inserted = transactions_repo.insert_transaction(session, txn)
-            if inserted is None:
-                ui.notify("Duplicate — not inserted", type="warning")
-            else:
-                ui.notify("Saved", type="positive")
+                fields = {
+                    "account_id": account_sel.value,
+                    "date": txn_date,
+                    "kind": kind,
+                    "instrument_id": instrument_id,
+                    "quantity": quantity,
+                    "price_native": price_native,
+                    "gross_native": gross_native,
+                    "fees_native": abs(fee_mag) if fee_mag is not None else None,
+                    "net_native": net_native,
+                    "fx_rate_to_eur": legs.fx_rate_to_eur,
+                    "net_eur": legs.net_eur,
+                    "net_usd": legs.net_usd,
+                    "description": (desc_in.value or "").strip() or None,
+                }
+                if is_edit:
+                    transactions_repo.update_transaction(session, existing["id"], **fields)
+                    ui.notify("Updated", type="positive")
+                else:
+                    txn = Transaction(source=TransactionSource.MANUAL, **fields)
+                    transactions_repo.insert_transaction(session, txn)
+                    _maybe_money_market_leg(
+                        session,
+                        enabled=bool(route_mm.value),
+                        account_id=account_sel.value,
+                        kind=kind,
+                        net_native=net_native,
+                        native_ccy=native_ccy,
+                        txn_date=txn_date,
+                    )
+                    ui.notify("Saved", type="positive")
             dlg.close()
             ui.navigate.to(PATH)  # cheap full refresh
 
         with ui.row().classes("justify-end w-full gap-sm"):
             ui.button("Cancel", on_click=dlg.close).props("flat")
+            if is_edit:
+                ui.button(
+                    "Delete",
+                    icon="delete",
+                    on_click=lambda: _confirm_delete(existing["id"], dlg),
+                ).props("flat color=negative no-caps")
             ui.button("Save", on_click=_save).props("color=primary")
     dlg.open()
 
 
-def _open_import_modal(accounts: list[Account]) -> None:  # pragma: no cover - UI
+def _maybe_money_market_leg(  # pragma: no cover - UI
+    session: Any,
+    *,
+    enabled: bool,
+    account_id: int,
+    kind: str,
+    net_native: Decimal | None,
+    native_ccy: str,
+    txn_date: date,
+) -> None:
+    """Auto-create the paired money-market settlement leg for a cash move."""
+    if not enabled:
+        return
+    leg = manual_entry.money_market_leg(kind, net_native)
+    if leg is None:
+        return
+    mm_instrument = transactions_repo.find_account_money_market_instrument(session, account_id)
+    if mm_instrument is None:
+        ui.notify(
+            "No money-market fund on this account yet — logged the cash move only.",
+            type="info",
+        )
+        return
+    leg_legs = transaction_fx_service.compute_legs(
+        session, native_currency=native_ccy, net_native=leg.net_native, on=txn_date
+    )
+    mm_txn = Transaction(
+        account_id=account_id,
+        date=txn_date,
+        kind=leg.kind,
+        instrument_id=mm_instrument.id,
+        quantity=leg.quantity,
+        price_native=leg.price,
+        net_native=leg.net_native,
+        fx_rate_to_eur=leg_legs.fx_rate_to_eur,
+        net_eur=leg_legs.net_eur,
+        net_usd=leg_legs.net_usd,
+        description=f"Money-market settlement (auto) · {mm_instrument.symbol}",
+        source=TransactionSource.MANUAL,
+    )
+    transactions_repo.insert_transaction(session, mm_txn)
+
+
+def _confirm_delete(txn_id: int, dlg: Any) -> None:  # pragma: no cover - UI
+    def _delete() -> None:
+        with session_scope() as session:
+            transactions_repo.delete_transaction(session, txn_id)
+        ui.notify("Deleted", type="positive")
+        dlg.close()
+        ui.navigate.to(PATH)
+
+    confirm_dialog(
+        "Delete this transaction?",
+        "This permanently removes the ledger row. This can't be undone.",
+        on_confirm=_delete,
+        confirm_label="Delete",
+    )
+
+
+def _open_import_modal(accounts: list[Account]) -> None:  # noqa: PLR0915  # pragma: no cover - UI
+    # Upload-first flow: the file is stashed the moment it's picked, so the
+    # account/broker can be chosen in any order and the import fires from an
+    # explicit button. (Previously ``auto_upload`` fired the import on file
+    # select and silently dropped the file if no account was picked yet.)
+    staged: dict[str, Any] = {"raw": None, "name": None}
+
     with ui.dialog() as dlg, ui.card().classes("min-w-[28rem]"):
         ui.label("Import broker CSV / XLSX").classes("text-h6")
+        ui.label(
+            "Drop your file first, then pick the broker and account — the import "
+            "only runs when you press Import."
+        ).classes("text-caption opacity-70")
         broker_sel = ui.select(
             {b.value: b.value.title() for b in Broker}, value=Broker.FIDELITY.value, label="Broker"
         ).classes("w-full")
@@ -294,11 +522,22 @@ def _open_import_modal(accounts: list[Account]) -> None:  # pragma: no cover - U
         status = ui.label("").classes("text-caption")
 
         def _on_upload(e: events.UploadEventArguments) -> None:
+            # Just stash the bytes; don't import yet. This lets the user
+            # upload before choosing an account and still import correctly.
+            staged["raw"] = e.content.read()
+            staged["name"] = e.name
+            status.text = f"File ready: {e.name} — pick the account, then press Import."
+            import_btn.enable()
+
+        def _do_import() -> None:
+            raw = staged["raw"]
+            if raw is None:
+                ui.notify("Upload a file first", type="warning")
+                return
             if account_sel.value is None:
                 ui.notify("Pick an account first", type="warning")
                 return
             broker = Broker(broker_sel.value)
-            raw = e.content.read()
             # Vanguard's Full History export is an .xlsx workbook (ZIP).
             # For everything else we still decode to text so the existing
             # CSV parsers stay on their happy path.
@@ -366,8 +605,12 @@ def _open_import_modal(accounts: list[Account]) -> None:  # pragma: no cover - U
         ui.upload(on_upload=_on_upload, auto_upload=True).props("accept=.csv,.xlsx").classes(
             "w-full"
         )
-        with ui.row().classes("justify-end w-full"):
+        with ui.row().classes("justify-end w-full gap-sm"):
             ui.button("Close", on_click=dlg.close).props("flat")
+            import_btn = ui.button("Import", icon="upload_file", on_click=_do_import).props(
+                "unelevated color=primary no-caps"
+            )
+            import_btn.disable()
     dlg.open()
 
 

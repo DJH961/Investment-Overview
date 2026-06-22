@@ -68,9 +68,7 @@ def test_refresh_due_prices_no_due_returns_empty(session: Session) -> None:
     assert prices_service.refresh_due_prices(session, now=now) == {}
 
 
-def test_refresh_due_prices_stamps_even_without_new_closes(
-    session: Session, monkeypatch
-) -> None:
+def test_refresh_due_prices_stamps_even_without_new_closes(session: Session, monkeypatch) -> None:
     """The per-symbol 'updated' time must advance whenever we successfully query
     the feed — even when it returns no new closes (after hours / weekends) —
     otherwise the overview's last-updated time freezes (the '7:51' bug)."""

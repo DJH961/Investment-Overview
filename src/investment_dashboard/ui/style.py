@@ -610,6 +610,16 @@ html, body {{
   text-transform: uppercase;
   font-size: 12px;
 }}
+/* The per-row "edit" action cell: a centred pencil that reads as a button. */
+.ag-theme-alpine .inv-edit-cell {{
+  cursor: pointer;
+  text-align: center;
+  font-size: 15px;
+  user-select: none;
+}}
+.ag-theme-alpine .inv-edit-cell:hover {{
+  background: var(--inv-accent-soft);
+}}
 /* Let long column titles wrap onto two lines (paired with the grids'
    ``wrapHeaderText`` / ``autoHeaderHeight`` options) instead of being clipped
    with an ellipsis, so headers like "Closing value (EUR)" stay fully readable

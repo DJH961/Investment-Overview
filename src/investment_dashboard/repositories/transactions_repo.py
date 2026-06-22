@@ -10,7 +10,32 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from investment_dashboard.models import Transaction
+from investment_dashboard.domain.money_market import is_money_market
+from investment_dashboard.models import Instrument, Transaction
+
+
+def find_account_money_market_instrument(session: Session, account_id: int) -> Instrument | None:
+    """Return the money-market settlement fund this account already holds.
+
+    Detected from the distinct instruments the account has transacted in,
+    using :func:`is_money_market` (known tickers or a "money market" name).
+    Returns ``None`` when the account has no settlement fund yet, so callers
+    can simply skip the auto-leg rather than inventing one.
+    """
+    stmt = (
+        select(Instrument)
+        .join(Transaction, Transaction.instrument_id == Instrument.id)
+        .where(Transaction.account_id == account_id)
+        .distinct()
+    )
+    for instrument in session.scalars(stmt):
+        if is_money_market(
+            instrument.symbol,
+            asset_class=instrument.asset_class,
+            name=instrument.name,
+        ):
+            return instrument
+    return None
 
 
 def list_transactions(
@@ -82,3 +107,30 @@ def insert_transaction(session: Session, txn: Transaction) -> Transaction | None
 def earliest_transaction_date(session: Session) -> date | None:
     stmt = select(Transaction.date).order_by(Transaction.date).limit(1)
     return session.scalars(stmt).one_or_none()
+
+
+def update_transaction(session: Session, txn_id: int, **fields: Any) -> Transaction | None:
+    """Update the given columns on transaction ``txn_id`` in place.
+
+    Returns the refreshed row, or ``None`` if no such transaction exists. Only
+    keys that map to real ``Transaction`` columns are applied; unknown keys are
+    ignored so callers can pass a superset safely.
+    """
+    txn = session.get(Transaction, txn_id)
+    if txn is None:
+        return None
+    for key, value in fields.items():
+        if hasattr(txn, key):
+            setattr(txn, key, value)
+    session.flush()
+    return txn
+
+
+def delete_transaction(session: Session, txn_id: int) -> bool:
+    """Delete transaction ``txn_id``; return ``True`` if a row was removed."""
+    txn = session.get(Transaction, txn_id)
+    if txn is None:
+        return False
+    session.delete(txn)
+    session.flush()
+    return True

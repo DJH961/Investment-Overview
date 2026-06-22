@@ -14,6 +14,65 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.2.0] — 2026-06-22
+
+### Added — local app: edit transactions & a much easier manual entry
+
+- **Transactions are now editable (and deletable) right from the ledger.** Each
+  row carries a small ✏️ action in a pinned left column — clicking it opens the
+  same form pre-filled, so you can correct any row (especially manually-added
+  ones) or delete it behind an "are you sure?" gate. There is no toolbar edit
+  button; the action lives in the table next to the row it edits.
+- **Manual entry no longer makes you do the arithmetic or pick a sign.** You type
+  **quantity, price and total** and the form fills in whichever one you leave
+  blank and checks the three agree (within a small rounding tolerance) before it
+  will save — catching the "these don't reconcile" mistake that previously slipped
+  through silently. The **+/- sign is now derived from the kind**: a *Sell* is
+  always cash in, a *Buy* always cash out, and a sale's share count is stored
+  negative automatically, so logging a sale with the wrong sign is no longer
+  possible.
+- **Cash transfers fill / deplete the money-market fund automatically.** When an
+  account holds a settlement / core money-market fund (VMFXX, SPAXX, …), a
+  deposit / withdrawal / transfer in or out now also buys or sells that fund at
+  its $1.00 NAV, so the uninvested-cash balance stays correct without you logging
+  the move twice. This mirrors the importer's Vanguard settlement-sweep logic and
+  can be switched off per entry.
+
+### Changed — local app: broker import is upload-first and more forgiving
+
+- **Import flow reordered so you upload first, then choose the account.** The
+  importer modal previously fired the moment a file was picked and dropped the
+  file entirely if no account was selected yet. Now the file is stashed on
+  upload, the broker/account can be chosen in any order, and the import runs only
+  when you press an explicit **Import** button (disabled until a file is staged).
+
+### Changed — local app: live price refresh
+
+- **One refresh indicator, not two.** The duplicate refresh animation in the
+  header was removed; the live-update indicator is the single source of truth, and
+  it is now clickable to force a manual refresh.
+- **Page refreshes now refresh prices too**, and the **auto-update interval is
+  editable in Settings** (15 s – 1 h) with a small animated bar at the top of the
+  page while an update is in flight.
+- **The per-symbol "last updated" time no longer sticks.** Every instrument that
+  is actually queried in a refresh is now stamped, so the overview's freshness
+  times advance even when the feed returns no new closing price.
+
+### Changed — local app: projection & monthly overview
+
+- **The projection screen shows a single currency** (USD *or* EUR, matching your
+  current display choice) instead of always rendering both.
+- **The monthly overview now includes the current, in-progress month** and
+  computes its month-to-date growth rather than ending at the last completed
+  month.
+
+### Fixed — local app: Data Health no longer reports benign Alembic noise
+
+- **Routine Alembic migration log lines are no longer surfaced as "recent
+  errors".** The embedded migration runner no longer routes Alembic's INFO logging
+  to stderr, and the error reporter additionally ignores INFO/DEBUG-only chunks,
+  so the Data Health screen stops flagging a healthy startup as a problem.
+
 ### Fixed — web companion: correct USD contribution / period figures
 
 - **Contributions and monthly/yearly figures are now correct in USD.** The
