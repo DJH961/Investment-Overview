@@ -14,6 +14,7 @@ import type { AllocationSlice, DashboardModel, HoldingView, OverviewView } from 
 import { fxTodayDeviationPct } from "./compute";
 import {
   type AnalyticsView,
+  type DepositRowView,
   type DepositsView,
   type PeriodRowView,
   type PeriodsView,
@@ -208,11 +209,13 @@ function renderStats(o: OverviewView): HTMLElement {
 
 /**
  * A short provenance tag for the EUR→USD rate shown on the coverage line:
- * "(live)" for the intraday Twelve Data spot, "(end-of-day)" for the ECB daily
- * fallback, and nothing for a cached/export rate (it speaks for itself).
+ * "(live)" for the intraday Twelve Data spot, "(cached)" for a recently-stored
+ * live spot reused without a re-fetch (so a quick app re-open stays instant),
+ * "(end-of-day)" for the ECB daily fallback, and nothing for an export rate.
  */
 function fxSourceTag(o: OverviewView): string {
   if (o.eurUsdSource === "live") return " (live)";
+  if (o.eurUsdSource === "cache") return " (cached)";
   if (o.eurUsdSource === "eod") return " (end-of-day)";
   return "";
 }
@@ -636,55 +639,137 @@ function renderPeriodRow(row: PeriodRowView): HTMLElement {
   return h("li", { class: "holding" }, [main, meta]);
 }
 
-function renderPeriodList(title: string, rows: PeriodRowView[], extraClass = ""): HTMLElement {
-  const cls = `holdings ${extraClass}`.trim();
-  if (rows.length === 0) {
-    return h("section", { class: cls }, [sectionHead(title), h("p", { class: "note" }, ["No periods yet."])]);
-  }
-  const list = h("ul", { class: "holding-list" }, rows.map(renderPeriodRow));
-  const sub = `${rows.length} ${rows.length === 1 ? "period" : "periods"}`;
-  return collapsibleSection(title, sub, list, cls);
-}
-
-function renderDepositsBlock(deposits: DepositsView): HTMLElement {
+function renderContributionsSummary(deposits: DepositsView): HTMLElement {
   const summary = h("div", { class: "stat-grid" }, [
     stat("Contributed", formatDualCurrency(deposits.totalEur, deposits.totalUsd)),
     stat("This year", formatDualCurrency(deposits.ytdEur, deposits.ytdUsd)),
     stat("This month", formatDualCurrency(deposits.mtdEur, deposits.mtdUsd)),
   ]);
+  return h("section", { class: "deposits" }, [sectionHead("Contributions"), h("div", { class: "stats" }, [summary])]);
+}
 
-  const recent = deposits.rows.slice(0, 12);
-  const rows = recent.map((row) =>
-    h("li", { class: "ledger-row" }, [
-      h("div", { class: "ledger-id" }, [
-        h("span", { class: "ledger-kind" }, [titleCase(row.kind)]),
-        h("span", { class: "ledger-sub muted" }, [`${row.date} · ${row.account}`]),
-      ]),
-      h("span", { class: "ledger-amount" }, [formatDualCurrency(row.amountEur, row.amountUsd)]),
+/** One contribution ledger row, used nested under its year group. */
+function renderDepositRow(row: DepositRowView): HTMLElement {
+  return h("li", { class: "ledger-row" }, [
+    h("div", { class: "ledger-id" }, [
+      h("span", { class: "ledger-kind" }, [titleCase(row.kind)]),
+      h("span", { class: "ledger-sub muted" }, [`${row.date} · ${row.account}`]),
     ]),
-  );
+    h("span", { class: "ledger-amount" }, [formatDualCurrency(row.amountEur, row.amountUsd)]),
+  ]);
+}
 
-  const children: Array<Node | string> = [h("div", { class: "stats" }, [summary])];
-  if (rows.length > 0) {
-    children.push(
-      h("details", { class: "allocation" }, [
-        h("summary", { class: "alloc-summary" }, [
-          h("span", { class: "alloc-summary-title" }, ["Recent contributions"]),
-          h("span", { class: "muted" }, [`${recent.length} shown`]),
-        ]),
-        h("ul", { class: "ledger-list" }, rows),
+/**
+ * A single collapsible year group: the year's headline (growth + closing value),
+ * its months nested inside, and that year's contributions kept *under* the year
+ * rather than floating in a separate middle block. The current year defaults
+ * open; prior years stay condensed until tapped.
+ */
+function renderYearGroup(
+  year: string,
+  yearRow: PeriodRowView | undefined,
+  months: PeriodRowView[],
+  deposits: DepositRowView[],
+  isCurrent: boolean,
+): HTMLElement {
+  const body: Array<Node | string> = [];
+
+  if (yearRow) {
+    // The year's own flows/dividends/interest as a compact meta strip.
+    body.push(
+      h("div", { class: "holding-meta year-meta" }, [
+        chip(`Net flow ${formatSignedDualCurrency(yearRow.netFlowEur, yearRow.netFlowUsd)}`, signClass(yearRow.netFlowEur)),
+        chip(`Contrib ${formatDualCurrency(yearRow.contributionsEur, yearRow.contributionsUsd)}`),
+        chip(`Div ${formatDualCurrency(yearRow.dividendsEur, yearRow.dividendsUsd)}`),
+        chip(`Int ${formatDualCurrency(yearRow.interestEur, yearRow.interestUsd)}`),
       ]),
     );
   }
-  return h("section", { class: "deposits" }, [sectionHead("Contributions"), ...children]);
+
+  if (months.length > 0) {
+    body.push(h("ul", { class: "holding-list" }, months.map(renderPeriodRow)));
+  } else {
+    body.push(h("p", { class: "note" }, ["No monthly breakdown for this year."]));
+  }
+
+  if (deposits.length > 0) {
+    body.push(
+      h("details", { class: "allocation year-contribs" }, [
+        h("summary", { class: "alloc-summary" }, [
+          h("span", { class: "alloc-summary-title" }, ["Contributions"]),
+          h("span", { class: "muted" }, [`${deposits.length} in ${year}`]),
+        ]),
+        h("ul", { class: "ledger-list" }, deposits.map(renderDepositRow)),
+      ]),
+    );
+  }
+
+  // Year headline as the collapsible sub-text: growth % and closing value.
+  const growthPct = yearRow ? pickByCurrency(yearRow.growthPct, yearRow.growthPctUsd) : null;
+  const valuePart =
+    yearRow && yearRow.closingValueEur !== null
+      ? formatDualCurrency(yearRow.closingValueEur, yearRow.closingValueUsd)
+      : "—";
+  const sub = `${signedPercentOrDash(growthPct)} · ${valuePart}`;
+
+  const wrapped = h("div", { class: "year-group-body" }, body);
+  return collapsibleSection(year, sub, wrapped, "periods-year", isCurrent);
 }
 
 function renderPeriodsPanel(periods: PeriodsView, deposits: DepositsView | null): HTMLElement {
-  const children: Array<Node | string> = [
-    renderPeriodList("This year, by month", periods.monthly, "periods-monthly"),
-    renderPeriodList("By year", periods.yearly, "periods-yearly"),
-  ];
-  if (deposits) children.push(renderDepositsBlock(deposits));
+  const children: Array<Node | string> = [];
+  if (deposits) children.push(renderContributionsSummary(deposits));
+
+  // Group the exported months and contribution rows by their calendar year so
+  // each year can be condensed independently (current year open by default).
+  const monthsByYear = new Map<string, PeriodRowView[]>();
+  for (const row of periods.monthly) {
+    const yr = row.label.slice(0, 4);
+    const bucket = monthsByYear.get(yr);
+    if (bucket) bucket.push(row);
+    else monthsByYear.set(yr, [row]);
+  }
+  const depositsByYear = new Map<string, DepositRowView[]>();
+  for (const row of deposits?.rows ?? []) {
+    const yr = row.date.slice(0, 4);
+    const bucket = depositsByYear.get(yr);
+    if (bucket) bucket.push(row);
+    else depositsByYear.set(yr, [row]);
+  }
+
+  // The current year is the live one (its yearly row is flagged current); fall
+  // back to today's year so a fresh export with no current row still opens one.
+  const currentYear =
+    periods.yearly.find((y) => y.isCurrent)?.label ?? String(new Date().getFullYear());
+
+  // Render newest year first; include any year that has a yearly row, months,
+  // or contributions so nothing is dropped.
+  const yearKeys = Array.from(
+    new Set<string>([
+      ...periods.yearly.map((y) => y.label),
+      ...monthsByYear.keys(),
+      ...depositsByYear.keys(),
+    ]),
+  )
+    .sort()
+    .reverse();
+
+  if (yearKeys.length === 0) {
+    children.push(h("p", { class: "note" }, ["No periods yet."]));
+  }
+  for (const year of yearKeys) {
+    const yearRow = periods.yearly.find((y) => y.label === year);
+    children.push(
+      renderYearGroup(
+        year,
+        yearRow,
+        monthsByYear.get(year) ?? [],
+        depositsByYear.get(year) ?? [],
+        year === currentYear,
+      ),
+    );
+  }
+
   children.push(
     h("p", { class: "disclaimer" }, [
       "The current month and year are recomputed live; completed periods are frozen as of the last export.",

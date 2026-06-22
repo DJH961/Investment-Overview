@@ -426,6 +426,16 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
  * section-head margins so the summary lines up with the card edges. */
 .collapsible.card > .collapsible-summary { margin: 0; }
 
+/* Periods → per-year group: the months + that year's contributions, stacked
+ * under one collapsible year header (current year open by default). */
+.periods-year > .year-group-body {
+  display: grid;
+  gap: 0.6rem;
+  padding-top: 0.4rem;
+}
+.year-group-body .year-meta { margin-bottom: 0.1rem; }
+.year-group-body .year-contribs { margin-top: 0.2rem; }
+
 .holding-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
 .holding {
   background: var(--card);
