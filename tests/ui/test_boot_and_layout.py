@@ -2,35 +2,42 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
 
+from investment_dashboard import boot
 from investment_dashboard.boot import run_boot_sequence
 
 
-@pytest.fixture(autouse=True)
-def _release_boot_writer_lock() -> object:
-    """Release any writer lock the boot sequence acquired.
+def _release_held_writer_lock() -> None:
+    """Close and forget the writer-lock handle stored in the boot global.
 
-    ``run_boot_sequence`` stores the held lock in a module-global; without an
-    explicit release each boot test leaks the ``<ledger>.lock`` file handle
-    until garbage collection, which surfaces as a ``ResourceWarning``. We
-    close the handle and reset the boot state directly (rather than calling
-    ``release_writer_lock``, which would flip the global to read-only and
-    leak that state into the next test).
+    ``run_boot_sequence`` stashes the acquired lock in a module-global; if it
+    is not released the ``<ledger>.lock`` file handle leaks until garbage
+    collection, surfacing as a ``ResourceWarning``.
     """
-    yield
-    from contextlib import suppress
-
-    from investment_dashboard import boot
-
     lock = boot._boot_state.get("held_lock")
     if lock is not None:
         with suppress(Exception):
-            lock.release()
+            lock.release()  # type: ignore[attr-defined]
     boot._boot_state["held_lock"] = None
+
+
+@pytest.fixture(autouse=True)
+def _release_boot_writer_lock() -> Iterator[None]:
+    """Release any writer lock a boot test acquired, and reset boot state.
+
+    We reset the handle directly rather than calling ``release_writer_lock``,
+    which would flip the global to read-only and leak that state into the
+    next test.
+    """
+    yield
+    _release_held_writer_lock()
+    boot._boot_state["read_only"] = False
     boot._boot_state["read_only"] = False
 
 
@@ -326,12 +333,7 @@ def test_integrity_check_tolerates_transient_disk_io_error(
     try:
         run_boot_sequence(skip_network=True)
     finally:
-        from contextlib import suppress
-
-        lock = boot._boot_state.get("held_lock")
-        if lock is not None:
-            with suppress(Exception):
-                lock.release()
+        _release_held_writer_lock()
         boot._boot_state.update(saved)
         dispose_engines()
         get_settings.cache_clear()
