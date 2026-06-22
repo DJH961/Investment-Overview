@@ -197,7 +197,7 @@ function renderHeroFx(o: OverviewView): HTMLElement | null {
     // strength convention used by this hero line.
     const rate = inUsd ? o.fxRateEurUsd : new Decimal(1).dividedBy(o.fxRateEurUsd);
     const dev = devPct === null ? null : inUsd ? devPct : devPct.negated();
-    const pair = inUsd ? "USD/EUR" : "EUR/USD";
+    const pair = inUsd ? "EUR/USD" : "USD/EUR";
     const rateLabel =
       dev !== null
         ? `${pair} ${formatFxRate(rate)} (${formatSignedPercent(dev)} today)`
