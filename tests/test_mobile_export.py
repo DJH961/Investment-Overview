@@ -250,8 +250,8 @@ def test_mobile_export_periods_carry_per_date_usd_regardless_of_display_currency
 ) -> None:
     """Period rows must carry per-trade-date USD figures even though the desktop
     display currency is EUR, so the web companion (which works in EUR as its FX
-    pivot) can show correct
-    USD contributions/values without rescaling by today's spot."""
+    pivot) can show correct USD contributions/values without rescaling by
+    today's spot."""
     _seed_mobile_portfolio(session)
 
     export = build_mobile_export(session, as_of=AS_OF)
