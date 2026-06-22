@@ -283,6 +283,19 @@ html, body {{
   gap: 1rem;
   align-items: stretch;
 }}
+/* Small caption that introduces a grouped band of KPI tiles (Analytics risk
+   groups). Adds vertical rhythm between the concept groups. */
+.inv-kpi-group-title {{
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--inv-muted);
+  margin: 1.25rem 0 0.5rem 0;
+}}
+.inv-kpi-group-title:first-child {{
+  margin-top: 0;
+}}
 /* One-line variant: lay every card in a single shrink-to-fit row (used by the
    Holdings "Portfolio shape" strip so a lone card can't fall to a 2nd row).
    Falls back to wrapping on narrow desktops. */

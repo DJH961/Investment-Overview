@@ -16,6 +16,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [3.2.0] — 2026-06-22
 
+### Analytics page
+- **Equity curve** now has labelled x/y axes (Date, Value) with gridlines and roomy margins instead of edge-clipped axes; the cumulative-contributions overlay is hidden when no deposits/withdrawals are logged so it no longer renders as a confusing flat line pinned to the bottom.
+- **Per-instrument attribution** now uses the same Alpine table theme as the rest of the app (no more out-of-place styling / clipping) and carries a one-line caption explaining it is the per-holding breakdown behind the totals above.
+- **Risk metrics** are regrouped into tidy, uniform-width tiles under labelled bands — *Returns*, *Risk & volatility*, *Drawdown & tail risk*, *Benchmark & market* — replacing the ragged, mismatched-size flex rows.
+
 ### Holdings page
 - Added **Total Growth** and **XIRR** KPI cards to the headline row.
 - Portfolio shape now fits on a single row instead of wrapping a lone tile to a second line.
