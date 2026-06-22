@@ -14,6 +14,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.9.1] — 2026-06-22
+
+### Changed
+
+- **"Today's movers" now sits below the value graph on the web too.** It used to
+  render above the chart; it now follows the chart and the stats block whose
+  notes explain how fresh the data is ("data last pulled…", live coverage,
+  budget), matching the desktop, which already places the band directly under
+  the value graph. On both apps the leaderboard now reads right after the graph
+  (and, on web, the update text) that frame it, and still above the Holdings
+  list.
+
 ## [3.9.0] — 2026-06-22
 
 ### Changed

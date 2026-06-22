@@ -739,14 +739,16 @@ function renderOverviewPanel(model: DashboardModel): HTMLElement {
     renderHero(model.overview),
     renderReturns(model.overview),
   ];
-  // Today's winners/losers sit high up as a distinct, attention-grabbing band —
-  // a quick read of the day's movers above the chart and well above the holdings
-  // list (the badges below tie each mover back to its row).
-  const movers = renderMovers(model.holdings);
-  if (movers) content.push(movers);
+  // Today's winners/losers sit as a distinct band below the value chart and the
+  // stats block whose notes explain how fresh the data is ("data last pulled…",
+  // live coverage, budget) — so the leaderboard reads right after the graph and
+  // the update text that frame it, mirroring the desktop layout. The badges
+  // below still tie each mover back to its holding row.
   const valueChart = renderValueChart(model.analytics, model.overview);
   if (valueChart) content.push(valueChart);
   content.push(renderStats(model.overview));
+  const movers = renderMovers(model.holdings);
+  if (movers) content.push(movers);
   content.push(renderHoldings(model.holdings, moverBadges(model.holdings)));
   const allocation = renderAllocation(model.allocation);
   if (allocation) content.push(allocation);
