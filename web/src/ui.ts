@@ -714,7 +714,7 @@ const PROJECTION_OUTLOOK_BAND = new Decimal("0.03");
  * and years above, the projected next {@link PROJECTION_OUTLOOK_YEARS} years
  * below. It is seeded straight from the portfolio (today's value, the average
  * yearly contribution, and the XIRR-derived expected return) with no inputs of
- * its own; the Calculator tab remains the place to tweak the assumptions.
+ * its own; it gives a quick "if this pace holds" outlook with no controls.
  */
 function renderProjectionOutlook(plan: PlanView): HTMLElement {
   const isUsd = getDisplayCurrency() === "USD";
