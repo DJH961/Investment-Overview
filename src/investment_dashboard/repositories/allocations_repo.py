@@ -48,6 +48,21 @@ def set_active(session: Session, allocation_id: int) -> None:
     session.flush()
 
 
+def deactivate_all(session: Session) -> None:
+    """Mark every allocation inactive (clears the autoloaded saved target).
+
+    Used by the Calculator's "Clear saved target" action so the page stops
+    auto-loading a previously-saved weighting. The allocations themselves are
+    kept (so a named target can still be re-activated elsewhere); only the
+    "active" flag is cleared.
+    """
+    session.execute(
+        update(TargetAllocation).where(TargetAllocation.active.is_(True)).values(active=False),
+        execution_options={"synchronize_session": "evaluate"},
+    )
+    session.flush()
+
+
 def create_allocation(
     session: Session,
     name: str,
