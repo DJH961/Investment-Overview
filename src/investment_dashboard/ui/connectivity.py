@@ -323,7 +323,26 @@ def _script() -> str:
     if (b) b.classList.remove('is-visible', 'is-offline', 'is-ok');
   }
 
+  // Called from the server when the user chooses to shut the app down. The
+  // websocket is *about* to drop on purpose, so suppress the alarming
+  // "connection lost" banner, show a calm confirmation instead, and try to
+  // auto-close the tab (works when the app opened it, e.g. native/show=True).
+  window.__invBeginShutdown = function () {
+    window.__invShuttingDown = true;
+    setDot('is-ok', 'Shutting down\\u2026');
+    var b = el('inv-connbar');
+    if (b) {
+      b.classList.remove('is-offline');
+      b.classList.add('is-visible', 'is-ok');
+      setText('Shutting down\\u2026 you can close this tab.');
+      var btn = el('inv-connbar-reload');
+      if (btn) btn.style.display = 'none';
+    }
+    try { window.close(); } catch (e) { /* browser refused — message stays */ }
+  };
+
   function onLost(offline) {
+    if (window.__invShuttingDown) return;
     wasDown = true;
     if (offline) {
       setDot('is-bad', 'Offline — no network');
@@ -334,6 +353,7 @@ def _script() -> str:
     }
   }
   function onReconnectAttempt(n) {
+    if (window.__invShuttingDown) return;
     attempts = n || (attempts + 1);
     setDot('is-warn', 'Reconnecting\\u2026');
     showBar('', 'Connection lost \\u2014 reconnecting (attempt ' + attempts + ')\\u2026');

@@ -61,20 +61,40 @@ def _connected_client_count() -> int:
     return sum(1 for client in Client.instances.values() if client.has_socket_connection)
 
 
-def request_shutdown() -> None:
-    """Release the writer lock and stop the server. Safe to call repeatedly."""
+def request_shutdown(*, publish: bool = True) -> None:
+    """Release the writer lock and stop the server. Safe to call repeatedly.
+
+    ``publish`` republishes the live-web blob first (proposal §5.4, gated by
+    Settings). The Settings "Shut down" button publishes itself so it can show
+    the user the result, and passes ``publish=False`` here to avoid a double
+    upload; the automatic paths (tab-close, OS signal) keep the default.
+    """
     if _state["shutting_down"]:
         return
     _state["shutting_down"] = True
+    # A pending debounced manual-edit publish is now moot — we publish the latest
+    # state below (or the UI already did), so cancel it to avoid a late upload.
+    _cancel_pending_edit_publish()
     # v3.0 §5.4: graceful close is an auto-publish trigger. Do this before
     # releasing the lock / stopping so the DB is still fully available. It is
     # best-effort and never raises, so a publish failure can't block shutdown.
-    _publish_on_shutdown()
+    if publish:
+        _publish_on_shutdown()
     # Release eagerly so a waiting instance can acquire the lock even while the
     # server drains; the ``on_shutdown`` hook releases again (idempotent).
     boot.release_writer_lock()
     log.info("shutdown requested; stopping server")
     app.shutdown()
+
+
+def _cancel_pending_edit_publish() -> None:
+    """Cancel any pending debounced manual-edit publish; never raises."""
+    try:
+        from investment_dashboard.services import auto_publish  # noqa: PLC0415
+
+        auto_publish.cancel_pending_edit_publish()
+    except Exception:  # pragma: no cover - defensive
+        log.warning("could not cancel pending manual-edit publish", exc_info=False)
 
 
 def _publish_on_shutdown() -> None:

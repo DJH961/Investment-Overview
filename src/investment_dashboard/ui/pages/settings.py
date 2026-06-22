@@ -16,7 +16,7 @@ import logging
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import Decimal, InvalidOperation
 
 from nicegui import run, ui
@@ -1400,6 +1400,7 @@ def _handoff_lock_clicked() -> None:  # pragma: no cover - UI
 def _shutdown_clicked() -> None:  # pragma: no cover - UI
     """Confirm, then release the lock and stop the server."""
     from investment_dashboard import shutdown  # noqa: PLC0415
+    from investment_dashboard.services import auto_publish  # noqa: PLC0415
 
     with ui.dialog() as dialog, ui.card():
         ui.label("Shut down the dashboard server?").classes("text-subtitle1")
@@ -1412,10 +1413,20 @@ def _shutdown_clicked() -> None:  # pragma: no cover - UI
 
             def _confirm() -> None:
                 dialog.close()
-                ui.notify("Shutting down… you can close this tab.", type="warning")
-                # Give the notification a moment to render before the server
-                # stops serving, then release the lock and exit.
-                ui.timer(0.6, shutdown.request_shutdown, once=True)
+                # Republish (gated) before stopping so the latest state is live,
+                # and tell the user whether the upload worked.
+                outcome = auto_publish.run_trigger(auto_publish.TRIGGER_SHUTDOWN)
+                note = auto_publish.describe_outcome(outcome)
+                if note is not None:
+                    ui.notify(note[0], type=note[1])
+                # Clean exit: suppress the "connection lost" banner (a drop is
+                # expected) and try to auto-close the tab.
+                ui.run_javascript(
+                    "if (window.__invBeginShutdown) window.__invBeginShutdown();"
+                )
+                # Give the notification + JS a moment to run, then stop the
+                # server. We already published above, so skip the duplicate.
+                ui.timer(0.8, lambda: shutdown.request_shutdown(publish=False), once=True)
 
             ui.button("Shut down", icon="power_settings_new", on_click=_confirm).props(
                 "unelevated color=negative no-caps"
@@ -1554,6 +1565,7 @@ def _live_web_config(session) -> dict[str, str | None]:  # pragma: no cover - UI
         "include_transactions": app_config_repo.get(session, "live_web_include_transactions"),
         "publish_on_import": app_config_repo.get(session, "live_web_publish_on_import"),
         "publish_on_shutdown": app_config_repo.get(session, "live_web_publish_on_shutdown"),
+        "publish_on_manual_edit": app_config_repo.get(session, "live_web_publish_on_manual_edit"),
         "last_published_at": app_config_repo.get(session, "live_web_last_published_at"),
     }
 
@@ -1608,6 +1620,7 @@ def _save_live_web_prefs(
     include_transactions: bool,
     publish_on_import: bool,
     publish_on_shutdown: bool,
+    publish_on_manual_edit: bool,
 ) -> None:
     # pragma: no cover - UI
     """Persist the non-secret live-web preferences to app_config."""
@@ -1629,6 +1642,11 @@ def _save_live_web_prefs(
                 session,
                 "live_web_publish_on_shutdown",
                 "true" if publish_on_shutdown else "false",
+            )
+            app_config_repo.set_value(
+                session,
+                "live_web_publish_on_manual_edit",
+                "true" if publish_on_manual_edit else "false",
             )
     except Exception as exc:
         ui.notify(f"Could not save preferences: {exc}", type="negative")
@@ -1664,10 +1682,29 @@ def _publish_now_clicked(repo: str, include_transactions: bool) -> None:  # prag
     )
 
 
+def _format_last_published(raw: str | None, tz: tzinfo) -> str:  # pragma: no cover - UI
+    """Render the stored last-published ISO timestamp in the user's timezone.
+
+    Stored as a UTC ISO-8601 string; shown without a zone suffix since the user
+    already chose the display zone in Settings. Falls back to the raw value if it
+    can't be parsed (forward-compatible / never blank).
+    """
+    if not raw:
+        return "Not published yet."
+    try:
+        moment = datetime.fromisoformat(raw)
+    except ValueError:
+        return f"Last published: {raw}"
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return f"Last published: {moment.astimezone(tz):%Y-%m-%d %H:%M}"
+
+
 def _render_live_web_companion_section() -> None:  # pragma: no cover - UI
     """Settings panel for the v3.0 live web companion (proposal §5.6)."""
     with session_scope() as session:
         cfg = _live_web_config(session)
+        tz = timezone_service.resolve_tzinfo(timezone_service.get_timezone(session))
 
     ui.label(
         "Publish an encrypted snapshot of your portfolio to a GitHub release "
@@ -1696,6 +1733,10 @@ def _render_live_web_companion_section() -> None:  # pragma: no cover - UI
         "Publish on graceful app close",
         value=cfg["publish_on_shutdown"] != "false",
     )
+    on_manual_edit_sw = ui.switch(
+        "Publish ~2 min after a manual transaction edit",
+        value=cfg["publish_on_manual_edit"] != "false",
+    )
     ui.button(
         "Save preferences",
         icon="save",
@@ -1705,6 +1746,7 @@ def _render_live_web_companion_section() -> None:  # pragma: no cover - UI
             bool(include_sw.value),
             bool(on_import_sw.value),
             bool(on_shutdown_sw.value),
+            bool(on_manual_edit_sw.value),
         ),
     ).props("flat no-caps")
 
@@ -1745,9 +1787,7 @@ def _render_live_web_companion_section() -> None:  # pragma: no cover - UI
             on_click=lambda: _publish_now_clicked(repo_in.value or "", bool(include_sw.value)),
         ).props("unelevated color=primary no-caps")
         last = cfg["last_published_at"]
-        ui.label(f"Last published: {last}" if last else "Not published yet.").classes(
-            "text-caption opacity-70"
-        )
+        ui.label(_format_last_published(last, tz)).classes("text-caption opacity-70")
 
 
 def _render_help_section() -> None:  # pragma: no cover - UI
