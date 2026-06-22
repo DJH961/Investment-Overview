@@ -1014,6 +1014,31 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* Keep the popover on-screen for dots near the left/right edges of the grid. */
 .stat:first-child .info-tip { left: 0; transform: none; }
 
+/* --- Risk & Returns metric cards -----------------------------------------
+ * The two metric grids pack a lot of cards with uneven labels (some wrap to two
+ * lines, e.g. "Max drawdown" / "Ulcer index") and tight values. Without help
+ * the values sit at different heights and a "%" can wrap onto its own line,
+ * which reads as messy. Pin every value to the bottom of its (equal-height)
+ * card so they line up across each row, align the label + info "i" to the top,
+ * and never break a value mid-number. */
+.analytics-returns .stat,
+.analytics-risk .stat {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+.analytics-returns .stat-label,
+.analytics-risk .stat-label {
+  align-items: flex-start;
+  line-height: 1.2;
+}
+.analytics-returns .stat-value,
+.analytics-risk .stat-value {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
 /* --- Calculator (plan) tab ------------------------------------------------- */
 .calc-fields { display: grid; gap: 0.75rem; grid-template-columns: 1fr 1fr; }
 .calc-fields .field { margin: 0; min-width: 0; }
@@ -1349,6 +1374,20 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    * columns and Risk (10 metrics) into 5, giving both exactly two full rows. */
   .panel-analytics > .analytics-returns .stat-grid { grid-template-columns: repeat(3, 1fr); }
   .panel-analytics > .analytics-risk .stat-grid { grid-template-columns: repeat(5, 1fr); }
+
+  /* In the dense desktop grids labels routinely run to two lines ("Max
+   * drawdown", "Ulcer index", "VaR 95%"). Reserve two lines for every label so
+   * single- and double-line cards share an identical header height and the
+   * values below them land on one tidy baseline per row. The slightly smaller
+   * value keeps long figures (e.g. "-9.08%") comfortably inside the narrow
+   * five-across risk cards. */
+  .panel-analytics > .analytics-returns .stat-label,
+  .panel-analytics > .analytics-risk .stat-label {
+    min-height: 2.4em;
+  }
+  .panel-analytics > .analytics-risk .stat-value {
+    font-size: 1.15rem;
+  }
 
   /* Keep the info "i" tooltips inside the cards: the centred popover on a
    * right-column metric used to spill past the card edge. Anchor the tooltip to
