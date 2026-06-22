@@ -10,8 +10,8 @@
  * media queries only — the markup stays the same.
  */
 import { Decimal } from "./decimal-config";
-import type { AllocationSlice, DashboardModel, HoldingView, OverviewView } from "./compute";
-import { fxTodayDeviationPct } from "./compute";
+import type { AllocationSlice, DashboardModel, HoldingView, MoverEntry, OverviewView } from "./compute";
+import { buildMovers, fxTodayDeviationPct } from "./compute";
 import {
   type AnalyticsView,
   type DepositRowView,
@@ -498,6 +498,10 @@ function renderHoldingRow(holding: HoldingView): HTMLElement {
 
   const todayPct = pickByCurrency(holding.todayMovePct, holding.todayMovePctUsd);
   const todayCls = signClass(todayPct);
+  // A holding still on an older print than its peers shows last session's move,
+  // not today's — grey it so a live glance separates today's numbers from the
+  // ones yet to refresh. Before the open nothing is stale, so nothing greys.
+  const todayStaleCls = holding.todayMoveIsStale ? " holding-change-stale" : "";
   const main = h("div", { class: "holding-main" }, [
     h("div", { class: "holding-id" }, [
       // Top line: symbol (+ NAV/stale pills) on the left, and the price's
@@ -514,7 +518,10 @@ function renderHoldingRow(holding: HoldingView): HTMLElement {
     ]),
     h("div", { class: "holding-figures" }, [
       h("span", { class: "holding-value" }, [formatCurrency(holding.valueEur)]),
-      h("span", { class: `holding-change ${todayCls}` }, [signedPercentOrDash(todayPct)]),
+      h("span", {
+        class: `holding-change ${todayCls}${todayStaleCls}`,
+        ...(holding.todayMoveIsStale ? { title: "Not updated today — last session's move" } : {}),
+      }, [signedPercentOrDash(todayPct)]),
     ]),
   ]);
 
@@ -554,6 +561,69 @@ function renderHoldings(holdings: HoldingView[]): HTMLElement {
   const count = `${holdings.length} ${holdings.length === 1 ? "position" : "positions"}`;
   const list = h("ul", { class: "holding-list" }, sorted.map(renderHoldingRow));
   return collapsibleSection("Holdings", count, list, "holdings");
+}
+
+/** A short "20 Jun" / "Today" label for the movers basis date (ISO `YYYY-MM-DD`). */
+function moversBasisLabel(basisDate: string | null, now: Date = new Date()): string {
+  if (basisDate === null) return "—";
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(basisDate);
+  if (match === null) return basisDate;
+  const [, year, month, day] = match;
+  // Compare as local calendar dates so "today" reflects the viewer's day.
+  const isToday =
+    Number(year) === now.getFullYear() &&
+    Number(month) === now.getMonth() + 1 &&
+    Number(day) === now.getDate();
+  if (isToday) return "today";
+  const parsed = new Date(Number(year), Number(month) - 1, Number(day));
+  return parsed.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+/** One winner/loser row: symbol + reason tag, today's % and money move. */
+function renderMoverEntry(entry: MoverEntry): HTMLElement {
+  const pct = pickByCurrency(entry.todayMovePct, entry.todayMovePctUsd);
+  const cls = signClass(pct);
+  const tag = entry.reason === "total" ? "biggest move" : "top %";
+  return h("li", { class: "mover" }, [
+    h("div", { class: "mover-id" }, [
+      h("span", { class: "mover-sym" }, [entry.symbol]),
+      h("span", { class: "mover-tag" }, [tag]),
+    ]),
+    h("div", { class: "mover-figures" }, [
+      h("span", { class: `mover-pct ${cls}` }, [signedPercentOrDash(pct)]),
+      h("span", { class: `mover-money ${cls}` }, [
+        formatSignedDualCurrency(entry.todayMoveEur, entry.todayMoveUsd),
+      ]),
+    ]),
+  ]);
+}
+
+/** One side (winners or losers) of the movers leaderboard. */
+function renderMoverColumn(title: string, entries: MoverEntry[]): HTMLElement {
+  const body: Array<Node | string> =
+    entries.length > 0
+      ? [h("ul", { class: "mover-list" }, entries.map(renderMoverEntry))]
+      : [h("p", { class: "mover-empty" }, ["None"])];
+  return h("div", { class: "mover-col" }, [h("h3", { class: "mover-col-title" }, [title]), ...body]);
+}
+
+/**
+ * Today's winners & losers: the biggest money mover and biggest percentage mover
+ * on each side (percentage runner-up substituted when one holding tops both). It
+ * is measured on the freshest price date across the book, so before the open it
+ * reflects last session and during the session only what has already printed
+ * today. Hidden entirely when nothing has a today's move yet.
+ */
+function renderMovers(holdings: HoldingView[]): HTMLElement | null {
+  const movers = buildMovers(holdings);
+  if (movers.winners.length === 0 && movers.losers.length === 0) return null;
+  const basis = moversBasisLabel(movers.basisDate);
+  const sub = basis === "today" ? "today" : `last close · ${basis}`;
+  const grid = h("div", { class: "mover-grid" }, [
+    renderMoverColumn("Winners", movers.winners),
+    renderMoverColumn("Losers", movers.losers),
+  ]);
+  return collapsibleSection("Today's movers", sub, grid, "movers");
 }
 
 export function renderDashboard(
@@ -684,9 +754,14 @@ function renderOverviewPanel(model: DashboardModel): HTMLElement {
     renderHero(model.overview),
     renderReturns(model.overview),
   ];
+  // Today's winners/losers sit high up — a quick glimpse of the day's movers
+  // without scrolling past the chart and KPIs to the holdings list.
+  const movers = renderMovers(model.holdings);
+  if (movers) content.push(movers);
   const valueChart = renderValueChart(model.analytics, model.overview);
   if (valueChart) content.push(valueChart);
-  content.push(renderStats(model.overview), renderHoldings(model.holdings));
+  content.push(renderStats(model.overview));
+  content.push(renderHoldings(model.holdings));
   const allocation = renderAllocation(model.allocation);
   if (allocation) content.push(allocation);
   content.push(

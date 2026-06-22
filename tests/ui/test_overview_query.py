@@ -712,3 +712,82 @@ def test_position_rows_carry_mtd(session: Session, seeded: None) -> None:
     metrics = compute_instrument_metrics(session, positions)
     rows = position_rows(positions, metrics=metrics)
     assert all("mtd_eur_signed" in r and "mtd_usd_signed" in r for r in rows)
+
+
+def test_build_holding_cards_flags_lagging_daily_move_as_stale(
+    session: Session,
+) -> None:
+    """When some holdings have repriced today but a fund still sits on
+    yesterday's NAV, the laggard's daily move is flagged stale so the UI can
+    grey it out while the fresh holdings show today's move normally."""
+    from investment_dashboard.ui.pages._overview_query import (
+        build_holding_cards,
+        compute_instrument_metrics,
+        get_positions,
+        holding_freshness,
+    )
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Fidelity",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    two_days_ago = today - timedelta(days=2)
+
+    vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
+    fund = instruments_repo.get_or_create(session, symbol="VFIAX", asset_class="mutual_fund")
+    # ETF printed today (fresh); the mutual fund's newest NAV is yesterday (lagging).
+    prices_repo.upsert_closes(
+        session, vti.id, {yesterday: Decimal("220.00"), today: Decimal("230.00")}
+    )
+    prices_repo.upsert_closes(
+        session, fund.id, {two_days_ago: Decimal("100.00"), yesterday: Decimal("101.00")}
+    )
+    fx_repo.upsert_rates(
+        session,
+        {
+            two_days_ago: Decimal("1.25"),
+            yesterday: Decimal("1.25"),
+            today: Decimal("1.25"),
+            date(2024, 1, 5): Decimal("1.25"),
+        },
+    )
+    session.add_all(
+        [
+            Transaction(
+                account_id=acct.id,
+                date=date(2024, 1, 5),
+                kind="buy",
+                instrument_id=vti.id,
+                quantity=Decimal("10"),
+                price_native=Decimal("200"),
+                net_native=Decimal("-2000"),
+                source=TransactionSource.MANUAL,
+            ),
+            Transaction(
+                account_id=acct.id,
+                date=date(2024, 1, 5),
+                kind="buy",
+                instrument_id=fund.id,
+                quantity=Decimal("20"),
+                price_native=Decimal("95"),
+                net_native=Decimal("-1900"),
+                source=TransactionSource.MANUAL,
+            ),
+        ]
+    )
+    session.flush()
+
+    positions = get_positions(session)
+    metrics = compute_instrument_metrics(session, positions)
+    fresh = holding_freshness(session, positions)
+    cards = {c.symbol: c for c in build_holding_cards(positions, metrics=metrics, freshness=fresh)}
+
+    assert cards["VTI"].daily_growth_as_of == today
+    assert cards["VTI"].daily_is_stale is False
+    assert cards["VFIAX"].daily_growth_as_of == yesterday
+    assert cards["VFIAX"].daily_is_stale is True

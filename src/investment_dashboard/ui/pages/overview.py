@@ -41,12 +41,15 @@ from investment_dashboard.ui.pages._overview_query import (
     VALUE_RANGES,
     HoldingCard,
     MarketVerdict,
+    MoverEntry,
+    MoversView,
     PortfolioMetrics,
     TreemapDatum,
     ValueSeriesPoint,
     allocation_treemap,
     build_holding_cards,
     build_intraday_value_series,
+    build_movers,
     build_value_series,
     compute_instrument_metrics,
     compute_market_verdict,
@@ -370,12 +373,26 @@ def _holding_card(
         daily_txt = (
             f"{arrow_for_signed(float(daily))} {fmt_pct(daily)}" if daily is not None else "—"
         )
-        ui.html(
-            '<div class="inv-holding-figures">'
-            f'<span class="inv-holding-value">{escape(fmt_money(value, ccy))}</span>'
-            f'<span class="inv-holding-change" style="color:{daily_color}">{escape(daily_txt)}</span>'
-            "</div>"
-        )
+        # A holding still on an older print than its peers shows last session's
+        # move, not today's — grey it (muted colour + softer weight + a hint) so
+        # a live glance separates today's numbers from the ones yet to refresh.
+        # Before peers diverge nothing is stale, so nothing greys.
+        if card.daily_is_stale:
+            ui.html(
+                '<div class="inv-holding-figures">'
+                f'<span class="inv-holding-value">{escape(fmt_money(value, ccy))}</span>'
+                '<span class="inv-holding-change inv-holding-change-stale" '
+                'title="Not updated today — last session&#39;s move">'
+                f"{escape(daily_txt)}</span>"
+                "</div>"
+            )
+        else:
+            ui.html(
+                '<div class="inv-holding-figures">'
+                f'<span class="inv-holding-value">{escape(fmt_money(value, ccy))}</span>'
+                f'<span class="inv-holding-change" style="color:{daily_color}">{escape(daily_txt)}</span>'
+                "</div>"
+            )
         if value_other is not None:
             ui.html(
                 f'<div class="inv-holding-value-sub">{escape(fmt_money(value_other, other_ccy))}</div>'
@@ -416,6 +433,64 @@ def _stat(label: str, value: str, color: str | None = None) -> None:  # pragma: 
         f'<span class="inv-holding-stat-value"{style}>{escape(value)}</span>'
         "</div>"
     )
+
+
+def _mover_basis_label(basis_date: date | None, *, today: date | None = None) -> str:
+    """A short "today" / "last close · 20 Jun" caption for the movers basis date."""
+    if basis_date is None:
+        return "—"
+    today = today or date.today()
+    if basis_date == today:
+        return "today"
+    return f"last close · {basis_date.strftime('%d %b')}"
+
+
+def _render_mover_entry(entry: MoverEntry, *, display_ccy: str) -> None:  # pragma: no cover - UI
+    """Render one winner/loser row: symbol + reason tag, today's % and money move."""
+    ccy = display_ccy.upper()
+    pct = _by_ccy(entry.pct_eur, entry.pct_usd, ccy)
+    money = _by_ccy(entry.move_eur, entry.move_usd, ccy)
+    color = color_for_signed(float(pct)) if pct is not None else "var(--inv-muted)"
+    pct_txt = f"{arrow_for_signed(float(pct))} {fmt_pct(pct)}" if pct is not None else "—"
+    tag = "biggest move" if entry.reason == "total" else "top %"
+    ui.html(
+        '<div class="inv-mover">'
+        '<div class="inv-mover-id">'
+        f'<span class="inv-mover-sym" title="{escape(entry.name)}">{escape(entry.symbol)}</span>'
+        f'<span class="inv-mover-tag">{escape(tag)}</span>'
+        "</div>"
+        '<div class="inv-mover-figures">'
+        f'<span class="inv-mover-pct" style="color:{color}">{escape(pct_txt)}</span>'
+        f'<span class="inv-mover-money" style="color:{color}">{escape(fmt_money(money, ccy))}</span>'
+        "</div>"
+        "</div>"
+    )
+
+
+def _render_mover_column(
+    title: str, entries: list[MoverEntry], *, display_ccy: str
+) -> None:  # pragma: no cover - UI
+    """Render one side (winners or losers) of the movers leaderboard."""
+    with ui.element("div").classes("inv-mover-col"):
+        ui.html(f'<div class="inv-mover-col-title">{escape(title)}</div>')
+        if entries:
+            for entry in entries:
+                _render_mover_entry(entry, display_ccy=display_ccy)
+        else:
+            ui.html('<div class="inv-mover-empty">None</div>')
+
+
+def _render_movers(movers: MoversView, *, display_ccy: str) -> None:  # pragma: no cover - UI
+    """Render the "Today's movers" section — a quick at-a-glance winners/losers board.
+
+    Measured on the freshest price date across the book, so before the open it
+    reflects last session and during the session only what has printed today.
+    """
+    with section("Today's movers"):
+        ui.html(f'<div class="inv-mover-sub">{escape(_mover_basis_label(movers.basis_date))}</div>')
+        with ui.element("div").classes("inv-mover-grid"):
+            _render_mover_column("Winners", movers.winners, display_ccy=display_ccy)
+            _render_mover_column("Losers", movers.losers, display_ccy=display_ccy)
 
 
 def _zero_value_warning(symbols: list[str]) -> None:  # pragma: no cover - UI
@@ -931,6 +1006,13 @@ def register() -> None:  # noqa: PLR0915
                     ui.label(f"{expense_text}  ·  {div_yield_text}").classes(
                         "text-caption opacity-70"
                     )
+
+                # Today's winners/losers — a quick glimpse high on the page,
+                # before the value chart, so the day's movers are visible without
+                # scrolling down to the holdings list.
+                movers = build_movers(cards)
+                if movers.winners or movers.losers:
+                    _render_movers(movers, display_ccy=display_ccy)
 
                 _value_over_time_section(
                     value_series,

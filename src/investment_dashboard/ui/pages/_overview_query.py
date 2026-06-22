@@ -250,6 +250,13 @@ class InstrumentMetrics:
     mtd_growth_usd: Decimal | None = None
     daily_growth_eur: Decimal | None = None
     daily_growth_usd: Decimal | None = None
+    #: Signed single-day *money* move (change in value) per currency, used to
+    #: rank today's biggest movers. ``None`` when no daily move is computable.
+    daily_move_eur: Decimal | None = None
+    daily_move_usd: Decimal | None = None
+    #: The print date today's move lands on (the newest close diffed). Lets the
+    #: overview tell which holdings have repriced more recently than their peers.
+    daily_growth_as_of: date | None = None
 
 
 def get_metrics(session: Session, *, as_of: date | None = None) -> PortfolioMetrics:
@@ -503,14 +510,16 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
         eff_name = p.effective.name if p.effective is not None else p.instrument.name
         eff_class = p.effective.asset_class if p.effective is not None else p.instrument.asset_class
         is_mm = is_money_market(p.instrument.symbol, asset_class=eff_class, name=eff_name)
-        daily_eur, daily_usd = _instrument_daily_growth(
-            instrument_id=iid,
-            shares=p.shares,
-            native_currency=native,
-            eur_to_usd=eur_to_usd,
-            today_rate=today_rate,
-            recent_closes=recent_closes,
-            is_money_market=is_mm,
+        daily_eur, daily_usd, daily_move_eur, daily_move_usd, daily_as_of = (
+            _instrument_daily_growth(
+                instrument_id=iid,
+                shares=p.shares,
+                native_currency=native,
+                eur_to_usd=eur_to_usd,
+                today_rate=today_rate,
+                recent_closes=recent_closes,
+                is_money_market=is_mm,
+            )
         )
         ter = p.effective.expense_ratio if p.effective is not None else p.instrument.expense_ratio
         # Legacy native-currency figures (readmodels / API back-compat).
@@ -539,6 +548,9 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
             mtd_growth_usd=mtd_usd,
             daily_growth_eur=daily_eur,
             daily_growth_usd=daily_usd,
+            daily_move_eur=daily_move_eur,
+            daily_move_usd=daily_move_usd,
+            daily_growth_as_of=daily_as_of,
         )
     return out
 
@@ -557,13 +569,20 @@ def _instrument_daily_growth(
     today_rate: Decimal | None,
     recent_closes: dict[int, list[tuple[date, Decimal]]],
     is_money_market: bool = False,
-) -> tuple[Decimal | None, Decimal | None]:
+) -> tuple[Decimal | None, Decimal | None, Decimal | None, Decimal | None, date | None]:
     """Single-day growth for one instrument, in EUR and USD.
 
     Values the holding on the two most recent print dates (forward-filled
     closes) and converts each with the FX rate of *that* day, so the USD and
     EUR figures differ only by the (small) intraday FX move — exactly the
     per-currency daily growth the KPI strip shows, but per instrument.
+
+    Returns a 5-tuple ``(growth_eur, growth_usd, move_eur, move_usd,
+    last_date)``: the two growth *fractions*, the two signed *money* moves (the
+    actual change in value, used to rank today's biggest movers), and the date
+    the move lands on (the newest print date, used to tell which holdings have
+    repriced more recently than their peers). ``last_date`` is ``None`` only
+    when there is no move to date.
 
     ``recent_closes`` is the batched ``{instrument_id: [(date, close), …]}``
     map built once for every held instrument, so this helper does no DB I/O of
@@ -576,13 +595,13 @@ def _instrument_daily_growth(
     single-day growth is a flat ``0`` — the par value did not move.
     """
     if is_money_market:
-        return ZERO, ZERO
+        return ZERO, ZERO, ZERO, ZERO, None
     pairs = recent_closes.get(instrument_id, [])
     if len(pairs) < 2:
-        return None, None
+        return None, None, None, None, None
     (last_date, close_last), (prev_date, close_prev) = pairs[0], pairs[1]
     if close_last is None or close_prev is None:
-        return None, None
+        return None, None, None, None, None
     e_last, u_last = _convert_native(
         shares * close_last, native_currency, last_date, eur_to_usd, today_rate
     )
@@ -591,7 +610,9 @@ def _instrument_daily_growth(
     )
     growth_eur = (e_last - e_prev) / e_prev if e_prev > ZERO else None
     growth_usd = (u_last - u_prev) / u_prev if u_prev > ZERO else None
-    return growth_eur, growth_usd
+    move_eur = _round_cent(e_last - e_prev)
+    move_usd = _round_cent(u_last - u_prev)
+    return growth_eur, growth_usd, move_eur, move_usd, last_date
 
 
 def _instrument_ytd_growth(
@@ -961,6 +982,9 @@ class HoldingCard:
     xirr_usd: Decimal | None
     daily_growth_eur: Decimal | None
     daily_growth_usd: Decimal | None
+    #: Signed single-day money move per currency (for the today's-movers board).
+    daily_move_eur: Decimal | None
+    daily_move_usd: Decimal | None
     ytd_growth_eur: Decimal | None
     ytd_growth_usd: Decimal | None
     weight: Decimal | None
@@ -968,6 +992,13 @@ class HoldingCard:
     price_as_of: date | None
     updated_at: datetime | None
     market_open: bool = False
+    #: The print date this holding's daily move lands on.
+    daily_growth_as_of: date | None = None
+    #: True when this holding's daily move is on an *older* print than the
+    #: freshest peer (e.g. a fund still on yesterday's NAV) — so the figure is
+    #: last session's move, not today's, and the overview greys it out. Resolved
+    #: across the book in :func:`build_holding_cards`.
+    daily_is_stale: bool = False
 
 
 def build_holding_cards(
@@ -1003,6 +1034,8 @@ def build_holding_cards(
             tg_eur, tg_usd = im.total_growth_eur, im.total_growth_usd
             xirr_eur, xirr_usd = im.xirr_eur, im.xirr_usd
             daily_eur, daily_usd = im.daily_growth_eur, im.daily_growth_usd
+            daily_move_eur, daily_move_usd = im.daily_move_eur, im.daily_move_usd
+            daily_as_of = im.daily_growth_as_of
             ytd_eur, ytd_usd = im.ytd_growth_eur, im.ytd_growth_usd
             ter = im.expense_ratio
         else:
@@ -1011,6 +1044,8 @@ def build_holding_cards(
             cb_eur = cb_usd = ZERO
             g_eur = g_usd = tg_eur = tg_usd = None
             xirr_eur = xirr_usd = daily_eur = daily_usd = ytd_eur = ytd_usd = None
+            daily_move_eur = daily_move_usd = None
+            daily_as_of = None
             ter = None
         cards.append(
             HoldingCard(
@@ -1038,6 +1073,9 @@ def build_holding_cards(
                 xirr_usd=xirr_usd,
                 daily_growth_eur=daily_eur,
                 daily_growth_usd=daily_usd,
+                daily_move_eur=daily_move_eur,
+                daily_move_usd=daily_move_usd,
+                daily_growth_as_of=daily_as_of,
                 ytd_growth_eur=ytd_eur,
                 ytd_growth_usd=ytd_usd,
                 weight=None,
@@ -1056,5 +1094,127 @@ def build_holding_cards(
             return replace(card, weight=card.value_eur / total_value_eur)
 
         cards = [_with_weight(c) for c in cards]
+    # Flag holdings whose daily move sits on an older print than the freshest
+    # peer: their today's figure is last session's move, so the overview greys
+    # it. Before any holding reprices ahead of the rest, the freshest date is
+    # shared and nothing is stale. Money-market funds carry no print date and so
+    # are never flagged (their flat par move is honest as-is).
+    freshest = max(
+        (c.daily_growth_as_of for c in cards if c.daily_growth_as_of is not None),
+        default=None,
+    )
+    if freshest is not None:
+        cards = [
+            replace(c, daily_is_stale=True)
+            if c.daily_growth_as_of is not None and c.daily_growth_as_of < freshest
+            else c
+            for c in cards
+        ]
     cards.sort(key=lambda c: c.value_eur if c.value_eur is not None else ZERO, reverse=True)
     return cards
+
+
+@dataclass(frozen=True)
+class MoverEntry:
+    """One holding on the today's-movers (winners/losers) leaderboard.
+
+    Carries the raw per-currency money move and percentage move so the renderer
+    can format for the active display currency and colour by sign. ``reason``
+    records why the holding earned its slot: ``"total"`` = biggest money move,
+    ``"percent"`` = biggest percentage move.
+    """
+
+    symbol: str
+    name: str
+    move_eur: Decimal | None
+    move_usd: Decimal | None
+    pct_eur: Decimal | None
+    pct_usd: Decimal | None
+    reason: str
+
+
+@dataclass(frozen=True)
+class MoversView:
+    """Today's biggest winners and losers, each capped at two entries.
+
+    Each side shows the biggest money move and the biggest percentage move; when
+    one holding tops both, the second slot becomes the percentage runner-up so
+    two distinct names show. Only holdings that repriced on the freshest date are
+    eligible — before the open that is every holding (so it reads last session's
+    movers), and during the session only those that have already printed today.
+    """
+
+    winners: list[MoverEntry]
+    losers: list[MoverEntry]
+    #: The print date the movers are measured on, or ``None`` when nothing moved.
+    basis_date: date | None
+    #: How many holdings were eligible (a fresh, non-zero daily move).
+    eligible_count: int
+
+
+def _to_mover_entry(card: HoldingCard, reason: str) -> MoverEntry:
+    return MoverEntry(
+        symbol=card.symbol,
+        name=card.name,
+        move_eur=card.daily_move_eur,
+        move_usd=card.daily_move_usd,
+        pct_eur=card.daily_growth_eur,
+        pct_usd=card.daily_growth_usd,
+        reason=reason,
+    )
+
+
+def _pick_mover_side(pool: list[HoldingCard], *, descending: bool) -> list[MoverEntry]:
+    """Pick up to two leaderboard entries from one side (winners or losers).
+
+    The biggest money move comes first, then the biggest percentage move; when
+    the same holding tops both, the second slot falls back to the percentage
+    runner-up so two distinct names are shown. ``descending`` is ``True`` for
+    winners (largest first) or ``False`` for losers (most negative first).
+    Ranking uses the canonical EUR figures (the order is FX-invariant, so the
+    USD view shows the same names).
+    """
+    if not pool:
+        return []
+    by_money = sorted(pool, key=lambda c: c.daily_move_eur or ZERO, reverse=descending)
+    by_pct = sorted(pool, key=lambda c: c.daily_growth_eur or ZERO, reverse=descending)
+    top_total = by_money[0]
+    entries = [_to_mover_entry(top_total, "total")]
+    # The biggest-% holding, or — when it is also the biggest-money one — the
+    # next holding by percentage, so a second, distinct name surfaces.
+    top_pct = next(
+        (c for c in by_pct if c.instrument_id != top_total.instrument_id),
+        by_pct[0],
+    )
+    if top_pct.instrument_id != top_total.instrument_id:
+        entries.append(_to_mover_entry(top_pct, "percent"))
+    return entries
+
+
+def build_movers(cards: list[HoldingCard]) -> MoversView:
+    """Build today's winners/losers leaderboard from the holding cards.
+
+    Only holdings that repriced on the freshest date contribute (lagging funds
+    are excluded), so before the open this reflects last session's movers and
+    during the session only those already printed today. See :class:`MoversView`.
+    """
+    eligible = [
+        c
+        for c in cards
+        if not c.daily_is_stale
+        and c.daily_move_eur is not None
+        and c.daily_growth_eur is not None
+        and c.daily_move_eur != ZERO
+    ]
+    basis_date = max(
+        (c.daily_growth_as_of for c in eligible if c.daily_growth_as_of is not None),
+        default=None,
+    )
+    winners_pool = [c for c in eligible if (c.daily_move_eur or ZERO) > ZERO]
+    losers_pool = [c for c in eligible if (c.daily_move_eur or ZERO) < ZERO]
+    return MoversView(
+        winners=_pick_mover_side(winners_pool, descending=True),
+        losers=_pick_mover_side(losers_pool, descending=False),
+        basis_date=basis_date,
+        eligible_count=len(eligible),
+    )
