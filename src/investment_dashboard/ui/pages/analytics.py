@@ -17,7 +17,7 @@ from decimal import Decimal
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
-from investment_dashboard.services import analytics_prefs_service, display_currency_service
+from investment_dashboard.services import chart_prefs_service, display_currency_service
 from investment_dashboard.services.metrics_service import (
     PortfolioMetrics,
     compute_portfolio_metrics,
@@ -46,6 +46,8 @@ from investment_dashboard.ui.theme import (
 )
 
 PATH = "/analytics"
+#: Persisted-preference key for the equity-curve lookback toggle (days).
+_ANALYTICS_LOOKBACK_PREF = "analytics_lookback"
 
 
 @dataclass(frozen=True)
@@ -56,6 +58,8 @@ class _AnalyticsData:
     bundle: AnalyticsBundle
     metrics: PortfolioMetrics
     attribution_rate: Decimal | None
+    #: Effective lookback (days) actually used — from the query param or, when
+    #: absent, the persisted preference. Drives the toggle's selected value.
     lookback_days: int
 
 
@@ -508,15 +512,17 @@ def _attribution_totals(
 
 
 def _on_lookback_change(days: int) -> None:  # pragma: no cover - UI callback
+    with session_scope() as session:
+        chart_prefs_service.set_pref(session, _ANALYTICS_LOOKBACK_PREF, str(days))
     ui.navigate.to(f"{PATH}?lookback={days}")
 
 
 def _parse_lookback(raw: str | None) -> int:
     try:
-        v = int(raw) if raw is not None else analytics_prefs_service.DEFAULT_LOOKBACK_DAYS
+        v = int(raw) if raw is not None else 365
     except ValueError:
-        v = analytics_prefs_service.DEFAULT_LOOKBACK_DAYS
-    return analytics_prefs_service.clamp_lookback_days(v)
+        v = 365
+    return max(7, min(v, 365 * 10))
 
 
 def register() -> None:
@@ -532,15 +538,14 @@ def register() -> None:
                 # Heavy bundle/metrics work runs off the event loop so the
                 # websocket stays responsive while it crunches.
                 with session_scope() as session:
-                    # Remember the picked time frame: an explicit ?lookback in
-                    # the URL is the user's new choice (persist it); a plain
-                    # /analytics visit reopens on the last persisted window.
-                    if lookback is not None:
-                        days = analytics_prefs_service.set_lookback_days(
-                            session, _parse_lookback(lookback)
+                    # No explicit query param ⇒ use the last lookback the user
+                    # picked (persisted), so the selection sticks across visits.
+                    raw_lookback = lookback
+                    if raw_lookback is None:
+                        raw_lookback = chart_prefs_service.get_pref(
+                            session, _ANALYTICS_LOOKBACK_PREF, default="365"
                         )
-                    else:
-                        days = analytics_prefs_service.get_lookback_days(session)
+                    days = _parse_lookback(raw_lookback)
                     display_ccy = display_currency_service.get_display_currency(session)
                     bundle = build_bundle(session, currency=display_ccy, lookback_days=days)
                     metrics = compute_portfolio_metrics(session)

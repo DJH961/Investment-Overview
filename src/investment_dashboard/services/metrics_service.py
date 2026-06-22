@@ -142,6 +142,16 @@ class PortfolioMetrics:
     #: The date ``daily_growth_pct`` refers to (the "last daily growth day"),
     #: so the UI can label *when* the move is from. ``None`` when unavailable.
     daily_growth_as_of: date | None = None
+    #: The prior priced day the daily move is measured *against*. Lets the UI
+    #: caption the FX change between the two marks. ``None`` when unavailable.
+    daily_growth_prev_as_of: date | None = None
+    #: EUR→USD mark (USD per 1 EUR) on ``daily_growth_as_of`` — live-overlaid
+    #: for today by :func:`fx_service.get_rates`, so the caption can show the
+    #: live rate when the market is open or Frankfurter is behind. ``None`` when
+    #: there is no FX history.
+    daily_growth_fx_eur_usd: Decimal | None = None
+    #: EUR→USD mark on ``daily_growth_prev_as_of`` (the comparison rate).
+    daily_growth_fx_eur_usd_prev: Decimal | None = None
 
 
 def _txn_eur_amount(t: Transaction) -> Decimal:
@@ -545,9 +555,7 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     )
 
     # Daily growth on the most recent completed trading day (dual currency).
-    daily_growth_eur, daily_growth_usd, daily_as_of = _compute_daily_growth(
-        session, as_of=as_of, eur_to_usd=eur_to_usd, cache=cache
-    )
+    daily = _compute_daily_growth(session, as_of=as_of, eur_to_usd=eur_to_usd, cache=cache)
 
     # Fund-fee figures from the live positions (value-weighted TER + €/yr cost).
     weighted_expense_ratio, annual_expense_cost_eur = _compute_expense_figures(
@@ -582,9 +590,12 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         mtd_growth_pct_usd=mtd_growth_usd,
         weighted_expense_ratio=weighted_expense_ratio,
         annual_expense_cost_eur=annual_expense_cost_eur,
-        daily_growth_pct=daily_growth_eur,
-        daily_growth_pct_usd=daily_growth_usd,
-        daily_growth_as_of=daily_as_of,
+        daily_growth_pct=daily.growth_eur,
+        daily_growth_pct_usd=daily.growth_usd,
+        daily_growth_as_of=daily.last_date,
+        daily_growth_prev_as_of=daily.prev_date,
+        daily_growth_fx_eur_usd=daily.fx_last,
+        daily_growth_fx_eur_usd_prev=daily.fx_prev,
         dividend_yield_pct=dividend_yield_pct,
     )
 
@@ -637,13 +648,31 @@ def _value_in_both(
     return eur, usd
 
 
+@dataclass(frozen=True)
+class _DailyGrowth:
+    """Single-day growth plus the FX context needed to caption it.
+
+    ``growth_eur`` / ``growth_usd`` are the dual-currency one-day moves;
+    ``last_date`` / ``prev_date`` the two trading days they span; ``fx_last`` /
+    ``fx_prev`` the EUR→USD marks on each (USD per 1 EUR, live-overlaid for
+    today). All optional so a not-yet-priced portfolio degrades cleanly.
+    """
+
+    growth_eur: Decimal | None
+    growth_usd: Decimal | None
+    last_date: date | None
+    prev_date: date | None
+    fx_last: Decimal | None
+    fx_prev: Decimal | None
+
+
 def _compute_daily_growth(
     session: Session,
     *,
     as_of: date,
     eur_to_usd: dict[date, Decimal],
     cache: _ValuationCache | None = None,
-) -> tuple[Decimal | None, Decimal | None, date | None]:
+) -> _DailyGrowth:
     """Single-day growth on the most recent completed trading day.
 
     The "last daily growth day" is the latest date (``<= as_of``) on which
@@ -654,8 +683,10 @@ def _compute_daily_growth(
     holdings are ETFs (daily close) and some are mutual funds (lagged NAV):
     each date is a consistent mark of the whole book.
 
-    Returns ``(growth_eur, growth_usd, as_of_date)``; all ``None`` when there
-    aren't two priced dates yet.
+    Returns a :class:`_DailyGrowth` whose growth legs are ``None`` when there
+    aren't two priced dates yet; the EUR→USD marks on each date are carried
+    alongside so the UI can caption *which* FX rate (and its change) drove the
+    move (already live-overlaid for today by :func:`fx_service.get_rates`).
     """
     positions = (
         cache.positions(as_of)
@@ -665,8 +696,10 @@ def _compute_daily_growth(
     held_ids = [p.instrument.id for p in positions]
     dates = prices_service.recent_price_dates(session, held_ids, on_or_before=as_of, limit=2)
     if len(dates) < 2:
-        return None, None, None
+        return _DailyGrowth(None, None, None, None, None, None)
     last_date, prev_date = dates[0], dates[1]
+    fx_last = lookup_rate_with_forward_fill(eur_to_usd, last_date)
+    fx_prev = lookup_rate_with_forward_fill(eur_to_usd, prev_date)
     last_eur, last_usd = _value_in_both(session, last_date, eur_to_usd=eur_to_usd, cache=cache)
     prev_eur, prev_usd = _value_in_both(session, prev_date, eur_to_usd=eur_to_usd, cache=cache)
     growth_eur = (last_eur - prev_eur) / prev_eur if prev_eur > ZERO else None
@@ -695,7 +728,7 @@ def _compute_daily_growth(
             price_span_days = (last_date - prev_date).days
             if fx_span_days > price_span_days + _DAILY_GROWTH_FX_TOLERANCE_DAYS:
                 growth_eur = growth_usd
-    return growth_eur, growth_usd, last_date
+    return _DailyGrowth(growth_eur, growth_usd, last_date, prev_date, fx_last, fx_prev)
 
 
 def _compute_mtd_growth(

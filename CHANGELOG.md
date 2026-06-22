@@ -12,7 +12,55 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
-## [3.5.3] — 2026-06-22
+## [3.6.1] — 2026-06-22
+
+A calmer, more legible Analytics tab.
+
+### Changed
+
+- **Single-currency XIRR headline.** The Analytics summary now shows the
+  money-weighted return (XIRR) in just the selected display currency. The
+  second-currency figure added noise without insight — the headline already
+  implies the currency lens — so the stat reads as one clear value.
+- **Five-up KPI grid.** The Analytics scalar KPIs are laid out on a tidy
+  five-across grid so the headline numbers line up instead of wrapping
+  unevenly.
+- **Paginated attribution table.** The per-instrument attribution grid now
+  paginates (like the other tables) at a fixed height instead of growing the
+  grid to fit every row, so a long holdings list scrolls through pages rather
+  than overflowing and pushing the surrounding text off-screen.
+
+## [3.6.0] — 2026-06-22
+
+Daily Growth that knows whether the market is open, graphs that remember your
+time range, and a Data Health page that tells warnings apart from errors.
+
+### Added
+
+- **Live vs. settled Daily Growth.** While the US market is open (today's stock
+  prices are in), the Overview's Daily Growth caption shows the **live** FX rate
+  and value with an "as of TIME" stamp plus the day's FX move. After the close
+  (or on weekends/holidays) it falls back to the **last open-market day**, that
+  day's settled FX rate and change, and an "as of DATE" stamp ("today" written
+  out when it was today) — using live FX only if the settled rate hasn't been
+  published yet.
+- **Sticky graph time ranges.** The Overview value range, Analytics lookback,
+  and Projection granularity selections are now remembered across reloads
+  (persisted via `app_config`), so a graph keeps the window you last chose.
+- **Fetched-symbol report in Settings.** The connectivity card now lists which
+  symbols each provider (yfinance / Frankfurter) last fetched.
+- **Scroll position restored on refresh.** The Update button (and any reload)
+  now returns you to where you were on the page.
+
+### Changed
+
+- **Warnings are no longer shown as errors in Data Health.** `WARNING`-level log
+  lines and stray `stderr` chatter (e.g. "returned no data", a UI-responsiveness
+  stall) now surface as amber **warnings** — in the toast and on the Data Health
+  page — instead of red errors. `BackgroundError` carries a `severity`, set from
+  the log record's level and from a `WARNING`-line classifier on the stderr tee.
+
+
 
 Saved target allocations now remember how you built them.
 

@@ -47,6 +47,16 @@ _SKIP = {"runtime_status_skip": True}
 #: ``INFO  [alembic.runtime.migration] Will assume non-transactional DDL.``
 _BENIGN_STDERR_LINE = re.compile(r"^(?:INFO|DEBUG)\b")
 
+#: Lines a few libraries write straight to ``stderr`` that are ``WARNING``-level
+#: rather than failures (e.g. a missing-data notice, a UI-responsiveness stall).
+#: They still deserve surfacing, but as an amber *warning* — not a red error. We
+#: match the ``levelname`` token at the start of the line, allowing an optional
+#: leading timestamp and tolerating truncated level names (``WARN``/``WARNI``).
+_WARNING_STDERR_LINE = re.compile(
+    r"^(?:\d{4}-\d\d-\d\d[ T][\d:.,]+\s+)?WARN(?:I|ING)?\b",
+    re.IGNORECASE,
+)
+
 _install_lock = threading.Lock()
 _state: dict[str, Any] = {"installed": False}
 
@@ -55,12 +65,15 @@ _state: dict[str, Any] = {"installed": False}
 _saved: dict[str, Any] = {}
 
 
-def _record(source: str, message: str) -> None:
+def _record(source: str, message: str, *, severity: str | None = None) -> None:
     """Best-effort push into the in-app tracker; never raise."""
     try:
         from investment_dashboard.services import runtime_status  # noqa: PLC0415
 
-        runtime_status.record_error(source, message)
+        if severity is None:
+            runtime_status.record_error(source, message)
+        else:
+            runtime_status.record_error(source, message, severity=severity)
     except Exception:  # pragma: no cover - reporting must never crash a hook
         pass
 
@@ -83,6 +96,21 @@ def _is_benign_noise(chunk: str) -> bool:
     if not lines:
         return True
     return all(_BENIGN_STDERR_LINE.match(line) for line in lines)
+
+
+def _chunk_severity(chunk: str) -> str:
+    """Classify a stray ``stderr`` chunk as a warning or an error.
+
+    A chunk is only a ``"warning"`` when *every* non-empty line looks like a
+    ``WARNING``-level log line; anything else (a bare traceback, a mixed chunk)
+    is treated as an ``"error"`` so genuine failures are never downgraded.
+    """
+    from investment_dashboard.services import runtime_status  # noqa: PLC0415
+
+    lines = [line.strip() for line in chunk.splitlines() if line.strip()]
+    if lines and all(_WARNING_STDERR_LINE.match(line) for line in lines):
+        return runtime_status.SEVERITY_WARNING
+    return runtime_status.SEVERITY_ERROR
 
 
 def _handle_uncaught(
@@ -202,7 +230,7 @@ class _StderrTee:
                     self._buffer = tail
                     chunk = head.strip()
             if "\n" in data and chunk and not _is_benign_noise(chunk):
-                _record("stderr", chunk)
+                _record("stderr", chunk, severity=_chunk_severity(chunk))
         except Exception:  # pragma: no cover - never break a write
             pass
         return written

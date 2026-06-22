@@ -22,6 +22,7 @@ from investment_dashboard.repositories import (
     prices_repo,
     splits_repo,
 )
+from investment_dashboard.services import fetch_report
 
 log = logging.getLogger(__name__)
 
@@ -115,6 +116,8 @@ def refresh_prices(
     except YFinanceError as exc:
         log.warning("yfinance refresh failed (%s); continuing with stale prices", exc)
         return result
+    # Note which tickers we just asked yfinance for, so Settings can report it.
+    fetch_report.record("yfinance", symbols_to_fetch)
 
     by_symbol = {i.symbol: i for i in instruments}
     now = datetime.now(UTC).replace(tzinfo=None)
@@ -475,6 +478,8 @@ def refresh_due_prices(
     except YFinanceError as exc:
         log.warning("yfinance live refresh failed (%s); continuing with stale prices", exc)
         return {}
+    # Note which tickers we just asked yfinance for, so Settings can report it.
+    fetch_report.record("yfinance", symbols_to_fetch)
 
     result: dict[str, int] = {}
     for instr in due:

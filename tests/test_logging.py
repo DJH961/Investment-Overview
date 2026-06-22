@@ -104,6 +104,13 @@ def test_warning_logs_are_mirrored_into_runtime_status(
     assert latest is not None
     assert latest.source == "some.library"
     assert latest.message == "disk on fire"
+    assert latest.is_warning is False
+
+    # A WARNING record is mirrored as a non-fatal warning, not a red error.
+    logging.getLogger("some.library").warning("AAPL returned no data")
+    warned = runtime_status.latest()
+    assert warned is not None
+    assert warned.is_warning is True
     runtime_status.reset()
 
 
