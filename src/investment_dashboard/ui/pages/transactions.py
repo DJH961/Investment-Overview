@@ -666,12 +666,14 @@ def _open_import_modal(accounts: list[Account]) -> None:  # noqa: PLR0915  # pra
         )
         status = ui.label("").classes("text-caption")
 
-        def _on_upload(e: events.UploadEventArguments) -> None:
+        async def _on_upload(e: events.UploadEventArguments) -> None:
             # Just stash the bytes; don't import yet. This lets the user
             # upload before choosing an account and still import correctly.
-            staged["raw"] = e.content.read()
-            staged["name"] = e.name
-            status.text = f"File ready: {e.name} — pick the account, then press Import."
+            # NiceGUI 3.x exposes the payload via ``e.file`` (a ``FileUpload``)
+            # whose ``read()`` is async — the old ``e.content.read()`` is gone.
+            staged["raw"] = await e.file.read()
+            staged["name"] = e.file.name
+            status.text = f"File ready: {e.file.name} — pick the account, then press Import."
             import_btn.enable()
 
         def _do_import() -> None:
