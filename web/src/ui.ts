@@ -40,6 +40,7 @@ import { cycleTheme, loadTheme, themeButtonContent } from "./theme";
 import {
   canConvertToUsd,
   getDisplayCurrency,
+  pickByCurrency,
   toggleDisplayCurrency,
   type DisplayCurrency,
 } from "./currency";
@@ -105,8 +106,8 @@ function segment(label: string, value: Decimal | null): HTMLElement {
 function renderReturns(o: OverviewView): HTMLElement {
   return h("section", { class: "segment", "aria-label": "Return by period" }, [
     segment("Today", o.todayMovePct),
-    segment("This month", o.mtdGrowthPct),
-    segment("This year", o.ytdGrowthPct),
+    segment("This month", pickByCurrency(o.mtdGrowthPct, o.mtdGrowthPctUsd)),
+    segment("This year", pickByCurrency(o.ytdGrowthPct, o.ytdGrowthPctUsd)),
   ]);
 }
 
@@ -121,21 +122,31 @@ function stat(label: string, value: string, cls = "flat", sub?: string): HTMLEle
 
 /** Compact KPI grid — parity-matched to the desktop overview headline. */
 function renderStats(o: OverviewView): HTMLElement {
+  // Growth figures are currency-dependent: prefer the USD figure when USD is
+  // selected (FX drift between the cash-flow dates and now makes EUR and USD
+  // growth genuinely differ), mirroring the desktop's per-currency KPIs.
+  const totalGainPct = pickByCurrency(o.totalGainPct, o.totalGainPctUsd);
+  const totalGrowthCompounded = pickByCurrency(
+    o.totalGrowthCompoundedPct,
+    o.totalGrowthCompoundedPctUsd,
+  );
+  const xirr = pickByCurrency(o.portfolioXirr, o.portfolioXirrUsd);
+  const gainPicked = pickByCurrency(o.totalGainEur, o.totalGainUsd);
   const grid = h("div", { class: "stat-grid" }, [
     stat(
       "Total gain",
-      formatSignedCurrency(o.totalGainEur),
-      signClass(o.totalGainEur),
-      o.totalGainPct !== null ? formatSignedPercent(o.totalGainPct) : undefined,
+      formatSignedDualCurrency(o.totalGainEur, o.totalGainUsd),
+      signClass(gainPicked),
+      totalGainPct !== null ? formatSignedPercent(totalGainPct) : undefined,
     ),
     stat(
       "Total growth",
-      signedPercentOrDash(o.totalGrowthCompoundedPct),
-      signClass(o.totalGrowthCompoundedPct),
+      signedPercentOrDash(totalGrowthCompounded),
+      signClass(totalGrowthCompounded),
     ),
-    stat("XIRR", formatPercent(o.portfolioXirr), signClass(o.portfolioXirr)),
+    stat("XIRR", formatPercent(xirr), signClass(xirr)),
     stat("Div. yield", o.dividendYieldPct !== null ? formatPercent(o.dividendYieldPct) : "—"),
-    stat("Invested", formatCurrency(o.totalCostBasisEur)),
+    stat("Invested", formatDualCurrency(o.totalCostBasisEur, o.totalCostBasisUsd)),
     stat("Cash & savings", formatCurrency(o.cashValueEur)),
   ]);
   return h("section", { class: "stats" }, [grid, ...renderNotes(o)]);
@@ -313,6 +324,9 @@ function renderHoldingRow(holding: HoldingView): HTMLElement {
     ]),
   ]);
 
+  const growthPct = pickByCurrency(holding.totalGrowthPct, holding.totalGrowthPctUsd);
+  const plPicked = pickByCurrency(holding.unrealisedPlEur, holding.unrealisedPlUsd);
+  const holdingXirr = pickByCurrency(holding.xirr, holding.xirrUsd);
   const meta = h("div", { class: "holding-meta" }, [
     chip(
       holding.priceNative !== null
@@ -324,13 +338,14 @@ function renderHoldingRow(holding: HoldingView): HTMLElement {
     // Holdings table. The card instead leads with total growth on cost, the
     // headline performance figure, coloured by sign.
     chip(
-      holding.totalGrowthPct !== null
-        ? `${formatSignedPercent(holding.totalGrowthPct)} growth`
-        : "— growth",
-      signClass(holding.totalGrowthPct),
+      growthPct !== null ? `${formatSignedPercent(growthPct)} growth` : "— growth",
+      signClass(growthPct),
     ),
-    chip(`P/L ${formatSignedCurrency(holding.unrealisedPlEur)}`, signClass(holding.unrealisedPlEur)),
-    chip(`XIRR ${formatPercent(holding.xirr)}`, signClass(holding.xirr)),
+    chip(
+      `P/L ${formatSignedDualCurrency(holding.unrealisedPlEur, holding.unrealisedPlUsd)}`,
+      signClass(plPicked),
+    ),
+    chip(`XIRR ${formatPercent(holdingXirr)}`, signClass(holdingXirr)),
   ]);
 
   return h("li", { class: "holding" }, [main, meta]);

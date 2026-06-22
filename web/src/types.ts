@@ -21,6 +21,10 @@ export interface ExportMeta {
 export interface ExportCashflow {
   date: string;
   amount: DecimalString;
+  /** The same flow converted at its own trade-date EUR→USD rate (USD-native
+   * rows use their booked amount). Lets the browser recompute currency-correct
+   * USD growth without rescaling at today's spot. Absent on older exports. */
+  amount_usd?: DecimalString | null;
 }
 
 export interface ExportHolding {
@@ -32,6 +36,10 @@ export interface ExportHolding {
   native_currency: string;
   shares: DecimalString;
   cost_basis_native: DecimalString;
+  /** Cost basis converted at each buy's own trade-date EUR→USD rate (not
+   * today's spot), for a currency-correct USD total gain. Absent on older
+   * exports, in which case the browser falls back to a spot conversion. */
+  cost_basis_usd?: DecimalString | null;
   cumulative_dividends_cash_native: DecimalString;
   price_symbol: string;
   price_type: PriceType;
@@ -57,11 +65,15 @@ export interface ExportCash {
 export interface PeriodOpeningHolding {
   month_start_value_eur: DecimalString;
   year_start_value_eur: DecimalString;
+  month_start_value_usd?: DecimalString | null;
+  year_start_value_usd?: DecimalString | null;
 }
 
 export interface PeriodOpenings {
   month_start_value_eur: DecimalString;
   year_start_value_eur: DecimalString;
+  month_start_value_usd?: DecimalString | null;
+  year_start_value_usd?: DecimalString | null;
   holdings: Record<string, PeriodOpeningHolding>;
 }
 
