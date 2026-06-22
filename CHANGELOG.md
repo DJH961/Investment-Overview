@@ -12,6 +12,42 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [3.4.0] — 2026-06-22
+
+A from-scratch redesign of the **Calculator** tab: build a target mix right on
+the page (no more trip to Settings), think in **categories** that auto-group
+your funds, and read the plan visually.
+
+### Added
+
+- **In-page allocation builder.** The Calculator now defines its own target
+  mix — no need to create and activate an allocation in Settings first. Two
+  modes: **By category** (e.g. "10 % International", with the funds in that
+  category sharing the slice automatically) and **By fund**. Every row shows
+  *how much percent it currently has* next to the target input, with a bar that
+  overlays the current weight under a target marker.
+- **Category fund picker + fair split.** Inside each category you can tick which
+  funds to actively invest in and choose how the category's weight is divided:
+  **Fair by value** (proportional to current holdings) or **Even**. New domain
+  helper `expand_category_weights` does the math (covered by unit tests).
+- **Presets & live total.** One-click **Match current mix**, **Equal weight**,
+  **Load saved target**, and **Clear**, plus a live total bar. Targets are
+  normalised to 100 % on compute, so you can sketch freely without the old
+  "weights must sum to 100" friction.
+- **Visual buy plan.** The plan now leads with KPI tiles (investing / allocated
+  / left over) and a per-fund list showing the add amount (EUR + USD + shares)
+  and a bar of the resulting weight versus target.
+- **Save as target.** Persist the mix you built as a named target allocation
+  (optionally activating it) so it still drives the allocation-drift views.
+
+### Changed
+
+- **Settings de-cluttered.** The busy per-instrument weight-entry dialog has
+  been removed from Settings; the *Target allocations* section now lists saved
+  targets and links to the Calculator to build new ones.
+- Calculator share math now prices holdings in **EUR** (converting USD closes at
+  the current rate) so share counts line up with the EUR buy amounts.
+
 ## [3.3.0] — 2026-06-22
 
 Desktop live-web companion workflow polish — quieter, smarter auto-publishing

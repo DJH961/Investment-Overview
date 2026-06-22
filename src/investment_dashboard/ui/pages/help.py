@@ -53,9 +53,9 @@ _PAGE_GUIDE: tuple[tuple[str, str], ...] = (
     ),
     (
         "Calculator",
-        "Project your portfolio forward. Start from your own historical return, "
-        "then adjust the expected return, contribution step-up and inflation to "
-        "model different futures.",
+        "Build a target mix (by category or by fund) right on the page, see how it "
+        "compares to what you hold, then turn a cash amount into a buy-only plan. "
+        "Save the mix you build as a named target allocation.",
     ),
     (
         "Settings",
@@ -135,10 +135,10 @@ _SETTINGS_GUIDE: tuple[tuple[str, str], ...] = (
     ),
     (
         "Target allocations",
-        "Your desired mix of instruments by percentage. Create one with 'New "
-        "allocation' (weights must add up to 100%), then 'Activate' the one you "
-        "want the drift metrics to compare against. Only one allocation is "
-        "active at a time.",
+        "Your desired mix of instruments by percentage. Build one in the "
+        "Calculator (by category or by fund) and 'Save as target', then "
+        "'Activate' the one you want the drift metrics to compare against. Only "
+        "one allocation is active at a time.",
     ),
 )
 
