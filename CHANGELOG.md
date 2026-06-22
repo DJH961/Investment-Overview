@@ -12,6 +12,54 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [3.5.2] — 2026-06-22
+
+Sharper Analytics, an honest benchmark, a new currency lens, and a Data Health
+surface that cleans up after itself.
+
+### Added
+
+- **Currency (EUR ↔ USD) section on Analytics.** A new band of stats spells out
+  how the exchange-rate move has affected a euro-based investor who holds dollar
+  assets: the current rate vs the average rate you invested at, how far the euro
+  has moved since, the slice of your EUR return that came from currency (EUR
+  return minus USD return), the FX gain/loss baked into your EUR value, and what
+  you'd receive converting the whole portfolio back to EUR now. Backed by the
+  pure, unit-tested `domain.currency_effect` module.
+- **"vs Benchmark (funded)" KPI.** A money-terms "did I beat the market?" tile
+  that compares the portfolio to the *funded* benchmark (see below).
+
+### Changed
+
+- **The benchmark is now funded by your own contributions.** The Analytics
+  equity-curve overlay (and the new KPI) invest the *same* deposits/withdrawals
+  into the index on the same dates, instead of a single lump sum rebased to the
+  window's start — so a dollar-cost-averaged portfolio no longer looks like it
+  automatically beats a flat benchmark line over long horizons.
+- **Smarter equity curve.** The old cumulative-contributions overlay is now a
+  clear **Net invested** (cost-basis) line, with the band between it and the
+  portfolio value shaded green when you're ahead and red when you're under
+  water — your profit/loss reads at a glance.
+- **Analytics headline redesigned.** The lone full-width "Total Growth" card
+  (which stretched across the row and left a wall of whitespace) is replaced by
+  a tidy three-tile hero band — Portfolio value · Total Growth · Capital gain —
+  in the same uniform KPI grid as the rest of the page.
+- **Per-instrument attribution table overhauled.** Columns now flex to fit (no
+  more horizontal cut-off), P&L and % are sign-coloured, and a pinned **Total**
+  row ties the per-instrument P&L back to the portfolio headline. Every holding
+  is shown, sorted by P&L.
+- **Monthly & Yearly tables read newest-first.** Both period tables are now in
+  reverse-chronological order so the most recent period is at the top; the
+  charts keep their natural left-to-right flow.
+
+### Fixed
+
+- **Data Health no longer keeps stale notices forever.** Background-error
+  notices (e.g. "outdated prices") can now be **dismissed** individually or all
+  at once, and they **auto-resolve**: a successful price/FX refresh clears its
+  own earlier failure, so a notice disappears once the prices are actually
+  flowing again instead of lingering until restart.
+
 ## [3.5.1] — 2026-06-22
 
 Web companion: currency-aware growth and risk, a descriptive live-coverage

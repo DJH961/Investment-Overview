@@ -171,3 +171,59 @@ def test_simulate_benchmark_xirr_none_without_contributions(session) -> None:
     """With no external contributions there is nothing to route into the
     benchmark, so the simulation declines to produce a figure."""
     assert svc.simulate_benchmark_xirr(session, as_of=date.today()) is None
+
+
+def test_simulate_benchmark_value_series_funds_with_contributions(session) -> None:
+    """The funded value series buys index shares with each contribution and
+    marks them to the close, so a single 1000 EUR deposit at a 100 price grows
+    to 1100 when the close rises to 110 (USD display, FX held at 1.0)."""
+    from datetime import date
+
+    from investment_dashboard.models import Transaction
+    from investment_dashboard.models.transaction import TransactionSource
+    from investment_dashboard.repositories import accounts_repo, fx_repo, prices_repo
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Cash",
+        native_currency="EUR",
+        account_type="brokerage",
+    )
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2024, 1, 5),
+            kind="deposit",
+            net_native=Decimal("1000"),
+            net_eur=Decimal("1000"),
+            source=TransactionSource.MANUAL,
+        )
+    )
+    vt = instruments_repo.get_or_create(session, symbol="VT", asset_class="etf")
+    prices_repo.upsert_closes(
+        session,
+        vt.id,
+        {date(2024, 1, 5): Decimal("100.00"), date(2024, 6, 1): Decimal("110.00")},
+    )
+    fx_repo.upsert_rates(
+        session, {date(2024, 1, 5): Decimal("1.00"), date(2024, 6, 1): Decimal("1.00")}
+    )
+    session.flush()
+
+    series = svc.simulate_benchmark_value_series(
+        session, start=date(2024, 1, 1), end=date(2024, 6, 1), currency="USD"
+    )
+    assert series[date(2024, 1, 5)] == Decimal("1000")
+    assert series[date(2024, 6, 1)] == Decimal("1100")
+
+
+def test_simulate_benchmark_value_series_empty_without_contributions(session) -> None:
+    from datetime import date
+
+    assert (
+        svc.simulate_benchmark_value_series(
+            session, start=date(2024, 1, 1), end=date.today(), currency="EUR"
+        )
+        == {}
+    )

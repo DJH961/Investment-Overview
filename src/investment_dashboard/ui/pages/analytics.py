@@ -89,7 +89,19 @@ def _kpi_group(title: str) -> Iterator[None]:
 
 
 def _curve_figure(bundle: AnalyticsBundle):  # type: ignore[no-untyped-def]
-    """Equity curve + cumulative-contributions + (rebased) benchmark overlay."""
+    """Equity curve: portfolio value, net invested (cost basis) and a funded
+    benchmark overlay.
+
+    Three comparable lines, all in the display currency:
+
+    * **Portfolio value** — daily mark-to-market.
+    * **Net invested** — cumulative external contributions (your cost basis).
+      The gap to the portfolio line *is* your profit/loss, so we shade the band
+      between the two: green when you're ahead, red when you're under water.
+    * **Benchmark (funded)** — the same contribution schedule invested in the
+      index, so "did I beat the market?" is an honest, like-for-like read
+      instead of a lump sum that flatters a dollar-cost-averaged portfolio.
+    """
     import plotly.graph_objects as go  # noqa: PLC0415
 
     from investment_dashboard.ui.charts import downsample  # noqa: PLC0415
@@ -108,51 +120,87 @@ def _curve_figure(bundle: AnalyticsBundle):  # type: ignore[no-untyped-def]
     values = [float(p.portfolio_value) for p in curve]
     contribs = [float(p.cumulative_contributions) for p in curve]
 
-    fig.add_trace(
-        go.Scatter(
-            x=dates,
-            y=values,
-            mode="lines",
-            name="Portfolio",
-            line={"width": 2.4},
-        )
+    # Net invested (cost basis) — only meaningful when contributions are logged.
+    has_contribs = bool(contribs) and (
+        max(contribs) - min(contribs) > 1e-6 or abs(contribs[-1]) > 1e-6
     )
-    # Only draw the cumulative-contributions overlay when it actually carries
-    # signal. If no deposits/withdrawals are logged it is flat at zero, which
-    # previously rendered as a confusing flat line pinned to the bottom of the
-    # chart — drop it in that case rather than showing a meaningless baseline.
-    if contribs and (max(contribs) - min(contribs) > 1e-6 or abs(contribs[-1]) > 1e-6):
+    if has_contribs:
+        # Draw the invested baseline first, then the portfolio line filling down
+        # to it, so the shaded band reads as profit (above) / loss (below).
         fig.add_trace(
             go.Scatter(
                 x=dates,
                 y=contribs,
                 mode="lines",
-                name="Cumulative contributions",
-                line={"width": 1.5, "dash": "dash"},
+                name="Net invested",
+                line={"width": 1.4, "dash": "dash", "color": "#6c7a89"},
+                hovertemplate="%{x|%d %b %Y}<br>Invested: %{y:,.0f}<extra></extra>",
             )
         )
-    # Rebase the benchmark to the first non-zero portfolio value so the
-    # two lines start at the same point and the overlay reads as a
-    # "what if I'd bought VT instead?" curve.
+        ahead = values[-1] >= contribs[-1]
+        band = "rgba(0,150,80,0.10)" if ahead else "rgba(200,60,40,0.10)"
+        fig.add_trace(
+            go.Scatter(
+                x=dates,
+                y=values,
+                mode="lines",
+                name="Portfolio",
+                line={"width": 2.4, "color": "#0072B2"},
+                fill="tonexty",
+                fillcolor=band,
+                hovertemplate="%{x|%d %b %Y}<br>Value: %{y:,.0f}<extra></extra>",
+            )
+        )
+    else:
+        fig.add_trace(
+            go.Scatter(
+                x=dates,
+                y=values,
+                mode="lines",
+                name="Portfolio",
+                line={"width": 2.4, "color": "#0072B2"},
+                hovertemplate="%{x|%d %b %Y}<br>Value: %{y:,.0f}<extra></extra>",
+            )
+        )
+
+    # Benchmark overlay. The bundle already funds it with the portfolio's own
+    # contributions (``benchmark_is_funded``) and expresses it in the display
+    # currency, so it is plotted directly — no rebasing. Older/raw-close callers
+    # still get the legacy "rebase to the first portfolio value" lump-sum line.
     bench_pairs = [
         (p.date, p.benchmark_value, p.portfolio_value)
         for p in curve
         if p.benchmark_value is not None
     ]
     if bench_pairs:
-        anchor_value = next((v for _, _, v in bench_pairs if v > 0), None)
-        anchor_bench = bench_pairs[0][1]
-        if anchor_value is not None and anchor_bench is not None and anchor_bench != 0:
-            rebased = [(d, float(b / anchor_bench * anchor_value)) for d, b, _ in bench_pairs]
+        if bundle.benchmark_is_funded:
+            bench_x = [d for d, _, _ in bench_pairs]
+            bench_y = [float(b) for _, b, _ in bench_pairs]
+            bench_name = f"{bundle.benchmark_symbol} (same contributions)"
             fig.add_trace(
                 go.Scatter(
-                    x=[d for d, _ in rebased],
-                    y=[v for _, v in rebased],
+                    x=bench_x,
+                    y=bench_y,
                     mode="lines",
-                    name=f"Benchmark ({bundle.benchmark_symbol})",
-                    line={"width": 1.5, "dash": "dot"},
+                    name=bench_name,
+                    line={"width": 1.6, "dash": "dot", "color": "#E69F00"},
+                    hovertemplate="%{x|%d %b %Y}<br>" + bench_name + ": %{y:,.0f}<extra></extra>",
                 )
             )
+        else:
+            anchor_value = next((v for _, _, v in bench_pairs if v > 0), None)
+            anchor_bench = bench_pairs[0][1]
+            if anchor_value is not None and anchor_bench is not None and anchor_bench != 0:
+                rebased = [(d, float(b / anchor_bench * anchor_value)) for d, b, _ in bench_pairs]
+                fig.add_trace(
+                    go.Scatter(
+                        x=[d for d, _ in rebased],
+                        y=[v for _, v in rebased],
+                        mode="lines",
+                        name=f"Benchmark ({bundle.benchmark_symbol})",
+                        line={"width": 1.5, "dash": "dot"},
+                    )
+                )
     fig.update_xaxes(
         title_text="Date",
         showgrid=True,
@@ -187,20 +235,42 @@ def _render_kpis(
 ) -> None:
     """KPI cards grouped by concept into uniform-width grids."""
     # v2.5 — Total Growth headline (dual currency) tops every page that
-    # reports performance.
+    # reports performance. It now lives in the shared uniform KPI grid as a
+    # three-tile hero band (value · growth · gain) instead of a lone card that
+    # stretched to the full row width and left a wall of empty space beside it.
     if metrics is not None:
-        with ui.row().classes("gap-md flex-wrap"):
+        from investment_dashboard.ui.components.kpi_card import (  # noqa: PLC0415
+            dual_pct_kpi_card,
+        )
+
+        growth_eur = metrics.total_growth_compounded_eur
+        growth_primary = metrics.total_growth_compounded_usd if display_ccy != "EUR" else growth_eur
+        with ui.element("div").classes("inv-kpi-grid w-full"):
             dual_kpi_card(
-                "Total Growth",
+                "Portfolio value",
                 fmt_money(metrics.total_value_eur, "EUR"),
                 fmt_money(metrics.total_value_usd, "USD"),
                 primary=display_ccy,
-                growth_pct=dual_pct(
-                    metrics.total_growth_compounded_eur,
-                    metrics.total_growth_compounded_usd,
-                    primary=display_ccy,
+                tooltip_key="total_value",
+            )
+            dual_pct_kpi_card(
+                "Total Growth",
+                fmt_pct(growth_primary),
+                fmt_pct(
+                    growth_eur if display_ccy != "EUR" else metrics.total_growth_compounded_usd
                 ),
+                primary_ccy=display_ccy,
+                secondary_ccy="EUR" if display_ccy != "EUR" else "USD",
                 tooltip_key="total_growth_compounded",
+                color=color_for_signed(float(growth_primary or 0)),
+                arrow=arrow_for_signed(float(growth_primary or 0)),
+            )
+            dual_kpi_card(
+                "Capital gain",
+                fmt_money(metrics.capital_gain_eur, "EUR"),
+                fmt_money(metrics.capital_gain_usd, "USD"),
+                primary=display_ccy,
+                tooltip_key="total_gain",
             )
     with _kpi_group("Returns"):
         kpi_card("CAGR", fmt_pct(bundle.cagr), tooltip_key="cagr")
@@ -267,6 +337,120 @@ def _render_kpis(
             sub=f"vs. portfolio ({display_ccy})",
             tooltip_key="benchmark",
         )
+        # "Did I beat the market?" in money, using the *funded* benchmark (same
+        # contributions into the index) so it is a like-for-like comparison.
+        if bundle.benchmark_is_funded and bundle.curve:
+            last_value = bundle.curve[-1].portfolio_value
+            bench_value = next(
+                (
+                    p.benchmark_value
+                    for p in reversed(bundle.curve)
+                    if p.benchmark_value is not None
+                ),
+                None,
+            )
+            if bench_value is not None:
+                diff = last_value - bench_value
+                pct = (diff / bench_value) if bench_value > 0 else None
+                kpi_card(
+                    f"vs {bundle.benchmark_symbol} (funded)",
+                    fmt_money(diff, display_ccy),
+                    sub=(
+                        f"{fmt_pct(pct)} vs same contributions in the index"
+                        if pct is not None
+                        else "same contributions in the index"
+                    ),
+                    color=color_for_signed(float(diff)),
+                    arrow=arrow_for_signed(float(diff)),
+                )
+
+
+def _fmt_rate(value: Decimal | None) -> str:
+    """Format a EUR/USD rate to 4 decimals (``1.0845``), em-dash when unknown."""
+    if value is None:
+        return "—"
+    return f"{value:,.4f}"
+
+
+def _render_currency_section(metrics, *, display_ccy: str) -> None:  # type: ignore[no-untyped-def]
+    """How the EUR ↔ USD rate has helped or hurt this euro-based investor.
+
+    The owner pays in EUR, holds USD assets, and will convert back to EUR — so
+    the FX drift between paying in and cashing out is a real gain or loss. This
+    band isolates that currency effect from the assets' own performance.
+    """
+    from investment_dashboard.domain.currency_effect import (  # noqa: PLC0415
+        compute_currency_effect,
+    )
+
+    effect = compute_currency_effect(
+        contributions_eur=metrics.total_contributions_eur,
+        contributions_usd=metrics.total_contributions_usd,
+        value_eur=metrics.total_value_eur,
+        value_usd=metrics.total_value_usd,
+        growth_eur=metrics.total_growth_compounded_eur,
+        growth_usd=metrics.total_growth_compounded_usd,
+    )
+    if effect.current_rate is None and effect.avg_invest_rate is None:
+        return
+
+    with section("Currency (EUR ↔ USD)"):
+        ui.label(
+            "You fund in EUR, hold USD assets, and would convert back to EUR — so "
+            "the EUR/USD move between paying in and cashing out is its own gain or "
+            "loss on top of the assets. A weaker euro (a lower rate) means each "
+            "dollar buys back more euros, which is good for you.",
+        ).classes("text-caption opacity-70 q-mb-sm")
+
+        with ui.element("div").classes("inv-kpi-grid w-full"):
+            kpi_card(
+                "EUR/USD now",
+                _fmt_rate(effect.current_rate),
+                sub=f"avg when you invested: {_fmt_rate(effect.avg_invest_rate)}",
+            )
+            # A weaker euro (negative rate change) favours a euro investor holding
+            # dollars, so colour by favourability (-rate_change), not raw sign.
+            if effect.rate_change_pct is not None:
+                fav = -float(effect.rate_change_pct)
+                weaker = effect.rate_change_pct < 0
+                kpi_card(
+                    "Euro move since investing",
+                    fmt_pct(effect.rate_change_pct),
+                    sub=(
+                        "euro weaker → tailwind for you" if weaker else "euro stronger → headwind"
+                    ),
+                    color=color_for_signed(fav),
+                    arrow=arrow_for_signed(fav),
+                )
+            if effect.currency_effect_pp is not None:
+                kpi_card(
+                    "Currency effect on return",
+                    fmt_pct(effect.currency_effect_pp),
+                    sub="your EUR return minus your USD return",
+                    color=color_for_signed(float(effect.currency_effect_pp)),
+                    arrow=arrow_for_signed(float(effect.currency_effect_pp)),
+                    tooltip_key="total_growth_compounded",
+                )
+            if effect.fx_pnl_eur is not None:
+                kpi_card(
+                    "FX gain / loss (EUR)",
+                    fmt_money(effect.fx_pnl_eur, "EUR"),
+                    sub="vs investing at your average rate",
+                    color=color_for_signed(float(effect.fx_pnl_eur)),
+                    arrow=arrow_for_signed(float(effect.fx_pnl_eur)),
+                )
+            if effect.repatriation_value_eur is not None:
+                usd_note = (
+                    f"= {fmt_money(metrics.total_value_usd, 'USD')} at "
+                    f"{_fmt_rate(effect.current_rate)}"
+                    if metrics.total_value_usd is not None and effect.current_rate is not None
+                    else "convert the whole portfolio back to EUR"
+                )
+                kpi_card(
+                    "If you transfer back now",
+                    fmt_money(effect.repatriation_value_eur, "EUR"),
+                    sub=usd_note,
+                )
 
 
 def _attribution_rows(
@@ -295,6 +479,29 @@ def _attribution_rows(
         }
         for r in bundle.attribution
     ]
+
+
+def _attribution_totals(
+    rows: list[dict[str, str | float]],
+) -> dict[str, str | float]:
+    """A pinned totals row that ties the per-instrument P&L back to the headline.
+
+    Sums every monetary column across ``rows`` so the table foots to the
+    portfolio's own P&L for the window; the ``% of return`` total is the sum of
+    the per-instrument shares (≈ 100 % of the window return, modulo rounding).
+    """
+
+    def _sum(field: str) -> float:
+        return float(sum(float(r.get(field, 0.0) or 0.0) for r in rows))
+
+    return {
+        "symbol": "Total",
+        "start_value": _sum("start_value"),
+        "end_value": _sum("end_value"),
+        "net_contribution": _sum("net_contribution"),
+        "absolute_pnl": _sum("absolute_pnl"),
+        "pct_of_total_return": _sum("pct_of_total_return"),
+    }
 
 
 def _on_lookback_change(days: int) -> None:  # pragma: no cover - UI callback
@@ -368,10 +575,31 @@ def register() -> None:
                     else:
                         ui.plotly(_curve_figure(bundle)).classes("w-full").style("height:420px")
                         last = bundle.curve[-1]
+                        bench_note = ""
+                        if bundle.benchmark_is_funded:
+                            bench_val = next(
+                                (
+                                    p.benchmark_value
+                                    for p in reversed(bundle.curve)
+                                    if p.benchmark_value is not None
+                                ),
+                                None,
+                            )
+                            if bench_val is not None:
+                                diff = last.portfolio_value - bench_val
+                                verb = "ahead of" if diff >= 0 else "behind"
+                                bench_note = (
+                                    f" · vs {bundle.benchmark_symbol} (same contributions): "
+                                    f"{fmt_money(bench_val, display_ccy)} "
+                                    f"({verb} by {fmt_money(abs(diff), display_ccy)})"
+                                )
                         ui.label(
                             f"Latest value: {fmt_money(last.portfolio_value, display_ccy)} · "
-                            f"cumulative contributions: {fmt_money(last.cumulative_contributions, display_ccy)}",
+                            f"net invested: {fmt_money(last.cumulative_contributions, display_ccy)}"
+                            f"{bench_note}",
                         ).classes("text-caption opacity-70")
+
+                _render_currency_section(metrics, display_ccy=display_ccy)
 
                 with section("Per-instrument attribution"):
                     rows = _attribution_rows(bundle, rate=attribution_rate)
@@ -388,50 +616,83 @@ def register() -> None:
                             "this table shows each one's contribution to the total return.",
                         )
                     else:
+                        totals = _attribution_totals(rows)
+                        pnl_rules = {
+                            "inv-cell-pos": "data.absolute_pnl > 0",
+                            "inv-cell-neg": "data.absolute_pnl < 0",
+                        }
                         ui.aggrid(
                             {
                                 "columnDefs": [
-                                    {"headerName": "Symbol", "field": "symbol", "pinned": "left"},
                                     {
-                                        "headerName": f"Start value ({display_ccy})",
+                                        "headerName": "Holding",
+                                        "field": "symbol",
+                                        "flex": 1.6,
+                                        "minWidth": 120,
+                                        "pinned": None,
+                                    },
+                                    {
+                                        "headerName": f"Start ({display_ccy})",
                                         "field": "start_value",
                                         "type": "rightAligned",
                                         "valueFormatter": aggrid_money_formatter(display_ccy),
                                     },
                                     {
-                                        "headerName": f"End value ({display_ccy})",
+                                        "headerName": f"End ({display_ccy})",
                                         "field": "end_value",
                                         "type": "rightAligned",
                                         "valueFormatter": aggrid_money_formatter(display_ccy),
                                     },
                                     {
-                                        "headerName": f"Net contribution ({display_ccy})",
+                                        "headerName": f"Net added ({display_ccy})",
                                         "field": "net_contribution",
                                         "type": "rightAligned",
                                         "valueFormatter": aggrid_money_formatter(display_ccy),
+                                        "headerTooltip": "Your own buys (+) and sells (-) "
+                                        "in the window, excluded from P&L so it isn't "
+                                        "double-counted.",
                                     },
                                     {
                                         "headerName": f"P&L ({display_ccy})",
                                         "field": "absolute_pnl",
                                         "type": "rightAligned",
                                         "valueFormatter": aggrid_money_formatter(display_ccy),
+                                        "cellClassRules": pnl_rules,
+                                        "sort": "desc",
                                     },
                                     {
-                                        "headerName": "% of total return",
+                                        "headerName": "% of return",
                                         "field": "pct_of_total_return",
                                         "type": "rightAligned",
-                                        "valueFormatter": "value == null ? '' : value.toFixed(2) + ' %'",
+                                        "minWidth": 110,
+                                        "valueFormatter": "value == null ? '' : value.toFixed(1) + ' %'",
+                                        "cellClassRules": pnl_rules,
                                     },
                                 ],
                                 "rowData": rows,
+                                # A pinned totals row that ties the per-instrument
+                                # P&L back to the portfolio headline.
+                                "pinnedBottomRowData": [totals],
+                                # Show every instrument (autoHeight grows the grid
+                                # to fit all rows) instead of clipping to a fixed
+                                # viewport that hid most holdings behind a scrollbar.
                                 "domLayout": "autoHeight",
                                 "defaultColDef": {
                                     "sortable": True,
                                     "resizable": True,
+                                    # Columns flex to fill the width (no horizontal
+                                    # scroll / cut-off); a modest minWidth lets them
+                                    # shrink on narrow windows rather than overflow.
                                     "flex": 1,
-                                    "minWidth": 130,
+                                    "minWidth": 96,
                                 },
                             },
                         ).classes("ag-theme-alpine w-full")
+                        ui.label(
+                            "P&L is each holding's gain after removing your own buys "
+                            "and sells in the window; the rows sum to the portfolio "
+                            "total (bottom). Sorted by P&L — winners on top, drags at "
+                            "the bottom.",
+                        ).classes("text-caption opacity-70 q-mt-xs")
 
             deferred(_build, compute=_gather)

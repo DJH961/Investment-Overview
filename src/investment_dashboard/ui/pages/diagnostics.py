@@ -102,17 +102,38 @@ def _render_background_errors() -> None:  # pragma: no cover - UI
     warning/error: logged problems, uncaught exceptions on any thread, asyncio
     loop errors and stray ``stderr`` writes — not just the live/startup refresh.
     Showing them here keeps them visible now that the app has no console window.
+
+    Each entry can be dismissed individually (or all at once); and because a
+    successful refresh auto-clears its own source, an "outdated prices" notice
+    disappears on its own once a later refresh actually lands the prices.
     """
     errors = runtime_status.recent(limit=10)
     if not errors:
         return
+
+    def _reload() -> None:
+        ui.navigate.to(PATH)
+
+    def _dismiss(seq: int) -> None:
+        runtime_status.dismiss(seq)
+        _reload()
+
+    def _dismiss_all() -> None:
+        runtime_status.dismiss_all()
+        _reload()
+
     with section(f"Recent errors ({len(errors)})"):
-        ui.label(
-            "Problems the app recorded recently — background refresh failures, "
-            "logged warnings/errors and uncaught exceptions. Most are best-effort, "
-            "so the dashboard keeps working from cached data, but the underlying "
-            "issue is worth a look.",
-        ).classes("text-body2 opacity-80 q-mb-sm")
+        with ui.row().classes("items-center justify-between w-full no-wrap q-mb-sm"):
+            ui.label(
+                "Problems the app recorded recently — background refresh failures, "
+                "logged warnings/errors and uncaught exceptions. Most are best-effort, "
+                "so the dashboard keeps working from cached data. These clear "
+                "automatically once the underlying task next succeeds; dismiss any "
+                "you've already dealt with.",
+            ).classes("text-body2 opacity-80")
+            ui.button("Dismiss all", icon="clear_all", on_click=_dismiss_all).props(
+                "flat dense no-caps color=primary"
+            )
         for event in errors:
             with ui.element("div").classes("inv-section w-full"):
                 with ui.row().classes("items-center gap-sm no-wrap w-full"):
@@ -121,6 +142,11 @@ def _render_background_errors() -> None:  # pragma: no cover - UI
                     ui.label(event.at.strftime("%Y-%m-%d %H:%M UTC")).classes(
                         "text-caption opacity-60"
                     )
+                    ui.space()
+                    ui.button(
+                        icon="close",
+                        on_click=lambda _e=None, seq=event.seq: _dismiss(seq),
+                    ).props("flat round dense").tooltip("Dismiss this notice")
                 ui.label(event.message).classes("text-body2 opacity-80 q-mt-xs")
 
 
