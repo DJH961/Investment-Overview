@@ -12,6 +12,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [3.6.1] — 2026-06-22
+
+A calmer, more legible Analytics tab.
+
+### Changed
+
+- **Single-currency XIRR headline.** The Analytics summary now shows the
+  money-weighted return (XIRR) in just the selected display currency. The
+  second-currency figure added noise without insight — the headline already
+  implies the currency lens — so the stat reads as one clear value.
+- **Five-up KPI grid.** The Analytics scalar KPIs are laid out on a tidy
+  five-across grid so the headline numbers line up instead of wrapping
+  unevenly.
+- **Paginated attribution table.** The per-instrument attribution grid now
+  paginates (like the other tables) at a fixed height instead of growing the
+  grid to fit every row, so a long holdings list scrolls through pages rather
+  than overflowing and pushing the surrounding text off-screen.
+
 ## [3.6.0] — 2026-06-22
 
 Daily Growth that knows whether the market is open, graphs that remember your

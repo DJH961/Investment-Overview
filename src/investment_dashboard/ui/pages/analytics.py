@@ -33,7 +33,6 @@ from investment_dashboard.ui.components.kpi_card import dual_kpi_card
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import (
     aggrid_money_formatter,
-    dual_pct,
     fmt_money,
     fmt_pct,
 )
@@ -280,13 +279,16 @@ def _render_kpis(
     with _kpi_group("Returns"):
         kpi_card("CAGR", fmt_pct(bundle.cagr), tooltip_key="cagr")
         kpi_card("TWR", fmt_pct(bundle.twr), tooltip_key="twr")
+        # XIRR only in the selected display currency — the second-currency
+        # figure added noise without insight (the headline already implies the
+        # currency lens), so we show a single value here.
+        if metrics is not None:
+            xirr_value = metrics.xirr_usd if display_ccy != "EUR" else metrics.xirr
+        else:
+            xirr_value = bundle.xirr
         kpi_card(
             "XIRR",
-            dual_pct(
-                metrics.xirr if metrics is not None else bundle.xirr,
-                metrics.xirr_usd if metrics is not None else None,
-                primary=display_ccy,
-            ),
+            fmt_pct(xirr_value),
             tooltip_key="xirr",
         )
     with _kpi_group("Risk & volatility"):
@@ -686,12 +688,15 @@ def register() -> None:
                                 ],
                                 "rowData": rows,
                                 # A pinned totals row that ties the per-instrument
-                                # P&L back to the portfolio headline.
+                                # P&L back to the portfolio headline. It stays
+                                # pinned across pages.
                                 "pinnedBottomRowData": [totals],
-                                # Show every instrument (autoHeight grows the grid
-                                # to fit all rows) instead of clipping to a fixed
-                                # viewport that hid most holdings behind a scrollbar.
-                                "domLayout": "autoHeight",
+                                # Paginate (like the other tables) so a long
+                                # holdings list scrolls through pages instead of
+                                # growing the grid until it overflows and blocks
+                                # the surrounding text.
+                                "pagination": True,
+                                "paginationAutoPageSize": True,
                                 "defaultColDef": {
                                     "sortable": True,
                                     "resizable": True,
@@ -702,7 +707,7 @@ def register() -> None:
                                     "minWidth": 96,
                                 },
                             },
-                        ).classes("ag-theme-alpine w-full")
+                        ).classes("ag-theme-alpine w-full").style("height:480px")
                         ui.label(
                             "P&L is each holding's gain after removing your own buys "
                             "and sells in the window; the rows sum to the portfolio "
