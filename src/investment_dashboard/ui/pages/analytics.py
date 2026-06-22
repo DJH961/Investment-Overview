@@ -17,7 +17,7 @@ from decimal import Decimal
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
-from investment_dashboard.services import display_currency_service
+from investment_dashboard.services import chart_prefs_service, display_currency_service
 from investment_dashboard.services.metrics_service import (
     PortfolioMetrics,
     compute_portfolio_metrics,
@@ -47,6 +47,8 @@ from investment_dashboard.ui.theme import (
 )
 
 PATH = "/analytics"
+#: Persisted-preference key for the equity-curve lookback toggle (days).
+_ANALYTICS_LOOKBACK_PREF = "analytics_lookback"
 
 
 @dataclass(frozen=True)
@@ -57,6 +59,9 @@ class _AnalyticsData:
     bundle: AnalyticsBundle
     metrics: PortfolioMetrics
     attribution_rate: Decimal | None
+    #: Effective lookback (days) actually used — from the query param or, when
+    #: absent, the persisted preference. Drives the toggle's selected value.
+    lookback_days: int
 
 
 _LOOKBACKS: tuple[tuple[str, int], ...] = (
@@ -505,6 +510,8 @@ def _attribution_totals(
 
 
 def _on_lookback_change(days: int) -> None:  # pragma: no cover - UI callback
+    with session_scope() as session:
+        chart_prefs_service.set_pref(session, _ANALYTICS_LOOKBACK_PREF, str(days))
     ui.navigate.to(f"{PATH}?lookback={days}")
 
 
@@ -519,7 +526,6 @@ def _parse_lookback(raw: str | None) -> int:
 def register() -> None:
     @ui.page(PATH)
     def _analytics(lookback: str | None = None) -> None:  # pragma: no cover - rendered
-        days = _parse_lookback(lookback)
         with page_frame("Analytics", current=PATH):
             page_header(
                 "Analytics",
@@ -530,6 +536,14 @@ def register() -> None:
                 # Heavy bundle/metrics work runs off the event loop so the
                 # websocket stays responsive while it crunches.
                 with session_scope() as session:
+                    # No explicit query param ⇒ use the last lookback the user
+                    # picked (persisted), so the selection sticks across visits.
+                    raw_lookback = lookback
+                    if raw_lookback is None:
+                        raw_lookback = chart_prefs_service.get_pref(
+                            session, _ANALYTICS_LOOKBACK_PREF, default="365"
+                        )
+                    days = _parse_lookback(raw_lookback)
                     display_ccy = display_currency_service.get_display_currency(session)
                     bundle = build_bundle(session, currency=display_ccy, lookback_days=days)
                     metrics = compute_portfolio_metrics(session)
@@ -545,6 +559,7 @@ def register() -> None:
                     bundle=bundle,
                     metrics=metrics,
                     attribution_rate=attribution_rate,
+                    lookback_days=days,
                 )
 
             def _build(data: _AnalyticsData) -> None:
@@ -556,7 +571,7 @@ def register() -> None:
                     ui.label("Lookback:").classes("text-caption opacity-70")
                     ui.toggle(
                         {d: lbl for lbl, d in _LOOKBACKS},
-                        value=days,
+                        value=data.lookback_days,
                         on_change=lambda e: _on_lookback_change(int(e.value)),
                     ).props("dense unelevated no-caps")
                     ui.label(

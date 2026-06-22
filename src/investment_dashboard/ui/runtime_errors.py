@@ -46,12 +46,21 @@ def install_client_watch() -> None:
         latest = runtime_status.latest()
         if latest is None:
             return
-        ui.notify(
-            f"{latest.source} failed — see Data Health for details.",
-            type="negative",
-            position="top",
-            timeout=TOAST_TIMEOUT_MS,
-            close_button="Dismiss",
-        )
+        if latest.is_warning:
+            ui.notify(
+                f"{latest.source} — see Data Health for details.",
+                type="warning",
+                position="top",
+                timeout=TOAST_TIMEOUT_MS,
+                close_button="Dismiss",
+            )
+        else:
+            ui.notify(
+                f"{latest.source} failed — see Data Health for details.",
+                type="negative",
+                position="top",
+                timeout=TOAST_TIMEOUT_MS,
+                close_button="Dismiss",
+            )
 
     ui.timer(POLL_INTERVAL_SECONDS, _poll)

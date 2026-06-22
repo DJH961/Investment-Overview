@@ -10,12 +10,15 @@ from html import escape
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
+from investment_dashboard.domain.market_hours import is_us_market_open
 from investment_dashboard.domain.returns import years_between
 from investment_dashboard.services import (
+    chart_prefs_service,
     display_currency_service,
     prices_service,
     timezone_service,
 )
+from investment_dashboard.services.daily_growth_view import build_daily_growth_caption
 from investment_dashboard.ui.components import (
     deferred,
     empty_state,
@@ -57,6 +60,8 @@ from investment_dashboard.ui.theme import (
 )
 
 PATH = "/overview"
+#: Persisted-preference key for the value-over-time range toggle.
+_OVERVIEW_RANGE_PREF = "overview_value_range"
 #: Sibling Holdings page route (defined on :mod:`...ui.pages.holdings`); kept as
 #: a literal here to avoid a circular import between the two page modules.
 HOLDINGS_PATH = "/holdings"
@@ -154,8 +159,8 @@ def format_price_freshness(card: HoldingCard, *, tz: tzinfo | None = None) -> st
     Mirrors the web companion's per-row transparency:
 
     * money-market funds price at a fixed $1.00 par with no feed → say so;
-    * a priced holding from today reads "LIVE" while its market trades (and the
-      price came from today's refresh) or "TODAY" once the market has closed;
+    * a priced holding from today reads "LIVE" while the US market is open and
+      "TODAY" once it has closed (the same rule as the Daily Growth caption);
     * an older priced holding shows the close's observation date ("as of …") and,
       when known, the saved last-refresh time ("updated …");
     * a held holding with no cached price at all reads "no price".
@@ -170,10 +175,7 @@ def format_price_freshness(card: HoldingCard, *, tz: tzinfo | None = None) -> st
     if card.price_as_of is None:
         return "no price"
     if card.price_as_of == date.today():
-        pulled_today = (
-            card.updated_at is not None and card.updated_at.date() == date.today()
-        )
-        return "LIVE" if (card.market_open and pulled_today) else "TODAY"
+        return "LIVE" if card.market_open else "TODAY"
     parts = [f"as of {_fmt_asof_date(card.price_as_of)}"]
     if card.updated_at is not None:
         parts.append(f"updated {_fmt_updated(card.updated_at, tz=tz)}")
@@ -460,6 +462,8 @@ def _value_curve_figure(points, *, currency: str):  # type: ignore[no-untyped-de
 
 
 def _on_value_range_change(label: str) -> None:  # pragma: no cover - UI callback
+    with session_scope() as session:
+        chart_prefs_service.set_pref(session, _OVERVIEW_RANGE_PREF, label)
     ui.navigate.to(f"{PATH}?value_range={label}")
 
 
@@ -492,8 +496,18 @@ def register() -> None:  # noqa: PLR0915
             page_header("Overview", subtitle="Portfolio at a glance")
 
             def _gather() -> _OverviewData:
-                range_label, _ = resolve_range_days(value_range)
                 with session_scope() as session:
+                    # No explicit query param ⇒ fall back to the last range the
+                    # user picked (persisted), so the selection sticks.
+                    effective_range = value_range
+                    if effective_range is None:
+                        effective_range = chart_prefs_service.get_pref(
+                            session,
+                            _OVERVIEW_RANGE_PREF,
+                            default=resolve_range_days(None)[0],
+                            allowed=[name for name, _ in VALUE_RANGES],
+                        )
+                    range_label, _ = resolve_range_days(effective_range)
                     metrics = get_metrics(session)
                     positions = get_positions(session)
                     instrument_metrics = compute_instrument_metrics(session, positions)
@@ -547,7 +561,7 @@ def register() -> None:  # noqa: PLR0915
                     treemap_data=treemap_data,
                 )
 
-            def _render(data: _OverviewData) -> None:  # noqa: PLR0915
+            def _render(data: _OverviewData) -> None:
                 range_label = data.range_label
                 metrics = data.metrics
                 display_ccy = data.display_ccy
@@ -618,27 +632,30 @@ def register() -> None:  # noqa: PLR0915
                         display_ccy=display_ccy,
                         tooltip_key="mtd_growth",
                     )
-                    _daily_sub = (
-                        f"as of {metrics.daily_growth_as_of.isoformat()}"
-                        if metrics.daily_growth_as_of is not None
-                        else "awaiting two priced days"
+                    # Caption: while the US market is open we show a live,
+                    # time-stamped figure with the live FX rate and its move;
+                    # once it is closed we pin to the last open-market date and
+                    # quote that day's settled FX rate (which falls back to the
+                    # live spot when Frankfurter has not published yet).
+                    _now = datetime.now(UTC)
+                    _caption = build_daily_growth_caption(
+                        last_date=metrics.daily_growth_as_of,
+                        prev_date=metrics.daily_growth_prev_as_of,
+                        eur_usd_last=metrics.daily_growth_fx_eur_usd,
+                        eur_usd_prev=metrics.daily_growth_fx_eur_usd_prev,
+                        display_ccy=display_ccy,
+                        today=date.today(),
+                        now=_now,
+                        tz=display_tz,
+                        market_open=is_us_market_open(_now),
                     )
-                    # Be honest about which EUR/USD drove today's figure: a live
-                    # intraday spot (keyless yfinance) vs the ECB end-of-day rate
-                    # when the live fetch was unavailable/over budget.
-                    if metrics.daily_growth_as_of is not None:
-                        from investment_dashboard.services import fx_service  # noqa: PLC0415
-
-                        _live = fx_service.get_live_spot("USD")
-                        _fx_live = _live is not None and _live.observed_on == date.today()
-                        _daily_sub += " · live FX" if _fx_live else " · end-of-day FX"
                     _pct_card(
                         "Daily Growth",
                         metrics.daily_growth_pct,
                         metrics.daily_growth_pct_usd,
                         display_ccy=display_ccy,
                         tooltip_key="daily_growth",
-                        sub=_daily_sub,
+                        sub=_caption.combined(),
                     )
                     _verdict_card(verdict)
                 # Expense ratio moved out of the KPI grid (kept the grid a clean

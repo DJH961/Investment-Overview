@@ -54,7 +54,12 @@ class _RuntimeStatusHandler(logging.Handler):
             from investment_dashboard.services import runtime_status  # noqa: PLC0415
 
             source = getattr(record, "runtime_status_source", None) or record.name
-            runtime_status.record_error(str(source), record.getMessage())
+            severity = (
+                runtime_status.SEVERITY_WARNING
+                if record.levelno < logging.ERROR
+                else runtime_status.SEVERITY_ERROR
+            )
+            runtime_status.record_error(str(source), record.getMessage(), severity=severity)
         except Exception:  # pragma: no cover - logging must never crash callers
             self.handleError(record)
 

@@ -215,6 +215,10 @@ def _refresh_single_quote(
         return 0
     rates = {r.date: r.rate for r in records}
     written = fx_repo.upsert_rates(session, rates, base=base, quote=quote)
+    # Note the pair we just pulled from Frankfurter, so Settings can report it.
+    from investment_dashboard.services import fetch_report  # noqa: PLC0415
+
+    fetch_report.record("frankfurter", [f"{base}/{quote}"])
     _record_status(
         "ok",
         f"Fetched {len(rates)} {base}/{quote} rate(s) for {start}..{today}; {written} new",

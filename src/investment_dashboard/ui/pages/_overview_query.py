@@ -13,7 +13,7 @@ from investment_dashboard.domain.currency import (
     dual_currency_amounts,
     lookup_rate_with_forward_fill,
 )
-from investment_dashboard.domain.market_hours import is_market_open
+from investment_dashboard.domain.market_hours import is_us_market_open
 from investment_dashboard.domain.money_market import is_money_market
 from investment_dashboard.domain.returns import (
     total_growth_pct_compounded,
@@ -732,12 +732,14 @@ def _fmt_pct(value: Decimal | None) -> str:
 def _fmt_asof(freshness: HoldingFreshness | None, *, today: date | None = None) -> str:
     """Compact freshness string for a holding's "As Of" cell.
 
-    Today's price is promoted to a status word so the row reads at a glance:
+    Today's price is promoted to a status word so the row reads at a glance,
+    using the *same* "is it live?" rule as the Daily Growth caption
+    (``market open and the price is from today``):
 
-    * ``LIVE``  — the price is from today, was pulled in today's refresh, and the
-      instrument's market is open right now (a genuinely current quote).
-    * ``TODAY`` — the price is from today but the market has since closed (a
-      settled close that is current yet no longer moving).
+    * ``LIVE``  — the price is from today and the US market is open right now, so
+      it is a genuinely current, moving quote.
+    * ``TODAY`` — the price is from today but the market is closed (a settled
+      close that is current yet no longer moving).
     * ``as of <date>`` — anything older falls back to the observation date.
 
     Money-market funds price at a fixed par with no feed, so they keep "par".
@@ -750,12 +752,7 @@ def _fmt_asof(freshness: HoldingFreshness | None, *, today: date | None = None) 
         return "—"
     today = today or date.today()
     if freshness.price_as_of == today:
-        pulled_today = (
-            freshness.updated_at is not None and freshness.updated_at.date() == today
-        )
-        if freshness.market_open and pulled_today:
-            return "LIVE"
-        return "TODAY"
+        return "LIVE" if freshness.market_open else "TODAY"
     return freshness.price_as_of.strftime("%d %b %Y")
 
 
@@ -829,9 +826,7 @@ def holding_freshness(session: Session, positions: list[Position]) -> dict[int, 
             price_as_of=None if is_mm else as_of_dates.get(iid),
             updated_at=None if is_mm else refreshed.get(iid),
             is_money_market=is_mm,
-            market_open=(
-                False if is_mm else is_market_open(p.instrument.native_currency)
-            ),
+            market_open=(False if is_mm else is_us_market_open()),
         )
     return out
 

@@ -34,6 +34,7 @@ from investment_dashboard.services import (
     auto_refresh,
     benchmark_service,
     display_currency_service,
+    fetch_report,
     instrument_enrichment_service,
     prices_service,
     provider_status,
@@ -1424,6 +1425,7 @@ def _render_connectivity_section() -> None:  # pragma: no cover - UI
     """Show the latest yfinance / Frankfurter call outcome + recent log."""
     known_providers = ("yfinance", "frankfurter")
     latest = provider_status.all_latest()
+    fetched = fetch_report.all_latest()
     with session_scope() as session:
         tz = timezone_service.resolve_tzinfo(timezone_service.get_timezone(session))
 
@@ -1446,6 +1448,11 @@ def _render_connectivity_section() -> None:  # pragma: no cover - UI
                         ui.badge(label, color=color).props("outline")
                     ui.label(when).classes("text-caption opacity-70")
                     ui.label(detail).classes("text-caption")
+                    report = fetched.get(prov)
+                    if report is not None:
+                        ui.label(f"Fetched: {', '.join(report.symbols)}").classes(
+                            "text-caption opacity-70"
+                        ).style("max-width:22rem; overflow-wrap:anywhere")
 
         events = provider_status.get_log(limit=20)
         if not events:
