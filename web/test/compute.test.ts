@@ -703,6 +703,46 @@ describe("buildDashboard overview parity features", () => {
     approx(m.overview.dividendYieldPct, 75 / 11000);
   });
 
+  it("falls back to summing current-year monthly dividends when yearly rows are unavailable", () => {
+    const exp = makePeriodExport();
+    exp.monthly = {
+      rows: [
+        {
+          label: "2023-12",
+          contributions_eur: "0",
+          dividends_eur: "999",
+          interest_eur: "0",
+          net_flow_eur: "0",
+          opening_value_eur: "0",
+          closing_value_eur: "0",
+          growth_pct: null,
+        },
+        {
+          label: "2024-01",
+          contributions_eur: "0",
+          dividends_eur: "30",
+          interest_eur: "0",
+          net_flow_eur: "0",
+          opening_value_eur: "8800",
+          closing_value_eur: "9000",
+          growth_pct: null,
+        },
+        {
+          label: "2024-06",
+          contributions_eur: "0",
+          dividends_eur: "45",
+          interest_eur: "0",
+          net_flow_eur: "0",
+          opening_value_eur: "10000",
+          closing_value_eur: "11000",
+          growth_pct: null,
+        },
+      ],
+    };
+    const m = buildDashboard(exp, flatQuotes, eurFx, new Date("2024-06-15T12:00:00Z"));
+    approx(m.overview.totalDividendsEur, 75);
+  });
+
   it("surfaces the EUR→USD reference rate", () => {
     expect(model.overview.fxRateEurUsd?.toNumber()).toBeCloseTo(1.1, 6);
   });

@@ -290,24 +290,20 @@ function periodStartIso(asOf: string, kind: "month" | "year"): string {
   return kind === "month" ? `${asOf.slice(0, 7)}-01` : `${asOf.slice(0, 4)}-01-01`;
 }
 
-function currentYearDividendsEur(data: MobileExport, fx: FxRates): Decimal {
+function currentYearDividendsEur(data: MobileExport): Decimal {
   const currentYear = data.meta.as_of.slice(0, 4);
   if (data.yearly?.rows) {
     const row = data.yearly.rows.find((period) => period.label === currentYear);
     return row ? new Decimal(row.dividends_eur) : new Decimal(0);
   }
 
-  let total = new Decimal(0);
-  for (const holding of data.holdings) {
-    const eur = convert(
-      new Decimal(holding.cumulative_dividends_cash_native),
-      holding.native_currency,
-      EUR,
-      fx,
-    );
-    if (eur !== null) total = total.plus(eur);
+  if (data.monthly?.rows) {
+    return data.monthly.rows
+      .filter((period) => period.label.startsWith(currentYear))
+      .reduce((total, period) => total.plus(new Decimal(period.dividends_eur)), new Decimal(0));
   }
-  return total;
+
+  return new Decimal(0);
 }
 
 /**
@@ -957,7 +953,7 @@ export function buildDashboard(
       : null;
 
   // Year-to-date dividend yield = current-year dividend cash ÷ current total value.
-  const totalDividendsEur = currentYearDividendsEur(data, fx);
+  const totalDividendsEur = currentYearDividendsEur(data);
   const dividendYieldPct = totalValueEur.greaterThan(0)
     ? totalDividendsEur.dividedBy(totalValueEur)
     : null;
