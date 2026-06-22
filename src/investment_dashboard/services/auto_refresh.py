@@ -88,6 +88,12 @@ def tick_refresh(source: str = "Live price refresh", *, force: bool = False) -> 
                 )
             else:
                 refreshed = refresh_due_prices(session)
+        # Refresh the live EUR/USD spot alongside prices so the FX-aware "today"
+        # figures move intraday with the currency, not just the security price.
+        # Best-effort: a failed FX pull leaves the ECB daily rate in place.
+        from investment_dashboard.services import fx_service  # noqa: PLC0415
+
+        fx_service.refresh_live_spot()
         updated = any(refreshed.values())
         if updated:
             log.debug("%s updated %s", source, [s for s, n in refreshed.items() if n])

@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   creditsSpentWithin,
   readCachedEnvelope,
+  readCachedEurUsd,
   readCachedFx,
   readCachedQuotes,
   readCreditLog,
@@ -16,6 +17,7 @@ import {
   recordCredits,
   recordNavPublish,
   writeCachedEnvelope,
+  writeCachedEurUsd,
   writeCachedFx,
   writeCachedQuotes,
   writeSymbolPlan,
@@ -252,5 +254,29 @@ describe("symbol plan cache", () => {
       { symbol: "OK", priceType: "market", assetClass: "", sizeEur: 0 },
       { symbol: "TYPED", priceType: "nav", assetClass: "mutual_fund", sizeEur: 12 },
     ]);
+  });
+});
+
+describe("live EUR/USD cache", () => {
+  it("round-trips the live spot and prior close", () => {
+    const s = memStorage();
+    writeCachedEurUsd({ now: new Decimal("1.085"), previousClose: new Decimal("1.0725") }, 5000, s);
+    const got = readCachedEurUsd(s)!;
+    expect(got.now?.toString()).toBe("1.085");
+    expect(got.previousClose?.toString()).toBe("1.0725");
+    expect(got.at).toBe(5000);
+  });
+
+  it("never clobbers a good reading with a null spot", () => {
+    const s = memStorage();
+    writeCachedEurUsd({ now: new Decimal("1.085"), previousClose: new Decimal("1.0725") }, 5000, s);
+    writeCachedEurUsd({ now: null, previousClose: null }, 6000, s);
+    const got = readCachedEurUsd(s)!;
+    expect(got.now?.toString()).toBe("1.085");
+    expect(got.at).toBe(5000);
+  });
+
+  it("returns null when nothing is cached", () => {
+    expect(readCachedEurUsd(memStorage())).toBeNull();
   });
 });

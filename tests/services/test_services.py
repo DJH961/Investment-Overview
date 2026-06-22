@@ -237,6 +237,96 @@ class TestMetrics:
         assert m.daily_growth_pct_usd is None
         assert m.total_value_usd is None
 
+    def test_daily_growth_eur_keeps_genuine_one_day_fx_move(self, session: Session) -> None:
+        """With an FX rate on file for *both* daily-growth dates, the EUR leg
+        legitimately carries the real one-day currency move, so it differs from
+        the FX-neutral USD leg by a small, believable amount.
+        """
+        acct_id = _seed_usd_brokerage(session)
+        vti = instruments_repo.get_or_create(session, symbol="VTI", native_currency="USD")
+        session.add(
+            Transaction(
+                account_id=acct_id,
+                instrument_id=vti.id,
+                date=date(2024, 1, 15),
+                kind="buy",
+                quantity=Decimal("20"),
+                price_native=Decimal("230.00"),
+                net_native=Decimal("-4600.00"),
+                net_eur=Decimal("-4230.00"),
+                net_usd=Decimal("-4600.00"),
+                source="manual",
+            )
+        )
+        prices_repo.upsert_closes(
+            session,
+            vti.id,
+            {date(2024, 6, 27): Decimal("264.00"), date(2024, 6, 28): Decimal("265.00")},
+        )
+        # FX present on both daily dates: a genuine ~0.2% one-day move.
+        fx_repo.upsert_rates(
+            session,
+            {
+                date(2024, 1, 15): Decimal("1.0875"),
+                date(2024, 6, 27): Decimal("1.0720"),
+                date(2024, 6, 28): Decimal("1.0700"),
+            },
+        )
+        session.flush()
+
+        m = metrics_service.compute_portfolio_metrics(session, as_of=date(2024, 6, 30))
+        assert m.daily_growth_pct is not None
+        assert m.daily_growth_pct_usd is not None
+        # EUR includes the FX move, USD does not — they differ, but only slightly.
+        assert m.daily_growth_pct != m.daily_growth_pct_usd
+        assert abs(m.daily_growth_pct - m.daily_growth_pct_usd) < Decimal("0.01")
+
+    def test_daily_growth_eur_ignores_stale_forward_filled_fx_gap(self, session: Session) -> None:
+        """A gap in FX history must not fabricate a giant one-day currency swing.
+
+        Both daily-growth price dates are a single day apart, but the only FX
+        mark before the comparison day is months old, so forward-fill would
+        otherwise value the two days at rates 5 months apart and inflate the EUR
+        daily growth. The guard falls back to the FX-neutral (USD) move instead.
+        """
+        acct_id = _seed_usd_brokerage(session)
+        vti = instruments_repo.get_or_create(session, symbol="VTI", native_currency="USD")
+        session.add(
+            Transaction(
+                account_id=acct_id,
+                instrument_id=vti.id,
+                date=date(2024, 1, 15),
+                kind="buy",
+                quantity=Decimal("20"),
+                price_native=Decimal("230.00"),
+                net_native=Decimal("-4600.00"),
+                net_eur=Decimal("-4230.00"),
+                net_usd=Decimal("-4600.00"),
+                source="manual",
+            )
+        )
+        prices_repo.upsert_closes(
+            session,
+            vti.id,
+            {date(2024, 6, 27): Decimal("264.00"), date(2024, 6, 28): Decimal("265.00")},
+        )
+        # FX only on the buy date and the latest day — nothing near 2024-06-27,
+        # so its rate forward-fills the stale January mark.
+        fx_repo.upsert_rates(
+            session,
+            {
+                date(2024, 1, 15): Decimal("1.0875"),
+                date(2024, 6, 28): Decimal("1.0700"),
+            },
+        )
+        session.flush()
+
+        m = metrics_service.compute_portfolio_metrics(session, as_of=date(2024, 6, 30))
+        assert m.daily_growth_pct is not None
+        assert m.daily_growth_pct_usd is not None
+        # The stale FX swing is neutralised: EUR collapses onto the USD move.
+        assert m.daily_growth_pct == m.daily_growth_pct_usd
+
     def test_dividend_income_counts_reinvested_capital_gain_uses_realized(
         self, session: Session
     ) -> None:

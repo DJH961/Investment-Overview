@@ -27,6 +27,7 @@ import {
   formatCurrency,
   formatCurrencyWhole,
   formatDualCurrency,
+  formatFxRate,
   formatNativePrice,
   formatPercent,
   formatShares,
@@ -89,11 +90,41 @@ function renderHero(o: OverviewView): HTMLElement {
   // Per-holding rows and the footer note both carry "as of" freshness, so the
   // hero stays clean: just the headline value and today's move, with no date
   // stamped above "Total value" at the very top of the screen.
-  return h("section", { class: "hero" }, [
+  const children: Array<Node | string> = [
     h("span", { class: "hero-label" }, ["Total value"]),
     h("span", { class: "hero-value" }, [formatCurrency(o.totalValueEur)]),
     change,
-  ]);
+  ];
+  const fxLine = renderHeroFx(o);
+  if (fxLine) children.push(fxLine);
+  return h("section", { class: "hero" }, children);
+}
+
+/**
+ * The live EUR/USD context under today's move: the current spot, how much of
+ * today's move came from the EUR/USD swing (the FX-aware part), and an honest
+ * "end-of-day FX" tag when only the ECB daily rate was available. Returns null
+ * when there's nothing useful to show (no rate and no FX contribution).
+ */
+function renderHeroFx(o: OverviewView): HTMLElement | null {
+  const parts: HTMLElement[] = [];
+  if (o.fxRateEurUsd !== null) {
+    parts.push(h("span", { class: "hero-fx-rate" }, [`EUR/USD ${formatFxRate(o.fxRateEurUsd)}`]));
+  }
+  // Only surface the split when FX actually moved the needle today.
+  if (!o.todayFxMoveEur.isZero()) {
+    const fxCls = signClass(o.todayFxMoveEur);
+    parts.push(
+      h("span", { class: `hero-fx-split ${fxCls}` }, [
+        `incl. ${formatSignedCurrency(o.todayFxMoveEur)} from FX`,
+      ]),
+    );
+  }
+  if (o.eurUsdSource === "eod") {
+    parts.push(h("span", { class: "hero-fx-eod" }, ["end-of-day FX"]));
+  }
+  if (parts.length === 0) return null;
+  return h("div", { class: "hero-fx" }, parts);
 }
 
 /** One return horizon (Today / This month / This year). */

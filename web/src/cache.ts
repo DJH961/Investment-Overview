@@ -172,6 +172,52 @@ export function writeCachedFx(
   writeJson(storage, FX_KEY, { base: fx.base, rates, at });
 }
 
+// --- Live EUR/USD cache -----------------------------------------------------
+
+const EURUSD_KEY = "iv.web.eurusd_cache";
+
+interface StoredEurUsd {
+  now: string | null;
+  previousClose: string | null;
+  at: number;
+}
+
+/** A cached live EUR→USD reading (now + prior close) and when it was stored. */
+export interface CachedEurUsd {
+  now: Decimal | null;
+  previousClose: Decimal | null;
+  at: number;
+}
+
+/** Read the last cached live EUR→USD reading, or null when none/corrupt. */
+export function readCachedEurUsd(storage: StorageLike | null = defaultStorage()): CachedEurUsd | null {
+  const stored = readJson<StoredEurUsd>(storage, EURUSD_KEY);
+  if (!stored || typeof stored.at !== "number") return null;
+  return {
+    now: toDecimal(stored.now),
+    previousClose: toDecimal(stored.previousClose),
+    at: stored.at,
+  };
+}
+
+/**
+ * Persist a live EUR→USD reading stamped at `at` (best-effort). Only written
+ * when a current spot is present, so a transient null never clobbers a good
+ * earlier reading.
+ */
+export function writeCachedEurUsd(
+  reading: { now: Decimal | null; previousClose: Decimal | null },
+  at: number,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  if (reading.now === null) return;
+  writeJson(storage, EURUSD_KEY, {
+    now: reading.now.toString(),
+    previousClose: reading.previousClose ? reading.previousClose.toString() : null,
+    at,
+  });
+}
+
 // --- Encrypted-blob cache ---------------------------------------------------
 
 /**
@@ -427,6 +473,7 @@ export function writeSymbolPlan(plan: PlannedSymbol[], storage: StorageLike | nu
 export const CACHE_KEYS = {
   QUOTE_KEY,
   FX_KEY,
+  EURUSD_KEY,
   CREDIT_KEY,
   NAV_PUBLISH_KEY,
   BLOB_KEY,

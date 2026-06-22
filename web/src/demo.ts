@@ -241,6 +241,14 @@ const DEMO_EXPORT: MobileExport = {
 /** Baked-in EUR-based FX (rates[X] = units of X per 1 EUR). */
 const DEMO_FX: FxRates = { base: "EUR", rates: { USD: new Decimal("1.08") } };
 
+/**
+ * The prior session's EUR/USD close, a touch lower than today's `DEMO_FX` spot
+ * so the preview demonstrates the FX-aware today's move (a slice of the move
+ * comes from the EUR/USD swing on the USD holdings, surfaced as the hero's
+ * "incl. … from FX" line and the live EUR/USD chip).
+ */
+const DEMO_FX_PREV_EUR_USD = new Decimal("1.0725");
+
 function quote(symbol: string, price: string, previousClose: string, currency: string): Quote {
   return {
     symbol,
@@ -280,5 +288,8 @@ const DEMO_QUOTES = new Map<string, Quote>([
 
 /** Build the sample dashboard model using the real compute pipeline. */
 export function buildDemoModel(): DashboardModel {
-  return buildDashboard(DEMO_EXPORT, DEMO_QUOTES, DEMO_FX, DEMO_NOW);
+  return buildDashboard(DEMO_EXPORT, DEMO_QUOTES, DEMO_FX, DEMO_NOW, null, {
+    fxPrevEurUsd: DEMO_FX_PREV_EUR_USD,
+    fxEurUsdSource: "live",
+  });
 }
