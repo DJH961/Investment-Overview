@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { describeLiveCoverage, liveRefreshProgress, manualRefreshSummary } from "../src/app";
+import { allPricesLive, describeLiveCoverage, liveRefreshProgress, manualRefreshSummary } from "../src/app";
 import type { QuoteLoadReport } from "../src/quotes";
 import { PriceError } from "../src/prices";
 
@@ -113,5 +113,24 @@ describe("liveRefreshProgress", () => {
   it("reports zero live while everything is still deferred", () => {
     const p = liveRefreshProgress(report({ deferred: ["A", "B", "C"] }));
     expect(p).toEqual({ live: 0, total: 3 });
+  });
+});
+
+describe("allPricesLive", () => {
+  it("is true when every requested symbol is fetched or cache-fresh", () => {
+    expect(allPricesLive(report({ fetched: ["AAPL"], servedFresh: ["MSFT"] }))).toBe(true);
+  });
+
+  it("is false while any symbol is still deferred", () => {
+    expect(allPricesLive(report({ fetched: ["AAPL"], deferred: ["MSFT"] }))).toBe(false);
+  });
+
+  it("is false when there are no priceable holdings at all", () => {
+    expect(allPricesLive(report())).toBe(false);
+  });
+
+  it("is false when the round failed, even with nothing deferred", () => {
+    const err = new PriceError("rate limited", { retryable: true });
+    expect(allPricesLive(report({ fetched: ["AAPL"], error: err }))).toBe(false);
   });
 });
