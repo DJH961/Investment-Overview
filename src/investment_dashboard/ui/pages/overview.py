@@ -414,10 +414,13 @@ def _value_curve_figure(points, *, currency: str, intraday: bool = False, prev_c
     "1 Day" range, whose points are timestamps within a single session.
 
     ``prev_close`` (intraday only) is the previous session's settled value: when
-    given, a dashed reference line marks it and the curve is tinted green/red
-    depending on whether the latest value is above or below it, so a profitable
-    day that drifts down from the open still reads as a gain over yesterday's
-    close rather than looking like a loss.
+    given, a neutral dashed reference line marks it and the curve is tinted with
+    the colourblind-safe Wong palette — **blue** above the close, **orange**
+    below — never red/green. The direction is also encoded redundantly (not by
+    colour alone) by the curve's position versus the dashed line and by an
+    up/down triangle marker at the latest point, so a profitable day that drifts
+    down from the open still reads as a gain over yesterday's close rather than
+    looking like a loss.
     """
     import plotly.graph_objects as go  # noqa: PLC0415
 
@@ -446,14 +449,19 @@ def _value_curve_figure(points, *, currency: str, intraday: bool = False, prev_c
             else f"%{{x|%d %b %Y}}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"
         )
         # Tint the intraday curve by its position versus the previous close, so
-        # the day's direction *relative to yesterday* is read at a glance.
+        # the day's direction *relative to yesterday* is read at a glance. The
+        # palette is the colourblind-safe Wong blue (up) / orange (down) — never
+        # red/green — and the direction is reinforced below by the dashed
+        # reference line and an up/down triangle marker (non-colour cues).
         line_color = GAIN_COLOR
-        fill_color = "rgba(0,114,178,0.12)"
+        fill_color = "rgba(0,114,178,0.12)"  # Wong blue #0072B2 @ 12%
         prev_close_f = float(prev_close) if prev_close is not None else None
+        up = True
         if intraday and prev_close_f is not None and values:
             up = values[-1] >= prev_close_f
             line_color = GAIN_COLOR if up else LOSS_COLOR
-            fill_color = "rgba(0,114,178,0.12)" if up else "rgba(213,94,0,0.12)"
+            # Wong orange #E69F00 @ 12% for the loss fill (matches LOSS_COLOR).
+            fill_color = "rgba(0,114,178,0.12)" if up else "rgba(230,159,0,0.12)"
         fig.add_trace(
             go.Scatter(
                 x=dates,
@@ -499,24 +507,33 @@ def _value_curve_figure(points, *, currency: str, intraday: bool = False, prev_c
             automargin=True,
             range=list(yrange) if yrange is not None else None,
         )
-        # Previous-session close: a dashed reference line + a red dot at the
-        # latest point so "where did we close yesterday?" is explicit.
+        # Previous-session close: a neutral dashed reference line + a directional
+        # triangle marker at the latest point so "are we up or down on the day?"
+        # reads without relying on colour (the line itself is a muted slate, not
+        # a gain/loss hue, so it carries no directional meaning of its own).
         if intraday and prev_close_f is not None:
+            ref_color = "rgba(91,107,124,0.85)"
             fig.add_hline(
                 y=prev_close_f,
-                line={"color": LOSS_COLOR, "width": 1.4, "dash": "dash"},
+                line={"color": ref_color, "width": 1.4, "dash": "dash"},
                 annotation_text=f"Prev close {symbol}{prev_close_f:,.2f}",
                 annotation_position="top left",
-                annotation_font={"size": 11, "color": LOSS_COLOR},
-                opacity=0.8,
+                annotation_font={"size": 11, "color": ref_color},
+                opacity=0.9,
             )
+            arrow = "▲" if up else "▼"
             fig.add_trace(
                 go.Scatter(
                     x=[dates[-1]],
                     y=[values[-1]],
                     mode="markers",
-                    marker={"size": 9, "color": line_color, "line": {"width": 1, "color": "white"}},
-                    hovertemplate=(f"now<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"),
+                    marker={
+                        "size": 11,
+                        "symbol": "triangle-up" if up else "triangle-down",
+                        "color": line_color,
+                        "line": {"width": 1, "color": "white"},
+                    },
+                    hovertemplate=(f"now {arrow}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"),
                     showlegend=False,
                 )
             )

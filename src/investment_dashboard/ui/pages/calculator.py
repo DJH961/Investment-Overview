@@ -54,8 +54,9 @@ TENTH = Decimal("0.1")
 _TARGET_COLOR = "var(--inv-accent, #0F4C81)"
 _CURRENT_COLOR = "var(--inv-muted, #9aa4b2)"
 #: Vivid colour for the *added* (contribution) slice of a bar, so even a small
-#: new contribution stands out against an already-large holding.
-_ADDED_COLOR = "var(--inv-gain, #21ba45)"
+#: new contribution stands out against an already-large holding. The fallback is
+#: the colourblind-safe Wong gain blue (matching ``--inv-gain``), never green.
+_ADDED_COLOR = "var(--inv-gain, #0072B2)"
 
 
 def _decimal_or_zero(value: object) -> Decimal:
