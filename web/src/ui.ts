@@ -53,7 +53,7 @@ import {
   formatTimestamp,
   signClass,
 } from "./format";
-import { isUsMarketOpen } from "./market-hours";
+import { isUsMarketHoliday, isUsMarketOpen } from "./market-hours";
 import { computeCurrencyEffect } from "./currency-effect";
 import { cycleTheme, loadTheme, themeButtonContent } from "./theme";
 import { getTimeFormat, setTimeFormat, type TimeFormat } from "./time-format";
@@ -114,6 +114,7 @@ function renderHero(o: OverviewView, now: Date = new Date()): HTMLElement {
   // The headline value and today's move, with a market-aware "as of" caption so
   // the total value reads correctly as live (session open) or settled (closed).
   const children: Array<Node | string> = [
+    renderMarketStatusChip(o, now),
     h("span", { class: "hero-label" }, ["Total value"]),
     h("span", { class: "hero-value" }, [formatCurrency(o.totalValueEur)]),
     change,
@@ -121,6 +122,34 @@ function renderHero(o: OverviewView, now: Date = new Date()): HTMLElement {
   const fxLine = renderHeroFx(o);
   if (fxLine) children.push(fxLine);
   return h("section", { class: "hero" }, children);
+}
+
+/**
+ * An honest market-status chip for the hero. It tells the truth about *why* the
+ * numbers are or aren't moving: a green "Live" only when the NYSE session is
+ * open AND we actually hold a same-day quote (`pricesAreLive`); otherwise an
+ * amber "Holiday" / "Weekend" / "Market closed" so a stale weekend or holiday
+ * price is never dressed up as live. This is the user-visible counterpart to
+ * the `pricesAreLive` gate that already governs the Periods "live" pill.
+ */
+function renderMarketStatusChip(o: OverviewView, now: Date = new Date()): HTMLElement {
+  let cls: string;
+  let label: string;
+  if (o.pricesAreLive) {
+    cls = "live";
+    label = "Live";
+  } else if (isUsMarketHoliday(now)) {
+    cls = "closed";
+    label = "Market holiday";
+  } else {
+    const day = now.getDay();
+    cls = "closed";
+    label = day === 0 || day === 6 ? "Weekend · last close" : "Market closed";
+  }
+  return h("span", { class: `market-status market-status-${cls}`, role: "status" }, [
+    h("span", { class: "market-status-dot", "aria-hidden": "true" }, []),
+    label,
+  ]);
 }
 
 /**

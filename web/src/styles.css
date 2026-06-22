@@ -258,6 +258,45 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   letter-spacing: 0.06em;
   font-weight: 600;
 }
+.market-status {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+.market-status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+.market-status-live {
+  color: var(--pos, #16a34a);
+  background: color-mix(in srgb, var(--pos, #16a34a) 12%, transparent);
+  border-color: color-mix(in srgb, var(--pos, #16a34a) 35%, transparent);
+}
+.market-status-live .market-status-dot {
+  box-shadow: 0 0 0 0 currentColor;
+  animation: market-pulse 2s ease-out infinite;
+}
+.market-status-closed {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 10%, transparent);
+}
+@keyframes market-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 55%, transparent); }
+  70% { box-shadow: 0 0 0 0.4rem transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .market-status-live .market-status-dot { animation: none; }
+}
 .hero-value {
   font-size: clamp(2.1rem, 9vw, 2.9rem);
   font-weight: 800;
@@ -978,11 +1017,13 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .panel-overview > .hero {
     grid-template-columns: max-content auto;
     grid-template-areas:
+      "status status"
       "label  label"
       "value  change";
     align-items: center;
     column-gap: 1.4rem;
   }
+  .panel-overview > .hero .market-status { grid-area: status; }
   .panel-overview > .hero .hero-label { grid-area: label; }
   .panel-overview > .hero .hero-value { grid-area: value; }
   .panel-overview > .hero .hero-change { grid-area: change; margin-top: 0; align-self: center; }
