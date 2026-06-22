@@ -114,9 +114,9 @@ def _easter_sunday(year: int) -> date:
     g = (b - f + 1) // 3
     h = (19 * a + b - d - g + 15) % 30
     i, k = divmod(c, 4)
-    el = (32 + 2 * e + 2 * i - h - k) % 7
-    m = (a + 11 * h + 22 * el) // 451
-    month, day = divmod(h + el - 7 * m + 114, 31)
+    ell = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * ell) // 451
+    month, day = divmod(h + ell - 7 * m + 114, 31)
     return date(year, month, day + 1)
 
 

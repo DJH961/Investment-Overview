@@ -64,7 +64,6 @@ export interface HoldingView {
    */
   priceMarketOpen: boolean | null;
   /**
-  /**
    * Epoch ms the displayed price was observed (live fetch or cache hit), or
    * null when it came from the export's last-known value. Drives the per-row
    * "as of" freshness indicator.
