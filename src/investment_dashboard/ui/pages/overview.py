@@ -440,7 +440,7 @@ def _mover_basis_label(basis_date: date | None, *, today: date | None = None) ->
     if basis_date is None:
         return "—"
     today = today or date.today()
-    if basis_date >= today:
+    if basis_date == today:
         return "today"
     return f"last close · {basis_date.strftime('%d %b')}"
 

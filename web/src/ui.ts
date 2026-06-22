@@ -566,13 +566,16 @@ function renderHoldings(holdings: HoldingView[]): HTMLElement {
 /** A short "20 Jun" / "Today" label for the movers basis date (ISO `YYYY-MM-DD`). */
 function moversBasisLabel(basisDate: string | null, now: Date = new Date()): string {
   if (basisDate === null) return "—";
-  const parsed = new Date(basisDate);
-  if (Number.isNaN(parsed.getTime())) return basisDate;
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(basisDate);
+  if (match === null) return basisDate;
+  const [, year, month, day] = match;
+  // Compare as local calendar dates so "today" reflects the viewer's day.
   const isToday =
-    parsed.getUTCFullYear() === now.getFullYear() &&
-    parsed.getUTCMonth() === now.getMonth() &&
-    parsed.getUTCDate() === now.getDate();
+    Number(year) === now.getFullYear() &&
+    Number(month) === now.getMonth() + 1 &&
+    Number(day) === now.getDate();
   if (isToday) return "today";
+  const parsed = new Date(Number(year), Number(month) - 1, Number(day));
   return parsed.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
