@@ -664,10 +664,19 @@ class _CalculatorView:  # pragma: no cover - UI wiring
             buys = sum((r.add_value for r in plan.rows if r.add_value > ZERO), start=ZERO)
             sells = sum((-r.add_value for r in plan.rows if r.add_value < ZERO), start=ZERO)
             with section("Plan summary"), ui.row().classes("w-full gap-md flex-wrap"):
+                # Contribution as a share of existing wealth — context for how
+                # small (or large) this round's cash is next to the whole
+                # portfolio, so a modest top-up reads honestly rather than
+                # looking like it moves everything.
+                wealth_eur = self.data.total_value_eur
+                pct_of_wealth = (cash_eur * HUNDRED / wealth_eur) if wealth_eur > ZERO else None
+                invest_sub = f"{fmt_money(cash_eur, 'EUR')} internal"
+                if pct_of_wealth is not None:
+                    invest_sub += f" · {pct_of_wealth:.1f}% of wealth"
                 kpi_card(
                     "Investing",
                     f"{sym}{cash_raw:,.2f}",
-                    sub=f"{fmt_money(cash_eur, 'EUR')} internal",
+                    sub=invest_sub,
                 )
                 kpi_card(
                     "Buying",
