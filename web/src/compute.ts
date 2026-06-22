@@ -201,7 +201,7 @@ export interface OverviewView {
   ytdGrowthPctUsd: Decimal | null;
   portfolioXirrUsd: Decimal | null;
   totalGrowthCompoundedPctUsd: Decimal | null;
-  /** Trailing dividend income (EUR) and its yield on current total value. */
+  /** Year-to-date dividend income (EUR) and its yield on current total value. */
   totalDividendsEur: Decimal;
   dividendYieldPct: Decimal | null;
   /** EUR→USD reference rate carried in the export meta (for the FX line). */
@@ -330,6 +330,28 @@ export function isSameLocalDay(epochMs: number, now: Date): boolean {
 /** First day of the current month/year for `asOf` (ISO `YYYY-MM-DD`). */
 function periodStartIso(asOf: string, kind: "month" | "year"): string {
   return kind === "month" ? `${asOf.slice(0, 7)}-01` : `${asOf.slice(0, 4)}-01-01`;
+}
+
+/**
+ * Dividend income earned in the export's as-of year. Prefer the yearly read-model
+ * row; if an older export lacks yearly periods but has monthly periods, aggregate
+ * the months in the same year. Without period read-models there is no reliable
+ * YTD split, so return zero rather than showing all-time cumulative dividends.
+ */
+function currentYearDividendsEur(data: MobileExport): Decimal {
+  const asOfYear = data.meta.as_of.slice(0, 4);
+  if (data.yearly?.rows) {
+    const row = data.yearly.rows.find((period) => period.label === asOfYear);
+    return row ? new Decimal(row.dividends_eur) : new Decimal(0);
+  }
+
+  if (data.monthly?.rows) {
+    return data.monthly.rows
+      .filter((period) => period.label.startsWith(asOfYear))
+      .reduce((total, period) => total.plus(new Decimal(period.dividends_eur)), new Decimal(0));
+  }
+
+  return new Decimal(0);
 }
 
 /**
@@ -986,18 +1008,8 @@ export function buildDashboard(
       ? totalGrowthPctCompounded(portfolioXirr, yearsBetween(firstCashflowDate, asOf))
       : null;
 
-  // Trailing dividend yield = total dividend cash ÷ current total value
-  // (mirrors the desktop's Dividends ÷ Closing Balance).
-  let totalDividendsEur = new Decimal(0);
-  for (const holding of data.holdings) {
-    const eur = convert(
-      new Decimal(holding.cumulative_dividends_cash_native),
-      holding.native_currency,
-      EUR,
-      fx,
-    );
-    if (eur !== null) totalDividendsEur = totalDividendsEur.plus(eur);
-  }
+  // Year-to-date dividend yield = current-year dividend cash ÷ current total value.
+  const totalDividendsEur = currentYearDividendsEur(data);
   const dividendYieldPct = totalValueEur.greaterThan(0)
     ? totalDividendsEur.dividedBy(totalValueEur)
     : null;
