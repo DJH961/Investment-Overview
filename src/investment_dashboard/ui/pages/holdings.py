@@ -160,7 +160,7 @@ def _holdings_summary(
         default=None,
     )
 
-    with ui.element("div").classes("inv-kpi-grid w-full"):
+    with ui.element("div").classes("inv-kpi-grid inv-kpi-grid--oneline w-full"):
         _summary_stat("Holdings", str(len(cards)), sub=f"{gainers} up · {losers} down")
         if best is not None and best[1] is not None:
             _summary_stat(
@@ -242,6 +242,20 @@ def register() -> None:
                         tooltip_key="total_value",
                     )
                     dual_kpi_card(
+                        "Total Growth",
+                        fmt_pct(metrics.total_growth_compounded_eur),
+                        fmt_pct(metrics.total_growth_compounded_usd),
+                        primary=display_ccy,
+                        tooltip_key="total_growth",
+                    )
+                    dual_kpi_card(
+                        "XIRR",
+                        fmt_pct(metrics.xirr),
+                        fmt_pct(metrics.xirr_usd),
+                        primary=display_ccy,
+                        tooltip_key="xirr",
+                    )
+                    dual_kpi_card(
                         "Capital Gain",
                         fmt_money(metrics.capital_gain_eur, "EUR"),
                         fmt_money(metrics.capital_gain_usd, "USD"),
@@ -298,10 +312,13 @@ def register() -> None:
                                     display_ccy,
                                     color_by_sign=True,
                                 ),
-                                _pct_column("Total Growth", "total_growth", display_ccy),
+                                # Growth columns ordered widest-window first:
+                                # XIRR → Total → YTD → MTD → Today.
                                 _pct_column("XIRR", "xirr", display_ccy),
-                                _pct_column("Daily Growth", "daily", display_ccy),
+                                _pct_column("Total Growth", "total_growth", display_ccy),
                                 _pct_column("YTD Growth", "ytd", display_ccy),
+                                _pct_column("MTD Growth", "mtd", display_ccy),
+                                _pct_column("Today", "daily", display_ccy),
                             ],
                             "rowData": rows,
                             "rowClassRules": {
@@ -312,7 +329,7 @@ def register() -> None:
                                 "resizable": True,
                                 "sortable": True,
                                 "flex": 1,
-                                "minWidth": 110,
+                                "minWidth": 124,
                                 "wrapHeaderText": True,
                                 "autoHeaderHeight": True,
                             },

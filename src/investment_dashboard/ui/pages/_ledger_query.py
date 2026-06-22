@@ -17,6 +17,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from investment_dashboard.domain.currency import dual_currency_amounts
+from investment_dashboard.domain.money_market import SETTLEMENT_EXTERNAL_ID_SUFFIX
 from investment_dashboard.models import Account, Instrument, Transaction
 from investment_dashboard.services import fx_service
 from investment_dashboard.ui.money_format import currency_symbol, fmt_shares
@@ -85,16 +86,17 @@ def _build_ledger_stmt(filters: LedgerFilters | None):  # type: ignore[no-untype
     if f.instrument_symbol:
         stmt = stmt.join(Transaction.instrument).where(Instrument.symbol == f.instrument_symbol)
     if f.hide_settlement_sweeps:
-        # Auto-generated Vanguard VMFXX settlement legs carry an external_id
-        # suffixed ``:vmfxx`` (settlement.py). They keep the settlement balance
-        # accurate for valuation but pair one row to every cash movement, which
-        # floods the ledger view — hide them here by default while leaving them
-        # in the ledger so positions_service still values VMFXX correctly. Rows
-        # with no external_id (e.g. manual entries) must stay visible.
+        # Auto-generated settlement legs carry an external_id suffixed
+        # ``:vmfxx`` (SETTLEMENT_EXTERNAL_ID_SUFFIX). They keep the settlement
+        # balance accurate for valuation but pair one row to every cash
+        # movement, which floods the ledger view — hide them here by default
+        # while leaving them in the ledger so positions_service still values
+        # the fund correctly. Rows with no external_id (plain manual entries)
+        # must stay visible.
         stmt = stmt.where(
             or_(
                 Transaction.external_id.is_(None),
-                Transaction.external_id.notlike("%:vmfxx"),
+                Transaction.external_id.notlike(f"%{SETTLEMENT_EXTERNAL_ID_SUFFIX}"),
             )
         )
     return stmt

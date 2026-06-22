@@ -16,8 +16,10 @@ Responsibilities:
 * :func:`build_seed` — a thin DB read capturing both starting values, the
   average historical contribution, and **both** per-currency XIRRs.
 * :func:`render` — the live NiceGUI widget: assumption controls, a Plotly
-  outcome cone (primary currency), dual-currency KPI tiles, an implied-FX
-  readout, a goal-seeking callout, and a dual-currency per-period table.
+  outcome cone, single-currency KPI tiles (the user's chosen display
+  currency), a goal-seeking callout, and a per-period table. Both currencies
+  are still *simulated* (each at its own historical XIRR) so switching the
+  display currency in Settings is instant, but only the selected one is shown.
 
 All heavy math lives in :mod:`._projection_model`; this layer captures
 inputs, runs the two simulations, and draws.
@@ -32,8 +34,8 @@ from decimal import Decimal, InvalidOperation
 from nicegui import ui
 
 from investment_dashboard.ui.components import section
-from investment_dashboard.ui.components.kpi_card import dual_kpi_card
-from investment_dashboard.ui.money_format import dual_money, fmt_money, fmt_pct
+from investment_dashboard.ui.components.kpi_card import kpi_card
+from investment_dashboard.ui.money_format import fmt_money, fmt_pct
 from investment_dashboard.ui.pages._period_query import aggregate
 from investment_dashboard.ui.pages._projection_model import (
     SCENARIO_EXPECTED,
@@ -239,7 +241,6 @@ def render(seed: ProjectionSeed) -> None:  # pragma: no cover - UI wiring
 
         _render_kpis(seed, result_eur, result_usd, real=real)
         _render_chart(seed, primary_result, real=real, period_word=period_word)
-        _render_implied_fx(seed, result_eur, result_usd, real=real)
         _render_goal(
             params_primary=(params_eur if primary == "EUR" else params_usd),
             primary_result=primary_result,
@@ -337,48 +338,37 @@ def _render_kpis(
     real: bool,
 ) -> None:
     primary = seed.primary
+    # Projection renders a single wallet in the user's chosen display currency
+    # (the other currency's simulation still runs, but we only surface the one
+    # the user picked — see module docstring / settings display-currency).
+    result = result_eur if primary == "EUR" else result_usd
     money_kind = "real" if real else "nominal"
     with ui.row().classes("gap-md flex-wrap q-mt-sm"):
-        dual_kpi_card(
+        kpi_card(
             "Expected value",
-            fmt_money(_final(result_eur, SCENARIO_EXPECTED, real=real), "EUR"),
-            fmt_money(_final(result_usd, SCENARIO_EXPECTED, real=real), "USD"),
-            primary=primary,
+            fmt_money(_final(result, SCENARIO_EXPECTED, real=real), primary),
             tooltip_key="projection_expected",
         )
-        dual_kpi_card(
+        kpi_card(
             "Optimistic",
-            fmt_money(_final(result_eur, SCENARIO_OPTIMISTIC, real=real), "EUR"),
-            fmt_money(_final(result_usd, SCENARIO_OPTIMISTIC, real=real), "USD"),
-            primary=primary,
+            fmt_money(_final(result, SCENARIO_OPTIMISTIC, real=real), primary),
         )
-        dual_kpi_card(
+        kpi_card(
             "Pessimistic",
-            fmt_money(_final(result_eur, SCENARIO_PESSIMISTIC, real=real), "EUR"),
-            fmt_money(_final(result_usd, SCENARIO_PESSIMISTIC, real=real), "USD"),
-            primary=primary,
+            fmt_money(_final(result, SCENARIO_PESSIMISTIC, real=real), primary),
         )
-        dual_kpi_card(
+        kpi_card(
             "Additionally contributed",
-            fmt_money(result_eur.total_contributed, "EUR"),
-            fmt_money(result_usd.total_contributed, "USD"),
-            primary=primary,
+            fmt_money(result.total_contributed, primary),
         )
-        gain_eur = (
-            _final(result_eur, SCENARIO_EXPECTED, real=real)
-            - result_eur.params.starting_value
-            - result_eur.total_contributed
+        gain = (
+            _final(result, SCENARIO_EXPECTED, real=real)
+            - result.params.starting_value
+            - result.total_contributed
         )
-        gain_usd = (
-            _final(result_usd, SCENARIO_EXPECTED, real=real)
-            - result_usd.params.starting_value
-            - result_usd.total_contributed
-        )
-        dual_kpi_card(
+        kpi_card(
             f"Projected growth ({money_kind})",
-            fmt_money(gain_eur, "EUR"),
-            fmt_money(gain_usd, "USD"),
-            primary=primary,
+            fmt_money(gain, primary),
         )
 
 
@@ -447,29 +437,6 @@ def _render_chart(
     ui.plotly(fig).classes("w-full").style("height:420px")
 
 
-def _render_implied_fx(
-    seed: ProjectionSeed,
-    result_eur: ProjectionResult,
-    result_usd: ProjectionResult,
-    *,
-    real: bool,
-) -> None:
-    """Surface the EUR/USD rate the two return streams imply at the horizon."""
-    final_eur = _final(result_eur, SCENARIO_EXPECTED, real=real)
-    final_usd = _final(result_usd, SCENARIO_EXPECTED, real=real)
-    if final_eur <= 0:
-        return
-    implied = final_usd / final_eur
-    today_rate = seed.usd_per_eur
-    drift = ((implied / today_rate) - ONE) * Decimal(100) if today_rate else ZERO
-    arrow = "↑" if implied >= today_rate else "↓"
-    ui.label(
-        f"Implied EUR/USD at horizon: {implied:.4f} {arrow}  "
-        f"(today {today_rate:.4f}, {drift:+.2f} % — the gap between the EUR and USD "
-        "return assumptions, not a fixed-rate conversion)."
-    ).classes("text-caption opacity-70")
-
-
 def _fmt_years(years: Decimal) -> str:
     y = float(years)
     return f"{y:.1f} yr" if y >= 1 else f"{y * 12:.0f} mo"
@@ -517,23 +484,21 @@ def _render_table(
     period_word: str,
 ) -> None:
     primary = seed.primary
+    result = result_eur if primary == "EUR" else result_usd
     rows = []
-    for pe, pu in zip(result_eur.points, result_usd.points, strict=True):
+    for point in result.points:
 
         def cell(scenario: str) -> str:
-            return dual_money(
-                _series(pe, scenario, real=real),  # noqa: B023 - bound per iteration
-                _series(pu, scenario, real=real),  # noqa: B023
-                primary=primary,
+            return fmt_money(
+                _series(point, scenario, real=real),  # noqa: B023 - bound per iteration
+                primary,
                 decimals=2,
             )
 
         rows.append(
             {
-                "label": pe.label,
-                "contributed": dual_money(
-                    pe.contributed, pu.contributed, primary=primary, decimals=2
-                ),
+                "label": point.label,
+                "contributed": fmt_money(point.contributed, primary, decimals=2),
                 "pessimistic": cell(SCENARIO_PESSIMISTIC),
                 "expected": cell(SCENARIO_EXPECTED),
                 "optimistic": cell(SCENARIO_OPTIMISTIC),
