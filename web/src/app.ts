@@ -32,8 +32,9 @@ import {
   type AppConfig,
 } from "./config";
 import { PriceError, type FxRates } from "./prices";
-import {
+import type { Decimal } from "./decimal-config";import {
   readCachedEnvelope,
+  readCachedEurUsd,
   readCachedFx,
   readLastPull,
   readNavPublishStats,
@@ -46,10 +47,12 @@ import {
 import {
   DEFAULT_NAV_CACHE_TTL_MS,
   FREE_TIER,
+  loadEurUsd,
   loadFxRates,
   loadQuotes,
   navCacheTtlMs,
   navPublishWindow,
+  type EurUsdSource,
   type LoadQuotesOptions,
   type QuoteLoadReport,
 } from "./quotes";
@@ -837,15 +840,35 @@ export class App {
 
     let fx: FxRates;
     let fxReport: { cached: boolean; error: PriceError | null };
+    let eurUsdNow: Decimal | null = null;
+    let eurUsdPrev: Decimal | null = null;
+    let eurUsdSource: EurUsdSource = "none";
     if (network) {
       const fxLoad = await loadFxRates();
       fx = fxLoad.fx;
       fxReport = fxLoad;
+      // Live EUR/USD (current + prior close) for an FX-aware today's move,
+      // budget-permitting; falls back to the just-loaded ECB end-of-day rate.
+      const eurUsd = await loadEurUsd(apiKey, { eodFallback: fx.rates.USD ?? null });
+      eurUsdNow = eurUsd.now;
+      eurUsdPrev = eurUsd.previousClose;
+      eurUsdSource = eurUsd.source;
     } else {
       // Cache-only paint: don't touch the network for FX either.
       const cachedFx = readCachedFx();
       fx = cachedFx?.fx ?? { base: "EUR", rates: {} };
       fxReport = { cached: cachedFx !== null, error: null };
+      const cachedEurUsd = readCachedEurUsd();
+      if (cachedEurUsd) {
+        eurUsdNow = cachedEurUsd.now;
+        eurUsdPrev = cachedEurUsd.previousClose;
+        eurUsdSource = "cache";
+      }
+    }
+    // Prefer the live EUR/USD spot (more current than the ECB daily rate) for
+    // all current marks, so value and today's move share one consistent rate.
+    if (eurUsdNow !== null && eurUsdNow.greaterThan(0)) {
+      fx = { base: fx.base, rates: { ...fx.rates, USD: eurUsdNow } };
     }
 
     const quoteLoad = await quotePromise;
@@ -871,7 +894,10 @@ export class App {
       this.lastDataPullAt = Date.now();
       writeLastPull(this.lastDataPullAt);
     }
-    const model = buildDashboard(data, quoteLoad.quotes, fx, new Date(), degradedReason);
+    const model = buildDashboard(data, quoteLoad.quotes, fx, new Date(), degradedReason, {
+      fxPrevEurUsd: eurUsdPrev,
+      fxEurUsdSource: eurUsdSource,
+    });
     model.overview.lastDataPullAt = this.lastDataPullAt;
     // Surface how much of the daily free-tier budget we've spent so far.
     model.overview.dailyCreditsUsed = Math.max(

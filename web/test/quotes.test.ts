@@ -6,11 +6,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   recordCredits,
+  writeCachedEurUsd,
   writeCachedFx,
   writeCachedQuotes,
   type StorageLike,
 } from "../src/cache";
-import { loadFxRates, loadQuotes, navCacheTtlMs, navPublishWindow, DEFAULT_NAV_CACHE_TTL_MS, DEFAULT_CACHE_TTL_MS } from "../src/quotes";
+import { loadEurUsd, loadFxRates, loadQuotes, navCacheTtlMs, navPublishWindow, DEFAULT_NAV_CACHE_TTL_MS, DEFAULT_CACHE_TTL_MS } from "../src/quotes";
 import { PriceError, type FetchLike, type Quote } from "../src/prices";
 import Decimal from "decimal.js";
 
@@ -439,5 +440,60 @@ describe("navPublishWindow — learning the window from observed data", () => {
       onValueDateAdvance: (symbol, valueDate, at) => seen.push([symbol, valueDate, at]),
     });
     expect(seen).toEqual([["VTI", "2024-01-10", 0]]);
+  });
+});
+
+describe("loadEurUsd", () => {
+  it("serves a fresh cached reading without spending a credit", async () => {
+    const storage = memStorage();
+    writeCachedEurUsd({ now: new Decimal("1.085"), previousClose: new Decimal("1.0725") }, 0, storage);
+    const fetchImpl = vi.fn<FetchLike>();
+    const res = await loadEurUsd("key", { fetchImpl, storage, now: clock(1000), ttlMs: 60_000 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(res.source).toBe("cache");
+    expect(res.now?.toString()).toBe("1.085");
+    expect(res.previousClose?.toString()).toBe("1.0725");
+  });
+
+  it("fetches a live pair (spot + prior close) and caches it", async () => {
+    const storage = memStorage();
+    const fetchImpl = vi.fn<FetchLike>(async () =>
+      jsonResponse({ symbol: "EUR/USD", close: "1.0900", previous_close: "1.0750", currency: "USD" }),
+    );
+    const res = await loadEurUsd("key", { fetchImpl, storage, now: clock(0) });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(res.source).toBe("live");
+    expect(res.now?.toString()).toBe("1.09");
+    expect(res.previousClose?.toString()).toBe("1.075");
+    // Cached for the next call.
+    const again = await loadEurUsd("key", { fetchImpl, storage, now: clock(1000), ttlMs: 60_000 });
+    expect(again.source).toBe("cache");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the end-of-day ECB rate (no prior close) when over budget", async () => {
+    const storage = memStorage();
+    // Exhaust the per-minute budget.
+    recordCredits(8, 0, storage);
+    const fetchImpl = vi.fn<FetchLike>();
+    const res = await loadEurUsd("key", {
+      fetchImpl,
+      storage,
+      now: clock(1000),
+      eodFallback: new Decimal("1.07"),
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(res.source).toBe("eod");
+    expect(res.now?.toString()).toBe("1.07");
+    expect(res.previousClose).toBeNull();
+  });
+
+  it("reports source none when nothing is available", async () => {
+    const fetchImpl = vi.fn<FetchLike>(async () =>
+      jsonResponse({ symbol: "EUR/USD", status: "error", message: "no data" }),
+    );
+    const res = await loadEurUsd("key", { fetchImpl, storage: memStorage(), now: clock(0) });
+    expect(res.source).toBe("none");
+    expect(res.now).toBeNull();
   });
 });

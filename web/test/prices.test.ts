@@ -4,7 +4,7 @@
 import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 
-import { convert, fetchFxRates, fetchNavQuotes, fetchQuotes, PriceError, type FetchLike } from "../src/prices";
+import { convert, fetchEurUsd, fetchFxRates, fetchNavQuotes, fetchQuotes, PriceError, type FetchLike } from "../src/prices";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return { ok, status, json: async () => body } as Response;
@@ -184,5 +184,23 @@ describe("convert", () => {
 
   it("returns null when an FX leg is missing", () => {
     expect(convert(new Decimal("100"), "JPY", "EUR", fx)).toBeNull();
+  });
+});
+
+describe("fetchEurUsd", () => {
+  it("parses the live spot and prior close from the quote endpoint", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({ symbol: "EUR/USD", close: "1.0850", previous_close: "1.0725", currency: "USD" });
+    const eurusd = await fetchEurUsd("key", fetchImpl);
+    expect(eurusd.now?.toString()).toBe("1.085");
+    expect(eurusd.previousClose?.toString()).toBe("1.0725");
+  });
+
+  it("returns nulls (no throw) when the pair is unavailable", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({ symbol: "EUR/USD", status: "error", message: "no data" });
+    const eurusd = await fetchEurUsd("key", fetchImpl);
+    expect(eurusd.now).toBeNull();
+    expect(eurusd.previousClose).toBeNull();
   });
 });

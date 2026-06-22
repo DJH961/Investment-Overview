@@ -246,6 +246,40 @@ export async function fetchQuotes(
   return result;
 }
 
+/** The Twelve Data forex symbol for the EUR→USD pair (USD per 1 EUR). */
+export const EUR_USD_SYMBOL = "EUR/USD";
+
+/** A live EUR→USD reading: the current spot and the prior session's close. */
+export interface EurUsdQuote {
+  /** Units of USD per 1 EUR, right now. Null when unavailable. */
+  now: Decimal | null;
+  /** Units of USD per 1 EUR at the prior session close. Null when unavailable. */
+  previousClose: Decimal | null;
+  /** Epoch ms the spot was observed (fetch time, or cache-store time). */
+  at?: number | null;
+}
+
+/**
+ * Fetch the live EUR→USD pair from Twelve Data's `quote` endpoint. Forex pairs
+ * are quoted like any other symbol there, so this reuses {@link fetchQuotes}'s
+ * parser and returns both the current price and the prior close — exactly the
+ * two rates an FX-aware "today's move" needs (revalue the current mark at
+ * `now`, the prior mark at `previousClose`). A missing/again-null reading does
+ * not throw; the caller falls back to the ECB daily rate.
+ */
+export async function fetchEurUsd(
+  apiKey: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<EurUsdQuote> {
+  const quotes = await fetchQuotes([EUR_USD_SYMBOL], apiKey, fetchImpl);
+  const quote = quotes.get(EUR_USD_SYMBOL);
+  return {
+    now: quote?.price ?? null,
+    previousClose: quote?.previousClose ?? null,
+    at: quote?.priceTime ?? quote?.at ?? null,
+  };
+}
+
 /**
  * Fetch the latest **NAV** for mutual-fund / money-market symbols from Twelve
  * Data's `time_series` (daily) endpoint instead of `quote`.
