@@ -36,9 +36,7 @@ def get_last_refreshed_at_map(
     return {iid: ts for iid, ts in session.execute(stmt).all()}
 
 
-def get_market_time_map(
-    session: Session, instrument_ids: Sequence[int]
-) -> dict[int, datetime]:
+def get_market_time_map(session: Session, instrument_ids: Sequence[int]) -> dict[int, datetime]:
     """Per-instrument *price market time* (``regularMarketTime``) in one query.
 
     The "market time" is when the served price was last struck on the exchange

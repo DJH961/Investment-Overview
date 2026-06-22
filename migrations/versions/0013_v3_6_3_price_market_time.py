@@ -14,7 +14,7 @@ guard (``_ensure_added_columns``) instead. The ``ADD COLUMN`` is guarded so a DB
 already carrying the column (e.g. created from the current model) is a no-op.
 
 Revision ID: b8e4f2a0c5d7
-Revises: a7d3e1f9c4b6
+Revises: b8e4f2a1d7c9
 Create Date: 2026-06-22 16:10:00.000000
 """
 
@@ -26,7 +26,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "b8e4f2a0c5d7"
-down_revision: str | Sequence[str] | None = "a7d3e1f9c4b6"
+down_revision: str | Sequence[str] | None = "b8e4f2a1d7c9"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

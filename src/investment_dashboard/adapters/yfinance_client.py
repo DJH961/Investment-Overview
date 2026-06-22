@@ -477,7 +477,7 @@ def fetch_market_times(
     out: dict[str, datetime] = {}
     for symbol in symbols:
         try:
-            when = quote(symbol)
+            when = _coerce_market_time(quote(symbol))
         except Exception as exc:  # pragma: no cover - network/yfinance churn
             log.debug("market-time fetch failed for %s: %s", symbol, exc)
             continue

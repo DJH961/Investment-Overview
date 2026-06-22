@@ -423,3 +423,54 @@ def test_fetch_intraday_closes_empty_symbols_is_noop() -> None:
     from investment_dashboard.adapters.yfinance_client import fetch_intraday_closes
 
     assert fetch_intraday_closes([], date(2024, 6, 3)) == {}
+
+
+def test_fetch_market_times_coerces_and_skips_unavailable() -> None:
+    from datetime import UTC, datetime
+
+    from investment_dashboard.adapters.yfinance_client import fetch_market_times
+
+    # 2024-06-24 19:59:00 UTC.
+    epoch = datetime(2024, 6, 24, 19, 59, tzinfo=UTC)
+
+    def fake_quoter(symbol: str):  # type: ignore[no-untyped-def]
+        return {"VTI": epoch, "GONE": None}.get(symbol)
+
+    out = fetch_market_times(["VTI", "GONE"], quoter=fake_quoter)
+
+    # The available symbol is timed (naive UTC); the unavailable one is absent.
+    assert out == {"VTI": datetime(2024, 6, 24, 19, 59)}
+    assert out["VTI"].tzinfo is None
+
+
+def test_fetch_market_times_swallows_quoter_errors() -> None:
+    from datetime import datetime
+
+    from investment_dashboard.adapters.yfinance_client import fetch_market_times
+
+    def boom(symbol: str):  # type: ignore[no-untyped-def]
+        if symbol == "BAD":
+            raise RuntimeError("quote endpoint down")
+        return datetime(2024, 6, 24, 20, 0)
+
+    out = fetch_market_times(["BAD", "OK"], quoter=boom)
+
+    # A failing symbol never breaks the batch; the healthy one still resolves.
+    assert out == {"OK": datetime(2024, 6, 24, 20, 0)}
+
+
+def test_fetch_market_times_empty_symbols_is_noop() -> None:
+    from investment_dashboard.adapters.yfinance_client import fetch_market_times
+
+    assert fetch_market_times([]) == {}
+
+
+def test_coerce_market_time_parses_epoch_seconds() -> None:
+    from datetime import datetime
+
+    from investment_dashboard.adapters.yfinance_client import _coerce_market_time
+
+    # 1719259140 == 2024-06-24 19:59:00 UTC.
+    assert _coerce_market_time(1719259140) == datetime(2024, 6, 24, 19, 59)
+    assert _coerce_market_time(None) is None
+    assert _coerce_market_time("not-a-time") is None

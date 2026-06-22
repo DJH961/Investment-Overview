@@ -88,6 +88,43 @@ def test_live_ignores_pull_time_and_omits_the_clock() -> None:
     assert cap.as_of_text == "as of today"
 
 
+def test_today_closed_prefers_market_time_and_trails_pull_time() -> None:
+    # Settled, today's close is in: the figure is dated by the *exchange* market
+    # time (when the price is from), with our pull instant trailing as "updated".
+    market = datetime(2024, 6, 24, 19, 59)  # 19:59 UTC == 21:59 CET
+    pulled = datetime(2024, 6, 24, 20, 16)  # 20:16 UTC == 22:16 CET
+    cap = _caption(market_open=False, tz=CET, price_market_at=market, price_observed_at=pulled)
+    assert cap.is_live is False
+    assert cap.as_of_text == "as of 21:59"
+    assert cap.updated_text == "updated 22:16"
+    assert cap.combined() == "as of 21:59 \u00b7 updated 22:16 \u00b7 $1\u2248\u20ac0.9259"
+
+
+def test_today_closed_market_time_without_pull_time_has_no_updated() -> None:
+    market = datetime(2024, 6, 24, 19, 59)
+    cap = _caption(market_open=False, tz=CET, price_market_at=market, price_observed_at=None)
+    assert cap.as_of_text == "as of 21:59"
+    assert cap.updated_text is None
+    assert "updated" not in cap.combined()
+
+
+def test_today_closed_falls_back_to_pull_time_without_market_time() -> None:
+    # No provider market time -> keep the prior behaviour: date by the pull
+    # instant, with no separate "updated" stamp (it would echo the "as of").
+    pulled = datetime(2024, 6, 24, 20, 7)
+    cap = _caption(market_open=False, tz=CET, price_market_at=None, price_observed_at=pulled)
+    assert cap.as_of_text == "as of 22:07"
+    assert cap.updated_text is None
+
+
+def test_live_ignores_market_time_and_omits_the_clock() -> None:
+    market = datetime(2024, 6, 24, 15, 59)
+    cap = _caption(price_market_at=market, price_observed_at=datetime(2024, 6, 24, 16, 1))
+    assert cap.is_live is True
+    assert cap.as_of_text == "as of today"
+    assert cap.updated_text is None
+
+
 def test_market_open_but_no_today_print_is_not_live() -> None:
     # We have an older last print even though the session is technically open.
     cap = _caption(last_date=date(2024, 6, 21), market_open=True)
