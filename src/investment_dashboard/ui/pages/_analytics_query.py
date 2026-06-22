@@ -167,6 +167,24 @@ def _build_curve(
     return points
 
 
+def build_curve(
+    session: Session,
+    *,
+    start: date,
+    end: date,
+    currency: str,
+    benchmark_closes: dict[date, Decimal],
+) -> list[EquityCurvePoint]:
+    """Public wrapper for analytics curve construction."""
+    return _build_curve(
+        session,
+        start=start,
+        end=end,
+        currency=currency,
+        benchmark_closes=benchmark_closes,
+    )
+
+
 def _attribution_for_window(
     session: Session,
     *,
