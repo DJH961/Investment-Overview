@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime, tzinfo
 from decimal import ROUND_HALF_UP, Decimal
 from html import escape
 
@@ -11,7 +11,11 @@ from nicegui import ui
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.domain.returns import years_between
-from investment_dashboard.services import display_currency_service, prices_service
+from investment_dashboard.services import (
+    display_currency_service,
+    prices_service,
+    timezone_service,
+)
 from investment_dashboard.ui.components import (
     deferred,
     empty_state,
@@ -71,6 +75,7 @@ class _OverviewData:
     range_label: str
     metrics: PortfolioMetrics
     display_ccy: str
+    display_tz: tzinfo | None
     value_series: list[ValueSeriesPoint]
     fx_rate: Decimal | None
     display_quote: str
@@ -143,7 +148,7 @@ def _by_ccy(eur: Decimal | None, usd: Decimal | None, ccy: str) -> Decimal | Non
     return eur if ccy.upper() == "EUR" else usd
 
 
-def format_price_freshness(card: HoldingCard) -> str:
+def format_price_freshness(card: HoldingCard, *, tz: tzinfo | None = None) -> str:
     """One-line "as of / updated" freshness string for a holding card.
 
     Mirrors the web companion's per-row transparency:
@@ -152,6 +157,11 @@ def format_price_freshness(card: HoldingCard) -> str:
     * a priced holding shows the close's observation date ("as of …") and,
       when known, the saved last-refresh time ("updated …");
     * a held holding with no cached price at all reads "no price".
+
+    ``tz`` renders the saved last-refresh time in the user's configured
+    timezone; the stored ``updated_at`` is a naive UTC instant, so it is
+    treated as UTC and converted. When ``tz`` is ``None`` the raw stored
+    instant is shown unchanged.
     """
     if card.is_money_market:
         return "par $1.00 · fixed"
@@ -159,7 +169,7 @@ def format_price_freshness(card: HoldingCard) -> str:
         return "no price"
     parts = [f"as of {_fmt_asof_date(card.price_as_of)}"]
     if card.updated_at is not None:
-        parts.append(f"updated {_fmt_updated(card.updated_at)}")
+        parts.append(f"updated {_fmt_updated(card.updated_at, tz=tz)}")
     return " · ".join(parts)
 
 
@@ -167,11 +177,18 @@ def _fmt_asof_date(value: date) -> str:
     return value.strftime("%d %b %Y")
 
 
-def _fmt_updated(value: datetime) -> str:
+def _fmt_updated(value: datetime, *, tz: tzinfo | None = None) -> str:
+    if tz is not None:
+        # Stored as a naive UTC instant — attach UTC, then convert to the
+        # user's display timezone so the clock matches the header.
+        aware = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        value = aware.astimezone(tz)
     return value.strftime("%d %b %H:%M")
 
 
-def _holding_card(card: HoldingCard, *, display_ccy: str) -> None:  # pragma: no cover - UI
+def _holding_card(
+    card: HoldingCard, *, display_ccy: str, tz: tzinfo | None = None
+) -> None:  # pragma: no cover - UI
     """Render one redesigned holding box (web-style headline + detail grid).
 
     The top mirrors the web app — symbol, name, value and today's (daily) move —
@@ -208,7 +225,7 @@ def _holding_card(card: HoldingCard, *, display_ccy: str) -> None:  # pragma: no
         ui.html(
             '<div class="inv-holding-topline">'
             f'<span class="inv-holding-sym">{escape(card.symbol)}{pills}</span>'
-            f'<span class="inv-holding-asof">{escape(format_price_freshness(card))}</span>'
+            f'<span class="inv-holding-asof">{escape(format_price_freshness(card, tz=tz))}</span>'
             "</div>"
         )
         ui.html(
@@ -488,6 +505,9 @@ def register() -> None:  # noqa: PLR0915
                         as_of=metrics.as_of,
                     )
                     display_ccy = display_currency_service.get_display_currency(session)
+                    display_tz = timezone_service.resolve_tzinfo(
+                        timezone_service.get_timezone(session)
+                    )
                     value_series = build_value_series(
                         session, currency=display_ccy, range_label=range_label
                     )
@@ -511,6 +531,7 @@ def register() -> None:  # noqa: PLR0915
                     range_label=range_label,
                     metrics=metrics,
                     display_ccy=display_ccy,
+                    display_tz=display_tz,
                     value_series=value_series,
                     fx_rate=fx_rate,
                     display_quote=display_quote,
@@ -519,10 +540,11 @@ def register() -> None:  # noqa: PLR0915
                     treemap_data=treemap_data,
                 )
 
-            def _render(data: _OverviewData) -> None:
+            def _render(data: _OverviewData) -> None:  # noqa: PLR0915
                 range_label = data.range_label
                 metrics = data.metrics
                 display_ccy = data.display_ccy
+                display_tz = data.display_tz
                 value_series = data.value_series
                 fx_rate = data.fx_rate
                 display_quote = data.display_quote
@@ -658,7 +680,7 @@ def register() -> None:  # noqa: PLR0915
                             ).props("flat dense no-caps color=primary")
                         with ui.element("div").classes("inv-holding-grid w-full q-mt-sm"):
                             for card in cards:
-                                _holding_card(card, display_ccy=display_ccy)
+                                _holding_card(card, display_ccy=display_ccy, tz=display_tz)
                     with section("Allocation"):
                         ui.plotly(
                             _treemap_figure(treemap_data, currency=display_ccy, fx_rate=fx_rate),

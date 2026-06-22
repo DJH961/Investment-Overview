@@ -79,8 +79,9 @@ export interface HoldingView {
   todayFxMoveEur: Decimal | null;
   weight: Decimal | null;
   unrealisedPlEur: Decimal | null;
-  /** Simple total growth on cost: unrealised P/L ÷ cost basis (null when no
-   * cost basis to grow from). Shown on the holding card in place of weight. */
+  /** Compounded total growth — (1+XIRR)^years over the holding's invested
+   * lifetime (falls back to the simple gain/cost ratio when XIRR/years are
+   * undefined). Shown on the holding card in place of weight. */
   totalGrowthPct: Decimal | null;
   xirr: Decimal | null;
   /**
@@ -555,17 +556,33 @@ function buildHolding(
     valueEur !== null && costBasisEur !== null ? valueEur.minus(costBasisEur) : null;
 
   // Simple total growth on cost (price-based, dividends excluded): the
-  // holding's unrealised P/L as a fraction of what it cost. Null when there is
-  // no cost basis to grow from (e.g. a fully gifted/spun-off position).
-  const totalGrowthPct =
+  // holding's unrealised P/L as a fraction of what it cost. Kept only as a
+  // fallback for the compounded figure below. Null when there is no cost basis
+  // to grow from (e.g. a fully gifted/spun-off position).
+  const simpleGrowthPct =
     unrealisedPlEur !== null && costBasisEur !== null && costBasisEur.greaterThan(0)
       ? unrealisedPlEur.dividedBy(costBasisEur)
       : null;
 
+  const holdingFlows = holdingCashflows(holding);
   const xirrRate =
     valueEur !== null && valueEur.greaterThan(0)
-      ? xirr(holdingCashflows(holding), asOf, { terminalValue: valueEur })
+      ? xirr(holdingFlows, asOf, { terminalValue: valueEur })
       : null;
+
+  // Total Growth mirrors the desktop + portfolio headline: the compounded
+  // (1+XIRR)^years return over the time actually invested in this holding,
+  // rather than a simple gain/cost ratio. The ratio badly understates holdings
+  // the user is still buying into regularly (a large, recently-added cost basis
+  // has had little time to grow). ``years`` runs from the holding's first
+  // cashflow to ``asOf``; when the compounded figure is undefined we fall back
+  // to the simple ratio so a brand-new holding still reads a sensible number.
+  const firstFlowDate = holdingFlows.reduce<string | null>(
+    (min, cf) => (min === null || cf.date < min ? cf.date : min),
+    null,
+  );
+  const heldYears = firstFlowDate !== null ? yearsBetween(firstFlowDate, asOf) : new Decimal(0);
+  const totalGrowthPct = totalGrowthPctCompounded(xirrRate, heldYears) ?? simpleGrowthPct;
 
   // --- USD companions (currency-correct growth when USD is selected) --------
   // Current marks use today's spot (matching the desktop's terminal-value
@@ -579,7 +596,7 @@ function buildHolding(
         : null;
   const unrealisedPlUsd =
     valueUsd !== null && costBasisUsd !== null ? valueUsd.minus(costBasisUsd) : null;
-  const totalGrowthPctUsd =
+  const simpleGrowthPctUsd =
     unrealisedPlUsd !== null && costBasisUsd !== null && costBasisUsd.greaterThan(0)
       ? unrealisedPlUsd.dividedBy(costBasisUsd)
       : null;
@@ -588,6 +605,10 @@ function buildHolding(
     usdFlows !== null && valueUsd !== null && valueUsd.greaterThan(0)
       ? xirr(usdFlows, asOf, { terminalValue: valueUsd })
       : null;
+  // Compounded USD total growth over the same invested horizon (falls back to
+  // the simple USD ratio when the compounded figure is undefined).
+  const totalGrowthPctUsd =
+    totalGrowthPctCompounded(xirrUsd, heldYears) ?? simpleGrowthPctUsd;
 
   return {
     symbol: holding.symbol,
