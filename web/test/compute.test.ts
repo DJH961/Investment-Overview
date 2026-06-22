@@ -890,3 +890,36 @@ describe("cost_basis_eur trade-date path", () => {
     approx(vti.costBasisEur, 1000 / 1.1, 1e-2);
   });
 });
+
+describe("EUR vs USD growth genuinely diverge (regression for identical figures)", () => {
+  // The desktop exports per-trade-date cost bases AND per-trade-date cashflow
+  // legs in BOTH currencies. When the historical FX rate differs from today's
+  // spot the per-currency growth numbers must NOT collapse to one value.
+  // Build a holding bought when the dollar was much weaker: 900 EUR == 1100 USD
+  // at the trade date (rate 1.222), today's spot is 1.10.
+  function divergentExport(): MobileExport {
+    const exp = makeExport();
+    exp.holdings[0].cashflows = [{ date: "2023-01-01", amount: "-900", amount_usd: "-1100" }];
+    exp.holdings[0].cost_basis_eur = "900";
+    exp.holdings[0].cost_basis_usd = "1100";
+    return exp;
+  }
+
+  it("per-holding total growth differs between EUR and USD", () => {
+    const m = buildDashboard(divergentExport(), quotes, fx, new Date("2024-06-01T12:00:00Z"));
+    const vti = m.holdings.find((h) => h.symbol === "VTI")!;
+    expect(vti.totalGrowthPct).not.toBeNull();
+    expect(vti.totalGrowthPctUsd).not.toBeNull();
+    expect(
+      Math.abs(vti.totalGrowthPct!.toNumber() - vti.totalGrowthPctUsd!.toNumber()),
+    ).toBeGreaterThan(0.01);
+  });
+
+  it("portfolio total gain % differs between EUR and USD", () => {
+    const m = buildDashboard(divergentExport(), quotes, fx, new Date("2024-06-01T12:00:00Z"));
+    const o = m.overview;
+    expect(o.totalGainPct).not.toBeNull();
+    expect(o.totalGainPctUsd).not.toBeNull();
+    expect(Math.abs(o.totalGainPct!.toNumber() - o.totalGainPctUsd!.toNumber())).toBeGreaterThan(0.01);
+  });
+});
