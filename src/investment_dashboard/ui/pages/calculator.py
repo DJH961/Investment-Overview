@@ -14,6 +14,7 @@ views elsewhere — the busy weight-entry form no longer lives in Settings.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
@@ -690,10 +691,14 @@ class _CalculatorView:  # pragma: no cover - UI wiring
             return
         cash_eur = self._to_eur(cash_raw, source_ccy)
         current_values = {i.instrument_id: i.current_value_eur for i in self.data.instruments}
+        # In buy-only "by category" mode, credit funds the user holds but left
+        # un-ticked toward their category's funding (see _held_unticked_extras).
+        extra_no_buy, category_of = self._held_unticked_extras(target_pct, current_values)
+        no_buy_ids = set(no_buy) | extra_no_buy
         current_prices = {
             mid: self.by_id[mid].price_eur
             for mid in target_pct
-            if self.by_id[mid].price_eur is not None
+            if mid in self.by_id and self.by_id[mid].price_eur is not None
         }
         try:
             plan = plan_rebalance(
@@ -703,12 +708,50 @@ class _CalculatorView:  # pragma: no cover - UI wiring
                 current_prices,  # type: ignore[arg-type]
                 allow_fractional_shares=bool(self.fractional.value),
                 allow_sell=self.allow_sell,
-                no_buy_ids=no_buy & set(target_pct),
+                no_buy_ids=no_buy_ids & set(target_pct),
+                category_of=category_of,
             )
         except ValueError as exc:
             ui.notify(f"Cannot rebalance: {exc}", type="negative")
             return
         self._render_result(plan, cash_raw, cash_eur, source_ccy)
+
+    def _held_unticked_extras(
+        self,
+        target_pct: dict[int, Decimal],
+        current_values: Mapping[int, Decimal],
+    ) -> tuple[set[int], dict[int, str] | None]:
+        """Fold funds the user holds but left un-ticked into a buy-only category
+        plan, so an already well-funded category — counting those held funds —
+        asks for no fresh cash even when the ticked fund alone looks
+        under-weight.
+
+        The held, un-ticked members of every *targeted* category are added to
+        ``target_pct`` (mutated in place) as 0 %-target rows, returned in the
+        ``no_buy`` set so they are never bought, and a ``{id: category}`` map is
+        returned so :func:`plan_rebalance` measures each category's shortfall as
+        a whole. Returns ``(set(), None)`` outside buy-only category mode, which
+        leaves the legacy per-fund behaviour untouched.
+        """
+        if self.mode != "category" or self.allow_sell:
+            return set(), None
+        no_buy_ids: set[int] = set()
+        for name, weight in self.cat_targets.items():
+            if _decimal_or_zero(weight) <= ZERO:
+                continue
+            selected = self.cat_selected.get(name, set())
+            for mid in self.cat_members.get(name, []):
+                if mid in selected or mid in target_pct:
+                    continue
+                if current_values.get(mid, ZERO) <= ZERO:
+                    continue
+                target_pct.setdefault(mid, ZERO)
+                no_buy_ids.add(mid)
+        category_of = {
+            mid: (self.by_id[mid].category if mid in self.by_id else UNCATEGORIZED)
+            for mid in target_pct
+        }
+        return no_buy_ids, category_of
 
     # -- result ------------------------------------------------------------
     def _render_result(

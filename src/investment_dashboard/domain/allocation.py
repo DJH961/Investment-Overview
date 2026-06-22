@@ -142,6 +142,61 @@ class RebalancePlan:
     residual_cash: Decimal
 
 
+def _buy_only_gaps(
+    instrument_ids: Sequence[int],
+    target_value: Mapping[int, Decimal],
+    current: Mapping[int, Decimal],
+    no_buy: set[int],
+    category_of: Mapping[int, str] | None,
+) -> dict[int, Decimal]:
+    """Cash shortfall per buyable fund.
+
+    When ``category_of`` is given, the shortfall is measured at the *category*
+    level: a category's whole current value — including funds the user chose to
+    hold but not actively buy (``no_buy``) — counts toward its target, so an
+    already well-funded category asks for no fresh cash even when an individual
+    buyable fund inside it still looks under-weight. The category's shortfall is
+    then shared across just its buyable funds, in proportion to their target
+    value, so the funds the user *does* buy pick up the whole category slack.
+    Without ``category_of`` each fund is its own bucket (the original per-fund
+    gap), so existing callers are unaffected.
+    """
+    buyable = [i for i in instrument_ids if i not in no_buy]
+    if not category_of:
+        return {i: max(ZERO, target_value[i] - current[i]) for i in buyable}
+
+    # Group instruments by category; instruments without a category form their
+    # own singleton bucket so they keep per-fund behaviour (no magic key that a
+    # real category name could ever collide with).
+    members_by_cat: dict[str, list[int]] = {}
+    solo_buckets: list[list[int]] = []
+    for i in instrument_ids:
+        cat = category_of.get(i)
+        if cat:
+            members_by_cat.setdefault(cat, []).append(i)
+        else:
+            solo_buckets.append([i])
+
+    gap = {i: ZERO for i in buyable}
+    for members in [*members_by_cat.values(), *solo_buckets]:
+        cat_buyable = [m for m in members if m not in no_buy]
+        if not cat_buyable:
+            continue
+        cat_target = sum((target_value[m] for m in members), start=ZERO)
+        cat_current = sum((current[m] for m in members), start=ZERO)
+        cat_gap = max(ZERO, cat_target - cat_current)
+        if cat_gap <= ZERO:
+            continue
+        weight_total = sum((target_value[m] for m in cat_buyable), start=ZERO)
+        for m in cat_buyable:
+            if weight_total > ZERO:
+                share = target_value[m] / weight_total
+            else:
+                share = Decimal(1) / Decimal(len(cat_buyable))
+            gap[m] = cat_gap * share
+    return gap
+
+
 def _plan_buy_only(
     instrument_ids: Sequence[int],
     target_value: Mapping[int, Decimal],
@@ -149,6 +204,7 @@ def _plan_buy_only(
     no_buy: set[int],
     cash_to_invest: Decimal,
     target_weights_pct: Mapping[int, Decimal],
+    category_of: Mapping[int, str] | None = None,
 ) -> dict[int, Decimal]:
     """Buy-only distribution: never sells, and never buys a ``no_buy`` fund.
 
@@ -157,7 +213,7 @@ def _plan_buy_only(
     target weight.
     """
     buyable = [i for i in instrument_ids if i not in no_buy]
-    gap = {i: max(ZERO, target_value[i] - current[i]) for i in buyable}
+    gap = _buy_only_gaps(instrument_ids, target_value, current, no_buy, category_of)
     gap_total = sum(gap.values(), start=ZERO)
     add = {i: ZERO for i in instrument_ids}
 
@@ -217,6 +273,7 @@ def plan_rebalance(
     fractional_decimals: int = 4,
     allow_sell: bool = False,
     no_buy_ids: set[int] | None = None,
+    category_of: Mapping[int, str] | None = None,
 ) -> RebalancePlan:
     """Compute a rebalance plan (buy-only by default).
 
@@ -243,6 +300,14 @@ def plan_rebalance(
         Instruments that still count toward the target percentages but must
         not receive any *new* cash. They are shown as held in the plan. When
         ``allow_sell`` is True they may still be trimmed if over target.
+    category_of
+        Optional ``{instrument_id: category}`` grouping. When given, the
+        buy-only shortfall is computed per category instead of per fund, so a
+        category's whole current value (including ``no_buy`` funds the user
+        holds but does not buy) counts toward its target. An already
+        well-funded category then asks for no fresh cash even when one buyable
+        fund inside it still looks under-weight. Ignored when ``allow_sell`` is
+        True.
 
     Raises
     ------
@@ -267,7 +332,13 @@ def plan_rebalance(
         add = _plan_with_sells(instrument_ids, target_value, current, no_buy)
     else:
         add = _plan_buy_only(
-            instrument_ids, target_value, current, no_buy, cash_to_invest, target_weights_pct
+            instrument_ids,
+            target_value,
+            current,
+            no_buy,
+            cash_to_invest,
+            target_weights_pct,
+            category_of,
         )
 
     rows: list[RebalanceRow] = []
