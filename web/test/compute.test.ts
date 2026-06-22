@@ -5,7 +5,8 @@
 import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 
-import { buildDashboard, buildFetchPlan } from "../src/compute";
+import { buildDashboard, buildFetchPlan, fxTodayDeviationPct } from "../src/compute";
+import type { OverviewView } from "../src/compute";
 import type { FxRates, Quote } from "../src/prices";
 import type { MobileExport } from "../src/types";
 
@@ -823,5 +824,39 @@ describe("compounded total growth vs simple ratio (multi-flow)", () => {
     expect(h.totalGrowthPct!.toNumber()).toBeGreaterThan(0);
     // Compounded growth is a real profit but is NOT the naive gain/cost ratio.
     expect(Math.abs(h.totalGrowthPct!.toNumber() - simpleRatio)).toBeGreaterThan(0.01);
+  });
+});
+
+describe("fxTodayDeviationPct", () => {
+  it("reports the EUR/USD move as a signed fraction vs. the prior close", () => {
+    const o = {
+      fxRateEurUsd: new Decimal("1.1033"),
+      fxRateEurUsdPrev: new Decimal("1.10"),
+    } as unknown as OverviewView;
+    approx(fxTodayDeviationPct(o), (1.1033 - 1.10) / 1.10, 1e-6);
+  });
+
+  it("is null when either rate is unknown or the prior close is non-positive", () => {
+    expect(fxTodayDeviationPct({ fxRateEurUsd: null, fxRateEurUsdPrev: new Decimal("1.1") } as unknown as OverviewView)).toBeNull();
+    expect(fxTodayDeviationPct({ fxRateEurUsd: new Decimal("1.1"), fxRateEurUsdPrev: null } as unknown as OverviewView)).toBeNull();
+    expect(fxTodayDeviationPct({ fxRateEurUsd: new Decimal("1.1"), fxRateEurUsdPrev: new Decimal("0") } as unknown as OverviewView)).toBeNull();
+  });
+});
+
+describe("cost_basis_eur trade-date path", () => {
+  it("uses the exported per-trade-date EUR cost basis when present", () => {
+    const exp = makeExport();
+    // The buy cost 1000 USD but only 800 EUR at the (stronger-dollar) trade date.
+    exp.holdings[0].cost_basis_eur = "800";
+    const m = buildDashboard(exp, quotes, fx, new Date("2024-06-01T12:00:00Z"));
+    const vti = m.holdings.find((h) => h.symbol === "VTI")!;
+    approx(vti.costBasisEur, 800);
+  });
+
+  it("falls back to converting native cost at today's spot when absent", () => {
+    const m = buildDashboard(makeExport(), quotes, fx, new Date("2024-06-01T12:00:00Z"));
+    const vti = m.holdings.find((h) => h.symbol === "VTI")!;
+    // 1000 USD / 1.10 = 909.09 EUR.
+    approx(vti.costBasisEur, 1000 / 1.1, 1e-2);
   });
 });
