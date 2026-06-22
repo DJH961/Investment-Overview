@@ -69,6 +69,22 @@ def previous_trading_day(today: date) -> date:
     return day
 
 
+def trading_days_before(today: date, n: int) -> date:
+    """The weekday that is ``n`` trading days strictly before ``today``.
+
+    ``n == 1`` is exactly :func:`previous_trading_day`; larger ``n`` rolls back
+    further, skipping weekends. Like the rest of this module it ignores exchange
+    holidays, so callers that need to absorb a holiday (which leaves no settled
+    print on a modelled "trading" day) add an extra day of grace on top.
+    """
+    if n <= 0:
+        return today
+    day = today
+    for _ in range(n):
+        day = previous_trading_day(day)
+    return day
+
+
 def regular_session_close(day: date, *, tz: tzinfo | None = None) -> datetime:
     """The NYSE regular-session close (16:00 America/New_York) on ``day``.
 

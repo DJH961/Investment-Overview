@@ -108,6 +108,42 @@ class TestHealthReportAggregation:
         assert stale.severity == "warning"
         assert "VTI" in stale.examples
 
+    def test_price_two_trading_days_back_absorbs_a_holiday(self, session: Session) -> None:
+        # An equity whose newest close is two trading days behind is not flagged:
+        # the extra grace day absorbs a single exchange holiday (which our
+        # weekday-only clock would otherwise read as a missed session and warn on
+        # the morning after a long weekend).
+        from investment_dashboard.domain import market_hours
+
+        instr = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
+        two_back = market_hours.trading_days_before(date.today(), 2)
+        prices_repo.upsert_closes(session, instr.id, {two_back: Decimal("100")})
+        session.commit()
+
+        report = diagnostics_service.check_health(session)
+
+        assert not any(i.key == "prices_stale" for i in report.items)
+
+    def test_mutual_fund_gets_extra_staleness_leeway(self, session: Session) -> None:
+        # A mutual-fund NAV that is three trading days behind is *not* stale —
+        # NAVs publish once a day and routinely land late — while an equity at the
+        # same date would be flagged.
+        from investment_dashboard.domain import market_hours
+
+        fund = instruments_repo.get_or_create(session, symbol="VTSAX", asset_class="mutual_fund")
+        etf = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
+        three_back = market_hours.trading_days_before(date.today(), 3)
+        prices_repo.upsert_closes(session, fund.id, {three_back: Decimal("100")})
+        prices_repo.upsert_closes(session, etf.id, {three_back: Decimal("100")})
+        session.commit()
+
+        report = diagnostics_service.check_health(session)
+
+        stale = next(i for i in report.items if i.key == "prices_stale")
+        # The equity is flagged; the mutual fund is given leeway.
+        assert "VTI" in stale.examples
+        assert "VTSAX" not in stale.examples
+
     def test_missing_fx_leg_is_flagged(self, session: Session) -> None:
         account_id = _account(session, native="USD")
         # A row written before the leg-freeze: net_usd / net_eur are NULL.

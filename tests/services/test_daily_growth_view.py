@@ -34,27 +34,30 @@ def test_no_data_degrades_cleanly() -> None:
     assert cap.combined() == "awaiting two priced days"
 
 
-def test_live_omits_the_clock_and_flags_live() -> None:
+def test_live_says_live_only() -> None:
     cap = _caption()
     assert cap.is_live is True
-    # Live: the clock is dropped (redundant next to "live"); FX trails.
-    assert cap.as_of_text == "as of today"
-    assert cap.combined() == "as of today \u00b7 live \u00b7 $1\u2248\u20ac0.9259"
+    # Live: the single state word "live", no "today" and no clock; FX trails.
+    assert cap.as_of_text == "live"
+    assert cap.updated_text is None
+    assert cap.combined() == "live \u00b7 $1\u2248\u20ac0.9259"
 
 
-def test_today_closed_stamps_the_market_close_time() -> None:
-    # Settled, but today's close is in: stamp when the price is from (the
-    # regular-session close, 16:00 ET -> shown in the display timezone).
+def test_today_closed_says_today_and_stamps_the_market_close_time() -> None:
+    # Settled, but today's close is in: lead with "today"; stamp when the price
+    # is from (the regular-session close, 16:00 ET -> the display timezone).
     cap = _caption(market_open=False)
     assert cap.is_live is False
-    assert cap.as_of_text == "as of 16:00"
+    assert cap.as_of_text == "today"
+    assert cap.updated_text == "as of 16:00"
     assert "live" not in cap.combined()
 
 
 def test_today_closed_close_time_is_in_display_timezone() -> None:
     # A CET user reads the 16:00 ET close as their local 22:00.
     cap = _caption(market_open=False, tz=CET)
-    assert cap.as_of_text == "as of 22:00"
+    assert cap.as_of_text == "today"
+    assert cap.updated_text == "as of 22:00"
 
 
 def test_today_closed_stamps_the_provider_pull_time() -> None:
@@ -64,7 +67,8 @@ def test_today_closed_stamps_the_provider_pull_time() -> None:
     pulled = datetime(2024, 6, 24, 20, 7)  # 20:07 UTC == 16:07 ET (EDT)
     cap = _caption(market_open=False, price_observed_at=pulled)
     assert cap.is_live is False
-    assert cap.as_of_text == "as of 16:07"
+    assert cap.as_of_text == "today"
+    assert cap.updated_text == "as of 16:07"
     assert "live" not in cap.combined()
 
 
@@ -72,56 +76,63 @@ def test_today_closed_pull_time_is_in_display_timezone() -> None:
     # A CET user reads the same 20:07 UTC pull as their local 22:07.
     pulled = datetime(2024, 6, 24, 20, 7)
     cap = _caption(market_open=False, tz=CET, price_observed_at=pulled)
-    assert cap.as_of_text == "as of 22:07"
+    assert cap.as_of_text == "today"
+    assert cap.updated_text == "as of 22:07"
 
 
 def test_today_closed_falls_back_to_session_close_without_pull_time() -> None:
     # No saved pull time -> fall back to the modelled regular-session close.
     cap = _caption(market_open=False, price_observed_at=None)
-    assert cap.as_of_text == "as of 16:00"
+    assert cap.as_of_text == "today"
+    assert cap.updated_text == "as of 16:00"
 
 
-def test_live_ignores_pull_time_and_omits_the_clock() -> None:
+def test_live_ignores_pull_time_and_says_live() -> None:
     pulled = datetime(2024, 6, 24, 19, 30)
     cap = _caption(price_observed_at=pulled)
     assert cap.is_live is True
-    assert cap.as_of_text == "as of today"
+    assert cap.as_of_text == "live"
+    assert cap.updated_text is None
 
 
 def test_today_closed_prefers_market_time_and_trails_pull_time() -> None:
-    # Settled, today's close is in: the figure is dated by the *exchange* market
-    # time (when the price is from), with our pull instant trailing as "updated".
+    # Settled, today's close is in: lead with "today", dated by the *exchange*
+    # market time (when the price is from), with our pull instant trailing as
+    # "updated".
     market = datetime(2024, 6, 24, 19, 59)  # 19:59 UTC == 21:59 CET
     pulled = datetime(2024, 6, 24, 20, 16)  # 20:16 UTC == 22:16 CET
     cap = _caption(market_open=False, tz=CET, price_market_at=market, price_observed_at=pulled)
     assert cap.is_live is False
-    assert cap.as_of_text == "as of 21:59"
-    assert cap.updated_text == "updated 22:16"
-    assert cap.combined() == "as of 21:59 \u00b7 updated 22:16 \u00b7 $1\u2248\u20ac0.9259"
+    assert cap.as_of_text == "today"
+    assert cap.updated_text == "as of 21:59 \u00b7 updated 22:16"
+    assert (
+        cap.combined()
+        == "today \u00b7 as of 21:59 \u00b7 updated 22:16 \u00b7 $1\u2248\u20ac0.9259"
+    )
 
 
 def test_today_closed_market_time_without_pull_time_has_no_updated() -> None:
     market = datetime(2024, 6, 24, 19, 59)
     cap = _caption(market_open=False, tz=CET, price_market_at=market, price_observed_at=None)
-    assert cap.as_of_text == "as of 21:59"
-    assert cap.updated_text is None
+    assert cap.as_of_text == "today"
+    assert cap.updated_text == "as of 21:59"
     assert "updated" not in cap.combined()
 
 
 def test_today_closed_falls_back_to_pull_time_without_market_time() -> None:
-    # No provider market time -> keep the prior behaviour: date by the pull
-    # instant, with no separate "updated" stamp (it would echo the "as of").
+    # No provider market time -> date by the pull instant, with no separate
+    # "updated" stamp (it would echo the "as of").
     pulled = datetime(2024, 6, 24, 20, 7)
     cap = _caption(market_open=False, tz=CET, price_market_at=None, price_observed_at=pulled)
-    assert cap.as_of_text == "as of 22:07"
-    assert cap.updated_text is None
+    assert cap.as_of_text == "today"
+    assert cap.updated_text == "as of 22:07"
 
 
-def test_live_ignores_market_time_and_omits_the_clock() -> None:
+def test_live_ignores_market_time_and_says_live() -> None:
     market = datetime(2024, 6, 24, 15, 59)
     cap = _caption(price_market_at=market, price_observed_at=datetime(2024, 6, 24, 16, 1))
     assert cap.is_live is True
-    assert cap.as_of_text == "as of today"
+    assert cap.as_of_text == "live"
     assert cap.updated_text is None
 
 
@@ -165,13 +176,14 @@ def test_fx_percentage_omitted_without_prior_mark() -> None:
 def test_fx_detail_omitted_when_no_mark() -> None:
     cap = _caption(fx_eur_usd=None)
     assert cap.fx_text is None
-    assert cap.combined() == "as of today \u00b7 live"
+    assert cap.combined() == "live"
     # A zero/negative mark is treated as missing, too.
     assert _caption(fx_eur_usd=Decimal("0")).fx_text is None
 
 
-def test_combined_appends_live_only_when_live() -> None:
+def test_combined_leads_with_live_only_when_live() -> None:
     live = _caption()
-    assert " \u00b7 live \u00b7 " in live.combined()
+    assert live.combined().startswith("live \u00b7 ")
     closed = _caption(market_open=False)
     assert "live" not in closed.combined()
+    assert closed.combined().startswith("today \u00b7 ")

@@ -175,6 +175,35 @@ def build_intraday_value_series(
     return points
 
 
+def previous_session_close_value(
+    session: Session,
+    *,
+    currency: str,
+    now: datetime | None = None,
+) -> Decimal | None:
+    """Settled portfolio value at the close of the session *before* the "Day" one.
+
+    This is the reference the Overview "1 Day" chart marks so the user can see
+    whether the live value is above or below where the portfolio last *closed* —
+    a positive day that drifts down from the open can still leave the value above
+    the prior close, which a bare intraday curve hides.
+
+    Returns the value in ``currency`` (display) for the trading day immediately
+    before the session shown by the "Day" range, or ``None`` when no settled
+    value can be computed (e.g. a brand-new portfolio).
+    """
+    from investment_dashboard.domain.market_hours import previous_trading_day  # noqa: PLC0415
+
+    now = now or datetime.now(UTC)
+    session_date = intraday_snapshots_service.last_session_date(now)
+    prev_date = previous_trading_day(session_date)
+    try:
+        value = snapshots_service.get_or_compute_in_currency(session, prev_date, currency)
+    except Exception:  # pragma: no cover - defensive: keep the chart renderable
+        return None
+    return value if value != 0 else None
+
+
 @dataclass(frozen=True)
 class TreemapDatum:
     """One slice of the allocation treemap."""

@@ -12,6 +12,52 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [3.6.6] — 2026-06-22
+
+The Periods tab is reorganised into a two-column layout that keeps the year
+groups and the contributions + projection stack visually distinct.
+
+### Changed
+
+- **Periods tab restructured into a two-column layout.** The left column holds
+  the per-year groups while the right column stacks the recent contributions and
+  an independent projection. On mobile each column collapses to a single
+  vertical stack so the tab stays phone-first.
+
+## [3.6.5] — 2026-06-22
+
+### Fixed
+
+- **Patch release.** Routine bug-fix version bump; no functional changes to
+  existing behavior.
+
+## [3.6.4] — 2026-06-22
+
+Keep the new "1 Day" close-aware chart strictly colourblind-safe.
+
+### Fixed
+
+- **"1 Day" chart honours the red-green colourblind-safe palette.** The
+  previous-close-aware intraday curve added in 3.6.x is now guaranteed to use
+  only the Wong colourblind-safe palette and to never rely on colour alone:
+  - The "below previous close" tint used a hard-coded vermillion fill
+    (`rgba(213,94,0,…)`) that did not match the documented loss **orange**
+    (`#E69F00`); the fill now matches `LOSS_COLOR` exactly
+    (`rgba(230,159,0,…)`), so the curve is **blue** above yesterday's close and
+    **orange** below — never red/green.
+  - The previous-close reference line was drawn in the loss orange (implying a
+    direction of its own); it is now a **neutral muted slate**, leaving the
+    gain/loss read to the curve alone.
+  - Direction is now encoded **redundantly, not by colour alone**: the latest
+    point is marked with an up/down **triangle** (▲/▼) — a shape cue that
+    survives any colour-vision deficiency — in addition to the curve's position
+    versus the dashed reference line.
+- **Allocation Calculator contribution bar drops its green fallback.** The
+  "added contribution" slice resolved to the colourblind-safe `--inv-gain` blue
+  in-app, but its hard-coded fallback colour was green (`#21ba45`); the fallback
+  is now the Wong gain blue (`#0072B2`) so the bar stays colourblind-safe even
+  when the stylesheet variable is unavailable.
+
 ## [3.6.3] — 2026-06-22
 
 The settled-day caption is dated by the market, not by our fetch.
