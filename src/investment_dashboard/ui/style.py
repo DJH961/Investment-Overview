@@ -145,8 +145,34 @@ html, body {{
   animation: inv-refresh-spin 0.9s linear infinite;
 }}
 @keyframes inv-refresh-spin {{ to {{ transform: rotate(360deg); }} }}
+/* Thin top-of-page bar that pulses while an automatic price refresh runs, so
+   the auto-update is visible at the very top, not only in the header chip. */
+#inv-refreshbar {{
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg,
+    transparent, var(--inv-accent), var(--inv-accent), transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+  z-index: 100003;
+}}
+#inv-refreshbar.is-active {{
+  opacity: 1;
+  animation: inv-refreshbar-slide 1.1s linear infinite;
+}}
+@keyframes inv-refreshbar-slide {{
+  0% {{ background-position: -40% 0; }}
+  100% {{ background-position: 140% 0; }}
+}}
 @media (prefers-reduced-motion: reduce) {{
   .inv-refresh-icon.inv-refresh-spin {{ animation: none; }}
+  #inv-refreshbar.is-active {{ animation: none; }}
 }}
 
 /* ------------------------------------------------------------------ */
@@ -256,6 +282,34 @@ html, body {{
   grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
   gap: 1rem;
   align-items: stretch;
+}}
+/* Small caption that introduces a grouped band of KPI tiles (Analytics risk
+   groups). Adds vertical rhythm between the concept groups. */
+.inv-kpi-group-title {{
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--inv-muted);
+  margin: 1.25rem 0 0.5rem 0;
+}}
+.inv-kpi-group-title:first-child {{
+  margin-top: 0;
+}}
+/* One-line variant: lay every card in a single shrink-to-fit row (used by the
+   Holdings "Portfolio shape" strip so a lone card can't fall to a 2nd row).
+   Falls back to wrapping on narrow desktops. */
+.inv-kpi-grid--oneline {{
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+}}
+@media (max-width: 60rem) {{
+  .inv-kpi-grid--oneline {{
+    grid-auto-flow: row;
+    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+    grid-auto-columns: auto;
+  }}
 }}
 .inv-kpi {{
   background: var(--inv-surface) !important;
@@ -583,6 +637,21 @@ html, body {{
   letter-spacing: 0.04em;
   text-transform: uppercase;
   font-size: 12px;
+}}
+/* The per-row "edit" action cell: a centred pencil that reads as a button. */
+.ag-theme-alpine .inv-edit-cell {{
+  cursor: pointer;
+  text-align: center;
+  font-size: 15px;
+  user-select: none;
+}}
+.ag-theme-alpine .inv-edit-cell:hover {{
+  background: var(--inv-accent-soft);
+}}
+/* A touch more breathing room in grid cells so numbers/labels aren't clipped. */
+.ag-theme-alpine .ag-cell {{
+  padding-left: 14px;
+  padding-right: 14px;
 }}
 /* Let long column titles wrap onto two lines (paired with the grids'
    ``wrapHeaderText`` / ``autoHeaderHeight`` options) instead of being clipped

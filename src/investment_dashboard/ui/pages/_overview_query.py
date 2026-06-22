@@ -153,6 +153,8 @@ class InstrumentMetrics:
     xirr_usd: Decimal | None = None
     ytd_growth_eur: Decimal | None = None
     ytd_growth_usd: Decimal | None = None
+    mtd_growth_eur: Decimal | None = None
+    mtd_growth_usd: Decimal | None = None
     daily_growth_eur: Decimal | None = None
     daily_growth_usd: Decimal | None = None
 
@@ -210,6 +212,7 @@ def compute_instrument_metrics(  # noqa: PLR0915
     today_rate = lookup_rate_with_forward_fill(eur_to_usd, as_of)
 
     year_start = date(as_of.year, 1, 1)
+    month_start = date(as_of.year, as_of.month, 1)
     eur_flows, usd_flows = build_instrument_cashflows(session, as_of=as_of)
     cost_eur: dict[int, Decimal] = {}
     cost_usd: dict[int, Decimal] = {}
@@ -220,6 +223,8 @@ def compute_instrument_metrics(  # noqa: PLR0915
     div_usd: dict[int, Decimal] = {}
     ytd_invested_eur: dict[int, Decimal] = {}
     ytd_invested_usd: dict[int, Decimal] = {}
+    mtd_invested_eur: dict[int, Decimal] = {}
+    mtd_invested_usd: dict[int, Decimal] = {}
     # Cash-dividend legs that were immediately reinvested must not be counted
     # as income (already captured as cost basis + shares via the reinvest
     # leg), otherwise growth double-counts them.
@@ -277,6 +282,12 @@ def compute_instrument_metrics(  # noqa: PLR0915
         }:
             ytd_invested_eur[iid] = ytd_invested_eur.get(iid, ZERO) - eur
             ytd_invested_usd[iid] = ytd_invested_usd.get(iid, ZERO) - usd
+        if t.date >= month_start and kind in {
+            TransactionKind.BUY.value,
+            TransactionKind.SELL.value,
+        }:
+            mtd_invested_eur[iid] = mtd_invested_eur.get(iid, ZERO) - eur
+            mtd_invested_usd[iid] = mtd_invested_usd.get(iid, ZERO) - usd
 
     # Start-of-year value per instrument in EUR (best-effort, for YTD growth);
     # USD parallel uses the FX rate on the first of the year. Reuse the ledger
@@ -286,6 +297,12 @@ def compute_instrument_metrics(  # noqa: PLR0915
     start_value_eur: dict[int, Decimal] = {
         p.instrument.id: p.current_value_eur
         for p in compute_positions(session, as_of=year_start, transactions=txns)
+    }
+    # Start-of-month value per instrument (for MTD growth), same approach.
+    fx_month_start = lookup_rate_with_forward_fill(eur_to_usd, month_start) or today_rate
+    month_start_value_eur: dict[int, Decimal] = {
+        p.instrument.id: p.current_value_eur
+        for p in compute_positions(session, as_of=month_start, transactions=txns)
     }
 
     out: dict[int, InstrumentMetrics] = {}
@@ -337,6 +354,22 @@ def compute_instrument_metrics(  # noqa: PLR0915
             if (sv_usd is not None and cv_usd is not None)
             else None
         )
+        msv_eur = month_start_value_eur.get(iid, ZERO)
+        msv_usd = msv_eur * fx_month_start if fx_month_start not in (None, 0) else None
+        mtd_eur = _instrument_ytd_growth(
+            start_value=msv_eur,
+            current_value=cv_eur,
+            net_invested=mtd_invested_eur.get(iid, ZERO),
+        )
+        mtd_usd = (
+            _instrument_ytd_growth(
+                start_value=msv_usd,
+                current_value=cv_usd,
+                net_invested=mtd_invested_usd.get(iid, ZERO),
+            )
+            if (msv_usd is not None and cv_usd is not None)
+            else None
+        )
         eff_name = p.effective.name if p.effective is not None else p.instrument.name
         eff_class = p.effective.asset_class if p.effective is not None else p.instrument.asset_class
         is_mm = is_money_market(p.instrument.symbol, asset_class=eff_class, name=eff_name)
@@ -372,6 +405,8 @@ def compute_instrument_metrics(  # noqa: PLR0915
             xirr_usd=xirr_usd,
             ytd_growth_eur=ytd_eur,
             ytd_growth_usd=ytd_usd,
+            mtd_growth_eur=mtd_eur,
+            mtd_growth_usd=mtd_usd,
             daily_growth_eur=daily_eur,
             daily_growth_usd=daily_usd,
         )
@@ -565,6 +600,7 @@ def position_rows(
             tg_eur, tg_usd = im.total_growth_eur, im.total_growth_usd
             xirr_eur, xirr_usd = im.xirr_eur, im.xirr_usd
             ytd_eur, ytd_usd = im.ytd_growth_eur, im.ytd_growth_usd
+            mtd_eur, mtd_usd = im.mtd_growth_eur, im.mtd_growth_usd
             daily_eur, daily_usd = im.daily_growth_eur, im.daily_growth_usd
             ter = im.expense_ratio
         else:
@@ -576,6 +612,7 @@ def position_rows(
             tg_eur = (g_eur / cb_eur) if (g_eur is not None and cb_eur) else None
             tg_usd = (g_usd / cb_usd) if (g_usd is not None and cb_usd) else None
             xirr_eur = xirr_usd = ytd_eur = ytd_usd = daily_eur = daily_usd = None
+            mtd_eur = mtd_usd = None
             ter = None
         eff = p.effective
         fr = fresh.get(p.instrument.id)
@@ -617,6 +654,8 @@ def position_rows(
                 "xirr_usd_signed": _signed(xirr_usd),
                 "ytd_eur_signed": _signed(ytd_eur),
                 "ytd_usd_signed": _signed(ytd_usd),
+                "mtd_eur_signed": _signed(mtd_eur),
+                "mtd_usd_signed": _signed(mtd_usd),
                 "daily_eur_signed": _signed(daily_eur),
                 "daily_usd_signed": _signed(daily_usd),
                 # Portfolio weight (this holding's EUR value ÷ the total of all

@@ -456,10 +456,15 @@ def aggregate(  # noqa: PLR0912, PLR0915
     # Pad the monthly grid so every calendar month between January of the
     # first active year and the latest active month exists as a (possibly
     # empty) bucket — the user's "add empty Jan/Feb 2023" request, and the
-    # prerequisite for one-year-per-page pagination.
+    # prerequisite for one-year-per-page pagination. We also always extend the
+    # grid up to the *current* month so the in-progress month is shown with its
+    # live month-to-date growth, even when it has no transactions yet.
+    today = today or date.today()
     if fill_gaps and monthly and buckets:
         labels_sorted = sorted(buckets)
-        for label in _month_label_range(labels_sorted[0], labels_sorted[-1]):
+        current_label = _period_key(today, monthly=True)
+        last_label = max(labels_sorted[-1], current_label)
+        for label in _month_label_range(labels_sorted[0], last_label):
             buckets.setdefault(label, {"contrib": ZERO, "div": ZERO, "int": ZERO})
     # Mirror every (possibly padded) label into the display buckets so the
     # render layer sees a display entry for each row.
@@ -467,7 +472,6 @@ def aggregate(  # noqa: PLR0912, PLR0915
         for label in buckets:
             display_buckets.setdefault(label, {"contrib": ZERO, "div": ZERO, "int": ZERO})
 
-    today = today or date.today()
     closing_by_label: dict[str, Decimal] = {}
     opening_by_label: dict[str, Decimal] = {}
     growth_by_label: dict[str, Decimal | None] = {}

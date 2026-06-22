@@ -9,6 +9,8 @@ that bundle alone. Nothing here mutates the DB.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from decimal import Decimal
 
 from nicegui import ui
@@ -58,6 +60,19 @@ def _fmt_ratio(value: Decimal | None) -> str:
     return f"{value:,.2f}"
 
 
+@contextmanager
+def _kpi_group(title: str) -> Iterator[None]:
+    """A captioned, uniform-width grid of KPI cards.
+
+    Replaces the old ragged ``flex-wrap`` rows: every card in the group shares
+    one column track (``inv-kpi-grid``), so the risk tiles line up in tidy
+    columns instead of a jumble of mismatched sizes.
+    """
+    ui.html(f'<div class="inv-kpi-group-title">{title}</div>')
+    with ui.element("div").classes("inv-kpi-grid w-full"):
+        yield
+
+
 def _curve_figure(bundle: AnalyticsBundle):  # type: ignore[no-untyped-def]
     """Equity curve + cumulative-contributions + (rebased) benchmark overlay."""
     import plotly.graph_objects as go  # noqa: PLC0415
@@ -87,15 +102,20 @@ def _curve_figure(bundle: AnalyticsBundle):  # type: ignore[no-untyped-def]
             line={"width": 2.4},
         )
     )
-    fig.add_trace(
-        go.Scatter(
-            x=dates,
-            y=contribs,
-            mode="lines",
-            name="Cumulative contributions",
-            line={"width": 1.5, "dash": "dash"},
+    # Only draw the cumulative-contributions overlay when it actually carries
+    # signal. If no deposits/withdrawals are logged it is flat at zero, which
+    # previously rendered as a confusing flat line pinned to the bottom of the
+    # chart — drop it in that case rather than showing a meaningless baseline.
+    if contribs and (max(contribs) - min(contribs) > 1e-6 or abs(contribs[-1]) > 1e-6):
+        fig.add_trace(
+            go.Scatter(
+                x=dates,
+                y=contribs,
+                mode="lines",
+                name="Cumulative contributions",
+                line={"width": 1.5, "dash": "dash"},
+            )
         )
-    )
     # Rebase the benchmark to the first non-zero portfolio value so the
     # two lines start at the same point and the overlay reads as a
     # "what if I'd bought VT instead?" curve.
@@ -118,12 +138,28 @@ def _curve_figure(bundle: AnalyticsBundle):  # type: ignore[no-untyped-def]
                     line={"width": 1.5, "dash": "dot"},
                 )
             )
-    fig.update_yaxes(tickprefix=currency_symbol(bundle.currency), tickformat=".3s")
+    fig.update_xaxes(
+        title_text="Date",
+        showgrid=True,
+        gridcolor="rgba(128,128,128,0.15)",
+        showline=True,
+        linecolor="rgba(128,128,128,0.4)",
+    )
+    fig.update_yaxes(
+        title_text=f"Value ({bundle.currency})",
+        tickprefix=currency_symbol(bundle.currency),
+        tickformat=".3s",
+        showgrid=True,
+        gridcolor="rgba(128,128,128,0.15)",
+        showline=True,
+        linecolor="rgba(128,128,128,0.4)",
+    )
     fig.update_layout(
         title=f"Equity curve ({bundle.currency})",
         template="colorblind_modern",
-        margin={"l": 0, "r": 0, "t": 40, "b": 0},
+        margin={"l": 72, "r": 16, "t": 48, "b": 48},
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02},
+        hovermode="x unified",
     )
     return fig
 
@@ -134,7 +170,7 @@ def _render_kpis(
     display_ccy: str,
     metrics=None,  # type: ignore[no-untyped-def]
 ) -> None:
-    """Two rows of KPI cards — returns / drawdown / shape."""
+    """KPI cards grouped by concept into uniform-width grids."""
     # v2.5 — Total Growth headline (dual currency) tops every page that
     # reports performance.
     if metrics is not None:
@@ -151,7 +187,7 @@ def _render_kpis(
                 ),
                 tooltip_key="total_growth_compounded",
             )
-    with ui.row().classes("gap-md flex-wrap"):
+    with _kpi_group("Returns"):
         kpi_card("CAGR", fmt_pct(bundle.cagr), tooltip_key="cagr")
         kpi_card("TWR", fmt_pct(bundle.twr), tooltip_key="twr")
         kpi_card(
@@ -163,6 +199,7 @@ def _render_kpis(
             ),
             tooltip_key="xirr",
         )
+    with _kpi_group("Risk & volatility"):
         kpi_card(
             "Volatility",
             fmt_pct(bundle.volatility),
@@ -182,7 +219,9 @@ def _render_kpis(
             color=color_for_signed(float(bundle.sortino or 0)),
             arrow=arrow_for_signed(float(bundle.sortino or 0)),
         )
-    with ui.row().classes("gap-md flex-wrap"):
+        kpi_card("Skew", _fmt_ratio(bundle.skew), tooltip_key="skew")
+        kpi_card("Excess Kurtosis", _fmt_ratio(bundle.kurtosis), tooltip_key="kurtosis")
+    with _kpi_group("Drawdown & tail risk"):
         kpi_card(
             "Max Drawdown",
             fmt_pct(bundle.max_drawdown),
@@ -193,9 +232,7 @@ def _render_kpis(
         kpi_card("Ulcer Index", fmt_pct(bundle.ulcer), tooltip_key="ulcer")
         kpi_card("VaR (95%)", fmt_pct(bundle.var_95), tooltip_key="var")
         kpi_card("CVaR (95%)", fmt_pct(bundle.cvar_95), tooltip_key="cvar")
-        kpi_card("Skew", _fmt_ratio(bundle.skew), tooltip_key="skew")
-        kpi_card("Excess Kurtosis", _fmt_ratio(bundle.kurtosis), tooltip_key="kurtosis")
-    with ui.row().classes("gap-md flex-wrap"):
+    with _kpi_group("Benchmark & market"):
         kpi_card("Beta", _fmt_ratio(bundle.beta), tooltip_key="beta")
         kpi_card("Alpha", fmt_pct(bundle.alpha), tooltip_key="alpha")
         rf_sub = (
@@ -309,6 +346,11 @@ def register() -> None:
 
                 with section("Per-instrument attribution"):
                     rows = _attribution_rows(bundle, rate=attribution_rate)
+                    ui.label(
+                        "How each holding contributed to the portfolio return over "
+                        f"the selected {bundle.start.isoformat()} → {bundle.as_of.isoformat()} "
+                        "window — the per-instrument breakdown behind the totals above.",
+                    ).classes("text-caption opacity-70 q-mb-sm")
                     if not rows:
                         empty_state(
                             "insights",
@@ -361,6 +403,6 @@ def register() -> None:
                                     "minWidth": 130,
                                 },
                             },
-                        ).classes("w-full")
+                        ).classes("ag-theme-alpine w-full")
 
             deferred(_build)

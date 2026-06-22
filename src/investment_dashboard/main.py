@@ -35,11 +35,24 @@ from investment_dashboard.ui.pages import (
 
 log = logging.getLogger(__name__)
 
-#: Background refresh cadence (seconds). Each tick only hits yfinance for
-#: instruments whose per-asset-class TTL has expired (see
-#: ``services.prices_service.REFRESH_TTL_SECONDS``), so this can be aggressive
-#: without spamming the network.
+#: Fallback background refresh cadence (seconds), used only when the persisted
+#: value can't be read. The live cadence is now user-editable in Settings —
+#: see :mod:`investment_dashboard.services.auto_refresh`. Each tick only hits
+#: the network for instruments whose per-asset-class TTL has expired
+#: (``services.prices_service.REFRESH_TTL_SECONDS``), so it stays cheap.
 _LIVE_REFRESH_INTERVAL_SECONDS = 60.0
+
+#: Handle to the live-refresh ``app.timer`` (boxed in a dict so Settings can
+#: re-arm its cadence at runtime without a module-level ``global``). NiceGUI
+#: timers expose a bindable ``interval``.
+_live_refresh_timer: dict[str, object] = {"timer": None}
+
+
+def set_live_refresh_interval(seconds: float) -> None:
+    """Update the running live-refresh timer's cadence (called from Settings)."""
+    timer = _live_refresh_timer["timer"]
+    if timer is not None:
+        timer.interval = seconds  # type: ignore[attr-defined]
 
 
 def _register_pages() -> None:
@@ -68,35 +81,10 @@ def _register_pages() -> None:
 
 
 def _live_refresh_tick() -> None:  # pragma: no cover - background loop
-    """Refresh due-by-TTL prices once. Logs and swallows any error."""
-    from investment_dashboard.services import refresh_status  # noqa: PLC0415
+    """Refresh due-by-TTL prices once (delegates to the shared runner)."""
+    from investment_dashboard.services import auto_refresh  # noqa: PLC0415
 
-    refresh_status.begin("Live price refresh")
-    updated = False
-    try:
-        from investment_dashboard.db import session_scope  # noqa: PLC0415
-        from investment_dashboard.services.prices_service import (  # noqa: PLC0415
-            refresh_due_prices,
-        )
-
-        with session_scope() as session:
-            refreshed = refresh_due_prices(session)
-        updated = bool(refreshed)
-        if refreshed:
-            log.debug("live refresh updated %s", list(refreshed.keys()))
-    except Exception as exc:
-        # The explicit record_error below gives this a friendly label, so skip
-        # the logging handler's mirror to avoid a duplicate (uglier) entry.
-        log.warning(
-            "live price refresh tick failed", exc_info=True, extra={"runtime_status_skip": True}
-        )
-        # Make the failure visible in-app (toast + Data Health), not just in the
-        # log — the local app now runs with no console window to watch.
-        from investment_dashboard.services import runtime_status  # noqa: PLC0415
-
-        runtime_status.record_error("Live price refresh", f"{type(exc).__name__}: {exc}")
-    finally:
-        refresh_status.finish("Live price refresh", updated=updated)
+    auto_refresh.tick_refresh("Live price refresh")
 
 
 def _run_deferred_network_refresh_guarded() -> None:  # pragma: no cover - thread body
@@ -195,8 +183,18 @@ def run() -> None:
     # client-independent, server-side timer. ``ui.timer`` would create a UI
     # element on the auto-index page in the global scope, which NiceGUI rejects
     # alongside ``@ui.page`` routes ("ui.page cannot be used ... in the global
-    # scope").
-    app.timer(_LIVE_REFRESH_INTERVAL_SECONDS, _live_refresh_tick)
+    # scope"). The cadence is user-editable (Settings → auto-update interval);
+    # the handle lets Settings re-arm it live via ``set_live_refresh_interval``.
+    interval = float(_LIVE_REFRESH_INTERVAL_SECONDS)
+    try:
+        from investment_dashboard.db import session_scope  # noqa: PLC0415
+        from investment_dashboard.services import auto_refresh  # noqa: PLC0415
+
+        with session_scope() as session:
+            interval = float(auto_refresh.get_interval_seconds(session))
+    except Exception:  # pragma: no cover - defensive: fall back to the default
+        log.debug("could not read auto-update interval; using default", exc_info=True)
+    _live_refresh_timer["timer"] = app.timer(interval, _live_refresh_tick)
     ui.run(
         host=settings.host,
         port=settings.port,

@@ -66,3 +66,24 @@ def test_refresh_due_prices_no_due_returns_empty(session: Session) -> None:
     session.flush()
     # No yfinance call should happen because nothing is due.
     assert prices_service.refresh_due_prices(session, now=now) == {}
+
+
+def test_refresh_due_prices_stamps_even_without_new_closes(session: Session, monkeypatch) -> None:
+    """The per-symbol 'updated' time must advance whenever we successfully query
+    the feed — even when it returns no new closes (after hours / weekends) —
+    otherwise the overview's last-updated time freezes (the '7:51' bug)."""
+    instr = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
+    stale = _utc_naive(datetime.now(UTC)) - timedelta(hours=1)
+    price_cache_repo.upsert_last_refreshed_at(session, instr.id, stale)
+    session.flush()
+
+    # Feed responds successfully but has nothing new for this symbol.
+    monkeypatch.setattr(prices_service, "fetch_closes", lambda *a, **k: {"VTI": {}})
+
+    now = _utc_naive(datetime.now(UTC))
+    result = prices_service.refresh_due_prices(session, now=now)
+
+    # Zero rows written, but the refresh timestamp advanced to ``now``.
+    assert result == {"VTI": 0}
+    stamped = price_cache_repo.get_last_refreshed_at_map(session, [instr.id])
+    assert stamped[instr.id] == now
