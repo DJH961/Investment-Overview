@@ -14,8 +14,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [3.6.7] — 2026-06-22
 
-The live web overview shows the FX rate in EUR display too — inverted — rather
-than hiding it.
+Live web companion: a cleaner, currency-correct overview hero, a manual
+"refresh now" that actually pulls fresh prices, an honest "up to date" signal,
+a configurable auto-refresh cadence, and a NAV cache that stops chasing prices
+that cannot change.
+
+### Added
+
+- **Manual Refresh forces a fresh market pull.** Tapping Refresh now re-fetches
+  market (non-NAV) symbols even when their cached quote is still inside its
+  freshness window — the "pull new prices now" path. NAV holdings (mutual
+  funds / money-market) are deliberately exempt, since their once-a-day NAV
+  cannot have changed, so a tap never wastes credits chasing it. A credit
+  reserve guards the free tier: below 10% of the day's budget a tap falls back
+  to the normal cache-respecting refresh (with a toast) rather than spending the
+  last of the budget at once. A descriptive summary toast reports the outcome
+  (e.g. how many holdings were freshly pulled).
+- **Configurable auto-refresh cadence.** Settings gains an "Auto-refresh
+  (minutes)" field (default 5, max 120) controlling the steady-state gap between
+  automatic live refreshes once everything is fresh. An off-cycle manual tap
+  also pushes the next automatic refresh out by this interval.
 
 ### Changed
 
@@ -26,6 +44,24 @@ than hiding it.
   shows `EUR/USD`). The freshness line's FX rate is quoted from the same side so
   the two never disagree. The intraday FX profit/loss money line stays out of
   the hero — that slice lives only in the Risk tab's Currency panel.
+- **"Today" growth is currency-correct.** The hero's daily move, the "Today"
+  return segment, and each holding's daily change now follow the display
+  currency (EUR vs USD) instead of rescaling one from the other, so the figure
+  changes honestly with the currency toggle — matching the desktop's
+  per-currency daily growth.
+- **Cleaner value-basis chip on the hero.** The old "as of …" caption is
+  replaced by a compact top-right chip that reads "Live" while the NYSE session
+  is open and we hold a same-day quote, "Today" when the freshest price is from
+  today, or the date it is from otherwise — so a settled close, weekend, or
+  holiday value reads honestly as the day it applies to.
+- **"Up to date" is only claimed when data was actually just pulled.** The
+  live-coverage summary now asserts holdings are up to date only when a network
+  pull landed within the last 60 seconds; a refresh served entirely from cache
+  no longer dresses old prices up as current.
+- **NAV freshness window widened to 24 hours (was 12).** Outside the evening
+  publish window a fund's NAV is never re-fetched until its cached value is more
+  than a day old — there is no new price to chase in between, so the longer
+  window saves free-tier credits without hiding any update.
 
 ## [3.6.6] — 2026-06-22
 
