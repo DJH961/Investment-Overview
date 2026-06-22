@@ -664,6 +664,36 @@ describe("buildFetchPlan", () => {
     expect(plan.map((e) => e.symbol)).not.toContain("MMF");
   });
 
+  it("excludes money-market funds even when they carry the mutual_fund class (VMFXX)", () => {
+    // The desktop keeps settlement funds in the broad mutual_fund class, so the
+    // asset_class alone won't exclude them; they must be caught by ticker/flag.
+    const data = planExport();
+    data.holdings.push({
+      ...data.holdings[0],
+      symbol: "VMFXX",
+      price_symbol: "VMFXX",
+      asset_class: "mutual_fund",
+      price_type: "nav",
+    });
+    data.period_openings.holdings.VMFXX = { month_start_value_eur: "8000", year_start_value_eur: "8000" };
+    const byTicker = buildFetchPlan(data, new Set(["mutual_fund"]));
+    expect(byTicker.map((e) => e.symbol)).not.toContain("VMFXX");
+
+    // And via the explicit export flag (e.g. a renamed/unknown settlement fund).
+    const flagged = planExport();
+    flagged.holdings.push({
+      ...flagged.holdings[0],
+      symbol: "CASHX",
+      price_symbol: "CASHX",
+      asset_class: "mutual_fund",
+      price_type: "nav",
+      is_money_market: true,
+    });
+    flagged.period_openings.holdings.CASHX = { month_start_value_eur: "8000", year_start_value_eur: "8000" };
+    const flagPlan = buildFetchPlan(flagged, new Set(["mutual_fund"]));
+    expect(flagPlan.map((e) => e.symbol)).not.toContain("CASHX");
+  });
+
   it("aggregates size across holdings sharing one ticker and prefers market priority", () => {
     const data = planExport();
     // A second holding on BIG_FUND's ticker, but market-priced and large.
@@ -858,5 +888,38 @@ describe("cost_basis_eur trade-date path", () => {
     const vti = m.holdings.find((h) => h.symbol === "VTI")!;
     // 1000 USD / 1.10 = 909.09 EUR.
     approx(vti.costBasisEur, 1000 / 1.1, 1e-2);
+  });
+});
+
+describe("EUR vs USD growth genuinely diverge (regression for identical figures)", () => {
+  // The desktop exports per-trade-date cost bases AND per-trade-date cashflow
+  // legs in BOTH currencies. When the historical FX rate differs from today's
+  // spot the per-currency growth numbers must NOT collapse to one value.
+  // Build a holding bought when the dollar was much weaker: 900 EUR == 1100 USD
+  // at the trade date (rate 1.222), today's spot is 1.10.
+  function divergentExport(): MobileExport {
+    const exp = makeExport();
+    exp.holdings[0].cashflows = [{ date: "2023-01-01", amount: "-900", amount_usd: "-1100" }];
+    exp.holdings[0].cost_basis_eur = "900";
+    exp.holdings[0].cost_basis_usd = "1100";
+    return exp;
+  }
+
+  it("per-holding total growth differs between EUR and USD", () => {
+    const m = buildDashboard(divergentExport(), quotes, fx, new Date("2024-06-01T12:00:00Z"));
+    const vti = m.holdings.find((h) => h.symbol === "VTI")!;
+    expect(vti.totalGrowthPct).not.toBeNull();
+    expect(vti.totalGrowthPctUsd).not.toBeNull();
+    expect(
+      Math.abs(vti.totalGrowthPct!.toNumber() - vti.totalGrowthPctUsd!.toNumber()),
+    ).toBeGreaterThan(0.01);
+  });
+
+  it("portfolio total gain % differs between EUR and USD", () => {
+    const m = buildDashboard(divergentExport(), quotes, fx, new Date("2024-06-01T12:00:00Z"));
+    const o = m.overview;
+    expect(o.totalGainPct).not.toBeNull();
+    expect(o.totalGainPctUsd).not.toBeNull();
+    expect(Math.abs(o.totalGainPct!.toNumber() - o.totalGainPctUsd!.toNumber())).toBeGreaterThan(0.01);
   });
 });

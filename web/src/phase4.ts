@@ -18,6 +18,7 @@
 
 import { Decimal } from "./decimal-config";
 import type { OverviewView } from "./compute";
+import { defaultExpectedRate, sanitizeRate } from "./projection";
 import type {
   DecimalString,
   ExportAnalytics,
@@ -135,8 +136,20 @@ export interface PlanView {
   startingValueEur: Decimal;
   /** Average historical yearly contribution (EUR), the default the form seeds. */
   defaultAnnualContributionEur: Decimal;
+  /** Average historical monthly contribution (EUR), seed for the monthly view. */
+  defaultMonthlyContributionEur: Decimal;
   /** Valuation year the projection counts forward from (anchored to `as_of`). */
   baseYear: number;
+  /**
+   * Seeded expected annual return rate for EUR (from the portfolio's XIRR,
+   * sanitised through defaultExpectedRate / sanitizeRate). Falls back to
+   * FALLBACK_EXPECTED_RATE when no XIRR is available.
+   */
+  expectedRateEur: Decimal;
+  /**
+   * USD companion of expectedRateEur. Null when no USD XIRR is available.
+   */
+  expectedRateUsd: Decimal | null;
 }
 
 function dec(value: string | null | undefined): Decimal | null {
@@ -215,6 +228,7 @@ function upsertCurrent(
   liveGrowthPct: Decimal | null,
   liveGrowthPctUsd: Decimal | null,
   liveClosingEur: Decimal,
+  live: boolean,
 ): void {
   const existing = rows.find((row) => row.label === currentLabel);
   if (existing) {
@@ -226,7 +240,10 @@ function upsertCurrent(
     if (liveGrowthPct !== null) {
       existing.growthPct = liveGrowthPct;
       existing.growthPctUsd = liveGrowthPctUsd;
-      existing.isLive = true;
+      // Only flag the row "live" when prices are genuinely live right now (the
+      // session is open and the freshest mark is from today). Otherwise the
+      // value still updates to the latest close — it just isn't badged "live".
+      existing.isLive = live;
     }
     return;
   }
@@ -251,7 +268,7 @@ function upsertCurrent(
     interestUsd: null,
     closingValueUsd: null,
     isCurrent: true,
-    isLive: liveGrowthPct !== null,
+    isLive: live && liveGrowthPct !== null,
   });
 }
 
@@ -271,6 +288,7 @@ export function buildPeriods(data: MobileExport, overview: OverviewView): Period
       overview.mtdGrowthPct,
       overview.mtdGrowthPctUsd,
       overview.totalValueEur,
+      overview.pricesAreLive,
     );
   }
   if (yearlySource) {
@@ -280,6 +298,7 @@ export function buildPeriods(data: MobileExport, overview: OverviewView): Period
       overview.ytdGrowthPct,
       overview.ytdGrowthPctUsd,
       overview.totalValueEur,
+      overview.pricesAreLive,
     );
   }
   // Newest period first (neobroker reverse-chronological list).
@@ -410,6 +429,36 @@ function averageYearlyContribution(data: MobileExport): Decimal {
   return years.size > 0 ? total.dividedBy(years.size) : new Decimal(0);
 }
 
+/**
+ * Average historical monthly contribution (positive months only), mirroring
+ * `averageYearlyContribution` but dividing by the number of distinct YYYY-MM
+ * months. Falls back to the yearly average / 12 when no monthly read-model
+ * is present.
+ */
+function averageMonthlyContribution(data: MobileExport): Decimal {
+  const rows = data.monthly?.rows ?? [];
+  const positives = rows
+    .map((r) => decOr0(r.contributions_eur))
+    .filter((v) => v.greaterThan(0));
+  if (positives.length > 0) {
+    const sum = positives.reduce((acc, v) => acc.plus(v), new Decimal(0));
+    return sum.dividedBy(positives.length);
+  }
+  // Fallback: derive from cashflows by distinct YYYY-MM months.
+  const months = new Set<string>();
+  let total = new Decimal(0);
+  for (const cf of data.portfolio_cashflows) {
+    const amount = new Decimal(cf.amount);
+    if (amount.lessThan(0)) {
+      total = total.plus(amount.negated());
+      months.add(cf.date.slice(0, 7));
+    }
+  }
+  if (months.size > 0) return total.dividedBy(months.size);
+  // Last resort: yearly average / 12.
+  return averageYearlyContribution(data).dividedBy(12);
+}
+
 /** Build the projection calculator inputs from the live total + history. */
 export function buildPlan(data: MobileExport, overview: OverviewView): PlanView {
   // Anchor the projection's first year to the valuation date (`as_of`), matching
@@ -417,10 +466,21 @@ export function buildPlan(data: MobileExport, overview: OverviewView): PlanView 
   // keeping the live recompute and the projection on the same calendar.
   const anchor = data.meta.as_of || overview.asOf;
   const baseYear = Number(anchor.slice(0, 4)) || new Date().getUTCFullYear();
+
+  // Seed the expected annual return rates from the portfolio's XIRR, sanitised
+  // to a safe planning range. Falls back to FALLBACK_EXPECTED_RATE when no XIRR
+  // is available (new portfolio, all-same-sign cashflows, solver did not converge).
+  const expectedRateEur = defaultExpectedRate(overview.portfolioXirr);
+  const expectedRateUsd =
+    overview.portfolioXirrUsd !== null ? sanitizeRate(overview.portfolioXirrUsd) : null;
+
   return {
     startingValueEur: overview.totalValueEur,
     defaultAnnualContributionEur: averageYearlyContribution(data),
+    defaultMonthlyContributionEur: averageMonthlyContribution(data),
     baseYear,
+    expectedRateEur,
+    expectedRateUsd,
   };
 }
 
@@ -463,4 +523,38 @@ export function projectForward(
     });
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Drawdown / underwater series (Feature B)
+// ---------------------------------------------------------------------------
+
+/** One point in the drawdown (underwater) curve. */
+export interface DrawdownPoint {
+  date: string;
+  /** (portfolioValue / runningPeak) − 1; always ≤ 0. Null for missing values. */
+  drawdown: Decimal | null;
+}
+
+/**
+ * Compute the running-peak drawdown series from an equity curve.
+ *
+ * For each point the running peak is the maximum portfolio value seen up to
+ * and including that date. The drawdown is `(value / peak) − 1` and is
+ * always ≤ 0 (it is zero at each new peak, negative in troughs).
+ *
+ * Used by `renderDrawdownChart` on the Risk tab. Pure function — no DOM.
+ */
+export function computeDrawdownSeries(curve: EquityPoint[]): DrawdownPoint[] {
+  let peak: Decimal | null = null;
+  return curve.map((p) => {
+    if (p.portfolioValue === null) return { date: p.date, drawdown: null };
+    // Skip non-positive values to avoid skewing the running peak while
+    // the portfolio is still being funded from scratch.
+    if (p.portfolioValue.lessThanOrEqualTo(0)) return { date: p.date, drawdown: null };
+    if (peak === null || p.portfolioValue.greaterThan(peak)) {
+      peak = p.portfolioValue;
+    }
+    return { date: p.date, drawdown: p.portfolioValue.dividedBy(peak).minus(1) };
+  });
 }

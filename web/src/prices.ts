@@ -171,14 +171,31 @@ function parseEpochSeconds(value: unknown): number | null {
   return Math.round(seconds * 1000);
 }
 
+/**
+ * Whether a Twelve Data `datetime` carries an intraday time component
+ * (`YYYY-MM-DD HH:MM:SS`) rather than a bare daily-bar date (`YYYY-MM-DD`).
+ * Only an intraday datetime has a meaningful within-day strike time; a daily
+ * (`interval=1day`) bar is stamped at the session *open*, which must NOT be
+ * surfaced as the price's "as of" time.
+ */
+function hasIntradayTime(value: unknown): boolean {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(value.trim());
+}
+
 function quoteFromNode(symbol: string, node: Record<string, unknown>): Quote {
   if (node.status === "error") {
     return { symbol, price: null, previousClose: null, currency: null, at: null, priceTime: null, valueDate: null };
   }
-  // The price's real time: prefer `timestamp` (the latest bar's datetime), then
-  // `last_quote_at`. Both are Unix seconds. This is what makes the "as of"
-  // honest when the market is closed and the latest price is stale.
-  const priceTime = parseEpochSeconds(node.timestamp) ?? parseEpochSeconds(node.last_quote_at);
+  // The price's real strike time. `last_quote_at` (when present) is the genuine
+  // last-trade moment, so always trust it. Otherwise only trust `timestamp` for
+  // an *intraday* bar: for the free-tier default daily `/quote`, `timestamp` is
+  // the bar's datetime — the session open (09:30 ET), which a European user sees
+  // rendered as "3:30 PM" even though the data was pulled hours later. For such
+  // a bare-date daily bar we leave `priceTime` null so the caller dates a market
+  // price by when it was actually observed (the fetch time), not the bar open.
+  const priceTime =
+    parseEpochSeconds(node.last_quote_at) ??
+    (hasIntradayTime(node.datetime) ? parseEpochSeconds(node.timestamp) : null);
   return {
     symbol,
     price: parseDecimal(node.close ?? node.price),

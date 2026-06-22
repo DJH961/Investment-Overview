@@ -27,6 +27,8 @@ import {
   type PlanView,
 } from "./phase4";
 import type { ExportCashflow, ExportHolding, MobileExport } from "./types";
+import { isMoneyMarketHolding } from "./money-market";
+import { isUsMarketOpen } from "./market-hours";
 
 const EUR = "EUR";
 const USD = "USD";
@@ -112,6 +114,15 @@ export interface OverviewView {
   liveAsOf: number | null;
   /** Export valuation date (`meta.as_of`), shown when `liveAsOf` is null. */
   liveAsOfFallbackDate: string;
+  /**
+   * True only when figures are *genuinely* live right now: the NYSE regular
+   * session is open (weekday, not a market holiday) **and** the freshest price
+   * observation is from today. On a weekend, a market holiday, after hours, or
+   * when no fresh same-day data arrived (a failed pull leaving a stale carry),
+   * this is false so nothing is mislabelled as "live" — the figures are then a
+   * settled close, not a live mark.
+   */
+  pricesAreLive: boolean;
   /**
    * Epoch ms of the last time fresh market data actually landed from the
    * network (a live quote or FX pull), or null when none yet this device.
@@ -237,6 +248,21 @@ export interface DashboardModel {
 /** Today's date as an ISO `YYYY-MM-DD` string in UTC (the live XIRR "now"). */
 export function todayIso(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);
+}
+
+/**
+ * Whether an epoch-ms instant falls on the same local calendar day as `now`.
+ * Used to decide whether the freshest price observation is genuinely from today
+ * (and therefore "live") rather than a carried-forward earlier close.
+ */
+export function isSameLocalDay(epochMs: number, now: Date): boolean {
+  const when = new Date(epochMs);
+  if (Number.isNaN(when.getTime())) return false;
+  return (
+    when.getFullYear() === now.getFullYear() &&
+    when.getMonth() === now.getMonth() &&
+    when.getDate() === now.getDate()
+  );
 }
 
 /** First day of the current month/year for `asOf` (ISO `YYYY-MM-DD`). */
@@ -367,6 +393,10 @@ export function buildFetchPlan(data: MobileExport, fetchableNavClasses: Set<stri
   // Aggregate by ticker: multiple holdings can map to one price symbol.
   const bySymbol = new Map<string, FetchPlanEntry>();
   for (const holding of data.holdings) {
+    // Money-market / settlement funds hold a constant $1.00 NAV by design, so a
+    // quote only ever returns the same dollar and wastes a free-tier credit —
+    // never fetch them, regardless of how they are otherwise classified.
+    if (isMoneyMarketHolding(holding)) continue;
     const isMarket = holding.price_type === "market";
     const isFetchableNav = fetchableNavClasses.has(holding.asset_class);
     if (!isMarket && !isFetchableNav) continue;
@@ -910,14 +940,22 @@ export function buildDashboard(
   // mirroring the desktop overview's allocation breakdown.
   const allocation = buildAllocation(holdings, holdingsValueEur);
 
+  const liveAsOf = holdings.reduce<number | null>(
+    (latest, h) =>
+      h.priceAsOf !== null && (latest === null || h.priceAsOf > latest) ? h.priceAsOf : latest,
+    null,
+  );
+  // "Live" is an honest claim, not a default: figures are live only while the
+  // NYSE session is actually open (holiday-aware) AND the freshest observation
+  // is from *today*. A weekend, a market holiday, after-hours, or a failed pull
+  // that left a stale carry-forward all read as a settled close, never "live".
+  const pricesAreLive = isUsMarketOpen(now) && liveAsOf !== null && isSameLocalDay(liveAsOf, now);
+
   const overview: OverviewView = {
     generatedAt: data.meta.generated_at,
     asOf,
-    liveAsOf: holdings.reduce<number | null>(
-      (latest, h) =>
-        h.priceAsOf !== null && (latest === null || h.priceAsOf > latest) ? h.priceAsOf : latest,
-      null,
-    ),
+    liveAsOf,
+    pricesAreLive,
     // When nothing was priced intraday (e.g. a fund-only portfolio over a
     // weekend), the top stamp shows the newest date we do know — the latest
     // holding value-date, or the export date.

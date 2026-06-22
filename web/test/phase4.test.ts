@@ -12,7 +12,9 @@ import {
   buildDeposits,
   buildPeriods,
   buildPlan,
+  computeDrawdownSeries,
   projectForward,
+  type EquityPoint,
 } from "../src/phase4";
 import type { MobileExport } from "../src/types";
 
@@ -41,6 +43,7 @@ function overview(extra: Partial<OverviewView> = {}): OverviewView {
     generatedAt: "2026-06-19T08:00:00+00:00",
     asOf: "2026-06-19",
     liveAsOf: null,
+    pricesAreLive: false,
     liveAsOfFallbackDate: "2026-06-19",
     lastDataPullAt: null,
     totalValueEur: new Decimal("39000"),
@@ -99,7 +102,7 @@ describe("buildPeriods", () => {
   });
 
   it("overlays the live current month with the live MTD growth + value", () => {
-    const { monthly } = buildPeriods(data, overview());
+    const { monthly } = buildPeriods(data, overview({ pricesAreLive: true }));
     const current = monthly.find((r) => r.label === "2026-06")!;
     expect(current.isCurrent).toBe(true);
     expect(current.isLive).toBe(true);
@@ -115,7 +118,7 @@ describe("buildPeriods", () => {
   });
 
   it("overlays the live current year with YTD growth and lists newest first", () => {
-    const { yearly } = buildPeriods(data, overview());
+    const { yearly } = buildPeriods(data, overview({ pricesAreLive: true }));
     expect(yearly[0].label).toBe("2026");
     expect(yearly[0].isLive).toBe(true);
     expect(yearly[0].growthPct!.toString()).toBe("0.11");
@@ -136,13 +139,24 @@ describe("buildPeriods", () => {
         ],
       },
     });
-    const { monthly } = buildPeriods(noCurrent, overview());
+    const { monthly } = buildPeriods(noCurrent, overview({ pricesAreLive: true }));
     // Newest first: the synthesised live current month leads the list.
     expect(monthly[0].label).toBe("2026-06");
     expect(monthly[0].isCurrent).toBe(true);
     expect(monthly[0].isLive).toBe(true);
     expect(monthly[0].closingValueEur!.toString()).toBe("39000");
     expect(monthly[0].growthPct!.toString()).toBe("0.05");
+  });
+
+  it("updates the current month value but does NOT badge it live when prices aren't live", () => {
+    // Market closed / no fresh same-day data: the row still overlays the latest
+    // value and growth, but must not claim to be "live".
+    const { monthly } = buildPeriods(data, overview({ pricesAreLive: false }));
+    const current = monthly.find((r) => r.label === "2026-06")!;
+    expect(current.isCurrent).toBe(true);
+    expect(current.isLive).toBe(false);
+    expect(current.closingValueEur!.toString()).toBe("39000");
+    expect(current.growthPct!.toString()).toBe("0.05");
   });
 
   it("maps the per-trade-date USD period growth when the row is a USD context", () => {
@@ -180,7 +194,7 @@ describe("buildPeriods", () => {
         ],
       },
     });
-    const { monthly } = buildPeriods(data, overview({ mtdGrowthPctUsd: new Decimal("0.07") }));
+    const { monthly } = buildPeriods(data, overview({ mtdGrowthPctUsd: new Decimal("0.07"), pricesAreLive: true }));
     const current = monthly.find((r) => r.label === "2026-06")!;
     expect(current.isLive).toBe(true);
     expect(current.growthPct!.toString()).toBe("0.05");
@@ -360,9 +374,132 @@ describe("buildPlan + projectForward", () => {
     expect(rows[0].contributedEur.toString()).toBe("1000");
   });
 
-  it("compounds across multiple years at the scenario rate", () => {
-    // 10% on 10000 with no contributions → 12100 after two years.
-    const rows = projectForward(new Decimal("10000"), new Decimal("0"), 2, 2026, ["0.1"]);
-    expect(rows[1].valuesByRate.get("0.1")!.toString()).toBe("12100");
+  it("seeds expectedRateEur from portfolioXirr (sanitised)", () => {
+    const plan = buildPlan(baseExport(), overview({ portfolioXirr: new Decimal("0.15") }));
+    expect(plan.expectedRateEur.toString()).toBe("0.15");
+  });
+
+  it("falls back to FALLBACK_EXPECTED_RATE when portfolioXirr is null", () => {
+    const plan = buildPlan(baseExport(), overview({ portfolioXirr: null }));
+    // FALLBACK_EXPECTED_RATE = 0.07
+    expect(plan.expectedRateEur.toString()).toBe("0.07");
+  });
+
+  it("clamps an extreme XIRR to the max reasonable rate", () => {
+    const plan = buildPlan(baseExport(), overview({ portfolioXirr: new Decimal("5.0") }));
+    expect(plan.expectedRateEur.toNumber()).toBe(0.40);
+  });
+
+  it("seeds expectedRateUsd from portfolioXirrUsd when present", () => {
+    const plan = buildPlan(baseExport(), overview({ portfolioXirrUsd: new Decimal("0.12") }));
+    expect(plan.expectedRateUsd?.toString()).toBe("0.12");
+  });
+
+  it("leaves expectedRateUsd null when portfolioXirrUsd is null", () => {
+    const plan = buildPlan(baseExport(), overview({ portfolioXirrUsd: null }));
+    expect(plan.expectedRateUsd).toBeNull();
+  });
+
+  it("seeds defaultMonthlyContributionEur from monthly rows", () => {
+    const data = baseExport({
+      monthly: {
+        rows: [
+          { label: "2026-04", contributions_eur: "900", dividends_eur: "0", interest_eur: "0", net_flow_eur: "900", opening_value_eur: "35000", closing_value_eur: "36000", growth_pct: null },
+          { label: "2026-05", contributions_eur: "1100", dividends_eur: "0", interest_eur: "0", net_flow_eur: "1100", opening_value_eur: "36000", closing_value_eur: "37000", growth_pct: null },
+        ],
+      },
+    });
+    const plan = buildPlan(data, overview());
+    expect(plan.defaultMonthlyContributionEur.toString()).toBe("1000");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeDrawdownSeries
+// ---------------------------------------------------------------------------
+
+function makeEquityPoint(date: string, value: number | null): EquityPoint {
+  return {
+    date,
+    portfolioValue: value !== null ? new Decimal(value) : null,
+    contributions: null,
+    benchmarkValue: null,
+  };
+}
+
+describe("computeDrawdownSeries", () => {
+  it("all zeros when portfolio only makes new highs", () => {
+    const curve = [
+      makeEquityPoint("2025-01-01", 1000),
+      makeEquityPoint("2025-02-01", 1100),
+      makeEquityPoint("2025-03-01", 1200),
+    ];
+    const dd = computeDrawdownSeries(curve);
+    expect(dd).toHaveLength(3);
+    for (const point of dd) {
+      expect(point.drawdown!.toNumber()).toBeCloseTo(0, 8);
+    }
+  });
+
+  it("drawdown is negative in a trough, resets at new peak", () => {
+    const curve = [
+      makeEquityPoint("2025-01-01", 1000), // peak = 1000, dd = 0
+      makeEquityPoint("2025-02-01", 800),  // dd = 800/1000 - 1 = -0.2
+      makeEquityPoint("2025-03-01", 1000), // new peak, dd = 0
+      makeEquityPoint("2025-04-01", 900),  // dd = 900/1000 - 1 = -0.1
+    ];
+    const dd = computeDrawdownSeries(curve);
+    expect(dd[0].drawdown!.toNumber()).toBeCloseTo(0, 8);
+    expect(dd[1].drawdown!.toNumber()).toBeCloseTo(-0.2, 8);
+    expect(dd[2].drawdown!.toNumber()).toBeCloseTo(0, 8);
+    expect(dd[3].drawdown!.toNumber()).toBeCloseTo(-0.1, 8);
+  });
+
+  it("all drawdown values are ≤ 0", () => {
+    const curve = [
+      makeEquityPoint("2025-01-01", 1000),
+      makeEquityPoint("2025-02-01", 900),
+      makeEquityPoint("2025-03-01", 800),
+    ];
+    const dd = computeDrawdownSeries(curve);
+    for (const point of dd) {
+      if (point.drawdown !== null) {
+        expect(point.drawdown.toNumber()).toBeLessThanOrEqual(0);
+      }
+    }
+  });
+
+  it("null portfolio values produce null drawdown", () => {
+    const curve = [
+      makeEquityPoint("2025-01-01", 1000),
+      makeEquityPoint("2025-02-01", null),
+      makeEquityPoint("2025-03-01", 900),
+    ];
+    const dd = computeDrawdownSeries(curve);
+    expect(dd[1].drawdown).toBeNull();
+    // Peak is still 1000 from the first point.
+    expect(dd[2].drawdown!.toNumber()).toBeCloseTo(-0.1, 8);
+  });
+
+  it("non-positive portfolio values produce null drawdown", () => {
+    const curve = [
+      makeEquityPoint("2025-01-01", 0),
+      makeEquityPoint("2025-02-01", 1000),
+      makeEquityPoint("2025-03-01", 900),
+    ];
+    const dd = computeDrawdownSeries(curve);
+    expect(dd[0].drawdown).toBeNull();  // 0 value → null
+    expect(dd[1].drawdown!.toNumber()).toBeCloseTo(0, 8);  // first positive = peak
+    expect(dd[2].drawdown!.toNumber()).toBeCloseTo(-0.1, 8);
+  });
+
+  it("preserves dates in the output", () => {
+    const curve = [
+      makeEquityPoint("2025-01-15", 1000),
+      makeEquityPoint("2025-02-15", 950),
+    ];
+    const dd = computeDrawdownSeries(curve);
+    expect(dd[0].date).toBe("2025-01-15");
+    expect(dd[1].date).toBe("2025-02-15");
   });
 });

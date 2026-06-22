@@ -4,6 +4,7 @@
  */
 import type { Decimal } from "./decimal-config";
 import { convertFromEur, displayAmount } from "./currency";
+import { clockOptions } from "./time-format";
 
 const NBSP = "\u00a0";
 
@@ -77,6 +78,25 @@ export function formatCurrencyWhole(value: Decimal | null): string {
   }).format(amount.toNumber());
 }
 
+/**
+ * Format an amount that is intrinsically **EUR** and must NOT be FX-rescaled to
+ * the display currency — e.g. the FX gain/loss and repatriation value on the
+ * Risk tab's currency-effect panel, which only make sense as euros. Always
+ * renders with the euro symbol regardless of the active display currency.
+ */
+export function formatMoneyEur(value: Decimal | null, fractionDigits = 0): string {
+  if (value === null) return "—";
+  return formatMoneyValue(value, "EUR", fractionDigits);
+}
+
+/** Signed companion of {@link formatMoneyEur} (e.g. "+ €200", "− €200"). */
+export function formatSignedMoneyEur(value: Decimal | null, fractionDigits = 0): string {
+  if (value === null) return "—";
+  const base = formatMoneyEur(value.abs(), fractionDigits);
+  if (value.isZero()) return base;
+  return value.isNegative() ? `−${NBSP}${base}` : `+${NBSP}${base}`;
+}
+
 export function formatSignedCurrency(value: Decimal | null): string {
   if (value === null) return "—";
   const base = formatCurrency(value.abs());
@@ -148,7 +168,7 @@ export function formatLastPull(
   if (at === null || at === undefined) return "not yet";
   const when = new Date(at);
   if (Number.isNaN(when.getTime())) return "—";
-  const time = when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const time = when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", ...clockOptions() });
   const dayDiff = calendarDayDiff(when, now);
   if (dayDiff === 0) return `today at ${time}`;
   if (dayDiff === 1) return `yesterday at ${time}`;
@@ -161,6 +181,46 @@ function calendarDayDiff(then: Date, now: Date): number {
   const a = new Date(then.getFullYear(), then.getMonth(), then.getDate()).getTime();
   const b = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   return Math.round((b - a) / 86_400_000);
+}
+
+/**
+ * The market-situation-aware "as of" caption for the hero's total value and
+ * today's move — the browser mirror of the desktop's Daily Growth caption
+ * (`services/daily_growth_view.build_daily_growth_caption`).
+ *
+ * While the US market is open and we hold an intraday observation dated today,
+ * it reads as a live clock time ("as of 3:42 PM"). Once the session is closed it
+ * pins to the latest settled trading day instead — "as of today" when that day
+ * is today, else the weekday + date ("as of Fri 20 Jun") — so the figure is
+ * never mislabelled as live when it is really a settled close.
+ *
+ * `liveAsOf` is the freshest intraday market observation (epoch ms; null when
+ * nothing priced intraday), `settledDate` the latest known trading day
+ * (`YYYY-MM-DD`), and `today` the local `YYYY-MM-DD`.
+ */
+export function formatDailyGrowthAsOf(
+  liveAsOf: number | null | undefined,
+  settledDate: string,
+  today: string,
+  marketOpen: boolean,
+  now: Date = new Date(),
+): string {
+  if (marketOpen && liveAsOf !== null && liveAsOf !== undefined) {
+    const when = new Date(liveAsOf);
+    const sameDay =
+      !Number.isNaN(when.getTime()) &&
+      when.getFullYear() === now.getFullYear() &&
+      when.getMonth() === now.getMonth() &&
+      when.getDate() === now.getDate();
+    if (sameDay) {
+      const time = when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", ...clockOptions() });
+      return `as of ${time}`;
+    }
+  }
+  if (settledDate === today) return "as of today";
+  const parsed = new Date(settledDate);
+  if (Number.isNaN(parsed.getTime())) return `as of ${settledDate}`;
+  return `as of ${parsed.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}`;
 }
 
 export function formatShares(value: Decimal): string {
@@ -189,7 +249,7 @@ export function signClass(value: Decimal | null): "pos" | "neg" | "flat" {
 export function formatTimestamp(iso: string): string {
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return iso;
-  return parsed.toLocaleString();
+  return parsed.toLocaleString(undefined, clockOptions());
 }
 
 /**
@@ -217,7 +277,7 @@ export function formatAsOf(
     when.getMonth() === now.getMonth() &&
     when.getDate() === now.getDate();
   return sameDay
-    ? when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+    ? when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", ...clockOptions() })
     : when.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
@@ -240,7 +300,7 @@ export function formatUpdatedAt(
   }
   const when = new Date(at);
   if (Number.isNaN(when.getTime())) return "—";
-  const time = when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const time = when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", ...clockOptions() });
   const sameDay =
     when.getFullYear() === now.getFullYear() &&
     when.getMonth() === now.getMonth() &&
