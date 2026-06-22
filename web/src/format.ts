@@ -78,6 +78,25 @@ export function formatCurrencyWhole(value: Decimal | null): string {
   }).format(amount.toNumber());
 }
 
+/**
+ * Format an amount that is intrinsically **EUR** and must NOT be FX-rescaled to
+ * the display currency — e.g. the FX gain/loss and repatriation value on the
+ * Risk tab's currency-effect panel, which only make sense as euros. Always
+ * renders with the euro symbol regardless of the active display currency.
+ */
+export function formatMoneyEur(value: Decimal | null, fractionDigits = 0): string {
+  if (value === null) return "—";
+  return formatMoneyValue(value, "EUR", fractionDigits);
+}
+
+/** Signed companion of {@link formatMoneyEur} (e.g. "+ €200", "− €200"). */
+export function formatSignedMoneyEur(value: Decimal | null, fractionDigits = 0): string {
+  if (value === null) return "—";
+  const base = formatMoneyEur(value.abs(), fractionDigits);
+  if (value.isZero()) return base;
+  return value.isNegative() ? `−${NBSP}${base}` : `+${NBSP}${base}`;
+}
+
 export function formatSignedCurrency(value: Decimal | null): string {
   if (value === null) return "—";
   const base = formatCurrency(value.abs());

@@ -209,6 +209,13 @@ const DEMO_EXPORT: MobileExport = {
     var_95: "-0.021", cvar_95: "-0.032", skew: "-0.35", kurtosis: "1.8",
     beta: "0.94", alpha: "0.021", risk_free_rate: "0.025",
     risk_free_symbol: "EURIBOR", benchmark_symbol: "VWCE",
+    // USD-view companions: a euro investor's dollar returns look different once
+    // you strip the FX move out, so the demo toggles visibly between currencies.
+    cagr_usd: "0.131", twr_usd: "0.137", xirr_usd: "0.140",
+    volatility_usd: "0.151", sharpe_usd: "0.98", sortino_usd: "1.39",
+    max_drawdown_usd: "-0.176", calmar_usd: "0.74", ulcer_usd: "5.1",
+    var_95_usd: "-0.023", cvar_95_usd: "-0.034", skew_usd: "-0.31", kurtosis_usd: "1.7",
+    beta_usd: "0.96", alpha_usd: "0.018",
     curve: [
       { date: "2025-06-30", portfolio_value: "31000", cumulative_contributions: "29000", benchmark_value: "112.00" },
       { date: "2025-08-31", portfolio_value: "32200", cumulative_contributions: "30200", benchmark_value: "115.60" },
@@ -226,7 +233,7 @@ const DEMO_EXPORT: MobileExport = {
     ],
   },
   deposits: {
-    summary: { total_contrib_eur: "37200", ytd_contrib_eur: "7200", mtd_contrib_eur: "1200" },
+    summary: { total_contrib_eur: "37200", ytd_contrib_eur: "7200", mtd_contrib_eur: "1200", total_contrib_usd: "40100", ytd_contrib_usd: "7850", mtd_contrib_usd: "1296" },
     rows: [
       { id: 6, date: "2026-06-01", account: "Taxable", kind: "contribution", amount_eur: "1200", currency: "EUR", description: "Monthly savings" },
       { id: 5, date: "2026-05-01", account: "Taxable", kind: "contribution", amount_eur: "1200", currency: "EUR", description: "Monthly savings" },

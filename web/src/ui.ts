@@ -42,16 +42,19 @@ import {
   formatDailyGrowthAsOf,
   formatDualCurrency,
   formatFxRate,
+  formatMoneyEur,
   formatNativePrice,
   formatPercent,
   formatShares,
   formatSignedCurrency,
   formatSignedDualCurrency,
+  formatSignedMoneyEur,
   formatSignedPercent,
   formatTimestamp,
   signClass,
 } from "./format";
 import { isUsMarketOpen } from "./market-hours";
+import { computeCurrencyEffect } from "./currency-effect";
 import { cycleTheme, loadTheme, themeButtonContent } from "./theme";
 import { getTimeFormat, setTimeFormat, type TimeFormat } from "./time-format";
 import {
@@ -499,7 +502,7 @@ export function renderDashboard(
   const tabs: TabDef[] = [
     { id: "overview", label: "Overview", glyph: "◎", panel: renderOverviewPanel(model) },
     { id: "periods", label: "Periods", glyph: "▦", panel: renderPeriodsPanel(model.periods, model.deposits, model.plan) },
-    { id: "analytics", label: "Risk", glyph: "📈", panel: renderAnalyticsPanel(model.analytics) },
+    { id: "analytics", label: "Risk", glyph: "📈", panel: renderAnalyticsPanel(model.analytics, model.overview, model.deposits) },
     { id: "plan", label: "Calculator", glyph: "🧮", panel: renderCalculatorPanel(model.plan) },
   ];
 
@@ -1251,7 +1254,98 @@ function renderAttribution(rows: AnalyticsView["attribution"]): HTMLElement | nu
   return collapsibleSection("Attribution", "P/L by holding", h("ul", { class: "ledger-list" }, items), "card attribution");
 }
 
-function renderAnalyticsPanel(analytics: AnalyticsView | null): HTMLElement {
+/**
+ * The Risk tab's "Currency (EUR ↔ USD)" panel — the browser port of the
+ * desktop analytics page's currency-effect section. It is the headline USD/EUR
+ * *comparison* for a euro investor holding dollar assets: it always shows both
+ * sides at once (the average rate you bought dollars at vs today's spot, and
+ * the slice of your return that came from the FX move rather than the assets),
+ * so it reads correctly whichever display currency is toggled. Returns null
+ * when there isn't enough cross-currency data to say anything useful.
+ */
+function renderCurrencyEffect(overview: OverviewView, deposits: DepositsView | null): HTMLElement | null {
+  const effect = computeCurrencyEffect({
+    contributionsEur: deposits?.totalEur ?? overview.totalCostBasisEur,
+    contributionsUsd: deposits?.totalUsd ?? overview.totalCostBasisUsd,
+    valueEur: overview.totalValueEur,
+    valueUsd: overview.totalValueUsd,
+    growthEur: overview.totalGrowthCompoundedPct,
+    growthUsd: overview.totalGrowthCompoundedPctUsd,
+  });
+  if (effect.currentRate === null && effect.avgInvestRate === null) return null;
+
+  const cards: HTMLElement[] = [];
+  const effectStat = (label: string, value: string, sub: string, cls = "flat"): HTMLElement =>
+    h("div", { class: "stat" }, [
+      h("span", { class: "stat-label" }, [label]),
+      h("span", { class: `stat-value ${cls}` }, [value]),
+      h("span", { class: "stat-sub muted" }, [sub]),
+    ]);
+
+  cards.push(
+    effectStat(
+      "EUR/USD now",
+      formatFxRate(effect.currentRate),
+      `avg when you invested: ${formatFxRate(effect.avgInvestRate)}`,
+    ),
+  );
+  if (effect.rateChangePct !== null) {
+    // A weaker euro (a *lower* rate, negative change) is a tailwind for a euro
+    // investor holding dollars, so colour by favourability (−change), not raw sign.
+    const weaker = effect.rateChangePct.isNegative();
+    cards.push(
+      effectStat(
+        "Euro move since investing",
+        formatSignedPercent(effect.rateChangePct),
+        weaker ? "euro weaker → tailwind for you" : "euro stronger → headwind",
+        signClass(effect.rateChangePct.negated()),
+      ),
+    );
+  }
+  if (effect.currencyEffectPp !== null) {
+    cards.push(
+      effectStat(
+        "Currency effect on return",
+        formatSignedPercent(effect.currencyEffectPp),
+        "your EUR return minus your USD return",
+        signClass(effect.currencyEffectPp),
+      ),
+    );
+  }
+  if (effect.fxPnlEur !== null) {
+    cards.push(
+      effectStat(
+        "FX gain / loss (EUR)",
+        formatSignedMoneyEur(effect.fxPnlEur),
+        "vs investing at your average rate",
+        signClass(effect.fxPnlEur),
+      ),
+    );
+  }
+  if (effect.repatriationValueEur !== null) {
+    const usdNote =
+      overview.totalValueUsd !== null && effect.currentRate !== null
+        ? `= ${formatMoneyEur(overview.totalValueUsd)} USD at ${formatFxRate(effect.currentRate)}`
+        : "convert the whole portfolio back to EUR";
+    cards.push(effectStat("If you transfer back now", formatMoneyEur(effect.repatriationValueEur), usdNote));
+  }
+
+  const body = h("div", { class: "currency-effect-body" }, [
+    h("p", { class: "note" }, [
+      "You fund in EUR, hold USD assets, and would convert back to EUR — so the EUR/USD move between " +
+        "paying in and cashing out is its own gain or loss on top of the assets. A weaker euro means each " +
+        "dollar buys back more euros, which is good for you.",
+    ]),
+    h("section", { class: "stats" }, [h("div", { class: "stat-grid" }, cards)]),
+  ]);
+  return collapsibleSection("Currency (EUR ↔ USD)", "FX effect on your return", body, "currency-effect", true);
+}
+
+function renderAnalyticsPanel(
+  analytics: AnalyticsView | null,
+  overview: OverviewView,
+  deposits: DepositsView | null,
+): HTMLElement {
   if (analytics === null) {
     return h("section", { class: "panel-stack" }, [
       h("section", { class: "card" }, [
@@ -1278,6 +1372,11 @@ function renderAnalyticsPanel(analytics: AnalyticsView | null): HTMLElement {
     ]),
   ];
 
+  // The headline USD/EUR comparison for a euro investor — always visible, never
+  // dependent on the toggle (it shows both currencies at once).
+  const currencyEffect = renderCurrencyEffect(overview, deposits);
+  if (currencyEffect) children.push(currencyEffect);
+
   const curve = renderEquityCurve(analytics.curve, analytics.benchmarkSymbol);
   if (curve) children.push(curve);
   const drawdown = renderDrawdownChart(analytics.curve);
@@ -1287,7 +1386,8 @@ function renderAnalyticsPanel(analytics: AnalyticsView | null): HTMLElement {
 
   children.push(
     h("p", { class: "disclaimer" }, [
-      `History-bound risk metrics are computed on the desktop and shown as of the last export (${analytics.start} → ${analytics.asOf}). They do not move intraday.`,
+      `History-bound risk metrics are computed on the desktop and shown as of the last export (${analytics.start} → ${analytics.asOf}). ` +
+        "They do not move intraday. Risk/return figures switch between EUR and USD with the currency toggle.",
     ]),
   );
   return h("section", { class: "panel-stack panel-analytics" }, children);
@@ -1340,16 +1440,18 @@ function renderCalculatorPanel(plan: PlanView): HTMLElement {
   const expectedRate = numberField(`Expected return % p.a.`, seedRatePct, { min: "-50", max: "40", step: "0.1" });
   const band = numberField("± band (pp)", "3.0", { min: "0", max: "30", step: "0.5" });
   const contribution = numberField(
-    `Contribution / period (${code})`,
+    `Contribution / ${monthly ? "month" : "year"} (${code})`,
     getDefaultContrib(),
     { min: "0", step: "10" },
   );
+  const contribLabel = contribution.wrap.querySelector(".field-label");
   const stepUp = numberField("Annual step-up %", "0", { min: "0", max: "100", step: "0.5" });
   const inflation = numberField("Inflation %", "2.0", { min: "0", max: "30", step: "0.1" });
   const target = numberField(`Target value (${code})`, "0", { min: "0", step: "1000" });
 
   // Horizon: years (1–40) or months (1–480), default 10y / 120m.
-  const horizonInput = numberField("Horizon", "10", { min: "1", max: "40", step: "1" });
+  const horizonInput = numberField("Horizon (years)", "10", { min: "1", max: "40", step: "1" });
+  const horizonLabel = horizonInput.wrap.querySelector(".field-label");
 
   // Period toggle (yearly / monthly).
   const btnYearly = h("button", { class: "chart-range-btn active", type: "button" }, ["Yearly"]) as HTMLButtonElement;
@@ -1430,7 +1532,7 @@ function renderCalculatorPanel(plan: PlanView): HTMLElement {
     });
 
     const contribTotal = totalContributed(result);
-    const contribTotalDisplay = convertFromEur(contribEur.isZero() ? contribTotal : contribTotal).value;
+    const contribTotalDisplay = convertFromEur(contribTotal).value;
     kpiCards.push(
       h("div", { class: "stat" }, [
         h("span", { class: "stat-label" }, ["Contributed"]),
@@ -1523,6 +1625,8 @@ function renderCalculatorPanel(plan: PlanView): HTMLElement {
     btnMonthly.setAttribute("aria-pressed", monthly ? "true" : "false");
     horizonInput.input.max = monthly ? "480" : "40";
     horizonInput.input.value = monthly ? "120" : "10";
+    if (horizonLabel) horizonLabel.textContent = monthly ? "Horizon (months)" : "Horizon (years)";
+    if (contribLabel) contribLabel.textContent = `Contribution / ${monthly ? "month" : "year"} (${code})`;
     contribution.input.value = getDefaultContrib();
     recompute();
   };
