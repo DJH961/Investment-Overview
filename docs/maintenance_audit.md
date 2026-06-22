@@ -287,6 +287,25 @@ These run inside `run_boot_sequence(skip_network=True)` on the cold-start path.
   timer fires — so clicking through views again and again never stacks expensive
   database work on tabs the user already navigated away from.
 
+### 5G — Heavy work still ran on the event loop (added 2026-06-22 — ✅ done)
+
+3.3.0 added a `compute` hook to `deferred` (gather on a worker thread via
+`nicegui.run.io_bound`, render back on the loop) but only Overview used it; the
+other pages and the update/upload actions still crunched on the asyncio loop, so
+one slow gather/scan/import could stall the websocket and trip the reconnect
+storm. 3.4.2 closes the gap:
+
+- **5G.14 Heavy pages now gather off the loop** — ✅ done. **Holdings**,
+  **Analytics**, **Monthly**, **Yearly** and **Projection** were split into a
+  render-free `_gather` (`compute=`) and an on-loop render, matching Overview.
+- **5G.15 Data Health scanned the DB on the loop** — ✅ done. `render_body` now
+  paints its shell first and runs `check_health` through `deferred(compute=…)`.
+- **5G.16 CSV import + republish ran on the loop** — ✅ done. The Transactions
+  import handler is async and runs `import_csv` and the live-web `run_trigger`
+  via `run.io_bound`, disabling the Import button while it works.
+- **5G.17 Support-bundle build ran on the loop** — ✅ done. The Data Health
+  download builds the bundle via `run.io_bound` so a large log can't stall the UI.
+
 ## 6. Observability / shareable diagnostics (added 2026-06-21 — ✅ done)
 
 - **6.1 No persistent log file to share** — ✅ done. `logging.configure_logging`

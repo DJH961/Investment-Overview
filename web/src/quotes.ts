@@ -19,24 +19,29 @@
 
 import {
   creditsSpentWithin,
+  readCachedEurUsd,
   readCachedFx,
   readCachedQuotes,
   readCreditLog,
   recordCredits,
+  writeCachedEurUsd,
   writeCachedFx,
   writeCachedQuotes,
   type CachedQuote,
   type StorageLike,
 } from "./cache";
 import {
+  fetchEurUsd,
   fetchFxRates,
   fetchNavQuotes,
   fetchQuotes,
   PriceError,
+  type EurUsdQuote,
   type FetchLike,
   type FxRates,
   type Quote,
 } from "./prices";
+import type { Decimal } from "./decimal-config";
 
 /** Twelve Data free-tier limits — the design constraint for this whole module. */
 export const FREE_TIER = {
@@ -324,6 +329,15 @@ export async function loadQuotes(
     const toFetch = stale.slice(0, affordableCount);
 
     if (toFetch.length > 0) {
+      // Reserve the credits *before* the network call, not after it returns.
+      // Two live loads can overlap (the login-time prefetch and the first
+      // scheduled refresh share the same caches); if each only recorded its
+      // spend on completion, both would read a full per-minute budget and fire
+      // a full batch — double-spending straight into an HTTP 429. Recording the
+      // spend up-front means whichever load reserves first wins the minute and
+      // the other defers, so we stay inside the free-tier cap by construction.
+      const reservedAt = now();
+      recordCredits(toFetch.length, reservedAt, storage ?? undefined);
       try {
         // Market symbols come from `quote`; NAV funds from the daily
         // `time_series` (authoritative trading-day mark) — see fetchNavQuotes.
@@ -342,7 +356,6 @@ export async function loadQuotes(
         }
         const at = now();
         writeCachedQuotes(quotes, at, storage ?? undefined);
-        recordCredits(toFetch.length, at, storage ?? undefined);
         for (const symbol of toFetch) {
           const q = quotes.get(symbol);
           if (q) {
@@ -359,15 +372,15 @@ export async function loadQuotes(
         }
       } catch (err) {
         const pe = err instanceof PriceError ? err : new PriceError((err as Error).message);
-        if (!pe.retryable) {
-          // A config-level rejection (bad/over-quota key): surface it so the
-          // caller can prompt for Settings rather than silently degrading.
+        if (pe.fatal) {
+          // A configuration-level rejection (bad/over-quota key): surface it so
+          // the caller can prompt for Settings rather than silently degrading.
           return {
             quotes: new Map(),
             report: { fetched: [], servedFresh: [], deferred: [], error: pe, minuteRemaining: 0, dayRemaining: 0 },
           };
         }
-        error = pe; // transient — keep what we have, fall back for the rest.
+        error = pe; // transient/non-fatal — keep what we have, fall back for the rest.
       }
     }
   }
@@ -435,6 +448,109 @@ export async function loadFxRates(
     if (cached) return { fx: cached.fx, cached: true, error: pe };
     return { fx: { base: "EUR", rates: {} }, cached: false, error: pe };
   }
+}
+
+/**
+ * Freshness window for the live EUR/USD spot. Short enough to track intraday FX
+ * developments, long enough to barely touch the free-tier budget (one credit
+ * per refresh at most).
+ */
+export const DEFAULT_EURUSD_TTL_MS = 15 * MINUTE_MS;
+
+/** Where a {@link loadEurUsd} reading came from. */
+export type EurUsdSource = "live" | "eod" | "cache" | "none";
+
+export interface LoadEurUsdResult {
+  /** Units of USD per 1 EUR, the current mark (null when wholly unavailable). */
+  now: Decimal | null;
+  /**
+   * Units of USD per 1 EUR at the prior session close, for the FX-aware
+   * today's-move prior mark. Null when only an end-of-day rate is available
+   * (the ECB fallback carries no separate prior close).
+   */
+  previousClose: Decimal | null;
+  /** Provenance of the figures, so the UI can label end-of-day FX honestly. */
+  source: EurUsdSource;
+  cached: boolean;
+  error: PriceError | null;
+}
+
+export interface LoadEurUsdOptions {
+  fetchImpl?: FetchLike;
+  storage?: StorageLike | null;
+  now?: () => number;
+  ttlMs?: number;
+  creditsPerMinute?: number;
+  creditsPerDay?: number;
+  /**
+   * The end-of-day ECB EUR→USD rate already loaded by {@link loadFxRates},
+   * reused as the keyless fallback when the live pair can't be fetched (no
+   * budget, no key, or a transient failure). Passing it here avoids a duplicate
+   * Frankfurter round-trip.
+   */
+  eodFallback?: Decimal | null;
+}
+
+/**
+ * Load the live EUR→USD pair (current spot + prior close) for an FX-aware
+ * today's move. Order of preference:
+ *   1. a still-fresh cached reading (zero credits),
+ *   2. a live Twelve Data `quote` on `EUR/USD` (one credit, budget-permitting),
+ *   3. the end-of-day ECB rate from {@link loadFxRates} (`eodFallback`) — no
+ *      prior close, so callers fall back to the FX-unaware move,
+ *   4. the last cached reading even if expired,
+ * degrading gracefully at every step rather than dead-ending the screen.
+ */
+export async function loadEurUsd(
+  apiKey: string,
+  options: LoadEurUsdOptions = {},
+): Promise<LoadEurUsdResult> {
+  const {
+    fetchImpl = fetch,
+    storage = undefined,
+    now = () => Date.now(),
+    ttlMs = DEFAULT_EURUSD_TTL_MS,
+    creditsPerMinute = FREE_TIER.creditsPerMinute,
+    creditsPerDay = FREE_TIER.creditsPerDay,
+    eodFallback = null,
+  } = options;
+
+  const cached = readCachedEurUsd(storage ?? undefined);
+  if (cached && cached.now !== null && now() - cached.at < ttlMs) {
+    return { now: cached.now, previousClose: cached.previousClose, source: "cache", cached: true, error: null };
+  }
+
+  let liveError: PriceError | null = null;
+  if (apiKey.length > 0) {
+    const log = readCreditLog(now(), DAY_MS, storage ?? undefined);
+    const minute = creditsPerMinute - creditsSpentWithin(log, now(), MINUTE_MS);
+    const day = creditsPerDay - creditsSpentWithin(log, now(), DAY_MS);
+    if (minute >= FREE_TIER.creditsPerSymbol && day >= FREE_TIER.creditsPerSymbol) {
+      // Reserve the credit up-front (same rationale as loadQuotes) so two
+      // overlapping loads can't both fire and 429.
+      recordCredits(FREE_TIER.creditsPerSymbol, now(), storage ?? undefined);
+      try {
+        const reading: EurUsdQuote = await fetchEurUsd(apiKey, fetchImpl);
+        if (reading.now !== null) {
+          const at = now();
+          writeCachedEurUsd(reading, at, storage ?? undefined);
+          return { now: reading.now, previousClose: reading.previousClose, source: "live", cached: false, error: null };
+        }
+      } catch (err) {
+        liveError = err instanceof PriceError ? err : new PriceError((err as Error).message, { retryable: true });
+      }
+    }
+  }
+
+  // Fall back to the end-of-day ECB rate (keyless, no prior close).
+  if (eodFallback !== null && eodFallback.greaterThan(0)) {
+    return { now: eodFallback, previousClose: null, source: "eod", cached: false, error: liveError };
+  }
+  // Last resort: a stale cached reading keeps the spot populated.
+  if (cached && cached.now !== null) {
+    return { now: cached.now, previousClose: cached.previousClose, source: "cache", cached: true, error: liveError };
+  }
+  return { now: null, previousClose: null, source: "none", cached: false, error: liveError };
 }
 
 /** Fetch one batch, retrying a transient failure with capped exponential backoff. */

@@ -20,7 +20,7 @@ from investment_dashboard.db import session_scope
 from investment_dashboard.services import diagnostics_service, runtime_status
 from investment_dashboard.services.diagnostics_service import HealthItem, HealthReport
 from investment_dashboard.services.support_bundle import build_support_bundle, bundle_filename
-from investment_dashboard.ui.components import empty_state, page_header, section
+from investment_dashboard.ui.components import deferred, empty_state, page_header, section
 from investment_dashboard.ui.layout import page_frame
 
 PATH = "/diagnostics"
@@ -81,9 +81,17 @@ def _render_report(report: HealthReport) -> None:  # pragma: no cover - UI
             _render_item(item)
 
 
-def _download_support_bundle() -> None:  # pragma: no cover - UI
-    """Build the logs-plus-context bundle and offer it as a text download."""
-    ui.download.content(build_support_bundle(), bundle_filename())
+async def _download_support_bundle() -> None:  # pragma: no cover - UI
+    """Build the logs-plus-context bundle and offer it as a text download.
+
+    The bundle reads the log file and queries app context, so it is built off
+    the event loop (via :func:`nicegui.run.io_bound`) to keep the websocket
+    responsive — a large log shouldn't stall every connected tab.
+    """
+    from nicegui import run  # noqa: PLC0415 - lazy (needs a NiceGUI context)
+
+    content = await run.io_bound(build_support_bundle)
+    ui.download.content(content, bundle_filename())
     ui.notify("Support bundle downloaded — attach it when reporting an issue.", type="positive")
 
 
@@ -138,12 +146,21 @@ def render_body() -> None:  # pragma: no cover - UI
         "Data Health",
         subtitle="Silent data problems, surfaced in one place.",
     )
-    with session_scope() as session:
-        report = diagnostics_service.check_health(session)
     ui.label(
         "This page never changes your data. Fix anything flagged from "
         "Settings → Data refresh (prices/FX) or Settings → Instruments (tickers).",
     ).classes("text-body2 opacity-70 q-mb-sm")
+    # The health check scans the whole DB; run it off the event loop so a slow
+    # scan never blocks the websocket (and the page paints its shell first).
+    deferred(_render_health, compute=_check_health)
+
+
+def _check_health() -> HealthReport:  # pragma: no cover - heavy DB scan, run off-loop
+    with session_scope() as session:
+        return diagnostics_service.check_health(session)
+
+
+def _render_health(report: HealthReport) -> None:  # pragma: no cover - UI
     _render_report(report)
     _render_background_errors()
     _render_support_section()

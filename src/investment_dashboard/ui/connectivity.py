@@ -14,10 +14,15 @@ app's state continuously visible:
 * **Top progress bar** — a thin accent bar that appears the instant you click a
   nav item or a link (and on every page load / unload), so navigation always
   feels responsive even while the server is building the next page synchronously.
-* **Connection banner** — a prominent, immediate full-width banner the moment the
-  websocket drops ("Connection lost — reconnecting…"), an amber pulse while it
-  retries, and a green "Reconnected" flash on recovery. It also exposes a
-  **Reconnect now** escape hatch so a wedged tab is never a dead end.
+* **Connection banner** — a prominent full-width banner ("Connection lost —
+  reconnecting…") that appears once a websocket drop *persists* past a short
+  grace window, an amber pulse while it retries, and a green "Reconnected" flash
+  on recovery. A brief stall (e.g. the server momentarily busy building a heavy
+  page) is ridden out behind the calm "Still working…" hint instead of flashing
+  an alarming banner. It also exposes a **Reconnect now** escape hatch that first
+  tries an *in-place* socket reconnect — preserving the page's state — and only
+  falls back to a full reload if the socket stays down, so a wedged tab is never
+  a dead end and the button no longer kills a page that is merely busy.
 * **Header status dot** — an always-on at-a-glance dot (green connected / amber
   reconnecting / red offline) rendered into the header by :mod:`layout`.
 * **Stall hint** — if a load runs unusually long, a small "Still working…" pill
@@ -302,6 +307,18 @@ def _script() -> str:
 
   // ---- Connection status ----------------------------------------------
   var dot = null, attempts = 0, wasDown = false;
+  // A websocket drop is very often just the server briefly busy (e.g. building
+  // a heavy page blocks the event loop so it can't answer the heartbeat for a
+  // moment). We hold back the alarming banner for a short grace window and show
+  // the calm "Still working…" hint instead, escalating only if the drop
+  // persists. ``escalated`` tracks whether we actually showed the banner so a
+  // sub-second hiccup doesn't flash a scary "lost" → "reconnected" pair.
+  var graceTimer = null, lostPending = false, escalated = false;
+  var reloadFallbackTimer = null;
+  // 4s: long enough to absorb a typical heavy-page build / brief disk stall
+  // without flashing a scary banner, but well inside the server's 10s
+  // reconnect window so a genuine drop is still surfaced promptly.
+  var LOST_GRACE_MS = 4000;
   function setDot(cls, title) {
     dot = dot || el('inv-conn-dot');
     if (!dot) return;
@@ -345,34 +362,95 @@ def _script() -> str:
     if (window.__invShuttingDown) return;
     wasDown = true;
     if (offline) {
+      // A real browser-level network drop — show immediately, no grace.
+      if (graceTimer) { clearTimeout(graceTimer); graceTimer = null; }
+      lostPending = false;
+      showHint(false);
+      escalateLost(true);
+      return;
+    }
+    // Websocket hiccup: stay calm during the grace window, then escalate only
+    // if it is still down. Keeps a momentary stall during a load from flashing
+    // a scary "connection lost" banner.
+    setDot('is-warn', 'Reconnecting\\u2026');
+    showHint(true);
+    if (lostPending) return;
+    lostPending = true;
+    if (graceTimer) clearTimeout(graceTimer);
+    graceTimer = setTimeout(function () {
+      graceTimer = null;
+      lostPending = false;
+      if (wasDown && (!window.socket || !window.socket.connected)) {
+        showHint(false);
+        escalateLost(false);
+      }
+    }, LOST_GRACE_MS);
+  }
+  function escalateLost(offline) {
+    if (window.__invShuttingDown) return;
+    escalated = true;
+    if (offline) {
       setDot('is-bad', 'Offline — no network');
       showBar('is-offline', 'You are offline \\u2014 check your connection\\u2026');
     } else {
       setDot('is-warn', 'Reconnecting\\u2026');
-      showBar('', 'Connection lost \\u2014 reconnecting\\u2026');
+      showBar('', 'Connection lost \\u2014 reconnecting'
+        + (attempts ? ' (attempt ' + attempts + ')' : '') + '\\u2026');
     }
   }
   function onReconnectAttempt(n) {
     if (window.__invShuttingDown) return;
     attempts = n || (attempts + 1);
     setDot('is-warn', 'Reconnecting\\u2026');
-    showBar('', 'Connection lost \\u2014 reconnecting (attempt ' + attempts + ')\\u2026');
+    // Only refresh the banner text once we've actually escalated; during the
+    // grace window we stay quiet behind the "Still working…" hint.
+    if (escalated) escalateLost(!navigator.onLine);
   }
   function onUp() {
     attempts = 0;
+    lostPending = false;
+    if (graceTimer) { clearTimeout(graceTimer); graceTimer = null; }
+    if (reloadFallbackTimer) { clearTimeout(reloadFallbackTimer); reloadFallbackTimer = null; }
+    showHint(false);
     setDot('is-ok', 'Connected');
     barDone();
-    if (wasDown) {
-      wasDown = false;
+    if (wasDown && escalated) {
+      // Only celebrate recovery if we actually warned about a loss; a hiccup
+      // that never escalated should resolve silently.
       showBar('is-ok', 'Reconnected');
       setTimeout(hideBar, 1800);
     } else {
       hideBar();
     }
+    wasDown = false;
+    escalated = false;
   }
 
   var reloadBtn = el('inv-connbar-reload');
   if (reloadBtn) reloadBtn.addEventListener('click', function () {
+    var s = window.socket;
+    // Prefer an in-place socket reconnect: it rides out a server stall and
+    // resumes with the page state intact. A full reload, by contrast, asks the
+    // (often still-busy) server for a brand-new page and frequently wedges the
+    // tab — that is the "reconnect button kills the page" symptom. We only fall
+    // back to a destructive reload if the socket is still down after a grace.
+    if (s && typeof s.connect === 'function') {
+      setText('Reconnecting\\u2026');
+      try { s.connect(); } catch (e) { /* ignore */ }
+      if (s.io && typeof s.io.reconnect === 'function') {
+        try { s.io.reconnect(); } catch (e) { /* ignore */ }
+      }
+      if (reloadFallbackTimer) clearTimeout(reloadFallbackTimer);
+      reloadFallbackTimer = setTimeout(function () {
+        reloadFallbackTimer = null;
+        if (!window.socket || !window.socket.connected) {
+          setText('Reloading\\u2026');
+          window.location.reload();
+        }
+      }, 5000);
+      return;
+    }
+    // No socket to revive — a reload is the only way back.
     setText('Reloading\\u2026');
     window.location.reload();
   });

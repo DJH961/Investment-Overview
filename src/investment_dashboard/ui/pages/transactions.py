@@ -29,7 +29,7 @@ from investment_dashboard.services import (
     manual_entry,
     transaction_fx_service,
 )
-from investment_dashboard.services.importer_service import Broker, import_csv
+from investment_dashboard.services.importer_service import Broker, ImportResult, import_csv
 from investment_dashboard.services.instrument_enrichment_service import (
     QUOTE_TYPE_MAP,
     effective_instrument,
@@ -682,7 +682,7 @@ def _open_import_modal(accounts: list[Account]) -> None:  # noqa: PLR0915  # pra
             status.text = f"File ready: {e.file.name} — pick the account, then press Import."
             import_btn.enable()
 
-        def _do_import() -> None:
+        async def _do_import() -> None:
             raw = staged["raw"]
             if raw is None:
                 ui.notify("Upload a file first", type="warning")
@@ -699,18 +699,33 @@ def _open_import_modal(accounts: list[Account]) -> None:  # noqa: PLR0915  # pra
                 content = raw
             else:
                 content = raw.decode("utf-8-sig", errors="replace")
-            try:
+            account_id = account_sel.value
+
+            def _run_import() -> ImportResult:
                 with session_scope() as session:
-                    result = import_csv(
+                    return import_csv(
                         session,
                         broker=broker,
-                        account_id=account_sel.value,
+                        account_id=account_id,
                         content=content,
                     )
+
+            from nicegui import run  # noqa: PLC0415 - lazy (needs a page context)
+
+            # Parsing + DB inserts (and the follow-up live-web publish) can
+            # be heavy for a long broker history; run them off the event loop
+            # so the import doesn't stall every connected tab. Disable the
+            # button so a double-click can't kick off a second import.
+            import_btn.disable()
+            status.text = "Importing…"
+            try:
+                result = await run.io_bound(_run_import)
             except Exception as exc:
                 log.exception("CSV import failed")
                 ui.notify(f"Import failed: {exc}", type="negative")
+                import_btn.enable()
                 return
+            import_btn.enable()
             status.text = (
                 f"Inserted {result.inserted}, duplicates {result.duplicates}, "
                 f"sweeps dropped {result.sweeps_dropped}"
@@ -752,9 +767,10 @@ def _open_import_modal(accounts: list[Account]) -> None:  # noqa: PLR0915  # pra
 
             # v3.0 §5.4: republish the live-web blob after a successful import.
             # Best-effort and gated by Settings → Live web companion; never
-            # raises, so a publish hiccup can't undo the import above. Tell the
+            # raises, so a publish hiccup can't undo the import above. Run it
+            # off the loop too (it serialises + writes the blob). Tell the
             # user whether the upload worked (but stay quiet when it is off).
-            outcome = auto_publish.run_trigger(auto_publish.TRIGGER_IMPORT)
+            outcome = await run.io_bound(auto_publish.run_trigger, auto_publish.TRIGGER_IMPORT)
             note = auto_publish.describe_outcome(outcome)
             if note is not None:
                 ui.notify(note[0], type=note[1])

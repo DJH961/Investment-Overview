@@ -392,6 +392,7 @@ def _ttl_for(instr: Instrument) -> int:
 
 def instruments_due_for_refresh(
     session: Session,
+    cache_session: Session | None = None,
     *,
     now: datetime | None = None,
 ) -> list[Instrument]:
@@ -400,16 +401,22 @@ def instruments_due_for_refresh(
     The background ``app.timer`` in :mod:`investment_dashboard.main` calls
     this every few minutes; whatever it returns is what we pull from
     yfinance — so the smaller this list, the cheaper the refresh.
+
+    ``session`` reads the ledger tier (instruments + active overrides);
+    ``cache_session`` reads the cache tier (``price_cache_metadata``). When
+    unset it falls back to ``session`` (single-file layout). In split-DB mode
+    the last-refresh timestamps live in the cache database, so reading them
+    through the ledger session would always come back empty and mark *every*
+    instrument due on every tick.
     """
+    cache = cache_session if cache_session is not None else session
     now = now or datetime.now(UTC).replace(tzinfo=None)
     due: list[Instrument] = []
     inactive = instrument_overrides_repo.inactive_ids(session)
     instruments = instruments_repo.list_instruments(session)
     # One IN(...) query for every instrument's last-refresh timestamp instead
     # of one lookup per instrument.
-    last_refreshed = price_cache_repo.get_last_refreshed_at_map(
-        session, [i.id for i in instruments]
-    )
+    last_refreshed = price_cache_repo.get_last_refreshed_at_map(cache, [i.id for i in instruments])
     for instr in instruments:
         if instr.asset_class in _SYNTHETIC_ASSET_CLASSES:
             continue
@@ -423,25 +430,36 @@ def instruments_due_for_refresh(
 
 def refresh_due_prices(
     session: Session,
+    cache_session: Session | None = None,
     *,
     today: date | None = None,
     now: datetime | None = None,
 ) -> dict[str, int]:
     """Refresh only the instruments whose per-asset-class TTL has expired.
 
+    ``session`` reads the ledger tier (instruments + active overrides);
+    ``cache_session`` reads **and writes** the cache tier (``price_history``
+    and ``price_cache_metadata``). When unset it falls back to ``session``
+    (single-file layout). In split-DB mode the cached closes and last-refresh
+    stamps live in a separate database that the overview reads through the
+    cache tier — writing them through the ledger session would land them in the
+    wrong database, so the per-symbol "updated" time (and prices) would never
+    advance from the live tick even though the fetch succeeded.
+
     Returns ``{symbol: rows_written}``. Synthetic ``cash`` / ``savings``
     rows are never touched. yfinance errors are logged and absorbed so
     the live dashboard remains responsive.
     """
+    cache = cache_session if cache_session is not None else session
     today = today or date.today()
     now = now or datetime.now(UTC).replace(tzinfo=None)
-    due = instruments_due_for_refresh(session, now=now)
+    due = instruments_due_for_refresh(session, cache, now=now)
     if not due:
         return {}
 
     symbols_to_fetch: list[str] = []
     earliest_per_symbol: dict[str, date] = {}
-    latest_dates = prices_repo.latest_price_dates(session, [i.id for i in due])
+    latest_dates = prices_repo.latest_price_dates(cache, [i.id for i in due])
     for instr in due:
         latest = latest_dates.get(instr.id)
         start = (latest + timedelta(days=1)) if latest is not None else today - timedelta(days=14)
@@ -463,12 +481,12 @@ def refresh_due_prices(
         closes = closes_by_symbol.get(instr.symbol, {})
         cutoff = earliest_per_symbol.get(instr.symbol, fetch_start)
         filtered = {d: c for d, c in closes.items() if d >= cutoff}
-        result[instr.symbol] = prices_repo.upsert_closes(session, instr.id, filtered)
+        result[instr.symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
         # Stamp the refresh time for *every* instrument we successfully queried,
         # not just those that returned new closes. Otherwise the per-symbol
         # "updated" time on the overview freezes whenever the feed has nothing
         # new (after hours / weekends / NAV not yet published), leaving it stuck
         # at the last time a price actually changed. The "as of" date still
         # reflects the real (possibly older) observation date.
-        price_cache_repo.upsert_last_refreshed_at(session, instr.id, now)
+        price_cache_repo.upsert_last_refreshed_at(cache, instr.id, now)
     return result

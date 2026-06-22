@@ -14,6 +14,7 @@ views elsewhere — the busy weight-entry form no longer lives in Settings.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
 from nicegui import ui
@@ -26,7 +27,13 @@ from investment_dashboard.domain.allocation import (
     plan_rebalance,
 )
 from investment_dashboard.repositories import allocations_repo
-from investment_dashboard.ui.components import empty_state, kpi_card, page_header, section
+from investment_dashboard.ui.components import (
+    deferred,
+    empty_state,
+    kpi_card,
+    page_header,
+    section,
+)
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import currency_symbol, fmt_money, fmt_shares
 from investment_dashboard.ui.pages._calculator_query import (
@@ -91,6 +98,20 @@ def _bar(current_pct: Decimal, target_pct: Decimal) -> str:
     )
 
 
+@dataclass(frozen=True)
+class _CalculatorPayload:
+    """Everything the Calculator page needs, gathered off the event loop.
+
+    Produced by the page's ``compute`` step (all heavy DB work on a worker
+    thread) and handed to the render step on the loop, so a slow build never
+    blocks the websocket — see
+    :func:`investment_dashboard.ui.components.deferred.deferred`.
+    """
+
+    data: CalcData
+    active_weights: dict[int, Decimal]
+
+
 def register() -> None:
     @ui.page(PATH)
     def _calculator() -> None:  # pragma: no cover - rendered by NiceGUI
@@ -99,25 +120,35 @@ def register() -> None:
                 "Calculator",
                 subtitle="Build a target mix and turn cash into a buy-only plan",
             )
-            with session_scope() as session:
-                data = build_calculator_data(session)
-                active = allocations_repo.get_active(session)
-                active_weights = (
-                    {item.instrument_id: item.weight_pct for item in active.items}
-                    if active is not None
-                    else {}
-                )
 
-            if not data.instruments:
-                empty_state(
-                    "calculate",
-                    "No instruments yet",
-                    hint="Add an account and an instrument in Settings, then come back "
-                    "to build a target mix and plan your next contribution.",
-                )
-                return
+            def _gather() -> _CalculatorPayload:
+                # All DB + metrics work happens here, off the event loop on a
+                # worker thread (via ``deferred(compute=...)``), so a large
+                # portfolio's calculator load never stalls the websocket and
+                # trips the "disconnected" / reconnect storm on open tabs.
+                with session_scope() as session:
+                    data = build_calculator_data(session)
+                    active = allocations_repo.get_active(session)
+                    active_weights = (
+                        {item.instrument_id: item.weight_pct for item in active.items}
+                        if active is not None
+                        else {}
+                    )
+                return _CalculatorPayload(data=data, active_weights=active_weights)
 
-            _CalculatorView(data, active_weights).render()
+            def _render(payload: _CalculatorPayload) -> None:
+                if not payload.data.instruments:
+                    empty_state(
+                        "calculate",
+                        "No instruments yet",
+                        hint="Add an account and an instrument in Settings, then come back "
+                        "to build a target mix and plan your next contribution.",
+                    )
+                    return
+
+                _CalculatorView(payload.data, payload.active_weights).render()
+
+            deferred(_render, compute=_gather)
 
 
 class _CalculatorView:  # pragma: no cover - UI wiring

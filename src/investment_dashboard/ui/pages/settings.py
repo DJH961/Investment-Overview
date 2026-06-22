@@ -1393,8 +1393,13 @@ def _status_chip_props(status: str) -> tuple[str, str, str]:
     return ("help", "grey", "Unknown")
 
 
-def _format_relative(at: datetime) -> str:
-    """Render a timestamp as both relative ("3 m ago") and absolute UTC."""
+def _format_relative(at: datetime, *, tz: tzinfo | None = None) -> str:
+    """Render a timestamp as both relative ("3 m ago") and absolute wall-clock.
+
+    ``tz`` formats the absolute part in the user's configured display timezone
+    (defaulting to UTC when unset) so the connectivity log matches the header
+    clock rather than always reading UTC.
+    """
     now = datetime.now(UTC)
     # Treat any naive datetime as UTC — provider_status always uses tz-aware UTC.
     moment = at if at.tzinfo is not None else at.replace(tzinfo=UTC)
@@ -1410,13 +1415,17 @@ def _format_relative(at: datetime) -> str:
         rel = f"{secs // 3600}h ago"
     else:
         rel = f"{secs // 86400}d ago"
-    return f"{rel} ({moment.strftime('%Y-%m-%d %H:%M:%S UTC')})"
+    shown = moment.astimezone(tz) if tz is not None else moment
+    suffix = "" if tz is not None else " UTC"
+    return f"{rel} ({shown.strftime('%Y-%m-%d %H:%M:%S')}{suffix})"
 
 
 def _render_connectivity_section() -> None:  # pragma: no cover - UI
     """Show the latest yfinance / Frankfurter call outcome + recent log."""
     known_providers = ("yfinance", "frankfurter")
     latest = provider_status.all_latest()
+    with session_scope() as session:
+        tz = timezone_service.resolve_tzinfo(timezone_service.get_timezone(session))
 
     with ui.column().classes("gap-sm w-full"):
         with ui.row().classes("gap-md items-center w-full"):
@@ -1429,7 +1438,7 @@ def _render_connectivity_section() -> None:  # pragma: no cover - UI
                 else:
                     icon, color, label = _status_chip_props(event.status)
                     detail = event.message
-                    when = _format_relative(event.at)
+                    when = _format_relative(event.at, tz=tz)
                 with ui.card().classes("p-sm"):
                     with ui.row().classes("items-center gap-sm"):
                         ui.icon(icon, color=color)
@@ -1454,7 +1463,7 @@ def _render_connectivity_section() -> None:  # pragma: no cover - UI
                 icon, color, _ = _status_chip_props(ev.status)
                 with ui.row().classes("items-center gap-sm w-full no-wrap"):
                     ui.icon(icon, color=color).classes("text-sm")
-                    ui.label(ev.at.astimezone(UTC).strftime("%H:%M:%S")).classes(
+                    ui.label(ev.at.astimezone(tz).strftime("%H:%M:%S")).classes(
                         "text-caption font-mono opacity-70"
                     )
                     ui.label(ev.provider).classes("text-caption font-mono")
