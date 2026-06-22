@@ -442,7 +442,7 @@ const CALC_FRACTIONAL_KEY = "iv.web.calc.allowFractional";
 const CALC_REBALANCE_KEY = "iv.web.calc.rebalance";
 
 /** A single holding as a list row (mobile-first, no wide horizontal table). */
-function renderHoldingRow(holding: HoldingView): HTMLElement {
+function renderHoldingRow(holding: HoldingView, badge?: string): HTMLElement {
   const symChildren: Array<Node | string> = [holding.symbol];
   if (holding.priceType === "nav") symChildren.push(h("span", { class: "pill" }, ["NAV"]));
   // A genuinely stale fallback (no price at all) is still flagged; the milder
@@ -450,6 +450,11 @@ function renderHoldingRow(holding: HoldingView): HTMLElement {
   // rather than a vague "last known" bubble.
   if (holding.valueIsStale) {
     symChildren.push(h("span", { class: "pill stale" }, ["stale value"]));
+  }
+  // A movers badge reminds the viewer this row topped today's leaderboard.
+  if (badge) {
+    const badgeCls = badge.includes("loser") ? "neg" : "pos";
+    symChildren.push(h("span", { class: `mover-badge ${badgeCls}` }, [badge]));
   }
 
   const todayPct = pickByCurrency(holding.todayMovePct, holding.todayMovePctUsd);
@@ -508,14 +513,18 @@ function renderHoldingRow(holding: HoldingView): HTMLElement {
   return h("li", { class: "holding" }, [main, meta]);
 }
 
-function renderHoldings(holdings: HoldingView[]): HTMLElement {
+function renderHoldings(holdings: HoldingView[], badges?: Map<string, string>): HTMLElement {
   const sorted = [...holdings].sort((a, b) => {
     const av = a.valueEur?.toNumber() ?? -1;
     const bv = b.valueEur?.toNumber() ?? -1;
     return bv - av;
   });
   const count = `${holdings.length} ${holdings.length === 1 ? "position" : "positions"}`;
-  const list = h("ul", { class: "holding-list" }, sorted.map(renderHoldingRow));
+  const list = h(
+    "ul",
+    { class: "holding-list" },
+    sorted.map((holding) => renderHoldingRow(holding, badges?.get(holding.symbol))),
+  );
   return collapsibleSection("Holdings", count, list, "holdings");
 }
 
@@ -535,51 +544,71 @@ function moversBasisLabel(basisDate: string | null, now: Date = new Date()): str
   return parsed.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
-/** One winner/loser row: symbol + reason tag, today's % and money move. */
-function renderMoverEntry(entry: MoverEntry): HTMLElement {
+/** One winner/loser block: the stat it ranked on shown large on top. */
+function renderMoverBlock(entry: MoverEntry, side: "winner" | "loser"): HTMLElement {
   const pct = pickByCurrency(entry.todayMovePct, entry.todayMovePctUsd);
-  const cls = signClass(pct);
+  const money = formatSignedDualCurrency(entry.todayMoveEur, entry.todayMoveUsd);
+  const cls = side === "winner" ? "pos" : "neg";
   const tag = entry.reason === "total" ? "biggest move" : "top %";
-  return h("li", { class: "mover" }, [
-    h("div", { class: "mover-id" }, [
-      h("span", { class: "mover-sym" }, [entry.symbol]),
+  // The figure it earned its slot on leads (large, on top); the other trails.
+  const primary = entry.reason === "total" ? money : signedPercentOrDash(pct);
+  const secondary = entry.reason === "total" ? signedPercentOrDash(pct) : money;
+  const sideLabel = side === "winner" ? "Winner" : "Loser";
+  return h("div", { class: `mover-block ${cls}` }, [
+    h("div", { class: "mover-head" }, [
+      h("span", { class: "mover-side" }, [sideLabel]),
       h("span", { class: "mover-tag" }, [tag]),
     ]),
+    h("div", { class: "mover-id" }, [
+      h("span", { class: "mover-sym" }, [entry.symbol]),
+      h("span", { class: "mover-name", title: entry.name }, [entry.name]),
+    ]),
     h("div", { class: "mover-figures" }, [
-      h("span", { class: `mover-pct ${cls}` }, [signedPercentOrDash(pct)]),
-      h("span", { class: `mover-money ${cls}` }, [
-        formatSignedDualCurrency(entry.todayMoveEur, entry.todayMoveUsd),
-      ]),
+      h("span", { class: `mover-primary ${cls}` }, [primary]),
+      h("span", { class: "mover-secondary" }, [secondary]),
     ]),
   ]);
-}
-
-/** One side (winners or losers) of the movers leaderboard. */
-function renderMoverColumn(title: string, entries: MoverEntry[]): HTMLElement {
-  const body: Array<Node | string> =
-    entries.length > 0
-      ? [h("ul", { class: "mover-list" }, entries.map(renderMoverEntry))]
-      : [h("p", { class: "mover-empty" }, ["None"])];
-  return h("div", { class: "mover-col" }, [h("h3", { class: "mover-col-title" }, [title]), ...body]);
 }
 
 /**
- * Today's winners & losers: the biggest money mover and biggest percentage mover
- * on each side (percentage runner-up substituted when one holding tops both). It
- * is measured on the freshest price date across the book, so before the open it
- * reflects last session and during the session only what has already printed
+ * Today's winners & losers as a distinct "special notice" band: up to four
+ * blocks across (two winners, two losers) on wide screens, each leading with the
+ * stat it was ranked on (money or %, large on top). Ranked in the active display
+ * currency so the board agrees with the figures on screen and with the desktop
+ * app. Measured on the freshest price date across the book, so before the open
+ * it reflects last session and during the session only what has already printed
  * today. Hidden entirely when nothing has a today's move yet.
  */
 function renderMovers(holdings: HoldingView[]): HTMLElement | null {
-  const movers = buildMovers(holdings);
+  const movers = buildMovers(holdings, getDisplayCurrency());
   if (movers.winners.length === 0 && movers.losers.length === 0) return null;
   const basis = moversBasisLabel(movers.basisDate);
   const sub = basis === "today" ? "today" : `last close · ${basis}`;
-  const grid = h("div", { class: "mover-grid" }, [
-    renderMoverColumn("Winners", movers.winners),
-    renderMoverColumn("Losers", movers.losers),
-  ]);
-  return collapsibleSection("Today's movers", sub, grid, "movers");
+  const blocks = [
+    ...movers.winners.map((e) => renderMoverBlock(e, "winner")),
+    ...movers.losers.map((e) => renderMoverBlock(e, "loser")),
+  ];
+  const grid = h("div", { class: "mover-grid" }, blocks);
+  const section = collapsibleSection("Today's movers", sub, grid, "movers");
+  section.classList.add("movers-band");
+  return section;
+}
+
+/**
+ * Map each leaderboard holding to a short badge label (e.g. "Top gainer"), so
+ * the holdings list can remind the viewer why a row stood out today. Built from
+ * the same currency-aware leaderboard the band shows.
+ */
+function moverBadges(holdings: HoldingView[]): Map<string, string> {
+  const movers = buildMovers(holdings, getDisplayCurrency());
+  const badges = new Map<string, string>();
+  for (const e of movers.winners) {
+    badges.set(e.symbol, e.reason === "total" ? "Top gainer" : "Top % gainer");
+  }
+  for (const e of movers.losers) {
+    badges.set(e.symbol, e.reason === "total" ? "Top loser" : "Top % loser");
+  }
+  return badges;
 }
 
 export function renderDashboard(
@@ -710,14 +739,15 @@ function renderOverviewPanel(model: DashboardModel): HTMLElement {
     renderHero(model.overview),
     renderReturns(model.overview),
   ];
-  // Today's winners/losers sit high up — a quick glimpse of the day's movers
-  // without scrolling past the chart and KPIs to the holdings list.
+  // Today's winners/losers sit high up as a distinct, attention-grabbing band —
+  // a quick read of the day's movers above the chart and well above the holdings
+  // list (the badges below tie each mover back to its row).
   const movers = renderMovers(model.holdings);
   if (movers) content.push(movers);
   const valueChart = renderValueChart(model.analytics, model.overview);
   if (valueChart) content.push(valueChart);
   content.push(renderStats(model.overview));
-  content.push(renderHoldings(model.holdings));
+  content.push(renderHoldings(model.holdings, moverBadges(model.holdings)));
   const allocation = renderAllocation(model.allocation);
   if (allocation) content.push(allocation);
   content.push(

@@ -648,36 +648,91 @@ html, body {{
 /* ------------------------------------------------------------------ */
 /* Today's movers (winners / losers)                                   */
 /* ------------------------------------------------------------------ */
+/* A distinct "special notice" band that stands apart from the holdings and
+   KPI surfaces, laying its winners/losers out as blocks across. */
+.inv-movers-band {{
+  border-color: color-mix(in srgb, var(--inv-accent) 35%, var(--inv-hairline));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--inv-accent) 7%, var(--inv-surface)),
+      var(--inv-surface));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--inv-accent) 10%, transparent);
+}}
+.inv-movers-band .inv-section-title::before {{
+  content: "\\2605";
+  margin-right: 0.4rem;
+  color: var(--inv-accent);
+}}
 .inv-mover-sub {{
   font-size: 0.75rem; color: var(--inv-muted); margin: -0.25rem 0 0.6rem;
 }}
 .inv-mover-grid {{
-  display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;
+  display: grid; grid-template-columns: 1fr; gap: 0.55rem;
 }}
-.inv-mover-col {{ display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }}
-.inv-mover-col-title {{
-  font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--inv-muted); font-weight: 700;
+@media (min-width: 600px) {{
+  .inv-mover-grid {{ grid-template-columns: repeat(2, 1fr); }}
 }}
-.inv-mover {{
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 0.5rem; padding: 0.45rem 0.6rem;
+@media (min-width: 1024px) {{
+  .inv-mover-grid {{ grid-template-columns: repeat(4, 1fr); }}
+}}
+.inv-mover-block {{
+  display: flex; flex-direction: column; gap: 0.3rem;
+  padding: 0.6rem 0.7rem;
   background: var(--inv-surface-alt); border: 1px solid var(--inv-hairline);
+  border-left: 3px solid var(--inv-hairline);
   border-radius: var(--inv-radius-md);
+  min-width: 0;
+}}
+.inv-mover-winner {{
+  border-left-color: var(--inv-gain);
+  background: color-mix(in srgb, var(--inv-gain) 6%, var(--inv-surface-alt));
+}}
+.inv-mover-loser {{
+  border-left-color: var(--inv-loss);
+  background: color-mix(in srgb, var(--inv-loss) 6%, var(--inv-surface-alt));
+}}
+.inv-mover-head {{
+  display: flex; align-items: baseline; justify-content: space-between; gap: 0.4rem;
+}}
+.inv-mover-side {{
+  font-size: 0.6875rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+}}
+.inv-mover-winner .inv-mover-side {{ color: var(--inv-gain); }}
+.inv-mover-loser .inv-mover-side {{ color: var(--inv-loss); }}
+.inv-mover-tag {{
+  font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--inv-muted);
 }}
 .inv-mover-id {{ display: flex; flex-direction: column; min-width: 0; }}
 .inv-mover-sym {{
   font-weight: 700; font-size: 0.9375rem; color: var(--inv-ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }}
-.inv-mover-tag {{
-  font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.04em;
-  color: var(--inv-muted);
+.inv-mover-name {{
+  font-size: 0.72rem; color: var(--inv-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }}
-.inv-mover-figures {{ display: flex; flex-direction: column; align-items: flex-end; flex: none; }}
-.inv-mover-pct {{ font-weight: 700; font-size: 0.9375rem; font-variant-numeric: tabular-nums; }}
-.inv-mover-money {{ font-size: 0.75rem; font-variant-numeric: tabular-nums; }}
+.inv-mover-figures {{ display: flex; flex-direction: column; }}
+/* The stat the block was ranked on leads — large, on top. */
+.inv-mover-primary {{
+  font-weight: 800; font-size: 1.15rem; line-height: 1.1; font-variant-numeric: tabular-nums;
+}}
+.inv-mover-secondary {{
+  font-size: 0.75rem; color: var(--inv-muted); font-variant-numeric: tabular-nums;
+}}
 .inv-mover-empty {{ font-size: 0.8125rem; color: var(--inv-muted); padding: 0.2rem 0; }}
+/* A compact badge on a holding card that topped today's movers leaderboard. */
+.inv-holding-badge {{
+  display: inline-block; margin-left: 0.35rem; padding: 0.05rem 0.45rem;
+  border-radius: var(--inv-radius-pill);
+  font-size: 0.625rem; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase;
+  vertical-align: middle;
+}}
+.inv-holding-badge-gain {{
+  color: var(--inv-gain); background: color-mix(in srgb, var(--inv-gain) 14%, transparent);
+}}
+.inv-holding-badge-loss {{
+  color: var(--inv-loss); background: color-mix(in srgb, var(--inv-loss) 14%, transparent);
+}}
 
 
 /* ------------------------------------------------------------------ */

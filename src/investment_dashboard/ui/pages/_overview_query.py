@@ -1233,20 +1233,41 @@ def _to_mover_entry(card: HoldingCard, reason: str) -> MoverEntry:
     )
 
 
-def _pick_mover_side(pool: list[HoldingCard], *, descending: bool) -> list[MoverEntry]:
+def _move_for_currency(card: HoldingCard, currency: str) -> Decimal:
+    """The money move to rank on, in ``currency`` (falls back to EUR)."""
+    if currency.upper() == "USD" and card.daily_move_usd is not None:
+        return card.daily_move_usd
+    return card.daily_move_eur or ZERO
+
+
+def _pct_for_currency(card: HoldingCard, currency: str) -> Decimal:
+    """The percentage move to rank on, in ``currency`` (falls back to EUR).
+
+    Unlike the money move, the daily percentage is genuinely FX-variant (EUR and
+    USD percentages differ as the day's FX drifts), so the "top %" pick must be
+    made in the display currency — the crux of the cross-currency discrepancy.
+    """
+    if currency.upper() == "USD" and card.daily_growth_usd is not None:
+        return card.daily_growth_usd
+    return card.daily_growth_eur or ZERO
+
+
+def _pick_mover_side(
+    pool: list[HoldingCard], *, descending: bool, currency: str
+) -> list[MoverEntry]:
     """Pick up to two leaderboard entries from one side (winners or losers).
 
     The biggest money move comes first, then the biggest percentage move; when
     the same holding tops both, the second slot falls back to the percentage
     runner-up so two distinct names are shown. ``descending`` is ``True`` for
     winners (largest first) or ``False`` for losers (most negative first).
-    Ranking uses the canonical EUR figures (the order is FX-invariant, so the
-    USD view shows the same names).
+    Ranking is done in ``currency`` so the board matches the figures on screen
+    (the "top %" pick in particular is FX-variant).
     """
     if not pool:
         return []
-    by_money = sorted(pool, key=lambda c: c.daily_move_eur or ZERO, reverse=descending)
-    by_pct = sorted(pool, key=lambda c: c.daily_growth_eur or ZERO, reverse=descending)
+    by_money = sorted(pool, key=lambda c: _move_for_currency(c, currency), reverse=descending)
+    by_pct = sorted(pool, key=lambda c: _pct_for_currency(c, currency), reverse=descending)
     top_total = by_money[0]
     entries = [_to_mover_entry(top_total, "total")]
     # The biggest-% holding, or — when it is also the biggest-money one — the
@@ -1260,12 +1281,15 @@ def _pick_mover_side(pool: list[HoldingCard], *, descending: bool) -> list[Mover
     return entries
 
 
-def build_movers(cards: list[HoldingCard]) -> MoversView:
+def build_movers(cards: list[HoldingCard], currency: str = "EUR") -> MoversView:
     """Build today's winners/losers leaderboard from the holding cards.
 
-    Only holdings that repriced on the freshest date contribute (lagging funds
-    are excluded), so before the open this reflects last session's movers and
-    during the session only those already printed today. See :class:`MoversView`.
+    Ranked in the active display ``currency``. Only holdings that repriced on the
+    freshest date contribute (lagging funds are excluded), so before the open
+    this reflects last session's movers and during the session only those already
+    printed today. Ranking in the display currency (rather than always EUR) keeps
+    the EUR and USD views — and the desktop and web apps — in agreement about who
+    the biggest mover was. See :class:`MoversView`.
     """
     eligible = [
         c
@@ -1279,11 +1303,13 @@ def build_movers(cards: list[HoldingCard]) -> MoversView:
         (c.daily_growth_as_of for c in eligible if c.daily_growth_as_of is not None),
         default=None,
     )
+    # Sign (winner vs loser) is FX-invariant, so the canonical EUR move decides
+    # the side; the in-currency figures only reorder within a side.
     winners_pool = [c for c in eligible if (c.daily_move_eur or ZERO) > ZERO]
     losers_pool = [c for c in eligible if (c.daily_move_eur or ZERO) < ZERO]
     return MoversView(
-        winners=_pick_mover_side(winners_pool, descending=True),
-        losers=_pick_mover_side(losers_pool, descending=False),
+        winners=_pick_mover_side(winners_pool, descending=True, currency=currency),
+        losers=_pick_mover_side(losers_pool, descending=False, currency=currency),
         basis_date=basis_date,
         eligible_count=len(eligible),
     )

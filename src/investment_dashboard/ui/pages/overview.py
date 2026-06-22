@@ -323,7 +323,7 @@ def _fmt_updated(value: datetime, *, tz: tzinfo | None = None) -> str:
 
 
 def _holding_card(
-    card: HoldingCard, *, display_ccy: str, tz: tzinfo | None = None
+    card: HoldingCard, *, display_ccy: str, tz: tzinfo | None = None, badge: str | None = None
 ) -> None:  # pragma: no cover - UI
     """Render one redesigned holding box (web-style headline + detail grid).
 
@@ -358,6 +358,10 @@ def _holding_card(
             pills += '<span class="inv-holding-pill inv-holding-pill-warn">stale value</span>'
         if card.price_data_warning:
             pills += '<span class="inv-holding-pill inv-holding-pill-warn">bad history</span>'
+        # A movers badge reminds the viewer this holding topped today's leaderboard.
+        if badge:
+            badge_cls = "inv-holding-badge-loss" if "loser" in badge else "inv-holding-badge-gain"
+            pills += f'<span class="inv-holding-badge {badge_cls}">{escape(badge)}</span>'
         ui.html(
             '<div class="inv-holding-topline">'
             f'<span class="inv-holding-sym">{escape(card.symbol)}{pills}</span>'
@@ -444,52 +448,67 @@ def _mover_basis_label(basis_date: date | None, *, today: date | None = None) ->
     return f"last close · {basis_date.strftime('%d %b')}"
 
 
-def _render_mover_entry(entry: MoverEntry, *, display_ccy: str) -> None:  # pragma: no cover - UI
-    """Render one winner/loser row: symbol + reason tag, today's % and money move."""
+def _render_mover_block(
+    entry: MoverEntry, side: str, *, display_ccy: str
+) -> None:  # pragma: no cover - UI
+    """Render one winner/loser block: the stat it ranked on shown large on top."""
     ccy = display_ccy.upper()
     pct = _by_ccy(entry.pct_eur, entry.pct_usd, ccy)
     money = _by_ccy(entry.move_eur, entry.move_usd, ccy)
-    color = color_for_signed(float(pct)) if pct is not None else "var(--inv-muted)"
+    color = color_for_signed(float(money)) if money is not None else "var(--inv-muted)"
     pct_txt = f"{arrow_for_signed(float(pct))} {fmt_pct(pct)}" if pct is not None else "—"
+    money_txt = fmt_money(money, ccy)
     tag = "biggest move" if entry.reason == "total" else "top %"
+    side_label = "Winner" if side == "winner" else "Loser"
+    # The figure it earned its slot on leads (large, on top); the other trails.
+    primary, secondary = (money_txt, pct_txt) if entry.reason == "total" else (pct_txt, money_txt)
     ui.html(
-        '<div class="inv-mover">'
-        '<div class="inv-mover-id">'
-        f'<span class="inv-mover-sym" title="{escape(entry.name)}">{escape(entry.symbol)}</span>'
+        f'<div class="inv-mover-block inv-mover-{escape(side)}">'
+        '<div class="inv-mover-head">'
+        f'<span class="inv-mover-side">{escape(side_label)}</span>'
         f'<span class="inv-mover-tag">{escape(tag)}</span>'
         "</div>"
+        '<div class="inv-mover-id">'
+        f'<span class="inv-mover-sym" title="{escape(entry.name)}">{escape(entry.symbol)}</span>'
+        f'<span class="inv-mover-name">{escape(entry.name)}</span>'
+        "</div>"
         '<div class="inv-mover-figures">'
-        f'<span class="inv-mover-pct" style="color:{color}">{escape(pct_txt)}</span>'
-        f'<span class="inv-mover-money" style="color:{color}">{escape(fmt_money(money, ccy))}</span>'
+        f'<span class="inv-mover-primary" style="color:{color}">{escape(primary)}</span>'
+        f'<span class="inv-mover-secondary">{escape(secondary)}</span>'
         "</div>"
         "</div>"
     )
 
 
-def _render_mover_column(
-    title: str, entries: list[MoverEntry], *, display_ccy: str
-) -> None:  # pragma: no cover - UI
-    """Render one side (winners or losers) of the movers leaderboard."""
-    with ui.element("div").classes("inv-mover-col"):
-        ui.html(f'<div class="inv-mover-col-title">{escape(title)}</div>')
-        if entries:
-            for entry in entries:
-                _render_mover_entry(entry, display_ccy=display_ccy)
-        else:
-            ui.html('<div class="inv-mover-empty">None</div>')
-
-
 def _render_movers(movers: MoversView, *, display_ccy: str) -> None:  # pragma: no cover - UI
-    """Render the "Today's movers" section — a quick at-a-glance winners/losers board.
+    """Render the "Today's movers" section — a distinct winners/losers notice band.
 
-    Measured on the freshest price date across the book, so before the open it
-    reflects last session and during the session only what has printed today.
+    Laid out as up to four blocks across (two winners, two losers), each leading
+    with the stat it was ranked on. Measured on the freshest price date across
+    the book, so before the open it reflects last session and during the session
+    only what has printed today.
     """
-    with section("Today's movers"):
+    with section("Today's movers", classes="inv-movers-band"):
         ui.html(f'<div class="inv-mover-sub">{escape(_mover_basis_label(movers.basis_date))}</div>')
         with ui.element("div").classes("inv-mover-grid"):
-            _render_mover_column("Winners", movers.winners, display_ccy=display_ccy)
-            _render_mover_column("Losers", movers.losers, display_ccy=display_ccy)
+            for entry in movers.winners:
+                _render_mover_block(entry, "winner", display_ccy=display_ccy)
+            for entry in movers.losers:
+                _render_mover_block(entry, "loser", display_ccy=display_ccy)
+
+
+def _mover_badges(movers: MoversView) -> dict[str, str]:
+    """Map each leaderboard holding's symbol to a short badge label.
+
+    Lets the holdings list remind the viewer why a row stood out today, using the
+    same currency-aware leaderboard the band shows.
+    """
+    badges: dict[str, str] = {}
+    for entry in movers.winners:
+        badges[entry.symbol] = "Top gainer" if entry.reason == "total" else "Top % gainer"
+    for entry in movers.losers:
+        badges[entry.symbol] = "Top loser" if entry.reason == "total" else "Top % loser"
+    return badges
 
 
 def _zero_value_warning(symbols: list[str]) -> None:  # pragma: no cover - UI
@@ -1003,12 +1022,12 @@ def register() -> None:  # noqa: PLR0915
                         "text-caption opacity-70"
                     )
 
-                # Today's winners/losers — a quick glimpse high on the page,
-                # before the value chart, so the day's movers are visible without
-                # scrolling down to the holdings list.
-                movers = build_movers(cards)
-                if movers.winners or movers.losers:
-                    _render_movers(movers, display_ccy=display_ccy)
+                # Movers are rendered under the value chart (below), not here, so
+                # the day's leaderboard sits as a distinct band just above the
+                # holdings detail. Build it now so the holding cards can badge
+                # the winners/losers, ranked in the active display currency.
+                movers = build_movers(cards, currency=display_ccy)
+                badges = _mover_badges(movers)
 
                 _value_over_time_section(
                     value_series,
@@ -1017,6 +1036,11 @@ def register() -> None:  # noqa: PLR0915
                     display_tz=display_tz,
                     prev_close=data.intraday_prev_close,
                 )
+
+                # Today's winners/losers — a distinct band under the graph and
+                # right above the holdings list.
+                if movers.winners or movers.losers:
+                    _render_movers(movers, display_ccy=display_ccy)
 
                 if not cards:
                     empty_state(
@@ -1042,7 +1066,12 @@ def register() -> None:  # noqa: PLR0915
                             ).props("flat dense no-caps color=primary")
                         with ui.element("div").classes("inv-holding-grid w-full q-mt-sm"):
                             for card in cards:
-                                _holding_card(card, display_ccy=display_ccy, tz=display_tz)
+                                _holding_card(
+                                    card,
+                                    display_ccy=display_ccy,
+                                    tz=display_tz,
+                                    badge=badges.get(card.symbol),
+                                )
                     with section("Allocation"):
                         ui.plotly(
                             _treemap_figure(treemap_data, currency=display_ccy, fx_rate=fx_rate),

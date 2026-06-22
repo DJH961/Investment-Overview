@@ -19,6 +19,8 @@ def _card(
     *,
     move_eur: Decimal | None,
     pct_eur: Decimal | None,
+    pct_usd: Decimal | None = None,
+    move_usd: Decimal | None = None,
     daily_as_of: date | None = _TODAY,
     daily_is_stale: bool = False,
 ) -> HoldingCard:
@@ -47,9 +49,9 @@ def _card(
         xirr_eur=None,
         xirr_usd=None,
         daily_growth_eur=pct_eur,
-        daily_growth_usd=pct_eur,
+        daily_growth_usd=pct_usd if pct_usd is not None else pct_eur,
         daily_move_eur=move_eur,
-        daily_move_usd=move_eur,
+        daily_move_usd=move_usd if move_usd is not None else move_eur,
         ytd_growth_eur=None,
         ytd_growth_usd=None,
         weight=None,
@@ -136,3 +138,14 @@ def test_movers_single_entry_per_side_when_only_one_mover() -> None:
     )
     assert [e.symbol for e in movers.winners] == ["ONLY"]
     assert [e.symbol for e in movers.losers] == ["DOWN"]
+
+
+def test_movers_top_percent_pick_uses_display_currency() -> None:
+    # AAA is the bigger % gainer in EUR; BBB is the bigger % gainer in USD.
+    cards = [
+        _card("BIG", move_eur=Decimal("900"), pct_eur=Decimal("0.01"), pct_usd=Decimal("0.01")),
+        _card("AAA", move_eur=Decimal("50"), pct_eur=Decimal("0.08"), pct_usd=Decimal("0.03")),
+        _card("BBB", move_eur=Decimal("40"), pct_eur=Decimal("0.05"), pct_usd=Decimal("0.09")),
+    ]
+    assert [e.symbol for e in build_movers(cards, "EUR").winners] == ["BIG", "AAA"]
+    assert [e.symbol for e in build_movers(cards, "USD").winners] == ["BIG", "BBB"]
