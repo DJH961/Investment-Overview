@@ -10,12 +10,14 @@ from html import escape
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
+from investment_dashboard.domain.market_hours import is_us_market_open
 from investment_dashboard.domain.returns import years_between
 from investment_dashboard.services import (
     display_currency_service,
     prices_service,
     timezone_service,
 )
+from investment_dashboard.services.daily_growth_view import build_daily_growth_caption
 from investment_dashboard.ui.components import (
     deferred,
     empty_state,
@@ -540,7 +542,7 @@ def register() -> None:  # noqa: PLR0915
                     treemap_data=treemap_data,
                 )
 
-            def _render(data: _OverviewData) -> None:  # noqa: PLR0915
+            def _render(data: _OverviewData) -> None:
                 range_label = data.range_label
                 metrics = data.metrics
                 display_ccy = data.display_ccy
@@ -611,27 +613,30 @@ def register() -> None:  # noqa: PLR0915
                         display_ccy=display_ccy,
                         tooltip_key="mtd_growth",
                     )
-                    _daily_sub = (
-                        f"as of {metrics.daily_growth_as_of.isoformat()}"
-                        if metrics.daily_growth_as_of is not None
-                        else "awaiting two priced days"
+                    # Caption: while the US market is open we show a live,
+                    # time-stamped figure with the live FX rate and its move;
+                    # once it is closed we pin to the last open-market date and
+                    # quote that day's settled FX rate (which falls back to the
+                    # live spot when Frankfurter has not published yet).
+                    _now = datetime.now(UTC)
+                    _caption = build_daily_growth_caption(
+                        last_date=metrics.daily_growth_as_of,
+                        prev_date=metrics.daily_growth_prev_as_of,
+                        eur_usd_last=metrics.daily_growth_fx_eur_usd,
+                        eur_usd_prev=metrics.daily_growth_fx_eur_usd_prev,
+                        display_ccy=display_ccy,
+                        today=date.today(),
+                        now=_now,
+                        tz=display_tz,
+                        market_open=is_us_market_open(_now),
                     )
-                    # Be honest about which EUR/USD drove today's figure: a live
-                    # intraday spot (keyless yfinance) vs the ECB end-of-day rate
-                    # when the live fetch was unavailable/over budget.
-                    if metrics.daily_growth_as_of is not None:
-                        from investment_dashboard.services import fx_service  # noqa: PLC0415
-
-                        _live = fx_service.get_live_spot("USD")
-                        _fx_live = _live is not None and _live.observed_on == date.today()
-                        _daily_sub += " · live FX" if _fx_live else " · end-of-day FX"
                     _pct_card(
                         "Daily Growth",
                         metrics.daily_growth_pct,
                         metrics.daily_growth_pct_usd,
                         display_ccy=display_ccy,
                         tooltip_key="daily_growth",
-                        sub=_daily_sub,
+                        sub=_caption.combined(),
                     )
                     _verdict_card(verdict)
                 # Expense ratio moved out of the KPI grid (kept the grid a clean
