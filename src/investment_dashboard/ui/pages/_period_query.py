@@ -787,6 +787,9 @@ def _period_xirr_growth(
     """
     flows: list[Cashflow] = list(window_flows)
     if opening > 0:
+        # Opening balance is money already at risk at period start; under the
+        # deposit sign convention (money in ⇒ negative) it enters as a negative
+        # cashflow so the period XIRR discounts it like an upfront investment.
         flows.append(Cashflow(date=period_start, amount=-opening))
         anchor = period_start
     else:
