@@ -165,15 +165,20 @@ def _buy_only_gaps(
     if not category_of:
         return {i: max(ZERO, target_value[i] - current[i]) for i in buyable}
 
-    # Group every instrument by its category; funds without a category form a
-    # singleton bucket keyed on their own id so they keep per-fund behaviour.
-    members_by_cat: dict[object, list[int]] = {}
+    # Group instruments by category; instruments without a category form their
+    # own singleton bucket so they keep per-fund behaviour (no magic key that a
+    # real category name could ever collide with).
+    members_by_cat: dict[str, list[int]] = {}
+    solo_buckets: list[list[int]] = []
     for i in instrument_ids:
-        key: object = category_of.get(i) or ("__fund__", i)
-        members_by_cat.setdefault(key, []).append(i)
+        cat = category_of.get(i)
+        if cat:
+            members_by_cat.setdefault(cat, []).append(i)
+        else:
+            solo_buckets.append([i])
 
     gap = {i: ZERO for i in buyable}
-    for members in members_by_cat.values():
+    for members in [*members_by_cat.values(), *solo_buckets]:
         cat_buyable = [m for m in members if m not in no_buy]
         if not cat_buyable:
             continue

@@ -133,18 +133,24 @@ function buyOnlyGaps(
     return gap;
   }
 
-  // Group every symbol by its category; symbols without a category form a
-  // singleton bucket keyed on themselves so they keep per-fund behaviour.
+  // Group symbols by category; symbols without a category form their own
+  // singleton bucket so they keep per-fund behaviour (no magic key that a real
+  // category name could ever collide with).
   const membersByCat = new Map<string, string[]>();
+  const soloBuckets: string[][] = [];
   for (const s of symbols) {
-    const key = categoryOf.get(s) || `__fund__:${s}`;
-    const members = membersByCat.get(key);
-    if (members) members.push(s);
-    else membersByCat.set(key, [s]);
+    const cat = categoryOf.get(s);
+    if (cat) {
+      const members = membersByCat.get(cat);
+      if (members) members.push(s);
+      else membersByCat.set(cat, [s]);
+    } else {
+      soloBuckets.push([s]);
+    }
   }
 
   for (const s of buyable) gap.set(s, ZERO);
-  for (const members of membersByCat.values()) {
+  for (const members of [...membersByCat.values(), ...soloBuckets]) {
     const catBuyable = members.filter((m) => !noBuy.has(m));
     if (catBuyable.length === 0) continue;
     let catTarget = ZERO;
