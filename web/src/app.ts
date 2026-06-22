@@ -1119,7 +1119,7 @@ export class App {
       // A real, non-rate-limit fetch problem (network blip, 404, 5xx).
       reasons.push("Live prices didn't refresh just now — showing last known values.");
     } else if (rateLimited || deferredByMinute) {
-      reasons.push("Live prices are catching up to the free-tier limit — showing last known values for now.");
+      reasons.push("Live prices are waiting on the free-tier limit — showing last known values for now.");
     }
 
     // Only surface FX when it's genuinely unavailable; a cached rate within its

@@ -50,6 +50,24 @@ to the web companion, and a smarter update button.
   "Shutting down… you can close this tab." message instead of the alarming
   "connection lost" reconnect screen.
 
+### Fixed
+
+- **Web: a transient HTTP 404 no longer dead-ends the dashboard.** Only true
+  config/auth failures (HTTP 401/403) now route to the Settings error screen;
+  every other live-price hiccup keeps the last-known values and shows a soft
+  banner, so a refresh can't strand the app on a full-screen error.
+- **Web: guard against rate-limit (HTTP 429) self-inflicted bursts.** Free-tier
+  credits are now reserved *before* the network fetch, so the login prefetch and
+  the first scheduled refresh can no longer each spend a full per-minute budget
+  at once (the concurrent double-spend that tripped the 429).
+- **Web: quieter refresh status.** The live-degradation banner is now a single,
+  non-duplicative line, and the auto-update pill no longer lingers on screen
+  between staged burst rounds.
+- **Desktop: today's EUR growth no longer inflated by a stale FX gap.** When the
+  prior price date's exchange rate is forward-filled from far in the past, the
+  EUR daily-growth figure is neutralised to the USD figure instead of absorbing
+  months of currency drift into a single day's move.
+
 
 ## [3.2.1] — 2026-06-22
 

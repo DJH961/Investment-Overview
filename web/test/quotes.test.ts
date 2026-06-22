@@ -200,9 +200,9 @@ describe("loadQuotes — free-tier budget", () => {
     const storage = memStorage();
     // A slow fetch that doesn't resolve until we let it, modelling a prefetch
     // still in flight while a second refresh starts.
-    let release!: () => void;
+    let resolveGate!: () => void;
     const gate = new Promise<void>((resolve) => {
-      release = resolve;
+      resolveGate = resolve;
     });
     const slow = vi.fn<FetchLike>(async (url) => {
       await gate;
@@ -225,7 +225,7 @@ describe("loadQuotes — free-tier budget", () => {
     });
     expect(second.report.deferred).toEqual(["B0"]);
     expect(second.report.fetched).toEqual([]);
-    release();
+    resolveGate();
     await first;
   });
 
