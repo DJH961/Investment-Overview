@@ -60,6 +60,15 @@ from investment_dashboard.services import (
 
 ZERO = Decimal(0)
 
+#: How many trailing days the analytics equity curve may recompute live on the
+#: request thread when the snapshot cache is cold. Older uncached days are read
+#: straight from the persistent snapshot cache (the background warm fills any
+#: gap in for a later render) so a cold cache or a long lookback never blocks the
+#: event loop rebuilding thousands of days synchronously — the failure mode that
+#: made the Analytics tab appear to hang and never load. Mirrors the Yearly
+#: chart's bounded recompute.
+CURVE_RECOMPUTE_TAIL_DAYS = 30
+
 
 @dataclass(frozen=True)
 class EquityCurvePoint:
@@ -117,6 +126,7 @@ def _build_curve(
     end: date,
     currency: str,
     benchmark_closes: dict[date, Decimal],
+    recompute_tail_days: int | None = CURVE_RECOMPUTE_TAIL_DAYS,
 ) -> list[EquityCurvePoint]:
     """One point per calendar day in ``[start, end]`` (inclusive).
 
@@ -144,15 +154,33 @@ def _build_curve(
     last_bench: Decimal | None = None
 
     # Bulk-load the daily portfolio valuations once (single snapshot read +
-    # single FX-series load) instead of reopening a cache session per day.
-    values = dict(snapshots_service.series_in_currency(session, start, end, currency))
+    # single FX-series load) instead of reopening a cache session per day. The
+    # recompute tail bounds how many uncached days are rebuilt live: on a cold
+    # cache the older days are simply omitted from the series (the background
+    # warm fills them in for a later render) rather than recomputed
+    # synchronously, which is what used to block the event loop and stop the
+    # Analytics page from ever finishing its first paint.
+    series = snapshots_service.series_in_currency(
+        session,
+        start,
+        end,
+        currency,
+        recompute_tail_days=recompute_tail_days,
+    )
+
+    # Cumulative contributions must account for flows on every calendar day,
+    # including days the bounded series skipped, so the overlay stays correct
+    # even when the value curve is sparse. Walk the (sorted) contribution dates
+    # in tandem with the emitted days.
+    sorted_contrib_dates = sorted(contribs_by_date)
+    contrib_idx = 0
+    cumulative = ZERO
 
     points: list[EquityCurvePoint] = []
-    cumulative = ZERO
-    day = start
-    while day <= end:
-        cumulative += contribs_by_date.get(day, ZERO)
-        value = values[day]
+    for day, value in series:
+        while contrib_idx < len(sorted_contrib_dates) and sorted_contrib_dates[contrib_idx] <= day:
+            cumulative += contribs_by_date[sorted_contrib_dates[contrib_idx]]
+            contrib_idx += 1
         while bench_idx < len(sorted_benchmark) and sorted_benchmark[bench_idx] <= day:
             last_bench = benchmark_closes[sorted_benchmark[bench_idx]]
             bench_idx += 1
@@ -164,7 +192,6 @@ def _build_curve(
                 benchmark_value=last_bench,
             )
         )
-        day += timedelta(days=1)
     return points
 
 
@@ -175,14 +202,22 @@ def build_curve(
     end: date,
     currency: str,
     benchmark_closes: dict[date, Decimal],
+    recompute_tail_days: int | None = None,
 ) -> list[EquityCurvePoint]:
-    """Public wrapper for analytics curve construction."""
+    """Public wrapper for analytics curve construction.
+
+    Defaults to a gap-free curve (``recompute_tail_days=None``) so the
+    full-history "All" range exported to the web companion honestly extends back
+    to inception. The interactive desktop bundle uses the bounded recompute
+    instead to keep long-lookback views responsive on a cold cache.
+    """
     return _build_curve(
         session,
         start=start,
         end=end,
         currency=currency,
         benchmark_closes=benchmark_closes,
+        recompute_tail_days=recompute_tail_days,
     )
 
 

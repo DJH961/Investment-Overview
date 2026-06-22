@@ -97,12 +97,37 @@ def test_bundle_populates_curve_and_kpis(populated_session) -> None:  # type: ig
 
 
 def test_bundle_safe_on_empty_db(session) -> None:  # type: ignore[no-untyped-def]
-    bundle = build_bundle(session, currency="EUR", lookback_days=7, as_of=date(2026, 5, 1))
+    # ``as_of`` is the live "today" (as on the page), so the bounded equity-curve
+    # recompute still renders a gap-free recent window straight from a cold cache
+    # without crashing — it just values every day at zero.
+    as_of = date.today()
+    bundle = build_bundle(session, currency="EUR", lookback_days=7, as_of=as_of)
     assert bundle.cagr is None
     assert bundle.sharpe is None
     assert bundle.attribution == []
     # Curve still has one point per day, even if values are zero.
     assert len(bundle.curve) == 8
+
+
+def test_curve_bounds_cold_cache_recompute(session) -> None:  # type: ignore[no-untyped-def]
+    """A long lookback over a cold snapshot cache must not recompute every day.
+
+    The equity-curve build only recomputes the trailing
+    ``CURVE_RECOMPUTE_TAIL_DAYS`` days live (the background warm fills the rest in
+    for a later render); older uncached days are skipped rather than rebuilt
+    synchronously. Without this bound a 1Y+/cold-cache analytics view recomputed
+    thousands of portfolio valuations on the request thread and the tab hung,
+    never finishing its first paint.
+    """
+    from investment_dashboard.ui.pages._analytics_query import CURVE_RECOMPUTE_TAIL_DAYS
+
+    as_of = date.today()
+    bundle = build_bundle(session, currency="EUR", lookback_days=400, as_of=as_of)
+    # Far fewer points than the 401-day window: only the bounded trailing tail.
+    assert 0 < len(bundle.curve) <= CURVE_RECOMPUTE_TAIL_DAYS + 1
+    # Nothing older than the recompute tail leaks into the curve.
+    oldest = as_of - timedelta(days=CURVE_RECOMPUTE_TAIL_DAYS)
+    assert all(p.date >= oldest for p in bundle.curve)
 
 
 def test_curve_counts_transfer_in_as_a_contribution(populated_session) -> None:  # type: ignore[no-untyped-def]

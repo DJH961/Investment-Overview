@@ -12,6 +12,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [3.4.1] — 2026-06-22
+
+Minor reliability fixes to the main app: timezone-aware "last update" stamps, a
+live refresh that actually advances those stamps, per-holding total growth that
+matches the compounded XIRR figure, and an analytics tab that loads again.
+
+### Fixed
+
+- **Timezone-aware "last update" times.** The overview holding card's price
+  freshness and the connectivity section's timestamps now render in the user's
+  configured timezone instead of naive/hard-coded UTC.
+- **Live price refresh advances the "updated" time.** The live tick now writes
+  cached closes and the per-symbol `last_refreshed_at` stamps through the cache
+  database tier (the one the overview reads under split-DB layouts), so the
+  on-screen prices and "updated" time move when live prices update.
+- **Per-holding total growth uses the compounded XIRR formula.** Each holding's
+  total growth is now the compounded `(1 + XIRR) ^ years` figure (matching the
+  portfolio headline) rather than a plain gain/cost ratio, which had badly
+  deflated the growth of holdings funded by regular, ongoing contributions. The
+  same fix is mirrored in the web companion.
+- **Analytics tab loads again.** The equity-curve build now bounds its live
+  recompute to a recent trailing window (filling deeper history from the
+  background snapshot warm) instead of synchronously revaluing every uncached
+  day on the request thread, which had hung the tab on long lookbacks / a cold
+  cache.
+
 ## [3.4.0] — 2026-06-22
 
 FX-aware, live "today's growth". Today's move now captures the EUR↔USD

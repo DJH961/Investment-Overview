@@ -71,7 +71,10 @@ def tick_refresh(source: str = "Live price refresh", *, force: bool = False) -> 
     instruments are pulled. Returns whether new closes actually landed (drives
     the "last update" timestamp on the header chip). Never raises.
     """
-    from investment_dashboard.db import session_scope  # noqa: PLC0415
+    from investment_dashboard.db import (  # noqa: PLC0415
+        cache_session_scope,
+        ledger_session_scope,
+    )
     from investment_dashboard.services import refresh_status  # noqa: PLC0415
     from investment_dashboard.services.prices_service import (  # noqa: PLC0415
         refresh_due_prices,
@@ -81,13 +84,18 @@ def tick_refresh(source: str = "Live price refresh", *, force: bool = False) -> 
     refresh_status.begin(source)
     updated = False
     try:
-        with session_scope() as session:
+        # Open both tiers explicitly so the cached closes + ``last_refreshed_at``
+        # stamps land in the cache database the overview actually reads. Passing
+        # only a ledger session here (the old behaviour) silently wrote them to
+        # the ledger DB under split-DB layouts, so the live tick never advanced
+        # the per-symbol prices or "updated" time on screen.
+        with ledger_session_scope() as ledger, cache_session_scope() as cache:
             if force:
                 refreshed = refresh_prices(
-                    session, earliest_needed=date.today() - timedelta(days=30)
+                    ledger, cache, earliest_needed=date.today() - timedelta(days=30)
                 )
             else:
-                refreshed = refresh_due_prices(session)
+                refreshed = refresh_due_prices(ledger, cache)
         # Refresh the live EUR/USD spot alongside prices so the FX-aware "today"
         # figures move intraday with the currency, not just the security price.
         # Best-effort: a failed FX pull leaves the ECB daily rate in place.

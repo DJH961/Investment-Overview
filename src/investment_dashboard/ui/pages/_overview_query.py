@@ -14,7 +14,11 @@ from investment_dashboard.domain.currency import (
     lookup_rate_with_forward_fill,
 )
 from investment_dashboard.domain.money_market import is_money_market
-from investment_dashboard.domain.returns import total_growth_pct_compounded, xirr
+from investment_dashboard.domain.returns import (
+    total_growth_pct_compounded,
+    xirr,
+    years_between,
+)
 from investment_dashboard.models import TransactionKind
 from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import fx_service, prices_service, snapshots_service
@@ -347,14 +351,34 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
         d_usd = div_usd.get(iid, ZERO)
         gain_eur = _round_cent(cv_eur + d_eur - c_eur)
         gain_usd = _round_cent(cv_usd + d_usd - c_usd) if cv_usd is not None else None
-        growth_eur = (gain_eur / c_eur) if c_eur != ZERO else None
-        growth_usd = (gain_usd / c_usd) if (gain_usd is not None and c_usd != ZERO) else None
         xirr_eur = xirr(eur_flows.get(iid, []), as_of=as_of, terminal_value=cv_eur)
         xirr_usd = (
             xirr(usd_flows.get(iid, []), as_of=as_of, terminal_value=cv_usd)
             if cv_usd is not None
             else None
         )
+        # Total Growth mirrors the portfolio headline: the compounded
+        # ``(1 + XIRR) ^ years − 1`` return over the time actually invested in
+        # this holding, *not* a simple gain/cost ratio. The simple ratio badly
+        # understates holdings the user is still buying into regularly (a large,
+        # recently-added cost basis has had little time to grow), so it diverged
+        # from the spreadsheet. ``years`` runs from the instrument's first
+        # cashflow to ``as_of``. When the compounded figure is undefined (no XIRR
+        # root, or a same-day position with ~0 years) we fall back to the simple
+        # gain/cost so a brand-new holding still reads a sensible number.
+        first_flow = min(
+            (cf.date for cf in eur_flows.get(iid, [])),
+            default=None,
+        )
+        held_years = years_between(first_flow, as_of) if first_flow is not None else ZERO
+        simple_growth_eur = (gain_eur / c_eur) if c_eur != ZERO else None
+        simple_growth_usd = (gain_usd / c_usd) if (gain_usd is not None and c_usd != ZERO) else None
+        growth_eur = total_growth_pct_compounded(xirr_eur, held_years)
+        if growth_eur is None:
+            growth_eur = simple_growth_eur
+        growth_usd = total_growth_pct_compounded(xirr_usd, held_years)
+        if growth_usd is None:
+            growth_usd = simple_growth_usd
         sv_eur = start_value_eur.get(iid, ZERO)
         sv_usd = sv_eur * fx_year_start if fx_year_start not in (None, 0) else None
         ytd_eur = _instrument_ytd_growth(

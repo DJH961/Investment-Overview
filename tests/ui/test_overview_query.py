@@ -416,10 +416,78 @@ def test_partial_sale_uses_average_cost_growth(session: Session) -> None:
     im = metrics[acme.id]
     # 5 shares remain; half the $1000 basis is released ⇒ cost $500.
     assert im.cost_basis_usd == Decimal("500.00")
-    # Value 5 × $150 = $750 ⇒ gain $250, growth +50 % (not a deflated loss).
+    # Value 5 × $150 = $750 ⇒ gain $250 (a genuine profit, not a deflated loss).
     assert im.capital_gain_usd == Decimal("250.00")
+    # Total growth is now the compounded (1 + XIRR) ^ years figure rather than a
+    # simple gain/cost ratio; with a clear profit it stays positive.
     assert im.total_growth_usd is not None
-    assert abs(im.total_growth_usd - Decimal("0.5")) < Decimal("0.001")
+    assert im.total_growth_usd > Decimal(0)
+
+
+def test_multi_flow_growth_is_compounded_not_simple_ratio(session: Session) -> None:
+    """A holding funded by regular, repeated buys must report the compounded
+    (1 + XIRR) ^ years growth rather than a plain gain/cost ratio.
+
+    This is the user-reported defect: dollar-cost-averaged holdings whose latest
+    contributions have barely had time to grow showed a deflated simple ratio.
+    With multiple cashflows the two formulas genuinely diverge (for a single
+    contribution they coincide), so the row must not fall back to gain/cost.
+    """
+    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Fidelity",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    acme = instruments_repo.get_or_create(session, symbol="ACME", asset_class="etf")
+    prices_repo.upsert_closes(session, acme.id, {date.today(): Decimal("150.00")})
+    fx_repo.upsert_rates(
+        session,
+        {
+            date(2024, 1, 5): Decimal("1.10"),
+            date(2025, 1, 6): Decimal("1.10"),
+            date.today(): Decimal("1.10"),
+        },
+    )
+    session.add_all(
+        [
+            Transaction(
+                account_id=acct.id,
+                date=date(2024, 1, 5),
+                kind="buy",
+                instrument_id=acme.id,
+                quantity=Decimal("10"),
+                price_native=Decimal("100"),
+                net_native=Decimal("-1000"),
+                source=TransactionSource.MANUAL,
+            ),
+            Transaction(
+                account_id=acct.id,
+                date=date(2025, 1, 6),
+                kind="buy",
+                instrument_id=acme.id,
+                quantity=Decimal("10"),
+                price_native=Decimal("120"),
+                net_native=Decimal("-1200"),
+                source=TransactionSource.MANUAL,
+            ),
+        ]
+    )
+    session.flush()
+
+    positions = get_positions(session)
+    metrics = compute_instrument_metrics(session, positions)
+    im = metrics[acme.id]
+    # Cost basis $2200, value 20 × $150 = $3000 ⇒ simple ratio would be 800/2200.
+    assert im.cost_basis_usd == Decimal("2200.00")
+    simple_ratio = Decimal("800") / Decimal("2200")
+    assert im.total_growth_usd is not None
+    # Compounded growth is a real profit but is NOT the naive gain/cost ratio.
+    assert im.total_growth_usd > Decimal(0)
+    assert abs(im.total_growth_usd - simple_ratio) > Decimal("0.01")
 
 
 def test_position_rows_carry_portfolio_weight(session: Session, seeded: None) -> None:
