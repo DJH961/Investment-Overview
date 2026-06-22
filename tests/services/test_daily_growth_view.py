@@ -159,13 +159,16 @@ def test_fx_detail_is_tight_and_display_relative() -> None:
 
 
 def test_fx_detail_appends_percentage_move_versus_prior_day() -> None:
-    # USD user reads the inverse rate (€ per $), so a rising EUR shows as a
-    # falling figure with a proper minus glyph and no absolute number.
+    # The percentage tracks the foreign (converted-into) currency, so it moves
+    # opposite to the displayed rate number — counter-intuitive by design.
+    # USD display shows $1≈€ (into euros): EUR rose 1.0700 → 1.0800 ⇒ +0.93%,
+    # even though the € figure (1/eur_usd) ticked down.
     usd = _caption(display_ccy="USD", fx_eur_usd=Decimal("1.08"), fx_eur_usd_prev=Decimal("1.07"))
-    assert usd.fx_text == "$1\u2248\u20ac0.9259 (\u22120.93%)"
-    # EUR user reads the rate as-is ($ per €): EUR rose 1.0700 → 1.0800 → +0.93%.
+    assert usd.fx_text == "$1\u2248\u20ac0.9259 (+0.93%)"
+    # EUR display shows €1≈$ (into dollars): the dollar weakened as the euro rose,
+    # so the same move reads −0.93% even though the $ figure ticked up.
     eur = _caption(fx_eur_usd=Decimal("1.08"), fx_eur_usd_prev=Decimal("1.07"))
-    assert eur.fx_text == "\u20ac1\u2248$1.0800 (+0.93%)"
+    assert eur.fx_text == "\u20ac1\u2248$1.0800 (\u22120.93%)"
 
 
 def test_fx_percentage_omitted_without_prior_mark() -> None:

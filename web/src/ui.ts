@@ -173,22 +173,27 @@ function valueBasisLabel(o: OverviewView, now: Date = new Date()): string {
  * the ECB daily rate was available. Both display currencies show the rate from
  * the user's own side as a "spend my currency, get the other" conversion: USD
  * display quotes USD/EUR (how much EUR one dollar buys), EUR display quotes the
- * reciprocal EUR/USD (how much USD one euro buys), each with the deviation
- * flipped to match its quote. We do *not* print any "how much the swing made you
- * in EUR" money line — the FX P/L slice lives in the Risk tab's currency panel,
- * not on the hero. Returns null when there's no rate to show.
+ * reciprocal EUR/USD (how much USD one euro buys). The percentage tracks the
+ * strength of the *foreign* currency you'd convert into — euro in USD display,
+ * dollar in EUR display — so a positive figure always means "that currency went
+ * up". This is deliberately counter-intuitive against the rate number (which
+ * moves the opposite way), because it answers "did the euro or the dollar rise?"
+ * rather than "did this digit go up?". We do *not* print any "how much the swing
+ * made you in EUR" money line — the FX P/L slice lives in the Risk tab's currency
+ * panel, not on the hero. Returns null when there's no rate to show.
  */
 function renderHeroFx(o: OverviewView): HTMLElement | null {
   const inUsd = getDisplayCurrency() === "USD";
   const parts: HTMLElement[] = [];
   if (o.fxRateEurUsd !== null) {
-    // The spot rate, plus how far it has moved today (the % the FX has deviated).
-    // The stored spot is EUR/USD (USD per 1 EUR). In USD display we invert it to
-    // USD/EUR (EUR per 1 USD) and flip the deviation sign so the rate reads from
-    // the dollar holder's side; EUR display shows the EUR/USD quote as-is.
+    // The spot rate, plus how far the FX moved today. The stored spot is EUR/USD
+    // (USD per 1 EUR), and `devPct` is the euro's move. In USD display we invert
+    // the rate to USD/EUR (EUR per 1 USD); the percentage keeps the euro's sign
+    // so "+" = euro stronger. In EUR display we show EUR/USD as-is but negate the
+    // percentage so it reads the dollar's strength, "+" = dollar stronger.
     const devPct = fxTodayDeviationPct(o);
     const rate = inUsd ? new Decimal(1).dividedBy(o.fxRateEurUsd) : o.fxRateEurUsd;
-    const dev = devPct === null ? null : inUsd ? devPct.negated() : devPct;
+    const dev = devPct === null ? null : inUsd ? devPct : devPct.negated();
     const pair = inUsd ? "USD/EUR" : "EUR/USD";
     const rateLabel =
       dev !== null
