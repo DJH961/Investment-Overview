@@ -82,6 +82,15 @@ and are ignored by the web build):
 - `contributions_eur`, `dividends_eur`, `interest_eur`, `net_flow_eur`.
 - `opening_value_eur`, `closing_value_eur`.
 - `growth_pct`: string decimal ratio or `null`.
+- `display_currency` plus `*_display` siblings
+  (`contributions_display`, `dividends_display`, `interest_display`,
+  `net_flow_display`, `opening_value_display`, `closing_value_display`,
+  `growth_pct_display`): the same figures converted with the EUR→quote FX rate
+  **in force on each trade/boundary date** (not today's spot). The mobile export
+  always builds these against a **USD** context, so `display_currency` is
+  `"USD"` and a USD reader gets the wallet they actually experienced. They are
+  `null` only when FX history is too sparse to convert, in which case the
+  browser falls back to the EUR figure.
 
 The browser **overlays the current period live** (proposal §3.C): the row whose
 `label` matches `meta.as_of`'s month/year is recomputed against live prices, so
@@ -101,8 +110,14 @@ export". Notable fields: `as_of`, `start`, `currency`, the return metrics
 ## `deposits`
 
 Contributions read-model (`readmodels/deposits.py`): a `summary`
-(`total_contrib_eur`, `ytd_contrib_eur`, `mtd_contrib_eur`, …) and `rows[]`
-(`date`, `account`, `kind`, `amount_eur`, `currency`, `description`, …).
+(`total_contrib_eur`, `ytd_contrib_eur`, `mtd_contrib_eur`, and their
+per-trade-date `*_usd` counterparts `total_contrib_usd`, `ytd_contrib_usd`,
+`mtd_contrib_usd`) and `rows[]` (`date`, `account`, `kind`, `amount_eur`,
+`amount_usd`, `amount_native`, `currency`, `description`, …). The `*_usd` /
+`amount_usd` figures convert each cash flow at the EUR→USD rate **on its own
+date** (USD-native deposits use their booked amount), so the browser must use
+them directly in USD mode rather than rescaling the EUR totals by today's spot
+— doing so would double-convert any deposit originally booked in USD.
 
 ## Precision targets
 

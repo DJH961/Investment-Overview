@@ -16,6 +16,7 @@ contents, and never add tokens or passphrases to it.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -196,6 +197,24 @@ def build_mobile_export(
         instr_id: rows[0][0] for instr_id, rows in recent_closes.items() if rows
     }
     txns = list(transactions_repo.list_transactions(session, end=context.as_of))
+    # The web companion carries figures in EUR as its internal FX-pivot (USD is
+    # the native booked currency) but lets the reader flip to USD on the
+    # device, independently of whatever display currency the desktop happens to
+    # be set to. Period figures are sums of *historical* flows / point-in-time
+    # valuations, so they must be converted at the FX rate in force on each
+    # trade/boundary date — not today's spot. Building the period read-models
+    # against a USD context makes the per-trade-date ``*_display`` (USD) figures
+    # always present (alongside the always-present ``*_eur``), so the browser
+    # never has to rescale a historical EUR total by today's rate. The deposits
+    # read-model already emits per-date-FX ``*_usd`` figures unconditionally.
+    # When no EUR→USD history exists (``fx_rate_eur_usd is None``) the period
+    # aggregation simply leaves the ``*_display`` fields null and the browser
+    # falls back to the always-present ``*_eur`` figures.
+    usd_context = replace(
+        context,
+        display_currency="USD",
+        fx_rate_eur_to_display=context.fx_rate_eur_usd,
+    )
     export: dict[str, Any] = {
         "meta": build_meta(context),
         "holdings": [
@@ -205,8 +224,8 @@ def build_mobile_export(
         "portfolio_cashflows": _portfolio_cashflows(session, txns),
         "cash": _cash_balances(session, as_of=context.as_of),
         "period_openings": _period_openings(session, as_of=context.as_of),
-        "monthly": periods.build_monthly(session, context=context),
-        "yearly": periods.build_yearly(session, context=context),
+        "monthly": periods.build_monthly(session, context=usd_context),
+        "yearly": periods.build_yearly(session, context=usd_context),
         "analytics": analytics.build(session, context=context),
         "deposits": deposits.build(session, context=context),
     }

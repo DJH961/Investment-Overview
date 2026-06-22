@@ -26,10 +26,12 @@ import {
   formatUpdatedAt,
   formatCurrency,
   formatCurrencyWhole,
+  formatDualCurrency,
   formatNativePrice,
   formatPercent,
   formatShares,
   formatSignedCurrency,
+  formatSignedDualCurrency,
   formatSignedPercent,
   formatTimestamp,
   signClass,
@@ -511,7 +513,9 @@ function renderPeriodRow(row: PeriodRowView): HTMLElement {
     h("div", { class: "holding-id" }, [
       h("span", { class: "holding-sym" }, badges),
       h("span", { class: "holding-name" }, [
-        row.closingValueEur !== null ? `Value ${formatCurrency(row.closingValueEur)}` : "Value —",
+        row.closingValueEur !== null
+          ? `Value ${formatDualCurrency(row.closingValueEur, row.closingValueUsd)}`
+          : "Value —",
       ]),
     ]),
     h("div", { class: "holding-figures" }, [
@@ -521,10 +525,10 @@ function renderPeriodRow(row: PeriodRowView): HTMLElement {
   ]);
 
   const meta = h("div", { class: "holding-meta" }, [
-    chip(`Net flow ${formatSignedCurrency(row.netFlowEur)}`, signClass(row.netFlowEur)),
-    chip(`Contrib ${formatCurrency(row.contributionsEur)}`),
-    chip(`Div ${formatCurrency(row.dividendsEur)}`),
-    chip(`Int ${formatCurrency(row.interestEur)}`),
+    chip(`Net flow ${formatSignedDualCurrency(row.netFlowEur, row.netFlowUsd)}`, signClass(row.netFlowEur)),
+    chip(`Contrib ${formatDualCurrency(row.contributionsEur, row.contributionsUsd)}`),
+    chip(`Div ${formatDualCurrency(row.dividendsEur, row.dividendsUsd)}`),
+    chip(`Int ${formatDualCurrency(row.interestEur, row.interestUsd)}`),
   ]);
 
   return h("li", { class: "holding" }, [main, meta]);
@@ -542,9 +546,9 @@ function renderPeriodList(title: string, rows: PeriodRowView[], extraClass = "")
 
 function renderDepositsBlock(deposits: DepositsView): HTMLElement {
   const summary = h("div", { class: "stat-grid" }, [
-    stat("Contributed", formatCurrency(deposits.totalEur)),
-    stat("This year", formatCurrency(deposits.ytdEur)),
-    stat("This month", formatCurrency(deposits.mtdEur)),
+    stat("Contributed", formatDualCurrency(deposits.totalEur, deposits.totalUsd)),
+    stat("This year", formatDualCurrency(deposits.ytdEur, deposits.ytdUsd)),
+    stat("This month", formatDualCurrency(deposits.mtdEur, deposits.mtdUsd)),
   ]);
 
   const recent = deposits.rows.slice(0, 12);
@@ -554,7 +558,7 @@ function renderDepositsBlock(deposits: DepositsView): HTMLElement {
         h("span", { class: "ledger-kind" }, [titleCase(row.kind)]),
         h("span", { class: "ledger-sub muted" }, [`${row.date} · ${row.account}`]),
       ]),
-      h("span", { class: "ledger-amount" }, [formatCurrency(row.amountEur)]),
+      h("span", { class: "ledger-amount" }, [formatDualCurrency(row.amountEur, row.amountUsd)]),
     ]),
   );
 
@@ -1039,7 +1043,8 @@ export function renderThemeToggle(): HTMLElement {
 }
 
 /**
- * EUR ↔ USD display-currency toggle. The compute layer is EUR-only; flipping
+ * EUR ↔ USD display-currency toggle. The compute layer denominates figures in
+ * EUR as its internal FX-pivot (USD is the native booked currency); flipping
  * this re-renders the whole dashboard (via `onToggle`) so every figure reformats
  * in the chosen currency. Disabled when no EUR→USD rate is available.
  */

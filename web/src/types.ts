@@ -79,6 +79,22 @@ export interface ExportPeriodRow {
   opening_value_eur: DecimalString;
   closing_value_eur: DecimalString;
   growth_pct: DecimalString | null;
+  /**
+   * Per-trade-date FX-converted figures (see `readmodels/periods.py`). The
+   * mobile export builds the period read-models against a USD context, so for
+   * web exports `display_currency` is `"USD"` and the `*_display` fields carry
+   * the USD value each figure had at the rate in force on its own
+   * trade/boundary date — not today's spot. Absent/`null` when FX history is
+   * too sparse to convert, in which case the browser falls back to EUR.
+   */
+  display_currency?: string | null;
+  contributions_display?: DecimalString | null;
+  dividends_display?: DecimalString | null;
+  interest_display?: DecimalString | null;
+  net_flow_display?: DecimalString | null;
+  opening_value_display?: DecimalString | null;
+  closing_value_display?: DecimalString | null;
+  growth_pct_display?: DecimalString | null;
 }
 
 export interface ExportPeriods {
@@ -137,6 +153,15 @@ export interface ExportDepositsSummary {
   total_contrib_eur: DecimalString | null;
   ytd_contrib_eur: DecimalString | null;
   mtd_contrib_eur: DecimalString | null;
+  /**
+   * Same contribution KPIs re-aggregated in USD using the EUR→USD rate in
+   * force **on each transaction's date** (USD-native deposits use their booked
+   * amount). Prefer these over rescaling the EUR totals by today's spot, which
+   * double-converts deposits originally booked in USD.
+   */
+  total_contrib_usd?: DecimalString | null;
+  ytd_contrib_usd?: DecimalString | null;
+  mtd_contrib_usd?: DecimalString | null;
 }
 
 export interface ExportDepositRecord {
@@ -145,6 +170,9 @@ export interface ExportDepositRecord {
   account: string;
   kind: string;
   amount_eur: DecimalString | null;
+  /** USD value of this cash flow on its own trade date (per-date FX). */
+  amount_usd?: DecimalString | null;
+  amount_native?: DecimalString | null;
   currency: string;
   description: string | null;
 }

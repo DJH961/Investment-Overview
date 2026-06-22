@@ -73,7 +73,7 @@ Top-level snapshot document (`GET /api/snapshot` or the exported file):
 
 | Key | Contents |
 |---|---|
-| `meta` | `schema_version`, `app_version`, `generated_at` (UTC ISO), `as_of`, `base_currency` (`"EUR"`), `display_currency`, `fx_rate_eur_to_display`, `fx_rate_eur_usd` |
+| `meta` | `schema_version`, `app_version`, `generated_at` (UTC ISO), `as_of`, `base_currency` (`"EUR"`, FX pivot/reference only — USD is the native booked currency), `display_currency`, `fx_rate_eur_to_display`, `fx_rate_eur_usd` |
 | `overview` | `metrics` (KPI quartet: total value, contributions, dividends, capital gain, growth %, XIRR, YTD variants), `positions[]`, `allocation[]` |
 | `deposits` | `summary` (contribution KPIs), `rows[]` (raw cash-flow rows) |
 | `transactions` | `rows[]` (raw ledger rows incl. `net_eur`/`net_usd`) |

@@ -1,11 +1,15 @@
 /**
  * Display-currency preference (EUR ↔ USD), persisted per device.
  *
- * Every figure in the compute layer is denominated in EUR (see compute.ts). The
- * user can flip the whole dashboard to USD with one tap; this module holds the
- * chosen currency plus the live EUR→USD rate so the formatting helpers can
- * convert EUR amounts on the fly without re-running the compute pipeline. Like
- * the theme choice, this is a non-secret, device-local preference.
+ * EUR and USD are equal, first-class display currencies. Internally the compute
+ * layer denominates figures in EUR purely as a common FX-pivot (see compute.ts)
+ * — that is an implementation detail, NOT a claim that EUR is the base/primary
+ * currency. USD is the native booked currency for almost every transaction and
+ * is the figure that must stay exact. The user can flip the whole dashboard
+ * between the two with one tap; this module holds the chosen currency plus the
+ * live EUR→USD rate so the formatting helpers can convert the pivot amounts on
+ * the fly without re-running the compute pipeline. Like the theme choice, this
+ * is a non-secret, device-local preference.
  */
 
 import { Decimal } from "./decimal-config";
@@ -82,4 +86,26 @@ export function convertFromEur(valueEur: Decimal): { value: Decimal; code: Displ
     return { value: valueEur.times(eurUsdRate), code: "USD" };
   }
   return { value: valueEur, code: "EUR" };
+}
+
+/**
+ * Pick the right figure for the active display currency for an amount that is a
+ * sum of *historical* flows or a point-in-time valuation (e.g. contributions,
+ * period flows). Such figures must not be rescaled by today's spot rate, so
+ * when USD is selected we use the pre-computed `valueUsd` (converted at the FX
+ * rate in force on each underlying date by the desktop). Only when USD is
+ * selected but no `valueUsd` is available do we fall back to spot-converting
+ * the EUR figure — better an approximation than a blank. EUR display always
+ * uses `valueEur`.
+ */
+export function displayAmount(
+  valueEur: Decimal | null,
+  valueUsd: Decimal | null,
+): { value: Decimal; code: DisplayCurrency } | null {
+  if (current === "USD" && eurUsdRate !== null) {
+    if (valueUsd !== null) return { value: valueUsd, code: "USD" };
+    if (valueEur !== null) return { value: valueEur.times(eurUsdRate), code: "USD" };
+    return null;
+  }
+  return valueEur === null ? null : { value: valueEur, code: "EUR" };
 }

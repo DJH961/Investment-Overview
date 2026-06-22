@@ -78,10 +78,12 @@ def build(
 ) -> dict[str, Any]:
     """Return the JSON-serializable analytics read-model."""
     ctx = context or build_context(session)
-    # The equity curve must be exported in EUR — the live-web companion is
-    # EUR-native (every ``*_eur`` figure, the live total, and the per-holding
-    # marks are all EUR) and converts to the user's chosen display currency at
-    # render time. Exporting the curve in the desktop's display currency made
+    # The equity curve must be exported in EUR — the live-web companion carries
+    # every figure in EUR as its internal FX-pivot (the ``*_eur`` figures, the
+    # live total, and the per-holding marks are all EUR; USD remains the native
+    # booked currency, preserved losslessly elsewhere) and converts to the user's
+    # chosen display currency at render time. Exporting the curve in the desktop's
+    # display currency made
     # the web double-convert it, inflating the line by the EUR→display factor
     # and dragging a ~16% cliff onto the value chart where the (correctly-EUR)
     # live tip joined the (display-currency) history. Risk/return metrics are

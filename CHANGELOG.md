@@ -14,6 +14,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed — web companion: correct USD contribution / period figures
+
+- **Contributions and monthly/yearly figures are now correct in USD.** The
+  web companion previously took every figure in EUR and rescaled it to USD by
+  *today's* spot rate. For sums of historical cash flows (contributions, period
+  net flows/dividends/interest) and point-in-time valuations this double-
+  converted any amount originally booked in USD, so the totals did not match
+  the desktop. The companion now uses the per-trade-date USD figures the export
+  already carries: the `deposits` read-model's `*_usd` / `amount_usd` fields,
+  and — newly — the monthly/yearly `*_display` (USD) fields, which the mobile
+  export now always emits (it builds the period read-models against a USD
+  context) regardless of the desktop's own display currency. When FX history is
+  too sparse to convert a figure, the companion falls back to the EUR value.
+
 ### Fixed — manual refresh feedback was invisible on mobile
 
 - **Tapping the web Refresh button now always shows feedback.** Two gaps made a
@@ -108,7 +122,7 @@ freshness correct around market closures.
 
 - **The "Value over time" chart no longer drops off a cliff at the live tip.**
   The exported analytics equity curve was serialized in the desktop's *display*
-  currency, but the web companion is EUR-native and converts to the display
+  currency, but the web companion works in EUR internally (its FX pivot) and converts to the display
   currency at render time — so the curve was effectively converted twice,
   inflating the whole line by the EUR→display factor and leaving a ~16% vertical
   drop where the (correctly-EUR) live total joined the (display-currency)

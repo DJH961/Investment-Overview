@@ -243,3 +243,30 @@ def test_mobile_export_period_openings(session: Session) -> None:
     for row in openings["holdings"].values():
         _assert_decimal_string_or_null(row["month_start_value_eur"])
         _assert_decimal_string_or_null(row["year_start_value_eur"])
+
+
+def test_mobile_export_periods_carry_per_date_usd_regardless_of_display_currency(
+    session: Session,
+) -> None:
+    """Period rows must carry per-trade-date USD figures even though the desktop
+    display currency is EUR, so the web companion (which works in EUR as its FX
+    pivot) can show correct USD contributions/values without rescaling by
+    today's spot."""
+    _seed_mobile_portfolio(session)
+
+    export = build_mobile_export(session, as_of=AS_OF)
+    # The desktop is EUR (default), but the periods are exported with USD detail.
+    assert export["meta"]["display_currency"] == "EUR"
+    for section in ("monthly", "yearly"):
+        rows = export[section]["rows"]
+        assert rows, section
+        for row in rows:
+            assert row["display_currency"] == "USD"
+            _assert_decimal_string_or_null(row["contributions_eur"])
+            _assert_decimal_string_or_null(row["contributions_display"])
+            _assert_decimal_string_or_null(row["closing_value_display"])
+    # The 2024 yearly bucket has a 1500 EUR deposit booked at 1.10 → 1650 USD;
+    # the USD figure must come from per-date FX, not today's spot on the EUR sum.
+    yearly = {r["label"]: r for r in export["yearly"]["rows"]}
+    assert yearly["2024"]["contributions_eur"] == "1500.000000"
+    assert yearly["2024"]["contributions_display"] == "1650.000000"

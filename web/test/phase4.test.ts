@@ -189,6 +189,62 @@ describe("buildAnalytics / buildDeposits", () => {
     expect(d.totalEur!.toString()).toBe("37200");
     expect(d.rows[0].date).toBe("2026-06-01");
   });
+
+  it("carries the per-date-FX USD contribution figures from the blob", () => {
+    const data = baseExport({
+      deposits: {
+        summary: {
+          total_contrib_eur: "37200", ytd_contrib_eur: "7200", mtd_contrib_eur: "1200",
+          total_contrib_usd: "41000", ytd_contrib_usd: "7800", mtd_contrib_usd: "1300",
+        },
+        rows: [
+          { id: 1, date: "2023-02-15", account: "Taxable", kind: "contribution", amount_eur: "6000", amount_usd: "6500", currency: "USD", description: null },
+        ],
+      },
+    });
+    const d = buildDeposits(data)!;
+    expect(d.totalUsd!.toString()).toBe("41000");
+    expect(d.ytdUsd!.toString()).toBe("7800");
+    expect(d.mtdUsd!.toString()).toBe("1300");
+    expect(d.rows[0].amountUsd!.toString()).toBe("6500");
+  });
+
+  it("maps the USD `*_display` period figures when the row is USD-denominated", () => {
+    const data = baseExport({
+      yearly: {
+        rows: [
+          {
+            label: "2025", contributions_eur: "9000", dividends_eur: "0", interest_eur: "10",
+            net_flow_eur: "9010", opening_value_eur: "24800", closing_value_eur: "33000", growth_pct: "0.094",
+            display_currency: "USD", contributions_display: "9800", dividends_display: "0",
+            interest_display: "11", net_flow_display: "9811", opening_value_display: "26000",
+            closing_value_display: "35000", growth_pct_display: "0.09",
+          },
+        ],
+      },
+    });
+    const { yearly } = buildPeriods(data, overview());
+    const row = yearly.find((r) => r.label === "2025")!;
+    expect(row.contributionsEur.toString()).toBe("9000");
+    expect(row.contributionsUsd!.toString()).toBe("9800");
+    expect(row.closingValueUsd!.toString()).toBe("35000");
+  });
+
+  it("leaves USD period figures null when the row is not USD-denominated", () => {
+    const data = baseExport({
+      yearly: {
+        rows: [
+          {
+            label: "2025", contributions_eur: "9000", dividends_eur: "0", interest_eur: "0",
+            net_flow_eur: "9000", opening_value_eur: "24800", closing_value_eur: "33000", growth_pct: "0.094",
+          },
+        ],
+      },
+    });
+    const { yearly } = buildPeriods(data, overview());
+    const row = yearly.find((r) => r.label === "2025")!;
+    expect(row.contributionsUsd).toBeNull();
+  });
 });
 
 describe("buildPlan + projectForward", () => {
