@@ -142,7 +142,11 @@ def _build_body(data: _YearlyData) -> None:  # pragma: no cover - heavy render, 
                     # Total Growth headline metric — kept last (v2.9.1).
                     pct_column("Total Growth", "total_growth", display_ccy),
                 ],
-                "rowData": to_table_rows(rows, currency=display_ccy, fx_rate=fx_rate),
+                # Table reads newest-first (reverse chronological); the line
+                # chart above keeps its natural chronological left-to-right flow.
+                "rowData": to_table_rows(
+                    list(reversed(rows)), currency=display_ccy, fx_rate=fx_rate
+                ),
                 "defaultColDef": {
                     "resizable": True,
                     "sortable": True,

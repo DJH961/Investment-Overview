@@ -255,3 +255,99 @@ def simulate_benchmark_xirr(session: Session, *, as_of: date | None = None) -> D
         return None
     terminal_value = shares * terminal_price
     return xirr(flows, as_of=as_of, terminal_value=terminal_value)
+
+
+def simulate_benchmark_value_series(
+    session: Session,
+    *,
+    start: date,
+    end: date,
+    currency: str = "EUR",
+) -> dict[date, Decimal]:
+    """Daily mark-to-market value of a benchmark holding **funded by the
+    portfolio's own contributions**, in ``currency``.
+
+    This is the fair "what if I'd put the same money into the index?" overlay:
+    instead of a single lump sum invested at the window's start (which lets a
+    dollar-cost-averaged portfolio look like it always beats a flat benchmark
+    line over long horizons), every deposit/transfer-in *buys* benchmark shares
+    at that day's close and every withdrawal/transfer-out sells them. The
+    resulting share balance is valued at each benchmark close in ``[start, end]``
+    so the line tracks the same cash schedule the real portfolio experienced.
+
+    Returns a ``{date: value}`` map (one entry per benchmark close in the
+    window); the caller forward-fills across non-trading days. Empty when there
+    is no benchmark history or no contributions to simulate.
+    """
+    currency = currency.upper()
+    txns = [
+        t
+        for t in transactions_repo.list_transactions(session, end=end)
+        if t.kind in _CONTRIBUTION_KINDS or t.kind in _WITHDRAWAL_KINDS
+    ]
+    if not txns:
+        return {}
+    first_contribution = min(t.date for t in txns)
+    # Fetch closes from the first contribution (so shares accumulated before the
+    # window are reflected in the opening value) through the window end.
+    series = get_series(session, start=min(first_contribution, start), end=end)
+    if not series.closes:
+        return {}
+    sorted_dates = sorted(series.closes)
+    eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
+
+    def _price(d: date) -> Decimal | None:
+        """Benchmark close on ``d`` in the display ``currency`` (USD natively)."""
+        close_usd = _close_as_of(series.closes, sorted_dates, d)
+        if close_usd is None:
+            return None
+        if currency == "USD":
+            return close_usd
+        rate = lookup_rate_with_forward_fill(eur_to_usd, d)
+        if rate is None or rate == 0:
+            return None
+        return close_usd / rate
+
+    # Pre-compute the cumulative share balance after each contribution date so
+    # the per-close valuation below is a simple lookup rather than an inner loop.
+    contributions = sorted(txns, key=lambda r: (r.date, r.id))
+    share_steps: list[tuple[date, Decimal]] = []
+    shares = Decimal(0)
+    for t in contributions:
+        amount = _txn_eur_amount(t)
+        if amount == 0:
+            continue
+        # The benchmark is priced in EUR for share accounting regardless of the
+        # display currency (contributions are stored in EUR), then re-valued in
+        # the display currency at each close — so EUR/USD display agree on the
+        # share count and differ only by the terminal FX, exactly like the
+        # portfolio curve.
+        close_usd = _close_as_of(series.closes, sorted_dates, t.date)
+        rate = lookup_rate_with_forward_fill(eur_to_usd, t.date)
+        if close_usd is None or close_usd == 0 or rate is None or rate == 0:
+            continue
+        price_eur = close_usd / rate
+        shares += amount / price_eur
+        share_steps.append((t.date, shares))
+
+    if not share_steps:
+        return {}
+
+    def _shares_through(d: date) -> Decimal:
+        held = Decimal(0)
+        for step_date, total in share_steps:
+            if step_date <= d:
+                held = total
+            else:
+                break
+        return held
+
+    out: dict[date, Decimal] = {}
+    for d in sorted_dates:
+        if d < start or d > end:
+            continue
+        price = _price(d)
+        if price is None:
+            continue
+        out[d] = _shares_through(d) * price
+    return out
