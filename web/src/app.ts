@@ -1111,13 +1111,13 @@ export class App {
           `${FREE_TIER.creditsPerDay} credits left) — updates are spacing out to last the day`,
       );
     }
-    if (quote.deferred.length > 0 && quote.dayRemaining > 0 && quote.error === null) {
-      // Normal staged fill for a portfolio larger than the per-minute cap: the
-      // spinning Refresh glyph + live "N of M" pill already show this as
-      // progress, so don't also raise an alarming banner every burst round.
-      // (A genuine stall — over the daily budget, or a fetch error — still
-      // surfaces above.)
-    } else if (quote.deferred.length > 0) {
+    // A genuine stall still surfaces above (over the daily budget, or a fetch
+    // error). The *ordinary* staged fill for a portfolio larger than the
+    // per-minute cap is not an error: the spinning Refresh glyph + live "N of M"
+    // pill already show it as progress, so don't also raise an alarming banner
+    // every burst round.
+    const stagedFill = quote.dayRemaining > 0 && quote.error === null;
+    if (quote.deferred.length > 0 && !stagedFill) {
       const n = quote.deferred.length;
       reasons.push(
         `${n} symbol${n === 1 ? "" : "s"} couldn't refresh right now ` +

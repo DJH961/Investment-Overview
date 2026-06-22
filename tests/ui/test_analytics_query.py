@@ -134,6 +134,8 @@ def test_curve_counts_transfer_in_as_a_contribution(populated_session) -> None: 
     # The line genuinely steps up rather than staying flat across the window.
     assert bundle.curve[-1].cumulative_contributions > bundle.curve[0].cumulative_contributions
 
+
+def test_risk_free_unavailable_yields_none_sharpe(populated_session) -> None:  # type: ignore[no-untyped-def]
     session, as_of = populated_session
     # Make sure no manual / cached rate is present.
     bundle = build_bundle(session, currency="EUR", lookback_days=29, as_of=as_of)
