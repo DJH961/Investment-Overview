@@ -203,6 +203,67 @@ def test_no_buy_under_target_not_bought_in_rebalance_mode() -> None:
     assert by_id[2].add_value == Decimal(0)
 
 
+# --- category-aware buy-only gaps ----------------------------------------
+
+
+def test_category_already_funded_by_unbought_member_gets_no_cash() -> None:
+    # Two categories, 50/50. In "US", the user only buys VTI (#1) but also holds
+    # a much larger un-bought VTSAX (#2) in the same category, so US is already
+    # well over its 50 % target. All the fresh cash must go to the under-funded
+    # "Intl" fund (#3), even though VTI alone looks under-weight.
+    plan = plan_rebalance(
+        cash_to_invest=Decimal(1000),
+        target_weights_pct={1: Decimal(50), 2: Decimal(0), 3: Decimal(50)},
+        current_values={1: Decimal(1000), 2: Decimal(20000), 3: Decimal(0)},
+        current_prices={1: Decimal(1), 2: Decimal(1), 3: Decimal(1)},
+        no_buy_ids={2},
+        category_of={1: "US", 2: "US", 3: "Intl"},
+    )
+    by_id = {r.instrument_id: r for r in plan.rows}
+    # US is over-funded (1000 + 20000 ≫ 50 %), so VTI is not topped up by the
+    # gap; all the cash flows to the under-funded Intl fund.
+    assert by_id[1].add_value == Decimal(0)
+    assert by_id[2].add_value == Decimal(0)
+    assert by_id[3].add_value == Decimal(1000)
+
+
+def test_category_gap_credits_unbought_member_then_buys_ticked() -> None:
+    # "US" target 50 %: held value is VTI 1000 (ticked) + VTSAX 2000 (un-bought)
+    # = 3000. With Intl at 7000 and 1000 cash, total-after = 11000 → US target
+    # 5500, so US needs 5500 - 3000 = 2500 of fresh cash, all into VTI.
+    plan = plan_rebalance(
+        cash_to_invest=Decimal(1000),
+        target_weights_pct={1: Decimal(50), 2: Decimal(0), 3: Decimal(50)},
+        current_values={1: Decimal(1000), 2: Decimal(2000), 3: Decimal(7000)},
+        current_prices={1: Decimal(1), 2: Decimal(1), 3: Decimal(1)},
+        no_buy_ids={2},
+        category_of={1: "US", 2: "US", 3: "Intl"},
+    )
+    by_id = {r.instrument_id: r for r in plan.rows}
+    # US gap (2500) and Intl gap (5500 - 7000 ≤ 0 → 0) compete for 1000 cash;
+    # only US has a gap, so all 1000 goes to VTI (#1), none to the un-bought
+    # VTSAX (#2) or the already-funded Intl fund (#3).
+    assert by_id[1].add_value == Decimal(1000)
+    assert by_id[2].add_value == Decimal(0)
+    assert by_id[3].add_value == Decimal(0)
+
+
+def test_category_gap_without_category_of_is_per_fund() -> None:
+    # Same holdings as the over-funded case but WITHOUT category_of: the legacy
+    # per-fund gap sees VTI under-weight and tops it up — the behaviour the
+    # category-aware path is meant to correct.
+    plan = plan_rebalance(
+        cash_to_invest=Decimal(1000),
+        target_weights_pct={1: Decimal(50), 2: Decimal(0), 3: Decimal(50)},
+        current_values={1: Decimal(1000), 2: Decimal(20000), 3: Decimal(0)},
+        current_prices={1: Decimal(1), 2: Decimal(1), 3: Decimal(1)},
+        no_buy_ids={2},
+    )
+    by_id = {r.instrument_id: r for r in plan.rows}
+    # Per-fund, VTI looks under-weight, so it grabs a share of the cash.
+    assert by_id[1].add_value > Decimal(0)
+
+
 # --- current_weights_pct -------------------------------------------------
 
 

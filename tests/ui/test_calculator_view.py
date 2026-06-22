@@ -121,6 +121,63 @@ def test_fund_mode_returns_empty_no_buy() -> None:
     assert no_buy == set()
 
 
+def test_held_unticked_member_credited_to_its_category() -> None:
+    # International holds VXUS (ticked) and VEU (un-ticked). Give VEU some value
+    # so it counts toward the International category's funding.
+    vti = _instr(1, "VTI", "US", Decimal(3000), Decimal(60))
+    vxus = _instr(2, "VXUS", "International", Decimal(1000), Decimal(20))
+    veu = _instr(3, "VEU", "International", Decimal(1000), Decimal(20))
+    data = CalcData(
+        instruments=[vti, vxus, veu],
+        categories=[
+            CalcCategory("US", Decimal(3000), Decimal(60), [vti]),
+            CalcCategory("International", Decimal(2000), Decimal(40), [vxus, veu]),
+        ],
+        fx_rate_usd_per_eur=Decimal("1.25"),
+        default_currency="EUR",
+    )
+    view = _CalculatorView(_payload(data))
+    view.mode = "category"
+    view.cat_targets = {"US": 50.0, "International": 50.0}
+    view.cat_selected["International"].discard(3)  # untick VEU
+
+    target_pct: dict[int, Decimal] = {1: Decimal(50), 2: Decimal(50)}
+    current_values = {i.instrument_id: i.current_value_eur for i in data.instruments}
+    no_buy, category_of = view._held_unticked_extras(target_pct, current_values)
+
+    # VEU (held, un-ticked, value > 0) joins the plan as a 0 %-target no-buy row.
+    assert no_buy == {3}
+    assert target_pct[3] == Decimal(0)
+    # Every fund is mapped to its category so the gap is measured per category.
+    assert category_of == {1: "US", 2: "International", 3: "International"}
+
+
+def test_held_unticked_extras_noop_in_rebalance_mode() -> None:
+    view = _view()
+    view.mode = "category"
+    view.allow_sell = True
+    view.cat_targets = {"International": 100.0}
+    view.cat_selected["International"].discard(3)
+    target_pct: dict[int, Decimal] = {2: Decimal(100)}
+    no_buy, category_of = view._held_unticked_extras(target_pct, {3: Decimal(1000)})
+    assert no_buy == set()
+    assert category_of is None
+    assert target_pct == {2: Decimal(100)}
+
+
+def test_held_unticked_extras_skips_zero_value_member() -> None:
+    # VEU in _data() has zero value, so it must NOT be folded into the plan.
+    view = _view()
+    view.mode = "category"
+    view.cat_targets = {"International": 100.0}
+    view.cat_selected["International"].discard(3)
+    target_pct: dict[int, Decimal] = {2: Decimal(100)}
+    current_values = {i.instrument_id: i.current_value_eur for i in view.data.instruments}
+    no_buy, _category_of = view._held_unticked_extras(target_pct, current_values)
+    assert no_buy == set()
+    assert 3 not in target_pct
+
+
 def test_preset_saved_reconstructs_category_targets() -> None:
     # A saved per-fund target loads back grouped by category, in category mode.
     view = _CalculatorView(

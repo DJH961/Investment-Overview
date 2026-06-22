@@ -108,6 +108,65 @@ export interface RebalancePlan {
   residualCash: Decimal;
 }
 
+/** Cash shortfall per buyable fund, optionally measured per category.
+ *
+ * When `categoryOf` is given, the shortfall is measured at the *category* level:
+ * a category's whole current value — including funds the user holds but does not
+ * actively buy (`noBuy`) — counts toward its target, so an already well-funded
+ * category asks for no fresh cash even when an individual buyable fund inside it
+ * still looks under-weight. The category's shortfall is then shared across just
+ * its buyable funds, in proportion to their target value, so the funds the user
+ * *does* buy pick up the whole category slack. Without `categoryOf` each fund is
+ * its own bucket (the original per-fund gap).
+ */
+function buyOnlyGaps(
+  symbols: readonly string[],
+  targetValue: Map<string, Decimal>,
+  current: Map<string, Decimal>,
+  noBuy: Set<string>,
+  categoryOf?: Map<string, string>,
+): Map<string, Decimal> {
+  const buyable = symbols.filter((s) => !noBuy.has(s));
+  const gap = new Map<string, Decimal>();
+  if (!categoryOf) {
+    for (const s of buyable) gap.set(s, Decimal.max(ZERO, targetValue.get(s)!.minus(current.get(s)!)));
+    return gap;
+  }
+
+  // Group every symbol by its category; symbols without a category form a
+  // singleton bucket keyed on themselves so they keep per-fund behaviour.
+  const membersByCat = new Map<string, string[]>();
+  for (const s of symbols) {
+    const key = categoryOf.get(s) || `__fund__:${s}`;
+    const members = membersByCat.get(key);
+    if (members) members.push(s);
+    else membersByCat.set(key, [s]);
+  }
+
+  for (const s of buyable) gap.set(s, ZERO);
+  for (const members of membersByCat.values()) {
+    const catBuyable = members.filter((m) => !noBuy.has(m));
+    if (catBuyable.length === 0) continue;
+    let catTarget = ZERO;
+    let catCurrent = ZERO;
+    for (const m of members) {
+      catTarget = catTarget.plus(targetValue.get(m)!);
+      catCurrent = catCurrent.plus(current.get(m)!);
+    }
+    const catGap = Decimal.max(ZERO, catTarget.minus(catCurrent));
+    if (catGap.lessThanOrEqualTo(0)) continue;
+    let weightTotal = ZERO;
+    for (const m of catBuyable) weightTotal = weightTotal.plus(targetValue.get(m)!);
+    for (const m of catBuyable) {
+      const share = weightTotal.greaterThan(0)
+        ? targetValue.get(m)!.dividedBy(weightTotal)
+        : new Decimal(1).dividedBy(new Decimal(catBuyable.length));
+      gap.set(m, catGap.times(share));
+    }
+  }
+  return gap;
+}
+
 /** Buy-only distribution: never sells, and never buys a `noBuy` fund. */
 function planBuyOnly(
   symbols: readonly string[],
@@ -116,15 +175,12 @@ function planBuyOnly(
   noBuy: Set<string>,
   cashToInvest: Decimal,
   targetWeightsPct: Map<string, Decimal>,
+  categoryOf?: Map<string, string>,
 ): Map<string, Decimal> {
   const buyable = symbols.filter((s) => !noBuy.has(s));
-  const gap = new Map<string, Decimal>();
+  const gap = buyOnlyGaps(symbols, targetValue, current, noBuy, categoryOf);
   let gapTotal = ZERO;
-  for (const s of buyable) {
-    const g = Decimal.max(ZERO, targetValue.get(s)!.minus(current.get(s)!));
-    gap.set(s, g);
-    gapTotal = gapTotal.plus(g);
-  }
+  for (const g of gap.values()) gapTotal = gapTotal.plus(g);
   const add = new Map<string, Decimal>();
   for (const s of symbols) add.set(s, ZERO);
 
@@ -172,6 +228,10 @@ export interface PlanRebalanceOptions {
   fractionalDecimals?: number;
   allowSell?: boolean;
   noBuyIds?: Set<string>;
+  /** Optional `{symbol: category}` grouping; enables per-category buy-only
+   * gaps so held-but-unbought funds count toward their category's funding.
+   * Ignored when `allowSell` is true. */
+  categoryOf?: Map<string, string>;
 }
 
 /**
@@ -190,6 +250,7 @@ export function planRebalance(
     fractionalDecimals = 4,
     allowSell = false,
     noBuyIds,
+    categoryOf,
   } = options;
 
   if (cashToInvest.lessThan(0)) {
@@ -218,7 +279,7 @@ export function planRebalance(
 
   const add = allowSell
     ? planWithSells(symbols, targetValue, current, noBuy)
-    : planBuyOnly(symbols, targetValue, current, noBuy, cashToInvest, targetWeightsPct);
+    : planBuyOnly(symbols, targetValue, current, noBuy, cashToInvest, targetWeightsPct, categoryOf);
 
   const rows: RebalanceRow[] = [];
   let allocatedTotal = ZERO;
