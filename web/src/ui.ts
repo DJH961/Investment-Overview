@@ -682,102 +682,94 @@ function renderPeriodRow(row: PeriodRowView): HTMLElement {
   return h("li", { class: "holding" }, [main, meta]);
 }
 
-function renderContributionsSummary(deposits: DepositsView): HTMLElement {
-  const summary = h("div", { class: "stat-grid" }, [
+/**
+ * Contributions panel for the Periods tab's right column. Collapsible: a headline
+ * stat triplet (total / this year / this month) stays visible in the summary,
+ * and unfolding reveals the full contribution ledger grouped per year (each year
+ * independently expandable, "like before").
+ */
+function renderContributions(deposits: DepositsView): HTMLElement {
+  const statGrid = h("div", { class: "stat-grid" }, [
     stat("Contributed", formatDualCurrency(deposits.totalEur, deposits.totalUsd)),
     stat("This year", formatDualCurrency(deposits.ytdEur, deposits.ytdUsd)),
     stat("This month", formatDualCurrency(deposits.mtdEur, deposits.mtdUsd)),
   ]);
-  return h("section", { class: "deposits" }, [sectionHead("Contributions"), h("div", { class: "stats" }, [summary])]);
-}
 
-/** How many forward years the Periods-tab projection outlook looks ahead. */
-const PROJECTION_OUTLOOK_YEARS = 10;
-/** The ± band (in fractional points) for the outlook's optimistic/pessimistic scenarios. */
-const PROJECTION_OUTLOOK_BAND = new Decimal("0.03");
+  // Group the ledger rows by calendar year (newest first) so each year folds
+  // away on its own — the contribution history can run long.
+  const byYear = new Map<string, DepositRowView[]>();
+  for (const row of deposits.rows) {
+    const yr = row.date.slice(0, 4);
+    const bucket = byYear.get(yr);
+    if (bucket) bucket.push(row);
+    else byYear.set(yr, [row]);
+  }
+  const yearBlocks = Array.from(byYear.keys())
+    .sort()
+    .reverse()
+    .map((yr) => {
+      const rows = byYear.get(yr) ?? [];
+      return h("details", { class: "allocation year-contribs" }, [
+        h("summary", { class: "alloc-summary" }, [
+          h("span", { class: "alloc-summary-title" }, [yr]),
+          h("span", { class: "muted" }, [`${rows.length} contribution${rows.length === 1 ? "" : "s"}`]),
+        ]),
+        h("ul", { class: "ledger-list" }, rows.map(renderDepositRow)),
+      ]);
+    });
 
-/**
- * A compact, read-only forward projection shown *underneath* the historical
- * period tables — so Periods reads as one continuous timeline: settled months
- * and years above, the projected next {@link PROJECTION_OUTLOOK_YEARS} years
- * below. It is seeded straight from the portfolio (today's value, the average
- * yearly contribution, and the XIRR-derived expected return) with no inputs of
- * its own; the Calculator tab remains the place to tweak the assumptions.
- */
-function renderProjectionOutlook(plan: PlanView): HTMLElement {
-  const isUsd = getDisplayCurrency() === "USD";
-  // Match the rest of the dashboard: in USD display, project on the USD-derived
-  // expected return so the outlook is consistent with the toggled currency.
-  const expected = isUsd && plan.expectedRateUsd !== null ? plan.expectedRateUsd : plan.expectedRateEur;
-  const params: ProjectionParams = {
-    startingValue: plan.startingValueEur,
-    baseContribution: plan.defaultAnnualContributionEur,
-    periods: PROJECTION_OUTLOOK_YEARS,
-    periodsPerYear: 1,
-    annualRates: bandRates(expected, PROJECTION_OUTLOOK_BAND),
-    start: new Date(Date.UTC(plan.baseYear, 0, 1)),
-  };
-  const result = simulate(params);
-  const last = finalPoint(result);
-
-  const scenarios = [
-    { key: SCENARIO_PESSIMISTIC, label: "Pessimistic" },
-    { key: SCENARIO_EXPECTED, label: "Expected" },
-    { key: SCENARIO_OPTIMISTIC, label: "Optimistic" },
-  ] as const;
-
-  // Headline scenario cards: where the portfolio could stand at the horizon.
-  const kpiCards = scenarios.map(({ key, label }) => {
-    const finalVal = last ? last.nominalByScenario[key] : plan.startingValueEur;
-    return h("div", { class: "stat" }, [
-      h("span", { class: "stat-label" }, [label]),
-      h("span", { class: "stat-value pos" }, [formatCurrencyWhole(convertFromEur(finalVal).value)]),
-      h("span", { class: "stat-sub muted" }, [last ? `by ${last.label}` : "—"]),
-    ]);
-  });
-  kpiCards.push(
-    h("div", { class: "stat" }, [
-      h("span", { class: "stat-label" }, ["Contributed"]),
-      h("span", { class: "stat-value" }, [formatCurrencyWhole(convertFromEur(totalContributed(result)).value)]),
-      h("span", { class: "stat-sub muted" }, ["total new money"]),
-    ]),
-  );
-
-  // Forward per-year table in the same style as the Calculator's projection.
-  const colHeaders = scenarios.map(({ label }) => h("span", { class: "proj-cell muted" }, [label.slice(0, 4)]));
-  const tableRows = result.points.map((pt) => {
-    const cells = scenarios.map(({ key }) =>
-      h("span", { class: "proj-cell" }, [formatCurrencyWhole(convertFromEur(pt.nominalByScenario[key]).value)]),
-    );
-    return h("li", { class: "proj-row" }, [
-      h("span", { class: "proj-year" }, [pt.label]),
-      h("span", { class: "proj-contrib muted" }, [`+${formatCurrencyWhole(convertFromEur(pt.contributed).value)}`]),
-      h("div", { class: "proj-values" }, cells),
-    ]);
-  });
-
-  const body = h("div", { class: "projection-outlook-body" }, [
-    h("p", { class: "note" }, [
-      `Seeded from today's portfolio: ${formatCurrency(plan.startingValueEur)} growing at ` +
-        `${expected.times(100).toDecimalPlaces(1)}% p.a. (±${PROJECTION_OUTLOOK_BAND.times(100)}pp), plus ` +
-        `${formatCurrency(plan.defaultAnnualContributionEur)}/yr of contributions. Adjust the assumptions on the Calculator tab.`,
-    ]),
-    h("section", { class: "stats" }, [h("div", { class: "stat-grid calc-summary" }, kpiCards)]),
-    h("section", { class: "card" }, [
-      h("div", { class: "proj-head" }, [
-        h("span", { class: "proj-year muted" }, ["Year"]),
-        h("span", { class: "proj-contrib muted" }, ["Contributed"]),
-        h("div", { class: "proj-values" }, colHeaders),
-      ]),
-      h("ul", { class: "proj-list" }, tableRows),
-    ]),
+  const body = h("div", { class: "contributions-body" }, [
+    h("div", { class: "stats" }, [statGrid]),
+    ...(yearBlocks.length > 0 ? yearBlocks : [h("p", { class: "note" }, ["No contributions yet."])]),
   ]);
 
-  const expectedFinal = last ? convertFromEur(last.nominalByScenario[SCENARIO_EXPECTED]).value : null;
-  const sub = expectedFinal !== null
-    ? `~${formatCurrencyWhole(expectedFinal)} expected by ${last!.label}`
-    : `${PROJECTION_OUTLOOK_YEARS}-year outlook`;
-  return collapsibleSection("Projection", sub, body, "projection-outlook", true);
+  const sub = deposits.totalEur !== null
+    ? formatDualCurrency(deposits.totalEur, deposits.totalUsd)
+    : undefined;
+  return collapsibleSection("Contributions", sub, body, "deposits", true);
+}
+
+/**
+ * The Periods tab's projection block: the calculator's settings window (copied
+ * from the Calculator tab and made fully independent via {@link buildCalculator})
+ * stacked above the projection outputs it drives. Both halves are independently
+ * collapsible; the projection's collapsed summary tracks the live "Expected"
+ * horizon value so it stays informative when folded. Returns two sections
+ * (settings, then projection) for the right column.
+ */
+function renderPeriodsProjection(plan: PlanView): HTMLElement[] {
+  // A mutable sub-label element so recompute() can refresh the projection's
+  // collapsed summary in place.
+  const projSub = h("span", { class: "muted" }, ["forward outlook"]);
+
+  const { form, kpiOut, goalOut, tableOut } = buildCalculator(plan, {
+    headless: true,
+    onSummary: (text) => {
+      projSub.textContent = text;
+    },
+  });
+
+  const settings = collapsibleSection(
+    "Projection settings",
+    "assumptions",
+    h("div", { class: "periods-calc-settings-body" }, [form]),
+    "periods-calc-settings",
+    false,
+  );
+
+  const projectionBody = h("div", { class: "periods-projection-body" }, [kpiOut, goalOut, tableOut]);
+  // Build the projection collapsible by hand (rather than collapsibleSection) so
+  // the summary can carry the live `projSub` element instead of a static string.
+  const id = "periods-projection";
+  const attrs: Attrs = { class: "collapsible periods-projection" };
+  if (loadOpenState(id, true)) attrs.open = "open";
+  const projection = h("details", attrs, [
+    h("summary", { class: "collapsible-summary" }, [h("h2", {}, ["Projection"]), projSub]),
+    projectionBody,
+  ]) as HTMLDetailsElement;
+  projection.addEventListener("toggle", () => saveOpenState(id, projection.open));
+
+  return [settings, projection];
 }
 
 
@@ -793,23 +785,41 @@ function renderDepositRow(row: DepositRowView): HTMLElement {
 }
 
 /**
- * A single collapsible year group: the year's headline (growth + closing value),
- * its months nested inside, and that year's contributions kept *under* the year
- * rather than floating in a separate middle block. The current year defaults
- * open; prior years stay condensed until tapped.
+ * A single collapsible year group for the Periods tab's left column: the folded
+ * monthly overview for one year. The year's stat tiles (net flow, contributions,
+ * dividends, interest) and its headline (growth % + closing value) stay visible
+ * in the always-shown summary even when collapsed; unfolding reveals the months.
+ * The current year defaults open; prior years stay condensed until tapped.
  */
 function renderYearGroup(
   year: string,
   yearRow: PeriodRowView | undefined,
   months: PeriodRowView[],
-  deposits: DepositRowView[],
   isCurrent: boolean,
 ): HTMLElement {
-  const body: Array<Node | string> = [];
+  // Headline: growth % and closing value, shifted to the left of the summary and
+  // given a touch more emphasis than the muted sub-labels elsewhere.
+  const growthPct = yearRow ? pickByCurrency(yearRow.growthPct, yearRow.growthPctUsd) : null;
+  const valuePart =
+    yearRow && yearRow.closingValueEur !== null
+      ? formatDualCurrency(yearRow.closingValueEur, yearRow.closingValueUsd)
+      : "—";
+  const headline = h("div", { class: "year-headline" }, [
+    h("span", { class: "year-value" }, [valuePart]),
+    h("span", { class: `year-growth ${signClass(growthPct)}` }, [signedPercentOrDash(growthPct)]),
+  ]);
 
+  const titleRow = h("div", { class: "year-title-row" }, [
+    h("h2", {}, [year]),
+    ...(isCurrent ? [h("span", { class: "pill" }, ["current"])] : []),
+    headline,
+  ]);
+
+  const summaryChildren: Array<Node | string> = [titleRow];
   if (yearRow) {
-    // The year's own flows/dividends/interest as a compact meta strip.
-    body.push(
+    // The year's own flows/dividends/interest as a compact meta strip — kept in
+    // the summary so the tiles show even when the year is folded together.
+    summaryChildren.push(
       h("div", { class: "holding-meta year-meta" }, [
         chip(`Net flow ${formatSignedDualCurrency(yearRow.netFlowEur, yearRow.netFlowUsd)}`, signClass(yearRow.netFlowEur)),
         chip(`Contrib ${formatDualCurrency(yearRow.contributionsEur, yearRow.contributionsUsd)}`),
@@ -819,42 +829,25 @@ function renderYearGroup(
     );
   }
 
-  if (months.length > 0) {
-    body.push(h("ul", { class: "holding-list" }, months.map(renderPeriodRow)));
-  } else {
-    body.push(h("p", { class: "note" }, ["No monthly breakdown for this year."]));
-  }
+  const body =
+    months.length > 0
+      ? h("ul", { class: "holding-list" }, months.map(renderPeriodRow))
+      : h("p", { class: "note" }, ["No monthly breakdown for this year."]);
 
-  if (deposits.length > 0) {
-    body.push(
-      h("details", { class: "allocation year-contribs" }, [
-        h("summary", { class: "alloc-summary" }, [
-          h("span", { class: "alloc-summary-title" }, ["Contributions"]),
-          h("span", { class: "muted" }, [`${deposits.length} in ${year}`]),
-        ]),
-        h("ul", { class: "ledger-list" }, deposits.map(renderDepositRow)),
-      ]),
-    );
-  }
-
-  // Year headline as the collapsible sub-text: growth % and closing value.
-  const growthPct = yearRow ? pickByCurrency(yearRow.growthPct, yearRow.growthPctUsd) : null;
-  const valuePart =
-    yearRow && yearRow.closingValueEur !== null
-      ? formatDualCurrency(yearRow.closingValueEur, yearRow.closingValueUsd)
-      : "—";
-  const sub = `${signedPercentOrDash(growthPct)} · ${valuePart}`;
-
-  const wrapped = h("div", { class: "year-group-body" }, body);
-  return collapsibleSection(year, sub, wrapped, "periods-year", isCurrent);
+  const id = `periods-year-${year}`;
+  const attrs: Attrs = { class: "collapsible periods-year" };
+  if (loadOpenState(id, isCurrent)) attrs.open = "open";
+  const details = h("details", attrs, [
+    h("summary", { class: "collapsible-summary year-summary" }, summaryChildren),
+    h("div", { class: "year-group-body" }, [body]),
+  ]) as HTMLDetailsElement;
+  details.addEventListener("toggle", () => saveOpenState(id, details.open));
+  return details;
 }
 
 function renderPeriodsPanel(periods: PeriodsView, deposits: DepositsView | null, plan: PlanView): HTMLElement {
-  const children: Array<Node | string> = [];
-  if (deposits) children.push(renderContributionsSummary(deposits));
-
-  // Group the exported months and contribution rows by their calendar year so
-  // each year can be condensed independently (current year open by default).
+  // Group the exported months by their calendar year so each year folds away
+  // independently (current year open by default).
   const monthsByYear = new Map<string, PeriodRowView[]>();
   for (const row of periods.monthly) {
     const yr = row.label.slice(0, 4);
@@ -862,58 +855,46 @@ function renderPeriodsPanel(periods: PeriodsView, deposits: DepositsView | null,
     if (bucket) bucket.push(row);
     else monthsByYear.set(yr, [row]);
   }
-  const depositsByYear = new Map<string, DepositRowView[]>();
-  for (const row of deposits?.rows ?? []) {
-    const yr = row.date.slice(0, 4);
-    const bucket = depositsByYear.get(yr);
-    if (bucket) bucket.push(row);
-    else depositsByYear.set(yr, [row]);
-  }
 
   // The current year is the live one (its yearly row is flagged current); fall
   // back to today's year so a fresh export with no current row still opens one.
   const currentYear =
     periods.yearly.find((y) => y.isCurrent)?.label ?? String(new Date().getFullYear());
 
-  // Render newest year first; include any year that has a yearly row, months,
-  // or contributions so nothing is dropped.
+  // Render newest year first; include any year that has a yearly row or months
+  // so nothing is dropped.
   const yearKeys = Array.from(
-    new Set<string>([
-      ...periods.yearly.map((y) => y.label),
-      ...monthsByYear.keys(),
-      ...depositsByYear.keys(),
-    ]),
+    new Set<string>([...periods.yearly.map((y) => y.label), ...monthsByYear.keys()]),
   )
     .sort()
     .reverse();
 
+  // --- Left column: all the periods, collapsible by year. ---
+  const leftChildren: Array<Node | string> = [];
   if (yearKeys.length === 0) {
-    children.push(h("p", { class: "note" }, ["No periods yet."]));
+    leftChildren.push(h("p", { class: "note" }, ["No periods yet."]));
   }
   for (const year of yearKeys) {
     const yearRow = periods.yearly.find((y) => y.label === year);
-    children.push(
-      renderYearGroup(
-        year,
-        yearRow,
-        monthsByYear.get(year) ?? [],
-        depositsByYear.get(year) ?? [],
-        year === currentYear,
-      ),
+    leftChildren.push(
+      renderYearGroup(year, yearRow, monthsByYear.get(year) ?? [], year === currentYear),
     );
   }
+  const left = h("div", { class: "periods-left" }, leftChildren);
 
-  // Forward-looking projection, underneath the historical periods, so Periods
-  // reads as one continuous past → future timeline.
-  children.push(renderProjectionOutlook(plan));
+  // --- Right column: contributions, then the independent projection settings
+  // and the projection they drive — all stacked and collapsible. ---
+  const rightChildren: Array<Node | string> = [];
+  if (deposits) rightChildren.push(renderContributions(deposits));
+  rightChildren.push(...renderPeriodsProjection(plan));
+  const right = h("div", { class: "periods-right" }, rightChildren);
 
-  children.push(
-    h("p", { class: "disclaimer" }, [
-      "The current month and year are recomputed live; completed periods are frozen as of the last export. " +
-        "Projected years are hypothetical and assume constant returns.",
-    ]),
-  );
-  return h("section", { class: "panel-stack panel-periods" }, children);
+  const disclaimer = h("p", { class: "disclaimer" }, [
+    "The current month and year are recomputed live; completed periods are frozen as of the last export. " +
+      "Projected years are hypothetical and assume constant returns.",
+  ]);
+
+  return h("section", { class: "panel-stack panel-periods" }, [left, right, disclaimer]);
 }
 
 // --- Analytics / risk tab ---------------------------------------------------
@@ -1485,7 +1466,36 @@ function numberField(label: string, value: string, attrs: Attrs): { wrap: HTMLEl
  *
  * Mirrors the desktop's _projection_view / _projection_model (req 11).
  */
-function renderCalculatorPanel(plan: PlanView): HTMLElement {
+
+/** The reusable pieces of the projection calculator, so the same engine can be
+ *  mounted both on its own Calculator tab and (decoupled) inside the Periods
+ *  tab. {@link buildCalculator} wires the form to the outputs; callers arrange
+ *  the pieces into whatever layout they need. */
+interface CalculatorParts {
+  /** The settings card (inputs + toggles). When `headless`, its own section
+   *  head is dropped so a surrounding collapsible can supply the title. */
+  form: HTMLElement;
+  kpiOut: HTMLElement;
+  goalOut: HTMLElement;
+  tableOut: HTMLElement;
+}
+
+interface CalculatorOptions {
+  /** Drop the form's internal section-head (the wrapper supplies a title). */
+  headless?: boolean;
+  /** Called after every recompute with a short collapsed-state summary line
+   *  (e.g. "~€1.2M expected by 2036"), so a collapsed projection can still
+   *  show where the outlook lands without being unfolded. */
+  onSummary?: (text: string) => void;
+}
+
+/**
+ * Build the projection calculator engine: a settings form wired to live KPI,
+ * goal and table outputs. Fully self-contained — it reads only {@link PlanView}
+ * and the active display currency, so it works identically on the Calculator
+ * tab and embedded in the Periods tab even if the Calculator tab goes away.
+ */
+function buildCalculator(plan: PlanView, opts: CalculatorOptions = {}): CalculatorParts {
   // The calculator runs in EUR internally; the user types in the active display
   // currency and the values are converted before simulating.
   const displayCurrency = getDisplayCurrency();
@@ -1621,6 +1631,20 @@ function renderCalculatorPanel(plan: PlanView): HTMLElement {
       ]),
     );
 
+    // Feed a one-line collapsed summary (where the "Expected" scenario lands at
+    // the horizon) to any caller that wants to show it without unfolding.
+    if (opts.onSummary) {
+      const expectedScenario = last
+        ? (useReal ? last.realByScenario[SCENARIO_EXPECTED] : last.nominalByScenario[SCENARIO_EXPECTED])
+        : null;
+      const expectedFinal = expectedScenario !== null ? convertFromEur(expectedScenario).value : null;
+      opts.onSummary(
+        expectedFinal !== null
+          ? `~${formatCurrencyWhole(expectedFinal)} expected by ${last!.label}`
+          : "forward outlook",
+      );
+    }
+
     // --- Goal-seeking callout (only when target > 0) ---
     if (targetEur.greaterThan(0)) {
       const hits = timeToTarget(result, targetEur, { real: useReal });
@@ -1715,10 +1739,14 @@ function renderCalculatorPanel(plan: PlanView): HTMLElement {
   realToggleInput.addEventListener("change", recompute);
 
   const form = h("section", { class: "card calc-form" }, [
-    h("div", { class: "section-head" }, [
-      h("h2", {}, ["Calculator"]),
-      h("span", { class: "muted" }, ["from today's portfolio"]),
-    ]),
+    ...(opts.headless
+      ? []
+      : [
+          h("div", { class: "section-head" }, [
+            h("h2", {}, ["Calculator"]),
+            h("span", { class: "muted" }, ["from today's portfolio"]),
+          ]),
+        ]),
     h("p", { class: "note" }, [
       `Seeded from your portfolio: starting value ${formatCurrency(plan.startingValueEur)}, ` +
       `expected return ${seedRatePct}% p.a. (from portfolio XIRR). Adjust below.`,
@@ -1734,6 +1762,15 @@ function renderCalculatorPanel(plan: PlanView): HTMLElement {
   ]);
 
   recompute();
+  return { form, kpiOut, goalOut, tableOut };
+}
+
+/**
+ * The standalone Calculator tab: the projection engine arranged as form on the
+ * left, KPI summary + goal + table on the right (see {@link buildCalculator}).
+ */
+function renderCalculatorPanel(plan: PlanView): HTMLElement {
+  const { form, kpiOut, goalOut, tableOut } = buildCalculator(plan);
   return h("section", { class: "panel-stack panel-calc" }, [
     form,
     kpiOut,

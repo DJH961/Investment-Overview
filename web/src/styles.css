@@ -465,15 +465,63 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
  * section-head margins so the summary lines up with the card edges. */
 .collapsible.card > .collapsible-summary { margin: 0; }
 
-/* Periods → per-year group: the months + that year's contributions, stacked
- * under one collapsible year header (current year open by default). */
+/* Periods → per-year group (left column): the folded monthly overview for one
+ * year. The summary stays visible when collapsed and carries the year headline
+ * (growth + value) plus the always-on stat tiles; the months sit in the body. */
+.periods-year > .year-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "title chev"
+    "tiles tiles";
+  align-items: center;
+  gap: 0.4rem 0.5rem;
+}
+.year-summary > .year-title-row { grid-area: title; }
+.year-summary > .year-meta { grid-area: tiles; }
+.year-summary::after { grid-area: chev; margin-left: 0; }
+
+/* The headline (closing value + growth %) sits left, right after the year, and
+ * stands out a touch more than the muted sub-labels used elsewhere. */
+.year-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.year-title-row > h2 { margin: 0; }
+.year-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+.year-headline .year-value { font-weight: 650; font-size: 0.95rem; }
+.year-headline .year-growth { font-weight: 650; font-size: 0.9rem; }
+
 .periods-year > .year-group-body {
   display: grid;
   gap: 0.6rem;
   padding-top: 0.4rem;
 }
-.year-group-body .year-meta { margin-bottom: 0.1rem; }
-.year-group-body .year-contribs { margin-top: 0.2rem; }
+.year-meta { margin: 0.15rem 0 0; }
+
+/* Contributions panel (right column): the stat triplet inside the collapsible
+ * body keeps the compact three-up grid; the per-year ledger blocks stack below. */
+.contributions-body { display: grid; gap: 0.7rem; }
+.contributions-body .stats .stat-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.contributions-body .stats .stat { padding: 0.75rem 0.55rem; }
+.contributions-body .stats .stat-value { font-size: 0.98rem; letter-spacing: -0.02em; }
+.contributions-body .year-contribs { margin-top: 0.1rem; }
+
+/* Embedded projection (right column): the settings card and outputs each fold
+ * away inside their own collapsible. */
+.periods-projection-body { display: grid; gap: 0.9rem; }
+.periods-calc-settings-body { display: grid; gap: 0.6rem; }
 
 .holding-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
 .holding {
@@ -706,6 +754,11 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
  * padded summary header instead of sitting flush against the card edge. */
 .allocation .ledger-list { padding: 0 0.95rem 0.95rem; }
 
+/* Periods columns: the left holds the year groups, the right the contributions
+ * + projection stack. Each is a simple vertical stack on mobile. */
+.periods-left,
+.periods-right { display: grid; gap: 1rem; align-content: start; }
+
 /* Attribution: a pinned "Total" row that foots the per-holding P/L, plus a
  * compact pager so a long holdings list scrolls through pages instead of
  * growing the section until it overlaps the surrounding charts. */
@@ -747,23 +800,18 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .deposits > .stats .stat { padding: 0.75rem 0.55rem; }
 .deposits > .stats .stat-value { font-size: 0.98rem; letter-spacing: -0.02em; }
 
-/* Periods groups: frame each of the three blocks (by-month, by-year,
- * contributions) as a softly-tinted zone so they read as distinct sections
- * instead of one undifferentiated stream of cards. Helps both the cramped phone
- * stack and the desktop two-column layout. */
-.panel-periods > .periods-monthly,
-.panel-periods > .periods-yearly,
-.panel-periods > .deposits {
+/* Frame the right-column blocks (contributions, projection settings, the
+ * projection itself) and each left-column year group as a softly-tinted zone so
+ * they read as distinct sections rather than one undifferentiated stream. */
+.periods-left > .periods-year,
+.periods-right > .collapsible {
   background: color-mix(in srgb, var(--card-2) 55%, transparent);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0.35rem 0.85rem 0.9rem;
 }
-.panel-periods > .periods-monthly > .section-head,
-.panel-periods > .periods-yearly > .section-head,
-.panel-periods > .periods-monthly > .collapsible-summary,
-.panel-periods > .periods-yearly > .collapsible-summary,
-.panel-periods > .deposits > .section-head {
+.periods-left > .periods-year > .year-summary,
+.periods-right > .collapsible > .collapsible-summary {
   margin: 0.5rem 0.1rem 0.6rem;
   padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--border);
@@ -1083,20 +1131,19 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    * still using more of the extra desktop width than before. */
   .chart-wrap { max-width: 60rem; margin-inline: auto; }
 
-  /* Periods: by-month on the left; by-year and contributions stacked right. */
+  /* Periods: all the period year-groups on the left; contributions and the
+   * projection stack on the right. */
   .panel-periods {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas:
-      "month year"
-      "month contrib"
-      "month disc";
+      "left right"
+      "disc disc";
     align-items: start;
     column-gap: 2.75rem;
     row-gap: 1.5rem;
   }
-  .panel-periods > .periods-monthly { grid-area: month; }
-  .panel-periods > .periods-yearly { grid-area: year; }
-  .panel-periods > .deposits { grid-area: contrib; }
+  .panel-periods > .periods-left { grid-area: left; }
+  .panel-periods > .periods-right { grid-area: right; }
   .panel-periods > .disclaimer { grid-area: disc; align-self: end; }
 
   /* Risk: returns and risk metrics side by side, then the full-width currency

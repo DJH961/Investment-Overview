@@ -12,6 +12,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [3.6.6] — 2026-06-22
+
+The Periods tab is reorganised into a two-column layout that keeps the year
+groups and the contributions + projection stack visually distinct.
+
+### Changed
+
+- **Periods tab restructured into a two-column layout.** The left column holds
+  the per-year groups while the right column stacks the recent contributions and
+  an independent projection. On mobile each column collapses to a single
+  vertical stack so the tab stays phone-first.
+
 ## [3.6.5] — 2026-06-22
 
 ### Fixed
