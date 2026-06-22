@@ -178,6 +178,9 @@ def test_mobile_export_shape_and_default_sensitivity(session: Session) -> None:
     assert export["meta"]["display_currency"] == "EUR"
     assert export["meta"]["fx_rate_eur_usd"] == "1.10000000"
     assert export["portfolio_cashflows"]
+    for flow in export["portfolio_cashflows"]:
+        _assert_decimal_string_or_null(flow["amount"])
+        _assert_decimal_string_or_null(flow["amount_usd"])
 
 
 def test_mobile_export_holdings_cash_and_transactions(session: Session) -> None:
@@ -195,6 +198,7 @@ def test_mobile_export_holdings_cash_and_transactions(session: Session) -> None:
         "native_currency",
         "shares",
         "cost_basis_native",
+        "cost_basis_usd",
         "cumulative_dividends_cash_native",
         "price_symbol",
         "price_type",
@@ -208,12 +212,15 @@ def test_mobile_export_holdings_cash_and_transactions(session: Session) -> None:
         for key in (
             "shares",
             "cost_basis_native",
+            "cost_basis_usd",
             "cumulative_dividends_cash_native",
             "last_known_price_native",
         ):
             _assert_decimal_string_or_null(holding[key])
         for flow in holding["cashflows"]:
             _assert_decimal_string_or_null(flow["amount"])
+            # Each cashflow also carries its USD leg at the trade-date FX rate.
+            _assert_decimal_string_or_null(flow["amount_usd"])
     assert by_symbol["VTI"]["price_type"] == "market"
     assert by_symbol["FXAIX"]["price_type"] == "nav"
     assert by_symbol["TG-CASH"]["price_type"] == "nav"
@@ -239,10 +246,14 @@ def test_mobile_export_period_openings(session: Session) -> None:
 
     _assert_decimal_string_or_null(openings["month_start_value_eur"])
     _assert_decimal_string_or_null(openings["year_start_value_eur"])
+    _assert_decimal_string_or_null(openings["month_start_value_usd"])
+    _assert_decimal_string_or_null(openings["year_start_value_usd"])
     assert {"VTI", "FXAIX", "TG-CASH"} <= set(openings["holdings"])
     for row in openings["holdings"].values():
         _assert_decimal_string_or_null(row["month_start_value_eur"])
         _assert_decimal_string_or_null(row["year_start_value_eur"])
+        _assert_decimal_string_or_null(row["month_start_value_usd"])
+        _assert_decimal_string_or_null(row["year_start_value_usd"])
 
 
 def test_mobile_export_periods_carry_per_date_usd_regardless_of_display_currency(

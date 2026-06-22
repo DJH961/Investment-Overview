@@ -182,4 +182,3 @@ def test_analytics_full_history_curve_extends_back_to_inception(
     # Cumulative contributions grow from the first deposit, not from zero at a
     # 1-year window edge.
     assert Decimal(full["curve"][0]["cumulative_contributions"]) != Decimal(0)
-
