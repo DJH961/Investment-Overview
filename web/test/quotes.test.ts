@@ -516,8 +516,8 @@ describe("loadEurUsd", () => {
 
   it("prefers an expired cached reading from today over the end-of-day rate", async () => {
     const storage = memStorage();
-    // Cached at t=1000ms (1970-01-01 UTC); read at t=120s, still the same UTC
-    // day but past the 60s TTL, so it is no longer "fresh".
+    // Cached at t=1000ms (1970-01-01 UTC); read at t=120_000ms (120s), still the
+    // same UTC day but past the 60s TTL, so it is no longer "fresh".
     writeCachedEurUsd({ now: new Decimal("1.084"), previousClose: new Decimal("1.071") }, 1000, storage);
     const fetchImpl = vi.fn<FetchLike>();
     const res = await loadEurUsd("", {
