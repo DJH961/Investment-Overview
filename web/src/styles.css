@@ -416,7 +416,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   justify-content: space-between;
   gap: 0.75rem;
 }
-.holding-id { min-width: 0; display: grid; gap: 0.1rem; }
+.holding-id { flex: 1 1 auto; min-width: 0; display: grid; gap: 0.1rem; }
 .holding-topline {
   display: flex;
   align-items: baseline;

@@ -94,6 +94,22 @@ const DEMO_EXPORT: MobileExport = {
       cashflows: [{ date: "2023-11-05", amount: "-1500" }],
     },
     {
+      symbol: "FCNTX",
+      name: "Fidelity Contrafund",
+      asset_class: "mutual_fund",
+      broker: "Sample Broker",
+      account: "Pension",
+      native_currency: "USD",
+      shares: "200",
+      cost_basis_native: "3400",
+      cumulative_dividends_cash_native: "0",
+      price_symbol: "FCNTX",
+      price_type: "nav",
+      last_known_price_native: "19.80",
+      last_price_date: "2026-06-19",
+      cashflows: [{ date: "2024-02-01", amount: "-3400" }],
+    },
+    {
       symbol: "VMFXX",
       name: "Vanguard Federal Money Market Fund",
       asset_class: "money_market",
@@ -114,6 +130,7 @@ const DEMO_EXPORT: MobileExport = {
     { date: "2023-09-01", amount: "-6800" },
     { date: "2023-11-05", amount: "-1500" },
     { date: "2024-01-10", amount: "-5100" },
+    { date: "2024-02-01", amount: "-3400" },
     { date: "2024-03-01", amount: "-3000" },
     { date: "2024-05-20", amount: "-5400" },
   ],
@@ -235,13 +252,30 @@ function quote(symbol: string, price: string, previousClose: string, currency: s
   };
 }
 
+/** A NAV (mutual-fund) quote: a daily bar with a value-date and prior close,
+ *  but no intraday strike time — mirrors what `time_series` returns for funds. */
+function navQuote(symbol: string, price: string, previousClose: string, currency: string, valueDate: string): Quote {
+  return {
+    symbol,
+    price: new Decimal(price),
+    previousClose: new Decimal(previousClose),
+    currency,
+    at: null,
+    priceTime: null,
+    valueDate,
+  };
+}
+
 /** Baked-in live quotes for the market-priced holdings (mix of up/down days). */
 const DEMO_QUOTES = new Map<string, Quote>([
   ["VWCE", quote("VWCE", "121.40", "120.10", "EUR")],
   ["AAPL", quote("AAPL", "212.30", "214.80", "USD")],
   ["MSFT", quote("MSFT", "448.00", "442.50", "USD")],
   ["AGGH", quote("AGGH", "4.98", "4.97", "EUR")],
-  // VMFXX (NAV) intentionally absent → falls back to last_known_price_native.
+  // A mutual fund (NAV) priced from a daily bar: shows a today's move from the
+  // prior close, just like a stock — the headline feature this demo showcases.
+  ["FCNTX", navQuote("FCNTX", "19.80", "19.60", "USD", "2026-06-19")],
+  // VMFXX (money-market NAV) intentionally absent → falls back to its $1 value.
 ]);
 
 /** Build the sample dashboard model using the real compute pipeline. */
