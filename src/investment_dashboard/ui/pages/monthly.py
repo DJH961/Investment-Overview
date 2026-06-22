@@ -130,7 +130,12 @@ def _build_body(data: _MonthlyData) -> None:  # pragma: no cover - heavy render,
                     # last per the v2.9.1 layout request.
                     pct_column("Total Growth", "total_growth", display_ccy),
                 ],
-                "rowData": to_table_rows(rows, currency=display_ccy, fx_rate=fx_rate),
+                # Table reads newest-first (reverse chronological) so the most
+                # recent month is at the top; the chart above keeps its natural
+                # left-to-right chronological flow.
+                "rowData": to_table_rows(
+                    list(reversed(rows)), currency=display_ccy, fx_rate=fx_rate
+                ),
                 "defaultColDef": {
                     "resizable": True,
                     "sortable": True,
@@ -146,11 +151,11 @@ def _build_body(data: _MonthlyData) -> None:  # pragma: no cover - heavy render,
         ).classes("ag-theme-alpine w-full h-[55vh]")
         ui.label(
             f"Values shown in {display_ccy} ({sym}); switch currency from the header "
-            "toggle. Closing value is end-of-month mark-to-market (best-effort if "
-            "prices are missing). Growth % (period) is the per-month time-weighted "
-            "return, chained across daily snapshots (it degrades to a single "
-            "Modified-Dietz month when snapshots are sparse); Total Growth (last "
-            "column) is cumulative (1 + XIRR) ^ years to the end of the row. Each "
-            "page is one calendar year (empty months before your first investment "
-            "are padded so years line up).",
+            "toggle. Rows are ordered newest first. Closing value is end-of-month "
+            "mark-to-market (best-effort if prices are missing). Growth % (period) is "
+            "the per-month time-weighted return, chained across daily snapshots (it "
+            "degrades to a single Modified-Dietz month when snapshots are sparse); "
+            "Total Growth (last column) is cumulative (1 + XIRR) ^ years to the end of "
+            "the row. Empty months before your first investment are padded so the "
+            "history is contiguous.",
         ).classes("text-caption opacity-70")

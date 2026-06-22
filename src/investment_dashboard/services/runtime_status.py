@@ -154,3 +154,51 @@ def reset() -> None:
         _log.clear()
         _state["seq"] = 0
         _last_seen.clear()
+
+
+def dismiss(seq: int) -> bool:
+    """Remove a single recorded error by its ``seq``. Returns whether it existed.
+
+    Lets the user clear an individual stale notification from the Data Health
+    page once they've seen it. ``seq`` keeps advancing, so a dismissed error is
+    gone for good (a genuinely *new* failure gets a fresh ``seq`` and reappears).
+    """
+    with _lock:
+        for event in list(_log):
+            if event.seq == seq:
+                _log.remove(event)
+                _last_seen.pop((event.source, event.message), None)
+                return True
+    return False
+
+
+def dismiss_all() -> int:
+    """Clear every recorded error (the "Dismiss all" action). Returns the count.
+
+    Unlike :func:`reset`, the monotonic ``seq`` is preserved so the toast
+    watcher doesn't replay old errors — only genuinely new failures advance it.
+    """
+    with _lock:
+        count = len(_log)
+        _log.clear()
+        _last_seen.clear()
+        return count
+
+
+def resolve(source: str) -> int:
+    """Drop retained errors from ``source`` because it has since succeeded.
+
+    Called when a background task (e.g. the price/FX refresh) completes without
+    error, so a notification that "prices are outdated" disappears on its own
+    once a later refresh actually lands the prices — rather than lingering
+    forever. Returns the number of errors cleared. ``seq`` is left untouched.
+    """
+    with _lock:
+        keep = [e for e in _log if e.source != source]
+        removed = len(_log) - len(keep)
+        if removed:
+            _log.clear()
+            _log.extend(keep)
+            for key in [k for k in _last_seen if k[0] == source]:
+                del _last_seen[key]
+        return removed

@@ -110,6 +110,9 @@ class _CalculatorPayload:
 
     data: CalcData
     active_weights: dict[int, Decimal]
+    active_no_buy: set[int]
+    active_allow_sell: bool
+    active_display_currency: str | None
 
 
 def register() -> None:
@@ -129,12 +132,25 @@ def register() -> None:
                 with session_scope() as session:
                     data = build_calculator_data(session)
                     active = allocations_repo.get_active(session)
-                    active_weights = (
-                        {item.instrument_id: item.weight_pct for item in active.items}
-                        if active is not None
-                        else {}
-                    )
-                return _CalculatorPayload(data=data, active_weights=active_weights)
+                    if active is not None:
+                        active_weights = {
+                            item.instrument_id: item.weight_pct for item in active.items
+                        }
+                        active_no_buy = {item.instrument_id for item in active.items if item.no_buy}
+                        active_allow_sell = bool(active.allow_sell)
+                        active_display_currency = active.display_currency
+                    else:
+                        active_weights = {}
+                        active_no_buy = set()
+                        active_allow_sell = False
+                        active_display_currency = None
+                return _CalculatorPayload(
+                    data=data,
+                    active_weights=active_weights,
+                    active_no_buy=active_no_buy,
+                    active_allow_sell=active_allow_sell,
+                    active_display_currency=active_display_currency,
+                )
 
             def _render(payload: _CalculatorPayload) -> None:
                 if not payload.data.instruments:
@@ -146,7 +162,7 @@ def register() -> None:
                     )
                     return
 
-                _CalculatorView(payload.data, payload.active_weights).render()
+                _CalculatorView(payload).render()
 
             deferred(_render, compute=_gather)
 
@@ -154,19 +170,36 @@ def register() -> None:
 class _CalculatorView:  # pragma: no cover - UI wiring
     """Stateful view object holding the in-page allocation builder."""
 
-    def __init__(self, data: CalcData, active_weights: dict[int, Decimal]) -> None:
+    def __init__(self, payload: _CalculatorPayload) -> None:
+        data = payload.data
         self.data = data
         self.by_id = data.by_id()
-        self.active_weights = active_weights
+        self.active_weights = payload.active_weights
+        self.active_no_buy = payload.active_no_buy
+        self.active_allow_sell = payload.active_allow_sell
+        self.active_display_currency = payload.active_display_currency
         self.fx = data.fx_rate_usd_per_eur
+        # Display/entry currency (drives the portfolio + per-holding values and
+        # the cash amount). Toggling it re-renders the figures live.
+        self.display_ccy = (
+            data.default_currency if data.default_currency in ("EUR", "USD") else "EUR"
+        )
+        # Whether the plan may sell over-weight funds to rebalance (off = buy-only).
+        self.allow_sell = False
         # Builder state.
         self.mode = "category"  # or "fund"
         self.cat_targets: dict[str, float] = {}
         self.cat_split: dict[str, str] = {c.name: "value" for c in data.categories}
+        # Funds the user will actively invest into per category. Members not in
+        # this set are still counted toward the category % but never bought.
         self.cat_selected: dict[str, set[int]] = {
             c.name: {m.instrument_id for m in c.members} for c in data.categories
         }
         self.fund_targets: dict[int, float] = {}
+        # Convenience lookup of every member id per category (for no-buy math).
+        self.cat_members: dict[str, list[int]] = {
+            c.name: [m.instrument_id for m in c.members] for c in data.categories
+        }
 
     # -- currency helpers --------------------------------------------------
     def _from_eur(self, amount_eur: Decimal, target: str) -> Decimal:
@@ -179,21 +212,45 @@ class _CalculatorView:  # pragma: no cover - UI wiring
             return amount
         return amount / self.fx
 
+    def _other_ccy(self) -> str:
+        return "USD" if self.display_ccy == "EUR" else "EUR"
+
+    def _fmt(self, amount_eur: Decimal) -> str:
+        """Format an EUR amount in the currently selected display currency."""
+        return fmt_money(self._from_eur(amount_eur, self.display_ccy), self.display_ccy)
+
+    def _fmt_other(self, amount_eur: Decimal) -> str:
+        """Format an EUR amount in the *other* currency (for the sub-line)."""
+        other = self._other_ccy()
+        return fmt_money(self._from_eur(amount_eur, other), other)
+
     # -- render ------------------------------------------------------------
     def render(self) -> None:
+        self.summary_box = ui.column().classes("w-full gap-none")
         self._render_summary()
         self._render_cash_section()
         self._render_target_section()
         self.result_box = ui.column().classes("w-full gap-md")
 
+    def _on_ccy_change(self, e: object) -> None:
+        self.display_ccy = e.value  # type: ignore[attr-defined]
+        # Re-paint every figure that is shown in the selected currency.
+        self._render_summary()
+        self._render_builder()
+        # A previously computed plan was rendered in the old currency; drop it
+        # so the user re-computes rather than reading mismatched figures.
+        if hasattr(self, "result_box"):
+            self.result_box.clear()
+
     def _render_summary(self) -> None:
+        self.summary_box.clear()
         total = self.data.total_value_eur
         held = sum(1 for i in self.data.instruments if i.current_value_eur > ZERO)
-        with ui.row().classes("w-full gap-md flex-wrap q-mb-sm"):
+        with self.summary_box, ui.row().classes("w-full items-center gap-md flex-wrap q-mb-sm"):
             kpi_card(
                 "Portfolio value",
-                fmt_money(total, "EUR"),
-                sub=fmt_money(self._from_eur(total, "USD"), "USD"),
+                self._fmt(total),
+                sub=self._fmt_other(total),
             )
             kpi_card("Holdings", str(held))
             kpi_card("Categories", str(len(self.data.categories)))
@@ -208,10 +265,18 @@ class _CalculatorView:  # pragma: no cover - UI wiring
                 .classes("min-w-[12rem]")
                 .props("outlined dense")
             )
-            self.ccy_in = ui.toggle(["EUR", "USD"], value=self.data.default_currency).props(
-                "dense unelevated"
-            )
+            self.ccy_in = ui.toggle(
+                ["EUR", "USD"],
+                value=self.display_ccy,
+                on_change=self._on_ccy_change,
+            ).props("dense unelevated")
             self.fractional = ui.checkbox("Allow fractional shares", value=False)
+            self.rebalance = ui.checkbox(
+                "Rebalance (allow selling)", value=self.allow_sell, on_change=self._on_rebalance
+            ).tooltip("Off = buy only. On = sell over-weight funds to balance precisely.")
+
+    def _on_rebalance(self, e: object) -> None:
+        self.allow_sell = bool(e.value)  # type: ignore[attr-defined]
 
     def _render_target_section(self) -> None:
         with section("2 · Set your target mix"):
@@ -283,7 +348,7 @@ class _CalculatorView:  # pragma: no cover - UI wiring
                     ui.label(name).classes("text-body1")
                     ui.html(
                         '<span class="text-caption opacity-70">now '
-                        f"{cat.current_pct:.1f} % · {fmt_money(cat.current_value_eur, 'EUR')}</span>"
+                        f"{cat.current_pct:.1f} % · {self._fmt(cat.current_value_eur)}</span>"
                     )
                 ui.html(
                     _bar(cat.current_pct, _decimal_or_zero(self.cat_targets.get(name)))
@@ -303,6 +368,10 @@ class _CalculatorView:  # pragma: no cover - UI wiring
                         value=self.cat_split.get(name, "value"),
                         on_change=lambda e, n=name: self.cat_split.__setitem__(n, e.value),
                     ).props("dense unelevated")
+                ui.label(
+                    "Untick a fund to keep its current holding counted in this "
+                    "category's % while sending no new cash into it.",
+                ).classes("text-caption opacity-70")
                 for member in cat.members:
                     self._render_member_checkbox(name, member)
 
@@ -392,9 +461,49 @@ class _CalculatorView:  # pragma: no cover - UI wiring
         self._render_builder()
 
     def _preset_saved(self) -> None:
-        # Saved targets are per-fund; show them in fund mode for fidelity.
-        self.mode = "fund"
+        # Rebuild the category view from the saved per-fund weights so a target
+        # saved "by category" loads back in category mode: group each fund's
+        # weight under its category, and tick only the funds the saved plan
+        # actually bought (no-buy members stay counted but un-ticked).
+        cat_of = {i.instrument_id: i.category for i in self.data.instruments}
+        cat_targets: dict[str, float] = {}
+        selected_in_saved: dict[str, set[int]] = {}
+        for mid, pct in self.active_weights.items():
+            category = cat_of.get(mid)
+            if category is None:
+                continue
+            cat_targets[category] = cat_targets.get(category, 0.0) + float(pct)
+            # Restore the central no-buy distinction: a saved member counts
+            # toward its category % but is only re-ticked when it was buyable.
+            if mid not in self.active_no_buy:
+                selected_in_saved.setdefault(category, set()).add(mid)
+
+        self.cat_targets = {name: round(value, 1) for name, value in cat_targets.items()}
+        self.cat_selected = {
+            c.name: {m.instrument_id for m in c.members} for c in self.data.categories
+        }
+        # Only override categories that the saved plan touched, removing any
+        # no-buy members so the un-ticked state survives the round-trip.
+        saved_categories = {
+            category for mid in self.active_weights if (category := cat_of.get(mid)) is not None
+        }
+        for category in saved_categories:
+            if category in self.cat_selected:
+                self.cat_selected[category] = selected_in_saved.get(category, set())
+        # Keep the per-fund view in sync for users who switch to fund mode.
         self.fund_targets = {mid: round(float(pct), 1) for mid, pct in self.active_weights.items()}
+        self.mode = "category"
+        # Restore the saved calculator settings (rebalance toggle + display
+        # currency) so loading a target reproduces the exact plan it was built
+        # under.
+        self.allow_sell = self.active_allow_sell
+        if hasattr(self, "rebalance"):
+            self.rebalance.set_value(self.allow_sell)
+        if self.active_display_currency in ("EUR", "USD"):
+            self.display_ccy = self.active_display_currency
+            if hasattr(self, "ccy_in"):
+                self.ccy_in.set_value(self.display_ccy)
+            self._render_summary()
         self._render_builder()
 
     def _preset_clear(self) -> None:
@@ -428,7 +537,12 @@ class _CalculatorView:  # pragma: no cover - UI wiring
         self.total_label.set_content(text)
 
     # -- compute -----------------------------------------------------------
-    def _build_weights(self) -> dict[int, Decimal] | None:
+    def _build_weights(self) -> tuple[dict[int, Decimal], set[int]] | None:
+        """Return ``(weights_by_id, no_buy_ids)`` or ``None`` on a validation error.
+
+        ``no_buy_ids`` are funds that count toward the target percentages but
+        should never receive fresh cash (the user un-ticked them).
+        """
         if self.mode == "category":
             return self._build_category_weights()
         weights = {
@@ -439,9 +553,9 @@ class _CalculatorView:  # pragma: no cover - UI wiring
         if not weights:
             ui.notify("Set at least one fund target", type="warning")
             return None
-        return weights
+        return weights, set()
 
-    def _build_category_weights(self) -> dict[int, Decimal] | None:
+    def _build_category_weights(self) -> tuple[dict[int, Decimal], set[int]] | None:
         cat_weights = {
             name: _decimal_or_zero(v)
             for name, v in self.cat_targets.items()
@@ -452,33 +566,42 @@ class _CalculatorView:  # pragma: no cover - UI wiring
             return None
         current_values = {i.instrument_id: i.current_value_eur for i in self.data.instruments}
         weights: dict[int, Decimal] = {}
+        no_buy: set[int] = set()
         for name, weight in cat_weights.items():
-            selected = sorted(self.cat_selected.get(name, set()))
-            if not selected:
-                ui.notify(f"Pick at least one fund for '{name}'", type="warning")
-                return None
+            # Split the category's % across *all* its members so each fund —
+            # ticked or not — keeps its share of the category percentage.
+            members = self.cat_members.get(name, [])
+            if not members:
+                continue
             expanded = expand_category_weights(
                 {name: weight},
-                {name: selected},
+                {name: members},
                 current_values,
                 split=self.cat_split.get(name, "value"),
             )
             for mid, w in expanded.items():
                 weights[mid] = weights.get(mid, ZERO) + w
-        return weights
+            # Members the user un-ticked are accounted for but never bought.
+            selected = self.cat_selected.get(name, set())
+            no_buy.update(mid for mid in members if mid not in selected)
+        return weights, no_buy
 
     def _compute(self) -> None:
-        raw = self._build_weights()
-        if raw is None:
+        built = self._build_weights()
+        if built is None:
             return
+        raw, no_buy = built
         target_pct = _scale_to_100(raw)
         if not target_pct:
             ui.notify("Targets must be positive", type="warning")
             return
         cash_raw = _decimal_or_zero(self.cash_in.value)
-        source_ccy = self.ccy_in.value or self.data.default_currency
-        if cash_raw <= ZERO:
-            ui.notify("Enter a positive cash amount", type="warning")
+        source_ccy = self.display_ccy
+        if cash_raw < ZERO or (cash_raw == ZERO and not self.allow_sell):
+            ui.notify(
+                "Enter a positive cash amount (or turn on rebalancing to sell only)",
+                type="warning",
+            )
             return
         cash_eur = self._to_eur(cash_raw, source_ccy)
         current_values = {i.instrument_id: i.current_value_eur for i in self.data.instruments}
@@ -494,6 +617,8 @@ class _CalculatorView:  # pragma: no cover - UI wiring
                 {mid: current_values.get(mid, ZERO) for mid in target_pct},
                 current_prices,  # type: ignore[arg-type]
                 allow_fractional_shares=bool(self.fractional.value),
+                allow_sell=self.allow_sell,
+                no_buy_ids=no_buy & set(target_pct),
             )
         except ValueError as exc:
             ui.notify(f"Cannot rebalance: {exc}", type="negative")
@@ -509,26 +634,36 @@ class _CalculatorView:  # pragma: no cover - UI wiring
         source_ccy: str,
     ) -> None:
         self.result_box.clear()
+        # Current weight of each fund in today's portfolio (before the plan).
+        current_pct_by_id = {i.instrument_id: i.current_pct for i in self.data.instruments}
         with self.result_box:
             sym = currency_symbol(source_ccy)
+            buys = sum((r.add_value for r in plan.rows if r.add_value > ZERO), start=ZERO)
+            sells = sum((-r.add_value for r in plan.rows if r.add_value < ZERO), start=ZERO)
             with section("Plan summary"), ui.row().classes("w-full gap-md flex-wrap"):
                 kpi_card(
                     "Investing",
                     f"{sym}{cash_raw:,.2f}",
                     sub=f"{fmt_money(cash_eur, 'EUR')} internal",
                 )
-                invested = plan.cash_to_invest - plan.residual_cash
                 kpi_card(
-                    "Allocated",
-                    fmt_money(invested, "EUR"),
-                    sub=fmt_money(self._from_eur(invested, "USD"), "USD"),
+                    "Buying",
+                    self._fmt(buys),
+                    sub=self._fmt_other(buys),
                 )
+                if sells > ZERO:
+                    kpi_card(
+                        "Selling",
+                        self._fmt(sells),
+                        sub=self._fmt_other(sells),
+                    )
                 kpi_card(
                     "Left over",
-                    fmt_money(plan.residual_cash, "EUR"),
-                    sub=fmt_money(self._from_eur(plan.residual_cash, "USD"), "USD"),
+                    self._fmt(plan.residual_cash),
+                    sub=self._fmt_other(plan.residual_cash),
                 )
-            with section("Buy plan"):
+            heading = "Rebalance plan" if self.allow_sell else "Buy plan"
+            with section(heading):
                 total_after = sum((r.current_value + r.add_value for r in plan.rows), start=ZERO)
                 for r in sorted(plan.rows, key=lambda row: row.add_value, reverse=True):
                     instr = self.by_id.get(r.instrument_id)
@@ -538,9 +673,12 @@ class _CalculatorView:  # pragma: no cover - UI wiring
                         if total_after > ZERO
                         else ZERO
                     )
-                    self._render_plan_row(sym_name, r, after_pct)
+                    current_pct = current_pct_by_id.get(r.instrument_id, ZERO)
+                    self._render_plan_row(sym_name, r, current_pct, after_pct)
 
-    def _render_plan_row(self, name: str, r: RebalanceRow, after_pct: Decimal) -> None:
+    def _render_plan_row(
+        self, name: str, r: RebalanceRow, current_pct: Decimal, after_pct: Decimal
+    ) -> None:
         with (
             ui.row()
             .classes("items-center gap-md w-full no-wrap inv-section")
@@ -549,38 +687,58 @@ class _CalculatorView:  # pragma: no cover - UI wiring
             with ui.column().classes("gap-none").style("min-width:8rem"):
                 ui.label(name).classes("text-body1")
                 ui.html(
-                    f'<span class="text-caption opacity-70">target {r.target_pct:.1f} % '
-                    f"→ {after_pct:.1f} % after</span>"
+                    '<span class="text-caption opacity-70">'
+                    f"now {current_pct:.1f} % → {after_pct:.1f} % after "
+                    f"· target {r.target_pct:.1f} %</span>"
                 )
             ui.html(_bar(after_pct, r.target_pct)).classes("flex-1")
             with ui.column().classes("gap-none items-end").style("min-width:11rem"):
                 if r.add_value > ZERO:
-                    ui.html(
-                        '<span style="color:var(--inv-gain,#21ba45);font-weight:600">'
-                        f"+ {fmt_money(r.add_value, 'EUR')}</span>"
-                    )
                     shares = f" · {fmt_shares(r.add_shares)} sh" if r.add_shares > ZERO else ""
                     ui.html(
-                        '<span class="text-caption opacity-70">'
-                        f"+ {fmt_money(self._from_eur(r.add_value, 'USD'), 'USD')}{shares}</span>"
+                        '<span style="color:var(--inv-gain,#21ba45);font-weight:600">'
+                        f"+ {self._fmt(r.add_value)}</span>"
                     )
+                    ui.html(
+                        '<span class="text-caption opacity-70">'
+                        f"+ {self._fmt_other(r.add_value)}{shares}</span>"
+                    )
+                elif r.add_value < ZERO:
+                    sell_value = -r.add_value
+                    shares = f" · {fmt_shares(-r.add_shares)} sh" if r.add_shares < ZERO else ""
+                    ui.html(
+                        '<span style="color:var(--inv-loss,#c10015);font-weight:600">'
+                        f"- {self._fmt(sell_value)} sell</span>"
+                    )
+                    ui.html(
+                        '<span class="text-caption opacity-70">'
+                        f"- {self._fmt_other(sell_value)}{shares}</span>"
+                    )
+                elif r.no_buy:
+                    ui.html('<span class="text-caption opacity-50">held · no new cash</span>')
                 else:
                     ui.html('<span class="text-caption opacity-50">no buy</span>')
 
     # -- save --------------------------------------------------------------
     def _save_dialog(self) -> None:
-        raw = self._build_weights()
-        if raw is None:
+        built = self._build_weights()
+        if built is None:
             return
+        raw, no_buy = built
         weights = _round_to_100(_scale_to_100(raw))
         if not weights:
             ui.notify("Nothing to save — set some targets first", type="warning")
             return
+        # Only mark funds that survive into the saved weights as no-buy.
+        saved_no_buy = no_buy & set(weights)
+        held_note = f" · {len(saved_no_buy)} held (no new cash)" if saved_no_buy else ""
         with ui.dialog() as dialog, ui.card().classes("min-w-[22rem]"):
             ui.label("Save target allocation").classes("text-h6")
             name_in = ui.input("Name", value="My target").classes("w-full")
             activate_in = ui.checkbox("Activate (drive allocation-drift views)", value=True)
-            ui.label(f"{len(weights)} funds · sums to 100 %").classes("text-caption opacity-70")
+            ui.label(f"{len(weights)} funds · sums to 100 %{held_note}").classes(
+                "text-caption opacity-70"
+            )
 
             def _save() -> None:
                 name = (name_in.value or "").strip()
@@ -590,7 +748,13 @@ class _CalculatorView:  # pragma: no cover - UI wiring
                 try:
                     with session_scope() as session:
                         allocations_repo.create_allocation(
-                            session, name, weights, active=bool(activate_in.value)
+                            session,
+                            name,
+                            weights,
+                            active=bool(activate_in.value),
+                            no_buy_ids=saved_no_buy,
+                            allow_sell=self.allow_sell,
+                            display_currency=self.display_ccy,
                         )
                 except Exception as exc:
                     log.exception("Save target failed")

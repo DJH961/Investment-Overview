@@ -105,6 +105,12 @@ def tick_refresh(source: str = "Live price refresh", *, force: bool = False) -> 
         updated = any(refreshed.values())
         if updated:
             log.debug("%s updated %s", source, [s for s, n in refreshed.items() if n])
+        # The refresh completed without error: clear any lingering "outdated
+        # prices"/refresh-failure notice from a previous tick so the Data Health
+        # surface self-heals once prices are actually flowing again.
+        from investment_dashboard.services import runtime_status  # noqa: PLC0415
+
+        runtime_status.resolve(source)
     except Exception as exc:
         # The explicit record_error below gives this a friendly label, so skip
         # the logging handler's mirror to avoid a duplicate (uglier) entry.

@@ -104,3 +104,45 @@ def test_deduped_warning_preserves_severity() -> None:
     second = runtime_status.record_warning("stderr", "same warning")
     assert second.seq == first.seq
     assert second.is_warning is True
+
+
+def test_dismiss_removes_single_error_but_keeps_sequence() -> None:
+    first = runtime_status.record_error("src", "msg-1")
+    runtime_status.record_error("src", "msg-2")
+    assert runtime_status.dismiss(first.seq) is True
+    messages = [e.message for e in runtime_status.recent()]
+    assert messages == ["msg-2"]
+    # A dismissed error is gone for good; the counter does not rewind.
+    assert runtime_status.sequence() == 2
+    # Dismissing an unknown seq is a no-op.
+    assert runtime_status.dismiss(999) is False
+
+
+def test_dismiss_all_clears_log_but_preserves_sequence() -> None:
+    runtime_status.record_error("src", "a")
+    runtime_status.record_error("src", "b")
+    assert runtime_status.dismiss_all() == 2
+    assert runtime_status.recent() == []
+    # Sequence is preserved so the toast watcher won't replay old errors.
+    assert runtime_status.sequence() == 2
+
+
+def test_resolve_clears_only_the_matching_source() -> None:
+    runtime_status.record_error("Live price refresh", "stale")
+    runtime_status.record_error("Other task", "boom")
+    removed = runtime_status.resolve("Live price refresh")
+    assert removed == 1
+    sources = [e.source for e in runtime_status.recent()]
+    assert sources == ["Other task"]
+    # Sequence is untouched by a resolve.
+    assert runtime_status.sequence() == 2
+
+
+def test_resolve_then_record_same_source_reappears() -> None:
+    runtime_status.record_error("Live price refresh", "stale prices")
+    runtime_status.resolve("Live price refresh")
+    assert runtime_status.recent() == []
+    # A genuinely new failure of the same source surfaces again (dedup window
+    # entry for the resolved message was cleared).
+    again = runtime_status.record_error("Live price refresh", "stale prices")
+    assert [e.seq for e in runtime_status.recent()] == [again.seq]

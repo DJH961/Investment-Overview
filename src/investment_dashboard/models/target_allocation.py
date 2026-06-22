@@ -29,6 +29,12 @@ class TargetAllocation(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Calculator settings frozen with the target so loading it restores the
+    # exact plan the user built. ``allow_sell`` is the rebalance toggle (off =
+    # buy-only); ``display_currency`` is the entry/display currency (EUR/USD),
+    # nullable so legacy rows fall back to the app's default currency.
+    allow_sell: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    display_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False),
         server_default=func.current_timestamp(),
@@ -52,5 +58,9 @@ class TargetAllocationItem(Base):
     # the allocation repository, not by a DB-level constraint.
     instrument_id: Mapped[int] = mapped_column(primary_key=True)
     weight_pct: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    # ``True`` marks a fund that counts toward the target percentages but should
+    # never receive fresh cash (the user un-ticked it in the Calculator). This is
+    # the central "no-buy" distinction that the buy-only / rebalance planner uses.
+    no_buy: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     allocation: Mapped[TargetAllocation] = relationship(back_populates="items")

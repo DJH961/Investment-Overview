@@ -249,3 +249,36 @@ class TestAllocationsRepo:
         assert active is not None
         assert active.id == alloc.id
         assert {item.weight_pct for item in active.items} == {Decimal("60.00"), Decimal("40.00")}
+
+    def test_persists_no_buy_and_settings(self, session: Session) -> None:
+        i1 = _seed_instrument(session, "VTI")
+        i2 = _seed_instrument(session, "VOO")
+        allocations_repo.create_allocation(
+            session,
+            name="With no-buy",
+            weights_by_instrument_id={i1: Decimal("70"), i2: Decimal("30")},
+            active=True,
+            no_buy_ids={i2},
+            allow_sell=True,
+            display_currency="USD",
+        )
+        active = allocations_repo.get_active(session)
+        assert active is not None
+        assert active.allow_sell is True
+        assert active.display_currency == "USD"
+        no_buy_by_id = {item.instrument_id: item.no_buy for item in active.items}
+        assert no_buy_by_id == {i1: False, i2: True}
+
+    def test_defaults_when_settings_omitted(self, session: Session) -> None:
+        i1 = _seed_instrument(session, "VTI")
+        allocations_repo.create_allocation(
+            session,
+            name="Plain",
+            weights_by_instrument_id={i1: Decimal("100")},
+            active=True,
+        )
+        active = allocations_repo.get_active(session)
+        assert active is not None
+        assert active.allow_sell is False
+        assert active.display_currency is None
+        assert all(item.no_buy is False for item in active.items)

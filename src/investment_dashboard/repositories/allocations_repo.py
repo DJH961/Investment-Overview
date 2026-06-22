@@ -54,8 +54,17 @@ def create_allocation(
     weights_by_instrument_id: dict[int, Decimal],
     *,
     active: bool = False,
+    no_buy_ids: set[int] | None = None,
+    allow_sell: bool = False,
+    display_currency: str | None = None,
 ) -> TargetAllocation:
-    alloc = TargetAllocation(name=name, active=active)
+    no_buy = no_buy_ids or set()
+    alloc = TargetAllocation(
+        name=name,
+        active=active,
+        allow_sell=allow_sell,
+        display_currency=display_currency,
+    )
     session.add(alloc)
     session.flush()
     for instrument_id, weight in weights_by_instrument_id.items():
@@ -64,6 +73,7 @@ def create_allocation(
                 target_allocation_id=alloc.id,
                 instrument_id=instrument_id,
                 weight_pct=weight,
+                no_buy=instrument_id in no_buy,
             )
         )
     if active:

@@ -12,6 +12,106 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [3.6.0] — 2026-06-22
+
+Daily Growth that knows whether the market is open, graphs that remember your
+time range, and a Data Health page that tells warnings apart from errors.
+
+### Added
+
+- **Live vs. settled Daily Growth.** While the US market is open (today's stock
+  prices are in), the Overview's Daily Growth caption shows the **live** FX rate
+  and value with an "as of TIME" stamp plus the day's FX move. After the close
+  (or on weekends/holidays) it falls back to the **last open-market day**, that
+  day's settled FX rate and change, and an "as of DATE" stamp ("today" written
+  out when it was today) — using live FX only if the settled rate hasn't been
+  published yet.
+- **Sticky graph time ranges.** The Overview value range, Analytics lookback,
+  and Projection granularity selections are now remembered across reloads
+  (persisted via `app_config`), so a graph keeps the window you last chose.
+- **Fetched-symbol report in Settings.** The connectivity card now lists which
+  symbols each provider (yfinance / Frankfurter) last fetched.
+- **Scroll position restored on refresh.** The Update button (and any reload)
+  now returns you to where you were on the page.
+
+### Changed
+
+- **Warnings are no longer shown as errors in Data Health.** `WARNING`-level log
+  lines and stray `stderr` chatter (e.g. "returned no data", a UI-responsiveness
+  stall) now surface as amber **warnings** — in the toast and on the Data Health
+  page — instead of red errors. `BackgroundError` carries a `severity`, set from
+  the log record's level and from a `WARNING`-line classifier on the stderr tee.
+
+
+
+Saved target allocations now remember how you built them.
+
+### Added
+
+- **No-buy distinction persisted in saved targets.** The Calculator's central
+  no-buy flag — funds that count toward the target percentages but never
+  receive fresh cash — is now stored per fund on each saved target
+  (`target_allocation_items.no_buy`). Loading a saved target restores the exact
+  ticked/un-ticked state instead of re-ticking every member.
+- **Calculator settings frozen with the target.** Saving also records the
+  rebalance toggle (`target_allocations.allow_sell`, off = buy-only) and the
+  entry/display currency (`target_allocations.display_currency`), and loading a
+  saved target reapplies both so the plan reproduces what you built.
+
+### Migration
+
+- `0011_v3_5_3_allocation_settings` adds the three columns idempotently;
+  packaged/split-DB installs gain them through the boot `create_all` guard,
+  which now also runs against the config tier.
+
+## [3.5.2] — 2026-06-22
+
+Sharper Analytics, an honest benchmark, a new currency lens, and a Data Health
+surface that cleans up after itself.
+
+### Added
+
+- **Currency (EUR ↔ USD) section on Analytics.** A new band of stats spells out
+  how the exchange-rate move has affected a euro-based investor who holds dollar
+  assets: the current rate vs the average rate you invested at, how far the euro
+  has moved since, the slice of your EUR return that came from currency (EUR
+  return minus USD return), the FX gain/loss baked into your EUR value, and what
+  you'd receive converting the whole portfolio back to EUR now. Backed by the
+  pure, unit-tested `domain.currency_effect` module.
+- **"vs Benchmark (funded)" KPI.** A money-terms "did I beat the market?" tile
+  that compares the portfolio to the *funded* benchmark (see below).
+
+### Changed
+
+- **The benchmark is now funded by your own contributions.** The Analytics
+  equity-curve overlay (and the new KPI) invest the *same* deposits/withdrawals
+  into the index on the same dates, instead of a single lump sum rebased to the
+  window's start — so a dollar-cost-averaged portfolio no longer looks like it
+  automatically beats a flat benchmark line over long horizons.
+- **Smarter equity curve.** The old cumulative-contributions overlay is now a
+  clear **Net invested** (cost-basis) line, with the band between it and the
+  portfolio value shaded green when you're ahead and red when you're under
+  water — your profit/loss reads at a glance.
+- **Analytics headline redesigned.** The lone full-width "Total Growth" card
+  (which stretched across the row and left a wall of whitespace) is replaced by
+  a tidy three-tile hero band — Portfolio value · Total Growth · Capital gain —
+  in the same uniform KPI grid as the rest of the page.
+- **Per-instrument attribution table overhauled.** Columns now flex to fit (no
+  more horizontal cut-off), P&L and % are sign-coloured, and a pinned **Total**
+  row ties the per-instrument P&L back to the portfolio headline. Every holding
+  is shown, sorted by P&L.
+- **Monthly & Yearly tables read newest-first.** Both period tables are now in
+  reverse-chronological order so the most recent period is at the top; the
+  charts keep their natural left-to-right flow.
+
+### Fixed
+
+- **Data Health no longer keeps stale notices forever.** Background-error
+  notices (e.g. "outdated prices") can now be **dismissed** individually or all
+  at once, and they **auto-resolve**: a successful price/FX refresh clears its
+  own earlier failure, so a notice disappears once the prices are actually
+  flowing again instead of lingering until restart.
+
 ## [3.5.1] — 2026-06-22
 
 Web companion: currency-aware growth and risk, a descriptive live-coverage

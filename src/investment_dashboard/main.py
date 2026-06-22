@@ -96,6 +96,10 @@ def _run_deferred_network_refresh_guarded() -> None:  # pragma: no cover - threa
     try:
         run_deferred_network_refresh()
         updated = True
+        # Success: clear any stale startup-refresh failure from a prior boot/run.
+        from investment_dashboard.services import runtime_status  # noqa: PLC0415
+
+        runtime_status.resolve("Startup data refresh")
     except Exception as exc:
         log.warning(
             "deferred startup refresh failed", exc_info=True, extra={"runtime_status_skip": True}

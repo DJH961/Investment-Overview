@@ -115,7 +115,14 @@ def _category_member_shares(
 
 @dataclass(frozen=True)
 class RebalanceRow:
-    """One row of the rebalance plan."""
+    """One row of the rebalance plan.
+
+    ``add_value`` / ``add_shares`` are signed: positive means *buy*, negative
+    means *sell* (only possible when the plan was built with ``allow_sell``).
+    ``no_buy`` marks a fund the user chose to hold but not invest fresh cash
+    into — it still counts toward the target percentages, it just never
+    receives a buy.
+    """
 
     instrument_id: int
     target_pct: Decimal
@@ -123,6 +130,7 @@ class RebalanceRow:
     add_value: Decimal
     current_price: Decimal | None
     add_shares: Decimal
+    no_buy: bool = False
 
 
 @dataclass(frozen=True)
@@ -134,6 +142,71 @@ class RebalancePlan:
     residual_cash: Decimal
 
 
+def _plan_buy_only(
+    instrument_ids: Sequence[int],
+    target_value: Mapping[int, Decimal],
+    current: Mapping[int, Decimal],
+    no_buy: set[int],
+    cash_to_invest: Decimal,
+    target_weights_pct: Mapping[int, Decimal],
+) -> dict[int, Decimal]:
+    """Buy-only distribution: never sells, and never buys a ``no_buy`` fund.
+
+    Cash that would have topped up a ``no_buy`` fund is left for the funds the
+    user *can* invest in — those funds absorb the slack in proportion to their
+    target weight.
+    """
+    buyable = [i for i in instrument_ids if i not in no_buy]
+    gap = {i: max(ZERO, target_value[i] - current[i]) for i in buyable}
+    gap_total = sum(gap.values(), start=ZERO)
+    add = {i: ZERO for i in instrument_ids}
+
+    if gap_total > cash_to_invest and gap_total > 0:
+        # Scale gaps down proportionally so they sum to exactly cash_to_invest.
+        for i in buyable:
+            add[i] = gap[i] * cash_to_invest / gap_total
+    elif gap_total < cash_to_invest:
+        # Remaining cash goes to the buyable instruments in proportion to their
+        # target weight (renormalised across just those funds).
+        remainder = cash_to_invest - gap_total
+        buyable_weight = sum((target_weights_pct[i] for i in buyable), start=ZERO)
+        for i in buyable:
+            if buyable_weight > ZERO:
+                share = target_weights_pct[i] / buyable_weight
+            elif buyable:
+                share = Decimal(1) / Decimal(len(buyable))
+            else:
+                share = ZERO
+            add[i] = gap[i] + remainder * share
+    else:
+        for i in buyable:
+            add[i] = gap[i]
+    return add
+
+
+def _plan_with_sells(
+    instrument_ids: Sequence[int],
+    target_value: Mapping[int, Decimal],
+    current: Mapping[int, Decimal],
+    no_buy: set[int],
+) -> dict[int, Decimal]:
+    """Full rebalance distribution: drive every fund to its target value.
+
+    Over-weight funds are sold (negative add) and under-weight funds are
+    bought, so the proceeds of sales help fund the buys. A ``no_buy`` fund is
+    still allowed to be *sold* when it is over target (the user is blocked from
+    reinvesting, not from trimming), but it is never bought.
+    """
+    add: dict[int, Decimal] = {}
+    for i in instrument_ids:
+        delta = target_value[i] - current[i]
+        if i in no_buy and delta > ZERO:
+            add[i] = ZERO  # cannot buy a no-buy fund
+        else:
+            add[i] = delta  # buy (delta > 0) or sell (delta < 0)
+    return add
+
+
 def plan_rebalance(
     cash_to_invest: Decimal,
     target_weights_pct: Mapping[int, Decimal],
@@ -142,8 +215,10 @@ def plan_rebalance(
     *,
     allow_fractional_shares: bool = False,
     fractional_decimals: int = 4,
+    allow_sell: bool = False,
+    no_buy_ids: set[int] | None = None,
 ) -> RebalancePlan:
-    """Compute a buy-only rebalance plan.
+    """Compute a rebalance plan (buy-only by default).
 
     Parameters
     ----------
@@ -160,6 +235,14 @@ def plan_rebalance(
     allow_fractional_shares
         If False (default), share counts are floored. If True, rounded to
         ``fractional_decimals`` places.
+    allow_sell
+        If False (default), the plan only ever buys (v1 behaviour). If True,
+        over-weight funds are sold so the portfolio can be balanced precisely,
+        with sale proceeds funding the buys.
+    no_buy_ids
+        Instruments that still count toward the target percentages but must
+        not receive any *new* cash. They are shown as held in the plan. When
+        ``allow_sell`` is True they may still be trimmed if over target.
 
     Raises
     ------
@@ -172,25 +255,20 @@ def plan_rebalance(
     if abs(weight_sum - HUNDRED) > Decimal("0.01"):
         raise ValueError(f"Target weights must sum to 100, got {weight_sum}")
 
+    no_buy = set(no_buy_ids or ())
     instrument_ids = list(target_weights_pct.keys())
     current = {i: current_values.get(i, ZERO) for i in instrument_ids}
     current_total = sum(current.values(), start=ZERO)
     total_after = current_total + cash_to_invest
 
-    # Gap to target — never negative (no selling).
     target_value = {i: total_after * target_weights_pct[i] / HUNDRED for i in instrument_ids}
-    gap = {i: max(ZERO, target_value[i] - current[i]) for i in instrument_ids}
-    gap_total = sum(gap.values(), start=ZERO)
 
-    if gap_total > cash_to_invest and gap_total > 0:
-        # Scale gaps down proportionally so they sum to exactly cash_to_invest.
-        add = {i: gap[i] * cash_to_invest / gap_total for i in instrument_ids}
-    elif gap_total < cash_to_invest:
-        # Remaining cash goes to all instruments in proportion to target weight.
-        remainder = cash_to_invest - gap_total
-        add = {i: gap[i] + remainder * target_weights_pct[i] / HUNDRED for i in instrument_ids}
+    if allow_sell:
+        add = _plan_with_sells(instrument_ids, target_value, current, no_buy)
     else:
-        add = dict(gap)
+        add = _plan_buy_only(
+            instrument_ids, target_value, current, no_buy, cash_to_invest, target_weights_pct
+        )
 
     rows: list[RebalanceRow] = []
     allocated_total = ZERO
@@ -202,7 +280,9 @@ def plan_rebalance(
             quant = Decimal(10) ** -fractional_decimals
             shares = (add[i] / price).quantize(quant)
         else:
-            shares = Decimal(math.floor(add[i] / price))
+            # Truncate toward zero so we never over-buy (positive) or
+            # over-sell (negative) a whole-share order.
+            shares = Decimal(math.trunc(add[i] / price))
         actual_add = shares * price if price is not None else add[i]
         # For floored shares, "spent" is shares * price; the residual rolls
         # up to the plan-wide unallocated cash.
@@ -214,6 +294,7 @@ def plan_rebalance(
                 add_value=add[i] if price is None or allow_fractional_shares else actual_add,
                 current_price=price,
                 add_shares=shares,
+                no_buy=i in no_buy,
             )
         )
         allocated_total += rows[-1].add_value

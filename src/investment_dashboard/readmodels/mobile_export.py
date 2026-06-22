@@ -31,7 +31,12 @@ from investment_dashboard.models import Transaction
 from investment_dashboard.readmodels import analytics, deposits, periods, transactions
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec, iso, now_utc_iso
-from investment_dashboard.repositories import accounts_repo, transactions_repo
+from investment_dashboard.repositories import (
+    accounts_repo,
+    allocations_repo,
+    instruments_repo,
+    transactions_repo,
+)
 from investment_dashboard.services import (
     fx_service,
     metrics_service,
@@ -246,6 +251,40 @@ def _period_openings(session: Session, *, as_of: date) -> dict[str, Any]:
     }
 
 
+def _target_allocations(session: Session) -> list[dict[str, Any]]:
+    """Serialize saved target allocations for the live-web companion.
+
+    Each saved target carries its per-fund weights plus the central **no-buy**
+    flag and the calculator settings (rebalance mode, display currency) frozen
+    when it was saved, so the browser can show the same plan the desktop built.
+    Items are keyed by both ``instrument_id`` (stable) and ``symbol`` (what the
+    web holdings are keyed by); a fund with no matching instrument is skipped.
+    """
+    symbol_by_id = {i.id: i.symbol for i in instruments_repo.list_instruments(session)}
+    allocations: list[dict[str, Any]] = []
+    for alloc in allocations_repo.list_allocations(session):
+        items = [
+            {
+                "instrument_id": item.instrument_id,
+                "symbol": symbol_by_id[item.instrument_id],
+                "weight_pct": dec(item.weight_pct),
+                "no_buy": bool(item.no_buy),
+            }
+            for item in alloc.items
+            if item.instrument_id in symbol_by_id
+        ]
+        allocations.append(
+            {
+                "name": alloc.name,
+                "active": bool(alloc.active),
+                "allow_sell": bool(alloc.allow_sell),
+                "display_currency": alloc.display_currency,
+                "items": items,
+            }
+        )
+    return allocations
+
+
 def build_mobile_export(
     session: Session,
     *,
@@ -313,6 +352,7 @@ def build_mobile_export(
         "yearly": periods.build_yearly(session, context=usd_context),
         "analytics": analytics.build(session, context=context, full_history_curve=True),
         "deposits": deposits.build(session, context=context),
+        "target_allocations": _target_allocations(session),
     }
     if include_transactions:
         export["transactions"] = transactions.build(session, context=context)

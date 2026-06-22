@@ -138,6 +138,24 @@ date** (USD-native deposits use their booked amount), so the browser must use
 them directly in USD mode rather than rescaling the EUR totals by today's spot
 — doing so would double-convert any deposit originally booked in USD.
 
+## `target_allocations`
+
+Saved Calculator targets (`repositories/allocations_repo.py`), added in v3.5.3.
+An array (newest first); each entry carries:
+
+- `name`: unique target name.
+- `active`: whether this is the active target driving the allocation-drift views.
+- `allow_sell`: rebalance toggle — `false` = buy-only, `true` = may sell
+  over-weight funds.
+- `display_currency`: the entry/display currency the target was built in
+  (`"EUR"`/`"USD"`) or `null` for legacy rows.
+- `items[]`: per-fund entries with `instrument_id`, `symbol`, `weight_pct`
+  (string decimal), and `no_buy` — the central "no-buy" flag for funds counted
+  toward the target percentages but never bought with fresh cash. Funds whose
+  instrument no longer exists are omitted.
+
+Absent on exports generated before v3.5.3.
+
 ## Precision targets
 
 Browser parity should compare money within `1e-6`, rates/percentages within
