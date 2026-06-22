@@ -307,9 +307,12 @@ describe("buildDashboard", () => {
     approx(fxaix.todayMovePct, 2 / 108, 1e-4);
   });
 
-  it("gives a NAV fund no today's move while it stays on the exported price", () => {
-    // Live NAV bar is not newer than the export, so the row keeps its exported
-    // price — and must not derive a move from the quote we deliberately ignored.
+  it("shows a NAV fund's latest published move even while it stays on the exported price", () => {
+    // A fund publishes ~once a day, so the export usually already carries its
+    // newest NAV and the row stays on the exported price (priceIsLive false).
+    // It should still surface that last session's move from the prior daily bar
+    // — the same way a stock shows last Friday's move over a weekend — instead
+    // of a blank dash.
     const exp = makeExport(); // as_of 2024-06-01
     const navQuotes = new Map<string, Quote>([
       [
@@ -319,7 +322,33 @@ describe("buildDashboard", () => {
           price: new Decimal("110"),
           previousClose: new Decimal("108"),
           currency: "USD",
-          valueDate: "2024-06-01", // same day as export → not newer
+          valueDate: "2024-06-01", // current with the exported price
+        },
+      ],
+    ]);
+    const m = buildDashboard(exp, navQuotes, fx, new Date("2024-06-01T12:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.priceIsLive).toBe(false);
+    // Move comes from the fund's own daily bar vs its prior close — the latest
+    // published session move: (110 − 108) × 5 = 10 USD → 9.0909 EUR; pct = 2/108.
+    approx(fxaix.todayMoveEur, 10 / 1.1, 1e-3);
+    approx(fxaix.todayMovePct, 2 / 108, 1e-4);
+  });
+
+  it("gives a NAV fund no today's move from a stale, older bar", () => {
+    // When the fetched daily bar is *behind* the price we display (its
+    // value-date precedes the exported price's date), its previous close is two
+    // sessions back and would mislabel an old move as today's — so we show none.
+    const exp = makeExport(); // as_of 2024-06-01
+    const navQuotes = new Map<string, Quote>([
+      [
+        "FXAIX",
+        {
+          symbol: "FXAIX",
+          price: new Decimal("110"),
+          previousClose: new Decimal("108"),
+          currency: "USD",
+          valueDate: "2024-05-30", // older than the exported price's date
         },
       ],
     ]);

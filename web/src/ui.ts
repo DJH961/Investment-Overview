@@ -23,6 +23,7 @@ import {
 } from "./phase4";
 import {
   formatAsOf,
+  formatUpdatedAt,
   formatCurrency,
   formatCurrencyWhole,
   formatNativePrice,
@@ -172,7 +173,9 @@ function renderNotes(o: OverviewView): HTMLElement[] {
     );
   }
   notes.push(
-    h("p", { class: "note" }, [`Data exported ${formatTimestamp(o.generatedAt)} · live as of ${o.asOf}.`]),
+    h("p", { class: "note" }, [
+      `Data exported ${formatTimestamp(o.generatedAt)} · prices updated ${formatUpdatedAt(o.liveAsOf, o.liveAsOfFallbackDate)}.`,
+    ]),
   );
   return notes;
 }

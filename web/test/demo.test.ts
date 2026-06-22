@@ -20,10 +20,21 @@ describe("buildDemoModel", () => {
     expect(model.overview.portfolioXirr).not.toBeNull();
   });
 
-  it("flags the NAV holding as a non-live (fallback) price", () => {
-    const navRow = model.holdings.find((holding) => holding.priceType === "nav");
+  it("flags the money-market NAV holding as a non-live (fallback) price", () => {
+    const navRow = model.holdings.find((holding) => holding.symbol === "VMFXX");
     expect(navRow).toBeDefined();
+    expect(navRow?.priceType).toBe("nav");
     expect(navRow?.priceIsLive).toBe(false);
+  });
+
+  it("shows a today's move for the live mutual fund (NAV) holding", () => {
+    const fund = model.holdings.find((holding) => holding.symbol === "FCNTX");
+    expect(fund).toBeDefined();
+    expect(fund?.priceType).toBe("nav");
+    // A mutual fund priced from a daily bar carries a move from its prior close,
+    // just like a stock — not a blank dash.
+    expect(fund?.todayMoveEur).not.toBeNull();
+    expect(fund?.todayMovePct?.greaterThan(0)).toBe(true);
   });
 
   it("has no missing FX legs (USD rate is provided)", () => {
