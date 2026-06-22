@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.adapters.yfinance_client import (
     YFinanceError,
     fetch_closes,
+    fetch_market_times,
     fetch_splits,
 )
 from investment_dashboard.models import Instrument
@@ -298,6 +299,23 @@ def last_refreshed_at_for(session: Session, instrument_ids: Sequence[int]) -> di
         return price_cache_repo.get_last_refreshed_at_map(cache, instrument_ids)
 
 
+def market_time_for(session: Session, instrument_ids: Sequence[int]) -> dict[int, datetime]:
+    """When each instrument's served price is *from* on the exchange (cache tier).
+
+    Tier-aware wrapper around :func:`price_cache_repo.get_market_time_map` — the
+    provider's ``regularMarketTime`` the live refresh stamps alongside the pull
+    time, surfaced so the desktop can date a settled-today figure by *when the
+    price is from* (e.g. a mutual fund's NAV publish time) rather than when we
+    happened to fetch it. Instruments without a recorded market time are absent.
+    """
+    if not instrument_ids:
+        return {}
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return price_cache_repo.get_market_time_map(cache, instrument_ids)
+
+
 def closes_as_of(
     session: Session, instrument_ids: Sequence[int], as_of: date
 ) -> dict[int, Decimal]:
@@ -481,6 +499,17 @@ def refresh_due_prices(
     # Note which tickers we just asked yfinance for, so Settings can report it.
     fetch_report.record("yfinance", symbols_to_fetch)
 
+    # Best-effort: stamp *when each price is from* on the exchange alongside the
+    # pull time, so the settled-today caption can date the figure by the
+    # provider's market time (e.g. a mutual fund's NAV publish time) instead of
+    # our fetch instant. Isolated so a quote-timing failure never disturbs the
+    # price refresh itself.
+    try:
+        market_times = fetch_market_times(symbols_to_fetch)
+    except Exception:  # pragma: no cover - defensive: never break the refresh
+        log.debug("market-time capture failed; continuing without it", exc_info=True)
+        market_times = {}
+
     result: dict[str, int] = {}
     for instr in due:
         closes = closes_by_symbol.get(instr.symbol, {})
@@ -493,5 +522,7 @@ def refresh_due_prices(
         # new (after hours / weekends / NAV not yet published), leaving it stuck
         # at the last time a price actually changed. The "as of" date still
         # reflects the real (possibly older) observation date.
-        price_cache_repo.upsert_last_refreshed_at(cache, instr.id, now)
+        price_cache_repo.upsert_last_refreshed_at(
+            cache, instr.id, now, market_time=market_times.get(instr.symbol)
+        )
     return result

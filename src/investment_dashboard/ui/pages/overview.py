@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, tzinfo
 from decimal import ROUND_HALF_UP, Decimal
@@ -15,10 +16,13 @@ from investment_dashboard.domain.returns import years_between
 from investment_dashboard.services import (
     chart_prefs_service,
     display_currency_service,
+    intraday_snapshots_service,
     prices_service,
+    refresh_status,
     timezone_service,
 )
 from investment_dashboard.services.daily_growth_view import build_daily_growth_caption
+from investment_dashboard.ui import refresh_indicator
 from investment_dashboard.ui.components import (
     deferred,
     empty_state,
@@ -43,6 +47,7 @@ from investment_dashboard.ui.pages._overview_query import (
     ValueSeriesPoint,
     allocation_treemap,
     build_holding_cards,
+    build_intraday_value_series,
     build_value_series,
     compute_instrument_metrics,
     compute_market_verdict,
@@ -58,6 +63,8 @@ from investment_dashboard.ui.theme import (
     arrow_for_signed,
     color_for_signed,
 )
+
+log = logging.getLogger(__name__)
 
 PATH = "/overview"
 #: Persisted-preference key for the value-over-time range toggle.
@@ -87,6 +94,8 @@ class _OverviewData:
     verdict: MarketVerdict
     cards: list[HoldingCard]
     treemap_data: list[TreemapDatum]
+    price_observed_at: datetime | None = None
+    price_market_at: datetime | None = None
 
 
 def _pct_card(
@@ -159,7 +168,10 @@ def format_price_freshness(card: HoldingCard, *, tz: tzinfo | None = None) -> st
     Mirrors the web companion's per-row transparency:
 
     * money-market funds price at a fixed $1.00 par with no feed → say so;
-    * a priced holding shows the close's observation date ("as of …") and,
+    * a priced holding from today reads "LIVE" while the US market is open and
+      "TODAY" once it has closed (the same rule as the Daily Growth caption),
+      each followed by the saved last-refresh time ("updated …") when known;
+    * an older priced holding shows the close's observation date ("as of …") and,
       when known, the saved last-refresh time ("updated …");
     * a held holding with no cached price at all reads "no price".
 
@@ -172,6 +184,14 @@ def format_price_freshness(card: HoldingCard, *, tz: tzinfo | None = None) -> st
         return "par $1.00 · fixed"
     if card.price_as_of is None:
         return "no price"
+    if card.price_as_of == date.today():
+        # A today-dated price reads LIVE while the market is open, TODAY once it
+        # has closed — and (re)appends the saved last-refresh time so the user
+        # still sees *when* it last updated, exactly like the older-price line.
+        state = "LIVE" if card.market_open else "TODAY"
+        if card.updated_at is not None:
+            return f"{state} · updated {_fmt_updated(card.updated_at, tz=tz)}"
+        return state
     parts = [f"as of {_fmt_asof_date(card.price_as_of)}"]
     if card.updated_at is not None:
         parts.append(f"updated {_fmt_updated(card.updated_at, tz=tz)}")
@@ -377,7 +397,7 @@ def _treemap_figure(data, *, currency: str, fx_rate: Decimal | None):  # type: i
     return fig
 
 
-def _value_curve_figure(points, *, currency: str):  # type: ignore[no-untyped-def]
+def _value_curve_figure(points, *, currency: str, intraday: bool = False):  # type: ignore[no-untyped-def]
     """Classic portfolio-value area graph over the selected time range.
 
     Styled the way mainstream investing apps present value-over-time:
@@ -385,6 +405,9 @@ def _value_curve_figure(points, *, currency: str):  # type: ignore[no-untyped-de
     a currency prefix and visible tick marks, a date axis with adaptive
     tick formatting, a unified hover read-out and a horizontal spike line so
     a value can be read off any date.
+
+    ``intraday`` switches the x-axis + hover to a time-of-day read-out for the
+    "1 Day" range, whose points are timestamps within a single session.
     """
     import plotly.graph_objects as go  # noqa: PLC0415
 
@@ -397,9 +420,9 @@ def _value_curve_figure(points, *, currency: str):  # type: ignore[no-untyped-de
         dates = [p.date for p in points]
         values = [float(p.value) for p in points]
         # Adapt the x-axis tick density/format to the span so a one-day range
-        # shows the day and a multi-year range shows months/years cleanly.
+        # shows the time of day and a multi-year range shows months/years.
         span_days = (dates[-1] - dates[0]).days if len(dates) > 1 else 0
-        if span_days <= 2:
+        if intraday or span_days <= 2:
             tickformat = "%H:%M"
         elif span_days <= 95:
             tickformat = "%d %b"
@@ -407,6 +430,11 @@ def _value_curve_figure(points, *, currency: str):  # type: ignore[no-untyped-de
             tickformat = "%b %Y"
         else:
             tickformat = "%Y"
+        hovertemplate = (
+            f"%{{x|%H:%M}}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"
+            if intraday
+            else f"%{{x|%d %b %Y}}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"
+        )
         fig.add_trace(
             go.Scatter(
                 x=dates,
@@ -416,7 +444,7 @@ def _value_curve_figure(points, *, currency: str):  # type: ignore[no-untyped-de
                 line={"width": 2.4, "color": GAIN_COLOR},
                 fill="tozeroy",
                 fillcolor="rgba(0,114,178,0.12)",
-                hovertemplate=(f"%{{x|%d %b %Y}}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"),
+                hovertemplate=hovertemplate,
             )
         )
         fig.update_xaxes(
@@ -448,7 +476,11 @@ def _value_curve_figure(points, *, currency: str):  # type: ignore[no-untyped-de
             range=list(yrange) if yrange is not None else None,
         )
     fig.update_layout(
-        title=f"Portfolio value over time ({currency})",
+        title=(
+            f"Portfolio value today ({currency})"
+            if intraday
+            else f"Portfolio value over time ({currency})"
+        ),
         template="colorblind_modern",
         margin={"l": 16, "r": 16, "t": 40, "b": 36},
         hovermode="x unified",
@@ -463,8 +495,14 @@ def _on_value_range_change(label: str) -> None:  # pragma: no cover - UI callbac
     ui.navigate.to(f"{PATH}?value_range={label}")
 
 
-def _value_over_time_section(value_series, *, range_label, display_ccy):  # type: ignore[no-untyped-def]
-    """Render the value-over-time line chart + Day/Month/Year/All selector."""
+def _value_over_time_section(value_series, *, range_label, display_ccy, display_tz=None):  # type: ignore[no-untyped-def]
+    """Render the value-over-time line chart + Day/Month/Year/All selector.
+
+    On the "Day" range the chart redraws itself in place whenever a price
+    refresh lands, so the intraday curve keeps growing live without a page
+    reload.
+    """
+    intraday = range_label == "Day"
     with section("Value over time"):
         with ui.row().classes("items-center gap-sm"):
             ui.label("Range:").classes("text-caption opacity-70")
@@ -480,9 +518,41 @@ def _value_over_time_section(value_series, *, range_label, display_ccy):  # type
                 hint="Import transactions or wait for the daily snapshot to populate.",
             )
         else:
-            ui.plotly(_value_curve_figure(value_series, currency=display_ccy)).classes(
-                "w-full"
-            ).style("height:360px")
+            plot = (
+                ui.plotly(
+                    _value_curve_figure(value_series, currency=display_ccy, intraday=intraday)
+                )
+                .classes("w-full")
+                .style("height:360px")
+            )
+            if intraday:
+                _install_intraday_live_update(plot, display_ccy=display_ccy, tz=display_tz)
+
+
+def _install_intraday_live_update(plot, *, display_ccy, tz):  # type: ignore[no-untyped-def]  # pragma: no cover - UI timer
+    """Redraw the "1 Day" chart in place each time a price refresh lands.
+
+    Polls the shared refresh-activity counter (cheap, in-memory) and only does
+    real work when a refresh has *completed* with new data — rebuilding the
+    intraday series and swapping the Plotly figure so the curve tracks the live
+    price without a disruptive full-page reload.
+    """
+    state = {"last": refresh_status.snapshot().last_update_at}
+
+    def _poll() -> None:
+        snap = refresh_status.snapshot()
+        if snap.active or snap.last_update_at == state["last"]:
+            return
+        state["last"] = snap.last_update_at
+        try:
+            with session_scope() as session:
+                series = build_intraday_value_series(session, currency=display_ccy, tz=tz)
+            if series:
+                plot.update_figure(_value_curve_figure(series, currency=display_ccy, intraday=True))
+        except Exception:  # pragma: no cover - best-effort live redraw
+            log.warning("intraday chart live update failed", exc_info=True)
+
+    ui.timer(refresh_indicator.POLL_INTERVAL_SECONDS, _poll)
 
 
 def register() -> None:  # noqa: PLR0915
@@ -525,9 +595,19 @@ def register() -> None:  # noqa: PLR0915
                     display_tz = timezone_service.resolve_tzinfo(
                         timezone_service.get_timezone(session)
                     )
-                    value_series = build_value_series(
-                        session, currency=display_ccy, range_label=range_label
-                    )
+                    if range_label == "Day":
+                        # Backfill the last trading session (~30-min bars) once
+                        # per day so opening the app late, after the close, or
+                        # over a weekend still shows a full intraday "1 Day"
+                        # curve. No-op after the first fetch of the session.
+                        intraday_snapshots_service.reconstruct_last_session(session)
+                        value_series = build_intraday_value_series(
+                            session, currency=display_ccy, tz=display_tz
+                        )
+                    else:
+                        value_series = build_value_series(
+                            session, currency=display_ccy, range_label=range_label
+                        )
                     # Display-currency FX (EUR→display) used to convert the
                     # portfolio-level expense cost and the allocation treemap.
                     display_quote = display_ccy if display_ccy != "EUR" else "USD"
@@ -544,6 +624,24 @@ def register() -> None:  # noqa: PLR0915
                     price_anomaly_ids=price_anomaly_ids,
                 )
                 treemap_data = allocation_treemap(positions)
+                # "When the price is from": the most recent moment we pulled a
+                # fresh price from the provider, used as a fallback to stamp the
+                # settled-today Daily Growth caption.
+                _refresh_times = [
+                    f.updated_at for f in freshness.values() if f.updated_at is not None
+                ]
+                price_observed_at = max(_refresh_times) if _refresh_times else None
+                # The most recent *market* time across holdings — when the served
+                # prices were last struck on the exchange (the provider's
+                # ``regularMarketTime``). This is the stamp the settled-today
+                # caption prefers, so it reads "as of <market time>" (e.g. the
+                # moment the day's NAV published) rather than our pull instant.
+                _market_times = [
+                    f.price_market_time
+                    for f in freshness.values()
+                    if f.price_market_time is not None
+                ]
+                price_market_at = max(_market_times) if _market_times else None
                 return _OverviewData(
                     range_label=range_label,
                     metrics=metrics,
@@ -555,6 +653,8 @@ def register() -> None:  # noqa: PLR0915
                     verdict=verdict,
                     cards=cards,
                     treemap_data=treemap_data,
+                    price_observed_at=price_observed_at,
+                    price_market_at=price_market_at,
                 )
 
             def _render(data: _OverviewData) -> None:
@@ -578,7 +678,7 @@ def register() -> None:  # noqa: PLR0915
                 tg_eur = metrics.total_growth_compounded_eur
                 tg_usd = metrics.total_growth_compounded_usd
 
-                with ui.element("div").classes("inv-kpi-grid w-full"):
+                with ui.element("div").classes("inv-kpi-grid inv-kpi-grid--hero w-full"):
                     # Total Value is the headline money figure (shown first).
                     dual_kpi_card(
                         "Total Value",
@@ -628,22 +728,25 @@ def register() -> None:  # noqa: PLR0915
                         display_ccy=display_ccy,
                         tooltip_key="mtd_growth",
                     )
-                    # Caption: while the US market is open we show a live,
-                    # time-stamped figure with the live FX rate and its move;
-                    # once it is closed we pin to the last open-market date and
-                    # quote that day's settled FX rate (which falls back to the
-                    # live spot when Frankfurter has not published yet).
+                    # Caption: a tight "as of …" line. While the NYSE session
+                    # is open the figure is flagged "· live" and the clock is
+                    # omitted (it just tracks now); once closed the caption
+                    # stamps when the price is from — the provider's market time
+                    # (e.g. when the day's NAV published), with our pull instant
+                    # trailing as "· updated …" — so the settled figure is dated
+                    # by the exchange, not by our fetch. A compact,
+                    # display-relative exchange rate trails it.
                     _now = datetime.now(UTC)
                     _caption = build_daily_growth_caption(
                         last_date=metrics.daily_growth_as_of,
-                        prev_date=metrics.daily_growth_prev_as_of,
-                        eur_usd_last=metrics.daily_growth_fx_eur_usd,
-                        eur_usd_prev=metrics.daily_growth_fx_eur_usd_prev,
+                        fx_eur_usd=metrics.daily_growth_fx_eur_usd,
+                        fx_eur_usd_prev=metrics.daily_growth_fx_eur_usd_prev,
                         display_ccy=display_ccy,
                         today=date.today(),
-                        now=_now,
                         tz=display_tz,
                         market_open=is_us_market_open(_now),
+                        price_observed_at=data.price_observed_at,
+                        price_market_at=data.price_market_at,
                     )
                     _pct_card(
                         "Daily Growth",
@@ -663,8 +766,7 @@ def register() -> None:  # noqa: PLR0915
                 div_yield_text = f"Dividend yield: {fmt_pct(metrics.dividend_yield_pct)}"
                 if fx_rate is not None:
                     ui.label(
-                        f"FX (EUR→{display_quote}): {fx_rate:,.4f}  ·  "
-                        f"Display currency: {display_ccy} (switch from the header toggle)  ·  "
+                        f"FX EUR→{display_quote} {fx_rate:,.4f}  ·  "
                         f"{expense_text}  ·  {div_yield_text}",
                     ).classes("text-caption opacity-70")
                 else:
@@ -673,7 +775,10 @@ def register() -> None:  # noqa: PLR0915
                     )
 
                 _value_over_time_section(
-                    value_series, range_label=range_label, display_ccy=display_ccy
+                    value_series,
+                    range_label=range_label,
+                    display_ccy=display_ccy,
+                    display_tz=display_tz,
                 )
 
                 if not cards:

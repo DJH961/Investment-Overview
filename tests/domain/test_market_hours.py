@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from investment_dashboard.domain.market_hours import is_us_market_open
+from investment_dashboard.domain.market_hours import (
+    is_us_market_open,
+    previous_trading_day,
+    regular_session_close,
+)
 
 NY = ZoneInfo("America/New_York")
 
@@ -44,3 +48,35 @@ def test_converts_from_other_timezones() -> None:
 def test_naive_datetime_treated_as_exchange_local() -> None:
     assert is_us_market_open(datetime(2024, 6, 24, 10, 0)) is True
     assert is_us_market_open(datetime(2024, 6, 24, 8, 0)) is False
+
+
+def test_default_now_uses_current_time() -> None:
+    # With no argument the helper reads the wall clock; it must not raise and
+    # must return a plain bool (the exact value depends on when the suite runs).
+    assert isinstance(is_us_market_open(), bool)
+
+
+class TestPreviousTradingDay:
+    def test_weekday_rolls_back_one_day(self) -> None:
+        # Wednesday → Tuesday.
+        assert previous_trading_day(date(2024, 6, 26)) == date(2024, 6, 25)
+
+    def test_monday_rolls_back_to_friday(self) -> None:
+        assert previous_trading_day(date(2024, 6, 24)) == date(2024, 6, 21)
+
+    def test_weekend_rolls_back_to_friday(self) -> None:
+        assert previous_trading_day(date(2024, 6, 22)) == date(2024, 6, 21)  # Saturday
+        assert previous_trading_day(date(2024, 6, 23)) == date(2024, 6, 21)  # Sunday
+
+
+class TestRegularSessionClose:
+    def test_close_is_16_00_exchange_time(self) -> None:
+        close = regular_session_close(date(2024, 6, 24))
+        assert close == datetime(2024, 6, 24, 16, 0, tzinfo=NY)
+
+    def test_close_converts_to_display_timezone(self) -> None:
+        # 16:00 New York (EDT) is 22:00 in Central Europe.
+        cet = ZoneInfo("Europe/Berlin")
+        close = regular_session_close(date(2024, 6, 24), tz=cet)
+        assert (close.hour, close.minute) == (22, 0)
+        assert close == datetime(2024, 6, 24, 16, 0, tzinfo=NY)

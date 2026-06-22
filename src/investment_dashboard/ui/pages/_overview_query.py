@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
@@ -13,6 +13,7 @@ from investment_dashboard.domain.currency import (
     dual_currency_amounts,
     lookup_rate_with_forward_fill,
 )
+from investment_dashboard.domain.market_hours import is_us_market_open
 from investment_dashboard.domain.money_market import is_money_market
 from investment_dashboard.domain.returns import (
     total_growth_pct_compounded,
@@ -21,7 +22,12 @@ from investment_dashboard.domain.returns import (
 )
 from investment_dashboard.models import TransactionKind
 from investment_dashboard.repositories import transactions_repo
-from investment_dashboard.services import fx_service, prices_service, snapshots_service
+from investment_dashboard.services import (
+    fx_service,
+    intraday_snapshots_service,
+    prices_service,
+    snapshots_service,
+)
 from investment_dashboard.services.metrics_service import (
     PortfolioMetrics,
     build_instrument_cashflows,
@@ -30,6 +36,7 @@ from investment_dashboard.services.metrics_service import (
 from investment_dashboard.services.positions_service import (
     Position,
     compute_positions,
+    total_portfolio_value,
 )
 from investment_dashboard.ui.money_format import currency_symbol, fmt_shares
 
@@ -113,6 +120,59 @@ def build_value_series(
             session, start, end, currency, recompute_tail_days=recompute_tail_days
         )
     ]
+
+
+def build_intraday_value_series(
+    session: Session,
+    *,
+    currency: str,
+    tz: tzinfo | None = None,
+    now: datetime | None = None,
+) -> list[ValueSeriesPoint]:
+    """Within-day portfolio-value series for the Overview "Day" range.
+
+    Built from the intraday samples captured during today's market session
+    (:mod:`investment_dashboard.services.intraday_snapshots_service`) rather than
+    the once-a-day snapshot cache, so the curve shows real intraday movement with
+    market-time points only. The live current value is appended as the final
+    point so the tip matches the headline figure, and every point is converted
+    to ``currency`` (at the current FX rate — a single intraday day) and its
+    timestamp localised to ``tz`` for display. ``ValueSeriesPoint.date`` carries
+    a full :class:`~datetime.datetime` here (a ``date`` subclass), which the
+    chart renders on a time-of-day axis.
+
+    Returns ``[]`` when there is nothing to plot (no samples *and* no live value
+    — e.g. an empty ledger), so the caller can fall back to the empty state.
+    """
+    currency = currency.upper()
+    now = now or datetime.now(UTC)
+
+    samples = intraday_snapshots_service.day_series_eur(session, now=now)
+
+    # Cap the curve with the live current value so the tip equals the headline
+    # Total Value, even between captures. Skip the duplicate when the most recent
+    # sample is effectively "now". For a genuinely empty portfolio (no samples
+    # and a zero live value) there is nothing to plot.
+    live_eur = total_portfolio_value(session)
+    live_at = now.astimezone(UTC).replace(tzinfo=None) if now.tzinfo is not None else now
+    if (not samples and live_eur != 0) or (samples and samples[-1][0] < live_at):
+        samples = [*samples, (live_at, live_eur)]
+
+    if not samples:
+        return []
+
+    rate: Decimal | None = None
+    if currency != "EUR":
+        rate = fx_service.get_rate_eur_to_quote(session, date.today(), quote=currency)
+
+    points: list[ValueSeriesPoint] = []
+    for at_utc, value_eur in samples:
+        value = value_eur if (currency == "EUR" or not rate) else value_eur * rate
+        when: datetime = at_utc
+        if tz is not None:
+            when = at_utc.replace(tzinfo=UTC).astimezone(tz).replace(tzinfo=None)
+        points.append(ValueSeriesPoint(date=when, value=value))
+    return points
 
 
 @dataclass(frozen=True)
@@ -728,14 +788,30 @@ def _fmt_pct(value: Decimal | None) -> str:
     return f"{value * Decimal(100):,.2f} %"
 
 
-def _fmt_asof(freshness: HoldingFreshness | None) -> str:
-    """Compact "as of" string for a table row (date, par note, or em dash)."""
+def _fmt_asof(freshness: HoldingFreshness | None, *, today: date | None = None) -> str:
+    """Compact freshness string for a holding's "As Of" cell.
+
+    Today's price is promoted to a status word so the row reads at a glance,
+    using the *same* "is it live?" rule as the Daily Growth caption
+    (``market open and the price is from today``):
+
+    * ``LIVE``  — the price is from today and the US market is open right now, so
+      it is a genuinely current, moving quote.
+    * ``TODAY`` — the price is from today but the market is closed (a settled
+      close that is current yet no longer moving).
+    * ``as of <date>`` — anything older falls back to the observation date.
+
+    Money-market funds price at a fixed par with no feed, so they keep "par".
+    """
     if freshness is None:
         return "—"
     if freshness.is_money_market:
         return "par"
     if freshness.price_as_of is None:
         return "—"
+    today = today or date.today()
+    if freshness.price_as_of == today:
+        return "LIVE" if freshness.market_open else "TODAY"
     return freshness.price_as_of.strftime("%d %b %Y")
 
 
@@ -774,26 +850,36 @@ class HoldingFreshness:
     * ``updated_at`` — *when we last pulled* fresh prices for the instrument
       (the saved ``last_refreshed_at`` timestamp), so the user can tell a fresh
       fetch from a value that has simply not moved.
+    * ``market_open`` — whether the instrument's exchange is open *right now*
+      (best-effort, by quote currency). Lets a same-day price read "LIVE" while
+      the market trades and "TODAY" once it has closed.
 
     Money-market / settlement funds price at a fixed $1.00 par with no feed, so
-    both fields are ``None`` and ``is_money_market`` is set — the UI shows a
+    both date fields are ``None`` and ``is_money_market`` is set — the UI shows a
     "fixed par" note rather than a misleading date.
     """
 
     price_as_of: date | None
     updated_at: datetime | None
     is_money_market: bool
+    market_open: bool = False
+    #: When the served price was last struck on the exchange (the provider's
+    #: ``regularMarketTime``) — *when the price is from*, distinct from
+    #: ``updated_at`` (*when we pulled it*). ``None`` when the provider does not
+    #: publish it (or for money-market par rows).
+    price_market_time: datetime | None = None
 
 
 def holding_freshness(session: Session, positions: list[Position]) -> dict[int, HoldingFreshness]:
     """Per-instrument price freshness for the held ``positions`` (cache tier).
 
-    Batches the two cache-tier lookups (latest print date + last-refreshed
-    timestamp) once for every held instrument instead of per row.
+    Batches the cache-tier lookups (latest print date + last-refreshed timestamp
+    + provider market time) once for every held instrument instead of per row.
     """
     ids = [p.instrument.id for p in positions]
     as_of_dates = prices_service.latest_price_dates_for(session, ids)
     refreshed = prices_service.last_refreshed_at_for(session, ids)
+    market_times = prices_service.market_time_for(session, ids)
     out: dict[int, HoldingFreshness] = {}
     for p in positions:
         iid = p.instrument.id
@@ -805,6 +891,8 @@ def holding_freshness(session: Session, positions: list[Position]) -> dict[int, 
             price_as_of=None if is_mm else as_of_dates.get(iid),
             updated_at=None if is_mm else refreshed.get(iid),
             is_money_market=is_mm,
+            market_open=(False if is_mm else is_us_market_open()),
+            price_market_time=None if is_mm else market_times.get(iid),
         )
     return out
 
@@ -850,6 +938,7 @@ class HoldingCard:
     # Freshness / transparency.
     price_as_of: date | None
     updated_at: datetime | None
+    market_open: bool = False
 
 
 def build_holding_cards(
@@ -925,6 +1014,7 @@ def build_holding_cards(
                 weight=None,
                 price_as_of=fr.price_as_of if fr is not None else None,
                 updated_at=fr.updated_at if fr is not None else None,
+                market_open=fr.market_open if fr is not None else False,
             )
         )
     # Portfolio weight: each card's EUR value as a share of the held total.

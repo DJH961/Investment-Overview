@@ -27,6 +27,11 @@ class PriceCacheMetadata(Base):
 
     instrument_id: Mapped[int] = mapped_column(primary_key=True)
     last_refreshed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    #: When the served price was last struck on the exchange (yfinance's
+    #: ``regularMarketTime``) — *when the price is from*, distinct from
+    #: ``last_refreshed_at`` (*when we pulled it*). Nullable: the provider does
+    #: not always publish it, and money-market / never-fetched rows have none.
+    price_market_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<PriceCacheMetadata instr={self.instrument_id} at={self.last_refreshed_at}>"

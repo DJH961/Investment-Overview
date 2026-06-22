@@ -36,6 +36,7 @@ EXPECTED_TABLES = {
     "position_snapshots",
     "price_cache_metadata",
     "price_split",
+    "intraday_value",
 }
 
 

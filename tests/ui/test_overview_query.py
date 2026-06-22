@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -513,8 +513,9 @@ def test_position_rows_as_of_date_from_freshness(session: Session, seeded: None)
     fresh = holding_freshness(session, positions)
     rows = position_rows(positions, freshness=fresh)
     vti = next(r for r in rows if r["symbol"] == "VTI")
-    # The "as of" string reflects the latest cached print date (today here).
-    assert vti["price_as_of"] == date.today().strftime("%d %b %Y")
+    # Today's price is promoted to a live status word ("LIVE" while the market
+    # trades, "TODAY" once it has closed) instead of the bare date.
+    assert vti["price_as_of"] in {"LIVE", "TODAY"}
     assert "instrument_id" in vti
 
 
@@ -574,6 +575,84 @@ def test_holding_freshness_marks_money_market(session: Session) -> None:
     assert mm.is_money_market is True
     assert mm.price_as_of is None
     assert mm.updated_at is None
+
+
+def test_fmt_asof_live_when_market_open() -> None:
+    from investment_dashboard.ui.pages._overview_query import (
+        HoldingFreshness,
+        _fmt_asof,
+    )
+
+    today = date(2024, 6, 19)
+    fr = HoldingFreshness(
+        price_as_of=today,
+        updated_at=datetime(2024, 6, 19, 14, 0),
+        is_money_market=False,
+        market_open=True,
+    )
+    assert _fmt_asof(fr, today=today) == "LIVE"
+
+
+def test_fmt_asof_today_when_market_closed() -> None:
+    from investment_dashboard.ui.pages._overview_query import (
+        HoldingFreshness,
+        _fmt_asof,
+    )
+
+    today = date(2024, 6, 19)
+    fr = HoldingFreshness(
+        price_as_of=today,
+        updated_at=datetime(2024, 6, 19, 14, 0),
+        is_money_market=False,
+        market_open=False,
+    )
+    assert _fmt_asof(fr, today=today) == "TODAY"
+
+
+def test_fmt_asof_today_when_market_closed_even_if_pulled_today() -> None:
+    from investment_dashboard.ui.pages._overview_query import (
+        HoldingFreshness,
+        _fmt_asof,
+    )
+
+    today = date(2024, 6, 19)
+    # Market closed → today's price reads TODAY regardless of the pull time,
+    # matching the Daily Growth caption's ``market_open and price is today`` rule.
+    fr = HoldingFreshness(
+        price_as_of=today,
+        updated_at=datetime(2024, 6, 19, 22, 0),
+        is_money_market=False,
+        market_open=False,
+    )
+    assert _fmt_asof(fr, today=today) == "TODAY"
+
+
+def test_fmt_asof_date_for_older_price() -> None:
+    from investment_dashboard.ui.pages._overview_query import (
+        HoldingFreshness,
+        _fmt_asof,
+    )
+
+    today = date(2024, 6, 19)
+    fr = HoldingFreshness(
+        price_as_of=date(2024, 6, 14),
+        updated_at=datetime(2024, 6, 14, 14, 0),
+        is_money_market=False,
+        market_open=True,
+    )
+    assert _fmt_asof(fr, today=today) == "14 Jun 2024"
+
+
+def test_fmt_asof_money_market_keeps_par() -> None:
+    from investment_dashboard.ui.pages._overview_query import (
+        HoldingFreshness,
+        _fmt_asof,
+    )
+
+    fr = HoldingFreshness(
+        price_as_of=None, updated_at=None, is_money_market=True, market_open=False
+    )
+    assert _fmt_asof(fr, today=date(2024, 6, 19)) == "par"
 
 
 def test_instrument_mtd_growth_per_currency(session: Session) -> None:

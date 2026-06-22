@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -303,6 +303,77 @@ def fetch_splits(
     return result
 
 
+def fetch_intraday_closes(
+    symbols: list[str],
+    day: date,
+    *,
+    interval: str = "30m",
+    downloader: Any = None,
+) -> dict[str, dict[datetime, Decimal]]:
+    """Return ``{symbol: {bar_time_utc: close}}`` of intraday bars on ``day``.
+
+    Used to *reconstruct* the most recent trading session's portfolio curve when
+    the app was closed for part (or all) of it — e.g. logging in late in the day,
+    after the close, or over a weekend. ``interval`` is a yfinance bar width
+    (``"30m"`` by default, matching the dashboard's ~half-hour reconstruction
+    granularity). Bar timestamps are normalised to **naive UTC** so they store
+    and compare uniformly with the live intraday samples.
+
+    yfinance only serves intraday history for roughly the last 60 days, so this
+    is for the *recent* session, not deep history. Symbols with no intraday data
+    in the window map to an empty dict. ``downloader`` injects a stub matching
+    ``yfinance.download`` in tests.
+    """
+    if not symbols:
+        return {}
+
+    download = downloader or yf.download
+    # yfinance treats ``end`` as exclusive; +1 day captures the whole session.
+    try:
+        frame = retry_call(
+            lambda: download(
+                tickers=symbols,
+                start=day.isoformat(),
+                end=(day + timedelta(days=1)).isoformat(),
+                interval=interval,
+                auto_adjust=False,
+                actions=False,
+                progress=False,
+                group_by="ticker",
+                threads=False,
+            ),
+            attempts=_DOWNLOAD_ATTEMPTS,
+            description="yfinance.download (intraday)",
+        )
+    except Exception as exc:
+        raise YFinanceError(f"yfinance.download (intraday) failed: {exc}") from exc
+
+    result: dict[str, dict[datetime, Decimal]] = {s: {} for s in symbols}
+    if frame is None or getattr(frame, "empty", True):
+        return result
+
+    import pandas as pd  # noqa: PLC0415
+
+    columns = getattr(frame, "columns", None)
+    is_grouped = isinstance(columns, pd.MultiIndex)
+    for symbol in symbols:
+        try:
+            close_series = frame[symbol]["Close"] if is_grouped else frame["Close"]
+        except KeyError:
+            continue
+        for ts, value in close_series.dropna().items():
+            result[symbol][_to_naive_utc(ts)] = Decimal(repr(float(value)))
+    return result
+
+
+def _to_naive_utc(ts: Any) -> datetime:
+    """Normalise a (possibly tz-aware) pandas/py timestamp to a naive UTC datetime."""
+    as_dt = ts.to_pydatetime() if hasattr(ts, "to_pydatetime") else ts
+    if isinstance(as_dt, datetime) and as_dt.tzinfo is not None:
+        return as_dt.astimezone(UTC).replace(tzinfo=None)
+    return as_dt
+
+
 def fetch_latest_close(
     symbol: str,
     *,
@@ -355,6 +426,64 @@ def fetch_eur_usd_spot(
     return fetch_latest_close(
         EUR_USD_YF_SYMBOL, lookback_days=lookback_days, ticker_factory=ticker_factory
     )
+
+
+def _coerce_market_time(value: Any) -> datetime | None:
+    """Normalise a yfinance market-time value to a naive-UTC ``datetime``.
+
+    yfinance publishes ``regularMarketTime`` as epoch seconds (an ``int``), but
+    different versions/symbols occasionally hand back a ``datetime`` or a pandas
+    ``Timestamp``. Anything unparseable degrades to ``None`` so the caller simply
+    omits the symbol. The naive-UTC shape matches the price cache's storage
+    convention for ``last_refreshed_at``.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.astimezone(UTC).replace(tzinfo=None) if value.tzinfo else value
+    try:
+        return datetime.fromtimestamp(int(value), tz=UTC).replace(tzinfo=None)
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
+def _regular_market_time(symbol: str, *, ticker_factory: Any = None) -> datetime | None:
+    """Read yfinance's ``regularMarketTime`` for ``symbol`` (best-effort)."""
+    factory = ticker_factory or yf.Ticker
+    info: dict[str, Any] = factory(symbol).info or {}
+    return _coerce_market_time(info.get("regularMarketTime"))
+
+
+def fetch_market_times(
+    symbols: list[str],
+    *,
+    quoter: Any = None,
+) -> dict[str, datetime]:
+    """Return ``{symbol: market_time}`` — *when each price is from* (naive UTC).
+
+    The "market time" is the moment the price the provider is currently serving
+    was last struck on the exchange (yfinance's ``regularMarketTime``), as
+    opposed to *when we pulled it*. For a mutual fund it is the instant the day's
+    NAV was published, which is exactly the stamp the user wants to watch for.
+
+    Best-effort and isolated: any symbol the provider can't time (or that errors)
+    is simply absent from the result, so callers transparently fall back to the
+    pull time or the modelled regular-session close. ``quoter`` injects a
+    ``(symbol) -> datetime | None`` stub in tests.
+    """
+    if not symbols:
+        return {}
+    quote = quoter or _regular_market_time
+    out: dict[str, datetime] = {}
+    for symbol in symbols:
+        try:
+            when = _coerce_market_time(quote(symbol))
+        except Exception as exc:  # pragma: no cover - network/yfinance churn
+            log.debug("market-time fetch failed for %s: %s", symbol, exc)
+            continue
+        if when is not None:
+            out[symbol] = when
+    return out
 
 
 def _history_closes(

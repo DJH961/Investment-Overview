@@ -18,7 +18,7 @@ pure is worth that small imprecision.
 
 from __future__ import annotations
 
-from datetime import datetime, time
+from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from zoneinfo import ZoneInfo
 
 #: The exchange whose regular session defines "the market is open" for the
@@ -34,14 +34,51 @@ _CLOSE = time(16, 0)
 _SATURDAY = 5
 
 
-def is_us_market_open(now: datetime) -> bool:
+def is_us_market_open(now: datetime | None = None) -> bool:
     """Return ``True`` when the NYSE regular session is open at ``now``.
 
-    ``now`` may be naive (interpreted as already being in exchange time) or
-    timezone-aware (converted to exchange time first). Weekends are always
-    closed; holidays are not modelled (see the module docstring).
+    ``now`` defaults to the current instant (UTC). It may be naive (interpreted
+    as already being in exchange time) or timezone-aware (converted to exchange
+    time first). Weekends are always closed; holidays are not modelled (see the
+    module docstring).
     """
+    if now is None:
+        now = datetime.now(UTC)
     local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
     if local.weekday() >= _SATURDAY:
         return False
     return _OPEN <= local.time() < _CLOSE
+
+
+def previous_trading_day(today: date) -> date:
+    """The most recent weekday strictly *before* ``today``.
+
+    A dependency-free stand-in for "the last settled trading session" — like
+    :func:`is_us_market_open` it models only the weekly Mon–Fri rhythm and
+    ignores exchange holidays (see the module docstring). Saturday/Sunday roll
+    back to Friday; any other weekday rolls back to the prior weekday.
+
+    Used to tell a *genuinely* stale price (its newest close is more than one
+    trading day behind, which usually means the provider is failing for that
+    symbol) apart from one that is merely waiting on the next intraday refresh
+    tick — the latter is normal overnight/at-weekend and must not be flagged.
+    """
+    day = today - timedelta(days=1)
+    while day.weekday() >= _SATURDAY:
+        day -= timedelta(days=1)
+    return day
+
+
+def regular_session_close(day: date, *, tz: tzinfo | None = None) -> datetime:
+    """The NYSE regular-session close (16:00 America/New_York) on ``day``.
+
+    Returns a timezone-aware instant marking "the last market action" of a
+    settled trading day — the moment a same-day-but-closed price is *from*. When
+    ``tz`` is given the instant is converted to that display timezone (so a CET
+    user reads the 22:00 local close); otherwise it stays in exchange time.
+
+    Like the rest of this module it ignores holidays and half-days (see the
+    module docstring): the close is always modelled as 16:00 exchange time.
+    """
+    close = datetime.combine(day, _CLOSE, tzinfo=_MARKET_TZ)
+    return close.astimezone(tz) if tz is not None else close

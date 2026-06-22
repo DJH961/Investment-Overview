@@ -37,6 +37,7 @@ from investment_dashboard.ui.components import (
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import currency_symbol, fmt_money, fmt_shares
 from investment_dashboard.ui.pages._calculator_query import (
+    UNCATEGORIZED,
     CalcData,
     CalcInstrument,
     build_calculator_data,
@@ -665,25 +666,126 @@ class _CalculatorView:  # pragma: no cover - UI wiring
             heading = "Rebalance plan" if self.allow_sell else "Buy plan"
             with section(heading):
                 total_after = sum((r.current_value + r.add_value for r in plan.rows), start=ZERO)
-                for r in sorted(plan.rows, key=lambda row: row.add_value, reverse=True):
-                    instr = self.by_id.get(r.instrument_id)
-                    sym_name = instr.symbol if instr else f"#{r.instrument_id}"
-                    after_pct = (
-                        (r.current_value + r.add_value) * HUNDRED / total_after
-                        if total_after > ZERO
-                        else ZERO
-                    )
-                    current_pct = current_pct_by_id.get(r.instrument_id, ZERO)
-                    self._render_plan_row(sym_name, r, current_pct, after_pct)
+                if self.mode == "category":
+                    # A "by category" plan reads best grouped into category
+                    # buckets (target %, cash in, then the member funds) rather
+                    # than as one flat fund list.
+                    self._render_category_plan(plan, total_after, current_pct_by_id)
+                else:
+                    for r in sorted(plan.rows, key=lambda row: row.add_value, reverse=True):
+                        instr = self.by_id.get(r.instrument_id)
+                        sym_name = instr.symbol if instr else f"#{r.instrument_id}"
+                        after_pct = (
+                            (r.current_value + r.add_value) * HUNDRED / total_after
+                            if total_after > ZERO
+                            else ZERO
+                        )
+                        current_pct = current_pct_by_id.get(r.instrument_id, ZERO)
+                        self._render_plan_row(sym_name, r, current_pct, after_pct)
 
-    def _render_plan_row(
-        self, name: str, r: RebalanceRow, current_pct: Decimal, after_pct: Decimal
+    def _render_category_plan(
+        self,
+        plan: RebalancePlan,
+        total_after: Decimal,
+        current_pct_by_id: dict[int, Decimal],
+    ) -> None:
+        """Render the plan grouped by category: a header bucket per category with
+        its rolled-up target / cash-in, followed by its member fund rows."""
+        groups: dict[str, list[RebalanceRow]] = {}
+        for r in plan.rows:
+            instr = self.by_id.get(r.instrument_id)
+            category = (instr.category if instr else None) or UNCATEGORIZED
+            groups.setdefault(category, []).append(r)
+
+        def _buy(rows: list[RebalanceRow]) -> Decimal:
+            return sum((row.add_value for row in rows if row.add_value > ZERO), start=ZERO)
+
+        def _after_pct(value: Decimal) -> Decimal:
+            return value * HUNDRED / total_after if total_after > ZERO else ZERO
+
+        # Most cash deployed first, mirroring the flat plan's "biggest move" sort.
+        for category, rows in sorted(groups.items(), key=lambda kv: _buy(kv[1]), reverse=True):
+            target_pct = sum((row.target_pct for row in rows), start=ZERO)
+            current_pct = sum(
+                (current_pct_by_id.get(row.instrument_id, ZERO) for row in rows), start=ZERO
+            )
+            after_value = sum((row.current_value + row.add_value for row in rows), start=ZERO)
+            add_value = sum((row.add_value for row in rows), start=ZERO)
+            self._render_category_header(
+                category, target_pct, current_pct, _after_pct(after_value), add_value
+            )
+            for r in sorted(rows, key=lambda row: row.add_value, reverse=True):
+                instr = self.by_id.get(r.instrument_id)
+                sym_name = instr.symbol if instr else f"#{r.instrument_id}"
+                member_current = current_pct_by_id.get(r.instrument_id, ZERO)
+                self._render_plan_row(
+                    sym_name,
+                    r,
+                    member_current,
+                    _after_pct(r.current_value + r.add_value),
+                    indent=True,
+                )
+
+    def _render_category_header(
+        self,
+        name: str,
+        target_pct: Decimal,
+        current_pct: Decimal,
+        after_pct: Decimal,
+        add_value: Decimal,
     ) -> None:
         with (
             ui.row()
-            .classes("items-center gap-md w-full no-wrap inv-section")
-            .style("padding:0.5rem 0.8rem")
+            .classes("items-center gap-md w-full no-wrap")
+            .style(
+                "padding:0.55rem 0.8rem;margin-top:0.5rem;border-radius:0.5rem;"
+                "background:var(--inv-surface-2,#eef1f5)"
+            )
         ):
+            with ui.column().classes("gap-none").style("min-width:9rem"):
+                ui.label(name).classes("text-subtitle2").style("font-weight:700")
+                ui.html(
+                    '<span class="text-caption opacity-70">'
+                    f"now {current_pct:.1f} % → {after_pct:.1f} % after "
+                    f"· target {target_pct:.1f} %</span>"
+                )
+            ui.html(_bar(after_pct, target_pct)).classes("flex-1")
+            with ui.column().classes("gap-none items-end").style("min-width:11rem"):
+                if add_value > ZERO:
+                    ui.html(
+                        '<span style="color:var(--inv-gain,#21ba45);font-weight:700">'
+                        f"+ {self._fmt(add_value)}</span>"
+                    )
+                    ui.html(
+                        '<span class="text-caption opacity-70">'
+                        f"+ {self._fmt_other(add_value)}</span>"
+                    )
+                elif add_value < ZERO:
+                    ui.html(
+                        '<span style="color:var(--inv-loss,#c10015);font-weight:700">'
+                        f"- {self._fmt(-add_value)} net</span>"
+                    )
+                else:
+                    ui.html('<span class="text-caption opacity-50">no new cash</span>')
+
+    def _render_plan_row(
+        self,
+        name: str,
+        r: RebalanceRow,
+        current_pct: Decimal,
+        after_pct: Decimal,
+        *,
+        indent: bool = False,
+    ) -> None:
+        # Member rows under a category header are inset with a left rail so the
+        # grouping reads at a glance.
+        row_style = "padding:0.5rem 0.8rem"
+        if indent:
+            row_style = (
+                "padding:0.4rem 0.8rem;margin-left:0.9rem;"
+                "border-left:2px solid var(--inv-hairline,#e2e6eb)"
+            )
+        with ui.row().classes("items-center gap-md w-full no-wrap inv-section").style(row_style):
             with ui.column().classes("gap-none").style("min-width:8rem"):
                 ui.label(name).classes("text-body1")
                 ui.html(

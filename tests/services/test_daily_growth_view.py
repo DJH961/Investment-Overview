@@ -9,18 +9,16 @@ from zoneinfo import ZoneInfo
 from investment_dashboard.services.daily_growth_view import build_daily_growth_caption
 
 NY = ZoneInfo("America/New_York")
+CET = ZoneInfo("Europe/Berlin")
 TODAY = date(2024, 6, 24)  # a Monday
 
 
 def _caption(**overrides):  # type: ignore[no-untyped-def]
     kwargs = {
         "last_date": TODAY,
-        "prev_date": date(2024, 6, 21),
-        "eur_usd_last": Decimal("1.08"),
-        "eur_usd_prev": Decimal("1.07"),
+        "fx_eur_usd": Decimal("1.08"),
         "display_ccy": "EUR",
         "today": TODAY,
-        "now": datetime(2024, 6, 24, 15, 42, tzinfo=NY),
         "tz": NY,
         "market_open": True,
     }
@@ -33,14 +31,98 @@ def test_no_data_degrades_cleanly() -> None:
     assert cap.as_of_text == "awaiting two priced days"
     assert cap.fx_text is None
     assert cap.is_live is False
+    assert cap.combined() == "awaiting two priced days"
 
 
-def test_market_open_is_time_stamped_and_live() -> None:
+def test_live_omits_the_clock_and_flags_live() -> None:
     cap = _caption()
     assert cap.is_live is True
-    assert cap.as_of_text == "as of 15:42"
-    assert cap.fx_text is not None
-    assert "live FX" in cap.fx_text
+    # Live: the clock is dropped (redundant next to "live"); FX trails.
+    assert cap.as_of_text == "as of today"
+    assert cap.combined() == "as of today \u00b7 live \u00b7 $1\u2248\u20ac0.9259"
+
+
+def test_today_closed_stamps_the_market_close_time() -> None:
+    # Settled, but today's close is in: stamp when the price is from (the
+    # regular-session close, 16:00 ET -> shown in the display timezone).
+    cap = _caption(market_open=False)
+    assert cap.is_live is False
+    assert cap.as_of_text == "as of 16:00"
+    assert "live" not in cap.combined()
+
+
+def test_today_closed_close_time_is_in_display_timezone() -> None:
+    # A CET user reads the 16:00 ET close as their local 22:00.
+    cap = _caption(market_open=False, tz=CET)
+    assert cap.as_of_text == "as of 22:00"
+
+
+def test_today_closed_stamps_the_provider_pull_time() -> None:
+    # Settled, but today's close is in: stamp when the price is from — the
+    # moment we last pulled it from the provider (a naive UTC instant), shown
+    # in the display timezone.
+    pulled = datetime(2024, 6, 24, 20, 7)  # 20:07 UTC == 16:07 ET (EDT)
+    cap = _caption(market_open=False, price_observed_at=pulled)
+    assert cap.is_live is False
+    assert cap.as_of_text == "as of 16:07"
+    assert "live" not in cap.combined()
+
+
+def test_today_closed_pull_time_is_in_display_timezone() -> None:
+    # A CET user reads the same 20:07 UTC pull as their local 22:07.
+    pulled = datetime(2024, 6, 24, 20, 7)
+    cap = _caption(market_open=False, tz=CET, price_observed_at=pulled)
+    assert cap.as_of_text == "as of 22:07"
+
+
+def test_today_closed_falls_back_to_session_close_without_pull_time() -> None:
+    # No saved pull time -> fall back to the modelled regular-session close.
+    cap = _caption(market_open=False, price_observed_at=None)
+    assert cap.as_of_text == "as of 16:00"
+
+
+def test_live_ignores_pull_time_and_omits_the_clock() -> None:
+    pulled = datetime(2024, 6, 24, 19, 30)
+    cap = _caption(price_observed_at=pulled)
+    assert cap.is_live is True
+    assert cap.as_of_text == "as of today"
+
+
+def test_today_closed_prefers_market_time_and_trails_pull_time() -> None:
+    # Settled, today's close is in: the figure is dated by the *exchange* market
+    # time (when the price is from), with our pull instant trailing as "updated".
+    market = datetime(2024, 6, 24, 19, 59)  # 19:59 UTC == 21:59 CET
+    pulled = datetime(2024, 6, 24, 20, 16)  # 20:16 UTC == 22:16 CET
+    cap = _caption(market_open=False, tz=CET, price_market_at=market, price_observed_at=pulled)
+    assert cap.is_live is False
+    assert cap.as_of_text == "as of 21:59"
+    assert cap.updated_text == "updated 22:16"
+    assert cap.combined() == "as of 21:59 \u00b7 updated 22:16 \u00b7 $1\u2248\u20ac0.9259"
+
+
+def test_today_closed_market_time_without_pull_time_has_no_updated() -> None:
+    market = datetime(2024, 6, 24, 19, 59)
+    cap = _caption(market_open=False, tz=CET, price_market_at=market, price_observed_at=None)
+    assert cap.as_of_text == "as of 21:59"
+    assert cap.updated_text is None
+    assert "updated" not in cap.combined()
+
+
+def test_today_closed_falls_back_to_pull_time_without_market_time() -> None:
+    # No provider market time -> keep the prior behaviour: date by the pull
+    # instant, with no separate "updated" stamp (it would echo the "as of").
+    pulled = datetime(2024, 6, 24, 20, 7)
+    cap = _caption(market_open=False, tz=CET, price_market_at=None, price_observed_at=pulled)
+    assert cap.as_of_text == "as of 22:07"
+    assert cap.updated_text is None
+
+
+def test_live_ignores_market_time_and_omits_the_clock() -> None:
+    market = datetime(2024, 6, 24, 15, 59)
+    cap = _caption(price_market_at=market, price_observed_at=datetime(2024, 6, 24, 16, 1))
+    assert cap.is_live is True
+    assert cap.as_of_text == "as of today"
+    assert cap.updated_text is None
 
 
 def test_market_open_but_no_today_print_is_not_live() -> None:
@@ -50,43 +132,46 @@ def test_market_open_but_no_today_print_is_not_live() -> None:
     assert cap.as_of_text == "as of Fri 21 Jun"
 
 
-def test_closed_today_reads_as_today() -> None:
-    cap = _caption(market_open=False)
-    assert cap.is_live is False
-    assert cap.as_of_text == "as of today"
-    assert cap.fx_text is not None
-    assert "end-of-day FX" in cap.fx_text
-
-
 def test_closed_past_date_is_formatted() -> None:
     cap = _caption(last_date=date(2024, 6, 20), market_open=False)
     assert cap.as_of_text == "as of Thu 20 Jun"
 
 
-def test_eur_user_quotes_usd_in_eur() -> None:
-    cap = _caption(display_ccy="EUR")
-    assert cap.fx_text is not None
-    # 1 USD = 1/1.08 = 0.9259 EUR, rising vs 1/1.07 = 0.9346 → a fall.
-    assert cap.fx_text.startswith("1 USD = 0.9259 EUR")
-    assert "\u2212" in cap.fx_text  # proper minus: USD got cheaper in EUR
+def test_fx_detail_is_tight_and_display_relative() -> None:
+    # No comparison mark -> spot only, no percentage move.
+    # EUR user prices the foreign USD unit in EUR…
+    eur = _caption()
+    assert eur.fx_text == "$1\u2248\u20ac0.9259"
+    # …USD user prices EUR in USD.
+    usd = _caption(display_ccy="USD")
+    assert usd.fx_text == "\u20ac1\u2248$1.0800"
 
 
-def test_usd_user_quotes_eur_in_usd() -> None:
-    cap = _caption(display_ccy="USD")
-    assert cap.fx_text is not None
-    # 1 EUR = 1.08 USD, up from 1.07 → positive change.
-    assert cap.fx_text.startswith("1 EUR = 1.0800 USD")
-    assert "+" in cap.fx_text
+def test_fx_detail_appends_percentage_move_versus_prior_day() -> None:
+    # USD user: EUR rose from 1.0700 to 1.0800 → +0.93%.
+    usd = _caption(display_ccy="USD", fx_eur_usd=Decimal("1.08"), fx_eur_usd_prev=Decimal("1.07"))
+    assert usd.fx_text == "\u20ac1\u2248$1.0800 (+0.93%)"
+    # EUR user reads the inverse rate, so the same move shows the opposite sign
+    # with a proper minus glyph and no absolute figure.
+    eur = _caption(fx_eur_usd=Decimal("1.08"), fx_eur_usd_prev=Decimal("1.07"))
+    assert eur.fx_text == "$1\u2248\u20ac0.9259 (\u22120.93%)"
 
 
-def test_missing_prev_rate_omits_change() -> None:
-    cap = _caption(eur_usd_prev=None, display_ccy="USD")
-    assert cap.fx_text is not None
-    assert cap.fx_text.startswith("1 EUR = 1.0800 USD")
-    assert "(" not in cap.fx_text  # no change parenthetical
+def test_fx_percentage_omitted_without_prior_mark() -> None:
+    assert "%" not in (_caption(fx_eur_usd_prev=None).fx_text or "")
+    assert "%" not in (_caption(fx_eur_usd_prev=Decimal("0")).fx_text or "")
 
 
-def test_combined_joins_parts() -> None:
-    cap = _caption(display_ccy="USD")
-    combined = cap.combined()
-    assert combined.startswith("as of 15:42 \u00b7 1 EUR = 1.0800 USD")
+def test_fx_detail_omitted_when_no_mark() -> None:
+    cap = _caption(fx_eur_usd=None)
+    assert cap.fx_text is None
+    assert cap.combined() == "as of today \u00b7 live"
+    # A zero/negative mark is treated as missing, too.
+    assert _caption(fx_eur_usd=Decimal("0")).fx_text is None
+
+
+def test_combined_appends_live_only_when_live() -> None:
+    live = _caption()
+    assert " \u00b7 live \u00b7 " in live.combined()
+    closed = _caption(market_open=False)
+    assert "live" not in closed.combined()

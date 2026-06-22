@@ -383,3 +383,94 @@ def test_fetch_splits_empty_frame() -> None:
 
     out = fetch_splits(["SCHD"], date(2024, 1, 2), date(2024, 1, 4), downloader=fake_download)
     assert out == {"SCHD": {}}
+
+
+def _intraday_frame() -> pd.DataFrame:
+    """Two 30-minute bars for one symbol with a tz-aware index (UTC)."""
+    idx = pd.to_datetime(["2024-06-03 13:30:00+00:00", "2024-06-03 14:00:00+00:00"], utc=True)
+    cols = pd.MultiIndex.from_tuples([("ACME", "Close"), ("ACME", "Open")])
+    return pd.DataFrame([[100.0, 99.0], [110.0, 109.0]], index=idx, columns=cols)
+
+
+def test_fetch_intraday_closes_normalises_to_naive_utc() -> None:
+    from datetime import datetime
+
+    from investment_dashboard.adapters.yfinance_client import fetch_intraday_closes
+
+    seen: dict[str, object] = {}
+
+    def fake_download(**kwargs: Any) -> pd.DataFrame:
+        seen["interval"] = kwargs.get("interval")
+        seen["start"] = kwargs.get("start")
+        seen["end"] = kwargs.get("end")
+        return _intraday_frame()
+
+    out = fetch_intraday_closes(
+        ["ACME"], date(2024, 6, 3), interval="30m", downloader=fake_download
+    )
+
+    assert seen["interval"] == "30m"
+    # end is exclusive in yfinance, so the window spans the whole session day.
+    assert seen["start"] == "2024-06-03"
+    assert seen["end"] == "2024-06-04"
+    assert out["ACME"][datetime(2024, 6, 3, 13, 30)] == Decimal(repr(100.0))
+    assert out["ACME"][datetime(2024, 6, 3, 14, 0)] == Decimal(repr(110.0))
+    # Stored keys are naive (tz stripped after conversion to UTC).
+    assert all(ts.tzinfo is None for ts in out["ACME"])
+
+
+def test_fetch_intraday_closes_empty_symbols_is_noop() -> None:
+    from investment_dashboard.adapters.yfinance_client import fetch_intraday_closes
+
+    assert fetch_intraday_closes([], date(2024, 6, 3)) == {}
+
+
+def test_fetch_market_times_coerces_and_skips_unavailable() -> None:
+    from datetime import UTC, datetime
+
+    from investment_dashboard.adapters.yfinance_client import fetch_market_times
+
+    # 2024-06-24 19:59:00 UTC.
+    epoch = datetime(2024, 6, 24, 19, 59, tzinfo=UTC)
+
+    def fake_quoter(symbol: str):  # type: ignore[no-untyped-def]
+        return {"VTI": epoch, "GONE": None}.get(symbol)
+
+    out = fetch_market_times(["VTI", "GONE"], quoter=fake_quoter)
+
+    # The available symbol is timed (naive UTC); the unavailable one is absent.
+    assert out == {"VTI": datetime(2024, 6, 24, 19, 59)}
+    assert out["VTI"].tzinfo is None
+
+
+def test_fetch_market_times_swallows_quoter_errors() -> None:
+    from datetime import datetime
+
+    from investment_dashboard.adapters.yfinance_client import fetch_market_times
+
+    def boom(symbol: str):  # type: ignore[no-untyped-def]
+        if symbol == "BAD":
+            raise RuntimeError("quote endpoint down")
+        return datetime(2024, 6, 24, 20, 0)
+
+    out = fetch_market_times(["BAD", "OK"], quoter=boom)
+
+    # A failing symbol never breaks the batch; the healthy one still resolves.
+    assert out == {"OK": datetime(2024, 6, 24, 20, 0)}
+
+
+def test_fetch_market_times_empty_symbols_is_noop() -> None:
+    from investment_dashboard.adapters.yfinance_client import fetch_market_times
+
+    assert fetch_market_times([]) == {}
+
+
+def test_coerce_market_time_parses_epoch_seconds() -> None:
+    from datetime import datetime
+
+    from investment_dashboard.adapters.yfinance_client import _coerce_market_time
+
+    # 1719259140 == 2024-06-24 19:59:00 UTC.
+    assert _coerce_market_time(1719259140) == datetime(2024, 6, 24, 19, 59)
+    assert _coerce_market_time(None) is None
+    assert _coerce_market_time("not-a-time") is None
