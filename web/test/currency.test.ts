@@ -3,6 +3,7 @@ import { Decimal } from "../src/decimal-config";
 import {
   canConvertToUsd,
   convertFromEur,
+  convertToEur,
   displayAmount,
   getDisplayCurrency,
   setDisplayCurrency,
@@ -39,6 +40,22 @@ describe("currency", () => {
   it("toggles EUR <-> USD", () => {
     expect(toggleDisplayCurrency()).toBe("USD");
     expect(toggleDisplayCurrency()).toBe("EUR");
+  });
+
+  it("convertToEur round-trips convertFromEur for USD display", () => {
+    setDisplayCurrency("USD");
+    // A USD amount the user typed converts back to its EUR equivalent.
+    expect(convertToEur(new Decimal("110")).toString()).toBe("100");
+    // Round-trip: EUR -> display -> EUR is the identity.
+    const display = convertFromEur(new Decimal("250")).value;
+    expect(convertToEur(display).toString()).toBe("250");
+  });
+
+  it("convertToEur leaves amounts untouched in EUR display or without a rate", () => {
+    expect(convertToEur(new Decimal("100")).toString()).toBe("100");
+    setDisplayCurrency("USD");
+    setEurUsdRate(null);
+    expect(convertToEur(new Decimal("100")).toString()).toBe("100");
   });
 
   it("falls back to EUR when USD is selected but no rate is known", () => {

@@ -40,20 +40,28 @@ Each row is sourced from `positions_service.compute_positions()`:
 - `symbol`, `name`, `asset_class`, `broker`, `account`, `native_currency`.
 - `shares`: string decimal, split-adjusted as of `as_of`.
 - `cost_basis_native`: string decimal in the account native currency.
+- `cost_basis_usd`: string decimal (or `null`) — cost basis converted at each
+  buy's own trade-date EUR→USD rate (not today's spot), so the browser can show
+  a currency-correct USD total gain. Sourced from the desktop's per-currency
+  `InstrumentMetrics`.
 - `cumulative_dividends_cash_native`: string decimal in the account native
   currency.
 - `price_symbol`: ticker for live quoting; defaults to `symbol`.
 - `price_type`: `"market"` for ETFs/stocks, `"nav"` for mutual funds, cash,
   savings, and money-market holdings.
 - `last_known_price_native`: string decimal or `null`.
-- `cashflows[]`: EUR-leg signed holding cashflows (`date`, `amount`) using the
-  returns convention: contributions/buys negative; sells/dividends positive.
+- `cashflows[]`: signed holding cashflows using the returns convention
+  (contributions/buys negative; sells/dividends positive). Each row carries both
+  `amount` (EUR leg) and `amount_usd` (USD leg at its own trade-date FX rate).
 
 ## `portfolio_cashflows[]`
 
-Rows are `{ "date": ISO date, "amount": string decimal }` in EUR. They reuse
-`metrics_service.build_portfolio_cashflows()` with the same retained cash-account
-logic as desktop portfolio XIRR.
+Rows are `{ "date": ISO date, "amount": string decimal, "amount_usd": string
+decimal }`. The `amount` leg is EUR and `amount_usd` is the same flow converted
+at its own trade-date EUR→USD rate (USD-native rows use their booked amount), so
+the browser can recompute currency-correct USD growth without rescaling at
+today's spot. They reuse `metrics_service.build_portfolio_cashflows_dual()` with
+the same retained cash-account logic as desktop portfolio XIRR.
 
 ## `cash[]`
 
@@ -65,8 +73,11 @@ Rows are savings/cash accounts:
 ## `period_openings`
 
 - `month_start_value_eur`, `year_start_value_eur`: total EUR opening values.
-- `holdings`: map of `symbol` to `month_start_value_eur` and
-  `year_start_value_eur`.
+- `month_start_value_usd`, `year_start_value_usd`: the same totals converted at
+  the EUR→USD rate in force on the boundary date (or `null` when unavailable),
+  for currency-correct MTD/YTD growth in USD.
+- `holdings`: map of `symbol` to `month_start_value_eur`, `year_start_value_eur`,
+  `month_start_value_usd`, and `year_start_value_usd`.
 
 These values are live-recompute inputs for the current month/year. Completed
 periods remain in `monthly` and `yearly` as-of-export; the browser decides which
@@ -106,6 +117,14 @@ export". Notable fields: `as_of`, `start`, `currency`, the return metrics
 `curve[]` equity series (`date`, `portfolio_value`, `cumulative_contributions`,
 `benchmark_value`) and an `attribution[]` list (`symbol`, `absolute_pnl`,
 `pct_of_total_return`, …). Any metric may be `null`.
+
+The risk/return metrics (and `start`, which labels their window) cover the last
+`lookback_days` (default 365). For the mobile export the `curve[]` alone is
+rebuilt from the portfolio's inception (`full_history_curve=True`) so the
+value-over-time chart's "All" range is honest and the cumulative-contributions
+line accumulates from the first deposit rather than flatlining over a 1-year
+window. `curve_start` records the curve's actual first date (inception for the
+mobile export, the metrics `start` otherwise).
 
 ## `deposits`
 

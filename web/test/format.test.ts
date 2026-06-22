@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { formatAsOf, formatUpdatedAt } from "../src/format";
+import { formatAsOf, formatLastPull, formatUpdatedAt } from "../src/format";
 
 describe("formatAsOf", () => {
   const now = new Date("2024-06-01T15:30:00Z");
@@ -56,5 +56,33 @@ describe("formatUpdatedAt", () => {
     const out = formatUpdatedAt(null, "2024-05-20", now);
     expect(out).not.toMatch(/:/);
     expect(out.length).toBeGreaterThan(0);
+  });
+});
+
+describe("formatLastPull", () => {
+  const now = new Date("2024-06-01T15:30:00Z");
+
+  it("says 'today' with a clock time for a pull earlier today", () => {
+    const at = new Date("2024-06-01T09:05:00Z").getTime();
+    const out = formatLastPull(at, now);
+    expect(out).toMatch(/^today at \d{1,2}:\d{2}/);
+  });
+
+  it("says 'yesterday' with a clock time for a pull the day before", () => {
+    const at = new Date("2024-05-31T18:05:00Z").getTime();
+    const out = formatLastPull(at, now);
+    expect(out).toMatch(/^yesterday at \d{1,2}:\d{2}/);
+  });
+
+  it("shows the date (and time) for an older pull", () => {
+    const at = new Date("2024-05-20T09:05:00Z").getTime();
+    const out = formatLastPull(at, now);
+    expect(out).not.toMatch(/^(today|yesterday)/);
+    expect(out).toMatch(/\d{1,2}:\d{2}/);
+  });
+
+  it("reports 'not yet' when no pull has happened", () => {
+    expect(formatLastPull(null, now)).toBe("not yet");
+    expect(formatLastPull(undefined, now)).toBe("not yet");
   });
 });

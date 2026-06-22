@@ -29,6 +29,7 @@ import {
 import type { ExportCashflow, ExportHolding, MobileExport } from "./types";
 
 const EUR = "EUR";
+const USD = "USD";
 
 export interface HoldingView {
   symbol: string;
@@ -68,6 +69,19 @@ export interface HoldingView {
    * cost basis to grow from). Shown on the holding card in place of weight. */
   totalGrowthPct: Decimal | null;
   xirr: Decimal | null;
+  /**
+   * USD companions (see currency.ts). `valueUsd`/`todayMoveUsd` mark the current
+   * figure at today's spot; `costBasisUsd` uses the export's per-trade-date USD
+   * cost basis; `totalGrowthPctUsd`/`xirrUsd` are recomputed in USD so the card
+   * shows currency-correct growth when USD is selected. Null when USD is
+   * unavailable, in which case the UI falls back to the EUR figure.
+   */
+  valueUsd: Decimal | null;
+  costBasisUsd: Decimal | null;
+  todayMoveUsd: Decimal | null;
+  unrealisedPlUsd: Decimal | null;
+  totalGrowthPctUsd: Decimal | null;
+  xirrUsd: Decimal | null;
 }
 
 export interface OverviewView {
@@ -83,6 +97,15 @@ export interface OverviewView {
   liveAsOf: number | null;
   /** Export valuation date (`meta.as_of`), shown when `liveAsOf` is null. */
   liveAsOfFallbackDate: string;
+  /**
+   * Epoch ms of the last time fresh market data actually landed from the
+   * network (a live quote or FX pull), or null when none yet this device.
+   * Drives the "data last pulled …" footer + Refresh-button tooltip — *when we
+   * last checked*, distinct from `liveAsOf` (when the prices themselves apply
+   * to). Populated by the app shell after the model is built (it owns the
+   * network), so the compute layer defaults it to null.
+   */
+  lastDataPullAt: number | null;
   totalValueEur: Decimal;
   cashValueEur: Decimal;
   totalCostBasisEur: Decimal;
@@ -97,6 +120,22 @@ export interface OverviewView {
   portfolioXirr: Decimal | null;
   /** Compounded (1+XIRR)^years total growth over the invested lifetime. */
   totalGrowthCompoundedPct: Decimal | null;
+  /**
+   * USD companions for the growth KPIs (see currency.ts). Absolute figures
+   * (`totalValueUsd`, `totalGainUsd`, `todayMoveUsd`, `totalCostBasisUsd`) carry
+   * the USD value at the appropriate FX (spot for current marks, per-trade-date
+   * for cost basis); the percentage figures are recomputed in USD so toggling to
+   * USD shows currency-correct growth. Null when USD is unavailable.
+   */
+  totalValueUsd: Decimal | null;
+  totalCostBasisUsd: Decimal | null;
+  totalGainUsd: Decimal | null;
+  totalGainPctUsd: Decimal | null;
+  todayMoveUsd: Decimal | null;
+  mtdGrowthPctUsd: Decimal | null;
+  ytdGrowthPctUsd: Decimal | null;
+  portfolioXirrUsd: Decimal | null;
+  totalGrowthCompoundedPctUsd: Decimal | null;
   /** Trailing dividend income (EUR) and its yield on current total value. */
   totalDividendsEur: Decimal;
   dividendYieldPct: Decimal | null;
@@ -175,6 +214,25 @@ function netContributionsSince(cashflows: ExportCashflow[], startIso: string): D
 }
 
 /**
+ * USD parallel of {@link netContributionsSince}, summing each flow's
+ * per-trade-date USD leg. Returns null when any in-range flow lacks a USD
+ * amount (older exports), so the caller leaves USD period growth blank rather
+ * than mixing per-date and spot conversions.
+ */
+function netContributionsSinceUsd(
+  cashflows: ExportCashflow[],
+  startIso: string,
+): Decimal | null {
+  let sum = new Decimal(0);
+  for (const cf of cashflows) {
+    if (cf.date < startIso) continue;
+    if (cf.amount_usd === null || cf.amount_usd === undefined) return null;
+    sum = sum.plus(new Decimal(cf.amount_usd));
+  }
+  return sum.negated();
+}
+
+/**
  * Period growth = (value − start − netContrib) / (start + netContrib), matching
  * the desktop's MTD/YTD growth. Returns `null` when there is no positive base
  * to grow from (e.g. a brand-new portfolio with no start-of-period value).
@@ -191,6 +249,21 @@ function periodGrowth(
 
 function holdingCashflows(holding: ExportHolding): Cashflow[] {
   return holding.cashflows.map((cf) => ({ date: cf.date, amount: new Decimal(cf.amount) }));
+}
+
+/**
+ * The per-trade-date USD leg of a holding's cashflows for a currency-correct USD
+ * XIRR. Returns null when any flow lacks a USD amount (older exports) so the
+ * caller leaves the USD XIRR blank and the UI falls back to the EUR figure
+ * rather than mixing per-date and spot conversions.
+ */
+function holdingCashflowsUsd(holding: ExportHolding): Cashflow[] | null {
+  const flows: Cashflow[] = [];
+  for (const cf of holding.cashflows) {
+    if (cf.amount_usd === null || cf.amount_usd === undefined) return null;
+    flows.push({ date: cf.date, amount: new Decimal(cf.amount_usd) });
+  }
+  return flows;
 }
 
 /**
@@ -431,6 +504,29 @@ function buildHolding(
       ? xirr(holdingCashflows(holding), asOf, { terminalValue: valueEur })
       : null;
 
+  // --- USD companions (currency-correct growth when USD is selected) --------
+  // Current marks use today's spot (matching the desktop's terminal-value
+  // treatment); the cost basis uses the export's per-trade-date USD figure.
+  const valueUsd = valueEur !== null ? convert(valueEur, EUR, USD, fx) : null;
+  const costBasisUsd =
+    holding.cost_basis_usd !== null && holding.cost_basis_usd !== undefined
+      ? new Decimal(holding.cost_basis_usd)
+      : costBasisEur !== null
+        ? convert(costBasisEur, EUR, USD, fx)
+        : null;
+  const todayMoveUsd = todayMoveEur !== null ? convert(todayMoveEur, EUR, USD, fx) : null;
+  const unrealisedPlUsd =
+    valueUsd !== null && costBasisUsd !== null ? valueUsd.minus(costBasisUsd) : null;
+  const totalGrowthPctUsd =
+    unrealisedPlUsd !== null && costBasisUsd !== null && costBasisUsd.greaterThan(0)
+      ? unrealisedPlUsd.dividedBy(costBasisUsd)
+      : null;
+  const usdFlows = holdingCashflowsUsd(holding);
+  const xirrUsd =
+    usdFlows !== null && valueUsd !== null && valueUsd.greaterThan(0)
+      ? xirr(usdFlows, asOf, { terminalValue: valueUsd })
+      : null;
+
   return {
     symbol: holding.symbol,
     name: holding.name ?? holding.symbol,
@@ -453,7 +549,27 @@ function buildHolding(
     unrealisedPlEur,
     totalGrowthPct,
     xirr: xirrRate,
+    valueUsd,
+    costBasisUsd,
+    todayMoveUsd,
+    unrealisedPlUsd,
+    totalGrowthPctUsd,
+    xirrUsd,
   };
+}
+
+/**
+ * USD parallel of the portfolio cashflow stream (per-trade-date USD legs).
+ * Returns null when any flow lacks a USD amount so the USD XIRR is left blank
+ * rather than mixing per-date and spot conversions.
+ */
+function buildPortfolioCashflowsUsd(cashflows: ExportCashflow[]): Cashflow[] | null {
+  const flows: Cashflow[] = [];
+  for (const cf of cashflows) {
+    if (cf.amount_usd === null || cf.amount_usd === undefined) return null;
+    flows.push({ date: cf.date, amount: new Decimal(cf.amount_usd) });
+  }
+  return flows;
 }
 
 /** Build the full dashboard model from the decrypted export + live data. */
@@ -589,6 +705,63 @@ export function buildDashboard(
       ? new Decimal(data.meta.fx_rate_eur_usd)
       : null;
 
+  // --- USD companions for the growth KPIs -----------------------------------
+  // Current marks (value, today's move) use today's spot; the cost basis uses
+  // the export's per-trade-date USD figures. The percentage KPIs are recomputed
+  // in USD so toggling currency shows currency-correct growth. Everything is
+  // null when USD is unavailable (no live/known EUR→USD rate), in which case the
+  // UI falls back to the EUR figure.
+  const holdingsValueUsd = convert(holdingsValueEur, EUR, USD, fx);
+  const totalValueUsd = convert(totalValueEur, EUR, USD, fx);
+  const totalCostBasisUsd = holdings.reduce<Decimal | null>(
+    (acc, h) => (acc !== null && h.costBasisUsd !== null ? acc.plus(h.costBasisUsd) : acc),
+    holdingsValueUsd === null ? null : new Decimal(0),
+  );
+  const todayMoveUsd = todayMoveEur !== null ? convert(todayMoveEur, EUR, USD, fx) : null;
+  const totalGainUsd =
+    holdingsValueUsd !== null && totalCostBasisUsd !== null
+      ? holdingsValueUsd.minus(totalCostBasisUsd)
+      : null;
+  const totalGainPctUsd =
+    totalGainUsd !== null && totalCostBasisUsd !== null && totalCostBasisUsd.greaterThan(0)
+      ? totalGainUsd.dividedBy(totalCostBasisUsd)
+      : null;
+
+  const monthStartValueUsdRaw = data.period_openings?.month_start_value_usd;
+  const yearStartValueUsdRaw = data.period_openings?.year_start_value_usd;
+  const monthNetContribUsd = netContributionsSinceUsd(
+    data.portfolio_cashflows,
+    periodStartIso(periodAnchor, "month"),
+  );
+  const yearNetContribUsd = netContributionsSinceUsd(
+    data.portfolio_cashflows,
+    periodStartIso(periodAnchor, "year"),
+  );
+  const mtdGrowthPctUsd =
+    totalValueUsd !== null &&
+    monthStartValueUsdRaw !== null &&
+    monthStartValueUsdRaw !== undefined &&
+    monthNetContribUsd !== null
+      ? periodGrowth(totalValueUsd, new Decimal(monthStartValueUsdRaw), monthNetContribUsd)
+      : null;
+  const ytdGrowthPctUsd =
+    totalValueUsd !== null &&
+    yearStartValueUsdRaw !== null &&
+    yearStartValueUsdRaw !== undefined &&
+    yearNetContribUsd !== null
+      ? periodGrowth(totalValueUsd, new Decimal(yearStartValueUsdRaw), yearNetContribUsd)
+      : null;
+
+  const portfolioCashflowsUsd = buildPortfolioCashflowsUsd(data.portfolio_cashflows);
+  const portfolioXirrUsd =
+    portfolioCashflowsUsd !== null && totalValueUsd !== null && totalValueUsd.greaterThan(0)
+      ? xirr(portfolioCashflowsUsd, asOf, { terminalValue: totalValueUsd })
+      : null;
+  const totalGrowthCompoundedPctUsd =
+    firstCashflowDate !== null && portfolioXirrUsd !== null
+      ? totalGrowthPctCompounded(portfolioXirrUsd, yearsBetween(firstCashflowDate, asOf))
+      : null;
+
   // Allocation by asset class (holdings only — cash is reported separately),
   // mirroring the desktop overview's allocation breakdown.
   const allocation = buildAllocation(holdings, holdingsValueEur);
@@ -608,6 +781,7 @@ export function buildDashboard(
       (latest, h) => (h.priceFallbackDate > latest ? h.priceFallbackDate : latest),
       exportAsOf,
     ),
+    lastDataPullAt: null,
     totalValueEur,
     cashValueEur,
     totalCostBasisEur,
@@ -619,6 +793,15 @@ export function buildDashboard(
     ytdGrowthPct,
     portfolioXirr,
     totalGrowthCompoundedPct,
+    totalValueUsd,
+    totalCostBasisUsd,
+    totalGainUsd,
+    totalGainPctUsd,
+    todayMoveUsd,
+    mtdGrowthPctUsd,
+    ytdGrowthPctUsd,
+    portfolioXirrUsd,
+    totalGrowthCompoundedPctUsd,
     totalDividendsEur,
     dividendYieldPct,
     fxRateEurUsd,

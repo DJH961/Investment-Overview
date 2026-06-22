@@ -285,6 +285,28 @@ export function creditsSpentWithin(log: CreditSpend[], now: number, windowMs: nu
   return log.reduce((acc, e) => (now - e.at < windowMs ? acc + e.n : acc), 0);
 }
 
+// --- Last successful data pull ---------------------------------------------
+
+const LAST_PULL_KEY = "iv.web.last_pull";
+
+/**
+ * Read the epoch-ms timestamp of the last time fresh market data actually
+ * landed from the network (a live quote or FX fetch), or null when none has
+ * been recorded yet. Persisted so the stamp survives a reload / re-open and is
+ * available on the very first (cache-only) paint — letting the UI say *when the
+ * data was last pulled* (e.g. "today", "yesterday") regardless of how old the
+ * prices themselves are.
+ */
+export function readLastPull(storage: StorageLike | null = defaultStorage()): number | null {
+  const raw = readJson<{ at?: unknown }>(storage, LAST_PULL_KEY);
+  return raw && typeof raw.at === "number" ? raw.at : null;
+}
+
+/** Persist the last-data-pull timestamp (epoch ms). */
+export function writeLastPull(at: number, storage: StorageLike | null = defaultStorage()): void {
+  writeJson(storage, LAST_PULL_KEY, { at });
+}
+
 // --- Learned NAV publish times ---------------------------------------------
 
 const NAV_PUBLISH_KEY = "iv.web.nav_publish";

@@ -12,7 +12,56 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
-## [Unreleased]
+## [3.2.0] — 2026-06-22
+
+Web companion: currency-correct growth, clearer data-freshness wording, and a
+batch of chart and tooltip fixes — all mobile-first.
+
+### Changed — web companion: growth figures now follow the display currency
+
+- **Growth, gain and XIRR are currency-dependent again.** Percentages and gains
+  on the Overview KPIs (Total gain, Total growth, XIRR, this-month / this-year
+  returns) and on each holding card (growth, P/L, XIRR) previously stayed on the
+  EUR figure even when the display was switched to USD. Because the EUR→USD rate
+  drifts between the cash-flow dates and today, EUR- and USD-denominated growth
+  genuinely differ, so the companion now exposes both and shows the one matching
+  the selected currency — mirroring the desktop's per-currency KPIs. The mobile
+  export now carries the USD primitives this needs (`cost_basis_usd` per holding,
+  `amount_usd` per cash flow, and USD period openings). When the USD figure can't
+  be derived it falls back to the EUR value.
+
+- **The Plan-tab projection input follows the display currency too.** The
+  "Annual contribution" field is now labelled with the active currency, seeds its
+  default in that currency, and converts what you type back to EUR before
+  projecting, so the projection stays consistent in USD as well as EUR.
+
+### Changed — web companion: "prices updated" footer now reports the last data pull
+
+- **The footer states when data was last pulled, not when prices are from.** The
+  per-holding "as of" chips already say when each price is from, so the footer
+  above Holdings now reports when the app last fetched live data — with a
+  "today" / "yesterday" keyword so, for example, a Sunday refresh clearly reads
+  as today's pull. The Refresh button's hover tooltip shows the same last-update
+  time.
+
+### Fixed — web companion: chart range labels, axis ticks, and the contribution line
+
+- **Charts no longer mislabel a one-year view as "All".** The equity / value
+  curve is now exported from inception, so the "All" range really does span the
+  whole history and the 1Y / 6M / 3M / 1M presets slice it correctly.
+- **The contribution line is no longer flatlined.** With the full-history curve,
+  cumulative contributions rise from zero instead of looking flat inside a
+  one-year window where existing wealth dwarfs recent contributions.
+- **Short-range charts label the x-axis by day.** A one-month view now shows day
+  ticks instead of a single month label, with an extra tick or two when there is
+  room.
+
+### Fixed — web companion: Risk-tab info tooltips no longer linger
+
+- **Tapping an info "i" now dismisses like a normal tooltip.** On touch devices a
+  pinned definition stayed on screen until tapped again; it now closes on an
+  outside tap, on Escape, or when focus leaves. On hover-capable devices the tip
+  simply follows the pointer and vanishes on mouse-leave.
 
 ### Fixed — web companion: correct USD contribution / period figures
 

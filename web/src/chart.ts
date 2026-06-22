@@ -33,13 +33,71 @@ function svgEl<K extends keyof SVGElementTagNameMap>(name: K): SVGElementTagName
   return document.createElementNS(SVG_NS, name);
 }
 
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
 /** "2026-06-19" → "Jun '26"; passes through anything unexpected. */
-function shortDate(iso: string): string {
+function monthLabel(iso: string): string {
   const m = /^(\d{4})-(\d{2})/.exec(iso);
   if (!m) return iso;
-  const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const month = names[Number(m[2]) - 1] ?? m[2];
+  const month = MONTH_NAMES[Number(m[2]) - 1] ?? m[2];
   return `${month} '${m[1].slice(2)}`;
+}
+
+/** "2026-06-19" → "19 Jun"; passes through anything unexpected. */
+function dayLabel(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return iso;
+  const month = MONTH_NAMES[Number(m[2]) - 1] ?? m[2];
+  return `${Number(m[3])} ${month}`;
+}
+
+/**
+ * Span in whole days between the first and last label, or `Infinity` when a
+ * date can't be parsed (so the caller falls back to month granularity).
+ */
+function spanDays(dates: string[]): number {
+  const a = Date.parse(dates[0]);
+  const b = Date.parse(dates[dates.length - 1]);
+  if (Number.isNaN(a) || Number.isNaN(b)) return Number.POSITIVE_INFINITY;
+  return Math.abs(b - a) / 86_400_000;
+}
+
+/**
+ * Up to `count` roughly-even indexes spanning `[0, n-1]` (always including both
+ * ends), de-duplicated. Lets the x-axis carry more ticks when space allows.
+ */
+function evenIndexes(n: number, count: number): number[] {
+  if (n <= 1) return [0];
+  const c = Math.max(2, Math.min(count, n));
+  const idx: number[] = [];
+  for (let t = 0; t < c; t += 1) idx.push(Math.round((t / (c - 1)) * (n - 1)));
+  return uniqueIndexes(idx);
+}
+
+export interface XAxisTick {
+  index: number;
+  text: string;
+  anchor: "start" | "middle" | "end";
+}
+
+/**
+ * The x-axis tick set for a date series. Short windows (≈a quarter or less) read
+ * better as day-of-month labels — "1M" should say "5 Jun … 19 Jun", not repeat
+ * the month — while wider windows keep the compact "Jun '26" month label. Up to
+ * `count` roughly-even ticks are returned (more than the old start/middle/end)
+ * so the axis is easier to read when it fits.
+ */
+export function xAxisTicks(dates: string[], count = 5): XAxisTick[] {
+  const n = dates.length;
+  if (n === 0) return [];
+  const labelFor = spanDays(dates) <= 92 ? dayLabel : monthLabel;
+  const idx = evenIndexes(n, count);
+  const last = idx[idx.length - 1];
+  return idx.map((i) => ({
+    index: i,
+    text: labelFor(dates[i]),
+    anchor: i === 0 ? "start" : i === last ? "end" : "middle",
+  }));
 }
 
 /**
@@ -107,18 +165,14 @@ export function buildLineChart(options: LineChartOptions): SVGSVGElement | null 
     svg.appendChild(label);
   }
 
-  // --- X axis: date ticks (start / middle / end) -------------------------
-  const xTickIdx = uniqueIndexes([0, Math.floor((n - 1) / 2), n - 1]);
-  for (const i of xTickIdx) {
+  // --- X axis: date ticks ------------------------------------------------
+  for (const tick of xAxisTicks(dates)) {
     const label = svgEl("text");
-    label.setAttribute("x", x(i).toFixed(1));
+    label.setAttribute("x", x(tick.index).toFixed(1));
     label.setAttribute("y", String(height - 8));
-    label.setAttribute(
-      "text-anchor",
-      i === 0 ? "start" : i === n - 1 ? "end" : "middle",
-    );
+    label.setAttribute("text-anchor", tick.anchor);
     label.setAttribute("class", "chart-axis-label");
-    label.textContent = shortDate(dates[i]);
+    label.textContent = tick.text;
     svg.appendChild(label);
   }
 

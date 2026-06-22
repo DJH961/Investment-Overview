@@ -572,3 +572,81 @@ describe("buildFetchPlan", () => {
     expect(bigFund.sizeEur).toBe(5001);
   });
 });
+
+/**
+ * Currency-dependent growth: when the EUR→USD rate has drifted between the
+ * purchase dates and now, EUR-denominated and USD-denominated growth genuinely
+ * differ. The compute layer must expose both so the UI can pick per currency.
+ */
+function makeUsdExport(): MobileExport {
+  return {
+    meta: {
+      schema_version: 1,
+      app_version: "test",
+      generated_at: "2024-06-01T00:00:00+00:00",
+      as_of: "2024-06-01",
+      display_currency: "EUR",
+      fx_pivot: "EUR",
+      fx_rate_eur_usd: "1.20",
+      currency_note: "test",
+    },
+    holdings: [
+      {
+        symbol: "EURO",
+        name: "Euro Fund",
+        asset_class: "etf",
+        broker: "Broker",
+        account: "Taxable",
+        native_currency: "EUR",
+        shares: "10",
+        cost_basis_native: "1000",
+        cost_basis_usd: "1100",
+        cumulative_dividends_cash_native: "0",
+        price_symbol: "EURO",
+        price_type: "market",
+        last_known_price_native: "120",
+        cashflows: [{ date: "2023-01-01", amount: "-1000", amount_usd: "-1100" }],
+      },
+    ],
+    portfolio_cashflows: [{ date: "2023-01-01", amount: "-1000", amount_usd: "-1100" }],
+    cash: [],
+    period_openings: {
+      month_start_value_eur: "0",
+      year_start_value_eur: "0",
+      holdings: {},
+    },
+  };
+}
+
+describe("currency-dependent growth", () => {
+  // EUR strengthened: bought at 1.10 (cost 1000 EUR = 1100 USD), now 1.20.
+  const fxNow: FxRates = { base: "EUR", rates: { USD: new Decimal("1.20") } };
+  const usdQuotes = new Map<string, Quote>([
+    ["EURO", { symbol: "EURO", price: new Decimal("120"), previousClose: new Decimal("120"), currency: "EUR" }],
+  ]);
+  const m = buildDashboard(makeUsdExport(), usdQuotes, fxNow, new Date("2024-06-01T12:00:00Z"));
+
+  it("reports different EUR and USD total growth", () => {
+    // Value 1200 EUR. EUR gain = 200 / 1000 = 20%.
+    approx(m.overview.totalGainPct, 0.2, 1e-4);
+    // Value in USD = 1200 × 1.20 = 1440; USD gain = 340 / 1100 = 30.91%.
+    approx(m.overview.totalGainPctUsd, 340 / 1100, 1e-4);
+  });
+
+  it("reports per-holding USD growth distinct from EUR", () => {
+    const h = m.holdings[0];
+    approx(h.totalGrowthPct, 0.2, 1e-4);
+    approx(h.totalGrowthPctUsd, 340 / 1100, 1e-4);
+    expect(h.costBasisUsd?.toNumber()).toBeCloseTo(1100, 4);
+    expect(h.valueUsd?.toNumber()).toBeCloseTo(1440, 4);
+  });
+
+  it("computes a USD XIRR that differs from the EUR XIRR", () => {
+    expect(m.overview.portfolioXirr).not.toBeNull();
+    expect(m.overview.portfolioXirrUsd).not.toBeNull();
+    expect(m.overview.portfolioXirrUsd!.toNumber()).not.toBeCloseTo(
+      m.overview.portfolioXirr!.toNumber(),
+      4,
+    );
+  });
+});
