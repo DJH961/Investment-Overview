@@ -17,7 +17,14 @@ from investment_dashboard.models import ALL_METADATAS, Base
 
 config = context.config
 
-if config.config_file_name is not None:
+# Only let Alembic (re)configure logging when it is run *standalone* from the
+# CLI. When the app boot sequence drives the upgrade it sets the
+# ``embedded`` attribute: the app has already called ``configure_logging`` and
+# wraps ``stderr`` to surface failures in-app, so letting Alembic's
+# ``fileConfig`` re-bind a ``StreamHandler`` to ``sys.stderr`` would (a) clobber
+# the app's logging setup and (b) spray benign migration INFO lines onto stderr,
+# where they get mis-reported as "Recent errors" in the Data Health screen.
+if config.config_file_name is not None and not config.attributes.get("embedded"):
     fileConfig(config.config_file_name)
 
 # Inject the runtime DB URL so the user doesn't have to maintain two configs.
