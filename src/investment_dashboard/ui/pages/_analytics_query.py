@@ -126,14 +126,15 @@ def _build_curve(
     Benchmark closes are forward-filled across weekends and holidays from the
     most recent available print.
     """
-    # Cashflows by date for the cumulative-contributions overlay.
+    # Cashflows by date for the cumulative-contributions overlay. Counts the
+    # same external-flow kinds as the rest of the app (deposits/withdrawals *and*
+    # transfer_in/transfer_out) so the contributions line tracks real funding
+    # instead of staying flat when money enters via a transfer rather than a
+    # plain deposit. See metrics_service.EXTERNAL_FLOW_KINDS.
     txns = list(transactions_repo.list_transactions(session, end=end))
     contribs_by_date: dict[date, Decimal] = {}
     for t in txns:
-        if t.kind not in {
-            TransactionKind.DEPOSIT.value,
-            TransactionKind.WITHDRAWAL.value,
-        }:
+        if t.kind not in metrics_service.EXTERNAL_FLOW_KINDS:
             continue
         amt = t.net_eur if t.net_eur is not None else (t.net_native or ZERO)
         contribs_by_date[t.date] = contribs_by_date.get(t.date, ZERO) + amt

@@ -72,6 +72,8 @@ function overview(extra: Partial<OverviewView> = {}): OverviewView {
     fxMissingCurrencies: [],
     totalValueIsComplete: true,
     liveDegradedReason: null,
+    dailyCreditsUsed: null,
+    dailyCreditLimit: 800,
     ...extra,
   };
 }

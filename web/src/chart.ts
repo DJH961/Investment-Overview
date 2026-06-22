@@ -125,13 +125,12 @@ export function buildLineChart(options: LineChartOptions): SVGSVGElement | null 
   for (const s of series) {
     for (const v of s.values) if (v !== null) allValues.push(v.toNumber());
   }
-  let min = Math.min(...allValues);
-  let max = Math.max(...allValues);
-  if (min === max) {
-    // Flat series: pad the range so the line sits in the middle.
-    min -= 1;
-    max += 1;
-  }
+  // "Nice" rounded bounds + step so the y-axis gridlines land on tidy round
+  // numbers (e.g. 30k, 32.5k, 35k) instead of arbitrary fractions of the raw
+  // data range, while keeping the same compact label width.
+  const axis = niceAxis(Math.min(...allValues), Math.max(...allValues));
+  const min = axis.min;
+  const max = axis.max;
   const span = max - min;
 
   const x = (i: number): number => padL + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
@@ -144,9 +143,9 @@ export function buildLineChart(options: LineChartOptions): SVGSVGElement | null 
   svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
 
   // --- Y axis: gridlines + value labels ----------------------------------
-  const ticks = 4;
-  for (let t = 0; t <= ticks; t += 1) {
-    const value = min + (span * t) / ticks;
+  // One gridline per "nice" tick value, so the labels read as round numbers and
+  // there are a few more of them (more exact) without widening the axis.
+  for (const value of axis.ticks) {
     const yy = y(value);
     const grid = svgEl("line");
     grid.setAttribute("x1", String(padL));
@@ -219,4 +218,63 @@ function linePath(
 
 function uniqueIndexes(idx: number[]): number[] {
   return [...new Set(idx)].filter((i) => i >= 0).sort((a, b) => a - b);
+}
+
+/** A "nice" value axis: rounded bounds, a round step, and the tick values. */
+export interface NiceAxis {
+  min: number;
+  max: number;
+  step: number;
+  ticks: number[];
+}
+
+/**
+ * Compute a "nice" value axis for `[dataMin, dataMax]`: rounded bounds and a
+ * step drawn from the 1 / 2 / 5 × 10ⁿ family, so gridline labels land on tidy
+ * round numbers (e.g. 30k, 32k, 34k) instead of arbitrary fractions of the raw
+ * data range. Aims for about `targetTicks` intervals and keeps the tick set
+ * small so the y-axis stays narrow. Degenerate/flat input returns a unit band
+ * centred on the value so the line still sits mid-plot.
+ */
+export function niceAxis(dataMin: number, dataMax: number, targetTicks = 4): NiceAxis {
+  if (!Number.isFinite(dataMin) || !Number.isFinite(dataMax) || dataMin === dataMax) {
+    const c = Number.isFinite(dataMin) ? dataMin : 0;
+    return { min: c - 1, max: c + 1, step: 1, ticks: [c - 1, c, c + 1] };
+  }
+  const step = niceNum((dataMax - dataMin) / Math.max(1, targetTicks), true);
+  const min = Math.floor(dataMin / step) * step;
+  const max = Math.ceil(dataMax / step) * step;
+  // Derive the count from the rounded bounds so floating-point drift across
+  // many steps can't drop or duplicate the final tick.
+  const count = Math.max(1, Math.round((max - min) / step));
+  const ticks: number[] = [];
+  for (let i = 0; i <= count; i += 1) ticks.push(min + i * step);
+  return { min, max, step, ticks };
+}
+
+/**
+ * Round `value` up to the nearest "nice" number (1 / 2 / 5 × 10ⁿ). With
+ * `round` true it snaps to the *nearest* nice number rather than the ceiling,
+ * which gives a tick step closest to the requested granularity.
+ */
+function niceNum(value: number, round: boolean): number {
+  if (value <= 0) return 1;
+  const exp = Math.floor(Math.log10(value));
+  const frac = value / 10 ** exp;
+  let niceFrac: number;
+  if (round) {
+    if (frac < 1.5) niceFrac = 1;
+    else if (frac < 3) niceFrac = 2;
+    else if (frac < 7) niceFrac = 5;
+    else niceFrac = 10;
+  } else if (frac <= 1) {
+    niceFrac = 1;
+  } else if (frac <= 2) {
+    niceFrac = 2;
+  } else if (frac <= 5) {
+    niceFrac = 5;
+  } else {
+    niceFrac = 10;
+  }
+  return niceFrac * 10 ** exp;
 }

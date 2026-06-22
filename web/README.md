@@ -152,7 +152,20 @@ game**. Everything slow happens *after* you're already looking at your numbers:
   fast as the rate limit allows. Once nothing is deferred it relaxes to a slow,
   rate-limit-friendly cadence, and it **pauses entirely while the tab is hidden**
   (then does one cheap, cache-first refresh when you return), so nothing is
-  wasted in the background.
+  wasted in the background. As the **rolling daily credit budget** runs low the
+  cadence **stretches out automatically** (`dailyBudgetSlowdown`) so a long day
+  paces itself instead of exhausting the free tier early; the footer shows how
+  much of the daily budget is used, and a banner warns when you're close to — or
+  over — the limit.
+- **Live, rotating update animation.** Every refresh (manual *or* automatic)
+  visibly **spins the Refresh glyph** while data loads — not just a silent
+  pop-up. For a portfolio larger than the per-minute cap, which can only be
+  priced over several burst rounds, the indicator stays on **between** rounds
+  and shows a live **"N of M"** fill count, so the unavoidable staging reads as
+  continuous progress rather than an update that can never finish in one go.
+  Because that progress is now self-evident, the app no longer raises an alarming
+  banner for the ordinary "still filling in" case — only genuine stalls (a fetch
+  error, or the daily budget spent) surface one.
 
 ## Free-tier economy (Twelve Data)
 
@@ -200,14 +213,19 @@ To stay comfortably inside that budget the app (`src/cache.ts`, `src/quotes.ts`)
    at most the credits left in the current minute/day windows and **defers** any
    overflow symbols to their last cached (or exported last-known) value,
    refreshing them on a later update. A larger portfolio therefore fills in over
-   a few refreshes instead of 429-ing.
+   a few refreshes instead of 429-ing — surfaced live in the update indicator as
+   an **"N of M"** fill count. As the **daily** window is consumed the
+   auto-refresh cadence stretches out (and a banner warns near/over the cap) so
+   the remaining budget lasts the day.
 3. **Retries a 429/5xx/network blip** with capped exponential backoff (honouring
    any `Retry-After` header) before giving up.
 4. **Degrades, never dead-ends**: whatever can't be fetched falls back to cached
-   / exported values and a non-blocking banner explains exactly what is stale and
-   why (e.g. *"3 symbols deferred to stay within your free-tier limit"*). Only a
-   genuine config error (a rejected/over-quota API key) shows the blocking error
-   screen with a route to Settings.
+   / exported values. The ordinary "still filling in over a few burst rounds"
+   case is shown as the live update indicator's progress count rather than a
+   warning; a non-blocking banner is reserved for genuine problems (a fetch
+   error, FX trouble, or the daily budget being close/spent) and explains exactly
+   what is stale and why. Only a genuine config error (a rejected/over-quota API
+   key) shows the blocking error screen with a route to Settings.
 
 The freshness of the data is shown **at the very top**, by the total value: the
 exact market **time** when it was pulled live today (a stock/ETF tick), or a

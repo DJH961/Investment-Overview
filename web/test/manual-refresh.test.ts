@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { manualRefreshSummary } from "../src/app";
+import { liveRefreshProgress, manualRefreshSummary } from "../src/app";
 import type { QuoteLoadReport } from "../src/quotes";
 import { PriceError } from "../src/prices";
 
@@ -45,5 +45,24 @@ describe("manualRefreshSummary", () => {
     expect(manualRefreshSummary(report({ error: err, deferred: ["AAPL"] }))).toBe(
       "Couldn't reach live prices — showing last known values",
     );
+  });
+});
+
+describe("liveRefreshProgress", () => {
+  it("counts freshly-fetched and cache-fresh symbols as live out of the total", () => {
+    const p = liveRefreshProgress(
+      report({ fetched: ["AAPL", "MSFT"], servedFresh: ["VWCE"], deferred: ["NVDA", "AMD"] }),
+    );
+    expect(p).toEqual({ live: 3, total: 5 });
+  });
+
+  it("is complete (live === total) when nothing is deferred", () => {
+    const p = liveRefreshProgress(report({ fetched: ["AAPL"], servedFresh: ["MSFT"] }));
+    expect(p).toEqual({ live: 2, total: 2 });
+  });
+
+  it("reports zero live while everything is still deferred", () => {
+    const p = liveRefreshProgress(report({ deferred: ["A", "B", "C"] }));
+    expect(p).toEqual({ live: 0, total: 3 });
   });
 });

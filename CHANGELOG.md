@@ -12,6 +12,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [3.2.1] — 2026-06-22
+
+Web companion: a batch of mobile-first UI polish around the chart axis, the live
+update animation, and free-tier budget awareness, plus a desktop equity-curve fix.
+
+### Changed — web companion
+
+- **Chart Y-axis now uses "nice" round ticks.** The growth chart picks evenly
+  spaced, human-friendly gridline values (1/2/5 × 10ⁿ family) instead of the raw
+  data min/max, giving more exact number ticks without widening the axis gutter.
+- **The update indicator now actually animates and shows real progress.** The
+  Refresh glyph spins for every update (not just manual ones) and stays alive
+  across the per-minute burst rounds, filling in an "N of M symbols" count so a
+  large watchlist that can't refresh in one free-tier minute still feels alive.
+  The deferral banner is calmer and explains symbols will keep filling in.
+- **Daily free-tier budget is now paced and surfaced.** Refresh cadence eases off
+  automatically as the day's credit usage approaches the 800/day cap, the footer
+  shows "Live-data budget today: X / Y credits used", and the status line warns
+  when usage is very close to or over the limit.
+
+### Fixed — desktop analytics
+
+- **Contribution equity curve no longer stays flat for transfer-funded
+  portfolios.** The analytics equity curve now counts `transfer_in`/`transfer_out`
+  as external contributions/withdrawals (matching the metrics service), so
+  accounts funded via transfers show a rising contribution line.
+
 ## [3.2.0] — 2026-06-22
 
 Web companion: currency-correct growth, clearer data-freshness wording, and a
