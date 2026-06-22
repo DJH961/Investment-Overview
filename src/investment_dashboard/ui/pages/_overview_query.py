@@ -863,17 +863,23 @@ class HoldingFreshness:
     updated_at: datetime | None
     is_money_market: bool
     market_open: bool = False
+    #: When the served price was last struck on the exchange (the provider's
+    #: ``regularMarketTime``) — *when the price is from*, distinct from
+    #: ``updated_at`` (*when we pulled it*). ``None`` when the provider does not
+    #: publish it (or for money-market par rows).
+    price_market_time: datetime | None = None
 
 
 def holding_freshness(session: Session, positions: list[Position]) -> dict[int, HoldingFreshness]:
     """Per-instrument price freshness for the held ``positions`` (cache tier).
 
-    Batches the two cache-tier lookups (latest print date + last-refreshed
-    timestamp) once for every held instrument instead of per row.
+    Batches the cache-tier lookups (latest print date + last-refreshed timestamp
+    + provider market time) once for every held instrument instead of per row.
     """
     ids = [p.instrument.id for p in positions]
     as_of_dates = prices_service.latest_price_dates_for(session, ids)
     refreshed = prices_service.last_refreshed_at_for(session, ids)
+    market_times = prices_service.market_time_for(session, ids)
     out: dict[int, HoldingFreshness] = {}
     for p in positions:
         iid = p.instrument.id
@@ -886,6 +892,7 @@ def holding_freshness(session: Session, positions: list[Position]) -> dict[int, 
             updated_at=None if is_mm else refreshed.get(iid),
             is_money_market=is_mm,
             market_open=(False if is_mm else is_us_market_open()),
+            price_market_time=None if is_mm else market_times.get(iid),
         )
     return out
 

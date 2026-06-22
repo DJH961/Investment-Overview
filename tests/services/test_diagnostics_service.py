@@ -83,6 +83,31 @@ class TestHealthReportAggregation:
         assert missing.severity == "ok"
         assert missing.count == 0
 
+    def test_recent_price_is_not_stale(self, session: Session) -> None:
+        # A close from today reflects the latest session, so it must never be
+        # flagged stale just because it is past the short internal refresh TTL
+        # (the bug the user kept hitting: a permanent warning they can't clear).
+        instr = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
+        prices_repo.upsert_closes(session, instr.id, {date.today(): Decimal("100")})
+        session.commit()
+
+        report = diagnostics_service.check_health(session)
+
+        assert not any(i.key == "prices_stale" for i in report.items)
+
+    def test_genuinely_old_price_is_flagged_stale(self, session: Session) -> None:
+        # A close that predates the last completed trading day is genuinely
+        # stale — a fresh price failed to land — so it is surfaced as a warning.
+        instr = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
+        prices_repo.upsert_closes(session, instr.id, {date(2020, 1, 6): Decimal("100")})
+        session.commit()
+
+        report = diagnostics_service.check_health(session)
+
+        stale = next(i for i in report.items if i.key == "prices_stale")
+        assert stale.severity == "warning"
+        assert "VTI" in stale.examples
+
     def test_missing_fx_leg_is_flagged(self, session: Session) -> None:
         account_id = _account(session, native="USD")
         # A row written before the leg-freeze: net_usd / net_eur are NULL.

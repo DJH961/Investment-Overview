@@ -481,6 +481,11 @@ def _ensure_secondary_tier_schema() -> None:
 
     ConfigBase.metadata.create_all(get_config_engine())
     CacheBase.metadata.create_all(get_cache_engine())
+    # Alembic migrated the ledger tier only; add post-creation columns the
+    # config + cache tiers gained later (v3.5.3 target settings, v3.6.3 price
+    # market time) to their separate split-DB files. No-op in single-file mode.
+    _ensure_added_columns(get_config_engine())
+    _ensure_added_columns(get_cache_engine())
     log.info("split-DB: ensured config + cache tier schema after Alembic upgrade")
     # Give each secondary tier its own alembic_version baseline.
     _stamp_secondary_tiers()
@@ -528,6 +533,9 @@ def _ensure_schema_present() -> None:
     # touches. Run the guard against the config engine too (a harmless repeat in
     # single-file mode where it aliases the ledger DB).
     _ensure_added_columns(get_config_engine())
+    # ``price_cache_metadata.price_market_time`` (v3.6.3) lives in the cache
+    # tier — a third separate file in split-DB mode — so guard that engine too.
+    _ensure_added_columns(get_cache_engine())
     log.info("Database schema ensured via create_all (Alembic migrations unavailable)")
 
 
@@ -542,6 +550,7 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("target_allocations", "allow_sell", "BOOLEAN NOT NULL DEFAULT 0"),
     ("target_allocations", "display_currency", "VARCHAR(3)"),
     ("target_allocation_items", "no_buy", "BOOLEAN NOT NULL DEFAULT 0"),
+    ("price_cache_metadata", "price_market_time", "DATETIME"),
 )
 
 

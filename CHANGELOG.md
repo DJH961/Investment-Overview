@@ -12,6 +12,54 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [3.6.3] — 2026-06-22
+
+The settled-day caption is dated by the market, not by our fetch.
+
+### Changed
+
+- **Daily Growth caption stamps the *market* time a settled price is from.**
+  In the "TODAY" state (US market closed, today's close already in) the caption
+  previously stamped *when we pulled* the price — which simply echoed the
+  visible refresh time. It now stamps **when the price is from on the exchange**:
+  the data provider's market time (yfinance's `regularMarketTime`, e.g. the
+  moment a mutual fund's NAV finally publishes), with our own pull instant
+  trailing as "· updated HH:MM". So a settled figure reads, for example,
+  "as of 21:59 · updated 22:16" in your display timezone. When the provider
+  publishes no market time the caption falls back to the pull instant and then
+  to the modelled 16:00 session close, and the clock is still omitted while the
+  session is *live* (where it would merely echo the "· live" flag).
+
+### Added
+
+- **Per-instrument provider market time is cached.** The live price refresh now
+  records yfinance's `regularMarketTime` alongside the pull timestamp in a new
+  nullable `price_cache_metadata.price_market_time` column (Alembic migration
+  0013, with a boot `create_all` guard for packaged installs). The capture is
+  best-effort and isolated — a quote-timing hiccup never disturbs the price
+  refresh.
+
+## [3.6.2] — 2026-06-22
+
+A clearer Daily Growth caption.
+
+### Fixed
+
+- **Daily Growth caption stamps when a settled price is from.** When the US
+  market is closed but today's close is already in (the "TODAY" state), the
+  caption now stamps *when the price is from* — the moment we last pulled it
+  from the data provider, e.g. "as of 22:07" in your display timezone — instead
+  of the vague "as of today" (falling back to the modelled 16:00 session close
+  when no pull time is recorded). The clock is omitted only while the session is
+  *live*, where it would merely echo the "· live" flag.
+- **Exchange rate kept under Daily Growth, just tightened — now with its move.**
+  The display-relative spot is no longer dropped from the caption; it returns in
+  a compact form with its percentage change versus the prior trading day
+  (`€1≈$1.0830 (+0.10%)` for USD users, `$1≈€0.9234 (−0.10%)` for EUR users).
+  The move is a *percentage only* (no absolute) and reads live while the session
+  is open, dropping the verbose absolute/“live FX” detail that made the line
+  noisy.
+
 ## [3.6.1] — 2026-06-22
 
 A calmer, more legible Analytics tab.

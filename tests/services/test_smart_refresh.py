@@ -87,3 +87,45 @@ def test_refresh_due_prices_stamps_even_without_new_closes(session: Session, mon
     assert result == {"VTI": 0}
     stamped = price_cache_repo.get_last_refreshed_at_map(session, [instr.id])
     assert stamped[instr.id] == now
+
+
+def test_refresh_due_prices_stamps_provider_market_time(session: Session, monkeypatch) -> None:
+    """The live refresh records yfinance's market time (when the price is from),
+    surfaced via ``market_time_for`` so the settled-today caption can date the
+    figure by the exchange rather than by our pull instant."""
+    instr = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
+    stale = _utc_naive(datetime.now(UTC)) - timedelta(hours=1)
+    price_cache_repo.upsert_last_refreshed_at(session, instr.id, stale)
+    session.flush()
+
+    monkeypatch.setattr(prices_service, "fetch_closes", lambda *a, **k: {"VTI": {}})
+    market = datetime(2024, 6, 24, 19, 59)
+    monkeypatch.setattr(prices_service, "fetch_market_times", lambda symbols: {"VTI": market})
+
+    now = _utc_naive(datetime.now(UTC))
+    prices_service.refresh_due_prices(session, now=now)
+
+    # Pull time and market time are recorded separately.
+    assert prices_service.last_refreshed_at_for(session, [instr.id])[instr.id] == now
+    assert prices_service.market_time_for(session, [instr.id])[instr.id] == market
+
+
+def test_refresh_due_prices_tolerates_market_time_failure(session: Session, monkeypatch) -> None:
+    """A market-time lookup failure must never break the price refresh itself."""
+    instr = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
+    stale = _utc_naive(datetime.now(UTC)) - timedelta(hours=1)
+    price_cache_repo.upsert_last_refreshed_at(session, instr.id, stale)
+    session.flush()
+
+    monkeypatch.setattr(prices_service, "fetch_closes", lambda *a, **k: {"VTI": {}})
+
+    def boom(symbols):  # type: ignore[no-untyped-def]
+        raise RuntimeError("quote endpoint down")
+
+    monkeypatch.setattr(prices_service, "fetch_market_times", boom)
+
+    now = _utc_naive(datetime.now(UTC))
+    # The refresh still succeeds and stamps the pull time.
+    assert prices_service.refresh_due_prices(session, now=now) == {"VTI": 0}
+    assert prices_service.last_refreshed_at_for(session, [instr.id])[instr.id] == now
+    assert prices_service.market_time_for(session, [instr.id]) == {}
