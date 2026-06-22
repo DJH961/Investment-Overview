@@ -27,6 +27,8 @@ export interface LineChartOptions {
   /** ISO `YYYY-MM-DD` labels, one per index, shared by every series. */
   dates: string[];
   series: ChartSeries[];
+  /** Optional custom formatter for y-axis labels. Defaults to formatCurrencyShort. */
+  yAxisLabel?: (value: number) => string;
 }
 
 function svgEl<K extends keyof SVGElementTagNameMap>(name: K): SVGElementTagNameMap[K] {
@@ -106,6 +108,7 @@ export function xAxisTicks(dates: string[], count = 5): XAxisTick[] {
  */
 export function buildLineChart(options: LineChartOptions): SVGSVGElement | null {
   const { dates, series } = options;
+  const yAxisLabel = options.yAxisLabel ?? ((v: number) => formatCurrencyShort(seriesValueAt(series, v)));
   const n = dates.length;
   const primary = series[0]?.values ?? [];
   const plottable = primary.filter((v) => v !== null).length;
@@ -160,7 +163,7 @@ export function buildLineChart(options: LineChartOptions): SVGSVGElement | null 
     label.setAttribute("y", (yy + 3).toFixed(1));
     label.setAttribute("text-anchor", "end");
     label.setAttribute("class", "chart-axis-label");
-    label.textContent = formatCurrencyShort(seriesValueAt(series, value));
+    label.textContent = yAxisLabel(value);
     svg.appendChild(label);
   }
 

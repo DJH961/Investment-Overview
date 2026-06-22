@@ -20,9 +20,20 @@ import {
   type PeriodsView,
   type PlanView,
   type RiskMetric,
-  projectForward,
-  PROJECTION_SCENARIOS,
+  computeDrawdownSeries,
 } from "./phase4";
+import {
+  bandRates,
+  finalPoint,
+  requiredContribution,
+  simulate,
+  timeToTarget,
+  totalContributed,
+  type ProjectionParams,
+  SCENARIO_EXPECTED,
+  SCENARIO_OPTIMISTIC,
+  SCENARIO_PESSIMISTIC,
+} from "./projection";
 import {
   formatAsOf,
   formatLastPull,
@@ -489,7 +500,7 @@ export function renderDashboard(
     { id: "overview", label: "Overview", glyph: "◎", panel: renderOverviewPanel(model) },
     { id: "periods", label: "Periods", glyph: "▦", panel: renderPeriodsPanel(model.periods, model.deposits) },
     { id: "analytics", label: "Risk", glyph: "📈", panel: renderAnalyticsPanel(model.analytics) },
-    { id: "plan", label: "Plan", glyph: "🧭", panel: renderPlanPanel(model.plan) },
+    { id: "plan", label: "Calculator", glyph: "🧮", panel: renderCalculatorPanel(model.plan) },
   ];
 
   const { nav, content } = renderTabs(tabs);
@@ -909,8 +920,12 @@ function daysBetween(a: string, b: string): number {
  * small button group that re-slices the same series to the chosen look-back and
  * redraws in place (no re-fetch; purely a view of the already-loaded points).
  */
-function chartWithTimeframe(dates: string[], series: ChartSeries[]): HTMLElement | null {
-  const full = buildLineChart({ dates, series });
+function chartWithTimeframe(
+  dates: string[],
+  series: ChartSeries[],
+  chartOpts: { yAxisLabel?: (v: number) => string } = {},
+): HTMLElement | null {
+  const full = buildLineChart({ dates, series, ...chartOpts });
   if (!full) return null;
   const wrap = h("div", { class: "chart-wrap" }, [full as unknown as HTMLElement]);
 
@@ -934,7 +949,7 @@ function chartWithTimeframe(dates: string[], series: ChartSeries[]): HTMLElement
     }
     const slicedDates = dates.slice(start);
     const slicedSeries = series.map((s) => ({ ...s, values: s.values.slice(start) }));
-    const chart = buildLineChart({ dates: slicedDates, series: slicedSeries });
+    const chart = buildLineChart({ dates: slicedDates, series: slicedSeries, ...chartOpts });
     if (chart) wrap.replaceChildren(chart as unknown as HTMLElement);
     buttons.forEach((button, i) => {
       const active = i === index;
@@ -1028,6 +1043,44 @@ function legendItem(seriesClass: string, label: string): HTMLElement {
   return h("span", { class: "legend-item" }, [
     h("span", { class: `legend-swatch ${seriesClass}`, "aria-hidden": "true" }, []),
     label,
+  ]);
+}
+
+/**
+ * The Risk-tab drawdown (underwater) chart.
+ *
+ * Computes the running-peak drawdown series from the equity curve and plots
+ * it as a filled area (always ≤ 0) using the same SVG chart infrastructure
+ * as the equity curve. The y-axis is labelled in percent rather than currency.
+ * Returns null when there is insufficient data.
+ */
+function renderDrawdownChart(curve: AnalyticsView["curve"]): HTMLElement | null {
+  const dd = computeDrawdownSeries(curve);
+  // Only keep points where drawdown is defined and filter to those with usable dates.
+  const points = dd.filter((p) => p.drawdown !== null);
+  if (points.length < 2) return null;
+
+  const dates = points.map((p) => p.date);
+  const values: Array<Decimal | null> = points.map((p) => p.drawdown);
+
+  // Format y-axis as signed percent (e.g. "−15.3%").
+  const pctLabel = (v: number): string => {
+    const pct = (v * 100).toFixed(1);
+    return v < 0 ? `−${Math.abs(Number(pct))}%` : `${pct}%`;
+  };
+
+  const chart = chartWithTimeframe(dates, [{ values, className: "series-drawdown", area: true }], { yAxisLabel: pctLabel });
+  if (!chart) return null;
+
+  return h("section", { class: "card drawdown" }, [
+    h("div", { class: "section-head" }, [
+      h("h2", {}, ["Drawdown"]),
+      h("span", { class: "muted" }, ["underwater from peak"]),
+    ]),
+    chart,
+    h("div", { class: "chart-legend" }, [
+      legendItem("series-drawdown", "Drawdown from peak"),
+    ]),
   ]);
 }
 
@@ -1132,6 +1185,8 @@ function renderAnalyticsPanel(analytics: AnalyticsView | null): HTMLElement {
 
   const curve = renderEquityCurve(analytics.curve, analytics.benchmarkSymbol);
   if (curve) children.push(curve);
+  const drawdown = renderDrawdownChart(analytics.curve);
+  if (drawdown) children.push(drawdown);
   const attribution = renderAttribution(analytics.attribution);
   if (attribution) children.push(attribution);
 
@@ -1152,107 +1207,269 @@ function numberField(label: string, value: string, attrs: Attrs): { wrap: HTMLEl
 }
 
 /**
- * The forward-projection calculator. Seeded from the live total value and the
- * average historical yearly contribution, it recomputes (in-browser, no
- * network) as the user adjusts the years and annual-contribution inputs.
+ * The full Calculator tab, replacing the old Plan panel.
+ *
+ * All inputs are seeded from the encrypted export blob (starting value from
+ * the live portfolio total, contribution from average historical contribution,
+ * expected return from the portfolio XIRR). The user can adjust everything;
+ * the simulation re-runs in-browser on each keystroke with no network call.
+ *
+ * Mirrors the desktop's _projection_view / _projection_model (req 11).
  */
-function renderPlanPanel(plan: PlanView): HTMLElement {
-  const baseYear = plan.baseYear;
-  // The projection runs in EUR, but the user sees and types in the active
-  // display currency — so seed the default and the field label in that currency
-  // and convert what they enter back to EUR before projecting.
-  const defaultContribution = convertFromEur(plan.defaultAnnualContributionEur);
-  const displayCode = defaultContribution.code;
-  const defaultContributionDisplay = defaultContribution.value.toDecimalPlaces(0).toString();
+function renderCalculatorPanel(plan: PlanView): HTMLElement {
+  // The calculator runs in EUR internally; the user types in the active display
+  // currency and the values are converted before simulating.
+  const displayCurrency = getDisplayCurrency();
+  const isUsd = displayCurrency === "USD";
 
-  const years = numberField("Years", "10", { min: "1", max: "40", step: "1" });
-  const contribution = numberField(`Annual contribution (${displayCode})`, defaultContributionDisplay, {
-    min: "0",
-    step: "100",
-  });
+  // Seed the expected rate from the portfolio XIRR (EUR or USD depending on
+  // which display currency is active; fall back to FALLBACK_EXPECTED_RATE).
+  const seedRate = isUsd && plan.expectedRateUsd !== null
+    ? plan.expectedRateUsd
+    : plan.expectedRateEur;
+  const seedRatePct = seedRate.times(100).toDecimalPlaces(2).toString();
 
-  const summaryOut = h("div", { class: "plan-summary-wrap" }, []);
-  const tableOut = h("div", { class: "plan-table-wrap" }, []);
+  // Seed contribution from the average historical value (monthly or yearly).
+  // The horizon default is yearly (10 years / 120 months).
+  let monthly = false;
+  const seedYearlyContrib = convertFromEur(plan.defaultAnnualContributionEur);
+  const seedMonthlyContrib = convertFromEur(plan.defaultMonthlyContributionEur);
+  const code = seedYearlyContrib.code;
 
+  const getDefaultContrib = (): string =>
+    monthly
+      ? seedMonthlyContrib.value.toDecimalPlaces(0).toString()
+      : seedYearlyContrib.value.toDecimalPlaces(0).toString();
+
+  // --- Controls ---
+  const expectedRate = numberField(`Expected return % p.a.`, seedRatePct, { min: "-50", max: "40", step: "0.1" });
+  const band = numberField("± band (pp)", "3.0", { min: "0", max: "30", step: "0.5" });
+  const contribution = numberField(
+    `Contribution / period (${code})`,
+    getDefaultContrib(),
+    { min: "0", step: "10" },
+  );
+  const stepUp = numberField("Annual step-up %", "0", { min: "0", max: "100", step: "0.5" });
+  const inflation = numberField("Inflation %", "2.0", { min: "0", max: "30", step: "0.1" });
+  const target = numberField(`Target value (${code})`, "0", { min: "0", step: "1000" });
+
+  // Horizon: years (1–40) or months (1–480), default 10y / 120m.
+  const horizonInput = numberField("Horizon", "10", { min: "1", max: "40", step: "1" });
+
+  // Period toggle (yearly / monthly).
+  const btnYearly = h("button", { class: "chart-range-btn active", type: "button" }, ["Yearly"]) as HTMLButtonElement;
+  const btnMonthly = h("button", { class: "chart-range-btn", type: "button" }, ["Monthly"]) as HTMLButtonElement;
+  btnYearly.setAttribute("aria-pressed", "true");
+  btnMonthly.setAttribute("aria-pressed", "false");
+
+  // "Today's money" (real / nominal) toggle.
+  const realToggleInput = h("input", { type: "checkbox", id: "calc-real" }) as HTMLInputElement;
+  const realToggle = h("label", { class: "calc-toggle-label", for: "calc-real" }, [
+    realToggleInput,
+    " Show in today's money (real)",
+  ]);
+
+  // Output containers.
+  const kpiOut = h("div", { class: "calc-kpi-wrap" }, []);
+  const goalOut = h("div", { class: "calc-goal-wrap" }, []);
+  const tableOut = h("div", { class: "calc-table-wrap" }, []);
+
+  // --- Core simulation ---
   const recompute = (): void => {
-    const yearsValue = Math.max(1, Math.min(40, Math.round(Number(years.input.value) || 0)));
-    const contribDisplay = Math.max(0, Number(contribution.input.value) || 0);
-    const contribInput = new Decimal(contribDisplay);
-    const contribEur = displayCode === "EUR" ? contribInput : convertToEur(contribInput);
-    const rows = projectForward(plan.startingValueEur, contribEur, yearsValue, baseYear);
-    renderProjection(summaryOut, tableOut, rows, plan.startingValueEur);
+    const ratePct = parseFloat(expectedRate.input.value) || 7;
+    const bandPpt = Math.max(0, parseFloat(band.input.value) || 3);
+    const stepUpPct = Math.max(0, parseFloat(stepUp.input.value) || 0);
+    const inflationPct = Math.max(0, parseFloat(inflation.input.value) || 0);
+    const horizonRaw = Math.max(1, parseInt(horizonInput.input.value) || (monthly ? 120 : 10));
+    const periods = monthly ? Math.min(horizonRaw, 480) : Math.min(horizonRaw, 40);
+    const periodsPerYear = monthly ? 12 : 1;
+
+    // Parse contribution and target in display currency, convert to EUR.
+    const contribDisplay = Math.max(0, parseFloat(contribution.input.value) || 0);
+    const contribEur = isUsd
+      ? convertToEur(new Decimal(contribDisplay))
+      : new Decimal(contribDisplay);
+
+    const targetDisplay = Math.max(0, parseFloat(target.input.value) || 0);
+    const targetEur = isUsd
+      ? convertToEur(new Decimal(targetDisplay))
+      : new Decimal(targetDisplay);
+
+    const useReal = realToggleInput.checked;
+
+    const expectedDecimal = new Decimal(ratePct).dividedBy(100);
+    const bandDecimal = new Decimal(bandPpt).dividedBy(100);
+    const rates = bandRates(expectedDecimal, bandDecimal);
+
+    const params: ProjectionParams = {
+      startingValue: plan.startingValueEur,
+      baseContribution: contribEur,
+      periods,
+      periodsPerYear,
+      annualRates: rates,
+      annualContributionGrowth: new Decimal(stepUpPct).dividedBy(100),
+      inflationRate: new Decimal(inflationPct).dividedBy(100),
+      start: new Date(Date.UTC(plan.baseYear, 0, 1)),
+    };
+
+    const result = simulate(params);
+    const last = finalPoint(result);
+
+    // --- KPI cards ---
+    const scenarios = [
+      { key: SCENARIO_PESSIMISTIC, label: "Pessimistic" },
+      { key: SCENARIO_EXPECTED,    label: "Expected" },
+      { key: SCENARIO_OPTIMISTIC,  label: "Optimistic" },
+    ] as const;
+
+    const kpiCards = scenarios.map(({ key, label }) => {
+      const finalVal = last
+        ? (useReal ? last.realByScenario[key] : last.nominalByScenario[key])
+        : plan.startingValueEur;
+      const displayVal = convertFromEur(finalVal).value;
+      return h("div", { class: "stat" }, [
+        h("span", { class: "stat-label" }, [label]),
+        h("span", { class: "stat-value pos" }, [formatCurrencyWhole(displayVal)]),
+        h("span", { class: "stat-sub muted" }, [last ? `in ${last.label}` : "—"]),
+      ]);
+    });
+
+    const contribTotal = totalContributed(result);
+    const contribTotalDisplay = convertFromEur(contribEur.isZero() ? contribTotal : contribTotal).value;
+    kpiCards.push(
+      h("div", { class: "stat" }, [
+        h("span", { class: "stat-label" }, ["Contributed"]),
+        h("span", { class: "stat-value" }, [formatCurrencyWhole(contribTotalDisplay)]),
+        h("span", { class: "stat-sub muted" }, ["total new money"]),
+      ]),
+    );
+
+    kpiOut.replaceChildren(
+      h("section", { class: "stats" }, [
+        h("div", { class: "stat-grid calc-summary" }, kpiCards),
+      ]),
+    );
+
+    // --- Goal-seeking callout (only when target > 0) ---
+    if (targetEur.greaterThan(0)) {
+      const hits = timeToTarget(result, targetEur, { real: useReal });
+      const reqContrib = requiredContribution(params, targetEur);
+      const reqDisplay = reqContrib !== null
+        ? `${formatCurrencyWhole(convertFromEur(reqContrib).value)} / ${monthly ? "month" : "year"}`
+        : "not reachable in this horizon";
+
+      const hitLines = scenarios.map(({ key, label }) => {
+        const hit = hits[key];
+        const text = hit ? `${label}: ${hit.label} (${hit.years.toDecimalPlaces(1)} yr)` : `${label}: not reached`;
+        return h("div", { class: "calc-hit-row" }, [text]);
+      });
+
+      goalOut.replaceChildren(
+        h("section", { class: "card calc-goal" }, [
+          h("div", { class: "section-head" }, [
+            h("h2", {}, ["Goal"]),
+            h("span", { class: "muted" }, [`target: ${formatCurrencyWhole(convertFromEur(targetEur).value)}`]),
+          ]),
+          h("div", { class: "calc-goal-body" }, [
+            h("div", { class: "calc-hit-list" }, hitLines),
+            h("div", { class: "calc-req" }, [
+              h("span", { class: "stat-label" }, ["Needed contribution"]),
+              h("span", { class: "stat-value" }, [reqDisplay]),
+            ]),
+          ]),
+        ]),
+      );
+    } else {
+      goalOut.replaceChildren();
+    }
+
+    // --- Per-period table ---
+    // In monthly mode only show annual milestones (every 12th row) to keep the
+    // table mobile-friendly; in yearly mode show every year.
+    const tablePoints = monthly
+      ? result.points.filter((p) => p.index % 12 === 0)
+      : result.points;
+
+    const colHeaders = scenarios.map(({ label }) =>
+      h("span", { class: "proj-cell muted" }, [label.slice(0, 4)]),
+    );
+
+    const tableRows = tablePoints.map((pt) => {
+      const cells = scenarios.map(({ key }) => {
+        const v = useReal ? pt.realByScenario[key] : pt.nominalByScenario[key];
+        return h("span", { class: "proj-cell" }, [formatCurrencyWhole(convertFromEur(v).value)]);
+      });
+      return h("li", { class: "proj-row" }, [
+        h("span", { class: "proj-year" }, [pt.label]),
+        h("span", { class: "proj-contrib muted" }, [`+${formatCurrencyWhole(convertFromEur(pt.contributed).value)}`]),
+        h("div", { class: "proj-values" }, cells),
+      ]);
+    });
+
+    tableOut.replaceChildren(
+      h("section", { class: "card" }, [
+        h("div", { class: "proj-head" }, [
+          h("span", { class: "proj-year muted" }, [monthly ? "Month" : "Year"]),
+          h("span", { class: "proj-contrib muted" }, ["Contributed"]),
+          h("div", { class: "proj-values" }, colHeaders),
+        ]),
+        h("ul", { class: "proj-list" }, tableRows),
+      ]),
+    );
   };
 
-  years.input.addEventListener("input", recompute);
-  contribution.input.addEventListener("input", recompute);
+  // --- Toggle handlers ---
+  const switchMode = (toMonthly: boolean): void => {
+    if (monthly === toMonthly) return;
+    monthly = toMonthly;
+    btnYearly.classList.toggle("active", !monthly);
+    btnMonthly.classList.toggle("active", monthly);
+    btnYearly.setAttribute("aria-pressed", monthly ? "false" : "true");
+    btnMonthly.setAttribute("aria-pressed", monthly ? "true" : "false");
+    horizonInput.input.max = monthly ? "480" : "40";
+    horizonInput.input.value = monthly ? "120" : "10";
+    contribution.input.value = getDefaultContrib();
+    recompute();
+  };
 
-  const form = h("section", { class: "card plan-form" }, [
-    h("div", { class: "section-head" }, [h("h2", {}, ["Projection"]), h("span", { class: "muted" }, ["from today's value"])]),
-    h("p", { class: "note" }, [
-      `Starting from your live value of ${formatCurrency(plan.startingValueEur)}, growing at 4% / 7% / 10% a year with contributions added at year-end.`,
+  btnYearly.addEventListener("click", () => switchMode(false));
+  btnMonthly.addEventListener("click", () => switchMode(true));
+
+  // Wire all inputs to recompute.
+  for (const field of [expectedRate, band, contribution, stepUp, inflation, target, horizonInput]) {
+    field.input.addEventListener("input", recompute);
+  }
+  realToggleInput.addEventListener("change", recompute);
+
+  const form = h("section", { class: "card calc-form" }, [
+    h("div", { class: "section-head" }, [
+      h("h2", {}, ["Calculator"]),
+      h("span", { class: "muted" }, ["from today's portfolio"]),
     ]),
-    h("div", { class: "plan-fields" }, [years.wrap, contribution.wrap]),
+    h("p", { class: "note" }, [
+      `Seeded from your portfolio: starting value ${formatCurrency(plan.startingValueEur)}, ` +
+      `expected return ${seedRatePct}% p.a. (from portfolio XIRR). Adjust below.`,
+    ]),
+    h("div", { class: "calc-period-toggle" }, [
+      h("div", { class: "chart-range", role: "group", "aria-label": "Period type" }, [btnYearly, btnMonthly]),
+      realToggle,
+    ]),
+    h("div", { class: "calc-fields" }, [
+      expectedRate.wrap, band.wrap, contribution.wrap, stepUp.wrap,
+      inflation.wrap, target.wrap, horizonInput.wrap,
+    ]),
   ]);
 
   recompute();
-  return h("section", { class: "panel-stack panel-plan" }, [
+  return h("section", { class: "panel-stack panel-calc" }, [
     form,
-    summaryOut,
+    kpiOut,
+    goalOut,
     tableOut,
     h("p", { class: "disclaimer" }, [
-      "Projections are hypothetical, assume constant returns, and are not advice. Real markets vary year to year.",
+      "Projections are hypothetical, assume constant returns, and are not financial advice. Real markets vary year to year.",
     ]),
   ]);
-}
-
-function renderProjection(
-  summaryTarget: HTMLElement,
-  tableTarget: HTMLElement,
-  rows: ReturnType<typeof projectForward>,
-  startingValue: Decimal,
-): void {
-  if (rows.length === 0) {
-    summaryTarget.replaceChildren();
-    tableTarget.replaceChildren();
-    return;
-  }
-  const last = rows[rows.length - 1];
-  const cards = PROJECTION_SCENARIOS.map((rate) => {
-    const value = last.valuesByRate.get(rate) ?? startingValue;
-    const pct = `${new Decimal(rate).times(100).toNumber()}%/yr`;
-    return h("div", { class: "stat" }, [
-      h("span", { class: "stat-label" }, [pct]),
-      h("span", { class: "stat-value pos" }, [formatCurrencyWhole(value)]),
-      h("span", { class: "stat-sub muted" }, [`in ${last.year}`]),
-    ]);
-  });
-
-  const tableRows = rows.map((row) => {
-    const cells = PROJECTION_SCENARIOS.map((rate) =>
-      h("span", { class: "proj-cell" }, [formatCurrencyWhole(row.valuesByRate.get(rate) ?? startingValue)]),
-    );
-    return h("li", { class: "proj-row" }, [
-      h("span", { class: "proj-year" }, [String(row.year)]),
-      h("span", { class: "proj-contrib muted" }, [`+${formatCurrencyWhole(row.contributedEur)}`]),
-      h("div", { class: "proj-values" }, cells),
-    ]);
-  });
-
-  summaryTarget.replaceChildren(
-    h("section", { class: "stats" }, [h("div", { class: "stat-grid plan-summary" }, cards)]),
-  );
-  tableTarget.replaceChildren(
-    h("section", { class: "card" }, [
-      h("div", { class: "proj-head" }, [
-        h("span", { class: "proj-year muted" }, ["Year"]),
-        h("span", { class: "proj-contrib muted" }, ["Contributed"]),
-        h("div", { class: "proj-values" }, PROJECTION_SCENARIOS.map((rate) =>
-          h("span", { class: "proj-cell muted" }, [`${new Decimal(rate).times(100).toNumber()}%`]),
-        )),
-      ]),
-      h("ul", { class: "proj-list" }, tableRows),
-    ]),
-  );
 }
 
 /**
