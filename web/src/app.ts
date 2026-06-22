@@ -82,6 +82,16 @@ const TOAST_DURATION_MS = 4500;
 const MANUAL_REFRESH_MIN_FEEDBACK_MS = 650;
 
 /**
+ * Minimum wall-clock gap between *automatic* background blob checks while prices
+ * are still deferring. Matches the slow steady-state refresh cadence so an
+ * always-deferred portfolio (more symbols than the free-tier budget) still polls
+ * for a newer desktop export every few minutes instead of never, while the first
+ * minute or two of startup burst — which checked the blob once on unlock — isn't
+ * spammed with redundant probes.
+ */
+const BLOB_CHECK_MIN_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
  * Daily free-tier credits remaining at or below which the UI warns the user it
  * is close to the limit (and starts spacing refreshes out). Two per-minute
  * windows' worth of headroom — enough warning to be useful without nagging.
@@ -132,6 +142,15 @@ export class App {
    */
   private lastDataPullAt: number | null = readLastPull();
   /**
+   * The most recent live-coverage summary (e.g. "13/18 up to date · …"), kept so
+   * a subsequent cache-only re-paint (currency toggle, blob swap) can re-show it
+   * instead of blanking the status the user just read. Set after each live
+   * refresh; surfaced on the overview as a calm inline note.
+   */
+  private lastCoverage: string | null = null;
+  /** NAV-priced symbols from the latest fetch plan, for coverage classification. */
+  private lastNavSymbols: ReadonlySet<string> = new Set();
+  /**
    * Monotonic session token. Bumped on every unlock and on lock so that
    * in-flight background work (timers, fetches) from a previous session is
    * recognised as stale and discarded.
@@ -143,6 +162,22 @@ export class App {
   private visibilityHandler: (() => void) | null = null;
   /** Guards against overlapping price refreshes. */
   private refreshing = false;
+  /**
+   * Whether every live-priced holding was up to date as of the last network
+   * refresh. Starts true so a portfolio that prices in a single round stays
+   * quiet; it flips false the moment a round has to defer symbols (the staged
+   * fill is underway), and the false→true transition is what pops the brief
+   * "all prices live" confirmation once the last laggard catches up.
+   */
+  private pricesAllLive = true;
+  /**
+   * Wall-clock time of the last background encrypted-blob check, so the
+   * automatic "is there a newer export?" probe still runs on a slow cadence for
+   * portfolios whose prices never fully stop deferring (more symbols than the
+   * free-tier budget). Without this throttle such portfolios would burst
+   * forever and never auto-detect new data.
+   */
+  private lastBlobCheckAt = 0;
   /**
    * When the manual refresh feedback (pill + spinning glyph) may be torn down.
    * A cache-served refresh finishes almost instantly, so we hold the feedback
@@ -711,6 +746,9 @@ export class App {
     if (!passphrase) return;
     const url = resolveBlobUrl(config);
     if (!url) return;
+    // Stamp the attempt up front so the slow-cadence throttle (blobCheckDue)
+    // measures from when we last *tried*, regardless of the outcome below.
+    this.lastBlobCheckAt = Date.now();
     try {
       // 1. Lightweight version probe. A matching stamp means "no newer export".
       const metaUrl = resolveMetaUrl(config);
@@ -747,6 +785,13 @@ export class App {
       if (this.envelope && envelope.ciphertext === this.envelope.ciphertext && envelope.nonce === this.envelope.nonce) {
         return;
       }
+      // A genuinely new export is on the wire — and it's worth telling the user:
+      // a new blob means the desktop published a larger update (new holdings,
+      // transactions, fresh history), so a bigger refresh is about to land. The
+      // *checking* stays silent (no toast on a 304 / unchanged version); only an
+      // actual new-data load pops up.
+      const hadData = this.envelope !== null;
+      if (hadData) this.toast("New data found — loading the latest portfolio…");
       const data = await decryptEnvelopeToJson<MobileExport>(envelope, passphrase);
       if (session !== this.sessionId) return;
       this.envelope = envelope;
@@ -836,6 +881,9 @@ export class App {
     if (!data) return null;
 
     const { symbols, options } = this.quoteRequest(data, config);
+    // Remember which symbols are NAV-priced funds so the coverage summary can
+    // say "stocks & ETFs done, N funds still refreshing" rather than a bare count.
+    this.lastNavSymbols = options.navSymbols ?? new Set();
     const apiKey = network ? config.apiKey : "";
     const quotePromise = loadQuotes(symbols, apiKey, options);
 
@@ -900,6 +948,12 @@ export class App {
       fxEurUsdSource: eurUsdSource,
     });
     model.overview.lastDataPullAt = this.lastDataPullAt;
+    // Refresh the live-coverage summary on a network pull; keep the last one on a
+    // cache-only re-paint so a currency toggle / blob swap doesn't blank it.
+    if (network) {
+      this.lastCoverage = describeLiveCoverage(quoteLoad.report, this.lastNavSymbols);
+    }
+    model.overview.liveCoverage = this.lastCoverage;
     // Surface how much of the daily free-tier budget we've spent so far.
     model.overview.dailyCreditsUsed = Math.max(
       0,
@@ -968,20 +1022,50 @@ export class App {
     this.setUpdating(false, kind);
     // Confirm the outcome of a manual tap so the user understands what happened
     // (fresh prices pulled, already up to date, or some deferred by the budget).
-    if (kind === "manual") this.toast(manualRefreshSummary(report));
+    if (kind === "manual") this.toast(manualRefreshSummary(report, this.lastNavSymbols));
+    // "Prices all live" confirmation: when a portfolio is too big to price in a
+    // single round it fills in over several burst rounds (the free-tier
+    // per-minute cap). The moment the *last* still-deferred holding catches up —
+    // i.e. we go from "some deferred" to "all live" — pop a brief confirmation
+    // so the staged fill ends with a clear "you're fully up to date" signal
+    // instead of silently stopping. Tracked across rounds so a portfolio that
+    // was live all along stays quiet, and it only fires on the transition.
+    const nowAllLive = allPricesLive(report);
+    // Only the automatic scheduler pops this — a manual tap already gets the
+    // descriptive manualRefreshSummary toast above (e.g. "All 18 holdings up to
+    // date"), so firing both would double up.
+    if (nowAllLive && !this.pricesAllLive && kind !== "manual") {
+      this.toast("All prices live — every holding is now on a fresh price.");
+    }
+    this.pricesAllLive = nowAllLive;
     const delayMs = nextRefreshDelayMs({
       deferred: report.deferred,
       // Pace auto-refresh out as the rolling daily free-tier budget runs low.
       dayRemaining: report.dayRemaining,
       dayLimit: FREE_TIER.creditsPerDay,
     });
-    // Idea A — near-free freshness polling: once we've settled into the slow
-    // steady-state cadence (nothing deferred), piggy-back the cheap meta/304
-    // blob check so a fresh desktop publish is picked up automatically within a
-    // few minutes, without the user reopening the app. While still bursting to
-    // fill in deferred prices we skip it to avoid competing with that work.
-    if (report.deferred.length === 0) void this.maybeRefreshBlob(session);
+    // Idea A — near-free freshness polling: piggy-back the cheap meta/304 blob
+    // check so a fresh desktop publish is picked up automatically within a few
+    // minutes, without the user reopening the app. A *manual* tap always checks
+    // (the user is asking "is there anything new?"), and an automatic round
+    // checks once it has settled into the slow cadence (nothing deferred) so it
+    // doesn't compete with the startup burst. To keep the automatic check alive
+    // for portfolios whose prices never fully stop deferring (more symbols than
+    // the budget), it also runs on a slow wall-clock cadence regardless.
+    if (kind === "manual" || report.deferred.length === 0 || this.blobCheckDue()) {
+      void this.maybeRefreshBlob(session);
+    }
     this.scheduleNext(session, delayMs);
+  }
+
+  /**
+   * Whether enough wall-clock time has passed since the last background blob
+   * check to run another one even while prices are still deferring. Ensures the
+   * automatic new-data probe keeps firing for always-deferred portfolios instead
+   * of being starved by a perpetual startup burst.
+   */
+  private blobCheckDue(): boolean {
+    return Date.now() - this.lastBlobCheckAt >= BLOB_CHECK_MIN_INTERVAL_MS;
   }
 
   /** Arm the next auto-refresh tick, replacing any pending one. */
@@ -1223,19 +1307,63 @@ export function liveRefreshProgress(report: QuoteLoadReport): { live: number; to
 }
 
 /**
+ * Whether a network refresh round leaves *every* priceable holding up to date:
+ * there is at least one such holding, nothing is still deferred for a later
+ * round, and the round didn't fail. Used to detect the moment a multi-round
+ * staged fill finally completes so the app can pop a one-off "prices all live"
+ * confirmation.
+ */
+export function allPricesLive(report: QuoteLoadReport): boolean {
+  const { live, total } = liveRefreshProgress(report);
+  return report.error === null && total > 0 && live === total;
+}
+
+/**
+ * A concise, descriptive summary of how much of the portfolio is priced live,
+ * for the inline coverage note and the manual-refresh toast. The whole point is
+ * to be *specific* — "13/18 up to date · stocks & ETFs done, 5 funds still
+ * refreshing" — rather than the vague "some prices aren't updated" the user
+ * already knows. `navSymbols` lets it name the funds that lag (their NAV strikes
+ * once a day and is fetched on a slower cadence than live stock/ETF quotes).
+ */
+export function describeLiveCoverage(
+  report: QuoteLoadReport,
+  navSymbols: ReadonlySet<string> = new Set(),
+): string {
+  const total = report.fetched.length + report.servedFresh.length + report.deferred.length;
+  const live = total - report.deferred.length;
+  if (total === 0) return "No live-priced holdings";
+  if (report.deferred.length === 0) {
+    if (report.error) return `Showing last known prices (${live}/${total})`;
+    return total === 1 ? "Your holding is up to date" : `All ${total} holdings up to date`;
+  }
+  const navDeferred = report.deferred.filter((s) => navSymbols.has(s)).length;
+  const marketDeferred = report.deferred.length - navDeferred;
+  const head = `${live}/${total} up to date`;
+  // Everything tradeable is done and only once-a-day funds are still catching up
+  // — the common, benign staged-fill case; name it precisely.
+  if (marketDeferred === 0 && navDeferred > 0) {
+    const funds = navDeferred === 1 ? "1 fund" : `${navDeferred} funds`;
+    return `${head} · stocks & ETFs done, ${funds} still refreshing`;
+  }
+  const remaining = report.deferred.length;
+  return `${head} · ${remaining} still refreshing`;
+}
+
+/**
  * A short, human summary of a manual refresh outcome for the confirmation
  * toast, so a tap always ends with a clear statement of what happened rather
- * than silence. Distinguishes a fresh live pull, an all-from-cache no-op, and a
- * budget-deferred partial refresh.
+ * than silence. Leads with the descriptive live-coverage count; only a genuine
+ * fetch failure (nothing fresh landed) overrides it with the fallback message.
  */
-export function manualRefreshSummary(report: QuoteLoadReport): string {
-  if (report.error) return "Couldn't reach live prices — showing last known values";
-  if (report.fetched.length > 0) {
-    const n = report.fetched.length;
-    return `Prices updated (${n} ${n === 1 ? "quote" : "quotes"} refreshed)`;
+export function manualRefreshSummary(
+  report: QuoteLoadReport,
+  navSymbols: ReadonlySet<string> = new Set(),
+): string {
+  if (report.error && report.fetched.length === 0) {
+    return "Couldn't reach live prices — showing last known values";
   }
-  if (report.deferred.length > 0) return "Some prices queued — they'll refresh shortly";
-  return "Prices are up to date";
+  return describeLiveCoverage(report, navSymbols);
 }
 
 /**

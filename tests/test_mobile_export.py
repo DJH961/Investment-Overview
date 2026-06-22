@@ -198,6 +198,7 @@ def test_mobile_export_holdings_cash_and_transactions(session: Session) -> None:
         "native_currency",
         "shares",
         "cost_basis_native",
+        "cost_basis_eur",
         "cost_basis_usd",
         "cumulative_dividends_cash_native",
         "price_symbol",
@@ -212,6 +213,7 @@ def test_mobile_export_holdings_cash_and_transactions(session: Session) -> None:
         for key in (
             "shares",
             "cost_basis_native",
+            "cost_basis_eur",
             "cost_basis_usd",
             "cumulative_dividends_cash_native",
             "last_known_price_native",

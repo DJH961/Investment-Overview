@@ -164,6 +164,33 @@ def test_snapshot_on_empty_db(session: Session) -> None:
     json.dumps(snap)
 
 
+def test_analytics_includes_usd_companion_metrics(session: Session, seeded: None) -> None:
+    # The web Risk tab toggles EUR/USD, so the currency-sensitive scalar metrics
+    # ship a `*_usd` twin computed on the USD-denominated curve. The EUR figure
+    # keeps its bare name; market inputs (risk-free rate) have no companion.
+    bundle = analytics_rm.build(session)
+    for name in (
+        "cagr",
+        "twr",
+        "xirr",
+        "volatility",
+        "sharpe",
+        "sortino",
+        "max_drawdown",
+        "calmar",
+        "ulcer",
+        "var_95",
+        "cvar_95",
+        "skew",
+        "kurtosis",
+        "beta",
+        "alpha",
+    ):
+        assert f"{name}_usd" in bundle
+    # The risk-free rate is a market input, not a per-currency portfolio return.
+    assert "risk_free_rate_usd" not in bundle
+
+
 def test_analytics_full_history_curve_extends_back_to_inception(
     session: Session, seeded: None
 ) -> None:

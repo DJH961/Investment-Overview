@@ -11,6 +11,7 @@
  */
 import { Decimal } from "./decimal-config";
 import type { AllocationSlice, DashboardModel, HoldingView, OverviewView } from "./compute";
+import { fxTodayDeviationPct } from "./compute";
 import {
   type AnalyticsView,
   type DepositsView,
@@ -108,17 +109,38 @@ function renderHero(o: OverviewView): HTMLElement {
  */
 function renderHeroFx(o: OverviewView): HTMLElement | null {
   const parts: HTMLElement[] = [];
+  const inUsd = getDisplayCurrency() === "USD";
   if (o.fxRateEurUsd !== null) {
-    parts.push(h("span", { class: "hero-fx-rate" }, [`EUR/USD ${formatFxRate(o.fxRateEurUsd)}`]));
+    // The spot rate, plus how far it has moved today (the % the FX has
+    // deviated) — the cause behind the FX P/L slice below.
+    const devPct = fxTodayDeviationPct(o);
+    const rateLabel =
+      devPct !== null
+        ? `EUR/USD ${formatFxRate(o.fxRateEurUsd)} (${formatSignedPercent(devPct)} today)`
+        : `EUR/USD ${formatFxRate(o.fxRateEurUsd)}`;
+    parts.push(h("span", { class: "hero-fx-rate" }, [rateLabel]));
   }
-  // Only surface the split when FX actually moved the needle today.
+  // The FX-revaluation slice of today's move. It is intrinsically a *EUR-side*
+  // effect: a USD-booked holding only changes in EUR when EUR/USD moves; its USD
+  // value is unaffected. So in USD display there is — correctly — no FX P/L to
+  // book (you can't "make money on FX" when everything is already in USD), and
+  // we say so plainly instead of rescaling a meaningless number into USD. In EUR
+  // display we show the actual EUR the swing added or removed today.
   if (!o.todayFxMoveEur.isZero()) {
-    const fxCls = signClass(o.todayFxMoveEur);
-    parts.push(
-      h("span", { class: `hero-fx-split ${fxCls}` }, [
-        `incl. ${formatSignedCurrency(o.todayFxMoveEur)} from FX`,
-      ]),
-    );
+    if (inUsd) {
+      parts.push(
+        h("span", { class: "hero-fx-split flat" }, [
+          "FX moves your EUR value, not USD",
+        ]),
+      );
+    } else {
+      const fxCls = signClass(o.todayFxMoveEur);
+      parts.push(
+        h("span", { class: `hero-fx-split ${fxCls}` }, [
+          `incl. ${formatSignedCurrency(o.todayFxMoveEur)} from FX`,
+        ]),
+      );
+    }
   }
   if (o.eurUsdSource === "eod") {
     parts.push(h("span", { class: "hero-fx-eod" }, ["end-of-day FX"]));
@@ -187,6 +209,12 @@ function renderStats(o: OverviewView): HTMLElement {
 
 function renderNotes(o: OverviewView): HTMLElement[] {
   const notes: HTMLElement[] = [];
+  // Lead with the live-coverage line: a calm, descriptive "how much is fresh"
+  // status that replaces both the opaque "some prices not updated" and the old
+  // floating banner — it stays on the page, but doesn't hover or nag.
+  if (o.liveCoverage) {
+    notes.push(h("p", { class: "note coverage" }, [o.liveCoverage]));
+  }
   if (o.liveDegradedReason) {
     notes.push(h("p", { class: "note warn" }, [o.liveDegradedReason]));
   }
@@ -560,7 +588,11 @@ function periodLabel(label: string): string {
 }
 
 function renderPeriodRow(row: PeriodRowView): HTMLElement {
-  const growthCls = signClass(row.growthPct);
+  // Period growth is currency-dependent (FX drift between the period boundary
+  // and now), so prefer the USD figure when USD is selected — matching the
+  // per-stock and headline growth — rather than showing the EUR number twice.
+  const growthPct = pickByCurrency(row.growthPct, row.growthPctUsd);
+  const growthCls = signClass(growthPct);
   const badges: Array<Node | string> = [periodLabel(row.label)];
   if (row.isLive) badges.push(h("span", { class: "pill live" }, ["live"]));
   else if (row.isCurrent) badges.push(h("span", { class: "pill" }, ["current"]));
@@ -575,7 +607,7 @@ function renderPeriodRow(row: PeriodRowView): HTMLElement {
       ]),
     ]),
     h("div", { class: "holding-figures" }, [
-      h("span", { class: `holding-value ${growthCls}` }, [signedPercentOrDash(row.growthPct)]),
+      h("span", { class: `holding-value ${growthCls}` }, [signedPercentOrDash(growthPct)]),
       h("span", { class: "holding-change muted" }, ["growth"]),
     ]),
   ]);
@@ -729,21 +761,25 @@ function infoDot(text: string): HTMLElement {
 
 /** A metric stat card whose label carries an info dot when a definition exists. */
 function metricStat(metric: RiskMetric): HTMLElement {
-  const cls = metric.kind === "pct" ? signClass(metric.value) : "flat";
+  // Risk/return metrics are currency-dependent (they're computed on the curve's
+  // daily returns, and FX varies day to day), so prefer the USD figure when USD
+  // is selected — matching the headline/per-stock growth and the periods.
+  const value = pickByCurrency(metric.value, metric.valueUsd);
+  const cls = metric.kind === "pct" ? signClass(value) : "flat";
   const labelChildren: Array<Node | string> = [metric.label];
   const info = METRIC_INFO[metric.label];
   if (info) labelChildren.push(infoDot(info));
   return h("div", { class: "stat" }, [
     h("span", { class: "stat-label" }, labelChildren),
-    h("span", { class: `stat-value ${cls}` }, [renderMetricValue(metric)]),
+    h("span", { class: `stat-value ${cls}` }, [renderMetricValue(metric, value)]),
   ]);
 }
 
-function renderMetricValue(metric: RiskMetric): string {
-  if (metric.value === null) return "—";
-  if (metric.kind === "pct") return formatPercent(metric.value);
-  if (metric.kind === "money") return formatCurrency(metric.value);
-  return metric.value.toNumber().toFixed(2);
+function renderMetricValue(metric: RiskMetric, value: Decimal | null): string {
+  if (value === null) return "—";
+  if (metric.kind === "pct") return formatPercent(value);
+  if (metric.kind === "money") return formatCurrency(value);
+  return value.toNumber().toFixed(2);
 }
 
 function renderMetricGrid(metrics: RiskMetric[]): HTMLElement {

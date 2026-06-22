@@ -12,7 +12,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
-## [3.5.0] — 2026-06-22
+## [3.5.2] — 2026-06-22
 
 Sharper Analytics, an honest benchmark, a new currency lens, and a Data Health
 surface that cleans up after itself.
@@ -60,6 +60,92 @@ surface that cleans up after itself.
   own earlier failure, so a notice disappears once the prices are actually
   flowing again instead of lingering until restart.
 
+## [3.5.1] — 2026-06-22
+
+Web companion: currency-aware growth and risk, a descriptive live-coverage
+status, a heads-up when a new desktop export lands (now on automatic checks
+too), a "prices all live" confirmation when the staged fill completes, and a
+sensible FX line.
+
+### Added
+
+- **Live-coverage status that actually tells you something.** The overview now
+  carries a calm inline note — e.g. "13/18 up to date · stocks & ETFs done, 5
+  funds still refreshing" or "All 18 holdings up to date" — instead of either a
+  60-second floating banner or the opaque "some prices aren't updated". The
+  manual-refresh toast uses the same descriptive summary, naming the once-a-day
+  NAV funds that lag rather than showing a bare count.
+- **Heads-up when a larger update is on the wire.** A manual refresh now always
+  performs the cheap encrypted-blob check (the moment you ask "is there anything
+  new?"), and loading a genuinely new export pops a small "New data found —
+  loading the latest portfolio…" toast. The silent 304/unchanged check stays
+  silent. This toast now also fires when the **automatic** background check
+  discovers a new export, not just a manual tap, so a fresh desktop publish
+  always announces itself.
+- **"Prices all live" confirmation.** When a portfolio is large enough that
+  prices fill in over several refresh rounds (the free-tier per-minute cap), the
+  moment the **last** still-pending holding catches up the app pops a brief
+  "All prices live — every holding is now on a fresh price" toast, so the staged
+  fill ends with a clear "you're fully up to date" signal instead of silence.
+- **FX rate deviation in the hero.** The EUR/USD line now shows both the spot
+  rate and how far it has moved today (e.g. "EUR/USD 1.0832 (+0.30% today)"),
+  the cause behind the FX P/L slice.
+
+### Changed
+
+- **Growth and risk stats follow the currency toggle.** Period growth (monthly
+  and yearly), and the risk/return metrics (volatility, Sharpe, Sortino, max
+  drawdown, VaR, beta, alpha, …) now switch between EUR and USD with the display
+  currency, matching XIRR and the per-stock growth. The mobile export gained a
+  per-trade-date `cost_basis_eur` for each holding and `*_usd` companions for
+  the currency-sensitive analytics metrics so the web can show currency-correct
+  figures instead of rescaling EUR at today's spot.
+- **FX P/L is no longer shown in USD.** The FX-revaluation slice of today's move
+  is intrinsically a EUR-side effect (a USD-booked holding only changes in EUR
+  when EUR/USD moves; its USD value is unaffected), so USD display now says "FX
+  moves your EUR value, not USD" instead of rescaling a meaningless number.
+
+## [3.5.0] — 2026-06-22
+
+A from-scratch redesign of the **Calculator** tab: build a target mix right on
+the page (no more trip to Settings), think in **categories** that auto-group
+your funds, and read the plan visually.
+
+### Added
+
+- **In-page allocation builder.** The Calculator now defines its own target
+  mix — no need to create and activate an allocation in Settings first. Two
+  modes: **By category** (e.g. "10 % International", with the funds in that
+  category sharing the slice automatically) and **By fund**. Every row shows
+  *how much percent it currently has* next to the target input, with a bar that
+  overlays the current weight under a target marker.
+- **Category fund picker + fair split.** Inside each category you can tick which
+  funds to actively invest in and choose how the category's weight is divided:
+  **Fair by value** (proportional to current holdings) or **Even**. New domain
+  helper `expand_category_weights` does the math (covered by unit tests).
+- **Presets & live total.** One-click **Match current mix**, **Equal weight**,
+  **Load saved target**, and **Clear**, plus a live total bar. Targets are
+  normalised to 100 % on compute, so you can sketch freely without the old
+  "weights must sum to 100" friction.
+- **Visual buy plan.** The plan now leads with KPI tiles (investing / allocated
+  / left over) and a per-fund list showing the add amount (EUR + USD + shares)
+  and a bar of the resulting weight versus target.
+- **Save as target.** Persist the mix you built as a named target allocation
+  (optionally activating it) so it still drives the allocation-drift views.
+
+### Changed
+
+- **Settings de-cluttered.** The busy per-instrument weight-entry dialog has
+  been removed from Settings; the *Target allocations* section now lists saved
+  targets and links to the Calculator to build new ones.
+- **Calculator computes off the event loop.** The page now uses the `deferred`
+  `compute` hook (as the other heavy pages do since 3.4.2): it paints its shell
+  and a spinner first and gathers the calculator data + active allocation on a
+  worker thread (via `nicegui.run.io_bound`), so building a target mix on a
+  large portfolio no longer stalls the websocket or trips the reconnect storm.
+- Calculator share math now prices holdings in **EUR** (converting USD closes at
+  the current rate) so share counts line up with the EUR buy amounts.
+
 ## [3.4.2] — 2026-06-22
 
 Keep the desktop UI responsive under load: every heavy page now gathers its
@@ -85,6 +171,7 @@ and trip the "disconnected" / reconnect storm on every open tab.
 - **Support-bundle download builds off the loop.** Packaging the log file and
   app context for the "Report an issue" download now runs on a worker thread, so
   a large log can't stall the UI.
+
 ## [3.4.1] — 2026-06-22
 
 Minor reliability fixes to the main app: timezone-aware "last update" stamps, a

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { liveRefreshProgress, manualRefreshSummary } from "../src/app";
+import { allPricesLive, describeLiveCoverage, liveRefreshProgress, manualRefreshSummary } from "../src/app";
 import type { QuoteLoadReport } from "../src/quotes";
 import { PriceError } from "../src/prices";
 
@@ -17,27 +17,36 @@ function report(overrides: Partial<QuoteLoadReport> = {}): QuoteLoadReport {
 }
 
 describe("manualRefreshSummary", () => {
-  it("reports how many quotes were freshly fetched", () => {
-    expect(manualRefreshSummary(report({ fetched: ["AAPL"] }))).toBe("Prices updated (1 quote refreshed)");
+  it("states how many holdings are up to date", () => {
+    expect(manualRefreshSummary(report({ fetched: ["AAPL"] }))).toBe("Your holding is up to date");
     expect(manualRefreshSummary(report({ fetched: ["AAPL", "MSFT"] }))).toBe(
-      "Prices updated (2 quotes refreshed)",
+      "All 2 holdings up to date",
     );
   });
 
-  it("reassures when everything was already fresh from cache", () => {
-    expect(manualRefreshSummary(report({ servedFresh: ["AAPL"] }))).toBe("Prices are up to date");
+  it("counts cache-fresh holdings as up to date", () => {
+    expect(manualRefreshSummary(report({ servedFresh: ["AAPL"] }))).toBe("Your holding is up to date");
   });
 
-  it("explains a budget-deferred partial refresh", () => {
+  it("explains a budget-deferred partial refresh with a precise count", () => {
     expect(manualRefreshSummary(report({ deferred: ["AAPL"] }))).toBe(
-      "Some prices queued — they'll refresh shortly",
+      "0/1 up to date · 1 still refreshing",
     );
   });
 
-  it("prefers a fetched count over deferred symbols", () => {
+  it("reports a precise live/total count when some symbols are deferred", () => {
     expect(manualRefreshSummary(report({ fetched: ["AAPL"], deferred: ["MSFT"] }))).toBe(
-      "Prices updated (1 quote refreshed)",
+      "1/2 up to date · 1 still refreshing",
     );
+  });
+
+  it("names lagging funds when only once-a-day NAV symbols are deferred", () => {
+    expect(
+      manualRefreshSummary(
+        report({ fetched: ["AAPL", "MSFT"], deferred: ["VMFXX", "VTSAX"] }),
+        new Set(["VMFXX", "VTSAX"]),
+      ),
+    ).toBe("2/4 up to date · stocks & ETFs done, 2 funds still refreshing");
   });
 
   it("surfaces a transient failure as a fallback message", () => {
@@ -47,6 +56,46 @@ describe("manualRefreshSummary", () => {
     );
   });
 });
+
+describe("describeLiveCoverage", () => {
+  it("reports nothing to price when there are no live holdings", () => {
+    expect(describeLiveCoverage(report())).toBe("No live-priced holdings");
+  });
+
+  it("confirms full coverage when nothing is deferred", () => {
+    expect(describeLiveCoverage(report({ fetched: ["AAPL"] }))).toBe("Your holding is up to date");
+    expect(describeLiveCoverage(report({ fetched: ["AAPL"], servedFresh: ["MSFT"] }))).toBe(
+      "All 2 holdings up to date",
+    );
+  });
+
+  it("singles out a single deferred fund", () => {
+    expect(
+      describeLiveCoverage(
+        report({ fetched: ["AAPL"], deferred: ["VMFXX"] }),
+        new Set(["VMFXX"]),
+      ),
+    ).toBe("1/2 up to date · stocks & ETFs done, 1 fund still refreshing");
+  });
+
+  it("falls back to a plain count when market symbols are also deferred", () => {
+    expect(
+      describeLiveCoverage(
+        report({ fetched: ["AAPL"], deferred: ["MSFT", "VMFXX"] }),
+        new Set(["VMFXX"]),
+      ),
+    ).toBe("1/3 up to date · 2 still refreshing");
+  });
+
+  it("notes the data is stale when a fetch failed but nothing is deferred", () => {
+    const err = new PriceError("offline", { retryable: true });
+    expect(describeLiveCoverage(report({ error: err, servedFresh: ["AAPL", "MSFT"] }))).toBe(
+      "Showing last known prices (2/2)",
+    );
+  });
+});
+
+
 
 describe("liveRefreshProgress", () => {
   it("counts freshly-fetched and cache-fresh symbols as live out of the total", () => {
@@ -64,5 +113,24 @@ describe("liveRefreshProgress", () => {
   it("reports zero live while everything is still deferred", () => {
     const p = liveRefreshProgress(report({ deferred: ["A", "B", "C"] }));
     expect(p).toEqual({ live: 0, total: 3 });
+  });
+});
+
+describe("allPricesLive", () => {
+  it("is true when every requested symbol is fetched or cache-fresh", () => {
+    expect(allPricesLive(report({ fetched: ["AAPL"], servedFresh: ["MSFT"] }))).toBe(true);
+  });
+
+  it("is false while any symbol is still deferred", () => {
+    expect(allPricesLive(report({ fetched: ["AAPL"], deferred: ["MSFT"] }))).toBe(false);
+  });
+
+  it("is false when there are no priceable holdings at all", () => {
+    expect(allPricesLive(report())).toBe(false);
+  });
+
+  it("is false when the round failed, even with nothing deferred", () => {
+    const err = new PriceError("rate limited", { retryable: true });
+    expect(allPricesLive(report({ fetched: ["AAPL"], error: err }))).toBe(false);
   });
 });

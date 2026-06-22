@@ -194,6 +194,15 @@ export interface OverviewView {
    */
   liveDegradedReason: string | null;
   /**
+   * A concise, descriptive summary of how much of the portfolio is currently
+   * priced live (e.g. "13/18 up to date · stocks & ETFs done, 5 funds still
+   * refreshing" or "All 18 holdings up to date"). Populated by the app shell
+   * after a live refresh (it owns the network/report), so the compute layer
+   * defaults it to null. Surfaced as a calm inline note — the transparency
+   * compromise between an opaque "some prices not updated" and a floating banner.
+   */
+  liveCoverage: string | null;
+  /**
    * Free-tier data credits spent so far in the rolling daily window, and the
    * daily cap. Populated by the app shell after the model is built (it owns the
    * network/credit log), so the compute layer defaults `dailyCreditsUsed` to
@@ -488,7 +497,16 @@ function buildHolding(
   // unvalued (no fallback recovered it).
   if (valueEur === null && price !== null && currency !== EUR) fxMissing.add(currency);
 
-  const costBasisEur = convert(new Decimal(holding.cost_basis_native), currency, EUR, fx);
+  // Cost basis in EUR. Prefer the export's per-trade-date EUR figure (the EUR
+  // the buys actually cost) so EUR growth reflects FX drift between the trade
+  // dates and now; fall back to converting the native cost at today's spot for
+  // older exports without the field. Deriving it at today's spot makes EUR and
+  // USD growth identical (both collapse to the native growth), which is exactly
+  // the "growth doesn't change with currency" bug this avoids.
+  const costBasisEur =
+    holding.cost_basis_eur !== null && holding.cost_basis_eur !== undefined
+      ? new Decimal(holding.cost_basis_eur)
+      : convert(new Decimal(holding.cost_basis_native), currency, EUR, fx);
 
   // Today's move is the change in the holding's *value* from the prior published
   // close to the price we display, for any holding that carries a previous close:
@@ -942,6 +960,7 @@ export function buildDashboard(
     fxMissingCurrencies: [...fxMissing],
     totalValueIsComplete: missingPrice.length === 0 && fxMissing.size === 0,
     liveDegradedReason,
+    liveCoverage: null,
   };
 
   const periods = buildPeriods(data, overview);
@@ -950,6 +969,20 @@ export function buildDashboard(
   const plan = buildPlan(data, overview);
 
   return { overview, holdings, allocation, periods, analytics, deposits, plan };
+}
+
+/**
+ * Today's EUR/USD move as a fraction (e.g. `0.0032` = +0.32%): the current spot
+ * versus the prior session close. This is the *cause* of the portfolio's FX
+ * P/L slice — surfaced alongside it so the user sees both the money the FX swing
+ * moved and the rate change behind it. Null when either rate is unknown or the
+ * prior close is non-positive.
+ */
+export function fxTodayDeviationPct(o: OverviewView): Decimal | null {
+  const now = o.fxRateEurUsd;
+  const prev = o.fxRateEurUsdPrev;
+  if (now === null || prev === null || !prev.greaterThan(0)) return null;
+  return now.minus(prev).dividedBy(prev);
 }
 
 /** Group holding values by asset class into descending allocation slices. */
