@@ -12,6 +12,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [3.6.8] — 2026-06-22
+
+Desktop holdings and calculator polish from user feedback (T2, T4).
+
+### Changed
+
+- **Holdings table shows every row, no vertical scrolling.** The AG-Grid
+  positions table now uses `domLayout: autoHeight`, growing to fit all holdings
+  in full instead of being capped at a fixed-height viewport.
+- **Calculator: "Load saved target" button restored with auto-apply.** The saved
+  target still auto-loads on open, and a "Load saved target" button re-applies it
+  on demand. The redundant "Clear saved target" button is removed since the
+  existing "Clear" button already resets the inputs.
+
 ## [3.6.7] — 2026-06-22
 
 Live web companion: a cleaner, currency-correct overview hero, a manual

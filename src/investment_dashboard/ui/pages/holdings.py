@@ -351,14 +351,13 @@ def register() -> None:
                                 "inv-row-loss": f"data.total_growth_{ccy_key}_signed < 0",
                             },
                             # The table is wider than the page (≈17 columns), so
-                            # it must scroll left↔right. ``autoHeight`` used to
-                            # grow the grid to fit every row, but that pushes the
-                            # horizontal scrollbar to the very bottom of a long
-                            # table — out of reach — so the right-hand columns
-                            # (YTD/MTD/Today) read as "cut off". A bounded
-                            # viewport keeps *both* scrollbars pinned and always
-                            # reachable, so the whole table is visible. The grid
-                            # height is set on the element below.
+                            # it must scroll left↔right. ``domLayout:autoHeight``
+                            # grows the grid to fit *every* row, so the holdings
+                            # table is shown in full with no vertical scrolling —
+                            # the user prefers seeing all holdings at once over a
+                            # capped viewport. The left↔right scrollbar still sits
+                            # at the bottom of the (now full-height) grid.
+                            "domLayout": "autoHeight",
                             "alwaysShowHorizontalScroll": True,
                             "suppressHorizontalScroll": False,
                             "defaultColDef": {
@@ -369,12 +368,6 @@ def register() -> None:
                                 "autoHeaderHeight": True,
                             },
                         }
-                    ).classes("ag-theme-alpine w-full").style(
-                        # Cap the viewport so the grid keeps its own vertical and
-                        # (sticky) horizontal scrollbars within view; tall enough
-                        # to show many rows at once, but never taller than the
-                        # screen.
-                        "height:min(72vh, 60rem); min-height:24rem"
-                    )
+                    ).classes("ag-theme-alpine w-full")
 
             deferred(_build, compute=_gather)

@@ -365,14 +365,13 @@ class _CalculatorView:  # pragma: no cover - UI wiring
                     "flat dense no-caps"
                 )
                 if self.has_saved_target:
-                    # The saved target now auto-loads on open, so the old "Load"
-                    # button is replaced by a way to *forget* it (stop it
-                    # auto-loading and wipe the inputs).
+                    # The saved target auto-loads on open, but keep a manual
+                    # "Load saved target" button to re-apply it after the user
+                    # tweaks or clears the inputs. Forgetting the saved target is
+                    # covered by the existing "Clear" button below.
                     ui.button(
-                        "Clear saved target", icon="bookmark_remove", on_click=self._clear_saved
-                    ).props("flat dense no-caps").tooltip(
-                        "Stop auto-loading the saved weighting and clear the inputs."
-                    )
+                        "Load saved target", icon="bookmark", on_click=self._preset_saved
+                    ).props("flat dense no-caps").tooltip("Re-apply your saved target weighting.")
                 ui.button("Clear", icon="clear", on_click=self._preset_clear).props(
                     "flat dense no-caps"
                 )
@@ -587,29 +586,6 @@ class _CalculatorView:  # pragma: no cover - UI wiring
         self.cat_targets = {}
         self.fund_targets = {}
         self._render_builder()
-
-    def _clear_saved(self) -> None:
-        """Forget the saved target: stop it auto-loading and wipe the inputs."""
-        try:
-            with session_scope() as session:
-                allocations_repo.deactivate_all(session)
-        except Exception as exc:
-            log.exception("Clear saved target failed")
-            ui.notify(f"Couldn't clear saved target: {exc}", type="negative")
-            return
-        self.has_saved_target = False
-        self.active_weights = {}
-        self.active_no_buy = set()
-        self.cat_targets = {}
-        self.fund_targets = {}
-        # Reset the per-category fund selection back to "all ticked".
-        self.cat_selected = {
-            c.name: {m.instrument_id for m in c.members} for c in self.data.categories
-        }
-        self._render_builder()
-        if hasattr(self, "result_box"):
-            self.result_box.clear()
-        ui.notify("Saved target cleared", type="positive")
 
     # -- live total --------------------------------------------------------
     def _current_total(self) -> Decimal:
