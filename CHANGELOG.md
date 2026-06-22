@@ -20,6 +20,21 @@ to the web companion, and a smarter update button.
 
 ### Added
 
+- **Resilience against disconnects and long calculations.** Several safeguards
+  so a single slow calculation no longer takes the whole desktop app down:
+  - The **Reconnect now** button now first attempts an *in-place* socket
+    reconnect (preserving the page's state) and only falls back to a full reload
+    if the socket stays down — it no longer kills a page that was merely busy.
+  - A brief websocket stall is ridden out behind the calm "Still working…" hint
+    for a short grace window; the alarming "connection lost" banner only appears
+    if the drop persists, so it no longer flashes the instant something loads.
+  - Heavy page builds can now run their data gathering **off the event loop**
+    (new `compute` hook on the `deferred` helper), keeping the websocket
+    responsive while metrics crunch; the Overview page uses it.
+  - A new **event-loop stall watchdog** surfaces a heads-up (Data Health + log)
+    when a long synchronous calculation blocks the UI, turning an invisible
+    freeze into an explicit, actionable signal.
+
 - **Debounced auto-publish after manual edits.** Editing, adding or deleting a
   transaction now schedules a single live-web republish 120 seconds after the
   *last* edit, so a burst of manual corrections coalesces into one upload

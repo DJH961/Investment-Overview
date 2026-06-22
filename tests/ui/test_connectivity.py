@@ -73,6 +73,30 @@ def test_script_attaches_to_socket_additively_and_guards_double_install() -> Non
     assert "__invFeedbackInstalled" in js
 
 
+def test_reconnect_button_tries_in_place_reconnect_before_reloading() -> None:
+    js = connectivity._script()
+    # The "Reconnect now" button must first attempt a non-destructive socket
+    # reconnect (preserving page state) and only fall back to a full reload.
+    assert "s.connect()" in js
+    assert "reloadFallbackTimer" in js
+    # The reload fallback is guarded behind a still-disconnected check.
+    assert "window.location.reload()" in js
+    assert "!window.socket || !window.socket.connected" in js
+
+
+def test_websocket_drop_is_held_behind_a_grace_window() -> None:
+    js = connectivity._script()
+    # A brief websocket stall must not flash the alarming banner immediately;
+    # it is escalated only after a grace window if still down.
+    assert "graceTimer" in js
+    assert "LOST_GRACE_MS" in js
+    assert "function escalateLost" in js
+    # During the grace window the calm "Still working…" hint is shown instead.
+    assert "showHint(true)" in js
+    # A real browser-level offline event still escalates immediately (no grace).
+    assert "escalateLost(true)" in js
+
+
 def test_header_dot_markup_has_id_and_default_ok_state() -> None:
     assert 'id="inv-conn-dot"' in connectivity.HEADER_DOT_HTML
     assert "is-ok" in connectivity.HEADER_DOT_HTML

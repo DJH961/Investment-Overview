@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from html import escape
@@ -30,6 +31,9 @@ from investment_dashboard.ui.pages._overview_query import (
     VALUE_RANGES,
     HoldingCard,
     MarketVerdict,
+    PortfolioMetrics,
+    TreemapDatum,
+    ValueSeriesPoint,
     allocation_treemap,
     build_holding_cards,
     build_value_series,
@@ -52,6 +56,27 @@ PATH = "/overview"
 #: Sibling Holdings page route (defined on :mod:`...ui.pages.holdings`); kept as
 #: a literal here to avoid a circular import between the two page modules.
 HOLDINGS_PATH = "/holdings"
+
+
+@dataclass(frozen=True)
+class _OverviewData:
+    """Everything the overview body needs, gathered off the event loop.
+
+    Produced by the page's ``compute`` step (which does all the heavy DB and
+    metrics work on a worker thread) and handed to the render step on the loop,
+    so a slow build never blocks the websocket — see
+    :func:`investment_dashboard.ui.components.deferred.deferred`.
+    """
+
+    range_label: str
+    metrics: PortfolioMetrics
+    display_ccy: str
+    value_series: list[ValueSeriesPoint]
+    fx_rate: Decimal | None
+    display_quote: str
+    verdict: MarketVerdict
+    cards: list[HoldingCard]
+    treemap_data: list[TreemapDatum]
 
 
 def _pct_card(
@@ -442,7 +467,7 @@ def register() -> None:  # noqa: PLR0915
         with page_frame("Overview", current=PATH):
             page_header("Overview", subtitle="Portfolio at a glance")
 
-            def _build() -> None:  # noqa: PLR0915
+            def _gather() -> _OverviewData:
                 range_label, _ = resolve_range_days(value_range)
                 with session_scope() as session:
                     metrics = get_metrics(session)
@@ -482,6 +507,28 @@ def register() -> None:  # noqa: PLR0915
                     price_anomaly_ids=price_anomaly_ids,
                 )
                 treemap_data = allocation_treemap(positions)
+                return _OverviewData(
+                    range_label=range_label,
+                    metrics=metrics,
+                    display_ccy=display_ccy,
+                    value_series=value_series,
+                    fx_rate=fx_rate,
+                    display_quote=display_quote,
+                    verdict=verdict,
+                    cards=cards,
+                    treemap_data=treemap_data,
+                )
+
+            def _render(data: _OverviewData) -> None:
+                range_label = data.range_label
+                metrics = data.metrics
+                display_ccy = data.display_ccy
+                value_series = data.value_series
+                fx_rate = data.fx_rate
+                display_quote = data.display_quote
+                verdict = data.verdict
+                cards = data.cards
+                treemap_data = data.treemap_data
 
                 # Total Value is the headline money figure; Total Growth shows the
                 # compounded (1 + XIRR) ^ years return per currency.
@@ -608,7 +655,7 @@ def register() -> None:  # noqa: PLR0915
                             _treemap_figure(treemap_data, currency=display_ccy, fx_rate=fx_rate),
                         ).classes("w-full h-[40vh]")
 
-            deferred(_build)
+            deferred(_render, compute=_gather)
 
 
 def _convert(amount_eur: Decimal | None, target: str, fx_rate: Decimal | None) -> Decimal | None:
