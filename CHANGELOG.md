@@ -14,6 +14,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.7.1] — 2026-06-22
+
+### Fixed
+
+- **Today's growth is no longer inflated.** The overview "today's move" is now
+  valued on a single global price step (holdings off the latest print date are
+  forward-filled so they contribute FX-only) instead of summing each holding's
+  own previous-close window, which a lagged NAV session could inflate in both
+  EUR and USD.
+- **FX % now tracks foreign-currency strength** so its sign correctly reflects
+  whether EUR/USD rose, with live FX pulled first and the display-relative FX
+  conversion flipped (web + desktop).
+
 ## [3.7.0] — 2026-06-22
 
 ### Changed
