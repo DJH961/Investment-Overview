@@ -12,6 +12,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [3.6.7] — 2026-06-22
+
+The live web overview shows the FX rate in EUR display too — inverted — rather
+than hiding it.
+
+### Changed
+
+- **EUR display shows the FX rate inverted instead of hiding it.** The overview
+  hero previously dropped all FX context in EUR display. It now shows the same
+  line as USD display, just from the euro holder's side: the reciprocal
+  `USD/EUR` quote with the today-deviation percentage flipped (USD display still
+  shows `EUR/USD`). The freshness line's FX rate is quoted from the same side so
+  the two never disagree. The intraday FX profit/loss money line stays out of
+  the hero — that slice lives only in the Risk tab's Currency panel.
+
 ## [3.6.6] — 2026-06-22
 
 The Periods tab is reorganised into a two-column layout that keeps the year
