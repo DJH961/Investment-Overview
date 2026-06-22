@@ -23,6 +23,33 @@ const ZERO = new Decimal(0);
 
 export const UNCATEGORIZED = "Uncategorized";
 
+/**
+ * Friendly labels for the raw `asset_class` slugs the export carries, so a
+ * holding the user hasn't filed under an explicit category still reads like a
+ * real category ("Bonds", "Money market") in the Calculator rather than a
+ * lowercase slug ("bond", "money_market"). An explicit category override from
+ * the main app always wins over this fallback.
+ */
+const ASSET_CLASS_LABELS: Record<string, string> = {
+  etf: "ETFs",
+  stock: "Stocks",
+  equity: "Stocks",
+  mutual_fund: "Mutual funds",
+  money_market: "Money market",
+  bond: "Bonds",
+  fixed_income: "Bonds",
+  cash: "Cash",
+  savings: "Savings",
+  crypto: "Crypto",
+  commodity: "Commodities",
+  reit: "Real estate",
+};
+
+/** Map a raw asset-class slug to a readable label, leaving unknowns untouched. */
+function humanizeAssetClass(assetClass: string): string {
+  return ASSET_CLASS_LABELS[assetClass.trim().toLowerCase()] ?? assetClass;
+}
+
 /** One investable instrument with the facts the calculator needs. */
 export interface CalcInstrument {
   symbol: string;
@@ -59,10 +86,12 @@ export interface CalcData {
   savedTargets: SavedTarget[];
 }
 
-/** Resolve the grouping label exactly like the desktop: category → asset_class
- * → "Uncategorized". */
+/** Resolve the grouping label like the desktop — category → asset_class →
+ * "Uncategorized" — but humanise the asset_class fallback so an uncategorised
+ * holding still reads like a real category. The explicit category the user set
+ * in the main app (carried in the encrypted blob) always takes precedence. */
 function categoryLabel(category: string | null, assetClass: string): string {
-  return category || assetClass || UNCATEGORIZED;
+  return category || humanizeAssetClass(assetClass) || UNCATEGORIZED;
 }
 
 interface Aggregate {
