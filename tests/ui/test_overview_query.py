@@ -653,6 +653,9 @@ def test_fmt_asof_money_market_keeps_par() -> None:
         price_as_of=None, updated_at=None, is_money_market=True, market_open=False
     )
     assert _fmt_asof(fr, today=date(2024, 6, 19)) == "par"
+
+
+def test_instrument_mtd_growth_per_currency(session: Session) -> None:
     """MTD growth compares the current value to the start-of-month value
     (no flows this month), mirroring the YTD calculation but month-scoped."""
     from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
