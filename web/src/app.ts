@@ -23,12 +23,15 @@ import {
   isValidRepo,
   loadConfig,
   parseAutoLockMinutes,
+  parseAutoRefreshMinutes,
   resolveBlobUrl,
   resolveMetaUrl,
   saveConfig,
   DEFAULT_QUOTE_CACHE_MINUTES,
   DEFAULT_AUTO_LOCK_MINUTES,
+  DEFAULT_AUTO_REFRESH_MINUTES,
   MAX_AUTO_LOCK_MINUTES,
+  MAX_AUTO_REFRESH_MINUTES,
   type AppConfig,
 } from "./config";
 import { PriceError, type FxRates } from "./prices";
@@ -37,6 +40,8 @@ import {
   readCachedEnvelope,
   readCachedEurUsd,
   readCachedFx,
+  readCreditLog,
+  creditsSpentWithin,
   readLastPull,
   readNavPublishStats,
   readSymbolPlan,
@@ -97,6 +102,23 @@ const BLOB_CHECK_MIN_INTERVAL_MS = 5 * 60 * 1000;
  * windows' worth of headroom — enough warning to be useful without nagging.
  */
 const DAILY_BUDGET_WARN_CREDITS = 2 * FREE_TIER.creditsPerMinute;
+
+/**
+ * How recently the app must have actually pulled fresh data from the network for
+ * the coverage summary to claim holdings are "up to date". Beyond this the
+ * prices on screen are old enough that a confident "up to date" would be
+ * misleading, so the summary names them as last-pulled instead.
+ */
+const UP_TO_DATE_WINDOW_MS = 60 * 1000;
+
+/**
+ * Fraction of the daily free-tier credit budget that must remain for a manual
+ * "refresh now" to force a fresh market pull. Below this reserve a tap falls
+ * back to the normal cache-respecting refresh so the last of the day's budget
+ * isn't burnt in one go. Matches the user's "unless I have less than 10% of
+ * credits available" rule.
+ */
+const FORCE_REFRESH_MIN_CREDIT_FRACTION = 0.1;
 
 /**
  * What triggered a price refresh: a `manual` tap of the Refresh button or an
@@ -317,6 +339,16 @@ export class App {
       placeholder: String(DEFAULT_AUTO_LOCK_MINUTES),
       value: String(config.autoLockMinutes),
     });
+    const autoRefresh = h("input", {
+      type: "number",
+      id: "f-autorefresh",
+      min: "1",
+      max: String(MAX_AUTO_REFRESH_MINUTES),
+      step: "1",
+      autocomplete: "off",
+      placeholder: String(DEFAULT_AUTO_REFRESH_MINUTES),
+      value: String(config.autoRefreshMinutes),
+    });
 
     const actions: Array<Node | string> = [
       h("button", { class: "btn", type: "submit" }, [settingsMode ? "Save & reload" : "Save & continue"]),
@@ -371,6 +403,7 @@ export class App {
       field("Blob URL override", blobUrl, "Advanced: a direct, CORS-enabled URL (e.g. your web/proxy Worker) to fetch the encrypted blob from, instead of the release asset."),
       field("Version-file URL override", metaUrl, "Advanced: where to read the tiny portfolio.meta.json version stamp. Leave blank to derive it from the blob URL — set it only if the sidecar lives elsewhere."),
       field("Quote cache (minutes)", cacheMinutes, "Free tier is 8 credits/min, 800/day (1 per symbol). A longer cache means fewer refetches and fewer credits spent."),
+      field("Auto-refresh (minutes)", autoRefresh, `Steady-state gap between automatic live refreshes once everything is fresh. A manual Refresh also pushes the next auto-refresh out by this long. Default is ${DEFAULT_AUTO_REFRESH_MINUTES}.`),
     );
     formChildren.push(
       error ? h("p", { class: "note err" }, [error]) : document.createTextNode(""),
@@ -392,6 +425,7 @@ export class App {
         metaUrl: (metaUrl as HTMLInputElement).value.trim(),
         quoteCacheMinutes: clampCacheMinutes((cacheMinutes as HTMLInputElement).value),
         autoLockMinutes: parseAutoLockMinutes((autoLock as HTMLInputElement).value),
+        autoRefreshMinutes: parseAutoRefreshMinutes((autoRefresh as HTMLInputElement).value),
       };
       if (!next.apiKey) return this.showSetup("Enter your price API key.", mode);
       const hasSource = next.blobUrl.length > 0 || isValidRepo(next.repo);
@@ -816,7 +850,11 @@ export class App {
   }
 
   /** The symbols to price live (priority-ordered), and the loadQuotes options. */
-  private quoteRequest(data: MobileExport, config: AppConfig): { symbols: string[]; options: LoadQuotesOptions } {
+  private quoteRequest(
+    data: MobileExport,
+    config: AppConfig,
+    force = false,
+  ): { symbols: string[]; options: LoadQuotesOptions } {
     // Priority-ordered fetch plan: ETFs/stocks (largest first), then mutual
     // funds (largest first). Money-market/cash rows are excluded — their NAV is
     // pinned at $1 and never requested. The leading symbols are the ones that
@@ -835,15 +873,21 @@ export class App {
       sizeEur: e.sizeEur,
     })));
 
-    return { symbols, options: this.buildQuoteOptions(navFetchSymbols, config) };
+    return { symbols, options: this.buildQuoteOptions(navFetchSymbols, config, force) };
   }
 
   /**
    * Build the (NAV-aware) {@link loadQuotes} options for a set of symbols. Shared
    * by the live refresh and the login-time prefetch so both honour the same
-   * per-symbol cache windows and publish-time learning.
+   * per-symbol cache windows and publish-time learning. `force` forces market
+   * symbols to re-fetch (the "pull now" path behind a manual Refresh tap); NAV
+   * symbols stay on their once-a-day adaptive window regardless.
    */
-  private buildQuoteOptions(navFetchSymbols: Set<string>, config: AppConfig): LoadQuotesOptions {
+  private buildQuoteOptions(
+    navFetchSymbols: Set<string>,
+    config: AppConfig,
+    force = false,
+  ): LoadQuotesOptions {
     const cacheTtlMs = config.quoteCacheMinutes * 60 * 1000;
     // Per-symbol learned publish windows: when each fund's NAV has historically
     // landed, so we poll within that tight band instead of a fixed evening guess.
@@ -851,6 +895,7 @@ export class App {
     return {
       cacheTtlMs,
       navSymbols: navFetchSymbols,
+      forceMarketFetch: force,
       cacheTtlMsForSymbol: (symbol, cached) => {
         if (!navFetchSymbols.has(symbol)) return cacheTtlMs;
         const { publishHour, catchUpWindowHours } = navPublishWindow(navStats.get(symbol)?.hours);
@@ -877,11 +922,15 @@ export class App {
    * follows. When `network` is true it does a budgeted live refresh and returns
    * the load report so the auto-refresh scheduler can decide what to do next.
    */
-  private async refreshPrices(session: number, network: boolean): Promise<QuoteLoadReport | null> {
+  private async refreshPrices(
+    session: number,
+    network: boolean,
+    opts: { force?: boolean } = {},
+  ): Promise<QuoteLoadReport | null> {
     const { data, config } = this.state;
     if (!data) return null;
 
-    const { symbols, options } = this.quoteRequest(data, config);
+    const { symbols, options } = this.quoteRequest(data, config, network && (opts.force ?? false));
     // Remember which symbols are NAV-priced funds so the coverage summary can
     // say "stocks & ETFs done, N funds still refreshing" rather than a bare count.
     this.lastNavSymbols = options.navSymbols ?? new Set();
@@ -952,7 +1001,9 @@ export class App {
     // Refresh the live-coverage summary on a network pull; keep the last one on a
     // cache-only re-paint so a currency toggle / blob swap doesn't blank it.
     if (network) {
-      this.lastCoverage = describeLiveCoverage(quoteLoad.report, this.lastNavSymbols);
+      this.lastCoverage = describeLiveCoverage(quoteLoad.report, this.lastNavSymbols, {
+        freshlyPulled: this.recentlyPulled(),
+      });
     }
     model.overview.liveCoverage = this.lastCoverage;
     // Surface how much of the daily free-tier budget we've spent so far.
@@ -984,7 +1035,36 @@ export class App {
       this.toast("Already refreshing prices…");
       return;
     }
-    void this.runScheduledRefresh(this.sessionId, "manual");
+    // A manual tap means "pull new market values now": force a fresh fetch of
+    // the tradeable holdings, bypassing the quote cache window — unless the daily
+    // free-tier budget is nearly spent (<10% left), where we fall back to the
+    // normal cache-respecting refresh so the reserve isn't burnt in one tap.
+    const canForce = this.canForceRefresh();
+    if (!canForce) this.toast("Low on data credits — showing recent cached prices.");
+    void this.runScheduledRefresh(this.sessionId, "manual", { force: canForce });
+  }
+
+  /**
+   * Whether enough of the daily free-tier credit budget remains to honour a
+   * manual "pull now" with a forced live fetch. Below
+   * {@link FORCE_REFRESH_MIN_CREDIT_FRACTION} of the day's budget a tap serves
+   * the cache instead, so the last credits aren't spent all at once.
+   */
+  private canForceRefresh(): boolean {
+    const now = Date.now();
+    const used = creditsSpentWithin(readCreditLog(now), now, 24 * 60 * 60 * 1000);
+    const remaining = Math.max(0, FREE_TIER.creditsPerDay - used);
+    return remaining >= FREE_TIER.creditsPerDay * FORCE_REFRESH_MIN_CREDIT_FRACTION;
+  }
+
+  /**
+   * Whether the app actually pulled fresh data from the network recently enough
+   * to honestly claim holdings are "up to date" (see {@link UP_TO_DATE_WINDOW_MS}).
+   * Gating the coverage summary on this means a refresh fully served from cache
+   * never falsely reports everything current.
+   */
+  private recentlyPulled(): boolean {
+    return this.lastDataPullAt !== null && Date.now() - this.lastDataPullAt < UP_TO_DATE_WINDOW_MS;
   }
 
   /**
@@ -992,10 +1072,14 @@ export class App {
    * startup, while symbols are still being filled in (deferred to stay within
    * the free-tier per-minute budget), it bursts roughly once a minute so every
    * holding reaches its latest price as fast as the rate limit allows; once
-   * nothing is deferred it relaxes to a slow steady-state cadence. Paused while
-   * the tab is hidden (resumed by the visibility listener).
+   * nothing is deferred it relaxes to the configured steady-state cadence. Paused
+   * while the tab is hidden (resumed by the visibility listener).
    */
-  private async runScheduledRefresh(session: number, kind: RefreshKind = "auto"): Promise<void> {
+  private async runScheduledRefresh(
+    session: number,
+    kind: RefreshKind = "auto",
+    opts: { force?: boolean } = {},
+  ): Promise<void> {
     if (session !== this.sessionId) return;
     // A manual tap should refresh even when the tab is technically "hidden"
     // (e.g. mid-transition); only the automatic scheduler skips hidden tabs.
@@ -1005,7 +1089,7 @@ export class App {
     this.setUpdating(true, kind);
     let report: QuoteLoadReport | null = null;
     try {
-      report = await this.refreshPrices(session, true);
+      report = await this.refreshPrices(session, true, { force: opts.force ?? false });
     } finally {
       this.refreshing = false;
     }
@@ -1023,7 +1107,11 @@ export class App {
     this.setUpdating(false, kind);
     // Confirm the outcome of a manual tap so the user understands what happened
     // (fresh prices pulled, already up to date, or some deferred by the budget).
-    if (kind === "manual") this.toast(manualRefreshSummary(report, this.lastNavSymbols));
+    if (kind === "manual") {
+      this.toast(
+        manualRefreshSummary(report, this.lastNavSymbols, { freshlyPulled: this.recentlyPulled() }),
+      );
+    }
     // "Prices all live" confirmation: when a portfolio is too big to price in a
     // single round it fills in over several burst rounds (the free-tier
     // per-minute cap). The moment the *last* still-deferred holding catches up —
@@ -1044,6 +1132,11 @@ export class App {
       // Pace auto-refresh out as the rolling daily free-tier budget runs low.
       dayRemaining: report.dayRemaining,
       dayLimit: FREE_TIER.creditsPerDay,
+    }, {
+      // The steady-state cadence is user-configurable. After an off-cycle manual
+      // tap this is also the gap before the next automatic refresh, so a manual
+      // pull cleanly pushes the auto schedule out by the configured interval.
+      slowIntervalMs: this.state.config.autoRefreshMinutes * 60 * 1000,
     });
     // Idea A — near-free freshness polling: piggy-back the cheap meta/304 blob
     // check so a fresh desktop publish is picked up automatically within a few
@@ -1330,12 +1423,20 @@ export function allPricesLive(report: QuoteLoadReport): boolean {
 export function describeLiveCoverage(
   report: QuoteLoadReport,
   navSymbols: ReadonlySet<string> = new Set(),
+  opts: { freshlyPulled?: boolean } = {},
 ): string {
+  // Only claim "up to date" when we actually pulled fresh data recently; a
+  // refresh served entirely from cache must not assert everything is current.
+  // Defaults to true so callers that don't track freshness keep prior behaviour.
+  const freshlyPulled = opts.freshlyPulled ?? true;
   const total = report.fetched.length + report.servedFresh.length + report.deferred.length;
   const live = total - report.deferred.length;
   if (total === 0) return "No live-priced holdings";
   if (report.deferred.length === 0) {
     if (report.error) return `Showing last known prices (${live}/${total})`;
+    if (!freshlyPulled) {
+      return total === 1 ? "Showing recent prices" : `Showing recent prices (${total} holdings)`;
+    }
     return total === 1 ? "Your holding is up to date" : `All ${total} holdings up to date`;
   }
   const navDeferred = report.deferred.filter((s) => navSymbols.has(s)).length;
@@ -1360,11 +1461,12 @@ export function describeLiveCoverage(
 export function manualRefreshSummary(
   report: QuoteLoadReport,
   navSymbols: ReadonlySet<string> = new Set(),
+  opts: { freshlyPulled?: boolean } = {},
 ): string {
   if (report.error && report.fetched.length === 0) {
     return "Couldn't reach live prices — showing last known values";
   }
-  return describeLiveCoverage(report, navSymbols);
+  return describeLiveCoverage(report, navSymbols, opts);
 }
 
 /**

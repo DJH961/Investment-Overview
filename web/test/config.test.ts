@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { resolveBlobUrl, resolveMetaUrl, type AppConfig } from "../src/config";
+import { resolveBlobUrl, resolveMetaUrl, parseAutoRefreshMinutes, type AppConfig } from "../src/config";
 
 function config(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
@@ -16,6 +16,7 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     metaUrl: "",
     quoteCacheMinutes: 15,
     autoLockMinutes: 5,
+    autoRefreshMinutes: 5,
     ...overrides,
   };
 }
@@ -65,5 +66,20 @@ describe("resolveMetaUrl", () => {
 
   it("returns null when no source is configured", () => {
     expect(resolveMetaUrl(config({ repo: "not-a-repo" }))).toBeNull();
+  });
+});
+
+describe("parseAutoRefreshMinutes", () => {
+  it("falls back to the default for blank or invalid input", () => {
+    expect(parseAutoRefreshMinutes("")).toBe(5);
+    expect(parseAutoRefreshMinutes("abc")).toBe(5);
+    expect(parseAutoRefreshMinutes("0")).toBe(5);
+    expect(parseAutoRefreshMinutes("-3")).toBe(5);
+  });
+
+  it("rounds and clamps to the allowed range", () => {
+    expect(parseAutoRefreshMinutes("7")).toBe(7);
+    expect(parseAutoRefreshMinutes("7.4")).toBe(7);
+    expect(parseAutoRefreshMinutes("9999")).toBe(120);
   });
 });

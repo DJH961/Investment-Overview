@@ -12,6 +12,88 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [Unreleased]
+
+### Changed
+
+- **Web Calculator tab is now an allocation/invest planner** (a port of the
+  desktop app's calculator), replacing the previous forward-projection
+  simulator. You set a **target mix** — by category (e.g. "20% International")
+  or by individual fund — and a cash contribution, and it returns a concrete
+  buy-only plan (or, with rebalancing enabled, a buy/sell plan) showing **how
+  much to invest** in each fund. It supports per-category value/equal splits,
+  no-buy members, fractional or whole shares, "match current mix" / "equal
+  weight" presets, and a one-tap **"Load saved target…"** picker that reads the
+  target allocations stored in the encrypted export blob. The forward
+  projection it replaced still lives **under the Periods tab** (Projection),
+  unchanged.
+- The mobile-export holdings payload now includes a nullable `category` field so
+  the web calculator can group holdings into the same category buckets the
+  desktop uses (falling back to `asset_class`, then "Uncategorized").
+
+## [3.6.7] — 2026-06-22
+
+Live web companion: a cleaner, currency-correct overview hero, a manual
+"refresh now" that actually pulls fresh prices, an honest "up to date" signal,
+a configurable auto-refresh cadence, and a NAV cache that stops chasing prices
+that cannot change.
+
+### Added
+
+- **Manual Refresh forces a fresh market pull.** Tapping Refresh now re-fetches
+  market (non-NAV) symbols even when their cached quote is still inside its
+  freshness window — the "pull new prices now" path. NAV holdings (mutual
+  funds / money-market) are deliberately exempt, since their once-a-day NAV
+  cannot have changed, so a tap never wastes credits chasing it. A credit
+  reserve guards the free tier: below 10% of the day's budget a tap falls back
+  to the normal cache-respecting refresh (with a toast) rather than spending the
+  last of the budget at once. A descriptive summary toast reports the outcome
+  (e.g. how many holdings were freshly pulled).
+- **Configurable auto-refresh cadence.** Settings gains an "Auto-refresh
+  (minutes)" field (default 5, max 120) controlling the steady-state gap between
+  automatic live refreshes once everything is fresh. An off-cycle manual tap
+  also pushes the next automatic refresh out by this interval.
+
+### Changed
+
+- **EUR display shows the FX rate inverted instead of hiding it.** The overview
+  hero previously dropped all FX context in EUR display. It now shows the same
+  line as USD display, just from the euro holder's side: the reciprocal
+  `USD/EUR` quote with the today-deviation percentage flipped (USD display still
+  shows `EUR/USD`). The freshness line's FX rate is quoted from the same side so
+  the two never disagree. The intraday FX profit/loss money line stays out of
+  the hero — that slice lives only in the Risk tab's Currency panel.
+- **"Today" growth is currency-correct.** The hero's daily move, the "Today"
+  return segment, and each holding's daily change now follow the display
+  currency (EUR vs USD) instead of rescaling one from the other, so the figure
+  changes honestly with the currency toggle — matching the desktop's
+  per-currency daily growth.
+- **Cleaner value-basis chip on the hero.** The old "as of …" caption is
+  replaced by a compact top-right chip that reads "Live" while the NYSE session
+  is open and we hold a same-day quote, "Today" when the freshest price is from
+  today, or the date it is from otherwise — so a settled close, weekend, or
+  holiday value reads honestly as the day it applies to.
+- **"Up to date" is only claimed when data was actually just pulled.** The
+  live-coverage summary now asserts holdings are up to date only when a network
+  pull landed within the last 60 seconds; a refresh served entirely from cache
+  no longer dresses old prices up as current.
+- **NAV freshness window widened to 24 hours (was 12).** Outside the evening
+  publish window a fund's NAV is never re-fetched until its cached value is more
+  than a day old — there is no new price to chase in between, so the longer
+  window saves free-tier credits without hiding any update.
+
+## [3.6.6] — 2026-06-22
+
+The Periods tab is reorganised into a two-column layout that keeps the year
+groups and the contributions + projection stack visually distinct.
+
+### Changed
+
+- **Periods tab restructured into a two-column layout.** The left column holds
+  the per-year groups while the right column stacks the recent contributions and
+  an independent projection. On mobile each column collapses to a single
+  vertical stack so the tab stays phone-first.
+
 ## [3.6.5] — 2026-06-22
 
 ### Fixed
