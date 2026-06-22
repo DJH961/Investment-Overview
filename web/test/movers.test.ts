@@ -132,4 +132,15 @@ describe("buildMovers", () => {
     expect(movers.winners.map((w) => w.symbol)).toEqual(["ONLY"]);
     expect(movers.losers.map((l) => l.symbol)).toEqual(["DOWN"]);
   });
+
+  it("ranks the top-% pick in the requested display currency", () => {
+    // AAA is the bigger % gainer in EUR; BBB is the bigger % gainer in USD.
+    const holdings = [
+      holding({ symbol: "BIG", todayMoveEur: 900, todayMovePct: 0.01, todayMovePctUsd: 0.01 }),
+      holding({ symbol: "AAA", todayMoveEur: 50, todayMovePct: 0.08, todayMovePctUsd: 0.03 }),
+      holding({ symbol: "BBB", todayMoveEur: 40, todayMovePct: 0.05, todayMovePctUsd: 0.09 }),
+    ];
+    expect(buildMovers(holdings, "EUR").winners.map((w) => w.symbol)).toEqual(["BIG", "AAA"]);
+    expect(buildMovers(holdings, "USD").winners.map((w) => w.symbol)).toEqual(["BIG", "BBB"]);
+  });
 });

@@ -628,39 +628,78 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .pill.stale { color: var(--warn); }
 
 /* --- Today's movers (winners / losers) ----------------------------------- */
+/* A distinct "special notice" band: an accented card that stands apart from the
+ * holdings and KPI surfaces, laying its winners/losers out as blocks across. */
+.movers-band {
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, var(--card)), var(--card));
+  box-shadow: var(--shadow), 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.movers-band > .collapsible-summary h2::before {
+  content: "★";
+  margin-right: 0.4rem;
+  color: var(--accent);
+  font-size: 0.9em;
+}
 .mover-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.6rem;
-  padding: 0.2rem 0 0.1rem;
+  grid-template-columns: 1fr;
+  gap: 0.55rem;
+  padding: 0.2rem 0 0.15rem;
 }
-.mover-col { display: grid; gap: 0.35rem; align-content: start; }
-.mover-col-title {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin: 0;
-}
-.mover-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
-.mover {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.4rem;
+.mover-block {
+  display: grid;
+  gap: 0.3rem;
   background: var(--card-2);
   border: 1px solid var(--border);
-  border-radius: 0.6rem;
-  padding: 0.35rem 0.5rem;
+  border-left: 3px solid var(--border);
+  border-radius: 0.7rem;
+  padding: 0.6rem 0.7rem;
 }
-.mover-id { display: grid; gap: 0.05rem; min-width: 0; }
-.mover-sym { font-weight: 700; font-size: 0.85rem; }
-.mover-tag { color: var(--faint); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.03em; }
-.mover-figures { text-align: right; display: grid; gap: 0.05rem; flex: none; }
-.mover-pct { font-weight: 700; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
-.mover-money { font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+.mover-block.pos { border-left-color: var(--pos); background: color-mix(in srgb, var(--pos) 6%, var(--card-2)); }
+.mover-block.neg { border-left-color: var(--neg); background: color-mix(in srgb, var(--neg) 6%, var(--card-2)); }
+.mover-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.4rem; }
+.mover-side {
+  font-size: 0.66rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.mover-block.pos .mover-side { color: var(--pos); }
+.mover-block.neg .mover-side { color: var(--neg); }
+.mover-tag { color: var(--faint); font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.mover-id { display: grid; gap: 0.02rem; min-width: 0; }
+.mover-sym { font-weight: 700; font-size: 0.9rem; }
+.mover-name {
+  color: var(--muted); font-size: 0.72rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mover-figures { display: grid; gap: 0.02rem; }
+/* The stat the block was ranked on leads — large, on top. */
+.mover-primary { font-weight: 800; font-size: 1.15rem; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.mover-secondary { color: var(--muted); font-size: 0.76rem; font-variant-numeric: tabular-nums; }
 .mover-empty { color: var(--faint); font-size: 0.8rem; margin: 0.1rem 0; }
+
+/* A compact badge on a holding row that topped today's movers leaderboard. */
+.mover-badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+.mover-badge.pos { color: var(--pos); background: var(--pos-soft); }
+.mover-badge.neg { color: var(--neg); background: var(--neg-soft); }
+
+/* Wider screens: lay the (up to four) blocks out across in one row. */
+@media (min-width: 48rem) {
+  .mover-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 64rem) {
+  .mover-grid { grid-template-columns: repeat(4, 1fr); }
+}
 
 .note { color: var(--muted); font-size: 0.85rem; margin: 0.2rem 0.15rem 0; }
 .note.warn { color: var(--warn); }

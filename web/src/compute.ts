@@ -1245,21 +1245,45 @@ function toMoverEntry(h: HoldingView, reason: MoverReason): MoverEntry {
   };
 }
 
+/** The display currency a movers board is ranked (and shown) in. */
+export type MoverCurrency = "EUR" | "USD";
+
+/**
+ * The money move for ranking in `currency`. Money ranking is FX-invariant (every
+ * holding scales by the same spot), but we still rank on the figure the viewer
+ * sees so a missing USD companion can never reorder the board behind their back.
+ */
+function moveForCurrency(h: HoldingView, currency: MoverCurrency): Decimal {
+  if (currency === "USD" && h.todayMoveUsd !== null) return h.todayMoveUsd;
+  return h.todayMoveEur as Decimal;
+}
+
+/**
+ * The percentage move for ranking in `currency`. Unlike the money move this is
+ * genuinely FX-variant — EUR and USD daily percentages differ as the day's FX
+ * drifts — so the "top %" pick must be made in the currency on screen. That is
+ * the crux of the cross-currency discrepancy this ranking fixes.
+ */
+function pctForCurrency(h: HoldingView, currency: MoverCurrency): Decimal {
+  if (currency === "USD" && h.todayMovePctUsd !== null) return h.todayMovePctUsd;
+  return h.todayMovePct as Decimal;
+}
+
 /**
  * Pick up to two leaderboard entries from one side (winners or losers): the
  * biggest money move, then the biggest percentage move. When the same holding
  * tops both, the second slot falls back to the percentage runner-up so two
  * distinct names are shown. `sign` is +1 for winners (descending) or −1 for
- * losers (ascending). Ranking uses the canonical EUR figures (the order is
- * FX-invariant, so the USD view shows the same names).
+ * losers (ascending). Ranking is done in `currency` so the board matches the
+ * figures on screen (the "top %" pick in particular is FX-variant).
  */
-function pickMoverSide(pool: HoldingView[], sign: 1 | -1): MoverEntry[] {
+function pickMoverSide(pool: HoldingView[], sign: 1 | -1, currency: MoverCurrency): MoverEntry[] {
   if (pool.length === 0) return [];
-  const byMoney = [...pool].sort((a, b) =>
-    sign * (b.todayMoveEur as Decimal).minus(a.todayMoveEur as Decimal).toNumber(),
+  const byMoney = [...pool].sort(
+    (a, b) => sign * moveForCurrency(b, currency).minus(moveForCurrency(a, currency)).toNumber(),
   );
-  const byPct = [...pool].sort((a, b) =>
-    sign * (b.todayMovePct as Decimal).minus(a.todayMovePct as Decimal).toNumber(),
+  const byPct = [...pool].sort(
+    (a, b) => sign * pctForCurrency(b, currency).minus(pctForCurrency(a, currency)).toNumber(),
   );
   const topTotal = byMoney[0];
   const entries: MoverEntry[] = [toMoverEntry(topTotal, "total")];
@@ -1271,12 +1295,15 @@ function pickMoverSide(pool: HoldingView[], sign: 1 | -1): MoverEntry[] {
 }
 
 /**
- * Build today's winners/losers leaderboard from the holdings. Only holdings that
- * repriced on the freshest date contribute a today's move (lagging funds are
- * excluded), so before the open this reflects last session's movers and during
- * the session only those already printed today. See {@link MoversView}.
+ * Build today's winners/losers leaderboard from the holdings, ranked in the
+ * active display `currency`. Only holdings that repriced on the freshest date
+ * contribute a today's move (lagging funds are excluded), so before the open
+ * this reflects last session's movers and during the session only those already
+ * printed today. Ranking in the display currency (rather than always EUR) keeps
+ * the EUR and USD views — and the desktop and web apps — in agreement about who
+ * the biggest mover was. See {@link MoversView}.
  */
-export function buildMovers(holdings: HoldingView[]): MoversView {
+export function buildMovers(holdings: HoldingView[], currency: MoverCurrency = "EUR"): MoversView {
   const eligible = holdings.filter(
     (h) => !h.todayMoveIsStale && h.todayMoveEur !== null && h.todayMovePct !== null,
   );
@@ -1284,11 +1311,13 @@ export function buildMovers(holdings: HoldingView[]): MoversView {
     (latest, h) => (latest === null || h.priceFallbackDate > latest ? h.priceFallbackDate : latest),
     null,
   );
+  // Sign (winner vs loser) is FX-invariant, so the canonical EUR move decides
+  // the side; the in-currency figures only reorder within a side.
   const winnersPool = eligible.filter((h) => (h.todayMoveEur as Decimal).greaterThan(0));
   const losersPool = eligible.filter((h) => (h.todayMoveEur as Decimal).lessThan(0));
   return {
-    winners: pickMoverSide(winnersPool, 1),
-    losers: pickMoverSide(losersPool, -1),
+    winners: pickMoverSide(winnersPool, 1, currency),
+    losers: pickMoverSide(losersPool, -1, currency),
     basisDate,
     eligibleCount: eligible.length,
   };

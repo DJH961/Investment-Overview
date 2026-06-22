@@ -32,6 +32,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     ground truth (catching unscheduled or early-close sessions the modelled
     clock would miss).
 
+## [3.9.1] — 2026-06-22
+
+### Changed
+
+- **"Today's movers" now sits below the value graph on the web too.** It used to
+  render above the chart; it now follows the chart and the stats block whose
+  notes explain how fresh the data is ("data last pulled…", live coverage,
+  budget), matching the desktop, which already places the band directly under
+  the value graph. On both apps the leaderboard now reads right after the graph
+  (and, on web, the update text) that frame it, and still above the Holdings
+  list.
+
+## [3.9.0] — 2026-06-22
+
+### Changed
+
+- **"Today's movers" redesigned (web + desktop).** The winners/losers board is
+  now a distinct, attention-grabbing "special notice" band that lays its movers
+  out as up to four blocks across on wider screens. Each block leads with the
+  stat it was ranked on (the money move for "biggest move", the percentage for
+  "top %") shown large on top, with the secondary figure below. On the web the
+  band sits just above the Holdings list; on the desktop it moved to directly
+  under the value graph.
+- Each holding that tops today's movers leaderboard now carries a small badge
+  ("Top gainer" / "Top % gainer" / "Top loser" / "Top % loser") in the holdings
+  list, so the winners/losers are recognisable in context too.
+
+### Fixed
+
+- **Today's movers now rank in the active display currency.** The biggest-%
+  pick is genuinely FX-variant (EUR and USD daily percentages differ as the
+  day's FX drifts), so ranking always in EUR could disagree with the figures on
+  screen — and the desktop and web apps could name different movers. Both apps
+  now rank in the chosen currency, so the EUR/USD views and the two apps agree.
+
 ## [3.8.1] — 2026-06-22
 
 ### Fixed
