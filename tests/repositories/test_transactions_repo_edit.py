@@ -109,3 +109,96 @@ def test_find_account_money_market_instrument_none_when_absent(session: Session)
         ),
     )
     assert transactions_repo.find_account_money_market_instrument(session, account_id) is None
+
+
+def test_find_settlement_leg_by_external_id_link(session: Session) -> None:
+    account_id = _account(session)
+    parent = transactions_repo.insert_transaction(
+        session,
+        Transaction(
+            account_id=account_id,
+            date=date(2024, 1, 5),
+            kind="deposit",
+            net_native=Decimal("1000"),
+            external_id="DEP-1",
+            source=TransactionSource.MANUAL,
+        ),
+    )
+    assert parent is not None
+    leg = transactions_repo.insert_transaction(
+        session,
+        Transaction(
+            account_id=account_id,
+            date=date(2024, 1, 5),
+            kind="buy",
+            net_native=Decimal("-1000"),
+            external_id="DEP-1:vmfxx",
+            source=TransactionSource.MANUAL,
+        ),
+    )
+    assert leg is not None
+    found = transactions_repo.find_settlement_leg(
+        session, account_id=account_id, parent_external_id="DEP-1"
+    )
+    assert found is not None
+    assert found.id == leg.id
+
+
+def test_find_settlement_leg_none_without_external_id(session: Session) -> None:
+    account_id = _account(session)
+    assert (
+        transactions_repo.find_settlement_leg(
+            session, account_id=account_id, parent_external_id=None
+        )
+        is None
+    )
+
+
+def test_find_legacy_settlement_leg_matches_unlinked(session: Session) -> None:
+    account_id = _account(session)
+    leg = transactions_repo.insert_transaction(
+        session,
+        Transaction(
+            account_id=account_id,
+            date=date(2024, 1, 5),
+            kind="buy",
+            net_native=Decimal("-1000"),
+            description="Money-market settlement (auto) · VMFXX",
+            source=TransactionSource.MANUAL,
+        ),
+    )
+    assert leg is not None
+    found = transactions_repo.find_legacy_settlement_leg(
+        session,
+        account_id=account_id,
+        on=date(2024, 1, 5),
+        parent_net_native=Decimal("1000"),
+    )
+    assert found is not None
+    assert found.id == leg.id
+
+
+def test_find_legacy_settlement_leg_ambiguous_returns_none(session: Session) -> None:
+    account_id = _account(session)
+    for _ in range(2):
+        transactions_repo.insert_transaction(
+            session,
+            Transaction(
+                account_id=account_id,
+                date=date(2024, 1, 5),
+                kind="buy",
+                net_native=Decimal("-1000"),
+                description="Money-market settlement (auto) · VMFXX",
+                source=TransactionSource.MANUAL,
+            ),
+        )
+    # Two identical candidates → refuse to guess.
+    assert (
+        transactions_repo.find_legacy_settlement_leg(
+            session,
+            account_id=account_id,
+            on=date(2024, 1, 5),
+            parent_net_native=Decimal("1000"),
+        )
+        is None
+    )

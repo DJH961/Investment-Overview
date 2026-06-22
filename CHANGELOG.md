@@ -14,6 +14,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed — local app: editing a cash move no longer desyncs its settlement leg
+
+- **Editing or deleting a transaction now keeps its paired money-market
+  settlement leg in lock-step.** A deposit/withdrawal/transfer (and every
+  imported cash move) is mirrored by an equal-and-opposite settlement-fund leg
+  that is hidden from the ledger by default. Previously, editing the visible
+  parent left that hidden leg untouched, so the settlement balance silently
+  diverged; deleting the parent stranded the leg. The editor now re-derives the
+  leg from the edited amount/date (or removes it if the edit zeroes the cash
+  flow), and deleting a parent removes its leg too.
+- **Works for existing entries.** Imported rows are matched through their
+  `:vmfxx` external-id link; legacy manually-added settlement legs (which had no
+  link) are matched by their auto-description, account, date and opposite
+  amount, so editing transactions already in your database stays correct.
+- Newly auto-created manual settlement legs are now linked to their parent and
+  hidden by default like the importer's sweeps (reveal them with **Show
+  settlement sweeps**); opening the editor directly on a settlement leg now
+  steers you to edit its parent instead.
+- **Transactions toolbar stays on one line.** The filter/action bar under the
+  KPI tiles no longer wraps the **Import** button onto a second row — the action
+  buttons are kept clustered on a single, non-wrapping line.
+
 ## [3.2.0] — 2026-06-22
 
 ### Analytics page

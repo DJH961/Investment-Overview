@@ -198,15 +198,20 @@ class MoneyMarketLeg:
     net_native: Decimal
 
 
-def money_market_leg(kind: str, net_native: Decimal | None) -> MoneyMarketLeg | None:
-    """Build the auto money-market leg for a cash movement, or ``None``.
+def settlement_leg_values(net_native: Decimal | None) -> MoneyMarketLeg | None:
+    """Build the settlement leg figures for *any* signed cash flow, kind-agnostic.
 
-    ``net_native`` is the *signed* cash flow of the triggering transaction
-    (positive = into the account). Only the cash-movement kinds in
-    :data:`MONEY_MARKET_TRIGGER_KINDS` produce a leg.
+    ``net_native`` is the signed cash flow of the triggering transaction
+    (positive = into the account). Cash **in** buys settlement-fund shares at
+    the constant $1.00 NAV; cash **out** sells them; the leg's ``net_native``
+    is the opposite of the triggering row so total cash stays neutral. Returns
+    ``None`` for a missing or zero flow (nothing to settle).
+
+    Unlike :func:`money_market_leg`, this does not gate on the transaction kind:
+    it is used when re-deriving an *existing* linked leg (whose existence is the
+    signal), so it must mirror the importer, which pairs a leg with every
+    cash-moving row — buys and sells included.
     """
-    if kind not in MONEY_MARKET_TRIGGER_KINDS:
-        return None
     if net_native is None or net_native == 0:
         return None
     leg_kind = TransactionKind.BUY.value if net_native > 0 else TransactionKind.SELL.value
@@ -216,3 +221,15 @@ def money_market_leg(kind: str, net_native: Decimal | None) -> MoneyMarketLeg | 
         price=MONEY_MARKET_NAV,
         net_native=-net_native,
     )
+
+
+def money_market_leg(kind: str, net_native: Decimal | None) -> MoneyMarketLeg | None:
+    """Build the auto money-market leg for a cash movement, or ``None``.
+
+    ``net_native`` is the *signed* cash flow of the triggering transaction
+    (positive = into the account). Only the cash-movement kinds in
+    :data:`MONEY_MARKET_TRIGGER_KINDS` produce a leg.
+    """
+    if kind not in MONEY_MARKET_TRIGGER_KINDS:
+        return None
+    return settlement_leg_values(net_native)

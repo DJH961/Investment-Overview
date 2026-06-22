@@ -19,6 +19,32 @@ from decimal import Decimal
 #: Constant net asset value of a money-market fund share (USD).
 MONEY_MARKET_NAV = Decimal(1)
 
+#: ``external_id`` suffix that marks an auto-generated settlement (money-market)
+#: leg paired to a cash-moving *parent* transaction. The importer tags every
+#: VMFXX counter-leg with ``{parent.external_id}:vmfxx`` (see
+#: ``adapters/vanguard/settlement.py``); the ledger view hides these rows by
+#: default, and edit/delete use the link to keep the leg in sync with its
+#: parent so the settlement balance never silently diverges.
+SETTLEMENT_EXTERNAL_ID_SUFFIX = ":vmfxx"
+
+
+def settlement_external_id_for(parent_external_id: str) -> str:
+    """Return the settlement leg's ``external_id`` for a given parent's id."""
+    return f"{parent_external_id}{SETTLEMENT_EXTERNAL_ID_SUFFIX}"
+
+
+def is_settlement_external_id(external_id: str | None) -> bool:
+    """Return ``True`` if ``external_id`` marks an auto settlement leg."""
+    return external_id is not None and external_id.endswith(SETTLEMENT_EXTERNAL_ID_SUFFIX)
+
+
+#: Description prefix stamped on a *manually*-triggered settlement leg (the
+#: auto-leg the manual-entry form pairs with a deposit/withdrawal/transfer).
+#: Used both to label new legs and to recognise legacy ones that predate the
+#: ``:vmfxx`` external-id link, so editing/deleting their parent can still find
+#: and keep them in sync.
+MANUAL_SETTLEMENT_DESCRIPTION_PREFIX = "Money-market settlement (auto)"
+
 #: Asset-class tag used when seeding money-market / settlement funds. They
 #: are technically mutual funds; we keep them in the existing taxonomy and
 #: identify them by ticker/name (see :func:`is_money_market`) rather than

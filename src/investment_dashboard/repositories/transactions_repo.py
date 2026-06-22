@@ -4,13 +4,18 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain.money_market import is_money_market
+from investment_dashboard.domain.money_market import (
+    MANUAL_SETTLEMENT_DESCRIPTION_PREFIX,
+    is_money_market,
+    settlement_external_id_for,
+)
 from investment_dashboard.models import Instrument, Transaction
 
 
@@ -36,6 +41,55 @@ def find_account_money_market_instrument(session: Session, account_id: int) -> I
         ):
             return instrument
     return None
+
+
+def find_settlement_leg(
+    session: Session, *, account_id: int, parent_external_id: str | None
+) -> Transaction | None:
+    """Return the auto settlement leg paired to a parent transaction, if any.
+
+    The leg is linked to its cash-moving parent by the ``external_id``
+    convention ``{parent.external_id}:vmfxx`` (see
+    :func:`settlement_external_id_for`). Returns ``None`` when the parent has no
+    ``external_id`` (so it can't own a linked leg) or no such leg exists. The
+    lookup is keyed on the unique ``(account_id, external_id)`` pair, so it
+    returns at most one row.
+    """
+    if not parent_external_id:
+        return None
+    target = settlement_external_id_for(parent_external_id)
+    stmt = select(Transaction).where(
+        Transaction.account_id == account_id,
+        Transaction.external_id == target,
+    )
+    return session.scalars(stmt).one_or_none()
+
+
+def find_legacy_settlement_leg(
+    session: Session,
+    *,
+    account_id: int,
+    on: date,
+    parent_net_native: Decimal,
+) -> Transaction | None:
+    """Find a *legacy* manual settlement leg that predates the ``:vmfxx`` link.
+
+    Early manual auto-legs (v3.2.0) were written without an ``external_id``
+    link, so :func:`find_settlement_leg` can't locate them. They are still
+    recognisable by their auto-description prefix, their account, the parent's
+    date, and a ``net_native`` that is the exact opposite of the parent's cash
+    flow. Returns the leg only when *exactly one* row matches — an ambiguous
+    match is left alone rather than risking editing the wrong row.
+    """
+    stmt = select(Transaction).where(
+        Transaction.account_id == account_id,
+        Transaction.external_id.is_(None),
+        Transaction.date == on,
+        Transaction.net_native == -parent_net_native,
+        Transaction.description.like(f"{MANUAL_SETTLEMENT_DESCRIPTION_PREFIX}%"),
+    )
+    rows = session.scalars(stmt).all()
+    return rows[0] if len(rows) == 1 else None
 
 
 def list_transactions(

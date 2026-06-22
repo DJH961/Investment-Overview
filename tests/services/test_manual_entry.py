@@ -113,6 +113,34 @@ class TestMoneyMarketLeg:
         assert manual_entry.money_market_leg("deposit", None) is None
 
 
+class TestSettlementLegValues:
+    """Kind-agnostic settlement leg builder used when re-syncing an edit."""
+
+    def test_cash_in_buys_shares(self) -> None:
+        leg = manual_entry.settlement_leg_values(Decimal("500"))
+        assert leg is not None
+        assert leg.kind == "buy"
+        assert leg.quantity == Decimal("500")
+        assert leg.price == Decimal("1")
+        assert leg.net_native == Decimal("-500")
+
+    def test_cash_out_sells_shares(self) -> None:
+        leg = manual_entry.settlement_leg_values(Decimal("-500"))
+        assert leg is not None
+        assert leg.kind == "sell"
+        assert leg.quantity == Decimal("-500")
+        assert leg.net_native == Decimal("500")
+
+    def test_ignores_kind_gate(self) -> None:
+        # Unlike money_market_leg, this builds a leg for *any* non-zero flow
+        # (the importer pairs a leg with buys/sells too).
+        assert manual_entry.settlement_leg_values(Decimal("-100")) is not None
+
+    def test_zero_or_missing_net(self) -> None:
+        assert manual_entry.settlement_leg_values(Decimal("0")) is None
+        assert manual_entry.settlement_leg_values(None) is None
+
+
 class TestSignedQuantity:
     def test_buy_is_positive(self) -> None:
         assert manual_entry.signed_quantity("buy", Decimal("10")) == Decimal("10")

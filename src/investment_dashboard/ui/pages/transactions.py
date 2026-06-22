@@ -11,6 +11,11 @@ from nicegui import events, ui
 from sqlalchemy import select
 
 from investment_dashboard.db import session_scope
+from investment_dashboard.domain.money_market import (
+    MANUAL_SETTLEMENT_DESCRIPTION_PREFIX,
+    is_settlement_external_id,
+    settlement_external_id_for,
+)
 from investment_dashboard.models import Account, Transaction
 from investment_dashboard.models.transaction import TransactionKind, TransactionSource
 from investment_dashboard.repositories import (
@@ -97,7 +102,7 @@ def register() -> None:
                     primary=display_ccy,
                 )
 
-            with ui.row().classes("items-end gap-md flex-wrap w-full"):
+            with ui.row().classes("items-end gap-md flex-nowrap w-full"):
                 ui.select(
                     {None: "All accounts", **account_options},
                     value=None,
@@ -118,26 +123,30 @@ def register() -> None:
                     "Show settlement sweeps",
                     value=False,
                     on_change=lambda e: _on_filter("show_sweeps", bool(e.value)),
-                ).props("dense").tooltip(
+                ).props("dense").classes("whitespace-nowrap").tooltip(
                     "Auto-generated VMFXX settlement legs are hidden by default; "
                     "they still count towards your VMFXX balance."
                 )
                 ui.space()
-                ui.button(
-                    "New transaction",
-                    icon="add",
-                    on_click=lambda: _open_new_modal(accounts),
-                ).props("unelevated color=primary no-caps")
-                ui.button(
-                    "Edit instrument",
-                    icon="edit",
-                    on_click=_open_instrument_override_modal,
-                ).props("flat color=primary no-caps")
-                ui.button(
-                    "Import",
-                    icon="upload_file",
-                    on_click=lambda: _open_import_modal(accounts),
-                ).props("flat color=primary no-caps")
+                # Keep the action buttons clustered on a single, never-wrapping
+                # line (Import used to drop to a second row when the toolbar got
+                # tight).
+                with ui.row().classes("items-end gap-sm flex-nowrap"):
+                    ui.button(
+                        "New transaction",
+                        icon="add",
+                        on_click=lambda: _open_new_modal(accounts),
+                    ).props("unelevated color=primary no-caps")
+                    ui.button(
+                        "Edit instrument",
+                        icon="edit",
+                        on_click=_open_instrument_override_modal,
+                    ).props("flat color=primary no-caps")
+                    ui.button(
+                        "Import",
+                        icon="upload_file",
+                        on_click=lambda: _open_import_modal(accounts),
+                    ).props("flat color=primary no-caps")
 
             with section():
                 grid = ui.aggrid(
@@ -241,6 +250,7 @@ def _load_txn_snapshot(txn_id: int) -> dict[str, Any] | None:  # pragma: no cove
             "net_native": txn.net_native,
             "description": txn.description or "",
             "source": txn.source,
+            "external_id": txn.external_id,
         }
 
 
@@ -248,6 +258,16 @@ def _open_edit_modal(accounts: list[Account], txn_id: int) -> None:  # pragma: n
     snap = _load_txn_snapshot(txn_id)
     if snap is None:
         ui.notify("Transaction not found — it may have been deleted", type="warning")
+        return
+    if is_settlement_external_id(snap.get("external_id")):
+        # This row is an auto-generated settlement leg, not a real cash move.
+        # Editing it directly would diverge it from the parent it mirrors, so
+        # steer the user to the parent instead of letting them desync it.
+        ui.notify(
+            "This is an auto-generated settlement (money-market) leg. Edit the "
+            "transaction it pairs with — it keeps this leg in sync automatically.",
+            type="warning",
+        )
         return
     _open_txn_modal(accounts, existing=snap)
 
@@ -311,9 +331,7 @@ def _open_txn_modal(  # noqa: PLR0915  # pragma: no cover - UI
         # control would be a no-op when editing — only show it for new rows.
         route_mm = None
         if not is_edit:
-            route_mm = ui.checkbox(
-                "Auto-fill the money-market fund for cash transfers", value=True
-            )
+            route_mm = ui.checkbox("Auto-fill the money-market fund for cash transfers", value=True)
             route_mm.tooltip(
                 "Deposits / withdrawals / transfers also buy or sell the account's "
                 "settlement (money-market) fund so you don't log it twice."
@@ -346,7 +364,7 @@ def _open_txn_modal(  # noqa: PLR0915  # pragma: no cover - UI
 
         kind_sel.on_value_change(_revalidate)
 
-        def _save() -> None:  # noqa: PLR0915 - one cohesive save handler
+        def _save() -> None:  # noqa: PLR0915, PLR0912 - one cohesive save handler
             if account_sel.value is None:
                 ui.notify("Pick an account", type="warning")
                 return
@@ -418,20 +436,38 @@ def _open_txn_modal(  # noqa: PLR0915  # pragma: no cover - UI
                     "description": (desc_in.value or "").strip() or None,
                 }
                 if is_edit:
-                    transactions_repo.update_transaction(session, existing["id"], **fields)
+                    updated = transactions_repo.update_transaction(
+                        session, existing["id"], **fields
+                    )
+                    # Keep the paired (often hidden) settlement leg in lock-step
+                    # with the cash it mirrors, so editing a transaction can't
+                    # silently diverge the money-market balance. Works for
+                    # existing imported rows (linked via ``:vmfxx``) and legacy
+                    # manual auto-legs alike (see ``_resync_settlement_leg``).
+                    if updated is not None:
+                        _resync_settlement_leg(
+                            session,
+                            parent=updated,
+                            old_account_id=existing["account_id"],
+                            old_external_id=existing.get("external_id"),
+                            old_date=existing["date"],
+                            old_net_native=existing["net_native"],
+                            native_ccy=native_ccy,
+                        )
                     ui.notify("Updated", type="positive")
                 else:
                     txn = Transaction(source=TransactionSource.MANUAL, **fields)
-                    transactions_repo.insert_transaction(session, txn)
-                    _maybe_money_market_leg(
-                        session,
-                        enabled=bool(route_mm.value) if route_mm is not None else False,
-                        account_id=account_sel.value,
-                        kind=kind,
-                        net_native=net_native,
-                        native_ccy=native_ccy,
-                        txn_date=txn_date,
-                    )
+                    inserted = transactions_repo.insert_transaction(session, txn)
+                    if inserted is not None:
+                        _maybe_money_market_leg(
+                            session,
+                            enabled=bool(route_mm.value) if route_mm is not None else False,
+                            parent=inserted,
+                            kind=kind,
+                            net_native=net_native,
+                            native_ccy=native_ccy,
+                            txn_date=txn_date,
+                        )
                     ui.notify("Saved", type="positive")
             dlg.close()
             ui.navigate.to(PATH)  # cheap full refresh
@@ -452,30 +488,42 @@ def _maybe_money_market_leg(  # pragma: no cover - UI
     session: Any,
     *,
     enabled: bool,
-    account_id: int,
+    parent: Transaction,
     kind: str,
     net_native: Decimal | None,
     native_ccy: str,
     txn_date: date,
 ) -> None:
-    """Auto-create the paired money-market settlement leg for a cash move."""
+    """Auto-create the paired money-market settlement leg for a cash move.
+
+    The leg is linked to ``parent`` via the ``:vmfxx`` external-id convention so
+    a later edit/delete of the parent can find and keep it in sync (and so the
+    ledger view hides it by default, like the importer's sweeps).
+    """
     if not enabled:
         return
     leg = manual_entry.money_market_leg(kind, net_native)
     if leg is None:
         return
-    mm_instrument = transactions_repo.find_account_money_market_instrument(session, account_id)
+    mm_instrument = transactions_repo.find_account_money_market_instrument(
+        session, parent.account_id
+    )
     if mm_instrument is None:
         ui.notify(
             "No money-market fund on this account yet — logged the cash move only.",
             type="info",
         )
         return
+    # Give the parent a stable external_id (if it has none) so the leg can be
+    # linked to it; manual rows otherwise carry no external_id.
+    if parent.external_id is None:
+        parent.external_id = f"manual:{parent.id}"
+        session.flush()
     leg_legs = transaction_fx_service.compute_legs(
         session, native_currency=native_ccy, net_native=leg.net_native, on=txn_date
     )
     mm_txn = Transaction(
-        account_id=account_id,
+        account_id=parent.account_id,
         date=txn_date,
         kind=leg.kind,
         instrument_id=mm_instrument.id,
@@ -485,15 +533,105 @@ def _maybe_money_market_leg(  # pragma: no cover - UI
         fx_rate_to_eur=leg_legs.fx_rate_to_eur,
         net_eur=leg_legs.net_eur,
         net_usd=leg_legs.net_usd,
-        description=f"Money-market settlement (auto) · {mm_instrument.symbol}",
+        description=(f"{MANUAL_SETTLEMENT_DESCRIPTION_PREFIX} · {mm_instrument.symbol}"),
+        external_id=settlement_external_id_for(parent.external_id),
         source=TransactionSource.MANUAL,
     )
     transactions_repo.insert_transaction(session, mm_txn)
 
 
+def _find_existing_settlement_leg(  # pragma: no cover - UI
+    session: Any,
+    *,
+    account_id: int,
+    external_id: str | None,
+    on: date,
+    net_native: Decimal | None,
+) -> Transaction | None:
+    """Locate the settlement leg paired to a parent, new or legacy.
+
+    First tries the ``:vmfxx`` external-id link (imported rows and post-v3.2.0
+    manual rows); falls back to matching a legacy manual auto-leg by its
+    description marker, account, date and opposite ``net_native`` so editing or
+    deleting *existing* entries keeps working.
+    """
+    leg = transactions_repo.find_settlement_leg(
+        session, account_id=account_id, parent_external_id=external_id
+    )
+    if leg is not None:
+        return leg
+    if net_native is None:
+        return None
+    return transactions_repo.find_legacy_settlement_leg(
+        session, account_id=account_id, on=on, parent_net_native=net_native
+    )
+
+
+def _resync_settlement_leg(  # pragma: no cover - UI
+    session: Any,
+    *,
+    parent: Transaction,
+    old_account_id: int,
+    old_external_id: str | None,
+    old_date: str,
+    old_net_native: Decimal | None,
+    native_ccy: str,
+) -> None:
+    """Re-derive the parent's settlement leg after an edit, or drop it.
+
+    Found via the *pre-edit* identity (the leg still carries the old date /
+    account / net until we touch it). If the edited parent no longer moves cash
+    the leg is deleted; otherwise its date, account, kind, quantity and frozen
+    FX legs are recomputed so the settlement balance never drifts.
+    """
+    leg = _find_existing_settlement_leg(
+        session,
+        account_id=old_account_id,
+        external_id=old_external_id,
+        on=date.fromisoformat(old_date),
+        net_native=old_net_native,
+    )
+    if leg is None or leg.id == parent.id:
+        return
+    values = manual_entry.settlement_leg_values(parent.net_native)
+    if values is None:
+        # The edit turned a cash move into something with no net flow (or zero):
+        # the paired leg no longer has anything to settle, so remove it.
+        session.delete(leg)
+        session.flush()
+        return
+    leg_legs = transaction_fx_service.compute_legs(
+        session, native_currency=native_ccy, net_native=values.net_native, on=parent.date
+    )
+    leg.account_id = parent.account_id
+    leg.date = parent.date
+    leg.kind = values.kind
+    leg.quantity = values.quantity
+    leg.price_native = values.price
+    leg.net_native = values.net_native
+    leg.fx_rate_to_eur = leg_legs.fx_rate_to_eur
+    leg.net_eur = leg_legs.net_eur
+    leg.net_usd = leg_legs.net_usd
+    session.flush()
+
+
 def _confirm_delete(txn_id: int, dlg: Any) -> None:  # pragma: no cover - UI
     def _delete() -> None:
         with session_scope() as session:
+            parent = transactions_repo.get_transaction(session, txn_id)
+            if parent is not None:
+                # Remove the paired settlement leg too, so deleting a cash move
+                # doesn't strand a now-orphaned (often hidden) money-market row.
+                leg = _find_existing_settlement_leg(
+                    session,
+                    account_id=parent.account_id,
+                    external_id=parent.external_id,
+                    on=parent.date,
+                    net_native=parent.net_native,
+                )
+                if leg is not None and leg.id != parent.id:
+                    session.delete(leg)
+                    session.flush()
             transactions_repo.delete_transaction(session, txn_id)
         ui.notify("Deleted", type="positive")
         dlg.close()

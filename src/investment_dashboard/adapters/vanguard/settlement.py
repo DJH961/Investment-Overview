@@ -22,7 +22,10 @@ from dataclasses import replace
 from decimal import Decimal
 
 from investment_dashboard.adapters.importer_types import ParsedTransactionRow
-from investment_dashboard.domain.money_market import MONEY_MARKET_ASSET_CLASS
+from investment_dashboard.domain.money_market import (
+    MONEY_MARKET_ASSET_CLASS,
+    settlement_external_id_for,
+)
 
 SETTLEMENT_SYMBOL = "VMFXX"
 SETTLEMENT_NAME = "Vanguard Federal Money Market Fund"
@@ -109,7 +112,7 @@ def _settlement_leg_for(row: ParsedTransactionRow) -> ParsedTransactionRow | Non
         fees_native=None,
         net_native=-net,
         description="Settlement sweep (auto-generated)",
-        external_id=f"{row.external_id}:vmfxx",
+        external_id=settlement_external_id_for(row.external_id),
         source=row.source,
         name=SETTLEMENT_NAME,
         asset_class=MONEY_MARKET_ASSET_CLASS,
