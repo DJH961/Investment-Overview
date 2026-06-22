@@ -35,7 +35,7 @@ function makeExport(): MobileExport {
         price_symbol: "VTI",
         price_type: "market",
         last_known_price_native: "90",
-        cashflows: [{ date: "2023-01-01", amount: "-1000" }],
+        cashflows: [{ date: "2023-01-01", amount: "-909.0909090909091" }],
       },
       {
         symbol: "FXAIX",
@@ -50,12 +50,12 @@ function makeExport(): MobileExport {
         price_symbol: "FXAIX",
         price_type: "nav",
         last_known_price_native: "100",
-        cashflows: [{ date: "2023-06-01", amount: "-500" }],
+        cashflows: [{ date: "2023-06-01", amount: "-454.5454545454545" }],
       },
     ],
     portfolio_cashflows: [
-      { date: "2023-01-01", amount: "-1000" },
-      { date: "2023-06-01", amount: "-500" },
+      { date: "2023-01-01", amount: "-909.0909090909091" },
+      { date: "2023-06-01", amount: "-454.5454545454545" },
     ],
     cash: [{ account_label: "Direct", broker: "Bank", native_currency: "EUR", balance_native: "200" }],
     period_openings: {
@@ -129,7 +129,12 @@ describe("buildDashboard", () => {
     expect(sum).toBeLessThan(1);
   });
 
-  it("exposes per-holding total growth on cost (P/L ÷ cost basis)", () => {
+  it("exposes per-holding total growth (compounded; equals P/L ÷ cost for a single buy)", () => {
+    // Total growth is now the compounded (1 + XIRR) ^ years figure. For a holding
+    // funded by a single contribution that coincides with its cost basis, the
+    // compounded figure collapses to the simple P/L ÷ cost ratio, so these
+    // single-buy fixtures still line up with the naive ratio (within the XIRR
+    // solver's day-count reconstruction).
     for (const holding of model.holdings) {
       if (
         holding.unrealisedPlEur !== null &&
@@ -137,7 +142,7 @@ describe("buildDashboard", () => {
         holding.costBasisEur.greaterThan(0)
       ) {
         expect(holding.totalGrowthPct).not.toBeNull();
-        approx(holding.totalGrowthPct, holding.unrealisedPlEur.dividedBy(holding.costBasisEur).toNumber());
+        approx(holding.totalGrowthPct, holding.unrealisedPlEur.dividedBy(holding.costBasisEur).toNumber(), 1e-3);
       }
     }
   });
@@ -162,7 +167,7 @@ describe("buildDashboard", () => {
         price_symbol: "VMFXX",
         price_type: "nav",
         last_known_price_native: "1",
-        cashflows: [{ date: "2023-01-01", amount: "-1000" }],
+        cashflows: [{ date: "2023-01-01", amount: "-909.0909090909091" }],
       },
     ];
     const m = buildDashboard(exp, new Map(), fx, new Date("2024-06-01T12:00:00Z"));
@@ -170,7 +175,7 @@ describe("buildDashboard", () => {
     // 1005 shares × $1 − $1000 cost = $5 of earned dividends.
     expect(vmfxx.unrealisedPlEur!.toNumber()).toBeGreaterThan(0);
     expect(vmfxx.totalGrowthPct).not.toBeNull();
-    approx(vmfxx.totalGrowthPct, 0.005, 1e-4);
+    approx(vmfxx.totalGrowthPct, 0.005, 1e-3);
   });
 
   it("produces a portfolio XIRR (sign change present)", () => {
@@ -739,8 +744,10 @@ describe("currency-dependent growth", () => {
 
   it("reports per-holding USD growth distinct from EUR", () => {
     const h = m.holdings[0];
-    approx(h.totalGrowthPct, 0.2, 1e-4);
-    approx(h.totalGrowthPctUsd, 340 / 1100, 1e-4);
+    // Compounded (1 + XIRR) ^ years growth; for this single buy it tracks the
+    // simple gain ratio within the XIRR solver's day-count reconstruction.
+    approx(h.totalGrowthPct, 0.2, 1e-3);
+    approx(h.totalGrowthPctUsd, 340 / 1100, 1e-3);
     expect(h.costBasisUsd?.toNumber()).toBeCloseTo(1100, 4);
     expect(h.valueUsd?.toNumber()).toBeCloseTo(1440, 4);
   });
@@ -752,5 +759,69 @@ describe("currency-dependent growth", () => {
       m.overview.portfolioXirr!.toNumber(),
       4,
     );
+  });
+});
+
+describe("compounded total growth vs simple ratio (multi-flow)", () => {
+  // The user-reported defect: a holding funded by regular, repeated buys whose
+  // latest contributions have barely had time to grow read a deflated simple
+  // gain/cost ratio. With multiple cashflows the compounded (1 + XIRR) ^ years
+  // figure genuinely diverges from the naive ratio, so the row must report the
+  // compounded number rather than falling back to gain/cost.
+  function makeDcaExport(): MobileExport {
+    return {
+      meta: {
+        schema_version: 1,
+        app_version: "test",
+        generated_at: "2024-06-01T00:00:00+00:00",
+        as_of: "2024-06-01",
+        display_currency: "EUR",
+        fx_pivot: "EUR",
+        fx_rate_eur_usd: "1.00",
+        currency_note: "test",
+      },
+      holdings: [
+        {
+          symbol: "DCA",
+          name: "Dollar Cost Average",
+          asset_class: "etf",
+          broker: "Broker",
+          account: "Taxable",
+          native_currency: "EUR",
+          shares: "20",
+          cost_basis_native: "2200",
+          cumulative_dividends_cash_native: "0",
+          price_symbol: "DCA",
+          price_type: "market",
+          last_known_price_native: "150",
+          // Two buys a year apart: an old 1000 and a recent 1200.
+          cashflows: [
+            { date: "2023-01-05", amount: "-1000" },
+            { date: "2024-01-05", amount: "-1200" },
+          ],
+        },
+      ],
+      portfolio_cashflows: [
+        { date: "2023-01-05", amount: "-1000" },
+        { date: "2024-01-05", amount: "-1200" },
+      ],
+      cash: [],
+      period_openings: { month_start_value_eur: "0", year_start_value_eur: "0", holdings: {} },
+    };
+  }
+
+  it("reports the compounded growth, not the deflated gain/cost ratio", () => {
+    const noFx: FxRates = { base: "EUR", rates: { USD: new Decimal("1.00") } };
+    const quotes = new Map<string, Quote>([
+      ["DCA", { symbol: "DCA", price: new Decimal("150"), previousClose: new Decimal("150"), currency: "EUR" }],
+    ]);
+    const model = buildDashboard(makeDcaExport(), quotes, noFx, new Date("2024-06-01T12:00:00Z"));
+    const h = model.holdings[0];
+    // Value 20 × 150 = 3000, cost 2200 ⇒ the simple ratio would be 800 / 2200.
+    const simpleRatio = 800 / 2200;
+    expect(h.totalGrowthPct).not.toBeNull();
+    expect(h.totalGrowthPct!.toNumber()).toBeGreaterThan(0);
+    // Compounded growth is a real profit but is NOT the naive gain/cost ratio.
+    expect(Math.abs(h.totalGrowthPct!.toNumber() - simpleRatio)).toBeGreaterThan(0.01);
   });
 });

@@ -372,9 +372,7 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
         )
         held_years = years_between(first_flow, as_of) if first_flow is not None else ZERO
         simple_growth_eur = (gain_eur / c_eur) if c_eur != ZERO else None
-        simple_growth_usd = (
-            (gain_usd / c_usd) if (gain_usd is not None and c_usd != ZERO) else None
-        )
+        simple_growth_usd = (gain_usd / c_usd) if (gain_usd is not None and c_usd != ZERO) else None
         growth_eur = total_growth_pct_compounded(xirr_eur, held_years)
         if growth_eur is None:
             growth_eur = simple_growth_eur

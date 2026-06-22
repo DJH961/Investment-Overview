@@ -95,7 +95,6 @@ def tick_refresh(source: str = "Live price refresh", *, force: bool = False) -> 
                     ledger, cache, earliest_needed=date.today() - timedelta(days=30)
                 )
             else:
-            else:
                 refreshed = refresh_due_prices(ledger, cache)
         # Refresh the live EUR/USD spot alongside prices so the FX-aware "today"
         # figures move intraday with the currency, not just the security price.

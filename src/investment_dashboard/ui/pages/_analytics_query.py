@@ -126,6 +126,7 @@ def _build_curve(
     end: date,
     currency: str,
     benchmark_closes: dict[date, Decimal],
+    recompute_tail_days: int | None = CURVE_RECOMPUTE_TAIL_DAYS,
 ) -> list[EquityCurvePoint]:
     """One point per calendar day in ``[start, end]`` (inclusive).
 
@@ -164,7 +165,7 @@ def _build_curve(
         start,
         end,
         currency,
-        recompute_tail_days=CURVE_RECOMPUTE_TAIL_DAYS,
+        recompute_tail_days=recompute_tail_days,
     )
 
     # Cumulative contributions must account for flows on every calendar day,
@@ -201,14 +202,22 @@ def build_curve(
     end: date,
     currency: str,
     benchmark_closes: dict[date, Decimal],
+    recompute_tail_days: int | None = None,
 ) -> list[EquityCurvePoint]:
-    """Public wrapper for analytics curve construction."""
+    """Public wrapper for analytics curve construction.
+
+    Defaults to a gap-free curve (``recompute_tail_days=None``) so the
+    full-history "All" range exported to the web companion honestly extends back
+    to inception. The interactive desktop bundle uses the bounded recompute
+    instead to keep long-lookback views responsive on a cold cache.
+    """
     return _build_curve(
         session,
         start=start,
         end=end,
         currency=currency,
         benchmark_closes=benchmark_closes,
+        recompute_tail_days=recompute_tail_days,
     )
 
 

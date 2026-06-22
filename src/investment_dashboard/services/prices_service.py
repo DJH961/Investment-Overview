@@ -416,9 +416,7 @@ def instruments_due_for_refresh(
     instruments = instruments_repo.list_instruments(session)
     # One IN(...) query for every instrument's last-refresh timestamp instead
     # of one lookup per instrument.
-    last_refreshed = price_cache_repo.get_last_refreshed_at_map(
-        cache, [i.id for i in instruments]
-    )
+    last_refreshed = price_cache_repo.get_last_refreshed_at_map(cache, [i.id for i in instruments])
     for instr in instruments:
         if instr.asset_class in _SYNTHETIC_ASSET_CLASSES:
             continue

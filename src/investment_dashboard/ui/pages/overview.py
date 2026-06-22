@@ -160,7 +160,9 @@ def _fmt_updated(value: datetime, *, tz: tzinfo | None = None) -> str:
     return value.strftime("%d %b %H:%M")
 
 
-def _holding_card(card: HoldingCard, *, display_ccy: str, tz: tzinfo | None = None) -> None:  # pragma: no cover - UI
+def _holding_card(
+    card: HoldingCard, *, display_ccy: str, tz: tzinfo | None = None
+) -> None:  # pragma: no cover - UI
     """Render one redesigned holding box (web-style headline + detail grid).
 
     The top mirrors the web app — symbol, name, value and today's (daily) move —
