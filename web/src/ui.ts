@@ -192,9 +192,9 @@ function renderHeroFx(o: OverviewView): HTMLElement | null {
   const parts: HTMLElement[] = [];
   if (o.fxRateEurUsd !== null) {
     const devPct = fxTodayDeviationPct(o);
-    // Roll back the PR 73 display swap: USD mode shows the EUR/USD spot, while
-    // EUR mode shows the reciprocal. The percentage still follows the currency
-    // strength convention used by this hero line.
+    // Roll back the PR 73 display swap: USD mode displays the stored EUR/USD
+    // spot directly; EUR mode displays USD/EUR by taking its reciprocal. The
+    // percentage still follows the currency strength convention used here.
     const rate = inUsd ? o.fxRateEurUsd : new Decimal(1).dividedBy(o.fxRateEurUsd);
     const dev = devPct === null ? null : inUsd ? devPct : devPct.negated();
     const pair = inUsd ? "EUR/USD" : "USD/EUR";
