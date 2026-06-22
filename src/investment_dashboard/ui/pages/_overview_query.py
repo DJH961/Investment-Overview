@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
@@ -22,7 +22,12 @@ from investment_dashboard.domain.returns import (
 )
 from investment_dashboard.models import TransactionKind
 from investment_dashboard.repositories import transactions_repo
-from investment_dashboard.services import fx_service, prices_service, snapshots_service
+from investment_dashboard.services import (
+    fx_service,
+    intraday_snapshots_service,
+    prices_service,
+    snapshots_service,
+)
 from investment_dashboard.services.metrics_service import (
     PortfolioMetrics,
     build_instrument_cashflows,
@@ -31,6 +36,7 @@ from investment_dashboard.services.metrics_service import (
 from investment_dashboard.services.positions_service import (
     Position,
     compute_positions,
+    total_portfolio_value,
 )
 from investment_dashboard.ui.money_format import currency_symbol, fmt_shares
 
@@ -114,6 +120,59 @@ def build_value_series(
             session, start, end, currency, recompute_tail_days=recompute_tail_days
         )
     ]
+
+
+def build_intraday_value_series(
+    session: Session,
+    *,
+    currency: str,
+    tz: tzinfo | None = None,
+    now: datetime | None = None,
+) -> list[ValueSeriesPoint]:
+    """Within-day portfolio-value series for the Overview "Day" range.
+
+    Built from the intraday samples captured during today's market session
+    (:mod:`investment_dashboard.services.intraday_snapshots_service`) rather than
+    the once-a-day snapshot cache, so the curve shows real intraday movement with
+    market-time points only. The live current value is appended as the final
+    point so the tip matches the headline figure, and every point is converted
+    to ``currency`` (at the current FX rate — a single intraday day) and its
+    timestamp localised to ``tz`` for display. ``ValueSeriesPoint.date`` carries
+    a full :class:`~datetime.datetime` here (a ``date`` subclass), which the
+    chart renders on a time-of-day axis.
+
+    Returns ``[]`` when there is nothing to plot (no samples *and* no live value
+    — e.g. an empty ledger), so the caller can fall back to the empty state.
+    """
+    currency = currency.upper()
+    now = now or datetime.now(UTC)
+
+    samples = intraday_snapshots_service.day_series_eur(session, now=now)
+
+    # Cap the curve with the live current value so the tip equals the headline
+    # Total Value, even between captures. Skip the duplicate when the most recent
+    # sample is effectively "now". For a genuinely empty portfolio (no samples
+    # and a zero live value) there is nothing to plot.
+    live_eur = total_portfolio_value(session)
+    live_at = now.astimezone(UTC).replace(tzinfo=None) if now.tzinfo is not None else now
+    if (not samples and live_eur != 0) or (samples and samples[-1][0] < live_at):
+        samples = [*samples, (live_at, live_eur)]
+
+    if not samples:
+        return []
+
+    rate: Decimal | None = None
+    if currency != "EUR":
+        rate = fx_service.get_rate_eur_to_quote(session, date.today(), quote=currency)
+
+    points: list[ValueSeriesPoint] = []
+    for at_utc, value_eur in samples:
+        value = value_eur if (currency == "EUR" or not rate) else value_eur * rate
+        when: datetime = at_utc
+        if tz is not None:
+            when = at_utc.replace(tzinfo=UTC).astimezone(tz).replace(tzinfo=None)
+        points.append(ValueSeriesPoint(date=when, value=value))
+    return points
 
 
 @dataclass(frozen=True)

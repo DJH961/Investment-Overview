@@ -383,3 +383,43 @@ def test_fetch_splits_empty_frame() -> None:
 
     out = fetch_splits(["SCHD"], date(2024, 1, 2), date(2024, 1, 4), downloader=fake_download)
     assert out == {"SCHD": {}}
+
+
+def _intraday_frame() -> pd.DataFrame:
+    """Two 30-minute bars for one symbol with a tz-aware index (UTC)."""
+    idx = pd.to_datetime(["2024-06-03 13:30:00+00:00", "2024-06-03 14:00:00+00:00"], utc=True)
+    cols = pd.MultiIndex.from_tuples([("ACME", "Close"), ("ACME", "Open")])
+    return pd.DataFrame([[100.0, 99.0], [110.0, 109.0]], index=idx, columns=cols)
+
+
+def test_fetch_intraday_closes_normalises_to_naive_utc() -> None:
+    from datetime import datetime
+
+    from investment_dashboard.adapters.yfinance_client import fetch_intraday_closes
+
+    seen: dict[str, object] = {}
+
+    def fake_download(**kwargs: Any) -> pd.DataFrame:
+        seen["interval"] = kwargs.get("interval")
+        seen["start"] = kwargs.get("start")
+        seen["end"] = kwargs.get("end")
+        return _intraday_frame()
+
+    out = fetch_intraday_closes(
+        ["ACME"], date(2024, 6, 3), interval="30m", downloader=fake_download
+    )
+
+    assert seen["interval"] == "30m"
+    # end is exclusive in yfinance, so the window spans the whole session day.
+    assert seen["start"] == "2024-06-03"
+    assert seen["end"] == "2024-06-04"
+    assert out["ACME"][datetime(2024, 6, 3, 13, 30)] == Decimal(repr(100.0))
+    assert out["ACME"][datetime(2024, 6, 3, 14, 0)] == Decimal(repr(110.0))
+    # Stored keys are naive (tz stripped after conversion to UTC).
+    assert all(ts.tzinfo is None for ts in out["ACME"])
+
+
+def test_fetch_intraday_closes_empty_symbols_is_noop() -> None:
+    from investment_dashboard.adapters.yfinance_client import fetch_intraday_closes
+
+    assert fetch_intraday_closes([], date(2024, 6, 3)) == {}

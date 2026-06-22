@@ -105,6 +105,12 @@ def tick_refresh(source: str = "Live price refresh", *, force: bool = False) -> 
         updated = any(refreshed.values())
         if updated:
             log.debug("%s updated %s", source, [s for s, n in refreshed.items() if n])
+        # Capture a point for the Overview "1 Day" intraday curve while the US
+        # market is open, so the graph fills in with real market-time samples as
+        # the app keeps auto-updating prices (no-op + self-pruning otherwise).
+        from investment_dashboard.services import intraday_snapshots_service  # noqa: PLC0415
+
+        intraday_snapshots_service.record_if_market_open()
         # The refresh completed without error: clear any lingering "outdated
         # prices"/refresh-failure notice from a previous tick so the Data Health
         # surface self-heals once prices are actually flowing again.
