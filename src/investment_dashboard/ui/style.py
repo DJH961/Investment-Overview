@@ -609,6 +609,12 @@ html, body {{
   font-size: 0.95rem; font-weight: 600; font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }}
+/* A daily move still on an older print than its peers (e.g. a fund yet to strike
+   today's NAV) is greyed: it shows last session's move, not today's, so the
+   muted colour + softer weight signal "not updated today yet". */
+.inv-holding-change-stale {{
+  color: var(--inv-muted); font-weight: 500; opacity: 0.7;
+}}
 /* The detailed statistics grid the user asked to sit below each box. */
 .inv-holding-stats {{
   display: grid;
@@ -638,6 +644,40 @@ html, body {{
   color: var(--inv-loss); background: rgba(230,159,0,.12);
   border-color: rgba(230,159,0,.3);
 }}
+
+/* ------------------------------------------------------------------ */
+/* Today's movers (winners / losers)                                   */
+/* ------------------------------------------------------------------ */
+.inv-mover-sub {{
+  font-size: 0.75rem; color: var(--inv-muted); margin: -0.25rem 0 0.6rem;
+}}
+.inv-mover-grid {{
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;
+}}
+.inv-mover-col {{ display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }}
+.inv-mover-col-title {{
+  font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--inv-muted); font-weight: 700;
+}}
+.inv-mover {{
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.5rem; padding: 0.45rem 0.6rem;
+  background: var(--inv-surface-alt); border: 1px solid var(--inv-hairline);
+  border-radius: var(--inv-radius-md);
+}}
+.inv-mover-id {{ display: flex; flex-direction: column; min-width: 0; }}
+.inv-mover-sym {{
+  font-weight: 700; font-size: 0.9375rem; color: var(--inv-ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}}
+.inv-mover-tag {{
+  font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--inv-muted);
+}}
+.inv-mover-figures {{ display: flex; flex-direction: column; align-items: flex-end; flex: none; }}
+.inv-mover-pct {{ font-weight: 700; font-size: 0.9375rem; font-variant-numeric: tabular-nums; }}
+.inv-mover-money {{ font-size: 0.75rem; font-variant-numeric: tabular-nums; }}
+.inv-mover-empty {{ font-size: 0.8125rem; color: var(--inv-muted); padding: 0.2rem 0; }}
 
 
 /* ------------------------------------------------------------------ */

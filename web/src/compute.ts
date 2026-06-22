@@ -77,6 +77,16 @@ export interface HoldingView {
   todayMoveEur: Decimal | null;
   todayMovePct: Decimal | null;
   /**
+   * True when this holding's today's move is measured on an *older* price date
+   * than the freshest peer in the book — e.g. a mutual fund still on yesterday's
+   * NAV while ETFs have already printed today. The figure is then last session's
+   * move, not today's, so the UI greys it out to signal "not from today yet".
+   * Before the market opens every holding shares the same latest close, so this
+   * is false for all and nothing is greyed; it only lights up once some holdings
+   * have repriced ahead of others. False when no today's move applies.
+   */
+  todayMoveIsStale: boolean;
+  /**
    * The FX-revaluation portion of `todayMoveEur` — how much of today's EUR move
    * came from the EUR/USD swing rather than the security's own price tick (the
    * remainder being the price move). Null when no today's move applies, or zero
@@ -247,6 +257,38 @@ export interface AllocationSlice {
   label: string;
   valueEur: Decimal;
   weight: Decimal | null;
+}
+
+/** Why a holding earned its place on the movers leaderboard. */
+export type MoverReason = "total" | "percent";
+
+/** One holding on the today's-movers (winners/losers) leaderboard. */
+export interface MoverEntry {
+  symbol: string;
+  name: string;
+  todayMoveEur: Decimal | null;
+  todayMoveUsd: Decimal | null;
+  todayMovePct: Decimal | null;
+  todayMovePctUsd: Decimal | null;
+  /** "total" = biggest money move; "percent" = biggest percentage move. */
+  reason: MoverReason;
+}
+
+/**
+ * Today's biggest winners and losers, each capped at two entries: the biggest
+ * money move and the biggest percentage move. When the same holding tops both,
+ * the second slot becomes the percentage runner-up so two distinct names show.
+ * Only holdings that repriced on the freshest date are eligible — before the
+ * open that is every holding (so it reads last session's movers), and during the
+ * session only those that have already printed today.
+ */
+export interface MoversView {
+  winners: MoverEntry[];
+  losers: MoverEntry[];
+  /** The price date the movers are measured on (ISO `YYYY-MM-DD`), or null. */
+  basisDate: string | null;
+  /** How many holdings were eligible (repriced on the freshest date with a move). */
+  eligibleCount: number;
 }
 
 export interface DashboardModel {
@@ -710,6 +752,7 @@ function buildHolding(
     costBasisEur,
     todayMoveEur,
     todayMovePct,
+    todayMoveIsStale: false, // resolved in buildDashboard once the freshest peer date is known
     todayFxMoveEur,
     weight: null, // filled once the portfolio total is known
     unrealisedPlEur,
@@ -861,6 +904,13 @@ export function buildDashboard(
         : latest,
     null,
   );
+  // A holding whose today's move spans an older date than the freshest peer is
+  // lagging (e.g. a fund still on yesterday's NAV while ETFs printed today): its
+  // daily figure is last session's move, not today's, so flag it for greying.
+  for (const { view, moveDate } of holdingContexts) {
+    view.todayMoveIsStale =
+      moveDate !== null && latestPriceDate !== null && moveDate < latestPriceDate;
+  }
   const prevHoldingsValueEur = holdingContexts.reduce(
     (acc, { view, currentValueNative, moveDate }) => {
       if (view.valueEur === null) return acc;
@@ -1145,4 +1195,66 @@ function buildAllocation(holdings: HoldingView[], holdingsValueEur: Decimal): Al
       weight: holdingsValueEur.greaterThan(0) ? valueEur.dividedBy(holdingsValueEur) : null,
     }))
     .sort((a, b) => b.valueEur.minus(a.valueEur).toNumber());
+}
+
+/** A holding's today's-move snapshot as a movers-leaderboard entry. */
+function toMoverEntry(h: HoldingView, reason: MoverReason): MoverEntry {
+  return {
+    symbol: h.symbol,
+    name: h.name,
+    todayMoveEur: h.todayMoveEur,
+    todayMoveUsd: h.todayMoveUsd,
+    todayMovePct: h.todayMovePct,
+    todayMovePctUsd: h.todayMovePctUsd,
+    reason,
+  };
+}
+
+/**
+ * Pick up to two leaderboard entries from one side (winners or losers): the
+ * biggest money move, then the biggest percentage move. When the same holding
+ * tops both, the second slot falls back to the percentage runner-up so two
+ * distinct names are shown. `sign` is +1 for winners (descending) or −1 for
+ * losers (ascending). Ranking uses the canonical EUR figures (the order is
+ * FX-invariant, so the USD view shows the same names).
+ */
+function pickMoverSide(pool: HoldingView[], sign: 1 | -1): MoverEntry[] {
+  if (pool.length === 0) return [];
+  const byMoney = [...pool].sort((a, b) =>
+    sign * (b.todayMoveEur as Decimal).minus(a.todayMoveEur as Decimal).toNumber(),
+  );
+  const byPct = [...pool].sort((a, b) =>
+    sign * (b.todayMovePct as Decimal).minus(a.todayMovePct as Decimal).toNumber(),
+  );
+  const topTotal = byMoney[0];
+  const entries: MoverEntry[] = [toMoverEntry(topTotal, "total")];
+  // The biggest-% holding, or — when it is also the biggest-money one — the
+  // next holding by percentage, so the runner-up surfaces a second name.
+  const topPct = byPct.find((h) => h.symbol !== topTotal.symbol) ?? byPct[0];
+  if (topPct.symbol !== topTotal.symbol) entries.push(toMoverEntry(topPct, "percent"));
+  return entries;
+}
+
+/**
+ * Build today's winners/losers leaderboard from the holdings. Only holdings that
+ * repriced on the freshest date contribute a today's move (lagging funds are
+ * excluded), so before the open this reflects last session's movers and during
+ * the session only those already printed today. See {@link MoversView}.
+ */
+export function buildMovers(holdings: HoldingView[]): MoversView {
+  const eligible = holdings.filter(
+    (h) => !h.todayMoveIsStale && h.todayMoveEur !== null && h.todayMovePct !== null,
+  );
+  const basisDate = eligible.reduce<string | null>(
+    (latest, h) => (latest === null || h.priceFallbackDate > latest ? h.priceFallbackDate : latest),
+    null,
+  );
+  const winnersPool = eligible.filter((h) => (h.todayMoveEur as Decimal).greaterThan(0));
+  const losersPool = eligible.filter((h) => (h.todayMoveEur as Decimal).lessThan(0));
+  return {
+    winners: pickMoverSide(winnersPool, 1),
+    losers: pickMoverSide(losersPool, -1),
+    basisDate,
+    eligibleCount: eligible.length,
+  };
 }
