@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session, joinedload
 from investment_dashboard.domain import dividends
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.returns import (
+    Cashflow,
     total_growth_pct_compounded,
     xirr,
     years_between,
@@ -134,6 +135,15 @@ class PeriodRow:
     #: rooted (degenerate cashflow stream).
     total_growth_compounded_eur: Decimal | None = None
     total_growth_compounded_usd: Decimal | None = None
+    #: Per-period growth measured with **XIRR** (money-weighted), compounded
+    #: over the period's own span: ``(1 + period_xirr) ^ years_in_period − 1``.
+    #: This is the v3.x "Growth % (period)" figure on the *yearly* table — the
+    #: per-year money-weighted return that is consistent with the cumulative
+    #: Total Growth column (also XIRR-based). For the first invested period it
+    #: equals Total Growth by construction (no opening balance to discount).
+    #: ``None`` when XIRR cannot be rooted for the period. Currency-dependent.
+    yearly_growth_eur: Decimal | None = None
+    yearly_growth_usd: Decimal | None = None
     #: Closing value translated to USD with the period-end FX rate
     #: (forward-filled). ``None`` when no FX history is on file.
     closing_value_usd: Decimal | None = None
@@ -696,6 +706,36 @@ def _attach_cumulative_growth(
         else:
             growth_usd = None
 
+        # ---- Per-period (yearly) growth via XIRR, currency-dependent -------
+        period_start = _period_start(r.label, monthly=monthly)
+        # USD opening balance: prefer the per-period-end display leg when the
+        # page already aggregated in USD, else convert the EUR opening with the
+        # period-start FX rate.
+        if r.display_currency == "USD" and r.opening_value_display is not None:
+            opening_usd: Decimal | None = r.opening_value_display
+        else:
+            fx_open = lookup_rate_with_forward_fill(eur_to_usd, period_start)
+            opening_usd = (
+                r.opening_value_eur * fx_open if fx_open is not None and fx_open != 0 else None
+            )
+        yearly_eur = _period_xirr_growth(
+            opening=r.opening_value_eur,
+            closing=closing_eur,
+            window_flows=[cf for cf in flows_eur if period_start <= cf.date <= period_end],
+            period_start=period_start,
+            period_end=period_end,
+        )
+        if closing_usd is not None and opening_usd is not None:
+            yearly_usd = _period_xirr_growth(
+                opening=opening_usd,
+                closing=closing_usd,
+                window_flows=[cf for cf in flows_usd if period_start <= cf.date <= period_end],
+                period_start=period_start,
+                period_end=period_end,
+            )
+        else:
+            yearly_usd = None
+
         out.append(
             PeriodRow(
                 label=r.label,
@@ -716,10 +756,52 @@ def _attach_cumulative_growth(
                 display_currency=r.display_currency,
                 total_growth_compounded_eur=growth_eur,
                 total_growth_compounded_usd=growth_usd,
+                yearly_growth_eur=yearly_eur,
+                yearly_growth_usd=yearly_usd,
                 closing_value_usd=closing_usd,
             )
         )
     return out
+
+
+def _period_xirr_growth(
+    *,
+    opening: Decimal,
+    closing: Decimal,
+    window_flows: list[Cashflow],
+    period_start: date,
+    period_end: date,
+) -> Decimal | None:
+    """Money-weighted growth for a single period via XIRR.
+
+    The opening balance (when positive) is modelled as money invested on
+    ``period_start`` — a negative cashflow, matching the deposit sign
+    convention — and the closing balance is the terminal mark-to-market. The
+    resulting period XIRR is then compounded over the period's *own* span
+    (anchored on the first money-at-risk date) so the figure is comparable to
+    the cumulative Total Growth column. For the first invested period (no
+    opening balance) this reduces to exactly the cumulative Total Growth.
+
+    Returns ``None`` when the period has no money at risk or XIRR cannot be
+    rooted (e.g. a degenerate single-date stream).
+    """
+    flows: list[Cashflow] = list(window_flows)
+    if opening > 0:
+        # Opening balance is money already at risk at period start; under the
+        # deposit sign convention (money in ⇒ negative) it enters as a negative
+        # cashflow so the period XIRR discounts it like an upfront investment.
+        flows.append(Cashflow(date=period_start, amount=-opening))
+        anchor = period_start
+    else:
+        in_dates = [cf.date for cf in flows]
+        if not in_dates:
+            return None
+        anchor = min(in_dates)
+    rate = xirr(flows, as_of=period_end, terminal_value=closing)
+    if rate is None:
+        return None
+    years = years_between(anchor, period_end)
+    return total_growth_pct_compounded(rate, years)
 
 
 def to_table_rows(
@@ -834,6 +916,17 @@ def to_table_rows(
             ),
             "total_growth_eur_signed": _f(r.total_growth_compounded_eur),
             "total_growth_usd_signed": _f(r.total_growth_compounded_usd),
+            # v3.x per-period XIRR (money-weighted) growth — the yearly table's
+            # "Growth % (period)" column binds to these so the per-year figure
+            # is consistent with the cumulative Total Growth (also XIRR).
+            "yearly_growth": (
+                f"{(r.yearly_growth_usd if currency.upper() == 'USD' else r.yearly_growth_eur) * Decimal(100):,.2f} %"
+                if (r.yearly_growth_usd if currency.upper() == "USD" else r.yearly_growth_eur)
+                is not None
+                else "—"
+            ),
+            "yearly_growth_eur_signed": _f(r.yearly_growth_eur),
+            "yearly_growth_usd_signed": _f(r.yearly_growth_usd),
         }
         for r in rows
     ]

@@ -75,3 +75,25 @@ class TestBuildValueSeries:
 
     def test_empty_ledger_returns_no_points(self, session: Session) -> None:
         assert build_value_series(session, currency="EUR", range_label="All") == []
+
+
+class TestPreviousSessionCloseValue:
+    def test_returns_prior_trading_day_settled_value(self, session: Session) -> None:
+        from datetime import datetime
+
+        from investment_dashboard.ui.pages._overview_query import previous_session_close_value
+
+        _seed(session)
+        # A Wednesday: the "Day" session is 2024-06-05, so the reference is the
+        # prior trading day's (2024-06-04) settled value (forward-filled 1000).
+        now = datetime(2024, 6, 5, 18, 0)
+        value = previous_session_close_value(session, currency="EUR", now=now)
+        assert value == Decimal("1000.00")
+
+    def test_returns_none_for_empty_ledger(self, session: Session) -> None:
+        from datetime import datetime
+
+        from investment_dashboard.ui.pages._overview_query import previous_session_close_value
+
+        now = datetime(2024, 6, 5, 18, 0)
+        assert previous_session_close_value(session, currency="EUR", now=now) is None
