@@ -231,13 +231,11 @@ def _header(
                 on_click=lambda: ui.navigate.to("/help"),
             ).props("flat round dense").tooltip("Help & user guide")
             _data_health_badge()
-            ui.button(
-                icon="refresh",
-                on_click=ui.navigate.reload,
-            ).props("flat round dense").tooltip("Refresh page")
             # Always-on cue that the app's *automatic* price refresh is alive:
             # it spins/says "Updating…" while a background pull runs and shows
-            # the last auto-update time when idle (see refresh_indicator).
+            # the last auto-update time when idle (see refresh_indicator). The
+            # chip is clickable to force an immediate refresh — it replaces the
+            # old standalone refresh button (which only reloaded the page).
             from investment_dashboard.ui import refresh_indicator  # noqa: PLC0415
 
             refresh_indicator.install_header_indicator(tz=now_tz)
@@ -331,6 +329,13 @@ def page_frame(title: str, *, current: str) -> Iterator[None]:
     from investment_dashboard.ui import runtime_errors  # noqa: PLC0415
 
     runtime_errors.install_client_watch()
+    # A page load (e.g. a browser refresh) now also pulls fresh prices, fixing
+    # the old "refresh only reloaded the UI" gap. TTL-gated, so navigating
+    # between pages is cheap — only symbols past their refresh window hit the
+    # network (see services.auto_refresh / prices_service).
+    from investment_dashboard.services import auto_refresh  # noqa: PLC0415
+
+    auto_refresh.run_in_background("Page refresh")
     with ui.column().classes("inv-page q-pa-lg gap-md") as col:
         yield
     del col

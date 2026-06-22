@@ -31,6 +31,7 @@ from investment_dashboard.repositories import (
     transactions_repo,
 )
 from investment_dashboard.services import (
+    auto_refresh,
     benchmark_service,
     display_currency_service,
     instrument_enrichment_service,
@@ -192,6 +193,25 @@ def _set_timezone(value: str) -> None:  # pragma: no cover - UI
         return
     ui.notify(f"Timezone set to {value}", type="positive")
     ui.navigate.reload()
+
+
+def _set_refresh_interval(value: object) -> None:  # pragma: no cover - UI
+    """Persist + live-apply the auto-update (price refresh) cadence."""
+    try:
+        seconds = int(float(value))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        ui.notify("Enter a whole number of seconds", type="negative")
+        return
+    with session_scope() as session:
+        stored = auto_refresh.set_interval_seconds(session, seconds)
+    # Re-arm the running timer immediately so the change takes effect now.
+    try:
+        from investment_dashboard import main as _main  # noqa: PLC0415
+
+        _main.set_live_refresh_interval(float(stored))
+    except Exception:  # pragma: no cover - defensive (e.g. timer not armed in tests)
+        log.debug("could not re-arm live refresh timer", exc_info=True)
+    ui.notify(f"Auto-update every {stored}s", type="positive")
 
 
 def _edit_account_dialog(
@@ -915,6 +935,23 @@ def _render_display_prefs(
         ui.label(
             'Sets the clock shown in the header. "Local" follows this '
             "computer's timezone; pick any zone to override it.",
+        ).classes("text-caption opacity-70")
+    with session_scope() as session:
+        current_interval = auto_refresh.get_interval_seconds(session)
+    with ui.row().classes("items-center gap-md q-mt-sm"):
+        ui.label("Auto-update prices every:").classes("text-body2")
+        ui.number(
+            value=current_interval,
+            min=auto_refresh.MIN_INTERVAL_SECONDS,
+            max=auto_refresh.MAX_INTERVAL_SECONDS,
+            step=5,
+            suffix="s",
+            on_change=lambda e: _set_refresh_interval(e.value),
+        ).props("dense outlined").classes("w-[8rem]")
+        ui.label(
+            "How often the app pulls fresh prices in the background "
+            f"({auto_refresh.MIN_INTERVAL_SECONDS}-{auto_refresh.MAX_INTERVAL_SECONDS}s). "
+            "A thin bar pulses at the top of the page while an update runs.",
         ).classes("text-caption opacity-70")
 
 

@@ -145,8 +145,34 @@ html, body {{
   animation: inv-refresh-spin 0.9s linear infinite;
 }}
 @keyframes inv-refresh-spin {{ to {{ transform: rotate(360deg); }} }}
+/* Thin top-of-page bar that pulses while an automatic price refresh runs, so
+   the auto-update is visible at the very top, not only in the header chip. */
+#inv-refreshbar {{
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg,
+    transparent, var(--inv-accent), var(--inv-accent), transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+  z-index: 100003;
+}}
+#inv-refreshbar.is-active {{
+  opacity: 1;
+  animation: inv-refreshbar-slide 1.1s linear infinite;
+}}
+@keyframes inv-refreshbar-slide {{
+  0% {{ background-position: -40% 0; }}
+  100% {{ background-position: 140% 0; }}
+}}
 @media (prefers-reduced-motion: reduce) {{
   .inv-refresh-icon.inv-refresh-spin {{ animation: none; }}
+  #inv-refreshbar.is-active {{ animation: none; }}
 }}
 
 /* ------------------------------------------------------------------ */
