@@ -1421,9 +1421,7 @@ def _shutdown_clicked() -> None:  # pragma: no cover - UI
                     ui.notify(note[0], type=note[1])
                 # Clean exit: suppress the "connection lost" banner (a drop is
                 # expected) and try to auto-close the tab.
-                ui.run_javascript(
-                    "if (window.__invBeginShutdown) window.__invBeginShutdown();"
-                )
+                ui.run_javascript("if (window.__invBeginShutdown) window.__invBeginShutdown();")
                 # Give the notification + JS a moment to run, then stop the
                 # server. We already published above, so skip the duplicate.
                 ui.timer(0.8, lambda: shutdown.request_shutdown(publish=False), once=True)

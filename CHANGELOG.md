@@ -12,7 +12,44 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
-## [3.2.1] — 2026-06-22
+## [3.3.0] — 2026-06-22
+
+Desktop live-web companion workflow polish — quieter, smarter auto-publishing
+and shutdown — plus a money-market profit/loss correction that now flows through
+to the web companion, and a smarter update button.
+
+### Added
+
+- **Debounced auto-publish after manual edits.** Editing, adding or deleting a
+  transaction now schedules a single live-web republish 120 seconds after the
+  *last* edit, so a burst of manual corrections coalesces into one upload
+  instead of publishing on every keystroke. The pending publish is cancelled on
+  shutdown (which publishes once itself).
+- **Publish notifications.** After an import-triggered or shutdown-triggered
+  auto-publish, a short toast reports whether the snapshot was published or
+  failed (with a non-sensitive reason). Skipped/disabled publishes stay silent.
+
+### Changed
+
+- **Money-market profit/loss now counts reinvested dividends.** Settlement
+  funds (VMFXX, SPAXX …) price at par ($1), so their reinvested dividends were
+  folded into the cost basis and cancelled out, pinning gain and growth at zero.
+  Those reinvest legs are now excluded from money-market cost basis, surfacing
+  the earned dividends as the holding's gain/growth in the desktop overview,
+  the mobile export, **and** the web companion.
+- **The update button reloads the page as well as the prices.** A user-initiated
+  refresh now repaints the page "page first" if prices are slow to arrive, then
+  reloads again once the fresh prices land, so the view never feels stale.
+- **"Last published" time is shown in your configured timezone** (no longer in
+  raw UTC), and the header clock drops its timezone suffix (set the zone in
+  Settings instead).
+
+### Changed — shutdown
+
+- **Cleaner log-off.** Shutting down now auto-closes the tab and shows a calm
+  "Shutting down… you can close this tab." message instead of the alarming
+  "connection lost" reconnect screen.
+
 
 Web companion: a batch of mobile-first UI polish around the chart axis, the live
 update animation, and free-tier budget awareness, plus a desktop equity-curve fix.
