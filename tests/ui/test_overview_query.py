@@ -417,3 +417,62 @@ def test_holding_freshness_marks_money_market(session: Session) -> None:
     assert mm.is_money_market is True
     assert mm.price_as_of is None
     assert mm.updated_at is None
+
+
+def test_instrument_mtd_growth_per_currency(session: Session) -> None:
+    """MTD growth compares the current value to the start-of-month value
+    (no flows this month), mirroring the YTD calculation but month-scoped."""
+    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+
+    today = date.today()
+    month_start = date(today.year, today.month, 1)
+    if today == month_start:
+        import pytest
+
+        pytest.skip("On the 1st there is no intra-month window to measure.")
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Fidelity",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    acme = instruments_repo.get_or_create(session, symbol="ACME", asset_class="etf")
+    # Bought before this month; priced $200 at month start, $250 today.
+    prices_repo.upsert_closes(
+        session, acme.id, {month_start: Decimal("200.00"), today: Decimal("250.00")}
+    )
+    fx_repo.upsert_rates(
+        session,
+        {month_start: Decimal("1.25"), today: Decimal("1.25")},
+    )
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(today.year, 1, 5),
+            kind="buy",
+            instrument_id=acme.id,
+            quantity=Decimal("10"),
+            price_native=Decimal("100"),
+            net_native=Decimal("-1000"),
+            source=TransactionSource.MANUAL,
+        )
+    )
+    session.flush()
+
+    positions = get_positions(session)
+    metrics = compute_instrument_metrics(session, positions)
+    im = metrics[acme.id]
+    # (250 - 200) / 200 = +25 % this month, no intra-month flows.
+    assert im.mtd_growth_usd is not None
+    assert abs(im.mtd_growth_usd - Decimal("0.25")) < Decimal("0.01")
+
+
+def test_position_rows_carry_mtd(session: Session, seeded: None) -> None:
+    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+
+    positions = get_positions(session)
+    metrics = compute_instrument_metrics(session, positions)
+    rows = position_rows(positions, metrics=metrics)
+    assert all("mtd_eur_signed" in r and "mtd_usd_signed" in r for r in rows)

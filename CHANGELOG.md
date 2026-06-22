@@ -16,6 +16,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [3.2.0] — 2026-06-22
 
+### Holdings page
+- Added **Total Growth** and **XIRR** KPI cards to the headline row.
+- Portfolio shape now fits on a single row instead of wrapping a lone tile to a second line.
+- Re-ordered the per-holding growth columns to **XIRR → Total → YTD → MTD → Today**, adding the previously-missing **MTD** column.
+- Roomier table spacing so figures and labels are no longer clipped.
+
 ### Added — local app: edit transactions & a much easier manual entry
 
 - **Transactions are now editable (and deletable) right from the ledger.** Each

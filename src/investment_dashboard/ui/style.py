@@ -283,6 +283,21 @@ html, body {{
   gap: 1rem;
   align-items: stretch;
 }}
+/* One-line variant: lay every card in a single shrink-to-fit row (used by the
+   Holdings "Portfolio shape" strip so a lone card can't fall to a 2nd row).
+   Falls back to wrapping on narrow desktops. */
+.inv-kpi-grid--oneline {{
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+}}
+@media (max-width: 60rem) {{
+  .inv-kpi-grid--oneline {{
+    grid-auto-flow: row;
+    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+    grid-auto-columns: auto;
+  }}
+}}
 .inv-kpi {{
   background: var(--inv-surface) !important;
   border: 1px solid var(--inv-hairline);
@@ -619,6 +634,11 @@ html, body {{
 }}
 .ag-theme-alpine .inv-edit-cell:hover {{
   background: var(--inv-accent-soft);
+}}
+/* A touch more breathing room in grid cells so numbers/labels aren't clipped. */
+.ag-theme-alpine .ag-cell {{
+  padding-left: 14px;
+  padding-right: 14px;
 }}
 /* Let long column titles wrap onto two lines (paired with the grids'
    ``wrapHeaderText`` / ``autoHeaderHeight`` options) instead of being clipped
