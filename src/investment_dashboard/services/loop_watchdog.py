@@ -106,7 +106,7 @@ async def _run(
             try:
                 _report_stall(lag)
             except Exception:  # never let the safety net take the app down
-                log.debug("loop watchdog report failed", exc_info=True)
+                log.debug("failed to report event loop stall", exc_info=True)
 
 
 def start(

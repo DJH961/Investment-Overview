@@ -315,6 +315,9 @@ def _script() -> str:
   // sub-second hiccup doesn't flash a scary "lost" → "reconnected" pair.
   var graceTimer = null, lostPending = false, escalated = false;
   var reloadFallbackTimer = null;
+  // 4s: long enough to absorb a typical heavy-page build / brief disk stall
+  // without flashing a scary banner, but well inside the server's 10s
+  // reconnect window so a genuine drop is still surfaced promptly.
   var LOST_GRACE_MS = 4000;
   function setDot(cls, title) {
     dot = dot || el('inv-conn-dot');
