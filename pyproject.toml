@@ -148,8 +148,16 @@ markers = [
     "network: tests that hit real external APIs; skipped unless --run-network is passed",
 ]
 filterwarnings = [
+    # Treat any unexpected warning as an error so new deprecations from our own
+    # code (or dependencies) surface in CI instead of scrolling past silently.
+    # Known, un-actionable third-party notices are explicitly allow-listed below.
+    "error",
     "ignore::DeprecationWarning:yfinance.*",
     "ignore::DeprecationWarning:pandas.*",
+    # FastAPI's TestClient re-exports Starlette's, which warns that pinning
+    # `httpx` (rather than the not-yet-released `httpx2`) is deprecated. This
+    # is a transitive-dependency notice we cannot action from our own code.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:UserWarning",
 ]
 
 [tool.coverage.run]
