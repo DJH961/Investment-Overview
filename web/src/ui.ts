@@ -498,7 +498,7 @@ export function renderDashboard(
   // (no re-render, so live figures and form state survive a tab switch).
   const tabs: TabDef[] = [
     { id: "overview", label: "Overview", glyph: "◎", panel: renderOverviewPanel(model) },
-    { id: "periods", label: "Periods", glyph: "▦", panel: renderPeriodsPanel(model.periods, model.deposits) },
+    { id: "periods", label: "Periods", glyph: "▦", panel: renderPeriodsPanel(model.periods, model.deposits, model.plan) },
     { id: "analytics", label: "Risk", glyph: "📈", panel: renderAnalyticsPanel(model.analytics) },
     { id: "plan", label: "Calculator", glyph: "🧮", panel: renderCalculatorPanel(model.plan) },
   ];
@@ -659,6 +659,96 @@ function renderContributionsSummary(deposits: DepositsView): HTMLElement {
   return h("section", { class: "deposits" }, [sectionHead("Contributions"), h("div", { class: "stats" }, [summary])]);
 }
 
+/** How many forward years the Periods-tab projection outlook looks ahead. */
+const PROJECTION_OUTLOOK_YEARS = 10;
+/** The ± band (in fractional points) for the outlook's optimistic/pessimistic scenarios. */
+const PROJECTION_OUTLOOK_BAND = new Decimal("0.03");
+
+/**
+ * A compact, read-only forward projection shown *underneath* the historical
+ * period tables — so Periods reads as one continuous timeline: settled months
+ * and years above, the projected next {@link PROJECTION_OUTLOOK_YEARS} years
+ * below. It is seeded straight from the portfolio (today's value, the average
+ * yearly contribution, and the XIRR-derived expected return) with no inputs of
+ * its own; the Calculator tab remains the place to tweak the assumptions.
+ */
+function renderProjectionOutlook(plan: PlanView): HTMLElement {
+  const isUsd = getDisplayCurrency() === "USD";
+  // Match the rest of the dashboard: in USD display, project on the USD-derived
+  // expected return so the outlook is consistent with the toggled currency.
+  const expected = isUsd && plan.expectedRateUsd !== null ? plan.expectedRateUsd : plan.expectedRateEur;
+  const params: ProjectionParams = {
+    startingValue: plan.startingValueEur,
+    baseContribution: plan.defaultAnnualContributionEur,
+    periods: PROJECTION_OUTLOOK_YEARS,
+    periodsPerYear: 1,
+    annualRates: bandRates(expected, PROJECTION_OUTLOOK_BAND),
+    start: new Date(Date.UTC(plan.baseYear, 0, 1)),
+  };
+  const result = simulate(params);
+  const last = finalPoint(result);
+
+  const scenarios = [
+    { key: SCENARIO_PESSIMISTIC, label: "Pessimistic" },
+    { key: SCENARIO_EXPECTED, label: "Expected" },
+    { key: SCENARIO_OPTIMISTIC, label: "Optimistic" },
+  ] as const;
+
+  // Headline scenario cards: where the portfolio could stand at the horizon.
+  const kpiCards = scenarios.map(({ key, label }) => {
+    const finalVal = last ? last.nominalByScenario[key] : plan.startingValueEur;
+    return h("div", { class: "stat" }, [
+      h("span", { class: "stat-label" }, [label]),
+      h("span", { class: "stat-value pos" }, [formatCurrencyWhole(convertFromEur(finalVal).value)]),
+      h("span", { class: "stat-sub muted" }, [last ? `by ${last.label}` : "—"]),
+    ]);
+  });
+  kpiCards.push(
+    h("div", { class: "stat" }, [
+      h("span", { class: "stat-label" }, ["Contributed"]),
+      h("span", { class: "stat-value" }, [formatCurrencyWhole(convertFromEur(totalContributed(result)).value)]),
+      h("span", { class: "stat-sub muted" }, ["total new money"]),
+    ]),
+  );
+
+  // Forward per-year table in the same style as the Calculator's projection.
+  const colHeaders = scenarios.map(({ label }) => h("span", { class: "proj-cell muted" }, [label.slice(0, 4)]));
+  const tableRows = result.points.map((pt) => {
+    const cells = scenarios.map(({ key }) =>
+      h("span", { class: "proj-cell" }, [formatCurrencyWhole(convertFromEur(pt.nominalByScenario[key]).value)]),
+    );
+    return h("li", { class: "proj-row" }, [
+      h("span", { class: "proj-year" }, [pt.label]),
+      h("span", { class: "proj-contrib muted" }, [`+${formatCurrencyWhole(convertFromEur(pt.contributed).value)}`]),
+      h("div", { class: "proj-values" }, cells),
+    ]);
+  });
+
+  const body = h("div", { class: "projection-outlook-body" }, [
+    h("p", { class: "note" }, [
+      `Seeded from today's portfolio: ${formatCurrency(plan.startingValueEur)} growing at ` +
+        `${expected.times(100).toDecimalPlaces(1)}% p.a. (±${PROJECTION_OUTLOOK_BAND.times(100)}pp), plus ` +
+        `${formatCurrency(plan.defaultAnnualContributionEur)}/yr of contributions. Adjust the assumptions on the Calculator tab.`,
+    ]),
+    h("section", { class: "stats" }, [h("div", { class: "stat-grid calc-summary" }, kpiCards)]),
+    h("section", { class: "card" }, [
+      h("div", { class: "proj-head" }, [
+        h("span", { class: "proj-year muted" }, ["Year"]),
+        h("span", { class: "proj-contrib muted" }, ["Contributed"]),
+        h("div", { class: "proj-values" }, colHeaders),
+      ]),
+      h("ul", { class: "proj-list" }, tableRows),
+    ]),
+  ]);
+
+  const expectedFinal = last ? convertFromEur(last.nominalByScenario[SCENARIO_EXPECTED]).value : null;
+  const sub = expectedFinal !== null
+    ? `~${formatCurrencyWhole(expectedFinal)} expected by ${last!.label}`
+    : `${PROJECTION_OUTLOOK_YEARS}-year outlook`;
+  return collapsibleSection("Projection", sub, body, "projection-outlook", true);
+}
+
+
 /** One contribution ledger row, used nested under its year group. */
 function renderDepositRow(row: DepositRowView): HTMLElement {
   return h("li", { class: "ledger-row" }, [
@@ -727,7 +817,7 @@ function renderYearGroup(
   return collapsibleSection(year, sub, wrapped, "periods-year", isCurrent);
 }
 
-function renderPeriodsPanel(periods: PeriodsView, deposits: DepositsView | null): HTMLElement {
+function renderPeriodsPanel(periods: PeriodsView, deposits: DepositsView | null, plan: PlanView): HTMLElement {
   const children: Array<Node | string> = [];
   if (deposits) children.push(renderContributionsSummary(deposits));
 
@@ -781,9 +871,14 @@ function renderPeriodsPanel(periods: PeriodsView, deposits: DepositsView | null)
     );
   }
 
+  // Forward-looking projection, underneath the historical periods, so Periods
+  // reads as one continuous past → future timeline.
+  children.push(renderProjectionOutlook(plan));
+
   children.push(
     h("p", { class: "disclaimer" }, [
-      "The current month and year are recomputed live; completed periods are frozen as of the last export.",
+      "The current month and year are recomputed live; completed periods are frozen as of the last export. " +
+        "Projected years are hypothetical and assume constant returns.",
     ]),
   );
   return h("section", { class: "panel-stack panel-periods" }, children);
