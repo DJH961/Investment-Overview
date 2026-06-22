@@ -70,6 +70,15 @@ export class PriceError extends Error {
    */
   readonly retryable: boolean;
   /**
+   * True when the failure is a genuine *configuration* problem the user must act
+   * on — a rejected/over-quota API key (HTTP 401/403) — so the caller should
+   * route to Settings rather than silently degrading. A `fatal` error is never
+   * `retryable`. Everything else (a 404, a 5xx, a rate limit, a network blip) is
+   * non-fatal: the app should keep its cached/last-known values and carry on,
+   * never dead-ending the whole screen.
+   */
+  readonly fatal: boolean;
+  /**
    * Server-advised wait before retrying, in milliseconds, parsed from a
    * `Retry-After` header when present; null otherwise. Callers may prefer this
    * over their own backoff schedule.
@@ -78,13 +87,19 @@ export class PriceError extends Error {
 
   constructor(
     message: string,
-    options: { status?: number | null; retryable?: boolean; retryAfterMs?: number | null } = {},
+    options: {
+      status?: number | null;
+      retryable?: boolean;
+      retryAfterMs?: number | null;
+      fatal?: boolean;
+    } = {},
   ) {
     super(message);
     this.name = "PriceError";
     this.status = options.status ?? null;
     this.retryable = options.retryable ?? false;
     this.retryAfterMs = options.retryAfterMs ?? null;
+    this.fatal = options.fatal ?? false;
   }
 }
 
@@ -108,10 +123,16 @@ function httpError(service: string, resp: Response): PriceError {
       { status, retryable: true, retryAfterMs: parseRetryAfter(resp) },
     );
   }
+  // A rejected / over-quota API key (401/403) is a configuration problem the
+  // user must fix in Settings — surface it as fatal. Every other status (a 404,
+  // a 4xx, …) is treated as a transient gap: keep the last-known values rather
+  // than dead-ending the whole screen on a refresh.
+  const fatal = status === 401 || status === 403;
   return new PriceError(`${service} returned HTTP ${status}`, {
     status,
     retryable: status >= 500,
     retryAfterMs: status >= 500 ? parseRetryAfter(resp) : null,
+    fatal,
   });
 }
 
@@ -206,7 +227,7 @@ export async function fetchQuotes(
     const code = typeof body.code === "number" ? body.code : null;
     throw new PriceError(
       typeof body.message === "string" ? body.message : "price request rejected",
-      { status: code, retryable: code === 429 },
+      { status: code, retryable: code === 429, fatal: code === 401 || code === 403 },
     );
   }
 
@@ -273,7 +294,7 @@ export async function fetchNavQuotes(
     const code = typeof body.code === "number" ? body.code : null;
     throw new PriceError(
       typeof body.message === "string" ? body.message : "price request rejected",
-      { status: code, retryable: code === 429 },
+      { status: code, retryable: code === 429, fatal: code === 401 || code === 403 },
     );
   }
 

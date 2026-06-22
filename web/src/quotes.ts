@@ -324,6 +324,15 @@ export async function loadQuotes(
     const toFetch = stale.slice(0, affordableCount);
 
     if (toFetch.length > 0) {
+      // Reserve the credits *before* the network call, not after it returns.
+      // Two live loads can overlap (the login-time prefetch and the first
+      // scheduled refresh share the same caches); if each only recorded its
+      // spend on completion, both would read a full per-minute budget and fire
+      // a full batch — double-spending straight into an HTTP 429. Recording the
+      // spend up-front means whichever load reserves first wins the minute and
+      // the other defers, so we stay inside the free-tier cap by construction.
+      const reservedAt = now();
+      recordCredits(toFetch.length, reservedAt, storage ?? undefined);
       try {
         // Market symbols come from `quote`; NAV funds from the daily
         // `time_series` (authoritative trading-day mark) — see fetchNavQuotes.
@@ -342,7 +351,6 @@ export async function loadQuotes(
         }
         const at = now();
         writeCachedQuotes(quotes, at, storage ?? undefined);
-        recordCredits(toFetch.length, at, storage ?? undefined);
         for (const symbol of toFetch) {
           const q = quotes.get(symbol);
           if (q) {
@@ -359,15 +367,15 @@ export async function loadQuotes(
         }
       } catch (err) {
         const pe = err instanceof PriceError ? err : new PriceError((err as Error).message);
-        if (!pe.retryable) {
-          // A config-level rejection (bad/over-quota key): surface it so the
-          // caller can prompt for Settings rather than silently degrading.
+        if (pe.fatal) {
+          // A configuration-level rejection (bad/over-quota key): surface it so
+          // the caller can prompt for Settings rather than silently degrading.
           return {
             quotes: new Map(),
             report: { fetched: [], servedFresh: [], deferred: [], error: pe, minuteRemaining: 0, dayRemaining: 0 },
           };
         }
-        error = pe; // transient — keep what we have, fall back for the rest.
+        error = pe; // transient/non-fatal — keep what we have, fall back for the rest.
       }
     }
   }

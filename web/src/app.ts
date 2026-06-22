@@ -852,10 +852,12 @@ export class App {
     // A superseded session (lock, or a newer unlock) must not paint over the UI.
     if (session !== this.sessionId) return quoteLoad.report;
 
-    // A non-retryable quote failure (e.g. a bad/rejected API key) is a config
+    // A *fatal* quote failure (a rejected / over-quota API key) is a config
     // problem the user must act on, so keep the explicit error screen with a
-    // route to Settings.
-    if (network && quoteLoad.report.error && !quoteLoad.report.error.retryable) {
+    // route to Settings. Any other failure (a 404, a 5xx, a network blip, a
+    // rate limit) is non-fatal: never wipe a populated dashboard for it — fall
+    // through and paint the cached / last-known values with a soft banner.
+    if (network && quoteLoad.report.error?.fatal) {
       this.renderLoadError(quoteLoad.report.error.message);
       return null;
     }
@@ -929,20 +931,14 @@ export class App {
       this.setUpdating(false, kind);
       return;
     }
-    // While a >per-minute-cap portfolio is still filling in (and we can actually
-    // make progress next round), keep the spinner + a live "N of M" count on
-    // screen *between* burst rounds, so the staged fill reads as continuous,
-    // satisfying progress instead of an indicator that flashes once and can
-    // never complete in a single minute's budget. Stop once everything reachable
-    // is fresh — or when nothing more can be fetched (a hard error, or the daily
-    // budget is spent), where a perpetual spinner would just mislead.
-    const canMakeProgress = report.deferred.length > 0 && report.dayRemaining > 0 && report.error === null;
-    if (canMakeProgress) {
-      const { live, total } = liveRefreshProgress(report);
-      this.setUpdating(true, kind, `${live} of ${total}`);
-    } else {
-      this.setUpdating(false, kind);
-    }
+    // The live refresh for this round is done: take the status pill down. While
+    // a >per-minute-cap portfolio is still filling in we used to keep the pill
+    // (with a live "N of M" count) up *between* burst rounds, but that left it
+    // hovering on screen for seconds at a time — too much. The Refresh glyph
+    // still spins during each actual fetch, and the per-row "as of" chips show
+    // which holdings are still on last-known values, so the staged fill stays
+    // visible without a persistent floating banner.
+    this.setUpdating(false, kind);
     // Confirm the outcome of a manual tap so the user understands what happened
     // (fresh prices pulled, already up to date, or some deferred by the budget).
     if (kind === "manual") this.toast(manualRefreshSummary(report));
@@ -1095,42 +1091,44 @@ export class App {
     fx: { cached: boolean; error: PriceError | null },
   ): string | null {
     const reasons: string[] = [];
-    if (quote.error) {
-      reasons.push(`live prices hit a snag (${quote.error.message})`);
-    }
-    // Daily free-tier budget: warn as it runs low, and clearly when it's gone,
-    // so the user understands why live updates are spacing out or paused.
+
+    // Daily free-tier budget: a distinct, useful signal — warn as it runs low
+    // and clearly when it's gone, so the user understands why live updates are
+    // spacing out or paused.
     if (quote.dayRemaining <= 0) {
       reasons.push(
-        `you've used today's full free-tier data budget (${FREE_TIER.creditsPerDay}/day) — ` +
-          `live updates are paused until it resets`,
+        `Today's free-tier data budget (${FREE_TIER.creditsPerDay}/day) is used up — ` +
+          `live updates pause until it resets.`,
       );
     } else if (quote.dayRemaining <= DAILY_BUDGET_WARN_CREDITS) {
       reasons.push(
-        `close to today's free-tier data limit (${quote.dayRemaining} of ` +
-          `${FREE_TIER.creditsPerDay} credits left) — updates are spacing out to last the day`,
+        `Close to today's free-tier limit (${quote.dayRemaining} of ${FREE_TIER.creditsPerDay} ` +
+          `credits left) — updates are spacing out to last the day.`,
       );
     }
-    // A genuine stall still surfaces above (over the daily budget, or a fetch
-    // error). The *ordinary* staged fill for a portfolio larger than the
-    // per-minute cap is not an error: the spinning Refresh glyph + live "N of M"
-    // pill already show it as progress, so don't also raise an alarming banner
-    // every burst round.
+
+    // A live-fetch gap. A rate limit (HTTP 429) and the *ordinary* staged fill
+    // of a portfolio larger than the per-minute cap are the **same** underlying
+    // situation — describe it once, not as two overlapping clauses. A genuine
+    // staged fill isn't an error at all (the spinning glyph + "N of M" pill show
+    // it as progress), so it raises no banner.
+    const rateLimited = quote.error?.status === 429;
     const stagedFill = quote.dayRemaining > 0 && quote.error === null;
-    if (quote.deferred.length > 0 && !stagedFill) {
-      const n = quote.deferred.length;
-      reasons.push(
-        `${n} symbol${n === 1 ? "" : "s"} couldn't refresh right now ` +
-          `(${FREE_TIER.creditsPerMinute}/min free-tier limit) — showing last known values`,
-      );
+    const deferredByMinute = quote.deferred.length > 0 && !stagedFill;
+    if (quote.error && !rateLimited) {
+      // A real, non-rate-limit fetch problem (network blip, 404, 5xx).
+      reasons.push("Live prices didn't refresh just now — showing last known values.");
+    } else if (rateLimited || deferredByMinute) {
+      reasons.push("Live prices are catching up to the free-tier limit — showing last known values for now.");
     }
-    if (fx.error) {
-      reasons.push(
-        fx.cached ? "FX rates are using the last cached values" : `FX rates unavailable (${fx.error.message})`,
-      );
+
+    // Only surface FX when it's genuinely unavailable; a cached rate within its
+    // (12h) freshness window is normal and not worth nagging about.
+    if (fx.error && !fx.cached) {
+      reasons.push("FX rates are temporarily unavailable.");
     }
-    if (reasons.length === 0) return null;
-    return `${reasons.join("; ")}. Showing your last known values where needed.`;
+
+    return reasons.length === 0 ? null : reasons.join(" ");
   }
 
   private renderDashboard(model: DashboardModel): void {
