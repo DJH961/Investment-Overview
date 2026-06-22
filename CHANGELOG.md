@@ -12,6 +12,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 
+## [3.5.3] — 2026-06-22
+
+Saved target allocations now remember how you built them.
+
+### Added
+
+- **No-buy distinction persisted in saved targets.** The Calculator's central
+  no-buy flag — funds that count toward the target percentages but never
+  receive fresh cash — is now stored per fund on each saved target
+  (`target_allocation_items.no_buy`). Loading a saved target restores the exact
+  ticked/un-ticked state instead of re-ticking every member.
+- **Calculator settings frozen with the target.** Saving also records the
+  rebalance toggle (`target_allocations.allow_sell`, off = buy-only) and the
+  entry/display currency (`target_allocations.display_currency`), and loading a
+  saved target reapplies both so the plan reproduces what you built.
+
+### Migration
+
+- `0011_v3_5_3_allocation_settings` adds the three columns idempotently;
+  packaged/split-DB installs gain them through the boot `create_all` guard,
+  which now also runs against the config tier.
+
 ## [3.5.2] — 2026-06-22
 
 Sharper Analytics, an honest benchmark, a new currency lens, and a Data Health

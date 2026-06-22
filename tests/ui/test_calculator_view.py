@@ -14,9 +14,26 @@ from investment_dashboard.ui.pages._calculator_query import (
     CalcData,
     CalcInstrument,
 )
-from investment_dashboard.ui.pages.calculator import _CalculatorView
+from investment_dashboard.ui.pages.calculator import _CalculatorPayload, _CalculatorView
 
 ZERO = Decimal(0)
+
+
+def _payload(
+    data: CalcData,
+    *,
+    active_weights: dict[int, Decimal] | None = None,
+    active_no_buy: set[int] | None = None,
+    active_allow_sell: bool = False,
+    active_display_currency: str | None = None,
+) -> _CalculatorPayload:
+    return _CalculatorPayload(
+        data=data,
+        active_weights=active_weights or {},
+        active_no_buy=active_no_buy or set(),
+        active_allow_sell=active_allow_sell,
+        active_display_currency=active_display_currency,
+    )
 
 
 def _instr(iid: int, symbol: str, category: str, value: Decimal, pct: Decimal) -> CalcInstrument:
@@ -49,7 +66,7 @@ def _data() -> CalcData:
 
 
 def _view() -> _CalculatorView:
-    return _CalculatorView(_data(), active_weights={})
+    return _CalculatorView(_payload(_data()))
 
 
 def test_unticked_member_is_accounted_but_marked_no_buy() -> None:
@@ -95,8 +112,10 @@ def test_fund_mode_returns_empty_no_buy() -> None:
 def test_preset_saved_reconstructs_category_targets() -> None:
     # A saved per-fund target loads back grouped by category, in category mode.
     view = _CalculatorView(
-        _data(),
-        active_weights={1: Decimal(60), 2: Decimal("30"), 3: Decimal(10)},
+        _payload(
+            _data(),
+            active_weights={1: Decimal(60), 2: Decimal("30"), 3: Decimal(10)},
+        )
     )
     # _preset_saved calls _render_builder at the end; stub it out so no UI runs.
     view._render_builder = lambda: None  # type: ignore[method-assign]
@@ -106,3 +125,27 @@ def test_preset_saved_reconstructs_category_targets() -> None:
     # Saved plan carried VEU too, so it stays ticked in International.
     assert view.cat_selected["International"] == {2, 3}
     assert view.cat_selected["US"] == {1}
+
+
+def test_preset_saved_restores_no_buy_and_settings() -> None:
+    # A saved target that marked VEU (id 3) no-buy and was built in USD with the
+    # rebalance toggle on should reload with VEU un-ticked and those settings.
+    view = _CalculatorView(
+        _payload(
+            _data(),
+            active_weights={1: Decimal(60), 2: Decimal("30"), 3: Decimal(10)},
+            active_no_buy={3},
+            active_allow_sell=True,
+            active_display_currency="USD",
+        )
+    )
+    view._render_builder = lambda: None  # type: ignore[method-assign]
+    view._render_summary = lambda: None  # type: ignore[method-assign]
+    view._preset_saved()
+    # VEU still counts toward the 40 % International target but is un-ticked.
+    assert view.cat_targets == {"US": 60.0, "International": 40.0}
+    assert view.cat_selected["International"] == {2}
+    assert view.cat_selected["US"] == {1}
+    # Settings round-trip.
+    assert view.allow_sell is True
+    assert view.display_ccy == "USD"

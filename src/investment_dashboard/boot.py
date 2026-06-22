@@ -523,6 +523,11 @@ def _ensure_schema_present() -> None:
     ConfigBase.metadata.create_all(get_config_engine())
     CacheBase.metadata.create_all(get_cache_engine())
     _ensure_added_columns(ledger_engine)
+    # The ``target_allocation*`` columns added in v3.5.3 live in the config
+    # tier; in split-DB mode that's a separate file the ledger guard never
+    # touches. Run the guard against the config engine too (a harmless repeat in
+    # single-file mode where it aliases the ledger DB).
+    _ensure_added_columns(get_config_engine())
     log.info("Database schema ensured via create_all (Alembic migrations unavailable)")
 
 
@@ -532,7 +537,12 @@ def _ensure_schema_present() -> None:
 #: would otherwise never gain a newly added column and every ORM query that
 #: selects it would fail. Each entry is ``(table, column, DDL type)`` and is
 #: applied idempotently (skipped when the column already exists).
-_ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (("transactions", "net_usd", "NUMERIC(18, 6)"),)
+_ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("transactions", "net_usd", "NUMERIC(18, 6)"),
+    ("target_allocations", "allow_sell", "BOOLEAN NOT NULL DEFAULT 0"),
+    ("target_allocations", "display_currency", "VARCHAR(3)"),
+    ("target_allocation_items", "no_buy", "BOOLEAN NOT NULL DEFAULT 0"),
+)
 
 
 def _ensure_added_columns(engine: object) -> None:
