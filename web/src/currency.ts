@@ -106,6 +106,19 @@ export function convertFromEur(valueEur: Decimal): { value: Decimal; code: Displ
 }
 
 /**
+ * Inverse of {@link convertFromEur}: turn an amount the user entered in the
+ * active display currency back into EUR, the currency the projection maths runs
+ * in. When USD is selected with a known rate we divide by it; otherwise the
+ * amount is already EUR and passes through unchanged.
+ */
+export function convertToEur(displayValue: Decimal): Decimal {
+  if (current === "USD" && eurUsdRate !== null && !eurUsdRate.isZero()) {
+    return displayValue.div(eurUsdRate);
+  }
+  return displayValue;
+}
+
+/**
  * Pick the right figure for the active display currency for an amount that is a
  * sum of *historical* flows or a point-in-time valuation (e.g. contributions,
  * period flows). Such figures must not be rescaled by today's spot rate, so

@@ -39,6 +39,8 @@ import {
 import { cycleTheme, loadTheme, themeButtonContent } from "./theme";
 import {
   canConvertToUsd,
+  convertFromEur,
+  convertToEur,
   getDisplayCurrency,
   pickByCurrency,
   toggleDisplayCurrency,
@@ -629,6 +631,33 @@ const METRIC_INFO: Record<string, string> = {
   Kurtosis: "'Fat tails' — how often extreme moves happen versus a normal bell curve. Higher means more surprises.",
 };
 
+/**
+ * The single info tooltip currently pinned open by tap, plus a one-time set of
+ * global dismiss listeners. A pinned tip behaves like a native tooltip: tapping
+ * anywhere else, pressing Escape, or moving focus away closes it instead of
+ * letting it linger on screen.
+ */
+let openInfoDot: HTMLButtonElement | null = null;
+let infoDotDismissBound = false;
+
+function closeOpenInfoDot(): void {
+  if (openInfoDot) {
+    openInfoDot.classList.remove("open");
+    openInfoDot = null;
+  }
+}
+
+function ensureInfoDotDismiss(): void {
+  if (infoDotDismissBound || typeof document === "undefined") return;
+  infoDotDismissBound = true;
+  // A tap that bubbles up to the document (i.e. anywhere but the dot itself,
+  // which calls stopPropagation) dismisses the pinned tip.
+  document.addEventListener("click", closeOpenInfoDot);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeOpenInfoDot();
+  });
+}
+
 /** A small tappable "i" that reveals a definition (hover/focus and tap). */
 function infoDot(text: string): HTMLElement {
   const tip = h("span", { class: "info-tip", role: "tooltip" }, [text]);
@@ -636,11 +665,26 @@ function infoDot(text: string): HTMLElement {
     "button",
     { class: "info-dot", type: "button", "aria-label": `What is this? ${text}` },
     [h("span", { "aria-hidden": "true" }, ["i"]), tip],
-  );
-  // Tap toggles the tooltip on touch devices (where :hover never fires).
+  ) as HTMLButtonElement;
+  ensureInfoDotDismiss();
+  // Hover-capable devices rely on CSS :hover, so the tip tracks the pointer and
+  // vanishes on mouse-leave like a normal tooltip — no sticky pin. Only on
+  // touch / no-hover devices (where :hover never fires) does a tap pin it open,
+  // and then an outside tap, Escape, or blur closes it again.
+  const canHover =
+    typeof window !== "undefined" && window.matchMedia?.("(hover: hover)").matches === true;
   button.addEventListener("click", (event) => {
     event.stopPropagation();
-    button.classList.toggle("open");
+    if (canHover) return;
+    const wasOpen = button === openInfoDot;
+    closeOpenInfoDot();
+    if (!wasOpen) {
+      button.classList.add("open");
+      openInfoDot = button;
+    }
+  });
+  button.addEventListener("blur", () => {
+    if (button === openInfoDot) closeOpenInfoDot();
   });
   return button;
 }
@@ -941,23 +985,28 @@ function numberField(label: string, value: string, attrs: Attrs): { wrap: HTMLEl
  */
 function renderPlanPanel(plan: PlanView): HTMLElement {
   const baseYear = plan.baseYear;
-  const defaultContribution = plan.defaultAnnualContributionEur.toDecimalPlaces(0).toString();
+  // The projection runs in EUR, but the user sees and types in the active
+  // display currency — so seed the default and the field label in that currency
+  // and convert what they enter back to EUR before projecting.
+  const displayCode = getDisplayCurrency();
+  const defaultContributionDisplay = convertFromEur(plan.defaultAnnualContributionEur)
+    .value.toDecimalPlaces(0)
+    .toString();
 
   const years = numberField("Years", "10", { min: "1", max: "40", step: "1" });
-  const contribution = numberField("Annual contribution (EUR)", defaultContribution, { min: "0", step: "100" });
+  const contribution = numberField(`Annual contribution (${displayCode})`, defaultContributionDisplay, {
+    min: "0",
+    step: "100",
+  });
 
   const summaryOut = h("div", { class: "plan-summary-wrap" }, []);
   const tableOut = h("div", { class: "plan-table-wrap" }, []);
 
   const recompute = (): void => {
     const yearsValue = Math.max(1, Math.min(40, Math.round(Number(years.input.value) || 0)));
-    const contribValue = Math.max(0, Number(contribution.input.value) || 0);
-    const rows = projectForward(
-      plan.startingValueEur,
-      new Decimal(contribValue),
-      yearsValue,
-      baseYear,
-    );
+    const contribDisplay = Math.max(0, Number(contribution.input.value) || 0);
+    const contribEur = convertToEur(new Decimal(contribDisplay));
+    const rows = projectForward(plan.startingValueEur, contribEur, yearsValue, baseYear);
     renderProjection(summaryOut, tableOut, rows, plan.startingValueEur);
   };
 
