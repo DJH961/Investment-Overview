@@ -681,6 +681,7 @@ export function renderDashboard(
   onSettings: () => void,
   lockLabel = "Lock",
   liveGraph?: LiveGraphHooks,
+  options: { initialTabId?: string } = {},
 ): HTMLElement {
   const refresh = h("button", { class: "icon-btn", type: "button", "data-action": "refresh" }, [
     h("span", { class: "icon-btn-glyph", "aria-hidden": "true" }, ["↻"]),
@@ -720,7 +721,7 @@ export function renderDashboard(
     { id: "plan", label: "Calculator", glyph: "🧮", panel: renderCalculatorPanel(model.calculator) },
   ];
 
-  const { nav, content } = renderTabs(tabs);
+  const { nav, content } = renderTabs(tabs, options.initialTabId);
   return h("main", { class: "app" }, [topbar, nav, content]);
 }
 
@@ -736,7 +737,7 @@ interface TabDef {
  * thumb-reachable bottom navigation; on wide screens CSS reflows it to sit
  * directly beneath the topbar (see styles.css). Switching is purely visual.
  */
-function renderTabs(tabs: TabDef[]): { nav: HTMLElement; content: HTMLElement } {
+function renderTabs(tabs: TabDef[], initialTabId?: string): { nav: HTMLElement; content: HTMLElement } {
   const buttons: HTMLButtonElement[] = [];
   const panels = tabs.map((tab) => {
     tab.panel.classList.add("tab-panel");
@@ -771,7 +772,16 @@ function renderTabs(tabs: TabDef[]): { nav: HTMLElement; content: HTMLElement } 
   const nav = h("nav", { class: "tabbar", "aria-label": "Sections" }, buttons);
   const content = h("div", { class: "content" }, panels);
   // Reopen the section the user last viewed (e.g. across a refresh or currency
-  // toggle re-render); default to the first tab when none is remembered.
+  // toggle re-render); default to the first tab when none is remembered. A
+  // caller-supplied `initialTabId` (deep link) wins and is applied without
+  // persisting, so it never overwrites the user's remembered tab.
+  if (initialTabId) {
+    const deepIndex = tabs.findIndex((t) => t.id === initialTabId);
+    if (deepIndex >= 0) {
+      select(deepIndex, false);
+      return { nav, content };
+    }
+  }
   const savedIndex = tabs.findIndex((t) => t.id === loadActiveTab());
   select(savedIndex >= 0 ? savedIndex : 0, false);
   return { nav, content };

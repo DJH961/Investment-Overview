@@ -17,7 +17,8 @@
 import { fetchBlobMeta, fetchEnvelopeConditional } from "./blob";
 import { buildDashboard, buildFetchPlan, type DashboardModel } from "./compute";
 import { decryptEnvelopeToJson, type Envelope } from "./crypto";
-import { buildDemoModel } from "./demo";
+import { buildDemoModel, parseDemoParams, getPersona, DEMO_PERSONAS, type DemoParams } from "./demo";
+import { startTour, DEMO_TOUR_STEPS } from "./tour";
 import {
   defaultConfig,
   loadConfig,
@@ -318,6 +319,17 @@ export class App {
   /** Installed activity listeners that reset the idle auto-lock timer. */
   private activityHandler: (() => void) | null = null;
 
+  /**
+   * Demo / preview state, present only while a sample dashboard is on screen.
+   * Holds the active persona, the live-tick index (0 = frozen snapshot), whether
+   * the offline live-sim is running, and the deep-linked tab still to apply.
+   */
+  private demo: { persona: string; tick: number; sim: boolean; initialTab: string | null } | null = null;
+  /** The running live-sim interval, if any (advances {@link demo.tick}). */
+  private demoTimer: ReturnType<typeof setInterval> | null = null;
+  /** Teardown for an open guided tour, if any. */
+  private stopTour: (() => void) | null = null;
+
   constructor(root: HTMLElement) {
     this.root = root;
     this.state = { config: defaultConfig(), passphrase: null, data: null };
@@ -325,7 +337,8 @@ export class App {
 
   async start(): Promise<void> {
     this.state.config = await loadConfig();
-    if (this.demoRequested()) this.showDemo();
+    const demoParams = this.demoParams();
+    if (demoParams.requested) this.enterDemo(demoParams);
     else if (!this.isConfigured()) {
       this.showSetup();
     } else {
@@ -367,13 +380,12 @@ export class App {
     await Promise.allSettled([loadQuotes(symbols, config.apiKey, options)]);
   }
 
-  /** Demo mode is opt-in via a `?demo` (or `?preview`) query flag in the URL. */
-  private demoRequested(): boolean {
+  /** Demo mode is opt-in via a `?demo`/`?preview` query flag (see parseDemoParams). */
+  private demoParams(): DemoParams {
     try {
-      const params = new URLSearchParams(window.location.search);
-      return params.has("demo") || params.has("preview");
+      return parseDemoParams(window.location.search);
     } catch {
-      return false;
+      return { requested: false, persona: getPersona(null).id, tab: null, tour: false, sim: false };
     }
   }
 
@@ -389,6 +401,7 @@ export class App {
   // --- Setup screen -----------------------------------------------------------
 
   private showSetup(error?: string, mode: "setup" | "settings" = "setup"): void {
+    this.leaveDemoChrome();
     const settingsMode = mode === "settings";
     const { config } = this.state;
     const apiKey = h("input", {
@@ -470,7 +483,7 @@ export class App {
     } else {
       actions.push(
         h("button", { class: "btn ghost", type: "button", "data-action": "demo" }, [
-          "Preview the dashboard with sample data",
+          "Preview with sample data",
         ]),
       );
     }
@@ -483,6 +496,23 @@ export class App {
       h("h1", {}, [settingsMode ? "Settings" : "Set up the companion"]),
       h("p", { class: "muted" }, [intro]),
     ];
+
+    // Discoverability: a prominent "try it now" call-to-action on first run, so a
+    // visitor (or an interviewer) can explore the whole dashboard from synthetic
+    // sample data before entering any key or URL — no signup, nothing to type.
+    if (!settingsMode) {
+      const tryBtn = h("button", { class: "btn cta", type: "button", "data-action": "demo" }, [
+        "Try the live demo — no signup",
+      ]);
+      formChildren.push(
+        h("div", { class: "demo-cta" }, [
+          h("p", { class: "demo-cta-text" }, [
+            "Curious what this looks like? Explore a fully-interactive sample portfolio — live-feeling prices, charts and risk metrics — with no account, no key and no real data.",
+          ]),
+          h("div", { class: "row" }, [tryBtn]),
+        ]),
+      );
+    }
 
     // Import lives right at the top on first run so a returning user can restore
     // everything from a saved packet in one tap instead of retyping. In Settings
@@ -635,7 +665,9 @@ export class App {
 
     const form = h("form", { class: "panel", novalidate: "novalidate" }, formChildren);
 
-    form.querySelector('[data-action="demo"]')?.addEventListener("click", () => this.showDemo());
+    form.querySelectorAll('[data-action="demo"]').forEach((el) =>
+      el.addEventListener("click", () => this.enterDemo(this.demoParams())),
+    );
     form.querySelector('[data-action="back"]')?.addEventListener("click", () => this.exitSettings());
 
     form.addEventListener("submit", (event) => {
@@ -700,6 +732,7 @@ export class App {
   // --- Unlock screen ----------------------------------------------------------
 
   private showUnlock(error?: string, options: { autoPrompt?: boolean } = {}): void {
+    this.leaveDemoChrome();
     const enrolled = hasBiometricEnrolment();
 
     const pass = h("input", {
@@ -759,8 +792,19 @@ export class App {
       formChildren.push(passBlock);
     }
 
+    // Always-visible entry into the synthetic sample dashboard, so the demo is
+    // reachable straight from the normal app link even on a configured (locked)
+    // device — not only from the first-run setup screen or a `?demo` deep link.
+    // Once inside, every part of the demo (personas, tabs, tour, live-sim) is
+    // driven by on-screen controls rather than URL parameters.
+    const demoLink = h("button", { class: "linkish", type: "button", "data-action": "demo" }, [
+      "Preview with sample data",
+    ]);
+    formChildren.push(h("p", { class: "unlock-demo" }, [demoLink]));
+
     const form = h("form", { class: "panel unlock", novalidate: "novalidate" }, formChildren);
     form.querySelector('[data-action="settings"]')?.addEventListener("click", () => this.showSetup());
+    form.querySelector('[data-action="demo"]')?.addEventListener("click", () => this.enterDemo(this.demoParams()));
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const passphrase = pass.value;
@@ -851,35 +895,212 @@ export class App {
 
   // --- Demo / preview ---------------------------------------------------------
 
+  /** Cadence of the offline live-tick simulator while "Live" is selected. */
+  private static readonly DEMO_SIM_INTERVAL_MS = 2500;
+
+  /** True when the viewer asked the OS to minimise motion. */
+  private prefersReducedMotion(): boolean {
+    try {
+      return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Enter demo mode from a parsed deep link (or the setup CTA). Sets up the
+   * persona/tick/sim state, renders the sample dashboard, and — when requested
+   * and motion is allowed — starts the live-sim and/or the guided tour.
+   */
+  private enterDemo(params: DemoParams): void {
+    this.demo = { persona: params.persona, tick: 0, sim: false, initialTab: params.tab };
+    this.renderDemo();
+    if (params.sim && !this.prefersReducedMotion()) this.setSim(true);
+    if (params.tour) this.startDemoTour();
+  }
+
   /**
    * Render the dashboard from baked-in sample data — no key, passphrase, or
-   * network. Lets anyone explore the UI; "Exit demo" returns to the setup.
+   * network. A banner explains it is synthetic and carries the persona switcher,
+   * the frozen/live-sim toggle and the guided-tour button. "Exit demo" (the
+   * topbar lock action) returns to the real app.
    */
-  private showDemo(): void {
-    const model = buildDemoModel();
+  private renderDemo(): void {
+    if (!this.demo) return;
+    const model = buildDemoModel({ persona: this.demo.persona, tick: this.demo.tick });
     // Seed the EUR→USD rate from the sample export so the currency toggle works.
     setEurUsdRate(model.overview.fxRateEurUsd);
     this.model = model;
-    const banner = h("div", { class: "demo-banner" }, [
-      h("strong", {}, ["Demo mode"]),
-      " — sample data, no real portfolio. Figures are illustrative.",
-    ]);
+
+    const banner = this.renderDemoBanner();
+    // The deep-linked tab only applies on the first paint, so subsequent
+    // re-renders (live ticks, currency toggle) respect the viewer's navigation.
+    const initialTabId = this.demo.initialTab ?? undefined;
+    this.demo.initialTab = null;
+
     const dashboard = renderDashboard(
       model,
-      () => this.showDemo(),
-      () => {
-        // Leave the preview for the real app, regardless of a `?demo` URL flag.
-        void (async () => {
-          this.state.config = await loadConfig();
-          if (this.isConfigured()) this.showUnlock();
-          else this.showSetup();
-        })().catch(() => this.showSetup());
-      },
-      () => this.showDemo(),
-      () => this.showSettings(),
+      () => this.tickDemo(), // Refresh = advance one live tick (offline).
+      () => this.exitDemo(), // Lock button reads "Exit demo" here.
+      () => this.renderDemo(), // Currency toggle re-renders without ticking.
+      () => this.showDemoSettings(),
       "Exit demo",
+      undefined,
+      { initialTabId },
     );
     this.mount(h("div", { class: "demo-shell" }, [banner, dashboard]));
+  }
+
+  /** The demo banner: synthetic-data note, persona "story", and the controls. */
+  private renderDemoBanner(): HTMLElement {
+    const persona = getPersona(this.demo?.persona);
+
+    const note = h("div", { class: "demo-note" }, [
+      h("strong", {}, ["Demo mode"]),
+      " — sample data, no real portfolio. ",
+      h("span", { class: "demo-tagline" }, [persona.tagline]),
+    ]);
+
+    // Persona switcher.
+    const select = h("select", { class: "demo-select", "aria-label": "Sample portfolio" }) as HTMLSelectElement;
+    for (const p of DEMO_PERSONAS) {
+      const option = h("option", { value: p.id }, [p.label]) as HTMLOptionElement;
+      if (p.id === this.demo?.persona) option.selected = true;
+      select.appendChild(option);
+    }
+    select.addEventListener("change", () => this.switchPersona(select.value));
+
+    // Frozen ↔ live-sim toggle.
+    const live = this.demo?.sim === true;
+    const simBtn = h(
+      "button",
+      { class: `demo-btn${live ? " live" : ""}`, type: "button", "aria-pressed": live ? "true" : "false" },
+      [live ? "● Live" : "Frozen"],
+    );
+    simBtn.title = live
+      ? "Prices are moving (simulated, offline). Click to freeze for screenshots."
+      : "Prices are frozen for stable screenshots. Click for a simulated live feed.";
+    simBtn.addEventListener("click", () => this.setSim(!live));
+
+    // Guided tour.
+    const tourBtn = h("button", { class: "demo-btn", type: "button" }, ["Take the tour"]);
+    tourBtn.addEventListener("click", () => this.startDemoTour());
+
+    const toolbar = h("div", { class: "demo-toolbar" }, [select, simBtn, tourBtn]);
+    return h("div", { class: "demo-banner" }, [note, toolbar]);
+  }
+
+  /** Switch the active sample portfolio, resetting to its frozen snapshot. */
+  private switchPersona(id: string): void {
+    if (!this.demo) return;
+    this.demo.persona = getPersona(id).id;
+    this.demo.tick = 0;
+    this.renderDemo();
+  }
+
+  /** Advance the offline live-tick simulator by one step and repaint. */
+  private tickDemo(): void {
+    if (!this.demo) return;
+    this.demo.tick += 1;
+    this.renderDemo();
+  }
+
+  /** Turn the live-sim on or off (explicit user action overrides reduced-motion). */
+  private setSim(on: boolean): void {
+    if (!this.demo) return;
+    this.demo.sim = on;
+    if (on) this.startDemoTimer();
+    else this.clearDemoTimer();
+    this.renderDemo();
+  }
+
+  private startDemoTimer(): void {
+    if (this.demoTimer !== null) return;
+    this.demoTimer = setInterval(() => {
+      // Pause while the tab is hidden so a backgrounded demo doesn't churn.
+      if (typeof document !== "undefined" && document.hidden) return;
+      this.tickDemo();
+    }, App.DEMO_SIM_INTERVAL_MS);
+  }
+
+  private clearDemoTimer(): void {
+    if (this.demoTimer !== null) {
+      clearInterval(this.demoTimer);
+      this.demoTimer = null;
+    }
+  }
+
+  /** Launch the guided spotlight tour, pausing the live-sim while it runs. */
+  private startDemoTour(): void {
+    this.endTour();
+    const resumeSim = this.demo?.sim === true;
+    this.clearDemoTimer();
+    this.stopTour = startTour(DEMO_TOUR_STEPS, {
+      onClose: () => {
+        this.stopTour = null;
+        if (resumeSim && this.demo?.sim) this.startDemoTimer();
+      },
+    });
+  }
+
+  private endTour(): void {
+    const stop = this.stopTour;
+    this.stopTour = null;
+    stop?.();
+  }
+
+  /** Tear down all demo chrome (timer + tour). Safe to call off the demo path. */
+  private leaveDemoChrome(): void {
+    this.clearDemoTimer();
+    this.endTour();
+    this.demo = null;
+  }
+
+  /**
+   * A deliberately trimmed Settings sheet for demo mode: appearance only, plus a
+   * reminder that the data is synthetic. It never renders the API-key,
+   * data-source or maintenance fields, so screen-sharing the demo can't leak a
+   * real key/URL and the viewer can't accidentally leave the preview.
+   */
+  private showDemoSettings(): void {
+    this.clearDemoTimer(); // Pause the sim while the sheet is open.
+    const back = h("button", { class: "btn", type: "button" }, ["Back to demo"]);
+    back.addEventListener("click", () => {
+      this.renderDemo();
+      if (this.demo?.sim) this.startDemoTimer();
+    });
+    const exit = h("button", { class: "btn ghost", type: "button" }, ["Exit demo"]);
+    exit.addEventListener("click", () => this.exitDemo());
+
+    const form = h("form", { class: "panel", novalidate: "novalidate" }, [
+      h("h1", {}, ["Demo settings"]),
+      h("p", { class: "muted" }, [
+        "This is a read-only preview of synthetic sample data. The live app's data-source and security settings are hidden here — there is nothing to configure and no real data involved.",
+      ]),
+      h("h2", { class: "settings-section" }, ["Appearance"]),
+      field("Theme", renderThemeToggle(), "Switch between system, light and dark themes."),
+      field("Clock format", renderTimeFormatToggle(), "Show times as 12-hour (AM/PM) or 24-hour. Auto follows your device locale."),
+      field(
+        "Currency",
+        h("p", { class: "field-static muted" }, ["Use the € / $ toggle in the topbar to flip the whole dashboard between EUR and USD."]),
+        "EUR and USD are equal, first-class display currencies.",
+      ),
+      h("div", { class: "row" }, [back, exit]),
+    ]);
+    this.mount(h("div", { class: "screen" }, [form]));
+  }
+
+  /**
+   * Leave the preview for the real app, regardless of a `?demo` URL flag. Tears
+   * down the demo chrome first so no timer or tour outlives it.
+   */
+  private exitDemo(): void {
+    this.leaveDemoChrome();
+    void (async () => {
+      this.state.config = await loadConfig();
+      if (this.isConfigured()) this.showUnlock();
+      else this.showSetup();
+    })().catch(() => this.showSetup());
   }
 
   // --- Load pipeline ----------------------------------------------------------

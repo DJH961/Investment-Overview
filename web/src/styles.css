@@ -751,11 +751,113 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   text-align: center;
 }
 .demo-banner strong { color: var(--warn); }
+.demo-note { line-height: 1.35; }
+.demo-tagline { color: var(--faint); }
+
+/* Demo controls: persona switcher + frozen/live toggle + tour. Wraps onto its
+ * own line on a phone (mobile first), sitting centred under the note. */
+.demo-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: center;
+  align-items: center;
+  margin-top: 0.45rem;
+}
+.demo-select {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--fg);
+  max-width: 100%;
+}
+.demo-btn {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--fg);
+  cursor: pointer;
+}
+.demo-btn:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+.demo-btn.live {
+  border-color: color-mix(in srgb, var(--pos) 60%, var(--border));
+  color: var(--pos);
+  font-weight: 600;
+}
+
+/* First-run "try the demo" call-to-action. */
+.demo-cta {
+  margin: 0.25rem 0 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--accent) 8%, var(--card));
+}
+.demo-cta-text { margin: 0 0 0.7rem; font-size: 0.9rem; line-height: 1.4; }
+.btn.cta { width: 100%; font-weight: 600; }
+.field-static { margin: 0; }
 
 /* Demo wrapper: a plain full-width block so the sample dashboard flows exactly
  * like the live app (the centred `.screen` layout is only for setup/unlock and
  * would shrink-wrap the dashboard to its content width, overflowing on phones). */
 .demo-shell { min-height: 100vh; }
+
+/* --- Guided tour overlay -------------------------------------------------- */
+.tour-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: color-mix(in srgb, #000 55%, transparent);
+}
+.tour-ring {
+  position: fixed;
+  border: 2px solid var(--accent);
+  border-radius: 0.6rem;
+  box-shadow: 0 0 0 9999px color-mix(in srgb, #000 55%, transparent);
+  pointer-events: none;
+  transition: all 0.2s ease;
+}
+.tour-card {
+  position: fixed;
+  z-index: 1001;
+  width: min(20rem, calc(100vw - 1.5rem));
+  padding: 0.9rem 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--fg);
+  box-shadow: 0 0.6rem 1.6rem color-mix(in srgb, #000 35%, transparent);
+}
+.tour-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+.tour-step-count { color: var(--faint); font-size: 0.78rem; }
+.tour-skip {
+  font: inherit;
+  font-size: 0.78rem;
+  background: none;
+  border: none;
+  color: var(--faint);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.tour-card-title { margin: 0 0 0.3rem; font-size: 1rem; }
+.tour-card-body { margin: 0 0 0.8rem; font-size: 0.88rem; line-height: 1.4; color: var(--fg); }
+.tour-card-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
+.tour-btn { padding: 0.35rem 0.9rem; font-size: 0.85rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-ring { transition: none; }
+}
 
 /* --- Allocation (de-emphasised, collapsible) ------------------------------ */
 .allocation {
@@ -1556,6 +1658,13 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .panel.unlock .note { text-align: left; }
 .unlock-pass[hidden] { display: none; }
 .unlock-pass { margin-top: 0.6rem; }
+/* Quiet, always-visible demo entry beneath the unlock controls, separated from
+ * them by a hairline so it reads as a secondary "just looking?" affordance. */
+.unlock-demo {
+  margin: 1rem 0 0;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+}
 
 /* A toggle switch (checkbox styled as an iOS-style slider) for on/off settings
  * like fingerprint unlock and the enrolment opt-in. */
