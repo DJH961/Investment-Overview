@@ -1060,14 +1060,15 @@ def register() -> None:  # noqa: PLR0915
                     f"Weighted expense ratio: {fmt_pct(metrics.weighted_expense_ratio)}  "
                     f"(≈ {fmt_money(_convert(metrics.annual_expense_cost_eur, display_ccy, fx_rate), display_ccy)} / yr)"
                 )
-                # Cumulative dividend return (lifetime cash dividends ÷ current
-                # value) shown next to the year-to-date cash dividends in the
-                # display currency, so the figure reads next to the money it
-                # earned. This is a lifetime total, not an annualised yield.
+                # Two complementary dividend figures: the lifetime cumulative
+                # dividend *return* (all cash dividends ÷ current value), then a
+                # per-year dividend *yield* (this year's dividends ÷ value) shown
+                # with the year-to-date cash dividends in the display currency.
                 div_ytd = _by_ccy(metrics.dividends_ytd_eur, metrics.dividends_ytd_usd, display_ccy)
                 div_yield_text = (
-                    f"Dividend return (lifetime): {fmt_pct(metrics.dividend_yield_pct)}  ·  "
-                    f"Dividends YTD: {fmt_money(div_ytd, display_ccy)}"
+                    f"Dividend total return: {fmt_pct(metrics.dividend_yield_pct)}  ·  "
+                    f"Dividend yield: {fmt_pct(metrics.dividend_yield_ytd_pct)} "
+                    f"(YTD {fmt_money(div_ytd, display_ccy)})"
                 )
                 if fx_rate is not None:
                     # The FX line now carries the day's FX move (%) — the detail

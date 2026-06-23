@@ -14,7 +14,42 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [3.10.0] — 2026-06-23
+## [3.11.0] — 2026-06-23
+
+### Added
+
+- **Holdings page now leads with a second row of headline KPIs.** Below the
+  Total Value / Total Growth / XIRR / Capital Gain row sit four income-and-cost
+  tiles, each pairing a rate with the matching money figure in the selected
+  display currency:
+  - **Dividend return** — lifetime cumulative dividend return, with total cash
+    dividends earned underneath.
+  - **Dividend yield** — current-year dividend yield, with the year-to-date
+    dividends underneath.
+  - **Weighted expense** — value-weighted fund fee, with the annual cost per
+    year underneath.
+  - **Current FX** — live EUR→USD spot, with the change since the previous
+    completed trading day underneath.
+- **`dividend_yield_ytd_pct` metric** — this calendar year's cash dividends ÷
+  current value, a true per-year yield distinct from the lifetime dividend
+  return, surfaced on both the Overview and Holdings pages.
+
+### Changed
+
+- **Overview dividend footnote now shows both figures.** It reads
+  *"Dividend total return: X% · Dividend yield: Y% (YTD …)"* — the lifetime
+  cumulative return next to the per-year yield with the year-to-date dividends.
+- **Holdings "Portfolio shape" strip trimmed to four boxes.** Weighted expense
+  moved up into the new headline KPI row, leaving Holdings / Best / Worst /
+  Most concentrated.
+
+### Fixed
+
+- **Holdings table is no longer cut off — every position is shown in full.**
+  NiceGUI's default `.nicegui-aggrid { height: 16rem }` was pinning the grid to
+  a short, scrolling viewport despite `domLayout: autoHeight`; an inline
+  `height: auto` override lets the grid grow to fit all rows, so the whole
+  holdings table is visible at once with no vertical scrolling.
 
 ### Added
 

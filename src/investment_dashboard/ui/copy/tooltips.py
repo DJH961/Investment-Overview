@@ -64,6 +64,20 @@ TOOLTIPS: Final[dict[str, str]] = {
         "The value-weighted average annual fund fee (TER) across your holdings, "
         "with the estimated euro cost per year at today's marks. Lower is better."
     ),
+    "dividend_return": (
+        "Lifetime cumulative dividend return — every cash dividend ever received "
+        "(paid out or reinvested) divided by today's portfolio value. A running "
+        "total since inception, not an annual rate."
+    ),
+    "dividend_yield": (
+        "Current-year dividend yield — this calendar year's cash dividends "
+        "divided by today's portfolio value. A per-year income rate, shown with "
+        "the year-to-date dividends in the display currency."
+    ),
+    "fx_rate": (
+        "Live EUR→USD spot rate used to convert between your two display "
+        "currencies, with the change since the previous completed trading day."
+    ),
     "market_verdict": (
         "Compares your portfolio's total growth since inception against simply "
         "buying and holding the benchmark index over the same period."

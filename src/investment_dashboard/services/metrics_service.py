@@ -150,6 +150,11 @@ class PortfolioMetrics:
     #: balance (spreadsheet ``Total`` block's ``Dividends / Closing Balance``).
     #: ``None`` when the portfolio has no value yet.
     dividend_yield_pct: Decimal | None = None
+    #: Current-year dividend *yield* = year-to-date cash dividends ÷ current
+    #: closing balance. Unlike ``dividend_yield_pct`` (a lifetime cumulative
+    #: return) this is a per-year rate, so the UI can show an actual "yield"
+    #: next to the lifetime "return". ``None`` when the portfolio has no value.
+    dividend_yield_ytd_pct: Decimal | None = None
     #: The date ``daily_growth_pct`` refers to (the "last daily growth day"),
     #: so the UI can label *when* the move is from. ``None`` when unavailable.
     daily_growth_as_of: date | None = None
@@ -585,6 +590,10 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     # Trailing dividend yield = total dividend income ÷ current closing balance
     # (matches the spreadsheet's Dividends ÷ Closing Balance).
     dividend_yield_pct = dividends_income_eur / total_value_eur if total_value_eur > 0 else None
+    # Per-year dividend yield = this calendar year's cash dividends ÷ current
+    # closing balance (a true annual-rate "yield", distinct from the lifetime
+    # cumulative dividend return above).
+    dividend_yield_ytd_pct = dividends_ytd_eur / total_value_eur if total_value_eur > 0 else None
 
     return PortfolioMetrics(
         as_of=as_of,
@@ -619,6 +628,7 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         daily_growth_fx_eur_usd=daily.fx_last,
         daily_growth_fx_eur_usd_prev=daily.fx_prev,
         dividend_yield_pct=dividend_yield_pct,
+        dividend_yield_ytd_pct=dividend_yield_ytd_pct,
         dividends_ytd_eur=dividends_ytd_eur,
         dividends_ytd_usd=dividends_ytd_usd,
     )
