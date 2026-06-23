@@ -10,8 +10,8 @@ import { describe, expect, it, vi } from "vitest";
 import { Decimal } from "../src/decimal-config";
 import { PriceError, type Quote } from "../src/prices";
 import { latestSettledSessionDate } from "../src/market-hours";
-import { runTiingoFallback } from "../src/tiingo-fallback";
-import { tiingoCreditsSpentToday, readTiingoCreditLog, type StorageLike } from "../src/cache";
+import { runTiingoFallback, shouldQuickRefresh, planStartupRefresh } from "../src/tiingo-fallback";
+import { tiingoCreditsSpentToday, readTiingoCreditLog, recordTiingoCredits, type StorageLike } from "../src/cache";
 
 function memStorage(): StorageLike {
   const map = new Map<string, string>();
@@ -198,5 +198,198 @@ describe("runTiingoFallback", () => {
     expect(out.tiingoSymbols).toEqual([]);
     expect(out.error).toBeInstanceOf(PriceError);
     expect(out.error?.retryable).toBe(true);
+  });
+
+  it("holds back reserveCredits so a run never spends the last few credits", async () => {
+    const storage = memStorage();
+    // Five deferred market symbols, but a reserve that leaves only two spendable
+    // credits of the 40/hr cap (40 − 38). Only the first two are fetched.
+    const symbols = ["AAA", "BBB", "CCC", "DDD", "EEE"];
+    const fetchImpl = stubFetch(symbols.map((s) => iexRow(s, 100, `${EXPECTED}T20:00:00Z`)));
+    const out = await runTiingoFallback({
+      symbols,
+      navSymbols: new Set(),
+      quotes: new Map<string, Quote>(),
+      report: emptyReport(symbols),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl,
+      reserveCredits: 38,
+    });
+    expect(out.tiingoSymbols).toEqual(["AAA", "BBB"]);
+    expect(tiingoCreditsSpentToday(readTiingoCreditLog(NOW, undefined, storage), NOW)).toBe(2);
+    // The reported budget still shows the true (unreserved) caps.
+    expect(out.budget).toEqual({ hourUsed: 2, hourLimit: 40, dayUsed: 2, dayLimit: 800 });
+  });
+
+  it("lets an actual fallback (no reserve) spend the final credits the quick-start holds back", async () => {
+    // Pre-spend 35 of the 40/hr cap so only the final 5 Tiingo credits remain.
+    // The heavily-outdated startup quick-refresh reserves those 5 (fetches none);
+    // a true gap-fill fallback — the default, reserveCredits 0 — may consume them.
+    const symbols = ["AAA", "BBB", "CCC", "DDD", "EEE"];
+    const rows = symbols.map((s) => iexRow(s, 100, `${EXPECTED}T20:00:00Z`));
+
+    const reserved = memStorage();
+    recordTiingoCredits(35, NOW, reserved);
+    const quickStart = await runTiingoFallback({
+      symbols,
+      navSymbols: new Set(),
+      quotes: new Map<string, Quote>(),
+      report: emptyReport(symbols),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage: reserved,
+      fetchImpl: stubFetch(rows),
+      reserveCredits: 5, // STARTUP_TIINGO_RESERVE — the "heavily outdated quick start".
+    });
+    expect(quickStart.tiingoSymbols).toEqual([]);
+
+    const open = memStorage();
+    recordTiingoCredits(35, NOW, open);
+    const fallback = await runTiingoFallback({
+      symbols,
+      navSymbols: new Set(),
+      quotes: new Map<string, Quote>(),
+      report: emptyReport(symbols),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage: open,
+      fetchImpl: stubFetch(rows),
+      // reserveCredits omitted ⇒ 0: an actual fallback may spend the final 5.
+    });
+    expect(fallback.tiingoSymbols).toEqual(symbols);
+    expect(tiingoCreditsSpentToday(readTiingoCreditLog(NOW, undefined, open), NOW)).toBe(40);
+  });
+});
+
+describe("planStartupRefresh", () => {
+  it("leaves Tiingo untouched for a small outdated set (≤8)", () => {
+    expect(planStartupRefresh({ outdatedCount: 8, tiingoRemaining: 40, tiingoAvailable: true })).toEqual({
+      route: "twelve",
+      tiingoBudget: 0,
+    });
+  });
+
+  it("routes the whole book via Tiingo when the spare budget covers it", () => {
+    // 12 outdated, 40 remaining, reserve 5 ⇒ usable 35 ≥ 12 ⇒ all Tiingo.
+    expect(planStartupRefresh({ outdatedCount: 12, tiingoRemaining: 40, tiingoAvailable: true })).toEqual({
+      route: "tiingo",
+      tiingoBudget: 12,
+    });
+  });
+
+  it("splits across Twelve + Tiingo when the set exceeds the spare budget", () => {
+    // 20 outdated, 12 remaining, reserve 5 ⇒ usable 7 < 20 ⇒ split, Tiingo gets 7.
+    expect(planStartupRefresh({ outdatedCount: 20, tiingoRemaining: 12, tiingoAvailable: true })).toEqual({
+      route: "split",
+      tiingoBudget: 7,
+    });
+  });
+
+  it("wires everything to Twelve when no spare Tiingo budget remains", () => {
+    // Only the reserve (or less) is left ⇒ a split is impossible ⇒ all Twelve.
+    expect(planStartupRefresh({ outdatedCount: 20, tiingoRemaining: 5, tiingoAvailable: true })).toEqual({
+      route: "twelve",
+      tiingoBudget: 0,
+    });
+    expect(planStartupRefresh({ outdatedCount: 20, tiingoRemaining: 3, tiingoAvailable: true })).toEqual({
+      route: "twelve",
+      tiingoBudget: 0,
+    });
+  });
+
+  it("wires everything to Twelve when Tiingo isn't configured", () => {
+    expect(planStartupRefresh({ outdatedCount: 50, tiingoRemaining: 800, tiingoAvailable: false })).toEqual({
+      route: "twelve",
+      tiingoBudget: 0,
+    });
+  });
+});
+
+describe("shouldQuickRefresh", () => {
+  const HOUR = 60 * 60 * 1000;
+
+  it("fires when the market is closed and we don't hold the latest close", () => {
+    // Logged in the morning after close, last pull was yesterday's session (>1h),
+    // and the latest settled close isn't in hand yet → fetch asap.
+    expect(
+      shouldQuickRefresh({
+        now: NOW,
+        marketOpen: false,
+        lastQuickRefreshAt: null,
+        freshestPriceAt: NOW - 12 * HOUR,
+        holdsLatestClose: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("fires even when the last pull was well under 24h ago (the old bug)", () => {
+    expect(
+      shouldQuickRefresh({
+        now: NOW,
+        marketOpen: false,
+        lastQuickRefreshAt: null,
+        freshestPriceAt: NOW - 3 * HOUR, // <24h but still missing the close
+        holdsLatestClose: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("stays quiet (market closed) once the latest close is already in hand", () => {
+    expect(
+      shouldQuickRefresh({
+        now: NOW,
+        marketOpen: false,
+        lastQuickRefreshAt: null,
+        freshestPriceAt: NOW - 12 * HOUR,
+        holdsLatestClose: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("suppresses a market-closed fire when we pulled within the last hour", () => {
+    expect(
+      shouldQuickRefresh({
+        now: NOW,
+        marketOpen: false,
+        lastQuickRefreshAt: null,
+        freshestPriceAt: NOW - 20 * 60 * 1000, // 20 min ago
+        holdsLatestClose: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("honours the once-per-hour quick-refresh throttle", () => {
+    expect(
+      shouldQuickRefresh({
+        now: NOW,
+        marketOpen: false,
+        lastQuickRefreshAt: NOW - 10 * 60 * 1000, // quick-refreshed 10 min ago
+        freshestPriceAt: NOW - 12 * HOUR,
+        holdsLatestClose: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("market open: fires only when >1h stale", () => {
+    expect(
+      shouldQuickRefresh({
+        now: NOW,
+        marketOpen: true,
+        lastQuickRefreshAt: null,
+        freshestPriceAt: NOW - 2 * HOUR,
+        holdsLatestClose: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldQuickRefresh({
+        now: NOW,
+        marketOpen: true,
+        lastQuickRefreshAt: null,
+        freshestPriceAt: NOW - 10 * 60 * 1000,
+        holdsLatestClose: true,
+      }),
+    ).toBe(false);
   });
 });

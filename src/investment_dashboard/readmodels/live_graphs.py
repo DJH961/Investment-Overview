@@ -47,7 +47,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import market_hours
 from investment_dashboard.readmodels._context import ReadModelContext
-from investment_dashboard.readmodels._serialize import dec, now_utc_iso
+from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.services import intraday_snapshots_service, positions_service
 from investment_dashboard.ui.pages._overview_query import (
     ValueSeriesPoint,
@@ -77,7 +77,7 @@ def build(
     week = _week_series(session, positions=positions, now=now)
     if day is None and week is None:
         return None
-    out: dict[str, Any] = {"captured_at": now_utc_iso()}
+    out: dict[str, Any] = {"captured_at": _iso_utc(now or datetime.now(UTC))}
     if day is not None:
         out["day"] = day
     if week is not None:

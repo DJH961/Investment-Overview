@@ -44,8 +44,11 @@ class TestSecondaryCurrencyAxis:
         )
         # A right-hand axis is added and the legend turned on.
         assert fig.layout.showlegend is True
-        left_lo, left_hi = padded_range([100.0, 120.0])
         scale = 200.0 / 100.0  # secondary[0] / primary[0]
+        # The left range is fitted to BOTH lines: the primary values plus the
+        # companion values mapped into primary units (secondary ÷ scale), so the
+        # diverging companion line is never clipped.
+        left_lo, left_hi = padded_range([100.0, 120.0, 200.0 / scale, 260.0 / scale])
         r2_lo, r2_hi = fig.layout.yaxis2.range
         assert r2_lo == left_lo * scale
         assert r2_hi == left_hi * scale
@@ -60,6 +63,26 @@ class TestSecondaryCurrencyAxis:
         # The companion line really is plotted against the right axis.
         sec_traces = [t for t in fig.data if getattr(t, "yaxis", None) == "y2"]
         assert len(sec_traces) == 1
+
+    def test_axis_encloses_diverging_companion_line(self) -> None:
+        # A companion (USD) line that diverges far above the primary (EUR) line
+        # — as happens over the long "All" window when EUR/USD drifts — must stay
+        # fully inside both axes rather than running off the top.
+        primary = _pts([100, 101, 102])  # almost flat in EUR
+        secondary = _pts([100, 130, 160])  # +60% in USD
+        fig = _value_curve_figure(
+            primary,
+            currency="EUR",
+            secondary=secondary,
+            secondary_currency="USD",
+        )
+        left_lo, left_hi = fig.layout.yaxis.range
+        r2_lo, r2_hi = fig.layout.yaxis2.range
+        # Neither line is clipped: every plotted value sits within its own axis.
+        assert left_lo <= 100.0
+        assert left_hi >= 102.0
+        assert r2_lo <= 100.0
+        assert r2_hi >= 160.0
 
     def test_secondary_ignored_when_lengths_mismatch(self) -> None:
         fig = _value_curve_figure(

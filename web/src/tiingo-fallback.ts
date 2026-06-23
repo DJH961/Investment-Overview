@@ -90,16 +90,42 @@ export interface TiingoFallbackOptions {
    * held value already covers the latest settled session are left untouched.
    */
   forceAll?: boolean;
+  /**
+   * Hold back this many Tiingo credits from every budget check in this run (the
+   * startup quick-refresh sets it so a true gap-fill fallback later in the
+   * session keeps some headroom). Defaults to 0 — normal fallbacks may spend the
+   * full self-capped budget.
+   */
+  reserveCredits?: number;
   /** Last-known EUR size per symbol, used only to pick the largest as canary. */
   sizeForSymbol?: (symbol: string) => number;
 }
 
-/** Snapshot the current Tiingo budget from the persisted credit log. */
-function readBudget(now: number, storage: StorageLike | null | undefined): Budget {
+/**
+ * Snapshot the current Tiingo budget from the persisted credit log. `reserve`
+ * shaves that many credits off both the hourly and daily caps, so the budget's
+ * `remaining()` keeps a headroom the caller will not spend (used by the startup
+ * quick-refresh, which must never burn the last few Tiingo credits).
+ */
+function readBudget(
+  now: number,
+  storage: StorageLike | null | undefined,
+  reserve = 0,
+): Budget {
   const log = readTiingoCreditLog(now, undefined, storage ?? undefined);
   const hourUsed = creditsSpentWithin(log, now, HOUR_MS);
   const dayUsed = tiingoCreditsSpentToday(log, now);
-  return new Budget(hourUsed, dayUsed, WEB_HOURLY_CAP, WEB_DAILY_CAP);
+  return new Budget(
+    hourUsed,
+    dayUsed,
+    Math.max(0, WEB_HOURLY_CAP - reserve),
+    Math.max(0, WEB_DAILY_CAP - reserve),
+  );
+}
+
+/** The Tiingo credits still spendable right now (min of the hour/day windows). */
+export function tiingoRemainingCredits(now: number, storage?: StorageLike | null): number {
+  return readBudget(now, storage).remaining();
 }
 
 function budgetView(now: number, storage: StorageLike | null | undefined): TiingoBudgetView {
@@ -188,6 +214,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     fetchImpl,
     manual = false,
     forceAll = false,
+    reserveCredits = 0,
     sizeForSymbol,
   } = options;
 
@@ -199,6 +226,10 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
   const deferred = new Set(report.deferred);
   const tiingoSymbols: string[] = [];
   let error: PriceError | null = null;
+
+  // Every budget check in this run honours the reserve, so the gate may use up to
+  // `remaining − reserveCredits` credits (clamped at 0) and no further.
+  const budgetNow = (): Budget => readBudget(now, storage, reserveCredits);
 
   const merge = (batch: string[]): Promise<string[]> =>
     fetchAndMerge(batch, { proxyUrl, navSymbols, quotes, now, storage, fetchImpl });
@@ -229,7 +260,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
         // NAV fund right now (budget-gated), bypassing the canary/peer timing
         // gates. The navMissing set is already "not recent" (behind the latest
         // settled session), so the "unless recent" rule is preserved.
-        const room = selectWithinBudget(navMissing, readBudget(now, storage));
+        const room = selectWithinBudget(navMissing, budgetNow());
         tiingoSymbols.push(...(await merge(room)));
       } else {
         const state = readTiingoState(storage ?? undefined);
@@ -249,7 +280,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
           lastCanaryAt: state.lastCanaryAt,
           canaryCountToday,
           now,
-          budget: readBudget(now, storage),
+          budget: budgetNow(),
         });
 
         // A manual tap may probe immediately even if the timing gates would WAIT,
@@ -261,7 +292,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
           decision.action === "wait" &&
           canaryPick !== null &&
           canaryCountToday < NAV_MAX_PROBES_PER_DAY &&
-          readBudget(now, storage).hasRoom();
+          budgetNow().hasRoom();
 
         if (decision.action === "fetch_laggards") {
           tiingoSymbols.push(...(await merge(decision.symbols)));
@@ -283,7 +314,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
           const fresh = !!got.length && (probed?.valueDate ?? "") >= expected;
           if (fresh) {
             const laggards = navMissing.filter((s) => s !== pick);
-            const room = selectWithinBudget(laggards, readBudget(now, storage));
+            const room = selectWithinBudget(laggards, budgetNow());
             tiingoSymbols.push(...(await merge(room)));
           }
         }
@@ -302,7 +333,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
       }
     }
     if (marketCandidates.length > 0) {
-      const room = selectWithinBudget(marketCandidates, readBudget(now, storage));
+      const room = selectWithinBudget(marketCandidates, budgetNow());
       tiingoSymbols.push(...(await merge(room)));
     }
   } catch (err) {
@@ -315,10 +346,16 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
 /**
  * Whether the app should run a Tiingo **startup quick-refresh**: on load, use
  * Tiingo (no per-minute cap → fast) when prices are *badly* outdated. Triggered
- * by either being ≥1 settled session behind (market closed) or >1h stale during
- * market hours. The ~1h floor (via {@link TiingoState.lastQuickRefreshAt}) keeps
- * this to about once an hour, preserving the budget for true fallbacks. A manual
- * tap bypasses the throttle entirely.
+ * by either *not holding the latest settled close* (market closed) or >1h stale
+ * during market hours. The ~1h floor (via {@link TiingoState.lastQuickRefreshAt})
+ * keeps this to about once an hour, preserving the budget for true fallbacks. A
+ * manual tap bypasses the throttle entirely.
+ *
+ * The market-closed rule is deliberately eager: the latest settled close is the
+ * freshest data that exists while the exchange is shut, so as soon as we *don't*
+ * hold it we fetch — even the morning after, when a stale-but-<24h cache used to
+ * suppress the pull. The only brake is "did we already pull in the last hour?":
+ * a recent update means there is nothing new worth spending Tiingo credits on.
  */
 export function shouldQuickRefresh(args: {
   now: number;
@@ -326,24 +363,93 @@ export function shouldQuickRefresh(args: {
   lastQuickRefreshAt: number | null;
   /** The freshest known price observation time across the book, or null. */
   freshestPriceAt: number | null;
+  /**
+   * Whether the book already holds the latest settled session close for every
+   * fetchable holding (market symbols vs the settled session, NAV funds vs their
+   * latest expected publish). Only consulted while the market is closed.
+   */
+  holdsLatestClose: boolean;
   /** True to skip the once-per-hour throttle (a manual tap). */
   manual?: boolean;
 }): boolean {
-  const { now, marketOpen, lastQuickRefreshAt, freshestPriceAt, manual = false } = args;
+  const { now, marketOpen, lastQuickRefreshAt, freshestPriceAt, holdsLatestClose, manual = false } = args;
   if (!manual && lastQuickRefreshAt !== null && now - lastQuickRefreshAt < HOUR_MS) return false;
   if (marketOpen) {
     // During market hours: badly outdated = >1h since the freshest observation.
     return freshestPriceAt === null || now - freshestPriceAt > HOUR_MS;
   }
-  // Market closed: only worthwhile if we don't already hold a recent observation
-  // (within a day); otherwise the latest settled close is already in hand.
-  return freshestPriceAt === null || now - freshestPriceAt > 24 * HOUR_MS;
+  // Market closed: the latest settled close is the freshest data that exists, so
+  // fire whenever we don't already hold it — unless we pulled within the last
+  // hour, where a fresh update means there is nothing new worth a Tiingo call.
+  if (!manual && freshestPriceAt !== null && now - freshestPriceAt < HOUR_MS) return false;
+  return !holdsLatestClose;
 }
 
 /** Record that a startup quick-refresh just ran, for the once-per-hour throttle. */
 export function noteQuickRefresh(now: number, storage?: StorageLike | null): void {
   const state = readTiingoState(storage ?? undefined);
   writeTiingoState({ ...state, lastQuickRefreshAt: now }, storage ?? undefined);
+}
+
+/**
+ * Reserve this many Tiingo credits — the startup quick-refresh never spends the
+ * last few (nor the full cap), so a true gap-fill fallback later in the session
+ * still has headroom.
+ */
+export const STARTUP_TIINGO_RESERVE = 5;
+/**
+ * Below this many outdated holdings the Twelve Data primary (8 credits/min)
+ * repopulates the whole book within about a minute, so the startup quick-refresh
+ * leaves the scarcer Tiingo budget untouched.
+ */
+export const STARTUP_TIINGO_MIN_OUTDATED = 8;
+
+export type StartupRefreshRoute = "twelve" | "tiingo" | "split";
+
+export interface StartupRefreshPlan {
+  /** Which provider(s) the startup quick-refresh should use this round. */
+  route: StartupRefreshRoute;
+  /** Credits Tiingo may spend this round (0 for the all-Twelve route). */
+  tiingoBudget: number;
+}
+
+/**
+ * Decide how the startup quick-refresh routes a badly-outdated book between the
+ * Twelve Data primary and the Tiingo backup, honouring two hard rules:
+ *
+ *  - **Never spend the last {@link STARTUP_TIINGO_RESERVE} Tiingo credits** (nor
+ *    the full cap): the usable Tiingo budget is `remaining − reserve`.
+ *  - **Leave Tiingo alone for small outdated sets** (≤
+ *    {@link STARTUP_TIINGO_MIN_OUTDATED}): the Twelve Data free tier (8 credits/
+ *    min) clears that many holdings within a minute, so spending Tiingo buys
+ *    nothing.
+ *
+ * Given those it routes everything via **Tiingo** when the usable budget covers
+ * the whole outdated set, a **split** (Tiingo for as many as the usable budget
+ * allows, Twelve Data for the rest) when the set is larger but some budget
+ * remains, and everything via **Twelve Data** when no usable budget is left (a
+ * split is impossible) or Tiingo isn't configured.
+ */
+export function planStartupRefresh(args: {
+  outdatedCount: number;
+  tiingoRemaining: number;
+  tiingoAvailable: boolean;
+  reserve?: number;
+  minOutdated?: number;
+}): StartupRefreshPlan {
+  const reserve = args.reserve ?? STARTUP_TIINGO_RESERVE;
+  const minOutdated = args.minOutdated ?? STARTUP_TIINGO_MIN_OUTDATED;
+  const allTwelve: StartupRefreshPlan = { route: "twelve", tiingoBudget: 0 };
+  if (!args.tiingoAvailable) return allTwelve;
+  // Small outdated sets never warrant a Tiingo spend.
+  if (args.outdatedCount <= minOutdated) return allTwelve;
+  const usable = Math.max(0, args.tiingoRemaining - reserve);
+  // No usable Tiingo budget ⇒ a split is impossible ⇒ wire everything to Twelve.
+  if (usable <= 0) return allTwelve;
+  // The whole outdated set fits within the usable budget ⇒ one capped Tiingo pull.
+  if (usable >= args.outdatedCount) return { route: "tiingo", tiingoBudget: args.outdatedCount };
+  // Otherwise split: Tiingo takes what the budget allows, Twelve Data the rest.
+  return { route: "split", tiingoBudget: usable };
 }
 
 export const TIINGO_GATE_TIMING = {

@@ -104,6 +104,11 @@ must stay secret, so the same Worker proxies it on a dedicated `…/price` route
   request that mirrors the daily-close window above. `resampleFreq` defaults to
   `1day` (the 1W graph) and also accepts `1hour`/`5min` (the 1D graph's intraday
   FX), validated to a positive integer followed by `min`, `hour` or `day`.
+- `GET …/price?intraday=AAPL&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` → Tiingo
+  **IEX intraday bars** (`/iex/<ticker>/prices`) at a **fixed** `resampleFreq=1hour`
+  (one ticker per request), used to build the web companion's live **1D curve**
+  (proposal §10). The frequency is pinned server-side — the caller only chooses
+  the ticker and the date window, both charset-validated.
 - `GET …/iex-intraday?ticker=AAPL&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&resampleFreq=1hour`
   → Tiingo **IEX intraday bars** (`/iex/<ticker>/prices`) for the live 1D/1W
   graph backfill. `resampleFreq` defaults to `1hour` and accepts a positive
@@ -156,6 +161,10 @@ curl -i "https://investment-overview-blob-proxy.<your-subdomain>.workers.dev/pri
 # The FX backup route — should return a JSON array like
 # [{"ticker":"eurusd","bidPrice":…,"askPrice":…,"midPrice":…,"quoteTimestamp":…}].
 curl -i "https://investment-overview-blob-proxy.<your-subdomain>.workers.dev/price?fx=eurusd"
+
+# The intraday-bars route (1D curve) — should return a JSON array of 1-hour OHLC
+# bars for the one ticker between the given dates.
+curl -i "https://investment-overview-blob-proxy.<your-subdomain>.workers.dev/price?intraday=AAPL&startDate=2026-06-22&endDate=2026-06-23"
 ```
 
 The companion auto-derives the `/price` URL from the blob Worker origin, so once
