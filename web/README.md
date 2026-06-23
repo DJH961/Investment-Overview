@@ -188,6 +188,27 @@ game**. Everything slow happens *after* you're already looking at your numbers:
   Because that progress is now self-evident, the app no longer raises an alarming
   banner for the ordinary "still filling in" case — only genuine stalls (a fetch
   error, or the daily budget spent) surface one.
+- **Market-phase-aware refresh windows** (`src/refresh-window.ts`). What a
+  refresh fetches now follows the trading clock, so credits are only ever spent
+  on a price that can actually have changed:
+  - **session open** → only live **stock** prices (a NAV can't strike yet);
+  - **post-close, pre-NAV** → only the **awaited NAVs** (the stock closes are
+    already in hand and stay quiet); and
+  - **fully settled / overnight / pre-market / weekend** → the **automatic**
+    scheduler fetches **nothing** *while the data is genuinely current* (every
+    settled close and NAV in hand), keeping only a slow heartbeat that notices
+    the next open or NAV publish. If a cached close is actually **outdated** —
+    e.g. the app was offline across the close — the automatic refresh still pulls
+    it even outside the session. A **manual**
+    tap in this window instead **re-pulls everything from scratch** — you only tap
+    Refresh off-hours when you're unsure the cache is right, so it verifies the
+    whole book rather than trusting it.
+- **Honest startup signal.** Opening the app answers "is this current?" *visibly*:
+  if there's something to pull it shows an **immediate refreshing animation**; if
+  the book is already settled and in hand it pops a small **"Prices up to date ·
+  last pulled …"** toast (with *when*) instead of silently doing nothing. A
+  cache-served refresh that holds every close/NAV now reads **"up to date"** rather
+  than the old apologetic "showing recent prices".
 
 ## Free-tier economy (Twelve Data)
 
@@ -238,9 +259,12 @@ To stay comfortably inside that budget the app (`src/cache.ts`, `src/quotes.ts`)
    `navPublishWindow` / `recordNavPublish`), so a fund that strikes its NAV late
    is judged against its own habit. Before any history is observed it falls back
    to the European market close (~22:00), since a EUR-listed fund's NAV can't
-   strike before its market shuts. A manual **Refresh** tap leaves an up-to-date
-   NAV alone (no credit wasted on an unchanged value) but **will** re-pull a fund
-   that is demonstrably behind its expected NAV. **Money-market funds are never
+   strike before its market shuts. During the session and the post-close NAV
+   window a manual **Refresh** tap leaves an up-to-date NAV alone (no credit
+   wasted on an unchanged value) but **will** re-pull a fund that is demonstrably
+   behind its expected NAV; a tap once everything is **settled** deliberately
+   re-pulls the whole book (the off-hours verification case — see
+   *Market-phase-aware refresh windows* above). **Money-market funds are never
    requested** — their NAV is pinned at $1 by design, so a quote always returns
    the same dollar and would only waste a credit; they keep their exported value,
    like the synthetic cash/savings rows (which have no ticker at all).
