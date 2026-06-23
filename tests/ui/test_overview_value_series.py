@@ -116,7 +116,31 @@ class TestBuildValueSeries:
         _seed(session)
         end = date(2024, 3, 1)
         points = build_value_series(session, currency="EUR", range_label="YTD", as_of=end)
-        assert points[0].date == date(2024, 1, 1)
+        # The YTD window opens on 1 Jan, but that is New Year's Day — a market
+        # holiday — so the first *plotted* point is the first trading session of
+        # the year (2 Jan). Non-trading days are dropped from value graphs.
+        assert points[0].date == date(2024, 1, 2)
+        assert points[-1].date == end
+
+    def test_non_trading_days_are_dropped(self, session: Session) -> None:
+        _seed(session)
+        # A window spanning a weekend: 2024-06-07 (Fri) … 2024-06-12 (Wed).
+        end = date(2024, 6, 12)
+        points = build_value_series(session, currency="EUR", range_label="Week", as_of=end)
+        plotted = {p.date for p in points}
+        # Sat 8 Jun and Sun 9 Jun carry only Friday's close forward → dropped.
+        assert date(2024, 6, 8) not in plotted
+        assert date(2024, 6, 9) not in plotted
+        # The surrounding trading days remain.
+        assert date(2024, 6, 7) in plotted
+        assert date(2024, 6, 10) in plotted
+
+    def test_live_tip_kept_even_on_a_non_trading_day(self, session: Session) -> None:
+        _seed(session)
+        # 2024-06-15 is a Saturday: the headline "today" tip must still close the
+        # curve so it ends at the current value, even though it is non-trading.
+        end = date(2024, 6, 15)
+        points = build_value_series(session, currency="EUR", range_label="Week", as_of=end)
         assert points[-1].date == end
 
 

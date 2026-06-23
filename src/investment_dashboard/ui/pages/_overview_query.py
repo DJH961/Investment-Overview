@@ -13,7 +13,11 @@ from investment_dashboard.domain.currency import (
     dual_currency_amounts,
     lookup_rate_with_forward_fill,
 )
-from investment_dashboard.domain.market_hours import feed_is_fresh, is_us_market_open
+from investment_dashboard.domain.market_hours import (
+    feed_is_fresh,
+    is_trading_day,
+    is_us_market_open,
+)
 from investment_dashboard.domain.money_market import is_money_market
 from investment_dashboard.domain.returns import (
     total_growth_pct_compounded,
@@ -210,12 +214,26 @@ def build_value_series(
     if start is None:
         return []
 
-    return [
+    points = [
         ValueSeriesPoint(date=day, value=value)
         for day, value in snapshots_service.series_in_currency(
             session, start, end, currency, recompute_tail_days=recompute_tail_days
         )
     ]
+    if not points:
+        return points
+    # Drop non-trading days (weekends / NYSE holidays). On those days the value
+    # is just the prior session's settled close carried forward, so plotting
+    # them only adds flat steps that repeat the day before; the line's own
+    # smoothing bridges the gap far more cleanly. The final point — the live
+    # "today" tip whose value matches the headline figure — is always kept so
+    # the curve still ends at the current value even when today is itself a
+    # non-trading day (e.g. the app is opened over a weekend).
+    last = points[-1]
+    trading = [p for p in points if is_trading_day(p.date)]
+    if not trading or trading[-1].date != last.date:
+        trading.append(last)
+    return trading
 
 
 def build_intraday_value_series(
