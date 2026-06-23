@@ -82,11 +82,23 @@ export const DEFAULT_NAV_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 export const NAV_PUBLISH_HOUR = 22;
 
 /**
- * How many hours after {@link NAV_PUBLISH_HOUR} the refresh layer keeps polling
- * hard for a not-yet-seen NAV before relaxing again. Bounds the credit cost of
- * a fund that publishes late (or skips a day) to one evening window.
+ * Bootstrap span (hours past {@link NAV_PUBLISH_HOUR}) used only to seed a fund's
+ * learned publish window before we've observed its real habit (see
+ * {@link navPublishWindow}). It no longer caps how long a *missing* NAV is
+ * chased: once we are past the expected publish hour and still behind, the fund
+ * is polled like a normal symbol until its new NAV actually lands.
  */
 export const NAV_CATCHUP_WINDOW_HOURS = 2;
+
+/**
+ * Freshness window for a **market** (stock/ETF) symbol whose exchange is closed
+ * and whose latest settled close we already hold. The session reopen is detected
+ * directly from the market clock on the next refresh, so this only needs to span
+ * the longest plausible closed stretch (a four-day holiday weekend) to guarantee
+ * that not a single credit is spent re-fetching an unchanged close until the
+ * market opens again.
+ */
+export const DEFAULT_CLOSED_MARKET_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Trailing slack (hours) added past the latest *observed* publish time when
@@ -100,11 +112,9 @@ export interface NavRefreshOptions {
   now?: number;
   /** Local hour the NAV is expected to publish; see {@link NAV_PUBLISH_HOUR}. */
   publishHour?: number;
-  /** Hours after `publishHour` to keep polling; see {@link NAV_CATCHUP_WINDOW_HOURS}. */
-  catchUpWindowHours?: number;
-  /** TTL while catching up to a fresh NAV (poll cadence). */
+  /** TTL while behind a fresh NAV (poll cadence — same as a normal symbol). */
   shortTtlMs?: number;
-  /** TTL once the latest NAV is in hand, or outside the publish window. */
+  /** TTL once the latest NAV is in hand, or before it is expected. */
   longTtlMs?: number;
 }
 
@@ -135,23 +145,22 @@ export function latestExpectedNavDate(now: Date, publishHour = NAV_PUBLISH_HOUR)
   return localYmd(d);
 }
 
-/** Are we currently inside today's "catch the new NAV" polling window? */
-function withinCatchUpWindow(now: Date, publishHour: number, windowHours: number): boolean {
-  if (!isBusinessDay(now)) return false;
-  const hour = now.getHours() + now.getMinutes() / 60;
-  return hour >= publishHour && hour < Math.min(24, publishHour + windowHours);
-}
-
 /**
  * Adaptive freshness window for a NAV-priced holding. Funds publish their NAV
  * only ~once per business day, so polling on a fixed short interval all day
  * wastes the free-tier budget while a fixed long interval can leave today's
  * fresh NAV unseen for hours.
  *
- * This returns a short (poll-often) TTL only when we are *both* inside the
- * evening publish window *and* still missing the latest expected NAV (judged by
- * the cached quote's value-date). Once that NAV lands — or outside the window —
- * it relaxes to the long window so refreshes barely touch the credit budget.
+ * Two states only, keyed off whether we already hold the latest *expected* NAV
+ * (judged by the cached quote's value-date against {@link latestExpectedNavDate}):
+ *   - **have it** (or it isn't due yet): relax to the long window — there is no
+ *     new price to chase, so refreshes barely touch the credit budget; and
+ *   - **behind it**: poll like a normal symbol (the short window) until the new
+ *     NAV actually lands. There is no upper "catch-up window" cap, so a NAV that
+ *     publishes late — even past midnight — is still picked up the same night
+ *     rather than waiting a whole day. Before the expected publish hour we are by
+ *     definition not behind (the latest expected date is the prior session, which
+ *     we hold), so this never polls a fund before its NAV could exist.
  */
 export function navCacheTtlMs(
   cached: { valueDate?: string | null } | null | undefined,
@@ -160,18 +169,63 @@ export function navCacheTtlMs(
   const {
     now = Date.now(),
     publishHour = NAV_PUBLISH_HOUR,
-    catchUpWindowHours = NAV_CATCHUP_WINDOW_HOURS,
     shortTtlMs = DEFAULT_CACHE_TTL_MS,
     longTtlMs = DEFAULT_NAV_CACHE_TTL_MS,
   } = options;
 
-  const nowDate = new Date(now);
   const have = cached?.valueDate ?? null;
-  // Already holding the latest expected NAV: nothing new to chase.
-  if (have && have >= latestExpectedNavDate(nowDate, publishHour)) return longTtlMs;
-  // Missing it — poll hard only during the evening publish window.
-  if (withinCatchUpWindow(nowDate, publishHour, catchUpWindowHours)) return shortTtlMs;
-  return longTtlMs;
+  // Already holding the latest expected NAV (or it isn't due yet): nothing to chase.
+  if (have && have >= latestExpectedNavDate(new Date(now), publishHour)) return longTtlMs;
+  // Behind the expected NAV: poll like a normal fund until it lands.
+  return shortTtlMs;
+}
+
+/** Tunables for {@link marketCacheTtlMs}. */
+export interface MarketRefreshOptions {
+  /** TTL while the session is open, or when chasing a not-yet-held close. */
+  shortTtlMs?: number;
+  /** TTL while the session is closed and the latest close is already in hand. */
+  longTtlMs?: number;
+  /** Whether the exchange's regular session is open right now. */
+  marketOpen: boolean;
+  /** Trading day (`YYYY-MM-DD`) of the most recent already-settled close. */
+  latestSettledDate: string;
+}
+
+/**
+ * Adaptive freshness window for a **market** (stock/ETF) symbol, the mirror of
+ * {@link navCacheTtlMs} for continuously-traded instruments.
+ *
+ * While the session is open we poll on the short window (prices move intraday).
+ * Once it closes there is nothing new until it reopens, so if we already hold
+ * the latest settled close (the cached value-date is at least the most recent
+ * settled session date) we rest on the long window and spend no credits —
+ * freeing that budget for late-arriving fund NAVs. If the market is closed but
+ * we are *missing* that close (or its date is unknown) we fetch once on the
+ * short window to capture it, then go quiet.
+ *
+ * Note: the "latest close" we settle on is the last intraday print we hold for
+ * the session (its value-date is already today during the session), which is at
+ * most a few minutes off the official 16:00 print — an intentional trade of
+ * sub-cent close precision for not re-polling an idle market all evening.
+ */
+export function marketCacheTtlMs(
+  cached: { valueDate?: string | null } | null | undefined,
+  options: MarketRefreshOptions,
+): number {
+  const {
+    shortTtlMs = DEFAULT_CACHE_TTL_MS,
+    longTtlMs = DEFAULT_CLOSED_MARKET_TTL_MS,
+    marketOpen,
+    latestSettledDate,
+  } = options;
+  // Session open: poll live.
+  if (marketOpen) return shortTtlMs;
+  // Closed and already holding the latest settled close: nothing to fetch.
+  const have = cached?.valueDate ?? null;
+  if (have && have >= latestSettledDate) return longTtlMs;
+  // Closed but missing that close (or unknown date): fetch once to capture it.
+  return shortTtlMs;
 }
 
 /** A NAV polling window: when to start, and for how many hours to keep at it. */
@@ -229,6 +283,15 @@ export interface LoadQuotesOptions {
    * so a forced refresh defers rather than exceeding the free-tier cap.
    */
   forceMarketFetch?: boolean;
+  /**
+   * Per-symbol escape hatch for a manual "pull now": when it returns true the
+   * symbol is re-fetched regardless of how fresh its cached quote is (still
+   * within the free-tier budget). Used so a manual Refresh can re-pull a NAV
+   * fund that is *behind* its latest expected value — the case the blanket
+   * {@link forceMarketFetch} deliberately skips to avoid chasing an unchanged
+   * NAV. Evaluated for every symbol; defaults to never forcing.
+   */
+  forceFetch?: (symbol: string, cached?: CachedQuote) => boolean;
   /**
    * Called when a freshly-fetched symbol reports a value-date later than the one
    * already cached (or has none cached yet). Lets callers learn *when* a fund's
@@ -289,6 +352,7 @@ export async function loadQuotes(
     cacheTtlMs = DEFAULT_CACHE_TTL_MS,
     cacheTtlMsForSymbol,
     forceMarketFetch = false,
+    forceFetch,
     onValueDateAdvance,
     navSymbols,
     creditsPerMinute = FREE_TIER.creditsPerMinute,
@@ -313,8 +377,11 @@ export async function loadQuotes(
     const cached = cache.get(symbol);
     // A manual "refresh now" forces market symbols to re-fetch even if their
     // cached quote is still inside its window; NAV symbols keep their adaptive
-    // (once-a-day) freshness so a tap never wastes credits on an unchanged NAV.
-    const forced = forceMarketFetch && !(navSymbols?.has(symbol) ?? false);
+    // (once-a-day) freshness so a tap never wastes credits on an unchanged NAV —
+    // unless `forceFetch` opts a specific symbol in (e.g. a NAV that is behind).
+    const forced =
+      (forceMarketFetch && !(navSymbols?.has(symbol) ?? false)) ||
+      (forceFetch?.(symbol, cached) ?? false);
     if (!forced && cached && t0 - cached.at < ttlFor(symbol, cached) && cached.quote.price !== null) {
       result.set(symbol, cached.quote);
       servedFresh.push(symbol);

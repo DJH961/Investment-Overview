@@ -200,19 +200,34 @@ To stay comfortably inside that budget the app (`src/cache.ts`, `src/quotes.ts`)
    latest bar is the authentic last-published NAV — and we only adopt it over the
    exported value when that bar's value-date is strictly newer, so a closed-day
    carry-forward is never trusted (no holiday calendar of our own required).
-   Within each fund's **publish window** (`navCacheTtlMs` / `navPublishWindow`
-   in `src/quotes.ts`), though, a NAV whose latest value-date is still behind
-   today's expected one temporarily drops to the short market window so refreshes
-   pick up the new NAV promptly — then relaxes back to ~12 h once today's value
-   is in hand. That window is **learned per fund** from when its value-date has
-   actually advanced (recorded in `localStorage`; see `recordNavPublish`), so a
-   fund that strikes its NAV late and in a tight band is polled only in that band
-   rather than all evening. Before any history is observed it falls back to the
-   European market close (~22:00), since a EUR-listed fund's NAV can't strike
-   before its market shuts. **Money-market funds are never requested** — their
-   NAV is pinned at $1 by design, so a quote always returns the same dollar and
-   would only waste a credit; they keep their exported value, like the synthetic
-   cash/savings rows (which have no ticker at all).
+   Within each fund's **publish window**, a NAV whose latest value-date is still
+   behind today's expected one drops to the short window and is then **polled
+   like an ordinary symbol until the new NAV actually lands** — there is no upper
+   "catch-up" cap, so a NAV that publishes late (even past midnight) is still
+   picked up the same night rather than waiting a whole day (`navCacheTtlMs` in
+   `src/quotes.ts`). It only relaxes back to ~12 h once today's value is in hand,
+   and is never polled before its NAV could exist (before the expected publish
+   hour the prior session's NAV — which we already hold — is the latest expected
+   one). The expected publish hour is **learned per fund** from when its
+   value-date has actually advanced (recorded in `localStorage`; see
+   `navPublishWindow` / `recordNavPublish`), so a fund that strikes its NAV late
+   is judged against its own habit. Before any history is observed it falls back
+   to the European market close (~22:00), since a EUR-listed fund's NAV can't
+   strike before its market shuts. A manual **Refresh** tap leaves an up-to-date
+   NAV alone (no credit wasted on an unchanged value) but **will** re-pull a fund
+   that is demonstrably behind its expected NAV. **Money-market funds are never
+   requested** — their NAV is pinned at $1 by design, so a quote always returns
+   the same dollar and would only waste a credit; they keep their exported value,
+   like the synthetic cash/savings rows (which have no ticker at all).
+
+   **Market (stock/ETF) symbols** mirror this while their exchange is *closed*:
+   once we already hold the latest settled close there is nothing new to fetch
+   until it reopens, so they rest on a long window and spend **zero credits**
+   overnight, at weekends, and on market holidays (`marketCacheTtlMs` +
+   `latestSettledSessionDate`, holiday-aware via `src/market-hours.ts`). The
+   moment the regular session reopens they snap back to the short live window.
+   Those saved overnight/weekend credits are exactly what funds a late-arriving
+   fund NAV.
 2. **Budgets itself across reloads** via a rolling credit-spend log: it spends
    at most the credits left in the current minute/day windows and **defers** any
    overflow symbols to their last cached (or exported last-known) value,

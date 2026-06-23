@@ -11,7 +11,17 @@ import {
   writeCachedQuotes,
   type StorageLike,
 } from "../src/cache";
-import { loadEurUsd, loadFxRates, loadQuotes, navCacheTtlMs, navPublishWindow, DEFAULT_NAV_CACHE_TTL_MS, DEFAULT_CACHE_TTL_MS } from "../src/quotes";
+import {
+  loadEurUsd,
+  loadFxRates,
+  loadQuotes,
+  marketCacheTtlMs,
+  navCacheTtlMs,
+  navPublishWindow,
+  DEFAULT_CLOSED_MARKET_TTL_MS,
+  DEFAULT_NAV_CACHE_TTL_MS,
+  DEFAULT_CACHE_TTL_MS,
+} from "../src/quotes";
 import { PriceError, type FetchLike, type Quote } from "../src/prices";
 import Decimal from "decimal.js";
 
@@ -187,6 +197,32 @@ describe("loadQuotes — caching", () => {
     // The market symbol is force-refetched; the once-a-day NAV is left on cache.
     expect(report.fetched).toEqual(["VTI"]);
     expect(report.servedFresh).toEqual(["FXAIX"]);
+  });
+
+  it("forceFetch opts a specific (behind) NAV symbol back into a forced refresh", async () => {
+    const storage = memStorage();
+    writeCachedQuotes(
+      new Map([
+        ["VTI", { symbol: "VTI", price: new Decimal("1"), previousClose: null, currency: "USD" }],
+        ["FXAIX", { symbol: "FXAIX", price: new Decimal("2"), previousClose: null, currency: "USD" }],
+      ]),
+      0,
+      storage,
+    );
+    const fetchImpl = vi.fn<FetchLike>(async (url) => quoteResponse(url));
+    const { report } = await loadQuotes(["VTI", "FXAIX"], "key", {
+      fetchImpl,
+      storage,
+      now: clock(60_000), // 1 min later — both still cache-fresh
+      sleep: noSleep,
+      navSymbols: new Set(["FXAIX"]),
+      cacheTtlMsForSymbol: (s) => (s === "FXAIX" ? 12 * 60 * 60_000 : 15 * 60_000),
+      forceMarketFetch: true,
+      // A manual Refresh deems the NAV behind, so it is forced despite being NAV.
+      forceFetch: (s) => s === "FXAIX",
+    });
+    expect(report.fetched.sort()).toEqual(["FXAIX", "VTI"]);
+    expect(report.servedFresh).toEqual([]);
   });
 });
 
@@ -375,44 +411,50 @@ describe("navCacheTtlMs — adaptive NAV refresh", () => {
     expect(ttl).toBe(DEFAULT_NAV_CACHE_TTL_MS);
   });
 
-  it("polls hard during the evening window while the new NAV is still missing", () => {
+  it("polls like a normal fund while behind the expected NAV", () => {
     const ttl = navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(22, 30) });
     expect(ttl).toBe(DEFAULT_CACHE_TTL_MS);
   });
 
-  it("chases an unknown (uncached) value-date during the window", () => {
+  it("keeps chasing a late NAV past midnight (no catch-up cap)", () => {
+    // 00:30 Thursday, still missing Wednesday's NAV: before the publish hour the
+    // latest expected is the prior session (Wed 01-10), which we don't hold, so
+    // we keep polling rather than giving up until the next evening.
+    const thu0030 = new Date(2024, 0, 11, 0, 30).getTime();
+    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { now: thu0030 })).toBe(DEFAULT_CACHE_TTL_MS);
+  });
+
+  it("chases an unknown (uncached) value-date", () => {
     expect(navCacheTtlMs(null, { now: wed(22, 30) })).toBe(DEFAULT_CACHE_TTL_MS);
     expect(navCacheTtlMs({ valueDate: null }, { now: wed(22, 30) })).toBe(DEFAULT_CACHE_TTL_MS);
   });
 
-  it("stays on the long window outside the publish window even if behind", () => {
-    // 12:00 is before the 22:00 publish hour; expected = previous business day.
-    const ttl = navCacheTtlMs({ valueDate: "2024-01-08" }, { now: wed(12) });
+  it("rests before the NAV is due, when the prior session is already in hand", () => {
+    // 12:00 is before the 22:00 publish hour; the latest expected NAV is the
+    // prior business day (Tue 01-09), which we already hold — nothing to chase.
+    const ttl = navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(12) });
     expect(ttl).toBe(DEFAULT_NAV_CACHE_TTL_MS);
   });
 
-  it("never polls on a weekend (no NAV publishes)", () => {
-    // Saturday evening: latest expected is Friday's NAV, which we already hold.
-    expect(navCacheTtlMs({ valueDate: "2024-01-12" }, { now: sat(22) })).toBe(DEFAULT_NAV_CACHE_TTL_MS);
-    // Even missing, a weekend evening is never a publish window.
-    expect(navCacheTtlMs({ valueDate: "2024-01-05" }, { now: sat(22) })).toBe(DEFAULT_NAV_CACHE_TTL_MS);
+  it("polls when an earlier session's NAV is still missing", () => {
+    // Noon but we only hold Monday's NAV — Tuesday's (the prior session) is due
+    // and missing, so fetch it now rather than wait for the evening.
+    const ttl = navCacheTtlMs({ valueDate: "2024-01-08" }, { now: wed(12) });
+    expect(ttl).toBe(DEFAULT_CACHE_TTL_MS);
   });
 
-  it("backs off again past the catch-up window", () => {
-    // publishHour 22 + 1h window ends at 23:00; 22:30 is inside, 23:30 is past it.
-    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(23, 30), catchUpWindowHours: 1 })).toBe(
-      DEFAULT_NAV_CACHE_TTL_MS,
-    );
-    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(22, 30), catchUpWindowHours: 1 })).toBe(
-      DEFAULT_CACHE_TTL_MS,
-    );
+  it("rests on a weekend once Friday's NAV is in hand", () => {
+    // Saturday evening: latest expected is Friday's NAV, which we already hold.
+    expect(navCacheTtlMs({ valueDate: "2024-01-12" }, { now: sat(22) })).toBe(DEFAULT_NAV_CACHE_TTL_MS);
   });
 
   it("honours an explicit (learned) publish hour", () => {
-    // A fund taught to publish at 18:00: 18:30 polls hard, 21:00 is past its 1h window.
-    const opts = { publishHour: 18, catchUpWindowHours: 1 };
+    // A fund taught to publish at 18:00: before 18:00 the prior session is the
+    // latest expected (rest); after it, today's NAV is due — poll until it lands.
+    const opts = { publishHour: 18 };
+    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { ...opts, now: wed(17) })).toBe(DEFAULT_NAV_CACHE_TTL_MS);
     expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { ...opts, now: wed(18, 30) })).toBe(DEFAULT_CACHE_TTL_MS);
-    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { ...opts, now: wed(21) })).toBe(DEFAULT_NAV_CACHE_TTL_MS);
+    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { ...opts, now: wed(21) })).toBe(DEFAULT_CACHE_TTL_MS);
   });
 
   it("honours custom short/long TTL overrides", () => {
@@ -431,6 +473,38 @@ describe("navCacheTtlMs — adaptive NAV refresh", () => {
       sleep: noSleep,
     });
     expect(quotes.get("VTI")?.valueDate).toBe("2024-01-10");
+  });
+});
+
+describe("marketCacheTtlMs — adaptive market refresh", () => {
+  const base = { latestSettledDate: "2024-01-10" };
+
+  it("polls on the short window while the session is open", () => {
+    expect(marketCacheTtlMs({ valueDate: "2024-01-09" }, { ...base, marketOpen: true })).toBe(DEFAULT_CACHE_TTL_MS);
+    // Even already holding today's print, an open session keeps polling live.
+    expect(marketCacheTtlMs({ valueDate: "2024-01-10" }, { ...base, marketOpen: true })).toBe(DEFAULT_CACHE_TTL_MS);
+  });
+
+  it("rests on the long window while closed and holding the latest close", () => {
+    expect(marketCacheTtlMs({ valueDate: "2024-01-10" }, { ...base, marketOpen: false })).toBe(
+      DEFAULT_CLOSED_MARKET_TTL_MS,
+    );
+    // A newer cached date than the latest settled session still counts as held.
+    expect(marketCacheTtlMs({ valueDate: "2024-01-11" }, { ...base, marketOpen: false })).toBe(
+      DEFAULT_CLOSED_MARKET_TTL_MS,
+    );
+  });
+
+  it("fetches once while closed but missing the latest close", () => {
+    expect(marketCacheTtlMs({ valueDate: "2024-01-09" }, { ...base, marketOpen: false })).toBe(DEFAULT_CACHE_TTL_MS);
+    expect(marketCacheTtlMs(null, { ...base, marketOpen: false })).toBe(DEFAULT_CACHE_TTL_MS);
+    expect(marketCacheTtlMs({ valueDate: null }, { ...base, marketOpen: false })).toBe(DEFAULT_CACHE_TTL_MS);
+  });
+
+  it("honours custom short/long TTL overrides", () => {
+    const opts = { ...base, marketOpen: false, shortTtlMs: 11, longTtlMs: 22 };
+    expect(marketCacheTtlMs({ valueDate: "2024-01-09" }, opts)).toBe(11);
+    expect(marketCacheTtlMs({ valueDate: "2024-01-10" }, opts)).toBe(22);
   });
 });
 

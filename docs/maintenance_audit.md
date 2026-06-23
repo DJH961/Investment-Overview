@@ -306,6 +306,26 @@ storm. 3.4.2 closes the gap:
 - **5G.17 Support-bundle build ran on the loop** — ✅ done. The Data Health
   download builds the bundle via `run.io_bound` so a large log can't stall the UI.
 
+### 5H — Live-web credit economy: idle-market polling (added 2026-06-23 — ✅ done)
+
+The `web/` companion's free-tier credit budget (8/min, 800/day) was being spent
+re-fetching prices that could not have changed:
+
+- **5H.18 Market symbols were re-polled while the exchange was closed** — ✅ done.
+  Stocks/ETFs kept refreshing on the configured cache window overnight, at
+  weekends, and on market holidays even though their settled close was already in
+  hand. `marketCacheTtlMs` (`web/src/quotes.ts`) + a new holiday-aware
+  `latestSettledSessionDate` (`web/src/market-hours.ts`) now rest a closed-market
+  symbol on a long window once we hold its latest close, snapping back to the live
+  window the moment the regular session reopens. The reclaimed credits fund
+  late-arriving fund NAVs.
+- **5H.19 A late NAV was abandoned until the next evening** — ✅ done. The old
+  fixed "catch-up window" stopped polling a not-yet-published NAV at a cut-off
+  (capped at midnight), so a NAV that struck late waited ~a day to appear.
+  `navCacheTtlMs` now simply polls a fund like a normal symbol whenever it is
+  behind its expected NAV — no upper cap — and a manual Refresh re-pulls a behind
+  NAV (via `loadQuotes`' `forceFetch`) while still sparing an up-to-date one.
+
 ## 6. Observability / shareable diagnostics (added 2026-06-21 — ✅ done)
 
 - **6.1 No persistent log file to share** — ✅ done. `logging.configure_logging`

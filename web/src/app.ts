@@ -53,9 +53,11 @@ import {
 import {
   DEFAULT_NAV_CACHE_TTL_MS,
   FREE_TIER,
+  latestExpectedNavDate,
   loadEurUsd,
   loadFxRates,
   loadQuotes,
+  marketCacheTtlMs,
   navCacheTtlMs,
   navPublishWindow,
   type EurUsdSource,
@@ -63,6 +65,7 @@ import {
   type QuoteLoadReport,
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
+import { isUsMarketOpen, latestSettledSessionDate } from "./market-hours";
 import {
   clearBiometricEnrolment,
   enrolBiometric,
@@ -894,20 +897,42 @@ export class App {
     // Per-symbol learned publish windows: when each fund's NAV has historically
     // landed, so we poll within that tight band instead of a fixed evening guess.
     const navStats = readNavPublishStats();
+    // Learned publish hour for a NAV symbol (when its once-a-day NAV is expected).
+    const publishHourFor = (symbol: string): number =>
+      navPublishWindow(navStats.get(symbol)?.hours).publishHour;
     return {
       cacheTtlMs,
       navSymbols: navFetchSymbols,
       forceMarketFetch: force,
       cacheTtlMsForSymbol: (symbol, cached) => {
-        if (!navFetchSymbols.has(symbol)) return cacheTtlMs;
-        const { publishHour, catchUpWindowHours } = navPublishWindow(navStats.get(symbol)?.hours);
-        return navCacheTtlMs(cached?.quote, {
+        if (navFetchSymbols.has(symbol)) {
+          // NAV fund: relax once today's NAV is in hand, else poll like a normal
+          // symbol until it lands (no upper catch-up cap — catches a late NAV).
+          return navCacheTtlMs(cached?.quote, {
+            shortTtlMs: cacheTtlMs,
+            longTtlMs: DEFAULT_NAV_CACHE_TTL_MS,
+            publishHour: publishHourFor(symbol),
+          });
+        }
+        // Market symbol: while the exchange is shut and we already hold the latest
+        // settled close there is nothing new to fetch — rest until it reopens.
+        const now = new Date();
+        return marketCacheTtlMs(cached?.quote, {
           shortTtlMs: cacheTtlMs,
-          longTtlMs: DEFAULT_NAV_CACHE_TTL_MS,
-          publishHour,
-          catchUpWindowHours,
+          marketOpen: isUsMarketOpen(now),
+          latestSettledDate: latestSettledSessionDate(now),
         });
       },
+      // A manual "pull now" may re-fetch a NAV fund only when it is *behind* its
+      // latest expected value (we are demonstrably missing a published NAV);
+      // otherwise NAV symbols stay exempt so a tap never chases an unchanged NAV.
+      forceFetch: force
+        ? (symbol, cached) => {
+            if (!navFetchSymbols.has(symbol)) return false; // market: forceMarketFetch
+            const have = cached?.quote.valueDate ?? null;
+            return !(have && have >= latestExpectedNavDate(new Date(), publishHourFor(symbol)));
+          }
+        : undefined,
       // Learn each fund's real publish time from when its value-date advances.
       onValueDateAdvance: (symbol, valueDate, at) => {
         if (navFetchSymbols.has(symbol)) recordNavPublish(symbol, valueDate, at);
