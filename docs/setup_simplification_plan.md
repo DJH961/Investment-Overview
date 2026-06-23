@@ -2,7 +2,7 @@
 
 _Authored 2026-06-23. Reference doc to compare the finished work against._
 
-Repo (working tree): `C:\Users\t-dhenke\OneDrive - Microsoft\Documents\VS Code\Investment-Overview\web`
+Repo (working tree): `web/`
 
 ## Why
 The first-run "Set up the companion" screen presented 7 fields as equals. In
