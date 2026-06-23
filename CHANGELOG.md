@@ -14,6 +14,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [3.11.2] — 2026-06-23
+
+### Fixed
+
+- **Overview "1 Day" graph no longer crashes with `no such column:
+  intraday_value.market_value_eur`.** The v3.9.3 rename of the cache-tier
+  `intraday_value` column (`total_value_eur` → `market_value_eur`) was applied
+  only by Alembic, which migrates the *ledger* tier; a split-DB or packaged
+  install (whose cache database is created by `create_all`, which never alters
+  an existing table) kept the legacy column, so every intraday query failed.
+  Boot now reconciles the pure-cache `intraday_value` table on every start
+  across whichever database backs the cache tier — dropping a legacy
+  `total_value_eur` table so it is rebuilt on the current schema, and adding the
+  per-sample `fx_eur_usd` rate column when a single-file Alembic `head` left it
+  off. The table is regenerable (pruned to the current session), so the rebuild
+  is safe.
+
+### Changed
+
+- **The support bundle now actually includes the errors it is meant to help
+  diagnose.** Alongside the log tail it now embeds the recorded background
+  errors and warnings (the Data Health "Recent errors" list, which otherwise
+  lives only in process memory and never reached the shared file), a Data Health
+  snapshot from the app's own diagnostics, the per-tier database file sizes, and
+  the resolved storage paths — all still secret-redacted.
+
 ## [3.11.1] — 2026-06-23
 
 ### Changed
