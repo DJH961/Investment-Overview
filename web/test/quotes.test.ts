@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   recordCredits,
+  recordTiingoCredits,
   writeCachedEurUsd,
   writeCachedFx,
   writeCachedQuotes,
@@ -24,6 +25,7 @@ import {
   DEFAULT_CACHE_TTL_MS,
 } from "../src/quotes";
 import { PriceError, type FetchLike, type Quote } from "../src/prices";
+import { WEB_DAILY_CAP } from "../src/tiingo-gate";
 import Decimal from "decimal.js";
 
 function memStorage(): StorageLike {
@@ -694,5 +696,85 @@ describe("loadEurUsd", () => {
     const res = await loadEurUsd("key", { fetchImpl, storage: memStorage(), now: clock(0) });
     expect(res.source).toBe("none");
     expect(res.now).toBeNull();
+  });
+
+  it("falls back to Tiingo FX when the primary is over budget", async () => {
+    const storage = memStorage();
+    recordCredits(8, 0, storage); // exhaust the Twelve Data per-minute budget
+    const primary = vi.fn<FetchLike>();
+    const tiingoFetchImpl = vi.fn<FetchLike>(async (url) => {
+      expect(String(url)).toContain("fx=eurusd");
+      return jsonResponse([{ ticker: "eurusd", midPrice: 1.1382, quoteTimestamp: "2026-06-23T16:00:00Z" }]);
+    });
+    const res = await loadEurUsd("key", {
+      fetchImpl: primary,
+      tiingoFetchImpl,
+      storage,
+      now: clock(1000),
+      tiingoProxyUrl: "https://worker.example.dev/price",
+      eodFallback: new Decimal("1.07"),
+    });
+    expect(primary).not.toHaveBeenCalled(); // primary skipped (no budget)
+    expect(tiingoFetchImpl).toHaveBeenCalledTimes(1);
+    expect(res.source).toBe("tiingo");
+    expect(res.now?.toString()).toBe("1.1382");
+  });
+
+  it("uses Tiingo FX when the primary live call fails, before the EOD rate", async () => {
+    const storage = memStorage();
+    const fetchImpl = vi.fn<FetchLike>(async (url) => {
+      if (String(url).includes("fx=eurusd")) {
+        return jsonResponse([{ ticker: "eurusd", midPrice: 1.14, quoteTimestamp: "2026-06-23T16:00:00Z" }]);
+      }
+      return jsonResponse({}, false, 500); // Twelve Data transient failure
+    });
+    const res = await loadEurUsd("key", {
+      fetchImpl,
+      storage,
+      now: clock(0),
+      tiingoProxyUrl: "https://worker.example.dev/price",
+      eodFallback: new Decimal("1.07"),
+    });
+    expect(res.source).toBe("tiingo");
+    expect(res.now?.toString()).toBe("1.14");
+  });
+
+  it("reuses today's cached prior close alongside a Tiingo spot", async () => {
+    const storage = memStorage();
+    // A same-day cached reading carries a real prior close; Tiingo carries none.
+    writeCachedEurUsd({ now: new Decimal("1.10"), previousClose: new Decimal("1.095") }, 1000, storage);
+    const tiingoFetchImpl = vi.fn<FetchLike>(async () =>
+      jsonResponse([{ ticker: "eurusd", midPrice: 1.12, quoteTimestamp: "1970-01-01T00:02:00Z" }]),
+    );
+    const res = await loadEurUsd("", {
+      fetchImpl: vi.fn<FetchLike>(),
+      tiingoFetchImpl,
+      storage,
+      now: clock(120_000), // same UTC day, past the TTL
+      ttlMs: 60_000,
+      tiingoProxyUrl: "https://worker.example.dev/price",
+      eodFallback: new Decimal("1.07"),
+    });
+    expect(res.source).toBe("tiingo");
+    expect(res.now?.toString()).toBe("1.12");
+    expect(res.previousClose?.toString()).toBe("1.095");
+  });
+
+  it("skips Tiingo FX when its budget is exhausted and drops to EOD", async () => {
+    const storage = memStorage();
+    recordCredits(8, 0, storage); // exhaust Twelve Data so we reach the Tiingo step
+    // Exhaust the Tiingo daily cap so the FX backup is gated out.
+    recordTiingoCredits(WEB_DAILY_CAP, 1000, storage);
+    const tiingoFetchImpl = vi.fn<FetchLike>();
+    const res = await loadEurUsd("key", {
+      fetchImpl: vi.fn<FetchLike>(),
+      tiingoFetchImpl,
+      storage,
+      now: clock(1000),
+      tiingoProxyUrl: "https://worker.example.dev/price",
+      eodFallback: new Decimal("1.07"),
+    });
+    expect(tiingoFetchImpl).not.toHaveBeenCalled();
+    expect(res.source).toBe("eod");
   });
 });

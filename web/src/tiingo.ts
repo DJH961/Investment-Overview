@@ -150,3 +150,89 @@ export async function fetchTiingoQuotes(
   }
   return result;
 }
+
+/** A live EUR→USD reading from Tiingo's FX top-of-book (USD per 1 EUR). */
+export interface TiingoFxReading {
+  /** Units of USD per 1 EUR (Tiingo's `eurusd` `midPrice`, used directly). */
+  now: Decimal;
+  /** Epoch ms the quote was struck (`quoteTimestamp`), or null. */
+  at: number | null;
+}
+
+/** Parse the mid rate from one FX top-of-book row, or null when unusable. */
+function midFromFxRow(row: Record<string, unknown>): Decimal | null {
+  const mid = parseDecimal(row.midPrice);
+  if (mid !== null && mid.greaterThan(0)) return mid;
+  // Fall back to (bid+ask)/2, then the bid alone, mirroring the desktop adapter.
+  const bid = parseDecimal(row.bidPrice);
+  const ask = parseDecimal(row.askPrice);
+  if (bid !== null && ask !== null && bid.greaterThan(0) && ask.greaterThan(0)) {
+    return bid.plus(ask).dividedBy(2);
+  }
+  return bid !== null && bid.greaterThan(0) ? bid : null;
+}
+
+/**
+ * Fetch the live EUR→USD mid rate from Tiingo's FX top-of-book endpoint via the
+ * `/price` Worker proxy at `proxyUrl` (`?fx=eurusd`). Tiingo only quotes the
+ * `eurusd` direction, and its `midPrice` is already units of USD per 1 EUR — the
+ * exact convention the app's EUR/USD spot uses — so it is returned directly (no
+ * inversion). Returns null when the pair is unknown/empty (`[]`), so a quiet
+ * weekend row never throws; the caller then keeps its prior/cached/EOD rate.
+ *
+ * Throws a {@link PriceError} only for a transport-level failure (proxy
+ * unreachable, a non-OK HTTP status, or a body that isn't the expected JSON
+ * array) so the caller can record a "backup FX unreachable" signal yet keep its
+ * last-known rate.
+ */
+export async function fetchTiingoEurUsd(
+  proxyUrl: string,
+  options: { fetchImpl?: FetchLike } = {},
+): Promise<TiingoFxReading | null> {
+  const { fetchImpl = fetch } = options;
+  if (!proxyUrl) return null;
+
+  const url = new URL(proxyUrl);
+  url.searchParams.set("fx", "eurusd");
+
+  let resp: Response;
+  try {
+    resp = await fetchImpl(url.toString());
+  } catch (err) {
+    throw new PriceError(`could not reach the Tiingo FX fallback: ${(err as Error).message}`, {
+      retryable: true,
+    });
+  }
+  if (!resp.ok) {
+    throw new PriceError(`Tiingo FX fallback returned HTTP ${resp.status}`, {
+      status: resp.status,
+      retryable: resp.status === 429 || resp.status >= 500,
+    });
+  }
+
+  let body: unknown;
+  try {
+    body = await resp.json();
+  } catch (err) {
+    throw new PriceError(`malformed Tiingo FX fallback payload: ${(err as Error).message}`, {
+      retryable: false,
+    });
+  }
+  // A genuine Tiingo FX response is ALWAYS a JSON array (even `[]` for the
+  // inverse/unknown pair). A non-array 200 means the proxy is NOT relaying Tiingo
+  // FX (an un-redeployed Worker, or a relayed error object) — surface it so the
+  // caller can show "backup FX unreachable" rather than degrading silently.
+  if (!Array.isArray(body)) {
+    throw new PriceError(
+      "price proxy did not return a Tiingo FX array — check the Worker /price route, proxy config, and Tiingo token",
+      { retryable: false },
+    );
+  }
+
+  const row = body.find((r) => r && typeof r === "object");
+  if (!row) return null; // `[]` — no quote for the pair (e.g. weekend gap).
+  const mid = midFromFxRow(row as Record<string, unknown>);
+  if (mid === null) return null;
+  const at = parseTimestamp((row as Record<string, unknown>).quoteTimestamp);
+  return { now: mid, at };
+}

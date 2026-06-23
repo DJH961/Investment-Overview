@@ -14,6 +14,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [3.16.0] — 2026-06-23
+
+### Added
+
+- **Tiingo is now the backup live FX provider (EUR→USD) on both platforms.**
+  The home-currency spot rate previously had a single live source on each stack
+  (yfinance on desktop, Twelve Data on the web companion) with only the ECB
+  end-of-day rate as a fallback. Now, when the primary live source can't be
+  reached, both apps transparently fall back to Tiingo's `eurusd` mid price
+  before dropping to the slower end-of-day rate — mirroring the existing Tiingo
+  secondary *price* provider.
+  - **Cloudflare Worker:** the `/price` proxy gains an `?fx=<pair>` route that
+    proxies `tiingo/fx/top?tickers=<pair>` (pair validated to six letters). It
+    reuses the existing `TIINGO_TOKEN` secret, so **enabling it is a redeploy
+    only — no new secret or route to configure.** Step-by-step instructions live
+    in `docs/tiingo_fx_worker_update.md`.
+  - **Web companion** (`src/tiingo.ts` `fetchTiingoEurUsd`, `src/quotes.ts`
+    `loadEurUsd`): Tiingo's `midPrice` is consumed directly as USD-per-EUR (no
+    inversion) and charged to the same 40/hr·800/day web Tiingo budget. The new
+    `tiingo` FX source surfaces as “FX live (backup)”.
+  - **Desktop app** (`adapters/tiingo_client.py` `fetch_fx_rate`,
+    `services/fx_service.py` `refresh_live_spot`): yfinance stays primary; the
+    Tiingo FX backup is budget-gated against the desktop 10/hr·200/day Tiingo cap
+    and rejects weekend/holiday (non-today) readings for parity with the primary.
+  - **Web companion FX-failure banner:** the live EUR→USD spot pull
+    (`loadEurUsd`, now including the Tiingo backup) reports its own `error`,
+    which was previously discarded. It is now wired into the degradation banner:
+    when the live spot fetch fails and the app falls back to the flat ECB
+    end-of-day rate, a "Live FX rate is unavailable — values use the last known
+    exchange rate" line appears; if there is no rate at all, it instead warns
+    that "portfolio values may be incomplete". A fresh live/backup spot, or a
+    still-fresh cached one, stays silent.
+
 ## [3.15.1] — 2026-06-23
 
 ### Added
