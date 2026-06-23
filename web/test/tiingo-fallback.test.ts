@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Decimal } from "../src/decimal-config";
 import { PriceError, type Quote } from "../src/prices";
 import { latestSettledSessionDate } from "../src/market-hours";
-import { runTiingoFallback, shouldQuickRefresh, planStartupRefresh } from "../src/tiingo-fallback";
+import { runTiingoFallback, shouldQuickRefresh, planStartupRefresh, planPrefetch } from "../src/tiingo-fallback";
 import { tiingoCreditsSpentToday, readTiingoCreditLog, readTiingoNoNewer, recordTiingoCredits, type StorageLike } from "../src/cache";
 
 function memStorage(): StorageLike {
@@ -437,6 +437,88 @@ describe("planStartupRefresh", () => {
       route: "twelve",
       tiingoBudget: 0,
     });
+  });
+});
+
+describe("planPrefetch", () => {
+  const base = {
+    marketSymbols: ["AAA", "BBB"],
+    outdatedMarketSymbols: ["AAA"],
+    awaitingNavSymbols: ["FUND"],
+    tiingoAvailable: true,
+  };
+
+  it("warms only the stocks/ETFs while the market is open", () => {
+    expect(planPrefetch({ ...base, marketOpen: true })).toEqual({
+      symbols: ["AAA", "BBB"],
+      route: "twelve",
+    });
+  });
+
+  it("does not fall back to Tiingo for an open market, however many symbols", () => {
+    const many = Array.from({ length: 20 }, (_, i) => `S${i}`);
+    expect(planPrefetch({ ...base, marketOpen: true, marketSymbols: many })).toEqual({
+      route: "twelve",
+      symbols: many,
+    });
+  });
+
+  it("warms nothing while the market is closed and everything is in hand", () => {
+    expect(
+      planPrefetch({
+        marketOpen: false,
+        marketSymbols: ["AAA", "BBB"],
+        outdatedMarketSymbols: [],
+        awaitingNavSymbols: [],
+        tiingoAvailable: true,
+      }),
+    ).toEqual({ symbols: [], route: "twelve" });
+  });
+
+  it("warms the after-close (pre-NAV) funds and any outdated close while closed", () => {
+    expect(planPrefetch({ ...base, marketOpen: false })).toEqual({
+      symbols: ["AAA", "FUND"],
+      route: "twelve",
+    });
+  });
+
+  it("rapid-fires a large (>8) closed-market catch-up through Tiingo", () => {
+    const outdated = Array.from({ length: 9 }, (_, i) => `S${i}`);
+    expect(
+      planPrefetch({
+        marketOpen: false,
+        marketSymbols: outdated,
+        outdatedMarketSymbols: outdated,
+        awaitingNavSymbols: [],
+        tiingoAvailable: true,
+      }),
+    ).toEqual({ symbols: outdated, route: "tiingo" });
+  });
+
+  it("keeps a small (≤8) closed-market catch-up on the Twelve Data primary", () => {
+    const outdated = Array.from({ length: 8 }, (_, i) => `S${i}`);
+    expect(
+      planPrefetch({
+        marketOpen: false,
+        marketSymbols: outdated,
+        outdatedMarketSymbols: outdated,
+        awaitingNavSymbols: [],
+        tiingoAvailable: true,
+      }),
+    ).toEqual({ symbols: outdated, route: "twelve" });
+  });
+
+  it("stays on the primary for a large catch-up when Tiingo isn't configured", () => {
+    const outdated = Array.from({ length: 12 }, (_, i) => `S${i}`);
+    expect(
+      planPrefetch({
+        marketOpen: false,
+        marketSymbols: outdated,
+        outdatedMarketSymbols: outdated,
+        awaitingNavSymbols: [],
+        tiingoAvailable: false,
+      }),
+    ).toEqual({ symbols: outdated, route: "twelve" });
   });
 });
 
