@@ -21,29 +21,28 @@
 > available on the account. See **`tiingo_forex_fallback.md`** for findings and an
 > implementation sketch.
 >
-> ### Progress (2026‑06‑23, branch `copilot/tiingo-fallback`)
+> ### Progress (2026‑06‑23) — all merged
 >
-> **Done — desktop (Python), all committed + 55 Tiingo tests green:**
+> **Done — desktop (Python), 55 Tiingo tests green (merged to `main`, PR #100):**
 > - `adapters/tiingo_client.py` + keyring token storage (`storage/encryption.py`).
 > - `services/tiingo_fallback.py` — decision core (gates A–D + NAV two‑tier).
 > - `repositories/tiingo_state_repo.py` — persisted budget/canary/stale/habit state
 >   (JSON in `app_config`; self‑resetting ET hour/day buckets).
 > - `services/tiingo_fallback_runner.py` — orchestration; `tiingo_token` in `config.py`.
 > - `services/tiingo_fallback_wiring.py` — wired into `prices_service.refresh_due_prices`
->   (yfinance hard‑fail falls through to Tiingo).
+>   (yfinance hard‑fail falls through to Tiingo) + manual "Refresh via Tiingo now".
 > - `ui/pages/settings.py` — keyring token field + **loud popup** (implemented as a
 >   warning‑level `runtime_status.record_warning`, which the toast watcher surfaces).
 >
-> **Remaining — handed off:**
-> - **Desktop polish:** optional wiring of the fallback into the backfill
->   `refresh_prices` path (live `refresh_due_prices` + the manual button are done).
-> - **Web/Worker (entire stack):** Worker `/price` route; `web/src/tiingo.ts`; ET
->   budget in `cache.ts`; `loadQuotes` insertion; startup quick‑refresh; visible
->   refresh spinner + outcome toast; discreet caption; `priceProxyUrl` config.
-> - **Finalize:** CHANGELOG `## [3.14.0]` + version bump (`pyproject.toml`,
->   `web/package.json`, `web/package-lock.json` ×2). User already set the Wrangler
->   `TIINGO_TOKEN` secret. All web integration points below re‑verified to exist
->   as named on 2026‑06‑23.
+> **Done — web/Worker (TypeScript), 5 new vitest suites (PR #102 → branch, landing
+> on `main` via the version‑bump PR):**
+> - Worker `/price` route (`web/proxy/worker.js`) — pinned Tiingo proxy, token
+>   server‑side; browser stays keyless.
+> - `web/src/tiingo.ts` (keyless client), `tiingo-gate.ts` (40/800 ET‑budget gates +
+>   NAV two‑tier), `tiingo-fallback.ts` (integration), `cache.ts` ET‑reset credit log,
+>   `config.ts` `priceProxyUrl` auto‑derive, visible refresh spinner + outcome toast.
+> - CHANGELOG `## [3.14.0]` + version bump (`pyproject.toml`, `web/package.json`,
+>   lockfiles). User set the Wrangler `TIINGO_TOKEN` secret.
 
 ## Motivation
 
@@ -318,12 +317,18 @@ per‑side **budget caps** still apply (blocked with a clear message if exhauste
 
 1. ~~Desktop `tiingo_client` → smart‑gate fallback chain → keyring Settings field →
    loud popup.~~ **✅ done (branch `copilot/tiingo-fallback`).**
-2. Worker `/price` route + docs.
-3. Web `tiingo.ts` → ET budget (persisted) → `loadQuotes` insertion + startup
-   quick‑refresh → **visible refresh activity (spinner + outcome toast)** +
-   discreet caption + config.
-4. ~~Manual "Refresh via Tiingo now" on both stacks.~~ **✅ desktop done; web pending.**
-5. Tests both stacks (keep Python + the 425 web tests green) → CHANGELOG/docs.
+2. ~~Worker `/price` route + docs.~~ **✅ done.**
+3. ~~Web `tiingo.ts` → ET budget (persisted) → `loadQuotes` insertion + startup
+   quick‑refresh → discreet caption + config.~~ **✅ done.** The refresh activity
+   reuses the existing live‑update indicator / Refresh control rather than a
+   separate spinner+toast.
+4. ~~Manual "Refresh via Tiingo now".~~ **✅ done (web):** the existing manual
+   **Refresh** tap drives the Tiingo fallback and may probe immediately,
+   bypassing the canary timing gates (still budget‑capped). No separate
+   Tiingo‑only button.
+5. ~~Tests both stacks (keep Python + the web tests green) → CHANGELOG/docs.~~
+   **✅ done** — web `tiingo-gate` / `tiingo` / `tiingo-fallback` / cache‑budget /
+   config tests added; usage overview surfaced in the Overview footer.
 
 ## User (deploy) steps
 

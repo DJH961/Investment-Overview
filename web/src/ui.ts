@@ -319,6 +319,14 @@ function renderNotes(o: OverviewView): HTMLElement[] {
       ]),
     );
   }
+  if (o.tiingoDayUsed !== null && o.tiingoHourUsed !== null) {
+    notes.push(
+      h("p", { class: "note" }, [
+        `Tiingo fallback budget: ${o.tiingoHourUsed} / ${o.tiingoHourLimit} this hour · ` +
+          `${o.tiingoDayUsed} / ${o.tiingoDayLimit} today.`,
+      ]),
+    );
+  }
   return notes;
 }
 

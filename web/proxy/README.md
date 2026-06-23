@@ -19,6 +19,9 @@ This Worker fetches the asset **server-side** (where CORS does not apply) and
 re-emits the bytes with `Access-Control-Allow-Origin: *`. It is the one external
 piece the companion needs; everything else stays GitHub-native.
 
+The same Worker also hosts the **Tiingo price-fallback** route (`…/price`) — see
+[Tiingo price fallback](#tiingo-price-fallback) below.
+
 ### Is the proxy safe?
 
 Yes. It only ever handles **opaque AES-256-GCM ciphertext** — it cannot decrypt
@@ -74,3 +77,41 @@ curl -i "https://investment-overview-blob-proxy.<your-subdomain>.workers.dev"
 cd web/proxy
 wrangler dev      # serves the Worker at http://localhost:8787
 ```
+
+## Tiingo price fallback
+
+The companion's primary live-quote source is Twelve Data (a free API key the user
+holds in the browser). When Twelve Data is missing data for a symbol, or its
+free-tier per-minute/day budget is spent, the app can fall back to **Tiingo** for
+US tickers. Tiingo's API is **not** CORS-readable from a browser and the token
+must stay secret, so the same Worker proxies it on a dedicated `…/price` route:
+
+- `GET …/price?tickers=AAPL,MSFT` → Tiingo **IEX** (`/iex/?tickers=…`): a live
+  intraday mark for stocks/ETFs and the latest NAV for mutual funds.
+- `GET …/price?daily=AAPL&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` → Tiingo
+  **daily** closes (`/tiingo/daily/<ticker>/prices`).
+
+The route injects the `TIINGO_TOKEN` **secret** as an `Authorization: Token …`
+header (never in the URL), validates every ticker/date against a strict charset
+(so it stays a closed, non-SSRF proxy: only `api.tiingo.com` price data, never an
+arbitrary target), and stamps the same CORS headers. The browser stays
+**Tiingo-keyless** — the token lives only in the Worker.
+
+### Set the secret (one-time)
+
+```sh
+cd web/proxy
+wrangler secret put TIINGO_TOKEN   # paste your Tiingo API token when prompted
+wrangler deploy
+```
+
+### Test it
+
+```sh
+# Should return 200 JSON with `access-control-allow-origin: *`.
+curl -i "https://investment-overview-blob-proxy.<your-subdomain>.workers.dev/price?tickers=AAPL"
+```
+
+The companion auto-derives the `/price` URL from the blob Worker origin, so once
+the blob proxy is wired up there is usually nothing else to set. An explicit
+override is available under **Settings → Price proxy URL** if needed.
