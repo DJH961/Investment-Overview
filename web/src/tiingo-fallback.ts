@@ -17,8 +17,11 @@
 import {
   readTiingoCreditLog,
   readTiingoState,
+  readTiingoNoNewer,
   recordNavPublish,
   recordTiingoCredits,
+  recordTiingoNoNewer,
+  clearTiingoNoNewer,
   creditsSpentThisHour,
   tiingoCreditsSpentToday,
   writeCachedQuotes,
@@ -26,7 +29,7 @@ import {
   type StorageLike,
   type TiingoState,
 } from "./cache";
-import { latestSettledSessionDate } from "./market-hours";
+import { isUsMarketOpen, latestSettledSessionDate } from "./market-hours";
 import { PriceError, type FetchLike, type Quote } from "./prices";
 import type { QuoteLoadReport } from "./quotes";
 import { fetchTiingoQuotes } from "./tiingo";
@@ -44,6 +47,16 @@ import {
 } from "./tiingo-gate";
 
 const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * How long a backup "nothing newer" result suppresses re-pulling the same
+ * symbol. Once Tiingo confirms it holds nothing fresher than what we already
+ * have for the target date, there is no point spending another credit on it
+ * every time the user taps Refresh — a genuinely behind mutual fund won't gain a
+ * new NAV within the hour. A newer target date (next session / NAV cycle) lifts
+ * the suppression immediately regardless of this cooldown.
+ */
+export const TIINGO_NO_NEWER_COOLDOWN_MS = HOUR_MS;
 
 /** The Tiingo budget consumed so far, surfaced for the usage overview. */
 export interface TiingoBudgetView {
@@ -152,6 +165,11 @@ function etDay(now: number): string {
  * Fetch `batch` via Tiingo, merge priced results into `quotes` + the cache, note
  * NAV value-date advances, and record the budget spend. Returns the symbols that
  * actually gained a Tiingo-sourced price.
+ *
+ * Also maintains the per-symbol "nothing newer" stamps (see
+ * {@link recordTiingoNoNewer}): a symbol whose held value-date *advanced* clears
+ * its stamp, while a symbol the backup left no fresher than before is stamped
+ * against `expected` so the next refresh doesn't re-pull the same stale value.
  */
 async function fetchAndMerge(
   batch: string[],
@@ -159,12 +177,18 @@ async function fetchAndMerge(
     proxyUrl: string;
     navSymbols: ReadonlySet<string>;
     quotes: Map<string, Quote>;
+    expected: string;
+    marketOpen: boolean;
     now: number;
     storage: StorageLike | null | undefined;
     fetchImpl?: FetchLike;
   },
 ): Promise<string[]> {
   if (batch.length === 0) return [];
+  // Snapshot the value-date we held *before* the merge, per symbol, so we can
+  // tell afterwards whether the backup actually advanced it.
+  const priorVdFor = new Map<string, string | null>();
+  for (const symbol of batch) priorVdFor.set(symbol, opts.quotes.get(symbol)?.valueDate ?? null);
   // Reserve the budget up-front (same discipline as the Twelve Data path), so a
   // failed call still counts against the self-cap rather than allowing a retry storm.
   recordTiingoCredits(batch.length, opts.now, opts.storage ?? undefined);
@@ -196,6 +220,27 @@ async function fetchAndMerge(
     }
   }
   if (priced.size > 0) writeCachedQuotes(priced, opts.now, opts.storage ?? undefined);
+  // Record/clear the per-symbol "nothing newer" stamps for the whole batch (not
+  // just the priced ones): a backup call that came back empty or no-fresher must
+  // still be remembered so we stop re-pulling it every refresh — but only for
+  // data that does *not* need an update right now (the user's rule): a NAV fund
+  // (publishes at most once a day) or a market symbol while the exchange is
+  // closed. An open-market stock may yet get a fresh tick next refresh, so it is
+  // never suppressed.
+  for (const symbol of batch) {
+    const priorVd = priorVdFor.get(symbol) ?? null;
+    const finalVd = opts.quotes.get(symbol)?.valueDate ?? null;
+    const advanced = finalVd !== null && (priorVd === null || finalVd > priorVd);
+    if (advanced) {
+      clearTiingoNoNewer(symbol, opts.storage ?? undefined);
+      continue;
+    }
+    const updateNotNeeded = opts.navSymbols.has(symbol) || !opts.marketOpen;
+    if (updateNotNeeded) {
+      // The backup had nothing fresher than what we already held for this target.
+      recordTiingoNoNewer(symbol, opts.expected, opts.now, opts.storage ?? undefined);
+    }
+  }
   return gained;
 }
 
@@ -226,16 +271,31 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
   }
 
   const expected = latestSettledSessionDate(new Date(now));
+  const marketOpen = isUsMarketOpen(new Date(now));
   const deferred = new Set(report.deferred);
   const tiingoSymbols: string[] = [];
   let error: PriceError | null = null;
+
+  // Per-symbol "backup had nothing newer" suppression. Once Tiingo confirms it
+  // holds nothing fresher than what we already have for `expected`, stop
+  // re-pulling that symbol on every refresh until the cooldown lapses or a newer
+  // target appears. The explicit "route everything through the backup" button
+  // (`forceAll`) bypasses this entirely.
+  const noNewer = forceAll ? {} : readTiingoNoNewer(storage ?? undefined);
+  const suppressedByNoNewer = (symbol: string): boolean => {
+    const stamp = noNewer[symbol];
+    if (!stamp) return false;
+    // A newer target than the one we recorded against lifts the suppression.
+    if (stamp.expected !== expected) return false;
+    return now - stamp.at < TIINGO_NO_NEWER_COOLDOWN_MS;
+  };
 
   // Every budget check in this run honours the reserve, so the gate may use up to
   // `remaining − reserveCredits` credits (clamped at 0) and no further.
   const budgetNow = (): Budget => readBudget(now, storage, reserveCredits);
 
   const merge = (batch: string[]): Promise<string[]> =>
-    fetchAndMerge(batch, { proxyUrl, navSymbols, quotes, now, storage, fetchImpl });
+    fetchAndMerge(batch, { proxyUrl, navSymbols, quotes, expected, marketOpen, now, storage, fetchImpl });
 
   // --- NAV funds: peer-confirmation + canary --------------------------------
   const navMissing: string[] = [];
@@ -246,7 +306,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     const q = quotes.get(symbol);
     const held = q?.valueDate ?? null;
     if (held === null || q?.price == null || held < expected) {
-      navMissing.push(symbol);
+      if (!suppressedByNoNewer(symbol)) navMissing.push(symbol);
     } else if (held >= expected) {
       // A fresh target-date NAV from the *primary* for some other fund is free
       // evidence the cycle is flowing (Tier 1).
@@ -331,6 +391,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
       const q = quotes.get(symbol);
       const held = q?.valueDate ?? null;
       const primaryFailed = deferred.has(symbol) || !q || q.price === null;
+      if (suppressedByNoNewer(symbol)) continue;
       if (marketSymbolEligible({ heldDate: held, expectedDate: expected, primaryFailed })) {
         marketCandidates.push(symbol);
       }

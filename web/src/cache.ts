@@ -493,6 +493,67 @@ export function writeTiingoState(state: TiingoState, storage: StorageLike | null
   writeJson(storage, TIINGO_STATE_KEY, state);
 }
 
+// --- Tiingo "no newer data" stamps (per symbol) ----------------------------
+
+const TIINGO_NO_NEWER_KEY = "iv.web.tiingo_no_newer";
+
+/**
+ * A record that the backup provider (Tiingo) was asked for a symbol and returned
+ * nothing newer than what we already held, while chasing a given target date.
+ * Lets the fallback stop re-pulling the same too-old value on every refresh: a
+ * mutual fund whose NAV is genuinely days behind shouldn't be re-fetched from
+ * the backup each time the user taps Refresh — the backup already confirmed it
+ * has nothing fresher for that target.
+ */
+export interface TiingoNoNewer {
+  /** The target session/NAV date we were chasing when the backup came up empty. */
+  expected: string;
+  /** Epoch ms the empty result was recorded (drives the cooldown). */
+  at: number;
+}
+
+/** Read the per-symbol "backup has nothing newer" stamps. */
+export function readTiingoNoNewer(storage: StorageLike | null = defaultStorage()): Record<string, TiingoNoNewer> {
+  const raw = readJson<Record<string, Partial<TiingoNoNewer>>>(storage, TIINGO_NO_NEWER_KEY);
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, TiingoNoNewer> = {};
+  for (const [symbol, v] of Object.entries(raw)) {
+    if (v && typeof v.expected === "string" && typeof v.at === "number") {
+      out[symbol] = { expected: v.expected, at: v.at };
+    }
+  }
+  return out;
+}
+
+/**
+ * Record that the backup returned nothing newer for `symbol` while chasing
+ * `expected`. Subsequent refreshes consult this (see the fallback's no-newer
+ * gate) to avoid re-pulling the same stale value until the cooldown elapses or a
+ * newer target appears.
+ */
+export function recordTiingoNoNewer(
+  symbol: string,
+  expected: string,
+  at: number,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  const map = readTiingoNoNewer(storage);
+  map[symbol] = { expected, at };
+  writeJson(storage, TIINGO_NO_NEWER_KEY, map);
+}
+
+/**
+ * Clear the "nothing newer" stamp for `symbol` — called when the backup (or the
+ * primary) finally advances the held value-date, so the next genuine gap re-pulls
+ * normally.
+ */
+export function clearTiingoNoNewer(symbol: string, storage: StorageLike | null = defaultStorage()): void {
+  const map = readTiingoNoNewer(storage);
+  if (!(symbol in map)) return;
+  delete map[symbol];
+  writeJson(storage, TIINGO_NO_NEWER_KEY, map);
+}
+
 // --- Last successful data pull ---------------------------------------------
 
 const LAST_PULL_KEY = "iv.web.last_pull";

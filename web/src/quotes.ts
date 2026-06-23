@@ -48,7 +48,7 @@ import {
 import type { Decimal } from "./decimal-config";
 import { latestSettledSessionDate } from "./market-hours";
 import { fetchTiingoEurUsd } from "./tiingo";
-import { Budget, WEB_DAILY_CAP, WEB_HOURLY_CAP } from "./tiingo-gate";
+import { Budget, etMinutesOfDay, WEB_DAILY_CAP, WEB_HOURLY_CAP } from "./tiingo-gate";
 
 /** Twelve Data free-tier limits — the design constraint for this whole module. */
 export const FREE_TIER = {
@@ -230,6 +230,21 @@ export interface MarketRefreshOptions {
 }
 
 /**
+ * Eastern minutes-of-day of the NYSE regular close (16:00). A market print
+ * captured at or after {@link CLOSE_MINUTES_ET} − {@link CLOSE_ACCEPT_WINDOW_MIN}
+ * is treated as the official close (see {@link holdsSettledClose}).
+ */
+const CLOSE_MINUTES_ET = 16 * 60; // 16:00 ET
+/**
+ * How many minutes before the official 16:00 ET close a same-session print is
+ * still accepted *as* that close. A capture from 15:59 ET (≈21:59 local CET) is
+ * effectively the closing value, so we accept it and stop chasing a cleaner
+ * post-close print that may never arrive — while an earlier intraday print
+ * (e.g. 15:18 ET) is still re-fetched once after the close to settle it.
+ */
+const CLOSE_ACCEPT_WINDOW_MIN = 2;
+
+/**
  * Whether a cached **market** quote genuinely holds the latest *settled close*
  * (`latestSettledDate`) — not merely a same-day intraday print.
  *
@@ -241,21 +256,34 @@ export interface MarketRefreshOptions {
  * symbol would freeze on its last intraday value all evening (the "stopped
  * updating at 22:00 even though the last pull was 21:18" bug).
  *
- * So a quote counts as holding the close only when its value-date is at least
- * the settled date **and** it was not captured while the session was open. The
- * provider's `is_market_open` flag is ground truth here: `true` means an
- * intraday capture (re-fetch once after the close to settle it); `false`/`null`
- * (a closed-market fetch, or an endpoint that omits the flag) means the value is
- * already a settled figure.
+ * So a quote counts as holding the close when its value-date is at least the
+ * settled date **and** either:
+ *   - it was not captured while the session was open (`is_market_open` is
+ *     `false`/`null`, a settled figure), or
+ *   - it was captured within the final {@link CLOSE_ACCEPT_WINDOW_MIN} minutes
+ *     before the close (the "accept 21:59" rule): there is essentially no
+ *     session left, so the near-close print *is* the close.
+ *
+ * The provider's `is_market_open` flag is ground truth for the first clause;
+ * `priceTime` (the print's observation instant) drives the near-close clause.
  */
 export function holdsSettledClose(
-  cached: { valueDate?: string | null; marketOpen?: boolean | null } | null | undefined,
+  cached:
+    | { valueDate?: string | null; marketOpen?: boolean | null; priceTime?: number | null }
+    | null
+    | undefined,
   latestSettledDate: string,
 ): boolean {
   const have = cached?.valueDate ?? null;
   if (!have || have < latestSettledDate) return false;
-  // Captured mid-session ⇒ it's an intraday print, not the official close.
-  return cached?.marketOpen !== true;
+  // A closed-market fetch (or an endpoint that omits the flag) is a settled figure.
+  if (cached?.marketOpen !== true) return true;
+  // Captured mid-session: accept it as the close only if it lands in the final
+  // minutes before 16:00 ET (the "accept 21:59" rule); otherwise re-fetch once
+  // after the close to settle it.
+  const t = cached?.priceTime ?? null;
+  if (t === null) return false;
+  return etMinutesOfDay(t) >= CLOSE_MINUTES_ET - CLOSE_ACCEPT_WINDOW_MIN;
 }
 
 /**
@@ -271,7 +299,10 @@ export function holdsSettledClose(
  * window to capture the official close, then go quiet.
  */
 export function marketCacheTtlMs(
-  cached: { valueDate?: string | null; marketOpen?: boolean | null } | null | undefined,
+  cached:
+    | { valueDate?: string | null; marketOpen?: boolean | null; priceTime?: number | null }
+    | null
+    | undefined,
   options: MarketRefreshOptions,
 ): number {
   const {

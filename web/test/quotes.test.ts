@@ -602,6 +602,21 @@ describe("holdsSettledClose — settled-close detection", () => {
     expect(holdsSettledClose({ valueDate: null }, settled)).toBe(false);
     expect(holdsSettledClose(null, settled)).toBe(false);
   });
+  it("accepts a near-close intraday print (the 21:59 rule) but not an earlier one", () => {
+    // 2024-01-10 is winter (ET = UTC−5), so 15:59 ET = 20:59 UTC, 15:18 ET = 20:18 UTC.
+    const nearClose = Date.UTC(2024, 0, 10, 20, 59, 0); // 15:59 ET ≈ 21:59 CET
+    const earlier = Date.UTC(2024, 0, 10, 20, 18, 0); // 15:18 ET ≈ 21:18 CET
+    // A print from the final minute before the bell counts as the close…
+    expect(holdsSettledClose({ valueDate: "2024-01-10", marketOpen: true, priceTime: nearClose }, settled)).toBe(
+      true,
+    );
+    // …but a mid-session print is still re-fetched once after the close.
+    expect(holdsSettledClose({ valueDate: "2024-01-10", marketOpen: true, priceTime: earlier }, settled)).toBe(
+      false,
+    );
+    // No capture time ⇒ fall back to the conservative "intraday ⇒ not the close".
+    expect(holdsSettledClose({ valueDate: "2024-01-10", marketOpen: true, priceTime: null }, settled)).toBe(false);
+  });
 });
 
 describe("navPublishWindow — learning the window from observed data", () => {

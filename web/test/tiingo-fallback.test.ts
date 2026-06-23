@@ -11,7 +11,7 @@ import { Decimal } from "../src/decimal-config";
 import { PriceError, type Quote } from "../src/prices";
 import { latestSettledSessionDate } from "../src/market-hours";
 import { runTiingoFallback, shouldQuickRefresh, planStartupRefresh } from "../src/tiingo-fallback";
-import { tiingoCreditsSpentToday, readTiingoCreditLog, recordTiingoCredits, type StorageLike } from "../src/cache";
+import { tiingoCreditsSpentToday, readTiingoCreditLog, readTiingoNoNewer, recordTiingoCredits, type StorageLike } from "../src/cache";
 
 function memStorage(): StorageLike {
   const map = new Map<string, string>();
@@ -178,6 +178,139 @@ describe("runTiingoFallback", () => {
     expect(out.quotes.get("VFIAX")?.valueDate).toBe(EXPECTED);
     // The recent fund spent no Tiingo credit (only the two laggards did).
     expect(tiingoCreditsSpentToday(readTiingoCreditLog(NOW, undefined, storage), NOW)).toBe(2);
+  });
+
+  it("stops re-pulling a NAV fund the backup left no fresher (no-newer cooldown)", async () => {
+    const storage = memStorage();
+    // A mutual fund whose held NAV is days behind, and the backup only has the
+    // same stale value-date (nothing newer exists yet — it's before the fund's
+    // next publish). The first pass spends a credit; the second must accept the
+    // stale value and not re-pull.
+    const STALE = "2026-06-18"; // several sessions before EXPECTED
+    const fetchImpl = stubFetch([iexRow("FSKAX", 100, `${STALE}T21:00:00Z`)]);
+    const behind = (): Quote => ({
+      symbol: "FSKAX",
+      price: new Decimal(100),
+      previousClose: null,
+      currency: "USD",
+      at: NOW,
+      priceTime: null,
+      valueDate: STALE,
+      marketOpen: null,
+    });
+    // First pass: force the pull so it deterministically records a no-newer stamp.
+    const first = await runTiingoFallback({
+      symbols: ["FSKAX"],
+      navSymbols: new Set(["FSKAX"]),
+      quotes: new Map<string, Quote>([["FSKAX", behind()]]),
+      report: emptyReport(),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl,
+      forceAll: true,
+    });
+    expect(first.tiingoSymbols).toEqual(["FSKAX"]);
+    expect((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
+
+    // Second pass (normal): the stamp suppresses the re-pull entirely.
+    const second = await runTiingoFallback({
+      symbols: ["FSKAX"],
+      navSymbols: new Set(["FSKAX"]),
+      quotes: new Map<string, Quote>([["FSKAX", behind()]]),
+      report: emptyReport(),
+      proxyUrl: PROXY,
+      now: NOW + 5 * 60_000,
+      storage,
+      fetchImpl,
+    });
+    expect(second.tiingoSymbols).toEqual([]);
+    expect((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
+  });
+
+  it("forceAll bypasses the no-newer cooldown so the backup button always pulls", async () => {
+    const storage = memStorage();
+    const STALE = "2026-06-18";
+    const fetchImpl = stubFetch([iexRow("FSKAX", 100, `${STALE}T21:00:00Z`)]);
+    const behind = (): Quote => ({
+      symbol: "FSKAX",
+      price: new Decimal(100),
+      previousClose: null,
+      currency: "USD",
+      at: NOW,
+      priceTime: null,
+      valueDate: STALE,
+      marketOpen: null,
+    });
+    await runTiingoFallback({
+      symbols: ["FSKAX"],
+      navSymbols: new Set(["FSKAX"]),
+      quotes: new Map<string, Quote>([["FSKAX", behind()]]),
+      report: emptyReport(),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl,
+      forceAll: true,
+    });
+    const again = await runTiingoFallback({
+      symbols: ["FSKAX"],
+      navSymbols: new Set(["FSKAX"]),
+      quotes: new Map<string, Quote>([["FSKAX", behind()]]),
+      report: emptyReport(),
+      proxyUrl: PROXY,
+      now: NOW + 5 * 60_000,
+      storage,
+      fetchImpl,
+      forceAll: true,
+    });
+    // The explicit "route everything through the backup" button ignores the stamp.
+    expect(again.tiingoSymbols).toEqual(["FSKAX"]);
+    expect((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2);
+  });
+
+  it("re-pulls once the backup advances the value-date (clears the stamp)", async () => {
+    const storage = memStorage();
+    const STALE = "2026-06-18";
+    // First the backup is stale (records a stamp), then it advances to EXPECTED.
+    const staleFetch = stubFetch([iexRow("FSKAX", 100, `${STALE}T21:00:00Z`)]);
+    const behind = (): Quote => ({
+      symbol: "FSKAX",
+      price: new Decimal(100),
+      previousClose: null,
+      currency: "USD",
+      at: NOW,
+      priceTime: null,
+      valueDate: STALE,
+      marketOpen: null,
+    });
+    await runTiingoFallback({
+      symbols: ["FSKAX"],
+      navSymbols: new Set(["FSKAX"]),
+      quotes: new Map<string, Quote>([["FSKAX", behind()]]),
+      report: emptyReport(),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl: staleFetch,
+      forceAll: true,
+    });
+    // A forced pass that advances the held NAV must clear the stamp.
+    const freshFetch = stubFetch([iexRow("FSKAX", 101, `${EXPECTED}T21:00:00Z`)]);
+    const advanced = await runTiingoFallback({
+      symbols: ["FSKAX"],
+      navSymbols: new Set(["FSKAX"]),
+      quotes: new Map<string, Quote>([["FSKAX", behind()]]),
+      report: emptyReport(),
+      proxyUrl: PROXY,
+      now: NOW + 5 * 60_000,
+      storage,
+      fetchImpl: freshFetch,
+      forceAll: true,
+    });
+    expect(advanced.quotes.get("FSKAX")?.valueDate).toBe(EXPECTED);
+    // The stamp is cleared, so the value-date now leads the eligibility checks.
+    expect(readTiingoNoNewer(storage).FSKAX).toBeUndefined();
   });
 
   it("never throws on a transient fetch failure; reports it on .error", async () => {
