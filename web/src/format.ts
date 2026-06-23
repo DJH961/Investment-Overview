@@ -143,11 +143,16 @@ export function formatSignedCurrency(value: Decimal | null): string {
  * A compact EUR-denominated amount for chart axis ticks (e.g. "€39k", "$1.2M"),
  * rendered in the active display currency. Uses the currency symbol only, with
  * k/M suffixes so axis labels stay short.
+ *
+ * `fractionDigits` (optional) pins the number of decimals shown after the k/M
+ * scaling, so a narrow axis (e.g. an intraday curve hugging €47k) can render
+ * "47.0k / 47.2k / 47.4k" instead of collapsing every tick to "47k". When
+ * omitted the label auto-trims trailing zeros (the headline-style default).
  */
-export function formatCurrencyShort(value: Decimal | null): string {
+export function formatCurrencyShort(value: Decimal | null, fractionDigits?: number): string {
   if (value === null) return "—";
   const { value: amount, code } = convertFromEur(value);
-  return formatCurrencyShortIn(amount, code);
+  return formatCurrencyShortIn(amount, code, fractionDigits);
 }
 
 /**
@@ -155,19 +160,29 @@ export function formatCurrencyShort(value: Decimal | null): string {
  * currency (e.g. a USD-denominated curve point), so it is not re-converted by
  * today's spot rate the way {@link formatCurrencyShort} converts an EUR figure.
  */
-export function formatCurrencyShortRaw(value: Decimal | null, code: string): string {
+export function formatCurrencyShortRaw(
+  value: Decimal | null,
+  code: string,
+  fractionDigits?: number,
+): string {
   if (value === null) return "—";
-  return formatCurrencyShortIn(value, code);
+  return formatCurrencyShortIn(value, code, fractionDigits);
 }
 
-function formatCurrencyShortIn(amount: Decimal, code: string): string {
+function formatCurrencyShortIn(amount: Decimal, code: string, fractionDigits?: number): string {
   const num = amount.toNumber();
   const abs = Math.abs(num);
   const symbol = currencySymbol(code);
   const sign = num < 0 ? "−" : "";
-  if (abs >= 1_000_000) return `${sign}${symbol}${trim(abs / 1_000_000)}M`;
-  if (abs >= 1_000) return `${sign}${symbol}${trim(abs / 1_000)}k`;
-  return `${sign}${symbol}${Math.round(abs)}`;
+  if (abs >= 1_000_000) return `${sign}${symbol}${scaled(abs / 1_000_000, fractionDigits)}M`;
+  if (abs >= 1_000) return `${sign}${symbol}${scaled(abs / 1_000, fractionDigits)}k`;
+  return `${sign}${symbol}${fractionDigits === undefined ? Math.round(abs) : abs.toFixed(fractionDigits)}`;
+}
+
+/** A k/M-scaled magnitude, either pinned to `fractionDigits` or auto-trimmed. */
+function scaled(value: number, fractionDigits?: number): string {
+  if (fractionDigits !== undefined) return value.toFixed(fractionDigits);
+  return trim(value);
 }
 
 function trim(value: number): string {

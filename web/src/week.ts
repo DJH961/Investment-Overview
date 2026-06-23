@@ -188,10 +188,32 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
     await store.saveSession({ day: key, bars: trimmed, fx: windowedFx, updatedAt: now.getTime() });
   }
 
+  // If the 1D curve has already been loaded this session, its fine-grained
+  // intraday bars for today are sitting in the store under today's date key.
+  // Splice them in over today's lone daily open/close so the freshest part of the
+  // 1W line gains the same intraday detail — for free, since it is a cache read,
+  // never a network fetch (we only use what a prior 1D build already paid for).
+  const reconBars = windowedBars;
+  let reconFx = windowedFx;
+  const todayKey = lastSessionDate(now);
+  const todayStartMs = dayStartMs(todayKey);
+  const intraday = await store.loadSession(todayKey);
+  if (intraday) {
+    for (const symbol of symbols) {
+      const fine = intraday.bars[symbol];
+      if (!fine || fine.length === 0) continue;
+      const coarse = (reconBars.get(symbol) ?? []).filter((b) => b.t < todayStartMs);
+      reconBars.set(symbol, [...coarse, ...fine]);
+    }
+    if (intraday.fx.length > 0) {
+      reconFx = [...reconFx.filter((b) => b.t < todayStartMs), ...intraday.fx];
+    }
+  }
+
   let points = reconstructSessionCurve({
     holdings: toReconHoldings(anchor.holdings),
-    barsBySymbol: windowedBars,
-    fxBars: windowedFx,
+    barsBySymbol: reconBars,
+    fxBars: reconFx,
     baseFx: anchor.baseFx,
     baseEur: anchor.baseEur,
     baseUsd: anchor.baseUsd,

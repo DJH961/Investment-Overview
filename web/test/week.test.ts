@@ -187,6 +187,50 @@ describe("loadOrBuildWeekCurve", () => {
     expect(instants).toContain(dayMs("2026-03-13"));
   });
 
+  it("splices today's cached 1D intraday bars into the week curve for finer detail", async () => {
+    const s = store();
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    // Week cache: coarse daily closes through Wednesday (settled while open).
+    await s.saveSession({
+      day: WEEK_STORE_KEY,
+      bars: {
+        VTI: [bar(dayMs("2026-03-10"), "100"), bar(dayMs("2026-03-11"), "100")],
+      },
+      fx: [],
+      updatedAt: 0,
+    });
+    // 1D session cache for today (Thu) holds fine intraday bars.
+    await s.saveSession({
+      day: "2026-03-12",
+      bars: {
+        VTI: [
+          bar(Date.parse("2026-03-12T14:00:00Z"), "100"),
+          bar(Date.parse("2026-03-12T17:00:00Z"), "110"),
+        ],
+      },
+      fx: [],
+      updatedAt: 0,
+    });
+    let fetched = false;
+    const curve = await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => {
+        fetched = true;
+        return new Map();
+      },
+      now: THU_OPEN,
+    });
+    // Pure cache read — never hits the network ("if 1D was already loaded").
+    expect(fetched).toBe(false);
+    const instants = curve.points.map((p) => p.t);
+    expect(instants).toContain(Date.parse("2026-03-12T14:00:00Z"));
+    expect(instants).toContain(Date.parse("2026-03-12T17:00:00Z"));
+    // The 110 intraday print lifts USD above the flat 100 daily closes.
+    const lifted = curve.points.find((p) => p.t === Date.parse("2026-03-12T17:00:00Z"));
+    expect(Number(lifted?.valueUsd.toString())).toBeGreaterThan(1000);
+  });
+
   it("returns an empty curve when the anchor has no intraday holdings", async () => {
     const anchor = buildIntradayAnchor(
       [holding({ priceType: "nav" })], // folds into the base, no sleeve

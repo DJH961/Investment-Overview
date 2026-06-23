@@ -232,6 +232,58 @@ describe("loadOrBuildSessionCurve", () => {
     expect(result.points).toHaveLength(1);
   });
 
+  it("does not re-fetch open-market bars written within the throttle window", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    // Mid-session: Tue 2026-06-23 14:00 UTC == 10:00 ET.
+    const now = new Date("2026-06-23T14:00:00Z");
+    // Cache was written 20s ago — inside the default 60s throttle.
+    await store.saveSession({
+      day: "2026-06-23",
+      bars: { VTI: [bar(Date.parse("2026-06-23T13:35:00Z"), "100")] },
+      fx: [],
+      updatedAt: now.getTime() - 20_000,
+    });
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    const result = await loadOrBuildSessionCurve({ anchor: singleEtfAnchor(), store, fetchBars, now });
+    expect(fetchBars).not.toHaveBeenCalled();
+    expect(result.marketOpen).toBe(true);
+  });
+
+  it("re-fetches open-market bars once the throttle window has elapsed", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    const now = new Date("2026-06-23T14:00:00Z");
+    // Cache is 5 minutes old — past the 60s throttle, so a refresh is due.
+    await store.saveSession({
+      day: "2026-06-23",
+      bars: { VTI: [bar(Date.parse("2026-06-23T13:35:00Z"), "100")] },
+      fx: [],
+      updatedAt: now.getTime() - 5 * 60_000,
+    });
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    await loadOrBuildSessionCurve({ anchor: singleEtfAnchor(), store, fetchBars, now });
+    expect(fetchBars).toHaveBeenCalledOnce();
+  });
+
+  it("minRefetchMs=0 always refreshes while the market is open", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    const now = new Date("2026-06-23T14:00:00Z");
+    await store.saveSession({
+      day: "2026-06-23",
+      bars: { VTI: [bar(Date.parse("2026-06-23T13:35:00Z"), "100")] },
+      fx: [],
+      updatedAt: now.getTime(),
+    });
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      now,
+      minRefetchMs: 0,
+    });
+    expect(fetchBars).toHaveBeenCalledOnce();
+  });
+
   it("caps the curve at the 16:00 ET close once the session has shut", async () => {
     const store = new TimeSeriesStore(memoryBackend());
     await store.mergeSession("2026-06-23", {

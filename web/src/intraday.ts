@@ -208,6 +208,15 @@ export interface SessionCurveOptions {
   liveTip?: LiveTip | null;
   /** Trading sessions to retain in the store (rolling window); default 7. */
   retainSessions?: number;
+  /**
+   * While the market is open the curve refreshes its bars on every build so it
+   * grows to the freshest print — but a value-chart re-render (or a burst
+   * refresh) can call this many times a minute, and the 5-minute bars barely
+   * move in between. Skip the open-market refresh when the stored session was
+   * written within this window (the live *tip* still advances every build, so the
+   * line stays current). Default 60s; set 0 to always refresh while open.
+   */
+  minRefetchMs?: number;
 }
 
 /** A built 1D session curve plus the day it covers. */
@@ -241,7 +250,16 @@ export async function loadOrBuildSessionCurve(
 
   let stored = await store.loadSession(day);
   const missing = symbols.filter((s) => !(stored?.bars[s]?.length));
-  const needFetch = symbols.length > 0 && (missing.length > 0 || marketOpen);
+  // While open we normally refresh every symbol so the curve extends to the
+  // freshest bar — but not if we just did: a session written within
+  // `minRefetchMs` is reused as-is (the live tip below still advances), so a
+  // chart re-render or burst refresh does not re-spend a credit per symbol every
+  // few seconds. Missing symbols are always backfilled regardless.
+  const minRefetchMs = options.minRefetchMs ?? 60_000;
+  const recentlyFetched =
+    stored !== null && minRefetchMs > 0 && now.getTime() - stored.updatedAt < minRefetchMs;
+  const needFetch =
+    symbols.length > 0 && (missing.length > 0 || (marketOpen && !recentlyFetched));
 
   if (needFetch) {
     // Closed: only backfill the gaps. Open: refresh every symbol so the curve
