@@ -237,10 +237,12 @@ export interface MarketRefreshOptions {
 const CLOSE_MINUTES_ET = 16 * 60; // 16:00 ET
 /**
  * How many minutes before the official 16:00 ET close a same-session print is
- * still accepted *as* that close. A capture from 15:59 ET (≈21:59 local CET) is
- * effectively the closing value, so we accept it and stop chasing a cleaner
- * post-close print that may never arrive — while an earlier intraday print
- * (e.g. 15:18 ET) is still re-fetched once after the close to settle it.
+ * still accepted *as* that close. Two minutes is deliberately tight: it accepts
+ * a 15:58–15:59 ET capture (≈21:58–21:59 local CET — the user's "accept 21:59"
+ * case, effectively the closing value) while still excluding an earlier intraday
+ * print such as 15:18 ET (≈21:18 CET), which is re-fetched once after the close
+ * to settle it. Widening this would risk accepting genuinely pre-close prints as
+ * the close.
  */
 const CLOSE_ACCEPT_WINDOW_MIN = 2;
 
