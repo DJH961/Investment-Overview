@@ -14,6 +14,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.9.4] — 2026-06-23
+
+### Fixed
+
+- **Header "Quit" performs a clean shutdown.** The desktop header quit action
+  now goes through a dedicated shutdown flow so the app exits cleanly instead
+  of leaving the process in an inconsistent state.
+- **Refresh-chip tooltip is scoped to the chip.** The refresh indicator's
+  tooltip is now attached to the chip itself rather than bleeding onto
+  surrounding layout elements.
+
 ## [3.9.3] — 2026-06-23
 
 ### Added
