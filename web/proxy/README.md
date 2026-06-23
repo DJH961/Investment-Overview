@@ -89,13 +89,31 @@ must stay secret, so the same Worker proxies it on a dedicated `…/price` route
 - `GET …/price?tickers=AAPL,MSFT` → Tiingo **IEX** (`/iex/?tickers=…`): a live
   intraday mark for stocks/ETFs and the latest NAV for mutual funds.
 - `GET …/price?daily=AAPL&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` → Tiingo
-  **daily** closes (`/tiingo/daily/<ticker>/prices`).
+  **daily** closes (`/tiingo/daily/<ticker>/prices`, `resampleFreq=daily`). The
+  forwarded `startDate`/`endDate` window is what feeds the 1W-and-beyond daily
+  closes.
+- `GET …/iex-intraday?ticker=AAPL&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&resampleFreq=1hour`
+  → Tiingo **IEX intraday bars** (`/iex/<ticker>/prices`) for the live 1D/1W
+  graph backfill. `resampleFreq` defaults to `1hour` and accepts a positive
+  integer followed by `min` or `hour` (e.g. `5min`, `30min`). This runs on
+  Tiingo's separate budget so the bulk history fetch never steals the live
+  price's Twelve Data slots.
 
-The route injects the `TIINGO_TOKEN` **secret** as an `Authorization: Token …`
-header (never in the URL), validates every ticker/date against a strict charset
-(so it stays a closed, non-SSRF proxy: only `api.tiingo.com` price data, never an
-arbitrary target), and stamps the same CORS headers. The browser stays
+The routes inject the `TIINGO_TOKEN` **secret** as an `Authorization: Token …`
+header (never in the URL), validate every ticker/date/frequency against a strict
+charset (so it stays a closed, non-SSRF proxy: only `api.tiingo.com` price data,
+never an arbitrary target), and stamp the same CORS headers. The browser stays
 **Tiingo-keyless** — the token lives only in the Worker.
+
+### Hourly Tiingo reserve
+
+Both Tiingo routes share a per-isolate, rolling **one-hour request counter**
+(default **40/hr**, overridable via the `TIINGO_HOURLY_RESERVE` var in
+`wrangler.toml`). Once the reserve is spent the Worker answers `429` with a
+`Retry-After` header, so the browser degrades gracefully — it falls back to its
+Twelve Data path — instead of hammering Tiingo. The cap is best-effort per
+isolate (Cloudflare may run several), enough to keep a single busy browser from
+blowing the reserve.
 
 ### Set the secret (one-time)
 
