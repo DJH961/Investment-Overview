@@ -20,8 +20,8 @@
 >   warning‑level `runtime_status.record_warning`, which the toast watcher surfaces).
 >
 > **Remaining — handed off:**
-> - **Desktop polish:** manual "Refresh via Tiingo now" button (bypasses timing
->   gate C only); optional wiring into the backfill `refresh_prices` path.
+> - **Desktop polish:** optional wiring of the fallback into the backfill
+>   `refresh_prices` path (live `refresh_due_prices` + the manual button are done).
 > - **Web/Worker (entire stack):** Worker `/price` route; `web/src/tiingo.ts`; ET
 >   budget in `cache.ts`; `loadQuotes` insertion; startup quick‑refresh; visible
 >   refresh spinner + outcome toast; discreet caption; `priceProxyUrl` config.
@@ -307,7 +307,7 @@ per‑side **budget caps** still apply (blocked with a clear message if exhauste
 3. Web `tiingo.ts` → ET budget (persisted) → `loadQuotes` insertion + startup
    quick‑refresh → **visible refresh activity (spinner + outcome toast)** +
    discreet caption + config.
-4. Manual "Refresh via Tiingo now" on both stacks.
+4. ~~Manual "Refresh via Tiingo now" on both stacks.~~ **✅ desktop done; web pending.**
 5. Tests both stacks (keep Python + the 425 web tests green) → CHANGELOG/docs.
 
 ## User (deploy) steps
