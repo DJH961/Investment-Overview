@@ -41,6 +41,7 @@ import {
   readCachedEnvelope,
   readCachedEurUsd,
   readCachedFx,
+  readCachedQuotes,
   readCreditLog,
   clearPriceCaches,
   creditsSpentToday,
@@ -887,6 +888,7 @@ export class App {
       marketOpen: isUsMarketOpen(),
       lastQuickRefreshAt: tiingoState.lastQuickRefreshAt,
       freshestPriceAt: this.lastDataPullAt,
+      holdsLatestClose: this.holdsLatestClose(),
     });
     const tiingoAvailable = resolvePriceProxyUrl(this.state.config) !== null;
     const quickOpts = quick ? (tiingoAvailable ? { viaTiingo: true } : { force: true }) : {};
@@ -1052,6 +1054,35 @@ export class App {
     })));
 
     return { symbols, options: this.buildQuoteOptions(navFetchSymbols, config, force, forceAll) };
+  }
+
+  /**
+   * Whether every fetchable holding already holds its latest settled close — i.e.
+   * there is nothing newer to fetch while the market is shut. Market symbols are
+   * judged against {@link latestSettledSessionDate}; NAV funds against their
+   * latest expected publish ({@link latestExpectedNavDate}, learned publish hour).
+   * Mirrors the per-symbol "behind" test used by the manual {@link forceFetch}
+   * path so the startup quick-refresh agrees with a manual pull on what counts as
+   * outdated. Returns true when there is no data yet (nothing to chase).
+   */
+  private holdsLatestClose(): boolean {
+    const data = this.state.data;
+    if (!data) return true;
+    const plan = buildFetchPlan(data, FETCHABLE_NAV_CLASSES);
+    if (plan.length === 0) return true;
+    const cached = readCachedQuotes();
+    const now = new Date();
+    const settled = latestSettledSessionDate(now);
+    const navStats = readNavPublishStats();
+    const publishHourFor = (symbol: string): number =>
+      navPublishWindow(navStats.get(symbol)?.hours).publishHour;
+    for (const entry of plan) {
+      const have = cached.get(entry.symbol)?.quote.valueDate ?? null;
+      const expected =
+        entry.priceType === "market" ? settled : latestExpectedNavDate(now, publishHourFor(entry.symbol));
+      if (!have || have < expected) return false;
+    }
+    return true;
   }
 
   /**

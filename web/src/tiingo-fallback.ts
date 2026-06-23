@@ -315,10 +315,16 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
 /**
  * Whether the app should run a Tiingo **startup quick-refresh**: on load, use
  * Tiingo (no per-minute cap → fast) when prices are *badly* outdated. Triggered
- * by either being ≥1 settled session behind (market closed) or >1h stale during
- * market hours. The ~1h floor (via {@link TiingoState.lastQuickRefreshAt}) keeps
- * this to about once an hour, preserving the budget for true fallbacks. A manual
- * tap bypasses the throttle entirely.
+ * by either *not holding the latest settled close* (market closed) or >1h stale
+ * during market hours. The ~1h floor (via {@link TiingoState.lastQuickRefreshAt})
+ * keeps this to about once an hour, preserving the budget for true fallbacks. A
+ * manual tap bypasses the throttle entirely.
+ *
+ * The market-closed rule is deliberately eager: the latest settled close is the
+ * freshest data that exists while the exchange is shut, so as soon as we *don't*
+ * hold it we fetch — even the morning after, when a stale-but-<24h cache used to
+ * suppress the pull. The only brake is "did we already pull in the last hour?":
+ * a recent update means there is nothing new worth spending Tiingo credits on.
  */
 export function shouldQuickRefresh(args: {
   now: number;
@@ -326,18 +332,26 @@ export function shouldQuickRefresh(args: {
   lastQuickRefreshAt: number | null;
   /** The freshest known price observation time across the book, or null. */
   freshestPriceAt: number | null;
+  /**
+   * Whether the book already holds the latest settled session close for every
+   * fetchable holding (market symbols vs the settled session, NAV funds vs their
+   * latest expected publish). Only consulted while the market is closed.
+   */
+  holdsLatestClose: boolean;
   /** True to skip the once-per-hour throttle (a manual tap). */
   manual?: boolean;
 }): boolean {
-  const { now, marketOpen, lastQuickRefreshAt, freshestPriceAt, manual = false } = args;
+  const { now, marketOpen, lastQuickRefreshAt, freshestPriceAt, holdsLatestClose, manual = false } = args;
   if (!manual && lastQuickRefreshAt !== null && now - lastQuickRefreshAt < HOUR_MS) return false;
   if (marketOpen) {
     // During market hours: badly outdated = >1h since the freshest observation.
     return freshestPriceAt === null || now - freshestPriceAt > HOUR_MS;
   }
-  // Market closed: only worthwhile if we don't already hold a recent observation
-  // (within a day); otherwise the latest settled close is already in hand.
-  return freshestPriceAt === null || now - freshestPriceAt > 24 * HOUR_MS;
+  // Market closed: the latest settled close is the freshest data that exists, so
+  // fire whenever we don't already hold it — unless we pulled within the last
+  // hour, where a fresh update means there is nothing new worth a Tiingo call.
+  if (!manual && freshestPriceAt !== null && now - freshestPriceAt < HOUR_MS) return false;
+  return !holdsLatestClose;
 }
 
 /** Record that a startup quick-refresh just ran, for the once-per-hour throttle. */

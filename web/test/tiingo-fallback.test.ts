@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Decimal } from "../src/decimal-config";
 import { PriceError, type Quote } from "../src/prices";
 import { latestSettledSessionDate } from "../src/market-hours";
-import { runTiingoFallback } from "../src/tiingo-fallback";
+import { runTiingoFallback, shouldQuickRefresh } from "../src/tiingo-fallback";
 import { tiingoCreditsSpentToday, readTiingoCreditLog, type StorageLike } from "../src/cache";
 
 function memStorage(): StorageLike {
@@ -198,5 +198,92 @@ describe("runTiingoFallback", () => {
     expect(out.tiingoSymbols).toEqual([]);
     expect(out.error).toBeInstanceOf(PriceError);
     expect(out.error?.retryable).toBe(true);
+  });
+});
+
+describe("shouldQuickRefresh", () => {
+  const HOUR = 60 * 60 * 1000;
+
+  it("fires when the market is closed and we don't hold the latest close", () => {
+    // Logged in the morning after close, last pull was yesterday's session (>1h),
+    // and the latest settled close isn't in hand yet → fetch asap.
+    expect(
+      shouldQuickRefresh({
+        now: NOW,
+        marketOpen: false,
+        lastQuickRefreshAt: null,
+        freshestPriceAt: NOW - 12 * HOUR,
+        holdsLatestClose: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("fires even when the last pull was well under 24h ago (the old bug)", () => {
+    expect(
+      shouldQuickRefresh({
+        now: NOW,
+        marketOpen: false,
+        lastQuickRefreshAt: null,
+        freshestPriceAt: NOW - 3 * HOUR, // <24h but still missing the close
+        holdsLatestClose: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("stays quiet (market closed) once the latest close is already in hand", () => {
+    expect(
+      shouldQuickRefresh({
+        now: NOW,
+        marketOpen: false,
+        lastQuickRefreshAt: null,
+        freshestPriceAt: NOW - 12 * HOUR,
+        holdsLatestClose: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("suppresses a market-closed fire when we pulled within the last hour", () => {
+    expect(
+      shouldQuickRefresh({
+        now: NOW,
+        marketOpen: false,
+        lastQuickRefreshAt: null,
+        freshestPriceAt: NOW - 20 * 60 * 1000, // 20 min ago
+        holdsLatestClose: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("honours the once-per-hour quick-refresh throttle", () => {
+    expect(
+      shouldQuickRefresh({
+        now: NOW,
+        marketOpen: false,
+        lastQuickRefreshAt: NOW - 10 * 60 * 1000, // quick-refreshed 10 min ago
+        freshestPriceAt: NOW - 12 * HOUR,
+        holdsLatestClose: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("market open: fires only when >1h stale", () => {
+    expect(
+      shouldQuickRefresh({
+        now: NOW,
+        marketOpen: true,
+        lastQuickRefreshAt: null,
+        freshestPriceAt: NOW - 2 * HOUR,
+        holdsLatestClose: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldQuickRefresh({
+        now: NOW,
+        marketOpen: true,
+        lastQuickRefreshAt: null,
+        freshestPriceAt: NOW - 10 * 60 * 1000,
+        holdsLatestClose: true,
+      }),
+    ).toBe(false);
   });
 });
