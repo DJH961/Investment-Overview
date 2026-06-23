@@ -481,7 +481,6 @@ function rateLimited(retryAfterSec, cors) {
     },
   );
 }
-}
 
 /** A small JSON error body with CORS headers. */
 function jsonError(status, message, cors) {

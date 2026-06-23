@@ -118,6 +118,8 @@ def test_live_graphs_exports_day_session_in_both_currencies(session: Session) ->
 
     assert out is not None
     assert isinstance(out["captured_at"], str)
+    # Stamped from the injected `now` (not wall-clock) and `Z`-suffixed UTC.
+    assert out["captured_at"] == "2024-06-03T20:00:00Z"
     day = out["day"]
     assert day["session_date"] == "2024-06-03"
     assert day["market_open"] is False  # 16:00 ET → closed
