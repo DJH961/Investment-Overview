@@ -1557,6 +1557,14 @@ export class App {
         },
       );
       this.lastCoverage = summarizeCoverage(this.lastCoverageFacts);
+      const cf = this.lastCoverageFacts;
+      this.pollLog(
+        "note",
+        `Coverage: market ${cf.marketFresh} live / ${Math.max(0, cf.marketHeld - cf.marketFresh)} cached / ` +
+          `${cf.marketAtClose} at last close of ${cf.marketTotal}; ` +
+          `NAVs ${cf.navTotal - cf.navAwaiting}/${cf.navTotal} in (${cf.navAwaiting} awaiting); ` +
+          `FX ${cf.fx}; market ${cf.marketOpen ? "open" : "closed"} → “${this.lastCoverage}”.`,
+      );
     }
     model.overview.liveCoverage = this.lastCoverage;
     // Surface how much of the daily free-tier budget we've spent so far.
@@ -2333,8 +2341,21 @@ export interface CoverageFacts {
   marketOpen: boolean;
   /** Market (stock/ETF) holdings requested this round. */
   marketTotal: number;
-  /** Market holdings on a fresh/held price (not deferred by the budget). */
-  marketLive: number;
+  /**
+   * Market holdings that hold a usable price right now — *freshly pulled or from
+   * cache*. Crucially this counts cached values too, so a budget-deferred holding
+   * that still has a perfectly good cached close is never reported as "missing"
+   * (the "0/12 recent when all are actually held" bug).
+   */
+  marketHeld: number;
+  /** Market holdings whose price was *freshly fetched this round* (a subset of {@link marketHeld}). */
+  marketFresh: number;
+  /**
+   * Market holdings that hold the latest *settled close* (see `holdsSettledClose`)
+   * — i.e. the freshest value that exists while the exchange is shut. Drives the
+   * "market closed · at closing prices, no need to update" messaging.
+   */
+  marketAtClose: number;
   /** NAV-priced funds requested this round. */
   navTotal: number;
   /**
@@ -2402,7 +2423,10 @@ function localDateIso(d: Date): string {
  */
 export function buildCoverageFacts(
   report: QuoteLoadReport,
-  quotes: ReadonlyMap<string, { valueDate?: string | null }>,
+  quotes: ReadonlyMap<
+    string,
+    { valueDate?: string | null; marketOpen?: boolean | null; priceTime?: number | null; price?: unknown }
+  >,
   navSymbols: ReadonlySet<string>,
   ctx: {
     now?: Date;
@@ -2414,10 +2438,13 @@ export function buildCoverageFacts(
 ): CoverageFacts {
   const now = ctx.now ?? new Date();
   const publishHourFor = ctx.publishHourFor ?? (() => NAV_PUBLISH_HOUR);
-  const deferred = new Set(report.deferred);
+  const fetched = new Set(report.fetched);
   const todayIso = localDateIso(now);
+  const settled = latestSettledSessionDate(now);
   let marketTotal = 0;
-  let marketLive = 0;
+  let marketHeld = 0;
+  let marketFresh = 0;
+  let marketAtClose = 0;
   let navTotal = 0;
   let navExpectedTonight = 0;
   let navAwaiting = 0;
@@ -2431,13 +2458,20 @@ export function buildCoverageFacts(
       if (!held || held < latestExpectedNavDate(now, publishHourFor(symbol))) navAwaiting += 1;
     } else {
       marketTotal += 1;
-      if (!deferred.has(symbol)) marketLive += 1;
+      const q = quotes.get(symbol);
+      // "Held" = we have an actual price to show (fresh or cached), so a deferred
+      // symbol that still has a usable cached value counts as held — never missing.
+      if (q?.price != null) marketHeld += 1;
+      if (fetched.has(symbol)) marketFresh += 1;
+      if (holdsSettledClose(q, settled)) marketAtClose += 1;
     }
   }
   return {
     marketOpen: ctx.marketOpen,
     marketTotal,
-    marketLive,
+    marketHeld,
+    marketFresh,
+    marketAtClose,
     navTotal,
     navExpectedTonight,
     navAwaiting,
@@ -2470,15 +2504,30 @@ function navCoverageClause(f: CoverageFacts): string[] {
 }
 
 /**
+ * Render a set of labelled count "buckets" into an honest fragment, **never**
+ * emitting a `0/N` (the "0/12 recent" confusion): zero buckets are dropped, a
+ * single bucket that accounts for the whole total reads as `N/N label`, and a
+ * genuine split reads as `a label, b other` so cache-vs-live (or
+ * closing-price-vs-still-chasing) is visible at a glance.
+ */
+function joinBuckets(buckets: { n: number; label: string }[], total: number): string {
+  const nz = buckets.filter((b) => b.n > 0);
+  if (nz.length === 0) return "";
+  if (nz.length === 1 && nz[0].n === total) return `${total}/${total} ${nz[0].label}`;
+  return nz.map((b) => `${b.n} ${b.label}`).join(", ");
+}
+
+/**
  * Turn {@link CoverageFacts} into a calm, *honest* one-liner. The point is to be
- * transparent about exactly what we pull and what we don't — never counting an
- * unpublished NAV as "live". Every line is written in sentence case (a bare
- * lowercase status reads as a glitch) and always ends with an FX-freshness
- * clause so the reader can see, at a glance, whether the conversion rate that
- * values the whole book is live, end-of-day, recent, or still awaited. E.g.:
+ * transparent about exactly what we hold and what we don't — never counting an
+ * unpublished NAV as "live", never reporting `0/N` while values are actually
+ * held, and splitting freshly-pulled ("live") from cached values so the reader
+ * can see the difference. Every line is sentence-cased and always ends with an
+ * FX-freshness clause. E.g.:
  *   - market open:   "13/13 live, 5 NAVs expected tonight · FX live"
- *   - market closed: "Market closed for 13/13, awaiting 5/5 NAVs · FX end of day"
- *   - all current:   "Market closed, all prices up to date · FX live"
+ *   - split fill:    "8 live, 5 cached, 5 NAVs expected tonight · FX live"
+ *   - market closed: "Market closed, at closing prices — up to date · FX end of day"
+ *   - closed split:  "Market closed, 11 at last close, 2 awaiting, awaiting 3/5 NAVs · FX live"
  */
 export function summarizeCoverage(f: CoverageFacts): string {
   const total = f.marketTotal + f.navTotal;
@@ -2489,60 +2538,61 @@ export function summarizeCoverage(f: CoverageFacts): string {
 
   if (total === 0) return withFx("no live-priced holdings");
   if (f.error) return withFx("showing last known prices");
-  // A refresh served entirely from cache (no fresh pull). This is *not* a
-  // failure — it usually means the prices we already hold are still current — so
-  // don't lead with an apologetic "recent prices". When the session is closed
-  // and we hold every settled close and NAV, the cached figures genuinely *are*
-  // the latest there are: say "up to date" plainly. Otherwise spell out exactly
-  // what is recent versus still awaited — a flat "recent prices" hides the fact
-  // that, say, 12/12 spots are recent while 5 NAVs are still expected. It is rare
-  // that every holding shares one status, so never collapse them into one word.
-  if (!f.freshlyPulled) {
-    const marketHeld = f.marketTotal === 0 || f.marketLive === f.marketTotal;
-    if (!f.marketOpen && marketHeld && f.navAwaiting === 0) {
-      return withFx(total === 1 ? "up to date" : `up to date (${total} holdings)`);
-    }
-    const parts: string[] = [];
-    // Cached market spots are "recent" (not live: no fresh pull this round).
-    if (f.marketTotal > 0) parts.push(`${f.marketLive}/${f.marketTotal} recent`);
-    parts.push(...navCoverageClause(f));
-    return withFx(parts.length > 0 ? parts.join(", ") : `showing recent prices (${total} holdings)`);
-  }
 
-  const marketHeld = f.marketTotal === 0 || f.marketLive === f.marketTotal;
+  const cached = Math.max(0, f.marketHeld - f.marketFresh);
+  const missing = Math.max(0, f.marketTotal - f.marketHeld);
 
   if (f.marketOpen) {
+    // Session live: split freshly-pulled ("live") from cached, and flag any
+    // holding we have no value for at all as "awaiting".
     const parts: string[] = [];
-    if (f.marketTotal > 0) parts.push(`${f.marketLive}/${f.marketTotal} live`);
-    if (f.navTotal > 0) {
+    if (f.marketTotal > 0) {
       parts.push(
-        f.navExpectedTonight > 0
-          ? `${f.navExpectedTonight} ${navWord(f.navExpectedTonight)} expected tonight`
-          : `${f.navTotal}/${f.navTotal} ${navWord(f.navTotal)} in`,
+        joinBuckets(
+          [
+            { n: f.marketFresh, label: "live" },
+            { n: cached, label: "cached" },
+            { n: missing, label: "awaiting prices" },
+          ],
+          f.marketTotal,
+        ),
       );
     }
-    return withFx(parts.join(", "));
+    parts.push(...navCoverageClause(f));
+    return withFx(parts.filter(Boolean).join(", "));
   }
 
-  // Market closed.
-  if (marketHeld && f.navAwaiting === 0) return withFx("market closed, all prices up to date");
+  // Market closed. The freshest data that exists is the settled close, so report
+  // against it: how many holdings are *at the closing price* versus still being
+  // chased, and never dress a held value up as missing.
+  const atClose = f.marketAtClose;
+  const heldOther = Math.max(0, f.marketHeld - f.marketAtClose);
+  const allAtClose = f.marketTotal > 0 && atClose === f.marketTotal;
+
+  // Best case: every market close is in hand (or there are no market holdings)
+  // and no NAV is overdue → the cached figures are the latest there are. Say so
+  // plainly and make clear no update is needed, rather than an apologetic count.
+  if ((f.marketTotal === 0 || allAtClose) && f.navAwaiting === 0) {
+    if (f.marketTotal === 0) return withFx("market closed, all up to date");
+    return withFx("market closed, at closing prices — up to date");
+  }
 
   const parts: string[] = [];
   if (f.marketTotal > 0) {
-    parts.push(
-      marketHeld
-        ? `market closed for ${f.marketLive}/${f.marketTotal}`
-        : `market closed, ${f.marketLive}/${f.marketTotal} up to date`,
+    const market = joinBuckets(
+      [
+        { n: atClose, label: "at last close" },
+        { n: heldOther, label: "recent" },
+        { n: missing, label: "awaiting prices" },
+      ],
+      f.marketTotal,
     );
+    parts.push(`market closed, ${market}`);
   } else {
     parts.push("market closed");
   }
-  if (f.navAwaiting > 0) {
-    parts.push(`awaiting ${f.navAwaiting}/${f.navTotal} ${navWord(f.navAwaiting)}`);
-  } else if (f.navTotal > 0) {
-    parts.push(`${f.navTotal}/${f.navTotal} ${navWord(f.navTotal)} in`);
-  }
-  return withFx(parts.join(", "));
+  parts.push(...navCoverageClause(f));
+  return withFx(parts.filter(Boolean).join(", "));
 }
 
 /**
