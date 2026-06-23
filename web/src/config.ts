@@ -318,9 +318,11 @@ export function parseConfigPacket(text: string): AppConfig {
   if (obj.type !== CONFIG_PACKET_TYPE) {
     throw new Error("That file isn't an Investment Overview config.");
   }
+  if (obj.version !== CONFIG_PACKET_VERSION) {
+    throw new Error("That config file version isn't supported by this build.");
+  }
   const apiKey = typeof obj.apiKey === "string" ? obj.apiKey.trim() : "";
   const blobUrl = typeof obj.blobUrl === "string" ? obj.blobUrl.trim() : "";
-  return {
     apiKey,
     blobUrl,
     updateMinutes: parseUpdateMinutes(String(obj.updateMinutes ?? "")),
