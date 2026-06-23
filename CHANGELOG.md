@@ -14,6 +14,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [3.13.2] — 2026-06-23
+
+### Fixed
+
+- **The web Overview/Risk currency overlay (and benchmark line) now rebase to
+  whichever time window you pick, not just "All".** The rebased "other currency"
+  and benchmark lines were anchored once to the full-history starting value, so
+  after slicing to a shorter preset (1M/3M/6M/1Y) the overlay no longer started
+  together with the portfolio line — the two lines sat offset and the divergence
+  no longer read as the FX move *within that window*. The window slicer now
+  re-anchors every rebased overlay (`series-currency`, `series-benchmark`) to the
+  selected window's first portfolio point, so the lines always start together and
+  the gap between them is the genuine EUR/USD (or benchmark) divergence over the
+  chosen duration. Because re-anchoring an already-rebased series only rescales by
+  a constant, this is mathematically identical to rebasing the raw series to the
+  window start; the "All" view is unchanged.
+
 ## [3.13.1] — 2026-06-23
 
 ### Fixed
