@@ -80,3 +80,25 @@ def test_note_publish_habit_keeps_earliest(session: Session) -> None:
     repo.note_publish_habit(state, time(17, 40))
     repo.note_publish_habit(state, time(18, 30))
     assert state.earliest_habit == time(17, 40)
+
+
+def test_per_fund_publish_habits_persist_across_days(session: Session) -> None:
+    state = repo.load(session, _NOW)
+    repo.note_publish_habit_for(state, "FXAIX", time(17, 50))
+    repo.note_publish_habit_for(state, "FSKAX", time(18, 10))
+    repo.save(session, state)
+
+    # Per-fund habits accumulate across days (unlike the daily earliest floor).
+    next_day = repo.load(session, _NOW + timedelta(days=1))
+    assert next_day.earliest_habit is None  # daily floor reset
+    assert next_day.publish_habits == {
+        "FXAIX": [time(17, 50)],
+        "FSKAX": [time(18, 10)],
+    }
+
+
+def test_per_fund_publish_habits_cap_recent_samples(session: Session) -> None:
+    state = TiingoDesktopState()
+    for minute in range(repo._MAX_HABIT_SAMPLES + 5):
+        repo.note_publish_habit_for(state, "FXAIX", time(17, minute % 60))
+    assert len(state.publish_habits["FXAIX"]) == repo._MAX_HABIT_SAMPLES

@@ -23,7 +23,7 @@ from investment_dashboard.models import Instrument
 from investment_dashboard.repositories import price_cache_repo, prices_repo
 from investment_dashboard.repositories import tiingo_state_repo as state_repo
 from investment_dashboard.services import fetch_report, provider_status
-from investment_dashboard.services.tiingo_fallback import now_eastern
+from investment_dashboard.services.tiingo_fallback import choose_canary, now_eastern
 from investment_dashboard.services.tiingo_fallback_runner import (
     FallbackCandidate,
     FallbackOutcome,
@@ -68,14 +68,47 @@ def expected_session_date(now_utc: datetime) -> date:
     return cursor
 
 
-def pick_canary(missing_funds: Sequence[str]) -> str | None:
+def pick_canary(
+    missing_funds: Sequence[str],
+    *,
+    publish_habits: Mapping[str, Sequence[time]] | None = None,
+    holding_values: Mapping[str, Decimal] | None = None,
+) -> str | None:
     """Choose the single fund to probe when there's no peer NAV evidence.
 
-    Deterministic (alphabetically first) so behaviour is predictable and
-    testable; the runner promotes to the full set the moment the canary confirms
-    a fresh NAV, so any held fund is a valid probe.
+    Delegates to the pure :func:`tiingo_fallback.choose_canary`: prefer the fund
+    with the earliest + most consistent learned publish habit (most likely
+    already out, so the best probe), and fall back to the **largest holding** on
+    a cold start or to break ties. The runner promotes to the full missing set
+    the moment the canary confirms a fresh NAV, so any held fund is valid.
     """
-    return sorted(missing_funds)[0] if missing_funds else None
+    return choose_canary(
+        missing_funds,
+        holding_values=holding_values,
+        publish_habits=publish_habits,
+    )
+
+
+def _nav_holding_values(session: Session, symbols: Sequence[str]) -> dict[str, Decimal]:
+    """Current native market value per NAV symbol (summed across accounts).
+
+    Used only to size the canary; a missing/zero price simply yields 0, which
+    sorts last — acceptable for a tiebreak/cold-start heuristic. Imported lazily
+    to keep the module import graph acyclic (mirrors the rest of the wiring).
+    """
+    if not symbols:
+        return {}
+    from investment_dashboard.services.positions_service import (  # noqa: PLC0415
+        compute_positions,
+    )
+
+    wanted = set(symbols)
+    totals: dict[str, Decimal] = {}
+    for pos in compute_positions(session):
+        sym = pos.instrument.symbol
+        if sym in wanted:
+            totals[sym] = totals.get(sym, Decimal(0)) + pos.current_value_native
+    return totals
 
 
 def _build_candidates(
@@ -147,6 +180,17 @@ def apply_desktop_fallback(
     peer_published = _peer_published(due, held_dates, expected)
     peer_at = state_repo.note_peer_nav(state, now_utc) if peer_published else None
 
+    # Only price the canary candidates (the missing NAV funds) when we might
+    # actually need a probe — i.e. no peer evidence and funds are missing.
+    holding_values = (
+        _nav_holding_values(session, nav_missing) if nav_missing and not peer_published else {}
+    )
+    canary_pick = pick_canary(
+        nav_missing,
+        publish_habits=state.publish_habits,
+        holding_values=holding_values,
+    )
+
     fetch_start = expected - timedelta(days=_FETCH_LOOKBACK_DAYS)
     fetch_end = today + timedelta(days=1)
 
@@ -160,7 +204,7 @@ def apply_desktop_fallback(
         primary_failed_symbols=primary_failed,
         peer_published=peer_published,
         peer_published_at=peer_at,
-        canary_pick=pick_canary(nav_missing),
+        canary_pick=canary_pick,
         state=state,
         now_utc=now_utc,
         fetch_closes=_fetch,

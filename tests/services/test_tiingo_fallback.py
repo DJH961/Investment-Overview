@@ -8,11 +8,14 @@ trickle, canary cooldown/cap, budget exhaustion, and elapsed-since-stamp firing.
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 
 from investment_dashboard.services.tiingo_fallback import (
     Budget,
     MarketSymbolState,
     NavAction,
+    canary_score,
+    choose_canary,
     decide_nav,
     eastern_day,
     first_probe_time,
@@ -310,3 +313,82 @@ def test_nav_budget_exhausted_blocks_everything() -> None:
     )
     assert d.action is NavAction.WAIT
     assert "budget" in d.reason
+
+
+# --- Smart canary selection (choose_canary / canary_score) -------------------
+
+
+def test_canary_score_none_without_history() -> None:
+    assert canary_score(()) is None
+
+
+def test_canary_score_prefers_early_and_consistent() -> None:
+    # A steady 17:40 publisher scores below a jittery one averaging later.
+    steady = canary_score([time(17, 40), time(17, 40), time(17, 42)])
+    jittery = canary_score([time(17, 40), time(18, 30), time(19, 0)])
+    assert steady is not None
+    assert jittery is not None
+    assert steady < jittery
+
+
+def test_choose_canary_cold_start_picks_largest_holding() -> None:
+    # No habit anywhere → fall back to the largest holding by value.
+    pick = choose_canary(
+        ["FSKAX", "FXAIX", "FZROX"],
+        holding_values={
+            "FSKAX": Decimal("1000"),
+            "FXAIX": Decimal("5000"),
+            "FZROX": Decimal("250"),
+        },
+    )
+    assert pick == "FXAIX"
+
+
+def test_choose_canary_cold_start_ties_break_by_symbol() -> None:
+    pick = choose_canary(
+        ["FZROX", "FSKAX"],
+        holding_values={"FZROX": Decimal("100"), "FSKAX": Decimal("100")},
+    )
+    assert pick == "FSKAX"
+
+
+def test_choose_canary_prefers_habit_over_holding_size() -> None:
+    # FXAIX is the biggest holding, but FSKAX reliably publishes earliest, so it
+    # is the better probe (most likely already out by now).
+    pick = choose_canary(
+        ["FSKAX", "FXAIX"],
+        holding_values={"FSKAX": Decimal("100"), "FXAIX": Decimal("9999")},
+        publish_habits={
+            "FSKAX": [time(17, 35), time(17, 36), time(17, 35)],
+            "FXAIX": [time(18, 50), time(19, 10), time(18, 40)],
+        },
+    )
+    assert pick == "FSKAX"
+
+
+def test_choose_canary_habit_tiebreak_uses_largest_holding() -> None:
+    # Identical publish habits → the larger holding wins the tiebreak.
+    pick = choose_canary(
+        ["FSKAX", "FXAIX"],
+        holding_values={"FSKAX": Decimal("100"), "FXAIX": Decimal("9999")},
+        publish_habits={
+            "FSKAX": [time(17, 40)],
+            "FXAIX": [time(17, 40)],
+        },
+    )
+    assert pick == "FXAIX"
+
+
+def test_choose_canary_funds_with_history_beat_unknowns() -> None:
+    # A fund with *any* learned habit is preferred over an unmeasured one, even
+    # if the unmeasured fund is larger — evidence beats a guess.
+    pick = choose_canary(
+        ["FSKAX", "FXAIX"],
+        holding_values={"FSKAX": Decimal("100"), "FXAIX": Decimal("9999")},
+        publish_habits={"FSKAX": [time(18, 0)]},
+    )
+    assert pick == "FSKAX"
+
+
+def test_choose_canary_empty_is_none() -> None:
+    assert choose_canary([]) is None

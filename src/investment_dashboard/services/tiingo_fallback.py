@@ -15,9 +15,10 @@ immediately on app open rather than waiting out a timer the user isn't present f
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from enum import Enum
 from zoneinfo import ZoneInfo
 
@@ -186,6 +187,76 @@ def first_probe_time(earliest_habit: time | None) -> time:
     combined = (datetime.combine(date.min, base) + NAV_PROBE_GRACE).time()
     # Guard the (impossible here, but defensive) midnight wrap.
     return combined if combined > base else base
+
+
+#: Weight on the publish-time spread when scoring a canary: a fund's "expected
+#: latest publish" ≈ mean + this × stddev. >0 so an *inconsistent* early
+#: publisher loses to a slightly later but rock-steady one (we want the fund most
+#: reliably out *by now*, not merely the one with the earliest lucky day).
+CANARY_CONSISTENCY_WEIGHT = 1.0
+
+
+def _minutes(t: time) -> int:
+    return t.hour * 60 + t.minute
+
+
+def canary_score(times: Sequence[time]) -> float | None:
+    """Score a fund's NAV-publish habit — *lower is a better canary*.
+
+    The score estimates the Eastern minute-of-day by which this fund has
+    *reliably* published: ``mean + CANARY_CONSISTENCY_WEIGHT × stddev`` over the
+    observed publish times. A fund that posts early *and* consistently scores
+    lowest (most likely already out, so the best single probe); a fund with no
+    history scores ``None`` (no evidence — falls back to holding size).
+    """
+    mins = [_minutes(t) for t in times]
+    if not mins:
+        return None
+    mean = sum(mins) / len(mins)
+    if len(mins) > 1:
+        variance = sum((m - mean) ** 2 for m in mins) / len(mins)
+        std = variance**0.5
+    else:
+        std = 0.0
+    return mean + CANARY_CONSISTENCY_WEIGHT * std
+
+
+def choose_canary(
+    missing_funds: Sequence[str],
+    *,
+    holding_values: Mapping[str, Decimal] | None = None,
+    publish_habits: Mapping[str, Sequence[time]] | None = None,
+) -> str | None:
+    """Pick the single fund to probe when there's no free peer NAV evidence.
+
+    Per ``docs/tiingo_fallback_plan.md``: probe the fund *most likely to have
+    published by now*. We prefer **learned evidence** over guesswork:
+
+    1. **Habit-driven** — among funds with an observed publish history, take the
+       lowest :func:`canary_score` (earliest *and* tightest publisher). Ties
+       break toward the **largest holding**, then symbol for determinism.
+    2. **Cold start** — when *no* missing fund has any habit yet, fall back to
+       the **largest holding** (the user's stated preference and the most
+       valuable NAV to confirm), tie-broken by symbol.
+
+    All inputs are caller-resolved facts; this stays pure and fully testable.
+    """
+    if not missing_funds:
+        return None
+    values = holding_values or {}
+    habits = publish_habits or {}
+
+    scored = [(s, canary_score(habits.get(s, ()))) for s in missing_funds]
+    with_habit = [(s, score) for s, score in scored if score is not None]
+    if with_habit:
+        # Lowest score wins; tiebreak largest holding (negate), then symbol.
+        return min(
+            with_habit,
+            key=lambda item: (item[1], -values.get(item[0], Decimal(0)), item[0]),
+        )[0]
+
+    # Cold start: largest holding, deterministic by symbol on a tie.
+    return min(missing_funds, key=lambda s: (-values.get(s, Decimal(0)), s))
 
 
 def _decide_nav_peer(

@@ -157,7 +157,7 @@ def _run_nav(
     if not canary_fresh:
         outcome.reasons.append(f"canary {canary}: NAV not yet published")
         return
-    state_repo.note_publish_habit(state, now_eastern(now_utc).time())
+    state_repo.note_publish_habit_for(state, canary, now_eastern(now_utc).time())
     for sym in _merge(outcome, {canary: fetched.get(canary, {})}):
         state_repo.clear_stale(state, sym)
     rest = select_within_budget([s for s in missing if s != canary], state.budget())

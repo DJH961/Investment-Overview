@@ -182,6 +182,9 @@ def test_nav_canary_fresh_promotes_to_laggards() -> None:
     assert state.canary_count_today == 1
     assert state.day_used == 3  # 1 canary + 2 promoted
     assert state.earliest_habit is not None
+    # The fresh canary's publish time is learned per-fund for future picks.
+    assert "FXAIX" in state.publish_habits
+    assert state.publish_habits["FXAIX"]
 
 
 def test_nav_canary_stale_aborts_without_promote() -> None:
