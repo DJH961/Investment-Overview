@@ -126,4 +126,12 @@ describe("config packet", () => {
   it("rejects a JSON file that isn't a config packet", () => {
     expect(() => parseConfigPacket(JSON.stringify({ hello: "world" }))).toThrow();
   });
+
+  it("rejects a packet whose version isn't supported", () => {
+    expect(() =>
+      parseConfigPacket(
+        JSON.stringify({ type: CONFIG_PACKET_TYPE, version: 999, apiKey: "k", blobUrl: "u" }),
+      ),
+    ).toThrow(/version/i);
+  });
 });
