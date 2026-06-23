@@ -90,11 +90,20 @@ import {
 } from "./webauthn";
 import { setEurUsdRate } from "./currency";
 import { formatLastPull } from "./format";
+import { appendPollLog, clearPollLog, formatPollLog, readPollLog, type PollLogCategory } from "./polling-log";
+import { APP_VERSION } from "./version";
 import type { MobileExport } from "./types";
 import { h, renderDashboard, renderThemeToggle, renderTimeFormatToggle } from "./ui";
 
 /** How long an auto-dismissing status toast stays on screen. */
 const TOAST_DURATION_MS = 4500;
+
+/**
+ * How long the top-of-page "welcome back" login banner stays up. A touch longer
+ * than an ordinary toast so a returning user clearly registers that the unlock
+ * was detected before it fades, while the bottom refreshing pill keeps working.
+ */
+const WELCOME_BANNER_DURATION_MS = 5000;
 
 /**
  * Minimum time the manual "Refreshing prices…" feedback stays on screen after
@@ -579,6 +588,21 @@ export class App {
         ["Try the backup data provider now"],
       );
       viaBackup.addEventListener("click", () => this.refreshViaBackupProvider());
+      // (4) Download the data-polling log: a detailed, timestamped trail of what
+      // every refresh did (cache hits, live fetches, fallback usage, budgets,
+      // blob checks) for transparency and debugging. Paired with a clear button.
+      const downloadLog = h(
+        "button",
+        { class: "btn ghost", type: "button", "data-action": "download-log" },
+        ["Download data polling log"],
+      );
+      downloadLog.addEventListener("click", () => this.downloadPollLog());
+      const clearLog = h(
+        "button",
+        { class: "btn ghost", type: "button", "data-action": "clear-log" },
+        ["Clear log"],
+      );
+      clearLog.addEventListener("click", () => this.clearPollLogNow());
       formChildren.push(
         h("h2", { class: "settings-section" }, ["Maintenance"]),
         field(
@@ -595,6 +619,11 @@ export class App {
           "Try the backup data provider",
           viaBackup,
           "Route the whole book through the secondary provider for one pull, skipping the primary — but only for holdings whose value isn't already recent. Use it for a second opinion when the primary looks wrong or stuck. Respects the backup provider's own budget.",
+        ),
+        field(
+          "Data polling log",
+          h("div", { class: "row import-row" }, [downloadLog, clearLog]),
+          "Download a detailed, timestamped trail of exactly what each refresh did: which holdings were served from cache, fetched live, or filled from the backup provider (and why), the free-tier budgets at each step, and the data-file checks. Useful for debugging when prices look wrong or stuck. The log stays on this device.",
         ),
       );
     }
@@ -912,6 +941,13 @@ export class App {
     // 1. Instant first paint from cached quotes — no network on the hot path.
     await this.refreshPrices(session, false);
 
+    // Make the successful unlock unmistakably visible: a top-of-page banner that
+    // confirms the login was detected and that a price refresh is about to run.
+    // It sits clear of the bottom refreshing pill / coverage toast so both show
+    // at once — the user sees "welcome back" *and* the live update underneath.
+    this.welcomeBanner("Welcome back — checking for fresh prices…");
+    this.pollLog("login", "Unlock detected — painting cache, starting refresh.");
+
     // 2. Optionally remember the verified passphrase behind the fingerprint.
     if (enrolRequested && this.state.passphrase) {
       try {
@@ -1083,7 +1119,10 @@ export class App {
       const metaUrl = resolveMetaUrl(config);
       const meta = metaUrl ? await fetchBlobMeta(metaUrl) : null;
       if (session !== this.sessionId) return;
-      if (meta && this.metaVersion !== null && meta.version === this.metaVersion) return;
+      if (meta && this.metaVersion !== null && meta.version === this.metaVersion) {
+        this.pollLog("blob", `Data-file check: unchanged (meta version ${meta.version}).`);
+        return;
+      }
 
       // 2. Conditional download: an unchanged blob comes back as 304.
       const cached = readCachedEnvelope();
@@ -1097,6 +1136,7 @@ export class App {
         // Nothing changed on the wire; just remember the latest meta version so
         // the next probe can short-circuit on step 1.
         if (meta) this.persistEnvelope(this.envelope, { metaVersion: meta.version, etag: cached?.etag, lastModified: cached?.lastModified });
+        this.pollLog("blob", "Data-file check: 304 Not Modified (no new export).");
         return;
       }
 
@@ -1121,6 +1161,7 @@ export class App {
       // actual new-data load pops up.
       const hadData = this.envelope !== null;
       if (hadData) this.toast("New data found — loading the latest portfolio…");
+      this.pollLog("blob", `New encrypted export downloaded (meta version ${meta?.version ?? "unknown"}) — decrypting and re-rendering.`);
       const data = await decryptEnvelopeToJson<MobileExport>(envelope, passphrase);
       if (session !== this.sessionId) return;
       this.envelope = envelope;
@@ -1407,6 +1448,24 @@ export class App {
       return null;
     }
 
+    if (network) {
+      const r = quoteLoad.report;
+      const list = (xs: string[]): string => (xs.length ? xs.join(", ") : "none");
+      this.pollLog(
+        "fx",
+        `EUR/USD source: ${eurUsdSource}${eurUsdError ? ` (error: ${eurUsdError.message})` : ""}.`,
+      );
+      this.pollLog(
+        "primary",
+        viaTiingo
+          ? "Primary (Twelve Data) skipped — routing this pull through the backup provider; quotes served from cache."
+          : `Primary (Twelve Data): fetched ${r.fetched.length} [${list(r.fetched)}], ` +
+              `served ${r.servedFresh.length} from cache, deferred ${r.deferred.length} [${list(r.deferred)}]. ` +
+              `Budget left: ${r.minuteRemaining}/min, ${r.dayRemaining}/day.` +
+              (r.error ? ` Non-fatal error: ${r.error.message}.` : ""),
+      );
+    }
+
     // --- Tiingo secondary-provider fallback ---------------------------------
     // After the Twelve Data (primary) pass, fill what it left missing/stale (and
     // the over-quota case) from Tiingo for US tickers, within Tiingo's own
@@ -1434,6 +1493,19 @@ export class App {
       // unreachable). Cleared to null on a clean round, so the banner/toast only
       // shout while the backup is genuinely down.
       this.lastTiingoError = fallback.error;
+      const b = fallback.budget;
+      this.pollLog(
+        "fallback",
+        fallback.tiingoSymbols.length > 0
+          ? `Backup (Tiingo) filled ${fallback.tiingoSymbols.length} [${fallback.tiingoSymbols.join(", ")}]. ` +
+              `Budget: ${b.hourUsed}/${b.hourLimit} this hour, ${b.dayUsed}/${b.dayLimit} today.` +
+              (fallback.error ? ` Error: ${fallback.error.message}.` : "")
+          : fallback.error
+            ? `Backup (Tiingo) needed but unreachable: ${fallback.error.message}.`
+            : proxyUrl
+              ? "Backup (Tiingo) not needed this round (primary covered the book or nothing newer to fetch)."
+              : "Backup (Tiingo) not configured (no /price proxy URL).",
+      );
     } else if (this.lastTiingoBudget === null) {
       this.lastTiingoSymbols = [];
     }
@@ -1745,9 +1817,27 @@ export class App {
     if (kind === "auto" && this.fullyUpToDate()) {
       if (this.blobCheckDue()) void this.maybeRefreshBlob(session);
       this.scheduleNext(session, SETTLED_HEARTBEAT_MS);
+      this.pollLog(
+        "refresh",
+        "Auto tick skipped — book fully up to date (market closed, all closes + NAVs held). Heartbeat only.",
+      );
       return;
     }
     this.refreshing = true;
+    // Describe what kicked off this round for the downloadable polling log: the
+    // trigger (manual tap / auto tick / startup burst / post-unlock kickoff) and
+    // any escape-hatch flags in play, so the trail explains *why* a pull ran.
+    const triggers = [
+      opts.kickoff ? "kickoff" : null,
+      opts.startup ? "startup-burst" : null,
+      opts.viaTiingo ? "via-backup" : null,
+      opts.forceAll ? "force-all" : null,
+      opts.force && !opts.forceAll ? "force" : null,
+    ].filter((t): t is string => t !== null);
+    this.pollLog(
+      "refresh",
+      `Refresh started: ${kind}${triggers.length ? ` (${triggers.join(", ")})` : ""}.`,
+    );
     // On startup we want an *immediate, guaranteed-visible* refreshing animation
     // so opening the app clearly signals "pulling fresh data now" even if the
     // round resolves fast from cache. Borrow the manual feedback's minimum-visible
@@ -1835,6 +1925,12 @@ export class App {
       void this.maybeRefreshBlob(session);
     }
     this.scheduleNext(session, delayMs);
+    this.pollLog(
+      "schedule",
+      `Refresh finished (${kind}). ${report.deferred.length} still deferred. ` +
+        `Next auto-refresh in ~${Math.round(delayMs / 1000)}s` +
+        `${report.deferred.length > 0 ? " (burst)" : ""}.`,
+    );
   }
 
   /**
@@ -1983,12 +2079,71 @@ export class App {
     }
   }
 
+  /**
+   * Record one line in the downloadable data-polling log (Settings → "Download
+   * data polling log"). Best-effort and never throws into the refresh path — a
+   * logging failure must not break a price pull. See {@link appendPollLog}.
+   */
+  private pollLog(category: PollLogCategory, message: string): void {
+    try {
+      appendPollLog(category, message);
+    } catch {
+      /* logging is best-effort */
+    }
+  }
+
+  /**
+   * Export the recorded data-polling log to a downloadable text file. Gives the
+   * user a detailed, timestamped trail of exactly what every refresh did — which
+   * symbols were served from cache, fetched live, or filled from the fallback,
+   * the budgets at each step, the blob checks — for transparency and debugging.
+   */
+  private downloadPollLog(): void {
+    try {
+      const text = formatPollLog(readPollLog(), { version: APP_VERSION });
+      const blob = new Blob([text], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = h("a", { href: url, download: "investment-overview-polling-log.txt" }) as HTMLAnchorElement;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      this.toast("Polling log downloaded.");
+    } catch {
+      this.toast("Couldn't export the polling log on this device.");
+    }
+  }
+
+  /** Clear the recorded data-polling log (Settings → "Clear polling log"). */
+  private clearPollLogNow(): void {
+    clearPollLog();
+    this.pollLog("note", "Polling log cleared by the user.");
+    this.toast("Polling log cleared.");
+  }
+
   /** A brief, auto-dismissing status message (e.g. biometric enrolment result). */
   private toast(message: string): void {
     if (typeof document === "undefined") return;
     const node = h("div", { class: "app-toast", role: "status", "aria-live": "polite" }, [message]);
     document.body.append(node);
     setTimeout(() => node.remove(), TOAST_DURATION_MS);
+  }
+
+  /**
+   * A login confirmation banner pinned to the *top* of the page. Unlike the
+   * ordinary {@link toast} (which sits at the bottom, where the refreshing pill
+   * and coverage toasts also live), this sits up top so it never hides an
+   * incoming "refreshing prices…" / coverage message — the two can be on screen
+   * at once. Its sole job is to make a successful unlock unmistakably visible so
+   * the user can see the app detected their login and is about to pull data.
+   */
+  private welcomeBanner(message: string): void {
+    if (typeof document === "undefined") return;
+    const id = "welcome-banner";
+    document.getElementById(id)?.remove();
+    const node = h("div", { id, class: "app-toast is-welcome", role: "status", "aria-live": "polite" }, [message]);
+    document.body.append(node);
+    setTimeout(() => node.remove(), WELCOME_BANNER_DURATION_MS);
   }
 
   /**
