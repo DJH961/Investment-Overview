@@ -216,16 +216,26 @@ def test_begin_graceful_shutdown_notifies_publish_and_defers_stop(
 
     shutdown.begin_graceful_shutdown(delay=0.1)
 
+    # The full-screen overlay is painted *immediately*, before any upload runs.
+    assert any("__invBeginShutdown" in script for script in fake.scripts)
+    # No publish/notify yet — the upload is deferred behind the overlay.
+    assert fake.notifications == []
+    # The upload + stop are deferred to a one-shot timer so the overlay paints first.
+    assert len(fake.timers) == 1
+    interval, publish_cb = fake.timers[0]
+    assert interval == 0.1
+
+    # Fire the deferred upload step.
+    publish_cb()  # type: ignore[operator]
     # The publish outcome is surfaced to the user.
     assert fake.notifications == [("Live-web publish failed: no token", "negative")]
-    # The browser is told the drop is intentional (suppresses the reconnect banner).
-    assert any("__invBeginShutdown" in script for script in fake.scripts)
-    # The server stop is deferred to a one-shot timer and skips the duplicate publish.
-    assert len(fake.timers) == 1
-    interval, callback = fake.timers[0]
-    assert interval == 0.1
-    assert stopped == []  # not stopped until the timer fires
-    callback()  # type: ignore[operator]
+    # The overlay swaps to its final "shut down — close this tab" frame.
+    assert any("__invFinishShutdown" in script for script in fake.scripts)
+    # The server stop is itself deferred to a second one-shot timer.
+    assert len(fake.timers) == 2
+    _, stop_cb = fake.timers[1]
+    assert stopped == []  # not stopped until the second timer fires
+    stop_cb()  # type: ignore[operator]
     assert stopped == ["{'publish': False}"]
 
 
@@ -242,8 +252,15 @@ def test_begin_graceful_shutdown_skipped_publish_still_confirms(
     )
     monkeypatch.setattr(shutdown, "request_shutdown", lambda **kw: None)
 
-    shutdown.begin_graceful_shutdown()
-
-    # No publish note, but the user is still told the app is closing.
-    assert fake.notifications == [("Shutting down… you can close this tab.", "warning")]
+    shutdown.begin_graceful_shutdown(delay=0.1)
+    # The overlay is shown immediately even when publishing is off.
     assert any("__invBeginShutdown" in script for script in fake.scripts)
+
+    # Fire the deferred upload step.
+    _, publish_cb = fake.timers[0]
+    publish_cb()  # type: ignore[operator]
+
+    # No publish note for a skipped/disabled upload, but the overlay still
+    # transitions to its final "shut down" frame.
+    assert fake.notifications == []
+    assert any("__invFinishShutdown" in script for script in fake.scripts)

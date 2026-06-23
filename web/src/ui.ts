@@ -1244,17 +1244,17 @@ interface CurveDisplay {
 }
 
 function curveDisplay(points: EquityPoint[]): CurveDisplay {
-  const usd =
+  const displayInUsd =
     getDisplayCurrency() === "USD" &&
     canConvertToUsd() &&
     points.some((p) => p.portfolioValueUsd !== null);
-  const code: DisplayCurrency = usd ? "USD" : "EUR";
+  const code: DisplayCurrency = displayInUsd ? "USD" : "EUR";
   const convert = (eur: Decimal | null): Decimal | null => {
     if (eur === null) return null;
     return code === "USD" ? convertFromEur(eur).value : eur;
   };
   const portfolio = (p: EquityPoint): Decimal | null =>
-    usd && p.portfolioValueUsd !== null ? p.portfolioValueUsd : convert(p.portfolioValue);
+    displayInUsd && p.portfolioValueUsd !== null ? p.portfolioValueUsd : convert(p.portfolioValue);
   const yAxisLabel = (value: number): string => formatCurrencyShortRaw(new Decimal(value), code);
   return { code, portfolio, convert, yAxisLabel };
 }

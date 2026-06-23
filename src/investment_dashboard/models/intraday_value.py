@@ -40,14 +40,26 @@ class IntradayValue(Base):
     ``captured_at`` is a naive UTC timestamp (mirroring
     :attr:`PositionSnapshot.computed_at`); display-timezone formatting happens
     in the UI layer, never in storage. ``market_value_eur`` is the EUR value of
-    the *intraday-priced* holdings only (stocks/ETFs) — the constant cash + NAV
-    base is reapplied at render time (see the module docstring).
+    the *intraday-priced* holdings only (stocks/ETFs) at that instant's **own**
+    EUR/USD rate — the constant cash + NAV base is reapplied at render time (see
+    the module docstring).
+
+    ``fx_eur_usd`` records the EUR→USD spot (USD per 1 EUR) in force at that very
+    instant, so the curve can be re-expressed in either currency at the *true
+    per-timestamp* rate rather than a single uniform conversion. USD is the booked
+    currency, so the USD line is **FX-free** (price only) — the native value is
+    recovered by removing exactly this stored rate from the EUR pivot, never by
+    applying FX to USD. The EUR line is the *derived* one: it carries the
+    per-minute rate directly, so the two legitimately diverge as the FX market
+    moves through the session. ``NULL`` for legacy rows (or when no rate could be
+    sourced), in which case the render falls back to today's rate for that point.
     """
 
     __tablename__ = "intraday_value"
 
     captured_at: Mapped[datetime] = mapped_column(DateTime, primary_key=True)
     market_value_eur: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    fx_eur_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<IntradayValue {self.captured_at:%Y-%m-%d %H:%M} = €{self.market_value_eur}>"
