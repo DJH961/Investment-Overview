@@ -283,11 +283,12 @@ describe("loadOrBuildSessionCurve", () => {
     expect(result.marketOpen).toBe(true);
   });
 
-  it("reuses recent open-market bars within the default cadence (tip carries freshness)", async () => {
+  it("does not re-fetch open-market bars on a cadence — breadcrumbs carry the curve (default)", async () => {
     const store = new TimeSeriesStore(memoryBackend());
     const now = new Date("2026-06-23T14:00:00Z");
-    // Cache is 5 minutes old — still inside the slow, credit-conscious default
-    // window, so the bars are reused and only the live tip advances (no credit).
+    // Bars were fetched 5 minutes ago. By default there is no cadence re-fetch:
+    // the free breadcrumb trail + live tip carry the curve forward, so no credit
+    // is re-spent on interior bars.
     await store.saveSession({
       day: "2026-06-23",
       bars: { VTI: [bar(Date.parse("2026-06-23T13:35:00Z"), "100")] },
@@ -303,7 +304,7 @@ describe("loadOrBuildSessionCurve", () => {
       liveTip: { valueEur: d(1010), valueUsd: d(1110) },
     });
     // No credit spent, yet the curve's final value still advances to the live tip
-    // at `now` — the free freshness the smart cadence relies on.
+    // at `now` — the free freshness the breadcrumb trail relies on.
     expect(fetchBars).not.toHaveBeenCalled();
     expect(result.points[result.points.length - 1]).toEqual({
       t: now.getTime(),
@@ -312,10 +313,28 @@ describe("loadOrBuildSessionCurve", () => {
     });
   });
 
-  it("re-fetches open-market bars once the throttle window has elapsed", async () => {
+  it("never re-buys bars on a long open watch, however old the stored bars are", async () => {
     const store = new TimeSeriesStore(memoryBackend());
     const now = new Date("2026-06-23T14:00:00Z");
-    // Cache is 20 minutes old — past the default cadence, so a top-up is due.
+    // Bars are 2 hours old — a long open-browser watch. The breadcrumb trail has
+    // carried the curve the whole time, so there is still no bar pull (the point
+    // of breadcrumbs: use the data we have over re-buying near-identical bars).
+    await store.saveSession({
+      day: "2026-06-23",
+      bars: { VTI: [bar(Date.parse("2026-06-23T12:00:00Z"), "100")] },
+      fx: [],
+      updatedAt: now.getTime() - 2 * 60 * 60_000,
+    });
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    await loadOrBuildSessionCurve({ anchor: singleEtfAnchor(), store, fetchBars, now });
+    expect(fetchBars).not.toHaveBeenCalled();
+  });
+
+  it("re-fetches open-market bars once a finite minRefetchMs window has elapsed", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    const now = new Date("2026-06-23T14:00:00Z");
+    // Cache is 20 minutes old. Opting into a finite 15-minute cadence makes a
+    // top-up due, so the bars are re-fetched.
     await store.saveSession({
       day: "2026-06-23",
       bars: { VTI: [bar(Date.parse("2026-06-23T13:35:00Z"), "100")] },
@@ -323,7 +342,13 @@ describe("loadOrBuildSessionCurve", () => {
       updatedAt: now.getTime() - 20 * 60_000,
     });
     const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
-    await loadOrBuildSessionCurve({ anchor: singleEtfAnchor(), store, fetchBars, now });
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      now,
+      minRefetchMs: 15 * 60_000,
+    });
     expect(fetchBars).toHaveBeenCalledOnce();
   });
 

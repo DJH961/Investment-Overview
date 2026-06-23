@@ -14,7 +14,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [3.19.2] — 2026-06-23
+## [3.19.3] — 2026-06-24
 
 ### Added
 - **Live 1D/1W value graphs now write to the Settings data-polling log.** Every
@@ -24,6 +24,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exported session/week or the already-stored bars instead of pulling. This makes
   the live graphs' provider traffic visible in the downloadable log alongside the
   quote/FX/blob activity, so it's clear exactly what gets pulled where and when.
+
+### Changed
+- **Live 1D breadcrumbs now fully replace the open-market bar re-fetch.** Once a
+  session's intraday bars have been fetched once, the free live-tip *breadcrumb*
+  trail (roughly one point a minute — finer than the 5-minute bars) carries the
+  curve forward on every subsequent build at zero credits. The slow 15-minute
+  cadence re-fetch is therefore gone by default: leaving the dashboard open for
+  hours now adds **no further bar pulls**, using the data already on the device
+  over re-buying near-identical bars. A finite `minRefetchMs` still opts into a
+  periodic interior top-up; missing symbols are always backfilled.
+
+## [3.19.2] — 2026-06-24
+
+### Fixed
+
+- **Manual refresh no longer raises spurious "Data Health" warnings (desktop
+  app).** Tapping Refresh always re-pulls every holding to double-check its
+  latest value, but the fetch window used to run to *today* unconditionally — so
+  on a weekend/holiday, or for a NAV fund during market hours, the request
+  covered only non-trading days and yfinance returned an empty frame, which
+  surfaced as a `no data` Data Health warning. Each holding's window is now
+  *anchored* to the most recent date it can actually be priced: live intraday
+  for market holdings while the session is open, otherwise the latest settled
+  close, and the latest settled NAV for mutual funds (which never have an
+  intraday value). The refresh still re-downloads the newest close/NAV for every
+  holding, but never asks for a window that can only come back empty.
+- **Automatic price refresh now respects market hours.** The background refresh
+  no longer fires off fetches for windows the market can't fill (e.g. repeatedly
+  re-requesting a closed session), using the same settled-session logic as the
+  manual path via a new `market_hours.latest_settled_session_date()` helper.
+- **FX Tiingo budget no longer crashes on `app_config`.** The desktop FX
+  fallback charged its daily Tiingo budget against the cache tier, where the
+  `app_config` table does not live, raising `no such table: app_config`. It now
+  uses the ledger tier, matching the canonical Tiingo fallback wiring.
+- **Loop watchdog stops crying wolf after sleep/suspension.** The event-loop lag
+  watchdog treated any large wall-clock gap as a stall, so resuming the laptop
+  from sleep triggered a false warning. It now also checks that the process
+  actually consumed CPU during the gap (`is_cpu_bound_stall`), so a suspended —
+  rather than genuinely blocked — loop no longer reports.
 
 ## [3.19.1] — 2026-06-23
 

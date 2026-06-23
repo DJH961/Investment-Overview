@@ -88,9 +88,12 @@ from intraday/daily bars cached on the device (IndexedDB `TimeSeriesStore`) — 
 `docs/v3.0_live_web_companion_proposal.md` §10.8. Two touches keep the live curves
 cheap on a long watch: the 1D curve **leaves breadcrumbs** — each time the live tip
 moves it persists that whole-book value (a figure already computed, so **zero
-credits**), and the curve splices the trail back in so it self-thickens between the
-slow, credit-conscious bar re-fetches instead of showing a lone moving dot (real
-bars always supersede a breadcrumb they have since caught up to). And in the other
+credits**), and the curve splices the trail back in so it self-thickens between
+bar fetches. Because that free trail (roughly one point a minute, *finer* than the
+5-minute bars) carries the line forward on its own, an open dashboard needs **just
+one bar fetch per session** — leaving the tab open for hours adds **no further bar
+pulls** (real bars always supersede a breadcrumb they have since caught up to). And
+in the other
 direction, when a build does pay to fetch price bars it **hands the newest bar back
 to the holdings' quote cache** (extending freshness only, never overwriting a fresher
 quote), so the holding rows reuse that price rather than re-buying it — see

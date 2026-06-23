@@ -156,11 +156,15 @@ def _charge_desktop_tiingo_budget() -> bool:
     try:
         from datetime import UTC, datetime  # noqa: PLC0415
 
-        from investment_dashboard.db import cache_session_scope  # noqa: PLC0415
+        from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
         from investment_dashboard.repositories import tiingo_state_repo  # noqa: PLC0415
 
         now_utc = datetime.now(tz=UTC).replace(tzinfo=None)
-        with cache_session_scope() as session:
+        # The shared desktop Tiingo budget lives in the ledger tier's app_config
+        # (where the canonical price-fallback path in tiingo_fallback_wiring
+        # loads/saves it). The cache tier has no app_config table, so opening a
+        # cache session here raised "no such table: app_config" every FX refresh.
+        with ledger_session_scope() as session:
             state = tiingo_state_repo.load(session, now_utc)
             if not state.budget().has_room():
                 return False

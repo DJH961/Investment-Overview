@@ -232,21 +232,20 @@ export interface SessionCurveOptions {
    * The minimum age a stored session must reach before its bars are re-fetched
    * while the market is open.
    *
-   * Intraday bars only add *interior* resolution: the curve's freshest point —
-   * the headline total at `now` — is supplied for **free** by the live *tip*,
-   * which advances on every build whether or not bars were fetched (see
-   * {@link appendLiveTip} below). So leaving the dashboard open to auto-update
-   * does **not** need a per-minute bar re-fetch to stay current; the tip already
-   * keeps the line's end on the live value. Re-fetching the 5-minute bars more
-   * often than this window only re-spends a free-tier credit per symbol for a few
-   * extra interior points that barely move — exactly the drain a long (e.g.
-   * 20-minute) open-browser watch would otherwise rack up.
+   * **Breadcrumbs make a cadence re-fetch unnecessary, so by default there is
+   * none ({@link DEFAULT_OPEN_REFETCH_MS} is `Infinity`).** One fetch per session
+   * backfills the interior bars; from then on the free live-tip *trail* (the
+   * persisted breadcrumbs, see {@link appendLiveTip}/{@link mergeBreadcrumbs})
+   * thickens the curve forward on every build — at roughly one point a minute,
+   * *finer* than the 5-minute bars it replaces. So leaving the dashboard open for
+   * hours adds **zero** further bar pulls: the data already in hand carries the
+   * line, exactly as intended. Re-fetching the bars again would only re-spend a
+   * free-tier credit per symbol for interior points the breadcrumbs already cover.
    *
-   * The bars are therefore refreshed on a slow, credit-conscious cadence
-   * ({@link DEFAULT_OPEN_REFETCH_MS}); the live tip carries the gap in between for
-   * nothing. Missing symbols are always backfilled regardless of this window. Set
-   * 0 to refresh the bars on every open-market build (maximal resolution, maximal
-   * credit cost).
+   * Set a finite value to opt back into a periodic interior top-up (a session
+   * whose bars were fetched within the window is reused as-is), or 0 to refresh
+   * the bars on every open-market build (maximal resolution, maximal credit cost).
+   * Missing symbols are always backfilled regardless of this window.
    */
   minRefetchMs?: number;
   /**
@@ -260,16 +259,16 @@ export interface SessionCurveOptions {
 }
 
 /**
- * Default open-market bar re-fetch cadence for the live 1D curve.
+ * Default open-market bar re-fetch cadence for the live 1D curve: **disabled**
+ * (`Infinity`), because the breadcrumb trail removes the need for one.
  *
- * Chosen so an open, auto-updating dashboard spends free-tier credits on
- * intraday bars at most a few times an hour rather than every refresh: the live
- * tip (free) keeps the curve's final value current on every build, so the bars
- * only need an occasional top-up for interior resolution. At 15 minutes a typical
- * "leave it open for a while" watch costs at most a credit or two per symbol,
- * not one every minute.
+ * Once a session's bars have been fetched once, the free live-tip breadcrumbs
+ * carry the curve forward on every subsequent build (finer than 5-minute bars,
+ * at zero credits), so a dashboard left open for hours never needs to re-buy
+ * bars to stay current. A caller that wants periodic interior top-ups can pass a
+ * finite `minRefetchMs`; the default trusts the data already on the device.
  */
-export const DEFAULT_OPEN_REFETCH_MS = 15 * 60_000;
+export const DEFAULT_OPEN_REFETCH_MS = Number.POSITIVE_INFINITY;
 
 /** A built 1D session curve plus the day it covers. */
 export interface SessionCurve {
@@ -284,17 +283,17 @@ export interface SessionCurve {
 /**
  * Build the live 1D session curve, fetching at most once per session day.
  *
- * Fetches a symbol's bars only when the store has none for the day, plus — while
- * the market is open — an occasional top-up to extend the interior resolution,
- * throttled to a slow, credit-conscious cadence ({@link DEFAULT_OPEN_REFETCH_MS},
- * overridable via `minRefetchMs`). It does **not** re-fetch on every build: the
- * live tip advances the curve's final value to `now` for free on each build, so
- * an open, auto-updating dashboard stays current without re-spending a free-tier
- * credit per symbol every minute. Newly fetched bars are merged into the store;
- * the reconstruction then runs off the merged session. While open, the live tip
- * is pinned as the final point; once closed, the curve is capped at the 16:00 ET
- * close. Older sessions are pruned to a rolling window so the store does not grow
- * unbounded.
+ * Fetches a symbol's bars only when the store has none for the day. It does
+ * **not** re-fetch on a cadence while the market is open: the free live-tip
+ * breadcrumbs (persisted on every build) thicken the curve forward for nothing,
+ * so an open, auto-updating dashboard stays current without ever re-spending a
+ * credit per symbol — the whole point of the breadcrumb trail. A caller can pass
+ * a finite `minRefetchMs` to opt into periodic interior bar top-ups. Newly
+ * fetched bars are merged into the store; the reconstruction then runs off the
+ * merged session, with the breadcrumb trail spliced on after the freshest bar.
+ * While open, the live tip is pinned as the final point; once closed, the curve
+ * is capped at the 16:00 ET close. Older sessions are pruned to a rolling window
+ * so the store does not grow unbounded.
  */
 export async function loadOrBuildSessionCurve(
   options: SessionCurveOptions,
@@ -307,12 +306,13 @@ export async function loadOrBuildSessionCurve(
 
   let stored = await store.loadSession(day);
   const missing = symbols.filter((s) => !(stored?.bars[s]?.length));
-  // While open we top the curve up to the freshest interior bars — but only on a
-  // slow, credit-conscious cadence: a session written within `minRefetchMs` is
-  // reused as-is, since the live tip below still advances to `now` on every build
-  // (for free), so the line's end stays current without re-spending a credit per
-  // symbol on a chart re-render, burst refresh, or a long open-browser watch.
-  // Missing symbols are always backfilled regardless.
+  // Breadcrumbs remove the need for a cadence re-fetch: once the session's bars
+  // are on the device, the free live-tip trail below carries the curve forward on
+  // every build (finer than the 5-min bars, at zero credits), so a long
+  // open-browser watch re-spends nothing. By default (`minRefetchMs` = Infinity)
+  // any stored session therefore counts as "recently fetched" and is reused as-is;
+  // only *missing* symbols are ever backfilled. A finite `minRefetchMs` opts back
+  // into periodic interior bar top-ups (0 = every open-market build).
   const minRefetchMs = options.minRefetchMs ?? DEFAULT_OPEN_REFETCH_MS;
   const recentlyFetched =
     stored !== null && minRefetchMs > 0 && now.getTime() - stored.updatedAt < minRefetchMs;
