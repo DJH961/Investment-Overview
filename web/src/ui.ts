@@ -913,14 +913,14 @@ function renderContributions(deposits: DepositsView): HTMLElement {
       const attrs: Attrs = { class: "allocation year-contribs" };
       if (loadOpenState(id, false)) attrs.open = "open";
       const details = h("details", attrs, [
-        h("summary", { class: "alloc-summary" }, [
-          h("span", { class: "alloc-summary-title" }, [yr]),
-          h("span", { class: "year-contribs-meta muted" }, [
-            h("span", { class: "year-contribs-count" }, [
+        h("summary", { class: "alloc-summary year-contribs-summary" }, [
+          h("span", { class: "year-contribs-head" }, [
+            h("span", { class: "alloc-summary-title" }, [yr]),
+            h("span", { class: "year-contribs-count muted" }, [
               `${rows.length} contribution${rows.length === 1 ? "" : "s"}`,
             ]),
-            dualAmount(yearEur, yearUsd),
           ]),
+          h("span", { class: "year-contribs-meta muted" }, [dualAmount(yearEur, yearUsd)]),
         ]),
         h("ul", { class: "ledger-list" }, rows.map(renderDepositRow)),
       ]) as HTMLDetailsElement;
