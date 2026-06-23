@@ -359,13 +359,15 @@ def _market_component_pivot_eur(
     EUR pivot rebased from the day's settled rate (``base_fx``, baked into
     ``current_value_eur``) to this minute's rate (``fx_t``) so the EUR view tracks
     per-minute FX while the native USD value stays FX-free (recovered at render by
-    removing exactly this rate). A symbol the feed served no bar for is carried at
-    a flat ratio of 1.
+    removing exactly this rate). A symbol the feed served no bar for — or one whose
+    bar is a corrupt non-positive close (a known feed glitch that elsewhere flags
+    an instrument as anomalous) — is carried at a flat ratio of 1 rather than
+    punching a spurious spike into the curve.
     """
     market = Decimal(0)
     for p in priced:
         price_t = _forward_filled(bars_by_symbol.get(p.instrument.symbol, {}), at)
-        if price_t is None:
+        if price_t is None or price_t <= 0:
             price_t = p.current_price_native
         ratio = price_t / p.current_price_native  # type: ignore[operator]
         contrib = p.current_value_eur * ratio

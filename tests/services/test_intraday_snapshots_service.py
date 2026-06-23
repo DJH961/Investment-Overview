@@ -252,6 +252,24 @@ class TestReconstruct:
         assert series[live_at] == Decimal("1234.00")  # untouched live value
         assert datetime(2024, 6, 3, 13, 30) in series  # gap was backfilled
 
+    def test_corrupt_nonpositive_bar_is_carried_flat_not_spiked(self, session: Session) -> None:
+        # A corrupt non-positive intraday close (a known feed glitch — the same
+        # kind elsewhere flags an instrument as anomalous) must not punch a
+        # spurious spike into the curve: the affected mark is carried at the
+        # holding's current price (flat ratio) instead of collapsing to €0.
+        _seed_eur_holding(session)  # ACME 10@€100 = €1,000, current price €100
+        bars = {
+            datetime(2024, 6, 3, 13, 30): Decimal("100"),  # +0%
+            datetime(2024, 6, 3, 14, 0): Decimal("0"),  # corrupt: would spike to €0
+            datetime(2024, 6, 3, 14, 30): Decimal("110"),  # +10%
+        }
+        written = iss.reconstruct_last_session(session, now=_NOW, fetcher=_fake_fetcher(bars))
+        session.flush()
+        assert written == 3
+        series = [v for _, v in iss.day_series_market_eur(session, now=_NOW)]
+        # The bad 14:00 bar is carried flat at €1,000, never €0.
+        assert series == [Decimal("1000.00"), Decimal("1000.00"), Decimal("1100.00")]
+
     def test_is_guarded_to_one_fetch_per_session(self, session: Session) -> None:
         _seed_eur_holding(session)
         calls = {"n": 0}
