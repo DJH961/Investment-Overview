@@ -18,6 +18,7 @@ from nicegui import ui
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.services import display_currency_service, prices_service
+from investment_dashboard.services.daily_growth_view import fx_move_pct
 from investment_dashboard.ui.components import (
     deferred,
     empty_state,
@@ -43,6 +44,8 @@ from investment_dashboard.ui.pages._overview_query import (
     position_rows,
 )
 from investment_dashboard.ui.pages.overview import (
+    _by_ccy,
+    _convert,
     _price_data_warning,
     _zero_value_warning,
 )
@@ -59,6 +62,7 @@ class _HoldingsData:
 
     metrics: PortfolioMetrics
     display_ccy: str
+    fx_rate: Decimal | None
     rows: list[dict[str, Any]]
     cards: list[HoldingCard]
 
@@ -150,13 +154,14 @@ def _summary_stat(
 
 
 def _holdings_summary(
-    cards: list[HoldingCard], *, display_ccy: str, weighted_expense: Decimal | None
+    cards: list[HoldingCard], *, display_ccy: str
 ) -> None:  # pragma: no cover - UI
     """Render the deep summary-statistics strip above the table.
 
     Surfaces the portfolio-shape facts that only fit on a desktop: the number of
     holdings, gainers vs losers, the best and worst performers by total growth,
-    the most concentrated position by weight, and the weighted expense ratio.
+    and the most concentrated position by weight. (Weighted expense moved up to
+    the headline KPI grid, so this strip stays a clean four boxes.)
     """
     ccy = display_ccy.upper()
 
@@ -196,11 +201,63 @@ def _holdings_summary(
                 heaviest.symbol,
                 sub=f"{fmt_pct(heaviest.weight)} of portfolio",
             )
-        _summary_stat(
-            "Weighted expense",
-            fmt_pct(weighted_expense) if weighted_expense is not None else "—",
-            sub="annual fund cost",
+
+
+def _kpi_metrics_row(
+    metrics: PortfolioMetrics, *, display_ccy: str, fx_rate: Decimal | None
+) -> None:  # pragma: no cover - UI
+    """Second headline KPI row: dividend return, dividend yield, fund fees, FX.
+
+    Each card leads with a rate and carries the matching money figure (in the
+    selected display currency) underneath, mirroring the Overview footnote but
+    given full KPI-tile prominence on the dedicated Holdings page.
+    """
+    ccy = display_ccy.upper()
+
+    with ui.element("div").classes("inv-kpi-grid w-full"):
+        # Lifetime cumulative dividend return + total cash dividends earned.
+        total_div = _by_ccy(metrics.total_dividends_cash_eur, metrics.total_dividends_cash_usd, ccy)
+        kpi_card(
+            "Dividend return",
+            fmt_pct(metrics.dividend_yield_pct),
+            sub=f"{fmt_money(total_div, ccy)} lifetime",
+            tooltip_key="dividend_return",
         )
+        # Per-year dividend yield + the trailing-12-month cash dividends.
+        div_ttm = _by_ccy(metrics.dividends_ttm_eur, metrics.dividends_ttm_usd, ccy)
+        kpi_card(
+            "Dividend yield",
+            fmt_pct(metrics.dividend_yield_ttm_pct),
+            sub=f"{fmt_money(div_ttm, ccy)} last 12 mo",
+            tooltip_key="dividend_yield",
+        )
+        # Value-weighted fund expense ratio + the annual cost it implies.
+        annual_cost = _convert(metrics.annual_expense_cost_eur, ccy, fx_rate)
+        kpi_card(
+            "Weighted expense",
+            fmt_pct(metrics.weighted_expense_ratio),
+            sub=f"{fmt_money(annual_cost, ccy)} / yr",
+            tooltip_key="expense_ratio",
+        )
+        # Live EUR→USD spot + the most recent completed-day move.
+        fx_pct = (
+            fx_move_pct(
+                metrics.daily_growth_fx_eur_usd,
+                metrics.daily_growth_fx_eur_usd_prev,
+                ccy,
+            )
+            if metrics.daily_growth_fx_eur_usd is not None
+            else None
+        )
+        fx_value = f"{fx_rate:,.4f}" if fx_rate is not None else "—"
+        if fx_pct is not None:
+            sign = "+" if fx_pct >= 0 else "\u2212"  # proper minus sign
+            fx_sub = f"EUR→USD · {sign}{abs(fx_pct):.2f}% today"
+            fx_color = color_for_signed(float(fx_pct))
+        else:
+            fx_sub = "EUR → USD"
+            fx_color = None
+        kpi_card("Current FX", fx_value, sub=fx_sub, color=fx_color, tooltip_key="fx_rate")
 
 
 def register() -> None:
@@ -239,7 +296,11 @@ def register() -> None:
                     price_anomaly_ids=price_anomaly_ids,
                 )
                 return _HoldingsData(
-                    metrics=metrics, display_ccy=display_ccy, rows=rows, cards=cards
+                    metrics=metrics,
+                    display_ccy=display_ccy,
+                    fx_rate=usd_rate,
+                    rows=rows,
+                    cards=cards,
                 )
 
             def _build(data: _HoldingsData) -> None:
@@ -288,15 +349,15 @@ def register() -> None:
                         tooltip_key="total_gain",
                     )
 
+                # Second headline row: income & cost KPIs (dividend return,
+                # dividend yield, fund fees, FX) with money figures underneath.
+                _kpi_metrics_row(metrics, display_ccy=display_ccy, fx_rate=data.fx_rate)
+
                 _zero_value_warning([c.symbol for c in cards if c.value_warning])
                 _price_data_warning([c.symbol for c in cards if c.price_data_warning])
 
                 with section("Portfolio shape"):
-                    _holdings_summary(
-                        cards,
-                        display_ccy=display_ccy,
-                        weighted_expense=metrics.weighted_expense_ratio,
-                    )
+                    _holdings_summary(cards, display_ccy=display_ccy)
 
                 with section("All holdings"):
                     ccy_key = display_ccy.lower()
@@ -357,6 +418,14 @@ def register() -> None:
                             # the user prefers seeing all holdings at once over a
                             # capped viewport. The left↔right scrollbar still sits
                             # at the bottom of the (now full-height) grid.
+                            #
+                            # NOTE: ``domLayout:autoHeight`` only takes effect if
+                            # the host element is allowed to grow. NiceGUI ships a
+                            # default ``.nicegui-aggrid { height: 16rem }`` rule
+                            # that otherwise pins the grid to ~16rem and clips it
+                            # (the "table is cut off" report); the inline
+                            # ``height: auto`` style below overrides it so the
+                            # grid genuinely expands to every row.
                             "domLayout": "autoHeight",
                             "alwaysShowHorizontalScroll": True,
                             "suppressHorizontalScroll": False,
@@ -368,6 +437,6 @@ def register() -> None:
                                 "autoHeaderHeight": True,
                             },
                         }
-                    ).classes("ag-theme-alpine w-full")
+                    ).classes("ag-theme-alpine w-full").style("height: auto")
 
             deferred(_build, compute=_gather)

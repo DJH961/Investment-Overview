@@ -573,6 +573,43 @@ class TestExpenseAndMtdMetrics:
         m = metrics_service.compute_portfolio_metrics(session)
         assert m.dividend_yield_pct is None
 
+    def test_dividend_yield_ttm_uses_trailing_year_not_calendar_ytd(self, session: Session) -> None:
+        # A dividend paid last December is meaningless under a calendar-YTD
+        # window on 2 Jan, but a trailing-twelve-month window still counts it,
+        # so the per-year yield stays a real annual rate at the year boundary.
+        acct_id = _seed_eur_account(session, "TTM Dividend Account")
+        session.add_all(
+            [
+                Transaction(
+                    account_id=acct_id,
+                    date=date(2024, 1, 1),
+                    kind="deposit",
+                    net_native=Decimal("1000"),
+                    net_eur=Decimal("1000"),
+                    source="manual",
+                ),
+                Transaction(
+                    account_id=acct_id,
+                    date=date(2024, 12, 15),
+                    kind="dividend_cash",
+                    net_native=Decimal("20"),
+                    net_eur=Decimal("20"),
+                    source="manual",
+                ),
+            ]
+        )
+        session.flush()
+        m = metrics_service.compute_portfolio_metrics(session, as_of=date(2025, 1, 2))
+        # Trailing 12 months (2024-01-03 → 2025-01-02) still includes the
+        # 15 Dec dividend, so the yield is non-zero on 2 Jan.
+        assert m.dividends_ttm_eur == Decimal("20")
+        assert m.dividend_yield_ttm_pct is not None
+        assert m.dividend_yield_ttm_pct > 0
+        # A dividend that fell out of the trailing window no longer counts.
+        m_later = metrics_service.compute_portfolio_metrics(session, as_of=date(2026, 1, 2))
+        assert m_later.dividends_ttm_eur == Decimal(0)
+        assert m_later.dividend_yield_ttm_pct == Decimal(0)
+
     def test_expense_metrics_none_when_empty(self, session: Session) -> None:
         m = metrics_service.compute_portfolio_metrics(session)
         assert m.weighted_expense_ratio is None

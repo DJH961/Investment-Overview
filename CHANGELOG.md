@@ -14,7 +14,57 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [3.10.0] — 2026-06-23
+## [3.11.1] — 2026-06-23
+
+### Changed
+
+- **Per-year dividend yield is now trailing-twelve-month, not calendar
+  year-to-date.** The Overview footnote and Holdings "Dividend yield" tile
+  divide the *last 12 months* of cash dividends by today's value instead of
+  this calendar year's. A calendar-YTD window collapses to ~0% in early
+  January (e.g. on 2 Jan, before any distribution lands), which made the
+  "yield" misleading at the year boundary; a rolling 12-month window stays a
+  meaningful annual rate all year round. The footnote/tile now read
+  *"… (last 12 mo X)"* rather than *"… (YTD X)"*. The underlying metrics were
+  renamed `dividends_ytd_eur`/`dividends_ytd_usd` → `dividends_ttm_eur`/
+  `dividends_ttm_usd` and `dividend_yield_ytd_pct` → `dividend_yield_ttm_pct`.
+
+## [3.11.0] — 2026-06-23
+
+### Added
+
+- **Holdings page now leads with a second row of headline KPIs.** Below the
+  Total Value / Total Growth / XIRR / Capital Gain row sit four income-and-cost
+  tiles, each pairing a rate with the matching money figure in the selected
+  display currency:
+  - **Dividend return** — lifetime cumulative dividend return, with total cash
+    dividends earned underneath.
+  - **Dividend yield** — current-year dividend yield, with the year-to-date
+    dividends underneath.
+  - **Weighted expense** — value-weighted fund fee, with the annual cost per
+    year underneath.
+  - **Current FX** — live EUR→USD spot, with the change since the previous
+    completed trading day underneath.
+- **`dividend_yield_ytd_pct` metric** — this calendar year's cash dividends ÷
+  current value, a true per-year yield distinct from the lifetime dividend
+  return, surfaced on both the Overview and Holdings pages.
+
+### Changed
+
+- **Overview dividend footnote now shows both figures.** It reads
+  *"Dividend total return: X% · Dividend yield: Y% (YTD …)"* — the lifetime
+  cumulative return next to the per-year yield with the year-to-date dividends.
+- **Holdings "Portfolio shape" strip trimmed to four boxes.** Weighted expense
+  moved up into the new headline KPI row, leaving Holdings / Best / Worst /
+  Most concentrated.
+
+### Fixed
+
+- **Holdings table is no longer cut off — every position is shown in full.**
+  NiceGUI's default `.nicegui-aggrid { height: 16rem }` was pinning the grid to
+  a short, scrolling viewport despite `domLayout: autoHeight`; an inline
+  `height: auto` override lets the grid grow to fit all rows, so the whole
+  holdings table is visible at once with no vertical scrolling.
 
 ### Added
 
