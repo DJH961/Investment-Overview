@@ -14,6 +14,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [3.14.1] — 2026-06-23
+
+### Added
+
+- **A visible "backup price source unreachable" signal on both platforms.** The
+  Tiingo secondary provider could fail silently: if it was needed (e.g. to price
+  a NAV fund like FSKAX that the primary couldn't) but the proxy/Worker was down,
+  misconfigured, or serving the wrong payload, the app simply left the holding
+  blank with no explanation. Now a Tiingo failure is surfaced explicitly.
+  - **Web companion:** the degradation banner gains a clear "Backup price source
+    (Tiingo) is unreachable — showing last-known prices" line, and a manual tap of
+    the Refresh / "Try the backup data provider now" button toasts the same.
+  - **Desktop app:** the automatic fallback path now records a red runtime error
+    (toast + Data Health page) when the backup raises, instead of only writing a
+    vague line to the log. The manual "Refresh via Tiingo now" button already
+    surfaced failures.
+
+### Fixed
+
+- **Web Tiingo client no longer swallows a non-array proxy response.** A genuine
+  Tiingo IEX reply is always a JSON array; a non-array `200` means the price proxy
+  isn't relaying Tiingo (e.g. an un-redeployed Worker serving the encrypted blob
+  for `/price`, or a relayed upstream error object). That case previously returned
+  silently with no error — masking exactly the misconfiguration above. It now
+  raises a classified `PriceError`, which drives the new unreachable signal while
+  still preserving cached/last-known quotes.
+
 ## [3.14.0] — 2026-06-23
 
 ### Added

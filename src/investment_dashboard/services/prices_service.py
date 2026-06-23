@@ -595,8 +595,26 @@ def _maybe_run_tiingo_fallback(
             primary_closes=primary_closes,
             token=token,
         )
-    except Exception:  # pragma: no cover - defensive: never break the refresh
-        log.warning("Tiingo fallback raised; keeping primary result", exc_info=True)
+    except Exception as exc:  # pragma: no cover - defensive: never break the refresh
+        # The backup was needed (a fetch was attempted) but failed — Tiingo
+        # unreachable, a bad/expired token, or an outage. Make it OBVIOUS rather
+        # than only logging: record a red runtime error so the UI pops a toast and
+        # the Data Health page lists it, mirroring the web companion's banner. The
+        # primary result still stands (we return below), so last-known prices show.
+        from investment_dashboard.services import runtime_status  # noqa: PLC0415
+
+        runtime_status.record_error(
+            "Price backup (Tiingo)",
+            f"Tiingo fallback unreachable — showing last-known prices ({exc}).",
+        )
+        # Keep the stack trace in the log file, but skip the logging→runtime_status
+        # funnel so we don't also raise a second, vaguer amber toast for the same
+        # failure (we just recorded the clear red one above).
+        log.warning(
+            "Tiingo fallback raised; keeping primary result",
+            exc_info=True,
+            extra={"runtime_status_skip": True},
+        )
         return
     for symbol, rows in recovered.items():
         result[symbol] = result.get(symbol, 0) + rows

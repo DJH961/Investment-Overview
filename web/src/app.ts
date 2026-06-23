@@ -196,6 +196,14 @@ export class App {
   /** Symbols served via the Tiingo fallback on the latest network round. */
   private lastTiingoSymbols: string[] = [];
   /**
+   * The Tiingo backup's own error from the latest network round, if it was
+   * needed but couldn't be reached (proxy down, Worker `/price` route missing,
+   * bad token). Drives the "backup unreachable" banner clause + manual toast so
+   * a silently-failing backup provider is visible instead of leaving a holding
+   * (e.g. FSKAX) blank with no explanation.
+   */
+  private lastTiingoError: PriceError | null = null;
+  /**
    * Monotonic session token. Bumped on every unlock and on lock so that
    * in-flight background work (timers, fetches) from a previous session is
    * recognised as stale and discarded.
@@ -1176,11 +1184,17 @@ export class App {
       if (session !== this.sessionId) return quoteLoad.report;
       this.lastTiingoSymbols = fallback.tiingoSymbols;
       this.lastTiingoBudget = fallback.budget;
+      // Remember whether the backup itself failed this round (needed but
+      // unreachable). Cleared to null on a clean round, so the banner/toast only
+      // shout while the backup is genuinely down.
+      this.lastTiingoError = fallback.error;
     } else if (this.lastTiingoBudget === null) {
       this.lastTiingoSymbols = [];
     }
 
-    const degradedReason = network ? this.describeDegradation(quoteLoad.report, fxReport) : null;
+    const degradedReason = network
+      ? this.describeDegradation(quoteLoad.report, fxReport, this.lastTiingoError)
+      : null;
     // Record when fresh market data actually landed: a live quote fetch, or a
     // live (non-cached) FX pull. This is "when we last pulled", independent of
     // how old the prices themselves are — so even over a closed-market weekend
@@ -1402,11 +1416,18 @@ export class App {
     // Confirm the outcome of a manual tap so the user understands what happened
     // (fresh prices pulled, already up to date, or some deferred by the budget).
     if (kind === "manual") {
-      this.toast(
-        this.lastCoverageFacts
-          ? manualRefreshSummary(this.lastCoverageFacts)
-          : "Couldn't reach live prices — showing last known values",
-      );
+      // A failed backup is the most actionable thing to say on a manual tap —
+      // especially the "Try the backup data provider now" button — so lead with
+      // it when the Tiingo backup couldn't be reached this round.
+      if (this.lastTiingoError) {
+        this.toast("Backup price source (Tiingo) is unreachable — check the Worker /price route.");
+      } else {
+        this.toast(
+          this.lastCoverageFacts
+            ? manualRefreshSummary(this.lastCoverageFacts)
+            : "Couldn't reach live prices — showing last known values",
+        );
+      }
     }
     // "Prices all live" confirmation: when a portfolio is too big to price in a
     // single round it fills in over several burst rounds (the free-tier
@@ -1590,6 +1611,7 @@ export class App {
   private describeDegradation(
     quote: QuoteLoadReport,
     fx: { cached: boolean; error: PriceError | null },
+    tiingoError: PriceError | null = null,
   ): string | null {
     const reasons: string[] = [];
 
@@ -1627,6 +1649,17 @@ export class App {
     // (12h) freshness window is normal and not worth nagging about.
     if (fx.error && !fx.cached) {
       reasons.push("FX rates are temporarily unavailable.");
+    }
+
+    // The Tiingo backup was needed this round but couldn't be reached (proxy
+    // down, Worker `/price` route missing, bad token). Without this, a holding
+    // the primary can't price (e.g. an FSKAX-style NAV fund) would just sit blank
+    // with no explanation — so call it out explicitly.
+    if (tiingoError) {
+      reasons.push(
+        "Backup price source (Tiingo) is unreachable — showing last-known prices. " +
+          "If this persists, redeploy the price proxy Worker.",
+      );
     }
 
     return reasons.length === 0 ? null : reasons.join(" ");
