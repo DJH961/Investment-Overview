@@ -58,6 +58,34 @@ class TestSessionWindow:
     def test_last_session_date_keeps_weekday(self) -> None:
         assert iss.last_session_date(_NOW) == _SESSION_DAY
 
+    def test_last_session_date_holds_prior_day_before_the_open(self) -> None:
+        # Early Monday morning (08:00 ET), before the 09:30 open: the new session
+        # has not started, so the last *started* session is still Friday — the
+        # "1 Day" curve keeps showing Friday rather than blanking on an empty
+        # Monday.
+        before_open = datetime(2024, 6, 3, 12, 0, tzinfo=UTC)  # 08:00 ET
+        assert iss.last_session_date(before_open) == date(2024, 5, 31)  # prior Friday
+
+    def test_last_session_date_takes_today_once_open(self) -> None:
+        # 09:45 ET, just after the open: Monday is now the current session.
+        after_open = datetime(2024, 6, 3, 13, 45, tzinfo=UTC)  # 09:45 ET
+        assert iss.last_session_date(after_open) == _SESSION_DAY
+
+    def test_last_session_date_skips_holidays(self) -> None:
+        # Thursday 2024-07-04 (Independence Day) is a full-day NYSE holiday, so an
+        # afternoon open that day rolls back to Wednesday 2024-07-03.
+        july_4 = datetime(2024, 7, 4, 18, 0, tzinfo=UTC)
+        assert iss.last_session_date(july_4) == date(2024, 7, 3)
+
+    def test_previous_trading_session_skips_holiday(self) -> None:
+        # The session before Friday 2024-07-05 is Wednesday 2024-07-03, because
+        # Thursday 2024-07-04 (Independence Day) is a full-day NYSE holiday.
+        assert iss.previous_trading_session(date(2024, 7, 5)) == date(2024, 7, 3)
+
+    def test_previous_trading_session_skips_weekend(self) -> None:
+        # The session before Monday 2024-06-03 is the prior Friday 2024-05-31.
+        assert iss.previous_trading_session(date(2024, 6, 3)) == date(2024, 5, 31)
+
     def test_window_bounds_a_single_session(self) -> None:
         start, end = iss.session_window_utc(_NOW)
         assert start < end

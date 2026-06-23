@@ -114,6 +114,40 @@ describe("buildMovers", () => {
     expect(movers.basisDate).toBe("2024-06-03");
   });
 
+  it("includes a mutual fund once its NAV refreshes to the freshest date", () => {
+    // A mutual fund lags on yesterday's NAV first (stale → ignored), then prints
+    // today's NAV (not stale → must join the leaderboard like any other holding).
+    const lagging = buildMovers([
+      holding({ symbol: "ETF", todayMoveEur: 100, todayMovePct: 0.01 }),
+      holding({
+        symbol: "FUND",
+        assetClass: "mutual_fund",
+        todayMoveEur: 800,
+        todayMovePct: 0.4,
+        todayMoveIsStale: true,
+        priceFallbackDate: "2024-06-02",
+      }),
+    ]);
+    expect(lagging.winners.map((w) => w.symbol)).toEqual(["ETF"]);
+
+    const refreshed = buildMovers([
+      holding({ symbol: "ETF", todayMoveEur: 100, todayMovePct: 0.01 }),
+      holding({
+        symbol: "FUND",
+        assetClass: "mutual_fund",
+        todayMoveEur: 800,
+        todayMovePct: 0.4,
+        todayMoveIsStale: false,
+        priceFallbackDate: "2024-06-03",
+      }),
+    ]);
+    expect(refreshed.winners.map((w) => [w.symbol, w.reason])).toEqual([
+      ["FUND", "total"],
+      ["ETF", "percent"],
+    ]);
+    expect(refreshed.eligibleCount).toBe(2);
+  });
+
   it("ignores holdings without a today's move and yields empty sides when flat", () => {
     const movers = buildMovers([
       holding({ symbol: "NONE", todayMoveEur: null, todayMovePct: null }),

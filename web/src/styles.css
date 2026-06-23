@@ -1309,8 +1309,9 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
   /* The overview panel becomes a full-width dashboard: the headline value and
    * return horizons share the top row, then a value-over-time chart, a single
-   * full-width KPI strip, a two-column holdings grid, and the allocation panel
-   * underneath (no longer a cramped sidebar). */
+   * full-width KPI strip, the full-width today's-movers band right beneath it, a
+   * two-column holdings grid, and the allocation panel underneath (no longer a
+   * cramped sidebar). */
   .panel-overview {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 22rem;
@@ -1318,6 +1319,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
       "hero     returns"
       "value    value"
       "stats    stats"
+      "movers   movers"
       "holdings holdings"
       "alloc    alloc"
       "disc     disc";
@@ -1344,6 +1346,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .panel-overview > .segment { grid-area: returns; align-self: stretch; align-content: center; }
   .panel-overview > .value-chart { grid-area: value; }
   .panel-overview > .stats { grid-area: stats; }
+  .panel-overview > .movers-band { grid-area: movers; }
   .panel-overview > .holdings { grid-area: holdings; }
   .panel-overview > .allocation { grid-area: alloc; align-self: start; }
   .panel-overview > .disclaimer { grid-area: disc; }
