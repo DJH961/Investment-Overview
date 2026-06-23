@@ -39,7 +39,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     Tiingo FX backup is budget-gated against the desktop 10/hr·200/day Tiingo cap
     and rejects weekend/holiday (non-today) readings for parity with the primary.
 
-
+## [3.15.1] — 2026-06-23
 
 ### Added
 
