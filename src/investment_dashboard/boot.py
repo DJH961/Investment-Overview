@@ -630,11 +630,17 @@ def _run_cache_janitor() -> None:
 def _refresh_fx() -> None:
     try:
         from investment_dashboard.db import cache_session_scope  # noqa: PLC0415
-        from investment_dashboard.services.fx_service import refresh_fx_history  # noqa: PLC0415
+        from investment_dashboard.services.fx_service import (  # noqa: PLC0415
+            refresh_fx_history,
+            refresh_fx_history_yfinance,
+        )
 
         earliest = _earliest_needed_date()
         with cache_session_scope() as session:
             refresh_fx_history(session, earliest_needed=earliest)
+            # Overlay yfinance's actual EUR/USD market closes on top of the ECB
+            # baseline so the recreated history converts at each day's real rate.
+            refresh_fx_history_yfinance(session, earliest_needed=earliest)
         log.info("FX rates refreshed (floor=%s)", earliest)
     except Exception:
         log.warning("FX refresh failed; continuing with cached rates", exc_info=True)

@@ -447,6 +447,27 @@ def fetch_eur_usd_spot(
     )
 
 
+def fetch_eur_usd_history(
+    start: date,
+    end: date,
+    *,
+    downloader: Any = None,
+) -> dict[date, Decimal]:
+    """Return the daily EUR→USD close history (USD per 1 EUR) for ``[start, end]``.
+
+    Sourced from yfinance's ``EURUSD=X`` ticker so the historical curve can be
+    recreated at each day's *actual market close* FX rate — the exact rate that
+    converts a USD-native portfolio into euros on that day — rather than relying
+    solely on the ECB daily reference rate. ``end`` is inclusive here (we add the
+    one day yfinance's exclusive-end convention needs internally). Empty/missing
+    days are simply absent from the mapping; callers forward-fill as usual.
+    """
+    closes = fetch_closes(
+        [EUR_USD_YF_SYMBOL], start, end + timedelta(days=1), downloader=downloader
+    )
+    return dict(closes.get(EUR_USD_YF_SYMBOL, {}))
+
+
 def _coerce_market_time(value: Any) -> datetime | None:
     """Normalise a yfinance market-time value to a naive-UTC ``datetime``.
 
