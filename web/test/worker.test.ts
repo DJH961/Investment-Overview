@@ -1,7 +1,7 @@
 /**
  * Tests for the Cloudflare Worker (`web/proxy/worker.js`) Tiingo routes:
  * the `/iex-intraday` intraday-bars proxy, the `/price` daily-range branch,
- * the `/price` FX branches (`?fx=eurusd` live + `?fxDaily=eurusd` history), and
+ * the `/price` FX branches (`?fx=eurusd` live + `?fxHistory=eurusd` history), and
  * the shared per-isolate hourly Tiingo budget (429 + Retry-After). The
  * upstream `fetch` is stubbed so no network is touched; we assert on the exact
  * pinned URL the Worker builds, the injected `Authorization` header, and that
@@ -210,12 +210,12 @@ describe("/price fx route (live top-of-book)", () => {
   });
 });
 
-describe("/price fxDaily route (history backfill)", () => {
+describe("/price fxHistory route (history backfill)", () => {
   it("builds the pinned Tiingo FX daily-history URL over the requested window", async () => {
     const worker = await loadWorker();
     const calls = stubUpstreamHolder.current.calls;
     const resp = await worker.fetch(
-      new Request(`${ORIGIN}/price?fxDaily=eurusd&startDate=2026-06-01&endDate=2026-06-23`),
+      new Request(`${ORIGIN}/price?fxHistory=eurusd&startDate=2026-06-01&endDate=2026-06-23`),
       ENV,
     );
     expect(resp.status).toBe(200);
@@ -228,10 +228,31 @@ describe("/price fxDaily route (history backfill)", () => {
     expect(new Headers(calls[0].init.headers).get("Authorization")).toBe("Token secret-token");
   });
 
-  it("rejects a malformed fxDaily pair without hitting the upstream", async () => {
+  it("forwards an intraday resampleFreq (1hour) for the 1D graph FX", async () => {
     const worker = await loadWorker();
     const calls = stubUpstreamHolder.current.calls;
-    const resp = await worker.fetch(new Request(`${ORIGIN}/price?fxDaily=eur1usd`), ENV);
+    await worker.fetch(
+      new Request(`${ORIGIN}/price?fxHistory=eurusd&resampleFreq=1hour`),
+      ENV,
+    );
+    expect(new URL(calls[0].url).searchParams.get("resampleFreq")).toBe("1hour");
+  });
+
+  it("rejects an invalid resampleFreq", async () => {
+    const worker = await loadWorker();
+    const calls = stubUpstreamHolder.current.calls;
+    const resp = await worker.fetch(
+      new Request(`${ORIGIN}/price?fxHistory=eurusd&resampleFreq=1week`),
+      ENV,
+    );
+    expect(resp.status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("rejects a malformed fxHistory pair without hitting the upstream", async () => {
+    const worker = await loadWorker();
+    const calls = stubUpstreamHolder.current.calls;
+    const resp = await worker.fetch(new Request(`${ORIGIN}/price?fxHistory=eur1usd`), ENV);
     expect(resp.status).toBe(400);
     expect(calls).toHaveLength(0);
   });
@@ -239,7 +260,7 @@ describe("/price fxDaily route (history backfill)", () => {
   it("counts against the shared hourly reserve", async () => {
     const worker = await loadWorker();
     const env: WorkerEnv = { TIINGO_TOKEN: "secret-token", TIINGO_HOURLY_RESERVE: "1" };
-    expect((await worker.fetch(new Request(`${ORIGIN}/price?fxDaily=eurusd`), env)).status).toBe(
+    expect((await worker.fetch(new Request(`${ORIGIN}/price?fxHistory=eurusd`), env)).status).toBe(
       200,
     );
     expect((await worker.fetch(new Request(`${ORIGIN}/price?fx=eurusd`), env)).status).toBe(429);

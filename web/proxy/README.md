@@ -98,10 +98,12 @@ must stay secret, so the same Worker proxies it on a dedicated `…/price` route
   pair is validated to exactly six lowercase letters (tighter than the ticker
   charset). Tiingo's `midPrice` is already USD-per-EUR, so the browser uses it
   directly (no inversion).
-- `GET …/price?fxDaily=eurusd&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` → Tiingo
-  **FX daily** history (`/tiingo/fx/eurusd/prices`, `resampleFreq=1day`): per-day
-  EUR→USD closes that backfill each graph point at its own settled FX rate, in
-  one batched request that mirrors the daily-close window above.
+- `GET …/price?fxHistory=eurusd&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&resampleFreq=1day`
+  → Tiingo **FX history** (`/tiingo/fx/eurusd/prices`): per-bar EUR→USD closes
+  that backfill each graph point at its own settled FX rate, in one batched
+  request that mirrors the daily-close window above. `resampleFreq` defaults to
+  `1day` (the 1W graph) and also accepts `1hour`/`5min` (the 1D graph's intraday
+  FX), validated to a positive integer followed by `min`, `hour` or `day`.
 - `GET …/iex-intraday?ticker=AAPL&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&resampleFreq=1hour`
   → Tiingo **IEX intraday bars** (`/iex/<ticker>/prices`) for the live 1D/1W
   graph backfill. `resampleFreq` defaults to `1hour` and accepts a positive

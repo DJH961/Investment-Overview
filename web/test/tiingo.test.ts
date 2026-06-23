@@ -5,7 +5,12 @@
 import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 
-import { fetchTiingoEurUsd, fetchTiingoQuotes } from "../src/tiingo";
+import {
+  fetchTiingoEurUsd,
+  fetchTiingoFxBars,
+  fetchTiingoQuotes,
+  makeTiingoFxBarFetcher,
+} from "../src/tiingo";
 import { PriceError, type FetchLike } from "../src/prices";
 
 const PROXY = "https://worker.example.dev/price";
@@ -144,5 +149,99 @@ describe("fetchTiingoEurUsd", () => {
     };
     expect(await fetchTiingoEurUsd("", { fetchImpl })).toBeNull();
     expect(called).toBe(false);
+  });
+});
+
+describe("fetchTiingoFxBars / makeTiingoFxBarFetcher", () => {
+  it("requests fxHistory with the cadence + window and parses ascending EUR→USD bars", async () => {
+    let calledUrl = "";
+    const fetchImpl: FetchLike = async (url) => {
+      calledUrl = String(url);
+      return jsonResponse([
+        { date: "2026-06-23T00:00:00.000Z", ticker: "eurusd", close: 1.142905 },
+        { date: "2026-06-19T00:00:00.000Z", ticker: "eurusd", close: 1.146945 },
+      ]);
+    };
+    const bars = await fetchTiingoFxBars(PROXY, {
+      fetchImpl,
+      resampleFreq: "1day",
+      startDate: "2026-06-19",
+      endDate: "2026-06-23",
+    });
+    expect(calledUrl).toContain("fxHistory=eurusd");
+    expect(calledUrl).toContain("resampleFreq=1day");
+    expect(calledUrl).toContain("startDate=2026-06-19");
+    expect(calledUrl).toContain("endDate=2026-06-23");
+    // Sorted ascending by instant; value is the raw `close` (USD per 1 EUR).
+    expect(bars.map((b) => b.t)).toEqual([
+      Date.parse("2026-06-19T00:00:00.000Z"),
+      Date.parse("2026-06-23T00:00:00.000Z"),
+    ]);
+    expect(bars[0].value.toString()).toBe("1.146945");
+  });
+
+  it("defaults the pair to eurusd and forwards an intraday cadence", async () => {
+    let calledUrl = "";
+    const fetchImpl: FetchLike = async (url) => {
+      calledUrl = String(url);
+      return jsonResponse([]);
+    };
+    await fetchTiingoFxBars(PROXY, { fetchImpl, resampleFreq: "1hour" });
+    expect(calledUrl).toContain("fxHistory=eurusd");
+    expect(calledUrl).toContain("resampleFreq=1hour");
+  });
+
+  it("drops rows with a non-positive or unparseable close", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse([
+        { date: "2026-06-23T00:00:00.000Z", close: 0 },
+        { date: "bad-date", close: 1.1 },
+        { date: "2026-06-22T00:00:00.000Z", close: 1.14268 },
+      ]);
+    const bars = await fetchTiingoFxBars(PROXY, { fetchImpl });
+    expect(bars).toHaveLength(1);
+    expect(bars[0].value.toString()).toBe("1.14268");
+  });
+
+  it("returns [] for an empty window (no throw)", async () => {
+    const fetchImpl: FetchLike = async () => jsonResponse([]);
+    expect(await fetchTiingoFxBars(PROXY, { fetchImpl })).toEqual([]);
+  });
+
+  it("throws a retryable PriceError on a 429 (reserve spent)", async () => {
+    const fetchImpl: FetchLike = async () => jsonResponse([], { ok: false, status: 429 });
+    await expect(fetchTiingoFxBars(PROXY, { fetchImpl })).rejects.toBeInstanceOf(PriceError);
+  });
+
+  it("returns [] on a plain 4xx gap rather than throwing", async () => {
+    const fetchImpl: FetchLike = async () => jsonResponse([], { ok: false, status: 404 });
+    expect(await fetchTiingoFxBars(PROXY, { fetchImpl })).toEqual([]);
+  });
+
+  it("throws when the proxy returns a non-array (un-redeployed Worker)", async () => {
+    const fetchImpl: FetchLike = async () => jsonResponse({ status: "error" });
+    await expect(fetchTiingoFxBars(PROXY, { fetchImpl })).rejects.toBeInstanceOf(PriceError);
+  });
+
+  it("is a no-op without a proxy URL", async () => {
+    let called = false;
+    const fetchImpl: FetchLike = async () => {
+      called = true;
+      return jsonResponse([]);
+    };
+    expect(await fetchTiingoFxBars("", { fetchImpl })).toEqual([]);
+    expect(called).toBe(false);
+  });
+
+  it("makeTiingoFxBarFetcher binds the proxy + window into a no-arg fetchFx", async () => {
+    let calledUrl = "";
+    const fetchImpl: FetchLike = async (url) => {
+      calledUrl = String(url);
+      return jsonResponse([{ date: "2026-06-23T00:00:00.000Z", close: 1.14 }]);
+    };
+    const fetchFx = makeTiingoFxBarFetcher(PROXY, { fetchImpl, resampleFreq: "1day" });
+    const bars = await fetchFx();
+    expect(calledUrl).toContain("fxHistory=eurusd");
+    expect(bars[0].value.toString()).toBe("1.14");
   });
 });

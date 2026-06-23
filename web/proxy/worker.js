@@ -92,6 +92,15 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const INTRADAY_FREQ_RE = /^[1-9]\d{0,3}(?:min|hour)$/;
 /** Default intraday bar width when the caller omits `resampleFreq`. */
 const DEFAULT_INTRADAY_FREQ = "1hour";
+/**
+ * Allowed FX-history resample frequency: like {@link INTRADAY_FREQ_RE} but also
+ * permitting `day` so one route can serve both the 1D graph's intraday FX bars
+ * (`1hour`) and the 1W graph's daily FX closes (`1day`). Still a closed charset
+ * (no path/host smuggling, no SSRF).
+ */
+const FX_FREQ_RE = /^[1-9]\d{0,3}(?:min|hour|day)$/;
+/** Default FX-history bar width when the caller omits `resampleFreq`. */
+const DEFAULT_FX_FREQ = "1day";
 
 /**
  * Per-isolate rolling-hour reserve of Tiingo upstream requests. The design
@@ -187,7 +196,7 @@ function hourlyReserve(env) {
  *   - `?tickers=AAPL,MSFT`            → IEX live quotes / latest NAV
  *   - `?daily=AAPL&startDate=…&endDate=…&outputsize=…` → daily closes
  *   - `?fx=eurusd`                    → live FX top-of-book (bid/ask/mid)
- *   - `?fxDaily=eurusd&startDate=…&endDate=…` → daily FX history (per-day close)
+ *   - `?fxHistory=eurusd&startDate=…&endDate=…&resampleFreq=…` → FX history bars
  *
  * Everything else (host, path) is fixed here, and every caller-supplied value is
  * charset-validated, so this can only ever read Tiingo price data (no SSRF).
@@ -318,7 +327,7 @@ function buildTiingoUrl(params) {
   const tickers = params.get("tickers");
   const daily = params.get("daily");
   const fx = params.get("fx");
-  const fxDaily = params.get("fxDaily");
+  const fxHistory = params.get("fxHistory");
 
   if (tickers) {
     const list = tickers.split(",").map((t) => t.trim()).filter((t) => t.length > 0);
@@ -340,16 +349,19 @@ function buildTiingoUrl(params) {
     return url.toString();
   }
 
-  if (fxDaily) {
-    // Daily FX history for one quoted pair (e.g. `eurusd`), one batched request
-    // over the forwarded startDate/endDate window. This backfills each graph
-    // point at its own settled EUR→USD close so the EUR and USD lines genuinely
-    // diverge per day, mirroring the equity daily-close backfill. Strictly
-    // validated to six lowercase letters so it can only ever name a Tiingo FX
-    // pair (no SSRF).
-    if (!FX_PAIR_RE.test(fxDaily)) throw new Error("invalid fxDaily pair");
-    const url = new URL(`${TIINGO_ROOT}/tiingo/fx/${fxDaily}/prices`);
-    url.searchParams.set("resampleFreq", "1day");
+  if (fxHistory) {
+    // FX history for one quoted pair (e.g. `eurusd`), one batched request over
+    // the forwarded startDate/endDate window. This backfills each graph point at
+    // its own settled EUR→USD rate so the EUR and USD lines genuinely diverge,
+    // mirroring the equity intraday/daily-close backfill. `resampleFreq` picks
+    // the cadence: `1hour` for the 1D graph's intraday FX, `1day` (default) for
+    // the 1W graph's daily FX closes. Strictly validated to six lowercase letters
+    // so it can only ever name a Tiingo FX pair (no SSRF).
+    if (!FX_PAIR_RE.test(fxHistory)) throw new Error("invalid fxHistory pair");
+    const url = new URL(`${TIINGO_ROOT}/tiingo/fx/${fxHistory}/prices`);
+    const freq = params.get("resampleFreq") || DEFAULT_FX_FREQ;
+    if (!FX_FREQ_RE.test(freq)) throw new Error("invalid resampleFreq");
+    url.searchParams.set("resampleFreq", freq);
     const start = params.get("startDate");
     const end = params.get("endDate");
     if (start) {
@@ -390,7 +402,7 @@ function buildTiingoUrl(params) {
     return url.toString();
   }
 
-  throw new Error("missing tickers, fx, fxDaily or daily parameter");
+  throw new Error("missing tickers, fx, fxHistory or daily parameter");
 }
 
 /**
