@@ -42,7 +42,7 @@ import {
   readCachedFx,
   readCreditLog,
   clearPriceCaches,
-  creditsSpentWithin,
+  creditsSpentToday,
   readLastPull,
   readNavPublishStats,
   readSymbolPlan,
@@ -1158,7 +1158,7 @@ export class App {
    */
   private canForceRefresh(): boolean {
     const now = Date.now();
-    const used = creditsSpentWithin(readCreditLog(now), now, 24 * 60 * 60 * 1000);
+    const used = creditsSpentToday(readCreditLog(now), now);
     const remaining = Math.max(0, FREE_TIER.creditsPerDay - used);
     return remaining >= FREE_TIER.creditsPerDay * FORCE_REFRESH_MIN_CREDIT_FRACTION;
   }

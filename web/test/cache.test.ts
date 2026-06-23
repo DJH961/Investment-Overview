@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   creditsSpentWithin,
+  creditsSpentToday,
+  startOfUtcDay,
   readCachedEnvelope,
   readCachedEurUsd,
   readCachedFx,
@@ -138,6 +140,30 @@ describe("credit log", () => {
     const s = memStorage();
     recordCredits(0, 1000, s);
     expect(readCreditLog(1000, 60_000, s).length).toBe(0);
+  });
+
+  it("counts the daily budget from UTC midnight, not a rolling 24h window", () => {
+    const s = memStorage();
+    const DAY = 24 * 60 * 60 * 1000;
+    // Two spends late "yesterday" (UTC) and one early "today".
+    const yesterdayEvening = 5 * DAY - 2 * 60 * 60 * 1000; // 22:00 UTC, day 4
+    const yesterdayLate = 5 * DAY - 30 * 60 * 1000; // 23:30 UTC, day 4
+    const todayMorning = 5 * DAY + 6 * 60 * 60 * 1000; // 06:00 UTC, day 5
+    recordCredits(300, yesterdayEvening, s);
+    recordCredits(200, yesterdayLate, s);
+    recordCredits(40, todayMorning, s);
+    const log = readCreditLog(todayMorning, DAY, s);
+    // A rolling 24h window would wrongly include yesterday's 500 credits...
+    expect(creditsSpentWithin(log, todayMorning, DAY)).toBe(540);
+    // ...but the UTC-day reset means only today's 40 count against the cap.
+    expect(creditsSpentToday(log, todayMorning)).toBe(40);
+  });
+
+  it("startOfUtcDay lands exactly on the most recent UTC midnight", () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    expect(startOfUtcDay(5 * DAY)).toBe(5 * DAY); // already midnight
+    expect(startOfUtcDay(5 * DAY + 1)).toBe(5 * DAY); // 1ms past midnight
+    expect(startOfUtcDay(6 * DAY - 1)).toBe(5 * DAY); // 1ms before next midnight
   });
 });
 

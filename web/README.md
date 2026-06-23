@@ -244,14 +244,19 @@ To stay comfortably inside that budget the app (`src/cache.ts`, `src/quotes.ts`)
    moment the regular session reopens they snap back to the short live window.
    Those saved overnight/weekend credits are exactly what funds a late-arriving
    fund NAV.
-2. **Budgets itself across reloads** via a rolling credit-spend log: it spends
+2. **Budgets itself across reloads** via a credit-spend log: it spends
    at most the credits left in the current minute/day windows and **defers** any
    overflow symbols to their last cached (or exported last-known) value,
    refreshing them on a later update. A larger portfolio therefore fills in over
    a few refreshes instead of 429-ing — surfaced live in the update indicator as
    an **"N of M"** fill count. As the **daily** window is consumed the
    auto-refresh cadence stretches out (and a banner warns near/over the cap) so
-   the remaining budget lasts the day.
+   the remaining budget lasts the day. The **per-minute** cap is a rolling 60s
+   window, but the **daily** cap is measured from **00:00 UTC** — the moment
+   Twelve Data actually resets the free-tier daily allowance — not a trailing 24h
+   window. That means a new UTC day starts the budget cleanly back at zero, so
+   last night's pulls never eat into this morning's allowance
+   (`creditsSpentToday` / `startOfUtcDay` in `src/cache.ts`).
 3. **Retries a 429/5xx/network blip** with capped exponential backoff (honouring
    any `Retry-After` header) before giving up.
 4. **Degrades, never dead-ends**: whatever can't be fetched falls back to cached

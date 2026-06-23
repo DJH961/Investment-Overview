@@ -19,6 +19,7 @@
 
 import {
   creditsSpentWithin,
+  creditsSpentToday,
   readCachedEurUsd,
   readCachedFx,
   readCachedQuotes,
@@ -425,7 +426,7 @@ export async function loadQuotes(
     const log = readCreditLog(now(), DAY_MS, storage ?? undefined);
     return {
       minute: Math.max(0, creditsPerMinute - creditsSpentWithin(log, now(), MINUTE_MS)),
-      day: Math.max(0, creditsPerDay - creditsSpentWithin(log, now(), DAY_MS)),
+      day: Math.max(0, creditsPerDay - creditsSpentToday(log, now())),
     };
   };
 
@@ -657,7 +658,7 @@ export async function loadEurUsd(
   if (apiKey.length > 0) {
     const log = readCreditLog(now(), DAY_MS, storage ?? undefined);
     const minute = creditsPerMinute - creditsSpentWithin(log, now(), MINUTE_MS);
-    const day = creditsPerDay - creditsSpentWithin(log, now(), DAY_MS);
+    const day = creditsPerDay - creditsSpentToday(log, now());
     if (minute >= FREE_TIER.creditsPerSymbol && day >= FREE_TIER.creditsPerSymbol) {
       // Reserve the credit up-front (same rationale as loadQuotes) so two
       // overlapping loads can't both fire and 429.

@@ -335,6 +335,31 @@ export function creditsSpentWithin(log: CreditSpend[], now: number, windowMs: nu
   return log.reduce((acc, e) => (now - e.at < windowMs ? acc + e.n : acc), 0);
 }
 
+/**
+ * Epoch ms of the most recent 00:00 **UTC** at or before `now`.
+ *
+ * Twelve Data resets the free-tier *daily* credit allowance at midnight UTC, so
+ * the day's spend must be measured from that boundary — not a trailing 24h
+ * window. Because the Unix epoch itself begins at 00:00 UTC and a JS day is a
+ * fixed 86_400_000 ms (no leap seconds), flooring to the day grid lands exactly
+ * on UTC midnight.
+ */
+export function startOfUtcDay(now: number): number {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  return Math.floor(now / DAY_MS) * DAY_MS;
+}
+
+/**
+ * Credits spent so far **today** (since the most recent 00:00 UTC), which is the
+ * window the free-tier daily cap of 800 actually applies to. Using this instead
+ * of a rolling 24h window means a fresh UTC day starts the budget back at zero —
+ * last night's spend no longer eats into this morning's allowance.
+ */
+export function creditsSpentToday(log: CreditSpend[], now: number): number {
+  const dayStart = startOfUtcDay(now);
+  return log.reduce((acc, e) => (e.at >= dayStart ? acc + e.n : acc), 0);
+}
+
 // --- Last successful data pull ---------------------------------------------
 
 const LAST_PULL_KEY = "iv.web.last_pull";
