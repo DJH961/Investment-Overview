@@ -80,7 +80,13 @@ Concretely, that means:
 ## Status
 
 **Phase 5 (PWA) implemented**, building on the Phase 4 periods/projection/
-analytics work. The companion is now an installable **progressive web app**: a
+analytics work, plus an **experimental Phase 6 opt-in**: live **1D / 1W** value
+graphs (Settings → Experimental → "Live graphs", **off by default** so the proven
+`1M / 3M / 6M / 1Y` chart never regresses). When on, the Overview value chart
+drops the longer `3M / 6M` slices and adds live 1D and 1W curves, reconstructed
+from intraday/daily bars cached on the device (IndexedDB `TimeSeriesStore`) — see
+`docs/v3.0_live_web_companion_proposal.md` §10.8. The companion is now an
+installable **progressive web app**: a
 web manifest + icon make it add-to-home-screen capable, and a service worker
 caches **only the public, static app shell** so the UI opens instantly and works
 offline. The service worker never caches the encrypted blob, the live price/FX

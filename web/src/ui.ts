@@ -69,6 +69,8 @@ import {
   type DisplayCurrency,
 } from "./currency";
 import { buildLineChart, type ChartSeries } from "./chart";
+import { curveColumns } from "./value-graph";
+import type { CurvePoint } from "./timeseries";
 import { APP_VERSION } from "./version";
 import {
   expandCategoryWeights,
@@ -678,6 +680,7 @@ export function renderDashboard(
   onToggleCurrency: () => void,
   onSettings: () => void,
   lockLabel = "Lock",
+  liveGraph?: LiveGraphHooks,
 ): HTMLElement {
   const refresh = h("button", { class: "icon-btn", type: "button", "data-action": "refresh" }, [
     h("span", { class: "icon-btn-glyph", "aria-hidden": "true" }, ["↻"]),
@@ -711,7 +714,7 @@ export function renderDashboard(
   // Each tab is a self-contained panel; the nav just toggles which is visible
   // (no re-render, so live figures and form state survive a tab switch).
   const tabs: TabDef[] = [
-    { id: "overview", label: "Overview", glyph: "◎", panel: renderOverviewPanel(model) },
+    { id: "overview", label: "Overview", glyph: "◎", panel: renderOverviewPanel(model, liveGraph) },
     { id: "periods", label: "Periods", glyph: "▦", panel: renderPeriodsPanel(model.periods, model.deposits, model.plan) },
     { id: "analytics", label: "Risk", glyph: "📈", panel: renderAnalyticsPanel(model.analytics, model.overview, model.deposits) },
     { id: "plan", label: "Calculator", glyph: "🧮", panel: renderCalculatorPanel(model.calculator) },
@@ -794,7 +797,7 @@ function saveActiveTab(id: string | undefined): void {
 }
 
 /** The Phase 3 overview (hero, return horizons, KPIs, holdings, allocation). */
-function renderOverviewPanel(model: DashboardModel): HTMLElement {
+function renderOverviewPanel(model: DashboardModel, liveGraph?: LiveGraphHooks): HTMLElement {
   const content: Array<Node | string> = [
     renderHero(model.overview),
     renderReturns(model.overview),
@@ -804,7 +807,7 @@ function renderOverviewPanel(model: DashboardModel): HTMLElement {
   // live coverage, budget) — so the leaderboard reads right after the graph and
   // the update text that frame it, mirroring the desktop layout. The badges
   // below still tie each mover back to its holding row.
-  const valueChart = renderValueChart(model.analytics, model.overview);
+  const valueChart = renderValueChart(model.analytics, model.overview, liveGraph);
   if (valueChart) content.push(valueChart);
   content.push(renderStats(model.overview));
   const movers = renderMovers(model.holdings);
@@ -1287,33 +1290,110 @@ function daysBetween(a: string, b: string): number {
   return (Date.parse(b) - Date.parse(a)) / 86_400_000;
 }
 
+/** A live range the experimental mode plots from device-cached intraday/daily bars. */
+export type LiveRange = "1D" | "1W";
+
+/** Chart-ready output of a live-curve build (already denominated and dated). */
+export interface LiveCurveChart {
+  dates: string[];
+  series: ChartSeries[];
+  yAxisLabel?: (value: number) => string;
+}
+
+/**
+ * Lazily build a live 1D/1W curve for the experimental value chart, returning
+ * `null` when the curve can't be drawn (no data yet, missing key/proxy, or a
+ * failed fetch). Only invoked when the user actually selects a live preset.
+ */
+export type LiveCurveBuilder = (range: LiveRange) => Promise<LiveCurveChart | null>;
+
+/**
+ * The app shell's hooks for the experimental live value chart: each lazily
+ * builds a whole-book curve (both currencies per point) for its range, returning
+ * `null` when the curve can't be drawn. Currency denomination and overlays are
+ * applied by the UI from the returned {@link CurvePoint}s, so the shell stays
+ * currency-agnostic.
+ */
+export interface LiveGraphHooks {
+  /** Build the live 1D (intraday) curve points, or null when unavailable. */
+  session: () => Promise<CurvePoint[] | null>;
+  /** Build the live 1W (daily-close) curve points, or null when unavailable. */
+  week: () => Promise<CurvePoint[] | null>;
+}
+
+/** One selectable preset: either a history slice or a live (fetched) curve. */
+export type RangeOption =
+  | { label: string; kind: "history"; days: number | null }
+  | { label: string; kind: "live"; range: LiveRange };
+
+/**
+ * The ordered preset set for the value chart, given the history `span` (days),
+ * whether experimental mode is on, and whether a live builder is available.
+ *
+ * - **Default:** the proven history slices that fit the span, plus "All".
+ * - **Experimental:** drops the 3M / 6M slices and — when a live builder exists —
+ *   prepends the live **1D** and **1W** curves.
+ *
+ * Returns `[]` when there is nothing worth toggling (no live presets and the
+ * history is shorter than the smallest slice), so the caller draws a plain chart.
+ */
+export function chartTimeframeOptions(span: number, experimental: boolean, hasLive: boolean): RangeOption[] {
+  const historySource = experimental
+    ? CHART_TIMEFRAMES.filter((t) => t.label !== "3M" && t.label !== "6M")
+    : CHART_TIMEFRAMES;
+  const presets = historySource.filter((t) => span > t.days + 5);
+  const livePresets: RangeOption[] =
+    experimental && hasLive
+      ? [
+          { label: "1D", kind: "live", range: "1D" },
+          { label: "1W", kind: "live", range: "1W" },
+        ]
+      : [];
+  if (presets.length === 0 && livePresets.length === 0) return [];
+  return [
+    ...livePresets,
+    ...presets.map((p): RangeOption => ({ label: p.label, kind: "history", days: p.days })),
+    { label: "All", kind: "history", days: null },
+  ];
+}
+
 /**
  * A line chart wrapped with time-range presets. Builds the full chart, then —
  * when there is enough history to make a shorter window meaningful — adds a
  * small button group that re-slices the same series to the chosen look-back and
  * redraws in place (no re-fetch; purely a view of the already-loaded points).
+ *
+ * In the experimental graph mode ({@link experimentalGraphsEnabled}) the longer
+ * 3M / 6M slices are dropped and, when a {@link LiveCurveBuilder} is supplied,
+ * live **1D** and **1W** presets are prepended. Selecting one fetches/builds its
+ * curve on demand (device-cached) and swaps it in; the default mode is untouched.
  */
 function chartWithTimeframe(
   dates: string[],
   series: ChartSeries[],
   chartOpts: { yAxisLabel?: (v: number) => string } = {},
   persistKey?: string,
+  live?: LiveCurveBuilder,
 ): HTMLElement | null {
   const full = buildLineChart({ dates, series, ...chartOpts });
   if (!full) return null;
   const wrap = h("div", { class: "chart-wrap" }, [full as unknown as HTMLElement]);
 
   const span = dates.length >= 2 ? daysBetween(dates[0], dates[dates.length - 1]) : 0;
-  const presets = CHART_TIMEFRAMES.filter((t) => span > t.days + 5);
-  // Nothing worth toggling (history shorter than the smallest preset): plain chart.
-  if (presets.length === 0) return wrap;
-  const options: Array<{ label: string; days: number | null }> = [...presets, { label: "All", days: null }];
+  const options = chartTimeframeOptions(span, experimentalGraphsEnabled(), Boolean(live));
+  // Nothing worth toggling (no live presets and history shorter than the smallest
+  // slice): plain chart.
+  if (options.length === 0) return wrap;
 
   const lastMs = Date.parse(dates[dates.length - 1]);
   const buttons: HTMLButtonElement[] = [];
   const storageKey = persistKey ? `${CHART_RANGE_KEY_PREFIX}${persistKey}` : null;
+  // Monotonic token so a slow live fetch never overwrites a newer selection.
+  let activeToken = 0;
 
-  const apply = (days: number | null, index: number, persist = true): void => {
+  const liveStatus = (text: string): HTMLElement => h("div", { class: "chart-live-status note muted" }, [text]);
+
+  const applyHistory = (days: number | null): void => {
     let start = 0;
     if (days !== null) {
       const cutoff = lastMs - days * 86_400_000;
@@ -1326,6 +1406,35 @@ function chartWithTimeframe(
     const slicedSeries = rebaseWindowOverlays(series.map((s) => ({ ...s, values: s.values.slice(start) })));
     const chart = buildLineChart({ dates: slicedDates, series: slicedSeries, ...chartOpts });
     if (chart) wrap.replaceChildren(chart as unknown as HTMLElement);
+  };
+
+  const applyLive = async (range: LiveRange, token: number): Promise<void> => {
+    if (!live) return;
+    wrap.replaceChildren(liveStatus("Loading live data…"));
+    let built: LiveCurveChart | null = null;
+    try {
+      built = await live(range);
+    } catch {
+      built = null;
+    }
+    if (token !== activeToken) return; // a newer selection superseded this build
+    if (!built) {
+      wrap.replaceChildren(liveStatus("Live data isn't available yet — try refreshing."));
+      return;
+    }
+    const chart = buildLineChart({
+      dates: built.dates,
+      series: built.series,
+      yAxisLabel: built.yAxisLabel ?? chartOpts.yAxisLabel,
+    });
+    wrap.replaceChildren(
+      (chart as unknown as HTMLElement) ?? liveStatus("Not enough live points to draw a curve yet."),
+    );
+  };
+
+  const select = (index: number, persist = true): void => {
+    const token = (activeToken += 1);
+    const option = options[index];
     buttons.forEach((button, i) => {
       const active = i === index;
       button.classList.toggle("active", active);
@@ -1333,13 +1442,15 @@ function chartWithTimeframe(
     });
     // Remember the chosen window (by label, stable across exports) so it survives
     // the full re-render a refresh or currency toggle triggers.
-    if (persist && storageKey) saveStringPref(storageKey, options[index]?.label ?? "All");
+    if (persist && storageKey) saveStringPref(storageKey, option.label);
+    if (option.kind === "live") void applyLive(option.range, token);
+    else applyHistory(option.days);
   };
 
   const controls = h("div", { class: "chart-range", role: "group", "aria-label": "Chart time range" }, []);
   options.forEach((option, index) => {
     const button = h("button", { class: "chart-range-btn", type: "button" }, [option.label]) as HTMLButtonElement;
-    button.addEventListener("click", () => apply(option.days, index));
+    button.addEventListener("click", () => select(index));
     buttons.push(button);
     controls.appendChild(button);
   });
@@ -1347,7 +1458,7 @@ function chartWithTimeframe(
   const savedLabel = storageKey ? loadStringPref(storageKey) : null;
   const savedIndex = savedLabel ? options.findIndex((o) => o.label === savedLabel) : -1;
   const initial = savedIndex >= 0 ? savedIndex : options.length - 1;
-  apply(options[initial].days, initial, false);
+  select(initial, false);
 
   return h("div", { class: "chart-block" }, [controls, wrap]);
 }
@@ -1607,11 +1718,40 @@ function renderDrawdownChart(curve: AnalyticsView["curve"]): HTMLElement | null 
 }
 
 /**
+ * Map a built live curve ({@link CurvePoint}s carrying both currencies) into a
+ * chart-ready {@link LiveCurveChart}, denominated in the active display currency
+ * with the other currency overlaid (rebased to share the axis) — the same
+ * treatment {@link renderValueChart} gives the exported history. Returns null
+ * when there are too few points to draw.
+ */
+function liveCurveToChart(points: CurvePoint[]): LiveCurveChart | null {
+  const cols = curveColumns(points);
+  if (cols.dates.length < 2) return null;
+  const inUsd = getDisplayCurrency() === "USD" && canConvertToUsd();
+  const code: DisplayCurrency = inUsd ? "USD" : "EUR";
+  const primary: Array<Decimal | null> = inUsd ? cols.usd : cols.eur;
+  const series: ChartSeries[] = [{ values: primary, className: "series-portfolio", area: true }];
+  // Overlay the other currency, rebased to the start, so EUR and USD diverge by
+  // the FX move rather than sitting a flat ~1.08× apart (mirrors renderValueChart).
+  const other: Array<Decimal | null> = inUsd ? cols.eur : cols.usd;
+  const currencyLine = secondaryCurrencyLine({ code } as CurveDisplay, other, primary);
+  if (currencyLine !== null) {
+    series.push({ values: currencyLine.values, className: "series-currency" });
+  }
+  const yAxisLabel = (value: number): string => formatCurrencyShortRaw(new Decimal(value), code);
+  return { dates: cols.dates, series, yAxisLabel };
+}
+
+/**
  * The Overview "value over time" graph. Reuses the exported equity curve and
  * appends today's live total value as the final point, so the headline figure
  * is the tip of the line. Returns null when no usable history was exported.
  */
-function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTMLElement | null {
+function renderValueChart(
+  analytics: AnalyticsView | null,
+  o: OverviewView,
+  liveGraph?: LiveGraphHooks,
+): HTMLElement | null {
   if (analytics === null) return null;
   const points = analytics.curve.filter((p) => p.portfolioValue !== null);
   if (points.length < 1) return null;
@@ -1661,9 +1801,23 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
     series.push({ values: currencyLine.values, className: "series-currency" });
   }
 
-  const chart = chartWithTimeframe(dates, series, {
-    yAxisLabel: disp.yAxisLabel,
-  }, "portfolio");
+  // In experimental mode, wire the live 1D/1W builders so their presets fetch and
+  // draw on demand; otherwise the chart keeps to the exported history alone.
+  const liveBuilder: LiveCurveBuilder | undefined =
+    liveGraph && experimentalGraphsEnabled()
+      ? async (range) => {
+          const built = range === "1D" ? await liveGraph.session() : await liveGraph.week();
+          return built ? liveCurveToChart(built) : null;
+        }
+      : undefined;
+
+  const chart = chartWithTimeframe(
+    dates,
+    series,
+    { yAxisLabel: disp.yAxisLabel },
+    "portfolio",
+    liveBuilder,
+  );
   if (!chart) return null;
 
   const todayPct = pickByCurrency(o.todayMovePct, o.todayMovePctUsd);
@@ -3082,6 +3236,38 @@ export function renderTimeFormatToggle(): HTMLElement {
   select.setAttribute("aria-label", "Clock format");
   select.addEventListener("change", () => {
     setTimeFormat((select.value as TimeFormat) || "auto");
+  });
+  return select;
+}
+
+/**
+ * Persisted opt-in for the experimental live-graph mode. When on, the Overview
+ * value chart swaps its longer presets (3M / 6M) for the live **1D** and **1W**
+ * curves (docs/v3.0_live_web_companion_proposal.md §10.8); when off, the proven
+ * 1M / 3M / 6M / 1Y export-history chart is shown unchanged, so the default
+ * experience never regresses.
+ */
+const EXPERIMENTAL_GRAPHS_KEY = "iv.web.experimentalGraphs";
+
+/** Whether the experimental 1D/1W live-graph mode is currently enabled. */
+export function experimentalGraphsEnabled(): boolean {
+  return loadBoolPref(EXPERIMENTAL_GRAPHS_KEY, false);
+}
+
+/**
+ * Self-contained toggle for the experimental live-graph mode. Persists its own
+ * choice; the change takes effect the next time the dashboard renders (e.g. on
+ * returning from Settings), exactly like the theme and clock toggles.
+ */
+export function renderExperimentalGraphsToggle(): HTMLElement {
+  const select = h("select", { class: "select", "data-action": "experimental-graphs" }, [
+    h("option", { value: "0" }, ["Off — 1M · 3M · 6M · 1Y"]),
+    h("option", { value: "1" }, ["On — adds live 1D & 1W"]),
+  ]) as HTMLSelectElement;
+  select.value = experimentalGraphsEnabled() ? "1" : "0";
+  select.setAttribute("aria-label", "Experimental graphs");
+  select.addEventListener("change", () => {
+    saveBoolPref(EXPERIMENTAL_GRAPHS_KEY, select.value === "1");
   });
   return select;
 }
