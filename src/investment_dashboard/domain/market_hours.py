@@ -206,9 +206,7 @@ def latest_settled_session_date(now: datetime | None = None) -> date:
     local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
     day = local.date()
     settled_today = (
-        local.weekday() < _SATURDAY
-        and not is_us_market_holiday(day)
-        and local.time() >= _CLOSE
+        local.weekday() < _SATURDAY and not is_us_market_holiday(day) and local.time() >= _CLOSE
     )
     if settled_today:
         return day

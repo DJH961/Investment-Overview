@@ -67,6 +67,42 @@ _SYNTHETIC_ASSET_CLASSES = frozenset({"cash", "savings"})
 _NAV_ASSET_CLASSES = frozenset({"mutual_fund"})
 
 
+def _force_refresh_window(
+    *,
+    asset_class: str,
+    latest: date | None,
+    earliest: date | None,
+    earliest_needed: date,
+    today: date,
+    settled: date,
+    market_open: bool,
+) -> tuple[date, date]:
+    """Return the ``(start, anchor)`` fetch window for one holding's force refresh.
+
+    ``start`` is the first date to fetch: forward-only from the cached tail
+    normally, or back to ``earliest_needed`` when the cache is empty or has a
+    leading gap (cached history begins later than the portfolio needs). It is
+    then clamped to the holding's *anchor* — the most recent date the holding
+    can actually be priced, so a manual re-pull always double-checks the latest
+    value without asking yfinance for a window that can only come back empty (a
+    "no data" Data Health warning). The anchor is today's live intraday quote
+    for market holdings while the session is open, otherwise the latest settled
+    close; NAV funds publish once a day after the bell, so they always anchor to
+    the latest settled session's NAV and are never asked for an intraday window.
+    Clamping to the anchor guarantees the batched request covers a real trading
+    session. The desktop's yfinance primary is unmetered, so this broad re-pull
+    is free.
+    """
+    if latest is None or (earliest is not None and earliest > earliest_needed):
+        start = earliest_needed
+    else:
+        start = max(earliest_needed, latest + timedelta(days=1))
+    # NAV funds price off a once-a-day close (never an intraday "today"); market
+    # holdings take today's live quote while open, else the latest settled close.
+    anchor = settled if asset_class in _NAV_ASSET_CLASSES else (today if market_open else settled)
+    return min(start, anchor), anchor
+
+
 def refresh_prices(
     session: Session,
     cache_session: Session | None = None,
@@ -123,37 +159,15 @@ def refresh_prices(
             continue
         if instr.id in inactive:
             continue
-        latest = latest_dates.get(instr.id)
-        earliest = earliest_dates.get(instr.id)
-        if latest is None:
-            start = earliest_needed
-        elif earliest is not None and earliest > earliest_needed:
-            # Leading gap: cached history starts later than the portfolio needs
-            # (e.g. the first refresh ran before an older transaction existed,
-            # or only extended forward). Refetch from ``earliest_needed`` to
-            # fill the early dates; ``upsert_closes`` is idempotent so the
-            # already-cached tail is rewritten harmlessly. Once filled,
-            # ``earliest`` equals ``earliest_needed`` and the forward-only path
-            # below takes over.
-            start = earliest_needed
-        else:
-            start = max(earliest_needed, latest + timedelta(days=1))
-        # Smart anchor: the most recent date this holding can actually be
-        # priced. A manual/force refresh clamps ``start`` back to the anchor so
-        # it always re-pulls (double-checks) the latest available value — a live
-        # intraday move for market holdings while the session is open, otherwise
-        # the latest settled close; NAV funds publish once a day after the bell,
-        # so they anchor to the latest settled session's NAV and are never asked
-        # for an intraday "today" window. Anchoring this way means the batched
-        # request always covers at least one real trading session, so it never
-        # returns an empty frame (which would log a "no data" Data Health
-        # warning). The desktop's yfinance primary is unmetered, so this broad
-        # re-pull is free.
-        if instr.asset_class in _NAV_ASSET_CLASSES:
-            anchor = settled
-        else:
-            anchor = today if market_open else settled
-        start = min(start, anchor)
+        start, anchor = _force_refresh_window(
+            asset_class=instr.asset_class,
+            latest=latest_dates.get(instr.id),
+            earliest=earliest_dates.get(instr.id),
+            earliest_needed=earliest_needed,
+            today=today,
+            settled=settled,
+            market_open=market_open,
+        )
         symbols_to_fetch.append(instr.symbol)
         earliest_per_symbol[instr.symbol] = start
         anchors.append(anchor)
