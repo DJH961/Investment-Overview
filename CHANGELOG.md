@@ -33,6 +33,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A large (>8) closed-market catch-up rapid-fires through Tiingo in one batched
   request instead of trickling ~8/min through the Twelve Data primary. A new pure
   `planPrefetch` helper captures the policy with unit tests.
+- **The login warm-up now pulls the live Twelve Data EUR/USD spot first**, not
+  just the keyless ECB end-of-day base rates. Currency is the most relevant mark
+  for a USD-booked book, so the prefetch warms the genuine intraday EUR/USD spot
+  (one credit, Tiingo backup then ECB end-of-day as graceful fallbacks) ahead of
+  any ticker. A still-fresh cached spot (< 15 min) is reused for free, so a
+  re-login moments after a refresh spends nothing.
+
+## [3.19.2] — 2026-06-24
+
+### Fixed
+
+- **Manual refresh no longer raises spurious "Data Health" warnings (desktop
+  app).** Tapping Refresh always re-pulls every holding to double-check its
+  latest value, but the fetch window used to run to *today* unconditionally — so
+  on a weekend/holiday, or for a NAV fund during market hours, the request
+  covered only non-trading days and yfinance returned an empty frame, which
+  surfaced as a `no data` Data Health warning. Each holding's window is now
+  *anchored* to the most recent date it can actually be priced: live intraday
+  for market holdings while the session is open, otherwise the latest settled
+  close, and the latest settled NAV for mutual funds (which never have an
+  intraday value). The refresh still re-downloads the newest close/NAV for every
+  holding, but never asks for a window that can only come back empty.
+- **Automatic price refresh now respects market hours.** The background refresh
+  no longer fires off fetches for windows the market can't fill (e.g. repeatedly
+  re-requesting a closed session), using the same settled-session logic as the
+  manual path via a new `market_hours.latest_settled_session_date()` helper.
+- **FX Tiingo budget no longer crashes on `app_config`.** The desktop FX
+  fallback charged its daily Tiingo budget against the cache tier, where the
+  `app_config` table does not live, raising `no such table: app_config`. It now
+  uses the ledger tier, matching the canonical Tiingo fallback wiring.
+- **Loop watchdog stops crying wolf after sleep/suspension.** The event-loop lag
+  watchdog treated any large wall-clock gap as a stall, so resuming the laptop
+  from sleep triggered a false warning. It now also checks that the process
+  actually consumed CPU during the gap (`is_cpu_bound_stall`), so a suspended —
+  rather than genuinely blocked — loop no longer reports.
 
 ## [3.19.1] — 2026-06-23
 
