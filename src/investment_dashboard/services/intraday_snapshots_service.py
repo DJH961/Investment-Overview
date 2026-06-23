@@ -15,7 +15,11 @@ keeps the *within-day* shape instead, from two complementary sources:
   so opening the app late in the day, after the close, or over a weekend still
   shows a full "1 Day" curve for the last trading day rather than a stub. It is
   anchored to that day's cached daily total, so only the priced holdings move
-  intraday and the curve closes exactly on the day's settled value.
+  intraday and the curve closes exactly on the day's settled value. It only fills
+  *gaps*: any 30-minute mark already captured live is left untouched, so a session
+  watched live keeps the prices actually seen rather than being overwritten by a
+  point revalued at a later (e.g. post-close NAV) price — which would otherwise
+  draw a spike at every 30-minute mark.
 
 :func:`day_series_eur` returns the current session's merged samples (EUR), which
 the Overview "Day" range converts to the display currency, localises to the
@@ -68,6 +72,15 @@ MIN_CAPTURE_GAP_SECONDS = 20
 
 #: Bar width used to reconstruct a missed session — the user's "every 30 min".
 RECONSTRUCT_INTERVAL = "30m"
+
+#: Half-window (seconds) around a reconstructed bar within which an existing live
+#: sample counts as "already covered". Reconstruction only *backfills* — it must
+#: never insert a bar where the session was watched live, because its anchor
+#: (today's settled total) can revalue a holding the live points captured at a
+#: different price (e.g. a mutual fund whose NAV prints only after the close):
+#: mixing the two would draw a spike at every 30-min mark. 15 min = half the bar
+#: width, so each bar is suppressed only by a live sample inside its own slot.
+RECONSTRUCT_COVERAGE_GAP_SECONDS = 15 * 60
 
 #: ``app_config`` key recording the last session date we reconstructed, so we
 #: fetch intraday bars at most once per session instead of on every page load.
@@ -258,6 +271,11 @@ def reconstruct_last_session(
     exactly on the settled value:
     ``value(t) = base + Σ value_i · price_i(t)/close_i``.
 
+    Only *gaps* are filled: a 30-minute mark already captured live is skipped, so
+    a session watched live keeps the live prices rather than being overwritten by
+    a point anchored to a later revaluation (e.g. a mutual fund's post-close NAV),
+    which would otherwise spike the curve at each mark.
+
     Idempotent and guarded: it runs the network fetch at most once per session
     (tracked in ``app_config``) unless ``force`` is set. Best-effort — returns
     the number of points written (0 on any failure / no data), never raises.
@@ -281,7 +299,7 @@ def reconstruct_last_session(
 
 def _reconstruct_session(session: Session, session_date: date, *, fetcher: object | None) -> int:
     from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
-    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.db import cache_read_session, cache_write_session  # noqa: PLC0415
     from investment_dashboard.domain.money_market import is_money_market  # noqa: PLC0415
     from investment_dashboard.services import positions_service  # noqa: PLC0415
 
@@ -312,9 +330,24 @@ def _reconstruct_session(session: Session, session_date: date, *, fetcher: objec
     )
     base = total_eur - sum((p.current_value_eur for p in priced), start=Decimal(0))
 
+    # Backfill gaps only: keep every instant already captured live and skip any
+    # reconstructed bar that falls inside a live sample's slot. Live points hold
+    # the prices actually seen during the session; a reconstructed point anchored
+    # to today's revalued total (e.g. a mutual fund's post-close NAV) would dip
+    # below them and draw a spike at each 30-min mark (see the coverage gap).
+    with cache_read_session(session) as cache:
+        live_times = [
+            r.captured_at
+            for r in intraday_repo.list_in_range(
+                cache, _session_start_utc(session_date), bar_times[-1]
+            )
+        ]
+
     written = 0
     with cache_write_session(session) as cache:
         for t in bar_times:
+            if _covered_by_live(live_times, t):
+                continue
             value = base
             for p in priced:
                 price_t = _forward_filled(bars_by_symbol.get(p.instrument.symbol, {}), t)
@@ -326,6 +359,13 @@ def _reconstruct_session(session: Session, session_date: date, *, fetcher: objec
             written += 1
         intraday_repo.delete_before(cache, _session_start_utc(session_date))
     return written
+
+
+def _covered_by_live(live_times: list[datetime], at: datetime) -> bool:
+    """Whether a live sample sits within the coverage half-window of ``at``."""
+    return any(
+        abs((t - at).total_seconds()) <= RECONSTRUCT_COVERAGE_GAP_SECONDS for t in live_times
+    )
 
 
 def _already_reconstructed(session: Session, session_date: date) -> bool:

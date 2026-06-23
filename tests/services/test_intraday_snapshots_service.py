@@ -139,6 +139,27 @@ class TestReconstruct:
         series = iss.day_series_eur(session, now=_NOW)
         assert [v for _, v in series] == [Decimal("1000.00"), Decimal("1100.00")]
 
+    def test_skips_bars_already_covered_by_live_samples(self, session: Session) -> None:
+        # A live sample captured during the session (at the unreleased/higher
+        # price) must survive reconstruction: the 30-min bar landing on it is
+        # skipped rather than overwritten by a point revalued to a lower price,
+        # which would otherwise draw a downward spike at that mark.
+        _seed_eur_holding(session)
+        live_at = datetime(2024, 6, 3, 14, 0)  # 10:00 ET, mid-session
+        intraday_repo.insert_sample(session, live_at, Decimal("1234.00"))
+        session.flush()
+        bars = {
+            datetime(2024, 6, 3, 13, 30): Decimal("100"),  # 09:30 ET — backfilled
+            datetime(2024, 6, 3, 14, 0): Decimal("90"),  # 10:00 ET — covered live
+        }
+        written = iss.reconstruct_last_session(session, now=_NOW, fetcher=_fake_fetcher(bars))
+        session.flush()
+        # Only the uncovered 09:30 bar is written; the live 10:00 point is kept.
+        assert written == 1
+        series = dict(iss.day_series_eur(session, now=_NOW))
+        assert series[live_at] == Decimal("1234.00")  # untouched live value
+        assert datetime(2024, 6, 3, 13, 30) in series  # gap was backfilled
+
     def test_is_guarded_to_one_fetch_per_session(self, session: Session) -> None:
         _seed_eur_holding(session)
         calls = {"n": 0}
