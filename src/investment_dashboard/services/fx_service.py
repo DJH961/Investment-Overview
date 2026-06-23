@@ -40,6 +40,9 @@ log = logging.getLogger(__name__)
 DEFAULT_QUOTES: tuple[str, ...] = ("USD",)
 
 _PROVIDER = "frankfurter"
+#: Provider tag of the retired yfinance ``EURUSD=X`` end-of-day overlay; kept so
+#: any rows it left behind can be purged in favour of the ECB reference rates.
+_YF_PROVIDER = "yfinance"
 
 
 @dataclass(frozen=True)
@@ -224,6 +227,26 @@ def _refresh_single_quote(
         f"Fetched {len(rates)} {base}/{quote} rate(s) for {start}..{today}; {written} new",
     )
     return written
+
+
+def purge_legacy_yfinance_fx_history(
+    session: Session,
+    *,
+    quote: str = "USD",
+) -> int:
+    """Drop any legacy yfinance end-of-day EUR→``quote`` overlay rows.
+
+    Historical end-of-day FX is sourced from the ECB/Frankfurter reference rates
+    (:func:`refresh_fx_history`); an earlier build additionally re-marked the same
+    days at yfinance's ``EURUSD=X`` close, which has since been reverted. This
+    retires those yfinance-sourced rows so the ECB backfill repopulates the dates
+    on the next refresh, leaving a single, consistent end-of-day source. (The
+    live *today-only* intraday spot overlay and the "1 Day" curve's per-minute
+    EUR/USD reconstruction are unaffected — both are separate paths.)
+
+    Idempotent: a no-op once no such rows remain. Returns the number removed.
+    """
+    return fx_repo.delete_by_source(session, base="EUR", quote=quote, source=_YF_PROVIDER)
 
 
 def get_rates(

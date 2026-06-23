@@ -334,7 +334,7 @@ def fetch_intraday_closes(
     Used to *reconstruct* the most recent trading session's portfolio curve when
     the app was closed for part (or all) of it — e.g. logging in late in the day,
     after the close, or over a weekend. ``interval`` is a yfinance bar width
-    (``"30m"`` by default, matching the dashboard's ~half-hour reconstruction
+    (``"30m"`` by default; the dashboard passes its own reconstruction
     granularity). Bar timestamps are normalised to **naive UTC** so they store
     and compare uniformly with the live intraday samples.
 
@@ -445,6 +445,30 @@ def fetch_eur_usd_spot(
     return fetch_latest_close(
         EUR_USD_YF_SYMBOL, lookback_days=lookback_days, ticker_factory=ticker_factory
     )
+
+
+def fetch_eur_usd_intraday(
+    day: date,
+    *,
+    interval: str = "15m",
+    downloader: Any = None,
+) -> dict[datetime, Decimal]:
+    """Return ``{bar_time_utc: eur_usd_close}`` of intraday EUR→USD bars on ``day``.
+
+    Sources the ``EURUSD=X`` ticker at the ~15-minute granularity the Overview
+    "1 Day" curve is reconstructed at, so each back-filled portfolio point can be
+    converted at the *actual rate struck at that minute* rather than a single
+    uniform spot. USD is the booked currency, so this is what lets the EUR view
+    legitimately diverge from the FX-free USD view as the rate moves through the
+    session. (Historical *end-of-day* FX is sourced from the ECB reference rates,
+    not yfinance — this intraday path is only for the live session's curve.)
+
+    Best-effort: an empty mapping (no data / a quiet weekend row) leaves callers
+    to forward-fill or fall back to the day's settled rate. Bar timestamps are
+    naive UTC, matching the portfolio samples they align with.
+    """
+    bars = fetch_intraday_closes([EUR_USD_YF_SYMBOL], day, interval=interval, downloader=downloader)
+    return dict(bars.get(EUR_USD_YF_SYMBOL, {}))
 
 
 def _coerce_market_time(value: Any) -> datetime | None:

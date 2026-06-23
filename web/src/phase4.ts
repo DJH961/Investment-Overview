@@ -87,6 +87,12 @@ export interface RiskMetric {
 export interface EquityPoint {
   date: string;
   portfolioValue: Decimal | null;
+  /**
+   * USD-denominated portfolio value (re-marked at each day's FX). Null when the
+   * export predates the companion field; the chart then falls back to
+   * spot-converting `portfolioValue` for the USD view.
+   */
+  portfolioValueUsd: Decimal | null;
   contributions: Decimal | null;
   benchmarkValue: Decimal | null;
 }
@@ -311,6 +317,7 @@ function mapEquityPoint(p: ExportEquityPoint): EquityPoint {
   return {
     date: p.date,
     portfolioValue: dec(p.portfolio_value),
+    portfolioValueUsd: dec(p.portfolio_value_usd),
     contributions: dec(p.cumulative_contributions),
     benchmarkValue: dec(p.benchmark_value),
   };

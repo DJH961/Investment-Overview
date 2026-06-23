@@ -184,6 +184,12 @@ export interface ExportAnalytics {
 export interface ExportEquityPoint {
   date: string;
   portfolio_value: DecimalString | null;
+  /**
+   * The portfolio value re-marked at *each day's* FX rate (USD-denominated),
+   * letting the web draw a currency-correct USD curve rather than rescaling the
+   * EUR line at today's spot. Absent on exports predating this field.
+   */
+  portfolio_value_usd?: DecimalString | null;
   cumulative_contributions: DecimalString | null;
   benchmark_value: DecimalString | null;
 }

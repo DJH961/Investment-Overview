@@ -14,6 +14,50 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.9.5] — 2026-06-23
+
+### Changed
+
+- **Value / equity / drawdown graphs are now currency-correct (USD-native).**
+  USD is the booked currency — spot prices arrive in USD — so the USD curve is
+  now computed natively with **no FX applied**, and EUR is the FX-derived view
+  (not the other way around). Analytics exports a true per-day USD value series
+  (`portfolio_value_usd`, built from the desktop USD snapshot bundle) instead of
+  rescaling the EUR curve by today's spot, so each currency's history reflects
+  the actual rate on every day rather than a single uniform conversion. The web
+  companion renders each chart natively in the active currency; the live "today"
+  tip uses the live intraday EUR/USD spot, so the USD and EUR graphs legitimately
+  differ point-by-point as the FX market moves.
+- **End-of-day FX history is sourced from the ECB (Frankfurter), intraday from
+  yfinance.** Historical end-of-day EUR/USD marks come from the ECB reference
+  rates; an earlier yfinance `EURUSD=X` end-of-day overlay has been reverted (and
+  any rows it left behind are purged on boot so the ECB backfill owns those
+  dates). yfinance is now used only for the *live and intraday* rates that feed
+  the "1 Day" curve. Every figure is still converted at its own point in time —
+  each day at that day's ECB rate, never today's.
+- **Overview "1 Day" graph uses true per-minute EUR/USD FX.** When the curve is
+  reconstructed (now every 15 minutes, down from 30), each back-filled point is
+  converted at the EUR/USD rate actually struck at that minute — pulled from
+  yfinance's `EURUSD=X` intraday bars — and live samples record the rate they
+  were captured at (new nullable cache-tier `fx_eur_usd` column on
+  `intraday_value`, added in place). USD stays the booked currency (FX-free); the
+  EUR view diverges from it minute-by-minute as the FX market moves, instead of a
+  single uniform conversion. Missing bars fall back to the day's settled rate.
+
+### Fixed
+
+- **Overview "1 Day" graph no longer spikes or steps from mutual-fund NAVs.**
+  The intraday curve now stores only the *intraday-priced* (market) component of
+  the portfolio — stocks/ETFs — and reapplies the constant cash + NAV base
+  (mutual funds, money-market funds, cash) at render time. Because once-a-day-NAV
+  holdings never enter the intraday variation, a mutual fund's post-close NAV
+  revaluation shifts the whole curve uniformly instead of spiking the points
+  captured live before it, and a session watched live for only part of the day
+  joins its reconstructed remainder on a single consistent basis (no misleading
+  step where the two meet). Cache-tier `intraday_value` gains a renamed
+  `market_value_eur` column (migration `0014`); the table is regenerable, so it
+  is recreated rather than back-filled.
+
 ## [3.9.4] — 2026-06-23
 
 ### Fixed
