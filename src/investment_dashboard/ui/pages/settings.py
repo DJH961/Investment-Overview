@@ -1307,7 +1307,6 @@ def _handoff_lock_clicked() -> None:  # pragma: no cover - UI
 def _shutdown_clicked() -> None:  # pragma: no cover - UI
     """Confirm, then release the lock and stop the server."""
     from investment_dashboard import shutdown  # noqa: PLC0415
-    from investment_dashboard.services import auto_publish  # noqa: PLC0415
 
     with ui.dialog() as dialog, ui.card():
         ui.label("Shut down the dashboard server?").classes("text-subtitle1")
@@ -1320,18 +1319,10 @@ def _shutdown_clicked() -> None:  # pragma: no cover - UI
 
             def _confirm() -> None:
                 dialog.close()
-                # Republish (gated) before stopping so the latest state is live,
-                # and tell the user whether the upload worked.
-                outcome = auto_publish.run_trigger(auto_publish.TRIGGER_SHUTDOWN)
-                note = auto_publish.describe_outcome(outcome)
-                if note is not None:
-                    ui.notify(note[0], type=note[1])
-                # Clean exit: suppress the "connection lost" banner (a drop is
-                # expected) and try to auto-close the tab.
-                ui.run_javascript("if (window.__invBeginShutdown) window.__invBeginShutdown();")
-                # Give the notification + JS a moment to run, then stop the
-                # server. We already published above, so skip the duplicate.
-                ui.timer(0.8, lambda: shutdown.request_shutdown(publish=False), once=True)
+                # Shared graceful-shutdown sequence: republish (gated) and
+                # report the result, suppress the reconnect banner, auto-close
+                # the tab, then stop the server.
+                shutdown.begin_graceful_shutdown()
 
             ui.button("Shut down", icon="power_settings_new", on_click=_confirm).props(
                 "unelevated color=negative no-caps"

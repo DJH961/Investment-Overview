@@ -67,6 +67,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Header "Quit" performs a clean shutdown.** The desktop header quit action
+  now goes through a dedicated shutdown flow so the app exits cleanly instead
+  of leaving the process in an inconsistent state.
+- **Refresh-chip tooltip is scoped to the chip.** The refresh indicator's
+  tooltip is now attached to the chip itself rather than bleeding onto
+  surrounding layout elements.
 - **Closed-market price pulls are skipped on manual refresh too.** The "market
   closed, last close already held → don't re-pull" economy now applies to both
   automatic and manual refreshes, before *and* after the close, so we stop

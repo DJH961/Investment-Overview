@@ -161,7 +161,11 @@ def install_header_indicator(tz: tzinfo | None = None) -> None:  # noqa: PLR0915
     ):
         icon = ui.icon("sync").classes("inv-refresh-icon")
         label = ui.label("Updated").classes("inv-refresh-label")
-    tip = ui.tooltip("Automatic price updates are on — click to refresh now")
+        # Bind the tooltip *inside* the chip so it only shows over the chip
+        # itself. Created outside this block it would attach to the surrounding
+        # header row and pop up over every neighbouring control (theme, help,
+        # quit, …).
+        tip = ui.tooltip("Automatic price updates are on — click to refresh now")
 
     # Force a first paint regardless of the initial sequence value. ``view``
     # caches the last applied idle visual ("live"/"updated") so the idle branch
