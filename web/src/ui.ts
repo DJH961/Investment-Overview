@@ -53,7 +53,7 @@ import {
   formatSignedDualCurrency,
   formatSignedMoneyEur,
   formatSignedPercent,
-  formatTimestamp,
+  formatExportedAt,
   signClass,
 } from "./format";
 import { computeCurrencyEffect } from "./currency-effect";
@@ -309,20 +309,20 @@ function renderNotes(o: OverviewView): HTMLElement[] {
   }
   notes.push(
     h("p", { class: "note" }, [
-      `Data exported ${formatTimestamp(o.generatedAt)} · data last pulled ${formatLastPull(o.lastDataPullAt)}.`,
+      `Exported ${formatExportedAt(o.generatedAt)} · last pulled ${formatLastPull(o.lastDataPullAt)}.`,
     ]),
   );
   if (o.dailyCreditsUsed !== null) {
     notes.push(
       h("p", { class: "note" }, [
-        `Live-data budget today: ${o.dailyCreditsUsed} / ${o.dailyCreditLimit} credits used.`,
+        `Live budget today: ${o.dailyCreditsUsed} / ${o.dailyCreditLimit}.`,
       ]),
     );
   }
   if (o.tiingoDayUsed !== null && o.tiingoHourUsed !== null) {
     notes.push(
       h("p", { class: "note" }, [
-        `Tiingo fallback budget: ${o.tiingoHourUsed} / ${o.tiingoHourLimit} this hour · ` +
+        `Fallback budget: ${o.tiingoHourUsed} / ${o.tiingoHourLimit} this hour · ` +
           `${o.tiingoDayUsed} / ${o.tiingoDayLimit} today.`,
       ]),
     );
@@ -649,7 +649,7 @@ function renderMovers(holdings: HoldingView[]): HTMLElement | null {
     ...movers.losers.map((e) => renderMoverBlock(e, "loser")),
   ];
   const grid = h("div", { class: "mover-grid" }, blocks);
-  const section = collapsibleSection("Today's movers", sub, grid, "movers");
+  const section = collapsibleSection("Top movers", sub, grid, "movers");
   section.classList.add("movers-band");
   return section;
 }
