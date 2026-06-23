@@ -1,34 +1,48 @@
 # Tiingo secondary‑provider fallback — implementation plan
 
-> Status: **desktop built; web built.** Captures the agreed architecture
+> Status: **fully implemented (desktop + web).** Captures the agreed architecture
 > for adding Tiingo as a smart fallback behind the existing primaries, plus a
 > user‑initiated manual refresh. Written 2026‑06‑23; revised same day to harden
 > the NAV‑late trigger (peer‑confirmation + canary probe) and the
 > yfinance retry‑before‑escalate gate.
 >
-> ### Progress (2026‑06‑23, branch `copilot/tiingo-fallback`)
+> ### ✅ Implementation complete (2026‑06‑23)
 >
-> **Done — desktop (Python), all committed + 55 Tiingo tests green:**
+> **Everything described in this document — both the desktop (Python) and the
+> web/Worker (TypeScript) stacks — has now been built and tested.** The desktop
+> side merged to `main` via PR #100 (branch `copilot/tiingo-fallback`). The web
+> side is complete on branch `copilot/implement-web-tiingo-fallback` (full client +
+> Worker `/price` route + gates + tests + the `3.14.0` version bump) and is merging
+> imminently. Treat the design sections below as **as‑built reference**, not pending
+> work.
+>
+> **Follow‑up idea (not built):** extend the same secondary‑provider pattern to the
+> **home‑currency FX rate** (USD→EUR). Tiingo's Forex feed was verified live and is
+> available on the account. See **`tiingo_forex_fallback.md`** for findings and an
+> implementation sketch.
+>
+> ### Progress (2026‑06‑23) — all merged
+>
+> **Done — desktop (Python), 55 Tiingo tests green (merged to `main`, PR #100):**
 > - `adapters/tiingo_client.py` + keyring token storage (`storage/encryption.py`).
 > - `services/tiingo_fallback.py` — decision core (gates A–D + NAV two‑tier).
 > - `repositories/tiingo_state_repo.py` — persisted budget/canary/stale/habit state
 >   (JSON in `app_config`; self‑resetting ET hour/day buckets).
 > - `services/tiingo_fallback_runner.py` — orchestration; `tiingo_token` in `config.py`.
 > - `services/tiingo_fallback_wiring.py` — wired into `prices_service.refresh_due_prices`
->   (yfinance hard‑fail falls through to Tiingo).
+>   (yfinance hard‑fail falls through to Tiingo) + manual "Refresh via Tiingo now".
 > - `ui/pages/settings.py` — keyring token field + **loud popup** (implemented as a
 >   warning‑level `runtime_status.record_warning`, which the toast watcher surfaces).
 >
-> **Remaining — handed off:**
-> - **Desktop polish:** optional wiring of the fallback into the backfill
->   `refresh_prices` path (live `refresh_due_prices` + the manual button are done).
-> - **Web/Worker (entire stack):** Worker `/price` route; `web/src/tiingo.ts`; ET
->   budget in `cache.ts`; `loadQuotes` insertion; startup quick‑refresh; visible
->   refresh spinner + outcome toast; discreet caption; `priceProxyUrl` config.
-> - **Finalize:** CHANGELOG `## [3.14.0]` + version bump (`pyproject.toml`,
->   `web/package.json`, `web/package-lock.json` ×2). User already set the Wrangler
->   `TIINGO_TOKEN` secret. All web integration points below re‑verified to exist
->   as named on 2026‑06‑23.
+> **Done — web/Worker (TypeScript), 5 new vitest suites (PR #102 → branch, landing
+> on `main` via the version‑bump PR):**
+> - Worker `/price` route (`web/proxy/worker.js`) — pinned Tiingo proxy, token
+>   server‑side; browser stays keyless.
+> - `web/src/tiingo.ts` (keyless client), `tiingo-gate.ts` (40/800 ET‑budget gates +
+>   NAV two‑tier), `tiingo-fallback.ts` (integration), `cache.ts` ET‑reset credit log,
+>   `config.ts` `priceProxyUrl` auto‑derive, visible refresh spinner + outcome toast.
+> - CHANGELOG `## [3.14.0]` + version bump (`pyproject.toml`, `web/package.json`,
+>   lockfiles). User set the Wrangler `TIINGO_TOKEN` secret.
 
 ## Motivation
 
