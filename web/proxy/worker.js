@@ -138,8 +138,8 @@ async function handlePrice(request, env) {
       headers: { Authorization: `Token ${token}`, Accept: "application/json" },
       cf: { cacheTtl: 0, cacheEverything: false },
     });
-  } catch (err) {
-    return jsonError(502, `upstream fetch failed: ${err}`, cors);
+  } catch {
+    return jsonError(502, "upstream fetch failed", cors);
   }
 
   const headers = new Headers(cors);
@@ -248,8 +248,8 @@ async function handleBlob(request, env) {
         // Never cache: the asset is overwritten frequently and must stay fresh.
         cf: { cacheTtl: 0, cacheEverything: false },
       });
-    } catch (err) {
-      return new Response(`upstream fetch failed: ${err}`, {
+    } catch {
+      return new Response("upstream fetch failed", {
         status: 502,
         headers: { ...cors, "Content-Type": "text/plain; charset=utf-8" },
       });

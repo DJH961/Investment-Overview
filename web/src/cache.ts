@@ -385,7 +385,7 @@ export function startOfEtDay(now: number): number {
   const hour = get("hour") % 24; // `hour12:false` can render midnight as "24".
   const minute = get("minute");
   const second = get("second");
-  const todMs = ((hour * 3600 + minute * 60 + second) * 1000) + (((now % 1000) + 1000) % 1000);
+  const todMs = (hour * 3600 + minute * 60 + second) * 1000 + (now % 1000);
   return now - todMs;
 }
 

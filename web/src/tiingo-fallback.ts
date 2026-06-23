@@ -144,6 +144,7 @@ async function fetchAndMerge(
     // Don't let Tiingo overwrite a *fresher* primary value: only take it when it
     // fills a gap or carries a not-older value-date than what we already hold.
     const prevVd = prev?.valueDate ?? null;
+    // `!= null` (not `!==`) is deliberate: guard both null and undefined here.
     if (prev && prev.price !== null && prevVd !== null && q.valueDate != null && q.valueDate < prevVd) {
       continue;
     }
