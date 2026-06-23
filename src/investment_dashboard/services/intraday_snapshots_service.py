@@ -172,6 +172,58 @@ def market_value_eur(positions: list[Position]) -> Decimal:
     )
 
 
+def _intraday_sleeve_complete(positions: list[Position]) -> bool:
+    """Whether *every* held intraday-priced holding could be valued this instant.
+
+    A live capture must reflect the **whole** intraday sleeve. When the app has
+    only partly loaded — e.g. the user just opened/logged in and not every
+    price (or its FX rate) has arrived yet — one or more holdings carry no usable
+    value (``value_warning``: no price sourced, a zero value, or no FX rate).
+    Recording then would store a sample that silently *omits* that holding and so
+    punch a spurious dip/spike into the curve at that timestamp. Returns ``False``
+    in that case so the caller drops the sample and lets a later, fully-loaded
+    refresh recapture the instant cleanly. An empty sleeve is trivially complete.
+    """
+    return all(
+        not p.value_warning and p.current_price_native is not None and p.current_price_native > 0
+        for p in positions
+        if p.shares > _MIN_SHARES and is_intraday_priced(p)
+    )
+
+
+def _intraday_sleeve_fresh(session: Session, positions: list[Position], session_date: date) -> bool:
+    """Whether every held intraday-priced holding is priced *at the current session*.
+
+    A live sample must value the **whole** intraday sleeve at one consistent
+    instant. A holding whose newest cached close predates the current trading
+    session carries an **outdated** price — the refresh failed to land today's bar
+    for it (rate-limited, deferred, or the provider stalled on that one symbol),
+    so it is still showing a previous session's price while the rest of the sleeve
+    has moved on. Folding it into the sample would blend that stale price with the
+    live ones, so the stored value misrepresents the portfolio at that timestamp.
+    Returns ``False`` then so the caller drops the *entire* sample and waits until
+    that holding's price for the session is recovered, rather than recording a
+    portfolio value that silently mixes timestamps. An empty sleeve is trivially
+    fresh.
+
+    Complements :func:`_intraday_sleeve_complete`: that guard catches a holding
+    with *no* usable price/FX yet (still loading); this one catches a holding that
+    *has* a price but one stamped to an earlier session than the live capture.
+    """
+    intraday_ids = [
+        p.instrument.id for p in positions if p.shares > _MIN_SHARES and is_intraday_priced(p)
+    ]
+    if not intraday_ids:
+        return True
+    from investment_dashboard.services import prices_service  # noqa: PLC0415
+
+    price_dates = prices_service.latest_price_dates_for(session, intraday_ids)
+    return all(
+        (as_of := price_dates.get(iid)) is not None and as_of >= session_date
+        for iid in intraday_ids
+    )
+
+
 def _to_naive_utc(now: datetime) -> datetime:
     """Normalise an aware/naive instant to a naive UTC timestamp (storage form)."""
     if now.tzinfo is not None:
@@ -276,9 +328,15 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:
     at that minute's *true* rate rather than a single uniform conversion.
 
     Best-effort and self-pruning: returns ``True`` when a sample was written,
-    ``False`` when the market is closed or the dedupe floor suppressed it. Opens
-    its own sessions (it runs from the background refresh thread) and never
-    raises — a capture failure must never break a price refresh.
+    ``False`` when the market is closed, the dedupe floor suppressed it, the
+    intraday sleeve was still loading (some holding lacked a price/FX rate, so a
+    sample then would omit it and spike the curve — see
+    :func:`_intraday_sleeve_complete`), or a holding's price was **outdated** —
+    stamped to an earlier session than this capture (see
+    :func:`_intraday_sleeve_fresh`), so the whole portfolio value is dropped until
+    that holding's current-session price is recovered. Opens its own sessions (it
+    runs from the background refresh thread) and never raises — a capture failure
+    must never break a price refresh.
     """
     now = now or datetime.now(UTC)
     if not is_us_market_open(now):
@@ -294,6 +352,20 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:
     try:
         with ledger_session_scope() as session:
             positions = positions_service.compute_positions(session)
+            # Guard against a partly-loaded portfolio (e.g. the user just opened
+            # the app and not every price/FX rate has arrived): a sample that
+            # silently omits a still-loading holding would punch a spurious
+            # dip/spike into the curve. Drop it and let a later, complete refresh
+            # recapture this instant cleanly.
+            if not _intraday_sleeve_complete(positions):
+                return False
+            # Guard against an *outdated* holding price: if any intraday-priced
+            # holding is still showing a previous session's close (its today bar
+            # failed to land — rate-limited/deferred/provider stalled), the total
+            # would blend a stale price with the live ones. Ignore the whole
+            # portfolio value until that holding's current-session price recovers.
+            if not _intraday_sleeve_fresh(session, positions, last_session_date(now)):
+                return False
             value_eur = market_value_eur(positions)
             # The EUR value above is at today's spot; record that same spot so the
             # USD view of this point is the FX-free price-only figure.
@@ -359,13 +431,15 @@ def _market_component_pivot_eur(
     EUR pivot rebased from the day's settled rate (``base_fx``, baked into
     ``current_value_eur``) to this minute's rate (``fx_t``) so the EUR view tracks
     per-minute FX while the native USD value stays FX-free (recovered at render by
-    removing exactly this rate). A symbol the feed served no bar for is carried at
-    a flat ratio of 1.
+    removing exactly this rate). A symbol the feed served no bar for — or one whose
+    bar is a corrupt non-positive close (a known feed glitch that elsewhere flags
+    an instrument as anomalous) — is carried at a flat ratio of 1 rather than
+    punching a spurious spike into the curve.
     """
     market = Decimal(0)
     for p in priced:
         price_t = _forward_filled(bars_by_symbol.get(p.instrument.symbol, {}), at)
-        if price_t is None:
+        if price_t is None or price_t <= 0:
             price_t = p.current_price_native
         ratio = price_t / p.current_price_native  # type: ignore[operator]
         contrib = p.current_value_eur * ratio
