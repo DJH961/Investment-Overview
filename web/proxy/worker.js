@@ -29,8 +29,10 @@
  * --------------------------------------
  * A second, equally-pinned route lives at `…/price`. It proxies **only**
  * `api.tiingo.com` — the IEX quote endpoint (`/iex/?tickers=…`), the daily
- * close endpoint (`/tiingo/daily/<ticker>/prices`), and the live FX top-of-book
- * endpoint (`/tiingo/fx/top?tickers=<pair>`, e.g. `eurusd`) — injecting the
+ * close endpoint (`/tiingo/daily/<ticker>/prices`), the live FX top-of-book
+ * endpoint (`/tiingo/fx/top?tickers=<pair>`, e.g. `eurusd`), and the intraday
+ * bars endpoint (`/iex/<ticker>/prices?resampleFreq=1hour`, one ticker per
+ * request → the web companion's 1D curve) — injecting the
  * `TIINGO_TOKEN` secret server-side so the browser companion stays
  * Tiingo-keyless. The FX route backs up the home-currency EUR/USD rate the same
  * way the IEX route backs up instrument prices. Symbols/pairs are
@@ -110,6 +112,7 @@ export default {
  *   - `?tickers=AAPL,MSFT`            → IEX live quotes / latest NAV
  *   - `?daily=AAPL&startDate=…&endDate=…&outputsize=…` → daily closes
  *   - `?fx=eurusd`                    → live FX top-of-book (bid/ask/mid)
+ *   - `?intraday=AAPL&startDate=…&endDate=…` → IEX 1-hour bars (1D curve)
  *
  * Everything else (host, path) is fixed here, and every caller-supplied value is
  * charset-validated, so this can only ever read Tiingo price data (no SSRF).
@@ -169,6 +172,7 @@ function buildTiingoUrl(params) {
   const tickers = params.get("tickers");
   const daily = params.get("daily");
   const fx = params.get("fx");
+  const intraday = params.get("intraday");
 
   if (tickers) {
     const list = tickers.split(",").map((t) => t.trim()).filter((t) => t.length > 0);
@@ -187,6 +191,29 @@ function buildTiingoUrl(params) {
     if (!FX_PAIR_RE.test(fx)) throw new Error("invalid fx pair");
     const url = new URL(`${TIINGO_ROOT}/tiingo/fx/top`);
     url.searchParams.set("tickers", fx);
+    return url.toString();
+  }
+
+  if (intraday) {
+    // Intraday OHLC bars for ONE ticker, used to paint the web companion's live
+    // 1D curve (proposal §10). Pinned to Tiingo's IEX `/prices` endpoint at a
+    // FIXED `resampleFreq=1hour` — the caller only chooses the ticker and the
+    // date window, both charset-validated, so this can only ever read Tiingo
+    // intraday bars (no SSRF; the frequency is not caller-controlled).
+    if (!TICKER_RE.test(intraday)) throw new Error("invalid intraday ticker");
+    const url = new URL(`${TIINGO_ROOT}/iex/${intraday}/prices`);
+    url.searchParams.set("format", "json");
+    url.searchParams.set("resampleFreq", "1hour");
+    const start = params.get("startDate");
+    const end = params.get("endDate");
+    if (start) {
+      if (!DATE_RE.test(start)) throw new Error("invalid startDate");
+      url.searchParams.set("startDate", start);
+    }
+    if (end) {
+      if (!DATE_RE.test(end)) throw new Error("invalid endDate");
+      url.searchParams.set("endDate", end);
+    }
     return url.toString();
   }
 
@@ -215,7 +242,7 @@ function buildTiingoUrl(params) {
     return url.toString();
   }
 
-  throw new Error("missing tickers, fx or daily parameter");
+  throw new Error("missing tickers, fx, intraday or daily parameter");
 }
 
 /** A small JSON error body with CORS headers. */
