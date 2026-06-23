@@ -41,6 +41,7 @@ import {
   readCachedEurUsd,
   readCachedFx,
   readCreditLog,
+  clearPriceCaches,
   creditsSpentWithin,
   readLastPull,
   readNavPublishStats,
@@ -417,6 +418,25 @@ export class App {
       field("Quote cache (minutes)", cacheMinutes, "Free tier is 8 credits/min, 800/day (1 per symbol). A longer cache means fewer refetches and fewer credits spent."),
       field("Auto-refresh (minutes)", autoRefresh, `Steady-state gap between automatic live refreshes once everything is fresh. A manual Refresh also pushes the next auto-refresh out by this long. Default is ${DEFAULT_AUTO_REFRESH_MINUTES}.`),
     );
+    // Maintenance: a manual escape hatch to throw away every cached price and
+    // re-pull the lot from scratch. Only meaningful once unlocked with data
+    // loaded — the dashboard it refreshes has to exist.
+    if (settingsMode && this.state.data) {
+      const updateAll = h(
+        "button",
+        { class: "btn ghost", type: "button", "data-action": "update-all" },
+        ["Update all data now"],
+      );
+      updateAll.addEventListener("click", () => this.updateAllFromScratch());
+      formChildren.push(
+        h("h2", { class: "settings-section" }, ["Maintenance"]),
+        field(
+          "Re-pull everything",
+          updateAll,
+          "Clear every cached price and re-fetch all quotes and FX from scratch — and re-check the data file. Use this if a price ever looks stuck. Respects your daily free-tier budget.",
+        ),
+      );
+    }
     formChildren.push(
       error ? h("p", { class: "note err" }, [error]) : document.createTextNode(""),
       h("div", { class: "row" }, actions),
@@ -1072,6 +1092,35 @@ export class App {
     setEurUsdRate(fx.rates.USD ?? model.overview.fxRateEurUsd);
     this.renderDashboard(model);
     return quoteLoad.report;
+  }
+
+  /**
+   * The Settings "Update all data now" escape hatch: throw away every cached
+   * price and re-pull the lot from scratch. Quotes can otherwise linger behind
+   * their (deliberately long) NAV / closed-market freshness windows, so if a
+   * value ever looks stuck — a NAV that published late, a provider hiccup, a bug
+   * in the staleness logic — this guarantees a clean re-fetch with one tap.
+   *
+   * It clears the quote/FX/EUR-USD caches, drops the in-memory blob version
+   * stamp so the next check re-pulls the data file unconditionally, returns to
+   * the dashboard, and runs a forced full refresh. Only the soft "conserve the
+   * last credits" gate is bypassed — the hard free-tier per-minute/day budget in
+   * {@link loadQuotes} still applies, so a from-scratch pull can never blow the
+   * daily allowance (any overflow simply defers and back-fills on later ticks).
+   */
+  private updateAllFromScratch(): void {
+    // Forget every cached price so nothing is served from a stale window.
+    clearPriceCaches();
+    // Force the blob check to re-download (rather than short-circuit on an
+    // unchanged version stamp) the next time it runs.
+    this.metaVersion = null;
+    // Back to the dashboard, then kick off the from-scratch pulls.
+    this.exitSettings();
+    this.toast("Re-pulling all prices from scratch…");
+    const session = this.sessionId;
+    void this.maybeRefreshBlob(session);
+    if (this.refreshing) return; // a pull is already in flight; it will repaint
+    void this.runScheduledRefresh(session, "manual", { force: true });
   }
 
   /**

@@ -21,6 +21,7 @@ import {
   writeCachedFx,
   writeCachedQuotes,
   writeSymbolPlan,
+  clearPriceCaches,
   NAV_PUBLISH_SAMPLES,
   type StorageLike,
 } from "../src/cache";
@@ -291,5 +292,29 @@ describe("live EUR/USD cache", () => {
 
   it("returns null when nothing is cached", () => {
     expect(readCachedEurUsd(memStorage())).toBeNull();
+  });
+});
+
+describe("clearPriceCaches", () => {
+  it("wipes quotes, FX and EUR/USD but keeps the credit log and publish stats", () => {
+    const s = memStorage();
+    writeCachedQuotes(new Map([["VTI", quote("VTI", "100")]]), 1000, s);
+    writeCachedFx({ base: "EUR", rates: { USD: new Decimal("1.1") } }, 1000, s);
+    writeCachedEurUsd({ now: new Decimal("1.085"), previousClose: new Decimal("1.07") }, 1000, s);
+    recordCredits(3, 1000, s);
+    recordNavPublish("VTSAX", "2024-01-10", new Date(2024, 0, 10, 22, 30).getTime(), s);
+
+    clearPriceCaches(s);
+
+    expect(readCachedQuotes(s).size).toBe(0);
+    expect(readCachedFx(s)).toBeNull();
+    expect(readCachedEurUsd(s)).toBeNull();
+    // The daily budget log and learned publish windows survive a from-scratch pull.
+    expect(creditsSpentWithin(readCreditLog(1000, 60_000, s), 1000, 60_000)).toBe(3);
+    expect(readNavPublishStats(s).size).toBe(1);
+  });
+
+  it("is a safe no-op when storage is unavailable", () => {
+    expect(() => clearPriceCaches(null)).not.toThrow();
   });
 });

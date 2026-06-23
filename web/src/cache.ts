@@ -483,3 +483,26 @@ export const CACHE_KEYS = {
   BLOB_KEY,
   SYMBOL_PLAN_KEY,
 } as const;
+
+/**
+ * Wipe every cached *price* reading — quotes, FX, and the EUR/USD pair — so the
+ * next refresh re-fetches all of them from scratch regardless of their cache
+ * windows. This is the data side of the Settings "Update all" control: a manual
+ * escape hatch for when a stale or wrong cached value would otherwise stick
+ * around behind its (deliberately long) NAV/closed-market freshness window.
+ *
+ * The rolling credit log is intentionally left untouched so a from-scratch pull
+ * still respects the free-tier daily budget; the encrypted blob and the learned
+ * NAV publish windows are likewise left alone (the blob is refreshed by its own
+ * conditional-download path, and the publish windows are still valid history).
+ */
+export function clearPriceCaches(storage: StorageLike | null = defaultStorage()): void {
+  if (!storage) return;
+  for (const key of [QUOTE_KEY, FX_KEY, EURUSD_KEY]) {
+    try {
+      storage.removeItem(key);
+    } catch {
+      /* best-effort: a storage failure just leaves that cache in place. */
+    }
+  }
+}

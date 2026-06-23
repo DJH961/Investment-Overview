@@ -42,6 +42,7 @@ import {
   type Quote,
 } from "./prices";
 import type { Decimal } from "./decimal-config";
+import { latestSettledSessionDate } from "./market-hours";
 
 /** Twelve Data free-tier limits — the design constraint for this whole module. */
 export const FREE_TIER = {
@@ -133,17 +134,46 @@ function localYmd(d: Date): string {
 }
 
 /**
- * The most recent business day (`YYYY-MM-DD`, local time) whose NAV should
- * already be published as of `now`: today once we're past `publishHour` on a
- * business day, otherwise the previous business day.
+ * The most recent business day (`YYYY-MM-DD`) whose NAV should already be
+ * published as of `now`.
+ *
+ * A NAV is value-dated by its **US trading session** (the daily bar's date that
+ * {@link Quote.valueDate} carries), so the answer must be anchored to that US
+ * session calendar — never the viewer's own local date. The two diverge by
+ * several hours, and around local midnight a European viewer's calendar day
+ * rolls forward while the US session it belongs to has not: a NAV that lands at,
+ * say, 02:00 in Europe still belongs to the *prior* US trading day. Anchoring to
+ * the US session keeps such a late NAV matched to the right date instead of
+ * being chased forever as a "tomorrow" that cannot exist yet.
+ *
+ * `publishHour` is a local-time hint for *when in the evening* a fund habitually
+ * publishes (learned per fund; see {@link navPublishWindow}). Before that hour we
+ * rest on the prior session; once past it the just-closed session's NAV is due.
+ * The result is then capped at {@link latestSettledSessionDate} — the latest US
+ * session whose 16:00 ET close has actually happened — so neither a small learned
+ * publish hour nor the local midnight rollover can ever make us expect a US NAV
+ * whose session has not yet closed.
  */
 export function latestExpectedNavDate(now: Date, publishHour = NAV_PUBLISH_HOUR): string {
   const d = new Date(now);
-  if (isBusinessDay(d) && d.getHours() >= publishHour) return localYmd(d);
-  do {
-    d.setDate(d.getDate() - 1);
-  } while (!isBusinessDay(d));
-  return localYmd(d);
+  // The local-time evening heuristic: today once past the publish hour on a
+  // business day, otherwise the previous business day. This still drives the
+  // pre-publish "rest" that conserves credits in the evening.
+  let candidate: string;
+  if (isBusinessDay(d) && d.getHours() >= publishHour) {
+    candidate = localYmd(d);
+  } else {
+    do {
+      d.setDate(d.getDate() - 1);
+    } while (!isBusinessDay(d));
+    candidate = localYmd(d);
+  }
+  // Anchor to the US trading calendar: a NAV's value-date can never be newer
+  // than the latest US session that has actually closed, so cap the local guess
+  // there. This is what makes a late / post-midnight NAV resolve to the correct
+  // US date rather than a rolled-over European one.
+  const settled = latestSettledSessionDate(now);
+  return candidate < settled ? candidate : settled;
 }
 
 /**

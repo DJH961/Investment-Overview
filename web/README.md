@@ -51,9 +51,18 @@ Concretely, that means:
   with **Appearance** (the **theme** control, which cycles System → Light → Dark,
   persisted in `localStorage`; "System" follows the OS `prefers-color-scheme`),
   then **Security** (an idle **auto-lock** timeout and a **fingerprint unlock**
-  toggle), and finally the **Data source** plumbing (data source, quote cache,
-  blob URL override). The modern **Inter** typeface is bundled
+  toggle), the **Data source** plumbing (data source, quote cache,
+  blob URL override), and a **Maintenance** section with an **Update all data
+  now** button. The modern **Inter** typeface is bundled
   (self-hosted — no third-party font requests).
+- **Update all (repoll from scratch).** Settings → Maintenance → *Update all data
+  now* throws away every cached price (quotes, FX, EUR/USD), drops the in-memory
+  data-file version stamp, and runs a forced full re-fetch of all quotes and FX
+  plus a re-check of the encrypted data file — a one-tap escape hatch for when a
+  value ever looks stuck behind its (deliberately long) NAV / closed-market
+  freshness window. It bypasses only the soft "conserve the last credits" gate;
+  the hard free-tier per-minute/day budget still applies, so it can never blow
+  the daily allowance (`clearPriceCaches` in `src/cache.ts`).
 - **Idle auto-lock.** After a configurable period of inactivity (default **5
   min**; Settings → Security → *Auto-lock (minutes)*, set `0` to disable) the
   session clears the in-memory passphrase and returns to the unlock screen, so an
@@ -205,10 +214,17 @@ To stay comfortably inside that budget the app (`src/cache.ts`, `src/quotes.ts`)
    like an ordinary symbol until the new NAV actually lands** — there is no upper
    "catch-up" cap, so a NAV that publishes late (even past midnight) is still
    picked up the same night rather than waiting a whole day (`navCacheTtlMs` in
-   `src/quotes.ts`). It only relaxes back to ~12 h once today's value is in hand,
-   and is never polled before its NAV could exist (before the expected publish
-   hour the prior session's NAV — which we already hold — is the latest expected
-   one). The expected publish hour is **learned per fund** from when its
+   `src/quotes.ts`). The "expected" NAV date is **anchored to the US trading
+   session** (the calendar a NAV's value-date actually uses), capped at the
+   latest session whose 16:00 ET close has happened (`latestExpectedNavDate` →
+   `latestSettledSessionDate`). That is what keeps a NAV arriving in the small
+   hours of the European morning — e.g. a 02:00 CET print — matched to the right
+   **US** date instead of the rolled-over local one, so the local midnight switch
+   never knocks a late NAV onto the wrong day or makes the app chase a value-date
+   that cannot exist yet. It only relaxes back to ~12 h once today's value is in
+   hand, and is never polled before its NAV could exist (before the expected
+   publish hour the prior session's NAV — which we already hold — is the latest
+   expected one). The expected publish hour is **learned per fund** from when its
    value-date has actually advanced (recorded in `localStorage`; see
    `navPublishWindow` / `recordNavPublish`), so a fund that strikes its NAV late
    is judged against its own habit. Before any history is observed it falls back
