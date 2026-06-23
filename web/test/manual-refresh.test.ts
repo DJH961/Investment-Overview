@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   allPricesLive,
   buildCoverageFacts,
+  describePrefetch,
   liveRefreshProgress,
   manualRefreshSummary,
   refreshTickAction,
@@ -17,6 +18,7 @@ function report(overrides: Partial<QuoteLoadReport> = {}): QuoteLoadReport {
     fetched: [],
     servedFresh: [],
     deferred: [],
+    failed: [],
     error: null,
     minuteRemaining: 8,
     dayRemaining: 800,
@@ -251,16 +253,20 @@ describe("buildCoverageFacts", () => {
     expect(f.navAwaiting).toBe(0);
   });
 
-  it("flags a NAV as awaiting once it is past its publish hour and still missing", () => {
-    const lateEvening = new Date(2024, 4, 15, 23, 0, 0); // 23:00 local, past publish hour
-    const quotes = new Map([["VTSAX", { valueDate: "2024-05-14" }]]);
+  it("counts a failed market symbol toward the total (held only if it has a cached price)", () => {
+    // A symbol the provider attempted but couldn't price this round is reported in
+    // `failed`; it must still count toward marketTotal (and as held when a cached
+    // price remains), never silently vanish from coverage.
+    const quotes = new Map([["AAPL", { price: 1, valueDate: "2024-05-14" }]]);
     const f = buildCoverageFacts(
-      report({ fetched: ["VTSAX"] }),
+      report({ fetched: ["AAPL"], failed: ["FSKAX"] }),
       quotes,
-      new Set(["VTSAX"]),
-      { now: lateEvening, marketOpen: false, publishHourFor: () => 22 },
+      new Set(),
+      { now, marketOpen: true },
     );
-    expect(f.navAwaiting).toBe(1);
+    expect(f.marketTotal).toBe(2); // AAPL + FSKAX
+    expect(f.marketHeld).toBe(1); // only AAPL has a cached price here
+    expect(f.marketFresh).toBe(1);
   });
 });
 
@@ -334,9 +340,9 @@ describe("liveRefreshProgress", () => {
     expect(p).toEqual({ live: 2, total: 2 });
   });
 
-  it("reports zero live while everything is still deferred", () => {
-    const p = liveRefreshProgress(report({ deferred: ["A", "B", "C"] }));
-    expect(p).toEqual({ live: 0, total: 3 });
+  it("counts a failed symbol as not-live, lowering the live total", () => {
+    const p = liveRefreshProgress(report({ fetched: ["AAPL"], failed: ["FSKAX"] }));
+    expect(p).toEqual({ live: 1, total: 2 });
   });
 });
 
@@ -353,8 +359,82 @@ describe("allPricesLive", () => {
     expect(allPricesLive(report())).toBe(false);
   });
 
+  it("is false when a symbol was attempted but failed to price", () => {
+    expect(allPricesLive(report({ fetched: ["AAPL"], failed: ["FSKAX"] }))).toBe(false);
+  });
+
   it("is false when the round failed, even with nothing deferred", () => {
     const err = new PriceError("rate limited", { retryable: true });
     expect(allPricesLive(report({ fetched: ["AAPL"], error: err }))).toBe(false);
+  });
+});
+
+describe("describePrefetch", () => {
+  const at = new Date(2024, 4, 15, 18, 0, 0).getTime();
+  const now = new Date(2024, 4, 15, 18, 3, 0).getTime(); // 3 min later
+
+  it("shows a warming line while still in flight", () => {
+    expect(
+      describePrefetch({
+        inFlight: true,
+        hasPlan: true,
+        quoteFetched: 0,
+        quoteTotal: 12,
+        fxLive: false,
+        lastPullAt: null,
+      }),
+    ).toBe("Warming live prices…");
+  });
+
+  it("appends the last-pulled clause to the warming line when known", () => {
+    const s = describePrefetch({
+      inFlight: true,
+      hasPlan: true,
+      quoteFetched: 0,
+      quoteTotal: 12,
+      fxLive: false,
+      lastPullAt: at,
+      now,
+    });
+    expect(s).toMatch(/^Warming live prices… · last pulled/);
+  });
+
+  it("reports the count and FX when the prefetch fetched something new", () => {
+    const s = describePrefetch({
+      inFlight: false,
+      hasPlan: true,
+      quoteFetched: 12,
+      quoteTotal: 14,
+      fxLive: true,
+      lastPullAt: at,
+      now,
+    });
+    expect(s).toMatch(/^Prefetched 12\/14 live · FX live · last pulled/);
+  });
+
+  it("says already up to date when nothing new was pulled", () => {
+    const s = describePrefetch({
+      inFlight: false,
+      hasPlan: true,
+      quoteFetched: 0,
+      quoteTotal: 14,
+      fxLive: false,
+      lastPullAt: at,
+      now,
+    });
+    expect(s).toMatch(/^Already up to date · last pulled/);
+  });
+
+  it("confirms readiness on a first ever run with no plan", () => {
+    expect(
+      describePrefetch({
+        inFlight: false,
+        hasPlan: false,
+        quoteFetched: 0,
+        quoteTotal: 0,
+        fxLive: false,
+        lastPullAt: null,
+      }),
+    ).toBe("Live prices ready");
   });
 });

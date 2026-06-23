@@ -272,7 +272,10 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
 
   const expected = latestSettledSessionDate(new Date(now));
   const marketOpen = isUsMarketOpen(new Date(now));
-  const deferred = new Set(report.deferred);
+  // Treat both budget-deferred and attempted-but-failed primary symbols as
+  // "primary fell short" so the backup still chases a fund the primary couldn't
+  // price (the FSKAX case), now that `failed` is split out from `deferred`.
+  const deferred = new Set([...report.deferred, ...report.failed]);
   const tiingoSymbols: string[] = [];
   let error: PriceError | null = null;
 

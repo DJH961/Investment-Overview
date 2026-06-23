@@ -116,6 +116,13 @@ const WELCOME_BANNER_DURATION_MS = 5000;
 const MANUAL_REFRESH_MIN_FEEDBACK_MS = 650;
 
 /**
+ * How long the one-off login spin of the Refresh glyph lasts — the honest "the
+ * prefetch got you something newer" signal fired once after unlock when (and
+ * only when) the login prefetch actually fetched fresh data.
+ */
+const PREFETCH_SPIN_MS = 1000;
+
+/**
  * Minimum wall-clock gap between *automatic* background blob checks while prices
  * are still deferring. Matches the slow steady-state refresh cadence so an
  * always-deferred portfolio (more symbols than the free-tier budget) still polls
@@ -250,6 +257,33 @@ export class App {
   private lastCoverageFacts: CoverageFacts | null = null;
   /** NAV-priced symbols from the latest fetch plan, for coverage classification. */
   private lastNavSymbols: ReadonlySet<string> = new Set();
+  /**
+   * Honest one-liner about the login-time prefetch, surfaced on the unlock
+   * ("Welcome back") screen so the warming of live prices is visible: "Warming
+   * live prices…" while in flight, then the real outcome (what it pulled + when
+   * it last pulled). Null until the prefetch starts. Never claims a value is live
+   * that isn't — it only ever describes what the prefetch actually fetched.
+   */
+  private prefetchStatus: string | null = null;
+  /**
+   * The in-flight prefetch, awaited by {@link maybeSignalPrefetchSpin} so the
+   * login refresh-glyph spin can fire once the prefetch settles.
+   */
+  private prefetchPromise: Promise<void> | null = null;
+  /**
+   * Whether the login prefetch actually fetched *new* data (≥1 quote or a live
+   * FX pull). Drives the one-off login spin of the Refresh glyph: it spins only
+   * when the prefetch genuinely got something newer, and stays still when the
+   * book was already as fresh as possible.
+   */
+  private prefetchFetchedSomething = false;
+  /**
+   * Symbols the latest *network* refresh genuinely failed to price (primary
+   * couldn't, backup didn't fill) — still stuck on a last-known value. Kept so
+   * the "Prices up to date" startup confirmation never claims everything is
+   * current while a holding actually failed to price.
+   */
+  private lastUnresolvedFailures: string[] = [];
   /** Tiingo fallback budget used so far (hour/day), for the usage overview. */
   private lastTiingoBudget: TiingoBudgetView | null = null;
   /** Symbols served via the Tiingo fallback on the latest network round. */
@@ -323,9 +357,10 @@ export class App {
     } else {
       // Warm live quotes for the symbols we already know about *before* the user
       // finishes unlocking, so the first post-login paint is live rather than
-      // starting the per-minute clock from zero. Fire-and-forget; honours the
-      // shared credit budget so it can't double-spend with the later refresh.
-      void this.prefetchLiveData();
+      // starting the per-minute clock from zero. Honours the shared credit budget
+      // so it can't double-spend with the later refresh. Kept as a promise so the
+      // login spin + welcome status can react once it settles.
+      this.prefetchPromise = this.prefetchLiveData();
       // First unlock of the session: auto-prompt the fingerprint sheet when the
       // device is enrolled, so a returning user can unlock with a single touch
       // and no extra tap.
@@ -340,14 +375,28 @@ export class App {
    * tickers + coarse sizes — and {@link loadQuotes}/{@link loadFxRates} write
    * straight into the same caches the real refresh reads, so the work is shared,
    * never duplicated. Best-effort: any failure is swallowed.
+   *
+   * The outcome is surfaced honestly on the unlock screen (see
+   * {@link describePrefetch}) and decides the one-off login spin of the Refresh
+   * glyph — it only spins when the prefetch actually got something newer.
    */
   private async prefetchLiveData(): Promise<void> {
     const { config } = this.state;
     if (!config.apiKey) return;
     const plan = readSymbolPlan();
+    this.prefetchStatus = describePrefetch({
+      inFlight: true,
+      hasPlan: plan.length > 0,
+      quoteFetched: 0,
+      quoteTotal: plan.length,
+      fxLive: false,
+      lastPullAt: this.lastDataPullAt,
+    });
+    this.updatePrefetchStatus();
     if (plan.length === 0) {
       // No plan yet (first ever run): we can still warm FX cheaply.
-      void loadFxRates().catch(() => undefined);
+      const fx = await loadFxRates().catch(() => undefined);
+      this.finishPrefetch({ quoteFetched: 0, quoteTotal: 0, hasPlan: false, fxLive: fx ? !fx.cached : false });
       return;
     }
     const symbols = plan.map((e) => e.symbol);
@@ -355,8 +404,72 @@ export class App {
     const options = this.buildQuoteOptions(navFetchSymbols, config);
     // Currency first: warm the FX cache before the tickers so the rate that
     // values the whole book always wins the per-minute budget, then prime quotes.
-    await loadFxRates().catch(() => undefined);
-    await Promise.allSettled([loadQuotes(symbols, config.apiKey, options)]);
+    const fx = await loadFxRates().catch(() => undefined);
+    const settled = await Promise.allSettled([loadQuotes(symbols, config.apiKey, options)]);
+    const quoteReport = settled[0].status === "fulfilled" ? settled[0].value.report : null;
+    this.finishPrefetch({
+      quoteFetched: quoteReport?.fetched.length ?? 0,
+      quoteTotal: symbols.length,
+      hasPlan: true,
+      fxLive: fx ? !fx.cached : false,
+    });
+  }
+
+  /**
+   * Record the prefetch outcome: stamp "last pulled" when it genuinely fetched
+   * fresh data (so the welcome line and coverage read honestly), set the login
+   * spin signal, and refresh the unlock-screen status text.
+   */
+  private finishPrefetch(outcome: {
+    quoteFetched: number;
+    quoteTotal: number;
+    hasPlan: boolean;
+    fxLive: boolean;
+  }): void {
+    const gotNew = outcome.quoteFetched > 0 || outcome.fxLive;
+    this.prefetchFetchedSomething = gotNew;
+    if (gotNew) {
+      // The prefetch really did pull fresh data, so "last pulled" is now — keep it
+      // honest and persisted, mirroring the live refresh's own stamp.
+      this.lastDataPullAt = Date.now();
+      writeLastPull(this.lastDataPullAt);
+    }
+    this.prefetchStatus = describePrefetch({
+      inFlight: false,
+      hasPlan: outcome.hasPlan,
+      quoteFetched: outcome.quoteFetched,
+      quoteTotal: outcome.quoteTotal,
+      fxLive: outcome.fxLive,
+      lastPullAt: this.lastDataPullAt,
+    });
+    this.updatePrefetchStatus();
+  }
+
+  /** Live-update the unlock-screen prefetch status line, if it is on screen. */
+  private updatePrefetchStatus(): void {
+    if (typeof document === "undefined") return;
+    const el = document.getElementById("prefetch-status");
+    if (el && this.prefetchStatus !== null) el.textContent = this.prefetchStatus;
+  }
+
+  /**
+   * Once the login prefetch settles, spin the Refresh glyph briefly *iff* it
+   * actually fetched new data — the honest "the prefetch got you something newer"
+   * signal. When the book was already as fresh as possible the glyph stays still.
+   */
+  private async maybeSignalPrefetchSpin(session: number): Promise<void> {
+    if (this.prefetchPromise) await this.prefetchPromise.catch(() => undefined);
+    if (session !== this.sessionId) return;
+    if (this.prefetchFetchedSomething) this.signalFreshSpin();
+  }
+
+  /** A brief, standalone spin of the Refresh glyph (no pill) used as a signal. */
+  private signalFreshSpin(): void {
+    if (typeof document === "undefined") return;
+    const glyph = document.querySelector('[data-action="refresh"] .icon-btn-glyph');
+    if (!glyph) return;
+    glyph.classList.add("is-spinning");
+    setTimeout(() => glyph.classList.remove("is-spinning"), PREFETCH_SPIN_MS);
   }
 
   /** Demo mode is opt-in via a `?demo` (or `?preview`) query flag in the URL. */
@@ -734,6 +847,19 @@ export class App {
       ]),
     ];
 
+    // The live-data prefetch status: show that the app is already warming live
+    // prices (and what it found / when it last pulled) while the user unlocks.
+    // Rendered only when there is something honest to say.
+    if (this.prefetchStatus !== null) {
+      formChildren.push(
+        h(
+          "p",
+          { id: "prefetch-status", class: "note prefetch-status", role: "status", "aria-live": "polite" },
+          [this.prefetchStatus],
+        ),
+      );
+    }
+
     if (enrolled) {
       // Biometric-first layout: one prominent fingerprint CTA, with the
       // passphrase tucked behind a quiet "Use passphrase instead" link.
@@ -949,6 +1075,11 @@ export class App {
     this.welcomeBanner("Welcome back — checking for fresh prices…");
     this.pollLog("login", "Unlock detected — painting cache, starting refresh.");
 
+    // Once the login prefetch settles, spin the Refresh glyph briefly *iff* it
+    // actually fetched new data — the honest "the prefetch got you something
+    // newer" signal. Stays still when the book was already as fresh as possible.
+    void this.maybeSignalPrefetchSpin(session);
+
     // 2. Optionally remember the verified passphrase behind the fingerprint.
     if (enrolRequested && this.state.passphrase) {
       try {
@@ -1038,7 +1169,17 @@ export class App {
     quickOpts: { force?: boolean; viaTiingo?: boolean; tiingoReserve?: number } = {},
   ): void {
     if (!quick && this.fullyUpToDate()) {
-      this.toast(`Prices up to date · last pulled ${formatLastPull(this.lastDataPullAt)}`);
+      // Only claim everything is current when it genuinely is: if the last network
+      // round left a holding unable to price (and still stuck on a last-known
+      // value), say so honestly instead of a blanket "up to date".
+      if (this.lastUnresolvedFailures.length > 0) {
+        this.toast(
+          `Couldn't get a live price for ${this.lastUnresolvedFailures.join(", ")} — ` +
+            `showing last-known values · last pulled ${formatLastPull(this.lastDataPullAt)}`,
+        );
+      } else {
+        this.toast(`Prices up to date · last pulled ${formatLastPull(this.lastDataPullAt)}`);
+      }
       this.scheduleNext(session, SETTLED_HEARTBEAT_MS);
       return;
     }
@@ -1521,11 +1662,13 @@ export class App {
       this.lastTiingoSymbols = [];
     }
 
+    const unresolvedFailures = network ? this.unresolvedFailedSymbols(quoteLoad.report) : [];
+    if (network) this.lastUnresolvedFailures = unresolvedFailures;
     const degradedReason = network
       ? this.describeDegradation(quoteLoad.report, fxReport, this.lastTiingoError, {
           eurUsdError,
           eurUsdSource,
-        })
+        }, unresolvedFailures)
       : null;
     // Record when fresh market data actually landed: a live quote fetch, or a
     // live (non-cached) FX pull. This is "when we last pulled", independent of
@@ -1565,6 +1708,29 @@ export class App {
           `NAVs ${cf.navTotal - cf.navAwaiting}/${cf.navTotal} in (${cf.navAwaiting} awaiting); ` +
           `FX ${cf.fx}; market ${cf.marketOpen ? "open" : "closed"} → “${this.lastCoverage}”.`,
       );
+    } else if (this.lastCoverage === null) {
+      // First paint after unlock is a *cache-only* render (network === false), so
+      // the coverage summary above never ran and the overview would show a blank
+      // coverage line until the background network refresh finishes. The login
+      // prefetch has already warmed the quote/FX caches, so summarise honestly
+      // from what we hold *right now* — cached observations and their value-dates,
+      // never dressed up as a fresh live pull (freshlyPulled gates that). Only
+      // fills the initial gap: a later cache re-paint (currency toggle, blob swap)
+      // keeps the real network coverage rather than overwriting it from cache.
+      const navStats = readNavPublishStats();
+      this.lastCoverageFacts = buildCoverageFacts(
+        quoteLoad.report,
+        quoteLoad.quotes,
+        this.lastNavSymbols,
+        {
+          now: new Date(),
+          marketOpen: isUsMarketOpen(),
+          publishHourFor: (symbol) => navPublishWindow(navStats.get(symbol)?.hours).publishHour,
+          freshlyPulled: this.recentlyPulled(),
+          fx: eurUsdSource,
+        },
+      );
+      this.lastCoverage = summarizeCoverage(this.lastCoverageFacts);
     }
     model.overview.liveCoverage = this.lastCoverage;
     // Surface how much of the daily free-tier budget we've spent so far.
@@ -1859,11 +2025,15 @@ export class App {
       "refresh",
       `Refresh started: ${kind}${triggers.length ? ` (${triggers.join(", ")})` : ""}.`,
     );
-    // On startup we want an *immediate, guaranteed-visible* refreshing animation
-    // so opening the app clearly signals "pulling fresh data now" even if the
-    // round resolves fast from cache. Borrow the manual feedback's minimum-visible
-    // floor for that, while keeping the automatic toast semantics below.
-    const feedbackKind: RefreshKind = opts.startup ? "manual" : kind;
+    // The Refresh glyph spins for any genuinely in-flight fetch (see
+    // {@link applyUpdating}), so a startup round that actually pulls data is
+    // visible on its own. We deliberately *don't* force a guaranteed-visible
+    // manual-style spin on startup any more: that made the button spin at every
+    // login even when the prefetch had already made the book as fresh as
+    // possible, so the spin meant nothing. The honest login signal now lives in
+    // {@link maybeSignalPrefetchSpin}, which spins once only when the prefetch
+    // actually fetched something newer.
+    const feedbackKind: RefreshKind = kind;
     this.setUpdating(true, feedbackKind);
     let report: QuoteLoadReport | null = null;
     try {
@@ -2168,6 +2338,18 @@ export class App {
   }
 
   /**
+   * The symbols the primary genuinely *failed* to price this round and the Tiingo
+   * backup didn't fill either — i.e. still stuck on a last-known value. Drives the
+   * honest "couldn't get a live price for X" degradation clause. Budget-deferred
+   * symbols are excluded (they were never attempted, just waiting their turn).
+   */
+  private unresolvedFailedSymbols(report: QuoteLoadReport): string[] {
+    if (report.failed.length === 0) return [];
+    const filled = new Set(this.lastTiingoSymbols);
+    return report.failed.filter((symbol) => !filled.has(symbol));
+  }
+
+  /**
    * Summarise any live-data gaps for a non-blocking banner, framed around the
    * free-tier budget. Returns null when everything was fresh and within budget.
    */
@@ -2179,6 +2361,7 @@ export class App {
       eurUsdError: null,
       eurUsdSource: "none",
     },
+    failedSymbols: readonly string[] = [],
   ): string | null {
     const reasons: string[] = [];
 
@@ -2250,6 +2433,19 @@ export class App {
       );
     }
 
+    // Name the holdings the providers *tried* to price this round but couldn't —
+    // a fund the primary returns no bar for (the FSKAX case) that the backup also
+    // didn't fill. Only when the call otherwise succeeded (`quote.error === null`):
+    // a whole-batch transient failure is already covered by the broad "didn't
+    // refresh just now" clause above, so this stays specific to per-symbol
+    // failures instead of repeating it. Without this, such a holding would sit on
+    // a stale value with no explanation, looking like it is merely "awaiting".
+    if (quote.error === null && failedSymbols.length > 0) {
+      reasons.push(
+        `Couldn't get a live price for ${failedSymbols.join(", ")} — showing last-known values.`,
+      );
+    }
+
     return reasons.length === 0 ? null : reasons.join(" ");
   }
 
@@ -2312,8 +2508,12 @@ export class App {
  * progress instead of an update that can never complete in one go.
  */
 export function liveRefreshProgress(report: QuoteLoadReport): { live: number; total: number } {
-  const total = report.fetched.length + report.servedFresh.length + report.deferred.length;
-  const live = total - report.deferred.length;
+  // Both deferred (skipped for budget) and failed (attempted, couldn't price)
+  // symbols count toward the total but are *not* live — so a failed holding keeps
+  // the round from reporting "all live" just as a deferred one does.
+  const notLive = report.deferred.length + report.failed.length;
+  const total = report.fetched.length + report.servedFresh.length + notLive;
+  const live = total - notLive;
   return { live, total };
 }
 
@@ -2448,7 +2648,7 @@ export function buildCoverageFacts(
   let navTotal = 0;
   let navExpectedTonight = 0;
   let navAwaiting = 0;
-  for (const symbol of [...report.fetched, ...report.servedFresh, ...report.deferred]) {
+  for (const symbol of [...report.fetched, ...report.servedFresh, ...report.deferred, ...report.failed]) {
     if (navSymbols.has(symbol)) {
       navTotal += 1;
       const held = quotes.get(symbol)?.valueDate ?? null;
@@ -2603,6 +2803,56 @@ export function summarizeCoverage(f: CoverageFacts): string {
 export function manualRefreshSummary(facts: CoverageFacts): string {
   if (facts.error) return "Couldn't reach live prices — showing last known values";
   return summarizeCoverage(facts);
+}
+
+/**
+ * An honest one-liner for the unlock ("Welcome back") screen describing the
+ * login-time prefetch, so the warming of live prices is visible while the user
+ * authenticates. Strictly truthful: it reports what the prefetch actually did
+ * and when prices were last pulled — never claims a value is "live" that isn't.
+ *
+ *   - in flight:                "Warming live prices… · last pulled 3 min ago"
+ *   - pulled fresh data:        "Prefetched 12/14 live · FX live · last pulled just now"
+ *   - everything already fresh: "Already up to date · last pulled 2 min ago"
+ *   - first ever run (no plan): "Warming live prices…" → "Live prices ready"
+ */
+export function describePrefetch(input: {
+  /** Whether the prefetch is still running. */
+  inFlight: boolean;
+  /** Whether a cached priority plan existed to warm (false on a first ever run). */
+  hasPlan: boolean;
+  /** Quotes freshly fetched this prefetch. */
+  quoteFetched: number;
+  /** Quotes requested this prefetch. */
+  quoteTotal: number;
+  /** Whether the EUR/USD FX rate was freshly pulled (not served from cache). */
+  fxLive: boolean;
+  /** When live data was last genuinely pulled, for the "last pulled" clause. */
+  lastPullAt: number | null;
+  /** Injectable clock for the "last pulled" formatting (tests). */
+  now?: number;
+}): string {
+  const pulled =
+    input.lastPullAt !== null
+      ? `last pulled ${formatLastPull(input.lastPullAt, input.now !== undefined ? new Date(input.now) : undefined)}`
+      : null;
+  if (input.inFlight) {
+    return pulled ? `Warming live prices… · ${pulled}` : "Warming live prices…";
+  }
+  const parts: string[] = [];
+  if (!input.hasPlan) {
+    // First ever run: nothing to compare against, just confirm we warmed up.
+    parts.push("Live prices ready");
+  } else if (input.quoteFetched > 0 || input.fxLive) {
+    const bits: string[] = [];
+    if (input.quoteFetched > 0) bits.push(`${input.quoteFetched}/${input.quoteTotal} live`);
+    if (input.fxLive) bits.push("FX live");
+    parts.push(`Prefetched ${bits.join(" · ")}`);
+  } else {
+    parts.push("Already up to date");
+  }
+  if (pulled) parts.push(pulled);
+  return parts.join(" · ");
 }
 
 /**

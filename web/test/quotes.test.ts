@@ -276,6 +276,47 @@ describe("loadQuotes — free-tier budget", () => {
     expect(report.minuteRemaining).toBe(0);
   });
 
+  it("reports an attempted-but-unpriced symbol as failed, not deferred", async () => {
+    // The provider returns a node for VTI but a null/empty one for FAIL (the
+    // FSKAX case): both were attempted, VTI prices, FAIL doesn't. FAIL must be
+    // reported as failed (genuinely stuck) rather than deferred (waiting its turn).
+    const storage = memStorage();
+    const fetchImpl = vi.fn<FetchLike>(async () =>
+      jsonResponse({
+        VTI: { close: "100", previous_close: "99", currency: "USD", datetime: "2024-01-10" },
+        FAIL: { close: null, currency: "USD" },
+      }),
+    );
+    const { quotes, report } = await loadQuotes(["VTI", "FAIL"], "key", {
+      fetchImpl,
+      storage,
+      now: clock(0),
+      sleep: noSleep,
+      creditsPerMinute: 8,
+    });
+    expect(report.fetched).toEqual(["VTI"]);
+    expect(report.failed).toEqual(["FAIL"]);
+    expect(report.deferred).toEqual([]);
+    expect(quotes.get("VTI")?.price?.toString()).toBe("100");
+  });
+
+  it("keeps a budget-deferred symbol in deferred, never failed", async () => {
+    const storage = memStorage();
+    const symbols = Array.from({ length: 10 }, (_, i) => `S${i}`);
+    const fetchImpl = vi.fn<FetchLike>(async (url) => quoteResponse(url));
+    const { report } = await loadQuotes(symbols, "key", {
+      fetchImpl,
+      storage,
+      now: clock(0),
+      sleep: noSleep,
+      creditsPerMinute: 8,
+    });
+    // 8 fetched, 2 never attempted → deferred (not failed): they just await budget.
+    expect(report.fetched.length).toBe(8);
+    expect(report.deferred.length).toBe(2);
+    expect(report.failed).toEqual([]);
+  });
+
   it("spends nothing when the minute budget is already exhausted", async () => {
     const storage = memStorage();
     recordCredits(8, 0, storage); // burn the minute budget just now
@@ -385,7 +426,10 @@ describe("loadQuotes — retry/backoff", () => {
     });
     expect(fetchImpl).toHaveBeenCalledTimes(3); // initial + 2 retries
     expect(report.error).toBeInstanceOf(PriceError);
-    expect(report.deferred).toEqual(["VTI"]);
+    // VTI was *attempted* (and couldn't be priced after the retries), so it is
+    // reported as failed rather than merely deferred for budget.
+    expect(report.failed).toEqual(["VTI"]);
+    expect(report.deferred).toEqual([]);
   });
 
   it("surfaces a non-retryable error with an empty result for the caller to act on", async () => {

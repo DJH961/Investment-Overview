@@ -416,6 +416,15 @@ export interface QuoteLoadReport {
   servedFresh: string[];
   /** Stale/uncached symbols left unfetched to stay within the free-tier budget. */
   deferred: string[];
+  /**
+   * Symbols we actually *attempted* to fetch this call but got no usable price
+   * back for — either the provider returned a null/empty node for that ticker
+   * while its batch peers succeeded (the FSKAX case), or the whole batch failed
+   * transiently. Distinct from {@link deferred} (which we deliberately skipped to
+   * stay within budget): a failed symbol was tried and couldn't be priced, so it
+   * is genuinely stuck rather than merely waiting its turn.
+   */
+  failed: string[];
   /** A transient failure that forced a fallback, if any. */
   error: PriceError | null;
   /** Credits remaining in the current minute/day windows after this call. */
@@ -495,6 +504,10 @@ export async function loadQuotes(
 
   const fetched: string[] = [];
   let error: PriceError | null = null;
+  // Symbols we actually attempted a live fetch for this call (the budget-affordable
+  // slice). Anything in here that doesn't end up freshly priced *failed* — as
+  // opposed to a stale symbol we never attempted, which is merely deferred.
+  const attempted = new Set<string>();
 
   const backoffDeps: BackoffDeps = { fetchImpl, sleep, maxRetries, backoffBaseMs, backoffCapMs };
 
@@ -506,6 +519,7 @@ export async function loadQuotes(
     // tier) this is always a single batched call.
     const affordableCount = Math.min(stale.length, minute, day);
     const toFetch = stale.slice(0, affordableCount);
+    for (const symbol of toFetch) attempted.add(symbol);
 
     if (toFetch.length > 0) {
       // Reserve the credits *before* the network call, not after it returns.
@@ -567,7 +581,7 @@ export async function loadQuotes(
           // the caller can prompt for Settings rather than silently degrading.
           return {
             quotes: new Map(),
-            report: { fetched: [], servedFresh: [], deferred: [], error: pe, minuteRemaining: 0, dayRemaining: 0 },
+            report: { fetched: [], servedFresh: [], deferred: [], failed: [], error: pe, minuteRemaining: 0, dayRemaining: 0 },
           };
         }
         error = pe; // transient/non-fatal — keep what we have, fall back for the rest.
@@ -577,13 +591,18 @@ export async function loadQuotes(
 
   // Anything still stale falls back to its last cached value (even if expired),
   // so totals stay populated; symbols absent from cache are left to the export's
-  // last-known price downstream in compute.ts.
+  // last-known price downstream in compute.ts. Split the leftovers honestly: a
+  // symbol we *attempted* but couldn't price this call is `failed` (genuinely
+  // stuck — e.g. a fund the provider returns no bar for), while one we never
+  // attempted because the per-minute/day budget was spent is merely `deferred`.
   const deferred: string[] = [];
+  const failed: string[] = [];
   for (const symbol of stale) {
     if (result.has(symbol)) continue;
     const cached = cache.get(symbol);
     if (cached && cached.quote.price !== null) result.set(symbol, cached.quote);
-    deferred.push(symbol);
+    if (attempted.has(symbol)) failed.push(symbol);
+    else deferred.push(symbol);
   }
 
   const remaining = budget();
@@ -593,6 +612,7 @@ export async function loadQuotes(
       fetched,
       servedFresh,
       deferred,
+      failed,
       error,
       minuteRemaining: remaining.minute,
       dayRemaining: remaining.day,

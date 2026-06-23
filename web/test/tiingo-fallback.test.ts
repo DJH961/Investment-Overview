@@ -27,7 +27,7 @@ const NOW = Date.UTC(2026, 5, 23, 18, 0, 0); // weekday afternoon ET
 const EXPECTED = latestSettledSessionDate(new Date(NOW));
 
 function emptyReport(deferred: string[] = []) {
-  return { fetched: [], servedFresh: [], deferred, error: null, minuteRemaining: 0, dayRemaining: 0 };
+  return { fetched: [], servedFresh: [], deferred, failed: [], error: null, minuteRemaining: 0, dayRemaining: 0 };
 }
 
 /** A stub `/price` fetch returning the given IEX rows as JSON. */

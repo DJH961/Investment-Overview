@@ -1547,6 +1547,17 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .unlock-pass[hidden] { display: none; }
 .unlock-pass { margin-top: 0.6rem; }
 
+/* The login-time live-data prefetch status on the unlock screen: a calm, centred
+ * caption showing that prices are already warming (and what was found / when
+ * last pulled) while the user authenticates. Mobile-first: small and unobtrusive
+ * so it never competes with the unlock CTA. */
+.panel.unlock .prefetch-status {
+  text-align: center;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 /* A toggle switch (checkbox styled as an iOS-style slider) for on/off settings
  * like fingerprint unlock and the enrolment opt-in. */
 .field.toggle { gap: 0.35rem; }
