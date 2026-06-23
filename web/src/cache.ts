@@ -336,6 +336,29 @@ export function creditsSpentWithin(log: CreditSpend[], now: number, windowMs: nu
 }
 
 /**
+ * Epoch ms of the most recent top-of-the-hour (`:00`) at or before `now`.
+ *
+ * Because a UTC hour is a fixed 3_600_000 ms and every whole-hour timezone shares
+ * the same `:00` boundary, flooring to the hour grid lands exactly on the local
+ * clock's top of the hour for the device's timezone.
+ */
+export function startOfHour(now: number): number {
+  const HOUR_MS = 60 * 60 * 1000;
+  return Math.floor(now / HOUR_MS) * HOUR_MS;
+}
+
+/**
+ * Credits spent so far **this clock hour** (since the most recent `:00`). Unlike
+ * a trailing 60-minute window this resets to zero on the hour — at 1:00, 2:00,
+ * … — which is the budget cadence the user expects ("rest on the hour, not
+ * every hour"): a spend at 1:55 no longer suppresses a fresh allowance at 2:00.
+ */
+export function creditsSpentThisHour(log: CreditSpend[], now: number): number {
+  const hourStart = startOfHour(now);
+  return log.reduce((acc, e) => (e.at >= hourStart ? acc + e.n : acc), 0);
+}
+
+/**
  * Epoch ms of the most recent 00:00 **UTC** at or before `now`.
  *
  * Twelve Data resets the free-tier *daily* credit allowance at midnight UTC, so
@@ -468,6 +491,67 @@ export function readTiingoState(storage: StorageLike | null = defaultStorage()):
 /** Persist the Tiingo timing state (best-effort). */
 export function writeTiingoState(state: TiingoState, storage: StorageLike | null = defaultStorage()): void {
   writeJson(storage, TIINGO_STATE_KEY, state);
+}
+
+// --- Tiingo "no newer data" stamps (per symbol) ----------------------------
+
+const TIINGO_NO_NEWER_KEY = "iv.web.tiingo_no_newer";
+
+/**
+ * A record that the backup provider (Tiingo) was asked for a symbol and returned
+ * nothing newer than what we already held, while chasing a given target date.
+ * Lets the fallback stop re-pulling the same too-old value on every refresh: a
+ * mutual fund whose NAV is genuinely days behind shouldn't be re-fetched from
+ * the backup each time the user taps Refresh — the backup already confirmed it
+ * has nothing fresher for that target.
+ */
+export interface TiingoNoNewer {
+  /** The target session/NAV date we were chasing when the backup came up empty. */
+  expected: string;
+  /** Epoch ms the empty result was recorded (drives the cooldown). */
+  at: number;
+}
+
+/** Read the per-symbol "backup has nothing newer" stamps. */
+export function readTiingoNoNewer(storage: StorageLike | null = defaultStorage()): Record<string, TiingoNoNewer> {
+  const raw = readJson<Record<string, Partial<TiingoNoNewer>>>(storage, TIINGO_NO_NEWER_KEY);
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, TiingoNoNewer> = {};
+  for (const [symbol, v] of Object.entries(raw)) {
+    if (v && typeof v.expected === "string" && typeof v.at === "number") {
+      out[symbol] = { expected: v.expected, at: v.at };
+    }
+  }
+  return out;
+}
+
+/**
+ * Record that the backup returned nothing newer for `symbol` while chasing
+ * `expected`. Subsequent refreshes consult this (see the fallback's no-newer
+ * gate) to avoid re-pulling the same stale value until the cooldown elapses or a
+ * newer target appears.
+ */
+export function recordTiingoNoNewer(
+  symbol: string,
+  expected: string,
+  at: number,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  const map = readTiingoNoNewer(storage);
+  map[symbol] = { expected, at };
+  writeJson(storage, TIINGO_NO_NEWER_KEY, map);
+}
+
+/**
+ * Clear the "nothing newer" stamp for `symbol` — called when the backup (or the
+ * primary) finally advances the held value-date, so the next genuine gap re-pulls
+ * normally.
+ */
+export function clearTiingoNoNewer(symbol: string, storage: StorageLike | null = defaultStorage()): void {
+  const map = readTiingoNoNewer(storage);
+  if (!(symbol in map)) return;
+  delete map[symbol];
+  writeJson(storage, TIINGO_NO_NEWER_KEY, map);
 }
 
 // --- Last successful data pull ---------------------------------------------

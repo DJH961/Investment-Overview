@@ -1666,6 +1666,17 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   border-top: 1px solid var(--border);
 }
 
+/* The login-time live-data prefetch status on the unlock screen: a calm, centred
+ * caption showing that prices are already warming (and what was found / when
+ * last pulled) while the user authenticates. Mobile-first: small and unobtrusive
+ * so it never competes with the unlock CTA. */
+.panel.unlock .prefetch-status {
+  text-align: center;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 /* A toggle switch (checkbox styled as an iOS-style slider) for on/off settings
  * like fingerprint unlock and the enrolment opt-in. */
 .field.toggle { gap: 0.35rem; }
@@ -1818,4 +1829,20 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 @media (min-width: 64rem) {
   .updating-pill,
   .app-toast { bottom: 1.5rem; }
+}
+
+/* The login "welcome back" banner is pinned to the *top* instead of the bottom,
+   so it never covers the refreshing pill / coverage toast that live down low —
+   both can be on screen at once. Tinted with the accent so a successful unlock
+   reads as a distinct, app-driven confirmation. */
+.app-toast.is-welcome {
+  top: max(1rem, env(safe-area-inset-top));
+  bottom: auto;
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  font-weight: 600;
+}
+
+@media (min-width: 64rem) {
+  .app-toast.is-welcome { top: 1.5rem; bottom: auto; }
 }

@@ -14,6 +14,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [3.19.0] — 2026-06-23
+
+### Added
+
+- **Downloadable data-polling log for the web companion
+  (`web/src/polling-log.ts`).** Every meaningful step of a refresh round — which
+  symbols were served from cache, which were fetched live, which fell to the
+  Tiingo backup (and why), what the per-minute/day budgets were, and where the
+  encrypted blob stood — is now recorded in plain language, persisted across
+  reloads, and exportable from Settings. It is best-effort and dependency-free:
+  in private mode it keeps a small in-memory tail and never throws into the
+  refresh hot path, so a number on screen can always be traced to *what actually
+  happened*.
+- **Honest login prefetch signal.** The post-unlock prefetch now distinguishes a
+  symbol that genuinely *failed* a live fetch from one that was merely *deferred*
+  by the free-tier budget, reports real coverage on unlock, and only spins the
+  Refresh glyph when the prefetch actually pulled something newer — so the login
+  signal means something instead of spinning on every unlock.
+
+### Changed
+
+- **Data pipeline audit + hardening pass.** Reviewed the entire data
+  pulling / update / "letting me know about updates" pipeline (quote and FX
+  loading, free-tier credit budgeting, burst-then-slow auto-refresh cadence,
+  market-hours / settled-close handling, the Tiingo secondary provider and its
+  NAV canary, and the user-facing degradation toasts/banners). The
+  `loadEurUsd` budget computation now clamps remaining per-minute/day credits
+  with `Math.max(0, …)`, matching `loadQuotes`' `budget()` so the two budget
+  paths stay consistent and a momentary over-spend can never surface a negative
+  "credits remaining".
+
 ## [3.17.0] — 2026-06-23
 
 ### Added

@@ -48,7 +48,7 @@ import {
 import type { Decimal } from "./decimal-config";
 import { latestSettledSessionDate } from "./market-hours";
 import { fetchTiingoEurUsd } from "./tiingo";
-import { Budget, WEB_DAILY_CAP, WEB_HOURLY_CAP } from "./tiingo-gate";
+import { Budget, etMinutesOfDay, WEB_DAILY_CAP, WEB_HOURLY_CAP } from "./tiingo-gate";
 
 /** Twelve Data free-tier limits — the design constraint for this whole module. */
 export const FREE_TIER = {
@@ -230,24 +230,81 @@ export interface MarketRefreshOptions {
 }
 
 /**
+ * Eastern minutes-of-day of the NYSE regular close (16:00). A market print
+ * captured at or after {@link CLOSE_MINUTES_ET} − {@link CLOSE_ACCEPT_WINDOW_MIN}
+ * is treated as the official close (see {@link holdsSettledClose}).
+ */
+const CLOSE_MINUTES_ET = 16 * 60; // 16:00 ET
+/**
+ * How many minutes before the official 16:00 ET close a same-session print is
+ * still accepted *as* that close. Two minutes is deliberately tight: it accepts
+ * a 15:58–15:59 ET capture (≈21:58–21:59 local CET — the user's "accept 21:59"
+ * case, effectively the closing value) while still excluding an earlier intraday
+ * print such as 15:18 ET (≈21:18 CET), which is re-fetched once after the close
+ * to settle it. Widening this would risk accepting genuinely pre-close prints as
+ * the close.
+ */
+const CLOSE_ACCEPT_WINDOW_MIN = 2;
+
+/**
+ * Whether a cached **market** quote genuinely holds the latest *settled close*
+ * (`latestSettledDate`) — not merely a same-day intraday print.
+ *
+ * A quote's value-date turns to today's date the moment the session opens, so a
+ * mid-session capture (say 15:18 ET) already carries today's value-date even
+ * though it is *not* the official 16:00 close. If we treated "value-date ==
+ * settled date" as "holds the close", such an intraday capture would wrongly
+ * suppress the one post-close fetch that records the real closing price — the
+ * symbol would freeze on its last intraday value all evening (the "stopped
+ * updating at 22:00 even though the last pull was 21:18" bug).
+ *
+ * So a quote counts as holding the close when its value-date is at least the
+ * settled date **and** either:
+ *   - it was not captured while the session was open (`is_market_open` is
+ *     `false`/`null`, a settled figure), or
+ *   - it was captured within the final {@link CLOSE_ACCEPT_WINDOW_MIN} minutes
+ *     before the close (the "accept 21:59" rule): there is essentially no
+ *     session left, so the near-close print *is* the close.
+ *
+ * The provider's `is_market_open` flag is ground truth for the first clause;
+ * `priceTime` (the print's observation instant) drives the near-close clause.
+ */
+export function holdsSettledClose(
+  cached:
+    | { valueDate?: string | null; marketOpen?: boolean | null; priceTime?: number | null }
+    | null
+    | undefined,
+  latestSettledDate: string,
+): boolean {
+  const have = cached?.valueDate ?? null;
+  if (!have || have < latestSettledDate) return false;
+  // A closed-market fetch (or an endpoint that omits the flag) is a settled figure.
+  if (cached?.marketOpen !== true) return true;
+  // Captured mid-session: accept it as the close only if it lands in the final
+  // minutes before 16:00 ET (the "accept 21:59" rule); otherwise re-fetch once
+  // after the close to settle it.
+  const t = cached?.priceTime ?? null;
+  if (t === null) return false;
+  return etMinutesOfDay(t) >= CLOSE_MINUTES_ET - CLOSE_ACCEPT_WINDOW_MIN;
+}
+
+/**
  * Adaptive freshness window for a **market** (stock/ETF) symbol, the mirror of
  * {@link navCacheTtlMs} for continuously-traded instruments.
  *
  * While the session is open we poll on the short window (prices move intraday).
  * Once it closes there is nothing new until it reopens, so if we already hold
- * the latest settled close (the cached value-date is at least the most recent
- * settled session date) we rest on the long window and spend no credits —
- * freeing that budget for late-arriving fund NAVs. If the market is closed but
- * we are *missing* that close (or its date is unknown) we fetch once on the
- * short window to capture it, then go quiet.
- *
- * Note: the "latest close" we settle on is the last intraday print we hold for
- * the session (its value-date is already today during the session), which is at
- * most a few minutes off the official 16:00 print — an intentional trade of
- * sub-cent close precision for not re-polling an idle market all evening.
+ * the latest settled close (see {@link holdsSettledClose}) we rest on the long
+ * window and spend no credits — freeing that budget for late-arriving fund NAVs.
+ * If the market is closed but we are *missing* that close — including the case
+ * where all we hold is a mid-session intraday print — we fetch once on the short
+ * window to capture the official close, then go quiet.
  */
 export function marketCacheTtlMs(
-  cached: { valueDate?: string | null } | null | undefined,
+  cached:
+    | { valueDate?: string | null; marketOpen?: boolean | null; priceTime?: number | null }
+    | null
+    | undefined,
   options: MarketRefreshOptions,
 ): number {
   const {
@@ -258,10 +315,10 @@ export function marketCacheTtlMs(
   } = options;
   // Session open: poll live.
   if (marketOpen) return shortTtlMs;
-  // Closed and already holding the latest settled close: nothing to fetch.
-  const have = cached?.valueDate ?? null;
-  if (have && have >= latestSettledDate) return longTtlMs;
-  // Closed but missing that close (or unknown date): fetch once to capture it.
+  // Closed and already holding the latest *settled* close: nothing to fetch.
+  if (holdsSettledClose(cached, latestSettledDate)) return longTtlMs;
+  // Closed but missing that close (or only holding an intraday print): fetch
+  // once to capture the official close.
   return shortTtlMs;
 }
 
@@ -359,6 +416,15 @@ export interface QuoteLoadReport {
   servedFresh: string[];
   /** Stale/uncached symbols left unfetched to stay within the free-tier budget. */
   deferred: string[];
+  /**
+   * Symbols we actually *attempted* to fetch this call but got no usable price
+   * back for — either the provider returned a null/empty node for that ticker
+   * while its batch peers succeeded (the FSKAX case), or the whole batch failed
+   * transiently. Distinct from {@link deferred} (which we deliberately skipped to
+   * stay within budget): a failed symbol was tried and couldn't be priced, so it
+   * is genuinely stuck rather than merely waiting its turn.
+   */
+  failed: string[];
   /** A transient failure that forced a fallback, if any. */
   error: PriceError | null;
   /** Credits remaining in the current minute/day windows after this call. */
@@ -438,6 +504,10 @@ export async function loadQuotes(
 
   const fetched: string[] = [];
   let error: PriceError | null = null;
+  // Symbols we actually attempted a live fetch for this call (the budget-affordable
+  // slice). Anything in here that doesn't end up freshly priced *failed* — as
+  // opposed to a stale symbol we never attempted, which is merely deferred.
+  const attempted = new Set<string>();
 
   const backoffDeps: BackoffDeps = { fetchImpl, sleep, maxRetries, backoffBaseMs, backoffCapMs };
 
@@ -449,6 +519,7 @@ export async function loadQuotes(
     // tier) this is always a single batched call.
     const affordableCount = Math.min(stale.length, minute, day);
     const toFetch = stale.slice(0, affordableCount);
+    for (const symbol of toFetch) attempted.add(symbol);
 
     if (toFetch.length > 0) {
       // Reserve the credits *before* the network call, not after it returns.
@@ -510,7 +581,7 @@ export async function loadQuotes(
           // the caller can prompt for Settings rather than silently degrading.
           return {
             quotes: new Map(),
-            report: { fetched: [], servedFresh: [], deferred: [], error: pe, minuteRemaining: 0, dayRemaining: 0 },
+            report: { fetched: [], servedFresh: [], deferred: [], failed: [], error: pe, minuteRemaining: 0, dayRemaining: 0 },
           };
         }
         error = pe; // transient/non-fatal — keep what we have, fall back for the rest.
@@ -520,13 +591,18 @@ export async function loadQuotes(
 
   // Anything still stale falls back to its last cached value (even if expired),
   // so totals stay populated; symbols absent from cache are left to the export's
-  // last-known price downstream in compute.ts.
+  // last-known price downstream in compute.ts. Split the leftovers honestly: a
+  // symbol we *attempted* but couldn't price this call is `failed` (genuinely
+  // stuck — e.g. a fund the provider returns no bar for), while one we never
+  // attempted because the per-minute/day budget was spent is merely `deferred`.
   const deferred: string[] = [];
+  const failed: string[] = [];
   for (const symbol of stale) {
     if (result.has(symbol)) continue;
     const cached = cache.get(symbol);
     if (cached && cached.quote.price !== null) result.set(symbol, cached.quote);
-    deferred.push(symbol);
+    if (attempted.has(symbol)) failed.push(symbol);
+    else deferred.push(symbol);
   }
 
   const remaining = budget();
@@ -536,6 +612,7 @@ export async function loadQuotes(
       fetched,
       servedFresh,
       deferred,
+      failed,
       error,
       minuteRemaining: remaining.minute,
       dayRemaining: remaining.day,
@@ -692,8 +769,8 @@ export async function loadEurUsd(
   if (apiKey.length > 0) {
     const t = now();
     const log = readCreditLog(t, DAY_MS, storage ?? undefined);
-    const minute = creditsPerMinute - creditsSpentWithin(log, t, MINUTE_MS);
-    const day = creditsPerDay - creditsSpentToday(log, t);
+    const minute = Math.max(0, creditsPerMinute - creditsSpentWithin(log, t, MINUTE_MS));
+    const day = Math.max(0, creditsPerDay - creditsSpentToday(log, t));
     if (minute >= FREE_TIER.creditsPerSymbol && day >= FREE_TIER.creditsPerSymbol) {
       // Reserve the credit up-front (same rationale as loadQuotes) so two
       // overlapping loads can't both fire and 429.

@@ -18,6 +18,7 @@ import {
   loadQuotes,
   latestExpectedNavDate,
   marketCacheTtlMs,
+  holdsSettledClose,
   navCacheTtlMs,
   navPublishWindow,
   DEFAULT_CLOSED_MARKET_TTL_MS,
@@ -275,6 +276,47 @@ describe("loadQuotes — free-tier budget", () => {
     expect(report.minuteRemaining).toBe(0);
   });
 
+  it("reports an attempted-but-unpriced symbol as failed, not deferred", async () => {
+    // The provider returns a node for VTI but a null/empty one for FAIL (the
+    // FSKAX case): both were attempted, VTI prices, FAIL doesn't. FAIL must be
+    // reported as failed (genuinely stuck) rather than deferred (waiting its turn).
+    const storage = memStorage();
+    const fetchImpl = vi.fn<FetchLike>(async () =>
+      jsonResponse({
+        VTI: { close: "100", previous_close: "99", currency: "USD", datetime: "2024-01-10" },
+        FAIL: { close: null, currency: "USD" },
+      }),
+    );
+    const { quotes, report } = await loadQuotes(["VTI", "FAIL"], "key", {
+      fetchImpl,
+      storage,
+      now: clock(0),
+      sleep: noSleep,
+      creditsPerMinute: 8,
+    });
+    expect(report.fetched).toEqual(["VTI"]);
+    expect(report.failed).toEqual(["FAIL"]);
+    expect(report.deferred).toEqual([]);
+    expect(quotes.get("VTI")?.price?.toString()).toBe("100");
+  });
+
+  it("keeps a budget-deferred symbol in deferred, never failed", async () => {
+    const storage = memStorage();
+    const symbols = Array.from({ length: 10 }, (_, i) => `S${i}`);
+    const fetchImpl = vi.fn<FetchLike>(async (url) => quoteResponse(url));
+    const { report } = await loadQuotes(symbols, "key", {
+      fetchImpl,
+      storage,
+      now: clock(0),
+      sleep: noSleep,
+      creditsPerMinute: 8,
+    });
+    // 8 fetched, 2 never attempted → deferred (not failed): they just await budget.
+    expect(report.fetched.length).toBe(8);
+    expect(report.deferred.length).toBe(2);
+    expect(report.failed).toEqual([]);
+  });
+
   it("spends nothing when the minute budget is already exhausted", async () => {
     const storage = memStorage();
     recordCredits(8, 0, storage); // burn the minute budget just now
@@ -384,7 +426,10 @@ describe("loadQuotes — retry/backoff", () => {
     });
     expect(fetchImpl).toHaveBeenCalledTimes(3); // initial + 2 retries
     expect(report.error).toBeInstanceOf(PriceError);
-    expect(report.deferred).toEqual(["VTI"]);
+    // VTI was *attempted* (and couldn't be priced after the retries), so it is
+    // reported as failed rather than merely deferred for budget.
+    expect(report.failed).toEqual(["VTI"]);
+    expect(report.deferred).toEqual([]);
   });
 
   it("surfaces a non-retryable error with an empty result for the caller to act on", async () => {
@@ -564,10 +609,57 @@ describe("marketCacheTtlMs — adaptive market refresh", () => {
     expect(marketCacheTtlMs({ valueDate: null }, { ...base, marketOpen: false })).toBe(DEFAULT_CACHE_TTL_MS);
   });
 
+  it("fetches once after the close when only an intraday print is held", () => {
+    // Captured mid-session (is_market_open true) with today's value-date: not yet
+    // the official close, so re-fetch once now that the session is shut.
+    expect(
+      marketCacheTtlMs({ valueDate: "2024-01-10", marketOpen: true }, { ...base, marketOpen: false }),
+    ).toBe(DEFAULT_CACHE_TTL_MS);
+    // A post-close capture (is_market_open false) is the settled close: rest.
+    expect(
+      marketCacheTtlMs({ valueDate: "2024-01-10", marketOpen: false }, { ...base, marketOpen: false }),
+    ).toBe(DEFAULT_CLOSED_MARKET_TTL_MS);
+    // An omitted flag is treated as a settled figure (no forced re-fetch loop).
+    expect(
+      marketCacheTtlMs({ valueDate: "2024-01-10", marketOpen: null }, { ...base, marketOpen: false }),
+    ).toBe(DEFAULT_CLOSED_MARKET_TTL_MS);
+  });
+
   it("honours custom short/long TTL overrides", () => {
     const opts = { ...base, marketOpen: false, shortTtlMs: 11, longTtlMs: 22 };
     expect(marketCacheTtlMs({ valueDate: "2024-01-09" }, opts)).toBe(11);
     expect(marketCacheTtlMs({ valueDate: "2024-01-10" }, opts)).toBe(22);
+  });
+});
+
+describe("holdsSettledClose — settled-close detection", () => {
+  const settled = "2024-01-10";
+  it("holds the close when the value-date covers the settled session and not intraday", () => {
+    expect(holdsSettledClose({ valueDate: "2024-01-10" }, settled)).toBe(true);
+    expect(holdsSettledClose({ valueDate: "2024-01-11" }, settled)).toBe(true);
+    expect(holdsSettledClose({ valueDate: "2024-01-10", marketOpen: false }, settled)).toBe(true);
+    expect(holdsSettledClose({ valueDate: "2024-01-10", marketOpen: null }, settled)).toBe(true);
+  });
+  it("does not hold the close for an intraday-only capture or an older/absent value-date", () => {
+    expect(holdsSettledClose({ valueDate: "2024-01-10", marketOpen: true }, settled)).toBe(false);
+    expect(holdsSettledClose({ valueDate: "2024-01-09" }, settled)).toBe(false);
+    expect(holdsSettledClose({ valueDate: null }, settled)).toBe(false);
+    expect(holdsSettledClose(null, settled)).toBe(false);
+  });
+  it("accepts a near-close intraday print (the 21:59 rule) but not an earlier one", () => {
+    // 2024-01-10 is winter (ET = UTC−5), so 15:59 ET = 20:59 UTC, 15:18 ET = 20:18 UTC.
+    const nearClose = Date.UTC(2024, 0, 10, 20, 59, 0); // 15:59 ET ≈ 21:59 CET
+    const earlier = Date.UTC(2024, 0, 10, 20, 18, 0); // 15:18 ET ≈ 21:18 CET
+    // A print from the final minute before the bell counts as the close…
+    expect(holdsSettledClose({ valueDate: "2024-01-10", marketOpen: true, priceTime: nearClose }, settled)).toBe(
+      true,
+    );
+    // …but a mid-session print is still re-fetched once after the close.
+    expect(holdsSettledClose({ valueDate: "2024-01-10", marketOpen: true, priceTime: earlier }, settled)).toBe(
+      false,
+    );
+    // No capture time ⇒ fall back to the conservative "intraday ⇒ not the close".
+    expect(holdsSettledClose({ valueDate: "2024-01-10", marketOpen: true, priceTime: null }, settled)).toBe(false);
   });
 });
 
