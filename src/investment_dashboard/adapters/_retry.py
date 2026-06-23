@@ -19,6 +19,7 @@ actually waiting.
 from __future__ import annotations
 
 import logging
+import random
 import time
 from collections.abc import Callable
 
@@ -48,8 +49,10 @@ def retry_call[T](
     *,
     attempts: int = DEFAULT_ATTEMPTS,
     backoff_seconds: float = DEFAULT_BACKOFF_SECONDS,
+    jitter: float = 0.0,
     retry_on: tuple[type[BaseException], ...] = (Exception,),
     sleep: Callable[[float], None] = time.sleep,
+    rng: Callable[[], float] = random.random,
     description: str = "external call",
 ) -> T:
     """Call ``func`` with bounded exponential-backoff retries.
@@ -65,17 +68,29 @@ def retry_call[T](
         Base delay; the wait before retry *n* is ``backoff_seconds * 2**(n-1)``.
         A :class:`RateLimitedError` with a ``retry_after`` hint overrides the
         computed delay when the hint is larger.
+    jitter
+        Fractional randomised spread added on top of each computed delay, as
+        ``delay * (1 + jitter * rng())`` (``rng`` yields ``[0, 1)``). Defaults
+        to ``0.0`` (deterministic schedule); set >0 to de-correlate retries
+        across concurrent callers so a transient blip doesn't escalate.
     retry_on
         Exception types treated as transient. Anything else propagates
         immediately (a programming error shouldn't be retried). A
         :class:`RateLimitedError` is always retried regardless of this tuple.
     sleep
         Injectable sleep, defaulting to :func:`time.sleep`.
+    rng
+        Injectable ``[0, 1)`` source for the jitter, defaulting to
+        :func:`random.random` (only consulted when ``jitter`` > 0).
     description
         Human label used in log messages.
     """
     if attempts < 1:
         raise ValueError("attempts must be >= 1")
+
+    def _delay(attempt: int) -> float:
+        base = backoff_seconds * (2 ** (attempt - 1))
+        return base * (1 + jitter * rng()) if jitter > 0 else base
 
     last_exc: BaseException | None = None
     for attempt in range(1, attempts + 1):
@@ -85,7 +100,7 @@ def retry_call[T](
             last_exc = exc
             if attempt == attempts:
                 break
-            delay = backoff_seconds * (2 ** (attempt - 1))
+            delay = _delay(attempt)
             if exc.retry_after is not None:
                 delay = max(delay, exc.retry_after)
             log.warning(
@@ -100,7 +115,7 @@ def retry_call[T](
             last_exc = exc
             if attempt == attempts:
                 break
-            delay = backoff_seconds * (2 ** (attempt - 1))
+            delay = _delay(attempt)
             log.warning(
                 "%s failed (attempt %d/%d): %s; retrying in %.2fs",
                 description,

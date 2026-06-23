@@ -44,7 +44,10 @@ from investment_dashboard.services import (
 )
 from investment_dashboard.services.fx_service import refresh_fx_history
 from investment_dashboard.services.onboarding_service import seed_default_setup
-from investment_dashboard.services.prices_service import refresh_prices
+from investment_dashboard.services.prices_service import (
+    TiingoNotConfiguredError,
+    refresh_prices,
+)
 from investment_dashboard.ui.components import confirm_dialog, page_header, section
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import fmt_pct
@@ -128,6 +131,46 @@ async def _refresh_prices_clicked(button: ui.button) -> None:  # pragma: no cove
         except Exception as exc:
             log.exception("Price refresh failed")
             ui.notify(f"Price refresh failed: {exc}", type="negative")
+
+
+async def _refresh_via_tiingo_clicked(button: ui.button) -> None:  # pragma: no cover - UI
+    """Manual "Refresh via Tiingo now": bypass the timing gates, keep worth-it+budget."""
+
+    def _work() -> tuple[dict[str, int], bool]:
+        from investment_dashboard.db import (  # noqa: PLC0415
+            cache_session_scope,
+            ledger_session_scope,
+        )
+        from investment_dashboard.services.prices_service import (  # noqa: PLC0415
+            refresh_via_tiingo,
+        )
+
+        with ledger_session_scope() as ledger, cache_session_scope() as cache:
+            return refresh_via_tiingo(ledger, cache)
+
+    async with _button_busy(button):
+        try:
+            recovered, switched = await run.io_bound(_work)
+        except TiingoNotConfiguredError:
+            ui.notify(
+                "No Tiingo token configured — add one above to use the fallback.",
+                type="warning",
+            )
+            return
+        except Exception as exc:
+            log.exception("Manual Tiingo refresh failed")
+            ui.notify(f"Tiingo refresh failed: {exc}", type="negative")
+            return
+        if switched:
+            symbols = ", ".join(sorted(recovered))
+            rows = sum(recovered.values())
+            ui.notify(
+                f"Tiingo refreshed {symbols} ({rows} new close(s)).",
+                type="positive",
+                timeout=8000,
+            )
+        else:
+            ui.notify("Already up to date — no Tiingo call needed.", type="info")
 
 
 def _recalc_fx_legs_clicked() -> None:  # pragma: no cover - UI
@@ -1413,8 +1456,8 @@ def _format_relative(at: datetime, *, tz: tzinfo | None = None) -> str:
 
 
 def _render_connectivity_section() -> None:  # pragma: no cover - UI
-    """Show the latest yfinance / Frankfurter call outcome + recent log."""
-    known_providers = ("yfinance", "frankfurter")
+    """Show the latest yfinance / Frankfurter / Tiingo call outcome + recent log."""
+    known_providers = ("yfinance", "frankfurter", "tiingo")
     latest = provider_status.all_latest()
     fetched = fetch_report.all_latest()
     with session_scope() as session:
@@ -1451,6 +1494,7 @@ def _render_connectivity_section() -> None:  # pragma: no cover - UI
                 "No provider calls recorded yet. Trigger 'Refresh prices' or "
                 "'Refresh FX rates' above, or wait for the next background tick."
             ).classes("text-caption opacity-70")
+            _render_tiingo_fallback_controls()
             return
 
         with (
@@ -1466,6 +1510,39 @@ def _render_connectivity_section() -> None:  # pragma: no cover - UI
                     )
                     ui.label(ev.provider).classes("text-caption font-mono")
                     ui.label(ev.message).classes("text-caption")
+
+        _render_tiingo_fallback_controls()
+
+
+def _render_tiingo_fallback_controls() -> None:  # pragma: no cover - UI
+    """Token entry for the Tiingo secondary-provider fallback (keychain-stored)."""
+    with ui.expansion("Tiingo fallback (secondary price source)", icon="backup").classes("w-full"):
+        ui.label(
+            "When yfinance can't deliver fresh prices or NAVs, the dashboard "
+            "quietly falls back to Tiingo within heavy rate-limit guards. Paste "
+            "your Tiingo API token below; it's stored in the OS keychain, never "
+            "in the repo or a config file. Leave blank to disable the fallback."
+        ).classes("text-caption opacity-70").style("max-width:34rem")
+        tiingo_in = (
+            ui.input("Tiingo API token")
+            .props("outlined dense type=password autocomplete=off")
+            .classes("w-full max-w-md")
+        )
+        ui.button(
+            "Save token",
+            icon="vpn_key",
+            on_click=lambda: _save_tiingo_token(tiingo_in.value or ""),
+        ).props("flat no-caps")
+        ui.label(
+            "Already have a token? Pull live data through Tiingo right now — this "
+            "skips the wait-for-yfinance timing, but still only spends a call when "
+            "newer data actually exists and budget remains."
+        ).classes("text-caption opacity-70").style("max-width:34rem")
+        tiingo_refresh_btn = ui.button(
+            "Refresh via Tiingo now",
+            icon="cloud_sync",
+        ).props("flat no-caps")
+        tiingo_refresh_btn.on_click(lambda: _refresh_via_tiingo_clicked(tiingo_refresh_btn))
 
 
 def _live_web_config(session) -> dict[str, str | None]:  # pragma: no cover - UI
@@ -1517,6 +1594,25 @@ def _save_publish_token(token: str) -> None:  # pragma: no cover - UI
         return
     if store_publish_token_in_keyring(token.strip()):
         ui.notify("GitHub token saved to the OS keychain.", type="positive")
+    else:
+        ui.notify(
+            "Could not reach the OS keychain. Check that a keyring backend "
+            "is available for your operating system.",
+            type="negative",
+        )
+
+
+def _save_tiingo_token(token: str) -> None:  # pragma: no cover - UI
+    """Store the Tiingo fallback API token in the OS keychain."""
+    from investment_dashboard.storage.encryption import (  # noqa: PLC0415
+        store_tiingo_token_in_keyring,
+    )
+
+    if not token.strip():
+        ui.notify("Paste a Tiingo token first.", type="warning")
+        return
+    if store_tiingo_token_in_keyring(token.strip()):
+        ui.notify("Tiingo token saved to the OS keychain.", type="positive")
     else:
         ui.notify(
             "Could not reach the OS keychain. Check that a keyring backend "

@@ -38,6 +38,11 @@ _KEYRING_USERNAME = "synced-tiers"
 #: passphrase never collide.
 _KEYRING_MOBILE_PASSPHRASE_USERNAME = "mobile-passphrase"
 _KEYRING_PUBLISH_TOKEN_USERNAME = "publish-token"
+#: Keyring username for the Tiingo secondary-provider API token (desktop
+#: fallback behind yfinance). Stored like every other app secret — in the OS
+#: keychain, never plaintext or an env var — so the desktop user enters it once
+#: in Settings and it survives restarts.
+_KEYRING_TIINGO_TOKEN_USERNAME = "tiingo-token"
 
 #: Suggested filename for the saved recovery document.
 RECOVERY_FILENAME = "investment-dashboard-recovery.txt"
@@ -110,6 +115,21 @@ def store_publish_token_in_keyring(token: str) -> bool:
     return _keyring_set(_KEYRING_PUBLISH_TOKEN_USERNAME, token)
 
 
+def load_tiingo_token_from_keyring() -> str | None:
+    """Look up the Tiingo fallback-provider API token in the OS keychain."""
+    return _keyring_get(_KEYRING_TIINGO_TOKEN_USERNAME)
+
+
+def store_tiingo_token_in_keyring(token: str) -> bool:
+    """Persist the Tiingo fallback-provider API token to the OS keychain."""
+    return _keyring_set(_KEYRING_TIINGO_TOKEN_USERNAME, token)
+
+
+def delete_tiingo_token_from_keyring() -> bool:
+    """Remove the stored Tiingo token (used when the user clears it in Settings)."""
+    return _keyring_delete(_KEYRING_TIINGO_TOKEN_USERNAME)
+
+
 def _keyring_get(username: str) -> str | None:
     try:
         import keyring  # noqa: PLC0415
@@ -132,6 +152,23 @@ def _keyring_set(username: str, secret: str) -> bool:
         return True
     except Exception:  # pragma: no cover - backend-specific
         log.warning("keyring store failed", exc_info=True)
+        return False
+
+
+def _keyring_delete(username: str) -> bool:
+    try:
+        import keyring  # noqa: PLC0415
+        from keyring.errors import PasswordDeleteError  # noqa: PLC0415
+    except ImportError:
+        return False
+    try:
+        keyring.delete_password(_KEYRING_SERVICE, username)
+        return True
+    except PasswordDeleteError:
+        # Entry already absent — treat as success (idempotent clear).
+        return True
+    except Exception:  # pragma: no cover - backend-specific
+        log.warning("keyring delete failed", exc_info=True)
         return False
 
 
