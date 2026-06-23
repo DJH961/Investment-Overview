@@ -384,10 +384,10 @@ def _holding_card(
             pills += '<span class="inv-holding-pill inv-holding-pill-warn">stale value</span>'
         if card.price_data_warning:
             pills += '<span class="inv-holding-pill inv-holding-pill-warn">bad history</span>'
-        # A movers badge reminds the viewer this holding topped today's leaderboard.
-        if badge:
-            badge_cls = "inv-holding-badge-loss" if "loser" in badge else "inv-holding-badge-gain"
-            pills += f'<span class="inv-holding-badge {badge_cls}">{escape(badge)}</span>'
+        # A movers badge reminds the viewer this holding topped today's
+        # leaderboard. It is rendered on its own right-aligned line above the
+        # daily-growth figures (below) rather than inline beside the symbol, so a
+        # long "Top % loser" badge can never push the freshness time out of place.
         ui.html(
             '<div class="inv-holding-topline">'
             f'<span class="inv-holding-sym">{escape(card.symbol)}{pills}</span>'
@@ -397,6 +397,13 @@ def _holding_card(
         ui.html(
             f'<div class="inv-holding-name" title="{escape(card.name)}">{escape(card.name)}</div>'
         )
+        if badge:
+            badge_cls = "inv-holding-badge-loss" if "loser" in badge else "inv-holding-badge-gain"
+            ui.html(
+                '<div class="inv-holding-badge-row">'
+                f'<span class="inv-holding-badge {badge_cls}">{escape(badge)}</span>'
+                "</div>"
+            )
 
         daily_color = color_for_signed(float(daily)) if daily is not None else "var(--inv-muted)"
         daily_txt = (

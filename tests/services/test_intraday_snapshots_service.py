@@ -266,6 +266,30 @@ class TestReconstruct:
         session.flush()
         assert calls["n"] == 1  # second call short-circuits on the app_config guard
 
+    def test_retries_when_prior_attempt_left_no_samples(self, session: Session) -> None:
+        # A first attempt that wrote nothing (a transient feed failure / opening
+        # the app before the bars were published) marks the session done but
+        # leaves the curve empty. The guard must not pin it empty: a later call
+        # re-runs and backfills, so the last market day always loads no matter
+        # when the app is opened.
+        _seed_eur_holding(session)
+        # First attempt: the feed returns no bars, so nothing is written but the
+        # session is still marked reconstructed.
+        written_first = iss.reconstruct_last_session(session, now=_NOW, fetcher=_fake_fetcher({}))
+        session.flush()
+        assert written_first == 0
+        assert iss.day_series_market_eur(session, now=_NOW) == []
+
+        # Second attempt (feed recovered): it must re-run despite the marker,
+        # because the session still holds no samples.
+        bars = {datetime(2024, 6, 3, 13, 30): Decimal("100")}
+        written_second = iss.reconstruct_last_session(
+            session, now=_NOW, fetcher=_fake_fetcher(bars)
+        )
+        session.flush()
+        assert written_second == 1
+        assert datetime(2024, 6, 3, 13, 30) in dict(iss.day_series_market_eur(session, now=_NOW))
+
 
 class TestNavDecomposition:
     def test_nav_holding_rides_in_base_not_intraday_samples(self, session: Session) -> None:

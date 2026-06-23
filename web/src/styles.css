@@ -556,6 +556,24 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .contributions-body .stats .stat { padding: 0.75rem 0.55rem; }
 .contributions-body .stats .stat-value { font-size: 0.98rem; letter-spacing: -0.02em; }
 .contributions-body .year-contribs { margin-top: 0.1rem; }
+/* Folded year header: stack the contribution count directly under the year
+ * label on the left, leaving only the monetary amount pinned to the right
+ * (before the chevron). Keeps the row to one clean line per side on mobile. */
+.year-contribs-summary { align-items: center; }
+.year-contribs-head { display: flex; flex-direction: column; gap: 0.05rem; }
+.year-contribs-meta {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.05rem;
+  text-align: right;
+}
+.year-contribs-count { font-size: 0.82rem; }
+/* A money figure shown in both currencies at once: the active display currency
+ * on top, the other smaller beneath, right-aligned so the columns line up. */
+.dual-amount { display: inline-flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
+.dual-amount-secondary { font-size: 0.74em; font-weight: 600; }
 
 /* Embedded projection (right column): the settings card and outputs each fold
  * away inside their own collapsible. */
@@ -1076,8 +1094,9 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .info-dot:hover .info-tip,
 .info-dot:focus-visible .info-tip,
 .info-dot.open .info-tip { display: block; opacity: 1; }
-/* Keep the popover on-screen for dots near the left/right edges of the grid. */
-.stat:first-child .info-tip { left: 0; transform: none; }
+/* Edge dots no longer need brittle :nth-child anchoring — positionInfoTip() in
+ * ui.ts measures the revealed popover and nudges it back inside the viewport on
+ * every column and screen width. */
 
 /* --- Risk & Returns metric cards -----------------------------------------
  * The two metric grids pack a lot of cards with uneven labels (some wrap to two
@@ -1113,6 +1132,9 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* On narrow phones stack the four KPI cards into two columns. */
 @media (max-width: 35rem) {
   .calc-summary { grid-template-columns: repeat(2, 1fr); }
+  /* Shrink the KPI figures so large totals (e.g. "$643,647") stay on one line
+   * rather than wrapping to two. */
+  .calc-summary .stat-value { font-size: 0.98rem; letter-spacing: -0.02em; }
   .calc-fields { grid-template-columns: 1fr; }
 }
 /* Goal callout */
@@ -1457,26 +1479,13 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     font-size: 1.15rem;
   }
 
-  /* Keep the info "i" tooltips inside the cards: the centred popover on a
-   * right-column metric used to spill past the card edge. Anchor the tooltip to
-   * the dot's right edge in the last grid column and to its left edge in the
-   * first, so it always opens back over the card instead of off it. */
-  .panel-analytics > .analytics-risk .stat:nth-child(5n) .info-tip,
-  .panel-analytics > .analytics-returns .stat:nth-child(3n) .info-tip {
-    left: auto;
-    right: 0;
-    transform: none;
-  }
-  .panel-analytics > .analytics-risk .stat:nth-child(5n + 1) .info-tip,
-  .panel-analytics > .analytics-returns .stat:nth-child(3n + 1) .info-tip {
-    left: 0;
-    right: auto;
-    transform: none;
-  }
-
-  /* Allocation calculator: KPI summary spreads to four across on widescreen;
-     the rest stays a comfortable single column of cards. */
+  /* Allocation calculator: the buy/rebalance KPI strip spreads to four across on
+     widescreen; the rest stays a comfortable single column of cards. */
   .panel-calc2 .calc2-summary { grid-template-columns: repeat(4, 1fr); }
+  /* The three-KPI overview (Portfolio value / Holdings / Categories) instead
+     spans the full width as an even three-across so there is no empty trailing
+     column. */
+  .panel-calc2 .calc2-summary-overview { grid-template-columns: repeat(3, 1fr); }
 }
 
 /* On true widescreen, give the content a little more room. */

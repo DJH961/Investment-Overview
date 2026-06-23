@@ -14,7 +14,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [3.12.0] — 2026-06-23
+## [3.13.0] — 2026-06-23
 
 ### Added
 
@@ -45,6 +45,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of being recomputed each render. The currency/FX model is unchanged: stored
   samples remain the EUR market component, and USD-native/EUR-derived
   conversion is reapplied at render.
+
+## [3.12.0] — 2026-06-23
+
+### Fixed
+
+- **Risk/Returns info tooltips no longer spill off-screen.** The "i" popovers are
+  now measured the moment they open and nudged back inside the viewport on every
+  grid column and screen width, replacing the brittle `:nth-child` edge anchoring
+  that still let edge-column and narrow-phone tips overflow.
+
+### Changed
+
+- **Calculator overview KPIs span the full width on desktop.** The three summary
+  cards (Portfolio value / Holdings / Categories) now lay out as an even
+  three-across instead of leaving an empty fourth column.
+- **Contributions show how much, not just how many.** A folded contribution year
+  now displays the year's total contributed (in both currencies) next to the
+  count, and each unfolded ledger row shows both the primary and a smaller
+  secondary currency at once — each leg at its own trade-date FX rate, so
+  currency drift is visible without toggling.
+- **UI selections persist across a currency switch.** Expanded sections
+  (Allocation, contribution years, calculator fund lists), the selected chart
+  timeframe, the Yearly/Monthly and category/fund toggles, and typed calculator
+  inputs are now remembered, so flipping EUR ↔ USD no longer resets where you
+  were. Money inputs are stored currency-neutrally (in EUR) and re-seed into the
+  active currency.
 
 ## [3.11.2] — 2026-06-23
 
