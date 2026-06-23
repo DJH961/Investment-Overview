@@ -931,7 +931,7 @@ def register() -> None:  # noqa: PLR0915
                         # curve. No-op after the first fetch of the session.
                         intraday_snapshots_service.reconstruct_last_session(session)
                         value_series = build_intraday_value_series(
-                            session, currency=display_ccy, tz=display_tz
+                            session, currency=display_ccy, tz=display_tz, positions=positions
                         )
                         # The reference line marking yesterday's settled close.
                         intraday_prev_close = previous_session_close_value(

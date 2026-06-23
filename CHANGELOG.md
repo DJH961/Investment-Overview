@@ -14,6 +14,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.9.3] — 2026-06-23
+
+### Fixed
+
+- **Overview "1 Day" graph no longer spikes or steps from mutual-fund NAVs.**
+  The intraday curve now stores only the *intraday-priced* (market) component of
+  the portfolio — stocks/ETFs — and reapplies the constant cash + NAV base
+  (mutual funds, money-market funds, cash) at render time. Because once-a-day-NAV
+  holdings never enter the intraday variation, a mutual fund's post-close NAV
+  revaluation shifts the whole curve uniformly instead of spiking the points
+  captured live before it, and a session watched live for only part of the day
+  joins its reconstructed remainder on a single consistent basis (no misleading
+  step where the two meet). Cache-tier `intraday_value` gains a renamed
+  `market_value_eur` column (migration `0014`); the table is regenerable, so it
+  is recreated rather than back-filled.
+
 ## [3.9.2] — 2026-06-23
 
 ### Fixed

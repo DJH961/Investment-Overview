@@ -192,15 +192,24 @@ def build_intraday_value_series(
     currency: str,
     tz: tzinfo | None = None,
     now: datetime | None = None,
+    positions: list[Position] | None = None,
 ) -> list[ValueSeriesPoint]:
     """Within-day portfolio-value series for the Overview "Day" range.
 
     Built from the intraday samples captured during today's market session
     (:mod:`investment_dashboard.services.intraday_snapshots_service`) rather than
     the once-a-day snapshot cache, so the curve shows real intraday movement with
-    market-time points only. The live current value is appended as the final
-    point so the tip matches the headline figure, and every point is converted
-    to ``currency`` (at the current FX rate — a single intraday day) and its
+    market-time points only.
+
+    Each stored sample holds just the intraday-priced (market) component; this
+    adds back the constant cash + NAV base (cash, mutual funds, money-market
+    funds) so the plotted figure is the whole-portfolio value while those
+    once-a-day-NAV holdings never enter the intraday variation — a mutual fund's
+    post-close revaluation shifts the whole curve uniformly instead of spiking the
+    points captured before it, and a part-day-live session joins its reconstructed
+    remainder without a step. The live current value is appended as the final
+    point so the tip matches the headline figure, every point is converted to
+    ``currency`` (at the current FX rate — a single intraday day) and its
     timestamp localised to ``tz`` for display. ``ValueSeriesPoint.date`` carries
     a full :class:`~datetime.datetime` here (a ``date`` subclass), which the
     chart renders on a time-of-day axis.
@@ -211,21 +220,29 @@ def build_intraday_value_series(
     currency = currency.upper()
     now = now or datetime.now(UTC)
 
-    samples = intraday_snapshots_service.day_series_eur(session, now=now)
+    # Decompose: the stored samples are the intraday-priced component; the
+    # base (cash + NAV holdings) is constant across the session and reapplied
+    # here, so it can never distort or spike the intraday shape.
+    if positions is None:
+        positions = compute_positions(session)
+    total_now = total_portfolio_value(session, positions=positions)
+    market_now = intraday_snapshots_service.market_value_eur(positions)
+    base = total_now - market_now
+
+    samples = intraday_snapshots_service.day_series_market_eur(session, now=now)
 
     # Cap the curve with the live current value so the tip equals the headline
     # Total Value, even between captures. Skip the duplicate when the most recent
     # sample is effectively "now". For a genuinely empty portfolio (no samples
     # and a zero live value) there is nothing to plot.
-    live_eur = total_portfolio_value(session)
     live_at = now.astimezone(UTC).replace(tzinfo=None) if now.tzinfo is not None else now
     # Stop the curve at the market close: once the session is over the live
     # value is just the settled close, so pin its point to 16:00 ET instead of
     # trailing a flat line out to the current time (overnight, or all weekend).
     session_close = intraday_snapshots_service.session_close_utc(now)
     live_at = min(live_at, session_close)
-    if (not samples and live_eur != 0) or (samples and samples[-1][0] < live_at):
-        samples = [*samples, (live_at, live_eur)]
+    if (not samples and total_now != 0) or (samples and samples[-1][0] < live_at):
+        samples = [*samples, (live_at, market_now)]
 
     if not samples:
         return []
@@ -235,7 +252,8 @@ def build_intraday_value_series(
         rate = fx_service.get_rate_eur_to_quote(session, date.today(), quote=currency)
 
     points: list[ValueSeriesPoint] = []
-    for at_utc, value_eur in samples:
+    for at_utc, market_eur in samples:
+        value_eur = base + market_eur
         value = value_eur if (currency == "EUR" or not rate) else value_eur * rate
         when: datetime = at_utc
         if tz is not None:

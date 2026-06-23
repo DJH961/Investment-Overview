@@ -48,6 +48,35 @@ def _seed_eur_holding(session: Session, *, close: Decimal = Decimal("100.00")) -
     session.flush()
 
 
+def _seed_mutual_fund(session: Session, *, nav: Decimal = Decimal("200.00")) -> None:
+    """Seed a €1,000 mutual-fund (NAV) holding — a once-a-day-priced position."""
+    account = accounts_repo.create_account(
+        session,
+        broker="vanguard",
+        account_label="EUR Funds",
+        native_currency="EUR",
+        account_type="brokerage",
+    )
+    instr = instruments_repo.get_or_create(
+        session, symbol="EURFUND", asset_class="mutual_fund", native_currency="EUR"
+    )
+    session.add(
+        Transaction(
+            account_id=account.id,
+            instrument_id=instr.id,
+            date=_SESSION_DAY,
+            kind="buy",
+            quantity=Decimal("5"),
+            price_native=nav,
+            net_native=Decimal("-1000.00"),
+            net_eur=Decimal("-1000.00"),
+            source="manual",
+        )
+    )
+    prices_repo.upsert_closes(session, instr.id, {_SESSION_DAY: nav})
+    session.flush()
+
+
 class TestSessionWindow:
     def test_last_session_date_rolls_back_over_weekend(self) -> None:
         saturday = datetime(2024, 6, 8, 18, 0, tzinfo=UTC)
@@ -136,7 +165,7 @@ class TestReconstruct:
         written = iss.reconstruct_last_session(session, now=_NOW, fetcher=_fake_fetcher(bars))
         session.flush()
         assert written == 2
-        series = iss.day_series_eur(session, now=_NOW)
+        series = iss.day_series_market_eur(session, now=_NOW)
         assert [v for _, v in series] == [Decimal("1000.00"), Decimal("1100.00")]
 
     def test_skips_bars_already_covered_by_live_samples(self, session: Session) -> None:
@@ -156,7 +185,7 @@ class TestReconstruct:
         session.flush()
         # Only the uncovered 09:30 bar is written; the live 10:00 point is kept.
         assert written == 1
-        series = dict(iss.day_series_eur(session, now=_NOW))
+        series = dict(iss.day_series_market_eur(session, now=_NOW))
         assert series[live_at] == Decimal("1234.00")  # untouched live value
         assert datetime(2024, 6, 3, 13, 30) in series  # gap was backfilled
 
@@ -173,6 +202,61 @@ class TestReconstruct:
         iss.reconstruct_last_session(session, now=_NOW, fetcher=fetch)
         session.flush()
         assert calls["n"] == 1  # second call short-circuits on the app_config guard
+
+
+class TestNavDecomposition:
+    def test_nav_holding_rides_in_base_not_intraday_samples(self, session: Session) -> None:
+        # A stock (intraday-priced) plus a mutual fund (once-a-day NAV). The fund
+        # must NOT appear in the stored intraday samples — it belongs to the
+        # constant base added at render — so its post-close NAV revaluation can
+        # never spike the curve at the points captured before it.
+        _seed_eur_holding(session)  # ACME 10@€100 = €1,000 (intraday-priced)
+        _seed_mutual_fund(session)  # EURFUND 5@€200 = €1,000 (NAV, in the base)
+        bars = {
+            datetime(2024, 6, 3, 13, 30): Decimal("100"),  # +0%
+            datetime(2024, 6, 3, 14, 0): Decimal("110"),  # +10%
+        }
+        written = iss.reconstruct_last_session(session, now=_NOW, fetcher=_fake_fetcher(bars))
+        session.flush()
+        assert written == 2
+
+        # Stored samples carry ONLY the stock's market component (no €1,000 fund).
+        market = [v for _, v in iss.day_series_market_eur(session, now=_NOW)]
+        assert market == [Decimal("1000.00"), Decimal("1100.00")]
+
+        # The rendered curve adds the constant €1,000 fund base to every point.
+        points = build_intraday_value_series(session, currency="EUR", now=_NOW)
+        assert points[0].value == Decimal("2000.00")  # €1,000 stock + €1,000 fund
+        assert points[1].value == Decimal("2100.00")  # stock +10%, fund unchanged
+
+    def test_part_day_live_then_offline_keeps_one_basis(self, session: Session) -> None:
+        # The user's scenario: watch the open live (dense points captured at the
+        # stock prices actually seen), go offline, reopen later. Reconstruction
+        # backfills the rest of the session; because the NAV fund is always in the
+        # base, the live stretch and the reconstructed remainder share one basis —
+        # no step where they meet.
+        _seed_eur_holding(session)
+        _seed_mutual_fund(session)
+        # Two live captures early in the session (stock-only market component).
+        intraday_repo.insert_sample(session, datetime(2024, 6, 3, 14, 0), Decimal("1000.00"))
+        intraday_repo.insert_sample(session, datetime(2024, 6, 3, 14, 30), Decimal("1050.00"))
+        session.flush()
+        # Reconstruction fills the whole session at 30-min granularity.
+        bars = {
+            datetime(2024, 6, 3, 14, 0): Decimal("100"),
+            datetime(2024, 6, 3, 15, 0): Decimal("90"),
+            datetime(2024, 6, 3, 15, 30): Decimal("95"),
+        }
+        iss.reconstruct_last_session(session, now=_NOW, fetcher=_fake_fetcher(bars))
+        session.flush()
+
+        points = build_intraday_value_series(session, currency="EUR", now=_NOW)
+        # Every point carries the same constant €1,000 NAV base: subtracting the
+        # base must leave a strictly positive stock component on every point, and
+        # the live 14:00 capture (€1,000 + €1,000 base) is preserved unchanged.
+        base = Decimal("1000.00")
+        assert all(p.value - base > 0 for p in points)
+        assert any(p.value == Decimal("2000.00") for p in points)  # the live 14:00 point
 
 
 class TestBuildIntradaySeries:

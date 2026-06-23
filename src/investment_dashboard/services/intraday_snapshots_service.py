@@ -3,9 +3,22 @@
 The longer-range Overview curves read one cached value *per day*
 (:mod:`investment_dashboard.services.snapshots_service`). A "Day" range built on
 that has at most one or two points, so it draws a near-empty line. This service
-keeps the *within-day* shape instead, from two complementary sources:
+keeps the *within-day* shape instead.
 
-* **Live capture** — :func:`record_if_market_open` appends a portfolio-value
+The trick that makes the curve robust is **decomposition**: every stored sample
+holds only the EUR value of the *intraday-priced* holdings (stocks/ETFs), not
+the whole-portfolio total. The constant base — cash plus NAV holdings (mutual
+funds and money-market funds, which print at most one NAV a day) — is added back
+once, at render time. Because that base is never baked into the samples, the two
+capture sources below always sit on a single consistent basis, and a holding
+whose NAV is revalued after the close (a mutual fund) only shifts the whole
+curve uniformly instead of spiking it at the instants captured before the
+revaluation, or stepping the curve where a live-watched stretch meets a
+reconstructed one.
+
+Two complementary sources feed the samples:
+
+* **Live capture** — :func:`record_if_market_open` appends a market-component
   sample on every successful price refresh **while the US market is open**, so
   the curve only ever contains real market-time points and grows denser the more
   often the app auto-updates prices. A small dedupe floor collapses bursts (a
@@ -13,26 +26,23 @@ keeps the *within-day* shape instead, from two complementary sources:
 * **Reconstruction** — :func:`reconstruct_last_session` backfills the most recent
   trading session at ~30-minute granularity from the price feed's intraday bars,
   so opening the app late in the day, after the close, or over a weekend still
-  shows a full "1 Day" curve for the last trading day rather than a stub. It is
-  anchored to that day's cached daily total, so only the priced holdings move
-  intraday and the curve closes exactly on the day's settled value. It only fills
-  *gaps*: any 30-minute mark already captured live is left untouched, so a session
-  watched live keeps the prices actually seen rather than being overwritten by a
-  point revalued at a later (e.g. post-close NAV) price — which would otherwise
-  draw a spike at every 30-minute mark.
+  shows a full "1 Day" curve for the last trading day rather than a stub. It
+  fills *gaps* only: any 30-minute mark already captured live is left untouched,
+  so a live-watched stretch keeps its denser, real points.
 
-:func:`day_series_eur` returns the current session's merged samples (EUR), which
-the Overview "Day" range converts to the display currency, localises to the
-user's timezone, and caps with the live current value — *pinned to the market
-close* (:func:`session_close_utc`) once the session is over, so the curve ends
-when the market closes rather than trailing a flat line overnight or all weekend.
+:func:`day_series_market_eur` returns the current session's merged market
+components; :func:`build_intraday_value_series` (in the Overview query layer)
+adds the settled cash + NAV base, converts to the display currency, localises to
+the user's timezone, and caps with the live current value — *pinned to the
+market close* (:func:`session_close_utc`) once the session is over, so the curve
+ends when the market closes rather than trailing a flat line overnight or all
+weekend.
 
 Holdings without intraday prices stay **constant** through the session, so they
-neither distort the intraday shape nor drop out of the total, and the curve
-still closes on the correct settled value. Cash and money-market funds ride in
-the reconstruction's anchored ``base``; mutual funds (which only print one NAV
-at the close) are carried at a flat ratio of 1 because the feed serves them no
-intraday bars.
+neither distort the intraday shape nor drop out of the total: cash and all NAV
+holdings (mutual funds, money-market funds) ride in the render-time base, while a
+market-priced holding the feed served no intraday bars for is simply carried at a
+flat ratio of 1.
 
 Only the most recent session is retained; older samples are pruned as fresh ones
 land (the data is pure cache, regenerable as the app keeps running).
@@ -44,12 +54,16 @@ import logging
 import threading
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain.market_hours import is_us_market_holiday, is_us_market_open
 from investment_dashboard.repositories import app_config_repo, intraday_repo
+
+if TYPE_CHECKING:
+    from investment_dashboard.services.positions_service import Position
 
 log = logging.getLogger(__name__)
 
@@ -74,12 +88,11 @@ MIN_CAPTURE_GAP_SECONDS = 20
 RECONSTRUCT_INTERVAL = "30m"
 
 #: Half-window (seconds) around a reconstructed bar within which an existing live
-#: sample counts as "already covered". Reconstruction only *backfills* — it must
-#: never insert a bar where the session was watched live, because its anchor
-#: (today's settled total) can revalue a holding the live points captured at a
-#: different price (e.g. a mutual fund whose NAV prints only after the close):
-#: mixing the two would draw a spike at every 30-min mark. 15 min = half the bar
-#: width, so each bar is suppressed only by a live sample inside its own slot.
+#: sample counts as "already covered". Reconstruction only *backfills*: a 30-min
+#: bar is skipped when a live sample already sits inside its slot, so a
+#: live-watched stretch keeps its denser, real points instead of being thinned to
+#: the coarse 30-min grid. 15 min = half the bar width, so each bar is suppressed
+#: only by a live sample inside its own slot.
 RECONSTRUCT_COVERAGE_GAP_SECONDS = 15 * 60
 
 #: ``app_config`` key recording the last session date we reconstructed, so we
@@ -89,8 +102,44 @@ _RECONSTRUCTED_KEY = "intraday_reconstructed_day"
 #: Smallest share count treated as a real holding (mirrors the Overview filter).
 _MIN_SHARES = Decimal("0.0000001")
 
+#: Asset classes that price at most once a day (a NAV) rather than intraday, plus
+#: cash-like balances. Their value is carried in the render-time base, never in
+#: the stored samples, so it can't distort or spike the intraday curve. Money
+#: market funds share the broad ``mutual_fund`` class (see
+#: :mod:`investment_dashboard.domain.money_market`), so this one set covers them.
+_NAV_ASSET_CLASSES = frozenset({"mutual_fund", "cash", "savings"})
+
 #: Serialises reconstruction so two tabs opening at once don't double-fetch.
 _reconstruct_lock = threading.Lock()
+
+
+def is_intraday_priced(position: Position) -> bool:
+    """Whether ``position`` has a genuine *intraday* market price (stock/ETF).
+
+    NAV holdings (mutual funds, money-market funds) and cash print at most once a
+    day, so they belong in the render-time base, not the intraday samples.
+    """
+    effective = position.effective
+    asset_class = (
+        effective.asset_class if effective is not None else position.instrument.asset_class
+    )
+    return asset_class not in _NAV_ASSET_CLASSES
+
+
+def market_value_eur(positions: list[Position]) -> Decimal:
+    """EUR value of the *intraday-priced* holdings — the stored sample quantity.
+
+    This is the portion of the portfolio that actually moves intraday; the
+    constant cash + NAV remainder is added back when the curve is rendered.
+    """
+    return sum(
+        (
+            p.current_value_eur
+            for p in positions
+            if p.shares > _MIN_SHARES and is_intraday_priced(p)
+        ),
+        start=Decimal(0),
+    )
 
 
 def _to_naive_utc(now: datetime) -> datetime:
@@ -187,7 +236,12 @@ def session_close_utc(now: datetime | None = None) -> datetime:
 
 
 def record_if_market_open(*, now: datetime | None = None) -> bool:
-    """Append one intraday portfolio-value sample when the US market is open.
+    """Append one intraday market-component sample when the US market is open.
+
+    Stores only the EUR value of the intraday-priced holdings (stocks/ETFs); the
+    cash + NAV base is reapplied at render time, so a mutual fund's post-close
+    NAV revaluation can never spike the curve at the live points captured before
+    it (see the module docstring).
 
     Best-effort and self-pruning: returns ``True`` when a sample was written,
     ``False`` when the market is closed or the dedupe floor suppressed it. Opens
@@ -207,7 +261,8 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:
     captured_at = _to_naive_utc(now)
     try:
         with ledger_session_scope() as session:
-            value_eur = positions_service.total_portfolio_value(session)
+            positions = positions_service.compute_positions(session)
+            value_eur = market_value_eur(positions)
             with cache_write_session(session) as cache:
                 last = intraday_repo.latest(cache)
                 if (
@@ -223,14 +278,14 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:
     return True
 
 
-def day_series_eur(
+def day_series_market_eur(
     session: Session, *, now: datetime | None = None
 ) -> list[tuple[datetime, Decimal]]:
-    """Return ``[(captured_at_utc, value_eur), ...]`` for the current session.
+    """Return ``[(captured_at_utc, market_value_eur), ...]`` for the current session.
 
     Oldest first. ``captured_at`` is a naive UTC timestamp; the caller localises
-    it for display. Merges reconstructed + live samples. Empty when nothing has
-    been captured or reconstructed for the session yet.
+    it for display and adds the cash + NAV base. Merges reconstructed + live
+    samples. Empty when nothing has been captured or reconstructed yet.
     """
     from investment_dashboard.db import cache_read_session  # noqa: PLC0415
 
@@ -238,7 +293,7 @@ def day_series_eur(
     start, end = session_window_utc(now)
     with cache_read_session(session) as cache:
         rows = intraday_repo.list_in_range(cache, start, end)
-    return [(r.captured_at, r.total_value_eur) for r in rows]
+    return [(r.captured_at, r.market_value_eur) for r in rows]
 
 
 def _forward_filled(bars: dict[datetime, Decimal], at: datetime) -> Decimal | None:
@@ -264,17 +319,15 @@ def reconstruct_last_session(
 ) -> int:
     """Backfill the most recent session's intraday curve from the price feed.
 
-    Fetches ~30-minute intraday bars for the held, market-priced instruments on
-    the last trading day and records a portfolio-value point per bar. The curve
-    is anchored to that day's cached daily total, so cash, money-market funds and
-    any holding without intraday bars stay constant and the reconstruction closes
-    exactly on the settled value:
-    ``value(t) = base + Σ value_i · price_i(t)/close_i``.
+    Fetches ~30-minute intraday bars for the held, intraday-priced instruments on
+    the last trading day and records the *market component* per bar — the EUR
+    value of those holdings, ``Σ value_i · price_i(t)/close_i``. The constant cash
+    + NAV base is added at render time, so a holding the feed served no bars for
+    is simply carried flat and the reconstruction is on the same basis as the live
+    captures.
 
     Only *gaps* are filled: a 30-minute mark already captured live is skipped, so
-    a session watched live keeps the live prices rather than being overwritten by
-    a point anchored to a later revaluation (e.g. a mutual fund's post-close NAV),
-    which would otherwise spike the curve at each mark.
+    a live-watched stretch keeps its denser real points.
 
     Idempotent and guarded: it runs the network fetch at most once per session
     (tracked in ``app_config``) unless ``force`` is set. Best-effort — returns
@@ -300,7 +353,6 @@ def reconstruct_last_session(
 def _reconstruct_session(session: Session, session_date: date, *, fetcher: object | None) -> int:
     from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
     from investment_dashboard.db import cache_read_session, cache_write_session  # noqa: PLC0415
-    from investment_dashboard.domain.money_market import is_money_market  # noqa: PLC0415
     from investment_dashboard.services import positions_service  # noqa: PLC0415
 
     positions = positions_service.compute_positions(session, as_of=session_date)
@@ -311,7 +363,7 @@ def _reconstruct_session(session: Session, session_date: date, *, fetcher: objec
         and p.current_price_native is not None
         and p.current_price_native != 0
         and p.current_value_eur != 0
-        and not is_money_market(p.instrument.symbol)
+        and is_intraday_priced(p)
     ]
     if not priced:
         return 0
@@ -325,16 +377,9 @@ def _reconstruct_session(session: Session, session_date: date, *, fetcher: objec
     if not bar_times:
         return 0
 
-    total_eur = positions_service.total_portfolio_value(
-        session, as_of=session_date, positions=positions
-    )
-    base = total_eur - sum((p.current_value_eur for p in priced), start=Decimal(0))
-
     # Backfill gaps only: keep every instant already captured live and skip any
-    # reconstructed bar that falls inside a live sample's slot. Live points hold
-    # the prices actually seen during the session; a reconstructed point anchored
-    # to today's revalued total (e.g. a mutual fund's post-close NAV) would dip
-    # below them and draw a spike at each 30-min mark (see the coverage gap).
+    # reconstructed bar that falls inside a live sample's slot, so a live-watched
+    # stretch keeps its denser real points.
     with cache_read_session(session) as cache:
         live_times = [
             r.captured_at
@@ -348,14 +393,17 @@ def _reconstruct_session(session: Session, session_date: date, *, fetcher: objec
         for t in bar_times:
             if _covered_by_live(live_times, t):
                 continue
-            value = base
+            # The intraday-priced (market) component only — the cash + NAV base is
+            # reapplied at render time, keeping reconstruction on the same basis
+            # as the live captures.
+            market = Decimal(0)
             for p in priced:
                 price_t = _forward_filled(bars_by_symbol.get(p.instrument.symbol, {}), t)
                 if price_t is None:
                     price_t = p.current_price_native
                 ratio = price_t / p.current_price_native  # type: ignore[operator]
-                value += p.current_value_eur * ratio
-            intraday_repo.insert_sample(cache, t, value)
+                market += p.current_value_eur * ratio
+            intraday_repo.insert_sample(cache, t, market)
             written += 1
         intraday_repo.delete_before(cache, _session_start_utc(session_date))
     return written
