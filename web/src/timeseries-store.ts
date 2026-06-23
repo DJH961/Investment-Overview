@@ -57,6 +57,9 @@ const DB_NAME = "investment-overview-timeseries";
 const STORE_NAME = "sessions";
 const DB_VERSION = 1;
 
+/** A genuine `YYYY-MM-DD` session key — distinguishes dated sessions from namespaced caches. */
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 function serializeBars(bars: Bar[]): StoredBar[] {
   return bars.map((b) => [b.t, b.value.toString()]);
 }
@@ -234,11 +237,14 @@ export class TimeSeriesStore {
   /**
    * Drop every stored day **strictly before** `oldestDay` (`YYYY-MM-DD`). Days
    * compare correctly as plain strings, so a single lexical compare keeps the
-   * rolling 1W window and discards the rest.
+   * rolling 1W window and discards the rest. Only genuine `YYYY-MM-DD` session
+   * keys are considered: namespaced keys (e.g. the 1W daily-close cache) sort
+   * before real dates but must never be swept away by a session prune, so they
+   * are skipped.
    */
   async prune(oldestDay: string): Promise<void> {
     for (const day of await this.backend.keys()) {
-      if (day < oldestDay) await this.backend.delete(day);
+      if (DATE_KEY_RE.test(day) && day < oldestDay) await this.backend.delete(day);
     }
   }
 }

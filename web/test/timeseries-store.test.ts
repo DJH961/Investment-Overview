@@ -74,4 +74,15 @@ describe("TimeSeriesStore", () => {
     await store.prune("2024-01-09");
     expect(await store.listDays()).toEqual(["2024-01-09", "2024-01-10"]);
   });
+
+  it("never prunes a namespaced (non-date) cache key", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.saveSession(session("2024-01-08"));
+    await store.saveSession({ ...session("2024-01-10"), day: "1W-daily" });
+    // A date floor far in the future would lexically exceed the namespaced key,
+    // but it must survive a session prune regardless.
+    await store.prune("2099-01-01");
+    expect(await store.listDays()).toContain("1W-daily");
+    expect(await store.listDays()).not.toContain("2024-01-08");
+  });
 });

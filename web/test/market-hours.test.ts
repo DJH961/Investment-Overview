@@ -6,6 +6,7 @@ import {
   lastSessionDate,
   latestSettledSessionDate,
   previousTradingSession,
+  recentTradingSessions,
   sessionCloseMs,
   sessionOpenMs,
 } from "../src/market-hours";
@@ -164,5 +165,33 @@ describe("sessionCloseMs / sessionOpenMs", () => {
   it("resolves 16:00 ET to UTC during standard time (UTC-5)", () => {
     // 2026-01-12 is EST: 16:00 ET == 21:00 UTC.
     expect(new Date(sessionCloseMs("2026-01-12")).toISOString()).toBe("2026-01-12T21:00:00.000Z");
+  });
+});
+
+describe("recentTradingSessions", () => {
+  it("returns the N most recent sessions ascending, ending on the current one", () => {
+    // Sat 2026-03-14 → the window ends on Friday 2026-03-13 and walks back a
+    // holiday-free week.
+    expect(recentTradingSessions(5, new Date("2026-03-14T16:00:00Z"))).toEqual([
+      "2026-03-09",
+      "2026-03-10",
+      "2026-03-11",
+      "2026-03-12",
+      "2026-03-13",
+    ]);
+  });
+
+  it("skips weekends and holidays when walking back", () => {
+    // Mon 2026-06-22: walking back skips the weekend and Fri 2026-06-19
+    // (Juneteenth) to reach Thursday 2026-06-18.
+    expect(recentTradingSessions(2, new Date("2026-06-22T14:00:00Z"))).toEqual([
+      "2026-06-18",
+      "2026-06-22",
+    ]);
+  });
+
+  it("returns an empty list for a non-positive count", () => {
+    expect(recentTradingSessions(0, new Date("2026-03-14T16:00:00Z"))).toEqual([]);
+    expect(recentTradingSessions(-3, new Date("2026-03-14T16:00:00Z"))).toEqual([]);
   });
 });

@@ -266,6 +266,23 @@ export function previousTradingSession(day: string): string {
 }
 
 /**
+ * The `count` most recent NYSE trading sessions up to and including the current
+ * session as of `now`, **ascending** (`YYYY-MM-DD`, New-York calendar) — the
+ * window the live "1 Week" curve spans. The newest entry is {@link lastSessionDate}
+ * (so a weekend window still ends on Friday's session), and each earlier entry is
+ * the {@link previousTradingSession} of the one after it, skipping weekends and
+ * holidays. `count <= 0` yields an empty list.
+ */
+export function recentTradingSessions(count: number, now: Date = new Date()): string[] {
+  if (count <= 0) return [];
+  const days: string[] = [lastSessionDate(now)];
+  for (let i = 1; i < count; i += 1) {
+    days.push(previousTradingSession(days[days.length - 1]));
+  }
+  return days.reverse();
+}
+
+/**
  * Minutes to add to a UTC instant to reach the exchange-local (New York) wall
  * clock — i.e. `ET = UTC + offset`. Negative (−240 EDT / −300 EST). Used to turn
  * an exchange wall-clock time on a given day into an absolute UTC instant.
