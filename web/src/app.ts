@@ -110,14 +110,15 @@ import {
 } from "./ui";
 
 /** How long an auto-dismissing status toast stays on screen. */
-const TOAST_DURATION_MS = 4500;
+const TOAST_DURATION_MS = 6000;
 
 /**
- * How long the top-of-page "welcome back" login banner stays up. A touch longer
- * than an ordinary toast so a returning user clearly registers that the unlock
- * was detected before it fades, while the bottom refreshing pill keeps working.
+ * How long the top-of-page "welcome back" login banner stays up. Kept short — its
+ * only job is to confirm the unlock was detected before it fades, so it doesn't
+ * linger over the dashboard while the bottom refreshing pill and coverage toasts
+ * keep working underneath.
  */
-const WELCOME_BANNER_DURATION_MS = 5000;
+const WELCOME_BANNER_DURATION_MS = 3200;
 
 /**
  * Minimum time the manual "Refreshing prices…" feedback stays on screen after
@@ -297,6 +298,13 @@ export class App {
    */
   private prefetchFetchedSomething = false;
   /**
+   * Whether the prefetch status line may be shown on the unlock screen. True only
+   * for the fresh page-load prefetch — so the login banner reflects a genuinely
+   * fresh warm-up. After a lock (auto or manual) it is cleared, so a stale status
+   * never reappears; the next unlock interaction re-warms the caches silently.
+   */
+  private prefetchShownOnLogin = false;
+  /**
    * Symbols the latest *network* refresh genuinely failed to price (primary
    * couldn't, backup didn't fill) — still stuck on a last-known value. Kept so
    * the "Prices up to date" startup confirmation never claims everything is
@@ -390,13 +398,27 @@ export class App {
       // finishes unlocking, so the first post-login paint is live rather than
       // starting the per-minute clock from zero. Honours the shared credit budget
       // so it can't double-spend with the later refresh. Kept as a promise so the
-      // login spin + welcome status can react once it settles.
-      this.prefetchPromise = this.prefetchLiveData();
+      // login spin + welcome status can react once it settles. This is the *fresh
+      // page load* warm-up, so its status is allowed to show on the login screen.
+      this.startPrefetch({ shownOnLogin: true });
       // First unlock of the session: auto-prompt the fingerprint sheet when the
       // device is enrolled, so a returning user can unlock with a single touch
       // and no extra tap.
       this.showUnlock(undefined, { autoPrompt: true });
     }
+  }
+
+  /**
+   * Kick off a single live-data prefetch, unless one is already in flight (or has
+   * already run this page load / since the last lock). `shownOnLogin` decides
+   * whether its status line may surface on the unlock screen: true for the fresh
+   * page-load warm-up, false for the silent re-warm fired by an unlock
+   * interaction after a lock — so a stale status never reappears on the login.
+   */
+  private startPrefetch(options: { shownOnLogin: boolean }): void {
+    if (this.prefetchPromise) return;
+    this.prefetchShownOnLogin = options.shownOnLogin;
+    this.prefetchPromise = this.prefetchLiveData();
   }
 
   /**
@@ -912,8 +934,9 @@ export class App {
 
     // The live-data prefetch status: show that the app is already warming live
     // prices (and what it found / when it last pulled) while the user unlocks.
-    // Rendered only when there is something honest to say.
-    if (this.prefetchStatus !== null) {
+    // Rendered only for the fresh page-load warm-up — never the stale status left
+    // over from before a lock (which has cleared the flag).
+    if (this.prefetchStatus !== null && this.prefetchShownOnLogin) {
       formChildren.push(
         h(
           "p",
@@ -994,6 +1017,10 @@ export class App {
    * to the manual button. An explicit tap does surface the reason.
    */
   private async unlockBiometric(auto = false): Promise<void> {
+    // An explicit fingerprint tap is the "interact again" signal after a lock:
+    // start warming the caches right away, in parallel with the platform sheet.
+    // No-op on the fresh page-load auto-prompt (prefetch already running).
+    if (!auto) this.startPrefetch({ shownOnLogin: false });
     try {
       const passphrase = await unlockWithBiometric();
       await this.unlock(passphrase, false);
@@ -1268,6 +1295,10 @@ export class App {
    * no usable cached blob do we block on a fresh download.
    */
   private async unlock(passphrase: string, enrolRequested = false): Promise<void> {
+    // Re-warm the live caches the moment the user interacts to unlock after a
+    // lock. No-op on the fresh page load (the prefetch is already running) and
+    // silent — its status never shows on the login (see {@link startPrefetch}).
+    this.startPrefetch({ shownOnLogin: false });
     const cached = readCachedEnvelope();
     if (cached) {
       try {
@@ -1323,7 +1354,7 @@ export class App {
     // confirms the login was detected and that a price refresh is about to run.
     // It sits clear of the bottom refreshing pill / coverage toast so both show
     // at once — the user sees "welcome back" *and* the live update underneath.
-    this.welcomeBanner("Welcome back — checking for fresh prices…");
+    this.welcomeBanner("Welcome back — checking prices…");
     this.pollLog("login", "Unlock detected — painting cache, starting refresh.");
 
     // Once the login prefetch settles, spin the Refresh glyph briefly *iff* it
@@ -2812,6 +2843,12 @@ export class App {
     this.refreshing = false;
     this.state.passphrase = null;
     this.state.data = null;
+    // Drop the prefetch warm-up state so its status never lingers on the unlock
+    // screen after a lock; the next unlock interaction re-warms the caches afresh.
+    this.prefetchStatus = null;
+    this.prefetchShownOnLogin = false;
+    this.prefetchPromise = null;
+    this.prefetchFetchedSomething = false;
     this.showUnlock();
   }
 }
