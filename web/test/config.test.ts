@@ -1,23 +1,28 @@
 /**
- * URL resolution for the data source. `resolveBlobUrl` builds the encrypted-blob
- * download URL; `resolveMetaUrl` derives the tiny version-sidecar endpoint used
- * to cheaply detect a newer export.
+ * Config resolution and the portable config packet. `resolveBlobUrl` returns the
+ * configured data-source URL; `resolveMetaUrl` derives the version-sidecar
+ * endpoint; `serializeConfig`/`parseConfigPacket` round-trip an export file.
  */
 import { describe, expect, it } from "vitest";
 
-import { resolveBlobUrl, resolveMetaUrl, resolvePriceProxyUrl, parseAutoRefreshMinutes, type AppConfig } from "../src/config";
+import {
+  resolveBlobUrl,
+  resolveMetaUrl,
+  resolvePriceProxyUrl,
+  parseUpdateMinutes,
+  serializeConfig,
+  parseConfigPacket,
+  CONFIG_PACKET_TYPE,
+  type AppConfig,
+} from "../src/config";
 
 function config(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     apiKey: "k",
-    repo: "octo/portfolio",
-    releaseTag: "live-data",
-    blobUrl: "",
-    metaUrl: "",
+    blobUrl: "https://proxy.example/portfolio.enc",
     priceProxyUrl: "",
-    quoteCacheMinutes: 15,
+    updateMinutes: 15,
     autoLockMinutes: 5,
-    autoRefreshMinutes: 5,
     ...overrides,
   };
 }
@@ -38,37 +43,33 @@ describe("resolvePriceProxyUrl", () => {
     ).toBe("https://other/price");
   });
 
-  it("returns null without a Worker origin (release-asset default has no /price route)", () => {
-    expect(resolvePriceProxyUrl(config())).toBeNull();
+  it("returns null without a Worker origin (no data source configured)", () => {
+    expect(resolvePriceProxyUrl(config({ blobUrl: "" }))).toBeNull();
   });
 });
 
 describe("resolveBlobUrl", () => {
-  it("builds the release-asset URL from repo + tag", () => {
-    expect(resolveBlobUrl(config())).toBe(
-      "https://github.com/octo/portfolio/releases/download/live-data/portfolio.enc",
-    );
-  });
-
-  it("prefers an explicit blobUrl override", () => {
+  it("returns the configured data-source URL", () => {
     expect(resolveBlobUrl(config({ blobUrl: "https://proxy.example/blob" }))).toBe(
       "https://proxy.example/blob",
     );
   });
 
   it("returns null when no source is configured", () => {
-    expect(resolveBlobUrl(config({ repo: "not-a-repo" }))).toBeNull();
+    expect(resolveBlobUrl(config({ blobUrl: "" }))).toBeNull();
   });
 });
 
 describe("resolveMetaUrl", () => {
-  it("derives the release-asset meta sidecar from repo + tag", () => {
-    expect(resolveMetaUrl(config())).toBe(
-      "https://github.com/octo/portfolio/releases/download/live-data/portfolio.meta.json",
-    );
+  it("swaps the filename for a release-asset-style portfolio.enc URL", () => {
+    expect(
+      resolveMetaUrl(
+        config({ blobUrl: "https://github.com/octo/portfolio/releases/download/live-data/portfolio.enc" }),
+      ),
+    ).toBe("https://github.com/octo/portfolio/releases/download/live-data/portfolio.meta.json");
   });
 
-  it("appends ?meta to a proxy blobUrl override", () => {
+  it("appends ?meta to a proxy blobUrl", () => {
     expect(resolveMetaUrl(config({ blobUrl: "https://proxy.example/blob" }))).toBe(
       "https://proxy.example/blob?meta",
     );
@@ -80,28 +81,80 @@ describe("resolveMetaUrl", () => {
     );
   });
 
-  it("prefers an explicit metaUrl override above all", () => {
-    expect(
-      resolveMetaUrl(config({ blobUrl: "https://proxy.example/blob", metaUrl: "https://meta.example/v" })),
-    ).toBe("https://meta.example/v");
-  });
-
   it("returns null when no source is configured", () => {
-    expect(resolveMetaUrl(config({ repo: "not-a-repo" }))).toBeNull();
+    expect(resolveMetaUrl(config({ blobUrl: "" }))).toBeNull();
   });
 });
 
-describe("parseAutoRefreshMinutes", () => {
+describe("parseUpdateMinutes", () => {
   it("falls back to the default for blank or invalid input", () => {
-    expect(parseAutoRefreshMinutes("")).toBe(5);
-    expect(parseAutoRefreshMinutes("abc")).toBe(5);
-    expect(parseAutoRefreshMinutes("0")).toBe(5);
-    expect(parseAutoRefreshMinutes("-3")).toBe(5);
+    expect(parseUpdateMinutes("")).toBe(15);
+    expect(parseUpdateMinutes("abc")).toBe(15);
+    expect(parseUpdateMinutes("0")).toBe(15);
+    expect(parseUpdateMinutes("-3")).toBe(15);
   });
 
   it("rounds and clamps to the allowed range", () => {
-    expect(parseAutoRefreshMinutes("7")).toBe(7);
-    expect(parseAutoRefreshMinutes("7.4")).toBe(7);
-    expect(parseAutoRefreshMinutes("9999")).toBe(120);
+    expect(parseUpdateMinutes("7")).toBe(7);
+    expect(parseUpdateMinutes("7.4")).toBe(7);
+    expect(parseUpdateMinutes("9999")).toBe(240);
+  });
+});
+
+describe("config packet", () => {
+  it("round-trips a config through serialize → parse", () => {
+    const original = config({
+      apiKey: "secret-key",
+      blobUrl: "https://proxy.example/portfolio.enc",
+      updateMinutes: 30,
+      autoLockMinutes: 10,
+    });
+    const restored = parseConfigPacket(serializeConfig(original));
+    expect(restored).toEqual(original);
+  });
+
+  it("stamps the packet with the recognised type and version", () => {
+    const packet = JSON.parse(serializeConfig(config())) as Record<string, unknown>;
+    expect(packet.type).toBe(CONFIG_PACKET_TYPE);
+    expect(packet.version).toBe(1);
+  });
+
+  it("clamps out-of-range numeric fields on import", () => {
+    const restored = parseConfigPacket(
+      JSON.stringify({
+        type: CONFIG_PACKET_TYPE,
+        version: 1,
+        apiKey: "k",
+        blobUrl: "u",
+        updateMinutes: 99999,
+        autoLockMinutes: -4,
+      }),
+    );
+    expect(restored.updateMinutes).toBe(240);
+    expect(restored.autoLockMinutes).toBe(0);
+  });
+
+  it("trims whitespace around the key and URL", () => {
+    const restored = parseConfigPacket(
+      JSON.stringify({ type: CONFIG_PACKET_TYPE, version: 1, apiKey: "  k  ", blobUrl: "  u  " }),
+    );
+    expect(restored.apiKey).toBe("k");
+    expect(restored.blobUrl).toBe("u");
+  });
+
+  it("rejects non-JSON input", () => {
+    expect(() => parseConfigPacket("not json")).toThrow();
+  });
+
+  it("rejects a JSON file that isn't a config packet", () => {
+    expect(() => parseConfigPacket(JSON.stringify({ hello: "world" }))).toThrow();
+  });
+
+  it("rejects a packet whose version isn't supported", () => {
+    expect(() =>
+      parseConfigPacket(
+        JSON.stringify({ type: CONFIG_PACKET_TYPE, version: 999, apiKey: "k", blobUrl: "u" }),
+      ),
+    ).toThrow(/version/i);
   });
 });

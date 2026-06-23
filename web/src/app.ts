@@ -20,19 +20,19 @@ import { decryptEnvelopeToJson, type Envelope } from "./crypto";
 import { buildDemoModel } from "./demo";
 import {
   defaultConfig,
-  isValidRepo,
   loadConfig,
   parseAutoLockMinutes,
-  parseAutoRefreshMinutes,
+  parseUpdateMinutes,
   resolveBlobUrl,
   resolveMetaUrl,
   resolvePriceProxyUrl,
   saveConfig,
-  DEFAULT_QUOTE_CACHE_MINUTES,
+  serializeConfig,
+  parseConfigPacket,
+  DEFAULT_UPDATE_MINUTES,
+  MAX_UPDATE_MINUTES,
   DEFAULT_AUTO_LOCK_MINUTES,
-  DEFAULT_AUTO_REFRESH_MINUTES,
   MAX_AUTO_LOCK_MINUTES,
-  MAX_AUTO_REFRESH_MINUTES,
   type AppConfig,
 } from "./config";
 import { PriceError, type FxRates } from "./prices";
@@ -324,33 +324,12 @@ export class App {
       placeholder: "Twelve Data API key",
       value: config.apiKey,
     });
-    const repo = h("input", {
-      type: "text",
-      id: "f-repo",
-      autocomplete: "off",
-      placeholder: "owner/repository",
-      value: config.repo,
-    });
-    const tag = h("input", {
-      type: "text",
-      id: "f-tag",
-      autocomplete: "off",
-      placeholder: "live-data",
-      value: config.releaseTag,
-    });
     const blobUrl = h("input", {
       type: "url",
       id: "f-bloburl",
       autocomplete: "off",
-      placeholder: "(optional) direct blob URL override",
+      placeholder: "https://your-worker.workers.dev/portfolio.enc",
       value: config.blobUrl,
-    });
-    const metaUrl = h("input", {
-      type: "url",
-      id: "f-metaurl",
-      autocomplete: "off",
-      placeholder: "(optional) version-file URL override",
-      value: config.metaUrl,
     });
     const priceProxyUrl = h("input", {
       type: "url",
@@ -359,15 +338,15 @@ export class App {
       placeholder: "(optional) Tiingo price-proxy URL override",
       value: config.priceProxyUrl,
     });
-    const cacheMinutes = h("input", {
+    const updateMinutes = h("input", {
       type: "number",
-      id: "f-cache",
+      id: "f-update",
       min: "1",
-      max: "240",
+      max: String(MAX_UPDATE_MINUTES),
       step: "1",
       autocomplete: "off",
-      placeholder: String(DEFAULT_QUOTE_CACHE_MINUTES),
-      value: String(config.quoteCacheMinutes),
+      placeholder: String(DEFAULT_UPDATE_MINUTES),
+      value: String(config.updateMinutes),
     });
     const autoLock = h("input", {
       type: "number",
@@ -379,15 +358,34 @@ export class App {
       placeholder: String(DEFAULT_AUTO_LOCK_MINUTES),
       value: String(config.autoLockMinutes),
     });
-    const autoRefresh = h("input", {
-      type: "number",
-      id: "f-autorefresh",
-      min: "1",
-      max: String(MAX_AUTO_REFRESH_MINUTES),
-      step: "1",
-      autocomplete: "off",
-      placeholder: String(DEFAULT_AUTO_REFRESH_MINUTES),
-      value: String(config.autoRefreshMinutes),
+
+    // Hidden file picker backing the "Import config" button: pick a previously
+    // exported packet, repopulate the (still editable) fields, and let the user
+    // review or tweak before continuing. Available in both setup and Settings.
+    const importInput = h("input", {
+      type: "file",
+      id: "f-import",
+      accept: "application/json,.json",
+      hidden: "hidden",
+    }) as HTMLInputElement;
+    const importBtn = h("button", { class: "btn ghost", type: "button" }, ["Import config file"]);
+    importBtn.addEventListener("click", () => importInput.click());
+    importInput.addEventListener("change", () => {
+      const file = importInput.files?.[0];
+      importInput.value = "";
+      if (!file) return;
+      file
+        .text()
+        .then((text) => {
+          const imported = parseConfigPacket(text);
+          // Re-render the same screen seeded with the imported values; fields
+          // stay visible and editable so the user can adjust before saving.
+          this.state.config = imported;
+          this.showSetup(undefined, mode);
+        })
+        .catch((err: unknown) => {
+          this.showSetup((err as Error).message || "Couldn't read that config file.", mode);
+        });
     });
 
     const actions: Array<Node | string> = [
@@ -405,47 +403,97 @@ export class App {
 
     const intro = settingsMode
       ? "Update where the companion looks for your data and how it behaves. Changes stay on this device."
-      : "These stay on this device. The API key powers live quotes; the repository tells the app where to find your encrypted data.";
+      : "These stay on this device. The API key powers live quotes; the data-source URL is where the app finds your encrypted portfolio.";
 
     const formChildren: Array<Node | string> = [
       h("h1", {}, [settingsMode ? "Settings" : "Set up the companion"]),
       h("p", { class: "muted" }, [intro]),
     ];
-    // Preferences (appearance, security) come first in Settings so the most
-    // commonly-touched controls — starting with dark mode — are right at the top,
-    // above the rarely-changed data-source plumbing.
-    if (settingsMode) {
+
+    // Import lives right at the top on first run so a returning user can restore
+    // everything from a saved packet in one tap instead of retyping. In Settings
+    // it sits with Export down in the "Backup" section instead.
+    if (!settingsMode) {
       formChildren.push(
-        h("h2", { class: "settings-section" }, ["Appearance"]),
-        field("Theme", renderThemeToggle(), "Switch between system, light and dark themes."),
-        field("Clock format", renderTimeFormatToggle(), "Show times as 12-hour (AM/PM) or 24-hour. Auto follows your device locale."),
-        h("h2", { class: "settings-section" }, ["Security"]),
-        field(
-          "Auto-lock (minutes)",
-          autoLock,
-          `Lock the dashboard after this many minutes of inactivity. Set 0 to never auto-lock. Default is ${DEFAULT_AUTO_LOCK_MINUTES}.`,
-        ),
+        importInput,
+        h("div", { class: "row import-row" }, [importBtn]),
+        h("p", { class: "field-hint" }, [
+          "Have a saved config file from another device? Import it, then review the fields below.",
+        ]),
       );
-      // Fingerprint unlock toggle — only meaningful while unlocked (we need the
-      // in-memory passphrase to enrol) and on a device with a platform
-      // authenticator, so it's revealed asynchronously below.
-      if (this.state.passphrase) {
-        const fingerprintSlot = h("div", { class: "settings-slot", hidden: "hidden" });
-        formChildren.push(fingerprintSlot);
-        void this.addFingerprintSetting(fingerprintSlot);
-      }
-      formChildren.push(h("h2", { class: "settings-section" }, ["Data source"]));
     }
+
+    // Core data source: the two things that genuinely must be set, plus the
+    // single refresh interval that replaced the old cache/auto-refresh pair.
+    if (settingsMode) formChildren.push(h("h2", { class: "settings-section" }, ["Data source"]));
     formChildren.push(
       field("Price API key", apiKey, "Free key from twelvedata.com — never leaves this device."),
-      field("Data repository", repo, "The repo that hosts your published portfolio.enc release asset."),
-      field("Release tag", tag, "Defaults to live-data."),
-      field("Blob URL override", blobUrl, "Advanced: a direct, CORS-enabled URL (e.g. your web/proxy Worker) to fetch the encrypted blob from, instead of the release asset."),
-      field("Version-file URL override", metaUrl, "Advanced: where to read the tiny portfolio.meta.json version stamp. Leave blank to derive it from the blob URL — set it only if the sidecar lives elsewhere."),
-      field("Price proxy URL override", priceProxyUrl, "Advanced: the web/proxy Worker /price route for the Tiingo fallback. Leave blank to derive it from the blob URL. The Tiingo token stays in the Worker — never in the browser."),
-      field("Quote cache (minutes)", cacheMinutes, "Free tier is 8 credits/min, 800/day (1 per symbol). A longer cache means fewer refetches and fewer credits spent."),
-      field("Auto-refresh (minutes)", autoRefresh, `Steady-state gap between automatic live refreshes once everything is fresh. A manual Refresh also pushes the next auto-refresh out by this long. Default is ${DEFAULT_AUTO_REFRESH_MINUTES}.`),
+      field(
+        "Data source URL",
+        blobUrl,
+        "The CORS-enabled URL that serves your encrypted portfolio — usually your Cloudflare Worker (…/portfolio.enc).",
+      ),
+      field(
+        "Update prices every (minutes)",
+        updateMinutes,
+        `How often live prices refresh. Lower is fresher but spends more of the Twelve Data free tier (8/min, 800/day). Default is ${DEFAULT_UPDATE_MINUTES}.`,
+      ),
     );
+
+    // Advanced (Settings only): the Tiingo price-fallback proxy override. It is
+    // derived from the data-source URL's origin by default, so this stays out of
+    // the streamlined first-run setup and is offered only for the rare case where
+    // the price proxy lives somewhere the derivation can't guess.
+    if (settingsMode) {
+      formChildren.push(
+        field(
+          "Price proxy URL override",
+          priceProxyUrl,
+          "Advanced: the web/proxy Worker /price route for the Tiingo fallback. Leave blank to derive it from the data-source URL. The Tiingo token stays in the Worker — never in the browser.",
+        ),
+      );
+    }
+
+    // Preferences: appearance + security. Shown on first-run setup too (not just
+    // Settings) so the user can pick dark mode, clock format and auto-lock once,
+    // before ever typing the passphrase — and never has to revisit them.
+    formChildren.push(
+      h("h2", { class: "settings-section" }, ["Appearance"]),
+      field("Theme", renderThemeToggle(), "Switch between system, light and dark themes."),
+      field("Clock format", renderTimeFormatToggle(), "Show times as 12-hour (AM/PM) or 24-hour. Auto follows your device locale."),
+      h("h2", { class: "settings-section" }, ["Security"]),
+      field(
+        "Auto-lock (minutes)",
+        autoLock,
+        `Lock the dashboard after this many minutes of inactivity. Set 0 to never auto-lock. Default is ${DEFAULT_AUTO_LOCK_MINUTES}.`,
+      ),
+    );
+    // Fingerprint unlock toggle — only meaningful while unlocked (we need the
+    // in-memory passphrase to enrol) and on a device with a platform
+    // authenticator, so it's revealed asynchronously below. Only reachable from
+    // Settings, where a passphrase is already in memory.
+    if (settingsMode && this.state.passphrase) {
+      const fingerprintSlot = h("div", { class: "settings-slot", hidden: "hidden" });
+      formChildren.push(fingerprintSlot);
+      void this.addFingerprintSetting(fingerprintSlot);
+    }
+
+    // Backup: export the current config to a portable file (Settings only — on
+    // first run there's nothing saved yet to export). Import is offered here too
+    // for symmetry with the top-of-setup importer.
+    if (settingsMode) {
+      const exportBtn = h("button", { class: "btn ghost", type: "button" }, ["Export config file"]);
+      exportBtn.addEventListener("click", () => this.exportConfig());
+      formChildren.push(
+        h("h2", { class: "settings-section" }, ["Backup"]),
+        importInput,
+        field(
+          "Portable config",
+          h("div", { class: "row import-row" }, [exportBtn, importBtn]),
+          "Export saves your API key, data-source URL, update interval, and auto-lock setting to a JSON file you can import on another device. Keep the file private — it contains your API key.",
+        ),
+      );
+    }
     // Maintenance: two manual escape hatches for when prices look stuck. Both
     // only make sense once unlocked with data loaded — the dashboard they refresh
     // has to exist.
@@ -508,18 +556,13 @@ export class App {
       event.preventDefault();
       const next: AppConfig = {
         apiKey: (apiKey as HTMLInputElement).value.trim(),
-        repo: (repo as HTMLInputElement).value.trim(),
-        releaseTag: (tag as HTMLInputElement).value.trim() || "live-data",
         blobUrl: (blobUrl as HTMLInputElement).value.trim(),
-        metaUrl: (metaUrl as HTMLInputElement).value.trim(),
         priceProxyUrl: (priceProxyUrl as HTMLInputElement).value.trim(),
-        quoteCacheMinutes: clampCacheMinutes((cacheMinutes as HTMLInputElement).value),
+        updateMinutes: parseUpdateMinutes((updateMinutes as HTMLInputElement).value),
         autoLockMinutes: parseAutoLockMinutes((autoLock as HTMLInputElement).value),
-        autoRefreshMinutes: parseAutoRefreshMinutes((autoRefresh as HTMLInputElement).value),
       };
       if (!next.apiKey) return this.showSetup("Enter your price API key.", mode);
-      const hasSource = next.blobUrl.length > 0 || isValidRepo(next.repo);
-      if (!hasSource) return this.showSetup("Enter a valid owner/repository or a direct blob URL.", mode);
+      if (!next.blobUrl) return this.showSetup("Enter your data-source URL.", mode);
       this.state.config = next;
       // Persist (the API key is encrypted at rest) before advancing. In Settings
       // (already unlocked) re-run the load pipeline with the new config; otherwise
@@ -537,6 +580,29 @@ export class App {
   /** Open the editable settings while logged in (reachable from the topbar). */
   private showSettings(): void {
     this.showSetup(undefined, "settings");
+  }
+
+  /**
+   * Export the current config to a portable JSON packet the user can save and
+   * re-import on another device. Plaintext by design (Plan A): it's a private
+   * file, no more exposed than the device's own localStorage. Reads live values
+   * from the in-memory config, which Settings keeps in sync on save.
+   */
+  private exportConfig(): void {
+    try {
+      const json = serializeConfig(this.state.config);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = h("a", { href: url, download: "investment-overview-config.json" }) as HTMLAnchorElement;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      // Revoke on the next tick so the download has a chance to start.
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      this.toast("Config exported — keep the file private; it holds your API key.");
+    } catch {
+      this.toast("Couldn't export the config on this device.");
+    }
   }
 
   /** Leave Settings without saving: back to the dashboard, or the unlock screen. */
@@ -998,7 +1064,7 @@ export class App {
     force = false,
     forceAll = false,
   ): LoadQuotesOptions {
-    const cacheTtlMs = config.quoteCacheMinutes * 60 * 1000;
+    const cacheTtlMs = config.updateMinutes * 60 * 1000;
     // Per-symbol learned publish windows: when each fund's NAV has historically
     // landed, so we poll within that tight band instead of a fixed evening guess.
     const navStats = readNavPublishStats();
@@ -1453,7 +1519,7 @@ export class App {
       // The steady-state cadence is user-configurable. After an off-cycle manual
       // tap this is also the gap before the next automatic refresh, so a manual
       // pull cleanly pushes the auto schedule out by the configured interval.
-      slowIntervalMs: this.state.config.autoRefreshMinutes * 60 * 1000,
+      slowIntervalMs: this.state.config.updateMinutes * 60 * 1000,
     });
     // Idea A — near-free freshness polling: piggy-back the cheap meta/304 blob
     // check so a fresh desktop publish is picked up automatically within a few
@@ -2017,11 +2083,4 @@ function fingerprintIcon(): HTMLElement {
   }
   span.appendChild(svg);
   return span;
-}
-
-/** Parse + clamp the quote-cache minutes input to a sane 1–240 range. */
-function clampCacheMinutes(raw: string): number {
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return DEFAULT_QUOTE_CACHE_MINUTES;
-  return Math.min(240, Math.round(n));
 }

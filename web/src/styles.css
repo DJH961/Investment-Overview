@@ -1616,6 +1616,11 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .settings-section:first-of-type { margin-top: 1rem; }
 .settings-slot[hidden] { display: none; }
 
+/* Export/Import config button row — keeps the portable-config buttons on one
+ * line, wrapping on narrow screens. */
+.import-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.import-row .btn { flex: 0 0 auto; }
+
 /* A small, non-blocking "Updating…" pill while a live refresh runs in the
  * background. Bottom-centred so it clears the fixed mobile tab bar. */
 .updating-pill {

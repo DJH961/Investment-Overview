@@ -1,28 +1,43 @@
 /**
  * Per-device configuration, persisted in `localStorage`.
  *
- * Device-local preferences live here: the Twelve Data API key (entered once per
- * device per the proposal §6.2), the source repository, and the release tag the
- * encrypted blob is published under. The mobile passphrase is NEVER persisted —
- * it is held in memory only for the current session.
+ * A working companion needs just three things: the Twelve Data API key (the
+ * live-quote credential), the data-source URL (a CORS-enabled endpoint — in
+ * practice the Cloudflare Worker in `web/proxy/` — that serves the encrypted
+ * portfolio blob), and how often to refresh prices. The mobile passphrase is
+ * NEVER persisted: it is held in memory only for the current session.
  *
  * The API key is the one secret among these, so it is encrypted at rest (see
  * `secret-store.ts`): `localStorage` holds only ciphertext, never the raw token.
  * Reading/writing the key is therefore async, which is why `loadConfig` and
  * `saveConfig` return promises.
+ *
+ * Earlier builds exposed a pile of data-source plumbing (repo, release tag,
+ * separate blob/meta overrides) and two timing knobs (quote-cache vs
+ * auto-refresh). Those collapsed into a single data-source URL and a single
+ * "update every N minutes" interval; {@link loadConfig} migrates any legacy
+ * values forward once, and {@link saveConfig} retires the old keys.
  */
 
 import { createSecretBox, looksEncrypted } from "./secret-store";
 
 const KEYS = {
   apiKey: "iv.web.twelvedata_api_key",
+  blobUrl: "iv.web.blob_url",
+  priceProxyUrl: "iv.web.price_proxy_url",
+  updateMinutes: "iv.web.update_minutes",
+  autoLockMinutes: "iv.web.auto_lock_minutes",
+} as const;
+
+/**
+ * Pre-simplification storage keys. Read once by {@link loadConfig} so an
+ * existing install migrates seamlessly, then cleared by {@link saveConfig}.
+ */
+const LEGACY_KEYS = {
   repo: "iv.web.repo",
   releaseTag: "iv.web.release_tag",
-  blobUrl: "iv.web.blob_url",
   metaUrl: "iv.web.meta_url",
-  priceProxyUrl: "iv.web.price_proxy_url",
   quoteCacheMinutes: "iv.web.quote_cache_minutes",
-  autoLockMinutes: "iv.web.auto_lock_minutes",
   autoRefreshMinutes: "iv.web.auto_refresh_minutes",
 } as const;
 
@@ -36,30 +51,24 @@ const ASSET_NAME = "portfolio.enc";
  */
 const META_ASSET_NAME = "portfolio.meta.json";
 /**
- * Default quote-cache freshness (minutes). Tuned for the Twelve Data free tier
+ * Default price-refresh interval (minutes). This single knob drives both the
+ * background wake cadence and the quote-cache freshness window, so prices are
+ * re-pulled roughly every N minutes. Tuned for the Twelve Data free tier
  * (8 credits/min, 800/day, 1 credit per symbol): a longer window means fewer
  * refetches and fewer credits spent, at the cost of slightly older prices.
  */
-const DEFAULT_QUOTE_CACHE_MINUTES = 15;
+const DEFAULT_UPDATE_MINUTES = 15;
+/** Upper bound for the configurable price-refresh interval, in minutes. */
+const MAX_UPDATE_MINUTES = 240;
 /**
  * Default idle auto-lock timeout (minutes). After this many minutes without any
  * interaction the companion clears the in-memory passphrase and returns to the
  * unlock screen, so an unattended phone doesn't sit on an unlocked dashboard.
- * Tuned as a sensible preset for a quick-check companion; configurable, and
- * `0` disables auto-lock entirely.
+ * Configurable, and `0` disables auto-lock entirely.
  */
 const DEFAULT_AUTO_LOCK_MINUTES = 5;
 /** Upper bound for the configurable idle auto-lock timeout, in minutes. */
 const MAX_AUTO_LOCK_MINUTES = 240;
-/**
- * Default steady-state auto-refresh interval (minutes). This is the cadence the
- * background price refresh settles into once everything is fresh, and the gap
- * before the next automatic refresh after an off-cycle manual tap. Five minutes
- * keeps prices current without burning through the free-tier daily budget.
- */
-const DEFAULT_AUTO_REFRESH_MINUTES = 5;
-/** Upper bound for the configurable auto-refresh interval, in minutes. */
-const MAX_AUTO_REFRESH_MINUTES = 120;
 
 /** Wraps/unwraps the API key with a non-extractable per-device key (IndexedDB). */
 const secrets = createSecretBox();
@@ -83,15 +92,13 @@ function write(key: string, value: string): void {
 
 export interface AppConfig {
   apiKey: string;
-  repo: string;
-  releaseTag: string;
-  blobUrl: string;
   /**
-   * Advanced override for the version-stamp (`portfolio.meta.json`) endpoint.
-   * Empty by default — it is then derived from {@link resolveBlobUrl}. Set it
-   * only when the meta sidecar lives somewhere the derivation can't guess.
+   * CORS-enabled endpoint that serves the encrypted portfolio blob — typically
+   * the Cloudflare Worker proxy in `web/proxy/`. This is the single source of
+   * truth for where the data lives; the version sidecar is derived from it (see
+   * {@link resolveMetaUrl}).
    */
-  metaUrl: string;
+  blobUrl: string;
   /**
    * Advanced override for the Tiingo price-fallback proxy (`web/proxy/` Worker
    * `/price` route). Empty by default — it is then derived from the blob Worker
@@ -100,26 +107,27 @@ export interface AppConfig {
    * the token lives only in the Worker.
    */
   priceProxyUrl: string;
-  /** Quote-cache freshness in minutes (free-tier credit economy knob). */
-  quoteCacheMinutes: number;
+  /**
+   * Price-refresh interval in minutes. Drives both how often the background
+   * refresh wakes and how stale a cached quote may get before it is re-pulled.
+   */
+  updateMinutes: number;
   /**
    * Idle auto-lock timeout in minutes. After this long without interaction the
    * session locks itself; `0` disables auto-lock.
    */
   autoLockMinutes: number;
-  /**
-   * Steady-state auto-refresh interval in minutes. The background price refresh
-   * relaxes to this cadence once everything is fresh, and the next automatic
-   * refresh after an off-cycle manual tap is pushed out by this much.
-   */
-  autoRefreshMinutes: number;
 }
 
-/** Clamp a parsed cache-minutes value to a sane 1–240 range, with a default. */
-function parseCacheMinutes(raw: string): number {
+/**
+ * Clamp a parsed update-interval to `1`–{@link MAX_UPDATE_MINUTES} minutes,
+ * falling back to {@link DEFAULT_UPDATE_MINUTES} for a blank or non-positive
+ * value. Exported so the setup/Settings UI clamps identically.
+ */
+export function parseUpdateMinutes(raw: string): number {
   const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return DEFAULT_QUOTE_CACHE_MINUTES;
-  return Math.min(240, Math.round(n));
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_UPDATE_MINUTES;
+  return Math.min(MAX_UPDATE_MINUTES, Math.max(1, Math.round(n)));
 }
 
 /**
@@ -135,29 +143,14 @@ export function parseAutoLockMinutes(raw: string): number {
   return Math.min(MAX_AUTO_LOCK_MINUTES, Math.round(n));
 }
 
-/**
- * Clamp a parsed auto-refresh interval to `1`–{@link MAX_AUTO_REFRESH_MINUTES}
- * minutes, falling back to {@link DEFAULT_AUTO_REFRESH_MINUTES} for a blank or
- * non-positive value. Exported so the Settings UI clamps identically.
- */
-export function parseAutoRefreshMinutes(raw: string): number {
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return DEFAULT_AUTO_REFRESH_MINUTES;
-  return Math.min(MAX_AUTO_REFRESH_MINUTES, Math.round(n));
-}
-
 /** A blank, unconfigured config — used as the initial in-memory state. */
 export function defaultConfig(): AppConfig {
   return {
     apiKey: "",
-    repo: "",
-    releaseTag: DEFAULT_RELEASE_TAG,
     blobUrl: "",
-    metaUrl: "",
     priceProxyUrl: "",
-    quoteCacheMinutes: DEFAULT_QUOTE_CACHE_MINUTES,
+    updateMinutes: DEFAULT_UPDATE_MINUTES,
     autoLockMinutes: DEFAULT_AUTO_LOCK_MINUTES,
-    autoRefreshMinutes: DEFAULT_AUTO_REFRESH_MINUTES,
   };
 }
 
@@ -194,30 +187,48 @@ async function saveApiKey(apiKey: string): Promise<void> {
   }
 }
 
+/**
+ * One-time migration of the legacy data-source plumbing into a single blob URL.
+ * Older installs stored `repo` + `releaseTag` (and optionally a `blobUrl`
+ * override). When no new-style blob URL is present but a legacy repo is, rebuild
+ * the release-asset download URL so the data source survives the upgrade.
+ */
+function migrateLegacyBlobUrl(): string {
+  const repo = read(LEGACY_KEYS.repo);
+  if (!isValidRepo(repo)) return "";
+  const tag = encodeURIComponent(read(LEGACY_KEYS.releaseTag) || DEFAULT_RELEASE_TAG);
+  return `https://github.com/${repo}/releases/download/${tag}/${ASSET_NAME}`;
+}
+
+/**
+ * One-time migration of the two legacy timing knobs into one interval. The old
+ * quote-cache window governed how stale a price could get before a refetch, so
+ * it best preserves perceived freshness; fall back to the old auto-refresh
+ * cadence, then the default.
+ */
+function readLegacyUpdateMinutes(): string {
+  return read(LEGACY_KEYS.quoteCacheMinutes) || read(LEGACY_KEYS.autoRefreshMinutes) || "";
+}
+
 export async function loadConfig(): Promise<AppConfig> {
   return {
     apiKey: await loadApiKey(),
-    repo: read(KEYS.repo),
-    releaseTag: read(KEYS.releaseTag) || DEFAULT_RELEASE_TAG,
-    blobUrl: read(KEYS.blobUrl),
-    metaUrl: read(KEYS.metaUrl),
+    blobUrl: read(KEYS.blobUrl) || migrateLegacyBlobUrl(),
     priceProxyUrl: read(KEYS.priceProxyUrl),
-    quoteCacheMinutes: parseCacheMinutes(read(KEYS.quoteCacheMinutes)),
+    updateMinutes: parseUpdateMinutes(read(KEYS.updateMinutes) || readLegacyUpdateMinutes()),
     autoLockMinutes: parseAutoLockMinutes(read(KEYS.autoLockMinutes)),
-    autoRefreshMinutes: parseAutoRefreshMinutes(read(KEYS.autoRefreshMinutes)),
   };
 }
 
 export async function saveConfig(config: AppConfig): Promise<void> {
   await saveApiKey(config.apiKey.trim());
-  write(KEYS.repo, config.repo.trim());
-  write(KEYS.releaseTag, config.releaseTag.trim());
   write(KEYS.blobUrl, config.blobUrl.trim());
-  write(KEYS.metaUrl, config.metaUrl.trim());
   write(KEYS.priceProxyUrl, config.priceProxyUrl.trim());
-  write(KEYS.quoteCacheMinutes, String(config.quoteCacheMinutes));
+  write(KEYS.updateMinutes, String(config.updateMinutes));
   write(KEYS.autoLockMinutes, String(config.autoLockMinutes));
-  write(KEYS.autoRefreshMinutes, String(config.autoRefreshMinutes));
+  // Retire the legacy keys now that their data lives in the simplified shape, so
+  // the migration only fires once and old plumbing doesn't linger in storage.
+  for (const legacyKey of Object.values(LEGACY_KEYS)) write(legacyKey, "");
 }
 
 /** A loosely-validated `owner/name` slug, matching the publisher's guard. */
@@ -228,52 +239,41 @@ export function isValidRepo(repo: string): boolean {
 }
 
 /**
- * Resolve the URL to download the encrypted blob from. An explicit `blobUrl`
- * override wins; otherwise it is the release-asset download URL built from the
- * repo + tag (the route the desktop publisher uploads to).
+ * Resolve the URL to download the encrypted blob from: simply the configured
+ * data-source URL, or `null` when none is set.
  *
- * NOTE (CORS): the release-asset download URL is NOT readable from a browser on
- * a different origin — GitHub's `releases/download/...` endpoint redirects to
- * `release-assets.githubusercontent.com`, which sends no `Access-Control-Allow-Origin`
- * header, so a cross-origin `fetch()` fails with "Failed to fetch". To serve the
- * blob to the hosted web app, set `blobUrl` to a CORS-enabled source — e.g. the
- * Cloudflare Worker proxy in `web/proxy/`, which fetches the release asset
- * server-side and re-emits it with permissive CORS headers. The release-asset
- * default below is kept for same-origin/local use and as a documented fallback.
+ * NOTE (CORS): a raw GitHub `releases/download/...` URL is NOT readable from a
+ * browser on a different origin — it redirects to `release-assets.githubusercontent.com`,
+ * which sends no `Access-Control-Allow-Origin` header, so a cross-origin
+ * `fetch()` fails. The hosted companion therefore points at a CORS-enabled
+ * source — the Cloudflare Worker proxy in `web/proxy/`, which fetches the
+ * release asset server-side and re-emits it with permissive CORS headers.
  */
 export function resolveBlobUrl(config: AppConfig): string | null {
-  if (config.blobUrl) return config.blobUrl;
-  if (!isValidRepo(config.repo)) return null;
-  const tag = encodeURIComponent(config.releaseTag || DEFAULT_RELEASE_TAG);
-  return `https://github.com/${config.repo}/releases/download/${tag}/${ASSET_NAME}`;
+  return config.blobUrl ? config.blobUrl : null;
 }
 
 /**
  * Resolve the URL of the lightweight version sidecar (`portfolio.meta.json`),
  * used to cheaply detect "is there a newer export?" before pulling the full
- * blob. Precedence:
+ * blob. Derived from {@link AppConfig.blobUrl}:
  *
- *  1. an explicit {@link AppConfig.metaUrl} override, if set;
- *  2. otherwise *derive* it from {@link resolveBlobUrl}:
- *     - when a `blobUrl` proxy override is in play, the same endpoint with a
- *       `?meta` flag (the `web/proxy/` Worker serves the sidecar that way), or
- *     - the release-asset default with the filename swapped to the meta asset.
+ *  - a GitHub release-asset blob has the sidecar as a sibling file, so swap the
+ *    `portfolio.enc` filename for `portfolio.meta.json`;
+ *  - any other endpoint (the proxy Worker) serves the sidecar via a `?meta` flag
+ *    on the same URL.
  *
- * Returns `null` only when there is no data source at all. The meta check is
+ * Returns `null` only when there is no data source. The meta check is
  * best-effort: callers fall back to a conditional/full blob download if the
- * sidecar can't be fetched (e.g. an older proxy, or the desktop app hasn't
- * published a meta file yet).
+ * sidecar can't be fetched.
  */
 export function resolveMetaUrl(config: AppConfig): string | null {
-  if (config.metaUrl) return config.metaUrl;
-  if (config.blobUrl) {
-    // A custom blob endpoint (typically the CORS proxy Worker) exposes the
-    // sidecar via a `?meta` flag rather than a sibling path.
-    return config.blobUrl + (config.blobUrl.includes("?") ? "&" : "?") + "meta";
+  const blob = config.blobUrl;
+  if (!blob) return null;
+  if (blob.endsWith("/" + ASSET_NAME)) {
+    return blob.slice(0, blob.length - ASSET_NAME.length) + META_ASSET_NAME;
   }
-  if (!isValidRepo(config.repo)) return null;
-  const tag = encodeURIComponent(config.releaseTag || DEFAULT_RELEASE_TAG);
-  return `https://github.com/${config.repo}/releases/download/${tag}/${META_ASSET_NAME}`;
+  return blob + (blob.includes("?") ? "&" : "?") + "meta";
 }
 
 /**
@@ -281,21 +281,16 @@ export function resolveMetaUrl(config: AppConfig): string | null {
  * `/price` route). Precedence:
  *
  *  1. an explicit {@link AppConfig.priceProxyUrl} override, if set;
- *  2. otherwise *derive* it from the blob Worker origin — `<origin>/price` — so
- *     wiring up the blob proxy is enough to get the price fallback too. The blob
- *     `blobUrl` override is the Worker URL the user already pasted; the price
- *     route hangs off the same Worker at `/price`.
+ *  2. otherwise *derive* it from the data-source URL's origin — `<origin>/price`
+ *     — so wiring up the blob Worker is enough to get the price fallback too.
  *
- * Returns `null` when there is no proxy to derive from (no `blobUrl` override and
- * no explicit price proxy). The Tiingo fallback is then simply unavailable — the
- * app keeps working on Twelve Data alone. The browser never holds a Tiingo token;
- * it lives only in the Worker, so this URL is the *only* thing the client needs.
+ * Returns `null` when there is no data source to derive from (and no explicit
+ * price proxy). The Tiingo fallback is then simply unavailable — the app keeps
+ * working on Twelve Data alone. The browser never holds a Tiingo token; it lives
+ * only in the Worker, so this URL is the *only* thing the client needs.
  */
 export function resolvePriceProxyUrl(config: AppConfig): string | null {
   if (config.priceProxyUrl) return config.priceProxyUrl;
-  // The price route can only be derived from an explicit Worker (`blobUrl`)
-  // origin: the bare GitHub release-asset default is not a Worker and has no
-  // `/price` route, so deriving from it would point at nothing useful.
   if (!config.blobUrl) return null;
   try {
     return new URL("/price", config.blobUrl).toString();
@@ -304,4 +299,82 @@ export function resolvePriceProxyUrl(config: AppConfig): string | null {
   }
 }
 
-export { DEFAULT_RELEASE_TAG, ASSET_NAME, META_ASSET_NAME, DEFAULT_QUOTE_CACHE_MINUTES, DEFAULT_AUTO_LOCK_MINUTES, MAX_AUTO_LOCK_MINUTES, DEFAULT_AUTO_REFRESH_MINUTES, MAX_AUTO_REFRESH_MINUTES };
+// --- Portable config packet (export / import) --------------------------------
+
+/** Discriminator stamped into an exported packet so imports can sanity-check it. */
+const CONFIG_PACKET_TYPE = "investment-overview-config";
+/** Bump when the packet shape changes incompatibly. */
+const CONFIG_PACKET_VERSION = 1;
+
+/**
+ * The on-disk shape of an exported config packet. Currently a plaintext JSON
+ * file the user keeps private (Plan A). The `type`/`version` stamps leave room
+ * for a future passphrase-encrypted, Worker-published variant (Plan B) without
+ * breaking older importers.
+ */
+export interface ConfigPacket {
+  type: typeof CONFIG_PACKET_TYPE;
+  version: number;
+  apiKey: string;
+  blobUrl: string;
+  updateMinutes: number;
+  autoLockMinutes: number;
+}
+
+/** Serialize the portable parts of a config to a pretty JSON packet string. */
+export function serializeConfig(config: AppConfig): string {
+  const packet: ConfigPacket = {
+    type: CONFIG_PACKET_TYPE,
+    version: CONFIG_PACKET_VERSION,
+    apiKey: config.apiKey,
+    blobUrl: config.blobUrl,
+    updateMinutes: config.updateMinutes,
+    autoLockMinutes: config.autoLockMinutes,
+  };
+  return JSON.stringify(packet, null, 2);
+}
+
+/**
+ * Parse and validate an imported config packet into an {@link AppConfig}.
+ * Throws a user-facing `Error` when the text isn't a recognisable packet.
+ * Numeric fields are clamped through the same parsers as manual entry.
+ */
+export function parseConfigPacket(text: string): AppConfig {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    throw new Error("That file isn't valid JSON.");
+  }
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error("That file isn't an Investment Overview config.");
+  }
+  const obj = raw as Record<string, unknown>;
+  if (obj.type !== CONFIG_PACKET_TYPE) {
+    throw new Error("That file isn't an Investment Overview config.");
+  }
+  if (obj.version !== CONFIG_PACKET_VERSION) {
+    throw new Error("That config file version isn't supported by this build.");
+  }
+  const apiKey = typeof obj.apiKey === "string" ? obj.apiKey.trim() : "";
+  const blobUrl = typeof obj.blobUrl === "string" ? obj.blobUrl.trim() : "";
+  return {
+    apiKey,
+    blobUrl,
+    priceProxyUrl: "",
+    updateMinutes: parseUpdateMinutes(String(obj.updateMinutes ?? "")),
+    autoLockMinutes: parseAutoLockMinutes(String(obj.autoLockMinutes ?? "")),
+  };
+}
+
+export {
+  DEFAULT_RELEASE_TAG,
+  ASSET_NAME,
+  META_ASSET_NAME,
+  DEFAULT_UPDATE_MINUTES,
+  MAX_UPDATE_MINUTES,
+  DEFAULT_AUTO_LOCK_MINUTES,
+  MAX_AUTO_LOCK_MINUTES,
+  CONFIG_PACKET_TYPE,
+  CONFIG_PACKET_VERSION,
+};
