@@ -1187,9 +1187,14 @@ export class App {
       // valuing the book. This only fires on a network round with an API key in
       // hand; a cache-only paint takes the `else` branch below. It still degrades
       // gracefully — when the pair can't be fetched (no budget/key, a transient
-      // failure, or the weekend FX close) loadEurUsd falls back to today's cached
-      // spot, then the ECB end-of-day rate.
-      const eurUsd = await loadEurUsd(apiKey, { eodFallback: fx.rates.USD ?? null, ttlMs: 0 });
+      // failure, or the weekend FX close) loadEurUsd falls back to the Tiingo
+      // backup FX provider (via the /price Worker), then today's cached spot,
+      // then the ECB end-of-day rate.
+      const eurUsd = await loadEurUsd(apiKey, {
+        eodFallback: fx.rates.USD ?? null,
+        ttlMs: 0,
+        tiingoProxyUrl: resolvePriceProxyUrl(config),
+      });
       eurUsdNow = eurUsd.now;
       eurUsdPrev = eurUsd.previousClose;
       eurUsdSource = eurUsd.source;
@@ -1864,6 +1869,8 @@ function fxClause(fx: EurUsdSource): string {
   switch (fx) {
     case "live":
       return "FX live";
+    case "tiingo":
+      return "FX live (backup)";
     case "eod":
       return "FX end of day";
     case "cache":

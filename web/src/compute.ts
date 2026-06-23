@@ -865,7 +865,7 @@ function buildPortfolioCashflowsUsd(cashflows: ExportCashflow[]): Cashflow[] | n
 }
 
 /** Provenance of the EUR/USD spot driving the live current marks + today's move. */
-export type EurUsdSourceLabel = "live" | "eod" | "cache" | "none";
+export type EurUsdSourceLabel = "live" | "tiingo" | "eod" | "cache" | "none";
 
 /** Optional live-FX inputs that make today's move FX-aware. */
 export interface BuildDashboardOptions {

@@ -70,6 +70,24 @@ class TiingoQuote:
     as_of: datetime | None
 
 
+@dataclass(frozen=True)
+class TiingoFxQuote:
+    """A live FX top-of-book reading for one pair.
+
+    ``rate`` is units of ``quote`` per 1 ``base`` (e.g. for ``EUR``→``USD`` it is
+    USD per 1 EUR — the same convention the FX service stores live spots in).
+    ``as_of`` is the quote instant (naive UTC); ``value_date`` its calendar date,
+    used to reject a stale weekend/holiday reading the same way the yfinance spot
+    is rejected when it isn't dated today.
+    """
+
+    base: str
+    quote: str
+    rate: Decimal
+    as_of: datetime | None
+    value_date: date | None
+
+
 def _record_status(status: str, message: str) -> None:
     """Lazy provider_status.record wrapper (mirrors the yfinance adapter).
 
@@ -351,3 +369,96 @@ def fetch_latest_close(
         return None
     latest = max(closes)
     return latest, closes[latest]
+
+
+#: Tiingo FX top-of-book endpoint (live bid/ask/mid for a quoted pair).
+_FX_TOP_PATH = "/tiingo/fx/top"
+
+
+def _mid_from_fx_row(row: dict[str, Any]) -> Decimal | None:
+    """Pick the mid rate from one FX top-of-book row, or ``None``.
+
+    Prefers Tiingo's own ``midPrice``; falls back to ``(bid+ask)/2`` and then the
+    bid alone, so a partial book still yields a usable rate.
+    """
+    mid = _to_decimal(row.get("midPrice"))
+    if mid is not None and mid > 0:
+        return mid
+    bid = _to_decimal(row.get("bidPrice"))
+    ask = _to_decimal(row.get("askPrice"))
+    if bid is not None and ask is not None and bid > 0 and ask > 0:
+        return (bid + ask) / 2
+    return bid if bid is not None and bid > 0 else None
+
+
+def fetch_fx_rate(
+    *,
+    base: str = "EUR",
+    quote: str = "USD",
+    token: str,
+    client: httpx.Client | None = None,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> TiingoFxQuote | None:
+    """Return the live ``base``→``quote`` rate from Tiingo FX, or ``None``.
+
+    Tiingo quotes a pair in exactly one direction (``eurusd``, not ``usdeur`` —
+    the inverse silently returns ``[]``). This requests the concatenated
+    ``<base><quote>`` pair (e.g. ``eurusd``) and returns its ``midPrice`` directly
+    as units of ``quote`` per 1 ``base`` — the same convention the FX service
+    stores live spots in, so no inversion is needed for the EUR→USD spot. A pair
+    Tiingo doesn't quote in this direction (empty array) yields ``None`` rather
+    than an error, so the caller simply keeps its existing rate.
+
+    The token rides an ``Authorization`` header, never the URL.
+    """
+    pair = f"{base.strip().lower()}{quote.strip().lower()}"
+    if len(pair) != 6 or not pair.isalpha():
+        raise ValueError("FX pair must be two 3-letter ISO currency codes")
+
+    url = f"{TIINGO_ROOT}{_FX_TOP_PATH}"
+    owns_client = client is None
+    http = client or httpx.Client(timeout=timeout)
+    try:
+        response = _get_with_retry(
+            http, url, params={"tickers": pair}, headers=_auth_headers(token)
+        )
+    finally:
+        if owns_client:
+            http.close()
+
+    if response.status_code == 404:
+        _record_status("error", f"Tiingo FX 404 for {pair}")
+        return None
+    if response.status_code != 200:
+        msg = f"Tiingo FX returned HTTP {response.status_code}: {response.text[:200]}"
+        _record_status("error", msg)
+        raise TiingoError(msg)
+
+    try:
+        rows: Any = response.json()
+    except ValueError as exc:
+        raise TiingoError(f"Malformed Tiingo FX payload: {exc}") from exc
+    if not isinstance(rows, list):
+        raise TiingoError("Unexpected Tiingo FX payload (expected a list)")
+
+    row = next((r for r in rows if isinstance(r, dict)), None)
+    if row is None:
+        # `[]` — the pair isn't quoted in this direction (e.g. usdeur). Graceful.
+        _record_status("error", f"Tiingo FX returned no rate for {pair}")
+        return None
+
+    mid = _mid_from_fx_row(row)
+    if mid is None:
+        _record_status("error", f"Tiingo FX row for {pair} had no usable price")
+        return None
+
+    as_of = _parse_timestamp(row.get("quoteTimestamp"))
+    value_date = as_of.date() if as_of is not None else None
+    _record_status("ok", f"FX {base.upper()}/{quote.upper()} mid {mid}")
+    return TiingoFxQuote(
+        base=base.upper(),
+        quote=quote.upper(),
+        rate=mid,
+        as_of=as_of,
+        value_date=value_date,
+    )
