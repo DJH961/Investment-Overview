@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { allPricesLive, describeLiveCoverage, liveRefreshProgress, manualRefreshSummary } from "../src/app";
+import {
+  allPricesLive,
+  buildCoverageFacts,
+  liveRefreshProgress,
+  manualRefreshSummary,
+  summarizeCoverage,
+  type CoverageFacts,
+} from "../src/app";
 import type { QuoteLoadReport } from "../src/quotes";
 import { PriceError } from "../src/prices";
 
@@ -16,103 +23,140 @@ function report(overrides: Partial<QuoteLoadReport> = {}): QuoteLoadReport {
   };
 }
 
-describe("manualRefreshSummary", () => {
-  it("states how many holdings are up to date", () => {
-    expect(manualRefreshSummary(report({ fetched: ["AAPL"] }))).toBe("Your holding is up to date");
-    expect(manualRefreshSummary(report({ fetched: ["AAPL", "MSFT"] }))).toBe(
-      "All 2 holdings up to date",
-    );
+function facts(overrides: Partial<CoverageFacts> = {}): CoverageFacts {
+  return {
+    marketOpen: false,
+    marketTotal: 0,
+    marketLive: 0,
+    navTotal: 0,
+    navExpectedTonight: 0,
+    navAwaiting: 0,
+    freshlyPulled: true,
+    error: false,
+    ...overrides,
+  };
+}
+
+describe("summarizeCoverage", () => {
+  it("reports nothing to price when there are no live holdings", () => {
+    expect(summarizeCoverage(facts())).toBe("No live-priced holdings");
   });
 
-  it("counts cache-fresh holdings as up to date", () => {
-    expect(manualRefreshSummary(report({ servedFresh: ["AAPL"] }))).toBe("Your holding is up to date");
-  });
-
-  it("explains a budget-deferred partial refresh with a precise count", () => {
-    expect(manualRefreshSummary(report({ deferred: ["AAPL"] }))).toBe(
-      "0/1 up to date · 1 still refreshing",
-    );
-  });
-
-  it("reports a precise live/total count when some symbols are deferred", () => {
-    expect(manualRefreshSummary(report({ fetched: ["AAPL"], deferred: ["MSFT"] }))).toBe(
-      "1/2 up to date · 1 still refreshing",
-    );
-  });
-
-  it("names lagging funds when only once-a-day NAV symbols are deferred", () => {
+  it("market open: shows live market count and NAVs still expected tonight", () => {
     expect(
-      manualRefreshSummary(
-        report({ fetched: ["AAPL", "MSFT"], deferred: ["VMFXX", "VTSAX"] }),
-        new Set(["VMFXX", "VTSAX"]),
+      summarizeCoverage(
+        facts({ marketOpen: true, marketTotal: 13, marketLive: 13, navTotal: 5, navExpectedTonight: 5 }),
       ),
-    ).toBe("2/4 up to date · stocks & ETFs done, 2 funds still refreshing");
+    ).toBe("13/13 live, 5 NAVs expected tonight");
   });
 
-  it("surfaces a transient failure as a fallback message", () => {
-    const err = new PriceError("rate limited", { retryable: true });
-    expect(manualRefreshSummary(report({ error: err, deferred: ["AAPL"] }))).toBe(
-      "Couldn't reach live prices — showing last known values",
+  it("market open: a single fund reads in the singular", () => {
+    expect(
+      summarizeCoverage(
+        facts({ marketOpen: true, marketTotal: 2, marketLive: 2, navTotal: 1, navExpectedTonight: 1 }),
+      ),
+    ).toBe("2/2 live, 1 NAV expected tonight");
+  });
+
+  it("market open: once every NAV is in, it says so rather than 'expected'", () => {
+    expect(
+      summarizeCoverage(
+        facts({ marketOpen: true, marketTotal: 13, marketLive: 13, navTotal: 5, navExpectedTonight: 0 }),
+      ),
+    ).toBe("13/13 live, 5/5 NAVs in");
+  });
+
+  it("market closed: holds every close but is awaiting tonight's NAVs", () => {
+    expect(
+      summarizeCoverage(
+        facts({ marketOpen: false, marketTotal: 13, marketLive: 13, navTotal: 5, navAwaiting: 5 }),
+      ),
+    ).toBe("market closed for 13/13, awaiting 5/5 NAVs");
+  });
+
+  it("market closed: everything current reads as fully up to date", () => {
+    expect(
+      summarizeCoverage(
+        facts({ marketOpen: false, marketTotal: 13, marketLive: 13, navTotal: 5, navAwaiting: 0 }),
+      ),
+    ).toBe("market closed, all prices up to date");
+  });
+
+  it("market closed: a budget-deferred market close is named honestly", () => {
+    expect(
+      summarizeCoverage(
+        facts({ marketOpen: false, marketTotal: 13, marketLive: 11, navTotal: 5, navAwaiting: 3 }),
+      ),
+    ).toBe("market closed, 11/13 up to date, awaiting 3/5 NAVs");
+  });
+
+  it("surfaces a hard error as last-known prices", () => {
+    expect(summarizeCoverage(facts({ marketTotal: 2, marketLive: 2, error: true }))).toBe(
+      "Showing last known prices",
     );
+  });
+
+  it("never asserts live/up to date when nothing was freshly pulled", () => {
+    expect(
+      summarizeCoverage(facts({ marketTotal: 2, marketLive: 2, freshlyPulled: false })),
+    ).toBe("Showing recent prices (2 holdings)");
+    expect(
+      summarizeCoverage(facts({ marketTotal: 1, marketLive: 1, freshlyPulled: false })),
+    ).toBe("Showing recent prices");
   });
 });
 
-describe("describeLiveCoverage", () => {
-  it("reports nothing to price when there are no live holdings", () => {
-    expect(describeLiveCoverage(report())).toBe("No live-priced holdings");
-  });
+describe("buildCoverageFacts", () => {
+  const now = new Date(2024, 4, 15, 18, 0, 0); // a Wednesday, 18:00 local
 
-  it("confirms full coverage when nothing is deferred", () => {
-    expect(describeLiveCoverage(report({ fetched: ["AAPL"] }))).toBe("Your holding is up to date");
-    expect(describeLiveCoverage(report({ fetched: ["AAPL"], servedFresh: ["MSFT"] }))).toBe(
-      "All 2 holdings up to date",
+  it("splits market vs NAV holdings and counts live market symbols", () => {
+    const f = buildCoverageFacts(
+      report({ fetched: ["AAPL"], deferred: ["MSFT"] }),
+      new Map(),
+      new Set(),
+      { now, marketOpen: true },
     );
+    expect(f).toMatchObject({ marketTotal: 2, marketLive: 1, navTotal: 0 });
   });
 
-  it("singles out a single deferred fund", () => {
-    expect(
-      describeLiveCoverage(
-        report({ fetched: ["AAPL"], deferred: ["VMFXX"] }),
-        new Set(["VMFXX"]),
-      ),
-    ).toBe("1/2 up to date · stocks & ETFs done, 1 fund still refreshing");
-  });
-
-  it("falls back to a plain count when market symbols are also deferred", () => {
-    expect(
-      describeLiveCoverage(
-        report({ fetched: ["AAPL"], deferred: ["MSFT", "VMFXX"] }),
-        new Set(["VMFXX"]),
-      ),
-    ).toBe("1/3 up to date · 2 still refreshing");
-  });
-
-  it("notes the data is stale when a fetch failed but nothing is deferred", () => {
-    const err = new PriceError("offline", { retryable: true });
-    expect(describeLiveCoverage(report({ error: err, servedFresh: ["AAPL", "MSFT"] }))).toBe(
-      "Showing last known prices (2/2)",
+  it("counts NAVs without today's value-date as expected tonight while open", () => {
+    const quotes = new Map([["VTSAX", { valueDate: "2024-05-14" }]]); // yesterday's NAV
+    const f = buildCoverageFacts(
+      report({ servedFresh: ["VTSAX"] }),
+      quotes,
+      new Set(["VTSAX"]),
+      { now, marketOpen: true, publishHourFor: () => 22 },
     );
+    expect(f.navTotal).toBe(1);
+    expect(f.navExpectedTonight).toBe(1);
+    // 18:00 is before the 22:00 publish hour, so nothing is overdue yet.
+    expect(f.navAwaiting).toBe(0);
   });
 
-  it("never claims 'up to date' when data was not freshly pulled", () => {
-    // The whole portfolio came straight from cache (no recent network pull): it
-    // must not be presented as "up to date".
+  it("flags a NAV as awaiting once it is past its publish hour and still missing", () => {
+    const lateEvening = new Date(2024, 4, 15, 23, 0, 0); // 23:00 local, past publish hour
+    const quotes = new Map([["VTSAX", { valueDate: "2024-05-14" }]]);
+    const f = buildCoverageFacts(
+      report({ fetched: ["VTSAX"] }),
+      quotes,
+      new Set(["VTSAX"]),
+      { now: lateEvening, marketOpen: false, publishHourFor: () => 22 },
+    );
+    expect(f.navAwaiting).toBe(1);
+  });
+});
+
+describe("manualRefreshSummary", () => {
+  it("leads with the transparent coverage line", () => {
     expect(
-      describeLiveCoverage(report({ servedFresh: ["AAPL", "MSFT"] }), new Set(), {
-        freshlyPulled: false,
-      }),
-    ).toBe("Showing recent prices (2 holdings)");
-    expect(
-      describeLiveCoverage(report({ servedFresh: ["AAPL"] }), new Set(), { freshlyPulled: false }),
-    ).toBe("Showing recent prices");
+      manualRefreshSummary(facts({ marketOpen: true, marketTotal: 2, marketLive: 2 })),
+    ).toBe("2/2 live");
   });
 
-  it("does claim 'up to date' when freshly pulled", () => {
-    expect(
-      describeLiveCoverage(report({ fetched: ["AAPL", "MSFT"] }), new Set(), {
-        freshlyPulled: true,
-      }),
-    ).toBe("All 2 holdings up to date");
+  it("surfaces a transient failure as a fallback message", () => {
+    expect(manualRefreshSummary(facts({ marketTotal: 1, error: true }))).toBe(
+      "Couldn't reach live prices — showing last known values",
+    );
   });
 });
 

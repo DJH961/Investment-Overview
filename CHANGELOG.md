@@ -14,6 +14,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.9.3] — 2026-06-23
+
+### Added
+
+- **Settings → "Update all data now".** A maintenance button in the web
+  companion's settings that clears all cached prices/FX and re-polls every
+  holding from scratch, for the rare case the incremental refresh logic gets
+  into a bad state.
+
+### Fixed
+
+- **Late-arriving NAV prices are attributed to the correct US trading day.**
+  Mutual-fund / money-market NAVs often publish around (EU) midnight. The
+  "expected NAV date" is now anchored to the latest *settled US session*
+  (`latestSettledSessionDate`) rather than the viewer's local (EU) calendar
+  date, so a NAV arriving at 02:00 CET is back-dated to the right US date and
+  the local date roll-over no longer triggers spurious polling or
+  mis-attribution.
+- **Daily live-data credit budget resets at 00:00 UTC.** The free-tier daily
+  allowance is now counted per UTC calendar day (`creditsSpentToday`) to match
+  Twelve Data's reset, instead of a rolling trailing-24h window that could
+  appear inflated in the morning.
+
 ## [3.9.2] — 2026-06-23
 
 ### Fixed

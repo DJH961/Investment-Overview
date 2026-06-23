@@ -195,3 +195,38 @@ export function isUsMarketOpen(now: Date = new Date()): boolean {
   if (holidaysForYear(moment.year).has(key(moment.month, moment.day))) return false;
   return moment.minutes >= OPEN_MINUTES && moment.minutes < CLOSE_MINUTES;
 }
+
+/** Whether `[year, month, day]` (NY calendar) is a regular NYSE trading day. */
+function isTradingDay(year: number, month: number, day: number): boolean {
+  const wd = weekdayOf(year, month, day);
+  if (wd === 0 || wd === 6) return false; // Sun / Sat
+  return !holidaysForYear(year).has(key(month, day));
+}
+
+function ymd(year: number, month: number, day: number): string {
+  return `${year}-${`${month}`.padStart(2, "0")}-${`${day}`.padStart(2, "0")}`;
+}
+
+/**
+ * The trading day (`YYYY-MM-DD`, New-York calendar) of the most recent NYSE
+ * regular session whose close has **already happened** as of `now`.
+ *
+ * Today counts only once its 16:00 close has passed on a trading day; before the
+ * open, mid-session, on weekends, and on holidays this is the previous trading
+ * day. Used by the refresh layer to tell whether the cached close we already
+ * hold is the latest one there is, so it can stop polling a market symbol while
+ * the exchange is shut instead of re-fetching an unchanged close.
+ */
+export function latestSettledSessionDate(now: Date = new Date()): string {
+  const moment = exchangeMoment(now);
+  if (isTradingDay(moment.year, moment.month, moment.day) && moment.minutes >= CLOSE_MINUTES) {
+    return ymd(moment.year, moment.month, moment.day);
+  }
+  // Walk back to the previous trading day (UTC stepping keeps the calendar math
+  // timezone-independent; only the date components matter here).
+  let date = new Date(Date.UTC(moment.year, moment.month - 1, moment.day));
+  do {
+    date = new Date(date.getTime() - 24 * 60 * 60 * 1000);
+  } while (!isTradingDay(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()));
+  return ymd(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+}

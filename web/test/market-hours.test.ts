@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isUsMarketHoliday, isUsMarketOpen } from "../src/market-hours";
+import { isUsMarketHoliday, isUsMarketOpen, latestSettledSessionDate } from "../src/market-hours";
 
 /**
  * The instants below are expressed in UTC; the helper must convert them to the
@@ -74,5 +74,35 @@ describe("isUsMarketHoliday", () => {
 
   it("treats an ordinary trading day as not a holiday", () => {
     expect(isUsMarketHoliday(new Date("2026-06-22T15:00:00Z"))).toBe(false);
+  });
+});
+
+describe("latestSettledSessionDate", () => {
+  it("returns today once its 16:00 ET close has passed", () => {
+    // Tue 2026-06-23 20:30 UTC == 16:30 ET — today's session has settled.
+    expect(latestSettledSessionDate(new Date("2026-06-23T20:30:00Z"))).toBe("2026-06-23");
+  });
+
+  it("returns the prior session before today's close (pre-open / mid-session)", () => {
+    // Tue 2026-06-23 13:00 UTC == 09:00 ET (pre-open) → previous trading day Mon.
+    expect(latestSettledSessionDate(new Date("2026-06-23T13:00:00Z"))).toBe("2026-06-22");
+    // Tue 2026-06-23 14:00 UTC == 10:00 ET (mid-session, today not yet settled).
+    expect(latestSettledSessionDate(new Date("2026-06-23T14:00:00Z"))).toBe("2026-06-22");
+  });
+
+  it("skips back over weekends", () => {
+    // Sat 2026-06-27 12:00 UTC → most recent settled close is Friday 2026-06-26.
+    expect(latestSettledSessionDate(new Date("2026-06-27T12:00:00Z"))).toBe("2026-06-26");
+    // Sun 2026-06-28 12:00 UTC → still Friday 2026-06-26.
+    expect(latestSettledSessionDate(new Date("2026-06-28T12:00:00Z"))).toBe("2026-06-26");
+  });
+
+  it("skips back over full-day market holidays", () => {
+    // Independence Day observed Fri 2026-07-03; the morning of that holiday the
+    // latest settled session is Thursday 2026-07-02.
+    expect(latestSettledSessionDate(new Date("2026-07-03T15:00:00Z"))).toBe("2026-07-02");
+    // The Monday after Juneteenth (Fri 2026-06-19) skips back over both the
+    // weekend and the holiday to Thursday 2026-06-18.
+    expect(latestSettledSessionDate(new Date("2026-06-22T13:00:00Z"))).toBe("2026-06-18");
   });
 });

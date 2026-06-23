@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   creditsSpentWithin,
+  creditsSpentToday,
+  startOfUtcDay,
   readCachedEnvelope,
   readCachedEurUsd,
   readCachedFx,
@@ -21,6 +23,7 @@ import {
   writeCachedFx,
   writeCachedQuotes,
   writeSymbolPlan,
+  clearPriceCaches,
   NAV_PUBLISH_SAMPLES,
   type StorageLike,
 } from "../src/cache";
@@ -137,6 +140,30 @@ describe("credit log", () => {
     const s = memStorage();
     recordCredits(0, 1000, s);
     expect(readCreditLog(1000, 60_000, s).length).toBe(0);
+  });
+
+  it("counts the daily budget from UTC midnight, not a rolling 24h window", () => {
+    const s = memStorage();
+    const DAY = 24 * 60 * 60 * 1000;
+    // Two spends late "yesterday" (UTC) and one early "today".
+    const yesterdayEvening = 5 * DAY - 2 * 60 * 60 * 1000; // 22:00 UTC, day 4
+    const yesterdayLate = 5 * DAY - 30 * 60 * 1000; // 23:30 UTC, day 4
+    const todayMorning = 5 * DAY + 6 * 60 * 60 * 1000; // 06:00 UTC, day 5
+    recordCredits(300, yesterdayEvening, s);
+    recordCredits(200, yesterdayLate, s);
+    recordCredits(40, todayMorning, s);
+    const log = readCreditLog(todayMorning, DAY, s);
+    // A rolling 24h window would wrongly include yesterday's 500 credits...
+    expect(creditsSpentWithin(log, todayMorning, DAY)).toBe(540);
+    // ...but the UTC-day reset means only today's 40 count against the cap.
+    expect(creditsSpentToday(log, todayMorning)).toBe(40);
+  });
+
+  it("startOfUtcDay lands exactly on the most recent UTC midnight", () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    expect(startOfUtcDay(5 * DAY)).toBe(5 * DAY); // already midnight
+    expect(startOfUtcDay(5 * DAY + 1)).toBe(5 * DAY); // 1ms past midnight
+    expect(startOfUtcDay(6 * DAY - 1)).toBe(5 * DAY); // 1ms before next midnight
   });
 });
 
@@ -291,5 +318,29 @@ describe("live EUR/USD cache", () => {
 
   it("returns null when nothing is cached", () => {
     expect(readCachedEurUsd(memStorage())).toBeNull();
+  });
+});
+
+describe("clearPriceCaches", () => {
+  it("wipes quotes, FX and EUR/USD but keeps the credit log and publish stats", () => {
+    const s = memStorage();
+    writeCachedQuotes(new Map([["VTI", quote("VTI", "100")]]), 1000, s);
+    writeCachedFx({ base: "EUR", rates: { USD: new Decimal("1.1") } }, 1000, s);
+    writeCachedEurUsd({ now: new Decimal("1.085"), previousClose: new Decimal("1.07") }, 1000, s);
+    recordCredits(3, 1000, s);
+    recordNavPublish("VTSAX", "2024-01-10", new Date(2024, 0, 10, 22, 30).getTime(), s);
+
+    clearPriceCaches(s);
+
+    expect(readCachedQuotes(s).size).toBe(0);
+    expect(readCachedFx(s)).toBeNull();
+    expect(readCachedEurUsd(s)).toBeNull();
+    // The daily budget log and learned publish windows survive a from-scratch pull.
+    expect(creditsSpentWithin(readCreditLog(1000, 60_000, s), 1000, 60_000)).toBe(3);
+    expect(readNavPublishStats(s).size).toBe(1);
+  });
+
+  it("is a safe no-op when storage is unavailable", () => {
+    expect(() => clearPriceCaches(null)).not.toThrow();
   });
 });
