@@ -1,10 +1,34 @@
 # Tiingo secondary‑provider fallback — implementation plan
 
-> Status: **approved design, not yet built.** Captures the agreed architecture for
-> adding Tiingo as a smart fallback behind the existing primaries, plus a
+> Status: **desktop built; web pending hand‑off.** Captures the agreed architecture
+> for adding Tiingo as a smart fallback behind the existing primaries, plus a
 > user‑initiated manual refresh. Written 2026‑06‑23; revised same day to harden
 > the NAV‑late trigger (peer‑confirmation + canary probe) and the
 > yfinance retry‑before‑escalate gate.
+>
+> ### Progress (2026‑06‑23, branch `copilot/tiingo-fallback`)
+>
+> **Done — desktop (Python), all committed + 55 Tiingo tests green:**
+> - `adapters/tiingo_client.py` + keyring token storage (`storage/encryption.py`).
+> - `services/tiingo_fallback.py` — decision core (gates A–D + NAV two‑tier).
+> - `repositories/tiingo_state_repo.py` — persisted budget/canary/stale/habit state
+>   (JSON in `app_config`; self‑resetting ET hour/day buckets).
+> - `services/tiingo_fallback_runner.py` — orchestration; `tiingo_token` in `config.py`.
+> - `services/tiingo_fallback_wiring.py` — wired into `prices_service.refresh_due_prices`
+>   (yfinance hard‑fail falls through to Tiingo).
+> - `ui/pages/settings.py` — keyring token field + **loud popup** (implemented as a
+>   warning‑level `runtime_status.record_warning`, which the toast watcher surfaces).
+>
+> **Remaining — handed off:**
+> - **Desktop polish:** manual "Refresh via Tiingo now" button (bypasses timing
+>   gate C only); optional wiring into the backfill `refresh_prices` path.
+> - **Web/Worker (entire stack):** Worker `/price` route; `web/src/tiingo.ts`; ET
+>   budget in `cache.ts`; `loadQuotes` insertion; startup quick‑refresh; visible
+>   refresh spinner + outcome toast; discreet caption; `priceProxyUrl` config.
+> - **Finalize:** CHANGELOG `## [3.14.0]` + version bump (`pyproject.toml`,
+>   `web/package.json`, `web/package-lock.json` ×2). User already set the Wrangler
+>   `TIINGO_TOKEN` secret. All web integration points below re‑verified to exist
+>   as named on 2026‑06‑23.
 
 ## Motivation
 
@@ -186,9 +210,11 @@ Persisted stamps:
   canary call.
 - **Budget counter**: ET‑aware hour + day buckets persisted in
   `price_cache_metadata`.
-- **Loud comms**: on any yfinance→Tiingo switch, raise a `dmc.Notification`
-  ("yfinance stale for FSKAX — pulled via Tiingo fallback") **and**
-  `provider_status.record("tiingo", …)` for Settings/diagnostics.
+- **Loud comms**: on any yfinance→Tiingo switch, raise a warning‑level
+  `runtime_status.record_warning` (the app's existing toast watcher pops it as a
+  notification — "yfinance couldn't deliver fresh data, so Tiingo covered: …")
+  **and** `provider_status.record("tiingo", …)` for Settings/diagnostics. The
+  `record_warning` dedup window keeps a repeatedly‑failing tick from spamming.
 
 ## Web design
 
@@ -275,8 +301,8 @@ per‑side **budget caps** still apply (blocked with a clear message if exhauste
 
 ## Build order
 
-1. Desktop `tiingo_client` → smart‑gate fallback chain → keyring Settings field →
-   loud popup.
+1. ~~Desktop `tiingo_client` → smart‑gate fallback chain → keyring Settings field →
+   loud popup.~~ **✅ done (branch `copilot/tiingo-fallback`).**
 2. Worker `/price` route + docs.
 3. Web `tiingo.ts` → ET budget (persisted) → `loadQuotes` insertion + startup
    quick‑refresh → **visible refresh activity (spinner + outcome toast)** +
