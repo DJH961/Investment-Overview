@@ -256,6 +256,13 @@ def test_mobile_export_holdings_cash_and_transactions(session: Session) -> None:
     # so the web can show when the value was last updated (not the export date).
     assert by_symbol["VTI"]["last_price_date"] == AS_OF.isoformat()
     assert by_symbol["FXAIX"]["last_price_date"] == AS_OF.isoformat()
+    # Each priced holding also carries its prior published close (native) and that
+    # close's date, so the web can derive a today's move from the export alone when
+    # the live provider serves no usable quote for the symbol.
+    assert by_symbol["VTI"]["previous_close_native"] == "110.000000"
+    assert by_symbol["VTI"]["previous_close_date"] == date(2024, 6, 1).isoformat()
+    assert by_symbol["FXAIX"]["previous_close_native"] == "155.000000"
+    assert by_symbol["FXAIX"]["previous_close_date"] == date(2024, 6, 1).isoformat()
     assert export["cash"] == [
         {
             "account_label": "Tagesgeld",
