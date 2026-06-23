@@ -41,7 +41,8 @@ import {
   readCachedEurUsd,
   readCachedFx,
   readCreditLog,
-  creditsSpentWithin,
+  clearPriceCaches,
+  creditsSpentToday,
   readLastPull,
   readNavPublishStats,
   readSymbolPlan,
@@ -53,9 +54,12 @@ import {
 import {
   DEFAULT_NAV_CACHE_TTL_MS,
   FREE_TIER,
+  NAV_PUBLISH_HOUR,
+  latestExpectedNavDate,
   loadEurUsd,
   loadFxRates,
   loadQuotes,
+  marketCacheTtlMs,
   navCacheTtlMs,
   navPublishWindow,
   type EurUsdSource,
@@ -63,6 +67,7 @@ import {
   type QuoteLoadReport,
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
+import { isUsMarketOpen, latestSettledSessionDate } from "./market-hours";
 import {
   clearBiometricEnrolment,
   enrolBiometric,
@@ -164,12 +169,18 @@ export class App {
    */
   private lastDataPullAt: number | null = readLastPull();
   /**
-   * The most recent live-coverage summary (e.g. "13/18 up to date · …"), kept so
+   * The most recent live-coverage summary (e.g. "13/13 live, 5 NAVs expected
+   * tonight"), kept so
    * a subsequent cache-only re-paint (currency toggle, blob swap) can re-show it
    * instead of blanking the status the user just read. Set after each live
    * refresh; surfaced on the overview as a calm inline note.
    */
   private lastCoverage: string | null = null;
+  /**
+   * The structured facts behind {@link lastCoverage}, kept so the manual-refresh
+   * toast can re-summarise the same network round without re-deriving them.
+   */
+  private lastCoverageFacts: CoverageFacts | null = null;
   /** NAV-priced symbols from the latest fetch plan, for coverage classification. */
   private lastNavSymbols: ReadonlySet<string> = new Set();
   /**
@@ -407,6 +418,25 @@ export class App {
       field("Quote cache (minutes)", cacheMinutes, "Free tier is 8 credits/min, 800/day (1 per symbol). A longer cache means fewer refetches and fewer credits spent."),
       field("Auto-refresh (minutes)", autoRefresh, `Steady-state gap between automatic live refreshes once everything is fresh. A manual Refresh also pushes the next auto-refresh out by this long. Default is ${DEFAULT_AUTO_REFRESH_MINUTES}.`),
     );
+    // Maintenance: a manual escape hatch to throw away every cached price and
+    // re-pull the lot from scratch. Only meaningful once unlocked with data
+    // loaded — the dashboard it refreshes has to exist.
+    if (settingsMode && this.state.data) {
+      const updateAll = h(
+        "button",
+        { class: "btn ghost", type: "button", "data-action": "update-all" },
+        ["Update all data now"],
+      );
+      updateAll.addEventListener("click", () => this.updateAllFromScratch());
+      formChildren.push(
+        h("h2", { class: "settings-section" }, ["Maintenance"]),
+        field(
+          "Re-pull everything",
+          updateAll,
+          "Clear every cached price and re-fetch all quotes and FX from scratch — and re-check the data file. Use this if a price ever looks stuck. Respects your daily free-tier budget.",
+        ),
+      );
+    }
     formChildren.push(
       error ? h("p", { class: "note err" }, [error]) : document.createTextNode(""),
       h("div", { class: "row" }, actions),
@@ -894,20 +924,42 @@ export class App {
     // Per-symbol learned publish windows: when each fund's NAV has historically
     // landed, so we poll within that tight band instead of a fixed evening guess.
     const navStats = readNavPublishStats();
+    // Learned publish hour for a NAV symbol (when its once-a-day NAV is expected).
+    const publishHourFor = (symbol: string): number =>
+      navPublishWindow(navStats.get(symbol)?.hours).publishHour;
     return {
       cacheTtlMs,
       navSymbols: navFetchSymbols,
       forceMarketFetch: force,
       cacheTtlMsForSymbol: (symbol, cached) => {
-        if (!navFetchSymbols.has(symbol)) return cacheTtlMs;
-        const { publishHour, catchUpWindowHours } = navPublishWindow(navStats.get(symbol)?.hours);
-        return navCacheTtlMs(cached?.quote, {
+        if (navFetchSymbols.has(symbol)) {
+          // NAV fund: relax once today's NAV is in hand, else poll like a normal
+          // symbol until it lands (no upper catch-up cap — catches a late NAV).
+          return navCacheTtlMs(cached?.quote, {
+            shortTtlMs: cacheTtlMs,
+            longTtlMs: DEFAULT_NAV_CACHE_TTL_MS,
+            publishHour: publishHourFor(symbol),
+          });
+        }
+        // Market symbol: while the exchange is shut and we already hold the latest
+        // settled close there is nothing new to fetch — rest until it reopens.
+        const now = new Date();
+        return marketCacheTtlMs(cached?.quote, {
           shortTtlMs: cacheTtlMs,
-          longTtlMs: DEFAULT_NAV_CACHE_TTL_MS,
-          publishHour,
-          catchUpWindowHours,
+          marketOpen: isUsMarketOpen(now),
+          latestSettledDate: latestSettledSessionDate(now),
         });
       },
+      // A manual "pull now" may re-fetch a NAV fund only when it is *behind* its
+      // latest expected value (we are demonstrably missing a published NAV);
+      // otherwise NAV symbols stay exempt so a tap never chases an unchanged NAV.
+      forceFetch: force
+        ? (symbol, cached) => {
+            if (!navFetchSymbols.has(symbol)) return false; // market: forceMarketFetch
+            const have = cached?.quote.valueDate ?? null;
+            return !(have && have >= latestExpectedNavDate(new Date(), publishHourFor(symbol)));
+          }
+        : undefined,
       // Learn each fund's real publish time from when its value-date advances.
       onValueDateAdvance: (symbol, valueDate, at) => {
         if (navFetchSymbols.has(symbol)) recordNavPublish(symbol, valueDate, at);
@@ -934,7 +986,8 @@ export class App {
 
     const { symbols, options } = this.quoteRequest(data, config, network && (opts.force ?? false));
     // Remember which symbols are NAV-priced funds so the coverage summary can
-    // say "stocks & ETFs done, N funds still refreshing" rather than a bare count.
+    // split the live market count from the once-a-day NAVs that are still
+    // expected/awaited (see {@link summarizeCoverage}) rather than a bare count.
     this.lastNavSymbols = options.navSymbols ?? new Set();
     const apiKey = network ? config.apiKey : "";
 
@@ -950,9 +1003,16 @@ export class App {
       const fxLoad = await loadFxRates();
       fx = fxLoad.fx;
       fxReport = fxLoad;
-      // Live EUR/USD (current + prior close) for an FX-aware today's move,
-      // budget-permitting; falls back to the just-loaded ECB end-of-day rate.
-      const eurUsd = await loadEurUsd(apiKey, { eodFallback: fx.rates.USD ?? null });
+      // Live EUR/USD (current + prior close) for an FX-aware today's move.
+      // The conversion rate is the one thing we *always* re-poll on every network
+      // refresh (ttlMs: 0, so the cache is only ever a fallback): the forex market
+      // trades ~24/5, so the most recent live spot is always the right rate for
+      // valuing the book. This only fires on a network round with an API key in
+      // hand; a cache-only paint takes the `else` branch below. It still degrades
+      // gracefully — when the pair can't be fetched (no budget/key, a transient
+      // failure, or the weekend FX close) loadEurUsd falls back to today's cached
+      // spot, then the ECB end-of-day rate.
+      const eurUsd = await loadEurUsd(apiKey, { eodFallback: fx.rates.USD ?? null, ttlMs: 0 });
       eurUsdNow = eurUsd.now;
       eurUsdPrev = eurUsd.previousClose;
       eurUsdSource = eurUsd.source;
@@ -1008,9 +1068,19 @@ export class App {
     // Refresh the live-coverage summary on a network pull; keep the last one on a
     // cache-only re-paint so a currency toggle / blob swap doesn't blank it.
     if (network) {
-      this.lastCoverage = describeLiveCoverage(quoteLoad.report, this.lastNavSymbols, {
-        freshlyPulled: this.recentlyPulled(),
-      });
+      const navStats = readNavPublishStats();
+      this.lastCoverageFacts = buildCoverageFacts(
+        quoteLoad.report,
+        quoteLoad.quotes,
+        this.lastNavSymbols,
+        {
+          now: new Date(),
+          marketOpen: isUsMarketOpen(),
+          publishHourFor: (symbol) => navPublishWindow(navStats.get(symbol)?.hours).publishHour,
+          freshlyPulled: this.recentlyPulled(),
+        },
+      );
+      this.lastCoverage = summarizeCoverage(this.lastCoverageFacts);
     }
     model.overview.liveCoverage = this.lastCoverage;
     // Surface how much of the daily free-tier budget we've spent so far.
@@ -1022,6 +1092,35 @@ export class App {
     setEurUsdRate(fx.rates.USD ?? model.overview.fxRateEurUsd);
     this.renderDashboard(model);
     return quoteLoad.report;
+  }
+
+  /**
+   * The Settings "Update all data now" escape hatch: throw away every cached
+   * price and re-pull the lot from scratch. Quotes can otherwise linger behind
+   * their (deliberately long) NAV / closed-market freshness windows, so if a
+   * value ever looks stuck — a NAV that published late, a provider hiccup, a bug
+   * in the staleness logic — this guarantees a clean re-fetch with one tap.
+   *
+   * It clears the quote/FX/EUR-USD caches, drops the in-memory blob version
+   * stamp so the next check re-pulls the data file unconditionally, returns to
+   * the dashboard, and runs a forced full refresh. Only the soft "conserve the
+   * last credits" gate is bypassed — the hard free-tier per-minute/day budget in
+   * {@link loadQuotes} still applies, so a from-scratch pull can never blow the
+   * daily allowance (any overflow simply defers and back-fills on later ticks).
+   */
+  private updateAllFromScratch(): void {
+    // Forget every cached price so nothing is served from a stale window.
+    clearPriceCaches();
+    // Force the blob check to re-download (rather than short-circuit on an
+    // unchanged version stamp) the next time it runs.
+    this.metaVersion = null;
+    // Back to the dashboard, then kick off the from-scratch pulls.
+    this.exitSettings();
+    this.toast("Re-pulling all prices from scratch…");
+    const session = this.sessionId;
+    void this.maybeRefreshBlob(session);
+    if (this.refreshing) return; // a pull is already in flight; it will repaint
+    void this.runScheduledRefresh(session, "manual", { force: true });
   }
 
   /**
@@ -1059,7 +1158,7 @@ export class App {
    */
   private canForceRefresh(): boolean {
     const now = Date.now();
-    const used = creditsSpentWithin(readCreditLog(now), now, 24 * 60 * 60 * 1000);
+    const used = creditsSpentToday(readCreditLog(now, 24 * 60 * 60 * 1000), now);
     const remaining = Math.max(0, FREE_TIER.creditsPerDay - used);
     return remaining >= FREE_TIER.creditsPerDay * FORCE_REFRESH_MIN_CREDIT_FRACTION;
   }
@@ -1116,7 +1215,9 @@ export class App {
     // (fresh prices pulled, already up to date, or some deferred by the budget).
     if (kind === "manual") {
       this.toast(
-        manualRefreshSummary(report, this.lastNavSymbols, { freshlyPulled: this.recentlyPulled() }),
+        this.lastCoverageFacts
+          ? manualRefreshSummary(this.lastCoverageFacts)
+          : "Couldn't reach live prices — showing last known values",
       );
     }
     // "Prices all live" confirmation: when a portfolio is too big to price in a
@@ -1420,60 +1521,167 @@ export function allPricesLive(report: QuoteLoadReport): boolean {
 }
 
 /**
- * A concise, descriptive summary of how much of the portfolio is priced live,
- * for the inline coverage note and the manual-refresh toast. The whole point is
- * to be *specific* — "13/18 up to date · stocks & ETFs done, 5 funds still
- * refreshing" — rather than the vague "some prices aren't updated" the user
- * already knows. `navSymbols` lets it name the funds that lag (their NAV strikes
- * once a day and is fetched on a slower cadence than live stock/ETF quotes).
+ * Structured, honest facts about what is actually live versus awaited right now,
+ * split the way the user thinks about it: continuously-traded **market**
+ * holdings (stocks/ETFs) versus once-a-day **NAV** funds. The summary text is
+ * built from these so it never dresses an unpublished NAV up as "live" — it says
+ * plainly what we hold and what is still expected (see {@link summarizeCoverage}).
  */
-export function describeLiveCoverage(
-  report: QuoteLoadReport,
-  navSymbols: ReadonlySet<string> = new Set(),
-  opts: { freshlyPulled?: boolean } = {},
-): string {
-  // Only claim "up to date" when we actually pulled fresh data recently; a
-  // refresh served entirely from cache must not assert everything is current.
-  // Defaults to true so callers that don't track freshness keep prior behaviour.
-  const freshlyPulled = opts.freshlyPulled ?? true;
-  const total = report.fetched.length + report.servedFresh.length + report.deferred.length;
-  const live = total - report.deferred.length;
-  if (total === 0) return "No live-priced holdings";
-  if (report.deferred.length === 0) {
-    if (report.error) return `Showing last known prices (${live}/${total})`;
-    if (!freshlyPulled) {
-      return total === 1 ? "Showing recent prices" : `Showing recent prices (${total} holdings)`;
-    }
-    return total === 1 ? "Your holding is up to date" : `All ${total} holdings up to date`;
-  }
-  const navDeferred = report.deferred.filter((s) => navSymbols.has(s)).length;
-  const marketDeferred = report.deferred.length - navDeferred;
-  const head = `${live}/${total} up to date`;
-  // Everything tradeable is done and only once-a-day funds are still catching up
-  // — the common, benign staged-fill case; name it precisely.
-  if (marketDeferred === 0 && navDeferred > 0) {
-    const funds = navDeferred === 1 ? "1 fund" : `${navDeferred} funds`;
-    return `${head} · stocks & ETFs done, ${funds} still refreshing`;
-  }
-  const remaining = report.deferred.length;
-  return `${head} · ${remaining} still refreshing`;
+export interface CoverageFacts {
+  /** NYSE regular session open right now. */
+  marketOpen: boolean;
+  /** Market (stock/ETF) holdings requested this round. */
+  marketTotal: number;
+  /** Market holdings on a fresh/held price (not deferred by the budget). */
+  marketLive: number;
+  /** NAV-priced funds requested this round. */
+  navTotal: number;
+  /**
+   * NAV funds that have not yet published *today's* NAV (they strike after the
+   * market closes) — the "expected tonight" count while the market is open.
+   */
+  navExpectedTonight: number;
+  /**
+   * NAV funds whose latest *due* NAV we don't yet hold (past their learned
+   * publish hour and still missing) — the "awaiting" count once due. Zero over a
+   * weekend/holiday, when the latest published NAV is genuinely the current one.
+   */
+  navAwaiting: number;
+  /** Whether fresh data actually landed recently (else: "showing recent prices"). */
+  freshlyPulled: boolean;
+  /** A hard fetch error occurred this round (on last-known values). */
+  error: boolean;
+}
+
+/** Local `YYYY-MM-DD` for `d` (matches the NAV value-date day boundary). */
+function localDateIso(d: Date): string {
+  const y = d.getFullYear();
+  const m = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 /**
- * A short, human summary of a manual refresh outcome for the confirmation
- * toast, so a tap always ends with a clear statement of what happened rather
- * than silence. Leads with the descriptive live-coverage count; only a genuine
- * fetch failure (nothing fresh landed) overrides it with the fallback message.
+ * Classify this refresh round into {@link CoverageFacts}: split the requested
+ * symbols into market vs NAV, count how many market holdings are live, and judge
+ * each NAV fund against both *today's* date (will it still publish tonight?) and
+ * its latest *due* value-date (is it overdue right now?). `publishHourFor` is the
+ * fund's learned publish hour (see {@link navPublishWindow}); it defaults to the
+ * bootstrap {@link NAV_PUBLISH_HOUR} when nothing has been learned yet.
  */
-export function manualRefreshSummary(
+export function buildCoverageFacts(
   report: QuoteLoadReport,
-  navSymbols: ReadonlySet<string> = new Set(),
-  opts: { freshlyPulled?: boolean } = {},
-): string {
-  if (report.error && report.fetched.length === 0) {
-    return "Couldn't reach live prices — showing last known values";
+  quotes: ReadonlyMap<string, { valueDate?: string | null }>,
+  navSymbols: ReadonlySet<string>,
+  ctx: {
+    now?: Date;
+    marketOpen: boolean;
+    publishHourFor?: (symbol: string) => number;
+    freshlyPulled?: boolean;
+  },
+): CoverageFacts {
+  const now = ctx.now ?? new Date();
+  const publishHourFor = ctx.publishHourFor ?? (() => NAV_PUBLISH_HOUR);
+  const deferred = new Set(report.deferred);
+  const todayIso = localDateIso(now);
+  let marketTotal = 0;
+  let marketLive = 0;
+  let navTotal = 0;
+  let navExpectedTonight = 0;
+  let navAwaiting = 0;
+  for (const symbol of [...report.fetched, ...report.servedFresh, ...report.deferred]) {
+    if (navSymbols.has(symbol)) {
+      navTotal += 1;
+      const held = quotes.get(symbol)?.valueDate ?? null;
+      // Not yet holding today's NAV → it will publish later tonight.
+      if (!held || held < todayIso) navExpectedTonight += 1;
+      // Past its learned publish hour and still missing → genuinely overdue.
+      if (!held || held < latestExpectedNavDate(now, publishHourFor(symbol))) navAwaiting += 1;
+    } else {
+      marketTotal += 1;
+      if (!deferred.has(symbol)) marketLive += 1;
+    }
   }
-  return describeLiveCoverage(report, navSymbols, opts);
+  return {
+    marketOpen: ctx.marketOpen,
+    marketTotal,
+    marketLive,
+    navTotal,
+    navExpectedTonight,
+    navAwaiting,
+    freshlyPulled: ctx.freshlyPulled ?? true,
+    error: report.error !== null,
+  };
+}
+
+/** Pluralise "NAV"/"NAVs". */
+function navWord(n: number): string {
+  return n === 1 ? "NAV" : "NAVs";
+}
+
+/**
+ * Turn {@link CoverageFacts} into a calm, *honest* one-liner. The point is to be
+ * transparent about exactly what we pull and what we don't — never counting an
+ * unpublished NAV as "live". It distinguishes the open- and closed-market
+ * framings the user asked for, e.g.:
+ *   - market open:   "13/13 live, 5 NAVs expected tonight"
+ *   - market closed: "market closed for 13/13, awaiting 5/5 NAVs"
+ *   - all current:   "market closed, all prices up to date"
+ */
+export function summarizeCoverage(f: CoverageFacts): string {
+  const total = f.marketTotal + f.navTotal;
+  if (total === 0) return "No live-priced holdings";
+  if (f.error) return "Showing last known prices";
+  // A refresh served entirely from cache (no fresh pull) must not assert things
+  // are live/up to date — say plainly that these are recent, not just-fetched.
+  if (!f.freshlyPulled) {
+    return total === 1 ? "Showing recent prices" : `Showing recent prices (${total} holdings)`;
+  }
+
+  const marketHeld = f.marketTotal === 0 || f.marketLive === f.marketTotal;
+
+  if (f.marketOpen) {
+    const parts: string[] = [];
+    if (f.marketTotal > 0) parts.push(`${f.marketLive}/${f.marketTotal} live`);
+    if (f.navTotal > 0) {
+      parts.push(
+        f.navExpectedTonight > 0
+          ? `${f.navExpectedTonight} ${navWord(f.navExpectedTonight)} expected tonight`
+          : `${f.navTotal}/${f.navTotal} ${navWord(f.navTotal)} in`,
+      );
+    }
+    return parts.join(", ");
+  }
+
+  // Market closed.
+  if (marketHeld && f.navAwaiting === 0) return "market closed, all prices up to date";
+
+  const parts: string[] = [];
+  if (f.marketTotal > 0) {
+    parts.push(
+      marketHeld
+        ? `market closed for ${f.marketLive}/${f.marketTotal}`
+        : `market closed, ${f.marketLive}/${f.marketTotal} up to date`,
+    );
+  } else {
+    parts.push("market closed");
+  }
+  if (f.navAwaiting > 0) {
+    parts.push(`awaiting ${f.navAwaiting}/${f.navTotal} ${navWord(f.navAwaiting)}`);
+  } else if (f.navTotal > 0) {
+    parts.push(`${f.navTotal}/${f.navTotal} ${navWord(f.navTotal)} in`);
+  }
+  return parts.join(", ");
+}
+
+/**
+ * A short, human summary of a manual refresh outcome for the confirmation toast,
+ * so a tap always ends with a clear statement of what happened. Leads with the
+ * transparent coverage line; only a genuine fetch failure overrides it.
+ */
+export function manualRefreshSummary(facts: CoverageFacts): string {
+  if (facts.error) return "Couldn't reach live prices — showing last known values";
+  return summarizeCoverage(facts);
 }
 
 /**

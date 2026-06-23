@@ -14,7 +14,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [3.9.3] — 2026-06-23
+## [3.9.5] — 2026-06-23
+
+### Changed
+
+- **Value / equity / drawdown graphs are now currency-correct (USD-native).**
+  USD is the booked currency — spot prices arrive in USD — so the USD curve is
+  now computed natively with **no FX applied**, and EUR is the FX-derived view
+  (not the other way around). Analytics exports a true per-day USD value series
+  (`portfolio_value_usd`, built from the desktop USD snapshot bundle) instead of
+  rescaling the EUR curve by today's spot, so each currency's history reflects
+  the actual rate on every day rather than a single uniform conversion. The web
+  companion renders each chart natively in the active currency; the live "today"
+  tip uses the live intraday EUR/USD spot, so the USD and EUR graphs legitimately
+  differ point-by-point as the FX market moves.
+- **Recreated FX history uses each day's actual market close (yfinance).** A
+  yfinance `EURUSD=X` overlay re-marks the EUR/USD history on top of the
+  ECB/Frankfurter baseline, so back-filled days convert a USD-native portfolio
+  into euros at that day's real market-close rate. Best-effort: any fetch failure
+  leaves the ECB rates in place.
 
 ### Fixed
 
@@ -29,6 +47,40 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   step where the two meet). Cache-tier `intraday_value` gains a renamed
   `market_value_eur` column (migration `0014`); the table is regenerable, so it
   is recreated rather than back-filled.
+
+## [3.9.4] — 2026-06-23
+
+### Fixed
+
+- **Header "Quit" performs a clean shutdown.** The desktop header quit action
+  now goes through a dedicated shutdown flow so the app exits cleanly instead
+  of leaving the process in an inconsistent state.
+- **Refresh-chip tooltip is scoped to the chip.** The refresh indicator's
+  tooltip is now attached to the chip itself rather than bleeding onto
+  surrounding layout elements.
+
+## [3.9.3] — 2026-06-23
+
+### Added
+
+- **Settings → "Update all data now".** A maintenance button in the web
+  companion's settings that clears all cached prices/FX and re-polls every
+  holding from scratch, for the rare case the incremental refresh logic gets
+  into a bad state.
+
+### Fixed
+
+- **Late-arriving NAV prices are attributed to the correct US trading day.**
+  Mutual-fund / money-market NAVs often publish around (EU) midnight. The
+  "expected NAV date" is now anchored to the latest *settled US session*
+  (`latestSettledSessionDate`) rather than the viewer's local (EU) calendar
+  date, so a NAV arriving at 02:00 CET is back-dated to the right US date and
+  the local date roll-over no longer triggers spurious polling or
+  mis-attribution.
+- **Daily live-data credit budget resets at 00:00 UTC.** The free-tier daily
+  allowance is now counted per UTC calendar day (`creditsSpentToday`) to match
+  Twelve Data's reset, instead of a rolling trailing-24h window that could
+  appear inflated in the morning.
 
 ## [3.9.2] — 2026-06-23
 

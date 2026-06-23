@@ -167,10 +167,11 @@ def _quit_clicked() -> None:  # pragma: no cover - UI callback
     from investment_dashboard.ui.components import confirm_dialog  # noqa: PLC0415
 
     def _confirm() -> None:
-        ui.notify("Shutting down… you can close this tab.", type="warning")
-        # Let the toast paint before the server stops serving, then release the
-        # writer lock and exit. ``request_shutdown`` is safe to call repeatedly.
-        ui.timer(0.6, shutdown.request_shutdown, once=True)
+        # Funnel through the shared graceful-shutdown sequence so the header
+        # power button behaves exactly like Settings → Server "Shut down":
+        # publish (gated) and report the result, suppress the reconnect banner,
+        # auto-close the tab, then stop the server.
+        shutdown.begin_graceful_shutdown()
 
     confirm_dialog(
         "Leave and shut down?",

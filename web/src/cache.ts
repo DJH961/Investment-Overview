@@ -335,6 +335,31 @@ export function creditsSpentWithin(log: CreditSpend[], now: number, windowMs: nu
   return log.reduce((acc, e) => (now - e.at < windowMs ? acc + e.n : acc), 0);
 }
 
+/**
+ * Epoch ms of the most recent 00:00 **UTC** at or before `now`.
+ *
+ * Twelve Data resets the free-tier *daily* credit allowance at midnight UTC, so
+ * the day's spend must be measured from that boundary — not a trailing 24h
+ * window. Because the Unix epoch itself begins at 00:00 UTC and a JS day is a
+ * fixed 86_400_000 ms (no leap seconds), flooring to the day grid lands exactly
+ * on UTC midnight.
+ */
+export function startOfUtcDay(now: number): number {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  return Math.floor(now / DAY_MS) * DAY_MS;
+}
+
+/**
+ * Credits spent so far **today** (since the most recent 00:00 UTC), which is the
+ * window the free-tier daily cap of 800 actually applies to. Using this instead
+ * of a rolling 24h window means a fresh UTC day starts the budget back at zero —
+ * last night's spend no longer eats into this morning's allowance.
+ */
+export function creditsSpentToday(log: CreditSpend[], now: number): number {
+  const dayStart = startOfUtcDay(now);
+  return log.reduce((acc, e) => (e.at >= dayStart ? acc + e.n : acc), 0);
+}
+
 // --- Last successful data pull ---------------------------------------------
 
 const LAST_PULL_KEY = "iv.web.last_pull";
@@ -483,3 +508,26 @@ export const CACHE_KEYS = {
   BLOB_KEY,
   SYMBOL_PLAN_KEY,
 } as const;
+
+/**
+ * Wipe every cached *price* reading — quotes, FX, and the EUR/USD pair — so the
+ * next refresh re-fetches all of them from scratch regardless of their cache
+ * windows. This is the data side of the Settings "Update all" control: a manual
+ * escape hatch for when a stale or wrong cached value would otherwise stick
+ * around behind its (deliberately long) NAV/closed-market freshness window.
+ *
+ * The rolling credit log is intentionally left untouched so a from-scratch pull
+ * still respects the free-tier daily budget; the encrypted blob and the learned
+ * NAV publish windows are likewise left alone (the blob is refreshed by its own
+ * conditional-download path, and the publish windows are still valid history).
+ */
+export function clearPriceCaches(storage: StorageLike | null = defaultStorage()): void {
+  if (!storage) return;
+  for (const key of [QUOTE_KEY, FX_KEY, EURUSD_KEY]) {
+    try {
+      storage.removeItem(key);
+    } catch {
+      /* best-effort: a storage failure just leaves that cache in place. */
+    }
+  }
+}
