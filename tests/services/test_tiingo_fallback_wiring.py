@@ -137,6 +137,56 @@ def test_fallback_error_is_swallowed(session: Session, monkeypatch: pytest.Monke
     assert result == {"VTI": 0}
 
 
+def test_fallback_error_is_surfaced_loudly(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A swallowed fallback failure must still be made OBVIOUS: a red runtime_status
+    # error (toast + Data Health) so a silently-down backup provider is visible.
+    from investment_dashboard.services import runtime_status
+
+    _due_etf(session)
+    monkeypatch.setattr(prices_service, "_resolve_tiingo_token", lambda: "tok")
+    monkeypatch.setattr(
+        wiring,
+        "apply_desktop_fallback",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("kaboom")),
+    )
+
+    prices_service.refresh_due_prices(session, today=_TODAY, now=_NOW)
+
+    latest = runtime_status.latest()
+    assert latest is not None
+    assert not latest.is_warning  # red error, not amber
+    assert "Tiingo" in latest.message
+    assert "kaboom" in latest.message
+
+
+def test_fallback_rate_limit_is_reported_as_credits(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A spent Tiingo quota (HTTP 429 → RateLimitedError) must read as "out of
+    # credits", not the generic "unreachable" message, so the user doesn't go
+    # Worker-hunting when they've simply burned the account's API budget.
+    from investment_dashboard.adapters._retry import RateLimitedError
+    from investment_dashboard.services import runtime_status
+
+    _due_etf(session)
+    monkeypatch.setattr(prices_service, "_resolve_tiingo_token", lambda: "tok")
+    monkeypatch.setattr(
+        wiring,
+        "apply_desktop_fallback",
+        lambda *a, **k: (_ for _ in ()).throw(RateLimitedError("HTTP 429 (rate limited)")),
+    )
+
+    prices_service.refresh_due_prices(session, today=_TODAY, now=_NOW)
+
+    latest = runtime_status.latest()
+    assert latest is not None
+    assert not latest.is_warning
+    assert "rate-limited" in latest.message
+    assert "credits" in latest.message
+
+
 # --------------------------------------------------------------------------- #
 # Manual "Refresh via Tiingo now"
 # --------------------------------------------------------------------------- #

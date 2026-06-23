@@ -66,10 +66,15 @@ describe("fetchTiingoQuotes", () => {
     expect(quotes.get("VOO")?.price).toEqual(new Decimal(500));
   });
 
-  it("returns empty (not an error) when the proxy relays a Tiingo error object", async () => {
+  it("throws a PriceError when the proxy returns a non-array body (blob/error object)", async () => {
+    // The deployed Worker missing its `/price` route serves the encrypted blob (a
+    // JSON *object*) on `/price`; a bad upstream relays a Tiingo error object.
+    // Either way it is not a Tiingo quote array, so treat it as a visible failure.
     const fetchImpl: FetchLike = async () => jsonResponse({ status: "error", message: "bad token" });
-    const quotes = await fetchTiingoQuotes(["AAPL"], PROXY, { fetchImpl });
-    expect(quotes.size).toBe(0);
+    await expect(fetchTiingoQuotes(["AAPL"], PROXY, { fetchImpl })).rejects.toMatchObject({
+      name: "PriceError",
+      retryable: false,
+    });
   });
 
   it("throws a classified PriceError on a non-OK HTTP status", async () => {
