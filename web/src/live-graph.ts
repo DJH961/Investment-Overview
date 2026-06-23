@@ -8,9 +8,13 @@
  * and an optional `fetchFx` (EUR→USD bars). This module assembles those
  * injectables from the app's two providers:
  *
- *   - **Prices** — the dual pipe: Tiingo via the Worker `/iex-intraday` route
- *     (one request per ticker, off Tiingo's own budget) with an automatic
- *     fall-back to Twelve Data's browser-direct `time_series` (1 credit/symbol).
+ *   - **Prices** — the dual pipe: Tiingo via the unified Worker `/price` route
+ *     (`?intraday=` for the 1D curve, `?daily=` for the 1W curve — one request
+ *     per ticker, off Tiingo's own budget) with an automatic fall-back to Twelve
+ *     Data's browser-direct `time_series` (1 credit/symbol) when Tiingo is
+ *     unavailable. Tiingo is preferred because its bulk history fetch is fast and
+ *     free of the per-minute Twelve Data cap, so the graph paints promptly even
+ *     in a short (2–3 min) session.
  *   - **FX** — the *same batched style*: one Tiingo `/price?fxHistory=eurusd`
  *     request over the curve's exact date window pulls the per-bar EUR→USD track
  *     ({@link makeTiingoFxBarFetcher}), so a back-dated graph re-marks each point
@@ -82,27 +86,27 @@ export function makeTwelveDataBarFetcher(
 }
 
 /**
- * Compose the dual-pipe price backfill: prefer Tiingo (Pipe B, via the
- * `/iex-intraday` Worker proxy) and fall back to Twelve Data (Pipe A) the moment
- * Pipe B is unavailable. When only one pipe is configured that pipe is used
- * alone; when neither is, `null` is returned (the curve then has no price bars
- * and the builder yields an empty curve).
+ * Compose the dual-pipe price backfill: prefer Tiingo (Pipe B, via the unified
+ * `/price` Worker proxy) and fall back to Twelve Data (Pipe A) the moment Pipe B
+ * is unavailable. The `param` selects the Tiingo feed (`intraday` for the 1D
+ * curve, `daily` for the 1W curve). When only one pipe is configured that pipe is
+ * used alone; when neither is, `null` is returned (the curve then has no price
+ * bars and the builder yields an empty curve).
  */
 export function makePriceBarFetcher(opts: {
   apiKey: string;
-  intradayProxyUrl: string | null;
+  proxyUrl: string | null;
+  param?: "intraday" | "daily";
   interval?: string;
   outputsize?: number;
   startDate?: string;
   endDate?: string;
-  resampleFreq?: string;
   fetchImpl?: FetchLike;
 }): BarFetcher | null {
-  const { apiKey, intradayProxyUrl, interval, outputsize, startDate, endDate, resampleFreq, fetchImpl } =
-    opts;
+  const { apiKey, proxyUrl, param, interval, outputsize, startDate, endDate, fetchImpl } = opts;
   const pipeA = makeTwelveDataBarFetcher(apiKey, { interval, outputsize, fetchImpl });
-  const pipeB = intradayProxyUrl
-    ? makeTiingoBarFetcher(intradayProxyUrl, { resampleFreq, startDate, endDate, fetchImpl })
+  const pipeB = proxyUrl
+    ? makeTiingoBarFetcher(proxyUrl, { param, startDate, endDate, fetchImpl })
     : null;
   if (pipeB && pipeA) return makeDualPipeBarFetcher(pipeB, pipeA);
   return pipeB ?? pipeA;
@@ -133,9 +137,7 @@ export function makeWindowFxFetcher(
 export interface LiveGraphProviders {
   /** Twelve Data API key (Pipe A). Empty ⇒ Tiingo-only prices. */
   apiKey: string;
-  /** Worker `/iex-intraday` route (Pipe B prices). Null ⇒ Twelve Data only. */
-  intradayProxyUrl: string | null;
-  /** Worker `/price` route (Tiingo FX history). Null ⇒ baseFx-only FX. */
+  /** Unified Worker `/price` route (Tiingo prices + FX history). Null ⇒ Twelve Data only. */
   priceProxyUrl: string | null;
   /** Injected fetch (defaults to the global). */
   fetchImpl?: FetchLike;
@@ -147,8 +149,6 @@ export interface SessionGraphTuning {
   interval?: string;
   /** Twelve Data `outputsize` for Pipe A (default 78 ≈ a 5-min session). */
   outputsize?: number;
-  /** Tiingo (Pipe B) intraday resample (default `1hour`). */
-  tiingoResampleFreq?: string;
   /** Tiingo FX-history resample for the day's FX track (default `1hour`). */
   fxResampleFreq?: string;
 }
@@ -169,10 +169,10 @@ export function buildLiveSessionCurve(
   const fetchBars =
     makePriceBarFetcher({
       apiKey: providers.apiKey,
-      intradayProxyUrl: providers.intradayProxyUrl,
+      proxyUrl: providers.priceProxyUrl,
+      param: "intraday",
       interval: tuning.interval,
       outputsize: tuning.outputsize,
-      resampleFreq: tuning.tiingoResampleFreq,
       startDate: window.startDate,
       endDate: window.endDate,
       fetchImpl: providers.fetchImpl,
@@ -187,10 +187,11 @@ export function buildLiveSessionCurve(
 }
 
 /**
- * Build the live **1 Week** curve with both backfills wired in: a daily-close
- * price fetcher and the batched Tiingo FX-history fetcher (daily cadence) over
- * the trailing-session window. `anchor`, `store`, `now`, `liveTip`, `sessions`
- * and `storeKey` pass straight through to {@link loadOrBuildWeekCurve}.
+ * Build the live **1 Week** curve with both backfills wired in: a dual-pipe
+ * daily-close price fetcher (Tiingo `?daily=` first, Twelve Data `interval=1day`
+ * fallback) and the batched Tiingo FX-history fetcher (daily cadence) over the
+ * trailing-session window. `anchor`, `store`, `now`, `liveTip`, `sessions` and
+ * `storeKey` pass straight through to {@link loadOrBuildWeekCurve}.
  */
 export function buildLiveWeekCurve(
   base: Omit<WeekCurveOptions, "fetchDailyBars" | "fetchFx">,
@@ -199,17 +200,21 @@ export function buildLiveWeekCurve(
   const now = base.now ?? new Date();
   const sessions = base.sessions ?? DEFAULT_WEEK_SESSIONS;
   const window = weekFxWindow(now, sessions);
-  // The 1W curve is built from one daily close per session. Tiingo's
-  // `/iex-intraday` route serves only intraday (`min`/`hour`) bars, so the daily
-  // price backfill runs on Twelve Data's `interval=1day` Pipe A alone; the FX
-  // track is still pulled in the same batched style from Tiingo's FX-history
-  // route at a daily cadence.
+  // The 1W curve is built from one daily close per session. Tiingo's `/price`
+  // route serves those via `?daily=<ticker>` (a single batched window per
+  // symbol, off Tiingo's own budget), so it is preferred for a prompt paint; the
+  // browser-direct Twelve Data `interval=1day` Pipe A is the fallback. The FX
+  // track is pulled in the same batched style from Tiingo's FX-history route at a
+  // daily cadence.
   const fetchDailyBars =
     makePriceBarFetcher({
       apiKey: providers.apiKey,
-      intradayProxyUrl: null,
+      proxyUrl: providers.priceProxyUrl,
+      param: "daily",
       interval: "1day",
       outputsize: Math.max(sessions + 2, 8),
+      startDate: window.startDate,
+      endDate: window.endDate,
       fetchImpl: providers.fetchImpl,
     }) ?? emptyBarFetcher;
   const fetchFx = makeWindowFxFetcher(providers.priceProxyUrl, window, "1day", providers.fetchImpl);

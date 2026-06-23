@@ -19,8 +19,8 @@ compatibility_date = "2024-11-01"
 RELEASE_URL = "https://github.com/DJH961/Investment-Overview/releases/download/live-data/portfolio.enc"
 # META_URL = "https://github.com/DJH961/Investment-Overview/releases/download/live-data/portfolio.meta.json"
 
-# Tiingo price-fallback secret (used only by the `…/price` and `…/iex-intraday`
-# routes). It is a *secret*, NOT a [vars] entry, so it is never committed: set it
+# Tiingo price-fallback secret (used only by the `…/price` route). It is a
+# *secret*, NOT a [vars] entry, so it is never committed: set it
 # once with
 #   wrangler secret put TIINGO_TOKEN
 # The browser companion stays Tiingo-keyless — the token lives only here.

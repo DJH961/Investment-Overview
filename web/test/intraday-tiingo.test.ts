@@ -1,8 +1,8 @@
 /**
- * Tests for the Pipe-B Tiingo intraday backfill (`intraday-tiingo.ts`): the
- * per-symbol `/iex-intraday` Worker client, the bar parser, and the dual-pipe
- * fallback that degrades to the Phase-2 Twelve Data fetcher. A stub fetch returns
- * canned Tiingo payloads.
+ * Tests for the Pipe-B Tiingo price backfill (`intraday-tiingo.ts`): the
+ * per-symbol unified `/price` Worker client (`?intraday=`/`?daily=`), the bar
+ * parser, and the dual-pipe fallback that degrades to the Twelve Data fetcher. A
+ * stub fetch returns canned Tiingo payloads.
  */
 import { describe, expect, it } from "vitest";
 
@@ -16,7 +16,7 @@ import { PriceError, type FetchLike } from "../src/prices";
 import { Decimal } from "../src/decimal-config";
 import type { Bar } from "../src/timeseries";
 
-const PROXY = "https://worker.example.dev/iex-intraday";
+const PROXY = "https://worker.example.dev/price";
 
 function jsonResponse(
   body: unknown,
@@ -58,16 +58,30 @@ describe("fetchTiingoIntradayBars", () => {
     };
     const bars = await fetchTiingoIntradayBars(["AAPL", "MSFT"], PROXY, {
       fetchImpl,
-      resampleFreq: "5min",
       startDate: "2026-06-22",
       endDate: "2026-06-22",
     });
     expect(urls).toHaveLength(2);
-    expect(urls[0]).toContain("ticker=AAPL");
-    expect(urls[0]).toContain("resampleFreq=5min");
+    expect(urls[0]).toContain("intraday=AAPL");
     expect(urls[0]).toContain("startDate=2026-06-22");
     expect(bars.get("AAPL")?.[0].value.toString()).toBe("100");
     expect(bars.get("MSFT")?.[0].value.toString()).toBe("100");
+  });
+
+  it("uses the daily param when requested (1W curve)", async () => {
+    const urls: string[] = [];
+    const fetchImpl: FetchLike = async (url) => {
+      urls.push(String(url));
+      return jsonResponse([{ date: "2026-06-22T00:00:00.000Z", close: 100 }]);
+    };
+    await fetchTiingoIntradayBars(["VOO"], PROXY, {
+      fetchImpl,
+      param: "daily",
+      startDate: "2026-06-15",
+      endDate: "2026-06-22",
+    });
+    expect(urls[0]).toContain("daily=VOO");
+    expect(urls[0]).not.toContain("intraday=");
   });
 
   it("de-duplicates and skips blank symbols", async () => {
@@ -82,7 +96,7 @@ describe("fetchTiingoIntradayBars", () => {
 
   it("treats a 404 ticker as an empty gap, not a failure", async () => {
     const fetchImpl: FetchLike = async (url) =>
-      String(url).includes("ticker=NOPE")
+      String(url).includes("intraday=NOPE")
         ? jsonResponse({ detail: "Not found" }, { ok: false, status: 404 })
         : jsonResponse([{ date: "2026-06-22T14:00:00.000Z", close: 50 }]);
     const bars = await fetchTiingoIntradayBars(["NOPE", "AAPL"], PROXY, { fetchImpl });
@@ -214,9 +228,9 @@ describe("makeTiingoBarFetcher", () => {
       calledUrl = String(url);
       return jsonResponse([{ date: "2026-06-22T14:00:00.000Z", close: 7 }]);
     };
-    const fetcher = makeTiingoBarFetcher(PROXY, { fetchImpl, resampleFreq: "1hour" });
+    const fetcher = makeTiingoBarFetcher(PROXY, { fetchImpl, param: "intraday" });
     const bars = await fetcher(["AAPL"]);
-    expect(calledUrl).toContain("resampleFreq=1hour");
+    expect(calledUrl).toContain("intraday=AAPL");
     expect(bars.get("AAPL")?.[0].value.toString()).toBe("7");
   });
 });

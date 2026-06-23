@@ -25,7 +25,6 @@ import type { FetchLike } from "../src/prices";
 const d = (v: string | number): Decimal => new Decimal(v);
 
 const PRICE_PROXY = "https://worker.example.dev/price";
-const INTRADAY_PROXY = "https://worker.example.dev/iex-intraday";
 
 /** One USD-booked ETF with a constant base — enough to drive both builders. */
 function anchor(): IntradayAnchor {
@@ -92,8 +91,8 @@ describe("makeWindowFxFetcher", () => {
 });
 
 describe("makePriceBarFetcher", () => {
-  it("returns null when neither a key nor an intraday proxy is configured", () => {
-    expect(makePriceBarFetcher({ apiKey: "", intradayProxyUrl: null })).toBeNull();
+  it("returns null when neither a key nor a price proxy is configured", () => {
+    expect(makePriceBarFetcher({ apiKey: "", proxyUrl: null })).toBeNull();
   });
 
   it("uses Tiingo (Pipe B) and falls back to Twelve Data (Pipe A) on an empty B", async () => {
@@ -101,13 +100,32 @@ describe("makePriceBarFetcher", () => {
     const { calls, fetchImpl } = recordingFetch([]);
     const fetch = makePriceBarFetcher({
       apiKey: "KEY",
-      intradayProxyUrl: INTRADAY_PROXY,
+      proxyUrl: PRICE_PROXY,
+      param: "intraday",
       fetchImpl,
     })!;
     await fetch(["VTI"]);
     // First hits the Tiingo intraday proxy, then the Twelve Data time_series.
-    expect(calls[0]).toContain("/iex-intraday");
+    expect(calls[0]).toContain("/price?intraday=VTI");
     expect(calls.some((u) => u.includes("time_series"))).toBe(true);
+  });
+
+  it("requests Tiingo daily closes when param=daily (the 1W price pipe)", async () => {
+    const { calls, fetchImpl } = recordingFetch([
+      { date: "2026-06-23T00:00:00.000Z", close: 100 },
+    ]);
+    const fetch = makePriceBarFetcher({
+      apiKey: "KEY",
+      proxyUrl: PRICE_PROXY,
+      param: "daily",
+      startDate: "2026-06-17",
+      endDate: "2026-06-23",
+      fetchImpl,
+    })!;
+    await fetch(["VTI"]);
+    // Tiingo daily returns bars → no fallback to Twelve Data is needed.
+    expect(calls[0]).toContain("/price?daily=VTI");
+    expect(calls.some((u) => u.includes("time_series"))).toBe(false);
   });
 });
 
@@ -119,7 +137,6 @@ describe("buildLiveSessionCurve", () => {
     const store = new TimeSeriesStore(memoryBackend());
     const providers: LiveGraphProviders = {
       apiKey: "KEY",
-      intradayProxyUrl: INTRADAY_PROXY,
       priceProxyUrl: PRICE_PROXY,
       fetchImpl,
     };
@@ -130,6 +147,8 @@ describe("buildLiveSessionCurve", () => {
     );
     expect(curve.day).toBe("2026-06-23");
     expect(curve.points.length).toBeGreaterThan(0);
+    // The session prices were pulled from the Tiingo intraday pipe.
+    expect(calls.some((u) => u.includes("intraday=VTI"))).toBe(true);
     // The FX track was pulled for the session day at an intraday cadence.
     const fxCall = calls.find((u) => u.includes("fxHistory=eurusd"));
     expect(fxCall).toBeDefined();
@@ -143,7 +162,7 @@ describe("buildLiveSessionCurve", () => {
     const store = new TimeSeriesStore(memoryBackend());
     const curve = await buildLiveSessionCurve(
       { anchor: anchor(), store, now: new Date("2026-06-23T14:00:00Z") },
-      { apiKey: "KEY", intradayProxyUrl: null, priceProxyUrl: null, fetchImpl },
+      { apiKey: "KEY", priceProxyUrl: null, fetchImpl },
     );
     expect(curve.day).toBe("2026-06-23");
     // No FX history was requested (no proxy); prices came from Twelve Data.
@@ -153,22 +172,51 @@ describe("buildLiveSessionCurve", () => {
 });
 
 describe("buildLiveWeekCurve", () => {
-  it("wires a daily FX track over the trailing-session window", async () => {
+  it("wires Tiingo daily prices + a daily FX track over the trailing-session window", async () => {
     const { calls, fetchImpl } = recordingFetch([
       { date: "2026-06-23T00:00:00.000Z", close: 100 },
     ]);
     const store = new TimeSeriesStore(memoryBackend());
     const providers: LiveGraphProviders = {
       apiKey: "KEY",
-      intradayProxyUrl: INTRADAY_PROXY,
       priceProxyUrl: PRICE_PROXY,
       fetchImpl,
     };
     const now = new Date("2026-06-23T14:00:00Z");
     await buildLiveWeekCurve({ anchor: anchor(), store, now, sessions: 5 }, providers);
+    // The daily closes were pulled from the Tiingo daily pipe (not Twelve Data).
+    const dailyCall = calls.find((u) => u.includes("daily=VTI"));
+    expect(dailyCall).toBeDefined();
+    expect(dailyCall).toContain("startDate=");
+    expect(calls.some((u) => u.includes("time_series"))).toBe(false);
     const fxCall = calls.find((u) => u.includes("fxHistory=eurusd"));
     expect(fxCall).toBeDefined();
     expect(fxCall).toContain("resampleFreq=1day");
     expect(fxCall).toContain("endDate=2026-06-23");
+  });
+
+  it("falls back to Twelve Data daily closes when Tiingo returns nothing", async () => {
+    // The Tiingo daily pipe answers empty for the price symbol, so the dual pipe
+    // degrades to Twelve Data's interval=1day; the FX track still comes from Tiingo.
+    const fxBody = [{ date: "2026-06-23T00:00:00.000Z", close: 1.1 }];
+    const calls: string[] = [];
+    const fetchImpl: FetchLike = async (url) => {
+      const u = String(url);
+      calls.push(u);
+      const body = u.includes("fxHistory")
+        ? fxBody
+        : u.includes("time_series")
+          ? { values: [{ datetime: "2026-06-23", close: "100" }] }
+          : [];
+      return { ok: true, status: 200, json: async () => body } as unknown as Response;
+    };
+    const store = new TimeSeriesStore(memoryBackend());
+    const providers: LiveGraphProviders = { apiKey: "KEY", priceProxyUrl: PRICE_PROXY, fetchImpl };
+    await buildLiveWeekCurve(
+      { anchor: anchor(), store, now: new Date("2026-06-23T14:00:00Z"), sessions: 5 },
+      providers,
+    );
+    expect(calls.some((u) => u.includes("daily=VTI"))).toBe(true);
+    expect(calls.some((u) => u.includes("time_series"))).toBe(true);
   });
 });

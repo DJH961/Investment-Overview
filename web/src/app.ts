@@ -24,7 +24,6 @@ import {
   parseAutoLockMinutes,
   parseUpdateMinutes,
   resolveBlobUrl,
-  resolveIntradayProxyUrl,
   resolveMetaUrl,
   resolvePriceProxyUrl,
   saveConfig,
@@ -2148,7 +2147,6 @@ export class App {
         : null;
     const providers: LiveGraphProviders = {
       apiKey: config.apiKey,
-      intradayProxyUrl: resolveIntradayProxyUrl(config),
       priceProxyUrl: resolvePriceProxyUrl(config),
     };
     const store = this.ensureTimeSeriesStore();

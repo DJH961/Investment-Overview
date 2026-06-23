@@ -48,13 +48,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     live from Tiingo intraday/daily bars batched through the Cloudflare Worker
     (`web/src/intraday-tiingo.ts`, `web/src/tiingo.ts`) and per-minute FX history,
     cached in a `TimeSeriesStore` (`web/src/timeseries-store.ts`) so repeat opens
-    reuse the bars instead of re-fetching them.
-  - **Worker routes:** the proxy gains a dedicated `…/iex-intraday` route plus a
-    `?fxHistory=<pair>&resampleFreq=…` route on `/price` for batched FX-history
-    backfill, both running on Tiingo's separate hourly reserve so the bulk
+    reuse the bars instead of re-fetching them. **Both** the 1D and 1W price
+    backfills prefer Tiingo (the 1W curve pulls its daily closes via Tiingo's
+    `?daily=` branch, not Twelve Data) and fall back to Twelve Data only when
+    Tiingo is unavailable — so a short (2–3 min) session still paints promptly
+    without waiting on the Twelve Data per-minute cap.
+  - **Worker routes (unified):** the live 1D/1W graph backfills run through the
+    single `/price` route via `?intraday=<ticker>` (pinned `resampleFreq=1hour`)
+    and `?daily=<ticker>` branches, alongside the `?fxHistory=<pair>&resampleFreq=…`
+    batched FX-history backfill — all on Tiingo's hourly reserve so the bulk
     history fetch never steals the live price's Twelve Data slots. Every
     caller-supplied ticker/pair/date/frequency is charset-validated, so the proxy
-    stays a closed, non-SSRF target.
+    stays a closed, non-SSRF target. (There is no longer a separate
+    `/iex-intraday` route — the deployed `/price` route serves every Tiingo feed.)
   - **Settings toggle:** an experimental "live 1D & 1W graphs" switch
     (`iv.web.experimentalGraphs`) adds the `1D`/`1W` presets to the chart
     timeframe row; off by default.

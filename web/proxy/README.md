@@ -108,23 +108,19 @@ must stay secret, so the same Worker proxies it on a dedicated `…/price` route
   **IEX intraday bars** (`/iex/<ticker>/prices`) at a **fixed** `resampleFreq=1hour`
   (one ticker per request), used to build the web companion's live **1D curve**
   (proposal §10). The frequency is pinned server-side — the caller only chooses
-  the ticker and the date window, both charset-validated.
-- `GET …/iex-intraday?ticker=AAPL&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&resampleFreq=1hour`
-  → Tiingo **IEX intraday bars** (`/iex/<ticker>/prices`) for the live 1D/1W
-  graph backfill. `resampleFreq` defaults to `1hour` and accepts a positive
-  integer followed by `min` or `hour` (e.g. `5min`, `30min`). This runs on
-  Tiingo's separate budget so the bulk history fetch never steals the live
-  price's Twelve Data slots.
+  the ticker and the date window, both charset-validated. The 1W curve reuses the
+  `?daily=` branch above for its daily closes. Both run on Tiingo's own budget so
+  the bulk history fetch never steals the live price's Twelve Data slots.
 
-The routes inject the `TIINGO_TOKEN` **secret** as an `Authorization: Token …`
-header (never in the URL), validate every ticker/date/frequency against a strict
+The route injects the `TIINGO_TOKEN` **secret** as an `Authorization: Token …`
+header (never in the URL), validates every ticker/date/frequency against a strict
 charset (so it stays a closed, non-SSRF proxy: only `api.tiingo.com` price data,
-never an arbitrary target), and stamp the same CORS headers. The browser stays
+never an arbitrary target), and stamps the same CORS headers. The browser stays
 **Tiingo-keyless** — the token lives only in the Worker.
 
 ### Hourly Tiingo reserve
 
-Both Tiingo routes share a per-isolate, rolling **one-hour request counter**
+The Tiingo `/price` route uses a per-isolate, rolling **one-hour request counter**
 (default **40/hr**, overridable via the `TIINGO_HOURLY_RESERVE` var in
 `wrangler.toml`). Once the reserve is spent the Worker answers `429` with a
 `Retry-After` header, so the browser degrades gracefully — it falls back to its

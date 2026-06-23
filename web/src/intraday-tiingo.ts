@@ -5,15 +5,15 @@
  * Phase 2 ships a working 1D entirely on Twelve Data's `time_series`
  * (browser-direct, `prices.fetchTimeSeries`). Phase 3 adds a *second* backfill
  * pipe that pulls the session's bars from Tiingo's IEX intraday endpoint via the
- * `web/proxy/` Cloudflare Worker `/iex-intraday` route, so the bulk history fetch
- * runs on Tiingo's separate budget and **never delays the live price** sharing
- * Twelve Data's 8-credit/min cap.
+ * `web/proxy/` Cloudflare Worker `/price` route (`?intraday=<ticker>`), so the
+ * bulk history fetch runs on Tiingo's separate budget and **never delays the
+ * live price** sharing Twelve Data's 8-credit/min cap.
  *
  * Tiingo's API is not CORS-readable from a browser and its token must stay
  * secret, so every request goes through the Worker, which injects the
  * `TIINGO_TOKEN` server-side and meters its own hourly reserve. The browser stays
  * Tiingo-keyless. One request covers one ticker (the route takes a single
- * `ticker=` param), so the bars are fetched per symbol.
+ * `intraday=`/`daily=` param), so the bars are fetched per symbol.
  *
  * The two pipes share the {@link BarFetcher} contract `intraday.ts` consumes, so
  * {@link makeDualPipeBarFetcher} can prefer Tiingo and **fall back to the Phase-2
@@ -71,8 +71,12 @@ export function barsFromTiingoIntraday(body: unknown): Bar[] {
 /** Tunables for {@link fetchTiingoIntradayBars} (all optional). */
 export interface TiingoIntradayOptions {
   fetchImpl?: FetchLike;
-  /** Resample frequency the Worker forwards to Tiingo (e.g. `5min`, `1hour`). */
-  resampleFreq?: string;
+  /**
+   * Which Tiingo bar feed the unified `/price` route should serve: `intraday`
+   * (IEX `resampleFreq=1hour` bars → the 1D curve) or `daily` (daily closes →
+   * the 1W curve). Defaults to `intraday`.
+   */
+  param?: "intraday" | "daily";
   /** Inclusive session start date (`YYYY-MM-DD`, New-York calendar). */
   startDate?: string;
   /** Inclusive session end date (`YYYY-MM-DD`, New-York calendar). */
@@ -80,8 +84,12 @@ export interface TiingoIntradayOptions {
 }
 
 /**
- * Fetch intraday price bars for `symbols` from the Tiingo IEX intraday endpoint
- * via the `/iex-intraday` Worker proxy at `proxyUrl`, one request per ticker.
+ * Fetch price bars for `symbols` from Tiingo via the unified `/price` Worker
+ * proxy at `proxyUrl`, one request per ticker. The `param` option selects the
+ * feed: `?intraday=<ticker>` for IEX intraday bars (the 1D curve) or
+ * `?daily=<ticker>` for daily closes (the 1W curve). Both are charset-validated
+ * and pinned server-side, so the bulk history fetch runs on Tiingo's own budget
+ * and **never delays the live price** sharing Twelve Data's 8-credit/min cap.
  *
  * A ticker Tiingo doesn't know simply comes back with no bars (no throw), so one
  * unknown/non-US symbol never blocks the rest. A {@link PriceError} is thrown
@@ -89,22 +97,21 @@ export interface TiingoIntradayOptions {
  * reserve spent (HTTP 429), the Tiingo token missing/rejected server-side (503 /
  * 5xx), or a 200 body that is not the Tiingo array (an un-redeployed Worker
  * serving something else). The caller — {@link makeDualPipeBarFetcher} — then
- * degrades to the Phase-2 Twelve Data path instead of dead-ending the graph.
+ * degrades to the Twelve Data path instead of dead-ending the graph.
  */
 export async function fetchTiingoIntradayBars(
   symbols: string[],
   proxyUrl: string,
   options: TiingoIntradayOptions = {},
 ): Promise<Map<string, Bar[]>> {
-  const { fetchImpl = fetch, resampleFreq, startDate, endDate } = options;
+  const { fetchImpl = fetch, param = "intraday", startDate, endDate } = options;
   const result = new Map<string, Bar[]>();
   const unique = [...new Set(symbols.map((s) => s.trim()).filter((s) => s.length > 0))];
   if (unique.length === 0 || !proxyUrl) return result;
 
   for (const symbol of unique) {
     const url = new URL(proxyUrl);
-    url.searchParams.set("ticker", symbol);
-    if (resampleFreq) url.searchParams.set("resampleFreq", resampleFreq);
+    url.searchParams.set(param, symbol);
     if (startDate) url.searchParams.set("startDate", startDate);
     if (endDate) url.searchParams.set("endDate", endDate);
 
@@ -148,7 +155,7 @@ export async function fetchTiingoIntradayBars(
     // (e.g. an un-redeployed Worker) — surface it so the caller falls back.
     if (!Array.isArray(body)) {
       throw new PriceError(
-        "intraday proxy did not return a Tiingo bar array — check the Worker /iex-intraday route, proxy config, and Tiingo token",
+        "intraday proxy did not return a Tiingo bar array — check the Worker /price route, proxy config, and Tiingo token",
         { retryable: false },
       );
     }
