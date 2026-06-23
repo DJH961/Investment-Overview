@@ -956,9 +956,9 @@ export class App {
       cacheTtlMs,
       navSymbols: navFetchSymbols,
       // Market symbols are never force-fetched blindly: the smart skip below
-      // (in `forceFetch`) decides per symbol whether a manual "pull now" has
-      // anything new to capture, so a tap during a closed market with the close
-      // already in hand spends no credits — see item below.
+      // (in the `forceFetch` property) decides per symbol whether a manual "pull
+      // now" has anything new to capture, so a tap during a closed market with
+      // the close already in hand spends no credits.
       forceMarketFetch: false,
       cacheTtlMsForSymbol: (symbol, cached) => {
         if (navFetchSymbols.has(symbol)) {

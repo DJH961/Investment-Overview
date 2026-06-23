@@ -188,7 +188,7 @@ def _holding_dict(
 
 def _portfolio_metrics(session: Session, *, as_of: date) -> dict[str, str | None]:
     """Portfolio-level scalars the web needs to recompute the headline **capital
-    gain** and **trailing dividend yield** live (against live prices), matching
+    gain** and **cumulative dividend return** live (against live prices), matching
     the desktop's definitions exactly.
 
     The desktop identity is ``capital_gain = total_value + dividends_cash −
@@ -218,7 +218,8 @@ def _portfolio_metrics(session: Session, *, as_of: date) -> dict[str, str | None
         "dividends_cash_eur": dec(dividends_cash_eur),
         "dividends_cash_usd": dec(dividends_cash_usd),
         # Lifetime dividend income incl. reinvested distributions (desktop's
-        # ``total_dividends_cash_eur`` is this income figure) for the yield.
+        # ``total_dividends_cash_eur`` is this income figure) for the cumulative
+        # dividend return.
         "dividends_income_eur": dec(m.total_dividends_cash_eur),
         "dividends_income_usd": dec(m.total_dividends_cash_usd),
     }
