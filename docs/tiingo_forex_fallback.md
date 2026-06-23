@@ -1,10 +1,27 @@
 # Tiingo Forex (FX) fallback — findings & implementation notes
 
-> Status: **investigated, not yet built.** A follow‑up idea captured for later
-> implementation. The core price fallback (desktop + web, equities/NAV via the
-> Tiingo **IEX** endpoint) is already implemented — see `tiingo_fallback_plan.md`.
-> This doc covers extending that same secondary‑provider idea to the **home‑currency
-> FX rate** (USD→EUR), which currently has no secondary source on either stack.
+> Status: **implemented (desktop + web), 2026‑06‑23.** Tiingo is now the
+> secondary **live FX provider** for the home‑currency EUR→USD rate on both
+> stacks, behind the existing primaries (yfinance on desktop, Twelve Data on
+> web). The findings below were captured during investigation and remain accurate
+> as the as‑built reference. The core price fallback (equities/NAV via the Tiingo
+> **IEX** endpoint) was already implemented — see `tiingo_fallback_plan.md`.
+>
+> **To enable it on your Cloudflare Worker, you only need to redeploy** — the FX
+> route hangs off the existing `…/price` route and reuses the existing
+> `TIINGO_TOKEN`. Step‑by‑step instructions: **`docs/tiingo_fx_worker_update.md`**.
+>
+> ### As built
+> - **Worker** (`web/proxy/worker.js`): new `?fx=<pair>` branch on `/price` →
+>   pinned `tiingo/fx/top?tickers=<pair>`, pair validated to `^[a-z]{6}$`.
+> - **Web** (`web/src/tiingo.ts` `fetchTiingoEurUsd`, `web/src/quotes.ts`
+>   `loadEurUsd`): Tiingo's `eurusd` `midPrice` is used directly as USD‑per‑EUR
+>   (no inversion) when the Twelve Data live pair can't be fetched, before the ECB
+>   end‑of‑day rate; charged to the same 40/hr·800/day web Tiingo budget. New
+>   `tiingo` FX source labelled “FX live (backup)”.
+> - **Desktop** (`adapters/tiingo_client.py` `fetch_fx_rate`, `fx_service`
+>   `refresh_live_spot`): yfinance primary, Tiingo FX backup when yfinance is
+>   unavailable/stale; budget‑gated against the desktop 10/hr·200/day Tiingo cap.
 >
 > Written 2026‑06‑23. All API responses below were captured **live** on that date
 > against the real account token.
