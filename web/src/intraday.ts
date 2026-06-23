@@ -209,15 +209,39 @@ export interface SessionCurveOptions {
   /** Trading sessions to retain in the store (rolling window); default 7. */
   retainSessions?: number;
   /**
-   * While the market is open the curve refreshes its bars on every build so it
-   * grows to the freshest print — but a value-chart re-render (or a burst
-   * refresh) can call this many times a minute, and the 5-minute bars barely
-   * move in between. Skip the open-market refresh when the stored session was
-   * written within this window (the live *tip* still advances every build, so the
-   * line stays current). Default 60s; set 0 to always refresh while open.
+   * The minimum age a stored session must reach before its bars are re-fetched
+   * while the market is open.
+   *
+   * Intraday bars only add *interior* resolution: the curve's freshest point —
+   * the headline total at `now` — is supplied for **free** by the live *tip*,
+   * which advances on every build whether or not bars were fetched (see
+   * {@link appendLiveTip} below). So leaving the dashboard open to auto-update
+   * does **not** need a per-minute bar re-fetch to stay current; the tip already
+   * keeps the line's end on the live value. Re-fetching the 5-minute bars more
+   * often than this window only re-spends a free-tier credit per symbol for a few
+   * extra interior points that barely move — exactly the drain a long (e.g.
+   * 20-minute) open-browser watch would otherwise rack up.
+   *
+   * The bars are therefore refreshed on a slow, credit-conscious cadence
+   * ({@link DEFAULT_OPEN_REFETCH_MS}); the live tip carries the gap in between for
+   * nothing. Missing symbols are always backfilled regardless of this window. Set
+   * 0 to refresh the bars on every open-market build (maximal resolution, maximal
+   * credit cost).
    */
   minRefetchMs?: number;
 }
+
+/**
+ * Default open-market bar re-fetch cadence for the live 1D curve.
+ *
+ * Chosen so an open, auto-updating dashboard spends free-tier credits on
+ * intraday bars at most a few times an hour rather than every refresh: the live
+ * tip (free) keeps the curve's final value current on every build, so the bars
+ * only need an occasional top-up for interior resolution. At 15 minutes a typical
+ * "leave it open for a while" watch costs at most a credit or two per symbol,
+ * not one every minute.
+ */
+export const DEFAULT_OPEN_REFETCH_MS = 15 * 60_000;
 
 /** A built 1D session curve plus the day it covers. */
 export interface SessionCurve {
@@ -232,12 +256,17 @@ export interface SessionCurve {
 /**
  * Build the live 1D session curve, fetching at most once per session day.
  *
- * Fetches a symbol's bars only when the store has none for the day, except while
- * the market is open (when all symbols are refreshed so the curve extends to the
- * latest bar). Newly fetched bars are merged into the store; the reconstruction
- * then runs off the merged session. While open, the live tip is pinned as the
- * final point; once closed, the curve is capped at the 16:00 ET close. Older
- * sessions are pruned to a rolling window so the store does not grow unbounded.
+ * Fetches a symbol's bars only when the store has none for the day, plus — while
+ * the market is open — an occasional top-up to extend the interior resolution,
+ * throttled to a slow, credit-conscious cadence ({@link DEFAULT_OPEN_REFETCH_MS},
+ * overridable via `minRefetchMs`). It does **not** re-fetch on every build: the
+ * live tip advances the curve's final value to `now` for free on each build, so
+ * an open, auto-updating dashboard stays current without re-spending a free-tier
+ * credit per symbol every minute. Newly fetched bars are merged into the store;
+ * the reconstruction then runs off the merged session. While open, the live tip
+ * is pinned as the final point; once closed, the curve is capped at the 16:00 ET
+ * close. Older sessions are pruned to a rolling window so the store does not grow
+ * unbounded.
  */
 export async function loadOrBuildSessionCurve(
   options: SessionCurveOptions,
@@ -250,12 +279,13 @@ export async function loadOrBuildSessionCurve(
 
   let stored = await store.loadSession(day);
   const missing = symbols.filter((s) => !(stored?.bars[s]?.length));
-  // While open we normally refresh every symbol so the curve extends to the
-  // freshest bar — but not if we just did: a session written within
-  // `minRefetchMs` is reused as-is (the live tip below still advances), so a
-  // chart re-render or burst refresh does not re-spend a credit per symbol every
-  // few seconds. Missing symbols are always backfilled regardless.
-  const minRefetchMs = options.minRefetchMs ?? 60_000;
+  // While open we top the curve up to the freshest interior bars — but only on a
+  // slow, credit-conscious cadence: a session written within `minRefetchMs` is
+  // reused as-is, since the live tip below still advances to `now` on every build
+  // (for free), so the line's end stays current without re-spending a credit per
+  // symbol on a chart re-render, burst refresh, or a long open-browser watch.
+  // Missing symbols are always backfilled regardless.
+  const minRefetchMs = options.minRefetchMs ?? DEFAULT_OPEN_REFETCH_MS;
   const recentlyFetched =
     stored !== null && minRefetchMs > 0 && now.getTime() - stored.updatedAt < minRefetchMs;
   const needFetch =

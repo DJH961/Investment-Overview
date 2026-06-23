@@ -236,7 +236,7 @@ describe("loadOrBuildSessionCurve", () => {
     const store = new TimeSeriesStore(memoryBackend());
     // Mid-session: Tue 2026-06-23 14:00 UTC == 10:00 ET.
     const now = new Date("2026-06-23T14:00:00Z");
-    // Cache was written 20s ago — inside the default 60s throttle.
+    // Cache was written 20s ago — well inside the default open-market throttle.
     await store.saveSession({
       day: "2026-06-23",
       bars: { VTI: [bar(Date.parse("2026-06-23T13:35:00Z"), "100")] },
@@ -249,15 +249,44 @@ describe("loadOrBuildSessionCurve", () => {
     expect(result.marketOpen).toBe(true);
   });
 
-  it("re-fetches open-market bars once the throttle window has elapsed", async () => {
+  it("reuses recent open-market bars within the default cadence (tip carries freshness)", async () => {
     const store = new TimeSeriesStore(memoryBackend());
     const now = new Date("2026-06-23T14:00:00Z");
-    // Cache is 5 minutes old — past the 60s throttle, so a refresh is due.
+    // Cache is 5 minutes old — still inside the slow, credit-conscious default
+    // window, so the bars are reused and only the live tip advances (no credit).
     await store.saveSession({
       day: "2026-06-23",
       bars: { VTI: [bar(Date.parse("2026-06-23T13:35:00Z"), "100")] },
       fx: [],
       updatedAt: now.getTime() - 5 * 60_000,
+    });
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    const result = await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      now,
+      liveTip: { valueEur: d(1010), valueUsd: d(1110) },
+    });
+    // No credit spent, yet the curve's final value still advances to the live tip
+    // at `now` — the free freshness the smart cadence relies on.
+    expect(fetchBars).not.toHaveBeenCalled();
+    expect(result.points[result.points.length - 1]).toEqual({
+      t: now.getTime(),
+      valueEur: d(1010),
+      valueUsd: d(1110),
+    });
+  });
+
+  it("re-fetches open-market bars once the throttle window has elapsed", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    const now = new Date("2026-06-23T14:00:00Z");
+    // Cache is 20 minutes old — past the default cadence, so a top-up is due.
+    await store.saveSession({
+      day: "2026-06-23",
+      bars: { VTI: [bar(Date.parse("2026-06-23T13:35:00Z"), "100")] },
+      fx: [],
+      updatedAt: now.getTime() - 20 * 60_000,
     });
     const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
     await loadOrBuildSessionCurve({ anchor: singleEtfAnchor(), store, fetchBars, now });

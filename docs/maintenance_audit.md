@@ -325,6 +325,18 @@ re-fetching prices that could not have changed:
   `navCacheTtlMs` now simply polls a fund like a normal symbol whenever it is
   behind its expected NAV — no upper cap — and a manual Refresh re-pulls a behind
   NAV (via `loadQuotes`' `forceFetch`) while still sparing an up-to-date one.
+- **5H.20 The live 1D graph re-fetched intraday bars every ~minute while open** —
+  ✅ done. With the dashboard left open to auto-update, `loadOrBuildSessionCurve`
+  (`web/src/intraday.ts`) refreshed all of the 1D sleeve's intraday bars on a 60s
+  throttle, so a 20-minute watch re-spent a free-tier credit per symbol several
+  times over for interior points that barely move. The bars now refresh on a slow,
+  credit-conscious cadence (`DEFAULT_OPEN_REFETCH_MS`, 15 min); the **live tip**
+  (the headline total, already computed for the dashboard, so free) advances the
+  curve's final value to `now` on every build, keeping the line current without
+  the per-minute re-fetch. The 1W curve already fetched its daily closes only once
+  per window advance, so it was already economical; the history (1M+) graphs end
+  on the same appended live tip (`renderValueChart`), so their final value tracks
+  the live total on each refresh too.
 
 ## 6. Observability / shareable diagnostics (added 2026-06-21 — ✅ done)
 
