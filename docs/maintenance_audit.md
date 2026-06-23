@@ -329,11 +329,15 @@ re-fetching prices that could not have changed:
   ✅ done. With the dashboard left open to auto-update, `loadOrBuildSessionCurve`
   (`web/src/intraday.ts`) refreshed all of the 1D sleeve's intraday bars on a 60s
   throttle, so a 20-minute watch re-spent a free-tier credit per symbol several
-  times over for interior points that barely move. The bars now refresh on a slow,
-  credit-conscious cadence (`DEFAULT_OPEN_REFETCH_MS`, 15 min); the **live tip**
-  (the headline total, already computed for the dashboard, so free) advances the
-  curve's final value to `now` on every build, keeping the line current without
-  the per-minute re-fetch. The 1W curve already fetched its daily closes only once
+  times over for interior points that barely move. The open-market cadence
+  re-fetch is now **disabled by default** (`DEFAULT_OPEN_REFETCH_MS` = `Infinity`):
+  the **live-tip breadcrumb trail** (each whole-book headline total, already
+  computed for the dashboard, so free — persisted ~once a minute, *finer* than the
+  5-minute bars) is spliced onto the curve and carries it forward on every build,
+  so a session needs **just one bar fetch** and a long open watch adds no further
+  bar pulls. A caller can still pass a finite `minRefetchMs` (e.g. 15 min) to opt
+  back into periodic interior top-ups; missing symbols are always backfilled. The
+  1W curve already fetched its daily closes only once
   per window advance, so it was already economical; the history (1M+) graphs end
   on the same appended live tip (`renderValueChart`), so their final value tracks
   the live total on each refresh too.
