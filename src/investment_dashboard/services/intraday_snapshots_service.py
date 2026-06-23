@@ -370,7 +370,21 @@ def reconstruct_last_session(
     now = now or datetime.now(UTC)
     session_date = last_session_date(now)
     with _reconstruct_lock:
-        if not force and _already_reconstructed(session, session_date):
+        # Skip the network fetch only once the session has *actually* been
+        # populated. The per-session marker alone is not enough: a first attempt
+        # that wrote nothing — a transient feed failure, or opening the app
+        # before the bars were published — would otherwise pin the curve empty
+        # for the rest of the session (it is never retried). Re-running while the
+        # session still holds no samples means the last market day always loads,
+        # no matter when the app is opened (e.g. before the next session's open).
+        # A portfolio with no intraday-priced holdings still short-circuits cheaply
+        # inside ``_reconstruct_session`` (before any network call), so this never
+        # spams the feed for a genuinely empty day.
+        if (
+            not force
+            and _already_reconstructed(session, session_date)
+            and _session_has_samples(session, session_date)
+        ):
             return 0
         try:
             written = _reconstruct_session(
@@ -491,6 +505,22 @@ def _covered_by_live(live_times: list[datetime], at: datetime) -> bool:
 
 def _already_reconstructed(session: Session, session_date: date) -> bool:
     return app_config_repo.get(session, _RECONSTRUCTED_KEY) == session_date.isoformat()
+
+
+def _session_has_samples(session: Session, session_date: date) -> bool:
+    """Whether any intraday sample is already stored for ``session_date``.
+
+    Used to decide whether a reconstruction marked "done" can be trusted: if the
+    session window holds no samples at all, the prior attempt produced nothing
+    (a failed/early fetch), so it is worth retrying rather than leaving the "1
+    Day" curve stuck on a bare live tip.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    start = _session_start_utc(session_date)
+    end = _session_start_utc(session_date + timedelta(days=1))
+    with cache_read_session(session) as cache:
+        return bool(intraday_repo.list_in_range(cache, start, end))
 
 
 def _mark_reconstructed(session: Session, session_date: date) -> None:
