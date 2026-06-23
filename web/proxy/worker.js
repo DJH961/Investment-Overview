@@ -27,20 +27,32 @@
  *
  * Tiingo price fallback (`/price` route)
  * --------------------------------------
- * A second, equally-pinned route lives at `…/price`. It proxies **only**
- * `api.tiingo.com` — the IEX quote endpoint (`/iex/?tickers=…`), the daily
- * close endpoint (`/tiingo/daily/<ticker>/prices`), the live FX top-of-book
- * endpoint (`/tiingo/fx/top?tickers=<pair>`, e.g. `eurusd`), and the intraday
- * bars endpoint (`/iex/<ticker>/prices?resampleFreq=1hour`, one ticker per
- * request → the web companion's 1D curve) — injecting the
- * `TIINGO_TOKEN` secret server-side so the browser companion stays
- * Tiingo-keyless. The FX route backs up the home-currency EUR/USD rate the same
- * way the IEX route backs up instrument prices. Symbols/pairs are
- * validated against a strict charset (still no SSRF: the upstream host and paths
- * are fixed; only the ticker list and a few numeric/date query params vary).
- * The token is sent as an `Authorization: Token …` header, never in the URL, so
- * it never lands in a log or a referrer. See web/proxy/README.md to deploy and
+ * A single, equally-pinned route lives at `…/price`. It proxies **only**
+ * `api.tiingo.com`, fanning out by query param to a fixed set of endpoints:
+ *   - `?tickers=…`              → IEX quotes (`/iex/?tickers=…`);
+ *   - `?fx=eurusd`             → live FX top-of-book (`/tiingo/fx/top`);
+ *   - `?fxHistory=eurusd&…`    → FX history bars (`/tiingo/fx/<pair>/prices`);
+ *   - `?intraday=<ticker>&…`   → IEX intraday bars (`/iex/<ticker>/prices`,
+ *                                 `resampleFreq=1hour`) → the 1D curve;
+ *   - `?daily=<ticker>&…`      → daily closes (`/tiingo/daily/<ticker>/prices`)
+ *                                 → the 1W curve.
+ * Each injects the `TIINGO_TOKEN` secret server-side so the browser companion
+ * stays Tiingo-keyless. The intraday/daily branches power the live 1D/1W graph
+ * backfills; running them on this same pinned route (rather than a separate one)
+ * keeps a single closed-charset proxy surface. Symbols/pairs are validated
+ * against a strict charset (still no SSRF: the upstream host and paths are fixed;
+ * only the ticker list and a few numeric/date query params vary). The token is
+ * sent as an `Authorization: Token …` header, never in the URL, so it never lands
+ * in a log or a referrer. See web/proxy/README.md to deploy and
  * `wrangler secret put TIINGO_TOKEN`.
+ *
+ * Hourly Tiingo budget
+ * --------------------
+ * The Tiingo `/price` route uses a per-isolate, rolling
+ * one-hour request counter (default reserve {@link TIINGO_HOURLY_RESERVE}/hr,
+ * overridable via the `TIINGO_HOURLY_RESERVE` var). When the reserve is spent the
+ * Worker answers `429` with a `Retry-After` header so the browser degrades
+ * gracefully (it falls back to its Twelve Data path) instead of hammering Tiingo.
  *
  * Deploy: see web/proxy/README.md.
  */
@@ -68,6 +80,32 @@ const FX_PAIR_RE = /^[a-z]{6}$/;
 const NUMERIC_RE = /^\d{1,4}$/;
 /** A `YYYY-MM-DD` calendar date (daily-close window bounds). */
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+/**
+ * Allowed FX-history resample frequency: a positive integer followed by `min`,
+ * `hour` or `day`, so one route can serve both the 1D graph's intraday FX bars
+ * (`1hour`) and the 1W graph's daily FX closes (`1day`). Still a closed charset
+ * (no path/host smuggling, no SSRF).
+ */
+const FX_FREQ_RE = /^[1-9]\d{0,3}(?:min|hour|day)$/;
+/** Default FX-history bar width when the caller omits `resampleFreq`. */
+const DEFAULT_FX_FREQ = "1day";
+
+/**
+ * Per-isolate rolling-hour reserve of Tiingo upstream requests. The design
+ * reserves ~40/hr for Tiingo; once spent, the Worker returns 429 + Retry-After so
+ * the browser falls back to Twelve Data instead of hammering Tiingo. Overridable
+ * via the `TIINGO_HOURLY_RESERVE` var.
+ */
+const TIINGO_HOURLY_RESERVE = 40;
+/** One hour in milliseconds — the budget window. */
+const HOUR_MS = 60 * 60 * 1000;
+/**
+ * Timestamps (ms) of recent Tiingo upstream requests served by THIS isolate.
+ * Cloudflare may run many isolates, so this is a best-effort, conservative cap
+ * per isolate rather than a globally exact quota — enough to keep a single busy
+ * browser from blowing the hourly reserve. Pruned to the trailing hour on use.
+ */
+const tiingoRequestLog = [];
 
 /**
  * Derive the version-sidecar URL (`portfolio.meta.json`) from the blob URL by
@@ -92,11 +130,12 @@ function corsHeaders() {
 export default {
   /**
    * @param {Request} request
-   * @param {{ RELEASE_URL?: string, META_URL?: string, TIINGO_TOKEN?: string }} env
+   * @param {{ RELEASE_URL?: string, META_URL?: string, TIINGO_TOKEN?: string, TIINGO_HOURLY_RESERVE?: string }} env
    */
   async fetch(request, env) {
-    // The Tiingo price fallback hangs off a dedicated `…/price` route; every
-    // other path is the original closed blob proxy. Both stay pinned upstreams.
+    // The Tiingo price fallback (and the live 1D/1W graph backfills) hang off a
+    // single dedicated `…/price` route; every other path is the original closed
+    // blob proxy. All stay pinned upstreams.
     const path = new URL(request.url).pathname.replace(/\/+$/, "");
     if (path.endsWith("/price")) {
       return handlePrice(request, env);
@@ -106,19 +145,50 @@ export default {
 };
 
 /**
+ * Reserve one slot in the per-isolate rolling-hour Tiingo budget. Prunes the
+ * request log to the trailing hour, then either records `now` and returns
+ * `{ ok: true }`, or — when the reserve is already full — returns `{ ok: false,
+ * retryAfterSec }` with the whole seconds until the oldest in-window request ages
+ * out. Best-effort per isolate (see {@link tiingoRequestLog}).
+ *
+ * @param {number} now
+ * @param {number} cap
+ * @returns {{ ok: true } | { ok: false, retryAfterSec: number }}
+ */
+function reserveTiingoSlot(now, cap) {
+  const cutoff = now - HOUR_MS;
+  while (tiingoRequestLog.length > 0 && tiingoRequestLog[0] <= cutoff) {
+    tiingoRequestLog.shift();
+  }
+  if (tiingoRequestLog.length >= cap) {
+    const retryAfterMs = tiingoRequestLog[0] + HOUR_MS - now;
+    return { ok: false, retryAfterSec: Math.max(1, Math.ceil(retryAfterMs / 1000)) };
+  }
+  tiingoRequestLog.push(now);
+  return { ok: true };
+}
+
+/** Resolve the hourly Tiingo reserve from env, falling back to the default. */
+function hourlyReserve(env) {
+  const raw = Number(env.TIINGO_HOURLY_RESERVE);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : TIINGO_HOURLY_RESERVE;
+}
+
+/**
  * Tiingo price proxy. Injects the `TIINGO_TOKEN` secret and forwards to one of
  * two pinned `api.tiingo.com` endpoints, chosen by query params:
  *
  *   - `?tickers=AAPL,MSFT`            → IEX live quotes / latest NAV
  *   - `?daily=AAPL&startDate=…&endDate=…&outputsize=…` → daily closes
  *   - `?fx=eurusd`                    → live FX top-of-book (bid/ask/mid)
+ *   - `?fxHistory=eurusd&startDate=…&endDate=…&resampleFreq=…` → FX history bars
  *   - `?intraday=AAPL&startDate=…&endDate=…` → IEX 1-hour bars (1D curve)
  *
  * Everything else (host, path) is fixed here, and every caller-supplied value is
  * charset-validated, so this can only ever read Tiingo price data (no SSRF).
  *
  * @param {Request} request
- * @param {{ TIINGO_TOKEN?: string }} env
+ * @param {{ TIINGO_TOKEN?: string, TIINGO_HOURLY_RESERVE?: string }} env
  */
 async function handlePrice(request, env) {
   const cors = corsHeaders();
@@ -147,6 +217,14 @@ async function handlePrice(request, env) {
     return jsonError(400, "invalid price request parameters", cors);
   }
 
+  // Spend one slot of the shared hourly Tiingo reserve. When exhausted, tell the
+  // browser to back off (it degrades to its Twelve Data path) rather than piling
+  // onto Tiingo.
+  const slot = reserveTiingoSlot(Date.now(), hourlyReserve(env));
+  if (!slot.ok) {
+    return rateLimited(slot.retryAfterSec, cors);
+  }
+
   let upstream;
   try {
     upstream = await fetch(upstreamUrl, {
@@ -172,6 +250,7 @@ function buildTiingoUrl(params) {
   const tickers = params.get("tickers");
   const daily = params.get("daily");
   const fx = params.get("fx");
+  const fxHistory = params.get("fxHistory");
   const intraday = params.get("intraday");
 
   if (tickers) {
@@ -191,6 +270,32 @@ function buildTiingoUrl(params) {
     if (!FX_PAIR_RE.test(fx)) throw new Error("invalid fx pair");
     const url = new URL(`${TIINGO_ROOT}/tiingo/fx/top`);
     url.searchParams.set("tickers", fx);
+    return url.toString();
+  }
+
+  if (fxHistory) {
+    // FX history for one quoted pair (e.g. `eurusd`), one batched request over
+    // the forwarded startDate/endDate window. This backfills each graph point at
+    // its own settled EUR→USD rate so the EUR and USD lines genuinely diverge,
+    // mirroring the equity intraday/daily-close backfill. `resampleFreq` picks
+    // the cadence: `1hour` for the 1D graph's intraday FX, `1day` (default) for
+    // the 1W graph's daily FX closes. Strictly validated to six lowercase letters
+    // so it can only ever name a Tiingo FX pair (no SSRF).
+    if (!FX_PAIR_RE.test(fxHistory)) throw new Error("invalid fxHistory pair");
+    const url = new URL(`${TIINGO_ROOT}/tiingo/fx/${fxHistory}/prices`);
+    const freq = params.get("resampleFreq") || DEFAULT_FX_FREQ;
+    if (!FX_FREQ_RE.test(freq)) throw new Error("invalid resampleFreq");
+    url.searchParams.set("resampleFreq", freq);
+    const start = params.get("startDate");
+    const end = params.get("endDate");
+    if (start) {
+      if (!DATE_RE.test(start)) throw new Error("invalid startDate");
+      url.searchParams.set("startDate", start);
+    }
+    if (end) {
+      if (!DATE_RE.test(end)) throw new Error("invalid endDate");
+      url.searchParams.set("endDate", end);
+    }
     return url.toString();
   }
 
@@ -221,6 +326,9 @@ function buildTiingoUrl(params) {
     if (!TICKER_RE.test(daily)) throw new Error("invalid daily ticker");
     const url = new URL(`${TIINGO_ROOT}/tiingo/daily/${daily}/prices`);
     url.searchParams.set("format", "json");
+    // Pin the resample to daily closes (the only frequency this route serves):
+    // this is what gives 1W-and-beyond their daily-close bars over the forwarded
+    // startDate/endDate window.
     url.searchParams.set("resampleFreq", "daily");
     const start = params.get("startDate");
     const end = params.get("endDate");
@@ -235,14 +343,29 @@ function buildTiingoUrl(params) {
     }
     if (size) {
       if (!NUMERIC_RE.test(size)) throw new Error("invalid outputsize");
-      // Tiingo daily has no outputsize; honoured here only as a validated no-op
-      // guard so a caller can't smuggle arbitrary query text. Intentionally not
-      // forwarded.
+      // Tiingo daily has no outputsize; the date window (startDate/endDate above)
+      // is what bounds the range. Validated here only as a no-op guard so a caller
+      // can't smuggle arbitrary query text. Intentionally not forwarded.
     }
     return url.toString();
   }
 
-  throw new Error("missing tickers, fx, intraday or daily parameter");
+  throw new Error("missing tickers, fx, fxHistory, intraday or daily parameter");
+}
+
+/** A 429 response telling the caller when the hourly Tiingo reserve frees up. */
+function rateLimited(retryAfterSec, cors) {
+  return new Response(
+    JSON.stringify({ status: "error", message: "Tiingo hourly reserve exhausted; try later" }),
+    {
+      status: 429,
+      headers: {
+        ...cors,
+        "Content-Type": "application/json",
+        "Retry-After": String(retryAfterSec),
+      },
+    },
+  );
 }
 
 /** A small JSON error body with CORS headers. */

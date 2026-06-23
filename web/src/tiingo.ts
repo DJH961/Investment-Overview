@@ -16,6 +16,7 @@
 
 import { Decimal } from "./decimal-config";
 import { PriceError, type FetchLike, type Quote } from "./prices";
+import type { Bar } from "./timeseries";
 
 /** Parse a JSON number/string into a finite Decimal, or null. */
 function parseDecimal(value: unknown): Decimal | null {
@@ -235,4 +236,130 @@ export async function fetchTiingoEurUsd(
   if (mid === null) return null;
   const at = parseTimestamp((row as Record<string, unknown>).quoteTimestamp);
   return { now: mid, at };
+}
+
+/** Parse a Tiingo FX-history `date` (ISO-8601) into epoch ms, or null. */
+function parseFxBarTime(value: unknown): number | null {
+  if (typeof value !== "string" || value.length === 0) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * Turn a Tiingo FX-history `prices` array into ascending EUR→USD bars (USD per
+ * 1 EUR), one per row's `close`. Rows missing a parseable instant or a positive
+ * close are dropped, and the result is sorted ascending so it slots straight
+ * into the {@link TimeSeriesStore} as the curve's per-point FX track.
+ */
+export function fxBarsFromTiingoHistory(body: unknown): Bar[] {
+  if (!Array.isArray(body)) return [];
+  const bars: Bar[] = [];
+  for (const row of body) {
+    if (!row || typeof row !== "object") continue;
+    const node = row as Record<string, unknown>;
+    const t = parseFxBarTime(node.date);
+    const close = parseDecimal(node.close);
+    // Tiingo's `eurusd` close is already USD per 1 EUR — the exact convention the
+    // curve's `baseFx`/`fxBars` use — so it is taken directly (no inversion).
+    if (t !== null && close !== null && close.greaterThan(0)) bars.push({ t, value: close });
+  }
+  bars.sort((a, b) => a.t - b.t);
+  return bars;
+}
+
+/** Tunables for {@link fetchTiingoFxBars} (all optional). */
+export interface TiingoFxHistoryOptions {
+  fetchImpl?: FetchLike;
+  /** Quoted FX pair (six lowercase letters). Defaults to `eurusd`. */
+  pair?: string;
+  /** Bar cadence: `1hour` for the 1D graph, `1day` (default) for the 1W graph. */
+  resampleFreq?: string;
+  /** Inclusive window start (`YYYY-MM-DD`, New-York calendar). */
+  startDate?: string;
+  /** Inclusive window end (`YYYY-MM-DD`, New-York calendar). */
+  endDate?: string;
+}
+
+/**
+ * Fetch EUR→USD history bars from Tiingo's FX-history endpoint via the `/price`
+ * Worker proxy at `proxyUrl` (`?fxHistory=eurusd&resampleFreq=…`), in **one
+ * batched request** over the requested window — the FX analogue of the equity
+ * {@link fetchTiingoIntradayBars} backfill, so a back-dated graph re-marks each
+ * point at its own settled FX rate (finest available granularity) rather than a
+ * single uniform rescale.
+ *
+ * Returns an empty array when Tiingo has no bars for the window (a quiet
+ * weekend/holiday gap comes back `[]`, never a throw). Throws a
+ * {@link PriceError} only when the **pipe itself** is unusable — proxy
+ * unreachable, hourly reserve spent (HTTP 429), token missing/rejected
+ * (503 / 5xx), or a 200 body that is not the Tiingo array — so the caller (the
+ * curve builder's `fetchFx`) can silently fall back to the day's `baseFx`.
+ */
+export async function fetchTiingoFxBars(
+  proxyUrl: string,
+  options: TiingoFxHistoryOptions = {},
+): Promise<Bar[]> {
+  const { fetchImpl = fetch, pair = "eurusd", resampleFreq, startDate, endDate } = options;
+  if (!proxyUrl) return [];
+
+  const url = new URL(proxyUrl);
+  url.searchParams.set("fxHistory", pair);
+  if (resampleFreq) url.searchParams.set("resampleFreq", resampleFreq);
+  if (startDate) url.searchParams.set("startDate", startDate);
+  if (endDate) url.searchParams.set("endDate", endDate);
+
+  let resp: Response;
+  try {
+    resp = await fetchImpl(url.toString());
+  } catch (err) {
+    throw new PriceError(`could not reach the Tiingo FX history proxy: ${(err as Error).message}`, {
+      retryable: true,
+    });
+  }
+  if (!resp.ok) {
+    // Pipe-level failures (429 reserve spent, 503 no token, 5xx upstream) abort
+    // so the caller falls back to the settled `baseFx`. A 4xx other than these is
+    // a window with no data — treat as an empty (no-bar) result.
+    if (resp.status === 429 || resp.status === 503 || resp.status >= 500) {
+      const retryAfter = Number(resp.headers?.get?.("Retry-After"));
+      throw new PriceError(`Tiingo FX history proxy returned HTTP ${resp.status}`, {
+        status: resp.status,
+        retryable: true,
+        retryAfterMs: Number.isFinite(retryAfter) ? Math.max(0, retryAfter * 1000) : null,
+      });
+    }
+    return [];
+  }
+
+  let body: unknown;
+  try {
+    body = await resp.json();
+  } catch (err) {
+    throw new PriceError(`malformed Tiingo FX history payload: ${(err as Error).message}`, {
+      retryable: false,
+    });
+  }
+  // A genuine Tiingo FX-history response is ALWAYS a JSON array (even `[]`). A
+  // non-array 200 means the proxy is NOT relaying Tiingo (e.g. an un-redeployed
+  // Worker) — surface it so the caller falls back to `baseFx`.
+  if (!Array.isArray(body)) {
+    throw new PriceError(
+      "price proxy did not return a Tiingo FX history array — check the Worker /price route, proxy config, and Tiingo token",
+      { retryable: false },
+    );
+  }
+  return fxBarsFromTiingoHistory(body);
+}
+
+/**
+ * Wrap {@link fetchTiingoFxBars} as the no-arg `fetchFx` the curve builders
+ * (`loadOrBuildSessionCurve`, `loadOrBuildWeekCurve`) consume — bound to a proxy
+ * URL and window, ready to hand alongside the price {@link makeTiingoBarFetcher}
+ * so the FX track is backfilled in the **same batched style** as the prices.
+ */
+export function makeTiingoFxBarFetcher(
+  proxyUrl: string,
+  options: TiingoFxHistoryOptions = {},
+): () => Promise<Bar[]> {
+  return () => fetchTiingoFxBars(proxyUrl, options);
 }

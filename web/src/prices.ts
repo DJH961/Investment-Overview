@@ -12,6 +12,7 @@
  */
 
 import { Decimal } from "./decimal-config";
+import type { Bar } from "./timeseries";
 
 const TWELVE_DATA_ROOT = "https://api.twelvedata.com";
 const FRANKFURTER_ROOT = "https://api.frankfurter.dev/v1";
@@ -394,6 +395,101 @@ function navQuoteFromNode(symbol: string, node: Record<string, unknown>): Quote 
     priceTime: null,
     valueDate: parseValueDate(latest.datetime),
   };
+}
+
+/**
+ * Parse a Twelve Data `datetime` (`YYYY-MM-DD HH:MM:SS` intraday, or a bare
+ * `YYYY-MM-DD` daily bar) into epoch milliseconds, treating the wall-clock as
+ * UTC. The absolute zone offset is unimportant here: price bars and EUR/USD bars
+ * come from the same provider with the same convention, so the curve's
+ * forward-fill alignment is internally consistent. Returns null if unparseable.
+ */
+function parseBarTime(value: unknown): number | null {
+  if (typeof value !== "string") return null;
+  const s = value.trim().replace(" ", "T");
+  const iso = s.length <= 10 ? `${s}T00:00:00Z` : `${s}Z`;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** Turn a `time_series` `values` array (newest-first) into ascending price bars. */
+function barsFromValues(node: Record<string, unknown>): TimeSeriesBar[] {
+  const values = Array.isArray(node.values) ? (node.values as Array<Record<string, unknown>>) : [];
+  const bars: TimeSeriesBar[] = [];
+  for (const v of values) {
+    const t = parseBarTime(v.datetime);
+    const close = parseDecimal(v.close);
+    if (t !== null && close !== null) bars.push({ t, value: close });
+  }
+  bars.sort((a, b) => a.t - b.t);
+  return bars;
+}
+
+/** One price bar: an epoch-ms instant and the close in the symbol's currency. */
+export type TimeSeriesBar = Bar;
+
+/**
+ * Fetch an intraday (or short-range daily) price **series** per symbol from
+ * Twelve Data's `time_series` endpoint — the data layer for the live 1D/1W
+ * graphs (docs/v3.0 §10.2).
+ *
+ * The crucial economics: `time_series` bills **1 credit per symbol per request,
+ * regardless of how many bars come back** (the bar count is set by
+ * `interval`/`outputsize` and is free). So a whole session's curve for one
+ * symbol costs a single credit, and the endpoint is CORS-open (`*`) → callable
+ * **browser-direct**, no proxy. Symbols are batched into one call (still 1
+ * credit each); unknown/over-quota symbols come back empty rather than throwing,
+ * so one bad ticker never blocks the rest.
+ */
+export async function fetchTimeSeries(
+  symbols: string[],
+  apiKey: string,
+  options: { interval?: string; outputsize?: number; fetchImpl?: FetchLike } = {},
+): Promise<Map<string, TimeSeriesBar[]>> {
+  const { interval = "5min", outputsize = 78, fetchImpl = fetch } = options;
+  const result = new Map<string, TimeSeriesBar[]>();
+  const unique = [...new Set(symbols.filter((s) => s.length > 0))];
+  if (unique.length === 0) return result;
+
+  const url = new URL(`${TWELVE_DATA_ROOT}/time_series`);
+  url.searchParams.set("symbol", unique.join(","));
+  url.searchParams.set("interval", interval);
+  url.searchParams.set("outputsize", String(outputsize));
+  url.searchParams.set("order", "desc");
+  url.searchParams.set("apikey", apiKey);
+
+  let resp: Response;
+  try {
+    resp = await fetchImpl(url.toString());
+  } catch (err) {
+    throw new PriceError(`could not reach the price service: ${(err as Error).message}`, {
+      retryable: true,
+    });
+  }
+  if (!resp.ok) {
+    throw httpError("price service", resp);
+  }
+  const body = (await resp.json()) as Record<string, unknown>;
+
+  // A top-level error with no `meta`/`values` means the whole call failed
+  // (usually a bad/over-quota key) — classify it like the other endpoints.
+  if (body.status === "error" && !("values" in body) && !("meta" in body)) {
+    const code = typeof body.code === "number" ? body.code : null;
+    throw new PriceError(
+      typeof body.message === "string" ? body.message : "price request rejected",
+      { status: code, retryable: code === 429, fatal: code === 401 || code === 403 },
+    );
+  }
+
+  if (unique.length === 1) {
+    result.set(unique[0], barsFromValues(body));
+    return result;
+  }
+  for (const symbol of unique) {
+    const node = body[symbol];
+    result.set(symbol, node && typeof node === "object" ? barsFromValues(node as Record<string, unknown>) : []);
+  }
+  return result;
 }
 
 /** Fetch FX rates from Frankfurter with `base` as the reference currency. */

@@ -1057,6 +1057,16 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* --- Charts (shared line chart: value-over-time + equity curve) ------------ */
 .chart-wrap { width: 100%; }
+/* Placeholder shown while an experimental live (1D/1W) curve loads, or when it
+   has no data yet — keeps the chart area from collapsing during the fetch. */
+.chart-live-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 8rem;
+  text-align: center;
+  padding: 0 1rem;
+}
 /* Time-range presets above a chart (mobile-first: a small wrapping button row). */
 .chart-block { display: grid; gap: 0.5rem; }
 .chart-range { display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: flex-end; }

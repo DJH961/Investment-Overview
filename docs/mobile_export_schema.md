@@ -18,11 +18,13 @@ timestamps are ISO-8601 strings.
 | `yearly` | object | Existing yearly read-model, shown as-of-export. |
 | `analytics` | object | Existing analytics read-model, shown as-of-export. |
 | `deposits` | object | Existing deposits read-model, shown as-of-export. |
+| `live_graphs` | object | Optional; the desktop's captured 1D/1W curves so mobile can springboard. Present only when the desktop had intraday/daily history to ship. |
 | `transactions` | object | Optional; present only with `include_transactions=True`. |
 
 ## `meta`
 
-- `schema_version`: integer, currently `1`.
+- `schema_version`: integer, currently `2` (`2` adds the optional `live_graphs`
+  section; readers must treat it as absent-tolerant for older `1` blobs).
 - `app_version`: package version string.
 - `generated_at`: UTC ISO timestamp.
 - `as_of`: ISO date used for all Python valuations.
@@ -166,6 +168,42 @@ An array (newest first); each entry carries:
   instrument no longer exists are omitted.
 
 Absent on exports generated before v3.5.3.
+
+## `live_graphs`
+
+The desktop's already-captured live curves, serialized so the mobile companion
+can **springboard** the 1D/1W graphs — paint instantly from the blob and only
+bridge to the live tip — instead of re-fetching intraday bars (saving free-tier
+credits). Added in schema_version `2`; **optional and absent-tolerant**: present
+only when the desktop had intraday/daily history, and a reader must fall back to
+its own live build when the section is missing or stale.
+
+- `captured_at`: UTC ISO-8601 instant (carries a trailing `Z`) the export was
+  built — the freshness stamp the reader uses to judge staleness and to show an
+  honest "as of"; it must never present a session older than the current one as
+  today's.
+- `day`: optional object, the intraday 1D session, or `null`.
+  - `session_date`: `YYYY-MM-DD` New-York session the curve covers.
+  - `market_open`: whether the regular session was open at capture.
+  - `points[]`: see below.
+- `week`: optional object, the multi-day 1W sleeve, or `null`.
+  - `start_date` / `end_date`: first/last `YYYY-MM-DD` New-York session of the
+    window.
+  - `market_open`: whether the regular session was open at capture.
+  - `points[]`: see below.
+
+Each `points[]` entry is a **whole-book** point (the constant cash + NAV base is
+already folded in, exactly as the desktop renders it) carrying both currencies so
+the reader reapplies the FX-granularity rule without a rescale:
+
+- `t`: UTC ISO-8601 instant (trailing `Z`).
+- `value_eur`: string decimal (or `null`) — whole-book EUR value at that
+  instant's own FX.
+- `value_usd`: string decimal (or `null`) — whole-book USD value (booked /
+  FX-free; never a rescale of the EUR line).
+
+The 1D session is down-sampled and capped (≤ ~80 points) so the blob stays small
+and the springboard curve is visually identical to a live one.
 
 ## Precision targets
 

@@ -168,7 +168,7 @@ def test_mobile_export_shape_and_default_sensitivity(session: Session) -> None:
 
     export = build_mobile_export(session, as_of=AS_OF)
 
-    assert set(export) == {
+    required_keys = {
         "meta",
         "holdings",
         "portfolio_cashflows",
@@ -181,6 +181,12 @@ def test_mobile_export_shape_and_default_sensitivity(session: Session) -> None:
         "target_allocations",
         "portfolio_metrics",
     }
+    # `live_graphs` is an optional, absent-tolerant springboard section: it is
+    # only emitted when intraday history is available to capture, so it must not
+    # be asserted as always-present (its presence depends on cached intraday data
+    # and the wall clock). The core sections, however, are always exported.
+    assert required_keys <= set(export)
+    assert set(export) - required_keys <= {"live_graphs"}
     assert "transactions" not in export
     assert export["meta"]["fx_pivot"] == "EUR"
     assert "base_currency" not in export["meta"]

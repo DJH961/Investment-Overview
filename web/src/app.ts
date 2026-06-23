@@ -37,7 +37,7 @@ import {
   type AppConfig,
 } from "./config";
 import { PriceError, type FxRates } from "./prices";
-import type { Decimal } from "./decimal-config";
+import { Decimal } from "./decimal-config";
 import {
   readCachedEnvelope,
   readCachedEurUsd,
@@ -91,8 +91,20 @@ import {
 } from "./webauthn";
 import { setEurUsdRate } from "./currency";
 import { formatLastPull } from "./format";
+import { buildLiveSessionCurve, buildLiveWeekCurve, type LiveGraphProviders } from "./live-graph";
+import { springboardSessionCurve, springboardWeekCurve } from "./springboard";
+import { buildModelAnchor } from "./value-graph";
+import { TimeSeriesStore } from "./timeseries-store";
 import type { MobileExport } from "./types";
-import { h, renderDashboard, renderThemeToggle, renderTimeFormatToggle } from "./ui";
+import {
+  experimentalGraphsEnabled,
+  h,
+  renderDashboard,
+  renderExperimentalGraphsToggle,
+  renderThemeToggle,
+  renderTimeFormatToggle,
+  type LiveGraphHooks,
+} from "./ui";
 
 /** How long an auto-dismissing status toast stays on screen. */
 const TOAST_DURATION_MS = 4500;
@@ -215,6 +227,12 @@ export class App {
   private readonly state: SessionState;
   /** The last computed model, kept so the currency toggle can re-render it. */
   private model: DashboardModel | null = null;
+  /**
+   * Persistent IndexedDB-backed store for the experimental live 1D/1W graphs'
+   * intraday/daily bars (smart-backfill across re-opens). Created lazily on the
+   * first live-graph build so the default chart path never touches IndexedDB.
+   */
+  private timeSeriesStore: TimeSeriesStore | null = null;
   /** The decrypted-from envelope and when it was downloaded (for re-download skip). */
   private envelope: Envelope | null = null;
   private envelopeAt: number | null = null;
@@ -580,6 +598,18 @@ export class App {
         ),
       );
     }
+    // Experimental: opt-in features that may change. The live 1D/1W value graphs
+    // are gated here so the default chart never regresses (Settings only).
+    if (settingsMode) {
+      formChildren.push(
+        h("h2", { class: "settings-section" }, ["Experimental"]),
+        field(
+          "Live graphs",
+          renderExperimentalGraphsToggle(),
+          "Swap the value chart's 3M / 6M ranges for live 1D and 1W curves, built from intraday data cached on this device. Takes effect when you return to the dashboard.",
+        ),
+      );
+    }
     // Maintenance: two manual escape hatches for when prices look stuck. Both
     // only make sense once unlocked with data loaded — the dashboard they refresh
     // has to exist.
@@ -915,6 +945,7 @@ export class App {
       () => this.renderDemo(), // Currency toggle re-renders without ticking.
       () => this.showDemoSettings(),
       "Exit demo",
+      undefined,
       { initialTabId },
     );
     this.mount(h("div", { class: "demo-shell" }, [banner, dashboard]));
@@ -2306,8 +2337,74 @@ export class App {
         () => this.lock(),
         () => this.reRenderCurrentModel(),
         () => this.showSettings(),
+        "Lock",
+        this.buildLiveGraphHooks(model),
       ),
     );
+  }
+
+  /**
+   * Assemble the experimental value chart's live 1D/1W builders from the current
+   * model + config, or `null` when the mode is off (so the default chart never
+   * spins up the live pipeline). Each hook lazily builds its whole-book curve via
+   * the already-shipped {@link buildLiveSessionCurve}/{@link buildLiveWeekCurve}
+   * orchestration; the bars are device-cached, so a re-open does not re-backfill.
+   */
+  private buildLiveGraphHooks(model: DashboardModel): LiveGraphHooks | undefined {
+    if (!experimentalGraphsEnabled()) return undefined;
+    const config = this.state.config;
+    const o = model.overview;
+    const baseFx = o.fxRateEurUsd;
+    // The settled cash sleeve in both currencies (USD derived from the day's FX).
+    const cashEur = o.cashValueEur;
+    const cashUsd = baseFx !== null ? cashEur.times(baseFx) : cashEur;
+    const liveTip =
+      o.totalValueIsComplete
+        ? {
+            valueEur: o.totalValueEur,
+            valueUsd:
+              o.totalValueUsd ?? (baseFx !== null ? o.totalValueEur.times(baseFx) : o.totalValueEur),
+          }
+        : null;
+    const providers: LiveGraphProviders = {
+      apiKey: config.apiKey,
+      priceProxyUrl: resolvePriceProxyUrl(config),
+    };
+    const store = this.ensureTimeSeriesStore();
+    const exported = this.state.data?.live_graphs ?? undefined;
+    const anchor = (): ReturnType<typeof buildModelAnchor> =>
+      buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx);
+
+    return {
+      session: async () => {
+        // Springboard off the exported session first — instant paint, no fetch —
+        // and only build live when the export is absent or too stale.
+        const sprung = springboardSessionCurve({ exported, liveTip });
+        if (sprung) return sprung;
+        try {
+          const curve = await buildLiveSessionCurve({ anchor: anchor(), store, liveTip }, providers);
+          return curve.points.length >= 2 ? curve.points : null;
+        } catch {
+          return null;
+        }
+      },
+      week: async () => {
+        const sprung = springboardWeekCurve({ exported, liveTip });
+        if (sprung) return sprung;
+        try {
+          const curve = await buildLiveWeekCurve({ anchor: anchor(), store, liveTip }, providers);
+          return curve.points.length >= 2 ? curve.points : null;
+        } catch {
+          return null;
+        }
+      },
+    };
+  }
+
+  /** Lazily create (once) the IndexedDB-backed live-graph bar store. */
+  private ensureTimeSeriesStore(): TimeSeriesStore {
+    if (this.timeSeriesStore === null) this.timeSeriesStore = new TimeSeriesStore();
+    return this.timeSeriesStore;
   }
 
   /** Re-render the current model in place (e.g. after a currency toggle). */

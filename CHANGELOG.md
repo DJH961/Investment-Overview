@@ -14,6 +14,65 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [3.17.0] — 2026-06-23
+
+### Added
+
+- **Live "1D" and "1W" value-over-time graphs on the web companion, springboarded
+  off the desktop's exported session.** The browser companion can now draw the
+  intraday "1 Day" curve and the multi-day "1 Week" sleeve, painting them
+  *instantly* from data the desktop already captured and only spending live-data
+  credits to extend the curve to the current tip. This is gated behind an
+  experimental Settings toggle so the default preset row is unchanged.
+  - **Export (schema v1 → v2):** the mobile export gains an optional
+    `live_graphs` section (`src/investment_dashboard/readmodels/live_graphs.py`).
+    The desktop serialises its already-computed 1D session and 1W sleeve as
+    **whole-book** points in *both* currencies, produced by the very same desktop
+    builders (`build_intraday_value_series` / `build_week_value_series`) so the
+    springboarded curve is byte-for-byte the desktop's line. `value_usd` is the
+    booked, FX-free figure; `value_eur` carries each point's *own* per-minute
+    EUR→USD rate, so the two lines genuinely diverge (never a uniform rescale).
+    Points are down-sampled to at most 80 to keep the blob small, and the section
+    is stamped with a `Z`-suffixed `captured_at` for honest freshness. The
+    section is **absent-tolerant**, so older (v1) blobs keep loading unchanged.
+  - **Springboard pipeline (web):** `web/src/springboard.ts` seeds the curve from
+    the export and bridges only to the live tip, falling back to a full live
+    rebuild (`web/src/intraday.ts` / `web/src/week.ts`) when the export is absent
+    or stale. Staleness is **trading-calendar based**, not wall-clock: a 1D
+    session is trusted while `session_date === lastSessionDate(now)` (covering
+    the fresh, same-session-but-hours-old, and pre-market "yesterday's completed
+    session" cases, while flipping to a live rebuild the moment today opens); a
+    1W sleeve is trusted while it ends on the current or previous trading
+    session, with the live tip supplying the missing latest point.
+  - **Live rebuild + caching:** when no usable export exists, the curve is built
+    live from Tiingo intraday/daily bars batched through the Cloudflare Worker
+    (`web/src/intraday-tiingo.ts`, `web/src/tiingo.ts`) and per-minute FX history,
+    cached in a `TimeSeriesStore` (`web/src/timeseries-store.ts`) so repeat opens
+    reuse the bars instead of re-fetching them. **Both** the 1D and 1W price
+    backfills prefer Tiingo (the 1W curve pulls its daily closes via Tiingo's
+    `?daily=` branch, not Twelve Data) and fall back to Twelve Data only when
+    Tiingo is unavailable — so a short (2–3 min) session still paints promptly
+    without waiting on the Twelve Data per-minute cap.
+  - **Worker routes (unified):** the live 1D/1W graph backfills run through the
+    single `/price` route via `?intraday=<ticker>` (pinned `resampleFreq=1hour`)
+    and `?daily=<ticker>` branches, alongside the `?fxHistory=<pair>&resampleFreq=…`
+    batched FX-history backfill — all on Tiingo's hourly reserve so the bulk
+    history fetch never steals the live price's Twelve Data slots. Every
+    caller-supplied ticker/pair/date/frequency is charset-validated, so the proxy
+    stays a closed, non-SSRF target. (There is no longer a separate
+    `/iex-intraday` route — the deployed `/price` route serves every Tiingo feed.)
+  - **Settings toggle:** an experimental "live 1D & 1W graphs" switch
+    (`iv.web.experimentalGraphs`) adds the `1D`/`1W` presets to the chart
+    timeframe row; off by default.
+
+### Fixed
+
+- **The live "1D" graph no longer repeats a single date across its x-axis.**
+  `web/src/chart.ts` now renders **time-of-day** labels (e.g. `9:30 … 4:00 PM`,
+  honouring the device's 12h/24h preference) for sub-day windows — gated on
+  `spanDays(dates) < 1 && hasClockTime(...)` — instead of stamping the same
+  calendar date on every tick.
+
 ## [3.16.0] — 2026-06-23
 
 ### Added

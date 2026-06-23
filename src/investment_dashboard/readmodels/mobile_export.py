@@ -17,7 +17,7 @@ contents, and never add tokens or passphrases to it.
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -28,7 +28,7 @@ from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.money_market import is_money_market
 from investment_dashboard.domain.returns import Cashflow
 from investment_dashboard.models import Transaction
-from investment_dashboard.readmodels import analytics, deposits, periods, transactions
+from investment_dashboard.readmodels import analytics, deposits, live_graphs, periods, transactions
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec, iso, now_utc_iso
 from investment_dashboard.repositories import (
@@ -46,7 +46,7 @@ from investment_dashboard.services import (
 from investment_dashboard.services.positions_service import Position
 from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _NAV_ASSET_CLASSES = {"mutual_fund", "cash", "savings", "money_market", "money-market"}
 _CASH_ACCOUNT_TYPES = {"savings", "cash"}
@@ -358,8 +358,14 @@ def build_mobile_export(
     *,
     as_of: date | None = None,
     include_transactions: bool = False,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Assemble the minimized, JSON-serializable live-web export."""
+    """Assemble the minimized, JSON-serializable live-web export.
+
+    ``now`` pins the instant the live 1D/1W springboard section is captured for
+    (defaults to the real wall clock); ``as_of`` still drives the settled
+    read-models.
+    """
     context = build_context(session, as_of=as_of)
     positions = positions_service.compute_positions(session, as_of=context.as_of)
     instrument_cashflows_eur, instrument_cashflows_usd = metrics_service.build_instrument_cashflows(
@@ -434,4 +440,11 @@ def build_mobile_export(
     }
     if include_transactions:
         export["transactions"] = transactions.build(session, context=context)
+    # The desktop's already-captured 1D session + 1W sleeve, so the web can
+    # springboard the live graph (instant paint, no re-fetch) when the export is
+    # still fresh enough. Optional/absent-tolerant: omitted when there is no
+    # intraday history to ship.
+    live = live_graphs.build(session, context=context, now=now)
+    if live is not None:
+        export["live_graphs"] = live
     return export
