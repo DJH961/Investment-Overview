@@ -768,6 +768,25 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
             spikedash="dot",
             spikecolor="rgba(91,107,124,0.5)",
         )
+        # Prepare the optional companion line *before* fitting the value scale so
+        # its data can widen that scale. The two currency lines are linked by a
+        # single ``scale`` (right axis = left axis × scale) that pins their two
+        # opening values to the same pixel; the right-axis range is therefore the
+        # left range × scale. So that *neither* line is ever clipped — the whole
+        # point of the dual view is to read their divergence — the left range is
+        # fitted to the union of the primary values **and** the companion values
+        # mapped back into primary units (companion ÷ scale). Without this the
+        # right axis was scaled from the primary range alone, so a companion line
+        # that diverged far enough (e.g. across the multi-year "All" window) ran
+        # clean off the top — or vanished entirely.
+        secondary_plot: tuple[list[object], list[float], float] | None = None
+        if secondary and secondary_currency and values and values[0]:
+            sec_points = downsample(secondary)
+            if len(sec_points) == len(dates):
+                sec_dates = [p.date for p in sec_points]
+                sec_values = [float(p.value) for p in sec_points]
+                if sec_values and sec_values[0] > 0:
+                    secondary_plot = (sec_dates, sec_values, sec_values[0] / values[0])
         # Fit the axis to the data (with headroom) instead of anchoring it to
         # zero, so the real price flow is visible rather than a near-flat line
         # squashed against a huge zero-based scale. The area still fills down
@@ -775,8 +794,11 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
         # The previous close is folded into the range so its reference line is
         # always on-screen even when the day stayed entirely above/below it.
         range_values = (
-            [*values, prev_close_f] if (intraday and prev_close_f is not None) else values
+            [*values, prev_close_f] if (intraday and prev_close_f is not None) else [*values]
         )
+        if secondary_plot is not None:
+            _, sec_values, scale = secondary_plot
+            range_values = [*range_values, *(sv / scale for sv in sec_values)]
         yrange = padded_range(range_values)
         fig.update_yaxes(
             tickprefix=symbol,
@@ -823,48 +845,44 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
         # range is the left range times secondary[0]/primary[0]. With identical
         # opening pixels, the visible gap between the lines is exactly how much
         # better or worse the portfolio did in one currency versus the other over
-        # the window — the whole point of the dual view.
-        if secondary and secondary_currency and yrange is not None and values and values[0]:
-            sec_points = downsample(secondary)
-            if len(sec_points) == len(dates):
-                sec_dates = [p.date for p in sec_points]
-                sec_values = [float(p.value) for p in sec_points]
-                if sec_values and sec_values[0] > 0:
-                    scale = sec_values[0] / values[0]
-                    sec_symbol = currency_symbol(secondary_currency)
-                    sec_color = "#CC79A7"  # Wong reddish-purple (colourblind-safe)
-                    fig.add_trace(
-                        go.Scatter(
-                            x=sec_dates,
-                            y=sec_values,
-                            mode="lines",
-                            name=f"In {secondary_currency}",
-                            yaxis="y2",
-                            line={"width": 2, "color": sec_color, "dash": "dot"},
-                            hovertemplate=(
-                                f"<b>{sec_symbol}%{{y:,.2f}}</b> ({secondary_currency})"
-                                "<extra></extra>"
-                            ),
-                        )
-                    )
-                    fig.update_layout(
-                        yaxis2={
-                            "overlaying": "y",
-                            "side": "right",
-                            "tickprefix": sec_symbol,
-                            "tickformat": ".3s",
-                            "separatethousands": True,
-                            "showgrid": False,
-                            "automargin": True,
-                            "range": [yrange[0] * scale, yrange[1] * scale],
-                            "tickfont": {"color": sec_color},
-                            "title": {
-                                "text": secondary_currency,
-                                "font": {"color": sec_color},
-                            },
-                        }
-                    )
-                    has_secondary = True
+        # the window — the whole point of the dual view. The left range was
+        # already widened above to enclose this line (mapped into primary units),
+        # so multiplying it by ``scale`` here keeps *both* lines fully on-screen.
+        if secondary_plot is not None and secondary_currency and yrange is not None:
+            sec_dates, sec_values, scale = secondary_plot
+            sec_symbol = currency_symbol(secondary_currency)
+            sec_color = "#CC79A7"  # Wong reddish-purple (colourblind-safe)
+            fig.add_trace(
+                go.Scatter(
+                    x=sec_dates,
+                    y=sec_values,
+                    mode="lines",
+                    name=f"In {secondary_currency}",
+                    yaxis="y2",
+                    line={"width": 2, "color": sec_color, "dash": "dot"},
+                    hovertemplate=(
+                        f"<b>{sec_symbol}%{{y:,.2f}}</b> ({secondary_currency})<extra></extra>"
+                    ),
+                )
+            )
+            fig.update_layout(
+                yaxis2={
+                    "overlaying": "y",
+                    "side": "right",
+                    "tickprefix": sec_symbol,
+                    "tickformat": ".3s",
+                    "separatethousands": True,
+                    "showgrid": False,
+                    "automargin": True,
+                    "range": [yrange[0] * scale, yrange[1] * scale],
+                    "tickfont": {"color": sec_color},
+                    "title": {
+                        "text": secondary_currency,
+                        "font": {"color": sec_color},
+                    },
+                }
+            )
+            has_secondary = True
     fig.update_layout(
         title=(
             f"Portfolio value today ({currency})"

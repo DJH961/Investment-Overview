@@ -230,3 +230,106 @@ export function latestSettledSessionDate(now: Date = new Date()): string {
   } while (!isTradingDay(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()));
   return ymd(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
 }
+
+/**
+ * Trading day (`YYYY-MM-DD`, New-York calendar) of the most recent NYSE session
+ * that has **started** as of `now` — the session the live "1 Day" curve covers.
+ *
+ * "Started" (not "settled") is the distinction from {@link latestSettledSessionDate}:
+ * today becomes the current session the moment its 09:30 open passes on a trading
+ * day, and stays the current session right through the 16:00 close and overnight
+ * until the *next* session opens. Before today's open, on weekends, and on
+ * holidays this is the previous trading day, so a Saturday still shows Friday's
+ * full session (mirrors the desktop `last_session_date`).
+ */
+export function lastSessionDate(now: Date = new Date()): string {
+  const moment = exchangeMoment(now);
+  if (isTradingDay(moment.year, moment.month, moment.day) && moment.minutes >= OPEN_MINUTES) {
+    return ymd(moment.year, moment.month, moment.day);
+  }
+  return previousTradingSession(ymd(moment.year, moment.month, moment.day));
+}
+
+/**
+ * The most recent regular NYSE trading day **strictly before** `day`
+ * (`YYYY-MM-DD`, New-York calendar). Skips weekends and full-day holidays, so it
+ * marks the genuine previous *session* even across a long weekend (mirrors the
+ * desktop `previous_trading_session`).
+ */
+export function previousTradingSession(day: string): string {
+  const [year, month, dayOfMonth] = day.split("-").map(Number);
+  let date = new Date(Date.UTC(year, month - 1, dayOfMonth));
+  do {
+    date = new Date(date.getTime() - 24 * 60 * 60 * 1000);
+  } while (!isTradingDay(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()));
+  return ymd(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+}
+
+/**
+ * The `count` most recent NYSE trading sessions up to and including the current
+ * session as of `now`, **ascending** (`YYYY-MM-DD`, New-York calendar) — the
+ * window the live "1 Week" curve spans. The newest entry is {@link lastSessionDate}
+ * (so a weekend window still ends on Friday's session), and each earlier entry is
+ * the {@link previousTradingSession} of the one after it, skipping weekends and
+ * holidays. `count <= 0` yields an empty list.
+ */
+export function recentTradingSessions(count: number, now: Date = new Date()): string[] {
+  if (count <= 0) return [];
+  const days: string[] = [lastSessionDate(now)];
+  for (let i = 1; i < count; i += 1) {
+    days.push(previousTradingSession(days[days.length - 1]));
+  }
+  return days.reverse();
+}
+
+/**
+ * Minutes to add to a UTC instant to reach the exchange-local (New York) wall
+ * clock — i.e. `ET = UTC + offset`. Negative (−240 EDT / −300 EST). Used to turn
+ * an exchange wall-clock time on a given day into an absolute UTC instant.
+ */
+function etOffsetMinutes(date: Date): number {
+  const moment = exchangeMoment(date);
+  const utcMinutes = date.getUTCHours() * 60 + date.getUTCMinutes();
+  let diff = moment.minutes - utcMinutes;
+  // The wall clocks can straddle a UTC-day boundary; fold into ±12h.
+  if (diff > 720) diff -= 1440;
+  if (diff < -720) diff += 1440;
+  return diff;
+}
+
+/**
+ * Absolute UTC epoch-ms of the exchange-local wall-clock `wallMinutes`
+ * (minutes since New-York midnight) on `day` (`YYYY-MM-DD`). Resolved by
+ * correcting a UTC guess by the exchange offset in force on that day (two passes
+ * settle any DST edge). The offset is looked up from the instant itself, so it
+ * is correct on either side of a daylight-saving change.
+ */
+function exchangeWallToUtcMs(day: string, wallMinutes: number): number {
+  const [year, month, dayOfMonth] = day.split("-").map(Number);
+  const midnightUtc = Date.UTC(year, month - 1, dayOfMonth);
+  let utc = midnightUtc + wallMinutes * 60_000;
+  for (let i = 0; i < 2; i += 1) {
+    const offset = etOffsetMinutes(new Date(utc));
+    utc = midnightUtc + (wallMinutes - offset) * 60_000;
+  }
+  return utc;
+}
+
+/**
+ * Absolute UTC epoch-ms of the 16:00 ET regular-session close on `day`
+ * (`YYYY-MM-DD`, New-York calendar). The live "1 Day" curve is pinned here once
+ * the session has shut, so it ends at the close rather than trailing a flat line
+ * out to the current wall-clock time, and a weekend still bounds Friday's
+ * session at Friday 16:00 (mirrors the desktop `session_close_utc`).
+ */
+export function sessionCloseMs(day: string): number {
+  return exchangeWallToUtcMs(day, CLOSE_MINUTES);
+}
+
+/**
+ * Absolute UTC epoch-ms of the 09:30 ET regular-session open on `day`
+ * (`YYYY-MM-DD`, New-York calendar) — the lower bound of the "1 Day" window.
+ */
+export function sessionOpenMs(day: string): number {
+  return exchangeWallToUtcMs(day, OPEN_MINUTES);
+}

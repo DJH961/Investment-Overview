@@ -769,8 +769,8 @@ export async function loadEurUsd(
   if (apiKey.length > 0) {
     const t = now();
     const log = readCreditLog(t, DAY_MS, storage ?? undefined);
-    const minute = creditsPerMinute - creditsSpentWithin(log, t, MINUTE_MS);
-    const day = creditsPerDay - creditsSpentToday(log, t);
+    const minute = Math.max(0, creditsPerMinute - creditsSpentWithin(log, t, MINUTE_MS));
+    const day = Math.max(0, creditsPerDay - creditsSpentToday(log, t));
     if (minute >= FREE_TIER.creditsPerSymbol && day >= FREE_TIER.creditsPerSymbol) {
       // Reserve the credit up-front (same rationale as loadQuotes) so two
       // overlapping loads can't both fire and 429.

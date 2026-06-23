@@ -52,6 +52,13 @@ const TIINGO_DAILY_CAP = 800;
 
 export interface HoldingView {
   symbol: string;
+  /**
+   * The Twelve Data ticker (export `price_symbol`) the live quote/intraday bars
+   * are keyed by — distinct from the display `symbol` for some holdings. Used to
+   * key the live 1D/1W graph's intraday sleeve. Optional only so lightweight test
+   * fixtures need not set it; the real `buildDashboard` path always does.
+   */
+  priceSymbol?: string;
   name: string;
   assetClass: string;
   /** The holding's category grouping key, or `null` when unset (the calculator
@@ -816,6 +823,7 @@ function buildHolding(
 
   return {
     symbol: holding.symbol,
+    priceSymbol: holding.price_symbol,
     name: holding.name ?? holding.symbol,
     assetClass: holding.asset_class,
     category: holding.category ?? null,

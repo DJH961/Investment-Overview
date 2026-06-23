@@ -4,7 +4,7 @@
 import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 
-import { convert, fetchEurUsd, fetchFxRates, fetchNavQuotes, fetchQuotes, PriceError, type FetchLike } from "../src/prices";
+import { convert, fetchEurUsd, fetchFxRates, fetchNavQuotes, fetchQuotes, fetchTimeSeries, PriceError, type FetchLike } from "../src/prices";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return { ok, status, json: async () => body } as Response;
@@ -236,5 +236,65 @@ describe("fetchEurUsd", () => {
     const eurusd = await fetchEurUsd("key", fetchImpl);
     expect(eurusd.now).toBeNull();
     expect(eurusd.previousClose).toBeNull();
+  });
+});
+
+describe("fetchTimeSeries", () => {
+  it("parses a single-symbol series ascending and bills per call", async () => {
+    let calls = 0;
+    const fetchImpl: FetchLike = async (url) => {
+      calls += 1;
+      expect(url).toContain("/time_series");
+      expect(url).toContain("interval=5min");
+      return jsonResponse({
+        meta: { symbol: "VTI" },
+        values: [
+          { datetime: "2024-01-10 16:00:00", close: "55" },
+          { datetime: "2024-01-10 09:30:00", close: "50" },
+        ],
+      });
+    };
+    const series = await fetchTimeSeries(["VTI"], "key", { fetchImpl });
+    const vti = series.get("VTI")!;
+    expect(vti.map((b) => b.value.toString())).toEqual(["50", "55"]); // ascending
+    expect(vti[0].t).toBeLessThan(vti[1].t);
+    expect(calls).toBe(1); // one request for the whole day
+  });
+
+  it("parses a multi-symbol batched response", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({
+        VTI: { values: [{ datetime: "2024-01-10 09:30:00", close: "50" }] },
+        SPY: { values: [{ datetime: "2024-01-10 09:30:00", close: "400" }] },
+      });
+    const series = await fetchTimeSeries(["VTI", "SPY"], "key", { fetchImpl });
+    expect(series.get("VTI")![0].value.toString()).toBe("50");
+    expect(series.get("SPY")![0].value.toString()).toBe("400");
+  });
+
+  it("returns an empty series for a symbol the feed errored on", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse({
+        VTI: { values: [{ datetime: "2024-01-10 09:30:00", close: "50" }] },
+        BAD: { status: "error", message: "no data" },
+      });
+    const series = await fetchTimeSeries(["VTI", "BAD"], "key", { fetchImpl });
+    expect(series.get("BAD")).toEqual([]);
+  });
+
+  it("throws a fatal PriceError on a rejected key", async () => {
+    const fetchImpl: FetchLike = async () => jsonResponse({ status: "error", code: 401, message: "bad key" });
+    const err = await captureError(() => fetchTimeSeries(["VTI"], "key", { fetchImpl }));
+    expect(err.fatal).toBe(true);
+  });
+
+  it("returns an empty map for no symbols without calling the network", async () => {
+    let called = false;
+    const fetchImpl: FetchLike = async () => {
+      called = true;
+      return jsonResponse({});
+    };
+    expect((await fetchTimeSeries([], "key", { fetchImpl })).size).toBe(0);
+    expect(called).toBe(false);
   });
 });

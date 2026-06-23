@@ -2,7 +2,8 @@
  * A tiny dependency-free line-chart helper (inline SVG) shared by the Overview
  * "value over time" graph and the Risk equity curve. It draws one or more value
  * series onto a padded plot area with a y-axis (value gridlines) and an x-axis
- * (date ticks) so the curve reads as a chart, not abstract art.
+ * (date or, for the intraday "1D" curve, time-of-day ticks) so the curve reads
+ * as a chart, not abstract art.
  *
  * The SVG keeps its aspect ratio (`xMidYMid meet`) and scales to its container
  * width via CSS, so axis text never stretches. Everything is built with the DOM
@@ -11,6 +12,7 @@
 
 import type { Decimal } from "./decimal-config";
 import { formatCurrencyShort } from "./format";
+import { clockOptions } from "./time-format";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -53,6 +55,24 @@ function dayLabel(iso: string): string {
   return `${Number(m[3])} ${month}`;
 }
 
+/** True when an ISO label carries a wall-clock time (e.g. an intraday instant). */
+function hasClockTime(iso: string): boolean {
+  return /T\d{2}:\d{2}/.test(iso);
+}
+
+/**
+ * An ISO instant → a local clock label (e.g. "9:30", "4:00 PM"), honouring the
+ * device's 12h/24h preference. Used for the intraday "1D" curve, where every
+ * point falls on the same calendar day and a date axis would just repeat that
+ * date — the time-of-day is the only thing that varies. Passes through anything
+ * that can't be parsed as an instant.
+ */
+function timeLabel(iso: string): string {
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return iso;
+  return when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", ...clockOptions() });
+}
+
 /**
  * Span in whole days between the first and last label, or `Infinity` when a
  * date can't be parsed (so the caller falls back to month granularity).
@@ -83,16 +103,21 @@ export interface XAxisTick {
 }
 
 /**
- * The x-axis tick set for a date series. Short windows (≈a quarter or less) read
- * better as day-of-month labels — "1M" should say "5 Jun … 19 Jun", not repeat
- * the month — while wider windows keep the compact "Jun '26" month label. Up to
+ * The x-axis tick set for a value series. An **intraday** window — every label
+ * on the same calendar day, carrying a wall-clock time (the live "1D" curve) —
+ * is labelled by time-of-day ("9:30 … 4:00 PM"), because a date axis would only
+ * repeat that one date. Otherwise short windows (≈a quarter or less) read better
+ * as day-of-month labels — "1M" should say "5 Jun … 19 Jun", not repeat the
+ * month — while wider windows keep the compact "Jun '26" month label. Up to
  * `count` roughly-even ticks are returned (more than the old start/middle/end)
  * so the axis is easier to read when it fits.
  */
 export function xAxisTicks(dates: string[], count = 5): XAxisTick[] {
   const n = dates.length;
   if (n === 0) return [];
-  const labelFor = spanDays(dates) <= 92 ? dayLabel : monthLabel;
+  const span = spanDays(dates);
+  const labelFor =
+    span < 1 && hasClockTime(dates[0]) ? timeLabel : span <= 92 ? dayLabel : monthLabel;
   const idx = evenIndexes(n, count);
   const last = idx[idx.length - 1];
   return idx.map((i) => ({
