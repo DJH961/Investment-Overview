@@ -82,6 +82,10 @@ function overview(extra: Partial<OverviewView> = {}): OverviewView {
     liveCoverage: null,
     dailyCreditsUsed: null,
     dailyCreditLimit: 800,
+    tiingoHourUsed: null,
+    tiingoHourLimit: 40,
+    tiingoDayUsed: null,
+    tiingoDayLimit: 800,
     ...extra,
   };
 }
