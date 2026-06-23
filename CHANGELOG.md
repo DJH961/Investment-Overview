@@ -14,6 +14,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [3.12.0] — 2026-06-23
+
+### Added
+
+- **The web Overview and Risk charts now overlay the *other* currency as a
+  second line.** When EUR is displayed the USD companion is drawn (and vice
+  versa), rebased to share the primary line's starting value — exactly the
+  technique the benchmark line already uses — so the two currency lines start
+  together and visibly *diverge* by the EUR/USD move over the window instead of
+  sitting a meaningless ~1.08× apart on the shared y-axis. The overlay is
+  opt-in and uncluttered: it appears only when a live FX rate is known and the
+  other currency actually has data, otherwise it is silently skipped (no empty
+  toggles), consistent with how presets and the benchmark line appear only when
+  meaningful. A "USD (rebased)" / "EUR (rebased)" legend entry and a
+  `series-currency` style accompany it.
+
+### Changed
+
+- **The desktop "1 Week" chart now reuses the intraday samples already cached
+  for "1 Day" and persists what it fetches.** Intraday-cache retention was
+  widened from a single session to a rolling week (the prune cutoff is now the
+  start of the oldest recent trading session), so the dense live captures
+  recorded for "1 Day" survive into the week window. `week_series_with_fx` now
+  reads stored samples first and only fetches sessions with no cached coverage,
+  guarding each missing day with a per-session "already fetched" marker so the
+  feed is hit at most once per session per missing day. The bars it does fetch
+  are written back (same decomposed EUR market-component + per-instant
+  `fx_eur_usd` shape the Day path uses), so the week survives reopening instead
+  of being recomputed each render. The currency/FX model is unchanged: stored
+  samples remain the EUR market component, and USD-native/EUR-derived
+  conversion is reapplied at render.
+
 ## [3.11.2] — 2026-06-23
 
 ### Fixed
