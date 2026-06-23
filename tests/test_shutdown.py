@@ -171,3 +171,79 @@ def test_resolve_auto_shutdown_falls_back_to_setting(monkeypatch: pytest.MonkeyP
         assert main._resolve_auto_shutdown() is True
     finally:
         get_settings.cache_clear()
+
+
+class _FakeUI:
+    """Minimal stand-in for ``nicegui.ui`` capturing the shutdown sequence."""
+
+    def __init__(self) -> None:
+        self.notifications: list[tuple[str, str | None]] = []
+        self.scripts: list[str] = []
+        self.timers: list[tuple[float, object]] = []
+
+    def notify(self, message: str, *, type: str | None = None) -> None:
+        self.notifications.append((message, type))
+
+    def run_javascript(self, script: str) -> None:
+        self.scripts.append(script)
+
+    def timer(self, interval: float, callback: object, *, once: bool = False) -> None:
+        assert once is True
+        self.timers.append((interval, callback))
+
+
+def _install_fake_ui(monkeypatch: pytest.MonkeyPatch) -> _FakeUI:
+    import nicegui
+
+    fake = _FakeUI()
+    monkeypatch.setattr(nicegui, "ui", fake, raising=False)
+    return fake
+
+
+def test_begin_graceful_shutdown_notifies_publish_and_defers_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from investment_dashboard.services import auto_publish
+
+    fake = _install_fake_ui(monkeypatch)
+    monkeypatch.setattr(
+        auto_publish,
+        "run_trigger",
+        lambda trigger: auto_publish.PublishOutcome(trigger, "failed", detail="no token"),
+    )
+    stopped: list[str] = []
+    monkeypatch.setattr(shutdown, "request_shutdown", lambda **kw: stopped.append(str(kw)))
+
+    shutdown.begin_graceful_shutdown(delay=0.1)
+
+    # The publish outcome is surfaced to the user.
+    assert fake.notifications == [("Live-web publish failed: no token", "negative")]
+    # The browser is told the drop is intentional (suppresses the reconnect banner).
+    assert any("__invBeginShutdown" in script for script in fake.scripts)
+    # The server stop is deferred to a one-shot timer and skips the duplicate publish.
+    assert len(fake.timers) == 1
+    interval, callback = fake.timers[0]
+    assert interval == 0.1
+    assert stopped == []  # not stopped until the timer fires
+    callback()  # type: ignore[operator]
+    assert stopped == ["{'publish': False}"]
+
+
+def test_begin_graceful_shutdown_skipped_publish_still_confirms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from investment_dashboard.services import auto_publish
+
+    fake = _install_fake_ui(monkeypatch)
+    monkeypatch.setattr(
+        auto_publish,
+        "run_trigger",
+        lambda trigger: auto_publish.PublishOutcome(trigger, "skipped"),
+    )
+    monkeypatch.setattr(shutdown, "request_shutdown", lambda **kw: None)
+
+    shutdown.begin_graceful_shutdown()
+
+    # No publish note, but the user is still told the app is closing.
+    assert fake.notifications == [("Shutting down… you can close this tab.", "warning")]
+    assert any("__invBeginShutdown" in script for script in fake.scripts)

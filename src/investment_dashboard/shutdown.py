@@ -107,6 +107,41 @@ def _publish_on_shutdown() -> None:
         log.warning("auto-publish on shutdown failed", exc_info=False)
 
 
+def begin_graceful_shutdown(*, delay: float = 0.8) -> None:
+    """Run the full user-facing shutdown sequence from a NiceGUI page context.
+
+    This is the one place every "quit" control (the header power button and the
+    Settings → Server "Shut down" button) funnels through, so they behave
+    identically:
+
+    1. Republish the live-web blob (gated by Settings) **before** the server
+       stops, and tell the user whether the upload succeeded, failed, or was
+       skipped — so a graceful close never silently drops the latest state.
+    2. Tell the browser we are shutting down on purpose (``__invBeginShutdown``)
+       so the websocket drop suppresses the alarming "connection lost —
+       reconnecting…" banner and the tab auto-closes when it can.
+    3. After a short grace period (so the toast + JS paint), release the writer
+       lock and stop the server. We already published in step 1, so this passes
+       ``publish=False`` to avoid a duplicate upload.
+    """
+    from nicegui import ui  # noqa: PLC0415 - needs a NiceGUI page context
+
+    from investment_dashboard.services import auto_publish  # noqa: PLC0415
+
+    # Publish first while the DB is still fully available, and surface the result.
+    outcome = auto_publish.run_trigger(auto_publish.TRIGGER_SHUTDOWN)
+    note = auto_publish.describe_outcome(outcome)
+    if note is not None:
+        ui.notify(note[0], type=note[1])
+    else:
+        # Publishing is off/not configured: still confirm the app is closing.
+        ui.notify("Shutting down… you can close this tab.", type="warning")
+    # Suppress the reconnect banner (the drop is expected) and try to close the tab.
+    ui.run_javascript("if (window.__invBeginShutdown) window.__invBeginShutdown();")
+    # Let the toast + JS run, then stop the server (already published above).
+    ui.timer(delay, lambda: request_shutdown(publish=False), once=True)
+
+
 def release_writer_lock_for_handoff() -> bool:
     """Hand the writer lock to another instance without stopping the server.
 
