@@ -729,9 +729,15 @@ html, body {{
   font-size: 0.75rem; color: var(--inv-muted); font-variant-numeric: tabular-nums;
 }}
 .inv-mover-empty {{ font-size: 0.8125rem; color: var(--inv-muted); padding: 0.2rem 0; }}
-/* A compact badge on a holding card that topped today's movers leaderboard. */
+/* A compact badge on a holding card that topped today's movers leaderboard.
+   It sits on its own right-aligned row (``.inv-holding-badge-row``) just above
+   the daily-growth figures, so it never widens the topline and shifts the
+   freshness time. */
+.inv-holding-badge-row {{
+  display: flex; justify-content: flex-end; margin-top: 0.3rem;
+}}
 .inv-holding-badge {{
-  display: inline-block; margin-left: 0.35rem; padding: 0.05rem 0.45rem;
+  display: inline-block; padding: 0.05rem 0.45rem;
   border-radius: var(--inv-radius-pill);
   font-size: 0.625rem; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase;
   vertical-align: middle;
