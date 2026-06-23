@@ -56,6 +56,7 @@ import {
   writeSymbolPlan,
 } from "./cache";
 import {
+  DEFAULT_EURUSD_TTL_MS,
   DEFAULT_NAV_CACHE_TTL_MS,
   FREE_TIER,
   NAV_PUBLISH_HOUR,
@@ -458,12 +459,12 @@ export class App {
       });
       this.updatePrefetchStatus();
       this.pollLog("login", "Login warm-up started — no symbol plan yet, warming FX only.");
-      const fx = await loadFxRates().catch(() => undefined);
+      const warmth = await this.warmPrefetchFx(config);
       this.pollLog(
         "primary",
-        `Login warm-up: no symbol plan yet, only warmed FX (${fx ? (fx.cached ? "from cache" : "live") : "unavailable"}). No quote credits spent.`,
+        `Login warm-up: no symbol plan yet, only warmed FX (EUR/USD spot ${warmth.spotSource}). No quote credits spent.`,
       );
-      this.finishPrefetch({ quoteFetched: 0, quoteTotal: 0, hasPlan: false, fxLive: fx ? !fx.cached : false });
+      this.finishPrefetch({ quoteFetched: 0, quoteTotal: 0, hasPlan: false, fxLive: warmth.fxLive });
       return;
     }
     // Market-aware plan: only fetch what is actually worth a credit right now —
@@ -501,14 +502,16 @@ export class App {
     );
     // Currency first, always: the forex market trades longest and values the
     // whole book, so warm the FX cache before any ticker — FX simply goes first
-    // in line, with no per-minute reserve held back from the quotes.
-    const fx = await loadFxRates().catch(() => undefined);
-    const fxLive = fx ? !fx.cached : false;
+    // in line, with no per-minute reserve held back from the quotes. The live
+    // EUR/USD spot is pulled from Twelve Data first (the most relevant mark for
+    // a USD-booked book), not just the keyless end-of-day base rates.
+    const warmth = await this.warmPrefetchFx(config);
+    const fxLive = warmth.fxLive;
     if (prefetch.symbols.length === 0) {
       this.pollLog(
         "primary",
         `Login warm-up: market ${marketOpen ? "open" : "closed"} and nothing outdated — ` +
-          `only warmed FX (${fx ? (fx.cached ? "from cache" : "live") : "unavailable"}). No quote credits spent.`,
+          `only warmed FX (EUR/USD spot ${warmth.spotSource}). No quote credits spent.`,
       );
       this.finishPrefetch({ quoteFetched: 0, quoteTotal: 0, hasPlan: true, fxLive });
       return;
@@ -524,6 +527,33 @@ export class App {
       hasPlan: true,
       fxLive,
     });
+  }
+
+  /**
+   * Warm the currency caches at login — currency first, always (the forex market
+   * trades longest and values the whole book). The **live EUR/USD spot is pulled
+   * from Twelve Data first** (one credit, the most relevant mark for valuing a
+   * USD-booked book), with the Tiingo backup FX provider and the keyless ECB
+   * end-of-day rate as graceful fallbacks; the keyless base rates
+   * ({@link loadFxRates}) are warmed alongside for any non-USD holdings and feed
+   * the end-of-day fallback. A still-fresh cached spot (< {@link DEFAULT_EURUSD_TTL_MS})
+   * is reused for free, so a re-login moments after a refresh spends nothing.
+   *
+   * Returns whether a genuinely fresh rate was pulled (a live/Tiingo spot, or
+   * fresh base rates) so the login spin + status read honestly, plus the spot's
+   * provenance for the polling log.
+   */
+  private async warmPrefetchFx(config: AppConfig): Promise<{ fxLive: boolean; spotSource: EurUsdSource }> {
+    const fx = await loadFxRates().catch(() => undefined);
+    const eurUsd = await loadEurUsd(config.apiKey, {
+      eodFallback: fx?.fx.rates.USD ?? null,
+      ttlMs: DEFAULT_EURUSD_TTL_MS,
+      tiingoProxyUrl: resolvePriceProxyUrl(config),
+    }).catch(() => null);
+    const spotSource: EurUsdSource = eurUsd?.source ?? "none";
+    const spotLive = spotSource === "live" || spotSource === "tiingo";
+    const baseLive = fx ? !fx.cached : false;
+    return { fxLive: spotLive || baseLive, spotSource };
   }
 
   /**
