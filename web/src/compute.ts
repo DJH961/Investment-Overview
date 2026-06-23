@@ -207,7 +207,12 @@ export interface OverviewView {
   ytdGrowthPctUsd: Decimal | null;
   portfolioXirrUsd: Decimal | null;
   totalGrowthCompoundedPctUsd: Decimal | null;
-  /** Year-to-date dividend income (EUR) and its yield on current total value. */
+  /**
+   * Year-to-date dividend income (EUR) and the cumulative *lifetime* dividend
+   * return — total cash dividends ever received (incl. reinvested) ÷ current
+   * total value. This is a lifetime total, NOT an annualised yield, so it is
+   * surfaced as "Div. return" rather than "Div. yield".
+   */
   totalDividendsEur: Decimal;
   dividendYieldPct: Decimal | null;
   /** EUR→USD reference rate carried in the export meta (for the FX line). */
@@ -1030,10 +1035,11 @@ export function buildDashboard(
       ? totalGrowthPctCompounded(portfolioXirr, yearsBetween(firstCashflowDate, asOf))
       : null;
 
-  // Trailing dividend yield = lifetime dividend income (incl. reinvested) ÷
-  // current total value, matching the desktop. The "Dividends YTD" KPI stays a
-  // current-year figure (totalDividendsEur). Older exports without the lifetime
-  // income offset fall back to the YTD-only yield.
+  // Cumulative dividend return = lifetime dividend income (incl. reinvested) ÷
+  // current total value, matching the desktop. This is a lifetime total, not an
+  // annualised yield, so the UI labels it "Div. return". The "Dividends YTD" KPI
+  // stays a current-year figure (totalDividendsEur). Older exports without the
+  // lifetime income offset fall back to the YTD-only ratio.
   const totalDividendsEur = currentYearDividendsEur(data);
   const dividendsIncomeEur = decimalOrNull(pm?.dividends_income_eur);
   const dividendYieldPct = totalValueEur.greaterThan(0)

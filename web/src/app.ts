@@ -418,22 +418,38 @@ export class App {
       field("Quote cache (minutes)", cacheMinutes, "Free tier is 8 credits/min, 800/day (1 per symbol). A longer cache means fewer refetches and fewer credits spent."),
       field("Auto-refresh (minutes)", autoRefresh, `Steady-state gap between automatic live refreshes once everything is fresh. A manual Refresh also pushes the next auto-refresh out by this long. Default is ${DEFAULT_AUTO_REFRESH_MINUTES}.`),
     );
-    // Maintenance: a manual escape hatch to throw away every cached price and
-    // re-pull the lot from scratch. Only meaningful once unlocked with data
-    // loaded — the dashboard it refreshes has to exist.
+    // Maintenance: two manual escape hatches for when prices look stuck. Both
+    // only make sense once unlocked with data loaded — the dashboard they refresh
+    // has to exist.
     if (settingsMode && this.state.data) {
+      // (1) Force-fetch every price now: ignore the NAV publish schedules and the
+      // market-closed skips and re-pull *all* symbols as if each were expecting a
+      // brand-new price. Keeps the caches and learned publish windows intact.
+      const forceAll = h(
+        "button",
+        { class: "btn ghost", type: "button", "data-action": "force-all" },
+        ["Force-fetch every price now"],
+      );
+      forceAll.addEventListener("click", () => this.forceFetchAllNow());
+      // (2) Reset everything: clear every cached price, forget the learned NAV
+      // publish windows, re-check the data file, then re-pull from scratch.
       const updateAll = h(
         "button",
         { class: "btn ghost", type: "button", "data-action": "update-all" },
-        ["Update all data now"],
+        ["Reset cache & re-pull everything"],
       );
       updateAll.addEventListener("click", () => this.updateAllFromScratch());
       formChildren.push(
         h("h2", { class: "settings-section" }, ["Maintenance"]),
         field(
-          "Re-pull everything",
+          "Force-fetch every price",
+          forceAll,
+          "Re-pull every quote now, ignoring NAV publish schedules and market-closed skips — as if all prices were expected to update. Keeps your caches and learned NAV windows. Respects your daily free-tier budget.",
+        ),
+        field(
+          "Reset & re-pull everything",
           updateAll,
-          "Clear every cached price and re-fetch all quotes and FX from scratch — and re-check the data file. Use this if a price ever looks stuck. Respects your daily free-tier budget.",
+          "Clear every cached price, forget the learned NAV publish windows, re-check the data file, and re-fetch all quotes and FX from scratch. Use this if a price ever looks stuck. Respects your daily free-tier budget.",
         ),
       );
     }
@@ -886,6 +902,7 @@ export class App {
     data: MobileExport,
     config: AppConfig,
     force = false,
+    forceAll = false,
   ): { symbols: string[]; options: LoadQuotesOptions } {
     // Priority-ordered fetch plan: ETFs/stocks (largest first), then mutual
     // funds (largest first). Money-market/cash rows are excluded — their NAV is
@@ -905,7 +922,7 @@ export class App {
       sizeEur: e.sizeEur,
     })));
 
-    return { symbols, options: this.buildQuoteOptions(navFetchSymbols, config, force) };
+    return { symbols, options: this.buildQuoteOptions(navFetchSymbols, config, force, forceAll) };
   }
 
   /**
@@ -914,11 +931,19 @@ export class App {
    * per-symbol cache windows and publish-time learning. `force` forces market
    * symbols to re-fetch (the "pull now" path behind a manual Refresh tap); NAV
    * symbols stay on their once-a-day adaptive window regardless.
+   *
+   * `forceAll` is the heavier "ignore every schedule" escape hatch (Settings →
+   * "Force-fetch every price now"): it re-pulls *every* symbol unconditionally —
+   * market symbols even while the exchange is shut and the close is in hand, and
+   * NAV funds even when they are not behind their expected publish — as if we
+   * expected all of them to have a brand-new price. The hard free-tier per-minute
+   * /day budget in {@link loadQuotes} still applies, so overflow simply defers.
    */
   private buildQuoteOptions(
     navFetchSymbols: Set<string>,
     config: AppConfig,
     force = false,
+    forceAll = false,
   ): LoadQuotesOptions {
     const cacheTtlMs = config.quoteCacheMinutes * 60 * 1000;
     // Per-symbol learned publish windows: when each fund's NAV has historically
@@ -964,17 +989,21 @@ export class App {
       //   - NAV funds: only when *behind* their latest expected value (we are
       //     demonstrably missing a published NAV); otherwise they stay exempt so
       //     a tap never chases an unchanged NAV.
-      forceFetch: force
-        ? (symbol, cached) => {
-            const have = cached?.quote.valueDate ?? null;
-            if (!navFetchSymbols.has(symbol)) {
-              const at = new Date();
-              if (isUsMarketOpen(at)) return true;
-              return !(have && have >= latestSettledSessionDate(at));
+      // `forceAll` overrides all of that and re-pulls *every* symbol — the
+      // explicit "ignore NAV schedules and market-closed skips" escape hatch.
+      forceFetch: forceAll
+        ? () => true
+        : force
+          ? (symbol, cached) => {
+              const have = cached?.quote.valueDate ?? null;
+              if (!navFetchSymbols.has(symbol)) {
+                const at = new Date();
+                if (isUsMarketOpen(at)) return true;
+                return !(have && have >= latestSettledSessionDate(at));
+              }
+              return !(have && have >= latestExpectedNavDate(new Date(), publishHourFor(symbol)));
             }
-            return !(have && have >= latestExpectedNavDate(new Date(), publishHourFor(symbol)));
-          }
-        : undefined,
+          : undefined,
       // Learn each fund's real publish time from when its value-date advances.
       onValueDateAdvance: (symbol, valueDate, at) => {
         if (navFetchSymbols.has(symbol)) recordNavPublish(symbol, valueDate, at);
@@ -994,12 +1023,18 @@ export class App {
   private async refreshPrices(
     session: number,
     network: boolean,
-    opts: { force?: boolean } = {},
+    opts: { force?: boolean; forceAll?: boolean } = {},
   ): Promise<QuoteLoadReport | null> {
     const { data, config } = this.state;
     if (!data) return null;
 
-    const { symbols, options } = this.quoteRequest(data, config, network && (opts.force ?? false));
+    const forceAll = network && (opts.forceAll ?? false);
+    const { symbols, options } = this.quoteRequest(
+      data,
+      config,
+      network && ((opts.force ?? false) || forceAll),
+      forceAll,
+    );
     // Remember which symbols are NAV-priced funds so the coverage summary can
     // split the live market count from the once-a-day NAVs that are still
     // expected/awaited (see {@link summarizeCoverage}) rather than a bare count.
@@ -1140,6 +1175,28 @@ export class App {
   }
 
   /**
+   * The Settings "Force-fetch every price now" escape hatch: re-pull *every*
+   * symbol from the provider right now, ignoring the NAV publish schedules and
+   * the market-closed skips that normally keep a tap from spending credits on a
+   * price that cannot have changed. Use it when you expect *all* holdings to have
+   * a fresh value (e.g. just after a known publish) and want to pull them all at
+   * once rather than waiting for each symbol's window.
+   *
+   * Unlike {@link updateAllFromScratch} this keeps the caches and the learned NAV
+   * publish windows intact — it only bypasses the freshness gates for this one
+   * pull (see {@link buildQuoteOptions} `forceAll`). The hard free-tier per-minute
+   * /day budget in {@link loadQuotes} still applies, so any overflow just defers.
+   */
+  private forceFetchAllNow(): void {
+    // Back to the dashboard, then force a pull of every symbol.
+    this.exitSettings();
+    this.toast("Pulling every live price now…");
+    const session = this.sessionId;
+    if (this.refreshing) return; // a pull is already in flight; it will repaint
+    void this.runScheduledRefresh(session, "manual", { force: true, forceAll: true });
+  }
+
+  /**
    * Handle a manual tap of the Refresh button. Always gives immediate feedback
    * the user can actually see: it shows the spinning glyph + "Refreshing prices…"
    * pill for a guaranteed minimum (so a cache-fast refresh doesn't flash by),
@@ -1200,7 +1257,7 @@ export class App {
   private async runScheduledRefresh(
     session: number,
     kind: RefreshKind = "auto",
-    opts: { force?: boolean } = {},
+    opts: { force?: boolean; forceAll?: boolean } = {},
   ): Promise<void> {
     if (session !== this.sessionId) return;
     // A manual tap should refresh even when the tab is technically "hidden"
@@ -1211,7 +1268,10 @@ export class App {
     this.setUpdating(true, kind);
     let report: QuoteLoadReport | null = null;
     try {
-      report = await this.refreshPrices(session, true, { force: opts.force ?? false });
+      report = await this.refreshPrices(session, true, {
+        force: opts.force ?? false,
+        forceAll: opts.forceAll ?? false,
+      });
     } finally {
       this.refreshing = false;
     }

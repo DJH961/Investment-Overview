@@ -263,7 +263,7 @@ function renderStats(o: OverviewView): HTMLElement {
       signClass(totalGrowthCompounded),
     ),
     stat("XIRR", formatPercent(xirr), signClass(xirr)),
-    stat("Div. yield", o.dividendYieldPct !== null ? formatPercent(o.dividendYieldPct) : "—"),
+    stat("Div. return", o.dividendYieldPct !== null ? formatPercent(o.dividendYieldPct) : "—"),
     stat("Invested", formatDualCurrency(o.totalCostBasisEur, o.totalCostBasisUsd)),
     stat("Dividends YTD", formatCurrency(o.totalDividendsEur)),
   ]);

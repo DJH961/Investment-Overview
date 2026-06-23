@@ -14,6 +14,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.10.0] — 2026-06-23
+
+### Added
+
+- **Two distinct hard refreshes in the web Settings → Maintenance section.**
+  - **"Force-fetch every price now"** re-pulls *every* symbol immediately,
+    ignoring the NAV publish schedules and the market-closed skips that normally
+    keep a tap from spending credits on a price that cannot have changed — i.e.
+    it behaves as if all holdings were expected to have a brand-new price. It
+    keeps the caches and the learned NAV publish windows intact.
+  - **"Reset cache & re-pull everything"** (the former "Update all data now")
+    still clears every cached price, forgets the learned NAV publish windows,
+    re-checks the data file, and re-fetches all quotes and FX from scratch.
+  Both still respect the hard free-tier per-minute/day budget (overflow defers).
+
+### Changed
+
+- **"Div. yield" renamed to "Div. return" (web) / "Dividend return (lifetime)"
+  (desktop).** The figure is the cumulative *lifetime* cash dividends (incl.
+  reinvested) ÷ current value — a lifetime total, not an annualised yield —
+  matching the spreadsheet's `Dividends ÷ Closing Balance`. The old "yield"
+  label implied a per-year rate and overstated the income rate for portfolios
+  held more than a year. The underlying number is unchanged; only the label and
+  its documentation were corrected.
+
+### Fixed
+
+- **Settings dropdowns (e.g. the "Clock format" picker) now match the form
+  styling.** The `.select` control previously had no CSS and fell back to the
+  raw native widget, which looked out of place; it now shares the inputs'
+  border, radius, padding, fill and a custom chevron.
+
 ## [3.9.4] — 2026-06-23
 
 ### Changed

@@ -195,11 +195,12 @@ def _portfolio_metrics(session: Session, *, as_of: date) -> dict[str, str | None
     net_contributions`` (see :func:`domain.returns.capital_gain`). The web
     substitutes its *own live* total value into that identity, so it only needs
     the two fixed offsets — net contributions and realized cash dividends — plus
-    lifetime dividend *income* (incl. reinvested distributions) for the trailing
-    yield (``dividend_income ÷ total_value``). Carrying these makes the web's
-    "Total gain" the desktop's capital gain (cash dividends added back, measured
-    against net contributions) rather than a bare value−cost unrealised P/L, and
-    its "Div. yield" the trailing lifetime yield rather than a YTD-only figure.
+    lifetime dividend *income* (incl. reinvested distributions) for the cumulative
+    dividend return (``dividend_income ÷ total_value``). Carrying these makes the
+    web's "Total gain" the desktop's capital gain (cash dividends added back,
+    measured against net contributions) rather than a bare value−cost unrealised
+    P/L, and its "Div. return" the lifetime cumulative figure rather than a
+    YTD-only one (it is a lifetime total, not an annualised yield).
     """
     m = metrics_service.compute_portfolio_metrics(session, as_of=as_of)
     # Realized cash dividends = capital_gain − total_value + net_contributions
