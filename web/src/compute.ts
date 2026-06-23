@@ -674,15 +674,38 @@ function buildHolding(
   const previousClose = quote?.previousClose ?? null;
   const quotePrice = quote?.price ?? null;
   const hasPriorClose = previousClose !== null && !previousClose.isZero();
-  const moveApplies =
+  const liveMoveApplies =
     hasPriorClose &&
     quotePrice !== null &&
     (holding.price_type === "nav"
       ? quote?.valueDate != null && quote.valueDate >= asOfDate
       : isLive);
-  if (moveApplies && quotePrice !== null && previousClose !== null) {
-    const valueNowNative = quotePrice.times(shares);
-    const valuePrevNative = previousClose.times(shares);
+  // Resolve the two marks the move is computed from. A usable *live* quote is
+  // preferred (current = quote price, prior = its `previous_close`). When no live
+  // quote applies but the displayed price is the export's own last-known close
+  // (`!isLive` — the live feed was missing or stale, e.g. a fund Twelve Data has
+  // stopped serving), fall back to the blob's own prior close so the holding still
+  // shows its latest published move instead of a blank, and so it can still rank
+  // among the day's movers. The staleness gate downstream (its move-date vs the
+  // freshest peer) decides whether that move counts as "today".
+  let curMark: Decimal | null = null;
+  let priorMark: Decimal | null = null;
+  if (liveMoveApplies && quotePrice !== null && previousClose !== null) {
+    curMark = quotePrice;
+    priorMark = previousClose;
+  } else if (price !== null && !isLive) {
+    const blobPrior =
+      holding.previous_close_native !== null && holding.previous_close_native !== undefined
+        ? new Decimal(holding.previous_close_native)
+        : null;
+    if (blobPrior !== null && blobPrior.greaterThan(0)) {
+      curMark = price;
+      priorMark = blobPrior;
+    }
+  }
+  if (curMark !== null && priorMark !== null) {
+    const valueNowNative = curMark.times(shares);
+    const valuePrevNative = priorMark.times(shares);
     // FX-aware EUR move: current mark at `fx`, prior mark at `fxPrev`.
     const valueNowEur = convert(valueNowNative, currency, EUR, fx);
     const valuePrevEur = convert(valuePrevNative, currency, EUR, fxPrev);
@@ -694,7 +717,7 @@ function buildHolding(
       // The price-only EUR move (both marks at today's FX) — the FX-neutral part
       // expressed in EUR; the remainder of the FX-aware move is the FX swing.
       const priceMoveEur = convert(
-        quotePrice.minus(previousClose).times(shares),
+        curMark.minus(priorMark).times(shares),
         currency,
         EUR,
         fx,

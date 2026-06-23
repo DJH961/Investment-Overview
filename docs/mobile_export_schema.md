@@ -53,6 +53,14 @@ Each row is sourced from `positions_service.compute_positions()`:
 - `price_type`: `"market"` for ETFs/stocks, `"nav"` for mutual funds, cash,
   savings, and money-market holdings.
 - `last_known_price_native`: string decimal or `null`.
+- `last_price_date`: `YYYY-MM-DD` the `last_known_price_native` was struck, or
+  `null`.
+- `previous_close_native`: string decimal of the prior published close (the close
+  one trading day before `last_known_price_native`), or `null` when under two
+  closes are cached. Lets the web derive a today's move from the export alone when
+  no usable live quote is available for the symbol.
+- `previous_close_date`: `YYYY-MM-DD` the `previous_close_native` was struck, or
+  `null`.
 - `cashflows[]`: signed holding cashflows using the returns convention
   (contributions/buys negative; sells/dividends positive). Each row carries both
   `amount` (EUR leg) and `amount_usd` (USD leg at its own trade-date FX rate).

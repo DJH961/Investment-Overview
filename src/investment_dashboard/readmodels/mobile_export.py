@@ -138,8 +138,10 @@ def _holding_dict(
     cost_basis_eur: dict[int, Decimal],
     cost_basis_usd: dict[int, Decimal],
     price_dates: dict[int, date],
+    previous_closes: dict[int, tuple[date, Decimal]],
 ) -> dict[str, Any]:
     iid = position.instrument.id
+    prev_close = previous_closes.get(iid)
     return {
         "symbol": position.instrument.symbol,
         "name": _position_name(position),
@@ -179,6 +181,11 @@ def _holding_dict(
         # is really days old. ``null`` for rows with no cached price history
         # (e.g. money-market funds pinned at their constant NAV).
         "last_price_date": iso(price_dates.get(iid)),
+        # The prior published close (native) and its date, so the web can derive a
+        # today's move from the export alone when the live price provider serves no
+        # usable quote for this symbol. ``None`` when under two closes are cached.
+        "previous_close_native": dec(prev_close[1]) if prev_close else None,
+        "previous_close_date": iso(prev_close[0]) if prev_close else None,
         "cashflows": _paired_cashflows(
             cashflows.get(iid, []),
             cashflows_usd.get(iid, []),
@@ -369,10 +376,18 @@ def build_mobile_export(
     # web can show "value last updated on …" rather than the export date.
     instrument_ids = [p.instrument.id for p in positions]
     recent_closes = prices_service.recent_closes_by_instrument(
-        session, instrument_ids, on_or_before=context.as_of, limit=1
+        session, instrument_ids, on_or_before=context.as_of, limit=2
     )
     price_dates: dict[int, date] = {
         instr_id: rows[0][0] for instr_id, rows in recent_closes.items() if rows
+    }
+    # The trading day's prior close (and its date) per instrument, so the web can
+    # derive a today's move from the export alone when no live quote is available
+    # (e.g. a fund the live price provider has stopped serving). ``rows`` are
+    # newest-first; index ``[1]`` is the close one trading day before the exported
+    # ``last_known_price_native``. Absent for instruments with under two closes.
+    previous_closes: dict[int, tuple[date, Decimal]] = {
+        instr_id: rows[1] for instr_id, rows in recent_closes.items() if len(rows) >= 2
     }
     txns = list(transactions_repo.list_transactions(session, end=context.as_of))
     # The web companion carries figures in EUR as its internal FX-pivot (USD is
@@ -403,6 +418,7 @@ def build_mobile_export(
                 cost_basis_eur=cost_basis_eur,
                 cost_basis_usd=cost_basis_usd,
                 price_dates=price_dates,
+                previous_closes=previous_closes,
             )
             for position in positions
         ],

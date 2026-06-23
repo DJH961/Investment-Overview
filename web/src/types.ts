@@ -63,6 +63,18 @@ export interface ExportHolding {
    */
   last_price_date?: string | null;
   /**
+   * The holding's prior published close in its native currency — the close one
+   * trading day before `last_known_price_native`. Lets the web derive a today's
+   * move (and rank the holding among the day's movers) from the export alone when
+   * no usable *live* quote is available — e.g. a fund the live price provider has
+   * stopped serving, whose fresh NAV still arrives via the blob. Null/absent on
+   * rows with under two cached closes, and on exports generated before this field
+   * was added (the web then shows no move for a blob-priced row, as before). */
+  previous_close_native?: DecimalString | null;
+  /** Trading day (`YYYY-MM-DD`) that `previous_close_native` was struck. Null/
+   * absent alongside `previous_close_native`. */
+  previous_close_date?: string | null;
+  /**
    * Whether this row is a money-market / settlement fund (Vanguard `VMFXX`,
    * Fidelity `SPAXX`, …). Such funds hold a constant $1.00 NAV by design, so
    * they are never sent to the price provider (it would only ever return the

@@ -5,7 +5,7 @@
 import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 
-import { buildDashboard, buildFetchPlan, fxTodayDeviationPct } from "../src/compute";
+import { buildDashboard, buildFetchPlan, buildMovers, fxTodayDeviationPct } from "../src/compute";
 import type { OverviewView } from "../src/compute";
 import type { FxRates, Quote } from "../src/prices";
 import type { MobileExport } from "../src/types";
@@ -121,6 +121,39 @@ describe("buildDashboard", () => {
     expect(vti.priceAsOf).toBe(at);
     expect(fxaix.priceAsOf).toBeNull();
     expect(fxaix.priceFallbackDate).toBe("2024-06-01");
+  });
+
+  it("derives a NAV holding's today move from the export when no live quote is served", () => {
+    // Regression: a fund the live provider stops serving (e.g. FSKAX) keeps its
+    // fresh blob NAV but had no previous close, so it showed no daily move and was
+    // excluded from the movers list. With `previous_close_native` in the export it
+    // now derives the move from the blob alone — last-known NAV vs prior close.
+    const exp = makeExport();
+    // FXAIX: fresh NAV 100 (its last_price_date is the export date) vs prior 96.
+    exp.holdings[1].last_price_date = "2024-06-01";
+    exp.holdings[1].previous_close_native = "96";
+    exp.holdings[1].previous_close_date = "2024-05-31";
+    // No live quote for FXAIX in `quotes` (only VTI), so it uses the blob.
+    const m = buildDashboard(exp, quotes, fx, new Date("2024-06-01T12:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.priceIsLive).toBe(false);
+    // (100 − 96) × 5 = 20 USD → 18.1818 EUR.
+    approx(fxaix.todayMoveEur, 20 / 1.1, 1e-3);
+    // pct on the prior value: 4/96.
+    approx(fxaix.todayMovePct, 4 / 96, 1e-4);
+    // Its move-date matches the freshest peer (VTI, same export date), so it is
+    // not flagged stale and so qualifies for the movers leaderboard.
+    expect(fxaix.todayMoveIsStale).toBe(false);
+    const inMovers = buildMovers(m.holdings).winners.some((w) => w.symbol === "FXAIX");
+    expect(inMovers).toBe(true);
+  });
+
+  it("does not invent a move when the export lacks a previous close", () => {
+    // Older exports (no `previous_close_native`) keep the prior behaviour: a
+    // blob-priced NAV holding contributes no daily move rather than a fabricated 0.
+    const fxaix = model.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.priceIsLive).toBe(false);
+    expect(fxaix.todayMoveEur).toBeNull();
   });
 
   it("weights sum to ~1 across priced holdings + cash share", () => {
