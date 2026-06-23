@@ -14,6 +14,7 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     releaseTag: "live-data",
     blobUrl: "",
     metaUrl: "",
+    priceProxyUrl: "",
     quoteCacheMinutes: 15,
     autoLockMinutes: 5,
     autoRefreshMinutes: 5,

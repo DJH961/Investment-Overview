@@ -25,12 +25,37 @@
  *   (configured via the `RELEASE_URL` var in wrangler.toml), so it can't be
  *   abused to fetch arbitrary targets (no SSRF).
  *
+ * Tiingo price fallback (`/price` route)
+ * --------------------------------------
+ * A second, equally-pinned route lives at `…/price`. It proxies **only**
+ * `api.tiingo.com` — the IEX quote endpoint (`/iex/?tickers=…`) and the daily
+ * close endpoint (`/tiingo/daily/<ticker>/prices`) — injecting the `TIINGO_TOKEN`
+ * secret server-side so the browser companion stays Tiingo-keyless. Symbols are
+ * validated against a strict charset (still no SSRF: the upstream host and paths
+ * are fixed; only the ticker list and a few numeric/date query params vary).
+ * The token is sent as an `Authorization: Token …` header, never in the URL, so
+ * it never lands in a log or a referrer. See web/proxy/README.md to deploy and
+ * `wrangler secret put TIINGO_TOKEN`.
+ *
  * Deploy: see web/proxy/README.md.
  */
 
 /** Default upstream — overridden by the `RELEASE_URL` var in wrangler.toml. */
 const DEFAULT_RELEASE_URL =
   "https://github.com/DJH961/Investment-Overview/releases/download/live-data/portfolio.enc";
+
+/** Tiingo API root — the only upstream the `/price` route is ever allowed to hit. */
+const TIINGO_ROOT = "https://api.tiingo.com";
+/**
+ * Allowed ticker charset. Tiingo US tickers are letters, digits, dot and dash;
+ * a comma separates a batch. Anything else is rejected, so the ticker list can
+ * never smuggle a path/host into the pinned upstream (no SSRF).
+ */
+const TICKER_RE = /^[A-Za-z0-9.\-]+$/;
+/** A numeric query value (output size). */
+const NUMERIC_RE = /^\d{1,4}$/;
+/** A `YYYY-MM-DD` calendar date (daily-close window bounds). */
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Derive the version-sidecar URL (`portfolio.meta.json`) from the blob URL by
@@ -55,9 +80,135 @@ function corsHeaders() {
 export default {
   /**
    * @param {Request} request
-   * @param {{ RELEASE_URL?: string, META_URL?: string }} env
+   * @param {{ RELEASE_URL?: string, META_URL?: string, TIINGO_TOKEN?: string }} env
    */
   async fetch(request, env) {
+    // The Tiingo price fallback hangs off a dedicated `…/price` route; every
+    // other path is the original closed blob proxy. Both stay pinned upstreams.
+    const path = new URL(request.url).pathname.replace(/\/+$/, "");
+    if (path.endsWith("/price")) {
+      return handlePrice(request, env);
+    }
+    return handleBlob(request, env);
+  },
+};
+
+/**
+ * Tiingo price proxy. Injects the `TIINGO_TOKEN` secret and forwards to one of
+ * two pinned `api.tiingo.com` endpoints, chosen by query params:
+ *
+ *   - `?tickers=AAPL,MSFT`            → IEX live quotes / latest NAV
+ *   - `?daily=AAPL&startDate=…&endDate=…&outputsize=…` → daily closes
+ *
+ * Everything else (host, path) is fixed here, and every caller-supplied value is
+ * charset-validated, so this can only ever read Tiingo price data (no SSRF).
+ *
+ * @param {Request} request
+ * @param {{ TIINGO_TOKEN?: string }} env
+ */
+async function handlePrice(request, env) {
+  const cors = corsHeaders();
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: cors });
+  }
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return new Response("method not allowed", {
+      status: 405,
+      headers: { ...cors, Allow: "GET, HEAD, OPTIONS" },
+    });
+  }
+
+  const token = env.TIINGO_TOKEN;
+  if (!token) {
+    return jsonError(503, "Tiingo fallback is not configured (no TIINGO_TOKEN secret)", cors);
+  }
+
+  const params = new URL(request.url).searchParams;
+  let upstreamUrl;
+  try {
+    upstreamUrl = buildTiingoUrl(params);
+  } catch (err) {
+    return jsonError(400, String(err && err.message ? err.message : err), cors);
+  }
+
+  let upstream;
+  try {
+    upstream = await fetch(upstreamUrl, {
+      method: request.method,
+      headers: { Authorization: `Token ${token}`, Accept: "application/json" },
+      cf: { cacheTtl: 0, cacheEverything: false },
+    });
+  } catch (err) {
+    return jsonError(502, `upstream fetch failed: ${err}`, cors);
+  }
+
+  const headers = new Headers(cors);
+  headers.set("Content-Type", "application/json");
+  headers.set("Cache-Control", "no-store");
+  return new Response(request.method === "HEAD" ? null : upstream.body, {
+    status: upstream.status,
+    headers,
+  });
+}
+
+/** Build the pinned Tiingo upstream URL from validated query params. */
+function buildTiingoUrl(params) {
+  const tickers = params.get("tickers");
+  const daily = params.get("daily");
+
+  if (tickers) {
+    const list = tickers.split(",").map((t) => t.trim()).filter((t) => t.length > 0);
+    if (list.length === 0 || !list.every((t) => TICKER_RE.test(t))) {
+      throw new Error("invalid tickers");
+    }
+    const url = new URL(`${TIINGO_ROOT}/iex/`);
+    url.searchParams.set("tickers", list.join(","));
+    return url.toString();
+  }
+
+  if (daily) {
+    if (!TICKER_RE.test(daily)) throw new Error("invalid daily ticker");
+    const url = new URL(`${TIINGO_ROOT}/tiingo/daily/${daily}/prices`);
+    url.searchParams.set("format", "json");
+    url.searchParams.set("resampleFreq", "daily");
+    const start = params.get("startDate");
+    const end = params.get("endDate");
+    const size = params.get("outputsize");
+    if (start) {
+      if (!DATE_RE.test(start)) throw new Error("invalid startDate");
+      url.searchParams.set("startDate", start);
+    }
+    if (end) {
+      if (!DATE_RE.test(end)) throw new Error("invalid endDate");
+      url.searchParams.set("endDate", end);
+    }
+    if (size) {
+      if (!NUMERIC_RE.test(size)) throw new Error("invalid outputsize");
+      // Tiingo daily has no outputsize; honoured here only as a validated no-op
+      // guard so a caller can't smuggle arbitrary query text. Intentionally not
+      // forwarded.
+    }
+    return url.toString();
+  }
+
+  throw new Error("missing tickers or daily parameter");
+}
+
+/** A small JSON error body with CORS headers. */
+function jsonError(status, message, cors) {
+  return new Response(JSON.stringify({ status: "error", message }), {
+    status,
+    headers: { ...cors, "Content-Type": "application/json" },
+  });
+}
+
+/**
+ * The original closed blob CORS proxy (unchanged behaviour).
+ *
+ * @param {Request} request
+ * @param {{ RELEASE_URL?: string, META_URL?: string }} env
+ */
+async function handleBlob(request, env) {
     const releaseUrl = env.RELEASE_URL || DEFAULT_RELEASE_URL;
     const cors = corsHeaders();
 
@@ -126,5 +277,4 @@ export default {
       status: upstream.status,
       headers,
     });
-  },
-};
+}

@@ -360,6 +360,116 @@ export function creditsSpentToday(log: CreditSpend[], now: number): number {
   return log.reduce((acc, e) => (e.at >= dayStart ? acc + e.n : acc), 0);
 }
 
+// --- Tiingo fallback budget (ET-reset) -------------------------------------
+
+const TIINGO_CREDIT_KEY = "iv.web.tiingo_credit_log";
+
+/**
+ * Epoch ms of the most recent ET (America/New_York) midnight at or before `now`.
+ *
+ * Tiingo's shared free-tier *daily* allowance resets at midnight **US/Eastern**
+ * (not UTC, unlike Twelve Data — see {@link startOfUtcDay}). Because the ET
+ * offset shifts with daylight saving, this can't floor to a fixed grid: it reads
+ * the actual ET wall-clock parts for `now` and subtracts the elapsed ET
+ * time-of-day, landing exactly on ET midnight in either DST phase.
+ */
+export function startOfEtDay(now: number): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(new Date(now));
+  const get = (type: string): number => Number(parts.find((p) => p.type === type)?.value ?? "0");
+  const hour = get("hour") % 24; // `hour12:false` can render midnight as "24".
+  const minute = get("minute");
+  const second = get("second");
+  const todMs = ((hour * 3600 + minute * 60 + second) * 1000) + (((now % 1000) + 1000) % 1000);
+  return now - todMs;
+}
+
+/**
+ * Read the Tiingo credit-spend log (separate from the Twelve Data one), dropping
+ * entries older than `keepMs`. A day's worth of retention is plenty for the
+ * hour/day budget windows.
+ */
+export function readTiingoCreditLog(
+  now: number,
+  keepMs = 24 * 60 * 60 * 1000,
+  storage: StorageLike | null = defaultStorage(),
+): CreditSpend[] {
+  const raw = readJson<CreditSpend[]>(storage, TIINGO_CREDIT_KEY);
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((e) => e && typeof e.at === "number" && typeof e.n === "number" && now - e.at < keepMs);
+}
+
+/** Append a spend of `n` Tiingo credits at `now` and persist the pruned log. */
+export function recordTiingoCredits(
+  n: number,
+  now: number,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  if (n <= 0) return;
+  const log = readTiingoCreditLog(now, 24 * 60 * 60 * 1000, storage);
+  log.push({ at: now, n });
+  writeJson(storage, TIINGO_CREDIT_KEY, log);
+}
+
+/**
+ * Tiingo credits spent so far **today**, measured from the most recent ET
+ * midnight — the window Tiingo's shared daily cap actually resets on.
+ */
+export function tiingoCreditsSpentToday(log: CreditSpend[], now: number): number {
+  const dayStart = startOfEtDay(now);
+  return log.reduce((acc, e) => (e.at >= dayStart ? acc + e.n : acc), 0);
+}
+
+// --- Tiingo NAV canary + quick-refresh state -------------------------------
+
+const TIINGO_STATE_KEY = "iv.web.tiingo_state";
+
+/**
+ * Persisted Tiingo-fallback timing state. Every gate is evaluated on *elapsed
+ * since a stored stamp*, never a live countdown, so a due probe / quick-refresh
+ * fires the instant the app is reopened past its window (the app is rarely left
+ * running across the evening NAV-publish window).
+ */
+export interface TiingoState {
+  /** ET day (`YYYY-MM-DD`) the canary counter belongs to; resets at ET midnight. */
+  canaryDay: string | null;
+  /** Number of canary probes already fired on {@link canaryDay}. */
+  canaryCount: number;
+  /** Epoch ms of the last canary probe, for the cooldown gate. */
+  lastCanaryAt: number | null;
+  /** Epoch ms of the last startup quick-refresh, for the ~once/hour throttle. */
+  lastQuickRefreshAt: number | null;
+}
+
+const EMPTY_TIINGO_STATE: TiingoState = {
+  canaryDay: null,
+  canaryCount: 0,
+  lastCanaryAt: null,
+  lastQuickRefreshAt: null,
+};
+
+/** Read the persisted Tiingo timing state (canary counters + quick-refresh stamp). */
+export function readTiingoState(storage: StorageLike | null = defaultStorage()): TiingoState {
+  const raw = readJson<Partial<TiingoState>>(storage, TIINGO_STATE_KEY);
+  if (!raw || typeof raw !== "object") return { ...EMPTY_TIINGO_STATE };
+  return {
+    canaryDay: typeof raw.canaryDay === "string" ? raw.canaryDay : null,
+    canaryCount: typeof raw.canaryCount === "number" && raw.canaryCount >= 0 ? raw.canaryCount : 0,
+    lastCanaryAt: typeof raw.lastCanaryAt === "number" ? raw.lastCanaryAt : null,
+    lastQuickRefreshAt: typeof raw.lastQuickRefreshAt === "number" ? raw.lastQuickRefreshAt : null,
+  };
+}
+
+/** Persist the Tiingo timing state (best-effort). */
+export function writeTiingoState(state: TiingoState, storage: StorageLike | null = defaultStorage()): void {
+  writeJson(storage, TIINGO_STATE_KEY, state);
+}
+
 // --- Last successful data pull ---------------------------------------------
 
 const LAST_PULL_KEY = "iv.web.last_pull";
@@ -504,6 +614,8 @@ export const CACHE_KEYS = {
   FX_KEY,
   EURUSD_KEY,
   CREDIT_KEY,
+  TIINGO_CREDIT_KEY,
+  TIINGO_STATE_KEY,
   NAV_PUBLISH_KEY,
   BLOB_KEY,
   SYMBOL_PLAN_KEY,

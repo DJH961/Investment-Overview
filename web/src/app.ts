@@ -26,6 +26,7 @@ import {
   parseAutoRefreshMinutes,
   resolveBlobUrl,
   resolveMetaUrl,
+  resolvePriceProxyUrl,
   saveConfig,
   DEFAULT_QUOTE_CACHE_MINUTES,
   DEFAULT_AUTO_LOCK_MINUTES,
@@ -68,6 +69,13 @@ import {
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
 import { isUsMarketOpen, latestSettledSessionDate } from "./market-hours";
+import {
+  runTiingoFallback,
+  shouldQuickRefresh,
+  noteQuickRefresh,
+  type TiingoBudgetView,
+} from "./tiingo-fallback";
+import { readTiingoState } from "./cache";
 import {
   clearBiometricEnrolment,
   enrolBiometric,
@@ -183,6 +191,10 @@ export class App {
   private lastCoverageFacts: CoverageFacts | null = null;
   /** NAV-priced symbols from the latest fetch plan, for coverage classification. */
   private lastNavSymbols: ReadonlySet<string> = new Set();
+  /** Tiingo fallback budget used so far (hour/day), for the usage overview. */
+  private lastTiingoBudget: TiingoBudgetView | null = null;
+  /** Symbols served via the Tiingo fallback on the latest network round. */
+  private lastTiingoSymbols: string[] = [];
   /**
    * Monotonic session token. Bumped on every unlock and on lock so that
    * in-flight background work (timers, fetches) from a previous session is
@@ -332,6 +344,13 @@ export class App {
       placeholder: "(optional) version-file URL override",
       value: config.metaUrl,
     });
+    const priceProxyUrl = h("input", {
+      type: "url",
+      id: "f-priceproxy",
+      autocomplete: "off",
+      placeholder: "(optional) Tiingo price-proxy URL override",
+      value: config.priceProxyUrl,
+    });
     const cacheMinutes = h("input", {
       type: "number",
       id: "f-cache",
@@ -415,6 +434,7 @@ export class App {
       field("Release tag", tag, "Defaults to live-data."),
       field("Blob URL override", blobUrl, "Advanced: a direct, CORS-enabled URL (e.g. your web/proxy Worker) to fetch the encrypted blob from, instead of the release asset."),
       field("Version-file URL override", metaUrl, "Advanced: where to read the tiny portfolio.meta.json version stamp. Leave blank to derive it from the blob URL — set it only if the sidecar lives elsewhere."),
+      field("Price proxy URL override", priceProxyUrl, "Advanced: the web/proxy Worker /price route for the Tiingo fallback. Leave blank to derive it from the blob URL. The Tiingo token stays in the Worker — never in the browser."),
       field("Quote cache (minutes)", cacheMinutes, "Free tier is 8 credits/min, 800/day (1 per symbol). A longer cache means fewer refetches and fewer credits spent."),
       field("Auto-refresh (minutes)", autoRefresh, `Steady-state gap between automatic live refreshes once everything is fresh. A manual Refresh also pushes the next auto-refresh out by this long. Default is ${DEFAULT_AUTO_REFRESH_MINUTES}.`),
     );
@@ -471,6 +491,7 @@ export class App {
         releaseTag: (tag as HTMLInputElement).value.trim() || "live-data",
         blobUrl: (blobUrl as HTMLInputElement).value.trim(),
         metaUrl: (metaUrl as HTMLInputElement).value.trim(),
+        priceProxyUrl: (priceProxyUrl as HTMLInputElement).value.trim(),
         quoteCacheMinutes: clampCacheMinutes((cacheMinutes as HTMLInputElement).value),
         autoLockMinutes: parseAutoLockMinutes((autoLock as HTMLInputElement).value),
         autoRefreshMinutes: parseAutoRefreshMinutes((autoRefresh as HTMLInputElement).value),
@@ -762,7 +783,18 @@ export class App {
     //    re-open) and 4. start the live-price auto-refresh (burst then slow).
     void this.maybeRefreshBlob(session);
     this.installVisibilityRefresh(session);
-    void this.runScheduledRefresh(session);
+    // Startup quick-refresh: when prices are badly outdated, the Tiingo fallback
+    // (no per-minute cap) can repopulate fast. Throttled to ~once/hour via the
+    // persisted stamp so it doesn't burn the budget on every re-open.
+    const tiingoState = readTiingoState();
+    const quick = shouldQuickRefresh({
+      now: Date.now(),
+      marketOpen: isUsMarketOpen(),
+      lastQuickRefreshAt: tiingoState.lastQuickRefreshAt,
+      freshestPriceAt: this.lastDataPullAt,
+    });
+    if (quick) noteQuickRefresh(Date.now());
+    void this.runScheduledRefresh(session, "auto", quick ? { force: true } : {});
     // 5. Arm the idle auto-lock so an unattended session locks itself.
     this.installAutoLock();
   }
@@ -1101,6 +1133,31 @@ export class App {
       return null;
     }
 
+    // --- Tiingo secondary-provider fallback ---------------------------------
+    // After the Twelve Data (primary) pass, fill what it left missing/stale (and
+    // the over-quota case) from Tiingo for US tickers, within Tiingo's own
+    // ET-reset budget. NAV funds take the peer-confirmation + canary path. This
+    // mutates quoteLoad.quotes in place and never throws for a transient failure.
+    if (network) {
+      const proxyUrl = resolvePriceProxyUrl(config);
+      const sizes = new Map(readSymbolPlan().map((e) => [e.symbol, e.sizeEur] as const));
+      const fallback = await runTiingoFallback({
+        symbols,
+        navSymbols: this.lastNavSymbols,
+        quotes: quoteLoad.quotes,
+        report: quoteLoad.report,
+        proxyUrl,
+        now: Date.now(),
+        manual: opts.force ?? false,
+        sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
+      });
+      if (session !== this.sessionId) return quoteLoad.report;
+      this.lastTiingoSymbols = fallback.tiingoSymbols;
+      this.lastTiingoBudget = fallback.budget;
+    } else if (this.lastTiingoBudget === null) {
+      this.lastTiingoSymbols = [];
+    }
+
     const degradedReason = network ? this.describeDegradation(quoteLoad.report, fxReport) : null;
     // Record when fresh market data actually landed: a live quote fetch, or a
     // live (non-cached) FX pull. This is "when we last pulled", independent of
@@ -1139,6 +1196,20 @@ export class App {
       0,
       model.overview.dailyCreditLimit - quoteLoad.report.dayRemaining,
     );
+    // Surface the Tiingo fallback's own hourly/daily usage, mirroring the Twelve
+    // Data line, and append a discreet note when any price came via Tiingo.
+    if (this.lastTiingoBudget) {
+      model.overview.tiingoHourUsed = this.lastTiingoBudget.hourUsed;
+      model.overview.tiingoHourLimit = this.lastTiingoBudget.hourLimit;
+      model.overview.tiingoDayUsed = this.lastTiingoBudget.dayUsed;
+      model.overview.tiingoDayLimit = this.lastTiingoBudget.dayLimit;
+    }
+    if (this.lastTiingoSymbols.length > 0) {
+      const note = `${this.lastTiingoSymbols.length} price${this.lastTiingoSymbols.length === 1 ? "" : "s"} via Tiingo fallback`;
+      model.overview.liveCoverage = model.overview.liveCoverage
+        ? `${model.overview.liveCoverage} · ${note}`
+        : note;
+    }
     // Prefer the live EUR→USD rate; fall back to the export meta rate.
     setEurUsdRate(fx.rates.USD ?? model.overview.fxRateEurUsd);
     this.renderDashboard(model);

@@ -20,6 +20,7 @@ const KEYS = {
   releaseTag: "iv.web.release_tag",
   blobUrl: "iv.web.blob_url",
   metaUrl: "iv.web.meta_url",
+  priceProxyUrl: "iv.web.price_proxy_url",
   quoteCacheMinutes: "iv.web.quote_cache_minutes",
   autoLockMinutes: "iv.web.auto_lock_minutes",
   autoRefreshMinutes: "iv.web.auto_refresh_minutes",
@@ -91,6 +92,14 @@ export interface AppConfig {
    * only when the meta sidecar lives somewhere the derivation can't guess.
    */
   metaUrl: string;
+  /**
+   * Advanced override for the Tiingo price-fallback proxy (`web/proxy/` Worker
+   * `/price` route). Empty by default — it is then derived from the blob Worker
+   * origin via {@link resolvePriceProxyUrl}. Set it only when the price proxy
+   * lives somewhere the derivation can't guess. The browser stays Tiingo-keyless;
+   * the token lives only in the Worker.
+   */
+  priceProxyUrl: string;
   /** Quote-cache freshness in minutes (free-tier credit economy knob). */
   quoteCacheMinutes: number;
   /**
@@ -145,6 +154,7 @@ export function defaultConfig(): AppConfig {
     releaseTag: DEFAULT_RELEASE_TAG,
     blobUrl: "",
     metaUrl: "",
+    priceProxyUrl: "",
     quoteCacheMinutes: DEFAULT_QUOTE_CACHE_MINUTES,
     autoLockMinutes: DEFAULT_AUTO_LOCK_MINUTES,
     autoRefreshMinutes: DEFAULT_AUTO_REFRESH_MINUTES,
@@ -191,6 +201,7 @@ export async function loadConfig(): Promise<AppConfig> {
     releaseTag: read(KEYS.releaseTag) || DEFAULT_RELEASE_TAG,
     blobUrl: read(KEYS.blobUrl),
     metaUrl: read(KEYS.metaUrl),
+    priceProxyUrl: read(KEYS.priceProxyUrl),
     quoteCacheMinutes: parseCacheMinutes(read(KEYS.quoteCacheMinutes)),
     autoLockMinutes: parseAutoLockMinutes(read(KEYS.autoLockMinutes)),
     autoRefreshMinutes: parseAutoRefreshMinutes(read(KEYS.autoRefreshMinutes)),
@@ -203,6 +214,7 @@ export async function saveConfig(config: AppConfig): Promise<void> {
   write(KEYS.releaseTag, config.releaseTag.trim());
   write(KEYS.blobUrl, config.blobUrl.trim());
   write(KEYS.metaUrl, config.metaUrl.trim());
+  write(KEYS.priceProxyUrl, config.priceProxyUrl.trim());
   write(KEYS.quoteCacheMinutes, String(config.quoteCacheMinutes));
   write(KEYS.autoLockMinutes, String(config.autoLockMinutes));
   write(KEYS.autoRefreshMinutes, String(config.autoRefreshMinutes));
@@ -262,6 +274,34 @@ export function resolveMetaUrl(config: AppConfig): string | null {
   if (!isValidRepo(config.repo)) return null;
   const tag = encodeURIComponent(config.releaseTag || DEFAULT_RELEASE_TAG);
   return `https://github.com/${config.repo}/releases/download/${tag}/${META_ASSET_NAME}`;
+}
+
+/**
+ * Resolve the URL of the Tiingo price-fallback proxy (the `web/proxy/` Worker
+ * `/price` route). Precedence:
+ *
+ *  1. an explicit {@link AppConfig.priceProxyUrl} override, if set;
+ *  2. otherwise *derive* it from the blob Worker origin — `<origin>/price` — so
+ *     wiring up the blob proxy is enough to get the price fallback too. The blob
+ *     `blobUrl` override is the Worker URL the user already pasted; the price
+ *     route hangs off the same Worker at `/price`.
+ *
+ * Returns `null` when there is no proxy to derive from (no `blobUrl` override and
+ * no explicit price proxy). The Tiingo fallback is then simply unavailable — the
+ * app keeps working on Twelve Data alone. The browser never holds a Tiingo token;
+ * it lives only in the Worker, so this URL is the *only* thing the client needs.
+ */
+export function resolvePriceProxyUrl(config: AppConfig): string | null {
+  if (config.priceProxyUrl) return config.priceProxyUrl;
+  // The price route can only be derived from an explicit Worker (`blobUrl`)
+  // origin: the bare GitHub release-asset default is not a Worker and has no
+  // `/price` route, so deriving from it would point at nothing useful.
+  if (!config.blobUrl) return null;
+  try {
+    return new URL("/price", config.blobUrl).toString();
+  } catch {
+    return null;
+  }
 }
 
 export { DEFAULT_RELEASE_TAG, ASSET_NAME, META_ASSET_NAME, DEFAULT_QUOTE_CACHE_MINUTES, DEFAULT_AUTO_LOCK_MINUTES, MAX_AUTO_LOCK_MINUTES, DEFAULT_AUTO_REFRESH_MINUTES, MAX_AUTO_REFRESH_MINUTES };
