@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
+import plotly.graph_objects as go
+
 from investment_dashboard.ui.charts import padded_range
 from investment_dashboard.ui.pages._overview_query import ValueSeriesPoint
 from investment_dashboard.ui.pages.overview import _value_curve_figure
@@ -21,7 +23,7 @@ def _pts(values: list[float]) -> list[ValueSeriesPoint]:
     ]
 
 
-def _has_secondary_axis(fig) -> bool:  # type: ignore[no-untyped-def]
+def _has_secondary_axis(fig: go.Figure) -> bool:
     return "yaxis2" in fig.layout.to_plotly_json()
 
 
