@@ -323,6 +323,7 @@ export function parseConfigPacket(text: string): AppConfig {
   }
   const apiKey = typeof obj.apiKey === "string" ? obj.apiKey.trim() : "";
   const blobUrl = typeof obj.blobUrl === "string" ? obj.blobUrl.trim() : "";
+  return {
     apiKey,
     blobUrl,
     updateMinutes: parseUpdateMinutes(String(obj.updateMinutes ?? "")),
