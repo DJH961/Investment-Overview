@@ -128,9 +128,20 @@ export async function fetchTiingoQuotes(
       retryable: false,
     });
   }
-  // The proxy relays a Tiingo error object on a bad upstream; treat it as "no
-  // data" rather than throwing, so the caller keeps its cached/last-known values.
-  if (!Array.isArray(body)) return result;
+  // A genuine Tiingo IEX response is ALWAYS a JSON array (even `[]` for unknown
+  // symbols). A non-array 200 therefore means the price proxy is NOT actually
+  // relaying Tiingo: e.g. an un-redeployed Worker serving the encrypted blob for
+  // `/price`, or a relayed Tiingo error object on a bad upstream/token. Both mean
+  // "no usable backup". Surface it as a (non-retryable) error so the app can show
+  // a "backup unreachable" signal instead of failing silently. The caller's catch
+  // records this on `fallback.error` while keeping the cached/last-known quotes it
+  // already holds, so last-known values are still shown.
+  if (!Array.isArray(body)) {
+    throw new PriceError(
+      "price proxy did not return a Tiingo quote array — check the Worker /price route, proxy config, and Tiingo token",
+      { retryable: false },
+    );
+  }
 
   for (const row of body) {
     if (!row || typeof row !== "object") continue;
