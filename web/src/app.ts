@@ -930,7 +930,11 @@ export class App {
     return {
       cacheTtlMs,
       navSymbols: navFetchSymbols,
-      forceMarketFetch: force,
+      // Market symbols are never force-fetched blindly: the smart skip below
+      // (in `forceFetch`) decides per symbol whether a manual "pull now" has
+      // anything new to capture, so a tap during a closed market with the close
+      // already in hand spends no credits — see item below.
+      forceMarketFetch: false,
       cacheTtlMsForSymbol: (symbol, cached) => {
         if (navFetchSymbols.has(symbol)) {
           // NAV fund: relax once today's NAV is in hand, else poll like a normal
@@ -950,13 +954,24 @@ export class App {
           latestSettledDate: latestSettledSessionDate(now),
         });
       },
-      // A manual "pull now" may re-fetch a NAV fund only when it is *behind* its
-      // latest expected value (we are demonstrably missing a published NAV);
-      // otherwise NAV symbols stay exempt so a tap never chases an unchanged NAV.
+      // A manual "pull now" re-fetches a symbol only when there is genuinely
+      // something new to capture, so a tap never burns credits re-pulling prices
+      // that cannot have changed:
+      //   - market symbols: only when the session is open, or we do not yet hold
+      //     the latest settled close. While the market is shut and that close is
+      //     in hand — true both after the closing bell *and* the next morning
+      //     before the open — they stay quiet, mirroring the automatic skip.
+      //   - NAV funds: only when *behind* their latest expected value (we are
+      //     demonstrably missing a published NAV); otherwise they stay exempt so
+      //     a tap never chases an unchanged NAV.
       forceFetch: force
         ? (symbol, cached) => {
-            if (!navFetchSymbols.has(symbol)) return false; // market: forceMarketFetch
             const have = cached?.quote.valueDate ?? null;
+            if (!navFetchSymbols.has(symbol)) {
+              const at = new Date();
+              if (isUsMarketOpen(at)) return true;
+              return !(have && have >= latestSettledSessionDate(at));
+            }
             return !(have && have >= latestExpectedNavDate(new Date(), publishHourFor(symbol)));
           }
         : undefined,
@@ -1078,6 +1093,7 @@ export class App {
           marketOpen: isUsMarketOpen(),
           publishHourFor: (symbol) => navPublishWindow(navStats.get(symbol)?.hours).publishHour,
           freshlyPulled: this.recentlyPulled(),
+          fx: eurUsdSource,
         },
       );
       this.lastCoverage = summarizeCoverage(this.lastCoverageFacts);
@@ -1551,6 +1567,34 @@ export interface CoverageFacts {
   freshlyPulled: boolean;
   /** A hard fetch error occurred this round (on last-known values). */
   error: boolean;
+  /**
+   * Where the EUR→USD spot that values the whole book came from this round, so
+   * the coverage line can report FX freshness alongside the price coverage:
+   *   - `live`  — a fresh live spot was pulled;
+   *   - `eod`   — the forex market is shut; on the last end-of-day close;
+   *   - `cache` — served from a recent cached spot (no fresh pull this round);
+   *   - `none`  — no rate at all (awaiting FX; book values may be incomplete).
+   */
+  fx: EurUsdSource;
+}
+
+/** Human FX-freshness clause for the coverage line (see {@link CoverageFacts.fx}). */
+function fxClause(fx: EurUsdSource): string {
+  switch (fx) {
+    case "live":
+      return "FX live";
+    case "eod":
+      return "FX end of day";
+    case "cache":
+      return "FX recent";
+    default:
+      return "awaiting FX";
+  }
+}
+
+/** Capitalise the first character of a status line (NAV/FX acronyms stay intact). */
+function capitalizeFirst(text: string): string {
+  return text.length === 0 ? text : text[0].toUpperCase() + text.slice(1);
 }
 
 /** Local `YYYY-MM-DD` for `d` (matches the NAV value-date day boundary). */
@@ -1578,6 +1622,7 @@ export function buildCoverageFacts(
     marketOpen: boolean;
     publishHourFor?: (symbol: string) => number;
     freshlyPulled?: boolean;
+    fx?: EurUsdSource;
   },
 ): CoverageFacts {
   const now = ctx.now ?? new Date();
@@ -1611,6 +1656,7 @@ export function buildCoverageFacts(
     navAwaiting,
     freshlyPulled: ctx.freshlyPulled ?? true,
     error: report.error !== null,
+    fx: ctx.fx ?? "none",
   };
 }
 
@@ -1622,20 +1668,29 @@ function navWord(n: number): string {
 /**
  * Turn {@link CoverageFacts} into a calm, *honest* one-liner. The point is to be
  * transparent about exactly what we pull and what we don't — never counting an
- * unpublished NAV as "live". It distinguishes the open- and closed-market
- * framings the user asked for, e.g.:
- *   - market open:   "13/13 live, 5 NAVs expected tonight"
- *   - market closed: "market closed for 13/13, awaiting 5/5 NAVs"
- *   - all current:   "market closed, all prices up to date"
+ * unpublished NAV as "live". Every line is written in sentence case (a bare
+ * lowercase status reads as a glitch) and always ends with an FX-freshness
+ * clause so the reader can see, at a glance, whether the conversion rate that
+ * values the whole book is live, end-of-day, recent, or still awaited. E.g.:
+ *   - market open:   "13/13 live, 5 NAVs expected tonight · FX live"
+ *   - market closed: "Market closed for 13/13, awaiting 5/5 NAVs · FX end of day"
+ *   - all current:   "Market closed, all prices up to date · FX live"
  */
 export function summarizeCoverage(f: CoverageFacts): string {
   const total = f.marketTotal + f.navTotal;
-  if (total === 0) return "No live-priced holdings";
-  if (f.error) return "Showing last known prices";
+  const fx = fxClause(f.fx);
+  // Compose the price-coverage clause with the FX clause, then sentence-case the
+  // whole line so it never reads as a lowercase fragment.
+  const withFx = (priceText: string): string => capitalizeFirst(`${priceText} · ${fx}`);
+
+  if (total === 0) return withFx("no live-priced holdings");
+  if (f.error) return withFx("showing last known prices");
   // A refresh served entirely from cache (no fresh pull) must not assert things
   // are live/up to date — say plainly that these are recent, not just-fetched.
   if (!f.freshlyPulled) {
-    return total === 1 ? "Showing recent prices" : `Showing recent prices (${total} holdings)`;
+    return withFx(
+      total === 1 ? "showing recent prices" : `showing recent prices (${total} holdings)`,
+    );
   }
 
   const marketHeld = f.marketTotal === 0 || f.marketLive === f.marketTotal;
@@ -1650,11 +1705,11 @@ export function summarizeCoverage(f: CoverageFacts): string {
           : `${f.navTotal}/${f.navTotal} ${navWord(f.navTotal)} in`,
       );
     }
-    return parts.join(", ");
+    return withFx(parts.join(", "));
   }
 
   // Market closed.
-  if (marketHeld && f.navAwaiting === 0) return "market closed, all prices up to date";
+  if (marketHeld && f.navAwaiting === 0) return withFx("market closed, all prices up to date");
 
   const parts: string[] = [];
   if (f.marketTotal > 0) {
@@ -1671,7 +1726,7 @@ export function summarizeCoverage(f: CoverageFacts): string {
   } else if (f.navTotal > 0) {
     parts.push(`${f.navTotal}/${f.navTotal} ${navWord(f.navTotal)} in`);
   }
-  return parts.join(", ");
+  return withFx(parts.join(", "));
 }
 
 /**

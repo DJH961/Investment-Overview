@@ -628,14 +628,9 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .pill.stale { color: var(--warn); }
 
 /* --- Today's movers (winners / losers) ----------------------------------- */
-/* A distinct "special notice" band: an accented card that stands apart from the
- * holdings and KPI surfaces, laying its winners/losers out as blocks across. */
-.movers-band {
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, var(--card)), var(--card));
-  box-shadow: var(--shadow), 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
-}
+/* A plain card surface (no accent frame): the section sits quietly like any
+ * other panel — each individual winner/loser block carries its own colour, so
+ * the colour lives on the movers themselves, not as a band around the area. */
 .movers-band > .collapsible-summary h2::before {
   content: "★";
   margin-right: 0.4rem;

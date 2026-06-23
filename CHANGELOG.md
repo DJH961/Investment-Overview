@@ -14,6 +14,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.9.4] — 2026-06-23
+
+### Changed
+
+- **Headline "Total gain" now matches the desktop's capital gain.** The web
+  companion previously showed a bare value−cost unrealised P/L, which was too
+  small because it ignored cash dividends. The export now carries the
+  portfolio-level offsets (net contributions, realized cash dividends and
+  lifetime dividend income), so the web reconstructs the desktop's capital-gain
+  identity (`live total value + cash dividends − net contributions`) against its
+  own live prices. The redundant percentage line was removed from the stat (the
+  "Total growth" stat sits right next to it).
+- **"Div. yield" now matches the desktop's trailing lifetime yield.** It uses
+  the exported lifetime dividend income (incl. reinvested) over the live total
+  value instead of a YTD-only figure, fixing the large web/desktop mismatch.
+- **Live-data status text is sentence-cased and now reports FX freshness.** The
+  coverage notes no longer use all-lowercase fragments and append the FX state
+  (`FX live` / `FX end of day` / `FX recent` / `awaiting FX`).
+
+### Fixed
+
+- **Closed-market price pulls are skipped on manual refresh too.** The "market
+  closed, last close already held → don't re-pull" economy now applies to both
+  automatic and manual refreshes, before *and* after the close, so we stop
+  wasting free-tier credits re-pulling stocks/ETFs whose last settled close is
+  already cached.
+- **A NAV symbol that returns no price no longer poisons the cache.** Quotes that
+  come back without a price are not written to the cache and are not counted as
+  fetched, so a single failing fund (e.g. FSKAX) keeps its last-known value and
+  is retried instead of overwriting good data with a blank.
+- **"Update all data now" resets learned NAV publish windows.** A from-scratch
+  re-poll now also clears the learned publish windows so a fund stuck on an old
+  NAV re-learns cleanly.
+
+### Removed
+
+- **Colorful border around the "Today's movers" section.** Each mover stays
+  colored, but the accent border/glow around the whole section is gone.
+
 ## [3.9.3] — 2026-06-23
 
 ### Added

@@ -517,13 +517,16 @@ export const CACHE_KEYS = {
  * around behind its (deliberately long) NAV/closed-market freshness window.
  *
  * The rolling credit log is intentionally left untouched so a from-scratch pull
- * still respects the free-tier daily budget; the encrypted blob and the learned
- * NAV publish windows are likewise left alone (the blob is refreshed by its own
- * conditional-download path, and the publish windows are still valid history).
+ * still respects the free-tier daily budget, and the encrypted blob is left to
+ * its own conditional-download path. The learned NAV publish windows ARE cleared
+ * here: a from-scratch reset is exactly when a fund (e.g. one stuck on an old
+ * NAV) needs its possibly-skewed learned window forgotten so the next pulls
+ * re-learn it from a clean slate — the symbol plan is likewise dropped and
+ * rebuilt on the next refresh.
  */
 export function clearPriceCaches(storage: StorageLike | null = defaultStorage()): void {
   if (!storage) return;
-  for (const key of [QUOTE_KEY, FX_KEY, EURUSD_KEY]) {
+  for (const key of [QUOTE_KEY, FX_KEY, EURUSD_KEY, NAV_PUBLISH_KEY, SYMBOL_PLAN_KEY]) {
     try {
       storage.removeItem(key);
     } catch {

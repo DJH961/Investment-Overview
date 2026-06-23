@@ -179,6 +179,7 @@ def test_mobile_export_shape_and_default_sensitivity(session: Session) -> None:
         "analytics",
         "deposits",
         "target_allocations",
+        "portfolio_metrics",
     }
     assert "transactions" not in export
     assert export["meta"]["fx_pivot"] == "EUR"
@@ -186,6 +187,17 @@ def test_mobile_export_shape_and_default_sensitivity(session: Session) -> None:
     assert export["meta"]["display_currency"] == "EUR"
     assert export["meta"]["fx_rate_eur_usd"] == "1.10000000"
     assert export["portfolio_cashflows"]
+    metrics = export["portfolio_metrics"]
+    assert set(metrics) == {
+        "net_contributions_eur",
+        "net_contributions_usd",
+        "dividends_cash_eur",
+        "dividends_cash_usd",
+        "dividends_income_eur",
+        "dividends_income_usd",
+    }
+    for value in metrics.values():
+        _assert_decimal_string_or_null(value)
     for flow in export["portfolio_cashflows"]:
         _assert_decimal_string_or_null(flow["amount"])
         _assert_decimal_string_or_null(flow["amount_usd"])

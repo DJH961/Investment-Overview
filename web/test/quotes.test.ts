@@ -52,9 +52,36 @@ function quoteBodyFor(requested: string[]): Record<string, unknown> {
   return out;
 }
 
+/**
+ * A Twelve Data `time_series` (daily NAV) body for the requested symbols. Mirrors
+ * the real API: `{meta, values:[…]}` at the top level for a single symbol, a
+ * `{SYM: {meta, values}}` map for several. Every bar closes at 100.
+ */
+function navBodyFor(requested: string[]): Record<string, unknown> {
+  const node = {
+    meta: { symbol: requested[0], currency: "USD" },
+    values: [
+      { datetime: "2024-01-10", close: "100" },
+      { datetime: "2024-01-09", close: "99" },
+    ],
+  };
+  if (requested.length === 1) return node;
+  const out: Record<string, unknown> = {};
+  for (const s of requested) {
+    out[s] = { meta: { symbol: s, currency: "USD" }, values: node.values };
+  }
+  return out;
+}
+
 function quoteResponse(url: string): Response {
-  const requested = new URL(url).searchParams.get("symbol")!.split(",");
-  return jsonResponse(quoteBodyFor(requested));
+  const parsed = new URL(url);
+  const requested = parsed.searchParams.get("symbol")!.split(",");
+  // Route NAV (mutual-fund) pulls to the daily time_series shape, market pulls to
+  // the quote shape — exactly as loadQuotes splits its batches in production.
+  const body = parsed.pathname.endsWith("/time_series")
+    ? navBodyFor(requested)
+    : quoteBodyFor(requested);
+  return jsonResponse(body);
 }
 
 const noSleep = async (): Promise<void> => {};

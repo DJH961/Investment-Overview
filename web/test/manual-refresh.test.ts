@@ -33,13 +33,14 @@ function facts(overrides: Partial<CoverageFacts> = {}): CoverageFacts {
     navAwaiting: 0,
     freshlyPulled: true,
     error: false,
+    fx: "live",
     ...overrides,
   };
 }
 
 describe("summarizeCoverage", () => {
   it("reports nothing to price when there are no live holdings", () => {
-    expect(summarizeCoverage(facts())).toBe("No live-priced holdings");
+    expect(summarizeCoverage(facts())).toBe("No live-priced holdings · FX live");
   });
 
   it("market open: shows live market count and NAVs still expected tonight", () => {
@@ -47,7 +48,7 @@ describe("summarizeCoverage", () => {
       summarizeCoverage(
         facts({ marketOpen: true, marketTotal: 13, marketLive: 13, navTotal: 5, navExpectedTonight: 5 }),
       ),
-    ).toBe("13/13 live, 5 NAVs expected tonight");
+    ).toBe("13/13 live, 5 NAVs expected tonight · FX live");
   });
 
   it("market open: a single fund reads in the singular", () => {
@@ -55,7 +56,7 @@ describe("summarizeCoverage", () => {
       summarizeCoverage(
         facts({ marketOpen: true, marketTotal: 2, marketLive: 2, navTotal: 1, navExpectedTonight: 1 }),
       ),
-    ).toBe("2/2 live, 1 NAV expected tonight");
+    ).toBe("2/2 live, 1 NAV expected tonight · FX live");
   });
 
   it("market open: once every NAV is in, it says so rather than 'expected'", () => {
@@ -63,7 +64,7 @@ describe("summarizeCoverage", () => {
       summarizeCoverage(
         facts({ marketOpen: true, marketTotal: 13, marketLive: 13, navTotal: 5, navExpectedTonight: 0 }),
       ),
-    ).toBe("13/13 live, 5/5 NAVs in");
+    ).toBe("13/13 live, 5/5 NAVs in · FX live");
   });
 
   it("market closed: holds every close but is awaiting tonight's NAVs", () => {
@@ -71,7 +72,7 @@ describe("summarizeCoverage", () => {
       summarizeCoverage(
         facts({ marketOpen: false, marketTotal: 13, marketLive: 13, navTotal: 5, navAwaiting: 5 }),
       ),
-    ).toBe("market closed for 13/13, awaiting 5/5 NAVs");
+    ).toBe("Market closed for 13/13, awaiting 5/5 NAVs · FX live");
   });
 
   it("market closed: everything current reads as fully up to date", () => {
@@ -79,7 +80,7 @@ describe("summarizeCoverage", () => {
       summarizeCoverage(
         facts({ marketOpen: false, marketTotal: 13, marketLive: 13, navTotal: 5, navAwaiting: 0 }),
       ),
-    ).toBe("market closed, all prices up to date");
+    ).toBe("Market closed, all prices up to date · FX live");
   });
 
   it("market closed: a budget-deferred market close is named honestly", () => {
@@ -87,22 +88,38 @@ describe("summarizeCoverage", () => {
       summarizeCoverage(
         facts({ marketOpen: false, marketTotal: 13, marketLive: 11, navTotal: 5, navAwaiting: 3 }),
       ),
-    ).toBe("market closed, 11/13 up to date, awaiting 3/5 NAVs");
+    ).toBe("Market closed, 11/13 up to date, awaiting 3/5 NAVs · FX live");
   });
 
   it("surfaces a hard error as last-known prices", () => {
     expect(summarizeCoverage(facts({ marketTotal: 2, marketLive: 2, error: true }))).toBe(
-      "Showing last known prices",
+      "Showing last known prices · FX live",
     );
   });
 
   it("never asserts live/up to date when nothing was freshly pulled", () => {
     expect(
       summarizeCoverage(facts({ marketTotal: 2, marketLive: 2, freshlyPulled: false })),
-    ).toBe("Showing recent prices (2 holdings)");
+    ).toBe("Showing recent prices (2 holdings) · FX live");
     expect(
       summarizeCoverage(facts({ marketTotal: 1, marketLive: 1, freshlyPulled: false })),
-    ).toBe("Showing recent prices");
+    ).toBe("Showing recent prices · FX live");
+  });
+
+  it("always reports FX freshness, capitalised, alongside the price coverage", () => {
+    const base = { marketOpen: false, marketTotal: 2, marketLive: 2 } as const;
+    expect(summarizeCoverage(facts({ ...base, fx: "live" }))).toBe(
+      "Market closed, all prices up to date · FX live",
+    );
+    expect(summarizeCoverage(facts({ ...base, fx: "eod" }))).toBe(
+      "Market closed, all prices up to date · FX end of day",
+    );
+    expect(summarizeCoverage(facts({ ...base, fx: "cache" }))).toBe(
+      "Market closed, all prices up to date · FX recent",
+    );
+    expect(summarizeCoverage(facts({ ...base, fx: "none" }))).toBe(
+      "Market closed, all prices up to date · awaiting FX",
+    );
   });
 });
 
@@ -150,7 +167,7 @@ describe("manualRefreshSummary", () => {
   it("leads with the transparent coverage line", () => {
     expect(
       manualRefreshSummary(facts({ marketOpen: true, marketTotal: 2, marketLive: 2 })),
-    ).toBe("2/2 live");
+    ).toBe("2/2 live · FX live");
   });
 
   it("surfaces a transient failure as a fallback message", () => {
