@@ -157,6 +157,77 @@ def _css() -> str:
 
 @keyframes inv-spin { to { transform: rotate(360deg); } }
 
+/* ------------------------------------------------------------------ */
+/* Full-screen shutdown overlay                                        */
+/* ------------------------------------------------------------------ */
+/* Painted the instant the user confirms "shut down", BEFORE the (blocking)
+   live-web upload runs, so the click is acknowledged immediately. It also
+   becomes the final frame once the server stops — a calm "you can close this
+   tab" screen that never triggers the reconnect machinery. */
+#inv-shutdown {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(15, 23, 42, .72);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  z-index: 1000000;             /* above everything, incl. the connbar (100001) */
+}
+#inv-shutdown.is-visible { display: flex; }
+#inv-shutdown .inv-shutdown-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .9rem;
+  max-width: 24rem;
+  width: 100%;
+  padding: 1.6rem 1.4rem;
+  text-align: center;
+  color: var(--inv-ink, #1f2937);
+  background: var(--inv-surface, #fff);
+  border-radius: 16px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .4);
+}
+#inv-shutdown .inv-shutdown-spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgba(0, 0, 0, .15);
+  border-top-color: var(--inv-accent, #2563eb);
+  border-radius: 50%;
+  animation: inv-spin .8s linear infinite;
+}
+#inv-shutdown.is-done .inv-shutdown-spinner { display: none; }
+#inv-shutdown .inv-shutdown-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+#inv-shutdown .inv-shutdown-msg {
+  font-size: .85rem;
+  line-height: 1.4;
+  opacity: .8;
+}
+#inv-shutdown .inv-shutdown-close {
+  display: none;
+  appearance: none;
+  margin-top: .2rem;
+  padding: .5rem 1.1rem;
+  font: inherit;
+  font-weight: 600;
+  color: #fff;
+  background: var(--inv-accent, #2563eb);
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+#inv-shutdown.is-done .inv-shutdown-close { display: inline-block; }
+#inv-shutdown .inv-shutdown-close:hover { filter: brightness(1.05); }
+@media (prefers-reduced-motion: reduce) {
+  #inv-shutdown .inv-shutdown-spinner { animation: none; }
+}
+
 /* Visually-hidden live region — announces connection/loading state to screen
    readers (the dot and banner are otherwise silent/decorative). */
 .inv-sr-only {
@@ -218,6 +289,17 @@ def _body_html() -> str:
   <span class="inv-connbar-spinner" aria-hidden="true"></span>
   <span id="inv-connbar-text">Connection lost &mdash; reconnecting&hellip;</span>
   <button type="button" class="inv-connbar-btn" id="inv-connbar-reload">Reconnect now</button>
+</div>
+<div id="inv-shutdown" role="alertdialog" aria-modal="true"
+     aria-labelledby="inv-shutdown-title" aria-hidden="true">
+  <div class="inv-shutdown-card">
+    <span class="inv-shutdown-spinner" aria-hidden="true"></span>
+    <div class="inv-shutdown-title" id="inv-shutdown-title">Shutting down&hellip;</div>
+    <div class="inv-shutdown-msg" id="inv-shutdown-msg">
+      Saving and uploading your latest data. This window will close on its own.
+    </div>
+    <button type="button" class="inv-shutdown-close" id="inv-shutdown-close">Close this tab</button>
+  </div>
 </div>
 """
 
@@ -340,22 +422,43 @@ def _script() -> str:
     if (b) b.classList.remove('is-visible', 'is-offline', 'is-ok');
   }
 
-  // Called from the server when the user chooses to shut the app down. The
-  // websocket is *about* to drop on purpose, so suppress the alarming
-  // "connection lost" banner, show a calm confirmation instead, and try to
-  // auto-close the tab (works when the app opened it, e.g. native/show=True).
+  // Called from the server the instant the user confirms shutdown — BEFORE the
+  // (blocking) live-web upload runs. Paint a full-screen "Shutting down…"
+  // overlay immediately so the click is unmistakably acknowledged, and suppress
+  // the alarming "connection lost" banner (the websocket is about to drop on
+  // purpose). We do NOT close the tab yet — that happens in __invFinishShutdown
+  // once the upload is done.
   window.__invBeginShutdown = function () {
     window.__invShuttingDown = true;
     setDot('is-ok', 'Shutting down\\u2026');
-    var b = el('inv-connbar');
-    if (b) {
-      b.classList.remove('is-offline');
-      b.classList.add('is-visible', 'is-ok');
-      setText('Shutting down\\u2026 you can close this tab.');
-      var btn = el('inv-connbar-reload');
-      if (btn) btn.style.display = 'none';
+    hideBar();                 // the reconnect banner must never show now
+    var ov = el('inv-shutdown');
+    if (ov) {
+      ov.classList.remove('is-done');
+      ov.classList.add('is-visible');
+      ov.setAttribute('aria-hidden', 'false');
     }
-    try { window.close(); } catch (e) { /* browser refused — message stays */ }
+    announce('Shutting down\\u2026');
+  };
+
+  // Called from the server once the upload has finished and the server is about
+  // to stop. Turn the overlay into the final "app shut down" frame (no spinner,
+  // a manual "Close this tab" button) and try to auto-close the tab. Because
+  // __invShuttingDown stays true, the websocket drop that follows never triggers
+  // the reconnect machinery — this frame is the last thing the user sees.
+  window.__invFinishShutdown = function () {
+    window.__invShuttingDown = true;
+    var ov = el('inv-shutdown');
+    if (ov) {
+      ov.classList.add('is-visible', 'is-done');
+      ov.setAttribute('aria-hidden', 'false');
+      var title = el('inv-shutdown-title');
+      if (title) title.textContent = 'App shut down';
+      var msg = el('inv-shutdown-msg');
+      if (msg) msg.textContent = 'Your data is saved. You can close this tab.';
+    }
+    announce('App shut down. You can close this tab.');
+    try { window.close(); } catch (e) { /* browser refused — frame stays */ }
   };
 
   function onLost(offline) {
@@ -453,6 +556,12 @@ def _script() -> str:
     // No socket to revive — a reload is the only way back.
     setText('Reloading\\u2026');
     window.location.reload();
+  });
+
+  var shutdownCloseBtn = el('inv-shutdown-close');
+  if (shutdownCloseBtn) shutdownCloseBtn.addEventListener('click', function () {
+    // A user gesture gives window.close() its best chance of being honoured.
+    try { window.close(); } catch (e) { /* browser refused — frame stays */ }
   });
 
   // Browser-level connectivity (covers Wi-Fi drops the socket is slow to notice).
