@@ -302,6 +302,24 @@ export function formatTimestamp(iso: string): string {
 }
 
 /**
+ * The export ("Exported …") stamp. Like {@link formatLastPull}, it swaps the
+ * date for the relative keyword "today"/"yesterday" when the export was made on
+ * that day, and falls back to the date otherwise — always with the clock time.
+ * Takes the export's ISO `generated_at` (the moment the decrypted blob was
+ * produced); returns the raw input when it can't be parsed.
+ */
+export function formatExportedAt(iso: string, now: Date = new Date()): string {
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return iso;
+  const time = when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", ...clockOptions() });
+  const dayDiff = calendarDayDiff(when, now);
+  if (dayDiff === 0) return `today at ${time}`;
+  if (dayDiff === 1) return `yesterday at ${time}`;
+  const date = when.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  return `${date} at ${time}`;
+}
+
+/**
  * A compact "how fresh is this price" label for a holding row.
  *
  * `at` is the epoch ms a live/cached price was observed; when null the price

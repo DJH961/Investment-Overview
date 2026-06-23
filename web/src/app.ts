@@ -327,7 +327,7 @@ export class App {
       type: "url",
       id: "f-priceproxy",
       autocomplete: "off",
-      placeholder: "(optional) Tiingo price-proxy URL override",
+      placeholder: "(optional) price-proxy URL override",
       value: config.priceProxyUrl,
     });
     const updateMinutes = h("input", {
@@ -441,7 +441,7 @@ export class App {
         field(
           "Price proxy URL override",
           priceProxyUrl,
-          "Advanced: the web/proxy Worker /price route for the Tiingo fallback. Leave blank to derive it from the data-source URL. The Tiingo token stays in the Worker — never in the browser.",
+          "Advanced: the web/proxy Worker /price route for the price fallback. Leave blank to derive it from the data-source URL. The provider token stays in the Worker — never in the browser.",
         ),
       );
     }
@@ -530,7 +530,7 @@ export class App {
         field(
           "Try the backup data provider",
           viaBackup,
-          "Route the whole book through the secondary provider (Tiingo) for one pull, skipping Twelve Data — but only for holdings whose value isn't already recent. Use it for a second opinion when the primary looks wrong or stuck. Respects Tiingo's own budget.",
+          "Route the whole book through the secondary provider for one pull, skipping the primary — but only for holdings whose value isn't already recent. Use it for a second opinion when the primary looks wrong or stuck. Respects the backup provider's own budget.",
         ),
       );
     }
@@ -1293,7 +1293,7 @@ export class App {
       model.overview.tiingoDayLimit = this.lastTiingoBudget.dayLimit;
     }
     if (this.lastTiingoSymbols.length > 0) {
-      const note = `${this.lastTiingoSymbols.length} price${this.lastTiingoSymbols.length === 1 ? "" : "s"} via Tiingo fallback`;
+      const note = `${this.lastTiingoSymbols.length} price${this.lastTiingoSymbols.length === 1 ? "" : "s"} via fallback`;
       model.overview.liveCoverage = model.overview.liveCoverage
         ? `${model.overview.liveCoverage} · ${note}`
         : note;
@@ -1396,7 +1396,7 @@ export class App {
     // free-tier budget is nearly spent (<10% left), where we fall back to the
     // normal cache-respecting refresh so the reserve isn't burnt in one tap.
     const canForce = this.canForceRefresh();
-    if (!canForce) this.toast("Low on data credits — showing recent cached prices.");
+    if (!canForce) this.toast("Low on credits — showing recent prices.");
     void this.runScheduledRefresh(this.sessionId, "manual", { force: canForce });
   }
 
