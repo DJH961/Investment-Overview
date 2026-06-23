@@ -24,13 +24,34 @@ from investment_dashboard.ui.pages._analytics_query import (
 )
 
 
-def _curve_point(p: EquityCurvePoint) -> dict[str, Any]:
-    return {
+def _curve_point(p: EquityCurvePoint, usd: EquityCurvePoint | None = None) -> dict[str, Any]:
+    point: dict[str, Any] = {
         "date": p.date.isoformat(),
         "portfolio_value": dec(p.portfolio_value),
         "cumulative_contributions": dec(p.cumulative_contributions),
         "benchmark_value": dec(p.benchmark_value),
     }
+    # The USD-denominated portfolio value re-marks every historical day at *that
+    # day's* FX rate (not today's spot), so the web can draw a genuinely
+    # currency-correct USD curve instead of uniformly rescaling the EUR line.
+    # USD is the native booked currency; EUR is only the internal FX-pivot. See
+    # ``_merge_usd_curve`` and the build() docstring.
+    if usd is not None:
+        point["portfolio_value_usd"] = dec(usd.portfolio_value)
+    return point
+
+
+def _merge_usd_curve(
+    eur_curve: list[EquityCurvePoint],
+    usd_curve: list[EquityCurvePoint],
+) -> list[dict[str, Any]]:
+    """Serialize the EUR curve with its USD portfolio-value companion attached.
+
+    Both curves are built over the same window/as-of, so they share dates; we
+    align by date (rather than index) to stay robust if one series skips a day.
+    """
+    usd_by_date = {p.date: p for p in usd_curve}
+    return [_curve_point(p, usd_by_date.get(p.date)) for p in eur_curve]
 
 
 def _attribution_row(r: AttributionRow) -> dict[str, Any]:
@@ -76,9 +97,11 @@ def _bundle_dict(b: AnalyticsBundle) -> dict[str, Any]:
 # The scalar risk/return metrics that genuinely differ between EUR and USD
 # (they are computed on the daily-return series of the equity curve, which is
 # denominated in the chosen currency — FX varies day to day, so the returns,
-# and hence every metric derived from them, differ by currency). The curve,
-# attribution and risk-free/benchmark labels are *not* currency companions:
-# the curve stays EUR (the web's FX-pivot) and is converted at render time.
+# and hence every metric derived from them, differ by currency). Attribution
+# and risk-free/benchmark labels are *not* currency companions. The curve is
+# exported EUR-first (the web's FX-pivot) but now also carries a per-point
+# ``portfolio_value_usd`` companion (see ``_curve_point``) so the web can draw a
+# currency-correct USD line instead of rescaling the EUR curve at today's spot.
 _CURRENCY_SENSITIVE_METRICS = (
     "cagr",
     "twr",
@@ -128,16 +151,19 @@ def build(
     actual first date for callers that want it.
     """
     ctx = context or build_context(session)
-    # The equity curve must be exported in EUR — the live-web companion carries
+    # The equity curve is exported EUR-first — the live-web companion carries
     # every figure in EUR as its internal FX-pivot (the ``*_eur`` figures, the
     # live total, and the per-holding marks are all EUR; USD remains the native
     # booked currency, preserved losslessly elsewhere) and converts to the user's
-    # chosen display currency at render time. Exporting the curve in the desktop's
-    # display currency made
-    # the web double-convert it, inflating the line by the EUR→display factor
-    # and dragging a ~16% cliff onto the value chart where the (correctly-EUR)
-    # live tip joined the (display-currency) history. Risk/return metrics are
-    # scale-invariant, so EUR vs display currency does not change them.
+    # chosen display currency at render time. Exporting the curve *only* in the
+    # desktop's display currency made the web double-convert it, inflating the
+    # line by the EUR→display factor and dragging a ~16% cliff onto the value
+    # chart where the (correctly-EUR) live tip joined the (display-currency)
+    # history. Risk/return metrics are scale-invariant, so EUR vs display
+    # currency does not change them. Each point additionally carries a
+    # ``portfolio_value_usd`` companion (re-marked at each day's FX, not today's
+    # spot) so the web draws a genuinely currency-correct USD line instead of a
+    # uniform rescale of the EUR curve.
     bundle = build_bundle(
         session,
         currency="EUR",
@@ -146,10 +172,10 @@ def build(
     )
     result = _bundle_dict(bundle)
     result["curve_start"] = bundle.start.isoformat()
-    # USD companions for the currency-sensitive scalar metrics, computed over the
-    # same window on the USD-denominated curve. The curve itself stays EUR (see
-    # above); only the risk/return numbers gain a `*_usd` twin so the web can
-    # show currency-correct risk stats when USD is selected.
+    # USD companions for the currency-sensitive scalar metrics *and* the equity
+    # curve, computed over the same window on the USD-denominated curve, so the
+    # web can show currency-correct risk stats and a true USD value line when USD
+    # is selected.
     usd_bundle = build_bundle(
         session,
         currency="USD",
@@ -157,6 +183,7 @@ def build(
         as_of=ctx.as_of,
     )
     result.update(_usd_companion_metrics(usd_bundle))
+    result["curve"] = _merge_usd_curve(bundle.curve, usd_bundle.curve)
     if full_history_curve:
         inception = transactions_repo.earliest_transaction_date(session)
         if inception is not None and inception < bundle.start:
@@ -168,6 +195,13 @@ def build(
                 currency="EUR",
                 benchmark_closes=benchmark_series.closes,
             )
-            result["curve"] = [_curve_point(p) for p in full_curve]
+            full_curve_usd = build_curve(
+                session,
+                start=inception,
+                end=ctx.as_of,
+                currency="USD",
+                benchmark_closes=benchmark_series.closes,
+            )
+            result["curve"] = _merge_usd_curve(full_curve, full_curve_usd)
             result["curve_start"] = inception.isoformat()
     return result

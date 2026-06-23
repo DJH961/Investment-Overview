@@ -191,6 +191,30 @@ def test_analytics_includes_usd_companion_metrics(session: Session, seeded: None
     assert "risk_free_rate_usd" not in bundle
 
 
+def test_analytics_curve_carries_usd_portfolio_companion(
+    session: Session, seeded: None
+) -> None:
+    # USD is the native booked currency (spot prices arrive in USD), so each
+    # curve point ships a `portfolio_value_usd` re-marked at *that day's* FX —
+    # letting the web draw a genuinely currency-correct USD line instead of
+    # rescaling the EUR pivot at today's spot. Present on both the default and
+    # full-history curves.
+    for bundle in (
+        analytics_rm.build(session),
+        analytics_rm.build(session, full_history_curve=True),
+    ):
+        valued = [p for p in bundle["curve"] if p["portfolio_value"] is not None]
+        assert valued, "expected at least one valued curve point"
+        for point in valued:
+            assert "portfolio_value_usd" in point
+            assert point["portfolio_value_usd"] is not None
+        # The USD line is a real re-mark, not a copy of the EUR pivot: with a
+        # non-unit EUR/USD rate at least one point must differ from its EUR twin.
+        assert any(
+            Decimal(p["portfolio_value_usd"]) != Decimal(p["portfolio_value"]) for p in valued
+        )
+
+
 def test_analytics_full_history_curve_extends_back_to_inception(
     session: Session, seeded: None
 ) -> None:
