@@ -984,12 +984,14 @@ export class App {
       fx = fxLoad.fx;
       fxReport = fxLoad;
       // Live EUR/USD (current + prior close) for an FX-aware today's move.
-      // The conversion rate is the one thing we *always* re-poll on a network
-      // refresh (ttlMs: 0): the forex market trades ~24/5, so the most recent
-      // live spot is always the right rate for valuing the book. It still
-      // degrades gracefully — when the pair can't be fetched (no budget/key, a
-      // transient failure, or the weekend FX close) loadEurUsd falls back to
-      // today's cached spot, then the ECB end-of-day rate.
+      // The conversion rate is the one thing we *always* re-poll on every network
+      // refresh (ttlMs: 0, so the cache is only ever a fallback): the forex market
+      // trades ~24/5, so the most recent live spot is always the right rate for
+      // valuing the book. This only fires on a network round with an API key in
+      // hand; a cache-only paint takes the `else` branch below. It still degrades
+      // gracefully — when the pair can't be fetched (no budget/key, a transient
+      // failure, or the weekend FX close) loadEurUsd falls back to today's cached
+      // spot, then the ECB end-of-day rate.
       const eurUsd = await loadEurUsd(apiKey, { eodFallback: fx.rates.USD ?? null, ttlMs: 0 });
       eurUsdNow = eurUsd.now;
       eurUsdPrev = eurUsd.previousClose;
