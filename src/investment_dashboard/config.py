@@ -90,6 +90,11 @@ class Settings(BaseSettings):
     #: same consumer-cloud sync the user already set up.
     snapshot_path: Path | None = None
 
+    #: Tiingo API token for the secondary-provider fallback (behind yfinance).
+    #: Normally ``None`` — resolved from the OS keyring (or the encrypted blob);
+    #: set via ``INV_DASHBOARD_TIINGO_TOKEN`` for CI/test only. Never committed.
+    tiingo_token: str | None = None
+
     # --- v3.0 live-web companion publishing (docs/v3.0 proposal §5.5) -------
     # All additive and off by default: a vanilla install never publishes.
     #: Master toggle. When ``False`` (default) no publishing happens, and the
