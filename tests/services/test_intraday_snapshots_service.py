@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -469,3 +469,173 @@ class TestPerTimestampFx:
         assert [eur for _, eur, _ in series] == [Decimal("1000.00"), Decimal("1000.00")]
         # The stored rate falls back to the settled spot (1.00), never NULL here.
         assert all(fx == Decimal("1.00") for _, _, fx in series)
+
+
+def _seed_eur_holding_for_week(session: Session) -> None:
+    """An EUR holding bought before the week, with a close on every session day."""
+    account = accounts_repo.create_account(
+        session,
+        broker="vanguard",
+        account_label="EUR Brokerage",
+        native_currency="EUR",
+        account_type="brokerage",
+    )
+    instr = instruments_repo.get_or_create(session, symbol="ACME", native_currency="EUR")
+    session.add(
+        Transaction(
+            account_id=account.id,
+            instrument_id=instr.id,
+            date=date(2024, 5, 20),
+            kind="buy",
+            quantity=Decimal("10"),
+            price_native=Decimal("100.00"),
+            net_native=Decimal("-1000.00"),
+            net_eur=Decimal("-1000.00"),
+            source="manual",
+        )
+    )
+    prices_repo.upsert_closes(
+        session,
+        instr.id,
+        {d: Decimal("100.00") for d in iss.recent_trading_sessions(_NOW)},
+    )
+    session.flush()
+
+
+def _fake_week_fetcher(per_day_bars):  # type: ignore[no-untyped-def]
+    """Stub for ``fetch_intraday_closes_range`` returning the same bars each day."""
+
+    def fetch(symbols, start_day, end_day, *, interval):  # type: ignore[no-untyped-def]
+        assert interval == iss.WEEK_INTERVAL
+        assert start_day <= end_day
+        bars: dict[datetime, Decimal] = {}
+        day = start_day
+        while day <= end_day:
+            for hour_min, price in per_day_bars:
+                bars[datetime(day.year, day.month, day.day, *hour_min)] = price
+            day += timedelta(days=1)
+        return {sym: dict(bars) for sym in symbols}
+
+    return fetch
+
+
+_WEEK_DAY_BARS = [
+    ((13, 30), Decimal("100")),  # start
+    ((15, 0), Decimal("110")),
+    ((17, 0), Decimal("120")),  # nearest the session midpoint → midday
+    ((19, 30), Decimal("130")),  # close
+]
+
+
+class TestWeekSeries:
+    # Four bars per session day; _pick_open_mid_close keeps start / midday / close.
+    _DAY_BARS = _WEEK_DAY_BARS
+
+    def test_three_points_per_session(self, session: Session) -> None:
+        _seed_eur_holding_for_week(session)
+        samples = iss.week_series_with_fx(
+            session, now=_NOW, fetcher=_fake_week_fetcher(self._DAY_BARS)
+        )
+        sessions = iss.recent_trading_sessions(_NOW)
+        assert len(sessions) == iss.WEEK_SESSIONS
+        # Start / midday / close kept for each of the week's sessions.
+        assert len(samples) == 3 * len(sessions)
+        # Oldest-first and the market component scales with the intraday price.
+        first_day = [s for s in samples if s[0].date() == sessions[0]]
+        assert [eur for _, eur, _ in first_day] == [
+            Decimal("1000.00"),  # 100/100 × €1,000
+            Decimal("1200.00"),  # 120/100 (midday)
+            Decimal("1300.00"),  # 130/100 (close)
+        ]
+
+    def test_empty_when_feed_has_no_bars(self, session: Session) -> None:
+        _seed_eur_holding_for_week(session)
+        samples = iss.week_series_with_fx(session, now=_NOW, fetcher=_fake_week_fetcher([]))
+        assert samples == []
+
+    def test_empty_when_no_positions(self, session: Session) -> None:
+        samples = iss.week_series_with_fx(
+            session, now=_NOW, fetcher=_fake_week_fetcher(self._DAY_BARS)
+        )
+        assert samples == []
+
+    def test_recent_trading_sessions_are_sorted_and_skip_weekends(self) -> None:
+        sessions = iss.recent_trading_sessions(_NOW)
+        assert sessions == sorted(sessions)
+        assert sessions[-1] == date(2024, 6, 3)
+        assert all(s.weekday() < 5 for s in sessions)
+
+    def test_week_window_start_is_the_oldest_session_start(self) -> None:
+        sessions = iss.recent_trading_sessions(_NOW)
+        assert iss.week_window_start_utc(_NOW) == iss._session_start_utc(sessions[0])
+
+    def test_reconstruct_retains_a_rolling_week_not_just_today(self, session: Session) -> None:
+        # Widened retention: pruning is to the *week* window start, so a sample
+        # from an earlier session this week survives reconstructing today, while
+        # one older than the whole window is pruned away.
+        _seed_eur_holding(session)
+        sessions = iss.recent_trading_sessions(_NOW)
+        within_week = iss._session_start_utc(sessions[0]) + timedelta(hours=16)
+        before_week = iss.week_window_start_utc(_NOW) - timedelta(days=3)
+        intraday_repo.insert_sample(session, within_week, Decimal("999.00"))
+        intraday_repo.insert_sample(session, before_week, Decimal("111.00"))
+        session.flush()
+        iss.reconstruct_last_session(
+            session,
+            now=_NOW,
+            fetcher=_fake_fetcher({datetime(2024, 6, 3, 13, 30): Decimal("100")}),
+        )
+        session.flush()
+        rows = intraday_repo.list_in_range(
+            session, before_week - timedelta(days=1), _NOW.replace(tzinfo=None)
+        )
+        times = [r.captured_at for r in rows]
+        assert within_week in times  # kept: inside the rolling week
+        assert before_week not in times  # pruned: older than the week window
+
+    def test_persists_fetched_bars_and_reuses_them_without_refetch(self, session: Session) -> None:
+        _seed_eur_holding_for_week(session)
+        calls = {"n": 0}
+        base = _fake_week_fetcher(self._DAY_BARS)
+
+        def fetch(symbols, start_day, end_day, *, interval):  # type: ignore[no-untyped-def]
+            calls["n"] += 1
+            return base(symbols, start_day, end_day, interval=interval)
+
+        first = iss.week_series_with_fx(session, now=_NOW, fetcher=fetch)
+        session.flush()
+        second = iss.week_series_with_fx(session, now=_NOW, fetcher=fetch)
+        # The whole week is now cached, so the second render does not refetch.
+        assert calls["n"] == 1
+        assert [(at, eur) for at, eur, _ in second] == [(at, eur) for at, eur, _ in first]
+
+    def test_fetches_only_uncovered_sessions(self, session: Session) -> None:
+        _seed_eur_holding_for_week(session)
+        sessions = iss.recent_trading_sessions(_NOW)
+        # A live capture covering today's session — it must be reused, not
+        # re-fetched, and the network fetch must stop at the prior session.
+        live_at = datetime(2024, 6, 3, 15, 0)
+        intraday_repo.insert_sample(session, live_at, Decimal("5555.00"))
+        session.flush()
+        seen: dict[str, date] = {}
+        base = _fake_week_fetcher(self._DAY_BARS)
+
+        def fetch(symbols, start_day, end_day, *, interval):  # type: ignore[no-untyped-def]
+            seen["start"] = start_day
+            seen["end"] = end_day
+            return base(symbols, start_day, end_day, interval=interval)
+
+        out = iss.week_series_with_fx(session, now=_NOW, fetcher=fetch)
+        # Today was covered by the live sample → fetch range excludes it.
+        assert seen["start"] == sessions[0]
+        assert seen["end"] == sessions[-2]
+        # The cached live point survives and is the only point for today.
+        today_points = [(at, eur) for at, eur, _ in out if at.date() == date(2024, 6, 3)]
+        assert today_points == [(live_at, Decimal("5555.00"))]
+
+    def test_build_week_value_series_empty_for_empty_portfolio(self, session: Session) -> None:
+        # With nothing to price intraday there is nothing to cache or fetch, so
+        # the series is empty and the page falls back to the daily snapshots.
+        from investment_dashboard.ui.pages._overview_query import build_week_value_series
+
+        assert build_week_value_series(session, currency="EUR", now=_NOW) == []

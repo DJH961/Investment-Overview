@@ -44,8 +44,12 @@ holdings (mutual funds, money-market funds) ride in the render-time base, while 
 market-priced holding the feed served no intraday bars for is simply carried at a
 flat ratio of 1.
 
-Only the most recent session is retained; older samples are pruned as fresh ones
-land (the data is pure cache, regenerable as the app keeps running).
+The most recent *week* of trading sessions is retained (see
+:data:`WEEK_SESSIONS`); older samples are pruned as fresh ones land. Keeping a
+rolling week — rather than only the current session — lets the Overview "1 Week"
+curve reuse the very same cached intraday points (including today's dense live
+captures) instead of re-fetching the whole week from the feed on every render.
+The data is pure cache, regenerable as the app keeps running.
 """
 
 from __future__ import annotations
@@ -98,6 +102,21 @@ RECONSTRUCT_COVERAGE_GAP_SECONDS = 7 * 60 + 30
 #: ``app_config`` key recording the last session date we reconstructed, so we
 #: fetch intraday bars at most once per session instead of on every page load.
 _RECONSTRUCTED_KEY = "intraday_reconstructed_day"
+
+#: ``app_config`` key *prefix* recording, per session day, the anchor session for
+#: which the Overview "Week" curve last fetched that day's intraday bars. Stored
+#: as ``{prefix}{day}`` → ``{anchor_session}`` so a missing day is fetched at most
+#: once per session (it is re-attempted only once the anchor session rolls on),
+#: mirroring :data:`_RECONSTRUCTED_KEY` for the "1 Day" reconstruction.
+_WEEK_FETCHED_PREFIX = "intraday_week_fetched:"
+
+#: Number of recent trading sessions the Overview "Week" (1W) curve spans.
+WEEK_SESSIONS = 5
+
+#: Bar width used to source the "Week" curve's intraday path. Only three points
+#: per day are kept (start / midday / close), so a coarse bar is plenty and keeps
+#: the multi-day download small.
+WEEK_INTERVAL = "30m"
 
 #: Smallest share count treated as a real holding (mirrors the Overview filter).
 _MIN_SHARES = Decimal("0.0000001")
@@ -287,7 +306,7 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:
                 ):
                     return False
                 intraday_repo.insert_sample(cache, captured_at, value_eur, fx_eur_usd)
-                intraday_repo.delete_before(cache, session_window_utc(now)[0])
+                intraday_repo.delete_before(cache, week_window_start_utc(now))
     except Exception:  # pragma: no cover - defensive: capture is best-effort
         log.warning("intraday value capture failed", exc_info=True)
         return False
@@ -324,6 +343,36 @@ def day_series_with_fx(
     with cache_read_session(session) as cache:
         rows = intraday_repo.list_in_range(cache, start, end)
     return [(r.captured_at, r.market_value_eur, r.fx_eur_usd) for r in rows]
+
+
+def _market_component_pivot_eur(
+    priced: list[Position],
+    bars_by_symbol: dict[str, dict[datetime, Decimal]],
+    at: datetime,
+    *,
+    fx_t: Decimal | None,
+    base_fx: Decimal | None,
+) -> Decimal:
+    """EUR pivot of the intraday-priced sleeve at instant ``at``.
+
+    ``Σ value_i · price_i(at)/close_i``, with each USD-booked holding's *derived*
+    EUR pivot rebased from the day's settled rate (``base_fx``, baked into
+    ``current_value_eur``) to this minute's rate (``fx_t``) so the EUR view tracks
+    per-minute FX while the native USD value stays FX-free (recovered at render by
+    removing exactly this rate). A symbol the feed served no bar for is carried at
+    a flat ratio of 1.
+    """
+    market = Decimal(0)
+    for p in priced:
+        price_t = _forward_filled(bars_by_symbol.get(p.instrument.symbol, {}), at)
+        if price_t is None:
+            price_t = p.current_price_native
+        ratio = price_t / p.current_price_native  # type: ignore[operator]
+        contrib = p.current_value_eur * ratio
+        if fx_t and base_fx and _is_usd_native(p):
+            contrib = contrib * base_fx / fx_t
+        market += contrib
+    return market
 
 
 def _forward_filled(bars: dict[datetime, Decimal], at: datetime) -> Decimal | None:
@@ -475,24 +524,12 @@ def _reconstruct_session(
             # The intraday-priced (market) component only — the cash + NAV base is
             # reapplied at render time, keeping reconstruction on the same basis
             # as the live captures.
-            market = Decimal(0)
-            for p in priced:
-                price_t = _forward_filled(bars_by_symbol.get(p.instrument.symbol, {}), t)
-                if price_t is None:
-                    price_t = p.current_price_native
-                ratio = price_t / p.current_price_native  # type: ignore[operator]
-                contrib = p.current_value_eur * ratio
-                # USD is booked FX-free; we only re-express its *derived* EUR pivot
-                # from the day's settled rate (baked into ``current_value_eur``) to
-                # this minute's rate, so the EUR view tracks per-minute FX. The
-                # native USD value (price × shares) is untouched and recovered at
-                # render by removing exactly this rate.
-                if fx_t and base_fx and _is_usd_native(p):
-                    contrib = contrib * base_fx / fx_t
-                market += contrib
+            market = _market_component_pivot_eur(
+                priced, bars_by_symbol, t, fx_t=fx_t, base_fx=base_fx
+            )
             intraday_repo.insert_sample(cache, t, market, point_fx)
             written += 1
-        intraday_repo.delete_before(cache, _session_start_utc(session_date))
+        intraday_repo.delete_before(cache, _week_window_start_for(session_date))
     return written
 
 
@@ -525,3 +562,258 @@ def _session_has_samples(session: Session, session_date: date) -> bool:
 
 def _mark_reconstructed(session: Session, session_date: date) -> None:
     app_config_repo.set_value(session, _RECONSTRUCTED_KEY, session_date.isoformat())
+
+
+def recent_trading_sessions(
+    now: datetime | None = None, *, count: int = WEEK_SESSIONS
+) -> list[date]:
+    """The most recent ``count`` trading sessions, oldest first.
+
+    Anchored on :func:`last_session_date` and walked back over weekends/holidays
+    with :func:`previous_trading_session`, so the "Week" curve always spans real
+    sessions rather than a fixed seven calendar days.
+    """
+    day = last_session_date(now)
+    days = [day]
+    for _ in range(max(0, count - 1)):
+        day = previous_trading_session(day)
+        days.append(day)
+    return sorted(days)
+
+
+def _week_window_start_for(anchor: date) -> datetime:
+    """Naive-UTC start of the oldest session in the week window ending ``anchor``.
+
+    Walks back :data:`WEEK_SESSIONS` − 1 trading sessions from ``anchor`` (the
+    most recently started session) and returns 00:00 exchange-time of that oldest
+    day. This is the prune cutoff for the intraday cache: everything from here up
+    to the live tip is the rolling week the "1 Week" curve reuses, so a sample is
+    only dropped once it ages out of the whole window rather than out of a single
+    session.
+    """
+    day = anchor
+    for _ in range(max(0, WEEK_SESSIONS - 1)):
+        day = previous_trading_session(day)
+    return _session_start_utc(day)
+
+
+def week_window_start_utc(now: datetime | None = None) -> datetime:
+    """Naive-UTC start of the oldest session in the current week window."""
+    return _week_window_start_for(last_session_date(now))
+
+
+def _pick_open_mid_close(bar_times: list[datetime]) -> list[datetime]:
+    """Choose a day's start / midday / close instants from its sorted bar times.
+
+    Returns up to three distinct timestamps (fewer when the day has fewer bars):
+    the first bar (start), the bar nearest the open→close midpoint (midday) and
+    the last bar (close). Preserves chronological order.
+    """
+    if not bar_times:
+        return []
+    if len(bar_times) <= 3:
+        return list(bar_times)
+    first, last = bar_times[0], bar_times[-1]
+    midpoint = first + (last - first) / 2
+    mid = min(bar_times, key=lambda t: abs((t - midpoint).total_seconds()))
+    chosen = sorted({first, mid, last})
+    return chosen
+
+
+def week_series_with_fx(
+    session: Session,
+    *,
+    now: datetime | None = None,
+    fetcher: object | None = None,
+    fx_fetcher: object | None = None,
+) -> list[tuple[datetime, Decimal, Decimal | None]]:
+    """Start / midday / close market-component samples over the last week's sessions.
+
+    Returns ``[(at_utc, market_value_eur, fx_eur_usd), ...]`` (oldest first) — the
+    same shape as :func:`day_series_with_fx`, so the render path
+    (:func:`build_week_value_series`) can reapply the cash + NAV base and convert
+    to either currency with the identical per-minute FX model used by the "1 Day"
+    curve. USD stays FX-free (booked currency); EUR is derived at each bar's own
+    EUR/USD rate, so the two currency lines genuinely diverge across the week.
+
+    Each session is repriced against *that day's* held positions (so a buy or
+    sell mid-week is reflected), with three representative instants kept per day
+    for a smooth-yet-cheap curve.
+
+    **Cache-first.** The rolling-week intraday cache (live "1 Day" captures plus
+    previously-fetched/reconstructed earlier days — all on the identical EUR
+    market-component basis) is read first, and only sessions with *no* cached
+    coverage trigger a network fetch. Today's dense live captures are therefore
+    reused verbatim inside the week curve instead of being re-downloaded. Freshly
+    fetched bars are *persisted* (same shape the "1 Day" path writes), so a later
+    render serves them straight from cache, and each missing day is fetched at
+    most once per session (guarded by :data:`_WEEK_FETCHED_PREFIX`).
+
+    Best-effort and network-backed: returns ``[]`` when nothing is cached and no
+    intraday bars could be sourced, letting the caller fall back to the daily
+    snapshot series.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    now = now or datetime.now(UTC)
+    sessions = recent_trading_sessions(now)
+    if not sessions:
+        return []
+    anchor = sessions[-1]
+    week_start = _session_start_utc(sessions[0])
+    window_end = min(_to_naive_utc(now), _session_start_utc(sessions[-1] + timedelta(days=1)))
+
+    # 1. Cache first — the rolling week already on hand. A session counts as
+    #    "covered" the moment it holds any cached sample (e.g. today's live
+    #    captures), so it is never re-fetched.
+    with cache_read_session(session) as cache:
+        cached = [
+            (r.captured_at, r.market_value_eur, r.fx_eur_usd)
+            for r in intraday_repo.list_in_range(cache, week_start, window_end)
+        ]
+
+    def _is_covered(session_date: date) -> bool:
+        start = _session_start_utc(session_date)
+        end = _session_start_utc(session_date + timedelta(days=1))
+        return any(start <= at < end for at, _, _ in cached)
+
+    # 2. Fetch only the gaps, and only days not already attempted this session.
+    to_fetch = [
+        d for d in sessions if not _is_covered(d) and not _week_day_fetched(session, d, anchor)
+    ]
+
+    fetched: list[tuple[datetime, Decimal, Decimal | None]] = []
+    if to_fetch:
+        fetched = _fetch_and_persist_week_days(
+            session, to_fetch, anchor, week_start, fetcher=fetcher, fx_fetcher=fx_fetcher
+        )
+
+    # 3. Merge cached + freshly fetched (disjoint by session), oldest first.
+    merged: dict[datetime, tuple[datetime, Decimal, Decimal | None]] = {}
+    for sample in [*cached, *fetched]:
+        merged[sample[0]] = sample
+    return sorted(merged.values(), key=lambda s: s[0])
+
+
+def _priced_intraday_positions(session: Session, session_date: date) -> list[Position]:
+    """Held, intraday-priced positions as of ``session_date`` (the week sleeve)."""
+    from investment_dashboard.services import positions_service  # noqa: PLC0415
+
+    return [
+        p
+        for p in positions_service.compute_positions(session, as_of=session_date)
+        if p.shares > _MIN_SHARES
+        and p.current_price_native is not None
+        and p.current_price_native != 0
+        and p.current_value_eur != 0
+        and is_intraday_priced(p)
+    ]
+
+
+def _build_week_day_samples(
+    session: Session,
+    session_date: date,
+    priced: list[Position],
+    bars_by_symbol: dict[str, dict[datetime, Decimal]],
+    fx_bars: dict[datetime, Decimal],
+) -> list[tuple[datetime, Decimal, Decimal | None]]:
+    """Start / midday / close market-component samples for one session day."""
+    from investment_dashboard.services import fx_service  # noqa: PLC0415
+
+    start = _session_start_utc(session_date)
+    end = _session_start_utc(session_date + timedelta(days=1))
+    day_symbols = {p.instrument.symbol for p in priced}
+    day_bar_times = sorted(
+        {t for sym in day_symbols for t in bars_by_symbol.get(sym, {}) if start <= t < end}
+    )
+    if not day_bar_times:
+        return []
+    base_fx = (
+        fx_service.get_rate_eur_to_quote(session, session_date, quote="USD")
+        if any(_is_usd_native(p) for p in priced)
+        else None
+    )
+    samples: list[tuple[datetime, Decimal, Decimal | None]] = []
+    for t in _pick_open_mid_close(day_bar_times):
+        fx_t = _forward_filled(fx_bars, t) if fx_bars else None
+        point_fx = fx_t or base_fx
+        market = _market_component_pivot_eur(priced, bars_by_symbol, t, fx_t=fx_t, base_fx=base_fx)
+        samples.append((t, market, point_fx))
+    return samples
+
+
+def _fetch_and_persist_week_days(
+    session: Session,
+    to_fetch: list[date],
+    anchor: date,
+    week_start: datetime,
+    *,
+    fetcher: object | None,
+    fx_fetcher: object | None,
+) -> list[tuple[datetime, Decimal, Decimal | None]]:
+    """Fetch, build, persist and mark the uncovered week sessions in ``to_fetch``.
+
+    Returns the freshly built samples (empty when the feed served no bars). Every
+    attempted day is marked done so a quiet/offline day doesn't re-hit the network
+    on every render this session; it is re-attempted once the anchor session rolls
+    on. Best-effort: a network failure is logged and yields no samples.
+    """
+    from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+
+    positions_by_day = {d: _priced_intraday_positions(session, d) for d in to_fetch}
+    symbols = sorted({p.instrument.symbol for priced in positions_by_day.values() for p in priced})
+
+    fetched: list[tuple[datetime, Decimal, Decimal | None]] = []
+    if symbols:
+        needs_fx = any(_is_usd_native(p) for priced in positions_by_day.values() for p in priced)
+        fetch = fetcher or yfinance_client.fetch_intraday_closes_range
+        try:
+            bars_by_symbol: dict[str, dict[datetime, Decimal]] = fetch(  # type: ignore[operator]
+                symbols, to_fetch[0], to_fetch[-1], interval=WEEK_INTERVAL
+            )
+        except Exception:  # pragma: no cover - defensive: best-effort network fetch
+            log.warning("week curve intraday fetch failed", exc_info=True)
+            bars_by_symbol = {}
+
+        fx_bars: dict[datetime, Decimal] = {}
+        if needs_fx and bars_by_symbol:
+            fx_fetch = fx_fetcher or yfinance_client.fetch_eur_usd_intraday_range
+            try:
+                fx_bars = fx_fetch(to_fetch[0], to_fetch[-1], interval=WEEK_INTERVAL)  # type: ignore[operator]
+            except Exception:  # pragma: no cover - defensive: FX overlay is best-effort
+                log.warning("week curve EUR/USD fetch failed", exc_info=True)
+                fx_bars = {}
+
+        for session_date in to_fetch:
+            fetched.extend(
+                _build_week_day_samples(
+                    session, session_date, positions_by_day[session_date], bars_by_symbol, fx_bars
+                )
+            )
+
+        # Persist what we sourced so the next render reads it from cache, and
+        # prune anything older than the rolling week.
+        if fetched:
+            with cache_write_session(session) as cache:
+                for t, market, point_fx in fetched:
+                    intraday_repo.insert_sample(cache, t, market, point_fx)
+                intraday_repo.delete_before(cache, week_start)
+
+    for session_date in to_fetch:
+        _mark_week_day_fetched(session, session_date, anchor)
+    return fetched
+
+
+def _week_day_fetched(session: Session, day: date, anchor: date) -> bool:
+    """Whether ``day``'s week-curve bars were already fetched this anchor session."""
+    return (
+        app_config_repo.get(session, f"{_WEEK_FETCHED_PREFIX}{day.isoformat()}")
+        == anchor.isoformat()
+    )
+
+
+def _mark_week_day_fetched(session: Session, day: date, anchor: date) -> None:
+    app_config_repo.set_value(
+        session, f"{_WEEK_FETCHED_PREFIX}{day.isoformat()}", anchor.isoformat()
+    )

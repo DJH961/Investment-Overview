@@ -1424,6 +1424,63 @@ export function rebaseBenchmark(
 }
 
 /**
+ * Rescale `values` so its anchor coincides with `reference`'s anchor — the first
+ * index where `reference` is a usable positive number. Both arrays must be
+ * index-aligned. Returns `null` when no usable anchor pair exists (so the caller
+ * can simply drop the series). Used to overlay a second *currency* line on the
+ * shared single y-axis (see {@link secondaryCurrencyLine}): rebased, the two
+ * lines start together and the gap that opens up is the genuine FX divergence
+ * rather than a meaningless vertical offset from the ~1.08× EUR/USD level.
+ */
+export function rebaseToAnchor(
+  values: Array<Decimal | null>,
+  reference: Array<Decimal | null>,
+): Array<Decimal | null> | null {
+  const anchorIdx = reference.findIndex((v) => v !== null && v.greaterThan(0));
+  if (anchorIdx < 0) return null;
+  const anchorRef = reference[anchorIdx]!;
+  const anchorVal = values[anchorIdx];
+  if (anchorVal === null || anchorVal.isZero()) return null;
+  return values.map((v) => (v === null ? null : v.dividedBy(anchorVal).times(anchorRef)));
+}
+
+/**
+ * The *other* currency's portfolio line, rebased to share the primary line's
+ * start, ready to overlay on the value/equity chart.
+ *
+ * The whole dashboard treats EUR and USD as equal first-class currencies, but a
+ * raw second line would sit a flat ~1.08× away on the shared y-axis and read as
+ * clutter. Instead the non-display currency's own per-point series (the genuine
+ * per-day-FX USD companion when EUR is shown, the EUR pivot when USD is shown)
+ * is rebased to the primary anchor, so both lines start together and visibly
+ * *diverge* by the FX move over the window — the actual insight.
+ *
+ * `otherValues` must already be index-aligned with `primaryValues` (including any
+ * appended live tip). Returns `null` — so the chart stays a single clean line —
+ * unless a live FX rate is known and the other currency genuinely has data,
+ * keeping the overlay uncluttered and opt-in exactly like the benchmark line.
+ */
+export function secondaryCurrencyLine(
+  disp: CurveDisplay,
+  otherValues: Array<Decimal | null>,
+  primaryValues: Array<Decimal | null>,
+): { code: DisplayCurrency; values: Array<Decimal | null> } | null {
+  if (!canConvertToUsd()) return null;
+  if (!otherValues.some((v) => v !== null)) return null;
+  const rebased = rebaseToAnchor(otherValues, primaryValues);
+  if (rebased === null) return null;
+  return { code: disp.code === "USD" ? "EUR" : "USD", values: rebased };
+}
+
+/** The non-display currency's raw per-point portfolio value (pre-rebase). */
+function otherCurrencyRaw(disp: CurveDisplay, p: EquityPoint): Decimal | null {
+  // USD shown → the other line is the EUR pivot; EUR shown → the genuine
+  // per-day-FX USD companion (never a spot rescale of the EUR pivot).
+  return disp.code === "USD" ? p.portfolioValue : p.portfolioValueUsd;
+}
+
+
+/**
  * The Risk-tab equity curve: portfolio value vs. the cumulative-contributions
  * baseline and (when present) the benchmark, drawn with the shared axis-aware
  * line chart. Stamped as-of-export — history-bound, it does not move intraday.
@@ -1446,6 +1503,16 @@ function renderEquityCurve(curve: AnalyticsView["curve"], benchmarkSymbol: strin
   if (hasBenchmark) {
     series.push({ values: rebaseBenchmark(points, portfolioValues), className: "series-benchmark" });
   }
+  // The other currency, rebased to the portfolio's start, so EUR and USD share
+  // one axis and the gap between them reads as the FX move (not a flat offset).
+  const currencyLine = secondaryCurrencyLine(
+    disp,
+    points.map((p) => otherCurrencyRaw(disp, p)),
+    portfolioValues,
+  );
+  if (currencyLine !== null) {
+    series.push({ values: currencyLine.values, className: "series-currency" });
+  }
 
   const chart = chartWithTimeframe(dates, series, { yAxisLabel: disp.yAxisLabel }, "value");
   if (!chart) return null;
@@ -1453,6 +1520,7 @@ function renderEquityCurve(curve: AnalyticsView["curve"], benchmarkSymbol: strin
   const legend: Array<Node | string> = [legendItem("series-portfolio", "Portfolio")];
   if (hasContribs) legend.push(legendItem("series-contrib", "Contributions"));
   if (hasBenchmark) legend.push(legendItem("series-benchmark", benchmarkSymbol ?? "Benchmark"));
+  if (currencyLine !== null) legend.push(legendItem("series-currency", `${currencyLine.code} (rebased)`));
 
   return h("section", { class: "card equity" }, [
     h("div", { class: "section-head" }, [
@@ -1531,10 +1599,17 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
   // not a rescale of the EUR pivot; EUR is the FX-derived view. See curveDisplay.
   const disp = curveDisplay(points);
   const values: Array<Decimal | null> = points.map(disp.portfolio);
+  // The other currency's raw per-point series, kept index-aligned with `values`
+  // (including the live tip below) so it can be rebased onto the same axis.
+  const otherValues: Array<Decimal | null> = points.map((p) => otherCurrencyRaw(disp, p));
+  const otherCode: DisplayCurrency = disp.code === "USD" ? "EUR" : "USD";
   // Today's live total in the chart currency: USD uses the native live total
   // directly (no FX), EUR is spot-converted from it.
   const liveTotal =
     disp.code === "USD" ? o.totalValueUsd ?? disp.convert(o.totalValueEur) : o.totalValueEur;
+  // The same live tip expressed in the *other* currency, so its line runs to
+  // "today" too (USD/EUR native total — the rebase only uses its shape).
+  const otherLiveTip = otherCode === "USD" ? o.totalValueUsd : o.totalValueEur;
 
   // Append today's live total as the latest point when it is newer than the
   // last exported point, so the curve runs right up to "today" — but only when
@@ -1547,13 +1622,23 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
     if (o.asOf > lastDate) {
       dates.push(o.asOf);
       values.push(liveTotal);
+      otherValues.push(otherLiveTip);
     } else if (o.asOf === lastDate) {
       values[values.length - 1] = liveTotal;
+      otherValues[otherValues.length - 1] = otherLiveTip;
     }
   }
   if (values.filter((v) => v !== null).length < 2) return null;
 
-  const chart = chartWithTimeframe(dates, [{ values, className: "series-portfolio", area: true }], {
+  const series: ChartSeries[] = [{ values, className: "series-portfolio", area: true }];
+  // Overlay the other currency, rebased to share this line's start, so EUR and
+  // USD diverge by the FX move rather than sitting a flat ~1.08× apart.
+  const currencyLine = secondaryCurrencyLine(disp, otherValues, values);
+  if (currencyLine !== null) {
+    series.push({ values: currencyLine.values, className: "series-currency" });
+  }
+
+  const chart = chartWithTimeframe(dates, series, {
     yAxisLabel: disp.yAxisLabel,
   }, "portfolio");
   if (!chart) return null;
@@ -1577,6 +1662,14 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
     ]),
     chart,
   ];
+  if (currencyLine !== null) {
+    children.push(
+      h("div", { class: "chart-legend" }, [
+        legendItem("series-portfolio", disp.code),
+        legendItem("series-currency", `${currencyLine.code} (rebased)`),
+      ]),
+    );
+  }
   if (note) children.push(h("p", { class: "note" }, [note]));
   return h("section", { class: "card value-chart" }, children);
 }

@@ -44,16 +44,25 @@ from investment_dashboard.ui.money_format import currency_symbol, fmt_shares
 ZERO = Decimal(0)
 _CENT = Decimal("0.01")
 
-#: Time-range options for the Overview value-over-time chart. ``None`` means
-#: "all time" (start at the first transaction). Labels match the user's
-#: requested Day / Month / Year / All selections.
+#: Time-range options for the Overview value-over-time chart. ``None`` means a
+#: non-fixed lookback (``"All"`` starts at the first transaction; ``"YTD"`` starts
+#: at 1 January of the current year — both resolved at build time, see
+#: :func:`range_start_date`). Labels match the user's requested
+#: Day / Week / Month / YTD / Year / All selections.
 VALUE_RANGES: tuple[tuple[str, int | None], ...] = (
     ("Day", 1),
+    ("Week", 7),
     ("Month", 30),
+    ("YTD", None),
     ("Year", 365),
     ("All", None),
 )
 _DEFAULT_RANGE = "Year"
+
+#: Ranges that render the multi-day / multi-currency comparison chart (everything
+#: a week or longer). The intraday "Day" curve stays single-currency with its own
+#: previous-close reference styling.
+MULTI_CCY_RANGES: frozenset[str] = frozenset({"Week", "Month", "YTD", "Year", "All"})
 
 
 @dataclass(frozen=True)
@@ -65,11 +74,17 @@ class ValueSeriesPoint:
 
 
 def resolve_range_days(label: str | None) -> tuple[str, int | None]:
-    """Map a range query-param to ``(canonical_label, lookback_days|None)``."""
+    """Map a range query-param to ``(canonical_label, lookback_days|None)``.
+
+    Matching is case-insensitive against the canonical :data:`VALUE_RANGES`
+    labels (so ``"ytd"`` resolves to ``"YTD"``). ``None`` lookback days are used
+    by ``"All"`` and ``"YTD"``, whose start dates are resolved at build time by
+    :func:`range_start_date`.
+    """
     if label is not None:
-        wanted = label.strip().capitalize()
+        wanted = label.strip().casefold()
         for name, days in VALUE_RANGES:
-            if name == wanted:
+            if name.casefold() == wanted:
                 return name, days
     for name, days in VALUE_RANGES:
         if name == _DEFAULT_RANGE:
@@ -145,6 +160,28 @@ def _earliest_transaction_date(session: Session) -> date | None:
     return txns[0].date if txns else None
 
 
+def range_start_date(session: Session, range_label: str | None, end: date) -> date | None:
+    """Resolve the inclusive start date for ``range_label`` ending at ``end``.
+
+    * ``"YTD"`` → 1 January of ``end``'s year.
+    * ``"All"`` (and any ``None`` lookback) → the first transaction date, or
+      ``None`` when the ledger is empty (nothing to plot).
+    * A fixed lookback (Week/Month/Year/…) → ``end - days``.
+
+    The returned date is clamped to be no later than ``end``.
+    """
+    canon, days = resolve_range_days(range_label)
+    if canon == "YTD":
+        start = date(end.year, 1, 1)
+    elif days is None:
+        start = _earliest_transaction_date(session)
+        if start is None:
+            return None
+    else:
+        start = end - timedelta(days=days)
+    return min(start, end)
+
+
 def build_value_series(
     session: Session,
     *,
@@ -169,14 +206,9 @@ def build_value_series(
     enough to trip NiceGUI's reconnect window and "crash" the app.
     """
     end = as_of or date.today()
-    _, days = resolve_range_days(range_label)
-    if days is None:
-        start = _earliest_transaction_date(session)
-        if start is None:
-            return []
-    else:
-        start = end - timedelta(days=days)
-    start = min(start, end)
+    start = range_start_date(session, range_label, end)
+    if start is None:
+        return []
 
     return [
         ValueSeriesPoint(date=day, value=value)
@@ -267,6 +299,26 @@ def build_intraday_value_series(
     if not samples:
         return []
 
+    return _compose_currency_points(samples, base=base, currency=currency, rate=rate, tz=tz)
+
+
+def _compose_currency_points(
+    samples: list[tuple[datetime, Decimal, Decimal | None]],
+    *,
+    base: Decimal,
+    currency: str,
+    rate: Decimal | None,
+    tz: tzinfo | None,
+) -> list[ValueSeriesPoint]:
+    """Turn ``(at_utc, market_eur, fx_eur_usd)`` samples into display-currency points.
+
+    Shared by the intraday "Day" curve and the multi-day "Week" curve. ``base``
+    is the constant cash + NAV remainder (EUR); ``market_eur`` is the
+    intraday-priced component's EUR pivot at that instant; ``rate`` is today's
+    EUR→``currency`` spot used for the EUR-native base. See
+    :func:`build_intraday_value_series` for the full currency model — USD is the
+    booked currency and stays FX-free, EUR is derived per-minute.
+    """
     points: list[ValueSeriesPoint] = []
     for at_utc, market_eur, sample_fx in samples:
         if currency == "EUR" or not rate:
@@ -290,6 +342,61 @@ def build_intraday_value_series(
             when = at_utc.replace(tzinfo=UTC).astimezone(tz).replace(tzinfo=None)
         points.append(ValueSeriesPoint(date=when, value=value))
     return points
+
+
+def build_week_value_series(
+    session: Session,
+    *,
+    currency: str,
+    tz: tzinfo | None = None,
+    now: datetime | None = None,
+    positions: list[Position] | None = None,
+) -> list[ValueSeriesPoint]:
+    """Multi-day portfolio-value series for the Overview "Week" (1W) range.
+
+    Inspired by the intraday "Day" curve, but instead of a single closing value
+    per day this plots **three** points for each of the last few trading
+    sessions — the day's *start* (first intraday bar), *midday* (the bar nearest
+    the session midpoint) and *close* (last bar) — so a week reads as a smooth,
+    detailed curve rather than five jagged daily steps.
+
+    The intraday-priced (market) component at each chosen instant is sourced
+    best-effort from the price feed (see
+    :func:`intraday_snapshots_service.week_series_with_fx`); the constant cash +
+    NAV base is reapplied here exactly as the Day curve does, and the same
+    per-minute FX / currency model applies (USD native and FX-free, EUR derived).
+    The live current value caps the curve so the tip matches the headline figure.
+
+    Returns ``[]`` when no intraday history could be sourced (e.g. offline, or an
+    empty ledger), letting the caller fall back to the daily snapshot series.
+    """
+    currency = currency.upper()
+    now = now or datetime.now(UTC)
+
+    if positions is None:
+        positions = compute_positions(session)
+    total_now = total_portfolio_value(session, positions=positions)
+    market_now = intraday_snapshots_service.market_value_eur(positions)
+    base = total_now - market_now
+
+    samples = intraday_snapshots_service.week_series_with_fx(session, now=now)
+
+    rate: Decimal | None = None
+    if currency != "EUR":
+        rate = fx_service.get_rate_eur_to_quote(session, date.today(), quote=currency)
+
+    # Cap the curve with the live current value so its tip equals the headline
+    # Total Value, pinned to the market close once the session is over (so it
+    # doesn't trail a flat line over a weekend). Mirrors the Day curve.
+    live_at = now.astimezone(UTC).replace(tzinfo=None) if now.tzinfo is not None else now
+    live_at = min(live_at, intraday_snapshots_service.session_close_utc(now))
+    if samples and samples[-1][0] < live_at:
+        samples = [*samples, (live_at, market_now, rate)]
+
+    if not samples:
+        return []
+
+    return _compose_currency_points(samples, base=base, currency=currency, rate=rate, tz=tz)
 
 
 def previous_session_close_value(
