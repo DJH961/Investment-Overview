@@ -18,6 +18,7 @@ import {
   loadQuotes,
   latestExpectedNavDate,
   marketCacheTtlMs,
+  holdsSettledClose,
   navCacheTtlMs,
   navPublishWindow,
   DEFAULT_CLOSED_MARKET_TTL_MS,
@@ -564,10 +565,42 @@ describe("marketCacheTtlMs — adaptive market refresh", () => {
     expect(marketCacheTtlMs({ valueDate: null }, { ...base, marketOpen: false })).toBe(DEFAULT_CACHE_TTL_MS);
   });
 
+  it("fetches once after the close when only an intraday print is held", () => {
+    // Captured mid-session (is_market_open true) with today's value-date: not yet
+    // the official close, so re-fetch once now that the session is shut.
+    expect(
+      marketCacheTtlMs({ valueDate: "2024-01-10", marketOpen: true }, { ...base, marketOpen: false }),
+    ).toBe(DEFAULT_CACHE_TTL_MS);
+    // A post-close capture (is_market_open false) is the settled close: rest.
+    expect(
+      marketCacheTtlMs({ valueDate: "2024-01-10", marketOpen: false }, { ...base, marketOpen: false }),
+    ).toBe(DEFAULT_CLOSED_MARKET_TTL_MS);
+    // An omitted flag is treated as a settled figure (no forced re-fetch loop).
+    expect(
+      marketCacheTtlMs({ valueDate: "2024-01-10", marketOpen: null }, { ...base, marketOpen: false }),
+    ).toBe(DEFAULT_CLOSED_MARKET_TTL_MS);
+  });
+
   it("honours custom short/long TTL overrides", () => {
     const opts = { ...base, marketOpen: false, shortTtlMs: 11, longTtlMs: 22 };
     expect(marketCacheTtlMs({ valueDate: "2024-01-09" }, opts)).toBe(11);
     expect(marketCacheTtlMs({ valueDate: "2024-01-10" }, opts)).toBe(22);
+  });
+});
+
+describe("holdsSettledClose — settled-close detection", () => {
+  const settled = "2024-01-10";
+  it("holds the close when the value-date covers the settled session and not intraday", () => {
+    expect(holdsSettledClose({ valueDate: "2024-01-10" }, settled)).toBe(true);
+    expect(holdsSettledClose({ valueDate: "2024-01-11" }, settled)).toBe(true);
+    expect(holdsSettledClose({ valueDate: "2024-01-10", marketOpen: false }, settled)).toBe(true);
+    expect(holdsSettledClose({ valueDate: "2024-01-10", marketOpen: null }, settled)).toBe(true);
+  });
+  it("does not hold the close for an intraday-only capture or an older/absent value-date", () => {
+    expect(holdsSettledClose({ valueDate: "2024-01-10", marketOpen: true }, settled)).toBe(false);
+    expect(holdsSettledClose({ valueDate: "2024-01-09" }, settled)).toBe(false);
+    expect(holdsSettledClose({ valueDate: null }, settled)).toBe(false);
+    expect(holdsSettledClose(null, settled)).toBe(false);
   });
 });
 

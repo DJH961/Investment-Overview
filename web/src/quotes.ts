@@ -230,24 +230,48 @@ export interface MarketRefreshOptions {
 }
 
 /**
+ * Whether a cached **market** quote genuinely holds the latest *settled close*
+ * (`latestSettledDate`) — not merely a same-day intraday print.
+ *
+ * A quote's value-date turns to today's date the moment the session opens, so a
+ * mid-session capture (say 15:18 ET) already carries today's value-date even
+ * though it is *not* the official 16:00 close. If we treated "value-date ==
+ * settled date" as "holds the close", such an intraday capture would wrongly
+ * suppress the one post-close fetch that records the real closing price — the
+ * symbol would freeze on its last intraday value all evening (the "stopped
+ * updating at 22:00 even though the last pull was 21:18" bug).
+ *
+ * So a quote counts as holding the close only when its value-date is at least
+ * the settled date **and** it was not captured while the session was open. The
+ * provider's `is_market_open` flag is ground truth here: `true` means an
+ * intraday capture (re-fetch once after the close to settle it); `false`/`null`
+ * (a closed-market fetch, or an endpoint that omits the flag) means the value is
+ * already a settled figure.
+ */
+export function holdsSettledClose(
+  cached: { valueDate?: string | null; marketOpen?: boolean | null } | null | undefined,
+  latestSettledDate: string,
+): boolean {
+  const have = cached?.valueDate ?? null;
+  if (!have || have < latestSettledDate) return false;
+  // Captured mid-session ⇒ it's an intraday print, not the official close.
+  return cached?.marketOpen !== true;
+}
+
+/**
  * Adaptive freshness window for a **market** (stock/ETF) symbol, the mirror of
  * {@link navCacheTtlMs} for continuously-traded instruments.
  *
  * While the session is open we poll on the short window (prices move intraday).
  * Once it closes there is nothing new until it reopens, so if we already hold
- * the latest settled close (the cached value-date is at least the most recent
- * settled session date) we rest on the long window and spend no credits —
- * freeing that budget for late-arriving fund NAVs. If the market is closed but
- * we are *missing* that close (or its date is unknown) we fetch once on the
- * short window to capture it, then go quiet.
- *
- * Note: the "latest close" we settle on is the last intraday print we hold for
- * the session (its value-date is already today during the session), which is at
- * most a few minutes off the official 16:00 print — an intentional trade of
- * sub-cent close precision for not re-polling an idle market all evening.
+ * the latest settled close (see {@link holdsSettledClose}) we rest on the long
+ * window and spend no credits — freeing that budget for late-arriving fund NAVs.
+ * If the market is closed but we are *missing* that close — including the case
+ * where all we hold is a mid-session intraday print — we fetch once on the short
+ * window to capture the official close, then go quiet.
  */
 export function marketCacheTtlMs(
-  cached: { valueDate?: string | null } | null | undefined,
+  cached: { valueDate?: string | null; marketOpen?: boolean | null } | null | undefined,
   options: MarketRefreshOptions,
 ): number {
   const {
@@ -258,10 +282,10 @@ export function marketCacheTtlMs(
   } = options;
   // Session open: poll live.
   if (marketOpen) return shortTtlMs;
-  // Closed and already holding the latest settled close: nothing to fetch.
-  const have = cached?.valueDate ?? null;
-  if (have && have >= latestSettledDate) return longTtlMs;
-  // Closed but missing that close (or unknown date): fetch once to capture it.
+  // Closed and already holding the latest *settled* close: nothing to fetch.
+  if (holdsSettledClose(cached, latestSettledDate)) return longTtlMs;
+  // Closed but missing that close (or only holding an intraday print): fetch
+  // once to capture the official close.
   return shortTtlMs;
 }
 

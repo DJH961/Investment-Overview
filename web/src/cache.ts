@@ -336,6 +336,29 @@ export function creditsSpentWithin(log: CreditSpend[], now: number, windowMs: nu
 }
 
 /**
+ * Epoch ms of the most recent top-of-the-hour (`:00`) at or before `now`.
+ *
+ * Because a UTC hour is a fixed 3_600_000 ms and every whole-hour timezone shares
+ * the same `:00` boundary, flooring to the hour grid lands exactly on the local
+ * clock's top of the hour for the device's timezone.
+ */
+export function startOfHour(now: number): number {
+  const HOUR_MS = 60 * 60 * 1000;
+  return Math.floor(now / HOUR_MS) * HOUR_MS;
+}
+
+/**
+ * Credits spent so far **this clock hour** (since the most recent `:00`). Unlike
+ * a trailing 60-minute window this resets to zero on the hour — at 1:00, 2:00,
+ * … — which is the budget cadence the user expects ("rest on the hour, not
+ * every hour"): a spend at 1:55 no longer suppresses a fresh allowance at 2:00.
+ */
+export function creditsSpentThisHour(log: CreditSpend[], now: number): number {
+  const hourStart = startOfHour(now);
+  return log.reduce((acc, e) => (e.at >= hourStart ? acc + e.n : acc), 0);
+}
+
+/**
  * Epoch ms of the most recent 00:00 **UTC** at or before `now`.
  *
  * Twelve Data resets the free-tier *daily* credit allowance at midnight UTC, so

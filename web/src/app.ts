@@ -57,6 +57,7 @@ import {
   DEFAULT_NAV_CACHE_TTL_MS,
   FREE_TIER,
   NAV_PUBLISH_HOUR,
+  holdsSettledClose,
   latestExpectedNavDate,
   loadEurUsd,
   loadFxRates,
@@ -1249,10 +1250,17 @@ export class App {
       navPublishWindow(navStats.get(symbol)?.hours).publishHour;
     let count = 0;
     for (const entry of plan) {
-      const have = cached.get(entry.symbol)?.quote.valueDate ?? null;
-      const expected =
-        entry.priceType === "market" ? settled : latestExpectedNavDate(now, publishHourFor(entry.symbol));
-      if (!have || have < expected) count++;
+      const cq = cached.get(entry.symbol)?.quote;
+      if (entry.priceType === "market") {
+        // Market symbol: outdated unless we hold the latest *settled* close — an
+        // intraday-only print still counts as outdated so the official close is
+        // captured once after the bell.
+        if (!holdsSettledClose(cq, settled)) count++;
+      } else {
+        const have = cq?.valueDate ?? null;
+        const expected = latestExpectedNavDate(now, publishHourFor(entry.symbol));
+        if (!have || have < expected) count++;
+      }
     }
     return count;
   }
@@ -1327,12 +1335,15 @@ export class App {
         ? () => true
         : force
           ? (symbol, cached) => {
-              const have = cached?.quote.valueDate ?? null;
               if (!navFetchSymbols.has(symbol)) {
                 const at = new Date();
                 if (isUsMarketOpen(at)) return true;
-                return !(have && have >= latestSettledSessionDate(at));
+                // Closed: re-pull unless we hold the latest *settled* close. An
+                // intraday-only capture (value-date is today but taken before the
+                // bell) still warrants one pull to record the official close.
+                return !holdsSettledClose(cached?.quote, latestSettledSessionDate(at));
               }
+              const have = cached?.quote.valueDate ?? null;
               return !(have && have >= latestExpectedNavDate(new Date(), publishHourFor(symbol)));
             }
           : undefined,
@@ -1720,12 +1731,13 @@ export class App {
 
   /**
    * Whether at least one **market** (stock/ETF) symbol is missing the latest
-   * already-settled close — i.e. its cached value-date is older than
-   * {@link latestSettledSessionDate} (or it has no cached price at all). Mirrors
-   * the per-symbol catch-up in {@link marketCacheTtlMs}: while the exchange is
-   * shut we normally rest, *unless* we don't actually hold that close yet (the
-   * app was offline across it), in which case it is genuinely outdated and must
-   * still be fetched even outside the session.
+   * already-settled close — either its cached value-date is older than
+   * {@link latestSettledSessionDate}, it has no cached price at all, or all we
+   * hold is a mid-session intraday print (not yet the official close). Mirrors
+   * the per-symbol catch-up in {@link marketCacheTtlMs} via {@link holdsSettledClose}:
+   * while the exchange is shut we normally rest, *unless* we don't actually hold
+   * that settled close yet (offline across it, or only an intraday capture), in
+   * which case it is genuinely outdated and must still be fetched.
    */
   private marketDataOutdated(now: Date = new Date()): boolean {
     const marketSymbols = readSymbolPlan()
@@ -1735,8 +1747,9 @@ export class App {
     const cached = readCachedQuotes();
     const settled = latestSettledSessionDate(now);
     return marketSymbols.some((symbol) => {
-      const have = cached.get(symbol)?.quote.valueDate ?? null;
-      return !(have && have >= settled);
+      // Outdated unless we hold the *settled* close — an intraday-only print
+      // (captured before the bell) still needs one post-close fetch.
+      return !holdsSettledClose(cached.get(symbol)?.quote, settled);
     });
   }
 

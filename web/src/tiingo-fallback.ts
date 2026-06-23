@@ -19,7 +19,7 @@ import {
   readTiingoState,
   recordNavPublish,
   recordTiingoCredits,
-  creditsSpentWithin,
+  creditsSpentThisHour,
   tiingoCreditsSpentToday,
   writeCachedQuotes,
   writeTiingoState,
@@ -113,7 +113,10 @@ function readBudget(
   reserve = 0,
 ): Budget {
   const log = readTiingoCreditLog(now, undefined, storage ?? undefined);
-  const hourUsed = creditsSpentWithin(log, now, HOUR_MS);
+  // The hourly cap resets on the clock hour (1:00, 2:00, …) rather than a
+  // trailing 60-min window, so a burst at :55 doesn't suppress the fresh
+  // allowance the user expects at the top of the next hour.
+  const hourUsed = creditsSpentThisHour(log, now);
   const dayUsed = tiingoCreditsSpentToday(log, now);
   return new Budget(
     hourUsed,
