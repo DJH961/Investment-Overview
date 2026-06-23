@@ -1029,6 +1029,36 @@ a:focus-visible, [tabindex]:focus-visible {{
 .q-separator {{
   background: var(--inv-hairline) !important;
 }}
+
+/* ------------------------------------------------------------------ */
+/* Plotly charts — dark-mode proof axis text                          */
+/* ------------------------------------------------------------------ */
+/* The figures are rendered server-side with a fixed *light* template
+   (``colorblind_modern``), so their ink-coloured axis tick labels,
+   titles and legend would vanish against the dark card surface. The
+   server can't know the resolved theme at render time (it may be
+   "auto" / follow-the-device), so we recolour the SVG text from the
+   live theme tokens here instead: ``--inv-muted`` / ``--inv-ink`` /
+   ``--inv-hairline`` already flip with ``.body--dark``, making every
+   chart legible in light, dark *and* auto modes. Plotly scopes its tick
+   classes per axis id (``xtick`` / ``ytick`` only target the primary
+   axes), so a coloured secondary axis — e.g. the dual-currency right
+   axis whose ``y2tick`` / ``y2title`` text is intentionally pink — keeps
+   its own colour. */
+.js-plotly-plot .xtick text,
+.js-plotly-plot .ytick text {{
+  fill: var(--inv-muted) !important;
+}}
+.js-plotly-plot .gtitle,
+.js-plotly-plot .xtitle,
+.js-plotly-plot .ytitle,
+.js-plotly-plot .infolayer .legendtext {{
+  fill: var(--inv-ink) !important;
+}}
+.js-plotly-plot .gridlayer path,
+.js-plotly-plot .zerolinelayer path {{
+  stroke: var(--inv-hairline) !important;
+}}
 """
 
 

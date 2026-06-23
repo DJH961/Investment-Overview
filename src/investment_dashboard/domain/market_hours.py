@@ -154,6 +154,21 @@ def is_us_market_holiday(day: date) -> bool:
     return day in _holidays_for_year(day.year)
 
 
+def is_trading_day(day: date) -> bool:
+    """Return ``True`` when ``day`` is a regular NYSE trading session.
+
+    A trading day is any weekday (Mon–Fri) that is not a full-day market
+    holiday. Half-day early closes still count as trading days (the market is
+    genuinely open, just for a shorter session — see :func:`is_us_market_holiday`).
+
+    Charts use this to drop non-trading days from value-over-time series: their
+    plotted value is only the prior session's close carried forward, so they add
+    flat, meaningless steps. Skipping them lets the line's own smoothing bridge
+    the gap instead.
+    """
+    return day.weekday() < _SATURDAY and not is_us_market_holiday(day)
+
+
 def is_us_market_open(now: datetime | None = None) -> bool:
     """Return ``True`` when the NYSE regular session is open at ``now``.
 
