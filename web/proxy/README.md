@@ -92,6 +92,16 @@ must stay secret, so the same Worker proxies it on a dedicated `…/price` route
   **daily** closes (`/tiingo/daily/<ticker>/prices`, `resampleFreq=daily`). The
   forwarded `startDate`/`endDate` window is what feeds the 1W-and-beyond daily
   closes.
+- `GET …/price?fx=eurusd` → Tiingo **FX** top-of-book
+  (`/tiingo/fx/top?tickers=eurusd`): the live EUR→USD bid/ask/mid, used as the
+  **backup live FX provider** behind Twelve Data for the home-currency rate. The
+  pair is validated to exactly six lowercase letters (tighter than the ticker
+  charset). Tiingo's `midPrice` is already USD-per-EUR, so the browser uses it
+  directly (no inversion).
+- `GET …/price?fxDaily=eurusd&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` → Tiingo
+  **FX daily** history (`/tiingo/fx/eurusd/prices`, `resampleFreq=1day`): per-day
+  EUR→USD closes that backfill each graph point at its own settled FX rate, in
+  one batched request that mirrors the daily-close window above.
 - `GET …/iex-intraday?ticker=AAPL&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&resampleFreq=1hour`
   → Tiingo **IEX intraday bars** (`/iex/<ticker>/prices`) for the live 1D/1W
   graph backfill. `resampleFreq` defaults to `1hour` and accepts a positive
@@ -123,11 +133,27 @@ wrangler secret put TIINGO_TOKEN   # paste your Tiingo API token when prompted
 wrangler deploy
 ```
 
+> **Adding the FX backup to an already-deployed Worker?** The FX route reuses the
+> **same** `TIINGO_TOKEN` secret — there is **no new secret to set**. You only need
+> to **redeploy** the latest `worker.js` so the new `?fx=eurusd` branch ships:
+>
+> ```sh
+> cd web/proxy
+> wrangler deploy            # picks up the new fx route in worker.js
+> ```
+>
+> If you have never set `TIINGO_TOKEN` (you weren't using the price fallback yet),
+> run the `wrangler secret put TIINGO_TOKEN` step above first, then `wrangler deploy`.
+
 ### Test it
 
 ```sh
 # Should return 200 JSON with `access-control-allow-origin: *`.
 curl -i "https://investment-overview-blob-proxy.<your-subdomain>.workers.dev/price?tickers=AAPL"
+
+# The FX backup route — should return a JSON array like
+# [{"ticker":"eurusd","bidPrice":…,"askPrice":…,"midPrice":…,"quoteTimestamp":…}].
+curl -i "https://investment-overview-blob-proxy.<your-subdomain>.workers.dev/price?fx=eurusd"
 ```
 
 The companion auto-derives the `/price` URL from the blob Worker origin, so once

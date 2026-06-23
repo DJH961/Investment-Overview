@@ -1,7 +1,8 @@
 /**
  * Tests for the Cloudflare Worker (`web/proxy/worker.js`) Tiingo routes:
- * the new `/iex-intraday` intraday-bars proxy, the `/price` daily-range branch,
- * and the shared per-isolate hourly Tiingo budget (429 + Retry-After). The
+ * the `/iex-intraday` intraday-bars proxy, the `/price` daily-range branch,
+ * the `/price` FX branches (`?fx=eurusd` live + `?fxDaily=eurusd` history), and
+ * the shared per-isolate hourly Tiingo budget (429 + Retry-After). The
  * upstream `fetch` is stubbed so no network is touched; we assert on the exact
  * pinned URL the Worker builds, the injected `Authorization` header, and that
  * caller input is charset-validated (no SSRF, no open proxy).
@@ -171,5 +172,76 @@ describe("hourly Tiingo reserve", () => {
       (await worker.fetch(new Request(`${ORIGIN}/iex-intraday?ticker=AAPL`), env)).status,
     ).toBe(200);
     expect((await worker.fetch(new Request(`${ORIGIN}/price?tickers=MSFT`), env)).status).toBe(429);
+  });
+});
+
+describe("/price fx route (live top-of-book)", () => {
+  it("builds the pinned Tiingo FX top-of-book URL and injects the token as a header", async () => {
+    const worker = await loadWorker();
+    const calls = stubUpstreamHolder.current.calls;
+    const resp = await worker.fetch(new Request(`${ORIGIN}/price?fx=eurusd`), ENV);
+    expect(resp.status).toBe(200);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe("https://api.tiingo.com/tiingo/fx/top?tickers=eurusd");
+    expect(new Headers(calls[0].init.headers).get("Authorization")).toBe("Token secret-token");
+    // Token never leaks into the upstream URL.
+    expect(calls[0].url.toLowerCase()).not.toContain("secret-token");
+  });
+
+  it("rejects a malformed fx pair without hitting the upstream", async () => {
+    const worker = await loadWorker();
+    const calls = stubUpstreamHolder.current.calls;
+    const resp = await worker.fetch(new Request(`${ORIGIN}/price?fx=eur/usd`), ENV);
+    expect(resp.status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("503s when no Tiingo token is configured", async () => {
+    const worker = await loadWorker();
+    const resp = await worker.fetch(new Request(`${ORIGIN}/price?fx=eurusd`), {});
+    expect(resp.status).toBe(503);
+  });
+
+  it("still serves the IEX quote route unchanged", async () => {
+    const worker = await loadWorker();
+    const calls = stubUpstreamHolder.current.calls;
+    await worker.fetch(new Request(`${ORIGIN}/price?tickers=AAPL`), ENV);
+    expect(calls[0].url).toBe("https://api.tiingo.com/iex/?tickers=AAPL");
+  });
+});
+
+describe("/price fxDaily route (history backfill)", () => {
+  it("builds the pinned Tiingo FX daily-history URL over the requested window", async () => {
+    const worker = await loadWorker();
+    const calls = stubUpstreamHolder.current.calls;
+    const resp = await worker.fetch(
+      new Request(`${ORIGIN}/price?fxDaily=eurusd&startDate=2026-06-01&endDate=2026-06-23`),
+      ENV,
+    );
+    expect(resp.status).toBe(200);
+    const url = new URL(calls[0].url);
+    expect(url.origin + url.pathname).toBe("https://api.tiingo.com/tiingo/fx/eurusd/prices");
+    expect(url.searchParams.get("resampleFreq")).toBe("1day");
+    expect(url.searchParams.get("startDate")).toBe("2026-06-01");
+    expect(url.searchParams.get("endDate")).toBe("2026-06-23");
+    expect(url.search).not.toContain("secret-token");
+    expect(new Headers(calls[0].init.headers).get("Authorization")).toBe("Token secret-token");
+  });
+
+  it("rejects a malformed fxDaily pair without hitting the upstream", async () => {
+    const worker = await loadWorker();
+    const calls = stubUpstreamHolder.current.calls;
+    const resp = await worker.fetch(new Request(`${ORIGIN}/price?fxDaily=eur1usd`), ENV);
+    expect(resp.status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("counts against the shared hourly reserve", async () => {
+    const worker = await loadWorker();
+    const env: WorkerEnv = { TIINGO_TOKEN: "secret-token", TIINGO_HOURLY_RESERVE: "1" };
+    expect((await worker.fetch(new Request(`${ORIGIN}/price?fxDaily=eurusd`), env)).status).toBe(
+      200,
+    );
+    expect((await worker.fetch(new Request(`${ORIGIN}/price?fx=eurusd`), env)).status).toBe(429);
   });
 });

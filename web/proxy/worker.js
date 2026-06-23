@@ -28,9 +28,12 @@
  * Tiingo price fallback (`/price` route)
  * --------------------------------------
  * A second, equally-pinned route lives at `…/price`. It proxies **only**
- * `api.tiingo.com` — the IEX quote endpoint (`/iex/?tickers=…`) and the daily
- * close endpoint (`/tiingo/daily/<ticker>/prices`) — injecting the `TIINGO_TOKEN`
- * secret server-side so the browser companion stays Tiingo-keyless. Symbols are
+ * `api.tiingo.com` — the IEX quote endpoint (`/iex/?tickers=…`), the daily
+ * close endpoint (`/tiingo/daily/<ticker>/prices`), and the live FX top-of-book
+ * endpoint (`/tiingo/fx/top?tickers=<pair>`, e.g. `eurusd`) — injecting the
+ * `TIINGO_TOKEN` secret server-side so the browser companion stays
+ * Tiingo-keyless. The FX route backs up the home-currency EUR/USD rate the same
+ * way the IEX route backs up instrument prices. Symbols/pairs are
  * validated against a strict charset (still no SSRF: the upstream host and paths
  * are fixed; only the ticker list and a few numeric/date query params vary).
  * The token is sent as an `Authorization: Token …` header, never in the URL, so
@@ -69,6 +72,13 @@ const TIINGO_ROOT = "https://api.tiingo.com";
  * never smuggle a path/host into the pinned upstream (no SSRF).
  */
 const TICKER_RE = /^[A-Za-z0-9.\-]+$/;
+/**
+ * Allowed FX pair charset. Tiingo quotes lowercase concatenated ISO pairs
+ * (`eurusd`, `gbpusd`, …). Restricting to exactly six lowercase letters is even
+ * tighter than the ticker charset, so an FX pair can never smuggle a path/host
+ * into the pinned upstream (no SSRF).
+ */
+const FX_PAIR_RE = /^[a-z]{6}$/;
 /** A numeric query value (output size). */
 const NUMERIC_RE = /^\d{1,4}$/;
 /** A `YYYY-MM-DD` calendar date (daily-close window bounds). */
@@ -176,6 +186,8 @@ function hourlyReserve(env) {
  *
  *   - `?tickers=AAPL,MSFT`            → IEX live quotes / latest NAV
  *   - `?daily=AAPL&startDate=…&endDate=…&outputsize=…` → daily closes
+ *   - `?fx=eurusd`                    → live FX top-of-book (bid/ask/mid)
+ *   - `?fxDaily=eurusd&startDate=…&endDate=…` → daily FX history (per-day close)
  *
  * Everything else (host, path) is fixed here, and every caller-supplied value is
  * charset-validated, so this can only ever read Tiingo price data (no SSRF).
@@ -305,6 +317,8 @@ async function handleIexIntraday(request, env) {
 function buildTiingoUrl(params) {
   const tickers = params.get("tickers");
   const daily = params.get("daily");
+  const fx = params.get("fx");
+  const fxDaily = params.get("fxDaily");
 
   if (tickers) {
     const list = tickers.split(",").map((t) => t.trim()).filter((t) => t.length > 0);
@@ -316,8 +330,40 @@ function buildTiingoUrl(params) {
     return url.toString();
   }
 
+  if (fx) {
+    // Live FX top-of-book for one quoted pair (e.g. `eurusd`). The browser reads
+    // `midPrice` and uses it directly as the EUR→USD spot. Strictly validated to
+    // six lowercase letters so it can only ever name a Tiingo FX pair.
+    if (!FX_PAIR_RE.test(fx)) throw new Error("invalid fx pair");
+    const url = new URL(`${TIINGO_ROOT}/tiingo/fx/top`);
+    url.searchParams.set("tickers", fx);
+    return url.toString();
+  }
+
+  if (fxDaily) {
+    // Daily FX history for one quoted pair (e.g. `eurusd`), one batched request
+    // over the forwarded startDate/endDate window. This backfills each graph
+    // point at its own settled EUR→USD close so the EUR and USD lines genuinely
+    // diverge per day, mirroring the equity daily-close backfill. Strictly
+    // validated to six lowercase letters so it can only ever name a Tiingo FX
+    // pair (no SSRF).
+    if (!FX_PAIR_RE.test(fxDaily)) throw new Error("invalid fxDaily pair");
+    const url = new URL(`${TIINGO_ROOT}/tiingo/fx/${fxDaily}/prices`);
+    url.searchParams.set("resampleFreq", "1day");
+    const start = params.get("startDate");
+    const end = params.get("endDate");
+    if (start) {
+      if (!DATE_RE.test(start)) throw new Error("invalid startDate");
+      url.searchParams.set("startDate", start);
+    }
+    if (end) {
+      if (!DATE_RE.test(end)) throw new Error("invalid endDate");
+      url.searchParams.set("endDate", end);
+    }
+    return url.toString();
+  }
+
   if (daily) {
-    if (!TICKER_RE.test(daily)) throw new Error("invalid daily ticker");
     const url = new URL(`${TIINGO_ROOT}/tiingo/daily/${daily}/prices`);
     url.searchParams.set("format", "json");
     // Pin the resample to daily closes (the only frequency this route serves):
@@ -344,7 +390,7 @@ function buildTiingoUrl(params) {
     return url.toString();
   }
 
-  throw new Error("missing tickers or daily parameter");
+  throw new Error("missing tickers, fx, fxDaily or daily parameter");
 }
 
 /**

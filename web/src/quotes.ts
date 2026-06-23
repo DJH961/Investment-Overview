@@ -25,6 +25,9 @@ import {
   readCachedQuotes,
   readCreditLog,
   recordCredits,
+  readTiingoCreditLog,
+  recordTiingoCredits,
+  tiingoCreditsSpentToday,
   writeCachedEurUsd,
   writeCachedFx,
   writeCachedQuotes,
@@ -44,6 +47,8 @@ import {
 } from "./prices";
 import type { Decimal } from "./decimal-config";
 import { latestSettledSessionDate } from "./market-hours";
+import { fetchTiingoEurUsd } from "./tiingo";
+import { Budget, WEB_DAILY_CAP, WEB_HOURLY_CAP } from "./tiingo-gate";
 
 /** Twelve Data free-tier limits — the design constraint for this whole module. */
 export const FREE_TIER = {
@@ -586,7 +591,7 @@ export async function loadFxRates(
 export const DEFAULT_EURUSD_TTL_MS = 15 * MINUTE_MS;
 
 /** Where a {@link loadEurUsd} reading came from. */
-export type EurUsdSource = "live" | "eod" | "cache" | "none";
+export type EurUsdSource = "live" | "tiingo" | "eod" | "cache" | "none";
 
 export interface LoadEurUsdResult {
   /** Units of USD per 1 EUR, the current mark (null when wholly unavailable). */
@@ -617,6 +622,17 @@ export interface LoadEurUsdOptions {
    * Frankfurter round-trip.
    */
   eodFallback?: Decimal | null;
+  /**
+   * The resolved `/price` Worker URL, enabling the **Tiingo** secondary FX
+   * provider. When Twelve Data (primary) can't deliver a fresh live spot — no
+   * key, budget spent, a transient failure, or a null reading — and we have no
+   * fresh same-day cache, Tiingo's `eurusd` mid is tried (one call, charged to
+   * the same ET-reset web Tiingo budget) *before* dropping to the flat ECB
+   * end-of-day rate. Null/omitted disables the backup (a vanilla setup).
+   */
+  tiingoProxyUrl?: string | null;
+  /** Injectable fetch for the Tiingo FX call (defaults to {@link fetchImpl}). */
+  tiingoFetchImpl?: FetchLike;
 }
 
 /**
@@ -640,11 +656,15 @@ function isSameUtcDay(aMs: number, bMs: number): boolean {
  * today's move. Order of preference:
  *   1. a still-fresh cached reading (zero credits),
  *   2. a live Twelve Data `quote` on `EUR/USD` (one credit, budget-permitting),
- *   3. a cached reading from *today* even if past its TTL — keep using today's
+ *   3. the **Tiingo** secondary FX provider's `eurusd` mid (one Tiingo call via
+ *      the `/price` Worker, budget-permitting) — a genuine live spot when the
+ *      primary couldn't deliver; it carries no prior close, so today's cached
+ *      prior close (if any) is reused alongside it,
+ *   4. a cached reading from *today* even if past its TTL — keep using today's
  *      real intraday spot + prior close rather than collapsing to end-of-day,
- *   4. the end-of-day ECB rate from {@link loadFxRates} (`eodFallback`) — no
+ *   5. the end-of-day ECB rate from {@link loadFxRates} (`eodFallback`) — no
  *      prior close, so callers fall back to the FX-unaware move,
- *   5. the last cached reading even if from before today,
+ *   6. the last cached reading even if from before today,
  * degrading gracefully at every step rather than dead-ending the screen.
  */
 export async function loadEurUsd(
@@ -659,6 +679,8 @@ export async function loadEurUsd(
     creditsPerMinute = FREE_TIER.creditsPerMinute,
     creditsPerDay = FREE_TIER.creditsPerDay,
     eodFallback = null,
+    tiingoProxyUrl = null,
+    tiingoFetchImpl,
   } = options;
 
   const cached = readCachedEurUsd(storage ?? undefined);
@@ -684,6 +706,40 @@ export async function loadEurUsd(
           return { now: reading.now, previousClose: reading.previousClose, source: "live", cached: false, error: null };
         }
       } catch (err) {
+        liveError = err instanceof PriceError ? err : new PriceError((err as Error).message, { retryable: true });
+      }
+    }
+  }
+
+  // Tiingo secondary FX provider: the primary couldn't deliver a fresh spot (no
+  // key, budget spent, a transient failure, or a null reading). One Tiingo call
+  // via the `/price` Worker, charged to the same ET-reset web Tiingo budget
+  // (40/hr · 800/day). Tiingo carries no prior close, so reuse today's cached
+  // one for an FX-aware move when available. Best-effort: never throws here.
+  if (tiingoProxyUrl) {
+    const t = now();
+    const log = readTiingoCreditLog(t, undefined, storage ?? undefined);
+    const budget = new Budget(
+      creditsSpentWithin(log, t, MINUTE_MS * 60),
+      tiingoCreditsSpentToday(log, t),
+      WEB_HOURLY_CAP,
+      WEB_DAILY_CAP,
+    );
+    if (budget.hasRoom()) {
+      recordTiingoCredits(1, t, storage ?? undefined);
+      try {
+        const reading = await fetchTiingoEurUsd(tiingoProxyUrl, {
+          fetchImpl: tiingoFetchImpl ?? fetchImpl,
+        });
+        if (reading && reading.now.greaterThan(0)) {
+          const at = now();
+          const prevClose = cached && isSameUtcDay(cached.at, at) ? cached.previousClose : null;
+          writeCachedEurUsd({ now: reading.now, previousClose: prevClose }, reading.at ?? at, storage ?? undefined);
+          return { now: reading.now, previousClose: prevClose, source: "tiingo", cached: false, error: liveError };
+        }
+      } catch (err) {
+        // A transient backup failure is non-fatal: record it on `error` and keep
+        // degrading to the cache / EOD rate below, never dead-ending the screen.
         liveError = err instanceof PriceError ? err : new PriceError((err as Error).message, { retryable: true });
       }
     }
