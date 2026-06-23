@@ -345,8 +345,8 @@ export class App {
     importBtn.addEventListener("click", () => importInput.click());
     importInput.addEventListener("change", () => {
       const file = importInput.files?.[0];
+      importInput.value = "";
       if (!file) return;
-      void file
         .text()
         .then((text) => {
           const imported = parseConfigPacket(text);
