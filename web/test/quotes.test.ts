@@ -218,7 +218,8 @@ describe("loadQuotes — caching", () => {
       navSymbols: new Set(["FXAIX"]),
       cacheTtlMsForSymbol: (s) => (s === "FXAIX" ? 12 * 60 * 60_000 : 15 * 60_000),
       forceMarketFetch: true,
-      // A manual Refresh deems the NAV behind, so it is forced despite being NAV.
+      // forceMarketFetch re-pulls the market symbol (VTI); forceFetch additionally
+      // opts the behind NAV (FXAIX) back in, so both are fetched this call.
       forceFetch: (s) => s === "FXAIX",
     });
     expect(report.fetched.sort()).toEqual(["FXAIX", "VTI"]);
@@ -417,9 +418,9 @@ describe("navCacheTtlMs — adaptive NAV refresh", () => {
   });
 
   it("keeps chasing a late NAV past midnight (no catch-up cap)", () => {
-    // 00:30 Thursday, still missing Wednesday's NAV: before the publish hour the
-    // latest expected is the prior session (Wed 01-10), which we don't hold, so
-    // we keep polling rather than giving up until the next evening.
+    // 00:30 Thursday. Before the 22:00 publish hour the latest expected NAV is
+    // the prior session — Wednesday (01-10) — but we only hold Tuesday's (01-09),
+    // so we keep polling rather than giving up until the next evening.
     const thu0030 = new Date(2024, 0, 11, 0, 30).getTime();
     expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { now: thu0030 })).toBe(DEFAULT_CACHE_TTL_MS);
   });

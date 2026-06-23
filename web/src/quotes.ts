@@ -82,11 +82,12 @@ export const DEFAULT_NAV_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 export const NAV_PUBLISH_HOUR = 22;
 
 /**
- * Bootstrap span (hours past {@link NAV_PUBLISH_HOUR}) used only to seed a fund's
+ * Bootstrap span (hours past {@link NAV_PUBLISH_HOUR}) used to seed a fund's
  * learned publish window before we've observed its real habit (see
- * {@link navPublishWindow}). It no longer caps how long a *missing* NAV is
- * chased: once we are past the expected publish hour and still behind, the fund
- * is polled like a normal symbol until its new NAV actually lands.
+ * {@link navPublishWindow}, which returns it as `catchUpWindowHours`). It feeds
+ * only the *width* of the initial learned window; how long a *missing* NAV is
+ * chased is no longer capped — {@link navCacheTtlMs} polls a behind fund like a
+ * normal symbol until its new NAV lands.
  */
 export const NAV_CATCHUP_WINDOW_HOURS = 2;
 
