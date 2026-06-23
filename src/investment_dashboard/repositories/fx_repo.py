@@ -6,7 +6,7 @@ from collections.abc import Iterable, Mapping
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
@@ -83,3 +83,26 @@ def upsert_rates(
     )
     result = session.execute(stmt)
     return result.rowcount or len(rates)
+
+
+def delete_by_source(
+    session: Session,
+    *,
+    base: str = "EUR",
+    quote: str = "USD",
+    source: str,
+) -> int:
+    """Delete every ``(base, quote)`` row marked with ``source``. Returns rows removed.
+
+    Used to retire a provider's rows so another source repopulates the dates —
+    e.g. dropping a legacy yfinance end-of-day overlay so the ECB/Frankfurter
+    backfill re-marks those days.
+    """
+    result = session.execute(
+        delete(FxHistory).where(
+            FxHistory.base == base,
+            FxHistory.quote == quote,
+            FxHistory.source == source,
+        )
+    )
+    return int(result.rowcount or 0)

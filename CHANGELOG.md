@@ -28,11 +28,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   companion renders each chart natively in the active currency; the live "today"
   tip uses the live intraday EUR/USD spot, so the USD and EUR graphs legitimately
   differ point-by-point as the FX market moves.
-- **Recreated FX history uses each day's actual market close (yfinance).** A
-  yfinance `EURUSD=X` overlay re-marks the EUR/USD history on top of the
-  ECB/Frankfurter baseline, so back-filled days convert a USD-native portfolio
-  into euros at that day's real market-close rate. Best-effort: any fetch failure
-  leaves the ECB rates in place.
+- **End-of-day FX history is sourced from the ECB (Frankfurter), intraday from
+  yfinance.** Historical end-of-day EUR/USD marks come from the ECB reference
+  rates; an earlier yfinance `EURUSD=X` end-of-day overlay has been reverted (and
+  any rows it left behind are purged on boot so the ECB backfill owns those
+  dates). yfinance is now used only for the *live and intraday* rates that feed
+  the "1 Day" curve. Every figure is still converted at its own point in time —
+  each day at that day's ECB rate, never today's.
+- **Overview "1 Day" graph uses true per-minute EUR/USD FX.** When the curve is
+  reconstructed (now every 15 minutes, down from 30), each back-filled point is
+  converted at the EUR/USD rate actually struck at that minute — pulled from
+  yfinance's `EURUSD=X` intraday bars — and live samples record the rate they
+  were captured at (new nullable cache-tier `fx_eur_usd` column on
+  `intraday_value`, added in place). USD stays the booked currency (FX-free); the
+  EUR view diverges from it minute-by-minute as the FX market moves, instead of a
+  single uniform conversion. Missing bars fall back to the day's settled rate.
 
 ### Fixed
 

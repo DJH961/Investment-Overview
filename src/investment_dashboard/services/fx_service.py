@@ -40,7 +40,8 @@ log = logging.getLogger(__name__)
 DEFAULT_QUOTES: tuple[str, ...] = ("USD",)
 
 _PROVIDER = "frankfurter"
-#: Provider tag stored on rows re-marked from yfinance's ``EURUSD=X`` history.
+#: Provider tag of the retired yfinance ``EURUSD=X`` end-of-day overlay; kept so
+#: any rows it left behind can be purged in favour of the ECB reference rates.
 _YF_PROVIDER = "yfinance"
 
 
@@ -228,70 +229,24 @@ def _refresh_single_quote(
     return written
 
 
-def refresh_fx_history_yfinance(
+def purge_legacy_yfinance_fx_history(
     session: Session,
     *,
-    earliest_needed: date,
-    today: date | None = None,
     quote: str = "USD",
-    fetcher: object = None,
 ) -> int:
-    """Overlay exact per-day EUR→``quote`` closes from yfinance onto ``fx_history``.
+    """Drop any legacy yfinance end-of-day EUR→``quote`` overlay rows.
 
-    The ECB/Frankfurter backfill (:func:`refresh_fx_history`) provides the
-    baseline and fallback; this re-marks the same days at yfinance's *actual
-    market close* (``EURUSD=X``) so a recreated equity curve converts a
-    USD-native portfolio into euros at each day's real rate rather than the ECB
-    reference fixing. Only EUR→USD is sourced (the pair we have a yfinance ticker
-    for); other quotes keep the ECB daily rate.
+    Historical end-of-day FX is sourced from the ECB/Frankfurter reference rates
+    (:func:`refresh_fx_history`); an earlier build additionally re-marked the same
+    days at yfinance's ``EURUSD=X`` close, which has since been reverted. This
+    retires those yfinance-sourced rows so the ECB backfill repopulates the dates
+    on the next refresh, leaving a single, consistent end-of-day source. (The
+    live *today-only* intraday spot overlay and the "1 Day" curve's per-minute
+    EUR/USD reconstruction are unaffected — both are separate paths.)
 
-    Only the window not already covered by a yfinance-sourced rate is refetched,
-    so routine boots don't re-download the whole multi-year history. Best-effort:
-    any network/parse failure is logged and counted as zero rows, leaving the ECB
-    rates untouched. ``fetcher`` is injectable for tests (defaults to
-    :func:`yfinance_client.fetch_eur_usd_history`).
+    Idempotent: a no-op once no such rows remain. Returns the number removed.
     """
-    if quote.upper() != "USD":
-        return 0
-    today = today or date.today()
-    latest_yf = fx_repo.latest_rate_date(session, base="EUR", quote=quote, source=_YF_PROVIDER)
-    earliest_yf = fx_repo.earliest_rate_date(session, base="EUR", quote=quote, source=_YF_PROVIDER)
-    if earliest_yf is None or earliest_yf > earliest_needed:
-        # No yfinance coverage yet, or a leading gap: (re)fetch from the floor.
-        start = earliest_needed
-    elif latest_yf is not None and latest_yf >= today:
-        return 0  # Fully covered already.
-    else:
-        start = (latest_yf + timedelta(days=1)) if latest_yf else earliest_needed
-    if start > today:
-        return 0
-    if fetcher is None:
-        from investment_dashboard.adapters.yfinance_client import (  # noqa: PLC0415
-            fetch_eur_usd_history,
-        )
-
-        fetcher = fetch_eur_usd_history
-    try:
-        rates = fetcher(start, today)  # type: ignore[operator]
-    except Exception as exc:  # pragma: no cover - network churn
-        log.warning(
-            "yfinance FX history fetch failed for EUR/%s (%s); keeping ECB rates",
-            quote,
-            exc,
-        )
-        return 0
-    # Guard against non-positive/garbage closes so a bad bar can't poison the
-    # curve; ECB rates remain for any day we drop here.
-    clean = {d: r for d, r in rates.items() if r is not None and r > 0}
-    if not clean:
-        return 0
-    written = fx_repo.upsert_rates(session, clean, base="EUR", quote=quote, source=_YF_PROVIDER)
-    # The yfinance adapter already records its own provider status; here we only
-    # note the pulled pair so Settings can report which provider marked the FX.
-    from investment_dashboard.services import fetch_report  # noqa: PLC0415
-
-    fetch_report.record(_YF_PROVIDER, [f"EUR/{quote}"])
-    return written
+    return fx_repo.delete_by_source(session, base="EUR", quote=quote, source=_YF_PROVIDER)
 
 
 def get_rates(
