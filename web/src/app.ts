@@ -89,6 +89,7 @@ import {
 import { setEurUsdRate } from "./currency";
 import { formatLastPull } from "./format";
 import { buildLiveSessionCurve, buildLiveWeekCurve, type LiveGraphProviders } from "./live-graph";
+import { springboardSessionCurve, springboardWeekCurve } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
 import { TimeSeriesStore } from "./timeseries-store";
 import type { MobileExport } from "./types";
@@ -1982,11 +1983,16 @@ export class App {
       priceProxyUrl: resolvePriceProxyUrl(config),
     };
     const store = this.ensureTimeSeriesStore();
+    const exported = this.state.data?.live_graphs ?? undefined;
     const anchor = (): ReturnType<typeof buildModelAnchor> =>
       buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx);
 
     return {
       session: async () => {
+        // Springboard off the exported session first — instant paint, no fetch —
+        // and only build live when the export is absent or too stale.
+        const sprung = springboardSessionCurve({ exported, liveTip });
+        if (sprung) return sprung;
         try {
           const curve = await buildLiveSessionCurve({ anchor: anchor(), store, liveTip }, providers);
           return curve.points.length >= 2 ? curve.points : null;
@@ -1995,6 +2001,8 @@ export class App {
         }
       },
       week: async () => {
+        const sprung = springboardWeekCurve({ exported, liveTip });
+        if (sprung) return sprung;
         try {
           const curve = await buildLiveWeekCurve({ anchor: anchor(), store, liveTip }, providers);
           return curve.points.length >= 2 ? curve.points : null;
