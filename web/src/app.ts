@@ -1158,7 +1158,7 @@ export class App {
    */
   private canForceRefresh(): boolean {
     const now = Date.now();
-    const used = creditsSpentToday(readCreditLog(now), now);
+    const used = creditsSpentToday(readCreditLog(now, 24 * 60 * 60 * 1000), now);
     const remaining = Math.max(0, FREE_TIER.creditsPerDay - used);
     return remaining >= FREE_TIER.creditsPerDay * FORCE_REFRESH_MIN_CREDIT_FRACTION;
   }

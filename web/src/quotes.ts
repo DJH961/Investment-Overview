@@ -423,10 +423,11 @@ export async function loadQuotes(
   }
 
   const budget = () => {
-    const log = readCreditLog(now(), DAY_MS, storage ?? undefined);
+    const t = now();
+    const log = readCreditLog(t, DAY_MS, storage ?? undefined);
     return {
-      minute: Math.max(0, creditsPerMinute - creditsSpentWithin(log, now(), MINUTE_MS)),
-      day: Math.max(0, creditsPerDay - creditsSpentToday(log, now())),
+      minute: Math.max(0, creditsPerMinute - creditsSpentWithin(log, t, MINUTE_MS)),
+      day: Math.max(0, creditsPerDay - creditsSpentToday(log, t)),
     };
   };
 
@@ -656,9 +657,10 @@ export async function loadEurUsd(
 
   let liveError: PriceError | null = null;
   if (apiKey.length > 0) {
-    const log = readCreditLog(now(), DAY_MS, storage ?? undefined);
-    const minute = creditsPerMinute - creditsSpentWithin(log, now(), MINUTE_MS);
-    const day = creditsPerDay - creditsSpentToday(log, now());
+    const t = now();
+    const log = readCreditLog(t, DAY_MS, storage ?? undefined);
+    const minute = creditsPerMinute - creditsSpentWithin(log, t, MINUTE_MS);
+    const day = creditsPerDay - creditsSpentToday(log, t);
     if (minute >= FREE_TIER.creditsPerSymbol && day >= FREE_TIER.creditsPerSymbol) {
       // Reserve the credit up-front (same rationale as loadQuotes) so two
       // overlapping loads can't both fire and 429.
