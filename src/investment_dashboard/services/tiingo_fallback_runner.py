@@ -83,6 +83,7 @@ def _run_market(
     now_utc: datetime,
     fetch_closes: FetchCloses,
     outcome: FallbackOutcome,
+    manual: bool = False,
 ) -> None:
     eligible: list[str] = []
     for cand in market:
@@ -97,7 +98,7 @@ def _run_market(
             # cycle (not just this one) and is still failing now.
             repeat_failure_confirmed=cand.symbol in previously_stale,
         )
-        if market_symbol_eligible(gate_state, now_utc=now_utc):
+        if market_symbol_eligible(gate_state, now_utc=now_utc, manual=manual):
             eligible.append(cand.symbol)
 
     selected = select_within_budget(eligible, state.budget())
@@ -121,6 +122,7 @@ def _run_nav(
     now_utc: datetime,
     fetch_closes: FetchCloses,
     outcome: FallbackOutcome,
+    manual: bool = False,
 ) -> None:
     missing = [
         c.symbol for c in nav if c.held_date is None or c.held_date < expected_nav_date
@@ -135,6 +137,7 @@ def _run_nav(
         canary_count_today=state.canary_count_today,
         now_utc=now_utc,
         budget=state.budget(),
+        manual=manual,
     )
     if decision.action is NavAction.WAIT:
         outcome.reasons.append(f"NAV wait: {decision.reason}")
@@ -182,6 +185,7 @@ def run_desktop_fallback(
     state: TiingoDesktopState,
     now_utc: datetime,
     fetch_closes: FetchCloses,
+    manual: bool = False,
 ) -> FallbackOutcome:
     """Run one desktop fallback cycle and mutate ``state`` (caller persists it).
 
@@ -190,6 +194,9 @@ def run_desktop_fallback(
     cycle; ``peer_published``/``peer_published_at`` describe whether a fresh
     ``expected_nav_date`` NAV arrived for some *other* fund via the primary;
     ``canary_pick`` is the single fund to probe when there's no peer evidence.
+    ``manual=True`` is a user-initiated refresh that bypasses the *timing* gates
+    only (grace/confirmed-repeat for market, first-probe/cooldown for NAV) while
+    keeping the worth-it and budget gates.
 
     Returns a :class:`FallbackOutcome`; ``state`` carries the updated budget,
     canary and stale-since stamps to persist via ``tiingo_state_repo.save``.
@@ -214,6 +221,7 @@ def run_desktop_fallback(
         now_utc=now_utc,
         fetch_closes=fetch_closes,
         outcome=outcome,
+        manual=manual,
     )
     _run_nav(
         nav,
@@ -225,5 +233,6 @@ def run_desktop_fallback(
         now_utc=now_utc,
         fetch_closes=fetch_closes,
         outcome=outcome,
+        manual=manual,
     )
     return outcome

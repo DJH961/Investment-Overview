@@ -120,12 +120,15 @@ def apply_desktop_fallback(
     primary_closes: Mapping[str, Mapping[date, Decimal]],
     token: str,
     fetch_closes_impl: TiingoFetchCloses | None = None,
+    manual: bool = False,
 ) -> tuple[dict[str, int], FallbackOutcome]:
     """Run the fallback for one refresh cycle; write recovered closes + stamps.
 
     ``primary_closes`` is what yfinance returned this cycle (``{}`` on a hard
-    failure). Returns ``({symbol: rows_written}, outcome)``; ``outcome.switched``
-    tells the caller a provider switch happened (drives the loud popup).
+    failure). ``manual=True`` is a user-initiated "Refresh via Tiingo now": it
+    bypasses the timing gates only (worth-it + budget still enforced). Returns
+    ``({symbol: rows_written}, outcome)``; ``outcome.switched`` tells the caller a
+    provider switch happened (drives the loud popup).
     """
     fetch_impl = fetch_closes_impl or tiingo_client.fetch_closes
     expected = expected_session_date(now_utc)
@@ -137,9 +140,7 @@ def apply_desktop_fallback(
     if not candidates:
         return {}, outcome
 
-    primary_failed = {
-        instr.symbol for instr in due if not primary_closes.get(instr.symbol)
-    }
+    primary_failed = {instr.symbol for instr in due if not primary_closes.get(instr.symbol)}
     nav_missing = [c.symbol for c in candidates if c.is_nav]
 
     state = state_repo.load(session, now_utc)
@@ -163,6 +164,7 @@ def apply_desktop_fallback(
         state=state,
         now_utc=now_utc,
         fetch_closes=_fetch,
+        manual=manual,
     )
 
     write_cutoff = expected - timedelta(days=_WRITE_LOOKBACK_DAYS)
@@ -182,13 +184,18 @@ def apply_desktop_fallback(
         provider_status.record(
             "tiingo",
             "ok",
-            f"yfinance gap covered via Tiingo: {joined}",
+            f"Tiingo refresh covered: {joined}"
+            if manual
+            else f"yfinance gap covered via Tiingo: {joined}",
         )
         fetch_report.record("tiingo", outcome.used_symbols)
         # Loud desktop surface: a warning-level runtime notice pops a toast so the
         # user knows the primary feed failed and Tiingo stepped in (deduped, so a
-        # repeatedly-failing tick won't spam).
-        provider_status_runtime_warning(joined)
+        # repeatedly-failing tick won't spam). For a *manual* refresh the caller
+        # owns the result UX (it knows the user just clicked the button), so skip
+        # the automatic "yfinance couldn't deliver" toast here.
+        if not manual:
+            provider_status_runtime_warning(joined)
         log.info("Tiingo fallback recovered %s", joined)
 
     return result, outcome

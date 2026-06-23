@@ -23,7 +23,7 @@ from investment_dashboard.repositories import (
     prices_repo,
     splits_repo,
 )
-from investment_dashboard.services import fetch_report, tiingo_fallback_wiring
+from investment_dashboard.services import fetch_report
 
 log = logging.getLogger(__name__)
 
@@ -573,6 +573,12 @@ def _maybe_run_tiingo_fallback(
     token = _resolve_tiingo_token()
     if not token:
         return
+    # Imported lazily to avoid a module-load import cycle: the services package
+    # __init__ eagerly imports prices_service, while the wiring chain
+    # (wiring -> runner -> tiingo_state_repo -> services.tiingo_fallback) imports
+    # back into the services package. Deferring keeps the import graph acyclic.
+    from investment_dashboard.services import tiingo_fallback_wiring  # noqa: PLC0415
+
     try:
         recovered, _outcome = tiingo_fallback_wiring.apply_desktop_fallback(
             session,
@@ -588,3 +594,63 @@ def _maybe_run_tiingo_fallback(
         return
     for symbol, rows in recovered.items():
         result[symbol] = result.get(symbol, 0) + rows
+
+
+class TiingoNotConfiguredError(RuntimeError):
+    """Raised by :func:`refresh_via_tiingo` when no Tiingo token is configured."""
+
+
+def refresh_via_tiingo(
+    session: Session,
+    cache_session: Session | None = None,
+    *,
+    today: date | None = None,
+    now: datetime | None = None,
+) -> tuple[dict[str, int], bool]:
+    """User-initiated "Refresh via Tiingo now" — bypass the timing gates only.
+
+    Unlike the automatic fallback (which only fires after yfinance has failed and
+    the per-symbol grace + confirmed-repeat-failure timing has elapsed), this is an
+    explicit user action: it considers *all* active, non-synthetic instruments
+    (not just the TTL-due ones) and skips the timing gates, but still enforces the
+    worth-it gate (newer data must actually exist — else it's a no-op, never a
+    wasted call) and the per-side budget caps. NAV funds still flow through the
+    peer-confirmation/canary structure, so a manual NAV refresh before publication
+    costs at most a single canary probe.
+
+    Returns ``({symbol: rows_written}, switched)`` where ``switched`` is whether
+    any Tiingo data was actually merged. Raises :class:`TiingoNotConfiguredError`
+    when no token is set so the UI can prompt the user to add one in Settings.
+    """
+    cache = cache_session if cache_session is not None else session
+    today = today or date.today()
+    now = now or datetime.now(UTC).replace(tzinfo=None)
+    token = _resolve_tiingo_token()
+    if not token:
+        raise TiingoNotConfiguredError(
+            "No Tiingo token configured. Add one under Settings to enable the "
+            "secondary price source."
+        )
+
+    inactive = instrument_overrides_repo.inactive_ids(session)
+    instruments = [
+        instr
+        for instr in instruments_repo.list_instruments(session)
+        if instr.asset_class not in _SYNTHETIC_ASSET_CLASSES and instr.id not in inactive
+    ]
+    if not instruments:
+        return {}, False
+
+    from investment_dashboard.services import tiingo_fallback_wiring  # noqa: PLC0415
+
+    recovered, outcome = tiingo_fallback_wiring.apply_desktop_fallback(
+        session,
+        cache,
+        due=instruments,
+        now_utc=now,
+        today=today,
+        primary_closes={},
+        token=token,
+        manual=True,
+    )
+    return recovered, outcome.switched

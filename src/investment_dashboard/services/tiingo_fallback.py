@@ -117,6 +117,7 @@ def market_symbol_eligible(
     *,
     now_utc: datetime,
     grace: timedelta = DESKTOP_GRACE,
+    manual: bool = False,
 ) -> bool:
     """Whether a market symbol has cleared gates A–C (budget applied separately).
 
@@ -127,6 +128,11 @@ def market_symbol_eligible(
       expected session is therefore *not* worth a call.
     * **C — Timing:** past the stale-since grace **and** a confirmed repeat
       yfinance failure (not merely elapsed time on one bad poll).
+
+    ``manual=True`` is a *user-initiated* refresh: it bypasses gate C (the grace
+    + confirmed-repeat-failure timing) but still enforces gate B (newer data must
+    actually exist), so a manual pull while already up to date is a no-op, never
+    a wasted call. Budget is applied by the caller regardless.
     """
     behind = state.held_date is None or state.held_date < state.expected_date
     triggered = state.primary_failed or behind
@@ -134,6 +140,8 @@ def market_symbol_eligible(
         return False
     if not behind:  # gate B: nothing newer to get
         return False
+    if manual:  # gate C bypassed by explicit user action; B still held above
+        return True
     if state.stale_since is None:
         return False
     if (now_utc - state.stale_since) < grace:
@@ -185,9 +193,15 @@ def _decide_nav_peer(
     peer_published_at: datetime | None,
     now_utc: datetime,
     budget: Budget,
+    *,
+    manual: bool = False,
 ) -> NavDecision:
     """Tier 1: the primary already returned a fresh NAV for some *other* fund."""
-    if peer_published_at is not None and (now_utc - peer_published_at) < NAV_PEER_GRACE:
+    if (
+        not manual
+        and peer_published_at is not None
+        and (now_utc - peer_published_at) < NAV_PEER_GRACE
+    ):
         return NavDecision(NavAction.WAIT, (), "within peer-trickle grace")
     laggards = select_within_budget(list(missing_funds), budget)
     if not laggards:
@@ -201,16 +215,25 @@ def _decide_nav_canary(
     last_canary_at: datetime | None,
     canary_count_today: int,
     now_utc: datetime,
+    *,
+    manual: bool = False,
 ) -> NavDecision:
-    """Tier 2: no peer evidence — probe a single fund, gated by time/cooldown/cap."""
+    """Tier 2: no peer evidence — probe a single fund, gated by time/cooldown/cap.
+
+    ``manual=True`` bypasses the first-probe-time floor and the inter-probe
+    cooldown (the *timing* gates), but the per-day probe cap still stands as a
+    hard budget backstop, and the result is still a single canary — never a batch
+    burn — so a manual NAV refresh before publication costs at most one probe.
+    """
     now_et = now_eastern(now_utc)
-    if now_et.time() < first_probe_time(earliest_habit):
+    if not manual and now_et.time() < first_probe_time(earliest_habit):
         return NavDecision(NavAction.WAIT, (), "before first-probe time")
     if canary_count_today >= NAV_MAX_PROBES_PER_DAY:
         return NavDecision(NavAction.WAIT, (), "daily canary cap reached")
-    cooldown = nav_cooldown_for(now_et.time())
-    if last_canary_at is not None and (now_utc - last_canary_at) < cooldown:
-        return NavDecision(NavAction.WAIT, (), "within canary cooldown")
+    if not manual:
+        cooldown = nav_cooldown_for(now_et.time())
+        if last_canary_at is not None and (now_utc - last_canary_at) < cooldown:
+            return NavDecision(NavAction.WAIT, (), "within canary cooldown")
     if canary_pick is None:
         return NavDecision(NavAction.WAIT, (), "no canary candidate")
     return NavDecision(NavAction.CANARY, (canary_pick,), "canary probe")
@@ -227,6 +250,7 @@ def decide_nav(
     canary_count_today: int,
     now_utc: datetime,
     budget: Budget,
+    manual: bool = False,
 ) -> NavDecision:
     """Decide the NAV path for one refresh cycle (see the plan's two tiers).
 
@@ -239,6 +263,9 @@ def decide_nav(
       (earliest/most-reliable publisher; ``None`` if none qualifies).
     * ``earliest_habit`` — earliest learned Eastern publish time, or ``None``.
     * ``last_canary_at`` / ``canary_count_today`` — persisted probe stamps (ET day).
+    * ``manual`` — a user-initiated refresh; bypasses the NAV timing gates
+      (peer-trickle grace, first-probe floor, cooldown) but keeps worth-it,
+      budget and the per-day probe cap, so it's still at most a single canary.
 
     Returns a :class:`NavDecision`; the wiring layer executes it and, on a *fresh*
     canary result, immediately promotes ``missing_funds`` to a laggard fetch.
@@ -248,7 +275,14 @@ def decide_nav(
     if not budget.has_room():
         return NavDecision(NavAction.WAIT, (), "budget exhausted")
     if peer_published:
-        return _decide_nav_peer(missing_funds, peer_published_at, now_utc, budget)
+        return _decide_nav_peer(
+            missing_funds, peer_published_at, now_utc, budget, manual=manual
+        )
     return _decide_nav_canary(
-        canary_pick, earliest_habit, last_canary_at, canary_count_today, now_utc
+        canary_pick,
+        earliest_habit,
+        last_canary_at,
+        canary_count_today,
+        now_utc,
+        manual=manual,
     )

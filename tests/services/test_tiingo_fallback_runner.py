@@ -225,3 +225,107 @@ def test_no_candidates_is_noop() -> None:
     )
     assert out.switched is False
     assert fetcher.calls == []
+
+
+# --------------------------------------------------------------------------- #
+# Manual refresh — bypasses timing gates only
+# --------------------------------------------------------------------------- #
+def test_manual_market_bypasses_confirmed_repeat_gate() -> None:
+    # First-seen-stale this cycle: the automatic path holds off (gate C), but a
+    # manual refresh fetches immediately since newer data exists.
+    state = TiingoDesktopState()
+    fetcher = _FakeFetcher({"FXAIX": {_MARKET_DATE: Decimal("180.5")}})
+    out = run_desktop_fallback(
+        candidates=[FallbackCandidate("FXAIX", is_nav=False, held_date=date(2026, 6, 20))],
+        expected_market_date=_MARKET_DATE,
+        expected_nav_date=_NAV_DATE,
+        primary_failed_symbols={"FXAIX"},
+        peer_published=False,
+        peer_published_at=None,
+        canary_pick=None,
+        state=state,
+        now_utc=_NOW,
+        fetch_closes=fetcher,
+        manual=True,
+    )
+    assert out.switched is True
+    assert out.closes["FXAIX"][_MARKET_DATE] == Decimal("180.5")
+    assert state.day_used == 1
+
+
+def test_manual_market_still_skips_when_up_to_date() -> None:
+    # Worth-it gate B is NOT bypassed: nothing newer to fetch -> no call.
+    state = TiingoDesktopState()
+    fetcher = _FakeFetcher({"FXAIX": {_MARKET_DATE: Decimal("180.5")}})
+    out = run_desktop_fallback(
+        candidates=[FallbackCandidate("FXAIX", is_nav=False, held_date=_MARKET_DATE)],
+        expected_market_date=_MARKET_DATE,
+        expected_nav_date=_NAV_DATE,
+        primary_failed_symbols=set(),
+        peer_published=False,
+        peer_published_at=None,
+        canary_pick=None,
+        state=state,
+        now_utc=_NOW,
+        fetch_closes=fetcher,
+        manual=True,
+    )
+    assert out.switched is False
+    assert fetcher.calls == []
+
+
+def test_manual_nav_canary_bypasses_first_probe_floor() -> None:
+    # 16:00 ET (20:00 UTC) is before the ~17:45 first-probe floor, so the auto
+    # path waits; a manual refresh fires a single canary anyway.
+    early = datetime(2026, 6, 23, 20, 0, 0)
+    state = TiingoDesktopState()
+    fetcher = _FakeFetcher(
+        {
+            "FXAIX": {_NAV_DATE: Decimal("180.0")},  # canary, fresh
+            "FSKAX": {_NAV_DATE: Decimal("160.0")},
+        }
+    )
+    out = run_desktop_fallback(
+        candidates=[
+            FallbackCandidate("FXAIX", is_nav=True, held_date=date(2026, 6, 22)),
+            FallbackCandidate("FSKAX", is_nav=True, held_date=date(2026, 6, 22)),
+        ],
+        expected_market_date=_MARKET_DATE,
+        expected_nav_date=_NAV_DATE,
+        primary_failed_symbols=set(),
+        peer_published=False,
+        peer_published_at=None,
+        canary_pick="FXAIX",
+        state=state,
+        now_utc=early,
+        fetch_closes=fetcher,
+        manual=True,
+    )
+    # Canary fired and, fresh, promoted to the laggard.
+    assert set(out.used_symbols) == {"FXAIX", "FSKAX"}
+    assert state.canary_count_today == 1
+
+
+def test_manual_nav_canary_stale_stays_single_probe() -> None:
+    # Manual NAV refresh before publication is at most one canary, never a batch.
+    early = datetime(2026, 6, 23, 20, 0, 0)
+    state = TiingoDesktopState()
+    fetcher = _FakeFetcher({"FXAIX": {date(2026, 6, 22): Decimal("179.0")}})  # stale
+    out = run_desktop_fallback(
+        candidates=[
+            FallbackCandidate("FXAIX", is_nav=True, held_date=date(2026, 6, 22)),
+            FallbackCandidate("FSKAX", is_nav=True, held_date=date(2026, 6, 22)),
+        ],
+        expected_market_date=_MARKET_DATE,
+        expected_nav_date=_NAV_DATE,
+        primary_failed_symbols=set(),
+        peer_published=False,
+        peer_published_at=None,
+        canary_pick="FXAIX",
+        state=state,
+        now_utc=early,
+        fetch_closes=fetcher,
+        manual=True,
+    )
+    assert out.switched is False
+    assert fetcher.calls == [("FXAIX",)]  # one probe, no batch burn
