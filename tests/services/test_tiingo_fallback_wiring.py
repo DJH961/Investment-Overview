@@ -105,9 +105,7 @@ def test_yfinance_failure_recovers_via_tiingo(
     def _fake_tiingo(symbols, start, end, *, token):
         return {s: {_TODAY: Decimal("123.45")} for s in symbols}
 
-    monkeypatch.setattr(
-        wiring.tiingo_client, "fetch_closes", _fake_tiingo
-    )
+    monkeypatch.setattr(wiring.tiingo_client, "fetch_closes", _fake_tiingo)
 
     result = prices_service.refresh_due_prices(session, today=_TODAY, now=_NOW)
     assert result.get("VTI", 0) >= 1
@@ -125,9 +123,7 @@ def test_yfinance_failure_recovers_via_tiingo(
     assert "Tiingo" in note.message
 
 
-def test_fallback_error_is_swallowed(
-    session: Session, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_fallback_error_is_swallowed(session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     _due_etf(session)
     monkeypatch.setattr(prices_service, "_resolve_tiingo_token", lambda: "tok")
     monkeypatch.setattr(prices_service, "fetch_closes", lambda *a, **k: {"VTI": {}})
@@ -139,3 +135,59 @@ def test_fallback_error_is_swallowed(
     # Must not raise; primary result (stamped, zero rows) stands.
     result = prices_service.refresh_due_prices(session, today=_TODAY, now=_NOW)
     assert result == {"VTI": 0}
+
+
+# --------------------------------------------------------------------------- #
+# Manual "Refresh via Tiingo now"
+# --------------------------------------------------------------------------- #
+def test_manual_refresh_recovers_without_prior_stale_stamp(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No stale stamp pre-set: the automatic path would hold off (gate C), but the
+    # manual refresh fetches immediately because newer data exists.
+    instr_id = _due_etf(session)
+    monkeypatch.setattr(prices_service, "_resolve_tiingo_token", lambda: "tok")
+
+    def _fake_tiingo(symbols, start, end, *, token):
+        return {s: {_TODAY: Decimal("222.0")} for s in symbols}
+
+    monkeypatch.setattr(wiring.tiingo_client, "fetch_closes", _fake_tiingo)
+
+    recovered, switched = prices_service.refresh_via_tiingo(session, today=_TODAY, now=_NOW)
+    assert switched is True
+    assert recovered.get("VTI", 0) >= 1
+    assert prices_repo.latest_price_dates(session, [instr_id]).get(instr_id) == _TODAY
+    # Manual refresh owns its own UX, so the automatic "yfinance couldn't deliver"
+    # toast is suppressed.
+    from investment_dashboard.services import runtime_status
+
+    assert runtime_status.latest() is None
+
+
+def test_manual_refresh_noop_when_up_to_date(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    instr = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
+    price_cache_repo.upsert_last_refreshed_at(session, instr.id, _NOW - timedelta(hours=2))
+    prices_repo.upsert_closes(session, instr.id, {_TODAY: Decimal("100")})  # already current
+    session.flush()
+    monkeypatch.setattr(prices_service, "_resolve_tiingo_token", lambda: "tok")
+    called = {"fetched": False}
+    monkeypatch.setattr(
+        wiring.tiingo_client,
+        "fetch_closes",
+        lambda *a, **k: called.__setitem__("fetched", True) or {},
+    )
+    recovered, switched = prices_service.refresh_via_tiingo(session, today=_TODAY, now=_NOW)
+    assert switched is False
+    assert recovered == {}
+    assert called["fetched"] is False  # worth-it gate held: no call spent
+
+
+def test_manual_refresh_without_token_raises(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _due_etf(session)
+    monkeypatch.setattr(prices_service, "_resolve_tiingo_token", lambda: None)
+    with pytest.raises(prices_service.TiingoNotConfiguredError):
+        prices_service.refresh_via_tiingo(session, today=_TODAY, now=_NOW)

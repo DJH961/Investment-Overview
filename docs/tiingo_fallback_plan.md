@@ -20,8 +20,8 @@
 >   warning‑level `runtime_status.record_warning`, which the toast watcher surfaces).
 >
 > **Remaining — handed off:**
-> - **Desktop polish:** manual "Refresh via Tiingo now" button (bypasses timing
->   gate C only); optional wiring into the backfill `refresh_prices` path.
+> - **Desktop polish:** optional wiring of the fallback into the backfill
+>   `refresh_prices` path (live `refresh_due_prices` + the manual button are done).
 > - **Web/Worker (entire stack):** Worker `/price` route; `web/src/tiingo.ts`; ET
 >   budget in `cache.ts`; `loadQuotes` insertion; startup quick‑refresh; visible
 >   refresh spinner + outcome toast; discreet caption; `priceProxyUrl` config.

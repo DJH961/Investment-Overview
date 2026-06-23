@@ -31,6 +31,9 @@ STATE_KEY = "tiingo_desktop_state"
 #: A clock-hour window in seconds (the hourly budget bucket).
 _HOUR_SECONDS = 3600
 
+#: Most recent per-fund NAV-publish samples to retain when learning the habit.
+_MAX_HABIT_SAMPLES = 10
+
 
 def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt is not None else None
@@ -38,6 +41,15 @@ def _iso(dt: datetime | None) -> str | None:
 
 def _parse_dt(raw: object) -> datetime | None:
     return datetime.fromisoformat(raw) if isinstance(raw, str) else None
+
+
+def _parse_time(raw: object) -> time | None:
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        return time.fromisoformat(raw)
+    except ValueError:
+        return None
 
 
 @dataclass
@@ -53,6 +65,11 @@ class TiingoDesktopState:
     earliest_habit: time | None = None
     peer_nav_seen_at: datetime | None = None
     stale_since: dict[str, datetime] = field(default_factory=dict)
+    #: Per-fund observed NAV-publish times (Eastern), accumulated *across days*
+    #: as a learned habit — capped to the most recent samples per fund. Drives
+    #: the smart canary pick (earliest + most consistent publisher). Unlike the
+    #: per-day ``earliest_habit`` floor, this is **not** reset at ET midnight.
+    publish_habits: dict[str, list[time]] = field(default_factory=dict)
 
     def budget(self) -> Budget:
         return Budget(
@@ -94,6 +111,10 @@ class TiingoDesktopState:
                 else None,
                 "peer_nav_seen_at": _iso(self.peer_nav_seen_at),
                 "stale_since": {sym: dt.isoformat() for sym, dt in self.stale_since.items()},
+                "publish_habits": {
+                    sym: [t.strftime("%H:%M") for t in times]
+                    for sym, times in self.publish_habits.items()
+                },
             }
         )
 
@@ -104,6 +125,7 @@ class TiingoDesktopState:
         data = json.loads(raw)
         habit_raw = data.get("earliest_habit")
         stale_raw = data.get("stale_since") or {}
+        habits_raw = data.get("publish_habits") or {}
         return cls(
             hour_stamp=_parse_dt(data.get("hour_stamp")),
             hour_used=int(data.get("hour_used", 0)),
@@ -117,6 +139,12 @@ class TiingoDesktopState:
                 sym: dt
                 for sym, raw_dt in stale_raw.items()
                 if (dt := _parse_dt(raw_dt)) is not None
+            },
+            publish_habits={
+                sym: parsed
+                for sym, raw_times in habits_raw.items()
+                if isinstance(raw_times, list)
+                and (parsed := [t for raw_t in raw_times if (t := _parse_time(raw_t)) is not None])
             },
         )
 
@@ -150,6 +178,20 @@ def note_publish_habit(state: TiingoDesktopState, observed_et: time) -> None:
     """Remember the earliest Eastern NAV-publish time seen today (learned habit)."""
     if state.earliest_habit is None or observed_et < state.earliest_habit:
         state.earliest_habit = observed_et
+
+
+def note_publish_habit_for(state: TiingoDesktopState, symbol: str, observed_et: time) -> None:
+    """Record a confirmed NAV-publish time for ``symbol`` (per-fund habit).
+
+    Updates both the per-day ``earliest_habit`` floor and the cross-day per-fund
+    publish history (capped to the most recent :data:`_MAX_HABIT_SAMPLES`), which
+    drives the smart canary pick.
+    """
+    note_publish_habit(state, observed_et)
+    samples = state.publish_habits.setdefault(symbol, [])
+    samples.append(observed_et)
+    if len(samples) > _MAX_HABIT_SAMPLES:
+        del samples[: len(samples) - _MAX_HABIT_SAMPLES]
 
 
 def note_peer_nav(state: TiingoDesktopState, now_utc: datetime) -> datetime:

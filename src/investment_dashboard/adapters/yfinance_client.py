@@ -27,7 +27,13 @@ _PROVIDER = "yfinance"
 #: Bounded retry budget for transient yfinance download failures. yfinance
 #: hides the underlying HTTP status, so we retry any download exception a
 #: small number of times with backoff before surfacing a ``YFinanceError``.
-_DOWNLOAD_ATTEMPTS = 3
+#: Boosted (4 attempts / 0.75 s base + jitter) so a transient blip is absorbed
+#: in-call and never needlessly escalates to the Tiingo secondary fallback —
+#: see ``docs/tiingo_fallback_plan.md`` ("Retry-before-escalate").
+_DOWNLOAD_ATTEMPTS = 4
+#: Base backoff for the download retry; jitter de-correlates concurrent retries.
+_DOWNLOAD_BACKOFF_SECONDS = 0.75
+_DOWNLOAD_JITTER = 0.25
 
 
 def _record_status(status: str, message: str) -> None:
@@ -218,6 +224,8 @@ def _download_window(
                 threads=False,
             ),
             attempts=_DOWNLOAD_ATTEMPTS,
+            backoff_seconds=_DOWNLOAD_BACKOFF_SECONDS,
+            jitter=_DOWNLOAD_JITTER,
             description="yfinance.download",
         )
     except Exception as exc:
@@ -295,6 +303,8 @@ def fetch_splits(
                 threads=False,
             ),
             attempts=_DOWNLOAD_ATTEMPTS,
+            backoff_seconds=_DOWNLOAD_BACKOFF_SECONDS,
+            jitter=_DOWNLOAD_JITTER,
             description="yfinance.download (splits)",
         )
     except Exception as exc:
@@ -382,6 +392,8 @@ def fetch_intraday_closes_range(
                 threads=False,
             ),
             attempts=_DOWNLOAD_ATTEMPTS,
+            backoff_seconds=_DOWNLOAD_BACKOFF_SECONDS,
+            jitter=_DOWNLOAD_JITTER,
             description="yfinance.download (intraday)",
         )
     except Exception as exc:

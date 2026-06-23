@@ -110,9 +110,7 @@ def _get_with_retry(
                 retry_after=float(retry_after) if retry_after and retry_after.isdigit() else None,
             )
         if response.status_code >= 500:
-            raise TiingoError(
-                f"Tiingo returned HTTP {response.status_code}: {response.text[:200]}"
-            )
+            raise TiingoError(f"Tiingo returned HTTP {response.status_code}: {response.text[:200]}")
         return response
 
     return retry_call(
@@ -252,8 +250,7 @@ def _fetch_one_symbol_closes(
         return {}
     if response.status_code != 200:
         msg = (
-            f"Tiingo daily returned HTTP {response.status_code} for {symbol}: "
-            f"{response.text[:200]}"
+            f"Tiingo daily returned HTTP {response.status_code} for {symbol}: {response.text[:200]}"
         )
         _record_status("error", msg)
         raise TiingoError(msg)
