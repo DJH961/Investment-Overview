@@ -14,6 +14,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.9.6] — 2026-06-23
+
+### Fixed
+
+- **Shutdown now gives instant feedback and reliably ends the session.**
+  Confirming "Shut down" used to run the live-web upload synchronously before
+  any UI update reached the browser, so the click appeared to do nothing while
+  the app kept loading in the background. The confirm now paints a full-screen
+  "Shutting down…" overlay immediately, then defers the upload (and the server
+  stop) so the overlay actually appears first; the overlay stays up until the
+  upload result is reported. When the server stops, the overlay swaps to a final
+  "App shut down — you can close this tab" frame that never triggers the
+  reconnect machinery and offers a manual close button if the browser refuses to
+  auto-close the tab.
+
 ## [3.9.5] — 2026-06-23
 
 ### Changed
