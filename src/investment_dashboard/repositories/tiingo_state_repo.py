@@ -51,6 +51,7 @@ class TiingoDesktopState:
     last_canary_at: datetime | None = None
     canary_count_today: int = 0
     earliest_habit: time | None = None
+    peer_nav_seen_at: datetime | None = None
     stale_since: dict[str, datetime] = field(default_factory=dict)
 
     def budget(self) -> Budget:
@@ -77,6 +78,7 @@ class TiingoDesktopState:
             self.canary_count_today = 0
             self.last_canary_at = None
             self.earliest_habit = None
+            self.peer_nav_seen_at = None
 
     def to_json(self) -> str:
         return json.dumps(
@@ -90,6 +92,7 @@ class TiingoDesktopState:
                 "earliest_habit": self.earliest_habit.strftime("%H:%M")
                 if self.earliest_habit
                 else None,
+                "peer_nav_seen_at": _iso(self.peer_nav_seen_at),
                 "stale_since": {sym: dt.isoformat() for sym, dt in self.stale_since.items()},
             }
         )
@@ -109,6 +112,7 @@ class TiingoDesktopState:
             last_canary_at=_parse_dt(data.get("last_canary_at")),
             canary_count_today=int(data.get("canary_count_today", 0)),
             earliest_habit=time.fromisoformat(habit_raw) if habit_raw else None,
+            peer_nav_seen_at=_parse_dt(data.get("peer_nav_seen_at")),
             stale_since={
                 sym: dt
                 for sym, raw_dt in stale_raw.items()
@@ -146,6 +150,17 @@ def note_publish_habit(state: TiingoDesktopState, observed_et: time) -> None:
     """Remember the earliest Eastern NAV-publish time seen today (learned habit)."""
     if state.earliest_habit is None or observed_et < state.earliest_habit:
         state.earliest_habit = observed_et
+
+
+def note_peer_nav(state: TiingoDesktopState, now_utc: datetime) -> datetime:
+    """Stamp the first time today a peer NAV was observed; return that stamp.
+
+    Idempotent within a day: later observations keep the original stamp so the
+    peer-trickle grace measures from when the *first* peer NAV landed.
+    """
+    if state.peer_nav_seen_at is None:
+        state.peer_nav_seen_at = now_utc
+    return state.peer_nav_seen_at
 
 
 def mark_stale(state: TiingoDesktopState, symbol: str, now_utc: datetime) -> None:
