@@ -448,8 +448,7 @@ export class App {
         field(
           "Portable config",
           h("div", { class: "row import-row" }, [exportBtn, importBtn]),
-          "Export saves your API key, data-source URL and preferences to a JSON file you can import on another device. Keep the file private — it contains your API key.",
-        ),
+          "Export saves your API key, data-source URL, update interval, and auto-lock setting to a JSON file you can import on another device. Keep the file private — it contains your API key.",
       );
     }
     // Maintenance: two manual escape hatches for when prices look stuck. Both
