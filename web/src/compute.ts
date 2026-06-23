@@ -239,12 +239,12 @@ export interface OverviewView {
    */
   liveDegradedReason: string | null;
   /**
-   * A concise, descriptive summary of how much of the portfolio is currently
-   * priced live (e.g. "13/18 up to date · stocks & ETFs done, 5 funds still
-   * refreshing" or "All 18 holdings up to date"). Populated by the app shell
-   * after a live refresh (it owns the network/report), so the compute layer
-   * defaults it to null. Surfaced as a calm inline note — the transparency
-   * compromise between an opaque "some prices not updated" and a floating banner.
+   * A concise, *honest* summary of what is currently priced live versus still
+   * awaited (e.g. "13/13 live, 5 NAVs expected tonight" or "market closed, all
+   * prices up to date"). Populated by the app shell after a live refresh (it
+   * owns the network/report + market clock), so the compute layer defaults it to
+   * null. Surfaced as a calm inline note — the transparency compromise between an
+   * opaque "some prices not updated" and a floating banner.
    */
   liveCoverage: string | null;
   /**
