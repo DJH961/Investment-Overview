@@ -343,17 +343,37 @@ def fetch_intraday_closes(
     in the window map to an empty dict. ``downloader`` injects a stub matching
     ``yfinance.download`` in tests.
     """
-    if not symbols:
-        return {}
+    return fetch_intraday_closes_range(symbols, day, day, interval=interval, downloader=downloader)
+
+
+def fetch_intraday_closes_range(
+    symbols: list[str],
+    start_day: date,
+    end_day: date,
+    *,
+    interval: str = "30m",
+    downloader: Any = None,
+) -> dict[str, dict[datetime, Decimal]]:
+    """Return ``{symbol: {bar_time_utc: close}}`` over ``[start_day, end_day]``.
+
+    Multi-day variant of :func:`fetch_intraday_closes` used by the Overview "1W"
+    curve, which needs each recent session's intraday bars in one download rather
+    than a separate request per day. Inclusive of both endpoints; bar timestamps
+    are naive UTC. yfinance only serves intraday history for roughly the last 60
+    days, so ``start_day`` should be recent. ``downloader`` injects a stub
+    matching ``yfinance.download`` in tests.
+    """
+    if not symbols or end_day < start_day:
+        return {s: {} for s in symbols}
 
     download = downloader or yf.download
-    # yfinance treats ``end`` as exclusive; +1 day captures the whole session.
+    # yfinance treats ``end`` as exclusive; +1 day captures the whole last session.
     try:
         frame = retry_call(
             lambda: download(
                 tickers=symbols,
-                start=day.isoformat(),
-                end=(day + timedelta(days=1)).isoformat(),
+                start=start_day.isoformat(),
+                end=(end_day + timedelta(days=1)).isoformat(),
                 interval=interval,
                 auto_adjust=False,
                 actions=False,
@@ -468,6 +488,26 @@ def fetch_eur_usd_intraday(
     naive UTC, matching the portfolio samples they align with.
     """
     bars = fetch_intraday_closes([EUR_USD_YF_SYMBOL], day, interval=interval, downloader=downloader)
+    return dict(bars.get(EUR_USD_YF_SYMBOL, {}))
+
+
+def fetch_eur_usd_intraday_range(
+    start_day: date,
+    end_day: date,
+    *,
+    interval: str = "15m",
+    downloader: Any = None,
+) -> dict[datetime, Decimal]:
+    """Return ``{bar_time_utc: eur_usd_close}`` of EUR→USD bars over a date range.
+
+    Multi-day variant of :func:`fetch_eur_usd_intraday` used by the Overview "1W"
+    curve so each plotted point can be converted at the rate actually struck at
+    that minute (USD stays FX-free, EUR is derived). Best-effort: an empty mapping
+    leaves callers to forward-fill / fall back to the day's settled rate.
+    """
+    bars = fetch_intraday_closes_range(
+        [EUR_USD_YF_SYMBOL], start_day, end_day, interval=interval, downloader=downloader
+    )
     return dict(bars.get(EUR_USD_YF_SYMBOL, {}))
 
 

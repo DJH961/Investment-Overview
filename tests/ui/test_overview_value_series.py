@@ -10,8 +10,10 @@ from sqlalchemy.orm import Session
 from investment_dashboard.models import Transaction
 from investment_dashboard.repositories import accounts_repo, instruments_repo, prices_repo
 from investment_dashboard.ui.pages._overview_query import (
+    MULTI_CCY_RANGES,
     VALUE_RANGES,
     build_value_series,
+    range_start_date,
     resolve_range_days,
 )
 
@@ -45,16 +47,50 @@ def _seed(session: Session) -> None:
 class TestResolveRange:
     def test_known_labels(self) -> None:
         assert resolve_range_days("Day") == ("Day", 1)
+        assert resolve_range_days("Week") == ("Week", 7)
         assert resolve_range_days("Month") == ("Month", 30)
+        assert resolve_range_days("YTD") == ("YTD", None)
         assert resolve_range_days("Year") == ("Year", 365)
         assert resolve_range_days("All") == ("All", None)
+
+    def test_matching_is_case_insensitive(self) -> None:
+        assert resolve_range_days("ytd") == ("YTD", None)
+        assert resolve_range_days("week") == ("Week", 7)
 
     def test_unknown_defaults_to_year(self) -> None:
         assert resolve_range_days(None) == ("Year", 365)
         assert resolve_range_days("bogus") == ("Year", 365)
 
     def test_all_ranges_present(self) -> None:
-        assert [name for name, _ in VALUE_RANGES] == ["Day", "Month", "Year", "All"]
+        assert [name for name, _ in VALUE_RANGES] == [
+            "Day",
+            "Week",
+            "Month",
+            "YTD",
+            "Year",
+            "All",
+        ]
+
+    def test_multi_ccy_ranges_exclude_day(self) -> None:
+        # Every range a week or longer carries the secondary-currency line.
+        assert "Day" not in MULTI_CCY_RANGES
+        assert {"Week", "Month", "YTD", "Year", "All"} == MULTI_CCY_RANGES
+
+
+class TestRangeStartDate:
+    def test_ytd_starts_at_jan_first(self, session: Session) -> None:
+        start = range_start_date(session, "YTD", date(2024, 6, 15))
+        assert start == date(2024, 1, 1)
+
+    def test_fixed_lookback(self, session: Session) -> None:
+        assert range_start_date(session, "Week", date(2024, 6, 15)) == date(2024, 6, 8)
+
+    def test_all_uses_first_transaction(self, session: Session) -> None:
+        _seed(session)
+        assert range_start_date(session, "All", date(2024, 6, 1)) == date(2024, 1, 2)
+
+    def test_all_empty_ledger_is_none(self, session: Session) -> None:
+        assert range_start_date(session, "All", date(2024, 6, 1)) is None
 
 
 class TestBuildValueSeries:
@@ -75,6 +111,44 @@ class TestBuildValueSeries:
 
     def test_empty_ledger_returns_no_points(self, session: Session) -> None:
         assert build_value_series(session, currency="EUR", range_label="All") == []
+
+    def test_ytd_range_starts_at_january_first(self, session: Session) -> None:
+        _seed(session)
+        end = date(2024, 3, 1)
+        points = build_value_series(session, currency="EUR", range_label="YTD", as_of=end)
+        assert points[0].date == date(2024, 1, 1)
+        assert points[-1].date == end
+
+
+class TestBuildWeekValueSeries:
+    def test_composes_base_plus_market(self, session: Session, monkeypatch) -> None:
+        """The week curve reapplies the cash + NAV base to each intraday sample."""
+        from investment_dashboard.services import intraday_snapshots_service as iss
+        from investment_dashboard.ui.pages import _overview_query
+
+        _seed(session)  # one €1,000 EUR holding ⇒ base 0, market €1,000
+
+        t0 = datetime(2024, 5, 28, 14, 0)
+        t1 = datetime(2024, 5, 28, 18, 0)
+        samples = [
+            (t0, Decimal("1000.00"), None),  # flat
+            (t1, Decimal("1100.00"), None),  # +10%
+        ]
+        monkeypatch.setattr(iss, "week_series_with_fx", lambda *a, **k: list(samples))
+
+        points = _overview_query.build_week_value_series(
+            session, currency="EUR", now=datetime(2024, 6, 3, 20, 0, tzinfo=UTC)
+        )
+        # base == 0 here, so the plotted values equal the market component.
+        assert [p.value for p in points[:2]] == [Decimal("1000.00"), Decimal("1100.00")]
+
+    def test_empty_samples_returns_no_points(self, session: Session, monkeypatch) -> None:
+        from investment_dashboard.services import intraday_snapshots_service as iss
+        from investment_dashboard.ui.pages import _overview_query
+
+        _seed(session)
+        monkeypatch.setattr(iss, "week_series_with_fx", lambda *a, **k: [])
+        assert _overview_query.build_week_value_series(session, currency="EUR") == []
 
 
 class TestPreviousSessionCloseValue:

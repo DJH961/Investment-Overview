@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -445,3 +445,98 @@ class TestPerTimestampFx:
         assert [eur for _, eur, _ in series] == [Decimal("1000.00"), Decimal("1000.00")]
         # The stored rate falls back to the settled spot (1.00), never NULL here.
         assert all(fx == Decimal("1.00") for _, _, fx in series)
+
+
+def _seed_eur_holding_for_week(session: Session) -> None:
+    """An EUR holding bought before the week, with a close on every session day."""
+    account = accounts_repo.create_account(
+        session,
+        broker="vanguard",
+        account_label="EUR Brokerage",
+        native_currency="EUR",
+        account_type="brokerage",
+    )
+    instr = instruments_repo.get_or_create(session, symbol="ACME", native_currency="EUR")
+    session.add(
+        Transaction(
+            account_id=account.id,
+            instrument_id=instr.id,
+            date=date(2024, 5, 20),
+            kind="buy",
+            quantity=Decimal("10"),
+            price_native=Decimal("100.00"),
+            net_native=Decimal("-1000.00"),
+            net_eur=Decimal("-1000.00"),
+            source="manual",
+        )
+    )
+    prices_repo.upsert_closes(
+        session,
+        instr.id,
+        {d: Decimal("100.00") for d in iss.recent_trading_sessions(_NOW)},
+    )
+    session.flush()
+
+
+def _fake_week_fetcher(per_day_bars):  # type: ignore[no-untyped-def]
+    """Stub for ``fetch_intraday_closes_range`` returning the same bars each day."""
+
+    def fetch(symbols, start_day, end_day, *, interval):  # type: ignore[no-untyped-def]
+        assert interval == iss.WEEK_INTERVAL
+        assert start_day <= end_day
+        bars: dict[datetime, Decimal] = {}
+        day = start_day
+        while day <= end_day:
+            for hour_min, price in per_day_bars:
+                bars[datetime(day.year, day.month, day.day, *hour_min)] = price
+            day += timedelta(days=1)
+        return {sym: dict(bars) for sym in symbols}
+
+    return fetch
+
+
+_WEEK_DAY_BARS = [
+    ((13, 30), Decimal("100")),  # start
+    ((15, 0), Decimal("110")),
+    ((17, 0), Decimal("120")),  # nearest the session midpoint → midday
+    ((19, 30), Decimal("130")),  # close
+]
+
+
+class TestWeekSeries:
+    # Four bars per session day; _pick_open_mid_close keeps start / midday / close.
+    _DAY_BARS = _WEEK_DAY_BARS
+
+    def test_three_points_per_session(self, session: Session) -> None:
+        _seed_eur_holding_for_week(session)
+        samples = iss.week_series_with_fx(
+            session, now=_NOW, fetcher=_fake_week_fetcher(self._DAY_BARS)
+        )
+        sessions = iss.recent_trading_sessions(_NOW)
+        assert len(sessions) == iss.WEEK_SESSIONS
+        # Start / midday / close kept for each of the week's sessions.
+        assert len(samples) == 3 * len(sessions)
+        # Oldest-first and the market component scales with the intraday price.
+        first_day = [s for s in samples if s[0].date() == sessions[0]]
+        assert [eur for _, eur, _ in first_day] == [
+            Decimal("1000.00"),  # 100/100 × €1,000
+            Decimal("1200.00"),  # 120/100 (midday)
+            Decimal("1300.00"),  # 130/100 (close)
+        ]
+
+    def test_empty_when_feed_has_no_bars(self, session: Session) -> None:
+        _seed_eur_holding_for_week(session)
+        samples = iss.week_series_with_fx(session, now=_NOW, fetcher=_fake_week_fetcher([]))
+        assert samples == []
+
+    def test_empty_when_no_positions(self, session: Session) -> None:
+        samples = iss.week_series_with_fx(
+            session, now=_NOW, fetcher=_fake_week_fetcher(self._DAY_BARS)
+        )
+        assert samples == []
+
+    def test_recent_trading_sessions_are_sorted_and_skip_weekends(self) -> None:
+        sessions = iss.recent_trading_sessions(_NOW)
+        assert sessions == sorted(sessions)
+        assert sessions[-1] == date(2024, 6, 3)
+        assert all(s.weekday() < 5 for s in sessions)

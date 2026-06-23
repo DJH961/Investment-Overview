@@ -99,6 +99,14 @@ RECONSTRUCT_COVERAGE_GAP_SECONDS = 7 * 60 + 30
 #: fetch intraday bars at most once per session instead of on every page load.
 _RECONSTRUCTED_KEY = "intraday_reconstructed_day"
 
+#: Number of recent trading sessions the Overview "Week" (1W) curve spans.
+WEEK_SESSIONS = 5
+
+#: Bar width used to source the "Week" curve's intraday path. Only three points
+#: per day are kept (start / midday / close), so a coarse bar is plenty and keeps
+#: the multi-day download small.
+WEEK_INTERVAL = "30m"
+
 #: Smallest share count treated as a real holding (mirrors the Overview filter).
 _MIN_SHARES = Decimal("0.0000001")
 
@@ -326,6 +334,36 @@ def day_series_with_fx(
     return [(r.captured_at, r.market_value_eur, r.fx_eur_usd) for r in rows]
 
 
+def _market_component_pivot_eur(
+    priced: list[Position],
+    bars_by_symbol: dict[str, dict[datetime, Decimal]],
+    at: datetime,
+    *,
+    fx_t: Decimal | None,
+    base_fx: Decimal | None,
+) -> Decimal:
+    """EUR pivot of the intraday-priced sleeve at instant ``at``.
+
+    ``Σ value_i · price_i(at)/close_i``, with each USD-booked holding's *derived*
+    EUR pivot rebased from the day's settled rate (``base_fx``, baked into
+    ``current_value_eur``) to this minute's rate (``fx_t``) so the EUR view tracks
+    per-minute FX while the native USD value stays FX-free (recovered at render by
+    removing exactly this rate). A symbol the feed served no bar for is carried at
+    a flat ratio of 1.
+    """
+    market = Decimal(0)
+    for p in priced:
+        price_t = _forward_filled(bars_by_symbol.get(p.instrument.symbol, {}), at)
+        if price_t is None:
+            price_t = p.current_price_native
+        ratio = price_t / p.current_price_native  # type: ignore[operator]
+        contrib = p.current_value_eur * ratio
+        if fx_t and base_fx and _is_usd_native(p):
+            contrib = contrib * base_fx / fx_t
+        market += contrib
+    return market
+
+
 def _forward_filled(bars: dict[datetime, Decimal], at: datetime) -> Decimal | None:
     """Latest bar value at/just-before ``at`` (or the earliest, if all later)."""
     if not bars:
@@ -461,21 +499,9 @@ def _reconstruct_session(
             # The intraday-priced (market) component only — the cash + NAV base is
             # reapplied at render time, keeping reconstruction on the same basis
             # as the live captures.
-            market = Decimal(0)
-            for p in priced:
-                price_t = _forward_filled(bars_by_symbol.get(p.instrument.symbol, {}), t)
-                if price_t is None:
-                    price_t = p.current_price_native
-                ratio = price_t / p.current_price_native  # type: ignore[operator]
-                contrib = p.current_value_eur * ratio
-                # USD is booked FX-free; we only re-express its *derived* EUR pivot
-                # from the day's settled rate (baked into ``current_value_eur``) to
-                # this minute's rate, so the EUR view tracks per-minute FX. The
-                # native USD value (price × shares) is untouched and recovered at
-                # render by removing exactly this rate.
-                if fx_t and base_fx and _is_usd_native(p):
-                    contrib = contrib * base_fx / fx_t
-                market += contrib
+            market = _market_component_pivot_eur(
+                priced, bars_by_symbol, t, fx_t=fx_t, base_fx=base_fx
+            )
             intraday_repo.insert_sample(cache, t, market, point_fx)
             written += 1
         intraday_repo.delete_before(cache, _session_start_utc(session_date))
@@ -495,3 +521,141 @@ def _already_reconstructed(session: Session, session_date: date) -> bool:
 
 def _mark_reconstructed(session: Session, session_date: date) -> None:
     app_config_repo.set_value(session, _RECONSTRUCTED_KEY, session_date.isoformat())
+
+
+def recent_trading_sessions(
+    now: datetime | None = None, *, count: int = WEEK_SESSIONS
+) -> list[date]:
+    """The most recent ``count`` trading sessions, oldest first.
+
+    Anchored on :func:`last_session_date` and walked back over weekends/holidays
+    with :func:`previous_trading_session`, so the "Week" curve always spans real
+    sessions rather than a fixed seven calendar days.
+    """
+    day = last_session_date(now)
+    days = [day]
+    for _ in range(max(0, count - 1)):
+        day = previous_trading_session(day)
+        days.append(day)
+    return sorted(days)
+
+
+def _pick_open_mid_close(bar_times: list[datetime]) -> list[datetime]:
+    """Choose a day's start / midday / close instants from its sorted bar times.
+
+    Returns up to three distinct timestamps (fewer when the day has fewer bars):
+    the first bar (start), the bar nearest the open→close midpoint (midday) and
+    the last bar (close). Preserves chronological order.
+    """
+    if not bar_times:
+        return []
+    if len(bar_times) <= 3:
+        return list(bar_times)
+    first, last = bar_times[0], bar_times[-1]
+    midpoint = first + (last - first) / 2
+    mid = min(bar_times, key=lambda t: abs((t - midpoint).total_seconds()))
+    chosen = sorted({first, mid, last})
+    return chosen
+
+
+def week_series_with_fx(
+    session: Session,
+    *,
+    now: datetime | None = None,
+    fetcher: object | None = None,
+    fx_fetcher: object | None = None,
+) -> list[tuple[datetime, Decimal, Decimal | None]]:
+    """Start / midday / close market-component samples over the last week's sessions.
+
+    Returns ``[(at_utc, market_value_eur, fx_eur_usd), ...]`` (oldest first) — the
+    same shape as :func:`day_series_with_fx`, so the render path
+    (:func:`build_week_value_series`) can reapply the cash + NAV base and convert
+    to either currency with the identical per-minute FX model used by the "1 Day"
+    curve. USD stays FX-free (booked currency); EUR is derived at each bar's own
+    EUR/USD rate, so the two currency lines genuinely diverge across the week.
+
+    Each session is repriced against *that day's* held positions (so a buy or
+    sell mid-week is reflected), with three representative instants kept per day
+    for a smooth-yet-cheap curve. Best-effort and network-backed: returns ``[]``
+    on any failure or when the feed serves no intraday bars, letting the caller
+    fall back to the daily snapshot series.
+    """
+    from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
+    from investment_dashboard.services import fx_service, positions_service  # noqa: PLC0415
+
+    now = now or datetime.now(UTC)
+    sessions = recent_trading_sessions(now)
+    if not sessions:
+        return []
+
+    # Positions for every session in the window, so a holding change mid-week is
+    # reflected in the curve rather than projecting today's holdings backwards.
+    positions_by_day: dict[date, list[Position]] = {}
+    symbols: set[str] = set()
+    needs_fx = False
+    for session_date in sessions:
+        day_positions = positions_service.compute_positions(session, as_of=session_date)
+        priced = [
+            p
+            for p in day_positions
+            if p.shares > _MIN_SHARES
+            and p.current_price_native is not None
+            and p.current_price_native != 0
+            and p.current_value_eur != 0
+            and is_intraday_priced(p)
+        ]
+        positions_by_day[session_date] = priced
+        symbols.update(p.instrument.symbol for p in priced)
+        needs_fx = needs_fx or any(_is_usd_native(p) for p in priced)
+
+    if not symbols:
+        return []
+
+    fetch = fetcher or yfinance_client.fetch_intraday_closes_range
+    try:
+        bars_by_symbol: dict[str, dict[datetime, Decimal]] = fetch(  # type: ignore[operator]
+            sorted(symbols), sessions[0], sessions[-1], interval=WEEK_INTERVAL
+        )
+    except Exception:  # pragma: no cover - defensive: best-effort network fetch
+        log.warning("week curve intraday fetch failed", exc_info=True)
+        return []
+
+    fx_bars: dict[datetime, Decimal] = {}
+    if needs_fx:
+        fx_fetch = fx_fetcher or yfinance_client.fetch_eur_usd_intraday_range
+        try:
+            fx_bars = fx_fetch(  # type: ignore[operator]
+                sessions[0], sessions[-1], interval=WEEK_INTERVAL
+            )
+        except Exception:  # pragma: no cover - defensive: FX overlay is best-effort
+            log.warning("week curve EUR/USD fetch failed", exc_info=True)
+            fx_bars = {}
+
+    samples: list[tuple[datetime, Decimal, Decimal | None]] = []
+    for session_date in sessions:
+        priced = positions_by_day[session_date]
+        if not priced:
+            continue
+        start = _session_start_utc(session_date)
+        end = _session_start_utc(session_date + timedelta(days=1))
+        day_symbols = {p.instrument.symbol for p in priced}
+        day_bar_times = sorted(
+            {t for sym in day_symbols for t in bars_by_symbol.get(sym, {}) if start <= t < end}
+        )
+        if not day_bar_times:
+            continue
+        base_fx = (
+            fx_service.get_rate_eur_to_quote(session, session_date, quote="USD")
+            if any(_is_usd_native(p) for p in priced)
+            else None
+        )
+        for t in _pick_open_mid_close(day_bar_times):
+            fx_t = _forward_filled(fx_bars, t) if fx_bars else None
+            point_fx = fx_t or base_fx
+            market = _market_component_pivot_eur(
+                priced, bars_by_symbol, t, fx_t=fx_t, base_fx=base_fx
+            )
+            samples.append((t, market, point_fx))
+
+    samples.sort(key=lambda s: s[0])
+    return samples

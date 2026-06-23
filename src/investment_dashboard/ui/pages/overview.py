@@ -40,6 +40,7 @@ from investment_dashboard.ui.money_format import (
     fmt_shares,
 )
 from investment_dashboard.ui.pages._overview_query import (
+    MULTI_CCY_RANGES,
     VALUE_RANGES,
     HoldingCard,
     MarketVerdict,
@@ -53,6 +54,7 @@ from investment_dashboard.ui.pages._overview_query import (
     build_intraday_value_series,
     build_movers,
     build_value_series,
+    build_week_value_series,
     compute_instrument_metrics,
     compute_market_verdict,
     effective_overview_range,
@@ -104,6 +106,13 @@ class _OverviewData:
     #: Previous-session settled value (display currency) — the "1 Day" chart's
     #: reference line. ``None`` outside the Day range or when not computable.
     intraday_prev_close: Decimal | None = None
+    #: Companion value series in the *other* currency (USD when the display is
+    #: EUR, and vice versa), plotted as a right-axis comparison line on every
+    #: range a week or longer. ``None``/empty on the Day range or when the other
+    #: currency could not be built.
+    value_series_secondary: list[ValueSeriesPoint] | None = None
+    #: ISO code of that companion line (e.g. ``"USD"``), for axis + legend labels.
+    secondary_ccy: str | None = None
 
 
 def _pct_card(
@@ -640,7 +649,16 @@ def _treemap_figure(data, *, currency: str, fx_rate: Decimal | None):  # type: i
     return fig
 
 
-def _value_curve_figure(points, *, currency: str, intraday: bool = False, prev_close=None):  # type: ignore[no-untyped-def]
+def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR0912
+    points,
+    *,
+    currency: str,
+    intraday: bool = False,
+    prev_close=None,
+    week: bool = False,
+    secondary=None,
+    secondary_currency: str | None = None,
+):
     """Classic portfolio-value area graph over the selected time range.
 
     Styled the way mainstream investing apps present value-over-time:
@@ -650,7 +668,18 @@ def _value_curve_figure(points, *, currency: str, intraday: bool = False, prev_c
     a value can be read off any date.
 
     ``intraday`` switches the x-axis + hover to a time-of-day read-out for the
-    "1 Day" range, whose points are timestamps within a single session.
+    "1 Day" range, whose points are timestamps within a single session. ``week``
+    keeps the multi-day "1 Week" curve's datetime x-axis on a weekday/date grid
+    while showing the time of day in the hover (its points are start/midday/close
+    instants across several sessions).
+
+    ``secondary`` (with ``secondary_currency``) adds a comparison line for the
+    *other* currency on a right-hand axis, scaled so both lines share the same
+    starting point: the right axis range is the left range scaled by
+    ``secondary[0] / primary[0]``, which pins the two opening values to the same
+    pixel **and** the same zero, so any later divergence is purely the difference
+    in how the portfolio fared in each currency over the window — read the gap to
+    see how much better/worse one currency did than the other.
 
     ``prev_close`` (intraday only) is the previous session's settled value: when
     given, a neutral dashed reference line marks it and the curve is tinted with
@@ -667,6 +696,7 @@ def _value_curve_figure(points, *, currency: str, intraday: bool = False, prev_c
 
     symbol = currency_symbol(currency)
     fig = go.Figure()
+    has_secondary = False
     if points:
         points = downsample(points)
         dates = [p.date for p in points]
@@ -674,7 +704,11 @@ def _value_curve_figure(points, *, currency: str, intraday: bool = False, prev_c
         # Adapt the x-axis tick density/format to the span so a one-day range
         # shows the time of day and a multi-year range shows months/years.
         span_days = (dates[-1] - dates[0]).days if len(dates) > 1 else 0
-        if intraday or span_days <= 2:
+        if intraday:
+            tickformat = "%H:%M"
+        elif week:
+            tickformat = "%a %d"
+        elif span_days <= 2:
             tickformat = "%H:%M"
         elif span_days <= 95:
             tickformat = "%d %b"
@@ -682,11 +716,12 @@ def _value_curve_figure(points, *, currency: str, intraday: bool = False, prev_c
             tickformat = "%b %Y"
         else:
             tickformat = "%Y"
-        hovertemplate = (
-            f"%{{x|%H:%M}}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"
-            if intraday
-            else f"%{{x|%d %b %Y}}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"
-        )
+        if intraday:
+            hovertemplate = f"%{{x|%H:%M}}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"
+        elif week:
+            hovertemplate = f"%{{x|%a %d %b %H:%M}}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"
+        else:
+            hovertemplate = f"%{{x|%d %b %Y}}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"
         # Tint the intraday curve by its position versus the previous close, so
         # the day's direction *relative to yesterday* is read at a glance. The
         # palette is the colourblind-safe Wong blue (up) / orange (down) — never
@@ -706,7 +741,7 @@ def _value_curve_figure(points, *, currency: str, intraday: bool = False, prev_c
                 x=dates,
                 y=values,
                 mode="lines",
-                name=f"Portfolio value ({currency})",
+                name=f"In {currency}",
                 line={"width": 2.4, "color": line_color},
                 fill="tozeroy",
                 fillcolor=fill_color,
@@ -776,16 +811,78 @@ def _value_curve_figure(points, *, currency: str, intraday: bool = False, prev_c
                     showlegend=False,
                 )
             )
+        # Companion line for the *other* currency on a right-hand axis, scaled so
+        # both lines share the same starting point (and the same zero): the right
+        # range is the left range times secondary[0]/primary[0]. With identical
+        # opening pixels, the visible gap between the lines is exactly how much
+        # better or worse the portfolio did in one currency versus the other over
+        # the window — the whole point of the dual view.
+        if secondary and secondary_currency and yrange is not None and values and values[0]:
+            sec_points = downsample(secondary)
+            if len(sec_points) == len(dates):
+                sec_dates = [p.date for p in sec_points]
+                sec_values = [float(p.value) for p in sec_points]
+                if sec_values and sec_values[0] > 0:
+                    scale = sec_values[0] / values[0]
+                    sec_symbol = currency_symbol(secondary_currency)
+                    sec_color = "#CC79A7"  # Wong reddish-purple (colourblind-safe)
+                    fig.add_trace(
+                        go.Scatter(
+                            x=sec_dates,
+                            y=sec_values,
+                            mode="lines",
+                            name=f"In {secondary_currency}",
+                            yaxis="y2",
+                            line={"width": 2, "color": sec_color, "dash": "dot"},
+                            hovertemplate=(
+                                f"<b>{sec_symbol}%{{y:,.2f}}</b> ({secondary_currency})"
+                                "<extra></extra>"
+                            ),
+                        )
+                    )
+                    fig.update_layout(
+                        yaxis2={
+                            "overlaying": "y",
+                            "side": "right",
+                            "tickprefix": sec_symbol,
+                            "tickformat": ".3s",
+                            "separatethousands": True,
+                            "showgrid": False,
+                            "automargin": True,
+                            "range": [yrange[0] * scale, yrange[1] * scale],
+                            "tickfont": {"color": sec_color},
+                            "title": {
+                                "text": secondary_currency,
+                                "font": {"color": sec_color},
+                            },
+                        }
+                    )
+                    has_secondary = True
     fig.update_layout(
         title=(
             f"Portfolio value today ({currency})"
             if intraday
-            else f"Portfolio value over time ({currency})"
+            else (
+                f"Portfolio value over time — {currency} vs {secondary_currency}"
+                if has_secondary
+                else f"Portfolio value over time ({currency})"
+            )
         ),
         template="colorblind_modern",
-        margin={"l": 16, "r": 16, "t": 40, "b": 36},
+        margin={"l": 16, "r": 44 if has_secondary else 16, "t": 40, "b": 36},
         hovermode="x unified",
-        showlegend=False,
+        showlegend=has_secondary,
+        legend=(
+            {
+                "orientation": "h",
+                "yanchor": "bottom",
+                "y": 1.02,
+                "xanchor": "right",
+                "x": 1,
+            }
+            if has_secondary
+            else None
+        ),
     )
     return fig
 
@@ -796,26 +893,27 @@ def _on_value_range_change(label: str) -> None:  # pragma: no cover - UI callbac
     ui.navigate.to(f"{PATH}?value_range={label}")
 
 
-def _value_over_time_section(value_series, *, range_label, display_ccy, display_tz=None):  # type: ignore[no-untyped-def]
-    """Render the value-over-time line chart + Day/Month/Year/All selector.
-
-    On the "Day" range the chart redraws itself in place whenever a price
-    refresh lands, so the intraday curve keeps growing live without a page
-    reload.
-    """
-
-
 def _value_over_time_section(  # type: ignore[no-untyped-def]
-    value_series, *, range_label, display_ccy, display_tz=None, prev_close=None
+    value_series,
+    *,
+    range_label,
+    display_ccy,
+    display_tz=None,
+    prev_close=None,
+    secondary=None,
+    secondary_ccy=None,
 ):
-    """Render the value-over-time line chart + Day/Month/Year/All selector.
+    """Render the value-over-time line chart + range selector.
 
     On the "Day" range the chart redraws itself in place whenever a price
     refresh lands, so the intraday curve keeps growing live without a page
     reload. ``prev_close`` is the previous session's settled value used to mark
-    the "1 Day" reference line.
+    the "1 Day" reference line. ``secondary`` / ``secondary_ccy`` add the
+    other-currency comparison line (right axis, shared start) on every range a
+    week or longer.
     """
     intraday = range_label == "Day"
+    week = range_label == "Week"
     with section("Value over time"):
         with ui.row().classes("items-center gap-sm"):
             ui.label("Range:").classes("text-caption opacity-70")
@@ -837,7 +935,10 @@ def _value_over_time_section(  # type: ignore[no-untyped-def]
                         value_series,
                         currency=display_ccy,
                         intraday=intraday,
+                        week=week,
                         prev_close=prev_close,
+                        secondary=secondary,
+                        secondary_currency=secondary_ccy,
                     )
                 )
                 .classes("w-full")
@@ -924,6 +1025,10 @@ def register() -> None:  # noqa: PLR0915
                     display_tz = timezone_service.resolve_tzinfo(
                         timezone_service.get_timezone(session)
                     )
+                    # The "other" currency for the comparison line on every range
+                    # a week or longer (USD when the display is EUR, else EUR).
+                    secondary_ccy = "USD" if display_ccy.upper() == "EUR" else "EUR"
+                    value_series_secondary: list[ValueSeriesPoint] | None = None
                     if range_label == "Day":
                         # Backfill the last trading session (~30-min bars) once
                         # per day so opening the app late, after the close, or
@@ -937,11 +1042,45 @@ def register() -> None:  # noqa: PLR0915
                         intraday_prev_close = previous_session_close_value(
                             session, currency=display_ccy
                         )
+                    elif range_label == "Week":
+                        # Multi-day intraday curve (start/midday/close per session),
+                        # inspired by the "1 Day" curve. Built in both currencies so
+                        # the right-axis comparison line shares the same start.
+                        value_series = build_week_value_series(
+                            session, currency=display_ccy, tz=display_tz, positions=positions
+                        )
+                        value_series_secondary = build_week_value_series(
+                            session, currency=secondary_ccy, tz=display_tz, positions=positions
+                        )
+                        # Fall back to the daily snapshot series if the feed served
+                        # no intraday bars (offline / quiet week), so the range is
+                        # never blank.
+                        if not value_series:
+                            value_series = build_value_series(
+                                session, currency=display_ccy, range_label=range_label
+                            )
+                            value_series_secondary = build_value_series(
+                                session, currency=secondary_ccy, range_label=range_label
+                            )
+                        intraday_prev_close = None
                     else:
                         value_series = build_value_series(
                             session, currency=display_ccy, range_label=range_label
                         )
+                        value_series_secondary = build_value_series(
+                            session, currency=secondary_ccy, range_label=range_label
+                        )
                         intraday_prev_close = None
+                    # Only keep the companion line for the multi-currency ranges
+                    # and when it actually lines up point-for-point with the
+                    # primary (so the shared-start scaling is meaningful).
+                    if (
+                        range_label not in MULTI_CCY_RANGES
+                        or not value_series_secondary
+                        or (value_series and len(value_series_secondary) != len(value_series))
+                    ):
+                        value_series_secondary = None
+                        secondary_ccy = None
                     # Display-currency FX (EUR→display) used to convert the
                     # portfolio-level expense cost and the allocation treemap.
                     display_quote = display_ccy if display_ccy != "EUR" else "USD"
@@ -990,6 +1129,8 @@ def register() -> None:  # noqa: PLR0915
                     price_observed_at=price_observed_at,
                     price_market_at=price_market_at,
                     intraday_prev_close=intraday_prev_close,
+                    value_series_secondary=value_series_secondary,
+                    secondary_ccy=secondary_ccy,
                 )
 
             def _render(data: _OverviewData) -> None:
@@ -1109,6 +1250,8 @@ def register() -> None:  # noqa: PLR0915
                     display_ccy=display_ccy,
                     display_tz=display_tz,
                     prev_close=data.intraday_prev_close,
+                    secondary=data.value_series_secondary,
+                    secondary_ccy=data.secondary_ccy,
                 )
 
                 # Today's winners/losers — a distinct band under the graph and
