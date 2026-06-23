@@ -63,6 +63,15 @@ Concretely, that means:
   freshness window. It bypasses only the soft "conserve the last credits" gate;
   the hard free-tier per-minute/day budget still applies, so it can never blow
   the daily allowance (`clearPriceCaches` in `src/cache.ts`).
+- **Try the backup data provider.** Settings → Maintenance → *Try the backup data
+  provider now* routes the whole book through the secondary provider (Tiingo) for
+  one pull: it skips the Twelve Data primary entirely and re-prices every holding
+  whose cached value isn't already recent (behind the latest settled session / its
+  expected NAV), pulling all behind NAV laggards at once instead of one canary
+  probe at a time. Use it for a second opinion when the primary looks wrong or
+  stuck. Tiingo's own hourly/daily budget still applies, so any overflow simply
+  defers and symbols already on a fresh value are left untouched (`viaTiingo` in
+  `src/app.ts`, `forceAll` in `src/tiingo-fallback.ts`).
 - **Idle auto-lock.** After a configurable period of inactivity (default **5
   min**; Settings → Security → *Auto-lock (minutes)*, set `0` to disable) the
   session clears the in-memory passphrase and returns to the unlock screen, so an

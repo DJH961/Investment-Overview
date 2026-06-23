@@ -142,6 +142,44 @@ describe("runTiingoFallback", () => {
     expect(out.quotes.get("FSKAX")?.priceTime).toBeNull();
   });
 
+  it("fetches every behind NAV fund directly under forceAll, skipping recent ones", async () => {
+    const storage = memStorage();
+    const fetchImpl = stubFetch([
+      iexRow("FSKAX", 100, `${EXPECTED}T21:00:00Z`),
+      iexRow("VFIAX", 200, `${EXPECTED}T21:00:00Z`),
+    ]);
+    // VTSAX is already on the latest settled session (recent) → left untouched;
+    // FSKAX and VFIAX are behind with no peer/canary timing satisfied, yet
+    // forceAll pulls them both at once.
+    const recent: Quote = {
+      symbol: "VTSAX",
+      price: new Decimal(120),
+      previousClose: null,
+      currency: "USD",
+      at: NOW,
+      priceTime: null,
+      valueDate: EXPECTED,
+      marketOpen: null,
+    };
+    const quotes = new Map<string, Quote>([["VTSAX", recent]]);
+    const out = await runTiingoFallback({
+      symbols: ["VTSAX", "FSKAX", "VFIAX"],
+      navSymbols: new Set(["VTSAX", "FSKAX", "VFIAX"]),
+      quotes,
+      report: emptyReport(),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl,
+      forceAll: true,
+    });
+    expect(out.tiingoSymbols.sort()).toEqual(["FSKAX", "VFIAX"]);
+    expect(out.quotes.get("FSKAX")?.valueDate).toBe(EXPECTED);
+    expect(out.quotes.get("VFIAX")?.valueDate).toBe(EXPECTED);
+    // The recent fund spent no Tiingo credit (only the two laggards did).
+    expect(tiingoCreditsSpentToday(readTiingoCreditLog(NOW, undefined, storage), NOW)).toBe(2);
+  });
+
   it("never throws on a transient fetch failure; reports it on .error", async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error("network down");

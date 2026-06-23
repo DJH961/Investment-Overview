@@ -81,6 +81,15 @@ export interface TiingoFallbackOptions {
    * enforces the smart gates (newer data must exist) and the hard budget caps.
    */
   manual?: boolean;
+  /**
+   * A manual "route everything through the backup provider" pull (Settings →
+   * "Try the backup data provider now"): fetch *every* still-behind holding from
+   * Tiingo directly, skipping the NAV canary/peer *timing* gates so missing funds
+   * are pulled at once rather than one canary probe at a time. The "unless the
+   * data is recent" rule and the hard budget caps still apply — symbols whose
+   * held value already covers the latest settled session are left untouched.
+   */
+  forceAll?: boolean;
   /** Last-known EUR size per symbol, used only to pick the largest as canary. */
   sizeForSymbol?: (symbol: string) => number;
 }
@@ -178,6 +187,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     storage,
     fetchImpl,
     manual = false,
+    forceAll = false,
     sizeForSymbol,
   } = options;
 
@@ -214,59 +224,68 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
 
   try {
     if (navMissing.length > 0) {
-      const state = readTiingoState(storage ?? undefined);
-      const today = etDay(now);
-      const canaryCountToday = state.canaryDay === today ? state.canaryCount : 0;
-      // Canary pick: the largest still-missing holding (cold-start proxy for
-      // "most likely to have published"); ties broken by symbol order.
-      const canaryPick =
-        [...navMissing].sort((a, b) => (sizeForSymbol?.(b) ?? 0) - (sizeForSymbol?.(a) ?? 0))[0] ?? null;
+      if (forceAll) {
+        // "Route everything through the backup provider": fetch every still-behind
+        // NAV fund right now (budget-gated), bypassing the canary/peer timing
+        // gates. The navMissing set is already "not recent" (behind the latest
+        // settled session), so the "unless recent" rule is preserved.
+        const room = selectWithinBudget(navMissing, readBudget(now, storage));
+        tiingoSymbols.push(...(await merge(room)));
+      } else {
+        const state = readTiingoState(storage ?? undefined);
+        const today = etDay(now);
+        const canaryCountToday = state.canaryDay === today ? state.canaryCount : 0;
+        // Canary pick: the largest still-missing holding (cold-start proxy for
+        // "most likely to have published"); ties broken by symbol order.
+        const canaryPick =
+          [...navMissing].sort((a, b) => (sizeForSymbol?.(b) ?? 0) - (sizeForSymbol?.(a) ?? 0))[0] ?? null;
 
-      const decision = decideNav({
-        missingFunds: navMissing,
-        peerPublished,
-        peerPublishedAt,
-        canaryPick,
-        earliestHabitMin: null,
-        lastCanaryAt: state.lastCanaryAt,
-        canaryCountToday,
-        now,
-        budget: readBudget(now, storage),
-      });
+        const decision = decideNav({
+          missingFunds: navMissing,
+          peerPublished,
+          peerPublishedAt,
+          canaryPick,
+          earliestHabitMin: null,
+          lastCanaryAt: state.lastCanaryAt,
+          canaryCountToday,
+          now,
+          budget: readBudget(now, storage),
+        });
 
-      // A manual tap may probe immediately even if the timing gates would WAIT,
-      // provided there is no peer evidence, a candidate exists, the daily cap is
-      // not yet hit, and budget remains.
-      const manualCanary =
-        manual &&
-        !peerPublished &&
-        decision.action === "wait" &&
-        canaryPick !== null &&
-        canaryCountToday < NAV_MAX_PROBES_PER_DAY &&
-        readBudget(now, storage).hasRoom();
+        // A manual tap may probe immediately even if the timing gates would WAIT,
+        // provided there is no peer evidence, a candidate exists, the daily cap is
+        // not yet hit, and budget remains.
+        const manualCanary =
+          manual &&
+          !peerPublished &&
+          decision.action === "wait" &&
+          canaryPick !== null &&
+          canaryCountToday < NAV_MAX_PROBES_PER_DAY &&
+          readBudget(now, storage).hasRoom();
 
-      if (decision.action === "fetch_laggards") {
-        tiingoSymbols.push(...(await merge(decision.symbols)));
-      } else if (decision.action === "canary" || manualCanary) {
-        const pick = decision.action === "canary" ? decision.symbols[0] : (canaryPick as string);
-        // Persist the probe stamp + counter (ET-day-scoped) before fetching.
-        const nextState: TiingoState = {
-          canaryDay: today,
-          canaryCount: canaryCountToday + 1,
-          lastCanaryAt: now,
-          lastQuickRefreshAt: state.lastQuickRefreshAt,
-        };
-        writeTiingoState(nextState, storage ?? undefined);
-        const got = await merge([pick]);
-        tiingoSymbols.push(...got);
-        // Canary fresh ⇒ the cycle has published and the primary missed it:
-        // promote every still-missing fund to a laggard fetch (budget-gated).
-        const probed = quotes.get(pick);
-        const fresh = !!got.length && (probed?.valueDate ?? "") >= expected;
-        if (fresh) {
-          const laggards = navMissing.filter((s) => s !== pick);
-          const room = selectWithinBudget(laggards, readBudget(now, storage));
-          tiingoSymbols.push(...(await merge(room)));
+        if (decision.action === "fetch_laggards") {
+          tiingoSymbols.push(...(await merge(decision.symbols)));
+        } else if (decision.action === "canary" || manualCanary) {
+          const pick = decision.action === "canary" ? decision.symbols[0] : (canaryPick as string);
+          // Persist the probe stamp + counter (ET-day-scoped) before fetching.
+          const nextState: TiingoState = {
+            canaryDay: today,
+            canaryCount: canaryCountToday + 1,
+            lastCanaryAt: now,
+            lastQuickRefreshAt: state.lastQuickRefreshAt,
+          };
+          writeTiingoState(nextState, storage ?? undefined);
+          const got = await merge([pick]);
+          tiingoSymbols.push(...got);
+          // Canary fresh ⇒ the cycle has published and the primary missed it:
+          // promote every still-missing fund to a laggard fetch (budget-gated).
+          const probed = quotes.get(pick);
+          const fresh = !!got.length && (probed?.valueDate ?? "") >= expected;
+          if (fresh) {
+            const laggards = navMissing.filter((s) => s !== pick);
+            const room = selectWithinBudget(laggards, readBudget(now, storage));
+            tiingoSymbols.push(...(await merge(room)));
+          }
         }
       }
     }

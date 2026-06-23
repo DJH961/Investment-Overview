@@ -459,6 +459,14 @@ export class App {
         ["Reset cache & re-pull everything"],
       );
       updateAll.addEventListener("click", () => this.updateAllFromScratch());
+      // (3) Try the backup data provider: route the whole book through Tiingo for
+      // one pull, skipping the primary and re-pricing every non-recent holding.
+      const viaBackup = h(
+        "button",
+        { class: "btn ghost", type: "button", "data-action": "via-backup" },
+        ["Try the backup data provider now"],
+      );
+      viaBackup.addEventListener("click", () => this.refreshViaBackupProvider());
       formChildren.push(
         h("h2", { class: "settings-section" }, ["Maintenance"]),
         field(
@@ -470,6 +478,11 @@ export class App {
           "Reset & re-pull everything",
           updateAll,
           "Clear every cached price, forget the learned NAV publish windows, re-check the data file, and re-fetch all quotes and FX from scratch. Use this if a price ever looks stuck. Respects your daily free-tier budget.",
+        ),
+        field(
+          "Try the backup data provider",
+          viaBackup,
+          "Route the whole book through the secondary provider (Tiingo) for one pull, skipping Twelve Data — but only for holdings whose value isn't already recent. Use it for a second opinion when the primary looks wrong or stuck. Respects Tiingo's own budget.",
         ),
       );
     }
@@ -1055,12 +1068,16 @@ export class App {
   private async refreshPrices(
     session: number,
     network: boolean,
-    opts: { force?: boolean; forceAll?: boolean } = {},
+    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean } = {},
   ): Promise<QuoteLoadReport | null> {
     const { data, config } = this.state;
     if (!data) return null;
 
     const forceAll = network && (opts.forceAll ?? false);
+    // "Route everything through the backup provider": skip the Twelve Data
+    // primary quote fetch entirely (serve quotes from cache only) and let the
+    // Tiingo fallback below re-pull every still-behind holding instead.
+    const viaTiingo = network && (opts.viaTiingo ?? false);
     const { symbols, options } = this.quoteRequest(
       data,
       config,
@@ -1072,6 +1089,10 @@ export class App {
     // expected/awaited (see {@link summarizeCoverage}) rather than a bare count.
     this.lastNavSymbols = options.navSymbols ?? new Set();
     const apiKey = network ? config.apiKey : "";
+    // The primary (Twelve Data) quote fetch is suppressed when routing through
+    // the backup provider — an empty key makes loadQuotes serve quotes from
+    // cache only, so the Tiingo pass below sources every non-recent holding.
+    const quotesApiKey = viaTiingo ? "" : apiKey;
 
     // Pull the live currency (FX + EUR/USD spot) FIRST — before any stock, ETF or
     // fund quote — so the per-minute free-tier budget always funds the rate that
@@ -1117,7 +1138,7 @@ export class App {
     }
 
     // Now fetch the stock / ETF / fund quotes with whatever budget remains.
-    const quotePromise = loadQuotes(symbols, apiKey, options);
+    const quotePromise = loadQuotes(symbols, quotesApiKey, options);
 
     const quoteLoad = await quotePromise;
     // A superseded session (lock, or a newer unlock) must not paint over the UI.
@@ -1148,7 +1169,8 @@ export class App {
         report: quoteLoad.report,
         proxyUrl,
         now: Date.now(),
-        manual: opts.force ?? false,
+        manual: (opts.force ?? false) || viaTiingo,
+        forceAll: viaTiingo,
         sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
       });
       if (session !== this.sessionId) return quoteLoad.report;
@@ -1268,6 +1290,24 @@ export class App {
   }
 
   /**
+   * The Settings "Try the backup data provider now" escape hatch: route the
+   * whole book through the secondary provider (Tiingo) for one pull. It skips the
+   * Twelve Data primary fetch entirely and asks Tiingo for every holding whose
+   * cached value is *not* already recent (behind the latest settled session / its
+   * expected NAV), bypassing the usual canary/peer timing so all laggards are
+   * pulled at once. Use it when the primary looks wrong or stuck and you want a
+   * second opinion. Tiingo's own hourly/daily budget still applies, so any
+   * overflow simply defers; symbols already on a fresh value are left untouched.
+   */
+  private refreshViaBackupProvider(): void {
+    this.exitSettings();
+    this.toast("Trying the backup data provider…");
+    const session = this.sessionId;
+    if (this.refreshing) return; // a pull is already in flight; it will repaint
+    void this.runScheduledRefresh(session, "manual", { viaTiingo: true });
+  }
+
+  /**
    * Handle a manual tap of the Refresh button. Always gives immediate feedback
    * the user can actually see: it shows the spinning glyph + "Refreshing prices…"
    * pill for a guaranteed minimum (so a cache-fast refresh doesn't flash by),
@@ -1328,7 +1368,7 @@ export class App {
   private async runScheduledRefresh(
     session: number,
     kind: RefreshKind = "auto",
-    opts: { force?: boolean; forceAll?: boolean } = {},
+    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean } = {},
   ): Promise<void> {
     if (session !== this.sessionId) return;
     // A manual tap should refresh even when the tab is technically "hidden"
@@ -1342,6 +1382,7 @@ export class App {
       report = await this.refreshPrices(session, true, {
         force: opts.force ?? false,
         forceAll: opts.forceAll ?? false,
+        viaTiingo: opts.viaTiingo ?? false,
       });
     } finally {
       this.refreshing = false;
