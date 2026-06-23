@@ -14,6 +14,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [3.13.1] — 2026-06-23
+
+### Fixed
+
+- **A blob-priced mutual fund (e.g. FSKAX) now shows today's move and is
+  eligible for the winners/losers movers list, instead of silently dropping
+  out.** Previously "today's move" was computed *only* from a live quote's
+  `previous_close`, so when the live feed was stale or missing for a holding
+  (as Twelve Data's NAV feed currently is for FSKAX, lagging several sessions
+  behind yfinance) and the displayed price fell back to the encrypted blob's
+  last-known close, the move was `null` — no growth percentage rendered and
+  `buildMovers` excluded it. The mobile export now carries a
+  `previous_close_native` / `previous_close_date` pair per holding (it fetches
+  two recent closes instead of one), and `compute.ts` generalizes the move
+  calculation to a current-mark / prior-mark pair: it uses the live quote when
+  it applies, otherwise derives the move from the blob's prior close when the
+  displayed price is the blob fallback. The existing staleness gate (move date
+  vs. the freshest peer session) and movers eligibility then include the fund
+  automatically. This is purely a fallback-path fix; live-quoted holdings are
+  unchanged.
+
 ## [3.13.0] — 2026-06-23
 
 ### Added
