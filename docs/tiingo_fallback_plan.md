@@ -1,10 +1,25 @@
 # Tiingo secondary‑provider fallback — implementation plan
 
-> Status: **desktop built; web pending hand‑off.** Captures the agreed architecture
+> Status: **fully implemented (desktop + web).** Captures the agreed architecture
 > for adding Tiingo as a smart fallback behind the existing primaries, plus a
 > user‑initiated manual refresh. Written 2026‑06‑23; revised same day to harden
 > the NAV‑late trigger (peer‑confirmation + canary probe) and the
 > yfinance retry‑before‑escalate gate.
+>
+> ### ✅ Implementation complete (2026‑06‑23)
+>
+> **Everything described in this document — both the desktop (Python) and the
+> web/Worker (TypeScript) stacks — has now been built and tested.** The desktop
+> side merged to `main` via PR #100 (branch `copilot/tiingo-fallback`). The web
+> side is complete on branch `copilot/implement-web-tiingo-fallback` (full client +
+> Worker `/price` route + gates + tests + the `3.14.0` version bump) and is merging
+> imminently. Treat the design sections below as **as‑built reference**, not pending
+> work.
+>
+> **Follow‑up idea (not built):** extend the same secondary‑provider pattern to the
+> **home‑currency FX rate** (USD→EUR). Tiingo's Forex feed was verified live and is
+> available on the account. See **`tiingo_forex_fallback.md`** for findings and an
+> implementation sketch.
 >
 > ### Progress (2026‑06‑23, branch `copilot/tiingo-fallback`)
 >
