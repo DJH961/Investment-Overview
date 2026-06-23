@@ -172,6 +172,25 @@ def market_value_eur(positions: list[Position]) -> Decimal:
     )
 
 
+def _intraday_sleeve_complete(positions: list[Position]) -> bool:
+    """Whether *every* held intraday-priced holding could be valued this instant.
+
+    A live capture must reflect the **whole** intraday sleeve. When the app has
+    only partly loaded — e.g. the user just opened/logged in and not every
+    price (or its FX rate) has arrived yet — one or more holdings carry no usable
+    value (``value_warning``: no price sourced, a zero value, or no FX rate).
+    Recording then would store a sample that silently *omits* that holding and so
+    punch a spurious dip/spike into the curve at that timestamp. Returns ``False``
+    in that case so the caller drops the sample and lets a later, fully-loaded
+    refresh recapture the instant cleanly. An empty sleeve is trivially complete.
+    """
+    return all(
+        not p.value_warning and p.current_price_native is not None and p.current_price_native > 0
+        for p in positions
+        if p.shares > _MIN_SHARES and is_intraday_priced(p)
+    )
+
+
 def _to_naive_utc(now: datetime) -> datetime:
     """Normalise an aware/naive instant to a naive UTC timestamp (storage form)."""
     if now.tzinfo is not None:
@@ -276,9 +295,12 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:
     at that minute's *true* rate rather than a single uniform conversion.
 
     Best-effort and self-pruning: returns ``True`` when a sample was written,
-    ``False`` when the market is closed or the dedupe floor suppressed it. Opens
-    its own sessions (it runs from the background refresh thread) and never
-    raises — a capture failure must never break a price refresh.
+    ``False`` when the market is closed, the dedupe floor suppressed it, or the
+    intraday sleeve was still loading (some holding lacked a price/FX rate, so a
+    sample then would omit it and spike the curve — see
+    :func:`_intraday_sleeve_complete`). Opens its own sessions (it runs from the
+    background refresh thread) and never raises — a capture failure must never
+    break a price refresh.
     """
     now = now or datetime.now(UTC)
     if not is_us_market_open(now):
@@ -294,6 +316,13 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:
     try:
         with ledger_session_scope() as session:
             positions = positions_service.compute_positions(session)
+            # Guard against a partly-loaded portfolio (e.g. the user just opened
+            # the app and not every price/FX rate has arrived): a sample that
+            # silently omits a still-loading holding would punch a spurious
+            # dip/spike into the curve. Drop it and let a later, complete refresh
+            # recapture this instant cleanly.
+            if not _intraday_sleeve_complete(positions):
+                return False
             value_eur = market_value_eur(positions)
             # The EUR value above is at today's spot; record that same spot so the
             # USD view of this point is the FX-free price-only figure.

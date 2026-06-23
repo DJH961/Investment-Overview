@@ -197,6 +197,98 @@ class TestSessionWindow:
         assert iss.session_close_utc(saturday) == datetime(2024, 6, 7, 20, 0)
 
 
+def _seed_unpriced_holding(session: Session) -> None:
+    """Seed a held stock with NO cached close — its price can't be sourced yet.
+
+    Mimics a holding still loading right after login: ``compute_positions`` can't
+    value it (``current_price_native is None``), so it trips ``value_warning``.
+    """
+    account = accounts_repo.create_account(
+        session,
+        broker="vanguard",
+        account_label="EUR Brokerage 2",
+        native_currency="EUR",
+        account_type="brokerage",
+    )
+    instr = instruments_repo.get_or_create(session, symbol="LOADING", native_currency="EUR")
+    session.add(
+        Transaction(
+            account_id=account.id,
+            instrument_id=instr.id,
+            date=_SESSION_DAY,
+            kind="buy",
+            quantity=Decimal("10"),
+            price_native=Decimal("100.00"),
+            net_native=Decimal("-1000.00"),
+            net_eur=Decimal("-1000.00"),
+            source="manual",
+        )
+    )
+    # Deliberately no prices_repo.upsert_closes → no current price available.
+    session.flush()
+
+
+class TestIntradaySleeveComplete:
+    def test_complete_when_every_holding_is_priced(self, session: Session) -> None:
+        from investment_dashboard.services import positions_service
+
+        _seed_eur_holding(session)
+        positions = positions_service.compute_positions(session)
+        assert iss._intraday_sleeve_complete(positions) is True
+
+    def test_incomplete_when_a_holding_is_still_loading(self, session: Session) -> None:
+        # One holding fully priced, one still loading (no price). A live capture
+        # then would omit the loading holding and punch a spurious dip into the
+        # curve, so the sleeve is reported incomplete and the sample is dropped.
+        from investment_dashboard.services import positions_service
+
+        _seed_eur_holding(session)
+        _seed_unpriced_holding(session)
+        positions = positions_service.compute_positions(session)
+        assert iss._intraday_sleeve_complete(positions) is False
+
+    def test_empty_portfolio_is_trivially_complete(self, session: Session) -> None:
+        from investment_dashboard.services import positions_service
+
+        positions = positions_service.compute_positions(session)
+        assert iss._intraday_sleeve_complete(positions) is True
+
+    def test_nav_holding_left_loading_does_not_block_capture(self, session: Session) -> None:
+        # NAV holdings ride in the render-time base, not the intraday sleeve, so a
+        # still-loading (unpriced) mutual fund must not block the live capture of
+        # the intraday-priced stocks.
+        from investment_dashboard.services import positions_service
+
+        _seed_eur_holding(session)
+        account = accounts_repo.create_account(
+            session,
+            broker="vanguard",
+            account_label="EUR Funds Loading",
+            native_currency="EUR",
+            account_type="brokerage",
+        )
+        instr = instruments_repo.get_or_create(
+            session, symbol="NAVLOADING", asset_class="mutual_fund", native_currency="EUR"
+        )
+        session.add(
+            Transaction(
+                account_id=account.id,
+                instrument_id=instr.id,
+                date=_SESSION_DAY,
+                kind="buy",
+                quantity=Decimal("5"),
+                price_native=Decimal("200.00"),
+                net_native=Decimal("-1000.00"),
+                net_eur=Decimal("-1000.00"),
+                source="manual",
+            )
+        )
+        # No close cached for the fund either, but it is excluded from the sleeve.
+        session.flush()
+        positions = positions_service.compute_positions(session)
+        assert iss._intraday_sleeve_complete(positions) is True
+
+
 class TestForwardFill:
     def test_picks_latest_bar_at_or_before(self) -> None:
         bars = {
