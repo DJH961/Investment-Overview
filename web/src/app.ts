@@ -2042,6 +2042,23 @@ function navWord(n: number): string {
 }
 
 /**
+ * The NAV portion of a coverage line, honest about how many funds have actually
+ * struck. While the market is open, undue NAVs are "expected tonight"; once due
+ * and missing they are "awaiting"; when every due NAV is in hand they are "in".
+ * Returns `[]` when there are no NAV holdings this round.
+ */
+function navCoverageClause(f: CoverageFacts): string[] {
+  if (f.navTotal === 0) return [];
+  if (f.marketOpen && f.navExpectedTonight > 0) {
+    return [`${f.navExpectedTonight} ${navWord(f.navExpectedTonight)} expected tonight`];
+  }
+  if (f.navAwaiting > 0) {
+    return [`awaiting ${f.navAwaiting}/${f.navTotal} ${navWord(f.navAwaiting)}`];
+  }
+  return [`${f.navTotal}/${f.navTotal} ${navWord(f.navTotal)} in`];
+}
+
+/**
  * Turn {@link CoverageFacts} into a calm, *honest* one-liner. The point is to be
  * transparent about exactly what we pull and what we don't — never counting an
  * unpublished NAV as "live". Every line is written in sentence case (a bare
@@ -2065,17 +2082,20 @@ export function summarizeCoverage(f: CoverageFacts): string {
   // failure — it usually means the prices we already hold are still current — so
   // don't lead with an apologetic "recent prices". When the session is closed
   // and we hold every settled close and NAV, the cached figures genuinely *are*
-  // the latest there are: say "up to date" plainly. Only when something is
-  // actually behind (the market is open and moving, or a NAV is still awaited)
-  // do we fall back to the softer "showing recent prices" wording.
+  // the latest there are: say "up to date" plainly. Otherwise spell out exactly
+  // what is recent versus still awaited — a flat "recent prices" hides the fact
+  // that, say, 12/12 spots are recent while 5 NAVs are still expected. It is rare
+  // that every holding shares one status, so never collapse them into one word.
   if (!f.freshlyPulled) {
     const marketHeld = f.marketTotal === 0 || f.marketLive === f.marketTotal;
     if (!f.marketOpen && marketHeld && f.navAwaiting === 0) {
       return withFx(total === 1 ? "up to date" : `up to date (${total} holdings)`);
     }
-    return withFx(
-      total === 1 ? "showing recent prices" : `showing recent prices (${total} holdings)`,
-    );
+    const parts: string[] = [];
+    // Cached market spots are "recent" (not live: no fresh pull this round).
+    if (f.marketTotal > 0) parts.push(`${f.marketLive}/${f.marketTotal} recent`);
+    parts.push(...navCoverageClause(f));
+    return withFx(parts.length > 0 ? parts.join(", ") : `showing recent prices (${total} holdings)`);
   }
 
   const marketHeld = f.marketTotal === 0 || f.marketLive === f.marketTotal;

@@ -109,19 +109,32 @@ describe("summarizeCoverage", () => {
     ).toBe("Up to date · FX live");
   });
 
-  it("still says 'recent prices' from cache while something is genuinely behind", () => {
-    // Market open and moving: cached prices may lag, so don't over-claim.
+  it("breaks cached coverage into recent vs awaiting while something is behind", () => {
+    // Market open and moving: cached spots are "recent", not live — say so per holding.
     expect(
       summarizeCoverage(
         facts({ marketOpen: true, marketTotal: 2, marketLive: 2, freshlyPulled: false }),
       ),
-    ).toBe("Showing recent prices (2 holdings) · FX live");
-    // Closed, but a NAV is still awaited: not yet up to date.
+    ).toBe("2/2 recent · FX live");
+    // Market open with an undue NAV: spots recent, NAV still expected tonight.
+    expect(
+      summarizeCoverage(
+        facts({
+          marketOpen: true,
+          marketTotal: 2,
+          marketLive: 2,
+          navTotal: 1,
+          navExpectedTonight: 1,
+          freshlyPulled: false,
+        }),
+      ),
+    ).toBe("2/2 recent, 1 NAV expected tonight · FX live");
+    // Closed, but a NAV is still awaited: recent spots, awaiting the NAV.
     expect(
       summarizeCoverage(
         facts({ marketTotal: 2, marketLive: 2, navTotal: 1, navAwaiting: 1, freshlyPulled: false }),
       ),
-    ).toBe("Showing recent prices (3 holdings) · FX live");
+    ).toBe("2/2 recent, awaiting 1/1 NAV · FX live");
   });
 
   it("always reports FX freshness, capitalised, alongside the price coverage", () => {
