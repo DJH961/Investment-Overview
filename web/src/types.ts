@@ -1,6 +1,6 @@
 /**
  * TypeScript shape of the minimized mobile export contract
- * (`docs/mobile_export_schema.md`, schema_version 1). All decimal values arrive
+ * (`docs/mobile_export_schema.md`, schema_version 2). All decimal values arrive
  * as strings and are parsed with decimal.js where arithmetic is needed.
  */
 
@@ -309,5 +309,47 @@ export interface MobileExport {
   /** Saved Calculator targets with their no-buy flags + settings. Absent on
    * exports generated before v3.5.3. */
   target_allocations?: ExportTargetAllocation[];
+  /** The desktop's already-captured live 1D/1W graph, for the web to springboard
+   * off (instant paint, no re-fetch). Absent on exports predating schema v2 or
+   * when no intraday history had been captured. */
+  live_graphs?: ExportLiveGraphs;
   transactions?: unknown;
+}
+
+/** One whole-book point of an exported live curve, in both currencies. */
+export interface ExportLiveCurvePoint {
+  /** ISO-8601 UTC instant (carries a `Z`), the point's time. */
+  t: string;
+  /** Whole-book EUR value (the constant cash + NAV base already folded in). */
+  value_eur: DecimalString | null;
+  /** Whole-book USD value (booked / FX-free; never a rescale of the EUR line). */
+  value_usd: DecimalString | null;
+}
+
+/** One exported live series (the 1D session or the 1W sleeve). */
+export interface ExportLiveGraphSeries {
+  /** `YYYY-MM-DD` New-York session the 1D curve covers (1D series only). */
+  session_date?: string;
+  /** First `YYYY-MM-DD` New-York session of the 1W window (1W series only). */
+  start_date?: string;
+  /** Last `YYYY-MM-DD` New-York session of the 1W window (1W series only). */
+  end_date?: string;
+  /** Whether the regular session was open when the export was captured. */
+  market_open?: boolean;
+  points: ExportLiveCurvePoint[];
+}
+
+/**
+ * The desktop's live 1D/1W graphs, serialized so the web can springboard the
+ * curve from the blob instead of re-fetching intraday bars. `captured_at` stamps
+ * when the desktop built it, so the web can judge freshness and never present a
+ * stale session as the live one.
+ */
+export interface ExportLiveGraphs {
+  /** ISO-8601 UTC instant the export was captured (the freshness stamp). */
+  captured_at: string;
+  /** The intraday 1D session, if the desktop had one to ship. */
+  day?: ExportLiveGraphSeries | null;
+  /** The multi-day 1W sleeve, if the desktop had one to ship. */
+  week?: ExportLiveGraphSeries | null;
 }

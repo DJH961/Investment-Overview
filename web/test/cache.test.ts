@@ -8,6 +8,8 @@ import { describe, expect, it } from "vitest";
 import {
   creditsSpentWithin,
   creditsSpentToday,
+  creditsSpentThisHour,
+  startOfHour,
   startOfUtcDay,
   readCachedEnvelope,
   readCachedEurUsd,
@@ -157,6 +159,23 @@ describe("credit log", () => {
     expect(creditsSpentWithin(log, todayMorning, DAY)).toBe(540);
     // ...but the UTC-day reset means only today's 40 count against the cap.
     expect(creditsSpentToday(log, todayMorning)).toBe(40);
+  });
+
+  it("counts the hourly budget from the top of the clock hour, not a rolling 60min window", () => {
+    const s = memStorage();
+    const HOUR = 60 * 60 * 1000;
+    // A spend late in hour 9 (09:55) and one early in hour 10 (10:05).
+    const nineFiftyFive = 9 * HOUR + 55 * 60 * 1000;
+    const tenOhFive = 10 * HOUR + 5 * 60 * 1000;
+    recordCredits(30, nineFiftyFive, s);
+    recordCredits(4, tenOhFive, s);
+    const log = readCreditLog(tenOhFive, 24 * HOUR, s);
+    // startOfHour lands exactly on the clock hour boundary.
+    expect(startOfHour(tenOhFive)).toBe(10 * HOUR);
+    // A rolling 60-min window would wrongly include the 30 from 09:55...
+    expect(creditsSpentWithin(log, tenOhFive, HOUR)).toBe(34);
+    // ...but the top-of-hour reset means only the 4 from 10:05 count.
+    expect(creditsSpentThisHour(log, tenOhFive)).toBe(4);
   });
 
   it("startOfUtcDay lands exactly on the most recent UTC midnight", () => {

@@ -89,24 +89,44 @@ must stay secret, so the same Worker proxies it on a dedicated `…/price` route
 - `GET …/price?tickers=AAPL,MSFT` → Tiingo **IEX** (`/iex/?tickers=…`): a live
   intraday mark for stocks/ETFs and the latest NAV for mutual funds.
 - `GET …/price?daily=AAPL&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` → Tiingo
-  **daily** closes (`/tiingo/daily/<ticker>/prices`).
+  **daily** closes (`/tiingo/daily/<ticker>/prices`, `resampleFreq=daily`). The
+  forwarded `startDate`/`endDate` window is what feeds the 1W-and-beyond daily
+  closes.
 - `GET …/price?fx=eurusd` → Tiingo **FX** top-of-book
   (`/tiingo/fx/top?tickers=eurusd`): the live EUR→USD bid/ask/mid, used as the
   **backup live FX provider** behind Twelve Data for the home-currency rate. The
   pair is validated to exactly six lowercase letters (tighter than the ticker
   charset). Tiingo's `midPrice` is already USD-per-EUR, so the browser uses it
   directly (no inversion).
+- `GET …/price?fxHistory=eurusd&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&resampleFreq=1day`
+  → Tiingo **FX history** (`/tiingo/fx/eurusd/prices`): per-bar EUR→USD closes
+  that backfill each graph point at its own settled FX rate, in one batched
+  request that mirrors the daily-close window above. `resampleFreq` defaults to
+  `1day` (the 1W graph) and also accepts `1hour`/`5min` (the 1D graph's intraday
+  FX), validated to a positive integer followed by `min`, `hour` or `day`.
 - `GET …/price?intraday=AAPL&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` → Tiingo
   **IEX intraday bars** (`/iex/<ticker>/prices`) at a **fixed** `resampleFreq=1hour`
   (one ticker per request), used to build the web companion's live **1D curve**
   (proposal §10). The frequency is pinned server-side — the caller only chooses
-  the ticker and the date window, both charset-validated.
+  the ticker and the date window, both charset-validated. The 1W curve reuses the
+  `?daily=` branch above for its daily closes. Both run on Tiingo's own budget so
+  the bulk history fetch never steals the live price's Twelve Data slots.
 
 The route injects the `TIINGO_TOKEN` **secret** as an `Authorization: Token …`
-header (never in the URL), validates every ticker/date against a strict charset
-(so it stays a closed, non-SSRF proxy: only `api.tiingo.com` price data, never an
-arbitrary target), and stamps the same CORS headers. The browser stays
+header (never in the URL), validates every ticker/date/frequency against a strict
+charset (so it stays a closed, non-SSRF proxy: only `api.tiingo.com` price data,
+never an arbitrary target), and stamps the same CORS headers. The browser stays
 **Tiingo-keyless** — the token lives only in the Worker.
+
+### Hourly Tiingo reserve
+
+The Tiingo `/price` route uses a per-isolate, rolling **one-hour request counter**
+(default **40/hr**, overridable via the `TIINGO_HOURLY_RESERVE` var in
+`wrangler.toml`). Once the reserve is spent the Worker answers `429` with a
+`Retry-After` header, so the browser degrades gracefully — it falls back to its
+Twelve Data path — instead of hammering Tiingo. The cap is best-effort per
+isolate (Cloudflare may run several), enough to keep a single busy browser from
+blowing the reserve.
 
 ### Set the secret (one-time)
 

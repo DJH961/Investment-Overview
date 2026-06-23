@@ -53,4 +53,23 @@ describe("xAxisTicks", () => {
     expect(new Set(indexes).size).toBe(indexes.length);
     expect(indexes).toEqual([0, 1]);
   });
+
+  it("labels an intraday (single-day) window by time-of-day, not a repeated date", () => {
+    // The live "1D" curve passes full ISO instants that all fall on one calendar
+    // day; a date axis would just repeat that date, so we want clock times.
+    const base = new Date("2026-06-19T13:30:00Z").getTime();
+    const intraday: string[] = [];
+    for (let i = 0; i < 8; i += 1) intraday.push(new Date(base + i * 30 * 60_000).toISOString());
+    const ticks = xAxisTicks(intraday);
+    // No tick should look like a date label ("19 Jun" / "Jun '26").
+    for (const t of ticks) {
+      expect(t.text).not.toMatch(/^\d{1,2} [A-Z][a-z]{2}$/);
+      expect(t.text).not.toMatch(/^[A-Z][a-z]{2} '\d{2}$/);
+      // It should read as a clock time (contains a ":" between digits).
+      expect(t.text).toMatch(/\d:\d{2}/);
+    }
+    // Ends are still anchored.
+    expect(ticks[0]!.anchor).toBe("start");
+    expect(ticks[ticks.length - 1]!.anchor).toBe("end");
+  });
 });
