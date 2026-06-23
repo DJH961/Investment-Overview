@@ -28,6 +28,20 @@ from investment_dashboard.services import fetch_report
 log = logging.getLogger(__name__)
 
 
+def _resolve_tiingo_token() -> str | None:
+    """Resolve the Tiingo token from settings, else the OS keyring.
+
+    Returns ``None`` when no token is configured, which cleanly disables the
+    fallback (a vanilla install never touches Tiingo).
+    """
+    from investment_dashboard.config import get_settings  # noqa: PLC0415
+    from investment_dashboard.storage.encryption import (  # noqa: PLC0415
+        load_tiingo_token_from_keyring,
+    )
+
+    return get_settings().tiingo_token or load_tiingo_token_from_keyring()
+
+
 # TTLs by asset_class — controls how often the background refresh loop
 # considers a symbol "due" for a fresh yfinance hit. ETFs/stocks are kept
 # near-live so the user can watch intraday moves; mutual-fund NAVs only
@@ -494,10 +508,14 @@ def refresh_due_prices(
     try:
         closes_by_symbol = fetch_closes(symbols_to_fetch, fetch_start, fetch_end)
     except YFinanceError as exc:
-        log.warning("yfinance live refresh failed (%s); continuing with stale prices", exc)
-        return {}
-    # Note which tickers we just asked yfinance for, so Settings can report it.
-    fetch_report.record("yfinance", symbols_to_fetch)
+        # A hard yfinance failure no longer ends the cycle: fall through with no
+        # primary data so the Tiingo fallback can still cover the gap. Every due
+        # symbol counts as a primary failure for the gates.
+        log.warning("yfinance live refresh failed (%s); attempting Tiingo fallback", exc)
+        closes_by_symbol = {}
+    else:
+        # Note which tickers we just asked yfinance for, so Settings can report it.
+        fetch_report.record("yfinance", symbols_to_fetch)
 
     # Best-effort: stamp *when each price is from* on the exchange alongside the
     # pull time, so the settled-today caption can date the figure by the
@@ -505,24 +523,140 @@ def refresh_due_prices(
     # our fetch instant. Isolated so a quote-timing failure never disturbs the
     # price refresh itself.
     try:
-        market_times = fetch_market_times(symbols_to_fetch)
+        market_times = fetch_market_times(symbols_to_fetch) if closes_by_symbol else {}
     except Exception:  # pragma: no cover - defensive: never break the refresh
         log.debug("market-time capture failed; continuing without it", exc_info=True)
         market_times = {}
 
     result: dict[str, int] = {}
-    for instr in due:
-        closes = closes_by_symbol.get(instr.symbol, {})
-        cutoff = earliest_per_symbol.get(instr.symbol, fetch_start)
-        filtered = {d: c for d, c in closes.items() if d >= cutoff}
-        result[instr.symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
-        # Stamp the refresh time for *every* instrument we successfully queried,
-        # not just those that returned new closes. Otherwise the per-symbol
-        # "updated" time on the overview freezes whenever the feed has nothing
-        # new (after hours / weekends / NAV not yet published), leaving it stuck
-        # at the last time a price actually changed. The "as of" date still
-        # reflects the real (possibly older) observation date.
-        price_cache_repo.upsert_last_refreshed_at(
-            cache, instr.id, now, market_time=market_times.get(instr.symbol)
-        )
+    # When the whole yfinance batch fails (hard error), skip the per-symbol write
+    # loop entirely so the result stays ``{}`` (the long-standing "nothing
+    # happened" contract) and the Tiingo fallback alone decides what to recover.
+    if closes_by_symbol:
+        for instr in due:
+            closes = closes_by_symbol.get(instr.symbol, {})
+            cutoff = earliest_per_symbol.get(instr.symbol, fetch_start)
+            filtered = {d: c for d, c in closes.items() if d >= cutoff}
+            result[instr.symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
+            # Stamp the refresh time for *every* instrument we successfully
+            # queried, not just those that returned new closes. Otherwise the
+            # per-symbol "updated" time on the overview freezes whenever the feed
+            # has nothing new (after hours / weekends / NAV not yet published),
+            # leaving it stuck at the last time a price actually changed. The "as
+            # of" date still reflects the real (possibly older) observation date.
+            price_cache_repo.upsert_last_refreshed_at(
+                cache, instr.id, now, market_time=market_times.get(instr.symbol)
+            )
+
+    _maybe_run_tiingo_fallback(
+        session,
+        cache,
+        due=due,
+        now=now,
+        today=today,
+        primary_closes=closes_by_symbol,
+        result=result,
+    )
     return result
+
+
+def _maybe_run_tiingo_fallback(
+    session: Session,
+    cache: Session,
+    *,
+    due: Sequence[Instrument],
+    now: datetime,
+    today: date,
+    primary_closes: dict[str, dict[date, Decimal]],
+    result: dict[str, int],
+) -> None:
+    """Cover any still-stale symbols via Tiingo when a token is configured.
+
+    Folds the recovered row counts into ``result``. Fully isolated: a missing
+    token disables it, and any fallback error is logged and swallowed so the
+    primary refresh result always stands.
+    """
+    token = _resolve_tiingo_token()
+    if not token:
+        return
+    # Imported lazily to avoid a module-load import cycle: the services package
+    # __init__ eagerly imports prices_service, while the wiring chain
+    # (wiring -> runner -> tiingo_state_repo -> services.tiingo_fallback) imports
+    # back into the services package. Deferring keeps the import graph acyclic.
+    from investment_dashboard.services import tiingo_fallback_wiring  # noqa: PLC0415
+
+    try:
+        recovered, _outcome = tiingo_fallback_wiring.apply_desktop_fallback(
+            session,
+            cache,
+            due=due,
+            now_utc=now,
+            today=today,
+            primary_closes=primary_closes,
+            token=token,
+        )
+    except Exception:  # pragma: no cover - defensive: never break the refresh
+        log.warning("Tiingo fallback raised; keeping primary result", exc_info=True)
+        return
+    for symbol, rows in recovered.items():
+        result[symbol] = result.get(symbol, 0) + rows
+
+
+class TiingoNotConfiguredError(RuntimeError):
+    """Raised by :func:`refresh_via_tiingo` when no Tiingo token is configured."""
+
+
+def refresh_via_tiingo(
+    session: Session,
+    cache_session: Session | None = None,
+    *,
+    today: date | None = None,
+    now: datetime | None = None,
+) -> tuple[dict[str, int], bool]:
+    """User-initiated "Refresh via Tiingo now" — bypass the timing gates only.
+
+    Unlike the automatic fallback (which only fires after yfinance has failed and
+    the per-symbol grace + confirmed-repeat-failure timing has elapsed), this is an
+    explicit user action: it considers *all* active, non-synthetic instruments
+    (not just the TTL-due ones) and skips the timing gates, but still enforces the
+    worth-it gate (newer data must actually exist — else it's a no-op, never a
+    wasted call) and the per-side budget caps. NAV funds still flow through the
+    peer-confirmation/canary structure, so a manual NAV refresh before publication
+    costs at most a single canary probe.
+
+    Returns ``({symbol: rows_written}, switched)`` where ``switched`` is whether
+    any Tiingo data was actually merged. Raises :class:`TiingoNotConfiguredError`
+    when no token is set so the UI can prompt the user to add one in Settings.
+    """
+    cache = cache_session if cache_session is not None else session
+    today = today or date.today()
+    now = now or datetime.now(UTC).replace(tzinfo=None)
+    token = _resolve_tiingo_token()
+    if not token:
+        raise TiingoNotConfiguredError(
+            "No Tiingo token configured. Add one under Settings to enable the "
+            "secondary price source."
+        )
+
+    inactive = instrument_overrides_repo.inactive_ids(session)
+    instruments = [
+        instr
+        for instr in instruments_repo.list_instruments(session)
+        if instr.asset_class not in _SYNTHETIC_ASSET_CLASSES and instr.id not in inactive
+    ]
+    if not instruments:
+        return {}, False
+
+    from investment_dashboard.services import tiingo_fallback_wiring  # noqa: PLC0415
+
+    recovered, outcome = tiingo_fallback_wiring.apply_desktop_fallback(
+        session,
+        cache,
+        due=instruments,
+        now_utc=now,
+        today=today,
+        primary_closes={},
+        token=token,
+        manual=True,
+    )
+    return recovered, outcome.switched

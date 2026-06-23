@@ -85,3 +85,45 @@ def test_rate_limited_honours_retry_after_hint() -> None:
 def test_invalid_attempts_raises() -> None:
     with pytest.raises(ValueError, match="attempts"):
         retry_call(lambda: None, attempts=0)
+
+
+def test_jitter_spreads_backoff_without_exceeding_bound() -> None:
+    waits: list[float] = []
+    calls = {"n": 0}
+
+    def _flaky() -> str:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise RuntimeError("transient")
+        return "ok"
+
+    # rng pinned to 1.0 (its supremum) gives the maximum jittered delay.
+    result = retry_call(
+        _flaky,
+        attempts=3,
+        backoff_seconds=0.75,
+        jitter=0.25,
+        sleep=waits.append,
+        rng=lambda: 1.0,
+    )
+    assert result == "ok"
+    # base schedule 0.75, 1.5; each scaled by (1 + 0.25 * 1.0) = 1.25.
+    assert waits == [0.75 * 1.25, 1.5 * 1.25]
+
+
+def test_jitter_zero_keeps_deterministic_schedule() -> None:
+    waits: list[float] = []
+
+    def _always_fails() -> str:
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        retry_call(
+            _always_fails,
+            attempts=3,
+            backoff_seconds=0.75,
+            jitter=0.0,
+            sleep=waits.append,
+            rng=lambda: 1.0,  # ignored when jitter == 0
+        )
+    assert waits == [0.75, 1.5]
