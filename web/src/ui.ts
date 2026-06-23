@@ -1183,7 +1183,7 @@ function ensureInfoDotDismiss(): void {
  * with brittle :nth-child rules.
  */
 function positionInfoTip(tip: HTMLElement): void {
-  if (typeof window === "undefined" || typeof tip.getBoundingClientRect !== "function") return;
+  if (typeof window === "undefined") return;
   // Reset to the CSS default (centred) before measuring, so repeated opens don't
   // accumulate offsets.
   tip.style.transform = "";
