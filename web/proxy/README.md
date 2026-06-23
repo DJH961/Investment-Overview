@@ -96,6 +96,11 @@ must stay secret, so the same Worker proxies it on a dedicated `…/price` route
   pair is validated to exactly six lowercase letters (tighter than the ticker
   charset). Tiingo's `midPrice` is already USD-per-EUR, so the browser uses it
   directly (no inversion).
+- `GET …/price?intraday=AAPL&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` → Tiingo
+  **IEX intraday bars** (`/iex/<ticker>/prices`) at a **fixed** `resampleFreq=1hour`
+  (one ticker per request), used to build the web companion's live **1D curve**
+  (proposal §10). The frequency is pinned server-side — the caller only chooses
+  the ticker and the date window, both charset-validated.
 
 The route injects the `TIINGO_TOKEN` **secret** as an `Authorization: Token …`
 header (never in the URL), validates every ticker/date against a strict charset
@@ -132,6 +137,10 @@ curl -i "https://investment-overview-blob-proxy.<your-subdomain>.workers.dev/pri
 # The FX backup route — should return a JSON array like
 # [{"ticker":"eurusd","bidPrice":…,"askPrice":…,"midPrice":…,"quoteTimestamp":…}].
 curl -i "https://investment-overview-blob-proxy.<your-subdomain>.workers.dev/price?fx=eurusd"
+
+# The intraday-bars route (1D curve) — should return a JSON array of 1-hour OHLC
+# bars for the one ticker between the given dates.
+curl -i "https://investment-overview-blob-proxy.<your-subdomain>.workers.dev/price?intraday=AAPL&startDate=2026-06-22&endDate=2026-06-23"
 ```
 
 The companion auto-derives the `/price` URL from the blob Worker origin, so once
