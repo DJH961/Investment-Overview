@@ -1,9 +1,12 @@
-"""Intraday-value repository — within-day total portfolio value samples (EUR).
+"""Intraday market-component repository — within-day intraday-priced value (EUR).
 
-Cache-tier table backing the Overview "1 Day" graph. Writes are append-only
-(one row per captured instant); reads pull the current session's window and a
-janitor prunes anything older. Routed through the cache tier for split-DB
-layouts (see :func:`investment_dashboard.db.cache_write_session`).
+Cache-tier table backing the Overview "1 Day" graph. Each row stores the EUR
+value of the intraday-priced holdings (stocks/ETFs) at a captured instant; the
+constant cash + NAV base is reapplied when the curve is rendered (see
+:mod:`investment_dashboard.models.intraday_value`). Writes are append-only (one
+row per captured instant); reads pull the current session's window and a janitor
+prunes anything older. Routed through the cache tier for split-DB layouts (see
+:func:`investment_dashboard.db.cache_write_session`).
 """
 
 from __future__ import annotations
@@ -18,16 +21,30 @@ from sqlalchemy.orm import Session
 from investment_dashboard.models import IntradayValue
 
 
-def insert_sample(session: Session, captured_at: datetime, total_value_eur: Decimal) -> None:
-    """Append one intraday value sample (idempotent on its exact timestamp)."""
+def insert_sample(
+    session: Session,
+    captured_at: datetime,
+    market_value_eur: Decimal,
+    fx_eur_usd: Decimal | None = None,
+) -> None:
+    """Append one intraday market-component sample (idempotent on its timestamp).
+
+    ``fx_eur_usd`` is the EUR→USD spot (USD per 1 EUR) at ``captured_at`` so the
+    curve can be re-expressed at the true per-timestamp rate; ``None`` leaves the
+    point's rate unknown (the render falls back to today's spot).
+    """
     stmt = sqlite_insert(IntradayValue).values(
         captured_at=captured_at,
-        total_value_eur=total_value_eur,
+        market_value_eur=market_value_eur,
+        fx_eur_usd=fx_eur_usd,
     )
     # Two captures at the identical instant are a no-op rather than an error.
     stmt = stmt.on_conflict_do_update(
         index_elements=[IntradayValue.captured_at],
-        set_={"total_value_eur": stmt.excluded.total_value_eur},
+        set_={
+            "market_value_eur": stmt.excluded.market_value_eur,
+            "fx_eur_usd": stmt.excluded.fx_eur_usd,
+        },
     )
     session.execute(stmt)
 

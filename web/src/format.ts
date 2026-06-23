@@ -112,6 +112,20 @@ export function formatSignedCurrency(value: Decimal | null): string {
 export function formatCurrencyShort(value: Decimal | null): string {
   if (value === null) return "—";
   const { value: amount, code } = convertFromEur(value);
+  return formatCurrencyShortIn(amount, code);
+}
+
+/**
+ * Compact axis label for an amount that is **already** in the given display
+ * currency (e.g. a USD-denominated curve point), so it is not re-converted by
+ * today's spot rate the way {@link formatCurrencyShort} converts an EUR figure.
+ */
+export function formatCurrencyShortRaw(value: Decimal | null, code: string): string {
+  if (value === null) return "—";
+  return formatCurrencyShortIn(value, code);
+}
+
+function formatCurrencyShortIn(amount: Decimal, code: string): string {
   const num = amount.toNumber();
   const abs = Math.abs(num);
   const symbol = currencySymbol(code);

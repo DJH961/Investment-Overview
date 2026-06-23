@@ -3,8 +3,15 @@
  * are asserted loosely (non-empty / contains a separator) to stay portable.
  */
 import { describe, expect, it } from "vitest";
+import Decimal from "decimal.js";
 
-import { formatAsOf, formatDailyGrowthAsOf, formatLastPull, formatUpdatedAt } from "../src/format";
+import {
+  formatAsOf,
+  formatCurrencyShortRaw,
+  formatDailyGrowthAsOf,
+  formatLastPull,
+  formatUpdatedAt,
+} from "../src/format";
 
 describe("formatDailyGrowthAsOf", () => {
   const today = "2026-06-22";
@@ -113,5 +120,19 @@ describe("formatLastPull", () => {
   it("reports 'not yet' when no pull has happened", () => {
     expect(formatLastPull(null, now)).toBe("not yet");
     expect(formatLastPull(undefined, now)).toBe("not yet");
+  });
+});
+
+describe("formatCurrencyShortRaw", () => {
+  it("formats an amount already in the given currency without FX conversion", () => {
+    // USD is native: the value must NOT be re-scaled, only labelled with $.
+    expect(formatCurrencyShortRaw(new Decimal(33000), "USD")).toBe("$33k");
+    expect(formatCurrencyShortRaw(new Decimal(1_250_000), "USD")).toBe("$1.3M");
+    expect(formatCurrencyShortRaw(new Decimal(30000), "EUR")).toBe("€30k");
+    expect(formatCurrencyShortRaw(new Decimal(-2500), "USD")).toBe("−$2.5k");
+  });
+
+  it("renders an em dash for a null value", () => {
+    expect(formatCurrencyShortRaw(null, "USD")).toBe("—");
   });
 });

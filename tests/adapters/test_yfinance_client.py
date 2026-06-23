@@ -425,6 +425,30 @@ def test_fetch_intraday_closes_empty_symbols_is_noop() -> None:
     assert fetch_intraday_closes([], date(2024, 6, 3)) == {}
 
 
+def test_fetch_eur_usd_intraday_returns_naive_utc_bars() -> None:
+    from datetime import datetime
+
+    from investment_dashboard.adapters.yfinance_client import fetch_eur_usd_intraday
+
+    seen: dict[str, object] = {}
+
+    def fake_download(**kwargs: Any) -> pd.DataFrame:
+        seen["interval"] = kwargs.get("interval")
+        seen["tickers"] = kwargs.get("tickers")
+        idx = pd.to_datetime(["2024-06-03 13:30:00+00:00", "2024-06-03 14:00:00+00:00"], utc=True)
+        cols = pd.MultiIndex.from_tuples([("EURUSD=X", "Close"), ("EURUSD=X", "Open")])
+        return pd.DataFrame([[1.08, 1.07], [1.09, 1.085]], index=idx, columns=cols)
+
+    out = fetch_eur_usd_intraday(date(2024, 6, 3), interval="15m", downloader=fake_download)
+
+    assert seen["interval"] == "15m"
+    assert seen["tickers"] == ["EURUSD=X"]
+    # Flattened to ``{bar_time_utc: rate}`` (no symbol layer) and naive UTC keys.
+    assert out[datetime(2024, 6, 3, 13, 30)] == Decimal(repr(1.08))
+    assert out[datetime(2024, 6, 3, 14, 0)] == Decimal(repr(1.09))
+    assert all(ts.tzinfo is None for ts in out)
+
+
 def test_fetch_market_times_coerces_and_skips_unavailable() -> None:
     from datetime import UTC, datetime
 
