@@ -519,6 +519,62 @@ export function planStartupRefresh(args: {
   return { route: "split", tiingoBudget: usable };
 }
 
+/** Which provider the login warm-up routes its quote pull through. */
+export type PrefetchRoute = "twelve" | "tiingo";
+
+export interface PrefetchPlan {
+  /** The stock/ETF/fund symbols to warm this round (FX is warmed separately). */
+  symbols: string[];
+  /** Which provider to route the warm-up quote pull through. */
+  route: PrefetchRoute;
+}
+
+/**
+ * Decide what the login warm-up should fetch this round, and via which provider.
+ * Kept pure so the market-aware policy is testable without the app shell.
+ *
+ * The forex market trades ~24/5 and values the *whole* book, so the caller warms
+ * FX first in line, unconditionally — it is not represented here. This only
+ * decides the stock/ETF/fund quote set, so no credit is spent on prices that
+ * cannot have changed since the last session:
+ *
+ *  - **Market open** — warm only the stocks/ETFs (`marketSymbols`): intraday
+ *    prices move continuously, while a fund's once-a-day NAV cannot change mid
+ *    session, so spending credits on NAVs now buys nothing.
+ *  - **Market closed** — nothing is worth a credit *unless* something is behind:
+ *    a fund still awaiting today's NAV (the after-close, pre-NAV window) or a
+ *    market symbol still missing its latest settled close (an outdated catch-up).
+ *    With everything in hand the warm-up makes no quote call at all.
+ *
+ * A large closed-market catch-up (more than `minBatch`, default
+ * {@link STARTUP_TIINGO_MIN_OUTDATED}) is rapid-fired through Tiingo — one
+ * batched request with no per-minute cap — instead of trickling ~8/min through
+ * the Twelve Data primary; every other case stays on the primary.
+ */
+export function planPrefetch(args: {
+  marketOpen: boolean;
+  /** Stock/ETF tickers from the plan, priority-ordered (largest first). */
+  marketSymbols: string[];
+  /** Market symbols still missing their latest settled close. */
+  outdatedMarketSymbols: string[];
+  /** NAV funds still awaiting their latest expected publish. */
+  awaitingNavSymbols: string[];
+  /** Whether the Tiingo backup (a configured /price proxy) is available. */
+  tiingoAvailable: boolean;
+  minBatch?: number;
+}): PrefetchPlan {
+  const minBatch = args.minBatch ?? STARTUP_TIINGO_MIN_OUTDATED;
+  if (args.marketOpen) {
+    // Open: only the stocks/ETFs move now; warm them on the primary.
+    return { symbols: [...args.marketSymbols], route: "twelve" };
+  }
+  // Closed: warm whatever is behind — outdated settled closes plus funds still
+  // awaiting today's NAV — and nothing when everything is already in hand.
+  const symbols = [...args.outdatedMarketSymbols, ...args.awaitingNavSymbols];
+  const route: PrefetchRoute = args.tiingoAvailable && symbols.length > minBatch ? "tiingo" : "twelve";
+  return { symbols, route };
+}
+
 export const TIINGO_GATE_TIMING = {
   firstProbeMinutes,
   navCooldownFor,

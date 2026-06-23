@@ -49,6 +49,7 @@ import {
   readLastPull,
   readNavPublishStats,
   readSymbolPlan,
+  type PlannedSymbol,
   recordNavPublish,
   writeCachedEnvelope,
   writeLastPull,
@@ -78,6 +79,7 @@ import {
   shouldQuickRefresh,
   noteQuickRefresh,
   planStartupRefresh,
+  planPrefetch,
   tiingoRemainingCredits,
   STARTUP_TIINGO_RESERVE,
   type TiingoBudgetView,
@@ -162,16 +164,6 @@ const SETTLED_HEARTBEAT_MS = 5 * 60 * 1000;
  * windows' worth of headroom — enough warning to be useful without nagging.
  */
 const DAILY_BUDGET_WARN_CREDITS = 2 * FREE_TIER.creditsPerMinute;
-
-/**
- * Per-minute credits the login warm-up holds back from its quote fetch so the
- * kickoff refresh's live EUR/USD pull — the one rate that values the *whole*
- * book — always wins a credit during the startup burst instead of being bumped
- * to the slower Tiingo FX backup. Without this reserve the warm-up spends the
- * whole 8/min window on tickers and the immediately-following kickoff finds
- * 0/min for the FX pair (the "EUR/USD source: tiingo at startup" puzzle).
- */
-const FX_BURST_RESERVE = 1;
 
 /**
  * How recently the app must have actually pulled fresh data from the network for
@@ -439,6 +431,13 @@ export class App {
    * straight into the same caches the real refresh reads, so the work is shared,
    * never duplicated. Best-effort: any failure is swallowed.
    *
+   * It is **market-aware** (see {@link planPrefetch}): FX is warmed first in line
+   * (the forex market trades longest and values the whole book), then quotes only
+   * for what is actually worth a credit — the stocks/ETFs while the market is
+   * open, the after-close NAVs and any outdated settled close while it is shut,
+   * and nothing at all when everything is already in hand. A large closed-market
+   * catch-up rapid-fires through Tiingo instead of trickling through the primary.
+   *
    * The outcome is surfaced honestly on the unlock screen (see
    * {@link describePrefetch}) and decides the one-off login spin of the Refresh
    * glyph — it only spins when the prefetch actually got something newer.
@@ -447,25 +446,18 @@ export class App {
     const { config } = this.state;
     if (!config.apiKey) return;
     const plan = readSymbolPlan();
-    this.prefetchStatus = describePrefetch({
-      inFlight: true,
-      hasPlan: plan.length > 0,
-      quoteFetched: 0,
-      quoteTotal: plan.length,
-      fxLive: false,
-      lastPullAt: this.lastDataPullAt,
-    });
-    this.updatePrefetchStatus();
-    // The warm-up draws on the *same* free-tier per-minute/day budget as the
-    // kickoff refresh that follows. Until now it spent those credits silently, so
-    // the kickoff's "PRIMARY 0/min" looked unexplained in the polling log — there
-    // was no record of where the minute went. Log it like any other pull.
-    this.pollLog(
-      "login",
-      `Login warm-up started — priming caches before unlock${plan.length ? ` (${plan.length} symbols from last session's plan)` : " (no plan yet)"}.`,
-    );
     if (plan.length === 0) {
       // No plan yet (first ever run): we can still warm FX cheaply.
+      this.prefetchStatus = describePrefetch({
+        inFlight: true,
+        hasPlan: false,
+        quoteFetched: 0,
+        quoteTotal: 0,
+        fxLive: false,
+        lastPullAt: this.lastDataPullAt,
+      });
+      this.updatePrefetchStatus();
+      this.pollLog("login", "Login warm-up started — no symbol plan yet, warming FX only.");
       const fx = await loadFxRates().catch(() => undefined);
       this.pollLog(
         "primary",
@@ -474,44 +466,163 @@ export class App {
       this.finishPrefetch({ quoteFetched: 0, quoteTotal: 0, hasPlan: false, fxLive: fx ? !fx.cached : false });
       return;
     }
-    const symbols = plan.map((e) => e.symbol);
+    // Market-aware plan: only fetch what is actually worth a credit right now —
+    // stocks/ETFs while the market is open, the after-close (pre-NAV) mutual
+    // funds and any outdated settled close while it is shut, nothing when the
+    // book is already current. Decided purely from the cached plan + caches, no
+    // decrypted data needed.
     const navFetchSymbols = new Set(plan.filter((e) => e.priceType !== "market").map((e) => e.symbol));
-    // Hold back FX_BURST_RESERVE credit(s) from the warm-up's quote fetch so the
-    // kickoff's live EUR/USD pull (which values the whole book) still has budget
-    // and stays on the primary instead of falling to the Tiingo FX backup.
-    const reservedPerMinute = Math.max(1, FREE_TIER.creditsPerMinute - FX_BURST_RESERVE);
-    const options: LoadQuotesOptions = {
-      ...this.buildQuoteOptions(navFetchSymbols, config),
-      creditsPerMinute: reservedPerMinute,
-    };
+    const targets = this.prefetchTargets(plan);
+    const marketOpen = isUsMarketOpen();
+    const prefetch = planPrefetch({
+      marketOpen,
+      marketSymbols: targets.marketSymbols,
+      outdatedMarketSymbols: targets.outdatedMarketSymbols,
+      awaitingNavSymbols: targets.awaitingNavSymbols,
+      tiingoAvailable: resolvePriceProxyUrl(config) !== null,
+    });
+    this.prefetchStatus = describePrefetch({
+      inFlight: true,
+      hasPlan: true,
+      quoteFetched: 0,
+      quoteTotal: prefetch.symbols.length,
+      fxLive: false,
+      lastPullAt: this.lastDataPullAt,
+    });
+    this.updatePrefetchStatus();
+    // The warm-up draws on the *same* free-tier per-minute/day budget as the
+    // kickoff refresh that follows, so log it like any other pull (otherwise the
+    // kickoff's "PRIMARY 0/min" looks unexplained in the polling log).
     this.pollLog(
-      "budget",
-      `Login warm-up reserves ${FX_BURST_RESERVE}/min credit for the upcoming EUR/USD pull ` +
-        `(quotes capped at ${reservedPerMinute}/min this round so FX stays on the primary).`,
+      "login",
+      `Login warm-up started — market ${marketOpen ? "open" : "closed"}, ` +
+        `${prefetch.symbols.length} symbol(s) worth warming via ${prefetch.route === "tiingo" ? "Tiingo" : "Twelve Data"} ` +
+        `(plan of ${plan.length}).`,
     );
-    // Currency first: warm the FX cache before the tickers so the rate that
-    // values the whole book always wins the per-minute budget, then prime quotes.
+    // Currency first, always: the forex market trades longest and values the
+    // whole book, so warm the FX cache before any ticker — FX simply goes first
+    // in line, with no per-minute reserve held back from the quotes.
     const fx = await loadFxRates().catch(() => undefined);
-    const settled = await Promise.allSettled([loadQuotes(symbols, config.apiKey, options)]);
-    const quoteReport = settled[0].status === "fulfilled" ? settled[0].value.report : null;
-    if (quoteReport) {
-      const list = (xs: string[]): string => (xs.length ? xs.join(", ") : "none");
+    const fxLive = fx ? !fx.cached : false;
+    if (prefetch.symbols.length === 0) {
       this.pollLog(
         "primary",
-        `Login warm-up (Twelve Data): fetched ${quoteReport.fetched.length} [${list(quoteReport.fetched)}], ` +
-          `served ${quoteReport.servedFresh.length} from cache, deferred ${quoteReport.deferred.length} [${list(quoteReport.deferred)}]. ` +
-          `Budget left: ${quoteReport.minuteRemaining}/min, ${quoteReport.dayRemaining}/day.` +
-          (quoteReport.error ? ` Non-fatal error: ${quoteReport.error.message}.` : ""),
+        `Login warm-up: market ${marketOpen ? "open" : "closed"} and nothing outdated — ` +
+          `only warmed FX (${fx ? (fx.cached ? "from cache" : "live") : "unavailable"}). No quote credits spent.`,
       );
-    } else {
-      this.pollLog("primary", "Login warm-up: quote fetch failed; caches left as-is.");
+      this.finishPrefetch({ quoteFetched: 0, quoteTotal: 0, hasPlan: true, fxLive });
+      return;
     }
+    const options = this.buildQuoteOptions(navFetchSymbols, config);
+    const fetchedCount =
+      prefetch.route === "tiingo"
+        ? await this.prefetchViaTiingo(prefetch.symbols, navFetchSymbols, plan, config, options)
+        : await this.prefetchViaPrimary(prefetch.symbols, config, options);
     this.finishPrefetch({
-      quoteFetched: quoteReport?.fetched.length ?? 0,
-      quoteTotal: symbols.length,
+      quoteFetched: fetchedCount,
+      quoteTotal: prefetch.symbols.length,
       hasPlan: true,
-      fxLive: fx ? !fx.cached : false,
+      fxLive,
     });
+  }
+
+  /**
+   * Split the cached prefetch plan into the symbols worth warming at login,
+   * judged against what the caches already hold — so the market-aware warm-up
+   * ({@link planPrefetch}) can skip a closed market that is already up to date.
+   * Pure cache reads (no decrypted data): mirrors {@link outdatedFetchCount}'s
+   * per-symbol "behind" test against the latest settled close / expected NAV.
+   */
+  private prefetchTargets(plan: PlannedSymbol[]): {
+    marketSymbols: string[];
+    outdatedMarketSymbols: string[];
+    awaitingNavSymbols: string[];
+  } {
+    const cached = readCachedQuotes();
+    const now = new Date();
+    const settled = latestSettledSessionDate(now);
+    const navStats = readNavPublishStats();
+    const publishHourFor = (symbol: string): number => navPublishWindow(navStats.get(symbol)?.hours).publishHour;
+    const marketSymbols: string[] = [];
+    const outdatedMarketSymbols: string[] = [];
+    const awaitingNavSymbols: string[] = [];
+    for (const entry of plan) {
+      const cq = cached.get(entry.symbol)?.quote;
+      if (entry.priceType === "market") {
+        marketSymbols.push(entry.symbol);
+        if (!holdsSettledClose(cq, settled)) outdatedMarketSymbols.push(entry.symbol);
+      } else {
+        const have = cq?.valueDate ?? null;
+        const expected = latestExpectedNavDate(now, publishHourFor(entry.symbol));
+        if (!have || have < expected) awaitingNavSymbols.push(entry.symbol);
+      }
+    }
+    return { marketSymbols, outdatedMarketSymbols, awaitingNavSymbols };
+  }
+
+  /** Warm the chosen symbols on the Twelve Data primary; returns how many it fetched. */
+  private async prefetchViaPrimary(
+    symbols: string[],
+    config: AppConfig,
+    options: LoadQuotesOptions,
+  ): Promise<number> {
+    const quoteLoad = await loadQuotes(symbols, config.apiKey, options).catch(() => null);
+    const report = quoteLoad?.report ?? null;
+    if (!report) {
+      this.pollLog("primary", "Login warm-up: quote fetch failed; caches left as-is.");
+      return 0;
+    }
+    const list = (xs: string[]): string => (xs.length ? xs.join(", ") : "none");
+    this.pollLog(
+      "primary",
+      `Login warm-up (Twelve Data): fetched ${report.fetched.length} [${list(report.fetched)}], ` +
+        `served ${report.servedFresh.length} from cache, deferred ${report.deferred.length} [${list(report.deferred)}]. ` +
+        `Budget left: ${report.minuteRemaining}/min, ${report.dayRemaining}/day.` +
+        (report.error ? ` Non-fatal error: ${report.error.message}.` : ""),
+    );
+    return report.fetched.length;
+  }
+
+  /**
+   * Rapid-fire a large closed-market catch-up through Tiingo: one batched request
+   * with no per-minute cap. Quotes are served from cache first (empty key), then
+   * the backup re-pulls every still-behind holding within its spare budget (the
+   * startup reserve is honoured). Returns how many Tiingo actually filled.
+   */
+  private async prefetchViaTiingo(
+    symbols: string[],
+    navFetchSymbols: Set<string>,
+    plan: PlannedSymbol[],
+    config: AppConfig,
+    options: LoadQuotesOptions,
+  ): Promise<number> {
+    const quoteLoad = await loadQuotes(symbols, "", options).catch(() => null);
+    if (!quoteLoad) {
+      this.pollLog("fallback", "Login warm-up: cache read for the Tiingo rapid-fire failed; caches left as-is.");
+      return 0;
+    }
+    const sizes = new Map(plan.map((e) => [e.symbol, e.sizeEur] as const));
+    const fallback = await runTiingoFallback({
+      symbols,
+      navSymbols: navFetchSymbols,
+      quotes: quoteLoad.quotes,
+      report: quoteLoad.report,
+      proxyUrl: resolvePriceProxyUrl(config),
+      now: Date.now(),
+      manual: true,
+      forceAll: true,
+      reserveCredits: STARTUP_TIINGO_RESERVE,
+      sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
+    });
+    const b = fallback.budget;
+    this.pollLog(
+      "fallback",
+      `Login warm-up (Tiingo rapid-fire): filled ${fallback.tiingoSymbols.length} ` +
+        `[${fallback.tiingoSymbols.length ? fallback.tiingoSymbols.join(", ") : "none"}] of ${symbols.length} outdated. ` +
+        `Budget: ${b.hourUsed}/${b.hourLimit} this hour, ${b.dayUsed}/${b.dayLimit} today.` +
+        (fallback.error ? ` Error: ${fallback.error.message}.` : ""),
+    );
+    return fallback.tiingoSymbols.length;
   }
 
   /**
@@ -2341,12 +2452,11 @@ export class App {
     this.refreshing = true;
     // Coalesce the login warm-up with this kickoff: if the warm-up is still
     // priming the shared caches, let it finish *before* we start the network
-    // pass. Otherwise the two race the same per-minute budget — the warm-up
-    // reserves credits for quotes while this kickoff independently reserves for
-    // FX/quotes — splitting the minute awkwardly and double-pulling symbols the
-    // warm-up was about to cache. Awaiting it means this kickoff reads the warm
-    // cache (and the FX credit the warm-up reserved) instead. Only the kickoff
-    // waits; ordinary auto ticks see an already-settled promise (a no-op).
+    // pass. Otherwise the two race the same per-minute budget — both pulling FX
+    // and quotes independently — splitting the minute awkwardly and double-pulling
+    // symbols the warm-up was about to cache. Awaiting it means this kickoff reads
+    // the warm cache (FX already in line first) instead. Only the kickoff waits;
+    // ordinary auto ticks see an already-settled promise (a no-op).
     if ((opts.kickoff ?? false) && this.prefetchPromise) {
       await this.prefetchPromise.catch(() => undefined);
       if (session !== this.sessionId) {
