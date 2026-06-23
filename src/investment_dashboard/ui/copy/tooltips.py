@@ -70,9 +70,11 @@ TOOLTIPS: Final[dict[str, str]] = {
         "total since inception, not an annual rate."
     ),
     "dividend_yield": (
-        "Current-year dividend yield — this calendar year's cash dividends "
-        "divided by today's portfolio value. A per-year income rate, shown with "
-        "the year-to-date dividends in the display currency."
+        "Per-year dividend yield — the trailing twelve months of cash dividends "
+        "divided by today's portfolio value. A rolling 12-month window (not "
+        "calendar year-to-date) so it stays a meaningful annual rate even in "
+        "early January, shown with the last-12-months dividends in the display "
+        "currency."
     ),
     "fx_rate": (
         "Live EUR→USD spot rate used to convert between your two display "

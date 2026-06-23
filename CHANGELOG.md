@@ -14,6 +14,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.11.1] — 2026-06-23
+
+### Changed
+
+- **Per-year dividend yield is now trailing-twelve-month, not calendar
+  year-to-date.** The Overview footnote and Holdings "Dividend yield" tile
+  divide the *last 12 months* of cash dividends by today's value instead of
+  this calendar year's. A calendar-YTD window collapses to ~0% in early
+  January (e.g. on 2 Jan, before any distribution lands), which made the
+  "yield" misleading at the year boundary; a rolling 12-month window stays a
+  meaningful annual rate all year round. The footnote/tile now read
+  *"… (last 12 mo X)"* rather than *"… (YTD X)"*. The underlying metrics were
+  renamed `dividends_ytd_eur`/`dividends_ytd_usd` → `dividends_ttm_eur`/
+  `dividends_ttm_usd` and `dividend_yield_ytd_pct` → `dividend_yield_ttm_pct`.
+
 ## [3.11.0] — 2026-06-23
 
 ### Added

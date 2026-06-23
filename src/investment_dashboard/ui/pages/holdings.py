@@ -223,12 +223,12 @@ def _kpi_metrics_row(
             sub=f"{fmt_money(total_div, ccy)} lifetime",
             tooltip_key="dividend_return",
         )
-        # Per-year dividend yield + this year's (YTD) cash dividends.
-        div_ytd = _by_ccy(metrics.dividends_ytd_eur, metrics.dividends_ytd_usd, ccy)
+        # Per-year dividend yield + the trailing-12-month cash dividends.
+        div_ttm = _by_ccy(metrics.dividends_ttm_eur, metrics.dividends_ttm_usd, ccy)
         kpi_card(
             "Dividend yield",
-            fmt_pct(metrics.dividend_yield_ytd_pct),
-            sub=f"{fmt_money(div_ytd, ccy)} YTD",
+            fmt_pct(metrics.dividend_yield_ttm_pct),
+            sub=f"{fmt_money(div_ttm, ccy)} last 12 mo",
             tooltip_key="dividend_yield",
         )
         # Value-weighted fund expense ratio + the annual cost it implies.

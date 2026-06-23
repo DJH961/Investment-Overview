@@ -46,6 +46,18 @@ from investment_dashboard.services import fx_service, positions_service, prices_
 ZERO = Decimal(0)
 
 
+def _one_year_before(as_of: date) -> date:
+    """The date exactly one year before ``as_of`` (start of a trailing window).
+
+    Falls back to 1 March for a 29 February valuation date, which has no direct
+    counterpart in a non-leap prior year.
+    """
+    try:
+        return as_of.replace(year=as_of.year - 1)
+    except ValueError:  # 29 Feb → no 29 Feb a year earlier
+        return date(as_of.year - 1, 3, 1)
+
+
 # Kinds that move *external* cash (the user's bank ↔ portfolio).
 # ``transfer_in`` / ``transfer_out`` model inter-account or in-kind moves: a
 # transfer between two *tracked* accounts records both legs, so counting
@@ -141,20 +153,24 @@ class PortfolioMetrics:
     #: ``None`` until there are two priced days (and ``*_usd`` also needs FX).
     daily_growth_money_eur: Decimal | None = None
     daily_growth_money_usd: Decimal | None = None
-    #: Year-to-date cash-dividend income per currency (every distribution dated
-    #: on/after 1 Jan of the valuation year, reinvested or paid out). Surfaced
-    #: next to the trailing dividend yield. ``0`` when none received this year.
-    dividends_ytd_eur: Decimal = Decimal(0)
-    dividends_ytd_usd: Decimal = Decimal(0)
+    #: Trailing-twelve-month cash-dividend income per currency (every
+    #: distribution dated in the 12 months up to the valuation date, reinvested
+    #: or paid out). Surfaced next to the per-year dividend yield. A rolling
+    #: window (not calendar year-to-date) so it stays a full year of income even
+    #: in early January. ``0`` when none received in the trailing year.
+    dividends_ttm_eur: Decimal = Decimal(0)
+    dividends_ttm_usd: Decimal = Decimal(0)
     #: Trailing dividend yield = cash dividends received ÷ current closing
     #: balance (spreadsheet ``Total`` block's ``Dividends / Closing Balance``).
     #: ``None`` when the portfolio has no value yet.
     dividend_yield_pct: Decimal | None = None
-    #: Current-year dividend *yield* = year-to-date cash dividends ÷ current
+    #: Per-year dividend *yield* = trailing-twelve-month cash dividends ÷ current
     #: closing balance. Unlike ``dividend_yield_pct`` (a lifetime cumulative
     #: return) this is a per-year rate, so the UI can show an actual "yield"
-    #: next to the lifetime "return". ``None`` when the portfolio has no value.
-    dividend_yield_ytd_pct: Decimal | None = None
+    #: next to the lifetime "return". A rolling 12-month window rather than
+    #: calendar year-to-date, so it is a meaningful annual rate even on 2 Jan.
+    #: ``None`` when the portfolio has no value.
+    dividend_yield_ttm_pct: Decimal | None = None
     #: The date ``daily_growth_pct`` refers to (the "last daily growth day"),
     #: so the UI can label *when* the move is from. ``None`` when unavailable.
     daily_growth_as_of: date | None = None
@@ -425,10 +441,13 @@ def compute_portfolio_metrics(  # noqa: PLR0915
 
     dividends_income_eur, dividends_income_usd = _dividends(include_reinvested=True)
     dividends_realized_eur, dividends_realized_usd = _dividends(include_reinvested=False)
-    # Year-to-date dividend income (every distribution dated this calendar year),
-    # shown alongside the trailing yield on the Overview KPI footnote.
-    dividends_ytd_eur, dividends_ytd_usd = _dividends(
-        include_reinvested=True, since=date(as_of.year, 1, 1)
+    # Trailing-twelve-month dividend income (every distribution dated in the 12
+    # months up to ``as_of``), shown alongside the per-year yield on the
+    # Overview KPI footnote. A rolling window rather than calendar year-to-date,
+    # so it stays a full year of income even in early January (a YTD figure
+    # would read ~0 on 2 Jan and make the "yield" meaningless).
+    dividends_ttm_eur, dividends_ttm_usd = _dividends(
+        include_reinvested=True, since=_one_year_before(as_of)
     )
 
     contributions_usd = sum(
@@ -590,10 +609,11 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     # Trailing dividend yield = total dividend income ÷ current closing balance
     # (matches the spreadsheet's Dividends ÷ Closing Balance).
     dividend_yield_pct = dividends_income_eur / total_value_eur if total_value_eur > 0 else None
-    # Per-year dividend yield = this calendar year's cash dividends ÷ current
+    # Per-year dividend yield = trailing-twelve-month cash dividends ÷ current
     # closing balance (a true annual-rate "yield", distinct from the lifetime
-    # cumulative dividend return above).
-    dividend_yield_ytd_pct = dividends_ytd_eur / total_value_eur if total_value_eur > 0 else None
+    # cumulative dividend return above). A rolling 12-month window rather than
+    # calendar year-to-date keeps it meaningful all year round.
+    dividend_yield_ttm_pct = dividends_ttm_eur / total_value_eur if total_value_eur > 0 else None
 
     return PortfolioMetrics(
         as_of=as_of,
@@ -628,9 +648,9 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         daily_growth_fx_eur_usd=daily.fx_last,
         daily_growth_fx_eur_usd_prev=daily.fx_prev,
         dividend_yield_pct=dividend_yield_pct,
-        dividend_yield_ytd_pct=dividend_yield_ytd_pct,
-        dividends_ytd_eur=dividends_ytd_eur,
-        dividends_ytd_usd=dividends_ytd_usd,
+        dividend_yield_ttm_pct=dividend_yield_ttm_pct,
+        dividends_ttm_eur=dividends_ttm_eur,
+        dividends_ttm_usd=dividends_ttm_usd,
     )
 
 

@@ -1062,13 +1062,15 @@ def register() -> None:  # noqa: PLR0915
                 )
                 # Two complementary dividend figures: the lifetime cumulative
                 # dividend *return* (all cash dividends ÷ current value), then a
-                # per-year dividend *yield* (this year's dividends ÷ value) shown
-                # with the year-to-date cash dividends in the display currency.
-                div_ytd = _by_ccy(metrics.dividends_ytd_eur, metrics.dividends_ytd_usd, display_ccy)
+                # per-year dividend *yield* (trailing-12-month dividends ÷ value)
+                # shown with the last-12-months cash dividends in the display
+                # currency. A rolling year, not calendar YTD, so the yield is a
+                # real annual rate even in early January.
+                div_ttm = _by_ccy(metrics.dividends_ttm_eur, metrics.dividends_ttm_usd, display_ccy)
                 div_yield_text = (
                     f"Dividend total return: {fmt_pct(metrics.dividend_yield_pct)}  ·  "
-                    f"Dividend yield: {fmt_pct(metrics.dividend_yield_ytd_pct)} "
-                    f"(YTD {fmt_money(div_ytd, display_ccy)})"
+                    f"Dividend yield: {fmt_pct(metrics.dividend_yield_ttm_pct)} "
+                    f"(last 12 mo {fmt_money(div_ttm, display_ccy)})"
                 )
                 if fx_rate is not None:
                     # The FX line now carries the day's FX move (%) — the detail
