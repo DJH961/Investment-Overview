@@ -2,16 +2,31 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.repositories import instruments_repo, price_cache_repo
+from investment_dashboard.repositories import (
+    instruments_repo,
+    price_cache_repo,
+    prices_repo,
+)
 from investment_dashboard.services import prices_service
 
 
 def _utc_naive(when: datetime) -> datetime:
     return when.replace(tzinfo=None)
+
+
+# Naive-UTC instants on Monday 2024-06-24 (a regular, non-holiday session):
+# 15:00 UTC == 11:00 ET (market open); 22:00 UTC == 18:00 ET (after the close).
+# The latest *settled* session is the prior Friday (06-21) while the market is
+# open or before it, and 06-24 itself once that day's 16:00 ET close has passed.
+_MARKET_OPEN_NOW = datetime(2024, 6, 24, 15, 0)
+_AFTER_CLOSE_NOW = datetime(2024, 6, 24, 22, 0)
+_FRIDAY = date(2024, 6, 21)
+_MONDAY = date(2024, 6, 24)
 
 
 def test_instruments_due_includes_brand_new_etf(session: Session) -> None:
@@ -57,6 +72,71 @@ def test_instruments_due_respects_ttl_mutual_fund(session: Session) -> None:
     session.flush()
     due = prices_service.instruments_due_for_refresh(session, now=now)
     assert [i.symbol for i in due] == ["VSMPX"]
+
+
+def _seed_close(session: Session, instrument_id: int, when: date) -> None:
+    prices_repo.upsert_closes(session, instrument_id, {when: Decimal("100")})
+    session.flush()
+
+
+def test_market_symbol_due_while_session_open(session: Session) -> None:
+    # Market open: stocks/ETFs are pulled live even though we already hold the
+    # latest settled close — the user is watching intraday moves.
+    instr = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
+    session.flush()
+    _seed_close(session, instr.id, _FRIDAY)  # latest settled close in hand
+    due = prices_service.instruments_due_for_refresh(session, now=_MARKET_OPEN_NOW)
+    assert [i.symbol for i in due] == ["VTI"]
+
+
+def test_market_symbol_skipped_when_closed_with_settled_close(session: Session) -> None:
+    # Market closed and today's official close is already cached → nothing can
+    # have changed, so it must NOT be re-fetched (the overnight/weekend churn
+    # that made yfinance log "no data" every couple of minutes).
+    instr = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
+    session.flush()
+    _seed_close(session, instr.id, _MONDAY)  # the settled close is in hand
+    due = prices_service.instruments_due_for_refresh(session, now=_AFTER_CLOSE_NOW)
+    assert due == []
+
+
+def test_market_symbol_due_after_bell_to_capture_settled_close(session: Session) -> None:
+    # Market closed but we only hold the prior session's close → due once so the
+    # official settled close gets captured after the bell.
+    instr = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
+    session.flush()
+    _seed_close(session, instr.id, _FRIDAY)  # still missing Monday's close
+    due = prices_service.instruments_due_for_refresh(session, now=_AFTER_CLOSE_NOW)
+    assert [i.symbol for i in due] == ["VTI"]
+
+
+def test_mutual_fund_due_after_hours_when_nav_behind(session: Session) -> None:
+    # NAV publishes after the close: due once the settled session is ahead of the
+    # cached value-date.
+    instr = instruments_repo.get_or_create(session, symbol="VSMPX", asset_class="mutual_fund")
+    session.flush()
+    _seed_close(session, instr.id, _FRIDAY)  # behind Monday's settled NAV
+    due = prices_service.instruments_due_for_refresh(session, now=_AFTER_CLOSE_NOW)
+    assert [i.symbol for i in due] == ["VSMPX"]
+
+
+def test_mutual_fund_skipped_when_todays_nav_cached(session: Session) -> None:
+    # Today's NAV already in hand → not due even after the close.
+    instr = instruments_repo.get_or_create(session, symbol="VSMPX", asset_class="mutual_fund")
+    session.flush()
+    _seed_close(session, instr.id, _MONDAY)
+    due = prices_service.instruments_due_for_refresh(session, now=_AFTER_CLOSE_NOW)
+    assert due == []
+
+
+def test_mutual_fund_not_chased_intraday(session: Session) -> None:
+    # NAV is a once-a-day figure: while the market is open it is never polled, so
+    # holding the latest settled NAV keeps it off the due list.
+    instr = instruments_repo.get_or_create(session, symbol="VSMPX", asset_class="mutual_fund")
+    session.flush()
+    _seed_close(session, instr.id, _FRIDAY)  # the latest settled NAV, mid-session
+    due = prices_service.instruments_due_for_refresh(session, now=_MARKET_OPEN_NOW)
+    assert due == []
 
 
 def test_refresh_due_prices_no_due_returns_empty(session: Session) -> None:
