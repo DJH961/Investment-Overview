@@ -677,7 +677,14 @@ export function getPersona(id: string | null | undefined): DemoPersona {
 /** Largest fraction of the base price a single market quote can wander. */
 const TICK_MAX_AMPLITUDE = 0.008; // 0.8%
 
-/** Deterministic 32-bit hash of a string (FNV-1a), used to seed per-symbol phase. */
+/**
+ * Deterministic 32-bit hash of a string, used to seed each symbol's tick phase.
+ *
+ * Uses FNV-1a (offset basis 0x811c9dc5, prime 0x01000193 — see
+ * http://www.isthe.com/chongo/tech/comp/fnv/): a tiny, dependency-free hash with
+ * good avalanche/distribution for short ASCII tickers, so distinct symbols get
+ * well-spread phases. It is not cryptographic — only stable spreading is needed.
+ */
 function hashString(value: string): number {
   let hash = 0x811c9dc5;
   for (let i = 0; i < value.length; i += 1) {
