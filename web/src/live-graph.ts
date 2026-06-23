@@ -222,6 +222,48 @@ function spendRecorders(providers: LiveGraphProviders): {
   };
 }
 
+/** Options for {@link instrumentedGraphRecorders}. */
+export interface GraphRecorderOptions {
+  /** Range label for the log line, e.g. `"1D"` or `"1W"`. */
+  range: string;
+  /** Book a Twelve Data (Pipe A) spend against its budget log. */
+  bookTwelveData: SpendRecorder;
+  /** Book a Tiingo (Pipe B / FX) spend against its budget log. */
+  bookTiingo: SpendRecorder;
+  /** Sink for a plain-language log line (e.g. the Settings polling log). */
+  log: (message: string) => void;
+  /** Shared counter: total credits this build actually pulled (0 ⇒ all reused). */
+  spent: { credits: number };
+}
+
+/**
+ * Wrap the two graph spend recorders so every live 1D/1W backfill pull is, in
+ * one step: (1) booked against its provider's budget log, (2) tallied into a
+ * shared `spent` counter so the caller can tell a real pull from a fully-reused
+ * (cache/springboard) render, and (3) reported in plain language to `log` — so
+ * the Settings data-polling log shows exactly what each graph pulled, from which
+ * provider, and at what credit cost. A bar fetch bills one credit per symbol; an
+ * FX-history pull bills one Tiingo credit for the whole window.
+ */
+export function instrumentedGraphRecorders(
+  opts: GraphRecorderOptions,
+): { onTwelveDataSpend: SpendRecorder; onTiingoSpend: SpendRecorder } {
+  const { range, bookTwelveData, bookTiingo, log, spent } = opts;
+  const plural = (n: number): string => (n === 1 ? "" : "s");
+  return {
+    onTwelveDataSpend: (n) => {
+      bookTwelveData(n);
+      spent.credits += n;
+      log(`${range} graph: fetched ${n} price series via Twelve Data (Pipe A) — ${n} credit${plural(n)}.`);
+    },
+    onTiingoSpend: (n) => {
+      bookTiingo(n);
+      spent.credits += n;
+      log(`${range} graph: fetched ${n} series via Tiingo (Pipe B) — ${n} Tiingo credit${plural(n)}.`);
+    },
+  };
+}
+
 /** Per-bar cadence the 1D price feed (and matching FX track) requests. */
 export interface SessionGraphTuning {
   /** Twelve Data `time_series` interval for Pipe A (default `5min`). */

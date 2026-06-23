@@ -13,6 +13,7 @@ import type { IntradayAnchor } from "../src/intraday";
 import {
   buildLiveSessionCurve,
   buildLiveWeekCurve,
+  instrumentedGraphRecorders,
   makePriceBarFetcher,
   makeWindowFxFetcher,
   recordingBarFetcher,
@@ -303,5 +304,48 @@ describe("credit accounting (live-graph backfills count against a source budget)
     // credit on the price attempt (an empty answer is not a throw) plus the FX.
     expect(twelve).toEqual([1]);
     expect(tiingo).toEqual([1, 1]);
+  });
+});
+
+describe("instrumentedGraphRecorders", () => {
+  it("books each pull against its provider budget, tallies credits, and logs it", () => {
+    const twelveBooked: number[] = [];
+    const tiingoBooked: number[] = [];
+    const messages: string[] = [];
+    const spent = { credits: 0 };
+    const { onTwelveDataSpend, onTiingoSpend } = instrumentedGraphRecorders({
+      range: "1D",
+      bookTwelveData: (n) => twelveBooked.push(n),
+      bookTiingo: (n) => tiingoBooked.push(n),
+      log: (m) => messages.push(m),
+      spent,
+    });
+
+    onTwelveDataSpend(3);
+    onTiingoSpend(1);
+
+    // Credits are booked against the matching provider budget…
+    expect(twelveBooked).toEqual([3]);
+    expect(tiingoBooked).toEqual([1]);
+    // …the shared counter tells a real pull from a fully-reused render…
+    expect(spent.credits).toBe(4);
+    // …and each pull is reported in plain language with provider + credit cost.
+    expect(messages).toEqual([
+      "1D graph: fetched 3 price series via Twelve Data (Pipe A) — 3 credits.",
+      "1D graph: fetched 1 series via Tiingo (Pipe B) — 1 Tiingo credit.",
+    ]);
+  });
+
+  it("leaves the credit counter at zero when nothing is pulled (all reused)", () => {
+    const spent = { credits: 0 };
+    instrumentedGraphRecorders({
+      range: "1W",
+      bookTwelveData: () => undefined,
+      bookTiingo: () => undefined,
+      log: () => undefined,
+      spent,
+    });
+    // Constructing the recorders must not, by itself, book or count anything.
+    expect(spent.credits).toBe(0);
   });
 });

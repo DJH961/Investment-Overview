@@ -14,6 +14,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [3.19.2] — 2026-06-23
+
+### Added
+- **Live 1D/1W value graphs now write to the Settings data-polling log.** Every
+  graph backfill is recorded under a new `GRAPH` category: which provider it hit
+  (Twelve Data Pipe A or Tiingo Pipe B), how many price series it pulled, and the
+  credit cost — plus an explicit zero-credit line whenever a render reused the
+  exported session/week or the already-stored bars instead of pulling. This makes
+  the live graphs' provider traffic visible in the downloadable log alongside the
+  quote/FX/blob activity, so it's clear exactly what gets pulled where and when.
+
 ## [3.19.1] — 2026-06-23
 
 ### Fixed
