@@ -20,7 +20,10 @@ from investment_dashboard.services import (
     refresh_status,
     timezone_service,
 )
-from investment_dashboard.services.daily_growth_view import build_daily_growth_caption
+from investment_dashboard.services.daily_growth_view import (
+    build_daily_growth_caption,
+    fx_move_pct,
+)
 from investment_dashboard.ui import refresh_indicator
 from investment_dashboard.ui.components import (
     deferred,
@@ -165,6 +168,20 @@ def _verdict_card(verdict: MarketVerdict) -> None:
 def _by_ccy(eur: Decimal | None, usd: Decimal | None, ccy: str) -> Decimal | None:
     """Pick the EUR or USD figure for the active display currency."""
     return eur if ccy.upper() == "EUR" else usd
+
+
+def _fmt_signed_money(amount: Decimal | None, ccy: str) -> str | None:
+    """A money figure with an explicit ``+``/``−`` sign (e.g. ``+€123.45``).
+
+    Used where the figure reads as a *change* (today's value difference, a
+    holding's daily move) so a gain shows its plus sign rather than looking like
+    a plain balance. Returns ``None`` when there's nothing to show, so callers
+    can omit the line entirely.
+    """
+    if amount is None:
+        return None
+    sign = "+" if amount >= 0 else "\u2212"  # proper minus sign
+    return f"{sign}{fmt_money(abs(amount), ccy)}"
 
 
 def _hero_total_value(
@@ -376,24 +393,48 @@ def _holding_card(
         daily_txt = (
             f"{arrow_for_signed(float(daily))} {fmt_pct(daily)}" if daily is not None else "—"
         )
+        # The same daily move as an absolute money figure in the display
+        # currency, shown just under the percentage (to the right) so the card
+        # answers "how much did this move today?" not only "by what percent?".
+        daily_money = _by_ccy(card.daily_move_eur, card.daily_move_usd, ccy)
+        daily_money_txt = _fmt_signed_money(daily_money, ccy)
         # A holding still on an older print than its peers shows last session's
         # move, not today's — grey it (muted colour + softer weight + a hint) so
         # a live glance separates today's numbers from the ones yet to refresh.
         # Before peers diverge nothing is stale, so nothing greys.
         if card.daily_is_stale:
+            money_html = (
+                f'<span class="inv-holding-change-money inv-holding-change-stale">'
+                f"{escape(daily_money_txt)}</span>"
+                if daily_money_txt is not None
+                else ""
+            )
             ui.html(
                 '<div class="inv-holding-figures">'
                 f'<span class="inv-holding-value">{escape(fmt_money(value, ccy))}</span>'
+                '<span class="inv-holding-change-wrap">'
                 '<span class="inv-holding-change inv-holding-change-stale" '
                 'title="Not updated today — last session&#39;s move">'
                 f"{escape(daily_txt)}</span>"
+                f"{money_html}"
+                "</span>"
                 "</div>"
             )
         else:
+            money_html = (
+                f'<span class="inv-holding-change-money" style="color:{daily_color}">'
+                f"{escape(daily_money_txt)}</span>"
+                if daily_money_txt is not None
+                else ""
+            )
             ui.html(
                 '<div class="inv-holding-figures">'
                 f'<span class="inv-holding-value">{escape(fmt_money(value, ccy))}</span>'
-                f'<span class="inv-holding-change" style="color:{daily_color}">{escape(daily_txt)}</span>'
+                '<span class="inv-holding-change-wrap">'
+                f'<span class="inv-holding-change" style="color:{daily_color}">'
+                f"{escape(daily_txt)}</span>"
+                f"{money_html}"
+                "</span>"
                 "</div>"
             )
         if value_other is not None:
@@ -975,6 +1016,12 @@ def register() -> None:  # noqa: PLR0915
                 # provider's market time — with our pull instant trailing as
                 # "· updated …". A compact, display-relative FX rate trails it.
                 _now = datetime.now(UTC)
+                # The headline daily move as money in the display currency, shown
+                # in the "Today" square in place of the FX detail (which now sits
+                # by the KPIs below).
+                _today_money = _by_ccy(
+                    metrics.daily_growth_money_eur, metrics.daily_growth_money_usd, display_ccy
+                )
                 _caption = build_daily_growth_caption(
                     last_date=metrics.daily_growth_as_of,
                     fx_eur_usd=metrics.daily_growth_fx_eur_usd,
@@ -986,6 +1033,7 @@ def register() -> None:  # noqa: PLR0915
                     price_observed_at=data.price_observed_at,
                     price_market_at=data.price_market_at,
                     now=_now,
+                    money_text=_fmt_signed_money(_today_money, display_ccy),
                 )
 
                 # Fill the header's Total Value hero box (created in register()).
@@ -1012,11 +1060,31 @@ def register() -> None:  # noqa: PLR0915
                     f"Weighted expense ratio: {fmt_pct(metrics.weighted_expense_ratio)}  "
                     f"(≈ {fmt_money(_convert(metrics.annual_expense_cost_eur, display_ccy, fx_rate), display_ccy)} / yr)"
                 )
-                div_yield_text = f"Dividend yield: {fmt_pct(metrics.dividend_yield_pct)}"
+                # Dividend yield trailed by the year-to-date cash dividends in the
+                # display currency, so the yield reads next to the money it earned.
+                div_ytd = _by_ccy(metrics.dividends_ytd_eur, metrics.dividends_ytd_usd, display_ccy)
+                div_yield_text = (
+                    f"Dividend yield: {fmt_pct(metrics.dividend_yield_pct)}  ·  "
+                    f"Dividends YTD: {fmt_money(div_ytd, display_ccy)}"
+                )
                 if fx_rate is not None:
+                    # The FX line now carries the day's FX move (%) — the detail
+                    # that used to sit in the "Today" square — next to the spot.
+                    fx_pct = (
+                        fx_move_pct(
+                            metrics.daily_growth_fx_eur_usd,
+                            metrics.daily_growth_fx_eur_usd_prev,
+                            display_ccy,
+                        )
+                        if metrics.daily_growth_fx_eur_usd is not None
+                        else None
+                    )
+                    fx_text = f"FX EUR→{display_quote} {fx_rate:,.4f}"
+                    if fx_pct is not None:
+                        sign = "+" if fx_pct >= 0 else "\u2212"  # proper minus sign
+                        fx_text += f" ({sign}{abs(fx_pct):.2f}%)"
                     ui.label(
-                        f"FX EUR→{display_quote} {fx_rate:,.4f}  ·  "
-                        f"{expense_text}  ·  {div_yield_text}",
+                        f"{fx_text}  ·  {expense_text}  ·  {div_yield_text}",
                     ).classes("text-caption opacity-70")
                 else:
                     ui.label(f"{expense_text}  ·  {div_yield_text}").classes(

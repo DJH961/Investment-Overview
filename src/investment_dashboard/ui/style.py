@@ -609,6 +609,15 @@ html, body {{
   font-size: 0.95rem; font-weight: 600; font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }}
+/* The change column stacks the daily % over the daily money move, right-aligned
+   so both sit under the headline value's right edge. */
+.inv-holding-change-wrap {{
+  display: flex; flex-direction: column; align-items: flex-end; gap: 1px;
+}}
+.inv-holding-change-money {{
+  font-size: 0.8125rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}}
 /* A daily move still on an older print than its peers (e.g. a fund yet to strike
    today's NAV) is greyed: it shows last session's move, not today's, so the
    muted colour + softer weight signal "not updated today yet". */

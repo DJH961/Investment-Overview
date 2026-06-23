@@ -135,6 +135,17 @@ class PortfolioMetrics:
     #: ``None`` until there are at least two priced dates.
     daily_growth_pct: Decimal | None = None
     daily_growth_pct_usd: Decimal | None = None
+    #: Signed single-day *money* move (the change in total value between the last
+    #: two priced days) per currency. Lets the Overview "Today" square show the
+    #: headline daily gain/loss as an absolute figure in the display currency.
+    #: ``None`` until there are two priced days (and ``*_usd`` also needs FX).
+    daily_growth_money_eur: Decimal | None = None
+    daily_growth_money_usd: Decimal | None = None
+    #: Year-to-date cash-dividend income per currency (every distribution dated
+    #: on/after 1 Jan of the valuation year, reinvested or paid out). Surfaced
+    #: next to the trailing dividend yield. ``0`` when none received this year.
+    dividends_ytd_eur: Decimal = Decimal(0)
+    dividends_ytd_usd: Decimal = Decimal(0)
     #: Trailing dividend yield = cash dividends received ÷ current closing
     #: balance (spreadsheet ``Total`` block's ``Dividends / Closing Balance``).
     #: ``None`` when the portfolio has no value yet.
@@ -390,10 +401,14 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     # only realized cash may be added back to reconstruct capital gain.
     reinvest_keys = dividends.reinvest_keys(list(txns))
 
-    def _dividends(*, include_reinvested: bool) -> tuple[Decimal, Decimal]:
+    def _dividends(
+        *, include_reinvested: bool, since: date | None = None
+    ) -> tuple[Decimal, Decimal]:
         eur_total = ZERO
         usd_total = ZERO
         for t in txns:
+            if since is not None and t.date < since:
+                continue
             div_eur, div_usd = dividends.income_dual(
                 t, reinvest_keys, eur_to_usd=eur_to_usd, include_reinvested=include_reinvested
             )
@@ -405,6 +420,11 @@ def compute_portfolio_metrics(  # noqa: PLR0915
 
     dividends_income_eur, dividends_income_usd = _dividends(include_reinvested=True)
     dividends_realized_eur, dividends_realized_usd = _dividends(include_reinvested=False)
+    # Year-to-date dividend income (every distribution dated this calendar year),
+    # shown alongside the trailing yield on the Overview KPI footnote.
+    dividends_ytd_eur, dividends_ytd_usd = _dividends(
+        include_reinvested=True, since=date(as_of.year, 1, 1)
+    )
 
     contributions_usd = sum(
         (_usd_amount(t) for t in txns if t.kind in _CONTRIBUTION_KINDS),
@@ -592,11 +612,15 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         annual_expense_cost_eur=annual_expense_cost_eur,
         daily_growth_pct=daily.growth_eur,
         daily_growth_pct_usd=daily.growth_usd,
+        daily_growth_money_eur=daily.move_eur,
+        daily_growth_money_usd=daily.move_usd,
         daily_growth_as_of=daily.last_date,
         daily_growth_prev_as_of=daily.prev_date,
         daily_growth_fx_eur_usd=daily.fx_last,
         daily_growth_fx_eur_usd_prev=daily.fx_prev,
         dividend_yield_pct=dividend_yield_pct,
+        dividends_ytd_eur=dividends_ytd_eur,
+        dividends_ytd_usd=dividends_ytd_usd,
     )
 
 
@@ -664,6 +688,10 @@ class _DailyGrowth:
     prev_date: date | None
     fx_last: Decimal | None
     fx_prev: Decimal | None
+    #: Signed money move (last value − prior value) per currency, ``None`` when
+    #: the corresponding growth leg is not computable.
+    move_eur: Decimal | None = None
+    move_usd: Decimal | None = None
 
 
 def _compute_daily_growth(
@@ -728,7 +756,18 @@ def _compute_daily_growth(
             price_span_days = (last_date - prev_date).days
             if fx_span_days > price_span_days + _DAILY_GROWTH_FX_TOLERANCE_DAYS:
                 growth_eur = growth_usd
-    return _DailyGrowth(growth_eur, growth_usd, last_date, prev_date, fx_last, fx_prev)
+    # Absolute money move (display-currency headline figure for the Today square),
+    # carried only when the matching growth leg is computable so the sign and
+    # magnitude always agree with the percentage shown beside it.
+    move_eur = last_eur - prev_eur if growth_eur is not None else None
+    move_usd = (
+        last_usd - prev_usd
+        if (growth_usd is not None and last_usd is not None and prev_usd is not None)
+        else None
+    )
+    return _DailyGrowth(
+        growth_eur, growth_usd, last_date, prev_date, fx_last, fx_prev, move_eur, move_usd
+    )
 
 
 def _compute_mtd_growth(

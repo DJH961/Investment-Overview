@@ -37,10 +37,20 @@ def test_no_data_degrades_cleanly() -> None:
 def test_live_says_live_only() -> None:
     cap = _caption()
     assert cap.is_live is True
-    # Live: the single state word "live", no "today" and no clock; FX trails.
+    # Live: the single state word "live", no "today" and no clock. The FX detail
+    # no longer trails the caption (it sits by the KPIs now), and with no money
+    # move supplied the combined line is just the state word.
     assert cap.as_of_text == "live"
     assert cap.updated_text is None
-    assert cap.combined() == "live \u00b7 $1\u2248\u20ac0.9259"
+    assert cap.combined() == "live"
+
+
+def test_money_move_trails_combined_when_supplied() -> None:
+    # The absolute daily move (display currency) trails the state word in place
+    # of the FX detail when ``money_text`` is supplied.
+    cap = _caption(money_text="+\u20ac123.45")
+    assert cap.money_text == "+\u20ac123.45"
+    assert cap.combined() == "live \u00b7 +\u20ac123.45"
 
 
 def test_stale_feed_while_market_open_is_not_live() -> None:
@@ -142,10 +152,8 @@ def test_today_closed_prefers_market_time_and_trails_pull_time() -> None:
     assert cap.is_live is False
     assert cap.as_of_text == "today"
     assert cap.updated_text == "as of 21:59 \u00b7 updated 22:16"
-    assert (
-        cap.combined()
-        == "today \u00b7 as of 21:59 \u00b7 updated 22:16 \u00b7 $1\u2248\u20ac0.9259"
-    )
+    # The FX detail no longer trails the combined line (it moved to the KPIs).
+    assert cap.combined() == "today \u00b7 as of 21:59 \u00b7 updated 22:16"
 
 
 def test_today_closed_market_time_without_pull_time_has_no_updated() -> None:
@@ -221,7 +229,7 @@ def test_fx_detail_omitted_when_no_mark() -> None:
 
 
 def test_combined_leads_with_live_only_when_live() -> None:
-    live = _caption()
+    live = _caption(money_text="+\u20ac10.00")
     assert live.combined().startswith("live \u00b7 ")
     closed = _caption(market_open=False)
     assert "live" not in closed.combined()

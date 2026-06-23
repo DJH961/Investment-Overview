@@ -19,12 +19,14 @@ Three shapes, mirroring the user's mental model — and the caption leads with
 * **Older close**: the caption pins to that date ("as of Fri 20 Jun"). On a
   weekend, holiday or early morning this is the prior trading day.
 
-A compact exchange-rate detail trails the caption when an EUR/USD mark is
-available — quoted relative to the display currency and tightened to the spot
-plus its percentage move versus the prior trading day's mark ("€1≈$1.0830
-(+0.10%)" for USD users, "$1≈€0.9234 (−0.10%)" for EUR users). The move is a
-*percentage only* (no absolute), and reads live while the session is open
-because the metrics layer overlays the live spot onto today's mark.
+The absolute daily move in the display currency (e.g. "+€123.45") trails the
+caption as ``money_text`` when supplied, so the "Today" square reads its headline
+gain/loss as money next to the date/live state.
+
+The display-relative exchange rate and its percentage move ("€1≈$1.0830
+(+0.10%)" for USD users, "$1≈€0.9234 (−0.10%)" for EUR users) are still computed
+here as ``fx_text`` (and via :func:`fx_move_pct`), but they are now rendered next
+to the headline KPIs rather than inside this caption.
 
 Pure and timezone-aware so it can be unit-tested without a NiceGUI context.
 """
@@ -53,22 +55,27 @@ class DailyGrowthCaption:
     fx_text: str | None
     is_live: bool
     updated_text: str | None = None
+    #: The headline daily move as an absolute money figure in the display
+    #: currency (e.g. ``"+€123.45"``), shown in the Overview "Today" square.
+    #: ``None`` when no money move is available to show.
+    money_text: str | None = None
 
     def combined(self) -> str:
-        """Single tight caption line: ``<live|today|as of …> · … · €1≈$…``.
+        """Single tight caption line: ``<live|today|as of …> · … · <money>``.
 
         The leading token is exactly one of the three states — ``live`` (the
         session is open now), ``today`` (settled, today's close is in) or ``as of
         <date>`` (an older settled close) — never a combination. All parts after
         it are optional details (not state descriptors): the settled-today
-        precise stamp (``as of <market time> · updated <pull time>``) and the FX
-        mark.
+        precise stamp (``as of <market time> · updated <pull time>``) and the
+        absolute daily move in the display currency. The FX mark is *not* part of
+        this line anymore — it lives next to the headline KPIs instead.
         """
         parts = [self.as_of_text]
         if self.updated_text is not None:
             parts.append(self.updated_text)
-        if self.fx_text is not None:
-            parts.append(self.fx_text)
+        if self.money_text is not None:
+            parts.append(self.money_text)
         return " \u00b7 ".join(parts)
 
 
@@ -82,6 +89,21 @@ def _display_rate(eur_usd: Decimal, display_ccy: str) -> Decimal:
     if display_ccy.upper() == "USD":
         return eur_usd
     return Decimal(1) / eur_usd
+
+
+def fx_move_pct(eur_usd: Decimal, eur_usd_prev: Decimal | None, display_ccy: str) -> Decimal | None:
+    """The display-relative FX move as a signed percentage.
+
+    ``eur_usd`` is USD per 1 EUR (the storage convention) and ``eur_usd_prev``
+    the prior trading day's mark. The result tracks the strength of the *foreign*
+    currency you convert into — the euro in USD display, the dollar in EUR display
+    — so a positive figure means "that currency went up". Returns ``None`` when
+    there is no usable comparison mark (so callers can omit the move entirely).
+    """
+    if eur_usd_prev is None or eur_usd_prev <= 0:
+        return None
+    euro_move = (eur_usd - eur_usd_prev) / eur_usd_prev * Decimal(100)
+    return euro_move if display_ccy.upper() == "USD" else -euro_move
 
 
 def _format_fx_tight(eur_usd: Decimal, eur_usd_prev: Decimal | None, display_ccy: str) -> str:
@@ -98,11 +120,8 @@ def _format_fx_tight(eur_usd: Decimal, eur_usd_prev: Decimal | None, display_ccy
     text = (
         f"\u20ac1\u2248${rate:.4f}" if display_ccy.upper() == "USD" else f"$1\u2248\u20ac{rate:.4f}"
     )
-    if eur_usd_prev is not None and eur_usd_prev > 0:
-        # The euro's own move (USD per 1 EUR). USD display reports it as-is (the
-        # euro's strength); EUR display negates it to read the dollar's strength.
-        euro_move = (eur_usd - eur_usd_prev) / eur_usd_prev * Decimal(100)
-        pct = euro_move if display_ccy.upper() == "USD" else -euro_move
+    pct = fx_move_pct(eur_usd, eur_usd_prev, display_ccy)
+    if pct is not None:
         sign = "+" if pct >= 0 else "\u2212"  # proper minus sign
         text += f" ({sign}{abs(pct):.2f}%)"
     return text
@@ -131,6 +150,7 @@ def build_daily_growth_caption(
     price_observed_at: datetime | None = None,
     price_market_at: datetime | None = None,
     now: datetime | None = None,
+    money_text: str | None = None,
 ) -> DailyGrowthCaption:
     """Build the caption for the Daily Growth card.
 
@@ -155,9 +175,15 @@ def build_daily_growth_caption(
     or unreachable feed — even while the market is nominally open — settles to
     "today" rather than dishonestly claiming "live". When ``now`` is ``None`` the
     gate is skipped (the legacy ``market open and price is today`` rule).
+
+    ``money_text`` is the pre-formatted absolute daily move in the display
+    currency (e.g. ``"+€123.45"``); when given it trails the caption so the
+    "Today" square shows the headline gain/loss as money, not just a percentage.
     """
     if last_date is None:
-        return DailyGrowthCaption("awaiting two priced days", None, is_live=False)
+        return DailyGrowthCaption(
+            "awaiting two priced days", None, is_live=False, money_text=money_text
+        )
 
     # The freshest proof we have that the feed is genuinely live right now: prefer
     # the most recent of our last successful pull and the exchange strike time.
@@ -195,4 +221,6 @@ def build_daily_growth_caption(
     fx_text: str | None = None
     if fx_eur_usd is not None and fx_eur_usd > 0:
         fx_text = _format_fx_tight(fx_eur_usd, fx_eur_usd_prev, display_ccy)
-    return DailyGrowthCaption(as_of_text, fx_text, is_live=is_live, updated_text=updated_text)
+    return DailyGrowthCaption(
+        as_of_text, fx_text, is_live=is_live, updated_text=updated_text, money_text=money_text
+    )
