@@ -540,3 +540,78 @@ class TestWeekSeries:
         assert sessions == sorted(sessions)
         assert sessions[-1] == date(2024, 6, 3)
         assert all(s.weekday() < 5 for s in sessions)
+
+    def test_week_window_start_is_the_oldest_session_start(self) -> None:
+        sessions = iss.recent_trading_sessions(_NOW)
+        assert iss.week_window_start_utc(_NOW) == iss._session_start_utc(sessions[0])
+
+    def test_reconstruct_retains_a_rolling_week_not_just_today(self, session: Session) -> None:
+        # Widened retention: pruning is to the *week* window start, so a sample
+        # from an earlier session this week survives reconstructing today, while
+        # one older than the whole window is pruned away.
+        _seed_eur_holding(session)
+        sessions = iss.recent_trading_sessions(_NOW)
+        within_week = iss._session_start_utc(sessions[0]) + timedelta(hours=16)
+        before_week = iss.week_window_start_utc(_NOW) - timedelta(days=3)
+        intraday_repo.insert_sample(session, within_week, Decimal("999.00"))
+        intraday_repo.insert_sample(session, before_week, Decimal("111.00"))
+        session.flush()
+        iss.reconstruct_last_session(
+            session,
+            now=_NOW,
+            fetcher=_fake_fetcher({datetime(2024, 6, 3, 13, 30): Decimal("100")}),
+        )
+        session.flush()
+        rows = intraday_repo.list_in_range(
+            session, before_week - timedelta(days=1), _NOW.replace(tzinfo=None)
+        )
+        times = [r.captured_at for r in rows]
+        assert within_week in times  # kept: inside the rolling week
+        assert before_week not in times  # pruned: older than the week window
+
+    def test_persists_fetched_bars_and_reuses_them_without_refetch(self, session: Session) -> None:
+        _seed_eur_holding_for_week(session)
+        calls = {"n": 0}
+        base = _fake_week_fetcher(self._DAY_BARS)
+
+        def fetch(symbols, start_day, end_day, *, interval):  # type: ignore[no-untyped-def]
+            calls["n"] += 1
+            return base(symbols, start_day, end_day, interval=interval)
+
+        first = iss.week_series_with_fx(session, now=_NOW, fetcher=fetch)
+        session.flush()
+        second = iss.week_series_with_fx(session, now=_NOW, fetcher=fetch)
+        # The whole week is now cached, so the second render does not refetch.
+        assert calls["n"] == 1
+        assert [(at, eur) for at, eur, _ in second] == [(at, eur) for at, eur, _ in first]
+
+    def test_fetches_only_uncovered_sessions(self, session: Session) -> None:
+        _seed_eur_holding_for_week(session)
+        sessions = iss.recent_trading_sessions(_NOW)
+        # A live capture covering today's session — it must be reused, not
+        # re-fetched, and the network fetch must stop at the prior session.
+        live_at = datetime(2024, 6, 3, 15, 0)
+        intraday_repo.insert_sample(session, live_at, Decimal("5555.00"))
+        session.flush()
+        seen: dict[str, date] = {}
+        base = _fake_week_fetcher(self._DAY_BARS)
+
+        def fetch(symbols, start_day, end_day, *, interval):  # type: ignore[no-untyped-def]
+            seen["start"] = start_day
+            seen["end"] = end_day
+            return base(symbols, start_day, end_day, interval=interval)
+
+        out = iss.week_series_with_fx(session, now=_NOW, fetcher=fetch)
+        # Today was covered by the live sample → fetch range excludes it.
+        assert seen["start"] == sessions[0]
+        assert seen["end"] == sessions[-2]
+        # The cached live point survives and is the only point for today.
+        today_points = [(at, eur) for at, eur, _ in out if at.date() == date(2024, 6, 3)]
+        assert today_points == [(live_at, Decimal("5555.00"))]
+
+    def test_build_week_value_series_empty_for_empty_portfolio(self, session: Session) -> None:
+        # With nothing to price intraday there is nothing to cache or fetch, so
+        # the series is empty and the page falls back to the daily snapshots.
+        from investment_dashboard.ui.pages._overview_query import build_week_value_series
+
+        assert build_week_value_series(session, currency="EUR", now=_NOW) == []

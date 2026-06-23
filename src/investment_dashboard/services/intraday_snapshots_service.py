@@ -623,12 +623,7 @@ def week_series_with_fx(
     intraday bars could be sourced, letting the caller fall back to the daily
     snapshot series.
     """
-    from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
-    from investment_dashboard.db import (  # noqa: PLC0415
-        cache_read_session,
-        cache_write_session,
-    )
-    from investment_dashboard.services import fx_service, positions_service  # noqa: PLC0415
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
 
     now = now or datetime.now(UTC)
     sessions = recent_trading_sessions(now)
@@ -636,9 +631,7 @@ def week_series_with_fx(
         return []
     anchor = sessions[-1]
     week_start = _session_start_utc(sessions[0])
-    window_end = min(
-        _to_naive_utc(now), _session_start_utc(sessions[-1] + timedelta(days=1))
-    )
+    window_end = min(_to_naive_utc(now), _session_start_utc(sessions[-1] + timedelta(days=1)))
 
     # 1. Cache first — the rolling week already on hand. A session counts as
     #    "covered" the moment it holds any cached sample (e.g. today's live
@@ -661,89 +654,125 @@ def week_series_with_fx(
 
     fetched: list[tuple[datetime, Decimal, Decimal | None]] = []
     if to_fetch:
-        positions_by_day: dict[date, list[Position]] = {}
-        symbols: set[str] = set()
-        needs_fx = False
-        for session_date in to_fetch:
-            day_positions = positions_service.compute_positions(session, as_of=session_date)
-            priced = [
-                p
-                for p in day_positions
-                if p.shares > _MIN_SHARES
-                and p.current_price_native is not None
-                and p.current_price_native != 0
-                and p.current_value_eur != 0
-                and is_intraday_priced(p)
-            ]
-            positions_by_day[session_date] = priced
-            symbols.update(p.instrument.symbol for p in priced)
-            needs_fx = needs_fx or any(_is_usd_native(p) for p in priced)
-
-        if symbols:
-            fetch = fetcher or yfinance_client.fetch_intraday_closes_range
-            try:
-                bars_by_symbol: dict[str, dict[datetime, Decimal]] = fetch(  # type: ignore[operator]
-                    sorted(symbols), to_fetch[0], to_fetch[-1], interval=WEEK_INTERVAL
-                )
-            except Exception:  # pragma: no cover - defensive: best-effort network fetch
-                log.warning("week curve intraday fetch failed", exc_info=True)
-                bars_by_symbol = {}
-
-            fx_bars: dict[datetime, Decimal] = {}
-            if needs_fx and bars_by_symbol:
-                fx_fetch = fx_fetcher or yfinance_client.fetch_eur_usd_intraday_range
-                try:
-                    fx_bars = fx_fetch(  # type: ignore[operator]
-                        to_fetch[0], to_fetch[-1], interval=WEEK_INTERVAL
-                    )
-                except Exception:  # pragma: no cover - defensive: FX overlay is best-effort
-                    log.warning("week curve EUR/USD fetch failed", exc_info=True)
-                    fx_bars = {}
-
-            for session_date in to_fetch:
-                priced = positions_by_day[session_date]
-                if not priced:
-                    continue
-                start = _session_start_utc(session_date)
-                end = _session_start_utc(session_date + timedelta(days=1))
-                day_symbols = {p.instrument.symbol for p in priced}
-                day_bar_times = sorted(
-                    {t for sym in day_symbols for t in bars_by_symbol.get(sym, {}) if start <= t < end}
-                )
-                if not day_bar_times:
-                    continue
-                base_fx = (
-                    fx_service.get_rate_eur_to_quote(session, session_date, quote="USD")
-                    if any(_is_usd_native(p) for p in priced)
-                    else None
-                )
-                for t in _pick_open_mid_close(day_bar_times):
-                    fx_t = _forward_filled(fx_bars, t) if fx_bars else None
-                    point_fx = fx_t or base_fx
-                    market = _market_component_pivot_eur(
-                        priced, bars_by_symbol, t, fx_t=fx_t, base_fx=base_fx
-                    )
-                    fetched.append((t, market, point_fx))
-
-            # Persist what we sourced so the next render reads it from cache, and
-            # prune anything older than the rolling week.
-            if fetched:
-                with cache_write_session(session) as cache:
-                    for t, market, point_fx in fetched:
-                        intraday_repo.insert_sample(cache, t, market, point_fx)
-                    intraday_repo.delete_before(cache, week_start)
-
-        # Mark every attempted day (even one the feed served no bars for) so a
-        # quiet/offline day doesn't re-hit the network on every render this
-        # session; it is re-attempted once the anchor session rolls on.
-        for session_date in to_fetch:
-            _mark_week_day_fetched(session, session_date, anchor)
+        fetched = _fetch_and_persist_week_days(
+            session, to_fetch, anchor, week_start, fetcher=fetcher, fx_fetcher=fx_fetcher
+        )
 
     # 3. Merge cached + freshly fetched (disjoint by session), oldest first.
     merged: dict[datetime, tuple[datetime, Decimal, Decimal | None]] = {}
     for sample in [*cached, *fetched]:
         merged[sample[0]] = sample
     return sorted(merged.values(), key=lambda s: s[0])
+
+
+def _priced_intraday_positions(session: Session, session_date: date) -> list[Position]:
+    """Held, intraday-priced positions as of ``session_date`` (the week sleeve)."""
+    from investment_dashboard.services import positions_service  # noqa: PLC0415
+
+    return [
+        p
+        for p in positions_service.compute_positions(session, as_of=session_date)
+        if p.shares > _MIN_SHARES
+        and p.current_price_native is not None
+        and p.current_price_native != 0
+        and p.current_value_eur != 0
+        and is_intraday_priced(p)
+    ]
+
+
+def _build_week_day_samples(
+    session: Session,
+    session_date: date,
+    priced: list[Position],
+    bars_by_symbol: dict[str, dict[datetime, Decimal]],
+    fx_bars: dict[datetime, Decimal],
+) -> list[tuple[datetime, Decimal, Decimal | None]]:
+    """Start / midday / close market-component samples for one session day."""
+    from investment_dashboard.services import fx_service  # noqa: PLC0415
+
+    start = _session_start_utc(session_date)
+    end = _session_start_utc(session_date + timedelta(days=1))
+    day_symbols = {p.instrument.symbol for p in priced}
+    day_bar_times = sorted(
+        {t for sym in day_symbols for t in bars_by_symbol.get(sym, {}) if start <= t < end}
+    )
+    if not day_bar_times:
+        return []
+    base_fx = (
+        fx_service.get_rate_eur_to_quote(session, session_date, quote="USD")
+        if any(_is_usd_native(p) for p in priced)
+        else None
+    )
+    samples: list[tuple[datetime, Decimal, Decimal | None]] = []
+    for t in _pick_open_mid_close(day_bar_times):
+        fx_t = _forward_filled(fx_bars, t) if fx_bars else None
+        point_fx = fx_t or base_fx
+        market = _market_component_pivot_eur(priced, bars_by_symbol, t, fx_t=fx_t, base_fx=base_fx)
+        samples.append((t, market, point_fx))
+    return samples
+
+
+def _fetch_and_persist_week_days(
+    session: Session,
+    to_fetch: list[date],
+    anchor: date,
+    week_start: datetime,
+    *,
+    fetcher: object | None,
+    fx_fetcher: object | None,
+) -> list[tuple[datetime, Decimal, Decimal | None]]:
+    """Fetch, build, persist and mark the uncovered week sessions in ``to_fetch``.
+
+    Returns the freshly built samples (empty when the feed served no bars). Every
+    attempted day is marked done so a quiet/offline day doesn't re-hit the network
+    on every render this session; it is re-attempted once the anchor session rolls
+    on. Best-effort: a network failure is logged and yields no samples.
+    """
+    from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+
+    positions_by_day = {d: _priced_intraday_positions(session, d) for d in to_fetch}
+    symbols = sorted({p.instrument.symbol for priced in positions_by_day.values() for p in priced})
+
+    fetched: list[tuple[datetime, Decimal, Decimal | None]] = []
+    if symbols:
+        needs_fx = any(_is_usd_native(p) for priced in positions_by_day.values() for p in priced)
+        fetch = fetcher or yfinance_client.fetch_intraday_closes_range
+        try:
+            bars_by_symbol: dict[str, dict[datetime, Decimal]] = fetch(  # type: ignore[operator]
+                symbols, to_fetch[0], to_fetch[-1], interval=WEEK_INTERVAL
+            )
+        except Exception:  # pragma: no cover - defensive: best-effort network fetch
+            log.warning("week curve intraday fetch failed", exc_info=True)
+            bars_by_symbol = {}
+
+        fx_bars: dict[datetime, Decimal] = {}
+        if needs_fx and bars_by_symbol:
+            fx_fetch = fx_fetcher or yfinance_client.fetch_eur_usd_intraday_range
+            try:
+                fx_bars = fx_fetch(to_fetch[0], to_fetch[-1], interval=WEEK_INTERVAL)  # type: ignore[operator]
+            except Exception:  # pragma: no cover - defensive: FX overlay is best-effort
+                log.warning("week curve EUR/USD fetch failed", exc_info=True)
+                fx_bars = {}
+
+        for session_date in to_fetch:
+            fetched.extend(
+                _build_week_day_samples(
+                    session, session_date, positions_by_day[session_date], bars_by_symbol, fx_bars
+                )
+            )
+
+        # Persist what we sourced so the next render reads it from cache, and
+        # prune anything older than the rolling week.
+        if fetched:
+            with cache_write_session(session) as cache:
+                for t, market, point_fx in fetched:
+                    intraday_repo.insert_sample(cache, t, market, point_fx)
+                intraday_repo.delete_before(cache, week_start)
+
+    for session_date in to_fetch:
+        _mark_week_day_fetched(session, session_date, anchor)
+    return fetched
 
 
 def _week_day_fetched(session: Session, day: date, anchor: date) -> bool:
