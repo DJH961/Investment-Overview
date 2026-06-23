@@ -41,6 +41,15 @@ const USD = "USD";
  */
 const FREE_TIER_CREDITS_PER_DAY = 800;
 
+/**
+ * Tiingo fallback self-cap (web side: 80 % of the shared account), mirrored here
+ * so the pure compute layer can default the {@link OverviewView} Tiingo-budget
+ * limits without importing the network layer. Keep in step with `tiingo-gate.ts`
+ * (`WEB_HOURLY_CAP` / `WEB_DAILY_CAP`).
+ */
+const TIINGO_HOURLY_CAP = 40;
+const TIINGO_DAILY_CAP = 800;
+
 export interface HoldingView {
   symbol: string;
   name: string;
@@ -261,6 +270,17 @@ export interface OverviewView {
    */
   dailyCreditsUsed: number | null;
   dailyCreditLimit: number;
+  /**
+   * Tiingo fallback budget used so far — hourly and daily — and the caps, or
+   * null when the Tiingo fallback isn't configured / hasn't been used. Populated
+   * by the app shell after the model is built (it owns the Tiingo credit log),
+   * mirroring the Twelve Data line above so the user can see the secondary
+   * provider's usage against its 40/hr · 800/day self-cap. See `tiingo-gate.ts`.
+   */
+  tiingoHourUsed: number | null;
+  tiingoHourLimit: number;
+  tiingoDayUsed: number | null;
+  tiingoDayLimit: number;
 }
 
 /** Portfolio allocation by asset class (holdings only, excludes cash). */
@@ -1208,6 +1228,10 @@ export function buildDashboard(
     lastDataPullAt: null,
     dailyCreditsUsed: null,
     dailyCreditLimit: FREE_TIER_CREDITS_PER_DAY,
+    tiingoHourUsed: null,
+    tiingoHourLimit: TIINGO_HOURLY_CAP,
+    tiingoDayUsed: null,
+    tiingoDayLimit: TIINGO_DAILY_CAP,
     totalValueEur,
     cashValueEur,
     totalCostBasisEur,

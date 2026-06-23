@@ -47,6 +47,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   legacy `quoteCacheMinutes` / `autoRefreshMinutes` fold into `updateMinutes`; the
   old storage keys are retired on the first save, so existing installs upgrade
   with no data loss.
+## [3.14.0] — 2026-06-23
+
+### Added
+
+- **Tiingo secondary-provider fallback on the web companion.** Twelve Data
+  remains the web primary; when it leaves a US ticker missing/stale (including an
+  upstream data-quality gap like the FSKAX incident) or its free-tier budget is
+  spent, the app now falls back to **Tiingo** for that symbol, reached through the
+  existing `web/proxy/` Cloudflare Worker on a new, equally-pinned `…/price`
+  route. The Worker injects a `TIINGO_TOKEN` secret server-side, so the browser
+  stays Tiingo-keyless. Tiingo self-caps at **40 calls/hour · 800/day** (its 80 %
+  share of the shared account, reset at midnight US/Eastern), tracked separately
+  from the Twelve Data budget. NAV-priced funds use a **peer-confirmation +
+  canary** path so a late evening NAV cycle costs at most one probe before
+  fetching confirmed laggards. A discreet caption notes when a price came via the
+  fallback, and the Overview footer shows the **Tiingo hourly/daily usage** beside
+  the existing Twelve Data budget line. A startup quick-refresh uses the
+  (per-minute-uncapped) fallback to repopulate fast when prices are badly
+  outdated, throttled to ~once/hour. An optional **Settings → Price proxy URL**
+  override is provided; by default it is auto-derived from the blob Worker origin.
+  Deploy once with `wrangler secret put TIINGO_TOKEN` (see `web/proxy/README.md`).
 
 ## [3.13.2] — 2026-06-23
 

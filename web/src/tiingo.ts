@@ -1,0 +1,141 @@
+/**
+ * Tiingo secondary-provider tap for the browser companion.
+ *
+ * Twelve Data is the web primary; Tiingo engages only as a smart, budgeted
+ * fallback (see `docs/tiingo_fallback_plan.md` and `tiingo-gate.ts`). Tiingo's
+ * API is not CORS-readable from a browser and its token must stay secret, so all
+ * requests go through the `web/proxy/` Cloudflare Worker `/price` route, which
+ * injects the `TIINGO_TOKEN` server-side. The browser stays Tiingo-keyless.
+ *
+ * Only the **IEX** endpoint is used here: it returns a live intraday mark for
+ * stocks/ETFs (`tngoLast` + `prevClose` + an ET `timestamp`) and, gracefully,
+ * the most recent NAV for a mutual fund. Tiingo covers **US** tickers only;
+ * unknown/non-US symbols simply come back absent (no error), which the caller
+ * treats as "no Tiingo fallback available".
+ */
+
+import { Decimal } from "./decimal-config";
+import { PriceError, type FetchLike, type Quote } from "./prices";
+
+/** Parse a JSON number/string into a finite Decimal, or null. */
+function parseDecimal(value: unknown): Decimal | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  try {
+    const d = new Decimal(value);
+    return d.isFinite() ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The ET (America/New_York) calendar date (`YYYY-MM-DD`) of an epoch — the
+ * trading/NAV day a Tiingo mark belongs to, evaluated on the exchange clock so a
+ * late-evening UTC timestamp doesn't roll a US session date forward.
+ */
+function etDate(epochMs: number): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(epochMs));
+  const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+/** Parse a Tiingo IEX `timestamp` (ISO-8601) into epoch ms, or null. */
+function parseTimestamp(raw: unknown): number | null {
+  if (typeof raw !== "string" || raw.length === 0) return null;
+  const t = Date.parse(raw);
+  return Number.isFinite(t) ? t : null;
+}
+
+/** Build a {@link Quote} from one IEX row, or null when unusable. */
+function quoteFromIexRow(row: Record<string, unknown>, navSymbols?: ReadonlySet<string>): Quote | null {
+  const ticker = typeof row.ticker === "string" ? row.ticker.toUpperCase() : null;
+  if (!ticker) return null;
+  const price = parseDecimal(row.tngoLast) ?? parseDecimal(row.last) ?? parseDecimal(row.prevClose);
+  if (price === null) return null;
+  const isNav = navSymbols?.has(ticker) ?? false;
+  const ts = parseTimestamp(row.timestamp ?? row.lastSaleTimeStamp ?? row.quoteTimestamp);
+  const valueDate = ts !== null ? etDate(ts) : null;
+  return {
+    symbol: ticker,
+    price,
+    previousClose: parseDecimal(row.prevClose),
+    // Tiingo IEX covers US tickers; their marks are USD.
+    currency: "USD",
+    at: null,
+    // A fund's once-a-day NAV has no intraday strike time, so the UI dates it by
+    // its value-date rather than a faux-live clock; an equity keeps its real tick.
+    priceTime: isNav ? null : ts,
+    valueDate,
+    marketOpen: null,
+  };
+}
+
+/** Tunables for {@link fetchTiingoQuotes} (all optional). */
+export interface FetchTiingoOptions {
+  fetchImpl?: FetchLike;
+  /** Symbols that are NAV-priced funds — marked as settled (no live strike time). */
+  navSymbols?: ReadonlySet<string>;
+}
+
+/**
+ * Fetch quotes for `symbols` from the Tiingo IEX endpoint via the `/price`
+ * Worker proxy at `proxyUrl`. One request covers the whole batch (comma-joined).
+ * Symbols Tiingo doesn't know are simply absent from the result (no throw), so
+ * one bad/non-US ticker never blocks the rest of the portfolio.
+ *
+ * Throws a {@link PriceError} only for a transport/transport-level failure (the
+ * proxy unreachable, a non-OK HTTP status, or a malformed body), classified so
+ * the caller can decide whether to retry or simply carry on with what it has.
+ */
+export async function fetchTiingoQuotes(
+  symbols: string[],
+  proxyUrl: string,
+  options: FetchTiingoOptions = {},
+): Promise<Map<string, Quote>> {
+  const { fetchImpl = fetch, navSymbols } = options;
+  const result = new Map<string, Quote>();
+  const unique = [...new Set(symbols.map((s) => s.trim()).filter((s) => s.length > 0))];
+  if (unique.length === 0 || !proxyUrl) return result;
+
+  const url = new URL(proxyUrl);
+  url.searchParams.set("tickers", unique.join(","));
+
+  let resp: Response;
+  try {
+    resp = await fetchImpl(url.toString());
+  } catch (err) {
+    throw new PriceError(`could not reach the Tiingo fallback: ${(err as Error).message}`, {
+      retryable: true,
+    });
+  }
+  if (!resp.ok) {
+    throw new PriceError(`Tiingo fallback returned HTTP ${resp.status}`, {
+      status: resp.status,
+      retryable: resp.status === 429 || resp.status >= 500,
+    });
+  }
+
+  let body: unknown;
+  try {
+    body = await resp.json();
+  } catch (err) {
+    throw new PriceError(`malformed Tiingo fallback payload: ${(err as Error).message}`, {
+      retryable: false,
+    });
+  }
+  // The proxy relays a Tiingo error object on a bad upstream; treat it as "no
+  // data" rather than throwing, so the caller keeps its cached/last-known values.
+  if (!Array.isArray(body)) return result;
+
+  for (const row of body) {
+    if (!row || typeof row !== "object") continue;
+    const quote = quoteFromIexRow(row as Record<string, unknown>, navSymbols);
+    if (quote) result.set(quote.symbol, quote);
+  }
+  return result;
+}

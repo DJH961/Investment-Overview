@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   resolveBlobUrl,
   resolveMetaUrl,
+  resolvePriceProxyUrl,
   parseUpdateMinutes,
   serializeConfig,
   parseConfigPacket,
@@ -19,11 +20,33 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     apiKey: "k",
     blobUrl: "https://proxy.example/portfolio.enc",
+    priceProxyUrl: "",
     updateMinutes: 15,
     autoLockMinutes: 5,
     ...overrides,
   };
 }
+
+describe("resolvePriceProxyUrl", () => {
+  it("derives the /price route from an explicit blob Worker origin", () => {
+    expect(resolvePriceProxyUrl(config({ blobUrl: "https://worker.example.dev/" }))).toBe(
+      "https://worker.example.dev/price",
+    );
+    expect(resolvePriceProxyUrl(config({ blobUrl: "https://worker.example.dev/blob?x=1" }))).toBe(
+      "https://worker.example.dev/price",
+    );
+  });
+
+  it("prefers an explicit priceProxyUrl override", () => {
+    expect(
+      resolvePriceProxyUrl(config({ blobUrl: "https://worker.example.dev/", priceProxyUrl: "https://other/price" })),
+    ).toBe("https://other/price");
+  });
+
+  it("returns null without a Worker origin (no data source configured)", () => {
+    expect(resolvePriceProxyUrl(config({ blobUrl: "" }))).toBeNull();
+  });
+});
 
 describe("resolveBlobUrl", () => {
   it("returns the configured data-source URL", () => {

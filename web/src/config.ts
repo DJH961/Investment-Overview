@@ -24,6 +24,7 @@ import { createSecretBox, looksEncrypted } from "./secret-store";
 const KEYS = {
   apiKey: "iv.web.twelvedata_api_key",
   blobUrl: "iv.web.blob_url",
+  priceProxyUrl: "iv.web.price_proxy_url",
   updateMinutes: "iv.web.update_minutes",
   autoLockMinutes: "iv.web.auto_lock_minutes",
 } as const;
@@ -99,6 +100,14 @@ export interface AppConfig {
    */
   blobUrl: string;
   /**
+   * Advanced override for the Tiingo price-fallback proxy (`web/proxy/` Worker
+   * `/price` route). Empty by default — it is then derived from the blob Worker
+   * origin via {@link resolvePriceProxyUrl}. Set it only when the price proxy
+   * lives somewhere the derivation can't guess. The browser stays Tiingo-keyless;
+   * the token lives only in the Worker.
+   */
+  priceProxyUrl: string;
+  /**
    * Price-refresh interval in minutes. Drives both how often the background
    * refresh wakes and how stale a cached quote may get before it is re-pulled.
    */
@@ -139,6 +148,7 @@ export function defaultConfig(): AppConfig {
   return {
     apiKey: "",
     blobUrl: "",
+    priceProxyUrl: "",
     updateMinutes: DEFAULT_UPDATE_MINUTES,
     autoLockMinutes: DEFAULT_AUTO_LOCK_MINUTES,
   };
@@ -204,6 +214,7 @@ export async function loadConfig(): Promise<AppConfig> {
   return {
     apiKey: await loadApiKey(),
     blobUrl: read(KEYS.blobUrl) || migrateLegacyBlobUrl(),
+    priceProxyUrl: read(KEYS.priceProxyUrl),
     updateMinutes: parseUpdateMinutes(read(KEYS.updateMinutes) || readLegacyUpdateMinutes()),
     autoLockMinutes: parseAutoLockMinutes(read(KEYS.autoLockMinutes)),
   };
@@ -212,6 +223,7 @@ export async function loadConfig(): Promise<AppConfig> {
 export async function saveConfig(config: AppConfig): Promise<void> {
   await saveApiKey(config.apiKey.trim());
   write(KEYS.blobUrl, config.blobUrl.trim());
+  write(KEYS.priceProxyUrl, config.priceProxyUrl.trim());
   write(KEYS.updateMinutes, String(config.updateMinutes));
   write(KEYS.autoLockMinutes, String(config.autoLockMinutes));
   // Retire the legacy keys now that their data lives in the simplified shape, so
@@ -262,6 +274,29 @@ export function resolveMetaUrl(config: AppConfig): string | null {
     return blob.slice(0, blob.length - ASSET_NAME.length) + META_ASSET_NAME;
   }
   return blob + (blob.includes("?") ? "&" : "?") + "meta";
+}
+
+/**
+ * Resolve the URL of the Tiingo price-fallback proxy (the `web/proxy/` Worker
+ * `/price` route). Precedence:
+ *
+ *  1. an explicit {@link AppConfig.priceProxyUrl} override, if set;
+ *  2. otherwise *derive* it from the data-source URL's origin — `<origin>/price`
+ *     — so wiring up the blob Worker is enough to get the price fallback too.
+ *
+ * Returns `null` when there is no data source to derive from (and no explicit
+ * price proxy). The Tiingo fallback is then simply unavailable — the app keeps
+ * working on Twelve Data alone. The browser never holds a Tiingo token; it lives
+ * only in the Worker, so this URL is the *only* thing the client needs.
+ */
+export function resolvePriceProxyUrl(config: AppConfig): string | null {
+  if (config.priceProxyUrl) return config.priceProxyUrl;
+  if (!config.blobUrl) return null;
+  try {
+    return new URL("/price", config.blobUrl).toString();
+  } catch {
+    return null;
+  }
 }
 
 // --- Portable config packet (export / import) --------------------------------
@@ -326,6 +361,7 @@ export function parseConfigPacket(text: string): AppConfig {
   return {
     apiKey,
     blobUrl,
+    priceProxyUrl: "",
     updateMinutes: parseUpdateMinutes(String(obj.updateMinutes ?? "")),
     autoLockMinutes: parseAutoLockMinutes(String(obj.autoLockMinutes ?? "")),
   };
