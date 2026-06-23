@@ -178,12 +178,27 @@ def apply_desktop_fallback(
     state_repo.save(session, state)
 
     if outcome.switched:
+        joined = ", ".join(outcome.used_symbols)
         provider_status.record(
             "tiingo",
             "ok",
-            f"yfinance gap covered via Tiingo: {', '.join(outcome.used_symbols)}",
+            f"yfinance gap covered via Tiingo: {joined}",
         )
         fetch_report.record("tiingo", outcome.used_symbols)
-        log.info("Tiingo fallback recovered %s", ", ".join(outcome.used_symbols))
+        # Loud desktop surface: a warning-level runtime notice pops a toast so the
+        # user knows the primary feed failed and Tiingo stepped in (deduped, so a
+        # repeatedly-failing tick won't spam).
+        provider_status_runtime_warning(joined)
+        log.info("Tiingo fallback recovered %s", joined)
 
     return result, outcome
+
+
+def provider_status_runtime_warning(symbols: str) -> None:
+    """Raise the loud desktop notice that yfinance fell back to Tiingo."""
+    from investment_dashboard.services import runtime_status  # noqa: PLC0415
+
+    runtime_status.record_warning(
+        "Price provider fallback",
+        f"yfinance couldn't deliver fresh data, so Tiingo covered: {symbols}.",
+    )

@@ -1413,8 +1413,8 @@ def _format_relative(at: datetime, *, tz: tzinfo | None = None) -> str:
 
 
 def _render_connectivity_section() -> None:  # pragma: no cover - UI
-    """Show the latest yfinance / Frankfurter call outcome + recent log."""
-    known_providers = ("yfinance", "frankfurter")
+    """Show the latest yfinance / Frankfurter / Tiingo call outcome + recent log."""
+    known_providers = ("yfinance", "frankfurter", "tiingo")
     latest = provider_status.all_latest()
     fetched = fetch_report.all_latest()
     with session_scope() as session:
@@ -1451,6 +1451,7 @@ def _render_connectivity_section() -> None:  # pragma: no cover - UI
                 "No provider calls recorded yet. Trigger 'Refresh prices' or "
                 "'Refresh FX rates' above, or wait for the next background tick."
             ).classes("text-caption opacity-70")
+            _render_tiingo_fallback_controls()
             return
 
         with (
@@ -1466,6 +1467,29 @@ def _render_connectivity_section() -> None:  # pragma: no cover - UI
                     )
                     ui.label(ev.provider).classes("text-caption font-mono")
                     ui.label(ev.message).classes("text-caption")
+
+        _render_tiingo_fallback_controls()
+
+
+def _render_tiingo_fallback_controls() -> None:  # pragma: no cover - UI
+    """Token entry for the Tiingo secondary-provider fallback (keychain-stored)."""
+    with ui.expansion("Tiingo fallback (secondary price source)", icon="backup").classes("w-full"):
+        ui.label(
+            "When yfinance can't deliver fresh prices or NAVs, the dashboard "
+            "quietly falls back to Tiingo within heavy rate-limit guards. Paste "
+            "your Tiingo API token below; it's stored in the OS keychain, never "
+            "in the repo or a config file. Leave blank to disable the fallback."
+        ).classes("text-caption opacity-70").style("max-width:34rem")
+        tiingo_in = (
+            ui.input("Tiingo API token")
+            .props("outlined dense type=password autocomplete=off")
+            .classes("w-full max-w-md")
+        )
+        ui.button(
+            "Save token",
+            icon="vpn_key",
+            on_click=lambda: _save_tiingo_token(tiingo_in.value or ""),
+        ).props("flat no-caps")
 
 
 def _live_web_config(session) -> dict[str, str | None]:  # pragma: no cover - UI
@@ -1517,6 +1541,25 @@ def _save_publish_token(token: str) -> None:  # pragma: no cover - UI
         return
     if store_publish_token_in_keyring(token.strip()):
         ui.notify("GitHub token saved to the OS keychain.", type="positive")
+    else:
+        ui.notify(
+            "Could not reach the OS keychain. Check that a keyring backend "
+            "is available for your operating system.",
+            type="negative",
+        )
+
+
+def _save_tiingo_token(token: str) -> None:  # pragma: no cover - UI
+    """Store the Tiingo fallback API token in the OS keychain."""
+    from investment_dashboard.storage.encryption import (  # noqa: PLC0415
+        store_tiingo_token_in_keyring,
+    )
+
+    if not token.strip():
+        ui.notify("Paste a Tiingo token first.", type="warning")
+        return
+    if store_tiingo_token_in_keyring(token.strip()):
+        ui.notify("Tiingo token saved to the OS keychain.", type="positive")
     else:
         ui.notify(
             "Could not reach the OS keychain. Check that a keyring backend "

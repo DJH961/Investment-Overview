@@ -28,6 +28,9 @@ def _utc(dt: datetime) -> datetime:
 @pytest.fixture(autouse=True)
 def _reset_status() -> None:
     provider_status.reset()
+    from investment_dashboard.services import runtime_status
+
+    runtime_status.reset()
 
 
 def _due_etf(session: Session, symbol: str = "VTI") -> int:
@@ -113,6 +116,13 @@ def test_yfinance_failure_recovers_via_tiingo(
     assert latest == _TODAY
     # And the switch was recorded for the popup.
     assert provider_status.get_status("tiingo") is not None
+    # The loud desktop runtime warning fired.
+    from investment_dashboard.services import runtime_status
+
+    note = runtime_status.latest()
+    assert note is not None
+    assert note.is_warning
+    assert "Tiingo" in note.message
 
 
 def test_fallback_error_is_swallowed(
