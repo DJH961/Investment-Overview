@@ -5,6 +5,7 @@ import {
   buildCoverageFacts,
   liveRefreshProgress,
   manualRefreshSummary,
+  refreshTickAction,
   summarizeCoverage,
   type CoverageFacts,
 } from "../src/app";
@@ -178,6 +179,47 @@ describe("manualRefreshSummary", () => {
 });
 
 
+
+describe("refreshTickAction", () => {
+  it("stops a superseded session outright (no re-arm, no run)", () => {
+    expect(
+      refreshTickAction({ sessionMatches: false, kind: "auto", hidden: false, kickoff: false }),
+    ).toBe("stop");
+    // Even a kickoff for a stale session must not run.
+    expect(
+      refreshTickAction({ sessionMatches: false, kind: "auto", hidden: true, kickoff: true }),
+    ).toBe("stop");
+  });
+
+  it("defers (skips the network but keeps the loop alive) for a hidden auto tick", () => {
+    expect(
+      refreshTickAction({ sessionMatches: true, kind: "auto", hidden: true, kickoff: false }),
+    ).toBe("defer");
+  });
+
+  it("runs an ordinary auto tick while the tab is visible", () => {
+    expect(
+      refreshTickAction({ sessionMatches: true, kind: "auto", hidden: false, kickoff: false }),
+    ).toBe("run");
+  });
+
+  it("always runs the post-unlock kickoff, even when the tab reports hidden", () => {
+    // The fingerprint-unlock bug: a momentarily-hidden tab must not drop the
+    // startup refresh, or no price update ever fires until a manual tap.
+    expect(
+      refreshTickAction({ sessionMatches: true, kind: "auto", hidden: true, kickoff: true }),
+    ).toBe("run");
+  });
+
+  it("never skips a manual tap, hidden or not", () => {
+    expect(
+      refreshTickAction({ sessionMatches: true, kind: "manual", hidden: true, kickoff: false }),
+    ).toBe("run");
+    expect(
+      refreshTickAction({ sessionMatches: true, kind: "manual", hidden: false, kickoff: false }),
+    ).toBe("run");
+  });
+});
 
 describe("liveRefreshProgress", () => {
   it("counts freshly-fetched and cache-fresh symbols as live out of the total", () => {

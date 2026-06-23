@@ -11,7 +11,7 @@ import { Decimal } from "../src/decimal-config";
 import { PriceError, type Quote } from "../src/prices";
 import { latestSettledSessionDate } from "../src/market-hours";
 import { runTiingoFallback, shouldQuickRefresh, planStartupRefresh } from "../src/tiingo-fallback";
-import { tiingoCreditsSpentToday, readTiingoCreditLog, type StorageLike } from "../src/cache";
+import { tiingoCreditsSpentToday, readTiingoCreditLog, recordTiingoCredits, type StorageLike } from "../src/cache";
 
 function memStorage(): StorageLike {
   const map = new Map<string, string>();
@@ -221,6 +221,45 @@ describe("runTiingoFallback", () => {
     expect(tiingoCreditsSpentToday(readTiingoCreditLog(NOW, undefined, storage), NOW)).toBe(2);
     // The reported budget still shows the true (unreserved) caps.
     expect(out.budget).toEqual({ hourUsed: 2, hourLimit: 40, dayUsed: 2, dayLimit: 800 });
+  });
+
+  it("lets an actual fallback (no reserve) spend the final credits the quick-start holds back", async () => {
+    // Pre-spend 35 of the 40/hr cap so only the final 5 Tiingo credits remain.
+    // The heavily-outdated startup quick-refresh reserves those 5 (fetches none);
+    // a true gap-fill fallback — the default, reserveCredits 0 — may consume them.
+    const symbols = ["AAA", "BBB", "CCC", "DDD", "EEE"];
+    const rows = symbols.map((s) => iexRow(s, 100, `${EXPECTED}T20:00:00Z`));
+
+    const reserved = memStorage();
+    recordTiingoCredits(35, NOW, reserved);
+    const quickStart = await runTiingoFallback({
+      symbols,
+      navSymbols: new Set(),
+      quotes: new Map<string, Quote>(),
+      report: emptyReport(symbols),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage: reserved,
+      fetchImpl: stubFetch(rows),
+      reserveCredits: 5, // STARTUP_TIINGO_RESERVE — the "heavily outdated quick start".
+    });
+    expect(quickStart.tiingoSymbols).toEqual([]);
+
+    const open = memStorage();
+    recordTiingoCredits(35, NOW, open);
+    const fallback = await runTiingoFallback({
+      symbols,
+      navSymbols: new Set(),
+      quotes: new Map<string, Quote>(),
+      report: emptyReport(symbols),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage: open,
+      fetchImpl: stubFetch(rows),
+      // reserveCredits omitted ⇒ 0: an actual fallback may spend the final 5.
+    });
+    expect(fallback.tiingoSymbols).toEqual(symbols);
+    expect(tiingoCreditsSpentToday(readTiingoCreditLog(NOW, undefined, open), NOW)).toBe(40);
   });
 });
 

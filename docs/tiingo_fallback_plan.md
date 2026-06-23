@@ -194,7 +194,13 @@ Persisted stamps:
   it never spends the last 5 Tiingo credits (nor the full cap), never fires for a
   small (≤8) outdated set the Twelve Data primary clears within a minute, splits a
   set too large for the spare budget across both providers, and forces the primary
-  when no spare Tiingo budget remains.
+  when no spare Tiingo budget remains. The 5‑credit reserve is held back **only**
+  by this heavily‑outdated quick‑start: an actual gap‑fill fallback later in the
+  session — including the Settings "Try the backup data provider now" manual pull
+  and the over‑quota fallback — runs with no reserve, so it *may* spend those last
+  credits. The post‑unlock kickoff always runs even if the tab momentarily reports
+  hidden (common right after a fingerprint unlock), and a skipped hidden auto tick
+  re‑arms the next one, so the auto‑refresh loop can never be silently abandoned.
 - **Tiingo budget buckets** — ET hour/day counters persist so reopening can't
   silently reset them.
 

@@ -144,7 +144,40 @@ const FORCE_REFRESH_MIN_CREDIT_FRACTION = 0.1;
  * pill) so the user can tell their tap registered *and* that the automatic
  * refresh keeps working on its own.
  */
-type RefreshKind = "manual" | "auto";
+export type RefreshKind = "manual" | "auto";
+
+/** What a scheduled refresh tick should do — see {@link refreshTickAction}. */
+export type RefreshTickAction = "run" | "defer" | "stop";
+
+/**
+ * Decide what one scheduled refresh tick should do, kept pure so the loop's
+ * survival rules are testable in isolation:
+ *
+ *  - **stop** — the session was superseded (a lock, or a newer unlock); abandon
+ *    this stale tick entirely.
+ *  - **defer** — an automatic background tick while the tab is hidden: skip the
+ *    network this round to save credits, but the caller MUST still re-arm the
+ *    next tick so the auto-refresh loop is never permanently abandoned.
+ *  - **run** — do the live refresh now.
+ *
+ * The post-unlock **kickoff** always runs, even when the tab reports hidden: a
+ * fingerprint unlock on mobile frequently (and sometimes stickily) flips the
+ * page to `hidden` for a beat, which used to drop the one startup refresh *and*,
+ * because the loop is only re-armed after a completed round, leave auto-refresh
+ * un-armed forever — so no price update fired at all until a manual tap. The
+ * kickoff is user-initiated (they are actively waiting on fresh prices), so it
+ * bypasses the hidden skip.
+ */
+export function refreshTickAction(args: {
+  sessionMatches: boolean;
+  kind: RefreshKind;
+  hidden: boolean;
+  kickoff: boolean;
+}): RefreshTickAction {
+  if (!args.sessionMatches) return "stop";
+  if (args.kind === "auto" && !args.kickoff && args.hidden) return "defer";
+  return "run";
+}
 
 /**
  * NAV-priced asset classes that are real, tickered funds and so can be priced
@@ -217,6 +250,13 @@ export class App {
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   /** Installed visibility listener, kept so it can be removed on lock. */
   private visibilityHandler: (() => void) | null = null;
+  /**
+   * Installed `pageshow` listener, kept so it can be removed on lock. Some mobile
+   * browsers restore a backgrounded PWA from the bfcache (or after a fingerprint
+   * unlock) without a reliable `visibilitychange`, so this is a second, belt-and
+   * -braces trigger to resume the refresh the moment the app is shown again.
+   */
+  private pageShowHandler: ((event: PageTransitionEvent) => void) | null = null;
   /** Guards against overlapping price refreshes. */
   private refreshing = false;
   /**
@@ -901,7 +941,7 @@ export class App {
     // small outdated set (the Twelve Data primary clears ≤8 within a minute); a
     // set too big for the spare Tiingo budget is split across both providers, and
     // a fully-spent (or unconfigured) Tiingo budget falls back to forcing Twelve.
-    let quickOpts: { force?: boolean; viaTiingo?: boolean; tiingoReserve?: number } = {};
+    let quickOpts: { force?: boolean; viaTiingo?: boolean; tiingoReserve?: number; kickoff?: boolean } = {};
     if (quick) {
       const tiingoAvailable = resolvePriceProxyUrl(this.state.config) !== null;
       const plan = planStartupRefresh({
@@ -923,7 +963,11 @@ export class App {
         quickOpts = { force: true };
       }
     }
-    void this.runScheduledRefresh(session, "auto", quickOpts);
+    // The post-unlock kickoff: always run this first live refresh, even if the
+    // tab momentarily reports hidden (common right after a fingerprint unlock).
+    // This both surfaces fresh prices immediately and arms the auto-refresh loop
+    // via the scheduleNext at the end of the round.
+    void this.runScheduledRefresh(session, "auto", { ...quickOpts, kickoff: true });
     // 5. Arm the idle auto-lock so an unattended session locks itself.
     this.installAutoLock();
   }
@@ -1536,12 +1580,25 @@ export class App {
   private async runScheduledRefresh(
     session: number,
     kind: RefreshKind = "auto",
-    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean; tiingoReserve?: number } = {},
+    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean; tiingoReserve?: number; kickoff?: boolean } = {},
   ): Promise<void> {
-    if (session !== this.sessionId) return;
-    // A manual tap should refresh even when the tab is technically "hidden"
-    // (e.g. mid-transition); only the automatic scheduler skips hidden tabs.
-    if (kind === "auto" && typeof document !== "undefined" && document.hidden) return;
+    // A manual tap (and the post-unlock kickoff) refreshes even when the tab is
+    // technically "hidden" (e.g. mid-transition right after a fingerprint
+    // unlock); only an ordinary automatic tick skips a hidden tab. Crucially a
+    // hidden skip still re-arms the next tick — otherwise a single dropped tick
+    // would silently kill the whole auto-refresh loop and no price update would
+    // ever fire until a manual tap (see {@link refreshTickAction}).
+    const action = refreshTickAction({
+      sessionMatches: session === this.sessionId,
+      kind,
+      hidden: typeof document !== "undefined" && document.hidden,
+      kickoff: opts.kickoff ?? false,
+    });
+    if (action === "stop") return;
+    if (action === "defer") {
+      this.scheduleNext(session, this.state.config.updateMinutes * 60 * 1000);
+      return;
+    }
     if (this.refreshing) return;
     this.refreshing = true;
     this.setUpdating(true, kind);
@@ -1666,6 +1723,21 @@ export class App {
     };
     document.addEventListener("visibilitychange", handler);
     this.visibilityHandler = handler;
+    // Belt-and-braces: a `pageshow` (incl. a bfcache restore) also resumes the
+    // refresh. On some mobile browsers reopening a backgrounded PWA — or coming
+    // back from the platform fingerprint sheet — doesn't fire a dependable
+    // `visibilitychange`, which used to leave the dashboard sitting on stale
+    // prices with no update. `runScheduledRefresh` guards against overlap, so a
+    // duplicate trigger is harmless.
+    if (typeof window !== "undefined") {
+      const onShow = (): void => {
+        if (session !== this.sessionId) return;
+        if (typeof document !== "undefined" && document.hidden) return;
+        void this.runScheduledRefresh(session);
+      };
+      window.addEventListener("pageshow", onShow);
+      this.pageShowHandler = onShow;
+    }
   }
 
   private removeVisibilityRefresh(): void {
@@ -1673,6 +1745,10 @@ export class App {
       document.removeEventListener("visibilitychange", this.visibilityHandler);
     }
     this.visibilityHandler = null;
+    if (this.pageShowHandler && typeof window !== "undefined") {
+      window.removeEventListener("pageshow", this.pageShowHandler);
+    }
+    this.pageShowHandler = null;
   }
 
   /**
