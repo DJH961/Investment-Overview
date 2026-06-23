@@ -5,7 +5,7 @@
 import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 
-import { fetchTiingoQuotes } from "../src/tiingo";
+import { fetchTiingoEurUsd, fetchTiingoQuotes } from "../src/tiingo";
 import { PriceError, type FetchLike } from "../src/prices";
 
 const PROXY = "https://worker.example.dev/price";
@@ -101,5 +101,48 @@ describe("fetchTiingoQuotes", () => {
       throw new Error("network down");
     };
     await expect(fetchTiingoQuotes(["AAPL"], PROXY, { fetchImpl })).rejects.toBeInstanceOf(PriceError);
+  });
+});
+
+describe("fetchTiingoEurUsd", () => {
+  it("requests the proxy with fx=eurusd and returns the mid directly", async () => {
+    let calledUrl = "";
+    const fetchImpl: FetchLike = async (url) => {
+      calledUrl = String(url);
+      return jsonResponse([
+        { ticker: "eurusd", bidPrice: 1.13818, askPrice: 1.13819, midPrice: 1.138185, quoteTimestamp: "2026-06-23T16:06:52.450Z" },
+      ]);
+    };
+    const reading = await fetchTiingoEurUsd(PROXY, { fetchImpl });
+    expect(calledUrl).toContain("fx=eurusd");
+    expect(reading?.now.toString()).toBe("1.138185");
+    expect(reading?.at).toBe(Date.parse("2026-06-23T16:06:52.450Z"));
+  });
+
+  it("falls back to the bid/ask midpoint when midPrice is absent", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse([{ ticker: "eurusd", bidPrice: 1.1, askPrice: 1.2 }]);
+    const reading = await fetchTiingoEurUsd(PROXY, { fetchImpl });
+    expect(reading?.now.toString()).toBe("1.15");
+  });
+
+  it("returns null for an empty array (unquoted/weekend pair)", async () => {
+    const fetchImpl: FetchLike = async () => jsonResponse([]);
+    expect(await fetchTiingoEurUsd(PROXY, { fetchImpl })).toBeNull();
+  });
+
+  it("throws when the proxy returns a non-array (un-redeployed Worker)", async () => {
+    const fetchImpl: FetchLike = async () => jsonResponse({ status: "error" });
+    await expect(fetchTiingoEurUsd(PROXY, { fetchImpl })).rejects.toBeInstanceOf(PriceError);
+  });
+
+  it("is a no-op without a proxy URL", async () => {
+    let called = false;
+    const fetchImpl: FetchLike = async () => {
+      called = true;
+      return jsonResponse([]);
+    };
+    expect(await fetchTiingoEurUsd("", { fetchImpl })).toBeNull();
+    expect(called).toBe(false);
   });
 });

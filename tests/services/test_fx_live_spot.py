@@ -106,3 +106,116 @@ def test_refresh_live_spot_only_sources_usd() -> None:
 
     assert fx_service.refresh_live_spot(quote="DKK", fetcher=fake_fetch) is None
     assert called is False
+
+
+# --- Tiingo secondary live-FX provider -------------------------------------
+
+
+def _tiingo_fx(rate: str, value_date: date | None) -> object:
+    from investment_dashboard.adapters.tiingo_client import TiingoFxQuote
+
+    return TiingoFxQuote(
+        base="EUR",
+        quote="USD",
+        rate=Decimal(rate),
+        as_of=None,
+        value_date=value_date,
+    )
+
+
+def test_refresh_live_spot_falls_back_to_tiingo_when_yfinance_stale() -> None:
+    yesterday = date.today() - timedelta(days=1)
+
+    def stale_yf() -> PriceRecord:
+        return PriceRecord(symbol="EURUSD=X", date=yesterday, close=Decimal("1.07"))
+
+    rate = fx_service.refresh_live_spot(
+        fetcher=stale_yf,
+        tiingo_fetcher=lambda: _tiingo_fx("1.1382", date.today()),
+        tiingo_token="tok",
+        charge_budget=lambda: True,
+    )
+    assert rate == Decimal("1.1382")
+    spot = fx_service.get_live_spot("USD")
+    assert spot is not None
+    assert spot.rate == Decimal("1.1382")
+    assert spot.observed_on == date.today()
+
+
+def test_refresh_live_spot_prefers_yfinance_over_tiingo() -> None:
+    tiingo_called = False
+
+    def tiingo() -> object:
+        nonlocal tiingo_called
+        tiingo_called = True
+        return _tiingo_fx("9.99", date.today())
+
+    rate = fx_service.refresh_live_spot(
+        fetcher=lambda: PriceRecord(symbol="EURUSD=X", date=date.today(), close=Decimal("1.08")),
+        tiingo_fetcher=tiingo,
+        tiingo_token="tok",
+        charge_budget=lambda: True,
+    )
+    assert rate == Decimal("1.08")
+    assert tiingo_called is False  # primary succeeded; backup never consulted
+
+
+def test_refresh_live_spot_skips_tiingo_without_token() -> None:
+    called = False
+
+    def tiingo() -> object:
+        nonlocal called
+        called = True
+        return _tiingo_fx("1.13", date.today())
+
+    rate = fx_service.refresh_live_spot(
+        fetcher=lambda: None,
+        tiingo_fetcher=tiingo,
+        tiingo_token="",  # no token configured ⇒ no backup
+        charge_budget=lambda: True,
+    )
+    assert rate is None
+    assert called is False
+
+
+def test_refresh_live_spot_skips_tiingo_when_budget_exhausted() -> None:
+    called = False
+
+    def tiingo() -> object:
+        nonlocal called
+        called = True
+        return _tiingo_fx("1.13", date.today())
+
+    rate = fx_service.refresh_live_spot(
+        fetcher=lambda: None,
+        tiingo_fetcher=tiingo,
+        tiingo_token="tok",
+        charge_budget=lambda: False,  # budget spent
+    )
+    assert rate is None
+    assert called is False
+
+
+def test_refresh_live_spot_rejects_stale_tiingo_reading() -> None:
+    yesterday = date.today() - timedelta(days=1)
+    rate = fx_service.refresh_live_spot(
+        fetcher=lambda: None,
+        tiingo_fetcher=lambda: _tiingo_fx("1.13", yesterday),
+        tiingo_token="tok",
+        charge_budget=lambda: True,
+    )
+    assert rate is None
+    assert fx_service.get_live_spot("USD") is None
+
+
+def test_refresh_live_spot_swallows_tiingo_errors() -> None:
+    def boom() -> object:
+        raise RuntimeError("tiingo down")
+
+    rate = fx_service.refresh_live_spot(
+        fetcher=lambda: None,
+        tiingo_fetcher=boom,
+        tiingo_token="tok",
+        charge_budget=lambda: True,
+    )
+    assert rate is None

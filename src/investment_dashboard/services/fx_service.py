@@ -91,14 +91,23 @@ def refresh_live_spot(
     quote: str = "USD",
     today: date | None = None,
     fetcher: object = None,
+    tiingo_fetcher: object = None,
+    tiingo_token: str | None = None,
+    charge_budget: object = None,
 ) -> Decimal | None:
-    """Fetch and store the live EUR→``quote`` spot from the keyless yfinance feed.
+    """Fetch and store the live EUR→``quote`` spot, primary then Tiingo backup.
 
-    Best-effort: returns the stored rate, or ``None`` when the feed is
-    unavailable or only offers a stale (pre-today) reading. Only EUR→USD is
-    sourced today; other quotes keep the ECB daily rate. ``fetcher`` is
-    injectable for tests (defaults to
-    :func:`yfinance_client.fetch_eur_usd_spot`).
+    The keyless yfinance ``EURUSD=X`` feed is the primary. When it is unavailable
+    or only offers a stale (pre-today) reading, **Tiingo** is tried as the
+    secondary live FX provider (mirroring the equity/NAV fallback): one budgeted
+    call to its FX top-of-book endpoint, gated so a sustained yfinance FX outage
+    can't burn the desktop Tiingo cap. Only fires when a Tiingo token is
+    configured; a vanilla install never touches Tiingo.
+
+    Best-effort: returns the stored rate, or ``None`` when neither provider offers
+    a fresh today-dated reading. Only EUR→USD is sourced today; other quotes keep
+    the ECB daily rate. ``fetcher`` (yfinance), ``tiingo_fetcher``,
+    ``tiingo_token`` and ``charge_budget`` are injectable for tests.
     """
     if quote.upper() != "USD":
         return None
@@ -112,17 +121,109 @@ def refresh_live_spot(
     try:
         record = fetcher()  # type: ignore[operator]
     except Exception as exc:  # pragma: no cover - network churn
-        log.warning("live EUR/USD fetch failed (%s); keeping ECB daily rate", exc)
-        return None
-    if record is None or record.close is None or record.close <= 0:
-        return None
+        log.warning("live EUR/USD fetch failed (%s); trying Tiingo FX backup", exc)
+        record = None
     # Only treat a reading dated *today* as a live overlay; an older close
     # (weekend/holiday, or before the FX market reopened) stays on the ECB
     # daily rate instead of masquerading as a live intraday mark.
-    if record.date != today:
+    if (
+        record is not None
+        and record.close is not None
+        and record.close > 0
+        and record.date == today
+    ):
+        set_live_spot(quote, record.close, observed_on=record.date)
+        return record.close
+    # Primary fell short (failed, unavailable, or only a stale reading) — engage
+    # the Tiingo secondary FX provider before conceding to the ECB daily rate.
+    return _refresh_live_spot_via_tiingo(
+        quote=quote,
+        today=today,
+        fetcher=tiingo_fetcher,
+        token=tiingo_token,
+        charge_budget=charge_budget,
+    )
+
+
+def _charge_desktop_tiingo_budget() -> bool:
+    """Reserve one desktop Tiingo call against the persisted ET-reset budget.
+
+    Returns ``True`` when a call may be spent (and charges it up-front, so a
+    failed call still counts and can't drive a retry storm), ``False`` when the
+    hourly/daily cap is exhausted. Best-effort: a persistence error logs and
+    permits the call rather than blocking FX on a DB hiccup.
+    """
+    try:
+        from datetime import UTC, datetime  # noqa: PLC0415
+
+        from investment_dashboard.db import cache_session_scope  # noqa: PLC0415
+        from investment_dashboard.repositories import tiingo_state_repo  # noqa: PLC0415
+
+        now_utc = datetime.now(tz=UTC).replace(tzinfo=None)
+        with cache_session_scope() as session:
+            state = tiingo_state_repo.load(session, now_utc)
+            if not state.budget().has_room():
+                return False
+            tiingo_state_repo.record_spend(state, 1)
+            tiingo_state_repo.save(session, state)
+        return True
+    except Exception:  # pragma: no cover - defensive: never block FX on DB issues
+        log.warning("Tiingo FX budget check failed; proceeding without gating", exc_info=True)
+        return True
+
+
+def _refresh_live_spot_via_tiingo(
+    *,
+    quote: str,
+    today: date,
+    fetcher: object,
+    token: str | None,
+    charge_budget: object,
+) -> Decimal | None:
+    """Try the Tiingo secondary live FX provider for EUR→``quote``.
+
+    Returns the stored rate on a fresh today-dated reading, else ``None`` (token
+    absent, budget exhausted, a transient failure, or a stale weekend/holiday
+    quote — all of which leave the ECB daily rate in place).
+    """
+    if token is None:
+        from investment_dashboard.services.prices_service import (  # noqa: PLC0415
+            _resolve_tiingo_token,
+        )
+
+        token = _resolve_tiingo_token()
+    if not token:
+        return None  # No Tiingo configured — vanilla install, no backup.
+
+    gate = charge_budget if charge_budget is not None else _charge_desktop_tiingo_budget
+    if not gate():  # type: ignore[operator]
+        log.info("Tiingo FX backup skipped: desktop Tiingo budget exhausted")
         return None
-    set_live_spot(quote, record.close, observed_on=record.date)
-    return record.close
+
+    if fetcher is None:
+        from investment_dashboard.adapters.tiingo_client import (  # noqa: PLC0415
+            fetch_fx_rate,
+        )
+
+        resolved_token = token
+
+        def fetcher() -> object:
+            return fetch_fx_rate(base="EUR", quote="USD", token=resolved_token)
+
+    try:
+        reading = fetcher()  # type: ignore[operator]
+    except Exception as exc:  # pragma: no cover - network churn
+        log.warning("Tiingo FX backup fetch failed (%s); keeping ECB daily rate", exc)
+        return None
+    if reading is None or reading.rate is None or reading.rate <= 0:
+        return None
+    # Reject a stale reading (weekend/holiday last quote) the same way the
+    # yfinance spot is rejected when it isn't dated today.
+    if reading.value_date is not None and reading.value_date != today:
+        return None
+    set_live_spot(quote, reading.rate, observed_on=today)
+    log.info("Live EUR/USD spot sourced from Tiingo backup (%s)", reading.rate)
+    return reading.rate
 
 
 def _record_status(status: str, message: str) -> None:

@@ -90,6 +90,12 @@ must stay secret, so the same Worker proxies it on a dedicated `…/price` route
   intraday mark for stocks/ETFs and the latest NAV for mutual funds.
 - `GET …/price?daily=AAPL&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` → Tiingo
   **daily** closes (`/tiingo/daily/<ticker>/prices`).
+- `GET …/price?fx=eurusd` → Tiingo **FX** top-of-book
+  (`/tiingo/fx/top?tickers=eurusd`): the live EUR→USD bid/ask/mid, used as the
+  **backup live FX provider** behind Twelve Data for the home-currency rate. The
+  pair is validated to exactly six lowercase letters (tighter than the ticker
+  charset). Tiingo's `midPrice` is already USD-per-EUR, so the browser uses it
+  directly (no inversion).
 
 The route injects the `TIINGO_TOKEN` **secret** as an `Authorization: Token …`
 header (never in the URL), validates every ticker/date against a strict charset
@@ -105,11 +111,27 @@ wrangler secret put TIINGO_TOKEN   # paste your Tiingo API token when prompted
 wrangler deploy
 ```
 
+> **Adding the FX backup to an already-deployed Worker?** The FX route reuses the
+> **same** `TIINGO_TOKEN` secret — there is **no new secret to set**. You only need
+> to **redeploy** the latest `worker.js` so the new `?fx=eurusd` branch ships:
+>
+> ```sh
+> cd web/proxy
+> wrangler deploy            # picks up the new fx route in worker.js
+> ```
+>
+> If you have never set `TIINGO_TOKEN` (you weren't using the price fallback yet),
+> run the `wrangler secret put TIINGO_TOKEN` step above first, then `wrangler deploy`.
+
 ### Test it
 
 ```sh
 # Should return 200 JSON with `access-control-allow-origin: *`.
 curl -i "https://investment-overview-blob-proxy.<your-subdomain>.workers.dev/price?tickers=AAPL"
+
+# The FX backup route — should return a JSON array like
+# [{"ticker":"eurusd","bidPrice":…,"askPrice":…,"midPrice":…,"quoteTimestamp":…}].
+curl -i "https://investment-overview-blob-proxy.<your-subdomain>.workers.dev/price?fx=eurusd"
 ```
 
 The companion auto-derives the `/price` URL from the blob Worker origin, so once

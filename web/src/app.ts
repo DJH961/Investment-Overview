@@ -1213,6 +1213,7 @@ export class App {
     let eurUsdNow: Decimal | null = null;
     let eurUsdPrev: Decimal | null = null;
     let eurUsdSource: EurUsdSource = "none";
+    let eurUsdError: PriceError | null = null;
     if (network) {
       const fxLoad = await loadFxRates();
       fx = fxLoad.fx;
@@ -1224,12 +1225,18 @@ export class App {
       // valuing the book. This only fires on a network round with an API key in
       // hand; a cache-only paint takes the `else` branch below. It still degrades
       // gracefully — when the pair can't be fetched (no budget/key, a transient
-      // failure, or the weekend FX close) loadEurUsd falls back to today's cached
-      // spot, then the ECB end-of-day rate.
-      const eurUsd = await loadEurUsd(apiKey, { eodFallback: fx.rates.USD ?? null, ttlMs: 0 });
+      // failure, or the weekend FX close) loadEurUsd falls back to the Tiingo
+      // backup FX provider (via the /price Worker), then today's cached spot,
+      // then the ECB end-of-day rate.
+      const eurUsd = await loadEurUsd(apiKey, {
+        eodFallback: fx.rates.USD ?? null,
+        ttlMs: 0,
+        tiingoProxyUrl: resolvePriceProxyUrl(config),
+      });
       eurUsdNow = eurUsd.now;
       eurUsdPrev = eurUsd.previousClose;
       eurUsdSource = eurUsd.source;
+      eurUsdError = eurUsd.error;
     } else {
       // Cache-only paint: don't touch the network for FX either.
       const cachedFx = readCachedFx();
@@ -1296,7 +1303,10 @@ export class App {
     }
 
     const degradedReason = network
-      ? this.describeDegradation(quoteLoad.report, fxReport, this.lastTiingoError)
+      ? this.describeDegradation(quoteLoad.report, fxReport, this.lastTiingoError, {
+          eurUsdError,
+          eurUsdSource,
+        })
       : null;
     // Record when fresh market data actually landed: a live quote fetch, or a
     // live (non-cached) FX pull. This is "when we last pulled", independent of
@@ -1820,6 +1830,10 @@ export class App {
     quote: QuoteLoadReport,
     fx: { cached: boolean; error: PriceError | null },
     tiingoError: PriceError | null = null,
+    eurUsd: { eurUsdError: PriceError | null; eurUsdSource: EurUsdSource } = {
+      eurUsdError: null,
+      eurUsdSource: "none",
+    },
   ): string | null {
     const reasons: string[] = [];
 
@@ -1854,9 +1868,24 @@ export class App {
     }
 
     // Only surface FX when it's genuinely unavailable; a cached rate within its
-    // (12h) freshness window is normal and not worth nagging about.
+    // (12h) freshness window is normal and not worth nagging about. Two
+    // independent failure paths feed this: the keyless ECB daily rate (`fx`)
+    // and the live EUR/USD spot (`eurUsd`, including the Tiingo backup). The
+    // live spot is degraded only when its fetch actually failed *and* we ended
+    // up on a flat end-of-day rate or no rate at all (a fresh live/backup spot,
+    // or a still-fresh cached one, is fine and stays silent).
+    const liveFxFailed =
+      eurUsd.eurUsdError !== null &&
+      (eurUsd.eurUsdSource === "eod" || eurUsd.eurUsdSource === "none");
     if (fx.error && !fx.cached) {
+      // The keyless ECB daily rate itself failed with nothing cached: no FX at all.
       reasons.push("FX rates are temporarily unavailable.");
+    } else if (liveFxFailed) {
+      reasons.push(
+        eurUsd.eurUsdSource === "none"
+          ? "FX rates are temporarily unavailable — portfolio values may be incomplete."
+          : "Live FX rate is unavailable — values use the last known exchange rate.",
+      );
     }
 
     // The Tiingo backup was needed this round but couldn't deliver. Distinguish
@@ -2002,6 +2031,8 @@ function fxClause(fx: EurUsdSource): string {
   switch (fx) {
     case "live":
       return "FX live";
+    case "tiingo":
+      return "FX live (backup)";
     case "eod":
       return "FX end of day";
     case "cache":
