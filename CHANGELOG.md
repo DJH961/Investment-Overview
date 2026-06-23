@@ -38,6 +38,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `services/fx_service.py` `refresh_live_spot`): yfinance stays primary; the
     Tiingo FX backup is budget-gated against the desktop 10/hr·200/day Tiingo cap
     and rejects weekend/holiday (non-today) readings for parity with the primary.
+  - **Web companion FX-failure banner:** the live EUR→USD spot pull
+    (`loadEurUsd`, now including the Tiingo backup) reports its own `error`,
+    which was previously discarded. It is now wired into the degradation banner:
+    when the live spot fetch fails *and* the app falls back to the flat ECB
+    end-of-day rate (or has no rate at all), a "FX rates are temporarily
+    unavailable — values use the last known exchange rate" line appears. A
+    fresh live/backup spot, or a still-fresh cached one, stays silent.
 
 ## [3.15.1] — 2026-06-23
 
