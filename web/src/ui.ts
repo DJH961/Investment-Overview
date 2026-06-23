@@ -16,6 +16,7 @@ import {
   type AnalyticsView,
   type DepositRowView,
   type DepositsView,
+  type EquityPoint,
   type PeriodRowView,
   type PeriodsView,
   type PlanView,
@@ -38,6 +39,7 @@ import {
   formatAsOf,
   formatLastPull,
   formatCurrency,
+  formatCurrencyShortRaw,
   formatCurrencyWhole,
   formatDualCurrency,
   formatFxRate,
@@ -1212,6 +1214,52 @@ function chartWithTimeframe(
 }
 
 /**
+ * Resolve how a value/equity curve should be denominated for the active display
+ * currency. The whole dashboard treats EUR and USD as equal first-class
+ * currencies (EUR is only the internal FX-pivot, USD the native booked
+ * currency); this picks the right per-point figure so the *graph* honours the
+ * toggle too, not just the headline numbers.
+ *
+ * When the user has selected USD, a live rate is known, and the export carries
+ * the per-day-FX `portfolioValueUsd` companion, the portfolio line uses that
+ * genuinely currency-correct USD value (each historical day re-marked at *that*
+ * day's FX) rather than rescaling the EUR curve by today's spot. EUR-pivot
+ * overlays without a USD twin (contributions, the live tip) are spot-converted
+ * so every series shares one axis. Otherwise everything stays in EUR.
+ *
+ * FX granularity matches the data: historical points use each day's settled FX
+ * (the finest rate we store), while the live tip is valued at the current
+ * intraday EUR/USD spot (see {@link renderValueChart}). The EUR and USD lines
+ * therefore genuinely diverge — by the FX move at each point — instead of being
+ * a single uniform rescale of one another.
+ */
+interface CurveDisplay {
+  code: DisplayCurrency;
+  /** Portfolio value for a point, in {@link code}. */
+  portfolio: (p: EquityPoint) => Decimal | null;
+  /** Convert an EUR-pivot amount into {@link code}. */
+  convert: (eur: Decimal | null) => Decimal | null;
+  /** y-axis tick formatter for values already in {@link code}. */
+  yAxisLabel: (value: number) => string;
+}
+
+function curveDisplay(points: EquityPoint[]): CurveDisplay {
+  const usd =
+    getDisplayCurrency() === "USD" &&
+    canConvertToUsd() &&
+    points.some((p) => p.portfolioValueUsd !== null);
+  const code: DisplayCurrency = usd ? "USD" : "EUR";
+  const convert = (eur: Decimal | null): Decimal | null => {
+    if (eur === null) return null;
+    return code === "USD" ? convertFromEur(eur).value : eur;
+  };
+  const portfolio = (p: EquityPoint): Decimal | null =>
+    usd && p.portfolioValueUsd !== null ? p.portfolioValueUsd : convert(p.portfolioValue);
+  const yAxisLabel = (value: number): string => formatCurrencyShortRaw(new Decimal(value), code);
+  return { code, portfolio, convert, yAxisLabel };
+}
+
+/**
  * Rebase the raw benchmark series so it shares the portfolio's scale.
  *
  * The export carries `benchmark_value` as the benchmark's *raw* closing level
@@ -1225,10 +1273,13 @@ function chartWithTimeframe(
  * the index instead?" curve. Returns the per-index values aligned with `points`
  * (null where the benchmark has no print yet).
  */
-export function rebaseBenchmark(points: AnalyticsView["curve"]): Array<Decimal | null> {
+export function rebaseBenchmark(
+  points: AnalyticsView["curve"],
+  portfolioValues?: Array<Decimal | null>,
+): Array<Decimal | null> {
+  const portfolio = portfolioValues ?? points.map((p) => p.portfolioValue);
   const anchorBench = points.find((p) => p.benchmarkValue !== null)?.benchmarkValue ?? null;
-  const anchorPortfolio =
-    points.find((p) => p.portfolioValue !== null && p.portfolioValue.greaterThan(0))?.portfolioValue ?? null;
+  const anchorPortfolio = portfolio.find((v) => v !== null && v.greaterThan(0)) ?? null;
   // Without a usable anchor pair we cannot rescale; fall back to the raw values
   // rather than dropping the series entirely.
   if (anchorBench === null || anchorBench.isZero() || anchorPortfolio === null) {
@@ -1249,19 +1300,21 @@ function renderEquityCurve(curve: AnalyticsView["curve"], benchmarkSymbol: strin
   if (points.length < 2) return null;
 
   const dates = points.map((p) => p.date);
+  const disp = curveDisplay(points);
+  const portfolioValues = points.map(disp.portfolio);
   const series: ChartSeries[] = [
-    { values: points.map((p) => p.portfolioValue), className: "series-portfolio", area: true },
+    { values: portfolioValues, className: "series-portfolio", area: true },
   ];
   const hasContribs = points.some((p) => p.contributions !== null);
   if (hasContribs) {
-    series.push({ values: points.map((p) => p.contributions), className: "series-contrib" });
+    series.push({ values: points.map((p) => disp.convert(p.contributions)), className: "series-contrib" });
   }
   const hasBenchmark = points.some((p) => p.benchmarkValue !== null);
   if (hasBenchmark) {
-    series.push({ values: rebaseBenchmark(points), className: "series-benchmark" });
+    series.push({ values: rebaseBenchmark(points, portfolioValues), className: "series-benchmark" });
   }
 
-  const chart = chartWithTimeframe(dates, series);
+  const chart = chartWithTimeframe(dates, series, { yAxisLabel: disp.yAxisLabel });
   if (!chart) return null;
 
   const legend: Array<Node | string> = [legendItem("series-portfolio", "Portfolio")];
@@ -1295,7 +1348,12 @@ function legendItem(seriesClass: string, label: string): HTMLElement {
  * Returns null when there is insufficient data.
  */
 function renderDrawdownChart(curve: AnalyticsView["curve"]): HTMLElement | null {
-  const dd = computeDrawdownSeries(curve);
+  // Drawdown is a ratio, so it differs between currencies by the day-to-day FX
+  // drift: compute it on the active display currency's portfolio line so the
+  // USD "underwater" curve reflects the dollar peak, not the euro one.
+  const disp = curveDisplay(curve);
+  const displayCurve = curve.map((p) => ({ ...p, portfolioValue: disp.portfolio(p) }));
+  const dd = computeDrawdownSeries(displayCurve);
   // Only keep points where drawdown is defined and filter to those with usable dates.
   const points = dd.filter((p) => p.drawdown !== null);
   if (points.length < 2) return null;
@@ -1335,7 +1393,15 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
   if (points.length < 1) return null;
 
   const dates = points.map((p) => p.date);
-  const values: Array<Decimal | null> = points.map((p) => p.portfolioValue);
+  // Denominate in the active display currency. USD is the native booked currency
+  // (spot prices arrive in USD) so its line is the genuine per-day-FX USD value,
+  // not a rescale of the EUR pivot; EUR is the FX-derived view. See curveDisplay.
+  const disp = curveDisplay(points);
+  const values: Array<Decimal | null> = points.map(disp.portfolio);
+  // Today's live total in the chart currency: USD uses the native live total
+  // directly (no FX), EUR is spot-converted from it.
+  const liveTotal =
+    disp.code === "USD" ? o.totalValueUsd ?? disp.convert(o.totalValueEur) : o.totalValueEur;
 
   // Append today's live total as the latest point when it is newer than the
   // last exported point, so the curve runs right up to "today" — but only when
@@ -1344,17 +1410,19 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
   // the portfolio and draw a false dip; in that case stop at the last
   // fully-valued exported point.
   const lastDate = dates[dates.length - 1];
-  if (o.totalValueIsComplete) {
+  if (o.totalValueIsComplete && liveTotal !== null) {
     if (o.asOf > lastDate) {
       dates.push(o.asOf);
-      values.push(o.totalValueEur);
+      values.push(liveTotal);
     } else if (o.asOf === lastDate) {
-      values[values.length - 1] = o.totalValueEur;
+      values[values.length - 1] = liveTotal;
     }
   }
   if (values.filter((v) => v !== null).length < 2) return null;
 
-  const chart = chartWithTimeframe(dates, [{ values, className: "series-portfolio", area: true }]);
+  const chart = chartWithTimeframe(dates, [{ values, className: "series-portfolio", area: true }], {
+    yAxisLabel: disp.yAxisLabel,
+  });
   if (!chart) return null;
 
   const todayPct = pickByCurrency(o.todayMovePct, o.todayMovePctUsd);

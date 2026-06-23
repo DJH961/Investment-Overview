@@ -21,21 +21,28 @@ def get_rates(session: Session, *, base: str = "EUR", quote: str = "USD") -> dic
     return {d: r for d, r in session.execute(stmt).all()}
 
 
-def latest_rate_date(session: Session, *, base: str = "EUR", quote: str = "USD") -> date | None:
+def latest_rate_date(
+    session: Session, *, base: str = "EUR", quote: str = "USD", source: str | None = None
+) -> date | None:
     stmt = (
         select(FxHistory.date)
         .where(FxHistory.base == base, FxHistory.quote == quote)
         .order_by(FxHistory.date.desc())
         .limit(1)
     )
+    if source is not None:
+        stmt = stmt.where(FxHistory.source == source)
     return session.scalars(stmt).one_or_none()
 
 
-def earliest_rate_date(session: Session, *, base: str = "EUR", quote: str = "USD") -> date | None:
+def earliest_rate_date(
+    session: Session, *, base: str = "EUR", quote: str = "USD", source: str | None = None
+) -> date | None:
     """Oldest cached rate date for ``(base, quote)`` (``None`` if empty).
 
     Mirrors :func:`investment_dashboard.repositories.prices_repo.earliest_price_date`
-    so the FX refresh can detect a leading gap and backfill earlier dates.
+    so the FX refresh can detect a leading gap and backfill earlier dates. Pass
+    ``source`` to scope the lookup to a single provider (e.g. ``"yfinance"``).
     """
     stmt = (
         select(FxHistory.date)
@@ -43,6 +50,8 @@ def earliest_rate_date(session: Session, *, base: str = "EUR", quote: str = "USD
         .order_by(FxHistory.date.asc())
         .limit(1)
     )
+    if source is not None:
+        stmt = stmt.where(FxHistory.source == source)
     return session.scalars(stmt).one_or_none()
 
 

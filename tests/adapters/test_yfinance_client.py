@@ -474,3 +474,27 @@ def test_coerce_market_time_parses_epoch_seconds() -> None:
     assert _coerce_market_time(1719259140) == datetime(2024, 6, 24, 19, 59)
     assert _coerce_market_time(None) is None
     assert _coerce_market_time("not-a-time") is None
+
+
+def test_fetch_eur_usd_history_returns_daily_closes() -> None:
+    """The EUR/USD history pull returns ``{date: close}`` for ``EURUSD=X`` and
+    treats ``end`` as inclusive (yfinance's exclusive end is handled internally)."""
+    from investment_dashboard.adapters.yfinance_client import (
+        EUR_USD_YF_SYMBOL,
+        fetch_eur_usd_history,
+    )
+
+    seen: dict[str, object] = {}
+
+    def fake_download(**kwargs: Any) -> pd.DataFrame:
+        seen["tickers"] = kwargs.get("tickers")
+        seen["end"] = kwargs.get("end")
+        idx = pd.to_datetime(["2024-01-02", "2024-01-03"])
+        return pd.DataFrame({"Open": [1.10, 1.11], "Close": [1.0825, 1.0912]}, index=idx)
+
+    out = fetch_eur_usd_history(date(2024, 1, 2), date(2024, 1, 3), downloader=fake_download)
+
+    assert out == {date(2024, 1, 2): Decimal(repr(1.0825)), date(2024, 1, 3): Decimal(repr(1.0912))}
+    assert seen["tickers"] == [EUR_USD_YF_SYMBOL]
+    # end is inclusive for the caller → exclusive 2024-01-04 reaches yfinance.
+    assert str(seen["end"]).startswith("2024-01-04")

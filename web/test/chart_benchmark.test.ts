@@ -18,6 +18,7 @@ function point(date: string, portfolio: string | null, bench: string | null): Cu
   return {
     date,
     portfolioValue: portfolio === null ? null : new Decimal(portfolio),
+    portfolioValueUsd: null,
     contributions: null,
     benchmarkValue: bench === null ? null : new Decimal(bench),
   };
@@ -48,5 +49,18 @@ describe("rebaseBenchmark", () => {
     const out = rebaseBenchmark(withGap);
     expect(out[0]).toBeNull();
     expect(out[1]!.toString()).toBe("120");
+  });
+
+  it("anchors to a supplied display-currency portfolio series (e.g. USD)", () => {
+    // Same EUR pivot, but the chart is drawn in USD: the benchmark must rebase
+    // to the USD portfolio scale so the two lines start together, not to EUR.
+    const curve: Curve = [
+      point("2025-01-01", "30000", "120"),
+      point("2025-02-01", "31000", "126"), // benchmark +5%
+    ];
+    const usdPortfolio = [new Decimal("33000"), new Decimal("34100")];
+    const out = rebaseBenchmark(curve, usdPortfolio);
+    expect(out[0]!.toNumber()).toBeCloseTo(33000, 6);
+    expect(out[1]!.toNumber()).toBeCloseTo(33000 * 1.05, 6);
   });
 });

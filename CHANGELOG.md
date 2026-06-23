@@ -45,6 +45,40 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   styling.** The `.select` control previously had no CSS and fell back to the
   raw native widget, which looked out of place; it now shares the inputs'
   border, radius, padding, fill and a custom chevron.
+## [3.9.5] — 2026-06-23
+
+### Changed
+
+- **Value / equity / drawdown graphs are now currency-correct (USD-native).**
+  USD is the booked currency — spot prices arrive in USD — so the USD curve is
+  now computed natively with **no FX applied**, and EUR is the FX-derived view
+  (not the other way around). Analytics exports a true per-day USD value series
+  (`portfolio_value_usd`, built from the desktop USD snapshot bundle) instead of
+  rescaling the EUR curve by today's spot, so each currency's history reflects
+  the actual rate on every day rather than a single uniform conversion. The web
+  companion renders each chart natively in the active currency; the live "today"
+  tip uses the live intraday EUR/USD spot, so the USD and EUR graphs legitimately
+  differ point-by-point as the FX market moves.
+- **Recreated FX history uses each day's actual market close (yfinance).** A
+  yfinance `EURUSD=X` overlay re-marks the EUR/USD history on top of the
+  ECB/Frankfurter baseline, so back-filled days convert a USD-native portfolio
+  into euros at that day's real market-close rate. Best-effort: any fetch failure
+  leaves the ECB rates in place.
+
+### Fixed
+
+- **Overview "1 Day" graph no longer spikes or steps from mutual-fund NAVs.**
+  The intraday curve now stores only the *intraday-priced* (market) component of
+  the portfolio — stocks/ETFs — and reapplies the constant cash + NAV base
+  (mutual funds, money-market funds, cash) at render time. Because once-a-day-NAV
+  holdings never enter the intraday variation, a mutual fund's post-close NAV
+  revaluation shifts the whole curve uniformly instead of spiking the points
+  captured live before it, and a session watched live for only part of the day
+  joins its reconstructed remainder on a single consistent basis (no misleading
+  step where the two meet). Cache-tier `intraday_value` gains a renamed
+  `market_value_eur` column (migration `0014`); the table is regenerable, so it
+  is recreated rather than back-filled.
+
 
 ## [3.9.4] — 2026-06-23
 

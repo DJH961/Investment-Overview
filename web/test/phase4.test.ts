@@ -423,6 +423,7 @@ function makeEquityPoint(date: string, value: number | null): EquityPoint {
   return {
     date,
     portfolioValue: value !== null ? new Decimal(value) : null,
+    portfolioValueUsd: null,
     contributions: null,
     benchmarkValue: null,
   };
