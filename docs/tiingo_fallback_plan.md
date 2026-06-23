@@ -1,6 +1,6 @@
 # Tiingo secondary‑provider fallback — implementation plan
 
-> Status: **desktop built; web pending hand‑off.** Captures the agreed architecture
+> Status: **desktop built; web built.** Captures the agreed architecture
 > for adding Tiingo as a smart fallback behind the existing primaries, plus a
 > user‑initiated manual refresh. Written 2026‑06‑23; revised same day to harden
 > the NAV‑late trigger (peer‑confirmation + canary probe) and the
@@ -303,12 +303,18 @@ per‑side **budget caps** still apply (blocked with a clear message if exhauste
 
 1. ~~Desktop `tiingo_client` → smart‑gate fallback chain → keyring Settings field →
    loud popup.~~ **✅ done (branch `copilot/tiingo-fallback`).**
-2. Worker `/price` route + docs.
-3. Web `tiingo.ts` → ET budget (persisted) → `loadQuotes` insertion + startup
-   quick‑refresh → **visible refresh activity (spinner + outcome toast)** +
-   discreet caption + config.
-4. Manual "Refresh via Tiingo now" on both stacks.
-5. Tests both stacks (keep Python + the 425 web tests green) → CHANGELOG/docs.
+2. ~~Worker `/price` route + docs.~~ **✅ done.**
+3. ~~Web `tiingo.ts` → ET budget (persisted) → `loadQuotes` insertion + startup
+   quick‑refresh → discreet caption + config.~~ **✅ done.** The refresh activity
+   reuses the existing live‑update indicator / Refresh control rather than a
+   separate spinner+toast.
+4. ~~Manual "Refresh via Tiingo now".~~ **✅ done (web):** the existing manual
+   **Refresh** tap drives the Tiingo fallback and may probe immediately,
+   bypassing the canary timing gates (still budget‑capped). No separate
+   Tiingo‑only button.
+5. ~~Tests both stacks (keep Python + the web tests green) → CHANGELOG/docs.~~
+   **✅ done** — web `tiingo-gate` / `tiingo` / `tiingo-fallback` / cache‑budget /
+   config tests added; usage overview surfaced in the Overview footer.
 
 ## User (deploy) steps
 

@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { resolveBlobUrl, resolveMetaUrl, parseAutoRefreshMinutes, type AppConfig } from "../src/config";
+import { resolveBlobUrl, resolveMetaUrl, resolvePriceProxyUrl, parseAutoRefreshMinutes, type AppConfig } from "../src/config";
 
 function config(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
@@ -21,6 +21,27 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     ...overrides,
   };
 }
+
+describe("resolvePriceProxyUrl", () => {
+  it("derives the /price route from an explicit blob Worker origin", () => {
+    expect(resolvePriceProxyUrl(config({ blobUrl: "https://worker.example.dev/" }))).toBe(
+      "https://worker.example.dev/price",
+    );
+    expect(resolvePriceProxyUrl(config({ blobUrl: "https://worker.example.dev/blob?x=1" }))).toBe(
+      "https://worker.example.dev/price",
+    );
+  });
+
+  it("prefers an explicit priceProxyUrl override", () => {
+    expect(
+      resolvePriceProxyUrl(config({ blobUrl: "https://worker.example.dev/", priceProxyUrl: "https://other/price" })),
+    ).toBe("https://other/price");
+  });
+
+  it("returns null without a Worker origin (release-asset default has no /price route)", () => {
+    expect(resolvePriceProxyUrl(config())).toBeNull();
+  });
+});
 
 describe("resolveBlobUrl", () => {
   it("builds the release-asset URL from repo + tag", () => {

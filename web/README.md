@@ -278,6 +278,49 @@ badge: a price is always labelled with the date or time it actually applies to.
 A longer **Quote cache** means fewer refetches and fewer credits spent, at the
 cost of slightly older prices — tune it to taste.
 
+## Tiingo fallback (secondary provider)
+
+Twelve Data is the primary, but it occasionally serves a **stale or missing**
+mark — most visibly a mutual-fund/money-market NAV that publishes late in the
+evening, or an upstream gap on a specific symbol. To cover those holes the
+companion can fall back to **Tiingo** as a smart, budgeted secondary source
+(mirrors the desktop app's `tiingo_fallback.py`). It is **opt-in**: nothing is
+fetched from Tiingo until you deploy the proxy with a token and the route
+resolves.
+
+How it behaves:
+
+1. **Keyless in the browser.** Tiingo's API is not CORS-readable and its token
+   must stay secret, so every call goes through the same Cloudflare Worker, on a
+   dedicated **`…/price`** route that injects the `TIINGO_TOKEN` secret
+   server-side. Set the token once (`wrangler secret put TIINGO_TOKEN`); see
+   [`web/proxy/README.md`](proxy/README.md). The `/price` route can only ever
+   read pinned Tiingo price endpoints — every caller-supplied value is
+   charset-validated (no SSRF).
+2. **Runs only after the primary, only on the gaps.** Each refresh first does
+   the Twelve Data pass; Tiingo is then asked only for the symbols that came back
+   missing/stale (`src/tiingo-fallback.ts`, gated by the pure decision core in
+   `src/tiingo-gate.ts`).
+3. **NAV peer-confirmation + canary.** For late-publishing funds, a fresh
+   target-date NAV the primary *did* return for any *other* fund is free evidence
+   the cycle is flowing, so confirmed laggards are fetched after a short grace.
+   With no such evidence, at most **one canary probe** (gated by an evening
+   first-probe floor and a cooldown, capped per day) tests whether the cycle has
+   published before any laggards are fetched — so a late NAV costs about one call,
+   not a polling storm.
+4. **Self-capped budget, reset on the US-market clock.** Tiingo is held to a
+   conservative **40 calls/hour · 800/day** (80% of the shared account), tracked
+   separately from Twelve Data and reset at **midnight US/Eastern** — the
+   exchange day, not UTC (`startOfEtDay` / `recordTiingoCredits` in
+   `src/cache.ts`). A manual **Refresh** tap may probe immediately (bypassing the
+   timing gates) but still respects the hard caps.
+5. **Never overwrites a fresher primary value** and **never dead-ends**: a Tiingo
+   blip is reported, the primary's result always stands.
+
+The current Tiingo usage — **calls this hour and today against the caps** — is
+shown in the Overview footer next to the Twelve Data credit line, so the secondary
+budget is just as transparent as the primary's.
+
 ## Preview the UI (sample data — no key, passphrase, or blob)
 
 Want to *see and click through the dashboard* without setting anything up? The
