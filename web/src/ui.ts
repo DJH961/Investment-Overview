@@ -1315,7 +1315,7 @@ function chartWithTimeframe(
       if (dates.length - start < 2) start = Math.max(0, dates.length - 2);
     }
     const slicedDates = dates.slice(start);
-    const slicedSeries = series.map((s) => ({ ...s, values: s.values.slice(start) }));
+    const slicedSeries = rebaseWindowOverlays(series.map((s) => ({ ...s, values: s.values.slice(start) })));
     const chart = buildLineChart({ dates: slicedDates, series: slicedSeries, ...chartOpts });
     if (chart) wrap.replaceChildren(chart as unknown as HTMLElement);
     buttons.forEach((button, i) => {
@@ -1345,6 +1345,21 @@ function chartWithTimeframe(
 }
 
 const CHART_RANGE_KEY_PREFIX = "iv.web.chartRange.";
+
+/**
+ * Rebase overlay series for the currently selected window so "benchmark" and
+ * "other currency (rebased)" always anchor to that window's first portfolio
+ * point (not only the full-history "All" anchor).
+ */
+export function rebaseWindowOverlays(series: ChartSeries[]): ChartSeries[] {
+  const reference = series.find((s) => s.className === "series-portfolio")?.values;
+  if (!reference) return series;
+  return series.map((s) => {
+    if (s.className !== "series-benchmark" && s.className !== "series-currency") return s;
+    const rebased = rebaseToAnchor(s.values, reference);
+    return rebased === null ? s : { ...s, values: rebased };
+  });
+}
 
 /**
  * Resolve how a value/equity curve should be denominated for the active display
