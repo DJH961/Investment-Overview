@@ -551,6 +551,7 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("target_allocations", "display_currency", "VARCHAR(3)"),
     ("target_allocation_items", "no_buy", "BOOLEAN NOT NULL DEFAULT 0"),
     ("price_cache_metadata", "price_market_time", "DATETIME"),
+    ("intraday_value", "fx_eur_usd", "NUMERIC(12, 8)"),
 )
 
 
@@ -631,16 +632,16 @@ def _refresh_fx() -> None:
     try:
         from investment_dashboard.db import cache_session_scope  # noqa: PLC0415
         from investment_dashboard.services.fx_service import (  # noqa: PLC0415
+            purge_legacy_yfinance_fx_history,
             refresh_fx_history,
-            refresh_fx_history_yfinance,
         )
 
         earliest = _earliest_needed_date()
         with cache_session_scope() as session:
+            # Retire any legacy yfinance end-of-day overlay rows so the ECB
+            # reference rates below own the historical end-of-day marks again.
+            purge_legacy_yfinance_fx_history(session)
             refresh_fx_history(session, earliest_needed=earliest)
-            # Overlay yfinance's actual EUR/USD market closes on top of the ECB
-            # baseline so the recreated history converts at each day's real rate.
-            refresh_fx_history_yfinance(session, earliest_needed=earliest)
         log.info("FX rates refreshed (floor=%s)", earliest)
     except Exception:
         log.warning("FX refresh failed; continuing with cached rates", exc_info=True)

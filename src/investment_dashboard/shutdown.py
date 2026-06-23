@@ -112,33 +112,58 @@ def begin_graceful_shutdown(*, delay: float = 0.8) -> None:
 
     This is the one place every "quit" control (the header power button and the
     Settings → Server "Shut down" button) funnels through, so they behave
-    identically:
+    identically. The key ordering goal is that the *click is acknowledged
+    instantly* — before the (blocking) live-web upload runs — so the user never
+    wonders whether their click registered:
 
-    1. Republish the live-web blob (gated by Settings) **before** the server
-       stops, and tell the user whether the upload succeeded, failed, or was
-       skipped — so a graceful close never silently drops the latest state.
-    2. Tell the browser we are shutting down on purpose (``__invBeginShutdown``)
-       so the websocket drop suppresses the alarming "connection lost —
-       reconnecting…" banner and the tab auto-closes when it can.
-    3. After a short grace period (so the toast + JS paint), release the writer
-       lock and stop the server. We already published in step 1, so this passes
+    1. **Immediately** paint a full-screen "Shutting down…" overlay
+       (``__invBeginShutdown``) and suppress the "connection lost —
+       reconnecting…" banner. This happens first, while the event loop is still
+       free, so the browser actually receives it before anything heavy runs.
+    2. **Deferred** (on a one-shot timer so step 1 paints first): republish the
+       live-web blob — gated by Settings — while the DB is still fully available,
+       then surface the upload result. The overlay stays up the whole time.
+    3. Swap the overlay to its final "App shut down — close this tab" frame
+       (``__invFinishShutdown``), which never triggers a reconnect and offers a
+       manual close if the auto-closer is refused by the browser.
+    4. After a short grace (so the toast + final frame paint), release the writer
+       lock and stop the server. We already published in step 2, so this passes
        ``publish=False`` to avoid a duplicate upload.
+    """
+    from nicegui import ui  # noqa: PLC0415 - needs a NiceGUI page context
+
+    # Step 1: instant feedback. Paint the overlay and suppress the reconnect
+    # banner *now*, before the blocking upload, so the click is acknowledged
+    # immediately instead of appearing to do nothing while the upload runs.
+    ui.run_javascript("if (window.__invBeginShutdown) window.__invBeginShutdown();")
+    # Steps 2–4: defer the upload + stop to a one-shot timer so the overlay above
+    # reaches the browser first (a synchronous upload would otherwise block the
+    # event loop and the overlay would never paint until it finished).
+    ui.timer(delay, lambda: _publish_then_stop(delay), once=True)
+
+
+def _publish_then_stop(delay: float) -> None:
+    """Upload the live-web blob, surface the result, then stop the server.
+
+    Runs from the deferred timer armed by :func:`begin_graceful_shutdown`, so the
+    full-screen "Shutting down…" overlay is already on screen. Keeping the upload
+    here (rather than inline) is what lets that overlay paint before the blocking
+    upload runs.
     """
     from nicegui import ui  # noqa: PLC0415 - needs a NiceGUI page context
 
     from investment_dashboard.services import auto_publish  # noqa: PLC0415
 
-    # Publish first while the DB is still fully available, and surface the result.
+    # Publish while the DB is still fully available, and surface the result. The
+    # overlay stays up until this notification (when publishing is configured).
     outcome = auto_publish.run_trigger(auto_publish.TRIGGER_SHUTDOWN)
     note = auto_publish.describe_outcome(outcome)
     if note is not None:
         ui.notify(note[0], type=note[1])
-    else:
-        # Publishing is off/not configured: still confirm the app is closing.
-        ui.notify("Shutting down… you can close this tab.", type="warning")
-    # Suppress the reconnect banner (the drop is expected) and try to close the tab.
-    ui.run_javascript("if (window.__invBeginShutdown) window.__invBeginShutdown();")
-    # Let the toast + JS run, then stop the server (already published above).
+    # Swap the overlay to its final "shut down — close this tab" frame and try to
+    # auto-close the tab. This frame never triggers a reconnect.
+    ui.run_javascript("if (window.__invFinishShutdown) window.__invFinishShutdown();")
+    # Let the toast + final frame paint, then stop the server (already published).
     ui.timer(delay, lambda: request_shutdown(publish=False), once=True)
 
 

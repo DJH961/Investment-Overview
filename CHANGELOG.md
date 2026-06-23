@@ -11,8 +11,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **1.0.0** — first release with a runnable UI: end-to-end flow from CSV
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
-
-## [Unreleased]
+- **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
+  released; entries must always carry a concrete version number and date.
 
 ## [3.10.0] — 2026-06-23
 
@@ -45,6 +45,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   styling.** The `.select` control previously had no CSS and fell back to the
   raw native widget, which looked out of place; it now shares the inputs'
   border, radius, padding, fill and a custom chevron.
+
+## [3.9.6] — 2026-06-23
+
+### Fixed
+
+- **Shutdown now gives instant feedback and reliably ends the session.**
+  Confirming "Shut down" used to run the live-web upload synchronously before
+  any UI update reached the browser, so the click appeared to do nothing while
+  the app kept loading in the background. The confirm now paints a full-screen
+  "Shutting down…" overlay immediately, then defers the upload (and the server
+  stop) so the overlay actually appears first; the overlay stays up until the
+  upload result is reported. When the server stops, the overlay swaps to a final
+  "App shut down — you can close this tab" frame that never triggers the
+  reconnect machinery and offers a manual close button if the browser refuses to
+  auto-close the tab.
+
 ## [3.9.5] — 2026-06-23
 
 ### Changed
@@ -59,11 +75,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   companion renders each chart natively in the active currency; the live "today"
   tip uses the live intraday EUR/USD spot, so the USD and EUR graphs legitimately
   differ point-by-point as the FX market moves.
-- **Recreated FX history uses each day's actual market close (yfinance).** A
-  yfinance `EURUSD=X` overlay re-marks the EUR/USD history on top of the
-  ECB/Frankfurter baseline, so back-filled days convert a USD-native portfolio
-  into euros at that day's real market-close rate. Best-effort: any fetch failure
-  leaves the ECB rates in place.
+- **End-of-day FX history is sourced from the ECB (Frankfurter), intraday from
+  yfinance.** Historical end-of-day EUR/USD marks come from the ECB reference
+  rates; an earlier yfinance `EURUSD=X` end-of-day overlay has been reverted (and
+  any rows it left behind are purged on boot so the ECB backfill owns those
+  dates). yfinance is now used only for the *live and intraday* rates that feed
+  the "1 Day" curve. Every figure is still converted at its own point in time —
+  each day at that day's ECB rate, never today's.
+- **Overview "1 Day" graph uses true per-minute EUR/USD FX.** When the curve is
+  reconstructed (now every 15 minutes, down from 30), each back-filled point is
+  converted at the EUR/USD rate actually struck at that minute — pulled from
+  yfinance's `EURUSD=X` intraday bars — and live samples record the rate they
+  were captured at (new nullable cache-tier `fx_eur_usd` column on
+  `intraday_value`, added in place). USD stays the booked currency (FX-free); the
+  EUR view diverges from it minute-by-minute as the FX market moves, instead of a
+  single uniform conversion. Missing bars fall back to the day's settled rate.
 
 ### Fixed
 

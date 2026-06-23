@@ -24,10 +24,10 @@ Two complementary sources feed the samples:
   often the app auto-updates prices. A small dedupe floor collapses bursts (a
   page-load refresh + the periodic tick firing within seconds).
 * **Reconstruction** — :func:`reconstruct_last_session` backfills the most recent
-  trading session at ~30-minute granularity from the price feed's intraday bars,
+  trading session at ~15-minute granularity from the price feed's intraday bars,
   so opening the app late in the day, after the close, or over a weekend still
   shows a full "1 Day" curve for the last trading day rather than a stub. It
-  fills *gaps* only: any 30-minute mark already captured live is left untouched,
+  fills *gaps* only: any 15-minute mark already captured live is left untouched,
   so a live-watched stretch keeps its denser, real points.
 
 :func:`day_series_market_eur` returns the current session's merged market
@@ -84,16 +84,16 @@ _MARKET_OPEN = time(9, 30)
 #: cadence is comfortably above it).
 MIN_CAPTURE_GAP_SECONDS = 20
 
-#: Bar width used to reconstruct a missed session — the user's "every 30 min".
-RECONSTRUCT_INTERVAL = "30m"
+#: Bar width used to reconstruct a missed session — the user's "every 15 min".
+RECONSTRUCT_INTERVAL = "15m"
 
 #: Half-window (seconds) around a reconstructed bar within which an existing live
-#: sample counts as "already covered". Reconstruction only *backfills*: a 30-min
+#: sample counts as "already covered". Reconstruction only *backfills*: a 15-min
 #: bar is skipped when a live sample already sits inside its slot, so a
 #: live-watched stretch keeps its denser, real points instead of being thinned to
-#: the coarse 30-min grid. 15 min = half the bar width, so each bar is suppressed
-#: only by a live sample inside its own slot.
-RECONSTRUCT_COVERAGE_GAP_SECONDS = 15 * 60
+#: the coarse 15-min grid. 7.5 min = half the bar width, so each bar is suppressed
+#: only by a live sample inside its own slot (never by one in a neighbouring slot).
+RECONSTRUCT_COVERAGE_GAP_SECONDS = 7 * 60 + 30
 
 #: ``app_config`` key recording the last session date we reconstructed, so we
 #: fetch intraday bars at most once per session instead of on every page load.
@@ -124,6 +124,17 @@ def is_intraday_priced(position: Position) -> bool:
         effective.asset_class if effective is not None else position.instrument.asset_class
     )
     return asset_class not in _NAV_ASSET_CLASSES
+
+
+def _is_usd_native(position: Position) -> bool:
+    """Whether ``position``'s EUR value moves with the EUR/USD rate.
+
+    Only USD-booked holdings are revalued against the intraday EUR/USD bars we
+    fetch (USD is the booked currency; EUR is the FX-derived view). EUR-native
+    holdings are FX-independent, and other currencies have no intraday FX feed
+    here, so both keep the day's settled rate — a safe, uniform fallback.
+    """
+    return position.account.native_currency.upper() == "USD"
 
 
 def market_value_eur(positions: list[Position]) -> Decimal:
@@ -241,7 +252,9 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:
     Stores only the EUR value of the intraday-priced holdings (stocks/ETFs); the
     cash + NAV base is reapplied at render time, so a mutual fund's post-close
     NAV revaluation can never spike the curve at the live points captured before
-    it (see the module docstring).
+    it (see the module docstring). The live EUR→USD spot at the capture instant
+    is stored alongside, so the point can later be re-expressed in either currency
+    at that minute's *true* rate rather than a single uniform conversion.
 
     Best-effort and self-pruning: returns ``True`` when a sample was written,
     ``False`` when the market is closed or the dedupe floor suppressed it. Opens
@@ -256,13 +269,16 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:
         cache_write_session,
         ledger_session_scope,
     )
-    from investment_dashboard.services import positions_service  # noqa: PLC0415
+    from investment_dashboard.services import fx_service, positions_service  # noqa: PLC0415
 
     captured_at = _to_naive_utc(now)
     try:
         with ledger_session_scope() as session:
             positions = positions_service.compute_positions(session)
             value_eur = market_value_eur(positions)
+            # The EUR value above is at today's spot; record that same spot so the
+            # USD view of this point is the FX-free price-only figure.
+            fx_eur_usd = fx_service.get_rate_eur_to_quote(session, date.today(), quote="USD")
             with cache_write_session(session) as cache:
                 last = intraday_repo.latest(cache)
                 if (
@@ -270,7 +286,7 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:
                     and (captured_at - last.captured_at).total_seconds() < MIN_CAPTURE_GAP_SECONDS
                 ):
                     return False
-                intraday_repo.insert_sample(cache, captured_at, value_eur)
+                intraday_repo.insert_sample(cache, captured_at, value_eur, fx_eur_usd)
                 intraday_repo.delete_before(cache, session_window_utc(now)[0])
     except Exception:  # pragma: no cover - defensive: capture is best-effort
         log.warning("intraday value capture failed", exc_info=True)
@@ -287,13 +303,27 @@ def day_series_market_eur(
     it for display and adds the cash + NAV base. Merges reconstructed + live
     samples. Empty when nothing has been captured or reconstructed yet.
     """
+    return [(at, eur) for at, eur, _ in day_series_with_fx(session, now=now)]
+
+
+def day_series_with_fx(
+    session: Session, *, now: datetime | None = None
+) -> list[tuple[datetime, Decimal, Decimal | None]]:
+    """Return ``[(captured_at_utc, market_value_eur, fx_eur_usd), ...]``, oldest first.
+
+    The FX-aware companion to :func:`day_series_market_eur`: ``fx_eur_usd`` is the
+    EUR→USD spot (USD per 1 EUR) struck at each sample's own instant, so the
+    render can re-express the curve at the true per-timestamp rate. ``None`` for
+    points whose rate was never recorded (legacy rows / no rate sourced), letting
+    the caller fall back to today's spot for those.
+    """
     from investment_dashboard.db import cache_read_session  # noqa: PLC0415
 
     now = now or datetime.now(UTC)
     start, end = session_window_utc(now)
     with cache_read_session(session) as cache:
         rows = intraday_repo.list_in_range(cache, start, end)
-    return [(r.captured_at, r.market_value_eur) for r in rows]
+    return [(r.captured_at, r.market_value_eur, r.fx_eur_usd) for r in rows]
 
 
 def _forward_filled(bars: dict[datetime, Decimal], at: datetime) -> Decimal | None:
@@ -316,23 +346,26 @@ def reconstruct_last_session(
     now: datetime | None = None,
     force: bool = False,
     fetcher: object | None = None,
+    fx_fetcher: object | None = None,
 ) -> int:
     """Backfill the most recent session's intraday curve from the price feed.
 
-    Fetches ~30-minute intraday bars for the held, intraday-priced instruments on
+    Fetches ~15-minute intraday bars for the held, intraday-priced instruments on
     the last trading day and records the *market component* per bar — the EUR
-    value of those holdings, ``Σ value_i · price_i(t)/close_i``. The constant cash
-    + NAV base is added at render time, so a holding the feed served no bars for
-    is simply carried flat and the reconstruction is on the same basis as the live
-    captures.
+    value of those holdings, ``Σ value_i · price_i(t)/close_i``, each USD-booked
+    holding re-marked at that minute's **own** EUR/USD rate (from intraday
+    ``EURUSD=X`` bars) rather than the day's single settled spot, and the rate
+    itself stored alongside. The constant cash + NAV base is added at render time,
+    so a holding the feed served no bars for is simply carried flat and the
+    reconstruction is on the same basis as the live captures.
 
-    Only *gaps* are filled: a 30-minute mark already captured live is skipped, so
+    Only *gaps* are filled: a 15-minute mark already captured live is skipped, so
     a live-watched stretch keeps its denser real points.
 
     Idempotent and guarded: it runs the network fetch at most once per session
     (tracked in ``app_config``) unless ``force`` is set. Best-effort — returns
     the number of points written (0 on any failure / no data), never raises.
-    ``fetcher`` overrides the intraday price source in tests.
+    ``fetcher`` / ``fx_fetcher`` override the intraday price / FX sources in tests.
     """
     now = now or datetime.now(UTC)
     session_date = last_session_date(now)
@@ -340,7 +373,9 @@ def reconstruct_last_session(
         if not force and _already_reconstructed(session, session_date):
             return 0
         try:
-            written = _reconstruct_session(session, session_date, fetcher=fetcher)
+            written = _reconstruct_session(
+                session, session_date, fetcher=fetcher, fx_fetcher=fx_fetcher
+            )
         except Exception:  # pragma: no cover - defensive: best-effort backfill
             log.warning("intraday session reconstruction failed", exc_info=True)
             return 0
@@ -350,10 +385,16 @@ def reconstruct_last_session(
         return written
 
 
-def _reconstruct_session(session: Session, session_date: date, *, fetcher: object | None) -> int:
+def _reconstruct_session(
+    session: Session,
+    session_date: date,
+    *,
+    fetcher: object | None,
+    fx_fetcher: object | None = None,
+) -> int:
     from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
     from investment_dashboard.db import cache_read_session, cache_write_session  # noqa: PLC0415
-    from investment_dashboard.services import positions_service  # noqa: PLC0415
+    from investment_dashboard.services import fx_service, positions_service  # noqa: PLC0415
 
     positions = positions_service.compute_positions(session, as_of=session_date)
     priced = [
@@ -377,6 +418,26 @@ def _reconstruct_session(session: Session, session_date: date, *, fetcher: objec
     if not bar_times:
         return 0
 
+    # Per-timestamp EUR/USD bars so the *derived* EUR pivot of each USD-booked
+    # holding can be expressed at the rate actually struck at that minute. USD is
+    # the booked currency and stays FX-free (price only); only the EUR view needs
+    # a rate. ``base_fx`` is the settled rate the positions' EUR values are already
+    # expressed at, used to rebase the pivot to each minute's rate. Both are
+    # best-effort: a missing intraday rate forward-fills / falls back to
+    # ``base_fx``, leaving the pivot at the day's settled rate rather than failing.
+    needs_fx = any(_is_usd_native(p) for p in priced)
+    base_fx = fx_service.get_rate_eur_to_quote(session, session_date, quote="USD")
+    fx_bars: dict[datetime, Decimal] = {}
+    if needs_fx and base_fx:
+        fx_fetch = fx_fetcher or yfinance_client.fetch_eur_usd_intraday
+        try:
+            fx_bars = fx_fetch(  # type: ignore[operator]
+                session_date, interval=RECONSTRUCT_INTERVAL
+            )
+        except Exception:  # pragma: no cover - defensive: FX overlay is best-effort
+            log.warning("intraday EUR/USD reconstruction fetch failed", exc_info=True)
+            fx_bars = {}
+
     # Backfill gaps only: keep every instant already captured live and skip any
     # reconstructed bar that falls inside a live sample's slot, so a live-watched
     # stretch keeps its denser real points.
@@ -393,6 +454,10 @@ def _reconstruct_session(session: Session, session_date: date, *, fetcher: objec
         for t in bar_times:
             if _covered_by_live(live_times, t):
                 continue
+            # The rate struck at this minute (forward-filled), or the day's
+            # settled spot when no intraday FX is available.
+            fx_t = _forward_filled(fx_bars, t) if fx_bars else None
+            point_fx = fx_t or base_fx
             # The intraday-priced (market) component only — the cash + NAV base is
             # reapplied at render time, keeping reconstruction on the same basis
             # as the live captures.
@@ -402,8 +467,16 @@ def _reconstruct_session(session: Session, session_date: date, *, fetcher: objec
                 if price_t is None:
                     price_t = p.current_price_native
                 ratio = price_t / p.current_price_native  # type: ignore[operator]
-                market += p.current_value_eur * ratio
-            intraday_repo.insert_sample(cache, t, market)
+                contrib = p.current_value_eur * ratio
+                # USD is booked FX-free; we only re-express its *derived* EUR pivot
+                # from the day's settled rate (baked into ``current_value_eur``) to
+                # this minute's rate, so the EUR view tracks per-minute FX. The
+                # native USD value (price × shares) is untouched and recovered at
+                # render by removing exactly this rate.
+                if fx_t and base_fx and _is_usd_native(p):
+                    contrib = contrib * base_fx / fx_t
+                market += contrib
+            intraday_repo.insert_sample(cache, t, market, point_fx)
             written += 1
         intraday_repo.delete_before(cache, _session_start_utc(session_date))
     return written

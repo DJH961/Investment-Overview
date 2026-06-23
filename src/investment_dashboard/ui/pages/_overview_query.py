@@ -208,11 +208,26 @@ def build_intraday_value_series(
     post-close revaluation shifts the whole curve uniformly instead of spiking the
     points captured before it, and a part-day-live session joins its reconstructed
     remainder without a step. The live current value is appended as the final
-    point so the tip matches the headline figure, every point is converted to
-    ``currency`` (at the current FX rate — a single intraday day) and its
-    timestamp localised to ``tz`` for display. ``ValueSeriesPoint.date`` carries
-    a full :class:`~datetime.datetime` here (a ``date`` subclass), which the
-    chart renders on a time-of-day axis.
+    point so the tip matches the headline figure, and its timestamp is localised
+    to ``tz`` for display. ``ValueSeriesPoint.date`` carries a full
+    :class:`~datetime.datetime` here (a ``date`` subclass), which the chart
+    renders on a time-of-day axis.
+
+    Currency model — USD is native, EUR is derived. USD is the booked currency
+    (the stock prices arrive in USD), so the USD "1 Day" line is **FX-free**: it
+    is purely price-driven, with no exchange rate applied to the market component.
+    The EUR line is the *derived* one — each point's USD market value is converted
+    to euros at the EUR/USD rate struck at that very minute (stored with the
+    sample). Because every minute's rate is used rather than one uniform spot, the
+    EUR line legitimately diverges point-by-point from the USD line as the FX
+    market moves through the session. A point whose rate was never recorded falls
+    back to today's spot for the EUR conversion.
+
+    (Internally the samples are pivoted in EUR — the app's pivot currency — so a
+    mixed/EUR-native portfolio and FX-less test fixtures stay representable in a
+    single scalar. The per-minute rate that the EUR pivot was stored at is kept
+    alongside, so the native USD value is recovered exactly by removing it; no FX
+    is ever *applied* to USD.)
 
     Returns ``[]`` when there is nothing to plot (no samples *and* no live value
     — e.g. an empty ledger), so the caller can fall back to the empty state.
@@ -229,12 +244,17 @@ def build_intraday_value_series(
     market_now = intraday_snapshots_service.market_value_eur(positions)
     base = total_now - market_now
 
-    samples = intraday_snapshots_service.day_series_market_eur(session, now=now)
+    samples = intraday_snapshots_service.day_series_with_fx(session, now=now)
+
+    rate: Decimal | None = None
+    if currency != "EUR":
+        rate = fx_service.get_rate_eur_to_quote(session, date.today(), quote=currency)
 
     # Cap the curve with the live current value so the tip equals the headline
     # Total Value, even between captures. Skip the duplicate when the most recent
     # sample is effectively "now". For a genuinely empty portfolio (no samples
-    # and a zero live value) there is nothing to plot.
+    # and a zero live value) there is nothing to plot. The live tip carries
+    # today's spot, the same rate the headline figure uses.
     live_at = now.astimezone(UTC).replace(tzinfo=None) if now.tzinfo is not None else now
     # Stop the curve at the market close: once the session is over the live
     # value is just the settled close, so pin its point to 16:00 ET instead of
@@ -242,19 +262,29 @@ def build_intraday_value_series(
     session_close = intraday_snapshots_service.session_close_utc(now)
     live_at = min(live_at, session_close)
     if (not samples and total_now != 0) or (samples and samples[-1][0] < live_at):
-        samples = [*samples, (live_at, market_now)]
+        samples = [*samples, (live_at, market_now, rate)]
 
     if not samples:
         return []
 
-    rate: Decimal | None = None
-    if currency != "EUR":
-        rate = fx_service.get_rate_eur_to_quote(session, date.today(), quote=currency)
-
     points: list[ValueSeriesPoint] = []
-    for at_utc, market_eur in samples:
-        value_eur = base + market_eur
-        value = value_eur if (currency == "EUR" or not rate) else value_eur * rate
+    for at_utc, market_eur, sample_fx in samples:
+        if currency == "EUR" or not rate:
+            # EUR view (derived): the base is already EUR; the market component
+            # carries its own per-minute FX in ``market_eur`` (USD-booked holdings
+            # were converted to euros at each minute's rate during capture /
+            # reconstruction), so the EUR line moves with both price *and* FX.
+            value = base + market_eur
+        else:
+            # USD view (native): USD is the booked currency, so the market
+            # component must be FX-free / price-only. The EUR pivot stored it
+            # divided by that minute's rate, so multiplying by the *same* rate
+            # cancels the FX exactly and recovers the native USD price — no
+            # exchange rate is applied to USD. Only the constant cash + NAV base
+            # is converted, at today's spot. A sample with no recorded rate falls
+            # back to today's spot (FX still cancels for that point).
+            point_rate = sample_fx if (sample_fx and currency == "USD") else rate
+            value = base * rate + market_eur * point_rate
         when: datetime = at_utc
         if tz is not None:
             when = at_utc.replace(tzinfo=UTC).astimezone(tz).replace(tzinfo=None)

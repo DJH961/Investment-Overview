@@ -21,16 +21,30 @@ from sqlalchemy.orm import Session
 from investment_dashboard.models import IntradayValue
 
 
-def insert_sample(session: Session, captured_at: datetime, market_value_eur: Decimal) -> None:
-    """Append one intraday market-component sample (idempotent on its timestamp)."""
+def insert_sample(
+    session: Session,
+    captured_at: datetime,
+    market_value_eur: Decimal,
+    fx_eur_usd: Decimal | None = None,
+) -> None:
+    """Append one intraday market-component sample (idempotent on its timestamp).
+
+    ``fx_eur_usd`` is the EUR→USD spot (USD per 1 EUR) at ``captured_at`` so the
+    curve can be re-expressed at the true per-timestamp rate; ``None`` leaves the
+    point's rate unknown (the render falls back to today's spot).
+    """
     stmt = sqlite_insert(IntradayValue).values(
         captured_at=captured_at,
         market_value_eur=market_value_eur,
+        fx_eur_usd=fx_eur_usd,
     )
     # Two captures at the identical instant are a no-op rather than an error.
     stmt = stmt.on_conflict_do_update(
         index_elements=[IntradayValue.captured_at],
-        set_={"market_value_eur": stmt.excluded.market_value_eur},
+        set_={
+            "market_value_eur": stmt.excluded.market_value_eur,
+            "fx_eur_usd": stmt.excluded.fx_eur_usd,
+        },
     )
     session.execute(stmt)
 
