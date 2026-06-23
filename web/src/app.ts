@@ -74,6 +74,9 @@ import {
   runTiingoFallback,
   shouldQuickRefresh,
   noteQuickRefresh,
+  planStartupRefresh,
+  tiingoRemainingCredits,
+  STARTUP_TIINGO_RESERVE,
   type TiingoBudgetView,
 } from "./tiingo-fallback";
 import { readTiingoState } from "./cache";
@@ -883,16 +886,41 @@ export class App {
     // {@link scheduleNext}) carry no options, so they return to the normal
     // Twelve-Data-first cadence.
     const tiingoState = readTiingoState();
+    const marketOpen = isUsMarketOpen();
     const quick = shouldQuickRefresh({
       now: Date.now(),
-      marketOpen: isUsMarketOpen(),
+      marketOpen,
       lastQuickRefreshAt: tiingoState.lastQuickRefreshAt,
       freshestPriceAt: this.lastDataPullAt,
       holdsLatestClose: this.holdsLatestClose(),
     });
-    const tiingoAvailable = resolvePriceProxyUrl(this.state.config) !== null;
-    const quickOpts = quick ? (tiingoAvailable ? { viaTiingo: true } : { force: true }) : {};
-    if (quick) noteQuickRefresh(Date.now());
+    // When badly outdated, decide how to route the pull. The startup Tiingo
+    // quick-refresh never spends the last few Tiingo credits and never fires for a
+    // small outdated set (the Twelve Data primary clears ≤8 within a minute); a
+    // set too big for the spare Tiingo budget is split across both providers, and
+    // a fully-spent (or unconfigured) Tiingo budget falls back to forcing Twelve.
+    let quickOpts: { force?: boolean; viaTiingo?: boolean; tiingoReserve?: number } = {};
+    if (quick) {
+      const tiingoAvailable = resolvePriceProxyUrl(this.state.config) !== null;
+      const plan = planStartupRefresh({
+        outdatedCount: this.outdatedFetchCount(marketOpen),
+        tiingoRemaining: tiingoRemainingCredits(Date.now()),
+        tiingoAvailable,
+      });
+      if (plan.route === "tiingo") {
+        quickOpts = { viaTiingo: true, tiingoReserve: STARTUP_TIINGO_RESERVE };
+        noteQuickRefresh(Date.now());
+      } else if (plan.route === "split") {
+        // Force the Twelve Data primary (it clears the largest ~8 holdings), then
+        // let the reserved Tiingo fallback fill the rest within its spare budget.
+        quickOpts = { force: true, tiingoReserve: STARTUP_TIINGO_RESERVE };
+        noteQuickRefresh(Date.now());
+      } else {
+        // route === "twelve": leave Tiingo untouched and force the primary; no
+        // throttle stamp, so a later re-open may still fire Tiingo once it helps.
+        quickOpts = { force: true };
+      }
+    }
     void this.runScheduledRefresh(session, "auto", quickOpts);
     // 5. Arm the idle auto-lock so an unattended session locks itself.
     this.installAutoLock();
@@ -1066,23 +1094,39 @@ export class App {
    * outdated. Returns true when there is no data yet (nothing to chase).
    */
   private holdsLatestClose(): boolean {
+    return this.outdatedFetchCount(false) === 0;
+  }
+
+  /**
+   * How many fetchable holdings are outdated and worth re-pricing right now. With
+   * the market **closed** this is the count behind the latest settled close (market
+   * symbols vs {@link latestSettledSessionDate}, NAV funds vs their latest expected
+   * publish) — the same per-symbol "behind" test {@link holdsLatestClose} uses. With
+   * the market **open** intraday prices move continuously, so once the
+   * startup quick-refresh fires (the whole book is >1h stale) every fetchable
+   * holding counts. Drives the startup-refresh routing in {@link start}; returns 0
+   * when there is no data yet (nothing to chase).
+   */
+  private outdatedFetchCount(marketOpen: boolean): number {
     const data = this.state.data;
-    if (!data) return true;
+    if (!data) return 0;
     const plan = buildFetchPlan(data, FETCHABLE_NAV_CLASSES);
-    if (plan.length === 0) return true;
+    if (plan.length === 0) return 0;
+    if (marketOpen) return plan.length;
     const cached = readCachedQuotes();
     const now = new Date();
     const settled = latestSettledSessionDate(now);
     const navStats = readNavPublishStats();
     const publishHourFor = (symbol: string): number =>
       navPublishWindow(navStats.get(symbol)?.hours).publishHour;
+    let count = 0;
     for (const entry of plan) {
       const have = cached.get(entry.symbol)?.quote.valueDate ?? null;
       const expected =
         entry.priceType === "market" ? settled : latestExpectedNavDate(now, publishHourFor(entry.symbol));
-      if (!have || have < expected) return false;
+      if (!have || have < expected) count++;
     }
-    return true;
+    return count;
   }
 
   /**
@@ -1183,7 +1227,7 @@ export class App {
   private async refreshPrices(
     session: number,
     network: boolean,
-    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean } = {},
+    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean; tiingoReserve?: number } = {},
   ): Promise<QuoteLoadReport | null> {
     const { data, config } = this.state;
     if (!data) return null;
@@ -1286,6 +1330,7 @@ export class App {
         now: Date.now(),
         manual: (opts.force ?? false) || viaTiingo,
         forceAll: viaTiingo,
+        reserveCredits: network ? (opts.tiingoReserve ?? 0) : 0,
         sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
       });
       if (session !== this.sessionId) return quoteLoad.report;
@@ -1489,7 +1534,7 @@ export class App {
   private async runScheduledRefresh(
     session: number,
     kind: RefreshKind = "auto",
-    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean } = {},
+    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean; tiingoReserve?: number } = {},
   ): Promise<void> {
     if (session !== this.sessionId) return;
     // A manual tap should refresh even when the tab is technically "hidden"
@@ -1504,6 +1549,7 @@ export class App {
         force: opts.force ?? false,
         forceAll: opts.forceAll ?? false,
         viaTiingo: opts.viaTiingo ?? false,
+        tiingoReserve: opts.tiingoReserve ?? 0,
       });
     } finally {
       this.refreshing = false;
