@@ -1486,7 +1486,7 @@ export class App {
       // especially the "Try the backup data provider now" button — so lead with
       // it when the Tiingo backup couldn't be reached this round.
       if (this.lastTiingoError) {
-        this.toast("Backup price source (Tiingo) is unreachable — check the Worker /price route.");
+        this.toast(`Backup price source (Tiingo) is unreachable — ${this.lastTiingoError.message}`);
       } else {
         this.toast(
           this.lastCoverageFacts
