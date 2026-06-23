@@ -874,15 +874,17 @@ export class App {
     //    re-open) and 4. start the live-price auto-refresh (burst then slow).
     void this.maybeRefreshBlob(session);
     this.installVisibilityRefresh(session);
-    // Startup quick-refresh: when prices are badly outdated, route the whole book
-    // through Tiingo for this one pull. Tiingo answers the entire batch in a
-    // single request with no per-minute cap, so every holding repopulates at once
-    // — far faster than the Twelve Data primary, which trickles ~8 symbols/min and
-    // defers the rest. Throttled to ~once/hour via the persisted stamp so it
-    // doesn't burn the budget on every re-open. It needs the price proxy to be
-    // configured; without it Tiingo is unavailable (a `viaTiingo` pull would skip
-    // the primary *and* the fallback), so fall back to forcing the Twelve Data
-    // primary instead. The subsequent scheduled refreshes (armed via
+    // Startup quick-refresh: when prices are badly outdated, repopulate the book
+    // fast. Tiingo answers a whole batch in a single request with no per-minute
+    // cap — far faster than the Twelve Data primary, which trickles ~8 symbols/min
+    // — so a big outdated set routes through Tiingo. But that scarcer budget is
+    // protected by two rules (see {@link planStartupRefresh}): it never spends the
+    // last few Tiingo credits, and it never fires for a small (≤8) outdated set the
+    // primary can clear within a minute. A set too large for the spare budget is
+    // split across both providers; a spent (or unconfigured) Tiingo budget forces
+    // the Twelve Data primary instead. Throttled to ~once/hour via the persisted
+    // stamp (set only when Tiingo is actually used) so it doesn't burn the budget
+    // on every re-open. The subsequent scheduled refreshes (armed via
     // {@link scheduleNext}) carry no options, so they return to the normal
     // Twelve-Data-first cadence.
     const tiingoState = readTiingoState();

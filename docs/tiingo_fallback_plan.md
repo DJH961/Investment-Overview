@@ -189,7 +189,12 @@ Persisted stamps:
   the first‑probe floor and the 15/30‑min cooldown; on open, if past the floor
   and `now ≥ last_canary_at + cooldown`, probe at once.
 - **Mobile startup quick‑refresh** — `last_quick_refresh_at` enforces the
-  ~once/hour throttle across reopens.
+  ~once/hour throttle across reopens (web: stamped only when the refresh actually
+  uses Tiingo). The web quick‑refresh routes between providers (`planStartupRefresh`):
+  it never spends the last 5 Tiingo credits (nor the full cap), never fires for a
+  small (≤8) outdated set the Twelve Data primary clears within a minute, splits a
+  set too large for the spare budget across both providers, and forces the primary
+  when no spare Tiingo budget remains.
 - **Tiingo budget buckets** — ET hour/day counters persist so reopening can't
   silently reset them.
 

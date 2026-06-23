@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Decimal } from "../src/decimal-config";
 import { PriceError, type Quote } from "../src/prices";
 import { latestSettledSessionDate } from "../src/market-hours";
-import { runTiingoFallback, shouldQuickRefresh } from "../src/tiingo-fallback";
+import { runTiingoFallback, shouldQuickRefresh, planStartupRefresh } from "../src/tiingo-fallback";
 import { tiingoCreditsSpentToday, readTiingoCreditLog, type StorageLike } from "../src/cache";
 
 function memStorage(): StorageLike {
@@ -198,6 +198,73 @@ describe("runTiingoFallback", () => {
     expect(out.tiingoSymbols).toEqual([]);
     expect(out.error).toBeInstanceOf(PriceError);
     expect(out.error?.retryable).toBe(true);
+  });
+
+  it("holds back reserveCredits so a run never spends the last few credits", async () => {
+    const storage = memStorage();
+    // Five deferred market symbols, but a reserve that leaves only two spendable
+    // credits of the 40/hr cap (40 − 38). Only the first two are fetched.
+    const symbols = ["AAA", "BBB", "CCC", "DDD", "EEE"];
+    const fetchImpl = stubFetch(symbols.map((s) => iexRow(s, 100, `${EXPECTED}T20:00:00Z`)));
+    const out = await runTiingoFallback({
+      symbols,
+      navSymbols: new Set(),
+      quotes: new Map<string, Quote>(),
+      report: emptyReport(symbols),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl,
+      reserveCredits: 38,
+    });
+    expect(out.tiingoSymbols).toEqual(["AAA", "BBB"]);
+    expect(tiingoCreditsSpentToday(readTiingoCreditLog(NOW, undefined, storage), NOW)).toBe(2);
+    // The reported budget still shows the true (unreserved) caps.
+    expect(out.budget).toEqual({ hourUsed: 2, hourLimit: 40, dayUsed: 2, dayLimit: 800 });
+  });
+});
+
+describe("planStartupRefresh", () => {
+  it("leaves Tiingo untouched for a small outdated set (≤8)", () => {
+    expect(planStartupRefresh({ outdatedCount: 8, tiingoRemaining: 40, tiingoAvailable: true })).toEqual({
+      route: "twelve",
+      tiingoBudget: 0,
+    });
+  });
+
+  it("routes the whole book via Tiingo when the spare budget covers it", () => {
+    // 12 outdated, 40 remaining, reserve 5 ⇒ usable 35 ≥ 12 ⇒ all Tiingo.
+    expect(planStartupRefresh({ outdatedCount: 12, tiingoRemaining: 40, tiingoAvailable: true })).toEqual({
+      route: "tiingo",
+      tiingoBudget: 12,
+    });
+  });
+
+  it("splits across Twelve + Tiingo when the set exceeds the spare budget", () => {
+    // 20 outdated, 12 remaining, reserve 5 ⇒ usable 7 < 20 ⇒ split, Tiingo gets 7.
+    expect(planStartupRefresh({ outdatedCount: 20, tiingoRemaining: 12, tiingoAvailable: true })).toEqual({
+      route: "split",
+      tiingoBudget: 7,
+    });
+  });
+
+  it("wires everything to Twelve when no spare Tiingo budget remains", () => {
+    // Only the reserve (or less) is left ⇒ a split is impossible ⇒ all Twelve.
+    expect(planStartupRefresh({ outdatedCount: 20, tiingoRemaining: 5, tiingoAvailable: true })).toEqual({
+      route: "twelve",
+      tiingoBudget: 0,
+    });
+    expect(planStartupRefresh({ outdatedCount: 20, tiingoRemaining: 3, tiingoAvailable: true })).toEqual({
+      route: "twelve",
+      tiingoBudget: 0,
+    });
+  });
+
+  it("wires everything to Twelve when Tiingo isn't configured", () => {
+    expect(planStartupRefresh({ outdatedCount: 50, tiingoRemaining: 800, tiingoAvailable: false })).toEqual({
+      route: "twelve",
+      tiingoBudget: 0,
+    });
   });
 });
 
