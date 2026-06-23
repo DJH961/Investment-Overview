@@ -130,7 +130,7 @@ describe("/iex-intraday route", () => {
   });
 });
 
-describe("/price daily branch honours the range", () => {
+describe("/price daily branch honors the range", () => {
   it("forwards resampleFreq=daily and the startDate/endDate window", async () => {
     const worker = await loadWorker();
     const calls = stubUpstreamHolder.current.calls;
