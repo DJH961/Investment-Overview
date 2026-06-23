@@ -92,7 +92,9 @@ def test_market_capped_by_budget() -> None:
     state.hour_used = 9  # only 1 call left
     fetcher = _FakeFetcher({s: {_MARKET_DATE: Decimal("1")} for s in ("A", "B", "C")})
     out = run_desktop_fallback(
-        candidates=[FallbackCandidate(s, is_nav=False, held_date=date(2026, 6, 20)) for s in ("A", "B", "C")],
+        candidates=[
+            FallbackCandidate(s, is_nav=False, held_date=date(2026, 6, 20)) for s in ("A", "B", "C")
+        ],
         expected_market_date=_MARKET_DATE,
         expected_nav_date=_NAV_DATE,
         primary_failed_symbols={"A", "B", "C"},

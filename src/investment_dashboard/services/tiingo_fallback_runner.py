@@ -124,9 +124,7 @@ def _run_nav(
     outcome: FallbackOutcome,
     manual: bool = False,
 ) -> None:
-    missing = [
-        c.symbol for c in nav if c.held_date is None or c.held_date < expected_nav_date
-    ]
+    missing = [c.symbol for c in nav if c.held_date is None or c.held_date < expected_nav_date]
     decision = decide_nav(
         missing_funds=missing,
         peer_published=peer_published,
@@ -162,9 +160,7 @@ def _run_nav(
     state_repo.note_publish_habit(state, now_eastern(now_utc).time())
     for sym in _merge(outcome, {canary: fetched.get(canary, {})}):
         state_repo.clear_stale(state, sym)
-    rest = select_within_budget(
-        [s for s in missing if s != canary], state.budget()
-    )
+    rest = select_within_budget([s for s in missing if s != canary], state.budget())
     if rest:
         more = fetch_closes(rest)
         state_repo.record_spend(state, len(rest))

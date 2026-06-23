@@ -105,9 +105,7 @@ def test_yfinance_failure_recovers_via_tiingo(
     def _fake_tiingo(symbols, start, end, *, token):
         return {s: {_TODAY: Decimal("123.45")} for s in symbols}
 
-    monkeypatch.setattr(
-        wiring.tiingo_client, "fetch_closes", _fake_tiingo
-    )
+    monkeypatch.setattr(wiring.tiingo_client, "fetch_closes", _fake_tiingo)
 
     result = prices_service.refresh_due_prices(session, today=_TODAY, now=_NOW)
     assert result.get("VTI", 0) >= 1
@@ -125,9 +123,7 @@ def test_yfinance_failure_recovers_via_tiingo(
     assert "Tiingo" in note.message
 
 
-def test_fallback_error_is_swallowed(
-    session: Session, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_fallback_error_is_swallowed(session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     _due_etf(session)
     monkeypatch.setattr(prices_service, "_resolve_tiingo_token", lambda: "tok")
     monkeypatch.setattr(prices_service, "fetch_closes", lambda *a, **k: {"VTI": {}})

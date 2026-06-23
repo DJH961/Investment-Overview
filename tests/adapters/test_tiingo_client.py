@@ -75,8 +75,12 @@ def test_fetch_quotes_skips_unknown_ticker_without_price() -> None:
         return_value=httpx.Response(
             200,
             json=[
-                {"ticker": "AAPL", "tngoLast": 201.5, "prevClose": 200.0,
-                 "timestamp": "2026-06-22T20:00:00Z"},
+                {
+                    "ticker": "AAPL",
+                    "tngoLast": 201.5,
+                    "prevClose": 200.0,
+                    "timestamp": "2026-06-22T20:00:00Z",
+                },
                 {"ticker": "NOTREAL"},  # echoed back with no price
             ],
         )
@@ -132,9 +136,7 @@ def test_fetch_closes_partial_status() -> None:
     respx.get(f"{TIINGO_ROOT}/tiingo/daily/FSKAX/prices").mock(
         return_value=httpx.Response(200, json=[{"date": "2026-06-22T00:00:00Z", "close": 206.15}])
     )
-    respx.get(f"{TIINGO_ROOT}/tiingo/daily/NOPE/prices").mock(
-        return_value=httpx.Response(404)
-    )
+    respx.get(f"{TIINGO_ROOT}/tiingo/daily/NOPE/prices").mock(return_value=httpx.Response(404))
 
     out = fetch_closes(["FSKAX", "NOPE"], date(2026, 6, 19), date(2026, 6, 22), token=_TOKEN)
 

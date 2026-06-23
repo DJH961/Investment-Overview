@@ -275,9 +275,7 @@ def decide_nav(
     if not budget.has_room():
         return NavDecision(NavAction.WAIT, (), "budget exhausted")
     if peer_published:
-        return _decide_nav_peer(
-            missing_funds, peer_published_at, now_utc, budget, manual=manual
-        )
+        return _decide_nav_peer(missing_funds, peer_published_at, now_utc, budget, manual=manual)
     return _decide_nav_canary(
         canary_pick,
         earliest_habit,

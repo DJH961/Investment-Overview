@@ -549,7 +549,13 @@ def refresh_due_prices(
             )
 
     _maybe_run_tiingo_fallback(
-        session, cache, due=due, now=now, today=today, primary_closes=closes_by_symbol, result=result
+        session,
+        cache,
+        due=due,
+        now=now,
+        today=today,
+        primary_closes=closes_by_symbol,
+        result=result,
     )
     return result
 
