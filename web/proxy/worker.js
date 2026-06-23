@@ -127,8 +127,10 @@ async function handlePrice(request, env) {
   let upstreamUrl;
   try {
     upstreamUrl = buildTiingoUrl(params);
-  } catch (err) {
-    return jsonError(400, String(err && err.message ? err.message : err), cors);
+  } catch {
+    // buildTiingoUrl throws only on caller-input validation; return a fixed
+    // message rather than echoing the error (no internal/stack detail leaks).
+    return jsonError(400, "invalid price request parameters", cors);
   }
 
   let upstream;
@@ -249,6 +251,8 @@ async function handleBlob(request, env) {
         cf: { cacheTtl: 0, cacheEverything: false },
       });
     } catch {
+      // Intentionally generic: don't echo the upstream error to clients (avoids
+      // leaking internal/stack detail; see CodeQL js/stack-trace-exposure).
       return new Response("upstream fetch failed", {
         status: 502,
         headers: { ...cors, "Content-Type": "text/plain; charset=utf-8" },
