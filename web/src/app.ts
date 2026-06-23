@@ -1877,8 +1877,15 @@ export class App {
     const liveFxFailed =
       eurUsd.eurUsdError !== null &&
       (eurUsd.eurUsdSource === "eod" || eurUsd.eurUsdSource === "none");
-    if ((fx.error && !fx.cached) || liveFxFailed) {
-      reasons.push("FX rates are temporarily unavailable — values use the last known exchange rate.");
+    if (fx.error && !fx.cached) {
+      // The keyless ECB daily rate itself failed with nothing cached: no FX at all.
+      reasons.push("FX rates are temporarily unavailable.");
+    } else if (liveFxFailed) {
+      reasons.push(
+        eurUsd.eurUsdSource === "none"
+          ? "FX rates are temporarily unavailable — portfolio values may be incomplete."
+          : "Live FX rate is unavailable — values use the last known exchange rate.",
+      );
     }
 
     // The Tiingo backup was needed this round but couldn't deliver. Distinguish
