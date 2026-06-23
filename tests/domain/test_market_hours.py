@@ -12,6 +12,7 @@ from investment_dashboard.domain.market_hours import (
     is_trading_day,
     is_us_market_holiday,
     is_us_market_open,
+    latest_settled_session_date,
     previous_trading_day,
     regular_session_close,
 )
@@ -174,3 +175,59 @@ class TestRegularSessionClose:
         close = regular_session_close(date(2024, 6, 24), tz=cet)
         assert (close.hour, close.minute) == (22, 0)
         assert close == datetime(2024, 6, 24, 16, 0, tzinfo=NY)
+
+
+class TestLatestSettledSessionDate:
+    def test_today_counts_only_after_the_close(self) -> None:
+        # Monday before 16:00 ET: today's close hasn't settled → previous session.
+        assert latest_settled_session_date(datetime(2024, 6, 24, 15, 0, tzinfo=NY)) == date(
+            2024, 6, 21
+        )
+        # At/after 16:00 ET: today's close has settled → today.
+        assert latest_settled_session_date(datetime(2024, 6, 24, 16, 0, tzinfo=NY)) == date(
+            2024, 6, 24
+        )
+
+    def test_before_open_is_the_prior_session(self) -> None:
+        # 08:00 ET on a Monday: nothing new today, last settled is Friday.
+        assert latest_settled_session_date(datetime(2024, 6, 24, 8, 0, tzinfo=NY)) == date(
+            2024, 6, 21
+        )
+
+    def test_weekend_rolls_back_to_friday(self) -> None:
+        assert latest_settled_session_date(datetime(2024, 6, 22, 12, 0, tzinfo=NY)) == date(
+            2024, 6, 21
+        )  # Saturday
+        assert latest_settled_session_date(datetime(2024, 6, 23, 12, 0, tzinfo=NY)) == date(
+            2024, 6, 21
+        )  # Sunday
+
+    def test_skips_market_holidays(self) -> None:
+        # Thursday 2024-12-26 before the close: 2024-12-25 is Christmas (closed),
+        # so the most recent settled session is Tuesday 2024-12-24.
+        assert latest_settled_session_date(datetime(2024, 12, 26, 10, 0, tzinfo=NY)) == date(
+            2024, 12, 24
+        )
+
+    def test_holiday_itself_rolls_back(self) -> None:
+        # On Christmas Day (a holiday) there is no settled-today print.
+        assert latest_settled_session_date(datetime(2024, 12, 25, 18, 0, tzinfo=NY)) == date(
+            2024, 12, 24
+        )
+
+    def test_naive_datetime_treated_as_exchange_local(self) -> None:
+        assert latest_settled_session_date(datetime(2024, 6, 24, 16, 30)) == date(2024, 6, 24)
+        assert latest_settled_session_date(datetime(2024, 6, 24, 9, 0)) == date(2024, 6, 21)
+
+    def test_converts_from_utc(self) -> None:
+        # 22:00 UTC is 18:00 ET (after the close) → today has settled.
+        assert latest_settled_session_date(datetime(2024, 6, 24, 22, 0, tzinfo=UTC)) == date(
+            2024, 6, 24
+        )
+        # 15:00 UTC is 11:00 ET (mid-session) → still the prior settled session.
+        assert latest_settled_session_date(datetime(2024, 6, 24, 15, 0, tzinfo=UTC)) == date(
+            2024, 6, 21
+        )
+
+    def test_default_now_returns_a_date(self) -> None:
+        assert isinstance(latest_settled_session_date(), date)

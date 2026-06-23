@@ -188,6 +188,36 @@ def is_us_market_open(now: datetime | None = None) -> bool:
     return _OPEN <= local.time() < _CLOSE
 
 
+def latest_settled_session_date(now: datetime | None = None) -> date:
+    """The exchange date of the most recent NYSE session whose 16:00 close has passed.
+
+    Holiday-aware (unlike :func:`previous_trading_day`): today counts only once
+    its 16:00 America/New_York close is in the past, otherwise the date rolls
+    back over weekends and full-day market holidays to the prior trading day.
+    This is "the close we should already be holding" — the desktop mirror of the
+    browser companion's ``latestSettledSessionDate`` — used to decide whether a
+    cached price is current enough that the feed needn't be polled again.
+
+    ``now`` defaults to the current instant (UTC). It may be naive (interpreted
+    as exchange time) or timezone-aware (converted to exchange time first).
+    """
+    if now is None:
+        now = datetime.now(UTC)
+    local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
+    day = local.date()
+    settled_today = (
+        local.weekday() < _SATURDAY
+        and not is_us_market_holiday(day)
+        and local.time() >= _CLOSE
+    )
+    if settled_today:
+        return day
+    day -= timedelta(days=1)
+    while day.weekday() >= _SATURDAY or is_us_market_holiday(day):
+        day -= timedelta(days=1)
+    return day
+
+
 def previous_trading_day(today: date) -> date:
     """The most recent weekday strictly *before* ``today``.
 

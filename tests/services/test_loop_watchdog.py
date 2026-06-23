@@ -24,6 +24,20 @@ def test_is_stall_uses_threshold_inclusively() -> None:
     assert loop_watchdog.is_stall(0.0, 3.0) is False
 
 
+def test_is_cpu_bound_stall_distinguishes_real_block_from_suspend() -> None:
+    # A genuine blocking calculation keeps a core busy for ~the whole lag.
+    assert loop_watchdog.is_cpu_bound_stall(5.0, 5.0) is True
+    assert loop_watchdog.is_cpu_bound_stall(5.0, 4.0) is True
+    # A suspend/deschedule (machine slept / app backgrounded) burns ~no CPU
+    # across a long wall-clock lag → not a real stall, must be suppressed.
+    assert loop_watchdog.is_cpu_bound_stall(60.0, 0.01) is False
+    assert loop_watchdog.is_cpu_bound_stall(5.0, 0.2) is False
+    # Right at the half-the-lag boundary counts (inclusive).
+    assert loop_watchdog.is_cpu_bound_stall(4.0, 2.0) is True
+    # A non-positive lag can never be a stall.
+    assert loop_watchdog.is_cpu_bound_stall(0.0, 0.0) is False
+
+
 def test_stall_message_reports_duration_and_guidance() -> None:
     msg = loop_watchdog.stall_message(4.25)
     assert "4.2s" in msg

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +44,15 @@ DEFAULT_STALL_THRESHOLD_SECONDS = 3.0
 #: collapses the burst into a single heads-up per incident-ish window.
 DEFAULT_REPORT_COOLDOWN_SECONDS = 30.0
 
+#: Fraction of a measured lag that must have been spent burning CPU for the lag
+#: to count as a *real* on-loop stall rather than a suspend/deschedule. A
+#: genuine blocking calculation keeps a core busy for ~the whole lag (fraction
+#: near 1.0); when the OS deschedules or suspends the process — the app was
+#: backgrounded while the user worked elsewhere, or the laptop slept — the wake
+#: simply arrives late while almost no CPU was used (fraction near 0). Half is a
+#: wide margin: real stalls clear it comfortably, idle-while-away ones don't.
+DEFAULT_MIN_CPU_FRACTION = 0.5
+
 #: Source label used for the in-app/Data Health entry.
 STALL_SOURCE = "UI responsiveness"
 
@@ -50,6 +60,27 @@ STALL_SOURCE = "UI responsiveness"
 def is_stall(lag_seconds: float, threshold_seconds: float) -> bool:
     """True when an observed loop ``lag`` qualifies as a reportable stall."""
     return lag_seconds >= threshold_seconds
+
+
+def is_cpu_bound_stall(
+    lag_seconds: float,
+    cpu_used_seconds: float,
+    *,
+    min_cpu_fraction: float = DEFAULT_MIN_CPU_FRACTION,
+) -> bool:
+    """Whether a measured ``lag`` reflects real on-CPU work vs. a suspend/deschedule.
+
+    During a genuine in-loop block the process keeps a core busy, so the CPU
+    time consumed across the lag window tracks the lag. When the OS deschedules
+    or suspends the process (the app was backgrounded while the user worked in
+    other windows, or the machine slept), the wake just arrives late while the
+    process burned almost no CPU. Requiring the CPU spent to be at least
+    ``min_cpu_fraction`` of the lag screens out those wall-clock-only stalls so
+    the watchdog stops crying wolf every time the user tabs away and back.
+    """
+    if lag_seconds <= 0:
+        return False
+    return cpu_used_seconds >= lag_seconds * min_cpu_fraction
 
 
 def stall_message(lag_seconds: float) -> str:
@@ -95,6 +126,7 @@ async def _run(
     throttle = _Throttle(report_cooldown_seconds)
     while True:
         scheduled = loop.time()
+        cpu_before = time.process_time()
         try:
             await asyncio.sleep(poll_interval_seconds)
         except asyncio.CancelledError:  # graceful shutdown
@@ -102,7 +134,15 @@ async def _run(
         # If the loop was blocked, this wake arrives late; the overshoot beyond
         # the requested sleep is the time the loop spent unable to service us.
         lag = loop.time() - scheduled - poll_interval_seconds
-        if is_stall(lag, stall_threshold_seconds) and throttle.allow(loop.time()):
+        # ...and the CPU the process burned over that same window tells a real
+        # blocking calculation (CPU ~= lag) apart from a suspend/deschedule
+        # while the user was away (CPU ~= 0) — only the former is worth a report.
+        cpu_used = time.process_time() - cpu_before
+        if (
+            is_stall(lag, stall_threshold_seconds)
+            and is_cpu_bound_stall(lag, cpu_used)
+            and throttle.allow(loop.time())
+        ):
             try:
                 _report_stall(lag)
             except Exception:  # never let the safety net take the app down

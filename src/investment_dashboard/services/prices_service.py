@@ -15,6 +15,10 @@ from investment_dashboard.adapters.yfinance_client import (
     fetch_market_times,
     fetch_splits,
 )
+from investment_dashboard.domain.market_hours import (
+    is_us_market_open,
+    latest_settled_session_date,
+)
 from investment_dashboard.models import Instrument
 from investment_dashboard.repositories import (
     instrument_overrides_repo,
@@ -57,6 +61,10 @@ REFRESH_TTL_SECONDS: dict[str, int] = {
 _DEFAULT_TTL_SECONDS = 24 * 60 * 60
 # Asset classes that do not have a yfinance ticker.
 _SYNTHETIC_ASSET_CLASSES = frozenset({"cash", "savings"})
+# Asset classes priced off a once-a-day NAV (published after the close) rather
+# than an intraday exchange quote. Mirrors the Tiingo fallback wiring's NAV set
+# and the browser companion's fetchable-NAV classes.
+_NAV_ASSET_CLASSES = frozenset({"mutual_fund"})
 
 
 def refresh_prices(
@@ -65,6 +73,7 @@ def refresh_prices(
     *,
     earliest_needed: date,
     today: date | None = None,
+    now: datetime | None = None,
 ) -> dict[str, int]:
     """Backfill ``price_history`` for every active instrument.
 
@@ -77,9 +86,22 @@ def refresh_prices(
     Synthetic ``SAVINGS_CASH`` (and other ``cash``/``savings`` asset
     classes) is skipped — there is no yfinance ticker. Returns
     ``{symbol: rows_written}``.
+
+    The fetch window's tail is *anchored* to the most recent date each
+    holding can actually have a price, so a manual re-pull double-checks
+    the latest close/NAV without ever asking yfinance for a window that can
+    only come back empty (which would surface a "no data" Data Health
+    warning). Market holdings anchor to today while the session is open
+    (live intraday) and otherwise to the latest settled close; NAV funds
+    never have an intraday value, so they always anchor to the latest
+    settled session's published NAV.
     """
     cache = cache_session if cache_session is not None else session
     today = today or date.today()
+    now = now or datetime.now(UTC).replace(tzinfo=None)
+    now_utc = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
+    market_open = is_us_market_open(now_utc)
+    settled = latest_settled_session_date(now_utc)
     result: dict[str, int] = {}
 
     instruments = instruments_repo.list_instruments(session)
@@ -95,6 +117,7 @@ def refresh_prices(
     earliest_dates = prices_repo.earliest_price_dates(cache, candidate_ids)
     symbols_to_fetch: list[str] = []
     earliest_per_symbol: dict[str, date] = {}
+    anchors: list[date] = []
     for instr in instruments:
         if instr.asset_class in _SYNTHETIC_ASSET_CLASSES:
             continue
@@ -115,17 +138,31 @@ def refresh_prices(
             start = earliest_needed
         else:
             start = max(earliest_needed, latest + timedelta(days=1))
-        if start >= today + timedelta(days=1):
-            result[instr.symbol] = 0
-            continue
+        # Smart anchor: the most recent date this holding can actually be
+        # priced. A manual/force refresh clamps ``start`` back to the anchor so
+        # it always re-pulls (double-checks) the latest available value — a live
+        # intraday move for market holdings while the session is open, otherwise
+        # the latest settled close; NAV funds publish once a day after the bell,
+        # so they anchor to the latest settled session's NAV and are never asked
+        # for an intraday "today" window. Anchoring this way means the batched
+        # request always covers at least one real trading session, so it never
+        # returns an empty frame (which would log a "no data" Data Health
+        # warning). The desktop's yfinance primary is unmetered, so this broad
+        # re-pull is free.
+        if instr.asset_class in _NAV_ASSET_CLASSES:
+            anchor = settled
+        else:
+            anchor = today if market_open else settled
+        start = min(start, anchor)
         symbols_to_fetch.append(instr.symbol)
         earliest_per_symbol[instr.symbol] = start
+        anchors.append(anchor)
 
     if not symbols_to_fetch:
         return result
 
     start = min(earliest_per_symbol.values())
-    end = today + timedelta(days=1)
+    end = max(anchors) + timedelta(days=1)
     try:
         closes_by_symbol = fetch_closes(symbols_to_fetch, start, end)
     except YFinanceError as exc:
@@ -425,41 +462,97 @@ def _ttl_for(instr: Instrument) -> int:
     return REFRESH_TTL_SECONDS.get(instr.asset_class, _DEFAULT_TTL_SECONDS)
 
 
+def _is_due_for_market_state(
+    instr: Instrument,
+    latest_date: date | None,
+    *,
+    market_open: bool,
+    settled_date: date,
+) -> bool:
+    """Whether ``instr`` is worth polling given the market clock and what's cached.
+
+    Mirrors the browser companion's update policy so the background refresh stops
+    hammering yfinance for data that cannot have changed:
+
+    * NAV funds (mutual funds) publish once a day after the close, so they are
+      due only while we don't yet hold the latest settled session's NAV — never
+      intraday.
+    * Market symbols (ETFs / stocks / tickered holdings) are due live while the
+      session is open, and once after the bell to capture the official settled
+      close; once that close is cached they're skipped until the next session, so
+      there are no pointless overnight, weekend or pre-open fetches.
+
+    A symbol with nothing cached (``latest_date is None``) is always due so a
+    brand-new holding — or one whose TTL lapsed before its first successful pull
+    — gets fetched immediately.
+    """
+    if latest_date is None:
+        return True
+    if instr.asset_class in _NAV_ASSET_CLASSES:
+        return latest_date < settled_date
+    if market_open:
+        return True
+    return latest_date < settled_date
+
+
 def instruments_due_for_refresh(
     session: Session,
     cache_session: Session | None = None,
     *,
     now: datetime | None = None,
 ) -> list[Instrument]:
-    """Return the active, non-synthetic instruments whose cache TTL has expired.
+    """Return the active, non-synthetic instruments worth pulling right now.
 
     The background ``app.timer`` in :mod:`investment_dashboard.main` calls
     this every few minutes; whatever it returns is what we pull from
     yfinance — so the smaller this list, the cheaper the refresh.
 
+    An instrument is due only when **both** gates pass: its per-asset-class TTL
+    has expired *and* the market clock says fresh data could exist (see
+    :func:`_is_due_for_market_state`). The second gate stops the loop from
+    re-fetching closed-market symbols every tick (which made yfinance log a
+    "no data" warning overnight and weekends and churned the event loop); manual
+    refreshes go through :func:`refresh_prices`, which ignores both gates and
+    always pulls, so a user can still force an update at any time.
+
     ``session`` reads the ledger tier (instruments + active overrides);
-    ``cache_session`` reads the cache tier (``price_cache_metadata``). When
-    unset it falls back to ``session`` (single-file layout). In split-DB mode
-    the last-refresh timestamps live in the cache database, so reading them
-    through the ledger session would always come back empty and mark *every*
-    instrument due on every tick.
+    ``cache_session`` reads the cache tier (``price_cache_metadata`` and
+    ``price_history``). When unset it falls back to ``session`` (single-file
+    layout). In split-DB mode the last-refresh timestamps and cached closes live
+    in the cache database, so reading them through the ledger session would
+    always come back empty and mark *every* instrument due on every tick.
     """
     cache = cache_session if cache_session is not None else session
     now = now or datetime.now(UTC).replace(tzinfo=None)
+    # The market-clock helpers read a naive datetime as already-exchange-time, so
+    # tag our naive-UTC ``now`` as UTC before handing it over.
+    now_utc = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
+    market_open = is_us_market_open(now_utc)
+    settled_date = latest_settled_session_date(now_utc)
     due: list[Instrument] = []
     inactive = instrument_overrides_repo.inactive_ids(session)
     instruments = instruments_repo.list_instruments(session)
-    # One IN(...) query for every instrument's last-refresh timestamp instead
-    # of one lookup per instrument.
-    last_refreshed = price_cache_repo.get_last_refreshed_at_map(cache, [i.id for i in instruments])
+    ids = [i.id for i in instruments]
+    # One IN(...) query each for the last-refresh timestamps and newest cached
+    # print dates instead of one lookup per instrument.
+    last_refreshed = price_cache_repo.get_last_refreshed_at_map(cache, ids)
+    latest_dates = prices_repo.latest_price_dates(cache, ids)
     for instr in instruments:
         if instr.asset_class in _SYNTHETIC_ASSET_CLASSES:
             continue
         if instr.id in inactive:
             continue
         last = last_refreshed.get(instr.id)
-        if last is None or (now - last).total_seconds() >= _ttl_for(instr):
-            due.append(instr)
+        if last is not None and (now - last).total_seconds() < _ttl_for(instr):
+            continue
+        if not _is_due_for_market_state(
+            instr,
+            latest_dates.get(instr.id),
+            market_open=market_open,
+            settled_date=settled_date,
+        ):
+            continue
+        due.append(instr)
     return due
 
 
