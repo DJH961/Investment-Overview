@@ -228,6 +228,12 @@ def _css() -> str:
   #inv-shutdown .inv-shutdown-spinner { animation: none; }
 }
 
+/* Keep NiceGUI/Quasar toasts (e.g. the live-web upload result shown during the
+   shutdown sequence) ABOVE the blurred shutdown overlay (z-index 1000000).
+   Quasar's notifications default to z-index 9500, so without this the upload
+   success/failure toast would be hidden behind the overlay. */
+.q-notifications, .q-notifications__list { z-index: 1000002 !important; }
+
 /* Visually-hidden live region — announces connection/loading state to screen
    readers (the dot and banner are otherwise silent/decorative). */
 .inv-sr-only {
@@ -560,8 +566,26 @@ def _script() -> str:
 
   var shutdownCloseBtn = el('inv-shutdown-close');
   if (shutdownCloseBtn) shutdownCloseBtn.addEventListener('click', function () {
-    // A user gesture gives window.close() its best chance of being honoured.
+    // Browsers only honour window.close() for tabs a script opened. The
+    // long-standing workaround is to first re-mark the current tab as
+    // script-opened (window.open('', '_self')) so the close is permitted; a
+    // user gesture (this click) gives it the best chance of being honoured.
+    try { window.open('', '_self'); } catch (e) { /* ignore */ }
     try { window.close(); } catch (e) { /* browser refused — frame stays */ }
+    // If the browser still refuses to close the tab, the page is still here a
+    // moment later: stop pretending and tell the user how to close it manually
+    // instead of leaving an apparently dead button.
+    setTimeout(function () {
+      var isMac = /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent || '');
+      var combo = isMac ? '\\u2318W' : 'Ctrl+W';
+      var msg = el('inv-shutdown-msg');
+      if (msg) msg.textContent =
+        'Your data is saved. Your browser blocked auto-close \\u2014 press '
+        + combo + ' to close this tab.';
+      announce('Your browser blocked closing the tab. Press ' + combo
+        + ' to close it.');
+      if (shutdownCloseBtn) shutdownCloseBtn.style.display = 'none';
+    }, 200);
   });
 
   // Browser-level connectivity (covers Wi-Fi drops the socket is slow to notice).
