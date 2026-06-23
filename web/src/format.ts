@@ -3,7 +3,7 @@
  * with `Intl.NumberFormat` for locale-aware grouping and currency symbols.
  */
 import type { Decimal } from "./decimal-config";
-import { convertFromEur, displayAmount } from "./currency";
+import { convertFromEur, displayAmount, getDisplayCurrency } from "./currency";
 import { clockOptions } from "./time-format";
 
 const NBSP = "\u00a0";
@@ -42,6 +42,41 @@ export function formatSignedDualCurrency(
   const base = formatMoneyValue(picked.value.abs(), picked.code);
   if (picked.value.isZero()) return base;
   return picked.value.isNegative() ? `−${NBSP}${base}` : `+${NBSP}${base}`;
+}
+
+/** A figure shown in both currencies at once: the active display currency as the
+ *  primary, the other as a smaller secondary. */
+export interface DualCurrencyParts {
+  /** Active display-currency figure (always present). */
+  primary: string;
+  /** The other currency's figure, or null when it can't be priced. */
+  secondary: string | null;
+}
+
+/**
+ * Format a figure that carries both its EUR pivot and a per-trade-date-FX USD
+ * value as *both* legs at once — the active display currency as the primary and
+ * the other currency as a smaller secondary. Used where currency drift itself is
+ * the point (e.g. the contribution ledger): each leg uses its own stored value
+ * (the USD leg already converted at the cash flow's own trade-date FX), so the
+ * two figures genuinely diverge instead of being a single rescale of one another.
+ * Returns null only when neither currency can be shown.
+ */
+export function formatDualCurrencyParts(
+  valueEur: Decimal | null,
+  valueUsd: Decimal | null,
+): DualCurrencyParts | null {
+  const eurStr = valueEur === null ? null : formatMoneyValue(valueEur, "EUR");
+  const usdStr = valueUsd === null ? null : formatMoneyValue(valueUsd, "USD");
+  const usdActive = getDisplayCurrency() === "USD";
+  const primaryStr = usdActive ? usdStr : eurStr;
+  const secondaryStr = usdActive ? eurStr : usdStr;
+  if (primaryStr === null) {
+    // The display currency can't be priced (e.g. USD selected without FX
+    // history): fall back to showing the other currency alone.
+    return secondaryStr === null ? null : { primary: secondaryStr, secondary: null };
+  }
+  return { primary: primaryStr, secondary: secondaryStr };
 }
 
 /**

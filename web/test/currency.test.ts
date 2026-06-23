@@ -14,6 +14,7 @@ import {
   formatCurrency,
   formatCurrencyShort,
   formatDualCurrency,
+  formatDualCurrencyParts,
   formatSignedDualCurrency,
 } from "../src/format";
 
@@ -134,6 +135,49 @@ describe("formatDualCurrency", () => {
 
   it("renders an em dash for missing figures", () => {
     expect(formatDualCurrency(null, null)).toBe("—");
+  });
+});
+
+describe("formatDualCurrencyParts", () => {
+  beforeEach(() => {
+    setDisplayCurrency("EUR");
+    setEurUsdRate(new Decimal("1.10"));
+  });
+
+  it("shows EUR primary and the per-date USD secondary in EUR mode", () => {
+    const parts = formatDualCurrencyParts(new Decimal("1000"), new Decimal("1300"));
+    expect(parts).not.toBeNull();
+    expect(parts?.primary).toContain("1,000.00");
+    expect(parts?.primary).toContain("€");
+    expect(parts?.secondary).toContain("1,300.00");
+    // The secondary USD leg is the verbatim per-date figure, not 1000*1.10.
+    expect(parts?.secondary).not.toContain("1,100.00");
+  });
+
+  it("flips primary/secondary in USD mode, keeping both legs verbatim", () => {
+    setDisplayCurrency("USD");
+    const parts = formatDualCurrencyParts(new Decimal("1000"), new Decimal("1300"));
+    expect(parts?.primary).toContain("1,300.00");
+    expect(parts?.secondary).toContain("1,000.00");
+    expect(parts?.secondary).toContain("€");
+  });
+
+  it("shows only the available leg when the other currency is missing", () => {
+    const parts = formatDualCurrencyParts(new Decimal("1000"), null);
+    expect(parts?.primary).toContain("1,000.00");
+    expect(parts?.secondary).toBeNull();
+  });
+
+  it("falls back to the EUR leg alone when USD is selected without a rate", () => {
+    setEurUsdRate(null);
+    setDisplayCurrency("USD");
+    const parts = formatDualCurrencyParts(new Decimal("1000"), null);
+    expect(parts?.primary).toContain("€");
+    expect(parts?.secondary).toBeNull();
+  });
+
+  it("returns null when neither currency can be shown", () => {
+    expect(formatDualCurrencyParts(null, null)).toBeNull();
   });
 });
 
