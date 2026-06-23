@@ -1,0 +1,306 @@
+/**
+ * Live **1 Day** intraday curve orchestration for the web companion
+ * (docs/v3.0_live_web_companion_proposal.md §10.8, Phase 2).
+ *
+ * This is the browser-direct baseline that ships a working 1D graph entirely on
+ * the existing provider (Twelve Data `time_series`), independent of the
+ * Cloudflare Worker / Tiingo pipe added in Phase 3. It ties the Phase 1
+ * foundation together:
+ *
+ *   1. **Anchor** the whole-book curve from the *live* holdings — the
+ *      intraday-priced sleeve (stocks/ETFs) is reconstructed bar-by-bar; the
+ *      constant cash + NAV sleeve rides in a flat `base` (`buildIntradayAnchor`).
+ *   2. **Smart-backfill** the session's price bars via {@link TimeSeriesStore},
+ *      keyed by trading day, so a re-open mid-session does **not** re-fetch a day
+ *      already on the device (§10.6) — at most one fetch per session, plus a
+ *      refresh of the live tip while the market is open.
+ *   3. **Reconstruct** the curve with the shared anchored maths
+ *      ({@link reconstructSessionCurve}), then **append the live tip** (the
+ *      headline total at `now`) while the session is open, or **cap at the
+ *      close** once it has shut so the line ends at 16:00 ET rather than trailing
+ *      flat to the wall clock.
+ *
+ * The network (`fetchBars`/`fetchFx`) and persistence (`store`) are injected, so
+ * the whole orchestration is unit-testable with no DOM, IndexedDB, or live API.
+ */
+
+import { Decimal } from "./decimal-config";
+import {
+  isUsMarketOpen,
+  lastSessionDate,
+  previousTradingSession,
+  sessionCloseMs,
+} from "./market-hours";
+import {
+  reconstructSessionCurve,
+  type Bar,
+  type CurvePoint,
+  type ReconHolding,
+} from "./timeseries";
+import { TimeSeriesStore } from "./timeseries-store";
+
+/**
+ * One intraday-priced holding (a stock/ETF) as the curve needs it. `closeNative`
+ * is the holding's *current* native mark, used as the ratio denominator so the
+ * last intraday bar re-marks the live value and the curve **closes on the
+ * headline total** by construction; `valueEur`/`valueUsd` are its live values.
+ */
+export interface IntradayHolding {
+  /** The Twelve Data ticker (export `price_symbol`) — the bar map's key. */
+  priceSymbol: string;
+  /** Current live EUR value of the holding. */
+  valueEur: Decimal;
+  /** Current live USD value of the holding (FX-free; USD is booked). */
+  valueUsd: Decimal;
+  /** Current native price — the ratio denominator the bars re-mark from. */
+  closeNative: Decimal;
+  /** True when the holding is booked in USD, so its EUR view needs an FX rebase. */
+  isUsdNative: boolean;
+}
+
+/**
+ * The whole-book anchor: the intraday-priced sleeve plus the constant base
+ * (settled cash + NAV funds) that is added at every point.
+ */
+export interface IntradayAnchor {
+  /** Intraday-priced holdings (ETFs/stocks). NAV funds + cash ride in `base`. */
+  holdings: IntradayHolding[];
+  /** Constant EUR base (cash + NAV funds) added at every point. */
+  baseEur: Decimal;
+  /** Constant USD base (cash + NAV funds) added at every point. */
+  baseUsd: Decimal;
+  /** The settled EUR→USD rate the holdings' EUR values are expressed at. */
+  baseFx: Decimal | null;
+}
+
+const ZERO = new Decimal(0);
+
+/** Shares below this are treated as a closed-out lot, not a real holding. */
+const MIN_SHARES = new Decimal("0.0000001");
+
+/** One holding's value/price as seen by {@link buildIntradayAnchor}. */
+export interface AnchorHoldingInput {
+  priceSymbol: string;
+  nativeCurrency: string;
+  priceType: "market" | "nav";
+  shares: Decimal;
+  /** Current native price (live or last-known), or null when unpriced. */
+  priceNative: Decimal | null;
+  /** Current live EUR value, or null when it could not be valued. */
+  valueEur: Decimal | null;
+  /** Current live USD value, or null when FX was unavailable. */
+  valueUsd: Decimal | null;
+}
+
+/**
+ * Split the live book into the intraday-priced sleeve (reconstructed bar by bar)
+ * and the constant cash + NAV base, ready for {@link loadOrBuildSessionCurve}.
+ *
+ * A holding joins the intraday sleeve only when it is market-priced, carries a
+ * real share count, and has both a native price (the ratio denominator) and a
+ * live EUR value; everything else — NAV funds, the unvalued, and the supplied
+ * cash totals — folds into the flat base, exactly like the desktop. USD values
+ * fall back to the EUR figure when no USD twin exists so the base never drops a
+ * sleeve.
+ */
+export function buildIntradayAnchor(
+  holdings: AnchorHoldingInput[],
+  cashValueEur: Decimal,
+  cashValueUsd: Decimal,
+  baseFx: Decimal | null,
+): IntradayAnchor {
+  const sleeve: IntradayHolding[] = [];
+  let baseEur = cashValueEur;
+  let baseUsd = cashValueUsd;
+  for (const h of holdings) {
+    const valueEur = h.valueEur;
+    if (valueEur === null) continue; // unvaluable — excluded from the curve entirely
+    const valueUsd = h.valueUsd ?? valueEur;
+    const intraday =
+      h.priceType === "market" &&
+      h.priceNative !== null &&
+      !h.priceNative.isZero() &&
+      h.shares.abs().greaterThan(MIN_SHARES) &&
+      h.priceSymbol.length > 0;
+    if (intraday) {
+      sleeve.push({
+        priceSymbol: h.priceSymbol,
+        valueEur,
+        valueUsd,
+        closeNative: h.priceNative as Decimal,
+        isUsdNative: h.nativeCurrency.toUpperCase() === "USD",
+      });
+    } else {
+      // NAV funds / cash-like rows print at most once a day — carry them flat.
+      baseEur = baseEur.plus(valueEur);
+      baseUsd = baseUsd.plus(valueUsd);
+    }
+  }
+  return { holdings: sleeve, baseEur, baseUsd, baseFx };
+}
+
+/** The distinct Twelve Data tickers the intraday sleeve needs bars for. */
+export function intradaySymbols(anchor: IntradayAnchor): string[] {
+  return [...new Set(anchor.holdings.map((h) => h.priceSymbol))];
+}
+
+/** Map the anchor's holdings into the reconstruction's holding shape. */
+function toReconHoldings(holdings: IntradayHolding[]): ReconHolding[] {
+  return holdings.map((h) => ({
+    symbol: h.priceSymbol,
+    valueEur: h.valueEur,
+    valueUsd: h.valueUsd,
+    closeNative: h.closeNative,
+    isUsdNative: h.isUsdNative,
+  }));
+}
+
+/** The live headline totals pinned as the curve's final point while open. */
+export interface LiveTip {
+  valueEur: Decimal;
+  valueUsd: Decimal;
+}
+
+/**
+ * Append (or replace) the curve's final point with the live tip at `t`.
+ *
+ * While the session is open the freshest headline is newer than the last 5-min
+ * bar, so the curve should end on it. A tip at the same instant as the last bar
+ * replaces it; an older tip is ignored (the bars are already ahead). An empty
+ * curve gains the lone tip so a cold open still shows the live dot.
+ */
+export function appendLiveTip(points: CurvePoint[], t: number, tip: LiveTip): CurvePoint[] {
+  const tipPoint: CurvePoint = { t, valueEur: tip.valueEur, valueUsd: tip.valueUsd };
+  if (points.length === 0) return [tipPoint];
+  const last = points[points.length - 1];
+  if (t < last.t) return points;
+  if (t === last.t) return [...points.slice(0, -1), tipPoint];
+  return [...points, tipPoint];
+}
+
+/**
+ * Cap the curve at the regular-session close: drop any point after `closeMs` so
+ * the line ends at 16:00 ET once the market has shut, rather than trailing a
+ * flat segment out to the current wall clock (or across a weekend). If capping
+ * would remove every point (e.g. only post-close daily bars survived), the curve
+ * is returned untouched rather than blanked.
+ */
+export function capAtClose(points: CurvePoint[], closeMs: number): CurvePoint[] {
+  const kept = points.filter((p) => p.t <= closeMs);
+  return kept.length > 0 ? kept : points;
+}
+
+/** Native price bars fetched per Twelve Data ticker (1 credit/symbol/request). */
+export type BarFetcher = (symbols: string[]) => Promise<Map<string, Bar[]>>;
+
+/** Inputs to {@link loadOrBuildSessionCurve}. */
+export interface SessionCurveOptions {
+  anchor: IntradayAnchor;
+  /** Persistent per-trading-day bar store (smart-backfill). */
+  store: TimeSeriesStore;
+  /** Fetch native price bars for the given tickers (browser-direct time_series). */
+  fetchBars: BarFetcher;
+  /** Fetch EUR→USD bars for the session; omit/null to fall back to `baseFx`. */
+  fetchFx?: (() => Promise<Bar[]>) | null;
+  /** Reference instant (defaults to now). */
+  now?: Date;
+  /** Live headline totals to pin as the tip while the market is open. */
+  liveTip?: LiveTip | null;
+  /** Trading sessions to retain in the store (rolling window); default 7. */
+  retainSessions?: number;
+}
+
+/** A built 1D session curve plus the day it covers. */
+export interface SessionCurve {
+  /** Trading day the curve covers (`YYYY-MM-DD`, New-York calendar). */
+  day: string;
+  /** Whole-book points, ascending; closes on the headline total. */
+  points: CurvePoint[];
+  /** Whether the regular session was open at `now`. */
+  marketOpen: boolean;
+}
+
+/**
+ * Build the live 1D session curve, fetching at most once per session day.
+ *
+ * Fetches a symbol's bars only when the store has none for the day, except while
+ * the market is open (when all symbols are refreshed so the curve extends to the
+ * latest bar). Newly fetched bars are merged into the store; the reconstruction
+ * then runs off the merged session. While open, the live tip is pinned as the
+ * final point; once closed, the curve is capped at the 16:00 ET close. Older
+ * sessions are pruned to a rolling window so the store does not grow unbounded.
+ */
+export async function loadOrBuildSessionCurve(
+  options: SessionCurveOptions,
+): Promise<SessionCurve> {
+  const { anchor, store, fetchBars, fetchFx = null } = options;
+  const now = options.now ?? new Date();
+  const day = lastSessionDate(now);
+  const marketOpen = isUsMarketOpen(now);
+  const symbols = intradaySymbols(anchor);
+
+  let stored = await store.loadSession(day);
+  const missing = symbols.filter((s) => !(stored?.bars[s]?.length));
+  const needFetch = symbols.length > 0 && (missing.length > 0 || marketOpen);
+
+  if (needFetch) {
+    // Closed: only backfill the gaps. Open: refresh every symbol so the curve
+    // grows to the freshest bar (still 1 credit each — bars are free).
+    const fetchSymbols = marketOpen ? symbols : missing;
+    const barsBySymbol = await fetchBars(fetchSymbols);
+    const incomingBars: Record<string, Bar[]> = {};
+    for (const [symbol, bars] of barsBySymbol) {
+      if (bars.length > 0) incomingBars[symbol] = bars;
+    }
+    let incomingFx: Bar[] | undefined;
+    if (fetchFx) {
+      try {
+        incomingFx = await fetchFx();
+      } catch {
+        // FX bars are a refinement (each point falls back to `baseFx`); a failure
+        // must never sink the price curve.
+        incomingFx = undefined;
+      }
+    }
+    stored = await store.mergeSession(day, { bars: incomingBars, fx: incomingFx }, now.getTime());
+  }
+
+  await pruneOldSessions(store, day, options.retainSessions ?? 7);
+
+  if (!stored || anchor.holdings.length === 0) {
+    return { day, points: [], marketOpen };
+  }
+
+  const barsBySymbol = new Map<string, Bar[]>(Object.entries(stored.bars));
+  let points = reconstructSessionCurve({
+    holdings: toReconHoldings(anchor.holdings),
+    barsBySymbol,
+    fxBars: stored.fx,
+    baseFx: anchor.baseFx,
+    baseEur: anchor.baseEur,
+    baseUsd: anchor.baseUsd,
+  });
+
+  if (marketOpen && options.liveTip) {
+    points = appendLiveTip(points, now.getTime(), options.liveTip);
+  } else if (!marketOpen) {
+    points = capAtClose(points, sessionCloseMs(day));
+  }
+
+  return { day, points, marketOpen };
+}
+
+/** Drop stored sessions older than `retainSessions` trading days back from `day`. */
+async function pruneOldSessions(
+  store: TimeSeriesStore,
+  day: string,
+  retainSessions: number,
+): Promise<void> {
+  if (retainSessions <= 1) return;
+  let floor = day;
+  for (let i = 1; i < retainSessions; i += 1) floor = previousTradingSession(floor);
+  await store.prune(floor);
+}
+
+/** Exposed for tests: the constant-base zero used when no cash sleeve is given. */
+export const NO_CASH = ZERO;

@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { isUsMarketHoliday, isUsMarketOpen, latestSettledSessionDate } from "../src/market-hours";
+import {
+  isUsMarketHoliday,
+  isUsMarketOpen,
+  lastSessionDate,
+  latestSettledSessionDate,
+  previousTradingSession,
+  sessionCloseMs,
+  sessionOpenMs,
+} from "../src/market-hours";
 
 /**
  * The instants below are expressed in UTC; the helper must convert them to the
@@ -104,5 +112,57 @@ describe("latestSettledSessionDate", () => {
     // The Monday after Juneteenth (Fri 2026-06-19) skips back over both the
     // weekend and the holiday to Thursday 2026-06-18.
     expect(latestSettledSessionDate(new Date("2026-06-22T13:00:00Z"))).toBe("2026-06-18");
+  });
+});
+
+describe("lastSessionDate", () => {
+  it("is today once the 09:30 ET open has passed on a trading day", () => {
+    // Tue 2026-06-23 14:00 UTC == 10:00 ET (mid-session).
+    expect(lastSessionDate(new Date("2026-06-23T14:00:00Z"))).toBe("2026-06-23");
+  });
+
+  it("stays today after the close, through the evening", () => {
+    // Tue 2026-06-23 21:00 UTC == 17:00 ET (after close, same session).
+    expect(lastSessionDate(new Date("2026-06-23T21:00:00Z"))).toBe("2026-06-23");
+  });
+
+  it("is the previous trading day before today's open", () => {
+    // Tue 2026-06-23 13:00 UTC == 09:00 ET (pre-open) → Monday's session.
+    expect(lastSessionDate(new Date("2026-06-23T13:00:00Z"))).toBe("2026-06-22");
+  });
+
+  it("shows Friday's session across the weekend", () => {
+    // Sat 2026-06-27 14:00 UTC → Friday 2026-06-26.
+    expect(lastSessionDate(new Date("2026-06-27T14:00:00Z"))).toBe("2026-06-26");
+  });
+});
+
+describe("previousTradingSession", () => {
+  it("steps back one weekday", () => {
+    expect(previousTradingSession("2026-06-23")).toBe("2026-06-22");
+  });
+
+  it("skips a weekend", () => {
+    // Mon 2026-06-29 → Fri 2026-06-26.
+    expect(previousTradingSession("2026-06-29")).toBe("2026-06-26");
+  });
+
+  it("skips a full-day holiday and the weekend", () => {
+    // Before Mon 2026-06-22 the previous session skips the weekend and Fri
+    // 2026-06-19 (Juneteenth) to land on Thursday 2026-06-18.
+    expect(previousTradingSession("2026-06-22")).toBe("2026-06-18");
+  });
+});
+
+describe("sessionCloseMs / sessionOpenMs", () => {
+  it("resolves 16:00 / 09:30 ET to UTC during daylight saving (UTC-4)", () => {
+    // 2026-06-23 is EDT: 16:00 ET == 20:00 UTC, 09:30 ET == 13:30 UTC.
+    expect(new Date(sessionCloseMs("2026-06-23")).toISOString()).toBe("2026-06-23T20:00:00.000Z");
+    expect(new Date(sessionOpenMs("2026-06-23")).toISOString()).toBe("2026-06-23T13:30:00.000Z");
+  });
+
+  it("resolves 16:00 ET to UTC during standard time (UTC-5)", () => {
+    // 2026-01-12 is EST: 16:00 ET == 21:00 UTC.
+    expect(new Date(sessionCloseMs("2026-01-12")).toISOString()).toBe("2026-01-12T21:00:00.000Z");
   });
 });
