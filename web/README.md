@@ -361,15 +361,24 @@ app has a built-in **demo mode** that renders the full Overview + Holdings UI
 from baked-in, entirely synthetic data — nothing is fetched and no real
 portfolio is involved.
 
-There are two ways to reach it:
+There are three ways to reach it:
 
 - **On the setup screen**, click **“Preview with sample data”** (a prominent
   *“Try the live demo — no signup”* call-to-action is shown first-run).
+- **On the unlock screen** (a configured, locked device), click
+  **“Preview with sample data”** beneath the unlock controls — so the demo is
+  reachable from the normal app link without editing the URL.
 - **Via URL**, add `?demo` (or `?preview`) to the address (e.g.
   `…/index.html?demo` or, once deployed,
   `https://<user>.github.io/<repo>/?demo`).
 
-Press **“Exit demo”** in the demo to return to the normal setup screen.
+Press **“Exit demo”** in the demo to return to the normal setup or unlock
+screen.
+
+Once inside, **every part of the demo is reachable from on-screen controls** —
+the deep-link URLs below are just shortcuts. The banner's persona switcher,
+Frozen/Live toggle and *Take the tour* button cover the persona, `sim` and
+`tour` parameters, and the normal tab bar covers the `tab` parameter.
 
 The demo is **feature-mapped to the real desktop app**: it runs the baked-in
 sample data through the exact same `buildDashboard` compute/render pipeline, so

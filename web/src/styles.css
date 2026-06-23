@@ -1648,6 +1648,13 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .panel.unlock .note { text-align: left; }
 .unlock-pass[hidden] { display: none; }
 .unlock-pass { margin-top: 0.6rem; }
+/* Quiet, always-visible demo entry beneath the unlock controls, separated from
+ * them by a hairline so it reads as a secondary "just looking?" affordance. */
+.unlock-demo {
+  margin: 1rem 0 0;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+}
 
 /* A toggle switch (checkbox styled as an iOS-style slider) for on/off settings
  * like fingerprint unlock and the enrolment opt-in. */

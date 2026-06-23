@@ -762,8 +762,19 @@ export class App {
       formChildren.push(passBlock);
     }
 
+    // Always-visible entry into the synthetic sample dashboard, so the demo is
+    // reachable straight from the normal app link even on a configured (locked)
+    // device — not only from the first-run setup screen or a `?demo` deep link.
+    // Once inside, every part of the demo (personas, tabs, tour, live-sim) is
+    // driven by on-screen controls rather than URL parameters.
+    const demoLink = h("button", { class: "linkish", type: "button", "data-action": "demo" }, [
+      "Preview with sample data",
+    ]);
+    formChildren.push(h("p", { class: "unlock-demo" }, [demoLink]));
+
     const form = h("form", { class: "panel unlock", novalidate: "novalidate" }, formChildren);
     form.querySelector('[data-action="settings"]')?.addEventListener("click", () => this.showSetup());
+    form.querySelector('[data-action="demo"]')?.addEventListener("click", () => this.enterDemo(this.demoParams()));
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const passphrase = pass.value;
