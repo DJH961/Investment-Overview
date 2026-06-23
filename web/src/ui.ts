@@ -872,10 +872,18 @@ function renderPeriodRow(row: PeriodRowView): HTMLElement {
  */
 function renderContributions(deposits: DepositsView): HTMLElement {
   const ZERO = new Decimal(0);
+  // Show each contribution KPI in both currencies (the active one large, the
+  // other as a smaller sub-line) — currency drift between the cash-flow dates and
+  // now is exactly what's interesting here, so it's surfaced without toggling.
+  const dualStat = (label: string, eur: Decimal | null, usd: Decimal | null): HTMLElement => {
+    const parts = formatDualCurrencyParts(eur, usd);
+    if (parts === null) return stat(label, "—");
+    return stat(label, parts.primary, "flat", parts.secondary ?? undefined);
+  };
   const statGrid = h("div", { class: "stat-grid" }, [
-    stat("Contributed", formatDualCurrency(deposits.totalEur, deposits.totalUsd)),
-    stat("This year", formatDualCurrency(deposits.ytdEur, deposits.ytdUsd)),
-    stat("This month", formatDualCurrency(deposits.mtdEur, deposits.mtdUsd)),
+    dualStat("Contributed", deposits.totalEur, deposits.totalUsd),
+    dualStat("This year", deposits.ytdEur, deposits.ytdUsd),
+    dualStat("This month", deposits.mtdEur, deposits.mtdUsd),
   ]);
 
   // Group the ledger rows by calendar year (newest first) so each year folds
