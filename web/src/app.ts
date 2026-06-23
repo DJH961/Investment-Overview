@@ -1723,8 +1723,7 @@ export class App {
     // with no explanation — so call it out explicitly.
     if (tiingoError) {
       reasons.push(
-        "Backup price source (Tiingo) is unreachable — showing last-known prices. " +
-          "If this persists, redeploy the price proxy Worker.",
+        `Backup price source (Tiingo) is unreachable — showing last-known prices. ${tiingoError.message}`,
       );
     }
 
