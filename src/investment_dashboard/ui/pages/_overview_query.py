@@ -261,11 +261,9 @@ def previous_session_close_value(
     before the session shown by the "Day" range, or ``None`` when no settled
     value can be computed (e.g. a brand-new portfolio).
     """
-    from investment_dashboard.domain.market_hours import previous_trading_day  # noqa: PLC0415
-
     now = now or datetime.now(UTC)
     session_date = intraday_snapshots_service.last_session_date(now)
-    prev_date = previous_trading_day(session_date)
+    prev_date = intraday_snapshots_service.previous_trading_session(session_date)
     try:
         value = snapshots_service.get_or_compute_in_currency(session, prev_date, currency)
     except Exception:  # pragma: no cover - defensive: keep the chart renderable

@@ -14,6 +14,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [3.9.2] — 2026-06-23
+
 ### Fixed
 
 - **"Live" now only shows when prices are genuinely live (web + desktop).** The

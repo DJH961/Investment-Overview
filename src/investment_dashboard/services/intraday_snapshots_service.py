@@ -44,7 +44,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain.market_hours import is_us_market_open
+from investment_dashboard.domain.market_hours import is_us_market_holiday, is_us_market_open
 from investment_dashboard.repositories import app_config_repo, intraday_repo
 
 log = logging.getLogger(__name__)
@@ -54,6 +54,11 @@ _MARKET_TZ = ZoneInfo("America/New_York")
 
 #: ``datetime.weekday()`` returns 5/6 for Saturday/Sunday.
 _SATURDAY = 5
+
+#: Regular cash-session open (local exchange time). A weekday only becomes "the
+#: current session" once its market has opened; before then the most recent
+#: *started* trading day is still the one shown (see :func:`last_session_date`).
+_MARKET_OPEN = time(9, 30)
 
 #: Minimum spacing between stored live samples. A page load and the periodic
 #: tick can both fire within a second or two; this collapses such bursts to one
@@ -82,23 +87,47 @@ def _to_naive_utc(now: datetime) -> datetime:
     return now
 
 
-def _market_date(now: datetime) -> date:
-    """Exchange-local calendar date of ``now`` (naive instants are read as UTC)."""
-    aware = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
-    return aware.astimezone(_MARKET_TZ).date()
+def _is_trading_day(day: date) -> bool:
+    """Whether ``day`` is a weekday the NYSE actually trades (not a holiday)."""
+    return day.weekday() < _SATURDAY and not is_us_market_holiday(day)
+
+
+def previous_trading_session(session_date: date) -> date:
+    """The most recent trading day strictly before ``session_date``.
+
+    Holiday- and weekend-aware (unlike
+    :func:`domain.market_hours.previous_trading_day`), so the "1 Day" chart's
+    prior-close reference line marks the genuine previous *session* even across a
+    holiday (e.g. the day before Independence Day, not the holiday itself).
+    """
+    day = session_date - timedelta(days=1)
+    while not _is_trading_day(day):
+        day -= timedelta(days=1)
+    return day
 
 
 def last_session_date(now: datetime | None = None) -> date:
-    """Exchange date of the most recent trading session on/before ``now``.
+    """Exchange date of the most recent trading session that has *started*.
 
-    Weekends roll back to Friday so a Saturday/Sunday open reconstructs (and
-    shows) the last trading day. Holidays are not modelled (see
-    :mod:`investment_dashboard.domain.market_hours`); on a holiday this returns
-    that date and the feed simply yields no intraday bars.
+    "Started" matters: a brand-new trading day only becomes the session once its
+    market has opened (09:30 exchange time). Before the open — early in the
+    morning, all weekend, or on a holiday — the most recent trading day that has
+    actually begun is returned, so the "1 Day" curve keeps showing the *last*
+    trading session's shape until a fresh session starts rather than blanking out
+    on an as-yet-empty day. Weekends and full-day NYSE holidays are skipped (both
+    here and when rolling back), and the whole calculation is done in exchange
+    time so it is timezone-correct regardless of where the user is.
     """
     now = now or datetime.now(UTC)
-    day = _market_date(now)
-    while day.weekday() >= _SATURDAY:
+    aware = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
+    local = aware.astimezone(_MARKET_TZ)
+    day = local.date()
+    # Today counts as the current session only once it is a trading day *and* its
+    # market has opened. Otherwise roll back to the most recent started session.
+    if _is_trading_day(day) and local.time() >= _MARKET_OPEN:
+        return day
+    day -= timedelta(days=1)
+    while not _is_trading_day(day):
         day -= timedelta(days=1)
     return day
 
