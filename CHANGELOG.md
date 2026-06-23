@@ -14,6 +14,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [3.19.1] — 2026-06-23
+
+### Fixed
+
+- **Chart axis labels are now dark-mode proof (desktop app).** The Plotly
+  value-over-time graphs were rendered with a fixed *light* template, so their
+  ink-coloured axis tick labels, titles, legend and gridlines were drawn for a
+  white background and all but vanished against the dark card surface in dark
+  mode. Because the server can't know the resolved theme at render time (it may
+  be "auto" / follow-the-device), the chart text is now recoloured from the live
+  theme tokens in CSS (`--inv-muted` / `--inv-ink` / `--inv-hairline`, which
+  already flip with `.body--dark`) — making every chart legible in light, dark
+  **and** auto modes. A coloured secondary axis (the dual-currency right axis,
+  whose `y2tick` / `y2title` text is intentionally pink) keeps its own colour.
+
+### Changed
+
+- **Value-over-time graphs no longer plot non-market days.** The Overview
+  Month / YTD / Year / All ranges and the Yearly history chart drew one point
+  per *calendar* day, so weekends and NYSE holidays added flat steps that merely
+  repeated the previous session's close. Those non-trading days are now dropped
+  from the series and the line's own smoothing bridges the gap, giving a cleaner
+  curve. The live "today" tip is always kept so the graph still ends at the
+  current value even when opened on a weekend. The intraday Day / Week curves
+  already plotted market-time points only. A new `market_hours.is_trading_day()`
+  helper centralises the weekday-and-not-a-holiday test.
+
 ## [3.19.0] — 2026-06-23
 
 ### Added
@@ -105,6 +132,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   calendar date on every tick.
 
 ## [3.16.0] — 2026-06-23
+
 
 ### Added
 

@@ -188,4 +188,3 @@ describe("parseDemoParams", () => {
     expect(parseDemoParams("?demo").tour).toBe(false);
   });
 });
-
