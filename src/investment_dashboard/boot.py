@@ -374,6 +374,16 @@ def _run_migrations() -> None:
         # resolving to 0. Create the secondary tiers' schema directly;
         # ``create_all`` is idempotent and a no-op in single-file mode.
         _ensure_secondary_tier_schema()
+    # Reconcile the pure-cache ``intraday_value`` table on every writable boot,
+    # regardless of which path above ran: its v3.9.3 column rename
+    # (``total_value_eur`` → ``market_value_eur``) is applied by neither
+    # ``create_all`` (which never renames an existing table, so a split-DB /
+    # packaged cache file keeps the legacy column and every Overview "1 Day"
+    # query fails with ``no such column: intraday_value.market_value_eur``) nor a
+    # single-file Alembic ``head`` for the ``fx_eur_usd`` rate column (migration
+    # 0014 recreates the table without it). See
+    # :func:`_ensure_intraday_value_schema`.
+    _reconcile_intraday_value_schema()
 
 
 def _load_alembic_config() -> tuple[Any, Any] | None:
@@ -583,6 +593,85 @@ def _ensure_added_columns(engine: object) -> None:
                 log.info("Added missing column %s.%s via create_all guard", table, column)
     except Exception:  # pragma: no cover - defensive
         log.warning("Could not ensure added columns; continuing", exc_info=True)
+
+
+def _reconcile_intraday_value_schema() -> None:
+    """Reconcile the cache-tier ``intraday_value`` table across every backing DB.
+
+    Runs the per-engine reconcile (:func:`_ensure_intraday_value_schema`) on both
+    the ledger and cache engines so the fix lands wherever the cache table
+    physically lives: the same file as the ledger in single-file mode, or a
+    separate cache database in a split-DB layout. The two engines alias the same
+    file in single-file mode, so the second call is a cheap no-op.
+    """
+    from investment_dashboard.db import (  # noqa: PLC0415
+        get_cache_engine,
+        get_ledger_engine,
+    )
+
+    seen: set[int] = set()
+    for getter in (get_ledger_engine, get_cache_engine):
+        try:
+            engine = getter()
+        except Exception:  # pragma: no cover - defensive: never block boot
+            log.warning("Could not resolve engine for intraday_value reconcile", exc_info=True)
+            continue
+        if id(engine) in seen:
+            continue
+        seen.add(id(engine))
+        _ensure_intraday_value_schema(engine)
+
+
+def _ensure_intraday_value_schema(engine: object) -> None:
+    """Bring an existing ``intraday_value`` table up to the current schema.
+
+    The table is **pure cache** (regenerable, pruned to the current session), so
+    a legacy copy is simply dropped and recreated on the current schema rather
+    than migrated in place. Handles the two schema changes that the plain
+    ``create_all`` / Alembic-head paths miss:
+
+    * the v3.9.3 rename ``total_value_eur`` → ``market_value_eur`` —
+      ``create_all`` never alters an existing table, so a split-DB / packaged
+      cache file keeps the old column and every read fails with
+      ``no such column: intraday_value.market_value_eur``; and
+    * the per-sample ``fx_eur_usd`` rate column — a single-file Alembic ``head``
+      recreates the table without it (migration 0014), so it must be added.
+
+    Idempotent and best-effort: a current table is left untouched and any failure
+    is logged and swallowed so boot never blocks on it.
+    """
+    from sqlalchemy import text  # noqa: PLC0415
+    from sqlalchemy.engine import Engine  # noqa: PLC0415
+
+    from investment_dashboard.models import IntradayValue  # noqa: PLC0415
+
+    if not isinstance(engine, Engine):  # pragma: no cover - defensive
+        return
+    try:
+        with engine.begin() as conn:
+            cols = {
+                row[1]
+                for row in conn.exec_driver_sql("PRAGMA table_info(intraday_value)").fetchall()
+            }
+            if cols and "market_value_eur" not in cols:
+                # Legacy v3.5.4 schema (``total_value_eur``): drop so the table is
+                # rebuilt below on the current schema. Pure cache, safe to drop —
+                # stale totals would otherwise be misread as market components.
+                conn.execute(text("DROP TABLE intraday_value"))
+                cols = set()
+                log.info("Dropped legacy intraday_value cache table (pre-market_value_eur rename)")
+            elif cols and "fx_eur_usd" not in cols:
+                # Rename already applied but the per-sample FX rate column is
+                # absent (single-file Alembic head recreates the table without it).
+                conn.execute(
+                    text('ALTER TABLE "intraday_value" ADD COLUMN "fx_eur_usd" NUMERIC(12, 8)')
+                )
+                log.info("Added missing column intraday_value.fx_eur_usd via cache reconcile")
+        # Rebuild a freshly-dropped (or never-created) table from the model so it
+        # carries the full current schema; a no-op when the table already exists.
+        IntradayValue.__table__.create(engine, checkfirst=True)
+    except Exception:  # pragma: no cover - defensive: never block boot
+        log.warning("Could not reconcile intraday_value schema; continuing", exc_info=True)
 
 
 def _backfill_transaction_legs() -> None:
