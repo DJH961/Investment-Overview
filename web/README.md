@@ -363,11 +363,49 @@ portfolio is involved.
 
 There are two ways to reach it:
 
-- **On the setup screen**, click **“Preview the dashboard with sample data”**.
-- **Via URL**, add `?demo` to the address (e.g. `…/index.html?demo` or, once
-  deployed, `https://<user>.github.io/<repo>/?demo`).
+- **On the setup screen**, click **“Preview with sample data”** (a prominent
+  *“Try the live demo — no signup”* call-to-action is shown first-run).
+- **Via URL**, add `?demo` (or `?preview`) to the address (e.g.
+  `…/index.html?demo` or, once deployed,
+  `https://<user>.github.io/<repo>/?demo`).
 
 Press **“Exit demo”** in the demo to return to the normal setup screen.
+
+The demo is **feature-mapped to the real desktop app**: it runs the baked-in
+sample data through the exact same `buildDashboard` compute/render pipeline, so
+all four tabs (Overview / Periods / Risk / Calculator), the EUR↔USD currency
+toggle, the live value chart with its FX-aware live tip, today's-move and
+freshness chips all behave as they do in production.
+
+### Interview / showcase options
+
+Everything below is **fully offline and secret-free** — no key, no network, no
+real data — so the links are safe to share or screen-share.
+
+| Goal | URL |
+| --- | --- |
+| Default ("Global ETF saver") | `?demo` |
+| US tech-heavy book (with a deliberate loser) | `?demo=tech` |
+| Euro investor, mostly USD assets (FX divergence) | `?demo=fx` |
+| Open straight to a tab | `?demo&tab=risk` (also `overview`, `periods`, `calculator`) |
+| Combine persona + tab | `?demo=tech&tab=risk` |
+| Auto-running guided tour | `?demo&tour=1` |
+| Boot into the live-sim motion | `?demo&sim=1` |
+| Full pitch link | `?demo=fx&tab=overview&tour=1&sim=1` |
+
+Inside the demo, the banner offers:
+
+- a **persona switcher** to jump between sample portfolios,
+- a **Frozen / Live** toggle — *Frozen* is a deterministic, screenshot-stable
+  snapshot; *Live* runs a seeded, gentle tick simulator that nudges prices
+  within a small band so the dashboard visibly "moves" (today's-move and
+  freshness chips update) with **no backend and no randomness you can't
+  reproduce**, and
+- a **Take the tour** button that spotlights one feature at a time.
+
+The motion and tour both respect `prefers-reduced-motion`, and the demo's ⚙
+**Settings** is a trimmed, read-only sheet (Appearance + currency + a "sample
+data" note) — it never exposes the API-key, data-source, or maintenance fields.
 
 ### No command line: view it on GitHub Pages
 
