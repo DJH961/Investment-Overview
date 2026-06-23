@@ -9,6 +9,7 @@ import pytest
 
 from investment_dashboard.domain.market_hours import (
     feed_is_fresh,
+    is_trading_day,
     is_us_market_holiday,
     is_us_market_open,
     previous_trading_day,
@@ -100,6 +101,18 @@ def test_holiday_during_session_hours_is_closed() -> None:
 def test_regular_weekday_is_not_a_holiday() -> None:
     assert is_us_market_holiday(date(2024, 6, 24)) is False
     assert is_us_market_open(datetime(2024, 6, 24, 10, 0, tzinfo=NY)) is True
+
+
+def test_is_trading_day() -> None:
+    # A plain weekday is a trading day...
+    assert is_trading_day(date(2024, 6, 24)) is True  # Monday
+    assert is_trading_day(date(2024, 6, 28)) is True  # Friday
+    # ...weekends never are...
+    assert is_trading_day(date(2024, 6, 29)) is False  # Saturday
+    assert is_trading_day(date(2024, 6, 30)) is False  # Sunday
+    # ...and a full-day NYSE holiday on a weekday is not, either.
+    assert is_trading_day(date(2024, 7, 4)) is False  # Independence Day (Thu)
+    assert is_trading_day(date(2024, 1, 1)) is False  # New Year's Day (Mon)
 
 
 def test_default_now_uses_current_time() -> None:
