@@ -9,6 +9,7 @@ import {
   resolveBlobUrl,
   resolveMetaUrl,
   resolvePriceProxyUrl,
+  resolveIntradayProxyUrl,
   parseUpdateMinutes,
   serializeConfig,
   parseConfigPacket,
@@ -45,6 +46,30 @@ describe("resolvePriceProxyUrl", () => {
 
   it("returns null without a Worker origin (no data source configured)", () => {
     expect(resolvePriceProxyUrl(config({ blobUrl: "" }))).toBeNull();
+  });
+});
+
+describe("resolveIntradayProxyUrl", () => {
+  it("derives the /iex-intraday route from the data-source origin", () => {
+    expect(resolveIntradayProxyUrl(config({ blobUrl: "https://worker.example.dev/blob?x=1" }))).toBe(
+      "https://worker.example.dev/iex-intraday",
+    );
+  });
+
+  it("swaps the trailing /price segment of an explicit override", () => {
+    expect(
+      resolveIntradayProxyUrl(config({ blobUrl: "https://worker.example.dev/", priceProxyUrl: "https://other/price" })),
+    ).toBe("https://other/iex-intraday");
+  });
+
+  it("hangs the route off the origin when the override path is non-standard", () => {
+    expect(
+      resolveIntradayProxyUrl(config({ priceProxyUrl: "https://other.example/custom/path" })),
+    ).toBe("https://other.example/iex-intraday");
+  });
+
+  it("returns null without a Worker origin", () => {
+    expect(resolveIntradayProxyUrl(config({ blobUrl: "" }))).toBeNull();
   });
 });
 

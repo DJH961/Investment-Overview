@@ -299,6 +299,35 @@ export function resolvePriceProxyUrl(config: AppConfig): string | null {
   }
 }
 
+/**
+ * Resolve the URL of the Tiingo intraday-curve proxy (the `web/proxy/` Worker
+ * `/iex-intraday` route) that backs the live 1D/1W graph backfill (design
+ * Phase 3). It is always a sibling of the `/price` route, so it is derived from
+ * {@link resolvePriceProxyUrl}: an explicit `priceProxyUrl` override has its
+ * trailing `/price` segment swapped for `/iex-intraday`; otherwise it falls back
+ * to the data-source origin + `/iex-intraday`.
+ *
+ * Returns `null` when there is no Worker origin to derive from. The Tiingo
+ * backfill pipe (Pipe B) is then simply unavailable and the graph runs entirely
+ * on the Twelve Data path (Pipe A). The browser never holds a Tiingo token.
+ */
+export function resolveIntradayProxyUrl(config: AppConfig): string | null {
+  const price = resolvePriceProxyUrl(config);
+  if (!price) return null;
+  try {
+    const url = new URL(price);
+    // An explicit override points straight at `…/price`; swap the final segment.
+    if (/\/price\/?$/.test(url.pathname)) {
+      url.pathname = url.pathname.replace(/\/price\/?$/, "/iex-intraday");
+      return url.toString();
+    }
+    // A non-standard override path: hang the route off the same origin.
+    return new URL("/iex-intraday", url).toString();
+  } catch {
+    return null;
+  }
+}
+
 // --- Portable config packet (export / import) --------------------------------
 
 /** Discriminator stamped into an exported packet so imports can sanity-check it. */
