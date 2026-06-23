@@ -80,9 +80,8 @@ Defaults: `updateMinutes` 15 (max 240), `autoLockMinutes` 5 (max 240, 0 = never)
 
 ## Verification
 - `npm run typecheck` clean.
-- `npm test` green (Node at `C:\Program Files\nodejs`; invoke via
-  `cmd /c "npm.cmd ..."` with that dir on PATH — PS execution policy blocks the
-  .ps1 shim).
+- `npm test` green.
+- `npm run build` succeeds.
 - Manual: fresh setup shows 3 fields + prefs + Import; export → import round
   trips; legacy localStorage migrates; prices still refresh.
 
