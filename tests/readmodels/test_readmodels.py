@@ -191,9 +191,7 @@ def test_analytics_includes_usd_companion_metrics(session: Session, seeded: None
     assert "risk_free_rate_usd" not in bundle
 
 
-def test_analytics_curve_carries_usd_portfolio_companion(
-    session: Session, seeded: None
-) -> None:
+def test_analytics_curve_carries_usd_portfolio_companion(session: Session, seeded: None) -> None:
     # USD is the native booked currency (spot prices arrive in USD), so each
     # curve point ships a `portfolio_value_usd` re-marked at *that day's* FX —
     # letting the web draw a genuinely currency-correct USD line instead of
