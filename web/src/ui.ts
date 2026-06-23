@@ -42,6 +42,8 @@ import {
   formatCurrencyShortRaw,
   formatCurrencyWhole,
   formatDualCurrency,
+  formatDualCurrencyParts,
+  type DualCurrencyParts,
   formatFxRate,
   formatMoneyEur,
   formatNativePrice,
@@ -341,13 +343,18 @@ function renderAllocation(allocation: AllocationSlice[]): HTMLElement | null {
       h("span", { class: "alloc-value muted" }, [formatCurrency(slice.valueEur)]),
     ]);
   });
-  return h("details", { class: "allocation" }, [
+  const id = "allocation";
+  const attrs: Attrs = { class: "allocation" };
+  if (loadOpenState(id, false)) attrs.open = "open";
+  const details = h("details", attrs, [
     h("summary", { class: "alloc-summary" }, [
       h("span", { class: "alloc-summary-title" }, ["Allocation"]),
       h("span", { class: "muted" }, ["by asset class"]),
     ]),
     h("ul", { class: "alloc-list" }, rows),
-  ]);
+  ]) as HTMLDetailsElement;
+  details.addEventListener("toggle", () => saveOpenState(id, details.open));
+  return details;
 }
 
 /** Humanise an asset-class slug ("money_market" → "Money Market"). */
@@ -440,9 +447,51 @@ function saveBoolPref(key: string, value: boolean): void {
   }
 }
 
+/**
+ * Read a persisted free-form string selection (e.g. a chart timeframe or a
+ * segmented toggle's active option), returning `null` when unset/unreadable.
+ * Used so a selection survives the full re-render the currency toggle triggers.
+ */
+function loadStringPref(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+/** Persist a free-form string selection so it survives a re-render or refresh. */
+function saveStringPref(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* Preference just won't persist; the in-memory selection still applies. */
+  }
+}
+
 /** Persisted calculator toggle keys (parity with the desktop's `calc.*` prefs). */
 const CALC_FRACTIONAL_KEY = "iv.web.calc.allowFractional";
 const CALC_REBALANCE_KEY = "iv.web.calc.rebalance";
+/** Allocation-calculator (calc2) remembered selections: target mode + cash. */
+const CALC2_MODE_KEY = "iv.web.calc2.mode";
+const CALC2_CASH_EUR_KEY = "iv.web.calc2.cashEur";
+
+/**
+ * Persisted projection-calculator field keys. Money fields (contribution,
+ * target) are stored in EUR so the persisted value is currency-neutral and
+ * re-seeds correctly into whichever display currency is active after a toggle.
+ */
+const PROJ_KEYS = {
+  monthly: "iv.web.proj.monthly",
+  real: "iv.web.proj.real",
+  rate: "iv.web.proj.rate",
+  band: "iv.web.proj.band",
+  stepUp: "iv.web.proj.stepUp",
+  inflation: "iv.web.proj.inflation",
+  horizon: "iv.web.proj.horizon",
+  contribEur: "iv.web.proj.contribEur",
+  targetEur: "iv.web.proj.targetEur",
+} as const;
 
 /** A single holding as a list row (mobile-first, no wide horizontal table). */
 function renderHoldingRow(holding: HoldingView, badge?: string): HTMLElement {
@@ -822,10 +871,19 @@ function renderPeriodRow(row: PeriodRowView): HTMLElement {
  * independently expandable, "like before").
  */
 function renderContributions(deposits: DepositsView): HTMLElement {
+  const ZERO = new Decimal(0);
+  // Show each contribution KPI in both currencies (the active one large, the
+  // other as a smaller sub-line) — currency drift between the cash-flow dates and
+  // now is exactly what's interesting here, so it's surfaced without toggling.
+  const dualStat = (label: string, eur: Decimal | null, usd: Decimal | null): HTMLElement => {
+    const parts = formatDualCurrencyParts(eur, usd);
+    if (parts === null) return stat(label, "—");
+    return stat(label, parts.primary, "flat", parts.secondary ?? undefined);
+  };
   const statGrid = h("div", { class: "stat-grid" }, [
-    stat("Contributed", formatDualCurrency(deposits.totalEur, deposits.totalUsd)),
-    stat("This year", formatDualCurrency(deposits.ytdEur, deposits.ytdUsd)),
-    stat("This month", formatDualCurrency(deposits.mtdEur, deposits.mtdUsd)),
+    dualStat("Contributed", deposits.totalEur, deposits.totalUsd),
+    dualStat("This year", deposits.ytdEur, deposits.ytdUsd),
+    dualStat("This month", deposits.mtdEur, deposits.mtdUsd),
   ]);
 
   // Group the ledger rows by calendar year (newest first) so each year folds
@@ -842,13 +900,32 @@ function renderContributions(deposits: DepositsView): HTMLElement {
     .reverse()
     .map((yr) => {
       const rows = byYear.get(yr) ?? [];
-      return h("details", { class: "allocation year-contribs" }, [
+      // Sum the year's flows in both currencies (each USD leg already at its own
+      // trade-date FX) so the folded summary shows how *much* was contributed,
+      // not just how many times.
+      let yearEur: Decimal | null = null;
+      let yearUsd: Decimal | null = null;
+      for (const r of rows) {
+        if (r.amountEur !== null) yearEur = (yearEur ?? ZERO).plus(r.amountEur);
+        if (r.amountUsd !== null) yearUsd = (yearUsd ?? ZERO).plus(r.amountUsd);
+      }
+      const id = `deposits-year-${yr}`;
+      const attrs: Attrs = { class: "allocation year-contribs" };
+      if (loadOpenState(id, false)) attrs.open = "open";
+      const details = h("details", attrs, [
         h("summary", { class: "alloc-summary" }, [
           h("span", { class: "alloc-summary-title" }, [yr]),
-          h("span", { class: "muted" }, [`${rows.length} contribution${rows.length === 1 ? "" : "s"}`]),
+          h("span", { class: "year-contribs-meta muted" }, [
+            h("span", { class: "year-contribs-count" }, [
+              `${rows.length} contribution${rows.length === 1 ? "" : "s"}`,
+            ]),
+            dualAmount(yearEur, yearUsd),
+          ]),
         ]),
         h("ul", { class: "ledger-list" }, rows.map(renderDepositRow)),
-      ]);
+      ]) as HTMLDetailsElement;
+      details.addEventListener("toggle", () => saveOpenState(id, details.open));
+      return details;
     });
 
   const body = h("div", { class: "contributions-body" }, [
@@ -913,8 +990,25 @@ function renderDepositRow(row: DepositRowView): HTMLElement {
       h("span", { class: "ledger-kind" }, [titleCase(row.kind)]),
       h("span", { class: "ledger-sub muted" }, [`${row.date} · ${row.account}`]),
     ]),
-    h("span", { class: "ledger-amount" }, [formatDualCurrency(row.amountEur, row.amountUsd)]),
+    dualAmount(row.amountEur, row.amountUsd),
   ]);
+}
+
+/**
+ * A money amount shown in both currencies at once — the active display currency
+ * large, the other smaller beneath it — so currency drift on a contribution is
+ * visible without toggling. Each leg uses its own per-trade-date-FX value (see
+ * {@link formatDualCurrencyParts}). Falls back to a single figure when only one
+ * currency can be priced.
+ */
+function dualAmount(amountEur: Decimal | null, amountUsd: Decimal | null): HTMLElement {
+  const parts: DualCurrencyParts | null = formatDualCurrencyParts(amountEur, amountUsd);
+  if (parts === null) return h("span", { class: "ledger-amount" }, ["—"]);
+  const children: Array<Node | string> = [h("span", { class: "dual-amount-primary" }, [parts.primary])];
+  if (parts.secondary !== null) {
+    children.push(h("span", { class: "dual-amount-secondary muted" }, [parts.secondary]));
+  }
+  return h("span", { class: "ledger-amount dual-amount" }, children);
 }
 
 /**
@@ -1080,6 +1174,30 @@ function ensureInfoDotDismiss(): void {
   });
 }
 
+/**
+ * Nudge a just-revealed tooltip horizontally so it always stays on screen. The
+ * tip is centred on its dot by default; for dots near the left/right edge of the
+ * grid (or anywhere on a narrow phone) the centred 16rem popover used to spill
+ * past the card/viewport. We measure it once shown and shift it back inside the
+ * viewport — robust for every column and screen width, instead of guessing edges
+ * with brittle :nth-child rules.
+ */
+function positionInfoTip(tip: HTMLElement): void {
+  if (typeof window === "undefined") return;
+  // Reset to the CSS default (centred) before measuring, so repeated opens don't
+  // accumulate offsets.
+  tip.style.transform = "";
+  const rect = tip.getBoundingClientRect();
+  // jsdom (tests) reports a zero-size rect; nothing to clamp there.
+  if (rect.width === 0) return;
+  const margin = 8;
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+  let shift = 0;
+  if (rect.left < margin) shift = margin - rect.left;
+  else if (rect.right > viewportWidth - margin) shift = viewportWidth - margin - rect.right;
+  if (shift !== 0) tip.style.transform = `translateX(calc(-50% + ${shift}px))`;
+}
+
 /** A small tappable "i" that reveals a definition (hover/focus and tap). */
 function infoDot(text: string): HTMLElement {
   const tip = h("span", { class: "info-tip", role: "tooltip" }, [text]);
@@ -1095,6 +1213,10 @@ function infoDot(text: string): HTMLElement {
   // and then an outside tap, Escape, or blur closes it again.
   const canHover =
     typeof window !== "undefined" && window.matchMedia?.("(hover: hover)").matches === true;
+  // Clamp the popover into the viewport the moment it becomes visible, whichever
+  // way it was triggered (pointer hover, keyboard focus, or tap-to-pin).
+  button.addEventListener("mouseenter", () => positionInfoTip(tip));
+  button.addEventListener("focus", () => positionInfoTip(tip));
   button.addEventListener("click", (event) => {
     event.stopPropagation();
     if (canHover) return;
@@ -1103,6 +1225,7 @@ function infoDot(text: string): HTMLElement {
     if (!wasOpen) {
       button.classList.add("open");
       openInfoDot = button;
+      positionInfoTip(tip);
     }
   });
   button.addEventListener("blur", () => {
@@ -1166,6 +1289,7 @@ function chartWithTimeframe(
   dates: string[],
   series: ChartSeries[],
   chartOpts: { yAxisLabel?: (v: number) => string } = {},
+  persistKey?: string,
 ): HTMLElement | null {
   const full = buildLineChart({ dates, series, ...chartOpts });
   if (!full) return null;
@@ -1179,8 +1303,9 @@ function chartWithTimeframe(
 
   const lastMs = Date.parse(dates[dates.length - 1]);
   const buttons: HTMLButtonElement[] = [];
+  const storageKey = persistKey ? `${CHART_RANGE_KEY_PREFIX}${persistKey}` : null;
 
-  const apply = (days: number | null, index: number): void => {
+  const apply = (days: number | null, index: number, persist = true): void => {
     let start = 0;
     if (days !== null) {
       const cutoff = lastMs - days * 86_400_000;
@@ -1198,6 +1323,9 @@ function chartWithTimeframe(
       button.classList.toggle("active", active);
       button.setAttribute("aria-pressed", active ? "true" : "false");
     });
+    // Remember the chosen window (by label, stable across exports) so it survives
+    // the full re-render a refresh or currency toggle triggers.
+    if (persist && storageKey) saveStringPref(storageKey, options[index]?.label ?? "All");
   };
 
   const controls = h("div", { class: "chart-range", role: "group", "aria-label": "Chart time range" }, []);
@@ -1207,11 +1335,16 @@ function chartWithTimeframe(
     buttons.push(button);
     controls.appendChild(button);
   });
-  // Default to the full history (the last option).
-  apply(null, options.length - 1);
+  // Reopen the remembered window (by label); default to the full history.
+  const savedLabel = storageKey ? loadStringPref(storageKey) : null;
+  const savedIndex = savedLabel ? options.findIndex((o) => o.label === savedLabel) : -1;
+  const initial = savedIndex >= 0 ? savedIndex : options.length - 1;
+  apply(options[initial].days, initial, false);
 
   return h("div", { class: "chart-block" }, [controls, wrap]);
 }
+
+const CHART_RANGE_KEY_PREFIX = "iv.web.chartRange.";
 
 /**
  * Resolve how a value/equity curve should be denominated for the active display
@@ -1314,7 +1447,7 @@ function renderEquityCurve(curve: AnalyticsView["curve"], benchmarkSymbol: strin
     series.push({ values: rebaseBenchmark(points, portfolioValues), className: "series-benchmark" });
   }
 
-  const chart = chartWithTimeframe(dates, series, { yAxisLabel: disp.yAxisLabel });
+  const chart = chartWithTimeframe(dates, series, { yAxisLabel: disp.yAxisLabel }, "value");
   if (!chart) return null;
 
   const legend: Array<Node | string> = [legendItem("series-portfolio", "Portfolio")];
@@ -1367,7 +1500,7 @@ function renderDrawdownChart(curve: AnalyticsView["curve"]): HTMLElement | null 
     return v < 0 ? `−${Math.abs(Number(pct))}%` : `${pct}%`;
   };
 
-  const chart = chartWithTimeframe(dates, [{ values, className: "series-drawdown", area: true }], { yAxisLabel: pctLabel });
+  const chart = chartWithTimeframe(dates, [{ values, className: "series-drawdown", area: true }], { yAxisLabel: pctLabel }, "drawdown");
   if (!chart) return null;
 
   return h("section", { class: "card drawdown" }, [
@@ -1422,7 +1555,7 @@ function renderValueChart(analytics: AnalyticsView | null, o: OverviewView): HTM
 
   const chart = chartWithTimeframe(dates, [{ values, className: "series-portfolio", area: true }], {
     yAxisLabel: disp.yAxisLabel,
-  });
+  }, "portfolio");
   if (!chart) return null;
 
   const todayPct = pickByCurrency(o.todayMovePct, o.todayMovePctUsd);
@@ -1711,8 +1844,10 @@ function buildCalculator(plan: PlanView, opts: CalculatorOptions = {}): Calculat
   const seedRatePct = seedRate.times(100).toDecimalPlaces(2).toString();
 
   // Seed contribution from the average historical value (monthly or yearly).
-  // The horizon default is yearly (10 years / 120 months).
-  let monthly = false;
+  // The horizon default is yearly (10 years / 120 months). The period mode is
+  // remembered across re-renders (e.g. a currency toggle) so a "selected
+  // something" choice survives — see PROJ_KEYS.
+  let monthly = loadBoolPref(PROJ_KEYS.monthly, false);
   const seedYearlyContrib = convertFromEur(plan.defaultAnnualContributionEur);
   const seedMonthlyContrib = convertFromEur(plan.defaultMonthlyContributionEur);
   const code = seedYearlyContrib.code;
@@ -1722,31 +1857,59 @@ function buildCalculator(plan: PlanView, opts: CalculatorOptions = {}): Calculat
       ? seedMonthlyContrib.value.toDecimalPlaces(0).toString()
       : seedYearlyContrib.value.toDecimalPlaces(0).toString();
 
-  // --- Controls ---
-  const expectedRate = numberField(`Expected return % p.a.`, seedRatePct, { min: "-50", max: "40", step: "0.1" });
-  const band = numberField("± band (pp)", "3.0", { min: "0", max: "30", step: "0.5" });
+  // Re-seed a stored display-currency value: money fields persist in EUR, so a
+  // saved figure converts cleanly into whichever currency is now active.
+  const seedMoneyDisplay = (key: string, fallbackDisplay: string): string => {
+    const saved = loadStringPref(key);
+    if (saved === null) return fallbackDisplay;
+    try {
+      return convertFromEur(new Decimal(saved)).value.toDecimalPlaces(0).toString();
+    } catch {
+      return fallbackDisplay;
+    }
+  };
+  const saveMoneyEur = (key: string, displayValue: string): void => {
+    let amount: Decimal;
+    try {
+      amount = new Decimal(displayValue || 0);
+    } catch {
+      return;
+    }
+    const eur = isUsd ? convertToEur(amount) : amount;
+    saveStringPref(key, eur.toString());
+  };
+
+  // --- Controls (each seeded from its remembered value, falling back to the
+  // portfolio-derived default). ---
+  const expectedRate = numberField(`Expected return % p.a.`, loadStringPref(PROJ_KEYS.rate) ?? seedRatePct, { min: "-50", max: "40", step: "0.1" });
+  const band = numberField("± band (pp)", loadStringPref(PROJ_KEYS.band) ?? "3.0", { min: "0", max: "30", step: "0.5" });
   const contribution = numberField(
     `Contribution / ${monthly ? "month" : "year"} (${code})`,
-    getDefaultContrib(),
+    seedMoneyDisplay(PROJ_KEYS.contribEur, getDefaultContrib()),
     { min: "0", step: "10" },
   );
   const contribLabel = contribution.wrap.querySelector(".field-label");
-  const stepUp = numberField("Annual step-up %", "0", { min: "0", max: "100", step: "0.5" });
-  const inflation = numberField("Inflation %", "2.0", { min: "0", max: "30", step: "0.1" });
-  const target = numberField(`Target value (${code})`, "0", { min: "0", step: "1000" });
+  const stepUp = numberField("Annual step-up %", loadStringPref(PROJ_KEYS.stepUp) ?? "0", { min: "0", max: "100", step: "0.5" });
+  const inflation = numberField("Inflation %", loadStringPref(PROJ_KEYS.inflation) ?? "2.0", { min: "0", max: "30", step: "0.1" });
+  const target = numberField(`Target value (${code})`, seedMoneyDisplay(PROJ_KEYS.targetEur, "0"), { min: "0", step: "1000" });
 
   // Horizon: years (1–40) or months (1–480), default 10y / 120m.
-  const horizonInput = numberField("Horizon (years)", "10", { min: "1", max: "40", step: "1" });
+  const horizonInput = numberField(
+    monthly ? "Horizon (months)" : "Horizon (years)",
+    loadStringPref(PROJ_KEYS.horizon) ?? (monthly ? "120" : "10"),
+    { min: "1", max: monthly ? "480" : "40", step: "1" },
+  );
   const horizonLabel = horizonInput.wrap.querySelector(".field-label");
 
-  // Period toggle (yearly / monthly).
-  const btnYearly = h("button", { class: "chart-range-btn active", type: "button" }, ["Yearly"]) as HTMLButtonElement;
-  const btnMonthly = h("button", { class: "chart-range-btn", type: "button" }, ["Monthly"]) as HTMLButtonElement;
-  btnYearly.setAttribute("aria-pressed", "true");
-  btnMonthly.setAttribute("aria-pressed", "false");
+  // Period toggle (yearly / monthly), reflecting the remembered mode.
+  const btnYearly = h("button", { class: `chart-range-btn${monthly ? "" : " active"}`, type: "button" }, ["Yearly"]) as HTMLButtonElement;
+  const btnMonthly = h("button", { class: `chart-range-btn${monthly ? " active" : ""}`, type: "button" }, ["Monthly"]) as HTMLButtonElement;
+  btnYearly.setAttribute("aria-pressed", monthly ? "false" : "true");
+  btnMonthly.setAttribute("aria-pressed", monthly ? "true" : "false");
 
   // "Today's money" (real / nominal) toggle.
   const realToggleInput = h("input", { type: "checkbox", id: "calc-real" }) as HTMLInputElement;
+  if (loadBoolPref(PROJ_KEYS.real, false)) realToggleInput.checked = true;
   const realToggle = h("label", { class: "calc-toggle-label", for: "calc-real" }, [
     realToggleInput,
     " Show in today's money (real)",
@@ -1919,6 +2082,7 @@ function buildCalculator(plan: PlanView, opts: CalculatorOptions = {}): Calculat
   const switchMode = (toMonthly: boolean): void => {
     if (monthly === toMonthly) return;
     monthly = toMonthly;
+    saveBoolPref(PROJ_KEYS.monthly, monthly);
     btnYearly.classList.toggle("active", !monthly);
     btnMonthly.classList.toggle("active", monthly);
     btnYearly.setAttribute("aria-pressed", monthly ? "false" : "true");
@@ -1928,17 +2092,39 @@ function buildCalculator(plan: PlanView, opts: CalculatorOptions = {}): Calculat
     if (horizonLabel) horizonLabel.textContent = monthly ? "Horizon (months)" : "Horizon (years)";
     if (contribLabel) contribLabel.textContent = `Contribution / ${monthly ? "month" : "year"} (${code})`;
     contribution.input.value = getDefaultContrib();
+    // Switching the period mode deliberately reseeds horizon + contribution, so
+    // persist those fresh defaults too (otherwise the next render would restore
+    // the previous mode's figures).
+    saveStringPref(PROJ_KEYS.horizon, horizonInput.input.value);
+    saveMoneyEur(PROJ_KEYS.contribEur, contribution.input.value);
     recompute();
   };
 
   btnYearly.addEventListener("click", () => switchMode(false));
   btnMonthly.addEventListener("click", () => switchMode(true));
 
-  // Wire all inputs to recompute.
+  // Wire all inputs to recompute, and persist each so the typed value survives a
+  // re-render (e.g. a currency toggle). Plain (currency-independent) fields store
+  // verbatim; money fields store their EUR equivalent.
+  const plainPersist: Array<[{ input: HTMLInputElement }, string]> = [
+    [expectedRate, PROJ_KEYS.rate],
+    [band, PROJ_KEYS.band],
+    [stepUp, PROJ_KEYS.stepUp],
+    [inflation, PROJ_KEYS.inflation],
+    [horizonInput, PROJ_KEYS.horizon],
+  ];
+  for (const [field, key] of plainPersist) {
+    field.input.addEventListener("input", () => saveStringPref(key, field.input.value));
+  }
+  contribution.input.addEventListener("input", () => saveMoneyEur(PROJ_KEYS.contribEur, contribution.input.value));
+  target.input.addEventListener("input", () => saveMoneyEur(PROJ_KEYS.targetEur, target.input.value));
   for (const field of [expectedRate, band, contribution, stepUp, inflation, target, horizonInput]) {
     field.input.addEventListener("input", recompute);
   }
-  realToggleInput.addEventListener("change", recompute);
+  realToggleInput.addEventListener("change", () => {
+    saveBoolPref(PROJ_KEYS.real, realToggleInput.checked);
+    recompute();
+  });
 
   const form = h("section", { class: "card calc-form" }, [
     ...(opts.headless
@@ -1981,7 +2167,10 @@ function renderCalculatorPanel(data: CalcData): HTMLElement {
   const code = getDisplayCurrency();
 
   // --- Builder state ---
-  let mode: "category" | "fund" = "category";
+  // The category/fund target mode is remembered so the choice survives a
+  // re-render (e.g. a currency toggle), like the other calculator prefs below.
+  let mode: "category" | "fund" = loadStringPref(CALC2_MODE_KEY) === "fund" ? "fund" : "category";
+  const isUsd = code === "USD";
   // Persisted toggles (survive reloads, like the desktop's calc.* prefs): allow
   // the plan to sell over-weight funds, and allow buying fractional shares.
   let allowSell = loadBoolPref(CALC_REBALANCE_KEY);
@@ -2057,7 +2246,7 @@ function renderCalculatorPanel(data: CalcData): HTMLElement {
     const held = data.instruments.filter((i) => i.currentValueEur.greaterThan(0)).length;
     summaryBox.replaceChildren(
       h("section", { class: "stats" }, [
-        h("div", { class: "stat-grid calc2-summary" }, [
+        h("div", { class: "stat-grid calc2-summary calc2-summary-overview" }, [
           h("div", { class: "stat" }, [
             h("span", { class: "stat-label" }, ["Portfolio value"]),
             h("span", { class: "stat-value" }, [fmt(data.totalValueEur)]),
@@ -2166,7 +2355,10 @@ function renderCalculatorPanel(data: CalcData): HTMLElement {
       (v) => catSplit.set(cat.name, v as "value" | "equal"),
     );
 
-    const expansion = h("details", { class: "calc2-funds" }, [
+    const expandId = `calc2-funds-${cat.name}`;
+    const expandAttrs: Attrs = { class: "calc2-funds" };
+    if (loadOpenState(expandId, false)) expandAttrs.open = "open";
+    const expansion = h("details", expandAttrs, [
       h("summary", {}, ["Funds in this category"]),
       h("div", { class: "calc2-funds-body" }, [
         h("div", { class: "calc2-split" }, [h("span", { class: "muted" }, ["Split:"]), splitToggle]),
@@ -2177,7 +2369,8 @@ function renderCalculatorPanel(data: CalcData): HTMLElement {
         ]),
         ...memberRows,
       ]),
-    ]);
+    ]) as HTMLDetailsElement;
+    expansion.addEventListener("toggle", () => saveOpenState(expandId, expansion.open));
 
     return h(
       "div",
@@ -2563,9 +2756,26 @@ function renderCalculatorPanel(data: CalcData): HTMLElement {
   }
 
   // --- Controls ---
-  const cashField = numberField(`Cash to invest (${code})`, "1000", { min: "0", step: "10" });
+  const seedCashDisplay = ((): string => {
+    const saved = loadStringPref(CALC2_CASH_EUR_KEY);
+    if (saved === null) return "1000";
+    try {
+      return convertFromEur(new Decimal(saved)).value.toDecimalPlaces(0).toString();
+    } catch {
+      return "1000";
+    }
+  })();
+  const cashField = numberField(`Cash to invest (${code})`, seedCashDisplay, { min: "0", step: "10" });
   const cashInput = cashField.input;
-  cashInput.addEventListener("input", clearNotice);
+  cashInput.addEventListener("input", () => {
+    clearNotice();
+    try {
+      const amount = new Decimal(cashInput.value || 0);
+      saveStringPref(CALC2_CASH_EUR_KEY, (isUsd ? convertToEur(amount) : amount).toString());
+    } catch {
+      /* Ignore an unparseable interim value; it saves on the next keystroke. */
+    }
+  });
 
   const fractionalCb = h("input", { type: "checkbox", id: "calc2-fractional" }) as HTMLInputElement;
   fractionalCb.checked = fractional;
@@ -2582,8 +2792,11 @@ function renderCalculatorPanel(data: CalcData): HTMLElement {
 
   const modeToggle = makeModeToggle((m) => {
     mode = m;
+    saveStringPref(CALC2_MODE_KEY, m);
     renderBuilder();
   });
+  // Reflect the remembered mode on the toggle (it defaults to "category").
+  if (mode === "fund") modeToggle.select("fund");
 
   const presetRow = h("div", { class: "calc2-presets" }, [
     presetBtn("Match current mix", presetCurrent),
