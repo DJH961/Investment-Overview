@@ -41,6 +41,7 @@ import {
   readCachedEnvelope,
   readCachedEurUsd,
   readCachedFx,
+  readCachedQuotes,
   readCreditLog,
   clearPriceCaches,
   creditsSpentToday,
@@ -68,6 +69,7 @@ import {
   type QuoteLoadReport,
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
+import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
 import { isUsMarketOpen, latestSettledSessionDate } from "./market-hours";
 import {
   runTiingoFallback,
@@ -84,6 +86,7 @@ import {
   unlockWithBiometric,
 } from "./webauthn";
 import { setEurUsdRate } from "./currency";
+import { formatLastPull } from "./format";
 import type { MobileExport } from "./types";
 import { h, renderDashboard, renderThemeToggle, renderTimeFormatToggle } from "./ui";
 
@@ -108,6 +111,16 @@ const MANUAL_REFRESH_MIN_FEEDBACK_MS = 650;
  * spammed with redundant probes.
  */
 const BLOB_CHECK_MIN_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
+ * Heartbeat cadence for the auto-refresh scheduler while the market is **settled**
+ * (closed, with every settled close and today's NAV already in hand). No prices
+ * are fetched in this state — see {@link App.runScheduledRefresh} — but the timer
+ * keeps ticking on this slow interval so the app promptly notices the next
+ * session open or NAV publish (and runs the near-free new-data probe when due)
+ * instead of going silent until the user reopens it.
+ */
+const SETTLED_HEARTBEAT_MS = 5 * 60 * 1000;
 
 /**
  * Daily free-tier credits remaining at or below which the UI warns the user it
@@ -335,7 +348,7 @@ export class App {
       type: "url",
       id: "f-priceproxy",
       autocomplete: "off",
-      placeholder: "(optional) Tiingo price-proxy URL override",
+      placeholder: "(optional) price-proxy URL override",
       value: config.priceProxyUrl,
     });
     const updateMinutes = h("input", {
@@ -449,7 +462,7 @@ export class App {
         field(
           "Price proxy URL override",
           priceProxyUrl,
-          "Advanced: the web/proxy Worker /price route for the Tiingo fallback. Leave blank to derive it from the data-source URL. The Tiingo token stays in the Worker — never in the browser.",
+          "Advanced: the web/proxy Worker /price route for the price fallback. Leave blank to derive it from the data-source URL. The provider token stays in the Worker — never in the browser.",
         ),
       );
     }
@@ -538,7 +551,7 @@ export class App {
         field(
           "Try the backup data provider",
           viaBackup,
-          "Route the whole book through the secondary provider (Tiingo) for one pull, skipping Twelve Data — but only for holdings whose value isn't already recent. Use it for a second opinion when the primary looks wrong or stuck. Respects Tiingo's own budget.",
+          "Route the whole book through the secondary provider for one pull, skipping the primary — but only for holdings whose value isn't already recent. Use it for a second opinion when the primary looks wrong or stuck. Respects the backup provider's own budget.",
         ),
       );
     }
@@ -881,9 +894,33 @@ export class App {
       freshestPriceAt: this.lastDataPullAt,
     });
     if (quick) noteQuickRefresh(Date.now());
-    void this.runScheduledRefresh(session, "auto", quick ? { force: true } : {});
+    this.startupRefresh(session, quick);
     // 5. Arm the idle auto-lock so an unattended session locks itself.
     this.installAutoLock();
+  }
+
+  /**
+   * The login-time refresh. The user's first question on opening the app is
+   * always "is this data current?", so answer it *visibly*:
+   *
+   *   - if there is genuinely something to pull (the session is open, or a NAV is
+   *     still awaited) — kick off an immediate, guaranteed-visible refreshing
+   *     animation so it's obvious fresh data is being fetched right now; or
+   *   - if everything is already settled and in hand — don't waste credits
+   *     re-polling a closed market; instead pop a small toast confirming the
+   *     prices are up to date and *when* they were last pulled, so the user knows
+   *     the cache is trusted rather than wondering whether anything happened.
+   *
+   * A throttled startup quick-refresh (the Tiingo catch-up for badly stale
+   * prices) always pulls, since it only fires when prices are demonstrably old.
+   */
+  private startupRefresh(session: number, quick: boolean): void {
+    if (!quick && this.fullyUpToDate()) {
+      this.toast(`Prices up to date · last pulled ${formatLastPull(this.lastDataPullAt)}`);
+      this.scheduleNext(session, SETTLED_HEARTBEAT_MS);
+      return;
+    }
+    void this.runScheduledRefresh(session, "auto", { startup: true, force: quick });
   }
 
   // --- Idle auto-lock ---------------------------------------------------------
@@ -1307,7 +1344,7 @@ export class App {
       model.overview.tiingoDayLimit = this.lastTiingoBudget.dayLimit;
     }
     if (this.lastTiingoSymbols.length > 0) {
-      const note = `${this.lastTiingoSymbols.length} price${this.lastTiingoSymbols.length === 1 ? "" : "s"} via Tiingo fallback`;
+      const note = `${this.lastTiingoSymbols.length} price${this.lastTiingoSymbols.length === 1 ? "" : "s"} via fallback`;
       model.overview.liveCoverage = model.overview.liveCoverage
         ? `${model.overview.liveCoverage} · ${note}`
         : note;
@@ -1405,13 +1442,26 @@ export class App {
       this.toast("Already refreshing prices…");
       return;
     }
-    // A manual tap means "pull new market values now": force a fresh fetch of
-    // the tradeable holdings, bypassing the quote cache window — unless the daily
-    // free-tier budget is nearly spent (<10% left), where we fall back to the
-    // normal cache-respecting refresh so the reserve isn't burnt in one tap.
+    // A manual tap means "pull new market values now". What that should fetch
+    // depends on the market phase (see {@link currentRefreshPhase}):
+    //   - market open   → only live stock prices can have moved (NAV is exempt
+    //     anyway, since it cannot strike until the close);
+    //   - post-close, pre-NAV → only the awaited NAVs are worth chasing (the
+    //     stock closes are already in hand and stay quiet);
+    //   - fully settled / pre-market / weekend → re-pull *everything*. The user
+    //     only taps refresh outside market hours when unsure the cache is right,
+    //     so verify the whole book from scratch rather than trust it.
+    // Unless the daily free-tier budget is nearly spent (<10% left), where we
+    // fall back to the normal cache-respecting refresh so the reserve isn't
+    // burnt in one tap.
     const canForce = this.canForceRefresh();
-    if (!canForce) this.toast("Low on data credits — showing recent cached prices.");
-    void this.runScheduledRefresh(this.sessionId, "manual", { force: canForce });
+    if (!canForce) {
+      this.toast("Low on credits — showing recent prices.");
+      void this.runScheduledRefresh(this.sessionId, "manual", { force: false });
+      return;
+    }
+    const forceAll = this.currentRefreshPhase() === "settled";
+    void this.runScheduledRefresh(this.sessionId, "manual", { force: true, forceAll });
   }
 
   /**
@@ -1425,6 +1475,76 @@ export class App {
     const used = creditsSpentToday(readCreditLog(now, 24 * 60 * 60 * 1000), now);
     const remaining = Math.max(0, FREE_TIER.creditsPerDay - used);
     return remaining >= FREE_TIER.creditsPerDay * FORCE_REFRESH_MIN_CREDIT_FRACTION;
+  }
+
+  /**
+   * Whether at least one NAV-priced fund is still missing a NAV that is
+   * genuinely *due* right now — i.e. we are demonstrably behind a published
+   * price. Judged exactly like the per-symbol manual skip in
+   * {@link buildQuoteOptions}: the cached value-date against the fund's latest
+   * expected NAV date (using its learned publish hour). Drives the market-phase
+   * classification so the refresh layer can tell the post-close "still awaiting
+   * tonight's NAVs" window apart from a fully settled book.
+   */
+  private navOutstanding(now: Date = new Date()): boolean {
+    const navSymbols = readSymbolPlan()
+      .filter((e) => e.priceType !== "market")
+      .map((e) => e.symbol);
+    if (navSymbols.length === 0) return false;
+    const cached = readCachedQuotes();
+    const navStats = readNavPublishStats();
+    return navSymbols.some((symbol) => {
+      const have = cached.get(symbol)?.quote.valueDate ?? null;
+      const publishHour = navPublishWindow(navStats.get(symbol)?.hours).publishHour;
+      return !(have && have >= latestExpectedNavDate(now, publishHour));
+    });
+  }
+
+  /**
+   * Whether at least one **market** (stock/ETF) symbol is missing the latest
+   * already-settled close — i.e. its cached value-date is older than
+   * {@link latestSettledSessionDate} (or it has no cached price at all). Mirrors
+   * the per-symbol catch-up in {@link marketCacheTtlMs}: while the exchange is
+   * shut we normally rest, *unless* we don't actually hold that close yet (the
+   * app was offline across it), in which case it is genuinely outdated and must
+   * still be fetched even outside the session.
+   */
+  private marketDataOutdated(now: Date = new Date()): boolean {
+    const marketSymbols = readSymbolPlan()
+      .filter((e) => e.priceType === "market")
+      .map((e) => e.symbol);
+    if (marketSymbols.length === 0) return false;
+    const cached = readCachedQuotes();
+    const settled = latestSettledSessionDate(now);
+    return marketSymbols.some((symbol) => {
+      const have = cached.get(symbol)?.quote.valueDate ?? null;
+      return !(have && have >= settled);
+    });
+  }
+
+  /**
+   * Classify the current refresh situation (see {@link RefreshPhase}) from the
+   * live market clock plus {@link navOutstanding}. Both the manual tap and the
+   * automatic scheduler key their fetch decisions off this.
+   */
+  private currentRefreshPhase(now: Date = new Date()): RefreshPhase {
+    return classifyRefreshPhase({
+      marketOpen: isUsMarketOpen(now),
+      navOutstanding: this.navOutstanding(now),
+    });
+  }
+
+  /**
+   * Whether the whole book is genuinely current and there is nothing to fetch:
+   * the {@link RefreshPhase} is `settled` (market closed, every NAV in hand)
+   * *and* every market close is also in hand ({@link marketDataOutdated} is
+   * false). This is the only state in which the automatic scheduler skips its
+   * pull — so a closed-market session whose cached close is stale (e.g. the app
+   * was offline across the close) still refreshes automatically instead of being
+   * stranded on old data.
+   */
+  private fullyUpToDate(now: Date = new Date()): boolean {
+    return this.currentRefreshPhase(now) === "settled" && !this.marketDataOutdated(now);
   }
 
   /**
@@ -1448,15 +1568,33 @@ export class App {
   private async runScheduledRefresh(
     session: number,
     kind: RefreshKind = "auto",
-    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean } = {},
+    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean; startup?: boolean } = {},
   ): Promise<void> {
     if (session !== this.sessionId) return;
     // A manual tap should refresh even when the tab is technically "hidden"
     // (e.g. mid-transition); only the automatic scheduler skips hidden tabs.
     if (kind === "auto" && typeof document !== "undefined" && document.hidden) return;
     if (this.refreshing) return;
+    // No *automatic* price pull once the book is fully up to date — the market is
+    // closed and every settled close *and* today's NAV is already in hand. There
+    // is nothing new to fetch, so spending credits (and re-polling FX) would be
+    // pure waste. Keep only the near-free new-data probe and a slow heartbeat
+    // that notices the next session open / NAV publish. Crucially this skips
+    // *only* when the data is genuinely current: a closed market whose cached
+    // close is stale (offline across the close) still refreshes here. A manual
+    // tap is never skipped — it forces a full verification re-pull.
+    if (kind === "auto" && this.fullyUpToDate()) {
+      if (this.blobCheckDue()) void this.maybeRefreshBlob(session);
+      this.scheduleNext(session, SETTLED_HEARTBEAT_MS);
+      return;
+    }
     this.refreshing = true;
-    this.setUpdating(true, kind);
+    // On startup we want an *immediate, guaranteed-visible* refreshing animation
+    // so opening the app clearly signals "pulling fresh data now" even if the
+    // round resolves fast from cache. Borrow the manual feedback's minimum-visible
+    // floor for that, while keeping the automatic toast semantics below.
+    const feedbackKind: RefreshKind = opts.startup ? "manual" : kind;
+    this.setUpdating(true, feedbackKind);
     let report: QuoteLoadReport | null = null;
     try {
       report = await this.refreshPrices(session, true, {
@@ -1468,7 +1606,7 @@ export class App {
       this.refreshing = false;
     }
     if (session !== this.sessionId || report === null) {
-      this.setUpdating(false, kind);
+      this.setUpdating(false, feedbackKind);
       return;
     }
     // The live refresh for this round is done: take the status pill down. While
@@ -1478,7 +1616,7 @@ export class App {
     // still spins during each actual fetch, and the per-row "as of" chips show
     // which holdings are still on last-known values, so the staged fill stays
     // visible without a persistent floating banner.
-    this.setUpdating(false, kind);
+    this.setUpdating(false, feedbackKind);
     // Confirm the outcome of a manual tap so the user understands what happened
     // (fresh prices pulled, already up to date, or some deferred by the budget).
     if (kind === "manual") {
@@ -1947,6 +2085,23 @@ function navWord(n: number): string {
 }
 
 /**
+ * The NAV portion of a coverage line, honest about how many funds have actually
+ * struck. While the market is open, undue NAVs are "expected tonight"; once due
+ * and missing they are "awaiting"; when every due NAV is in hand they are "in".
+ * Returns `[]` when there are no NAV holdings this round.
+ */
+function navCoverageClause(f: CoverageFacts): string[] {
+  if (f.navTotal === 0) return [];
+  if (f.marketOpen && f.navExpectedTonight > 0) {
+    return [`${f.navExpectedTonight} ${navWord(f.navExpectedTonight)} expected tonight`];
+  }
+  if (f.navAwaiting > 0) {
+    return [`awaiting ${f.navAwaiting}/${f.navTotal} ${navWord(f.navAwaiting)}`];
+  }
+  return [`${f.navTotal}/${f.navTotal} ${navWord(f.navTotal)} in`];
+}
+
+/**
  * Turn {@link CoverageFacts} into a calm, *honest* one-liner. The point is to be
  * transparent about exactly what we pull and what we don't — never counting an
  * unpublished NAV as "live". Every line is written in sentence case (a bare
@@ -1966,12 +2121,24 @@ export function summarizeCoverage(f: CoverageFacts): string {
 
   if (total === 0) return withFx("no live-priced holdings");
   if (f.error) return withFx("showing last known prices");
-  // A refresh served entirely from cache (no fresh pull) must not assert things
-  // are live/up to date — say plainly that these are recent, not just-fetched.
+  // A refresh served entirely from cache (no fresh pull). This is *not* a
+  // failure — it usually means the prices we already hold are still current — so
+  // don't lead with an apologetic "recent prices". When the session is closed
+  // and we hold every settled close and NAV, the cached figures genuinely *are*
+  // the latest there are: say "up to date" plainly. Otherwise spell out exactly
+  // what is recent versus still awaited — a flat "recent prices" hides the fact
+  // that, say, 12/12 spots are recent while 5 NAVs are still expected. It is rare
+  // that every holding shares one status, so never collapse them into one word.
   if (!f.freshlyPulled) {
-    return withFx(
-      total === 1 ? "showing recent prices" : `showing recent prices (${total} holdings)`,
-    );
+    const marketHeld = f.marketTotal === 0 || f.marketLive === f.marketTotal;
+    if (!f.marketOpen && marketHeld && f.navAwaiting === 0) {
+      return withFx(total === 1 ? "up to date" : `up to date (${total} holdings)`);
+    }
+    const parts: string[] = [];
+    // Cached market spots are "recent" (not live: no fresh pull this round).
+    if (f.marketTotal > 0) parts.push(`${f.marketLive}/${f.marketTotal} recent`);
+    parts.push(...navCoverageClause(f));
+    return withFx(parts.length > 0 ? parts.join(", ") : `showing recent prices (${total} holdings)`);
   }
 
   const marketHeld = f.marketTotal === 0 || f.marketLive === f.marketTotal;

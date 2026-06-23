@@ -9,6 +9,7 @@ import {
   formatAsOf,
   formatCurrencyShortRaw,
   formatDailyGrowthAsOf,
+  formatExportedAt,
   formatLastPull,
   formatUpdatedAt,
 } from "../src/format";
@@ -120,6 +121,30 @@ describe("formatLastPull", () => {
   it("reports 'not yet' when no pull has happened", () => {
     expect(formatLastPull(null, now)).toBe("not yet");
     expect(formatLastPull(undefined, now)).toBe("not yet");
+  });
+});
+
+describe("formatExportedAt", () => {
+  const now = new Date("2024-06-01T15:30:00Z");
+
+  it("says 'today' with a clock time for an export made today", () => {
+    const out = formatExportedAt("2024-06-01T09:05:00Z", now);
+    expect(out).toMatch(/^today at \d{1,2}:\d{2}/);
+  });
+
+  it("says 'yesterday' with a clock time for an export made the day before", () => {
+    const out = formatExportedAt("2024-05-31T18:05:00Z", now);
+    expect(out).toMatch(/^yesterday at \d{1,2}:\d{2}/);
+  });
+
+  it("shows the date (and time) for an older export", () => {
+    const out = formatExportedAt("2024-05-20T09:05:00Z", now);
+    expect(out).not.toMatch(/^(today|yesterday)/);
+    expect(out).toMatch(/\d{1,2}:\d{2}/);
+  });
+
+  it("returns the raw input when it can't be parsed", () => {
+    expect(formatExportedAt("not-a-date", now)).toBe("not-a-date");
   });
 });
 
