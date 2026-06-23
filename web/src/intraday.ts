@@ -190,6 +190,26 @@ export function capAtClose(points: CurvePoint[], closeMs: number): CurvePoint[] 
   return kept.length > 0 ? kept : points;
 }
 
+/**
+ * Splice persisted live-tip **breadcrumbs** onto the reconstructed curve so it
+ * draws its own trail between the slow, credit-conscious bar re-fetches.
+ *
+ * Real bars are ground truth: any breadcrumb at or before the curve's freshest
+ * bar instant is dropped (the bars have since caught up and re-marked that span),
+ * so the trail is self-correcting — it only ever fills the gap *after* the last
+ * bar, exactly where the lone moving live tip would otherwise leave the line
+ * bare. Breadcrumbs are assumed ascending and instant-deduplicated (the store
+ * keeps them so); an empty reconstruction falls back to the breadcrumbs alone, so
+ * a cold open mid-session still shows the trail it has gathered.
+ */
+export function mergeBreadcrumbs(points: CurvePoint[], tips: CurvePoint[]): CurvePoint[] {
+  if (tips.length === 0) return points;
+  if (points.length === 0) return [...tips].sort((a, b) => a.t - b.t);
+  const lastBarT = points[points.length - 1].t;
+  const tail = tips.filter((tip) => tip.t > lastBarT).sort((a, b) => a.t - b.t);
+  return tail.length > 0 ? [...points, ...tail] : points;
+}
+
 /** Native price bars fetched per Twelve Data ticker (1 credit/symbol/request). */
 export type BarFetcher = (symbols: string[]) => Promise<Map<string, Bar[]>>;
 
@@ -229,6 +249,14 @@ export interface SessionCurveOptions {
    * credit cost).
    */
   minRefetchMs?: number;
+  /**
+   * Invoked with the freshly fetched native price bars whenever a build actually
+   * spends credits on a bar fetch (never on a cache-only reuse). The app wires
+   * this to prime the holdings' quote cache from each symbol's newest bar, so a
+   * big graph load hands the current price *back* to the holding rows — they then
+   * skip a separate per-symbol quote request. A no-op by default.
+   */
+  onFreshBars?: (barsBySymbol: Map<string, Bar[]>) => void;
 }
 
 /**
@@ -300,6 +328,10 @@ export async function loadOrBuildSessionCurve(
     for (const [symbol, bars] of barsBySymbol) {
       if (bars.length > 0) incomingBars[symbol] = bars;
     }
+    // Hand the freshly paid-for bars back to the holdings' quote cache: the
+    // newest bar is a current native mark, so a holding row can skip its own
+    // per-symbol quote request rather than re-buy the same price.
+    if (options.onFreshBars) options.onFreshBars(barsBySymbol);
     let incomingFx: Bar[] | undefined;
     if (fetchFx) {
       try {
@@ -329,9 +361,20 @@ export async function loadOrBuildSessionCurve(
     baseUsd: anchor.baseUsd,
   });
 
+  // While open, drop a breadcrumb at the live tip (free — a value already in
+  // hand) and splice the gathered trail onto the curve so it self-thickens
+  // between the slow bar re-fetches; real bars always supersede stale crumbs.
   if (marketOpen && options.liveTip) {
+    const tip: CurvePoint = {
+      t: now.getTime(),
+      valueEur: options.liveTip.valueEur,
+      valueUsd: options.liveTip.valueUsd,
+    };
+    const breadcrumbs = await store.appendTip(day, tip);
+    points = mergeBreadcrumbs(points, breadcrumbs);
     points = appendLiveTip(points, now.getTime(), options.liveTip);
   } else if (!marketOpen) {
+    points = mergeBreadcrumbs(points, stored.tips ?? []);
     points = capAtClose(points, sessionCloseMs(day));
   }
 

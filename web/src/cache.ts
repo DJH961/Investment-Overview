@@ -17,6 +17,7 @@
 import { Decimal } from "./decimal-config";
 import type { Envelope } from "./crypto";
 import type { FxRates, Quote } from "./prices";
+import type { Bar } from "./timeseries";
 
 /** Subset of the Web Storage API we depend on (injectable for tests). */
 export type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -141,7 +142,64 @@ export function writeCachedQuotes(
   writeJson(storage, QUOTE_KEY, file);
 }
 
-// --- FX cache ---------------------------------------------------------------
+/**
+ * Prime the quote cache from a graph's freshly fetched native price bars.
+ *
+ * When a 1D/1W graph build pays to fetch price bars, each symbol's newest bar is
+ * a current native mark — the very figure a holding row would otherwise spend its
+ * own credit on. Folding it back into the quote cache lets the holdings reuse it
+ * instead of re-requesting it.
+ *
+ * It only ever **extends** freshness, never rewrites history: a symbol is primed
+ * only when its newest bar is strictly newer than the cached quote's price
+ * instant (`priceTime`, falling back to `at`), so a genuine, fresher quote is
+ * never clobbered by an older bar. Bars carry no currency or prior close, so the
+ * cached `currency`/`previousClose` are preserved; when the symbol is uncached,
+ * the caller-supplied native currency seeds it (and without any currency the
+ * symbol is skipped, since its value could not be denominated safely). `at` is
+ * stamped at `now` because the bar was just fetched — honest fetch-freshness —
+ * while `priceTime` records the bar's own strike instant.
+ */
+export function primeQuotesFromBars(
+  barsBySymbol: Map<string, Bar[]>,
+  currencyBySymbol: Map<string, string | null>,
+  now: number,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  if (barsBySymbol.size === 0) return;
+  const file = readJson<QuoteCacheFile>(storage, QUOTE_KEY) ?? {};
+  let touched = false;
+  for (const [symbol, bars] of barsBySymbol) {
+    const latest = latestBar(bars);
+    if (latest === null) continue;
+    const existing = file[symbol];
+    const knownInstant = existing ? (existing.priceTime ?? existing.at) : null;
+    // Only ever move freshness forward — never overwrite a newer genuine quote.
+    if (knownInstant !== null && latest.t <= knownInstant) continue;
+    const currency = existing?.currency ?? currencyBySymbol.get(symbol) ?? null;
+    if (currency === null) continue; // cannot denominate a bare native price safely
+    file[symbol] = {
+      price: latest.value.toString(),
+      previousClose: existing?.previousClose ?? null,
+      currency,
+      at: now,
+      priceTime: latest.t,
+      valueDate: existing?.valueDate ?? null,
+      marketOpen: existing?.marketOpen ?? null,
+    };
+    touched = true;
+  }
+  if (touched) writeJson(storage, QUOTE_KEY, file);
+}
+
+/** The newest (largest-`t`) bar in a list, or null when the list is empty. */
+function latestBar(bars: Bar[]): Bar | null {
+  let best: Bar | null = null;
+  for (const bar of bars) {
+    if (best === null || bar.t > best.t) best = bar;
+  }
+  return best;
+}
 
 interface StoredFx {
   base: string;

@@ -101,6 +101,12 @@ export interface WeekCurveOptions {
   sessions?: number;
   /** Override the store key (mainly for tests). */
   storeKey?: string;
+  /**
+   * Invoked with the freshly fetched daily bars when a build actually spends
+   * credits, so the app can prime the holdings' quote cache from each symbol's
+   * newest mark. A no-op by default. See {@link SessionCurveOptions.onFreshBars}.
+   */
+  onFreshBars?: (barsBySymbol: Map<string, Bar[]>) => void;
 }
 
 /** A built 1W curve plus the window it covers. */
@@ -157,6 +163,7 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
     for (const [symbol, bars] of barsBySymbol) {
       if (bars.length > 0) incomingBars[symbol] = bars;
     }
+    if (options.onFreshBars) options.onFreshBars(barsBySymbol);
     let incomingFx: Bar[] | undefined;
     if (fetchFx) {
       try {
@@ -185,7 +192,13 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
   }
   const windowedFx = barsFrom(stored.fx, windowStartMs);
   if (trimmedDiffers(stored.bars, trimmed) || windowedFx.length !== stored.fx.length) {
-    await store.saveSession({ day: key, bars: trimmed, fx: windowedFx, updatedAt: now.getTime() });
+    await store.saveSession({
+      day: key,
+      bars: trimmed,
+      fx: windowedFx,
+      tips: stored.tips ?? [],
+      updatedAt: now.getTime(),
+    });
   }
 
   // If the 1D curve has already been loaded this session, its fine-grained

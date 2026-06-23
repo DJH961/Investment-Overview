@@ -16,10 +16,13 @@
  */
 
 import { Decimal } from "./decimal-config";
-import type { Bar } from "./timeseries";
+import type { Bar, CurvePoint } from "./timeseries";
 
 /** A bar serialised for storage: `[epochMs, decimalString]`. */
 type StoredBar = [number, string];
+
+/** A breadcrumb serialised for storage: `[epochMs, eurString, usdString]`. */
+type StoredTip = [number, string, string];
 
 /** A session's worth of bars, persisted under its trading-day key. */
 export interface StoredSession {
@@ -29,7 +32,18 @@ export interface StoredSession {
   bars: Record<string, Bar[]>;
   /** EUR→USD bars for the session (oldest first); empty when none fetched. */
   fx: Bar[];
-  /** Epoch ms the session was last written — for staleness / debugging. */
+  /**
+   * Live-tip **breadcrumbs** (oldest first): the whole-book headline totals the
+   * curve was last drawn at, dropped as the live tip moved. They cost nothing to
+   * record — each is a value the dashboard already computed — and let the 1D
+   * curve self-thicken between the slow, credit-conscious bar re-fetches instead
+   * of showing a single lone moving dot. Real bars are ground truth, so a build
+   * keeps a build's breadcrumbs only when they fall *after* its freshest bar (see
+   * `mergeBreadcrumbs`). Optional/absent on records written before breadcrumbs
+   * existed (treated as an empty trail).
+   */
+  tips?: CurvePoint[];
+  /** Epoch ms the session's *bars* were last fetched — for the refetch throttle. */
   updatedAt: number;
 }
 
@@ -38,6 +52,7 @@ interface SerializedSession {
   day: string;
   bars: Record<string, StoredBar[]>;
   fx: StoredBar[];
+  tips?: StoredTip[];
   updatedAt: number;
 }
 
@@ -69,12 +84,31 @@ function deserializeBars(stored: StoredBar[] | undefined): Bar[] {
   return stored.map(([t, value]) => ({ t, value: new Decimal(value) }));
 }
 
+function serializeTips(tips: CurvePoint[]): StoredTip[] {
+  return tips.map((t) => [t.t, t.valueEur.toString(), t.valueUsd.toString()]);
+}
+
+function deserializeTips(stored: StoredTip[] | undefined): CurvePoint[] {
+  if (!Array.isArray(stored)) return [];
+  return stored.map(([t, eur, usd]) => ({
+    t,
+    valueEur: new Decimal(eur),
+    valueUsd: new Decimal(usd),
+  }));
+}
+
 function serialize(session: StoredSession): SerializedSession {
   const bars: Record<string, StoredBar[]> = {};
   for (const [symbol, list] of Object.entries(session.bars)) {
     bars[symbol] = serializeBars(list);
   }
-  return { day: session.day, bars, fx: serializeBars(session.fx), updatedAt: session.updatedAt };
+  return {
+    day: session.day,
+    bars,
+    fx: serializeBars(session.fx),
+    tips: serializeTips(session.tips ?? []),
+    updatedAt: session.updatedAt,
+  };
 }
 
 function deserialize(record: SerializedSession): StoredSession {
@@ -86,6 +120,7 @@ function deserialize(record: SerializedSession): StoredSession {
     day: record.day,
     bars,
     fx: deserializeBars(record.fx),
+    tips: deserializeTips(record.tips),
     updatedAt: typeof record.updatedAt === "number" ? record.updatedAt : 0,
   };
 }
@@ -186,6 +221,23 @@ export function indexedDbBackend(): TimeSeriesBackend {
 }
 
 /**
+ * Default minimum spacing between persisted live-tip breadcrumbs (1 minute).
+ *
+ * A build can happen on every chart re-render or burst refresh, far more often
+ * than the curve visibly moves, so breadcrumbs are decimated to roughly one a
+ * minute — dense enough to draw a smooth trail across a long watch, sparse enough
+ * that a whole trading session stays well within {@link DEFAULT_MAX_TIPS}.
+ */
+export const DEFAULT_TIP_SPACING_MS = 60_000;
+
+/**
+ * Hard cap on stored breadcrumbs per session (most-recent kept). A regular US
+ * session is 6.5h ≈ 390 minutes, so 600 leaves comfortable headroom at the
+ * default 1-minute spacing while bounding the IndexedDB record.
+ */
+export const DEFAULT_MAX_TIPS = 600;
+
+/**
  * The time-series store. Reads/writes whole sessions keyed by trading day and
  * prunes anything outside the retained window, so a week of 1D curves rolls up
  * into 1W (§10.6) without the store growing without bound.
@@ -218,15 +270,64 @@ export class TimeSeriesStore {
     incoming: { bars?: Record<string, Bar[]>; fx?: Bar[] },
     now: number = Date.now(),
   ): Promise<StoredSession> {
-    const existing = (await this.loadSession(day)) ?? { day, bars: {}, fx: [], updatedAt: 0 };
+    const existing =
+      (await this.loadSession(day)) ?? { day, bars: {}, fx: [], tips: [], updatedAt: 0 };
     const bars: Record<string, Bar[]> = { ...existing.bars };
     for (const [symbol, list] of Object.entries(incoming.bars ?? {})) {
       bars[symbol] = mergeBars(existing.bars[symbol] ?? [], list);
     }
     const fx = incoming.fx ? mergeBars(existing.fx, incoming.fx) : existing.fx;
-    const merged: StoredSession = { day, bars, fx, updatedAt: now };
+    // Preserve any breadcrumbs already recorded for the day — a bar fetch must
+    // never wipe the live-tip trail.
+    const merged: StoredSession = { day, bars, fx, tips: existing.tips ?? [], updatedAt: now };
     await this.saveSession(merged);
     return merged;
+  }
+
+  /**
+   * Record one live-tip **breadcrumb** for a day and return the (bounded) trail.
+   *
+   * Each breadcrumb is a whole-book headline total the dashboard already computed,
+   * so persisting it costs no API credits; the trail lets the 1D curve build
+   * itself out between the slow bar re-fetches. Writes are decimated to at most
+   * one per {@link DEFAULT_TIP_SPACING_MS} (a tip closer than that to the last
+   * one *replaces* it, so the latest position still advances without unbounded
+   * growth) and capped at {@link DEFAULT_MAX_TIPS} most-recent points. Crucially
+   * this does **not** bump `updatedAt`, so it never fools the bar-refetch throttle
+   * into thinking fresh bars were fetched.
+   */
+  async appendTip(
+    day: string,
+    tip: CurvePoint,
+    options: { spacingMs?: number; maxTips?: number } = {},
+  ): Promise<CurvePoint[]> {
+    const spacing = options.spacingMs ?? DEFAULT_TIP_SPACING_MS;
+    const maxTips = options.maxTips ?? DEFAULT_MAX_TIPS;
+    const existing =
+      (await this.loadSession(day)) ?? { day, bars: {}, fx: [], tips: [], updatedAt: 0 };
+    const tips = [...(existing.tips ?? [])];
+    const last = tips[tips.length - 1];
+    if (last && tip.t <= last.t) {
+      // Out-of-order or same instant — replace the tail so the latest wins.
+      tips[tips.length - 1] = tip;
+    } else if (last && tip.t - last.t < spacing) {
+      // Too soon since the last breadcrumb — replace it rather than crowd the
+      // trail, keeping the most recent position without unbounded growth.
+      tips[tips.length - 1] = tip;
+    } else {
+      tips.push(tip);
+    }
+    const bounded = tips.length > maxTips ? tips.slice(tips.length - maxTips) : tips;
+    const merged: StoredSession = {
+      day,
+      bars: existing.bars,
+      fx: existing.fx,
+      tips: bounded,
+      // Leave `updatedAt` untouched: breadcrumbs are not a bar fetch.
+      updatedAt: existing.updatedAt,
+    };
+    await this.saveSession(merged);
+    return bounded;
   }
 
   /** All stored trading days, ascending. */
