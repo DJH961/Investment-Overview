@@ -556,8 +556,11 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .contributions-body .stats .stat { padding: 0.75rem 0.55rem; }
 .contributions-body .stats .stat-value { font-size: 0.98rem; letter-spacing: -0.02em; }
 .contributions-body .year-contribs { margin-top: 0.1rem; }
-/* Folded year header: push the "N contributions · amount" meta to the right of
- * the year label (before the chevron) and stack the count over the amount. */
+/* Folded year header: stack the contribution count directly under the year
+ * label on the left, leaving only the monetary amount pinned to the right
+ * (before the chevron). Keeps the row to one clean line per side on mobile. */
+.year-contribs-summary { align-items: center; }
+.year-contribs-head { display: flex; flex-direction: column; gap: 0.05rem; }
 .year-contribs-meta {
   margin-left: auto;
   display: flex;
@@ -1121,6 +1124,9 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* On narrow phones stack the four KPI cards into two columns. */
 @media (max-width: 35rem) {
   .calc-summary { grid-template-columns: repeat(2, 1fr); }
+  /* Shrink the KPI figures so large totals (e.g. "$643,647") stay on one line
+   * rather than wrapping to two. */
+  .calc-summary .stat-value { font-size: 0.98rem; letter-spacing: -0.02em; }
   .calc-fields { grid-template-columns: 1fr; }
 }
 /* Goal callout */
