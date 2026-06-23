@@ -472,9 +472,20 @@ export async function loadQuotes(
           }
         }
         const at = now();
-        writeCachedQuotes(quotes, at, storage ?? undefined);
+        // A per-symbol fetch can come back with a null price — a Twelve Data
+        // error/empty node for that one ticker while its batch peers succeed
+        // (seen on some mutual funds the free tier returns no recent bar for).
+        // Never let such a null overwrite a good cached quote: cache and count
+        // only the priced results, and leave the unpriced symbols to fall back
+        // to their last-known value below (so they keep their real "as of" date
+        // and are retried next round, instead of being poisoned to null).
+        const priced = new Map<string, Quote>();
+        for (const [symbol, q] of quotes) {
+          if (q.price !== null) priced.set(symbol, q);
+        }
+        writeCachedQuotes(priced, at, storage ?? undefined);
         for (const symbol of toFetch) {
-          const q = quotes.get(symbol);
+          const q = priced.get(symbol);
           if (q) {
             // Stamp the observation time so the UI can show how fresh it is.
             result.set(symbol, { ...q, at });

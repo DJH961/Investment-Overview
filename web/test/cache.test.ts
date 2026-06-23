@@ -322,7 +322,7 @@ describe("live EUR/USD cache", () => {
 });
 
 describe("clearPriceCaches", () => {
-  it("wipes quotes, FX and EUR/USD but keeps the credit log and publish stats", () => {
+  it("wipes quotes, FX, EUR/USD and learned publish windows but keeps the credit log", () => {
     const s = memStorage();
     writeCachedQuotes(new Map([["VTI", quote("VTI", "100")]]), 1000, s);
     writeCachedFx({ base: "EUR", rates: { USD: new Decimal("1.1") } }, 1000, s);
@@ -335,9 +335,11 @@ describe("clearPriceCaches", () => {
     expect(readCachedQuotes(s).size).toBe(0);
     expect(readCachedFx(s)).toBeNull();
     expect(readCachedEurUsd(s)).toBeNull();
-    // The daily budget log and learned publish windows survive a from-scratch pull.
+    // The daily budget log survives a from-scratch pull so it still respects the
+    // free-tier allowance; the learned publish windows are reset so a fund stuck
+    // on an old NAV re-learns its window cleanly.
     expect(creditsSpentWithin(readCreditLog(1000, 60_000, s), 1000, 60_000)).toBe(3);
-    expect(readNavPublishStats(s).size).toBe(1);
+    expect(readNavPublishStats(s).size).toBe(0);
   });
 
   it("is a safe no-op when storage is unavailable", () => {

@@ -265,10 +265,29 @@ export interface ExportTargetAllocation {
  * `analytics`, `deposits`) are surfaced in Phase 4 (periods, projection and the
  * analytics display); `transactions` remains optional and is carried opaquely.
  */
+/**
+ * Portfolio-level scalars (from `mobile_export._portfolio_metrics`) that let the
+ * browser recompute the desktop's **capital gain** and **trailing dividend
+ * yield** against live prices. Absent on exports generated before v3.9.4, so all
+ * fields are optional and the web falls back to its value−cost gain / YTD yield.
+ */
+export interface PortfolioMetrics {
+  /** Net external contributions (deposits − withdrawals), EUR / USD. */
+  net_contributions_eur?: DecimalString | null;
+  net_contributions_usd?: DecimalString | null;
+  /** Realized (un-reinvested) cash dividends added back into capital gain. */
+  dividends_cash_eur?: DecimalString | null;
+  dividends_cash_usd?: DecimalString | null;
+  /** Lifetime dividend income incl. reinvested, for the trailing yield. */
+  dividends_income_eur?: DecimalString | null;
+  dividends_income_usd?: DecimalString | null;
+}
+
 export interface MobileExport {
   meta: ExportMeta;
   holdings: ExportHolding[];
   portfolio_cashflows: ExportCashflow[];
+  portfolio_metrics?: PortfolioMetrics;
   cash: ExportCash[];
   period_openings: PeriodOpenings;
   monthly?: ExportPeriods;

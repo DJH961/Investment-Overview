@@ -207,7 +207,12 @@ export interface OverviewView {
   ytdGrowthPctUsd: Decimal | null;
   portfolioXirrUsd: Decimal | null;
   totalGrowthCompoundedPctUsd: Decimal | null;
-  /** Year-to-date dividend income (EUR) and its yield on current total value. */
+  /**
+   * Year-to-date dividend income (EUR) and the cumulative *lifetime* dividend
+   * return — total cash dividends ever received (incl. reinvested) ÷ current
+   * total value. This is a lifetime total, NOT an annualised yield, so it is
+   * surfaced as "Div. return" rather than "Div. yield".
+   */
   totalDividendsEur: Decimal;
   dividendYieldPct: Decimal | null;
   /** EUR→USD reference rate carried in the export meta (for the FX line). */
@@ -336,6 +341,11 @@ export function isSameLocalDay(epochMs: number, now: Date): boolean {
 /** First day of the current month/year for `asOf` (ISO `YYYY-MM-DD`). */
 function periodStartIso(asOf: string, kind: "month" | "year"): string {
   return kind === "month" ? `${asOf.slice(0, 7)}-01` : `${asOf.slice(0, 4)}-01-01`;
+}
+
+/** Parse a nullable decimal-string export field into a Decimal, or null. */
+function decimalOrNull(value: string | null | undefined): Decimal | null {
+  return value === null || value === undefined ? null : new Decimal(value);
 }
 
 /**
@@ -969,9 +979,19 @@ export function buildDashboard(
   // not on that latest date is forward-filled, so its contribution is FX-only.
   const todayFxMoveEur = todayMoveEur.minus(priceOnlyMoveEur);
 
-  // Gain reflects the market holdings' unrealised P/L (value − cost basis);
-  // cash carries no cost basis so it is excluded from the gain figure.
-  const totalGainEur = holdingsValueEur.minus(totalCostBasisEur);
+  // Gain reflects the desktop's **capital gain**: current total value plus the
+  // realized cash dividends taken out over the years, measured against the net
+  // contributions actually paid in — not a bare value−cost unrealised P/L (which
+  // ignores both dividends and realized flows, so it reads too small). When the
+  // export carries the portfolio_metrics offsets we substitute our *live* total
+  // value into that identity; otherwise we fall back to the value−cost figure.
+  const pm = data.portfolio_metrics;
+  const netContribEur = decimalOrNull(pm?.net_contributions_eur);
+  const dividendsCashEur = decimalOrNull(pm?.dividends_cash_eur);
+  const totalGainEur =
+    netContribEur !== null && dividendsCashEur !== null
+      ? totalValueEur.plus(dividendsCashEur).minus(netContribEur)
+      : holdingsValueEur.minus(totalCostBasisEur);
   const totalGainPct = totalCostBasisEur.greaterThan(0)
     ? totalGainEur.dividedBy(totalCostBasisEur)
     : null;
@@ -1015,10 +1035,15 @@ export function buildDashboard(
       ? totalGrowthPctCompounded(portfolioXirr, yearsBetween(firstCashflowDate, asOf))
       : null;
 
-  // Year-to-date dividend yield = current-year dividend cash ÷ current total value.
+  // Cumulative dividend return = lifetime dividend income (incl. reinvested) ÷
+  // current total value, matching the desktop. This is a lifetime total, not an
+  // annualised yield, so the UI labels it "Div. return". The "Dividends YTD" KPI
+  // stays a current-year figure (totalDividendsEur). Older exports without the
+  // lifetime income offset fall back to the YTD-only ratio.
   const totalDividendsEur = currentYearDividendsEur(data);
+  const dividendsIncomeEur = decimalOrNull(pm?.dividends_income_eur);
   const dividendYieldPct = totalValueEur.greaterThan(0)
-    ? totalDividendsEur.dividedBy(totalValueEur)
+    ? (dividendsIncomeEur ?? totalDividendsEur).dividedBy(totalValueEur)
     : null;
 
   const fxRateEurUsd =
@@ -1066,10 +1091,14 @@ export function buildDashboard(
     todayMoveUsd !== null && prevTotalUsd !== null
       ? prevTotalUsd.greaterThan(0) ? todayMoveUsd.dividedBy(prevTotalUsd) : null
       : null;
+  const netContribUsd = decimalOrNull(pm?.net_contributions_usd);
+  const dividendsCashUsd = decimalOrNull(pm?.dividends_cash_usd);
   const totalGainUsd =
-    holdingsValueUsd !== null && totalCostBasisUsd !== null
-      ? holdingsValueUsd.minus(totalCostBasisUsd)
-      : null;
+    totalValueUsd !== null && netContribUsd !== null && dividendsCashUsd !== null
+      ? totalValueUsd.plus(dividendsCashUsd).minus(netContribUsd)
+      : holdingsValueUsd !== null && totalCostBasisUsd !== null
+        ? holdingsValueUsd.minus(totalCostBasisUsd)
+        : null;
   const totalGainPctUsd =
     totalGainUsd !== null && totalCostBasisUsd !== null && totalCostBasisUsd.greaterThan(0)
       ? totalGainUsd.dividedBy(totalCostBasisUsd)

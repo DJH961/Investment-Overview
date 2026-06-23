@@ -11,8 +11,40 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **1.0.0** — first release with a runnable UI: end-to-end flow from CSV
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
+- **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
+  released; entries must always carry a concrete version number and date.
 
-## [Unreleased]
+## [3.10.0] — 2026-06-23
+
+### Added
+
+- **Two distinct hard refreshes in the web Settings → Maintenance section.**
+  - **"Force-fetch every price now"** re-pulls *every* symbol immediately,
+    ignoring the NAV publish schedules and the market-closed skips that normally
+    keep a tap from spending credits on a price that cannot have changed — i.e.
+    it behaves as if all holdings were expected to have a brand-new price. It
+    keeps the caches and the learned NAV publish windows intact.
+  - **"Reset cache & re-pull everything"** (the former "Update all data now")
+    still clears every cached price, forgets the learned NAV publish windows,
+    re-checks the data file, and re-fetches all quotes and FX from scratch.
+  Both still respect the hard free-tier per-minute/day budget (overflow defers).
+
+### Changed
+
+- **"Div. yield" renamed to "Div. return" (web) / "Dividend return (lifetime)"
+  (desktop).** The figure is the cumulative *lifetime* cash dividends (incl.
+  reinvested) ÷ current value — a lifetime total, not an annualised yield —
+  matching the spreadsheet's `Dividends ÷ Closing Balance`. The old "yield"
+  label implied a per-year rate and overstated the income rate for portfolios
+  held more than a year. The underlying number is unchanged; only the label and
+  its documentation were corrected.
+
+### Fixed
+
+- **Settings dropdowns (e.g. the "Clock format" picker) now match the form
+  styling.** The `.select` control previously had no CSS and fell back to the
+  raw native widget, which looked out of place; it now shares the inputs'
+  border, radius, padding, fill and a custom chevron.
 
 ## [3.9.6] — 2026-06-23
 
@@ -73,7 +105,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `market_value_eur` column (migration `0014`); the table is regenerable, so it
   is recreated rather than back-filled.
 
+
 ## [3.9.4] — 2026-06-23
+
+### Changed
+
+- **Headline "Total gain" now matches the desktop's capital gain.** The web
+  companion previously showed a bare value−cost unrealised P/L, which was too
+  small because it ignored cash dividends. The export now carries the
+  portfolio-level offsets (net contributions, realized cash dividends and
+  lifetime dividend income), so the web reconstructs the desktop's capital-gain
+  identity (`live total value + cash dividends − net contributions`) against its
+  own live prices. The redundant percentage line was removed from the stat (the
+  "Total growth" stat sits right next to it).
+- **"Div. yield" now matches the desktop's trailing lifetime yield.** It uses
+  the exported lifetime dividend income (incl. reinvested) over the live total
+  value instead of a YTD-only figure, fixing the large web/desktop mismatch.
+- **Live-data status text is sentence-cased and now reports FX freshness.** The
+  coverage notes no longer use all-lowercase fragments and append the FX state
+  (`FX live` / `FX end of day` / `FX recent` / `awaiting FX`).
 
 ### Fixed
 
@@ -83,6 +133,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Refresh-chip tooltip is scoped to the chip.** The refresh indicator's
   tooltip is now attached to the chip itself rather than bleeding onto
   surrounding layout elements.
+- **Closed-market price pulls are skipped on manual refresh too.** The "market
+  closed, last close already held → don't re-pull" economy now applies to both
+  automatic and manual refreshes, before *and* after the close, so we stop
+  wasting free-tier credits re-pulling stocks/ETFs whose last settled close is
+  already cached.
+- **A NAV symbol that returns no price no longer poisons the cache.** Quotes that
+  come back without a price are not written to the cache and are not counted as
+  fetched, so a single failing fund (e.g. FSKAX) keeps its last-known value and
+  is retried instead of overwriting good data with a blank.
+- **"Update all data now" resets learned NAV publish windows.** A from-scratch
+  re-poll now also clears the learned publish windows so a fund stuck on an old
+  NAV re-learns cleanly.
+
+### Removed
+
+- **Colorful border around the "Today's movers" section.** Each mover stays
+  colored, but the accent border/glow around the whole section is gone.
 
 ## [3.9.3] — 2026-06-23
 

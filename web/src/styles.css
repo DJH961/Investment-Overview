@@ -147,6 +147,29 @@ input {
 }
 input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+/* Dropdown selectors (e.g. the Settings "Clock format" picker). Styled to match
+ * the text inputs — same border, radius, padding and fill — with a custom
+ * chevron so the native OS control doesn't look out of place in the panel. */
+.select {
+  font: inherit;
+  padding: 0.7rem 2.2rem 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background-color: var(--card-2);
+  color: var(--fg);
+  width: 100%;
+  min-width: 0;
+  cursor: pointer;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  /* Inline SVG chevron (uses currentColor via stroke) pinned to the right. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.8rem center;
+}
+.select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 .row { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 1rem; }
 
 .btn {
@@ -628,14 +651,9 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .pill.stale { color: var(--warn); }
 
 /* --- Today's movers (winners / losers) ----------------------------------- */
-/* A distinct "special notice" band: an accented card that stands apart from the
- * holdings and KPI surfaces, laying its winners/losers out as blocks across. */
-.movers-band {
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, var(--card)), var(--card));
-  box-shadow: var(--shadow), 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
-}
+/* A plain card surface (no accent frame): the section sits quietly like any
+ * other panel — each individual winner/loser block carries its own colour, so
+ * the colour lives on the movers themselves, not as a band around the area. */
 .movers-band > .collapsible-summary h2::before {
   content: "★";
   margin-right: 0.4rem;

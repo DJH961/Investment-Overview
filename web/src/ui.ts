@@ -244,7 +244,6 @@ function renderStats(o: OverviewView): HTMLElement {
   // Growth figures are currency-dependent: prefer the USD figure when USD is
   // selected (FX drift between the cash-flow dates and now makes EUR and USD
   // growth genuinely differ), mirroring the desktop's per-currency KPIs.
-  const totalGainPct = pickByCurrency(o.totalGainPct, o.totalGainPctUsd);
   const totalGrowthCompounded = pickByCurrency(
     o.totalGrowthCompoundedPct,
     o.totalGrowthCompoundedPctUsd,
@@ -252,11 +251,13 @@ function renderStats(o: OverviewView): HTMLElement {
   const xirr = pickByCurrency(o.portfolioXirr, o.portfolioXirrUsd);
   const gainPicked = pickByCurrency(o.totalGainEur, o.totalGainUsd);
   const grid = h("div", { class: "stat-grid" }, [
+    // Total gain is the capital gain (mirrors the desktop): value + cash
+    // dividends − net contributions. The compounded growth % sits right beside
+    // it, so the gain stat shows the money figure alone — no redundant percent.
     stat(
       "Total gain",
       formatSignedDualCurrency(o.totalGainEur, o.totalGainUsd),
       signClass(gainPicked),
-      totalGainPct !== null ? formatSignedPercent(totalGainPct) : undefined,
     ),
     stat(
       "Total growth",
@@ -264,7 +265,7 @@ function renderStats(o: OverviewView): HTMLElement {
       signClass(totalGrowthCompounded),
     ),
     stat("XIRR", formatPercent(xirr), signClass(xirr)),
-    stat("Div. yield", o.dividendYieldPct !== null ? formatPercent(o.dividendYieldPct) : "—"),
+    stat("Div. return", o.dividendYieldPct !== null ? formatPercent(o.dividendYieldPct) : "—"),
     stat("Invested", formatDualCurrency(o.totalCostBasisEur, o.totalCostBasisUsd)),
     stat("Dividends YTD", formatCurrency(o.totalDividendsEur)),
   ]);

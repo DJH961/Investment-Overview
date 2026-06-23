@@ -186,6 +186,45 @@ def _holding_dict(
     }
 
 
+def _portfolio_metrics(session: Session, *, as_of: date) -> dict[str, str | None]:
+    """Portfolio-level scalars the web needs to recompute the headline **capital
+    gain** and **cumulative dividend return** live (against live prices), matching
+    the desktop's definitions exactly.
+
+    The desktop identity is ``capital_gain = total_value + dividends_cash −
+    net_contributions`` (see :func:`domain.returns.capital_gain`). The web
+    substitutes its *own live* total value into that identity, so it only needs
+    the two fixed offsets — net contributions and realized cash dividends — plus
+    lifetime dividend *income* (incl. reinvested distributions) for the cumulative
+    dividend return (``dividend_income ÷ total_value``). Carrying these makes the
+    web's "Total gain" the desktop's capital gain (cash dividends added back,
+    measured against net contributions) rather than a bare value−cost unrealised
+    P/L, and its "Div. return" the lifetime cumulative figure rather than a
+    YTD-only one (it is a lifetime total, not an annualised yield).
+    """
+    m = metrics_service.compute_portfolio_metrics(session, as_of=as_of)
+    # Realized cash dividends = capital_gain − total_value + net_contributions
+    # (the inverse of the capital-gain identity above), a constant the web adds
+    # back to its live total value.
+    dividends_cash_eur = m.capital_gain_eur - m.total_value_eur + m.total_contributions_eur
+    dividends_cash_usd = (
+        m.capital_gain_usd - m.total_value_usd + m.total_contributions_usd
+        if m.capital_gain_usd is not None and m.total_value_usd is not None
+        else None
+    )
+    return {
+        "net_contributions_eur": dec(m.total_contributions_eur),
+        "net_contributions_usd": dec(m.total_contributions_usd),
+        "dividends_cash_eur": dec(dividends_cash_eur),
+        "dividends_cash_usd": dec(dividends_cash_usd),
+        # Lifetime dividend income incl. reinvested distributions (desktop's
+        # ``total_dividends_cash_eur`` is this income figure) for the cumulative
+        # dividend return.
+        "dividends_income_eur": dec(m.total_dividends_cash_eur),
+        "dividends_income_usd": dec(m.total_dividends_cash_usd),
+    }
+
+
 def _cash_balances(session: Session, *, as_of: date) -> list[dict[str, str | None]]:
     rows: list[dict[str, str | None]] = []
     for account in accounts_repo.list_accounts(session):
@@ -368,6 +407,7 @@ def build_mobile_export(
             for position in positions
         ],
         "portfolio_cashflows": _portfolio_cashflows(session, txns),
+        "portfolio_metrics": _portfolio_metrics(session, as_of=context.as_of),
         "cash": _cash_balances(session, as_of=context.as_of),
         "period_openings": _period_openings(session, as_of=context.as_of),
         "monthly": periods.build_monthly(session, context=usd_context),
