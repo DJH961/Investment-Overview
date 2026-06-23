@@ -181,7 +181,7 @@ def test_mobile_export_shape_and_default_sensitivity(session: Session) -> None:
         "target_allocations",
         "portfolio_metrics",
     }
-    # ``live_graphs`` is an optional, absent-tolerant springboard section: it is
+    # `live_graphs` is an optional, absent-tolerant springboard section: it is
     # only emitted when intraday history is available to capture, so it must not
     # be asserted as always-present (its presence depends on cached intraday data
     # and the wall clock). The core sections, however, are always exported.
