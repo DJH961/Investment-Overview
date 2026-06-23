@@ -138,7 +138,7 @@ export async function fetchTiingoQuotes(
   // already holds, so last-known values are still shown.
   if (!Array.isArray(body)) {
     throw new PriceError(
-      "price proxy did not return Tiingo data — is the Worker /price route deployed?",
+      "price proxy did not return a Tiingo quote array — check the Worker /price route, proxy config, and Tiingo token",
       { retryable: false },
     );
   }
