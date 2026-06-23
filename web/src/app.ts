@@ -1486,7 +1486,11 @@ export class App {
       // especially the "Try the backup data provider now" button — so lead with
       // it when the Tiingo backup couldn't be reached this round.
       if (this.lastTiingoError) {
-        this.toast("Backup price source (Tiingo) is unreachable — check the Worker /price route.");
+        this.toast(
+          this.lastTiingoError.status === 429
+            ? "Backup provider (Tiingo) is rate-limited — its API credits look used up."
+            : "Backup price source (Tiingo) is unreachable — check the Worker /price route.",
+        );
       } else {
         this.toast(
           this.lastCoverageFacts
@@ -1717,14 +1721,20 @@ export class App {
       reasons.push("FX rates are temporarily unavailable.");
     }
 
-    // The Tiingo backup was needed this round but couldn't be reached (proxy
-    // down, Worker `/price` route missing, bad token). Without this, a holding
-    // the primary can't price (e.g. an FSKAX-style NAV fund) would just sit blank
-    // with no explanation — so call it out explicitly.
+    // The Tiingo backup was needed this round but couldn't deliver. Distinguish
+    // the two causes the user can act on differently: a 429 means Tiingo's own
+    // hourly/daily API quota is spent (e.g. our self-budget had room, but
+    // independent/manual use of the same token burned the real account quota),
+    // whereas any other failure means the proxy/Worker is unreachable or
+    // misconfigured. Without this, a holding the primary can't price (e.g. an
+    // FSKAX-style NAV fund) would just sit blank with no explanation.
     if (tiingoError) {
       reasons.push(
-        "Backup price source (Tiingo) is unreachable — showing last-known prices. " +
-          "If this persists, redeploy the price proxy Worker.",
+        tiingoError.status === 429
+          ? "Backup price source (Tiingo) is rate-limited — its API credits look used up. " +
+              "Showing last-known prices until the quota resets."
+          : "Backup price source (Tiingo) is unreachable — showing last-known prices. " +
+              "If this persists, redeploy the price proxy Worker.",
       );
     }
 

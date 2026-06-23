@@ -596,17 +596,25 @@ def _maybe_run_tiingo_fallback(
             token=token,
         )
     except Exception as exc:  # pragma: no cover - defensive: never break the refresh
-        # The backup was needed (a fetch was attempted) but failed — Tiingo
-        # unreachable, a bad/expired token, or an outage. Make it OBVIOUS rather
-        # than only logging: record a red runtime error so the UI pops a toast and
-        # the Data Health page lists it, mirroring the web companion's banner. The
+        # The backup was needed (a fetch was attempted) but failed. Make it
+        # OBVIOUS rather than only logging: record a red runtime error so the UI
+        # pops a toast and the Data Health page lists it, mirroring the web
+        # companion's banner. Distinguish a spent Tiingo quota (HTTP 429 →
+        # RateLimitedError; e.g. our self-budget had room but independent use of
+        # the same token burned the real account quota) from an unreachable/
+        # misconfigured proxy, since the user acts on each differently. The
         # primary result still stands (we return below), so last-known prices show.
+        from investment_dashboard.adapters._retry import RateLimitedError  # noqa: PLC0415
         from investment_dashboard.services import runtime_status  # noqa: PLC0415
 
-        runtime_status.record_error(
-            "Price backup (Tiingo)",
-            f"Tiingo fallback unreachable — showing last-known prices ({exc}).",
-        )
+        if isinstance(exc, RateLimitedError):
+            message = (
+                f"Tiingo is rate-limited — its API credits look used up; showing "
+                f"last-known prices until the quota resets ({exc})."
+            )
+        else:
+            message = f"Tiingo fallback unreachable — showing last-known prices ({exc})."
+        runtime_status.record_error("Price backup (Tiingo)", message)
         # Keep the stack trace in the log file, but skip the logging→runtime_status
         # funnel so we don't also raise a second, vaguer amber toast for the same
         # failure (we just recorded the clear red one above).

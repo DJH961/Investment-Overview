@@ -30,6 +30,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     (toast + Data Health page) when the backup raises, instead of only writing a
     vague line to the log. The manual "Refresh via Tiingo now" button already
     surfaced failures.
+  - **Rate-limit aware:** an HTTP 429 (Tiingo's own hourly/daily API quota spent —
+    e.g. our self-budget had room but independent use of the same token burned the
+    real account quota) is reported distinctly as "rate-limited — API credits look
+    used up" rather than the generic "unreachable" message, so the cause is clear.
 
 ### Fixed
 
