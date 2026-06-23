@@ -14,6 +14,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [3.15.0] — 2026-06-23
+
+### Changed
+
+- **The first-run "Set up the companion" screen is down to three core fields.**
+  It previously presented seven inputs as equals, but for the hosted app only the
+  Twelve Data API key and a CORS-enabled data-source URL (the Cloudflare Worker)
+  genuinely matter — a raw GitHub release-asset path can't be fetched
+  cross-origin, so framing **Data repository** as the primary source was
+  misleading and unusable. Setup is now **Price API key**, **Data source URL**
+  (primary/required), and **Update prices every N minutes**. The repo, release
+  tag and version-file URL inputs are retired (UI + `AppConfig` + storage); the
+  meta sidecar auto-derives from the data URL.
+- **Quote-cache and auto-refresh merged into one `updateMinutes` interval** that
+  drives both the background wake cadence and how stale a cached quote may get,
+  so a single knob replaces two that controlled one perceived thing.
+- **Theme, Clock format and Auto-lock now appear on the setup screen**, so the
+  core preferences are set once, up front, before login.
+
+### Added
+
+- **Portable config export / import (Plan A).** Export the setup to a private
+  JSON packet and import it on another device, then review or edit the fields
+  before continuing. The packet is `type`/`version` stamped (and the importer
+  rejects unsupported versions) so a future passphrase-encrypted, Worker-published
+  variant (Plan B) can drop in without breaking older files.
+
+### Migration
+
+- On `loadConfig`, legacy `repo` + `tag` rebuild into the data-source URL and the
+  legacy `quoteCacheMinutes` / `autoRefreshMinutes` fold into `updateMinutes`; the
+  old storage keys are retired on the first save, so existing installs upgrade
+  with no data loss.
 ## [3.14.0] — 2026-06-23
 
 ### Added
