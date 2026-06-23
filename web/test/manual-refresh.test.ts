@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   allPricesLive,
   buildCoverageFacts,
+  describePrefetch,
   liveRefreshProgress,
   manualRefreshSummary,
   refreshTickAction,
@@ -17,6 +18,7 @@ function report(overrides: Partial<QuoteLoadReport> = {}): QuoteLoadReport {
     fetched: [],
     servedFresh: [],
     deferred: [],
+    failed: [],
     error: null,
     minuteRemaining: 8,
     dayRemaining: 800,
@@ -28,7 +30,9 @@ function facts(overrides: Partial<CoverageFacts> = {}): CoverageFacts {
   return {
     marketOpen: false,
     marketTotal: 0,
-    marketLive: 0,
+    marketHeld: 0,
+    marketFresh: 0,
+    marketAtClose: 0,
     navTotal: 0,
     navExpectedTonight: 0,
     navAwaiting: 0,
@@ -47,15 +51,45 @@ describe("summarizeCoverage", () => {
   it("market open: shows live market count and NAVs still expected tonight", () => {
     expect(
       summarizeCoverage(
-        facts({ marketOpen: true, marketTotal: 13, marketLive: 13, navTotal: 5, navExpectedTonight: 5 }),
+        facts({
+          marketOpen: true,
+          marketTotal: 13,
+          marketHeld: 13,
+          marketFresh: 13,
+          navTotal: 5,
+          navExpectedTonight: 5,
+        }),
       ),
     ).toBe("13/13 live, 5 NAVs expected tonight · FX live");
+  });
+
+  it("market open: splits freshly-pulled (live) from cached holdings", () => {
+    expect(
+      summarizeCoverage(
+        facts({ marketOpen: true, marketTotal: 13, marketHeld: 13, marketFresh: 8 }),
+      ),
+    ).toBe("8 live, 5 cached · FX live");
+  });
+
+  it("market open: never says 0/N when everything is held from cache", () => {
+    // The "0/12 recent — how is that possible?" bug: budget-deferred holdings
+    // still carry usable cached values, so they must read as held, not missing.
+    expect(
+      summarizeCoverage(facts({ marketOpen: true, marketTotal: 12, marketHeld: 12, marketFresh: 0 })),
+    ).toBe("12/12 cached · FX live");
   });
 
   it("market open: a single fund reads in the singular", () => {
     expect(
       summarizeCoverage(
-        facts({ marketOpen: true, marketTotal: 2, marketLive: 2, navTotal: 1, navExpectedTonight: 1 }),
+        facts({
+          marketOpen: true,
+          marketTotal: 2,
+          marketHeld: 2,
+          marketFresh: 2,
+          navTotal: 1,
+          navExpectedTonight: 1,
+        }),
       ),
     ).toBe("2/2 live, 1 NAV expected tonight · FX live");
   });
@@ -63,7 +97,14 @@ describe("summarizeCoverage", () => {
   it("market open: once every NAV is in, it says so rather than 'expected'", () => {
     expect(
       summarizeCoverage(
-        facts({ marketOpen: true, marketTotal: 13, marketLive: 13, navTotal: 5, navExpectedTonight: 0 }),
+        facts({
+          marketOpen: true,
+          marketTotal: 13,
+          marketHeld: 13,
+          marketFresh: 13,
+          navTotal: 5,
+          navExpectedTonight: 0,
+        }),
       ),
     ).toBe("13/13 live, 5/5 NAVs in · FX live");
   });
@@ -71,29 +112,36 @@ describe("summarizeCoverage", () => {
   it("market closed: holds every close but is awaiting tonight's NAVs", () => {
     expect(
       summarizeCoverage(
-        facts({ marketOpen: false, marketTotal: 13, marketLive: 13, navTotal: 5, navAwaiting: 5 }),
+        facts({ marketOpen: false, marketTotal: 13, marketHeld: 13, marketAtClose: 13, navTotal: 5, navAwaiting: 5 }),
       ),
-    ).toBe("Market closed for 13/13, awaiting 5/5 NAVs · FX live");
+    ).toBe("Market closed, 13/13 at last close, awaiting 5/5 NAVs · FX live");
   });
 
-  it("market closed: everything current reads as fully up to date", () => {
+  it("market closed: everything at closing prices reads as up to date, no update needed", () => {
     expect(
       summarizeCoverage(
-        facts({ marketOpen: false, marketTotal: 13, marketLive: 13, navTotal: 5, navAwaiting: 0 }),
+        facts({ marketOpen: false, marketTotal: 13, marketHeld: 13, marketAtClose: 13, navTotal: 5, navAwaiting: 0 }),
       ),
-    ).toBe("Market closed, all prices up to date · FX live");
+    ).toBe("Market closed, at closing prices — up to date · FX live");
   });
 
   it("market closed: a budget-deferred market close is named honestly", () => {
     expect(
       summarizeCoverage(
-        facts({ marketOpen: false, marketTotal: 13, marketLive: 11, navTotal: 5, navAwaiting: 3 }),
+        facts({
+          marketOpen: false,
+          marketTotal: 13,
+          marketHeld: 13,
+          marketAtClose: 11,
+          navTotal: 5,
+          navAwaiting: 3,
+        }),
       ),
-    ).toBe("Market closed, 11/13 up to date, awaiting 3/5 NAVs · FX live");
+    ).toBe("Market closed, 11 at last close, 2 recent, awaiting 3/5 NAVs · FX live");
   });
 
   it("surfaces a hard error as last-known prices", () => {
-    expect(summarizeCoverage(facts({ marketTotal: 2, marketLive: 2, error: true }))).toBe(
+    expect(summarizeCoverage(facts({ marketTotal: 2, marketHeld: 2, marketAtClose: 2, error: true }))).toBe(
       "Showing last known prices · FX live",
     );
   });
@@ -101,56 +149,64 @@ describe("summarizeCoverage", () => {
   it("calls cache-served prices 'up to date' when the closed market is fully in hand", () => {
     // Served from cache, but the session is closed and every close/NAV is held —
     // the cached figures are the latest there are, so say so plainly rather than
-    // the old apologetic "recent prices" (which read like a failed refresh).
+    // an apologetic count that reads like a failed refresh.
     expect(
-      summarizeCoverage(facts({ marketTotal: 2, marketLive: 2, freshlyPulled: false })),
-    ).toBe("Up to date (2 holdings) · FX live");
+      summarizeCoverage(facts({ marketTotal: 2, marketHeld: 2, marketAtClose: 2, freshlyPulled: false })),
+    ).toBe("Market closed, at closing prices — up to date · FX live");
     expect(
-      summarizeCoverage(facts({ marketTotal: 1, marketLive: 1, freshlyPulled: false })),
-    ).toBe("Up to date · FX live");
+      summarizeCoverage(facts({ marketTotal: 1, marketHeld: 1, marketAtClose: 1, freshlyPulled: false })),
+    ).toBe("Market closed, at closing prices — up to date · FX live");
   });
 
   it("breaks cached coverage into recent vs awaiting while something is behind", () => {
-    // Market open and moving: cached spots are "recent", not live — say so per holding.
+    // Market open, served from cache (no fresh pull): the spots read as cached.
     expect(
       summarizeCoverage(
-        facts({ marketOpen: true, marketTotal: 2, marketLive: 2, freshlyPulled: false }),
+        facts({ marketOpen: true, marketTotal: 2, marketHeld: 2, marketFresh: 0, freshlyPulled: false }),
       ),
-    ).toBe("2/2 recent · FX live");
-    // Market open with an undue NAV: spots recent, NAV still expected tonight.
+    ).toBe("2/2 cached · FX live");
+    // Market open with an undue NAV: spots cached, NAV still expected tonight.
     expect(
       summarizeCoverage(
         facts({
           marketOpen: true,
           marketTotal: 2,
-          marketLive: 2,
+          marketHeld: 2,
+          marketFresh: 0,
           navTotal: 1,
           navExpectedTonight: 1,
           freshlyPulled: false,
         }),
       ),
-    ).toBe("2/2 recent, 1 NAV expected tonight · FX live");
-    // Closed, but a NAV is still awaited: recent spots, awaiting the NAV.
+    ).toBe("2/2 cached, 1 NAV expected tonight · FX live");
+    // Closed, holding both closes, but a NAV is still awaited.
     expect(
       summarizeCoverage(
-        facts({ marketTotal: 2, marketLive: 2, navTotal: 1, navAwaiting: 1, freshlyPulled: false }),
+        facts({
+          marketTotal: 2,
+          marketHeld: 2,
+          marketAtClose: 2,
+          navTotal: 1,
+          navAwaiting: 1,
+          freshlyPulled: false,
+        }),
       ),
-    ).toBe("2/2 recent, awaiting 1/1 NAV · FX live");
+    ).toBe("Market closed, 2/2 at last close, awaiting 1/1 NAV · FX live");
   });
 
   it("always reports FX freshness, capitalised, alongside the price coverage", () => {
-    const base = { marketOpen: false, marketTotal: 2, marketLive: 2 } as const;
+    const base = { marketOpen: false, marketTotal: 2, marketHeld: 2, marketAtClose: 2 } as const;
     expect(summarizeCoverage(facts({ ...base, fx: "live" }))).toBe(
-      "Market closed, all prices up to date · FX live",
+      "Market closed, at closing prices — up to date · FX live",
     );
     expect(summarizeCoverage(facts({ ...base, fx: "eod" }))).toBe(
-      "Market closed, all prices up to date · FX end of day",
+      "Market closed, at closing prices — up to date · FX end of day",
     );
     expect(summarizeCoverage(facts({ ...base, fx: "cache" }))).toBe(
-      "Market closed, all prices up to date · FX recent",
+      "Market closed, at closing prices — up to date · FX recent",
     );
     expect(summarizeCoverage(facts({ ...base, fx: "none" }))).toBe(
-      "Market closed, all prices up to date · awaiting FX",
+      "Market closed, at closing prices — up to date · awaiting FX",
     );
   });
 });
@@ -158,14 +214,29 @@ describe("summarizeCoverage", () => {
 describe("buildCoverageFacts", () => {
   const now = new Date(2024, 4, 15, 18, 0, 0); // a Wednesday, 18:00 local
 
-  it("splits market vs NAV holdings and counts live market symbols", () => {
+  it("splits market vs NAV holdings and counts freshly-pulled market symbols", () => {
     const f = buildCoverageFacts(
       report({ fetched: ["AAPL"], deferred: ["MSFT"] }),
       new Map(),
       new Set(),
       { now, marketOpen: true },
     );
-    expect(f).toMatchObject({ marketTotal: 2, marketLive: 1, navTotal: 0 });
+    expect(f).toMatchObject({ marketTotal: 2, marketFresh: 1, navTotal: 0 });
+  });
+
+  it("counts a budget-deferred holding with a cached price as held, not missing", () => {
+    // The "0/12 recent" bug: a deferred symbol that still has a usable cached
+    // value must count as held so it never reads as missing.
+    const quotes = new Map([["MSFT", { price: 1, valueDate: "2024-05-14" }]]);
+    const f = buildCoverageFacts(
+      report({ fetched: ["AAPL"], deferred: ["MSFT"] }),
+      quotes,
+      new Set(),
+      { now, marketOpen: true },
+    );
+    expect(f.marketTotal).toBe(2);
+    expect(f.marketHeld).toBe(1); // only MSFT carries a price in this synthetic map
+    expect(f.marketFresh).toBe(1); // AAPL was fetched
   });
 
   it("counts NAVs without today's value-date as expected tonight while open", () => {
@@ -182,23 +253,27 @@ describe("buildCoverageFacts", () => {
     expect(f.navAwaiting).toBe(0);
   });
 
-  it("flags a NAV as awaiting once it is past its publish hour and still missing", () => {
-    const lateEvening = new Date(2024, 4, 15, 23, 0, 0); // 23:00 local, past publish hour
-    const quotes = new Map([["VTSAX", { valueDate: "2024-05-14" }]]);
+  it("counts a failed market symbol toward the total (held only if it has a cached price)", () => {
+    // A symbol the provider attempted but couldn't price this round is reported in
+    // `failed`; it must still count toward marketTotal (and as held when a cached
+    // price remains), never silently vanish from coverage.
+    const quotes = new Map([["AAPL", { price: 1, valueDate: "2024-05-14" }]]);
     const f = buildCoverageFacts(
-      report({ fetched: ["VTSAX"] }),
+      report({ fetched: ["AAPL"], failed: ["FSKAX"] }),
       quotes,
-      new Set(["VTSAX"]),
-      { now: lateEvening, marketOpen: false, publishHourFor: () => 22 },
+      new Set(),
+      { now, marketOpen: true },
     );
-    expect(f.navAwaiting).toBe(1);
+    expect(f.marketTotal).toBe(2); // AAPL + FSKAX
+    expect(f.marketHeld).toBe(1); // only AAPL has a cached price here
+    expect(f.marketFresh).toBe(1);
   });
 });
 
 describe("manualRefreshSummary", () => {
   it("leads with the transparent coverage line", () => {
     expect(
-      manualRefreshSummary(facts({ marketOpen: true, marketTotal: 2, marketLive: 2 })),
+      manualRefreshSummary(facts({ marketOpen: true, marketTotal: 2, marketHeld: 2, marketFresh: 2 })),
     ).toBe("2/2 live · FX live");
   });
 
@@ -265,9 +340,9 @@ describe("liveRefreshProgress", () => {
     expect(p).toEqual({ live: 2, total: 2 });
   });
 
-  it("reports zero live while everything is still deferred", () => {
-    const p = liveRefreshProgress(report({ deferred: ["A", "B", "C"] }));
-    expect(p).toEqual({ live: 0, total: 3 });
+  it("counts a failed symbol as not-live, lowering the live total", () => {
+    const p = liveRefreshProgress(report({ fetched: ["AAPL"], failed: ["FSKAX"] }));
+    expect(p).toEqual({ live: 1, total: 2 });
   });
 });
 
@@ -284,8 +359,82 @@ describe("allPricesLive", () => {
     expect(allPricesLive(report())).toBe(false);
   });
 
+  it("is false when a symbol was attempted but failed to price", () => {
+    expect(allPricesLive(report({ fetched: ["AAPL"], failed: ["FSKAX"] }))).toBe(false);
+  });
+
   it("is false when the round failed, even with nothing deferred", () => {
     const err = new PriceError("rate limited", { retryable: true });
     expect(allPricesLive(report({ fetched: ["AAPL"], error: err }))).toBe(false);
+  });
+});
+
+describe("describePrefetch", () => {
+  const at = new Date(2024, 4, 15, 18, 0, 0).getTime();
+  const now = new Date(2024, 4, 15, 18, 3, 0).getTime(); // 3 min later
+
+  it("shows a warming line while still in flight", () => {
+    expect(
+      describePrefetch({
+        inFlight: true,
+        hasPlan: true,
+        quoteFetched: 0,
+        quoteTotal: 12,
+        fxLive: false,
+        lastPullAt: null,
+      }),
+    ).toBe("Warming live prices…");
+  });
+
+  it("appends the last-pulled clause to the warming line when known", () => {
+    const s = describePrefetch({
+      inFlight: true,
+      hasPlan: true,
+      quoteFetched: 0,
+      quoteTotal: 12,
+      fxLive: false,
+      lastPullAt: at,
+      now,
+    });
+    expect(s).toMatch(/^Warming live prices… · last pulled/);
+  });
+
+  it("reports the count and FX when the prefetch fetched something new", () => {
+    const s = describePrefetch({
+      inFlight: false,
+      hasPlan: true,
+      quoteFetched: 12,
+      quoteTotal: 14,
+      fxLive: true,
+      lastPullAt: at,
+      now,
+    });
+    expect(s).toMatch(/^Prefetched 12\/14 live · FX live · last pulled/);
+  });
+
+  it("says already up to date when nothing new was pulled", () => {
+    const s = describePrefetch({
+      inFlight: false,
+      hasPlan: true,
+      quoteFetched: 0,
+      quoteTotal: 14,
+      fxLive: false,
+      lastPullAt: at,
+      now,
+    });
+    expect(s).toMatch(/^Already up to date · last pulled/);
+  });
+
+  it("confirms readiness on a first ever run with no plan", () => {
+    expect(
+      describePrefetch({
+        inFlight: false,
+        hasPlan: false,
+        quoteFetched: 0,
+        quoteTotal: 0,
+        fxLive: false,
+        lastPullAt: null,
+      }),
+    ).toBe("Live prices ready");
   });
 });
