@@ -75,6 +75,9 @@ import {
   runTiingoFallback,
   shouldQuickRefresh,
   noteQuickRefresh,
+  planStartupRefresh,
+  tiingoRemainingCredits,
+  STARTUP_TIINGO_RESERVE,
   type TiingoBudgetView,
 } from "./tiingo-fallback";
 import { readTiingoState } from "./cache";
@@ -153,7 +156,40 @@ const FORCE_REFRESH_MIN_CREDIT_FRACTION = 0.1;
  * pill) so the user can tell their tap registered *and* that the automatic
  * refresh keeps working on its own.
  */
-type RefreshKind = "manual" | "auto";
+export type RefreshKind = "manual" | "auto";
+
+/** What a scheduled refresh tick should do — see {@link refreshTickAction}. */
+export type RefreshTickAction = "run" | "defer" | "stop";
+
+/**
+ * Decide what one scheduled refresh tick should do, kept pure so the loop's
+ * survival rules are testable in isolation:
+ *
+ *  - **stop** — the session was superseded (a lock, or a newer unlock); abandon
+ *    this stale tick entirely.
+ *  - **defer** — an automatic background tick while the tab is hidden: skip the
+ *    network this round to save credits, but the caller MUST still re-arm the
+ *    next tick so the auto-refresh loop is never permanently abandoned.
+ *  - **run** — do the live refresh now.
+ *
+ * The post-unlock **kickoff** always runs, even when the tab reports hidden: a
+ * fingerprint unlock on mobile frequently (and sometimes stickily) flips the
+ * page to `hidden` for a beat, which used to drop the one startup refresh *and*,
+ * because the loop is only re-armed after a completed round, leave auto-refresh
+ * un-armed forever — so no price update fired at all until a manual tap. The
+ * kickoff is user-initiated (they are actively waiting on fresh prices), so it
+ * bypasses the hidden skip.
+ */
+export function refreshTickAction(args: {
+  sessionMatches: boolean;
+  kind: RefreshKind;
+  hidden: boolean;
+  kickoff: boolean;
+}): RefreshTickAction {
+  if (!args.sessionMatches) return "stop";
+  if (args.kind === "auto" && !args.kickoff && args.hidden) return "defer";
+  return "run";
+}
 
 /**
  * NAV-priced asset classes that are real, tickered funds and so can be priced
@@ -226,6 +262,13 @@ export class App {
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   /** Installed visibility listener, kept so it can be removed on lock. */
   private visibilityHandler: (() => void) | null = null;
+  /**
+   * Installed `pageshow` listener, kept so it can be removed on lock. Some mobile
+   * browsers restore a backgrounded PWA from the bfcache (or after a fingerprint
+   * unlock) without a reliable `visibilitychange`, so this is a second, belt-and
+   * -braces trigger to resume the refresh the moment the app is shown again.
+   */
+  private pageShowHandler: ((event: PageTransitionEvent) => void) | null = null;
   /** Guards against overlapping price refreshes. */
   private refreshing = false;
   /**
@@ -883,18 +926,56 @@ export class App {
     //    re-open) and 4. start the live-price auto-refresh (burst then slow).
     void this.maybeRefreshBlob(session);
     this.installVisibilityRefresh(session);
-    // Startup quick-refresh: when prices are badly outdated, the Tiingo fallback
-    // (no per-minute cap) can repopulate fast. Throttled to ~once/hour via the
-    // persisted stamp so it doesn't burn the budget on every re-open.
+    // Startup quick-refresh: when prices are badly outdated, repopulate the book
+    // fast. Tiingo answers a whole batch in a single request with no per-minute
+    // cap — far faster than the Twelve Data primary, which trickles ~8 symbols/min
+    // — so a big outdated set routes through Tiingo. But that scarcer budget is
+    // protected by two rules (see {@link planStartupRefresh}): it never spends the
+    // last few Tiingo credits, and it never fires for a small (≤8) outdated set the
+    // primary can clear within a minute. A set too large for the spare budget is
+    // split across both providers; a spent (or unconfigured) Tiingo budget forces
+    // the Twelve Data primary instead. Throttled to ~once/hour via the persisted
+    // stamp (set only when Tiingo is actually used) so it doesn't burn the budget
+    // on every re-open. The subsequent scheduled refreshes (armed via
+    // {@link scheduleNext}) carry no options, so they return to the normal
+    // Twelve-Data-first cadence.
     const tiingoState = readTiingoState();
+    const marketOpen = isUsMarketOpen();
     const quick = shouldQuickRefresh({
       now: Date.now(),
-      marketOpen: isUsMarketOpen(),
+      marketOpen,
       lastQuickRefreshAt: tiingoState.lastQuickRefreshAt,
       freshestPriceAt: this.lastDataPullAt,
+      holdsLatestClose: this.holdsLatestClose(),
     });
-    if (quick) noteQuickRefresh(Date.now());
-    this.startupRefresh(session, quick);
+    // When badly outdated, decide how to route the pull. The startup Tiingo
+    // quick-refresh never spends the last few Tiingo credits and never fires for a
+    // small outdated set (the Twelve Data primary clears ≤8 within a minute); a
+    // set too big for the spare Tiingo budget is split across both providers, and
+    // a fully-spent (or unconfigured) Tiingo budget falls back to forcing Twelve.
+    let quickOpts: { force?: boolean; viaTiingo?: boolean; tiingoReserve?: number } = {};
+    if (quick) {
+      const tiingoAvailable = resolvePriceProxyUrl(this.state.config) !== null;
+      const plan = planStartupRefresh({
+        outdatedCount: this.outdatedFetchCount(marketOpen),
+        tiingoRemaining: tiingoRemainingCredits(Date.now()),
+        tiingoAvailable,
+      });
+      if (plan.route === "tiingo") {
+        quickOpts = { viaTiingo: true, tiingoReserve: STARTUP_TIINGO_RESERVE };
+        noteQuickRefresh(Date.now());
+      } else if (plan.route === "split") {
+        // Force the Twelve Data primary (it clears the largest ~8 holdings), then
+        // let the reserved Tiingo fallback fill the rest within its spare budget.
+        quickOpts = { force: true, tiingoReserve: STARTUP_TIINGO_RESERVE };
+        noteQuickRefresh(Date.now());
+      } else {
+        // route === "twelve": leave Tiingo untouched and force the primary; no
+        // throttle stamp, so a later re-open may still fire Tiingo once it helps.
+        quickOpts = { force: true };
+      }
+    }
+    this.startupRefresh(session, quick, quickOpts);
     // 5. Arm the idle auto-lock so an unattended session locks itself.
     this.installAutoLock();
   }
@@ -914,13 +995,22 @@ export class App {
    * A throttled startup quick-refresh (the Tiingo catch-up for badly stale
    * prices) always pulls, since it only fires when prices are demonstrably old.
    */
-  private startupRefresh(session: number, quick: boolean): void {
+  private startupRefresh(
+    session: number,
+    quick: boolean,
+    quickOpts: { force?: boolean; viaTiingo?: boolean; tiingoReserve?: number } = {},
+  ): void {
     if (!quick && this.fullyUpToDate()) {
       this.toast(`Prices up to date · last pulled ${formatLastPull(this.lastDataPullAt)}`);
       this.scheduleNext(session, SETTLED_HEARTBEAT_MS);
       return;
     }
-    void this.runScheduledRefresh(session, "auto", { startup: true, force: quick });
+    // The post-unlock kickoff: always run this first live refresh, even if the
+    // tab momentarily reports hidden (common right after a fingerprint unlock).
+    // This surfaces fresh prices immediately (with a guaranteed-visible startup
+    // animation) and arms the auto-refresh loop via the scheduleNext at the end
+    // of the round.
+    void this.runScheduledRefresh(session, "auto", { ...quickOpts, startup: true, kickoff: true });
   }
 
   // --- Idle auto-lock ---------------------------------------------------------
@@ -1082,6 +1172,51 @@ export class App {
   }
 
   /**
+   * Whether every fetchable holding already holds its latest settled close — i.e.
+   * there is nothing newer to fetch while the market is shut. Market symbols are
+   * judged against {@link latestSettledSessionDate}; NAV funds against their
+   * latest expected publish ({@link latestExpectedNavDate}, learned publish hour).
+   * Mirrors the per-symbol "behind" test used by the manual {@link forceFetch}
+   * path so the startup quick-refresh agrees with a manual pull on what counts as
+   * outdated. Returns true when there is no data yet (nothing to chase).
+   */
+  private holdsLatestClose(): boolean {
+    return this.outdatedFetchCount(false) === 0;
+  }
+
+  /**
+   * How many fetchable holdings are outdated and worth re-pricing right now. With
+   * the market **closed** this is the count behind the latest settled close (market
+   * symbols vs {@link latestSettledSessionDate}, NAV funds vs their latest expected
+   * publish) — the same per-symbol "behind" test {@link holdsLatestClose} uses. With
+   * the market **open** intraday prices move continuously, so once the
+   * startup quick-refresh fires (the whole book is >1h stale) every fetchable
+   * holding counts. Drives the startup-refresh routing in {@link start}; returns 0
+   * when there is no data yet (nothing to chase).
+   */
+  private outdatedFetchCount(marketOpen: boolean): number {
+    const data = this.state.data;
+    if (!data) return 0;
+    const plan = buildFetchPlan(data, FETCHABLE_NAV_CLASSES);
+    if (plan.length === 0) return 0;
+    if (marketOpen) return plan.length;
+    const cached = readCachedQuotes();
+    const now = new Date();
+    const settled = latestSettledSessionDate(now);
+    const navStats = readNavPublishStats();
+    const publishHourFor = (symbol: string): number =>
+      navPublishWindow(navStats.get(symbol)?.hours).publishHour;
+    let count = 0;
+    for (const entry of plan) {
+      const have = cached.get(entry.symbol)?.quote.valueDate ?? null;
+      const expected =
+        entry.priceType === "market" ? settled : latestExpectedNavDate(now, publishHourFor(entry.symbol));
+      if (!have || have < expected) count++;
+    }
+    return count;
+  }
+
+  /**
    * Build the (NAV-aware) {@link loadQuotes} options for a set of symbols. Shared
    * by the live refresh and the login-time prefetch so both honour the same
    * per-symbol cache windows and publish-time learning. `force` forces market
@@ -1179,7 +1314,7 @@ export class App {
   private async refreshPrices(
     session: number,
     network: boolean,
-    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean } = {},
+    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean; tiingoReserve?: number } = {},
   ): Promise<QuoteLoadReport | null> {
     const { data, config } = this.state;
     if (!data) return null;
@@ -1289,6 +1424,7 @@ export class App {
         now: Date.now(),
         manual: (opts.force ?? false) || viaTiingo,
         forceAll: viaTiingo,
+        reserveCredits: network ? (opts.tiingoReserve ?? 0) : 0,
         sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
       });
       if (session !== this.sessionId) return quoteLoad.report;
@@ -1578,12 +1714,25 @@ export class App {
   private async runScheduledRefresh(
     session: number,
     kind: RefreshKind = "auto",
-    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean; startup?: boolean } = {},
+    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean; tiingoReserve?: number; startup?: boolean; kickoff?: boolean } = {},
   ): Promise<void> {
-    if (session !== this.sessionId) return;
-    // A manual tap should refresh even when the tab is technically "hidden"
-    // (e.g. mid-transition); only the automatic scheduler skips hidden tabs.
-    if (kind === "auto" && typeof document !== "undefined" && document.hidden) return;
+    // A manual tap (and the post-unlock kickoff) refreshes even when the tab is
+    // technically "hidden" (e.g. mid-transition right after a fingerprint
+    // unlock); only an ordinary automatic tick skips a hidden tab. Crucially a
+    // hidden skip still re-arms the next tick — otherwise a single dropped tick
+    // would silently kill the whole auto-refresh loop and no price update would
+    // ever fire until a manual tap (see {@link refreshTickAction}).
+    const action = refreshTickAction({
+      sessionMatches: session === this.sessionId,
+      kind,
+      hidden: typeof document !== "undefined" && document.hidden,
+      kickoff: opts.kickoff ?? false,
+    });
+    if (action === "stop") return;
+    if (action === "defer") {
+      this.scheduleNext(session, this.state.config.updateMinutes * 60 * 1000);
+      return;
+    }
     if (this.refreshing) return;
     // No *automatic* price pull once the book is fully up to date — the market is
     // closed and every settled close *and* today's NAV is already in hand. There
@@ -1611,6 +1760,7 @@ export class App {
         force: opts.force ?? false,
         forceAll: opts.forceAll ?? false,
         viaTiingo: opts.viaTiingo ?? false,
+        tiingoReserve: opts.tiingoReserve ?? 0,
       });
     } finally {
       this.refreshing = false;
@@ -1725,6 +1875,21 @@ export class App {
     };
     document.addEventListener("visibilitychange", handler);
     this.visibilityHandler = handler;
+    // Belt-and-braces: a `pageshow` (incl. a bfcache restore) also resumes the
+    // refresh. On some mobile browsers reopening a backgrounded PWA — or coming
+    // back from the platform fingerprint sheet — doesn't fire a dependable
+    // `visibilitychange`, which used to leave the dashboard sitting on stale
+    // prices with no update. `runScheduledRefresh` guards against overlap, so a
+    // duplicate trigger is harmless.
+    if (typeof window !== "undefined") {
+      const onShow = (): void => {
+        if (session !== this.sessionId) return;
+        if (typeof document !== "undefined" && document.hidden) return;
+        void this.runScheduledRefresh(session);
+      };
+      window.addEventListener("pageshow", onShow);
+      this.pageShowHandler = onShow;
+    }
   }
 
   private removeVisibilityRefresh(): void {
@@ -1732,6 +1897,10 @@ export class App {
       document.removeEventListener("visibilitychange", this.visibilityHandler);
     }
     this.visibilityHandler = null;
+    if (this.pageShowHandler && typeof window !== "undefined") {
+      window.removeEventListener("pageshow", this.pageShowHandler);
+    }
+    this.pageShowHandler = null;
   }
 
   /**
