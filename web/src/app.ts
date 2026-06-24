@@ -180,6 +180,12 @@ const BLOB_CHECK_MIN_INTERVAL_MS = 5 * 60 * 1000;
 const SETTLED_HEARTBEAT_MS = 5 * 60 * 1000;
 
 /**
+ * localStorage key holding the app version this device last booted, so the next
+ * boot can spot a version change and note it in the polling log (item 6).
+ */
+const APP_VERSION_KEY = "iv.web.app_version";
+
+/**
  * Daily free-tier credits remaining at or below which the UI warns the user it
  * is close to the limit (and starts spacing refreshes out). Two per-minute
  * windows' worth of headroom — enough warning to be useful without nagging.
@@ -439,6 +445,7 @@ export class App {
   }
 
   async start(): Promise<void> {
+    this.logVersionUpdate();
     this.state.config = await loadConfig();
     const demoParams = this.demoParams();
     if (demoParams.requested) this.enterDemo(demoParams);
@@ -2606,6 +2613,10 @@ export class App {
   private updateAllFromScratch(): void {
     // Forget every cached price so nothing is served from a stale window.
     clearPriceCaches();
+    this.pollLog(
+      "note",
+      "Hard reset (Settings) — cleared price caches and wiping the 1D/1W graph store, then re-pulling everything from scratch.",
+    );
     // Force the blob check to re-download (rather than short-circuit on an
     // unchanged version stamp) the next time it runs.
     this.metaVersion = null;
@@ -2661,6 +2672,10 @@ export class App {
     // Back to the dashboard, then force a pull of every symbol.
     this.exitSettings();
     this.toast("Pulling every live price now…");
+    this.pollLog(
+      "note",
+      "Hard refresh (Settings) — force-fetching every live price now, bypassing the freshness/NAV-schedule gates.",
+    );
     const session = this.sessionId;
     if (this.refreshing) return; // a pull is already in flight; it will repaint
     void this.runScheduledRefresh(session, "manual", { force: true, forceAll: true });
@@ -2679,6 +2694,10 @@ export class App {
   private refreshViaBackupProvider(): void {
     this.exitSettings();
     this.toast("Trying the backup data provider…");
+    this.pollLog(
+      "note",
+      "Hard refresh (Settings) — routing the whole book through the backup provider (Tiingo) for one pull.",
+    );
     const session = this.sessionId;
     if (this.refreshing) return; // a pull is already in flight; it will repaint
     void this.runScheduledRefresh(session, "manual", { viaTiingo: true });
@@ -3231,6 +3250,31 @@ export class App {
       appendPollLog(category, message);
     } catch {
       /* logging is best-effort */
+    }
+  }
+
+  /**
+   * On boot, note in the polling log whenever the running app version differs
+   * from the one this device last recorded — so a reader of a downloaded log can
+   * see which build produced a given window, and spot the exact tick a new
+   * deploy took effect (docs/tiingo_polling_storm_cleanup_plan.md item 6).
+   * Best-effort: a missing/blocked localStorage simply skips the note.
+   */
+  private logVersionUpdate(): void {
+    try {
+      if (typeof localStorage === "undefined") return;
+      const previous = localStorage.getItem(APP_VERSION_KEY);
+      if (previous !== APP_VERSION) {
+        this.pollLog(
+          "note",
+          previous
+            ? `App updated — version ${previous} → ${APP_VERSION} on this device.`
+            : `App version ${APP_VERSION} — first run recorded on this device.`,
+        );
+        localStorage.setItem(APP_VERSION_KEY, APP_VERSION);
+      }
+    } catch {
+      /* version-stamping is best-effort */
     }
   }
 
