@@ -188,3 +188,98 @@ def test_everything_reset_clears_all_tables(app_db: None) -> None:
 def test_reset_on_empty_db_is_safe(app_db: None) -> None:
     result = svc.reset_database(ResetLevel.EVERYTHING)
     assert result.total_deleted == 0
+
+
+@pytest.fixture
+def split_app_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Point each storage tier at its **own** file (split-DB / cloud layout).
+
+    This is the layout that exposed the cache-reset bug: the regenerable cache
+    (prices/FX/snapshots/intraday samples) lives in a separate SQLite file from
+    the ledger, so a delete issued on the ledger session never reaches it.
+    """
+    from investment_dashboard.boot import _ensure_schema_present
+    from investment_dashboard.config import get_settings
+    from investment_dashboard.db import dispose_engines
+
+    monkeypatch.delenv("INV_DASHBOARD_DB_PATH", raising=False)
+    monkeypatch.setenv("INV_DASHBOARD_LEDGER_PATH", str(tmp_path / "ledger.sqlite"))
+    monkeypatch.setenv("INV_DASHBOARD_CONFIG_PATH", str(tmp_path / "config.sqlite"))
+    monkeypatch.setenv("INV_DASHBOARD_CACHE_PATH", str(tmp_path / "cache.sqlite"))
+    get_settings.cache_clear()
+    dispose_engines()
+    _ensure_schema_present()
+    try:
+        yield
+    finally:
+        dispose_engines()
+        get_settings.cache_clear()
+
+
+def test_cache_reset_wipes_cache_tier_on_split_db(split_app_db: None) -> None:
+    """A CACHE reset must empty the cache-tier file, not just the ledger file.
+
+    Regression test: previously every cache model was deleted through the
+    ledger session, so on a split-DB install the cached 1 Day / 1 Week samples
+    (and prices/FX) survived the reset entirely.
+    """
+    from investment_dashboard.db import (
+        cache_session_scope,
+        config_session_scope,
+        ledger_session_scope,
+    )
+    from investment_dashboard.models import (
+        Account,
+        FxHistory,
+        Instrument,
+        InstrumentOverride,
+        IntradayValue,
+        PositionSnapshot,
+        PriceCacheMetadata,
+        PriceHistory,
+        PriceSplit,
+    )
+
+    now = datetime.now(UTC)
+    # Ledger tier (source of truth) — must survive a cache reset.
+    with ledger_session_scope() as s:
+        s.add(Account(id=1, broker="vanguard", account_label="Brokerage", native_currency="USD"))
+        s.add(Instrument(id=1, symbol="VT", asset_class="etf", native_currency="USD"))
+    # Config tier — must survive a cache reset.
+    with config_session_scope() as s:
+        s.add(InstrumentOverride(instrument_id=1, category="core"))
+    # Cache tier — every one of these must be wiped.
+    with cache_session_scope() as s:
+        s.add(PriceHistory(instrument_id=1, date=date(2026, 1, 2), close_native=Decimal("100")))
+        s.add(PriceSplit(instrument_id=1, date=date(2026, 1, 2), ratio=Decimal("2")))
+        s.add(FxHistory(date=date(2026, 1, 2), base="USD", quote="EUR", rate=Decimal("0.9")))
+        s.add(
+            PositionSnapshot(
+                snapshot_date=date(2026, 1, 2),
+                total_value_eur=Decimal("100"),
+                computed_at=now,
+            )
+        )
+        s.add(IntradayValue(captured_at=now.replace(tzinfo=None), market_value_eur=Decimal("100")))
+        s.add(PriceCacheMetadata(instrument_id=1, last_refreshed_at=now))
+
+    result = svc.reset_database(ResetLevel.CACHE)
+
+    cache_models = (
+        PriceHistory,
+        PriceSplit,
+        FxHistory,
+        PositionSnapshot,
+        IntradayValue,
+        PriceCacheMetadata,
+    )
+    with cache_session_scope() as s:
+        for m in cache_models:
+            assert s.query(m).count() == 0, f"{m.__tablename__} survived the cache reset"
+    # Source-of-truth and config tiers untouched.
+    with ledger_session_scope() as s:
+        assert s.query(Account).count() == 1
+        assert s.query(Instrument).count() == 1
+    with config_session_scope() as s:
+        assert s.query(InstrumentOverride).count() == 1
+    assert result.total_deleted == len(cache_models)
