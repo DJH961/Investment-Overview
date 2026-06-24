@@ -380,7 +380,7 @@ describe("classifyConnectivity", () => {
     tiingoError: null,
   } as const;
 
-  it("is offline whenever the device reports no link, whatever else happened", () => {
+  it("is offline whenever the device reports no link, regardless of what else happened", () => {
     expect(classifyConnectivity({ ...base, online: false })).toBe("offline");
     // Even a fetch that 'landed' is moot once the device says it is offline.
     expect(classifyConnectivity({ ...base, online: false, fetched: 3 })).toBe("offline");
