@@ -313,20 +313,84 @@ describe("loadOrBuildSessionCurve", () => {
     });
   });
 
-  it("never re-buys bars on a long open watch, however old the stored bars are", async () => {
+  it("never re-buys bars on a long open watch while the breadcrumb trail stays fresh", async () => {
     const store = new TimeSeriesStore(memoryBackend());
     const now = new Date("2026-06-23T14:00:00Z");
-    // Bars are 2 hours old — a long open-browser watch. The breadcrumb trail has
-    // carried the curve the whole time, so there is still no bar pull (the point
-    // of breadcrumbs: use the data we have over re-buying near-identical bars).
+    // Bars are 2 hours old — a long open-browser watch — but the breadcrumb trail
+    // has been laid the whole time (newest crumb seconds ago), so the data on the
+    // device is current and there is still no bar pull: the point of breadcrumbs is
+    // to use the data we have over re-buying near-identical bars.
     await store.saveSession({
       day: "2026-06-23",
       bars: { VTI: [bar(Date.parse("2026-06-23T12:00:00Z"), "100")] },
       fx: [],
+      tips: [{ t: now.getTime() - 30_000, valueEur: d(1010), valueUsd: d(1110) }],
       updatedAt: now.getTime() - 2 * 60 * 60_000,
     });
     const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
     await loadOrBuildSessionCurve({ anchor: singleEtfAnchor(), store, fetchBars, now });
+    expect(fetchBars).not.toHaveBeenCalled();
+  });
+
+  it("repulls the whole session on resume when the freshest point has gone stale", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    const now = new Date("2026-06-23T16:00:00Z");
+    // Logged in earlier, then left: the newest data on the device (both the bar
+    // and the last breadcrumb) is ~2h old because refresh paused while away. On
+    // logging back in, the default 10-minute resume window is blown, so the whole
+    // session is re-pulled to bridge the dead span with real bars rather than a
+    // single straight jump to the live tip.
+    await store.saveSession({
+      day: "2026-06-23",
+      bars: { VTI: [bar(Date.parse("2026-06-23T14:00:00Z"), "100")] },
+      fx: [],
+      tips: [{ t: now.getTime() - 2 * 60 * 60_000, valueEur: d(1010), valueUsd: d(1110) }],
+      updatedAt: now.getTime() - 2 * 60 * 60_000,
+    });
+    const fetchBars = vi.fn(async () =>
+      new Map<string, Bar[]>([["VTI", [bar(Date.parse("2026-06-23T19:55:00Z"), "100")]]]),
+    );
+    await loadOrBuildSessionCurve({ anchor: singleEtfAnchor(), store, fetchBars, now });
+    expect(fetchBars).toHaveBeenCalledOnce();
+    // The resume repull grabs every symbol (best possible curve), not just gaps.
+    expect(fetchBars).toHaveBeenCalledWith(["VTI"]);
+  });
+
+  it("does not resume-repull while the breadcrumb trail is younger than the window", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    const now = new Date("2026-06-23T16:00:00Z");
+    // Continuously open: the bars are old but the newest breadcrumb is only 5
+    // minutes back (inside the 10-minute resume window), so nothing is re-pulled.
+    await store.saveSession({
+      day: "2026-06-23",
+      bars: { VTI: [bar(Date.parse("2026-06-23T12:00:00Z"), "100")] },
+      fx: [],
+      tips: [{ t: now.getTime() - 5 * 60_000, valueEur: d(1010), valueUsd: d(1110) }],
+      updatedAt: now.getTime() - 4 * 60 * 60_000,
+    });
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    await loadOrBuildSessionCurve({ anchor: singleEtfAnchor(), store, fetchBars, now });
+    expect(fetchBars).not.toHaveBeenCalled();
+  });
+
+  it("resumeBackfillMs=Infinity disables resume repull (pure breadcrumb mode)", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    const now = new Date("2026-06-23T16:00:00Z");
+    await store.saveSession({
+      day: "2026-06-23",
+      bars: { VTI: [bar(Date.parse("2026-06-23T12:00:00Z"), "100")] },
+      fx: [],
+      tips: [{ t: now.getTime() - 3 * 60 * 60_000, valueEur: d(1010), valueUsd: d(1110) }],
+      updatedAt: now.getTime() - 4 * 60 * 60_000,
+    });
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      now,
+      resumeBackfillMs: Number.POSITIVE_INFINITY,
+    });
     expect(fetchBars).not.toHaveBeenCalled();
   });
 
