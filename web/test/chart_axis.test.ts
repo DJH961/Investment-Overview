@@ -73,6 +73,36 @@ describe("xAxisTicks", () => {
     expect(ticks[ticks.length - 1]!.anchor).toBe("end");
   });
 
+  it("scales a multi-day (1W-style) timeline by elapsed time too, not point index", () => {
+    // The live "1W" curve is daily closes, but the final day can carry many more
+    // blob-backed points. Those extra points must not balloon the last day across
+    // the plot — placement is by elapsed time, identical to the 1D fix.
+    const dates: string[] = [];
+    const start = new Date("2026-06-15T20:00:00Z").getTime();
+    // One close per day for five days …
+    for (let d = 0; d < 5; d += 1) dates.push(new Date(start + d * 86_400_000).toISOString());
+    // … then a dense burst of points within the final day.
+    const denseDay = start + 5 * 86_400_000;
+    for (let i = 1; i <= 30; i += 1) dates.push(new Date(denseDay + i * 60_000).toISOString());
+
+    const first = Date.parse(dates[0]);
+    const span = Date.parse(dates[dates.length - 1]) - first;
+    const positions = dates.map((d) => (Date.parse(d) - first) / span);
+
+    // The dense tail spans ~30 min out of ~6 days, so every dense point must sit
+    // in the far-right sliver of the axis — never spread across it by count.
+    const denseFracs = positions.slice(5);
+    for (const f of denseFracs) expect(f).toBeGreaterThan(0.82);
+
+    const ticks = xAxisTicks(dates, 5, positions);
+    const fracs = ticks.map((t) => positions[t.index]);
+    expect(fracs[0]).toBeCloseTo(0, 2);
+    expect(fracs[fracs.length - 1]).toBeCloseTo(1, 2);
+    const mid = fracs[Math.floor(fracs.length / 2)]!;
+    expect(mid).toBeGreaterThan(0.3);
+    expect(mid).toBeLessThan(0.7);
+  });
+
   it("spaces ticks by elapsed time, not point index, when positions are supplied", () => {
     // A timeline where the final hour carries many more samples than the rest of
     // the day (the blob-backed "extra data in the final hour" case). Index-based
