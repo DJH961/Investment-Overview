@@ -177,3 +177,74 @@ def test_full_history_refresh_force_progress_overrides_fresh_cache(
 
     assert boot.run_full_history_refresh("Cache reset re-download", force_progress=True) is True
     assert seen == [True]
+
+
+# --- the "large pull" gate shared by the expensive force-rebuild steps -------
+
+
+def test_is_large_pull_prefers_override_then_probes(monkeypatch: pytest.MonkeyPatch) -> None:
+    # During a deferred run the shared override wins; outside one it falls back to
+    # the staleness probe.
+    monkeypatch.setattr(boot, "_history_is_stale", lambda: False)
+    boot._large_pull_state["override"] = True
+    try:
+        assert boot._is_large_pull() is True
+    finally:
+        boot._large_pull_state["override"] = None
+    assert boot._is_large_pull() is False
+
+
+def test_deferred_refresh_shares_large_pull_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The "large pull" decision (== show_progress) is exposed to every stage via
+    # the shared override and cleared afterwards, so the gated steps force a full
+    # rebuild only for a large pull.
+    seen: list[bool | None] = []
+    for attr in _STAGE_ATTRS:
+        monkeypatch.setattr(boot, attr, lambda: seen.append(boot._large_pull_state["override"]))
+
+    boot.run_deferred_network_refresh(show_progress=False)
+    assert seen == [False] * len(_STAGE_ATTRS)
+    assert boot._large_pull_state["override"] is None  # reset after the run
+
+    seen.clear()
+    boot.run_deferred_network_refresh(show_progress=True)
+    assert seen == [True] * len(_STAGE_ATTRS)
+    assert boot._large_pull_state["override"] is None
+
+
+def test_warm_snapshots_routine_reopen_only_forces_recent_tail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import contextlib
+    from datetime import date, timedelta
+
+    @contextlib.contextmanager
+    def _fake_scope():  # type: ignore[no-untyped-def]
+        yield object()
+
+    monkeypatch.setattr("investment_dashboard.db.ledger_session_scope", _fake_scope)
+    # A fixed, populated floor so the window is deterministic.
+    floor = date.today() - timedelta(days=40)
+    monkeypatch.setattr(boot, "_earliest_needed_date", lambda: floor)
+
+    calls: list[tuple[date, date, bool]] = []
+    monkeypatch.setattr(
+        "investment_dashboard.services.snapshots_service.warm_range",
+        lambda _s, a, b, *, force: calls.append((a, b, force)) or 0,
+    )
+
+    # Routine reopen: fill missing older days unforced, force only the recent tail.
+    monkeypatch.setattr(boot, "_is_large_pull", lambda: False)
+    boot._warm_snapshots()
+    today = date.today()
+    recent_floor = today - timedelta(days=boot._WARM_FORCE_RECENT_DAYS)
+    assert calls == [
+        (floor, recent_floor - timedelta(days=1), False),
+        (recent_floor, today, True),
+    ]
+
+    # Large pull: a single force-recompute over the whole lifetime.
+    calls.clear()
+    monkeypatch.setattr(boot, "_is_large_pull", lambda: True)
+    boot._warm_snapshots()
+    assert calls == [(floor, today, True)]

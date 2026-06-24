@@ -841,6 +841,47 @@ class TestWeekSeries:
         today_points = [(at, eur) for at, eur, _ in out if at.date() == date(2024, 6, 3)]
         assert today_points == [(live_at, Decimal("5555.00"))]
 
+    def test_completed_session_with_missing_points_is_repulled(self, session: Session) -> None:
+        # A finished earlier session that holds only a single stray sample (a
+        # partial earlier fetch, or one live capture) is *incomplete*: it must be
+        # re-pulled to fill its start/midday/close span rather than frozen at one
+        # point.
+        _seed_eur_holding_for_week(session)
+        sessions = iss.recent_trading_sessions(_NOW)
+        stale_day = sessions[1]  # a completed, non-anchor session
+        lone_at = datetime(stale_day.year, stale_day.month, stale_day.day, 15, 0)
+        intraday_repo.insert_sample(session, lone_at, Decimal("4242.00"))
+        session.flush()
+
+        out = iss.week_series_with_fx(session, now=_NOW, fetcher=_fake_week_fetcher(self._DAY_BARS))
+        # The day was re-pulled: its start/midday/close triplet (1000/1200/1300,
+        # the scaled _DAY_BARS) is now present alongside the original stray point.
+        day_values = [eur for at, eur, _ in out if at.date() == stale_day]
+        assert len(day_values) >= iss.WEEK_POINTS_PER_COMPLETE_SESSION
+        assert {Decimal("1000.00"), Decimal("1200.00"), Decimal("1300.00")} <= set(day_values)
+
+    def test_completed_session_with_full_triplet_is_not_repulled(self, session: Session) -> None:
+        # A finished session already holding its full start/midday/close triplet is
+        # covered and never re-fetched — even under force=True, which only bypasses
+        # the once-per-anchor marker, not the coverage check. The day keeps exactly
+        # its seeded points (no scaled _DAY_BARS values mixed in), proving the
+        # coverage gate, not the marker, suppressed the re-pull.
+        _seed_eur_holding_for_week(session)
+        sessions = iss.recent_trading_sessions(_NOW)
+        full_day = sessions[1]  # a completed, non-anchor session
+        seeded = Decimal("7777.00")
+        for hour, minute in ((13, 30), (17, 0), (19, 30)):
+            at = datetime(full_day.year, full_day.month, full_day.day, hour, minute)
+            intraday_repo.insert_sample(session, at, seeded)
+        session.flush()
+
+        out = iss.week_series_with_fx(
+            session, now=_NOW, force=True, fetcher=_fake_week_fetcher(self._DAY_BARS)
+        )
+        day_values = [eur for at, eur, _ in out if at.date() == full_day]
+        # Untouched: still the three seeded points, no re-fetched bars merged in.
+        assert day_values == [seeded, seeded, seeded]
+
     def test_build_week_value_series_empty_for_empty_portfolio(self, session: Session) -> None:
         # With nothing to price intraday there is nothing to cache or fetch, so
         # the series is empty and the page falls back to the daily snapshots.

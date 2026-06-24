@@ -51,6 +51,42 @@ _BOOT_BACKFILL_DAYS = 14
 #: the bar. A full week comfortably clears normal weekend/holiday gaps.
 _HISTORICAL_PROGRESS_STALE_DAYS = 7
 
+#: How many trailing days the snapshot warm *always* force-recomputes in place,
+#: even on a routine reopen. This catches the only day-to-day staleness a
+#: non-forced warm would miss — a recent day whose snapshot a pre-backfill render
+#: cached before that day's close/FX had landed — while skipping the rest of the
+#: (settled, immutable) history, so a reopen no longer recomputes the entire
+#: portfolio lifetime every time. A full-history force is reserved for a genuine
+#: from-scratch / long-absence pull (see :func:`_is_large_pull`).
+_WARM_FORCE_RECENT_DAYS = 7
+
+#: Shared "large pull" decision for the duration of one deferred refresh (a
+#: from-scratch / post-reset / long-absence re-download), so the per-stage
+#: ``force`` flags share a single staleness probe instead of each re-running it.
+#: Boxed in a dict (rather than a bare module global needing the ``global``
+#: statement) so the stage helpers can read it and the runners can set/reset it.
+#: ``override`` is ``None`` outside a deferred run, where the stage helpers fall
+#: back to their own probe (see :func:`_is_large_pull`).
+_large_pull_state: dict[str, bool | None] = {"override": None}
+
+
+def _is_large_pull() -> bool:
+    """Whether the current refresh is a *large* (from-scratch / long-absence) pull.
+
+    Gates the expensive boot steps — the intraday 1D/1W re-pull and the
+    full-history snapshot rebuild — so a routine reopen of an already-warm cache
+    runs them cache-first (skipping work that cannot have changed) while a
+    genuine re-download still forces a complete rebuild. During a deferred
+    refresh the decision is computed once and shared via
+    :data:`_large_pull_state`; called standalone (the synchronous boot path or a
+    direct unit-test call) it falls back to a fresh :func:`_history_is_stale`
+    probe.
+    """
+    override = _large_pull_state["override"]
+    if override is not None:
+        return override
+    return _history_is_stale()
+
 
 def _history_is_stale(*, threshold_days: int = _HISTORICAL_PROGRESS_STALE_DAYS) -> bool:
     """Whether the cached market history lags far enough to warrant the bar.
@@ -852,16 +888,23 @@ def _refresh_intraday_day() -> None:
     The Overview "1 Day" graph reconstructs the last trading session from
     ~15-minute intraday bars (the within-day samples a cache reset wipes). Until
     this runs the curve is only rebuilt lazily the first time the user opens that
-    range, so a fresh re-download would otherwise leave it blank. ``force`` makes
-    it re-fetch even if the session was already marked reconstructed.
-    Best-effort: a failure just leaves the lazy first-open path to rebuild it."""
+    range, so a fresh re-download would otherwise leave it blank.
+
+    The ``force`` re-fetch (which bypasses the once-per-session "already
+    reconstructed" guard) is reserved for a *large* pull — a from-scratch /
+    post-reset / long-absence re-download (:func:`_is_large_pull`). On a routine
+    reopen the guard already re-runs whenever the session holds no samples, so a
+    forced re-pull every time would just re-download a curve that is already
+    complete. Best-effort: a failure just leaves the lazy first-open path to
+    rebuild it."""
     try:
         from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
         from investment_dashboard.services import intraday_snapshots_service  # noqa: PLC0415
 
+        force = _is_large_pull()
         with ledger_session_scope() as session:
-            written = intraday_snapshots_service.reconstruct_last_session(session, force=True)
-        log.info("Intraday 1 Day curve reconstructed (%d point(s))", written)
+            written = intraday_snapshots_service.reconstruct_last_session(session, force=force)
+        log.info("Intraday 1 Day curve reconstructed (%d point(s), force=%s)", written, force)
     except Exception:
         log.warning("Intraday 1 Day refresh failed; continuing", exc_info=True)
 
@@ -872,16 +915,22 @@ def _refresh_intraday_week() -> None:
     Mirrors :func:`_refresh_intraday_day` for the Overview "1 Week" graph: it
     fetches and persists any uncovered sessions in the rolling week so the curve
     renders straight away after a re-download instead of being fetched on first
-    open. ``force`` bypasses the per-session fetched-day markers (which survive a
-    cache reset that wipes the samples), so the week is genuinely re-pulled.
+    open.
+
+    The ``force`` re-fetch (which bypasses the per-session fetched-day markers
+    that survive a cache reset wiping the samples) is reserved for a *large* pull
+    (:func:`_is_large_pull`). On a routine reopen the cache-first path already
+    re-pulls any session that is uncovered *or* missing intraday points, so a
+    forced re-pull every time would needlessly re-download already-complete days.
     Best-effort: a failure just leaves the lazy first-open path to rebuild it."""
     try:
         from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
         from investment_dashboard.services import intraday_snapshots_service  # noqa: PLC0415
 
+        force = _is_large_pull()
         with ledger_session_scope() as session:
-            samples = intraday_snapshots_service.week_series_with_fx(session, force=True)
-        log.info("Intraday 1 Week sleeve warmed (%d sample(s))", len(samples))
+            samples = intraday_snapshots_service.week_series_with_fx(session, force=force)
+        log.info("Intraday 1 Week sleeve warmed (%d sample(s), force=%s)", len(samples), force)
     except Exception:
         log.warning("Intraday 1 Week refresh failed; continuing", exc_info=True)
 
@@ -907,17 +956,30 @@ def _invalidate_snapshots() -> None:
 
 
 def _warm_snapshots() -> None:
-    """Rebuild the daily snapshot cache over the portfolio lifetime, in place.
+    """Rebuild the daily snapshot cache so the first heavy render reads it warm.
 
     Once the deferred FX/price backfill lands, historical closing values that
     were cached against an empty/partial price + FX cache (e.g. the ``0``
     closing values a pre-backfill render persisted) are stale and must be
-    recomputed. Rather than delete every snapshot and recompute from an empty
-    cache — which briefly forces a full-history page like ``/yearly`` to rebuild
-    its whole daily equity curve on the request thread — this force-rebuilds
-    each day and *overwrites* the cached row in place. Readers keep seeing the
-    previous (still-valid) value until the fresh one is written, so the heavy
-    work stays on this background thread and the UI never blocks.
+    recomputed. The recompute *overwrites* each cached row in place (never
+    deleting first), so readers keep seeing the previous value until the fresh
+    one is written and a full-history page like ``/yearly`` is never pushed into
+    a synchronous cold rebuild on the request thread.
+
+    How much to recompute is gated on the pull size so a routine reopen stops
+    re-deriving the entire (settled, immutable) portfolio history every time —
+    the chief reason boot felt slow:
+
+    * **Large pull** (from-scratch / post-reset / long-absence —
+      :func:`_is_large_pull`): force-recompute the whole lifetime, since the
+      backfill may have just replaced placeholder/zero closes across all of it.
+    * **Routine reopen:** fill any still-missing days over the lifetime
+      (``force=False`` skips the days already cached correctly) and additionally
+      force-recompute only the trailing :data:`_WARM_FORCE_RECENT_DAYS` days in
+      place. That trailing window is the only stretch a non-forced warm could
+      leave stale — a recent day whose snapshot a pre-backfill render cached
+      before that day's close/FX had landed — while the older settled history is
+      left untouched.
 
     Best-effort: a failure just leaves the lazy read-through path to recompute
     on demand.
@@ -927,9 +989,19 @@ def _warm_snapshots() -> None:
         from investment_dashboard.services.snapshots_service import warm_range  # noqa: PLC0415
 
         start = _earliest_needed_date()
+        today = date.today()
+        large = _is_large_pull()
         with ledger_session_scope() as session:
-            warmed = warm_range(session, start, date.today(), force=True)
-        log.info("Rebuilt %d daily snapshot(s) in place (floor=%s)", warmed, start)
+            if large:
+                warmed = warm_range(session, start, today, force=True)
+            else:
+                # Fill any missing older days (cheap: cached days are skipped),
+                # then force-refresh just the recent tail that a pre-backfill
+                # render could have cached stale.
+                recent_floor = max(start, today - timedelta(days=_WARM_FORCE_RECENT_DAYS))
+                warmed = warm_range(session, start, recent_floor - timedelta(days=1), force=False)
+                warmed += warm_range(session, recent_floor, today, force=True)
+        log.info("Warmed %d daily snapshot(s) (floor=%s, full_history=%s)", warmed, start, large)
     except Exception:
         log.warning("Snapshot warming failed; continuing", exc_info=True)
 
@@ -968,18 +1040,24 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
     if skip_network:
         log.info("skip_network=True — not refreshing FX or prices")
         return
-    _refresh_fx()
-    _backfill_transaction_legs()
-    _refresh_prices()
-    _refresh_live_fx()
-    _refresh_splits()
-    _refresh_benchmark()
-    _refresh_intraday_day()
-    _refresh_intraday_week()
-    # Rebuild the snapshot cache in place (no delete-all window — see
-    # _warm_snapshots) so a full-history page like /yearly never cold-recomputes
-    # its daily curve on the request thread.
-    _warm_snapshots()
+    # Probe the pull size once so the gated steps (intraday 1D/1W, snapshot warm)
+    # share a single staleness check instead of each re-running it.
+    _large_pull_state["override"] = _history_is_stale()
+    try:
+        _refresh_fx()
+        _backfill_transaction_legs()
+        _refresh_prices()
+        _refresh_live_fx()
+        _refresh_splits()
+        _refresh_benchmark()
+        _refresh_intraday_day()
+        _refresh_intraday_week()
+        # Warm the snapshot cache (full history only for a large pull — see
+        # _warm_snapshots) so a full-history page like /yearly never
+        # cold-recomputes its daily curve on the request thread.
+        _warm_snapshots()
+    finally:
+        _large_pull_state["override"] = None
 
 
 def run_deferred_network_refresh(*, show_progress: bool = True) -> None:
@@ -1007,6 +1085,14 @@ def run_deferred_network_refresh(*, show_progress: bool = True) -> None:
 
     from investment_dashboard.services import refresh_status  # noqa: PLC0415
 
+    # ``show_progress`` is exactly the "large pull" signal (a from-scratch /
+    # post-reset / long-absence re-download), so it doubles as the gate for the
+    # expensive force-rebuild steps: share it via ``_large_pull_state`` so the
+    # intraday 1D/1W re-pull and the snapshot warm force a full rebuild only for a
+    # large pull and otherwise run cache-first. Reset in ``finally`` so a probe
+    # outside a deferred run still falls back to a fresh staleness check.
+    _large_pull_state["override"] = show_progress
+
     # Ordered stages of the full historic re-download. The labels are what the
     # progress bar shows as each one runs; keep them short and user-legible.
     steps: tuple[tuple[str, Callable[[], None]], ...] = (
@@ -1028,16 +1114,20 @@ def run_deferred_network_refresh(*, show_progress: bool = True) -> None:
         "(FX, prices, splits, benchmark, intraday 1D/1W, snapshots; progress_bar=%s)",
         show_progress,
     )
-    for index, (label, step) in enumerate(steps):
-        # Announce the stage *before* running it so the bar names what is being
-        # downloaded right now; advance the completed count after it returns. The
-        # progress bar is only painted for a large re-pull (``show_progress``);
-        # a routine catch-up runs the same stages under the plain "Updating…" cue.
-        if show_progress:
-            refresh_status.set_progress(index, total, label)
-        step()
-        if show_progress:
-            refresh_status.set_progress(index + 1, total, label)
+    try:
+        for index, (label, step) in enumerate(steps):
+            # Announce the stage *before* running it so the bar names what is being
+            # downloaded right now; advance the completed count after it returns.
+            # The progress bar is only painted for a large re-pull
+            # (``show_progress``); a routine catch-up runs the same stages under
+            # the plain "Updating…" cue.
+            if show_progress:
+                refresh_status.set_progress(index, total, label)
+            step()
+            if show_progress:
+                refresh_status.set_progress(index + 1, total, label)
+    finally:
+        _large_pull_state["override"] = None
     log.info(
         "deferred network refresh: complete in %.1fs",
         _time.monotonic() - started,

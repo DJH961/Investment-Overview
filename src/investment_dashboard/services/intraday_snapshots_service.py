@@ -63,7 +63,11 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain.market_hours import is_us_market_holiday, is_us_market_open
+from investment_dashboard.domain.market_hours import (
+    is_us_market_holiday,
+    is_us_market_open,
+    regular_session_close,
+)
 from investment_dashboard.repositories import app_config_repo, intraday_repo
 
 if TYPE_CHECKING:
@@ -117,6 +121,16 @@ WEEK_SESSIONS = 5
 #: per day are kept (start / midday / close), so a coarse bar is plenty and keeps
 #: the multi-day download small.
 WEEK_INTERVAL = "30m"
+
+#: How many representative intraday points a *completed* week session should
+#: carry once fully sourced — the start / midday / close triplet
+#: :func:`_pick_open_mid_close` keeps. A finished session holding fewer than this
+#: is treated as missing data and re-pulled (see ``_is_covered`` in
+#: :func:`week_series_with_fx`), so a partial earlier fetch or a single stray live
+#: capture can't freeze a day at an incomplete curve. The in-progress session is
+#: exempt: its close hasn't happened yet, so it grows from live captures and any
+#: sample counts.
+WEEK_POINTS_PER_COMPLETE_SESSION = 3
 
 #: Smallest share count treated as a real holding (mirrors the Overview filter).
 _MIN_SHARES = Decimal("0.0000001")
@@ -308,10 +322,6 @@ def session_close_utc(now: datetime | None = None) -> datetime:
     Saturday). Holidays/half-days are not modelled (see
     :mod:`investment_dashboard.domain.market_hours`).
     """
-    from investment_dashboard.domain.market_hours import (  # noqa: PLC0415
-        regular_session_close,
-    )
-
     now = now or datetime.now(UTC)
     close = regular_session_close(last_session_date(now))
     return close.astimezone(UTC).replace(tzinfo=None)
@@ -756,9 +766,14 @@ def week_series_with_fx(
     week_start = _session_start_utc(sessions[0])
     window_end = min(_to_naive_utc(now), _session_start_utc(sessions[-1] + timedelta(days=1)))
 
-    # 1. Cache first — the rolling week already on hand. A session counts as
-    #    "covered" the moment it holds any cached sample (e.g. today's live
-    #    captures), so it is never re-fetched.
+    # 1. Cache first — the rolling week already on hand. A *completed* (earlier)
+    #    session is covered only once it holds its full start/midday/close
+    #    triplet, so a partial earlier fetch or a single stray live capture no
+    #    longer freezes a day at an incomplete curve — it is re-pulled to fill the
+    #    gaps. The current/anchor session is exempt: its close may not have
+    #    happened yet and it grows from today's dense live captures, so any sample
+    #    counts and it is never re-downloaded (those live points are denser than a
+    #    coarse re-fetch and must be preserved).
     with cache_read_session(session) as cache:
         cached = [
             (r.captured_at, r.market_value_eur, r.fx_eur_usd)
@@ -768,7 +783,15 @@ def week_series_with_fx(
     def _is_covered(session_date: date) -> bool:
         start = _session_start_utc(session_date)
         end = _session_start_utc(session_date + timedelta(days=1))
-        return any(start <= at < end for at, _, _ in cached)
+        sample_times = {at for at, _, _ in cached if start <= at < end}
+        if not sample_times:
+            return False
+        if session_date == anchor:
+            # The current session grows from live captures; any sample counts.
+            return True
+        # A finished session must carry the full representative span; fewer points
+        # means data is missing, so report it uncovered to trigger a re-pull.
+        return len(sample_times) >= WEEK_POINTS_PER_COMPLETE_SESSION
 
     # 2. Fetch only the gaps, and only days not already attempted this session
     #    (``force`` re-pulls every uncovered day regardless of the marker).
