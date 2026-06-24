@@ -60,8 +60,9 @@ export function twelveDataAvailable(
   now: number,
   storage: StorageLike | null = null,
 ): number {
-  if (twelveDataFrozen(now, storage)) return 0;
-  const log = readCreditLog(now, DAY_MS, storage);
+  const s = storage ?? undefined;
+  if (twelveDataFrozen(now, s)) return 0;
+  const log = readCreditLog(now, DAY_MS, s);
   const minute = Math.max(0, FREE_TIER.creditsPerMinute - Math.max(0, creditsSpentWithin(log, now, MINUTE_MS)));
   const day = Math.max(0, FREE_TIER.creditsPerDay - Math.max(0, creditsSpentToday(log, now)));
   return Math.min(minute, day);
@@ -77,8 +78,9 @@ export function tiingoAvailable(
   now: number,
   storage: StorageLike | null = null,
 ): number {
-  if (tiingoFrozen(now, storage)) return 0;
-  const log = readTiingoCreditLog(now, DAY_MS, storage);
+  const s = storage ?? undefined;
+  if (tiingoFrozen(now, s)) return 0;
+  const log = readTiingoCreditLog(now, DAY_MS, s);
   const budget = new Budget(
     creditsSpentWithin(log, now, HOUR_MS),
     tiingoCreditsSpentToday(log, now),
