@@ -21,6 +21,7 @@ import {
   holdsSettledClose,
   navCacheTtlMs,
   navPublishWindow,
+  twelveDataBudgetRemaining,
   DEFAULT_CLOSED_MARKET_TTL_MS,
   DEFAULT_NAV_CACHE_TTL_MS,
   DEFAULT_CACHE_TTL_MS,
@@ -883,5 +884,29 @@ describe("loadEurUsd", () => {
     });
     expect(tiingoFetchImpl).not.toHaveBeenCalled();
     expect(res.source).toBe("eod");
+  });
+});
+
+describe("twelveDataBudgetRemaining (graph provider-split budget, item 8)", () => {
+  it("reports the full free-tier budget on an empty ledger", () => {
+    const storage = memStorage();
+    const { minute, day } = twelveDataBudgetRemaining(1000, { storage });
+    expect(minute).toBe(8);
+    expect(day).toBe(800);
+  });
+
+  it("subtracts the live shared spend (quotes-first) from the remaining budget", () => {
+    const storage = memStorage();
+    recordCredits(5, 1000, storage); // a quote pass just reserved 5 credits
+    const { minute, day } = twelveDataBudgetRemaining(1000, { storage });
+    expect(minute).toBe(3); // 8 - 5 left this minute
+    expect(day).toBe(795); // 800 - 5 left today
+  });
+
+  it("never goes negative once the minute budget is exhausted", () => {
+    const storage = memStorage();
+    recordCredits(8, 1000, storage);
+    const { minute } = twelveDataBudgetRemaining(1000, { storage });
+    expect(minute).toBe(0);
   });
 });

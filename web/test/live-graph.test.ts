@@ -14,6 +14,7 @@ import {
   buildLiveSessionCurve,
   buildLiveWeekCurve,
   instrumentedGraphRecorders,
+  makeCapacitySplitBarFetcher,
   makeDualFxFetcher,
   makePriceBarFetcher,
   makeWindowFxFetcher,
@@ -282,6 +283,88 @@ describe("makePriceBarFetcher", () => {
     // Tiingo daily returns bars → no fallback to Twelve Data is needed.
     expect(calls[0]).toContain("/price?daily=VTI");
     expect(calls.some((u) => u.includes("time_series"))).toBe(false);
+  });
+});
+
+describe("makeCapacitySplitBarFetcher (provider split, item 8)", () => {
+  const barOf = (v: number): Bar[] => [{ t: 1, value: d(v) }];
+  /** A fetcher that answers each requested symbol with a one-bar series + records calls. */
+  function fakeFetcher(label: string, calls: Array<{ who: string; symbols: string[] }>, opts: { fail?: boolean; empty?: Set<string> } = {}): BarFetcher {
+    return async (symbols) => {
+      calls.push({ who: label, symbols: [...symbols] });
+      if (opts.fail) throw new PriceError(`${label} down`);
+      const out = new Map<string, Bar[]>();
+      for (const s of symbols) out.set(s, opts.empty?.has(s) ? [] : barOf(1));
+      return out;
+    };
+  }
+
+  it("fills Twelve Data up to its budget and routes the overflow to Tiingo", async () => {
+    const calls: Array<{ who: string; symbols: string[] }> = [];
+    const fetch = makeCapacitySplitBarFetcher(
+      fakeFetcher("TD", calls),
+      fakeFetcher("TII", calls),
+      () => ({ minute: 2, day: 100 }),
+    );
+    const bars = await fetch(["A", "B", "C", "D"]);
+    expect(bars.size).toBe(4);
+    const td = calls.find((c) => c.who === "TD");
+    const tii = calls.find((c) => c.who === "TII");
+    expect(td?.symbols).toEqual(["A", "B"]); // M = min(4, 2, 100) = 2
+    expect(tii?.symbols).toEqual(["C", "D"]); // overflow
+  });
+
+  it("routes everything to Tiingo when Twelve Data has zero budget left", async () => {
+    const calls: Array<{ who: string; symbols: string[] }> = [];
+    const fetch = makeCapacitySplitBarFetcher(
+      fakeFetcher("TD", calls),
+      fakeFetcher("TII", calls),
+      () => ({ minute: 0, day: 100 }),
+    );
+    await fetch(["A", "B"]);
+    expect(calls.find((c) => c.who === "TD")?.symbols ?? []).toEqual([]);
+    expect(calls.find((c) => c.who === "TII")?.symbols).toEqual(["A", "B"]);
+  });
+
+  it("clamps the Twelve Data slice to the scarcer of the minute/day budgets", async () => {
+    const calls: Array<{ who: string; symbols: string[] }> = [];
+    const fetch = makeCapacitySplitBarFetcher(
+      fakeFetcher("TD", calls),
+      fakeFetcher("TII", calls),
+      () => ({ minute: 8, day: 1 }),
+    );
+    await fetch(["A", "B", "C"]);
+    expect(calls.find((c) => c.who === "TD")?.symbols).toEqual(["A"]); // day budget caps at 1
+    expect(calls.find((c) => c.who === "TII")?.symbols).toEqual(["B", "C"]);
+  });
+
+  it("spills a failed Twelve Data symbol to Tiingo underneath the split", async () => {
+    const calls: Array<{ who: string; symbols: string[] }> = [];
+    const fetch = makeCapacitySplitBarFetcher(
+      fakeFetcher("TD", calls, { fail: true }),
+      fakeFetcher("TII", calls),
+      () => ({ minute: 2, day: 100 }),
+    );
+    const bars = await fetch(["A", "B"]);
+    // Twelve Data threw, so both assigned symbols spill to Tiingo and still resolve.
+    expect(bars.get("A")?.length).toBe(1);
+    expect(bars.get("B")?.length).toBe(1);
+    const spill = calls.filter((c) => c.who === "TII").flatMap((c) => c.symbols);
+    expect(spill).toContain("A");
+    expect(spill).toContain("B");
+  });
+
+  it("spills an empty (billed-but-no-bars) Twelve Data symbol to Tiingo", async () => {
+    const calls: Array<{ who: string; symbols: string[] }> = [];
+    const fetch = makeCapacitySplitBarFetcher(
+      fakeFetcher("TD", calls, { empty: new Set(["A"]) }),
+      fakeFetcher("TII", calls),
+      () => ({ minute: 2, day: 100 }),
+    );
+    const bars = await fetch(["A", "B"]);
+    expect(bars.get("A")?.length).toBe(1); // refilled from Tiingo
+    const spill = calls.filter((c) => c.who === "TII").flatMap((c) => c.symbols);
+    expect(spill).toEqual(["A"]);
   });
 });
 

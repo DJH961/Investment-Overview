@@ -238,6 +238,13 @@ export function makePriceBarFetcher(opts: {
   tiingoMeter?: BackfillMeter;
   /** Meter the Twelve Data (Pipe A) bar spend in two phases. */
   twelveDataMeter?: BackfillMeter;
+  /**
+   * Live remaining Twelve Data per-minute/day budget. When supplied (and both
+   * pipes exist), the fetch becomes the capacity-aware split (item 8): Twelve
+   * Data first up to this budget, Tiingo for the overflow. Omit for the legacy
+   * Tiingo-first dual pipe.
+   */
+  budget?: () => { minute: number; day: number };
 }): BarFetcher | null {
   const {
     apiKey,
@@ -250,6 +257,7 @@ export function makePriceBarFetcher(opts: {
     fetchImpl,
     tiingoMeter,
     twelveDataMeter,
+    budget,
   } = opts;
   let pipeA = makeTwelveDataBarFetcher(apiKey, { interval, outputsize, fetchImpl });
   let pipeB = proxyUrl
@@ -260,8 +268,82 @@ export function makePriceBarFetcher(opts: {
   // primary records only the fallback's spend).
   if (pipeA && twelveDataMeter) pipeA = recordingBarFetcher(pipeA, twelveDataMeter);
   if (pipeB && tiingoMeter) pipeB = recordingBarFetcher(pipeB, tiingoMeter);
-  if (pipeB && pipeA) return makeDualPipeBarFetcher(pipeB, pipeA);
+  if (pipeB && pipeA) {
+    // With a live budget, fill Twelve Data first and spill the overflow to Tiingo
+    // (item 8); otherwise keep the legacy Tiingo-first failover dual pipe.
+    return budget
+      ? makeCapacitySplitBarFetcher(pipeA, pipeB, budget)
+      : makeDualPipeBarFetcher(pipeB, pipeA);
+  }
   return pipeB ?? pipeA;
+}
+
+/** Merge two symbol→bars maps; non-empty bars from `extra` win over `base` gaps. */
+function mergeBarMaps(base: Map<string, Bar[]>, extra: Map<string, Bar[]>): Map<string, Bar[]> {
+  const out = new Map(base);
+  for (const [symbol, bars] of extra) {
+    if (bars.length > 0) out.set(symbol, bars);
+  }
+  return out;
+}
+
+/** Fetch one provider leg, reporting which requested symbols came back empty/failed. */
+async function fetchBarLeg(
+  fetcher: BarFetcher,
+  symbols: string[],
+): Promise<{ bars: Map<string, Bar[]>; missing: string[] }> {
+  if (symbols.length === 0) return { bars: new Map<string, Bar[]>(), missing: [] };
+  try {
+    const bars = await fetcher(symbols);
+    const missing = symbols.filter((s) => !(bars.get(s)?.length));
+    return { bars, missing };
+  } catch (err) {
+    // A whole-batch reject (a Worker/provider error) spills every assigned symbol.
+    if (err instanceof PriceError) return { bars: new Map<string, Bar[]>(), missing: symbols };
+    throw err;
+  }
+}
+
+/**
+ * Capacity-aware provider split for graph bars (price **and** NAV series), item
+ * 8 — the reverse of the old Tiingo-first dual pipe. Fill **Twelve Data (Pipe A)**
+ * up to the live remaining per-minute/day budget, route the overflow to **Tiingo
+ * (Pipe B)**, and run both legs concurrently so the paint stays instant. A symbol
+ * that *fails or comes back empty* on Twelve Data still spills to Tiingo
+ * underneath the split. Rationale: Twelve Data's 8/min replenishes every minute
+ * (the plentiful pool) while Tiingo's 40/hour is scarce — so fill the plentiful
+ * one first and spend the scarce one only on the overflow.
+ *
+ * `budget()` must read the **live** shared credit log so the graph only takes
+ * what the (earlier, prefetch-led) quote pass left — see
+ * {@link ../quotes.twelveDataBudgetRemaining}.
+ */
+export function makeCapacitySplitBarFetcher(
+  twelveData: BarFetcher,
+  tiingo: BarFetcher,
+  budget: () => { minute: number; day: number },
+): BarFetcher {
+  return async (symbols) => {
+    const uniq = uniqueSymbols(symbols);
+    if (uniq.length === 0) return new Map<string, Bar[]>();
+    const { minute, day } = budget();
+    const capacity = Math.max(0, Math.min(uniq.length, minute, day));
+    const toTwelveData = uniq.slice(0, capacity);
+    const toTiingo = uniq.slice(capacity);
+    const [a, b] = await Promise.all([
+      fetchBarLeg(twelveData, toTwelveData),
+      fetchBarLeg(tiingo, toTiingo),
+    ]);
+    let result = mergeBarMaps(a.bars, b.bars);
+    // Spill any Twelve Data misses (failed/empty) to Tiingo, unless the overflow
+    // leg already covered them.
+    const spill = a.missing.filter((s) => !(result.get(s)?.length));
+    if (spill.length > 0) {
+      const spilled = await fetchBarLeg(tiingo, spill);
+      result = mergeBarMaps(result, spilled.bars);
+    }
+    return result;
+  };
 }
 
 /** Map a Tiingo FX `resampleFreq` to the nearest Twelve Data `time_series` interval. */
@@ -461,6 +543,12 @@ export interface LiveGraphProviders {
    * persisted Twelve Data credit log (reserve + refund, no logging).
    */
   twelveDataMeter?: BackfillMeter;
+  /**
+   * Live remaining Twelve Data per-minute/day budget. When supplied, the bar
+   * fetch becomes the capacity-aware split (item 8): Twelve Data first up to this
+   * budget, Tiingo for the overflow. Omit to keep the legacy Tiingo-first pipe.
+   */
+  budget?: () => { minute: number; day: number };
 }
 
 /** Resolve the Tiingo/Twelve Data meters, defaulting to the real ledgers. */
@@ -590,6 +678,7 @@ export function buildLiveSessionCurve(
       fetchImpl: providers.fetchImpl,
       tiingoMeter,
       twelveDataMeter,
+      budget: providers.budget,
     }) ?? emptyBarFetcher;
   const fetchFx = makeWindowFxFetcher(
     providers.priceProxyUrl,
@@ -639,6 +728,7 @@ export function buildLiveWeekCurve(
       fetchImpl: providers.fetchImpl,
       tiingoMeter,
       twelveDataMeter,
+      budget: providers.budget,
     }) ?? emptyBarFetcher;
   const fetchFx = makeWindowFxFetcher(
     providers.priceProxyUrl,

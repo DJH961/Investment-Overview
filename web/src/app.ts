@@ -76,6 +76,7 @@ import {
   marketCacheTtlMs,
   navCacheTtlMs,
   navPublishWindow,
+  twelveDataBudgetRemaining,
   type EurUsdSource,
   type LoadQuotesOptions,
   type QuoteLoadReport,
@@ -3498,6 +3499,10 @@ export class App {
     const providers: LiveGraphProviders = {
       apiKey: config.apiKey,
       priceProxyUrl: resolvePriceProxyUrl(config),
+      // The graph fills Twelve Data first up to whatever its shared per-minute/day
+      // budget has left after the (prefetch-led) quote pass, then spills the
+      // overflow to Tiingo (item 8). Reads the live shared credit ledger.
+      budget: () => twelveDataBudgetRemaining(Date.now()),
     };
     const store = this.ensureTimeSeriesStore();
     const exported = this.state.data?.live_graphs ?? undefined;

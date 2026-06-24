@@ -69,6 +69,27 @@ const BACKOFF_JITTER_MS = 250;
 export const DEFAULT_CACHE_TTL_MS = 15 * MINUTE_MS;
 
 /**
+ * The Twelve Data credits still affordable right now on the shared free-tier
+ * budget — the **live** per-minute and per-day headroom read straight from the
+ * shared credit ledger. Exposed so the live-graph provider split (item 8) can
+ * fill Twelve Data up to this many symbols *after* the quote pass has reserved
+ * its share, then spill the overflow to Tiingo. Mirrors the in-`loadQuotes`
+ * `budget()` closure so both consult one source of truth.
+ */
+export function twelveDataBudgetRemaining(
+  now: number = Date.now(),
+  opts: { creditsPerMinute?: number; creditsPerDay?: number; storage?: StorageLike } = {},
+): { minute: number; day: number } {
+  const creditsPerMinute = opts.creditsPerMinute ?? FREE_TIER.creditsPerMinute;
+  const creditsPerDay = opts.creditsPerDay ?? FREE_TIER.creditsPerDay;
+  const log = readCreditLog(now, DAY_MS, opts.storage);
+  return {
+    minute: Math.max(0, creditsPerMinute - creditsSpentWithin(log, now, MINUTE_MS)),
+    day: Math.max(0, creditsPerDay - creditsSpentToday(log, now)),
+  };
+}
+
+/**
  * Freshness window for NAV-priced holdings (mutual funds / money-market).
  * Their NAV publishes only ~once per business day, so a long window keeps the
  * latest available value on screen while barely touching the free-tier budget.
