@@ -9,24 +9,45 @@
 import { describe, expect, it } from "vitest";
 
 import { Decimal } from "../src/decimal-config";
-import type { IntradayAnchor } from "../src/intraday";
+import type { BarFetcher, IntradayAnchor } from "../src/intraday";
 import {
   buildLiveSessionCurve,
   buildLiveWeekCurve,
   instrumentedGraphRecorders,
+  makeCapacitySplitBarFetcher,
+  makeDualFxFetcher,
   makePriceBarFetcher,
   makeWindowFxFetcher,
   recordingBarFetcher,
   recordingFxFetcher,
   sessionFxWindow,
   weekFxWindow,
+  withFxBackoff,
+  withBarBackoff,
+  cacheSeriesBackoff,
+  type BackfillMeter,
   type LiveGraphProviders,
+  type SpendRequest,
 } from "../src/live-graph";
 import { memoryBackend, TimeSeriesStore } from "../src/timeseries-store";
-import type { FetchLike } from "../src/prices";
+import { PriceError, type FetchLike } from "../src/prices";
 import type { Bar } from "../src/timeseries";
 
 const d = (v: string | number): Decimal => new Decimal(v);
+
+/** A minimal in-memory `StorageLike` for backoff persistence tests. */
+function mapStorage(): {
+  getItem(k: string): string | null;
+  setItem(k: string, v: string): void;
+  removeItem(k: string): void;
+} {
+  const m = new Map<string, string>();
+  return {
+    getItem: (k) => m.get(k) ?? null,
+    setItem: (k, v) => void m.set(k, v),
+    removeItem: (k) => void m.delete(k),
+  };
+}
 
 const PRICE_PROXY = "https://worker.example.dev/price";
 
@@ -34,7 +55,7 @@ const PRICE_PROXY = "https://worker.example.dev/price";
 function anchor(): IntradayAnchor {
   return {
     holdings: [
-      { priceSymbol: "VTI", valueEur: d(900), valueUsd: d(1000), closeNative: d(100), isUsdNative: true },
+      { priceSymbol: "VTI", valueEur: d(900), valueUsd: d(1000), closeNative: d(100), isUsdNative: true, priceType: "market" },
     ],
     baseEur: d(100),
     baseUsd: d(100),
@@ -50,6 +71,38 @@ function recordingFetch(body: unknown = []): { calls: string[]; fetchImpl: Fetch
     return { ok: true, status: 200, json: async () => body } as unknown as Response;
   };
   return { calls, fetchImpl };
+}
+
+/** A two-phase {@link BackfillMeter} that records every reserve/settle/refund. */
+function recordingMeter(): {
+  meter: BackfillMeter;
+  events: Array<{ phase: "reserve" | "settle" | "refund"; req: SpendRequest & { bars?: number; reason?: string } }>;
+  /** Net credits left on the ledger: reservations minus refunds (settle is a no-op debit). */
+  net: () => number;
+} {
+  const events: Array<{ phase: "reserve" | "settle" | "refund"; req: SpendRequest & { bars?: number; reason?: string } }> = [];
+  const meter: BackfillMeter = {
+    reserve: (req) => events.push({ phase: "reserve", req }),
+    settle: (req) => events.push({ phase: "settle", req }),
+    refund: (req) => events.push({ phase: "refund", req }),
+  };
+  const net = (): number =>
+    events.reduce(
+      (acc, e) => acc + (e.phase === "reserve" ? e.req.n : e.phase === "refund" ? -e.req.n : 0),
+      0,
+    );
+  return { meter, events, net };
+}
+
+/** A fetch stub that answers every request with a fixed HTTP status + body. */
+function statusFetch(status: number, body: unknown = []): FetchLike {
+  return async () =>
+    ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      json: async () => body,
+    }) as unknown as Response;
 }
 
 describe("FX windows", () => {
@@ -92,6 +145,208 @@ describe("makeWindowFxFetcher", () => {
   it("is null (baseFx-only FX) when no price proxy is configured", () => {
     expect(makeWindowFxFetcher(null, { startDate: "a", endDate: "b" }, "1day")).toBeNull();
   });
+
+  it("falls back to Twelve Data forex when there is no proxy but a key is held", async () => {
+    const { calls, fetchImpl } = recordingFetch({ values: [{ datetime: "2026-06-23", close: "1.1" }] });
+    const fetchFx = makeWindowFxFetcher(null, { startDate: "2026-06-19", endDate: "2026-06-23" }, "1day", fetchImpl, undefined, {
+      apiKey: "KEY",
+    });
+    const bars = await fetchFx!();
+    // The EUR/USD forex series is pulled browser-direct (no Worker fxHistory).
+    expect(calls.some((u) => u.includes("symbol=EUR%2FUSD") || u.includes("symbol=EUR/USD"))).toBe(true);
+    expect(bars[0].value.toString()).toBe("1.1");
+  });
+});
+
+describe("FX dual pipe + backoff (item 4)", () => {
+  const bar = (v: number): Bar => ({ t: 1, value: d(v) });
+
+  it("makeDualFxFetcher falls back to Twelve Data on an empty Tiingo result", async () => {
+    let fellBack = false;
+    const fx = makeDualFxFetcher(
+      async () => [],
+      async () => {
+        fellBack = true;
+        return [bar(1.1)];
+      },
+    );
+    expect(await fx()).toEqual([bar(1.1)]);
+    expect(fellBack).toBe(true);
+  });
+
+  it("makeDualFxFetcher falls back when the Tiingo pipe throws a PriceError", async () => {
+    const fx = makeDualFxFetcher(
+      async () => {
+        throw new PriceError("Tiingo FX history proxy returned HTTP 400");
+      },
+      async () => [bar(1.2)],
+    );
+    expect(await fx()).toEqual([bar(1.2)]);
+  });
+
+  it("makeDualFxFetcher keeps a non-empty Tiingo result (no fallback)", async () => {
+    let fellBack = false;
+    const fx = makeDualFxFetcher(
+      async () => [bar(1.3)],
+      async () => {
+        fellBack = true;
+        return [bar(9)];
+      },
+    );
+    expect(await fx()).toEqual([bar(1.3)]);
+    expect(fellBack).toBe(false);
+  });
+
+  it("withFxBackoff suppresses re-attempts only after the 3rd failure, then clears on success", async () => {
+    const memory = mapStorage();
+    const backoff = cacheSeriesBackoff({ attempts: 3, cooldownMs: 10_000, storage: memory });
+    let calls = 0;
+    let result: Bar[] = [];
+    let t = 1000;
+    const fx = withFxBackoff(
+      async () => {
+        calls += 1;
+        return result;
+      },
+      backoff,
+      "fx:1W:1day",
+      { now: () => t },
+    );
+    // Three empty pulls are still attempted (it tries hard in a short session)…
+    expect(await fx()).toEqual([]);
+    expect(await fx()).toEqual([]);
+    expect(await fx()).toEqual([]);
+    expect(calls).toBe(3);
+    // …only now is the cooldown armed: a 4th rebuild short-circuits to [].
+    expect(await fx()).toEqual([]);
+    expect(calls).toBe(3);
+    // Past the cooldown it tries again; a non-empty pull clears the memo.
+    t = 20_000;
+    result = [bar(1.1)];
+    expect(await fx()).toEqual([bar(1.1)]);
+    expect(calls).toBe(4);
+    // Cleared: a later empty result starts a fresh 3-strike count.
+    t = 40_000;
+    result = [];
+    expect(await fx()).toEqual([]);
+    expect(calls).toBe(5);
+    expect(backoff.suppressed("fx:1W:1day", t)).toBe(false);
+  });
+
+  it("withFxBackoff counts a throw as a strike and re-raises it, arming after 3", async () => {
+    const memory = mapStorage();
+    const backoff = cacheSeriesBackoff({ attempts: 3, cooldownMs: 10_000, storage: memory });
+    let calls = 0;
+    const fx = withFxBackoff(
+      async () => {
+        calls += 1;
+        throw new PriceError("boom");
+      },
+      backoff,
+      "fx:1D:1hour",
+      { now: () => 1000 },
+    );
+    await expect(fx()).rejects.toThrow("boom");
+    await expect(fx()).rejects.toThrow("boom");
+    await expect(fx()).rejects.toThrow("boom");
+    expect(calls).toBe(3);
+    // Armed after the 3rd throw: the next rebuild is suppressed (no network hit).
+    expect(await fx()).toEqual([]);
+    expect(calls).toBe(3);
+  });
+});
+
+describe("withBarBackoff (per-symbol time-series backoff)", () => {
+  it("drops a symbol from the network only after 3 empty/failed pulls, sparing the quote", async () => {
+    const memory = mapStorage();
+    const backoff = cacheSeriesBackoff({ attempts: 3, cooldownMs: 10_000, storage: memory });
+    const seen: string[][] = [];
+    let t = 1000;
+    // AAPL always comes back empty; MSFT always returns bars.
+    const inner: BarFetcher = async (symbols) => {
+      seen.push(symbols);
+      const out = new Map<string, Bar[]>();
+      for (const s of symbols) if (s === "MSFT") out.set(s, [{ t: 1, value: d(1) }]);
+      return out;
+    };
+    const fetch = withBarBackoff(inner, backoff, (s) => `1W:${s}`, { now: () => t });
+    // Three rounds: AAPL is attempted each time (still trying), MSFT keeps clearing.
+    await fetch(["AAPL", "MSFT"]);
+    await fetch(["AAPL", "MSFT"]);
+    await fetch(["AAPL", "MSFT"]);
+    expect(seen).toEqual([
+      ["AAPL", "MSFT"],
+      ["AAPL", "MSFT"],
+      ["AAPL", "MSFT"],
+    ]);
+    // 4th round: AAPL is now suppressed (parked), only MSFT reaches the network.
+    seen.length = 0;
+    const out = await fetch(["AAPL", "MSFT"]);
+    expect(seen).toEqual([["MSFT"]]);
+    expect(out.has("AAPL")).toBe(false); // absent ⇒ curve holds AAPL flat at its quote
+    expect(out.get("MSFT")?.length).toBe(1);
+    // Past the cooldown AAPL is retried again.
+    t = 20_000;
+    seen.length = 0;
+    await fetch(["AAPL", "MSFT"]);
+    expect(seen).toEqual([["AAPL", "MSFT"]]);
+  });
+
+  it("returns an empty map (no network) when every symbol is suppressed", async () => {
+    const memory = mapStorage();
+    const backoff = cacheSeriesBackoff({ attempts: 1, cooldownMs: 10_000, storage: memory });
+    let calls = 0;
+    const inner: BarFetcher = async () => {
+      calls += 1;
+      return new Map<string, Bar[]>();
+    };
+    const fetch = withBarBackoff(inner, backoff, (s) => `1D:${s}`, { now: () => 1000 });
+    await fetch(["AAPL"]); // first attempt fails ⇒ arms (attempts: 1)
+    expect(calls).toBe(1);
+    const out = await fetch(["AAPL"]); // suppressed
+    expect(calls).toBe(1);
+    expect(out.size).toBe(0);
+  });
+
+  it("keeps 1D and 1W scopes independent (a 1D error never suppresses 1W)", async () => {
+    const memory = mapStorage();
+    const backoff = cacheSeriesBackoff({ attempts: 1, cooldownMs: 10_000, storage: memory });
+    const inner = (label: string): BarFetcher => async (symbols) => {
+      // The 1D leg always fails for AAPL; the 1W leg always serves it.
+      const out = new Map<string, Bar[]>();
+      if (label === "1W") for (const s of symbols) out.set(s, [{ t: 1, value: d(1) }]);
+      return out;
+    };
+    const day = withBarBackoff(inner("1D"), backoff, (s) => `1D:${s}`, { now: () => 1000 });
+    const week = withBarBackoff(inner("1W"), backoff, (s) => `1W:${s}`, { now: () => 1000 });
+    await day(["AAPL"]); // arms 1D:AAPL
+    expect(backoff.suppressed("1D:AAPL", 1000)).toBe(true);
+    expect(backoff.suppressed("1W:AAPL", 1000)).toBe(false); // 1W untouched
+    const out = await week(["AAPL"]); // still fetched on the 1W scope
+    expect(out.get("AAPL")?.length).toBe(1);
+  });
+
+  it("retroactively recovers a symbol: the bars flow again once it succeeds after the cooldown", async () => {
+    const memory = mapStorage();
+    const backoff = cacheSeriesBackoff({ attempts: 1, cooldownMs: 10_000, storage: memory });
+    let alive = false;
+    let t = 1000;
+    const inner: BarFetcher = async (symbols) => {
+      const out = new Map<string, Bar[]>();
+      if (alive) for (const s of symbols) out.set(s, [{ t: 2, value: d(2) }]);
+      return out;
+    };
+    const fetch = withBarBackoff(inner, backoff, (s) => `1W:${s}`, { now: () => t });
+    await fetch(["AAPL"]); // fails ⇒ armed; curve holds AAPL flat at its quote meanwhile
+    expect(backoff.suppressed("1W:AAPL", t)).toBe(true);
+    // The endpoint recovers; once the cooldown elapses the retry succeeds and the
+    // memo clears, so the corrected bars flow back into the curve.
+    alive = true;
+    t = 20_000;
+    const out = await fetch(["AAPL"]);
+    expect(out.get("AAPL")?.length).toBe(1);
+    expect(backoff.suppressed("1W:AAPL", t)).toBe(false);
+  });
 });
 
 describe("makePriceBarFetcher", () => {
@@ -130,6 +385,88 @@ describe("makePriceBarFetcher", () => {
     // Tiingo daily returns bars → no fallback to Twelve Data is needed.
     expect(calls[0]).toContain("/price?daily=VTI");
     expect(calls.some((u) => u.includes("time_series"))).toBe(false);
+  });
+});
+
+describe("makeCapacitySplitBarFetcher (provider split, item 8)", () => {
+  const barOf = (v: number): Bar[] => [{ t: 1, value: d(v) }];
+  /** A fetcher that answers each requested symbol with a one-bar series + records calls. */
+  function fakeFetcher(label: string, calls: Array<{ who: string; symbols: string[] }>, opts: { fail?: boolean; empty?: Set<string> } = {}): BarFetcher {
+    return async (symbols) => {
+      calls.push({ who: label, symbols: [...symbols] });
+      if (opts.fail) throw new PriceError(`${label} down`);
+      const out = new Map<string, Bar[]>();
+      for (const s of symbols) out.set(s, opts.empty?.has(s) ? [] : barOf(1));
+      return out;
+    };
+  }
+
+  it("fills Twelve Data up to its budget and routes the overflow to Tiingo", async () => {
+    const calls: Array<{ who: string; symbols: string[] }> = [];
+    const fetch = makeCapacitySplitBarFetcher(
+      fakeFetcher("TD", calls),
+      fakeFetcher("TII", calls),
+      () => ({ minute: 2, day: 100 }),
+    );
+    const bars = await fetch(["A", "B", "C", "D"]);
+    expect(bars.size).toBe(4);
+    const td = calls.find((c) => c.who === "TD");
+    const tii = calls.find((c) => c.who === "TII");
+    expect(td?.symbols).toEqual(["A", "B"]); // M = min(4, 2, 100) = 2
+    expect(tii?.symbols).toEqual(["C", "D"]); // overflow
+  });
+
+  it("routes everything to Tiingo when Twelve Data has zero budget left", async () => {
+    const calls: Array<{ who: string; symbols: string[] }> = [];
+    const fetch = makeCapacitySplitBarFetcher(
+      fakeFetcher("TD", calls),
+      fakeFetcher("TII", calls),
+      () => ({ minute: 0, day: 100 }),
+    );
+    await fetch(["A", "B"]);
+    expect(calls.find((c) => c.who === "TD")?.symbols ?? []).toEqual([]);
+    expect(calls.find((c) => c.who === "TII")?.symbols).toEqual(["A", "B"]);
+  });
+
+  it("clamps the Twelve Data slice to the scarcer of the minute/day budgets", async () => {
+    const calls: Array<{ who: string; symbols: string[] }> = [];
+    const fetch = makeCapacitySplitBarFetcher(
+      fakeFetcher("TD", calls),
+      fakeFetcher("TII", calls),
+      () => ({ minute: 8, day: 1 }),
+    );
+    await fetch(["A", "B", "C"]);
+    expect(calls.find((c) => c.who === "TD")?.symbols).toEqual(["A"]); // day budget caps at 1
+    expect(calls.find((c) => c.who === "TII")?.symbols).toEqual(["B", "C"]);
+  });
+
+  it("spills a failed Twelve Data symbol to Tiingo underneath the split", async () => {
+    const calls: Array<{ who: string; symbols: string[] }> = [];
+    const fetch = makeCapacitySplitBarFetcher(
+      fakeFetcher("TD", calls, { fail: true }),
+      fakeFetcher("TII", calls),
+      () => ({ minute: 2, day: 100 }),
+    );
+    const bars = await fetch(["A", "B"]);
+    // Twelve Data threw, so both assigned symbols spill to Tiingo and still resolve.
+    expect(bars.get("A")?.length).toBe(1);
+    expect(bars.get("B")?.length).toBe(1);
+    const spill = calls.filter((c) => c.who === "TII").flatMap((c) => c.symbols);
+    expect(spill).toContain("A");
+    expect(spill).toContain("B");
+  });
+
+  it("spills an empty (billed-but-no-bars) Twelve Data symbol to Tiingo", async () => {
+    const calls: Array<{ who: string; symbols: string[] }> = [];
+    const fetch = makeCapacitySplitBarFetcher(
+      fakeFetcher("TD", calls, { empty: new Set(["A"]) }),
+      fakeFetcher("TII", calls),
+      () => ({ minute: 2, day: 100 }),
+    );
+    const bars = await fetch(["A", "B"]);
+    expect(bars.get("A")?.length).toBe(1); // refilled from Tiingo
+    const spill = calls.filter((c) => c.who === "TII").flatMap((c) => c.symbols);
+    expect(spill).toEqual(["A"]);
   });
 });
 
@@ -225,60 +562,140 @@ describe("buildLiveWeekCurve", () => {
   });
 });
 
-describe("credit accounting (live-graph backfills count against a source budget)", () => {
-  it("recordingBarFetcher books one credit per requested symbol on success", async () => {
-    const spends: number[] = [];
+describe("two-phase credit accounting (reserve up-front, settle on result)", () => {
+  it("recordingBarFetcher reserves one credit per symbol up-front and settles on success", async () => {
     const inner = async (symbols: string[]) =>
       new Map<string, Bar[]>(symbols.map((s) => [s, [{ t: 1, value: d(1) }]]));
-    const fetcher = recordingBarFetcher(inner, (n) => spends.push(n));
+    const { meter, events, net } = recordingMeter();
+    const fetcher = recordingBarFetcher(inner, meter);
     await fetcher(["AAPL", "MSFT", "AAPL", "  "]); // dedup + blank-drop ⇒ 2
-    expect(spends).toEqual([2]);
+    expect(events.map((e) => e.phase)).toEqual(["reserve", "settle"]);
+    expect(events[0].req).toMatchObject({ n: 2, leg: "bars", symbols: ["AAPL", "MSFT"] });
+    expect(net()).toBe(2);
   });
 
-  it("recordingBarFetcher books nothing when the inner pipe throws", async () => {
-    const spends: number[] = [];
-    const inner = async (): Promise<Map<string, Bar[]>> => {
-      throw new Error("429");
+  it("recordingBarFetcher calls inner with the trimmed+deduped symbol set", async () => {
+    const seen: string[][] = [];
+    const inner: BarFetcher = async (symbols) => {
+      seen.push(symbols);
+      return new Map<string, Bar[]>(symbols.map((s) => [s, [{ t: 1, value: d(1) }]]));
     };
-    const fetcher = recordingBarFetcher(inner, (n) => spends.push(n));
-    await expect(fetcher(["AAPL"])).rejects.toThrow();
-    expect(spends).toEqual([]);
+    const { meter } = recordingMeter();
+    await recordingBarFetcher(inner, meter)(["AAPL", "MSFT", "AAPL", "  "]);
+    expect(seen).toEqual([["AAPL", "MSFT"]]);
   });
 
-  it("recordingFxFetcher books one credit per successful FX pull", async () => {
-    const spends: number[] = [];
-    const fetcher = recordingFxFetcher(async () => [], (n) => spends.push(n));
-    await fetcher();
-    expect(spends).toEqual([1]);
+  it("recordingBarFetcher short-circuits (no inner call, no metering) when no real symbols remain", async () => {
+    let calls = 0;
+    const inner: BarFetcher = async () => {
+      calls += 1;
+      return new Map<string, Bar[]>();
+    };
+    const { meter, events } = recordingMeter();
+    const bars = await recordingBarFetcher(inner, meter)(["  ", ""]);
+    expect(calls).toBe(0);
+    expect(bars.size).toBe(0);
+    expect(events).toEqual([]);
+  });
+
+  it("recordingBarFetcher reserves before the network resolves (paces concurrent dispatches)", async () => {
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>((r) => (release = r));
+    const inner: BarFetcher = async (symbols) => {
+      await gate;
+      return new Map<string, Bar[]>(symbols.map((s) => [s, []]));
+    };
+    const { meter, events } = recordingMeter();
+    const pending = recordingBarFetcher(inner, meter)(["AAPL"]);
+    // The reservation is already on the books while the call is still in flight.
+    expect(events.map((e) => e.phase)).toEqual(["reserve"]);
+    release!();
+    await pending;
+    expect(events.map((e) => e.phase)).toEqual(["reserve", "settle"]);
+  });
+
+  it("recordingBarFetcher refunds the reservation when the pipe throws (not billed)", async () => {
+    const inner = async (): Promise<Map<string, Bar[]>> => {
+      throw new PriceError("429");
+    };
+    const { meter, events, net } = recordingMeter();
+    await expect(recordingBarFetcher(inner, meter)(["AAPL"])).rejects.toThrow();
+    expect(events.map((e) => e.phase)).toEqual(["reserve", "refund"]);
+    expect(net()).toBe(0);
+  });
+
+  it("recordingFxFetcher settles a returned FX pull (reached the meter, even when empty)", async () => {
+    const { meter, events, net } = recordingMeter();
+    await recordingFxFetcher(async () => [], meter)();
+    expect(events.map((e) => e.phase)).toEqual(["reserve", "settle"]);
+    expect(events[0].req).toMatchObject({ n: 1, leg: "fx", symbols: ["eurusd"] });
+    expect(net()).toBe(1);
+  });
+
+  it("recordingFxFetcher refunds a thrown FX pull (the Worker-400 phantom-charge fix)", async () => {
+    const { meter, net } = recordingMeter();
+    await expect(
+      recordingFxFetcher(async () => {
+        throw new PriceError("Tiingo FX history proxy returned HTTP 400");
+      }, meter)(),
+    ).rejects.toThrow();
+    expect(net()).toBe(0);
+  });
+
+  it("books a Tiingo 200+[] and a 404 (reached the meter) but refunds Worker rejects", async () => {
+    // A Tiingo-only price pipe (no Twelve Data fallback) so the per-status billing
+    // outcome is visible directly on the meter.
+    const cases: Array<[number, number]> = [
+      [200, 1], // empty array — reached Tiingo, billed
+      [404, 1], // ticker unknown to Tiingo — reached Tiingo, billed
+      [400, 0], // Worker rejected bad params before forwarding — not billed
+      [429, 0], // hourly reserve spent, never forwarded — not billed
+      [502, 0], // upstream fetch failed — not billed
+      [503, 0], // no token — not billed
+    ];
+    for (const [status, expected] of cases) {
+      const { meter, net } = recordingMeter();
+      const fetcher = makePriceBarFetcher({
+        apiKey: "",
+        proxyUrl: PRICE_PROXY,
+        param: "intraday",
+        fetchImpl: statusFetch(status),
+        tiingoMeter: meter,
+      })!;
+      try {
+        await fetcher(["VTI"]);
+      } catch {
+        // A pipe-level reject with no fallback configured propagates — expected.
+      }
+      expect(net(), `status ${status}`).toBe(expected);
+    }
   });
 
   it("the 1D build books the Tiingo budget for both prices and FX", async () => {
     const { fetchImpl } = recordingFetch([{ date: "2026-06-23T13:35:00.000Z", close: 100 }]);
-    const tiingo: number[] = [];
-    const twelve: number[] = [];
+    const tiingo = recordingMeter();
+    const twelve = recordingMeter();
     const store = new TimeSeriesStore(memoryBackend());
     const providers: LiveGraphProviders = {
       apiKey: "KEY",
       priceProxyUrl: PRICE_PROXY,
       fetchImpl,
-      onTiingoSpend: (n) => tiingo.push(n),
-      onTwelveDataSpend: (n) => twelve.push(n),
+      tiingoMeter: tiingo.meter,
+      twelveDataMeter: twelve.meter,
     };
     await buildLiveSessionCurve(
       { anchor: anchor(), store, now: new Date("2026-06-23T14:00:00Z") },
       providers,
     );
     // One credit for the single price symbol + one for the batched FX pull.
-    expect(tiingo).toEqual([1, 1]);
-    expect(twelve).toEqual([]);
+    expect(tiingo.net()).toBe(2);
+    expect(twelve.net()).toBe(0);
   });
 
   it("books the Twelve Data budget when prices fall back to Pipe A", async () => {
     // Tiingo prices answer empty (fallback to Twelve Data); FX still via Tiingo.
-    const calls: string[] = [];
     const fetchImpl: FetchLike = async (url) => {
       const u = String(url);
-      calls.push(u);
       const body = u.includes("fxHistory")
         ? [{ date: "2026-06-23T00:00:00.000Z", close: 1.1 }]
         : u.includes("time_series")
@@ -286,53 +703,104 @@ describe("credit accounting (live-graph backfills count against a source budget)
           : [];
       return { ok: true, status: 200, json: async () => body } as unknown as Response;
     };
-    const tiingo: number[] = [];
-    const twelve: number[] = [];
+    const tiingo = recordingMeter();
+    const twelve = recordingMeter();
     const store = new TimeSeriesStore(memoryBackend());
     const providers: LiveGraphProviders = {
       apiKey: "KEY",
       priceProxyUrl: PRICE_PROXY,
       fetchImpl,
-      onTiingoSpend: (n) => tiingo.push(n),
-      onTwelveDataSpend: (n) => twelve.push(n),
+      tiingoMeter: tiingo.meter,
+      twelveDataMeter: twelve.meter,
     };
     await buildLiveSessionCurve(
       { anchor: anchor(), store, now: new Date("2026-06-23T14:00:00Z") },
       providers,
     );
-    // Twelve Data served the price symbol (1 credit). Tiingo still spent a
-    // credit on the price attempt (an empty answer is not a throw) plus the FX.
-    expect(twelve).toEqual([1]);
-    expect(tiingo).toEqual([1, 1]);
+    // Twelve Data served the price symbol (1 credit). Tiingo still booked its
+    // billed price attempt (an empty answer is not a throw) plus the FX pull.
+    expect(twelve.net()).toBe(1);
+    expect(tiingo.net()).toBe(2);
   });
 });
 
 describe("instrumentedGraphRecorders", () => {
-  it("books each pull against its provider budget, tallies credits, and logs it", () => {
+  it("books each pull, tallies credits, and logs the leg + symbols", () => {
     const twelveBooked: number[] = [];
     const tiingoBooked: number[] = [];
     const messages: string[] = [];
     const spent = { credits: 0 };
-    const { onTwelveDataSpend, onTiingoSpend } = instrumentedGraphRecorders({
+    const { twelveDataMeter, tiingoMeter } = instrumentedGraphRecorders({
       range: "1D",
       bookTwelveData: (n) => twelveBooked.push(n),
+      refundTwelveData: () => undefined,
       bookTiingo: (n) => tiingoBooked.push(n),
+      refundTiingo: () => undefined,
       log: (m) => messages.push(m),
       spent,
     });
 
-    onTwelveDataSpend(3);
-    onTiingoSpend(1);
+    twelveDataMeter.reserve({ leg: "bars", symbols: ["SCHK", "MSFT", "VOO"], n: 3 });
+    twelveDataMeter.settle({ leg: "bars", symbols: ["SCHK", "MSFT", "VOO"], n: 3, bars: 30 });
+    tiingoMeter.reserve({ leg: "fx", symbols: ["eurusd"], n: 1 });
+    tiingoMeter.settle({ leg: "fx", symbols: ["eurusd"], n: 1, bars: 5 });
 
-    // Credits are booked against the matching provider budget…
+    // Credits are booked against the matching provider budget on reserve…
     expect(twelveBooked).toEqual([3]);
     expect(tiingoBooked).toEqual([1]);
-    // …the shared counter tells a real pull from a fully-reused render…
+    // …the shared counter tallies only billed (settled) pulls…
     expect(spent.credits).toBe(4);
-    // …and each pull is reported in plain language with provider + credit cost.
+    // …and each billed pull names the leg + symbols (or `FX <pair>`).
     expect(messages).toEqual([
-      "1D graph: fetched 3 price series via Twelve Data (Pipe A) — 3 credits.",
-      "1D graph: fetched 1 series via Tiingo (Pipe B) — 1 Tiingo credit.",
+      "1D graph: fetched bars SCHK, MSFT, VOO via Twelve Data (Pipe A) — 3 credits.",
+      "1D graph: fetched fx FX eurusd via Tiingo (Pipe B) — 1 Tiingo credit.",
+    ]);
+  });
+
+  it("refunds and logs a labelled failure when a pull is not billed", () => {
+    const tiingoBooked: number[] = [];
+    const tiingoRefunded: number[] = [];
+    const messages: string[] = [];
+    const spent = { credits: 0 };
+    const { tiingoMeter } = instrumentedGraphRecorders({
+      range: "1D",
+      bookTwelveData: () => undefined,
+      refundTwelveData: () => undefined,
+      bookTiingo: (n) => tiingoBooked.push(n),
+      refundTiingo: (n) => tiingoRefunded.push(n),
+      log: (m) => messages.push(m),
+      spent,
+    });
+
+    tiingoMeter.reserve({ leg: "fx", symbols: ["eurusd"], n: 1 });
+    tiingoMeter.refund({ leg: "fx", symbols: ["eurusd"], n: 1, reason: "Tiingo FX history proxy returned HTTP 400" });
+
+    expect(tiingoBooked).toEqual([1]);
+    expect(tiingoRefunded).toEqual([1]);
+    // A refunded (not-billed) pull never counts toward the build's real spend.
+    expect(spent.credits).toBe(0);
+    expect(messages).toEqual([
+      "1D graph: fx FX eurusd via Tiingo (Pipe B) not billed (1 Tiingo credit refunded) — Tiingo FX history proxy returned HTTP 400.",
+    ]);
+  });
+
+  it("annotates a billed-but-empty pull (reached the provider, no bars)", () => {
+    const messages: string[] = [];
+    const spent = { credits: 0 };
+    const { tiingoMeter } = instrumentedGraphRecorders({
+      range: "1W",
+      bookTwelveData: () => undefined,
+      refundTwelveData: () => undefined,
+      bookTiingo: () => undefined,
+      refundTiingo: () => undefined,
+      log: (m) => messages.push(m),
+      spent,
+    });
+    tiingoMeter.reserve({ leg: "bars", symbols: ["DAX"], n: 1 });
+    tiingoMeter.settle({ leg: "bars", symbols: ["DAX"], n: 1, bars: 0 });
+    expect(spent.credits).toBe(1);
+    expect(messages).toEqual([
+      "1W graph: fetched bars DAX via Tiingo (Pipe B) — 1 Tiingo credit (empty — reached the provider, no bars).",
     ]);
   });
 
@@ -341,7 +809,9 @@ describe("instrumentedGraphRecorders", () => {
     instrumentedGraphRecorders({
       range: "1W",
       bookTwelveData: () => undefined,
+      refundTwelveData: () => undefined,
       bookTiingo: () => undefined,
+      refundTiingo: () => undefined,
       log: () => undefined,
       spent,
     });

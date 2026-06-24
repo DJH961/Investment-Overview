@@ -56,6 +56,14 @@ export interface IntradayHolding {
   closeNative: Decimal;
   /** True when the holding is booked in USD, so its EUR view needs an FX rebase. */
   isUsdNative: boolean;
+  /**
+   * How this sleeve member is priced. `"market"` members get bars from the live
+   * price provider (intraday for 1D, daily closes for 1W). `"nav"` members
+   * (mutual funds folded into the **week** sleeve) re-mark from accumulated daily
+   * NAV bars only and are **never** network-fetched as graph bars — see
+   * {@link buildIntradayAnchor} `navInSleeve` and `week.ts`.
+   */
+  priceType: "market" | "nav";
 }
 
 /**
@@ -102,13 +110,22 @@ export interface AnchorHoldingInput {
  * cash totals — folds into the flat base, exactly like the desktop. USD values
  * fall back to the EUR figure when no USD twin exists so the base never drops a
  * sleeve.
+ *
+ * When `navInSleeve` is set (the **1W** path), NAV funds that carry a real
+ * price + share count *also* join the sleeve (tagged `priceType: "nav"`) so the
+ * week curve re-marks them from their accumulated daily-NAV bars instead of
+ * pinning them flat — the week's NAV drift is material for a NAV-heavy book
+ * (`docs/tiingo_polling_storm_cleanup_plan.md` item 7). The 1D path leaves them
+ * flat in the base (NAV strikes once a day, so there is no intraday NAV curve).
  */
 export function buildIntradayAnchor(
   holdings: AnchorHoldingInput[],
   cashValueEur: Decimal,
   cashValueUsd: Decimal,
   baseFx: Decimal | null,
+  options: { navInSleeve?: boolean } = {},
 ): IntradayAnchor {
+  const navInSleeve = options.navInSleeve ?? false;
   const sleeve: IntradayHolding[] = [];
   let baseEur = cashValueEur;
   let baseUsd = cashValueUsd;
@@ -116,19 +133,21 @@ export function buildIntradayAnchor(
     const valueEur = h.valueEur;
     if (valueEur === null) continue; // unvaluable — excluded from the curve entirely
     const valueUsd = h.valueUsd ?? valueEur;
-    const intraday =
-      h.priceType === "market" &&
+    const pricedLot =
       h.priceNative !== null &&
       !h.priceNative.isZero() &&
       h.shares.abs().greaterThan(MIN_SHARES) &&
       h.priceSymbol.length > 0;
-    if (intraday) {
+    const inSleeve =
+      pricedLot && (h.priceType === "market" || (navInSleeve && h.priceType === "nav"));
+    if (inSleeve) {
       sleeve.push({
         priceSymbol: h.priceSymbol,
         valueEur,
         valueUsd,
         closeNative: h.priceNative as Decimal,
         isUsdNative: h.nativeCurrency.toUpperCase() === "USD",
+        priceType: h.priceType,
       });
     } else {
       // NAV funds / cash-like rows print at most once a day — carry them flat.
@@ -142,6 +161,16 @@ export function buildIntradayAnchor(
 /** The distinct Twelve Data tickers the intraday sleeve needs bars for. */
 export function intradaySymbols(anchor: IntradayAnchor): string[] {
   return [...new Set(anchor.holdings.map((h) => h.priceSymbol))];
+}
+
+/**
+ * The distinct sleeve tickers that are safe to fetch from the live **price**
+ * provider — the `"market"` members only. NAV sleeve members (1W funds) re-mark
+ * from accumulated daily-NAV bars and must never be network-fetched as graph
+ * bars (item 7), so the week build pulls only these.
+ */
+export function marketSleeveSymbols(anchor: IntradayAnchor): string[] {
+  return [...new Set(anchor.holdings.filter((h) => h.priceType === "market").map((h) => h.priceSymbol))];
 }
 
 /** Map the anchor's holdings into the reconstruction's holding shape. */

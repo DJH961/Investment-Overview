@@ -161,15 +161,19 @@ export async function fetchTiingoIntradayBars(
 
     if (!resp.ok) {
       // Pipe-level failures abort the whole batch so the caller can fall back:
+      //  - 400: the Worker rejected bad params *before* forwarding to Tiingo (a
+      //    dead/renamed route, or a malformed window) — never reached Tiingo's
+      //    meter, so it must NOT book a credit (the FX-storm phantom-charge bug);
       //  - 429: the Worker's hourly Tiingo reserve is spent (Retry-After advised);
       //  - 503: no TIINGO_TOKEN configured; 5xx: an upstream/Worker error.
-      // A 404 (or other 4xx) is a per-ticker gap — Tiingo doesn't know it — so the
-      // symbol is left with no bars and the batch carries on.
-      if (resp.status === 429 || resp.status === 503 || resp.status >= 500) {
+      // A 404 (or other 4xx) is a per-ticker gap — Tiingo doesn't know it, but the
+      // request *did* reach Tiingo's meter — so the symbol is left with no bars,
+      // the batch carries on, and the call still counts as billed.
+      if (resp.status === 400 || resp.status === 429 || resp.status === 503 || resp.status >= 500) {
         const retryAfter = Number(resp.headers?.get?.("Retry-After"));
         throw new PriceError(`Tiingo intraday proxy returned HTTP ${resp.status}`, {
           status: resp.status,
-          retryable: true,
+          retryable: resp.status !== 400,
           retryAfterMs: Number.isFinite(retryAfter) ? Math.max(0, retryAfter * 1000) : null,
         });
       }

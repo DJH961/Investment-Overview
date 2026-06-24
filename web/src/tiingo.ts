@@ -317,14 +317,18 @@ export async function fetchTiingoFxBars(
     });
   }
   if (!resp.ok) {
-    // Pipe-level failures (429 reserve spent, 503 no token, 5xx upstream) abort
-    // so the caller falls back to the settled `baseFx`. A 4xx other than these is
-    // a window with no data — treat as an empty (no-bar) result.
-    if (resp.status === 429 || resp.status === 503 || resp.status >= 500) {
+    // Pipe-level failures (400 Worker reject before forwarding, 429 reserve
+    // spent, 503 no token, 5xx upstream) abort so the caller falls back to the
+    // settled `baseFx`. Crucially a 400 never reached Tiingo's meter — a dead
+    // `fxHistory` route returning 400 was the polling-storm phantom-charge — so
+    // it throws (the recorder refunds its reservation) rather than booking a
+    // credit on an empty result. A 4xx *other* than 400/429 is a window with no
+    // data that *did* reach Tiingo — treat as an empty (billed) result.
+    if (resp.status === 400 || resp.status === 429 || resp.status === 503 || resp.status >= 500) {
       const retryAfter = Number(resp.headers?.get?.("Retry-After"));
       throw new PriceError(`Tiingo FX history proxy returned HTTP ${resp.status}`, {
         status: resp.status,
-        retryable: true,
+        retryable: resp.status !== 400,
         retryAfterMs: Number.isFinite(retryAfter) ? Math.max(0, retryAfter * 1000) : null,
       });
     }
