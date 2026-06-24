@@ -441,12 +441,13 @@ export async function loadOrBuildSessionCurve(
   // the FX track is missing, pull it once. Gated on having bars to rebase and on
   // not having just tried FX above, so a fully-loaded closed-market curve never
   // re-fires once its FX is in hand.
+  const loaded = stored;
   if (
     fetchFx &&
     !fxAttempted &&
-    stored !== null &&
-    stored.fx.length === 0 &&
-    symbols.some((s) => (stored?.bars[s]?.length ?? 0) > 0)
+    loaded !== null &&
+    loaded.fx.length === 0 &&
+    symbols.some((s) => (loaded.bars[s]?.length ?? 0) > 0)
   ) {
     try {
       const incomingFx = await fetchFx();
