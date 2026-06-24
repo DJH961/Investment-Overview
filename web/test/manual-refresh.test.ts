@@ -6,6 +6,7 @@ import {
   classifyConnectivity,
   connectivityNotice,
   describePrefetch,
+  describeTiingoError,
   liveRefreshProgress,
   manualRefreshSummary,
   refreshTickAction,
@@ -124,7 +125,7 @@ describe("summarizeCoverage", () => {
       summarizeCoverage(
         facts({ marketOpen: false, marketTotal: 13, marketHeld: 13, marketAtClose: 13, navTotal: 5, navAwaiting: 0 }),
       ),
-    ).toBe("Market closed, at closing prices — up to date · FX live");
+    ).toBe("Market closed, up to date · FX live");
   });
 
   it("market closed: a budget-deferred market close is named honestly", () => {
@@ -144,7 +145,7 @@ describe("summarizeCoverage", () => {
 
   it("surfaces a hard error as last-known prices", () => {
     expect(summarizeCoverage(facts({ marketTotal: 2, marketHeld: 2, marketAtClose: 2, error: true }))).toBe(
-      "Showing last known prices · FX live",
+      "Showing last known · FX live",
     );
   });
 
@@ -154,10 +155,10 @@ describe("summarizeCoverage", () => {
     // an apologetic count that reads like a failed refresh.
     expect(
       summarizeCoverage(facts({ marketTotal: 2, marketHeld: 2, marketAtClose: 2, freshlyPulled: false })),
-    ).toBe("Market closed, at closing prices — up to date · FX live");
+    ).toBe("Market closed, up to date · FX live");
     expect(
       summarizeCoverage(facts({ marketTotal: 1, marketHeld: 1, marketAtClose: 1, freshlyPulled: false })),
-    ).toBe("Market closed, at closing prices — up to date · FX live");
+    ).toBe("Market closed, up to date · FX live");
   });
 
   it("breaks cached coverage into recent vs awaiting while something is behind", () => {
@@ -199,16 +200,16 @@ describe("summarizeCoverage", () => {
   it("always reports FX freshness, capitalised, alongside the price coverage", () => {
     const base = { marketOpen: false, marketTotal: 2, marketHeld: 2, marketAtClose: 2 } as const;
     expect(summarizeCoverage(facts({ ...base, fx: "live" }))).toBe(
-      "Market closed, at closing prices — up to date · FX live",
+      "Market closed, up to date · FX live",
     );
     expect(summarizeCoverage(facts({ ...base, fx: "eod" }))).toBe(
-      "Market closed, at closing prices — up to date · FX end of day",
+      "Market closed, up to date · FX end of day",
     );
     expect(summarizeCoverage(facts({ ...base, fx: "cache" }))).toBe(
-      "Market closed, at closing prices — up to date · FX recent",
+      "Market closed, up to date · FX recent",
     );
     expect(summarizeCoverage(facts({ ...base, fx: "none" }))).toBe(
-      "Market closed, at closing prices — up to date · awaiting FX",
+      "Market closed, up to date · awaiting FX",
     );
   });
 });
@@ -298,7 +299,7 @@ describe("manualRefreshSummary", () => {
 
   it("surfaces a transient failure as a fallback message", () => {
     expect(manualRefreshSummary(facts({ marketTotal: 1, error: true }))).toBe(
-      "Couldn't reach live prices — showing last known values",
+      "Couldn't reach live prices, showing last known.",
     );
   });
 });
@@ -427,11 +428,25 @@ describe("classifyConnectivity", () => {
 
 describe("connectivityNotice", () => {
   it("names the offline and unreachable cases plainly, and is silent when online", () => {
-    expect(connectivityNotice("offline")).toBe("No internet connection — showing last known prices.");
+    expect(connectivityNotice("offline")).toBe("No internet connection, showing last known.");
     expect(connectivityNotice("unreachable")).toBe(
-      "Couldn't reach any price service — showing last known prices.",
+      "Couldn't reach any price service, showing last known.",
     );
     expect(connectivityNotice("online")).toBeNull();
+  });
+});
+
+describe("describeTiingoError", () => {
+  it("distinguishes a rate-limit (429) from an unreachable backup, sharing one wording", () => {
+    expect(describeTiingoError(new PriceError("rate", { status: 429 }))).toBe(
+      "Backup (Tiingo) rate-limited; its credits look used up.",
+    );
+    expect(describeTiingoError(new PriceError("down", { status: 503 }))).toBe(
+      "Backup (Tiingo) unreachable; check the price proxy Worker.",
+    );
+    expect(describeTiingoError(new PriceError("dns"))).toBe(
+      "Backup (Tiingo) unreachable; check the price proxy Worker.",
+    );
   });
 });
 
