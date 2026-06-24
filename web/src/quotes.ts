@@ -84,8 +84,8 @@ export function twelveDataBudgetRemaining(
   const creditsPerDay = opts.creditsPerDay ?? FREE_TIER.creditsPerDay;
   const log = readCreditLog(now, DAY_MS, opts.storage);
   return {
-    minute: Math.max(0, creditsPerMinute - creditsSpentWithin(log, now, MINUTE_MS)),
-    day: Math.max(0, creditsPerDay - creditsSpentToday(log, now)),
+    minute: Math.max(0, creditsPerMinute - Math.max(0, creditsSpentWithin(log, now, MINUTE_MS))),
+    day: Math.max(0, creditsPerDay - Math.max(0, creditsSpentToday(log, now))),
   };
 }
 

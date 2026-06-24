@@ -154,13 +154,14 @@ export function recordingBarFetcher(
   return async (symbols) => {
     const uniq = uniqueSymbols(symbols);
     const n = uniq.length;
-    if (n > 0) meter.reserve({ leg, symbols: uniq, n });
+    if (n === 0) return new Map<string, Bar[]>();
+    meter.reserve({ leg, symbols: uniq, n });
     try {
-      const bars = await inner(symbols);
-      if (n > 0) meter.settle({ leg, symbols: uniq, n, bars: totalBars(bars) });
+      const bars = await inner(uniq);
+      meter.settle({ leg, symbols: uniq, n, bars: totalBars(bars) });
       return bars;
     } catch (err) {
-      if (n > 0) meter.refund({ leg, symbols: uniq, n, reason: describeError(err) });
+      meter.refund({ leg, symbols: uniq, n, reason: describeError(err) });
       throw err;
     }
   };

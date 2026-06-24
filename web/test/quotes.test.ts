@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   recordCredits,
   recordTiingoCredits,
+  releaseCredits,
   writeCachedEurUsd,
   writeCachedFx,
   writeCachedQuotes,
@@ -908,5 +909,15 @@ describe("twelveDataBudgetRemaining (graph provider-split budget, item 8)", () =
     recordCredits(8, 1000, storage);
     const { minute } = twelveDataBudgetRemaining(1000, { storage });
     expect(minute).toBe(0);
+  });
+
+  it("never over-reports when a stray refund makes the ledger net negative", () => {
+    const storage = memStorage();
+    // A refund whose matching reservation fell outside the current window
+    // (e.g. reserved just before midnight UTC, refunded just after).
+    releaseCredits(3, 1000, storage);
+    const { minute, day } = twelveDataBudgetRemaining(1000, { storage });
+    expect(minute).toBe(8); // clamped to the cap, not 8 - (-3) = 11
+    expect(day).toBe(800);
   });
 });

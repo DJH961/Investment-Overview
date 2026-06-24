@@ -472,6 +472,30 @@ describe("two-phase credit accounting (reserve up-front, settle on result)", () 
     expect(net()).toBe(2);
   });
 
+  it("recordingBarFetcher calls inner with the trimmed+deduped symbol set", async () => {
+    const seen: string[][] = [];
+    const inner: BarFetcher = async (symbols) => {
+      seen.push(symbols);
+      return new Map<string, Bar[]>(symbols.map((s) => [s, [{ t: 1, value: d(1) }]]));
+    };
+    const { meter } = recordingMeter();
+    await recordingBarFetcher(inner, meter)(["AAPL", "MSFT", "AAPL", "  "]);
+    expect(seen).toEqual([["AAPL", "MSFT"]]);
+  });
+
+  it("recordingBarFetcher short-circuits (no inner call, no metering) when no real symbols remain", async () => {
+    let calls = 0;
+    const inner: BarFetcher = async () => {
+      calls += 1;
+      return new Map<string, Bar[]>();
+    };
+    const { meter, events } = recordingMeter();
+    const bars = await recordingBarFetcher(inner, meter)(["  ", ""]);
+    expect(calls).toBe(0);
+    expect(bars.size).toBe(0);
+    expect(events).toEqual([]);
+  });
+
   it("recordingBarFetcher reserves before the network resolves (paces concurrent dispatches)", async () => {
     let release: (() => void) | null = null;
     const gate = new Promise<void>((r) => (release = r));
