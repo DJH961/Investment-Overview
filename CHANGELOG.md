@@ -34,6 +34,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   hours now adds **no further bar pulls**, using the data already on the device
   over re-buying near-identical bars. A finite `minRefetchMs` still opts into a
   periodic interior top-up; missing symbols are always backfilled.
+- **The live 1D curve now repulls the whole session when you log back in after
+  being away.** The breadcrumb trail only grows while the tab is open and
+  refreshing; locking the app or hiding the tab pauses refresh, so an absence used
+  to leave a flat straight jump from where the curve was left to the live tip. The
+  build now tracks how long since the session was actually touched (the later of
+  the last bar fetch and the newest breadcrumb) and, while the market is open,
+  re-pulls every symbol's bars plus the session FX track once that gap exceeds a
+  10-minute window — bridging the dead span with real data instead of a jump.
+  Staying open keeps laying breadcrumbs faster than the window, so a
+  continuously-watched dashboard never triggers it and spends nothing; only a true
+  log-out/log-in-again does, and since the credit is spent anyway the repull grabs
+  the full session for the best possible curve.
 
 ## [3.20.0] — 2026-06-23
 

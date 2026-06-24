@@ -342,6 +342,22 @@ re-fetching prices that could not have changed:
   on the same appended live tip (`renderValueChart`), so their final value tracks
   the live total on each refresh too.
 
+- **5H.21 A log-out / log-in-again left a flat gap in the live 1D curve** —
+  ✅ done. The breadcrumb trail (5H.20) only grows while the tab is visible and
+  auto-refresh is ticking; locking the app or hiding the tab pauses refresh, so an
+  absence stops the trail. On return, the curve jumped in a single straight line
+  from where it was left to the live tip — a dead span that looked like a glitch.
+  `loadOrBuildSessionCurve` now takes a `resumeBackfillMs` window
+  (`DEFAULT_RESUME_BACKFILL_MS` = 10 min, safely above the slow ~5-min refresh
+  cadence). While open, if the session's freshness anchor — `max(updatedAt, newest
+  breadcrumb)`, i.e. the last time the dashboard actually touched the session — has
+  aged past the window, the next build repulls the **whole** session (every symbol
+  plus the FX track), bridging the gap with real bars instead of a jump. A
+  continuously-open dashboard lays breadcrumbs faster than the window, so it never
+  trips; only a genuine absence does. Since the credit is spent on return anyway,
+  the repull grabs the full session for the best possible curve. Pass
+  `resumeBackfillMs = Infinity` for pure breadcrumb mode.
+
 ## 6. Observability / shareable diagnostics (added 2026-06-21 — ✅ done)
 
 - **6.1 No persistent log file to share** — ✅ done. `logging.configure_logging`
