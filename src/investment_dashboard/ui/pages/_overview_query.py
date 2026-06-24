@@ -63,10 +63,10 @@ VALUE_RANGES: tuple[tuple[str, int | None], ...] = (
 )
 _DEFAULT_RANGE = "Year"
 
-#: Ranges that render the multi-day / multi-currency comparison chart (everything
-#: a week or longer). The intraday "Day" curve stays single-currency with its own
-#: previous-close reference styling.
-MULTI_CCY_RANGES: frozenset[str] = frozenset({"Week", "Month", "YTD", "Year", "All"})
+#: Ranges that render the multi-currency comparison chart. Every range carries
+#: the other-currency comparison line, including the intraday "Day" curve (which
+#: keeps its own previous-close reference styling on top of the companion line).
+MULTI_CCY_RANGES: frozenset[str] = frozenset({"Day", "Week", "Month", "YTD", "Year", "All"})
 
 
 @dataclass(frozen=True)

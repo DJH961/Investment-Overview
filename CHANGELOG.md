@@ -14,9 +14,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [3.20.2] — 2026-06-24
+## [4.0.0] — 2026-06-24
+
+### Changed
+- **Live 1D and 1W are now the default value graphs; the experimental toggle is
+  gone.** The Overview "Value over time" chart now ships with the live **1D** and
+  **1W** curves always on — no Settings opt-in required. The old
+  "Settings → Experimental → Live graphs" toggle has been removed entirely.
+- **3M and 6M are now optional ranges, off by default for a cleaner look.** The
+  default range strip is `1D · 1W · 1M · 1Y · All`. A new
+  "Settings → Graphs → Extra ranges" toggle (**off by default**) adds the longer
+  `3M` and `6M` history slices back for anyone who wants them, so the standard
+  chart stays uncluttered while power users can opt in.
 
 ### Added
+- **Deduplicated value-chart legend and a 1D previous-close reference line
+  (web, incorporates #119).** `chartWithTimeframe` now owns the single chart
+  legend and redraws it for every preset (history *and* live), so a live preset
+  no longer prints the currency legend twice. The live **1D** curve also gains
+  the previous-session close reference line the desktop "1 Day" chart draws:
+  `buildLineChart` takes an optional `referenceLine` folded into the y-axis range
+  and rendered as a muted dashed rule (neutral slate, carrying no gain/loss
+  meaning), and `liveCurveToChart` emits it in the active display currency (USD
+  verbatim, EUR FX-derived) sourced from the last exported settled point.
 - **Smart-routing login prefetch.** The login warm-up no longer blindly fetches
   quotes — it now decides, entirely from cached state before the blob is even
   decrypted, the *minimum* worth pulling and the cheapest route for it:
@@ -47,7 +67,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the one-off refresh-glyph spin now also count freshly backfilled graph bars as
   genuinely "pulled".
 
+## [3.20.2] — 2026-06-24
 
+### Fixed
+
+- **FX history refresh no longer reports a spurious "Failed" before the ECB
+  publishes (desktop app).** When the price refresh runs early in the day, the
+  Frankfurter backfill asks for the only missing day — *today* — as a single-day
+  window. The ECB doesn't publish its daily reference rate until ~16:00 CET, so
+  Frankfurter answers that empty window with `HTTP 404 {"message":"not found"}`,
+  which surfaced as a red `EUR/USD fetch failed` provider-status badge even
+  though nothing was actually wrong. The adapter now treats a `404` on a date
+  range as a benign "no published rates in this window yet" and returns an empty
+  series, so the backfill cleanly no-ops instead of recording an error. Today's
+  displayed EUR/USD rate is unaffected — it already comes from the live intraday
+  spot (yfinance, with a Tiingo backup), independent of the ECB daily history.
+  Genuine failures (5xx, network, malformed payloads) still raise as before. The
+  ECB-only `fx_history` golden-master invariant is preserved; no fallback rows
+  are written into it.
+
+## [3.20.1] — 2026-06-24
 
 ### Added
 - **Live 1D/1W value graphs now write to the Settings data-polling log.** Every

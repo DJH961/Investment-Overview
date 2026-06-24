@@ -71,10 +71,11 @@ class TestResolveRange:
             "All",
         ]
 
-    def test_multi_ccy_ranges_exclude_day(self) -> None:
-        # Every range a week or longer carries the secondary-currency line.
-        assert "Day" not in MULTI_CCY_RANGES
-        assert {"Week", "Month", "YTD", "Year", "All"} == MULTI_CCY_RANGES
+    def test_multi_ccy_ranges_include_all_ranges(self) -> None:
+        # Every range now carries the secondary-currency line, including the
+        # intraday "Day" curve.
+        assert "Day" in MULTI_CCY_RANGES
+        assert {"Day", "Week", "Month", "YTD", "Year", "All"} == MULTI_CCY_RANGES
 
 
 class TestRangeStartDate:
