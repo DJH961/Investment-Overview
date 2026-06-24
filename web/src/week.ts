@@ -26,6 +26,7 @@
 import {
   appendLiveTip,
   intradaySymbols,
+  rebaseBreadcrumbs,
   marketSleeveSymbols,
   type IntradayAnchor,
   type LiveTip,
@@ -71,6 +72,9 @@ function toReconHoldings(holdings: IntradayAnchor["holdings"]): ReconHolding[] {
 function dayStartMs(day: string): number {
   return Date.parse(`${day}T00:00:00Z`);
 }
+
+/** Milliseconds in a calendar day — the span a single trading day's bars/crumbs occupy. */
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** The `YYYY-MM-DD` UTC calendar day an epoch-ms instant falls on. */
 function utcDayOf(t: number): string {
@@ -415,25 +419,38 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
     });
   }
 
-  // If the 1D curve has already been loaded this session, its fine-grained
-  // intraday bars for today are sitting in the store under today's date key.
-  // Splice them in over today's lone daily open/close so the freshest part of the
-  // 1W line gains the same intraday detail — for free, since it is a cache read,
-  // never a network fetch (we only use what a prior 1D build already paid for).
+  // Enrich the coarse weekly closes with cached per-day 1D detail — for free,
+  // since every window day's 1D session (fine intraday bars + free live-tip
+  // breadcrumbs) was already paid for by a prior 1D build; this only reads what
+  // the cache already holds, never the network. For each day in the window:
+  //   1. its lone coarse close is replaced by that day's fine intraday bars (and
+  //      FX), so the reconstructed line gains intraday shape; and
+  //   2. its live-tip breadcrumb trail is rebased onto the current base and
+  //      spliced into the gaps between reconstructed points (after the day's
+  //      freshest real bar — bars stay ground truth), so a day the dashboard
+  //      watched live thickens out even where no extra bars were fetched.
   const reconBars = windowedBars;
   let reconFx = windowedFx;
-  const todayKey = lastSessionDate(now);
-  const todayStartMs = dayStartMs(todayKey);
-  const intraday = await store.loadSession(todayKey);
-  if (intraday) {
+  const crumbsByDay = new Map<string, CurvePoint[]>();
+  for (const day of window) {
+    const session = await store.loadSession(day);
+    if (!session) continue;
+    const dayStart = dayStartMs(day);
+    const dayEnd = dayStart + DAY_MS;
     for (const symbol of symbols) {
-      const fine = intraday.bars[symbol];
+      const fine = session.bars[symbol];
       if (!fine || fine.length === 0) continue;
-      const coarse = (reconBars.get(symbol) ?? []).filter((b) => b.t < todayStartMs);
+      // Drop this day's coarse close, keep every other day's, splice the fine bars in.
+      const coarse = (reconBars.get(symbol) ?? []).filter(
+        (b) => b.t < dayStart || b.t >= dayEnd,
+      );
       reconBars.set(symbol, [...coarse, ...fine]);
     }
-    if (intraday.fx.length > 0) {
-      reconFx = [...reconFx.filter((b) => b.t < todayStartMs), ...intraday.fx];
+    if (session.fx.length > 0) {
+      reconFx = [...reconFx.filter((b) => b.t < dayStart || b.t >= dayEnd), ...session.fx];
+    }
+    if (session.tips && session.tips.length > 0) {
+      crumbsByDay.set(day, rebaseBreadcrumbs(session.tips, anchor.baseEur, anchor.baseUsd));
     }
   }
 
@@ -446,11 +463,50 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
     baseUsd: anchor.baseUsd,
   });
 
+  // Splice each window day's rebased breadcrumb trail into the gaps so the line
+  // thickens where it was watched live but no extra bars were fetched.
+  points = spliceWeekBreadcrumbs(points, crumbsByDay);
+
   if (marketOpen && options.liveTip) {
     points = appendLiveTip(points, now.getTime(), options.liveTip);
   }
 
   return { startDay, endDay, points, marketOpen };
+}
+
+/**
+ * Splice each window day's rebased breadcrumb trail into the gaps of the
+ * reconstructed weekly curve.
+ *
+ * The crumbs are already rebased onto the *current* base; they are merged in
+ * **per day** with the same "real bars are ground truth" rule the 1D curve uses
+ * ({@link mergeBreadcrumbs}): only crumbs falling *after* the day's freshest
+ * reconstructed bar are kept. A coarse-only day's lone close sits at UTC
+ * midnight, so its whole intraday trail fills the otherwise-flat gap; a day whose
+ * fine 1D bars were spliced keeps only the crumbs past its last bar. The result
+ * stays ascending so the live tip can still pin cleanly onto the end.
+ */
+function spliceWeekBreadcrumbs(
+  points: CurvePoint[],
+  crumbsByDay: Map<string, CurvePoint[]>,
+): CurvePoint[] {
+  if (crumbsByDay.size === 0) return points;
+  const extra: CurvePoint[] = [];
+  for (const [day, crumbs] of crumbsByDay) {
+    const dayStart = dayStartMs(day);
+    const dayEnd = dayStart + DAY_MS;
+    // The day's freshest real bar among the reconstructed points, or the instant
+    // just before the day when it contributed no bar at all.
+    let lastBarT = dayStart - 1;
+    for (const p of points) {
+      if (p.t >= dayStart && p.t < dayEnd && p.t > lastBarT) lastBarT = p.t;
+    }
+    for (const c of crumbs) {
+      if (c.t > lastBarT && c.t >= dayStart && c.t < dayEnd) extra.push(c);
+    }
+  }
+  if (extra.length === 0) return points;
+  return [...points, ...extra].sort((a, b) => a.t - b.t);
 }
 
 /** Whether trimming actually dropped any bar (so a re-save is worthwhile). */
