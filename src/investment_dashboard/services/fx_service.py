@@ -279,6 +279,13 @@ def refresh_fx_history(
             base=base,
             quote=q,
         )
+    log.info(
+        "refresh_fx_history: %s→%s backfilled to %s; %d new rate(s) written",
+        base,
+        ",".join(targets),
+        today,
+        total,
+    )
     return total
 
 
@@ -296,6 +303,7 @@ def _refresh_single_quote(
         # later than ``earliest_needed``) still needs filling.
         earliest = fx_repo.earliest_rate_date(session, base=base, quote=quote)
         if earliest is None or earliest <= earliest_needed:
+            log.debug("fx %s→%s already current at %s; skipping fetch", base, quote, latest)
             return 0
         start = earliest_needed
     else:
@@ -310,6 +318,7 @@ def _refresh_single_quote(
             )
     if start > today:
         return 0
+    log.debug("fx %s→%s: fetching %s..%s from Frankfurter", base, quote, start, today)
     try:
         records = fetch_rates(start, today, base=base, quote=quote)
     except FrankfurterError as exc:
