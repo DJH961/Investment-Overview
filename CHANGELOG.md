@@ -14,6 +14,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.0.2] — 2026-06-24
+
+### Fixed
+
+- **The 1D/1W graph no longer over-trusts a sparse exported blob (#127).** The
+  web companion springboards its live "1 Day" / "1 Week" curves off the desktop's
+  exported session, but it only gated on *freshness* (the blob's `session_date` /
+  `end_date`), never on whether the blob actually covered the span it claimed. A
+  recent export that shipped just the last day of the week (or only the tail of a
+  session) was therefore painted as a full curve, leaving the 1W graph showing a
+  single day instead of the week. Both deciders (`web/src/springboard.ts`) now add
+  a **completeness gate**: the 1W springboard requires the exported points to span
+  at least half of the trading sessions the window expects up to `end_date`
+  (`MIN_WEEK_DAY_COVERAGE`), and the 1D springboard requires the earliest point to
+  begin within the session's first stretch (`MIN_SESSION_COVERAGE`). When the blob
+  is too sparse, the web falls back to building its own curve (the live daily/
+  intraday backfill) rather than trusting the stunted export. The data need not be
+  perfect — only complete enough to not be missing most of the window.
+
 ## [4.0.1] — 2026-06-24
 
 ### Fixed
