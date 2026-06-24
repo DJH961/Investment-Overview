@@ -70,9 +70,7 @@ def _seed_everything() -> None:
             )
         )
         s.add(PriceHistory(instrument_id=1, date=date(2026, 1, 2), close_native=Decimal("100")))
-        s.add(
-            PriceSplit(instrument_id=1, date=date(2026, 1, 2), ratio=Decimal("2"))
-        )
+        s.add(PriceSplit(instrument_id=1, date=date(2026, 1, 2), ratio=Decimal("2")))
         s.add(FxHistory(date=date(2026, 1, 2), base="USD", quote="EUR", rate=Decimal("0.9")))
         s.add(
             PositionSnapshot(

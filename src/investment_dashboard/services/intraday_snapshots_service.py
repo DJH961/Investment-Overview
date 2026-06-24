@@ -382,6 +382,12 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:
     except Exception:  # pragma: no cover - defensive: capture is best-effort
         log.warning("intraday value capture failed", exc_info=True)
         return False
+    log.debug(
+        "intraday capture @ %s: market-component €%s (fx EUR/USD=%s)",
+        captured_at,
+        value_eur,
+        fx_eur_usd,
+    )
     return True
 
 
@@ -519,6 +525,12 @@ def reconstruct_last_session(
         # Mark the attempt done either way so a holiday / empty day doesn't
         # re-hit the network on every page load; ``force`` bypasses the guard.
         _mark_reconstructed(session, session_date)
+        log.info(
+            "intraday reconstruct for %s: backfilled %d point(s) (force=%s)",
+            session_date,
+            written,
+            force,
+        )
         return written
 
 

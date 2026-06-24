@@ -896,6 +896,10 @@ def run_deferred_network_refresh() -> None:
     Like the in-sequence refresh it is best-effort: every failure is logged and
     swallowed so an offline machine still gets a working dashboard.
     """
+    import time as _time  # noqa: PLC0415
+
+    started = _time.monotonic()
+    log.info("deferred network refresh: starting (FX, prices, splits, benchmark, snapshots)")
     _refresh_fx()
     _backfill_transaction_legs()
     _refresh_prices()
@@ -906,3 +910,7 @@ def run_deferred_network_refresh() -> None:
     # _warm_snapshots) so a full-history page like /yearly never cold-recomputes
     # its daily curve on the request thread.
     _warm_snapshots()
+    log.info(
+        "deferred network refresh: complete in %.1fs",
+        _time.monotonic() - started,
+    )
