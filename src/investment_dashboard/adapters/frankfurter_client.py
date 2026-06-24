@@ -95,10 +95,17 @@ def fetch_rates(
     holidays simply do not appear. Callers that need a continuous daily
     series can forward-fill from the most recent prior business day.
 
+    A window with **no published rates yet** (e.g. a single-day request for
+    today before the ~16:00 CET ECB publication, or an all-weekend window)
+    yields an empty list rather than an error: Frankfurter answers such a
+    range with ``404 {"message":"not found"}``, which we treat as "nothing
+    new" so callers can no-op cleanly.
+
     Raises
     ------
     FrankfurterError
-        On non-2xx responses, transport failures, or unexpected payloads.
+        On non-2xx responses (other than the benign 404 above), transport
+        failures, or unexpected payloads.
     """
     if end < start:
         raise ValueError(f"end ({end}) precedes start ({start})")
@@ -115,6 +122,16 @@ def fetch_rates(
     finally:
         if owns_client:
             http.close()
+
+    if response.status_code == 404:
+        # Frankfurter answers ``404 {"message":"not found"}`` for a date range
+        # that contains *no published business-day rates*. The common trigger is
+        # a single-day window for **today** before the ECB publishes its daily
+        # reference rates (~16:00 CET), or any window that falls entirely on
+        # weekends/holidays. That's a benign "nothing new yet" signal rather than
+        # a failure — the live intraday spot already covers today — so we return
+        # an empty series and let the caller no-op instead of recording an error.
+        return []
 
     if response.status_code != 200:
         raise FrankfurterError(

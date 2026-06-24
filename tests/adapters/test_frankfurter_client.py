@@ -81,6 +81,19 @@ def test_fetch_rates_raises_on_http_error() -> None:
 
 
 @respx.mock
+def test_fetch_rates_returns_empty_on_404_unpublished_window() -> None:
+    # Frankfurter answers a window with no published rates yet (e.g. a
+    # single-day request for today before the ECB publishes) with a 404.
+    # We treat that as a benign "nothing new", not an error.
+    route = respx.get(f"{BASE_URL}/2026-06-24..2026-06-24").mock(
+        return_value=httpx.Response(404, json={"message": "not found"})
+    )
+    records = fetch_rates(date(2026, 6, 24), date(2026, 6, 24))
+    assert route.called
+    assert records == []
+
+
+@respx.mock
 def test_fetch_rates_raises_on_malformed_payload() -> None:
     respx.get(f"{BASE_URL}/2024-01-01..2024-01-02").mock(
         return_value=httpx.Response(200, json={"unexpected": "shape"})
