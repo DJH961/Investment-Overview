@@ -120,7 +120,7 @@ export interface BackfillMeter {
   /** Provider billed the call: keep the reservation; `bars` is the count returned. */
   settle(req: SpendRequest & { bars: number }): void;
   /** Provider did not bill (reject/error/throw): refund and log why. */
-  refund(req: SpendRequest & { reason: string }): void;
+  refund(req: SpendRequest & { reason: string; status?: number | null }): void;
 }
 
 /** The deduped, non-blank symbol set of a request. */
@@ -133,6 +133,11 @@ function totalBars(bars: Map<string, Bar[]>): number {
   let n = 0;
   for (const list of bars.values()) n += list.length;
   return n;
+}
+
+/** The provider HTTP status behind an error, when it is a {@link PriceError}. */
+function errorStatus(err: unknown): number | null {
+  return err instanceof PriceError ? err.status : null;
 }
 
 /** A short, log-safe description of why a pull was not billed. */
@@ -164,7 +169,7 @@ export function recordingBarFetcher(
       meter.settle({ leg, symbols: uniq, n, bars: totalBars(bars) });
       return bars;
     } catch (err) {
-      meter.refund({ leg, symbols: uniq, n, reason: describeError(err) });
+      meter.refund({ leg, symbols: uniq, n, reason: describeError(err), status: errorStatus(err) });
       throw err;
     }
   };
@@ -189,7 +194,7 @@ export function recordingFxFetcher(
       meter.settle({ ...req, bars: bars.length });
       return bars;
     } catch (err) {
-      meter.refund({ ...req, reason: describeError(err) });
+      meter.refund({ ...req, reason: describeError(err), status: errorStatus(err) });
       throw err;
     }
   };
@@ -256,6 +261,12 @@ export function makePriceBarFetcher(opts: {
    * attempt) and fall back to their flat quote value on the curve.
    */
   backoff?: { memo: SeriesBackoff; scope: string; now?: () => number };
+  /**
+   * Whether the Tiingo overflow leg may be used right now (WS4/WS5 — false while
+   * Tiingo is in a 429 freeze). Only consulted on the capacity-split path (when a
+   * `budget` is supplied and both pipes exist). Defaults to always-available.
+   */
+  tiingoAvailable?: () => boolean;
 }): BarFetcher | null {
   const {
     apiKey,
@@ -270,6 +281,7 @@ export function makePriceBarFetcher(opts: {
     twelveDataMeter,
     budget,
     backoff,
+    tiingoAvailable,
   } = opts;
   let pipeA = makeTwelveDataBarFetcher(apiKey, { interval, outputsize, fetchImpl });
   let pipeB = proxyUrl
@@ -285,7 +297,7 @@ export function makePriceBarFetcher(opts: {
     // With a live budget, fill Twelve Data first and spill the overflow to Tiingo
     // (item 8); otherwise keep the legacy Tiingo-first failover dual pipe.
     combined = budget
-      ? makeCapacitySplitBarFetcher(pipeA, pipeB, budget)
+      ? makeCapacitySplitBarFetcher(pipeA, pipeB, budget, tiingoAvailable)
       : makeDualPipeBarFetcher(pipeB, pipeA);
   } else {
     combined = pipeB ?? pipeA;
@@ -344,6 +356,13 @@ export function makeCapacitySplitBarFetcher(
   twelveData: BarFetcher,
   tiingo: BarFetcher,
   budget: () => { minute: number; day: number },
+  /**
+   * Whether the Tiingo overflow leg may be used right now (WS4/WS5). When it
+   * returns `false` — e.g. Tiingo is in a 429 freeze until the next `:00` — the
+   * overflow is **deferred** to a later round rather than wasted on a provider
+   * that has already said no. Defaults to always-available.
+   */
+  tiingoAvailable: () => boolean = () => true,
 ): BarFetcher {
   return async (symbols) => {
     const uniq = uniqueSymbols(symbols);
@@ -351,15 +370,16 @@ export function makeCapacitySplitBarFetcher(
     const { minute, day } = budget();
     const capacity = Math.max(0, Math.min(uniq.length, minute, day));
     const toTwelveData = uniq.slice(0, capacity);
-    const toTiingo = uniq.slice(capacity);
+    const tiingoOpen = tiingoAvailable();
+    const toTiingo = tiingoOpen ? uniq.slice(capacity) : [];
     const [a, b] = await Promise.all([
       fetchBarLeg(twelveData, toTwelveData),
       fetchBarLeg(tiingo, toTiingo),
     ]);
     let result = mergeBarMaps(a.bars, b.bars);
     // Spill any Twelve Data misses (failed/empty) to Tiingo, unless the overflow
-    // leg already covered them.
-    const spill = a.missing.filter((s) => !(result.get(s)?.length));
+    // leg already covered them — but never onto a frozen Tiingo (defer instead).
+    const spill = tiingoOpen ? a.missing.filter((s) => !(result.get(s)?.length)) : [];
     if (spill.length > 0) {
       const spilled = await fetchBarLeg(tiingo, spill);
       result = mergeBarMaps(result, spilled.bars);
@@ -650,6 +670,13 @@ export interface LiveGraphProviders {
    * network and fall back to their flat quote value; quotes are never gated.
    */
   backoff?: SeriesBackoff;
+  /**
+   * Whether the Tiingo overflow leg may be used right now (WS4/WS5). Returns
+   * `false` while Tiingo is in a 429 freeze so the overflow defers to a later
+   * round instead of being wasted on a provider that has already said no.
+   * Defaults to always-available.
+   */
+  tiingoAvailable?: () => boolean;
 }
 
 /** Resolve the Tiingo/Twelve Data meters, defaulting to the real ledgers. */
@@ -689,6 +716,18 @@ export interface GraphRecorderOptions {
   log: (message: string) => void;
   /** Shared counter: total credits this build actually pulled (0 ⇒ all reused). */
   spent: { credits: number };
+  /**
+   * Two-tier-brake hooks (market_open_token_burn_fix_plan.md WS4/WS5). The meter
+   * is the chokepoint that observes each provider's billed/not-billed outcome, so
+   * it is where the per-provider 429 circuit breaker is tripped and cleared:
+   *  - `onTwelveData429` — a Twelve Data over-quota reject (freeze TD).
+   *  - `onTwelveDataSuccess` — a billed Twelve Data call (clear the 429 streak).
+   *  - `onTiingo429` — a Tiingo over-quota reject (freeze Tiingo to the next `:00`).
+   * All optional; omit to leave the breaker untouched (the default wiring).
+   */
+  onTwelveData429?: () => void;
+  onTwelveDataSuccess?: () => void;
+  onTiingo429?: () => void;
 }
 
 /** Render a request's subject for the log: the symbol list, or `FX <pair>`. */
@@ -719,10 +758,15 @@ export function instrumentedGraphRecorders(
     creditNoun: string,
     book: SpendRecorder,
     refund: SpendRecorder,
+    /** Trip the per-provider 429 breaker on an over-quota reject (WS4/WS5). */
+    on429?: () => void,
+    /** Clear the per-provider 429 streak on a billed result (WS4/WS5). */
+    onSuccess?: () => void,
   ): BackfillMeter => ({
     reserve: (req) => book(req.n),
     settle: (req) => {
       spent.credits += req.n;
+      onSuccess?.();
       const empty = req.bars === 0 ? " (empty — reached the provider, no bars)" : "";
       log(
         `${range} graph: fetched ${req.leg} ${spendSubject(req)} via ${provider} — ` +
@@ -731,15 +775,26 @@ export function instrumentedGraphRecorders(
     },
     refund: (req) => {
       refund(req.n);
+      // A 429 is the authoritative cross-device "out of credits" signal: trip the
+      // breaker so this provider is frozen and no further attempt is wasted.
+      const breaker = req.status === 429 ? " — circuit breaker armed" : "";
+      if (req.status === 429) on429?.();
       log(
         `${range} graph: ${req.leg} ${spendSubject(req)} via ${provider} not billed ` +
-          `(${req.n} ${creditNoun}${plural(req.n)} refunded) — ${req.reason}.`,
+          `(${req.n} ${creditNoun}${plural(req.n)} refunded) — ${req.reason}${breaker}.`,
       );
     },
   });
   return {
-    twelveDataMeter: meter("Twelve Data (Pipe A)", "credit", bookTwelveData, refundTwelveData),
-    tiingoMeter: meter("Tiingo (Pipe B)", "Tiingo credit", bookTiingo, refundTiingo),
+    twelveDataMeter: meter(
+      "Twelve Data (Pipe A)",
+      "credit",
+      bookTwelveData,
+      refundTwelveData,
+      opts.onTwelveData429,
+      opts.onTwelveDataSuccess,
+    ),
+    tiingoMeter: meter("Tiingo (Pipe B)", "Tiingo credit", bookTiingo, refundTiingo, opts.onTiingo429),
   };
 }
 
@@ -782,6 +837,7 @@ export function buildLiveSessionCurve(
       twelveDataMeter,
       budget: providers.budget,
       backoff: { memo: backoff, scope: "1D" },
+      tiingoAvailable: providers.tiingoAvailable,
     }) ?? emptyBarFetcher;
   const fetchFx = makeWindowFxFetcher(
     providers.priceProxyUrl,
@@ -835,6 +891,7 @@ export function buildLiveWeekCurve(
       twelveDataMeter,
       budget: providers.budget,
       backoff: { memo: backoff, scope: "1W" },
+      tiingoAvailable: providers.tiingoAvailable,
     }) ?? emptyBarFetcher;
   const fetchFx = makeWindowFxFetcher(
     providers.priceProxyUrl,

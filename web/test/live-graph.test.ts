@@ -468,6 +468,37 @@ describe("makeCapacitySplitBarFetcher (provider split, item 8)", () => {
     const spill = calls.filter((c) => c.who === "TII").flatMap((c) => c.symbols);
     expect(spill).toEqual(["A"]);
   });
+
+  it("defers the overflow instead of dumping it on a frozen Tiingo (WS4/WS5)", async () => {
+    const calls: Array<{ who: string; symbols: string[] }> = [];
+    const fetch = makeCapacitySplitBarFetcher(
+      fakeFetcher("TD", calls),
+      fakeFetcher("TII", calls),
+      () => ({ minute: 2, day: 100 }),
+      () => false, // Tiingo frozen
+    );
+    const bars = await fetch(["A", "B", "C", "D"]);
+    // Twelve Data still serves up to its budget; the overflow is held back for a
+    // later round rather than wasted on a provider that has already said no.
+    expect(calls.find((c) => c.who === "TD")?.symbols).toEqual(["A", "B"]);
+    expect(calls.find((c) => c.who === "TII")?.symbols ?? []).toEqual([]);
+    expect(bars.get("A")?.length).toBe(1);
+    expect(bars.get("C")).toBeUndefined();
+  });
+
+  it("does not spill Twelve Data misses to a frozen Tiingo", async () => {
+    const calls: Array<{ who: string; symbols: string[] }> = [];
+    const fetch = makeCapacitySplitBarFetcher(
+      fakeFetcher("TD", calls, { empty: new Set(["A"]) }),
+      fakeFetcher("TII", calls),
+      () => ({ minute: 8, day: 100 }),
+      () => false, // Tiingo frozen
+    );
+    const bars = await fetch(["A", "B"]);
+    expect(calls.find((c) => c.who === "TII")).toBeUndefined();
+    expect(bars.get("A")?.length ?? 0).toBe(0); // empty miss left for a later round
+    expect(bars.get("B")?.length).toBe(1);
+  });
 });
 
 describe("buildLiveSessionCurve", () => {

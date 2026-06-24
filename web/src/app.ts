@@ -119,6 +119,13 @@ import {
   weekFxWindow,
   type LiveGraphProviders,
 } from "./live-graph";
+import {
+  applyTwelveDataFreeze,
+  recordTwelveData429,
+  recordTwelveDataSuccess,
+  recordTiingo429,
+  tiingoFrozen,
+} from "./provider-breaker";
 import { springboardSessionCurve, springboardWeekCurve } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
 import { TimeSeriesStore } from "./timeseries-store";
@@ -849,6 +856,11 @@ export class App {
         refundTiingo: (n) => releaseTiingoCredits(n, Date.now()),
         log: (message) => this.pollLog("graph", message),
         spent,
+        // Two-tier braking, tier 2 (WS4/WS5): a provider 429 is the authoritative
+        // cross-device "out of credits" signal, so trip its circuit breaker here.
+        onTwelveData429: () => recordTwelveData429(Date.now()),
+        onTwelveDataSuccess: () => recordTwelveDataSuccess(),
+        onTiingo429: () => recordTiingo429(Date.now()),
       });
       const fetchBars = makePriceBarFetcher({
         apiKey: config.apiKey,
@@ -863,11 +875,15 @@ export class App {
         // (WS2) so a 12-credit batch can never 429 a fresh 8-credit minute, and
         // route only the genuine overflow to Tiingo — never Tiingo-first. The
         // remainder is deferred to the next refresh round, not dumped on Tiingo.
-        budget: () => twelveDataBudgetRemaining(Date.now()),
+        // While Twelve Data is in a 429 freeze its live minute reads 0 (WS5), so
+        // the split routes nothing to it until the freeze lifts.
+        budget: () => applyTwelveDataFreeze(twelveDataBudgetRemaining(Date.now()), Date.now()),
         // Two-tier braking, tier 1 (WS4): a per-symbol series backoff parks a
         // dead/empty series instead of re-pulling it every ~60s round, exactly as
         // the FX leg below already is.
         backoff: { memo: cacheSeriesBackoff(), scope: `bars:${param}`, now: () => Date.now() },
+        // Defer (don't waste) the overflow while Tiingo is frozen to the next :00.
+        tiingoAvailable: () => !tiingoFrozen(Date.now()),
         ...extra,
       });
       if (!fetchBars) return;
@@ -3516,8 +3532,11 @@ export class App {
       priceProxyUrl: resolvePriceProxyUrl(config),
       // The graph fills Twelve Data first up to whatever its shared per-minute/day
       // budget has left after the (prefetch-led) quote pass, then spills the
-      // overflow to Tiingo (item 8). Reads the live shared credit ledger.
-      budget: () => twelveDataBudgetRemaining(Date.now()),
+      // overflow to Tiingo (item 8). Reads the live shared credit ledger, and
+      // reads 0 for Twelve Data's minute while it is in a 429 freeze (WS5).
+      budget: () => applyTwelveDataFreeze(twelveDataBudgetRemaining(Date.now()), Date.now()),
+      // Defer (don't waste) the Tiingo overflow while Tiingo is frozen (WS4/WS5).
+      tiingoAvailable: () => !tiingoFrozen(Date.now()),
     };
     const store = this.ensureTimeSeriesStore();
     const exported = this.state.data?.live_graphs ?? undefined;
@@ -3547,6 +3566,10 @@ export class App {
         refundTiingo: (n) => releaseTiingoCredits(n, Date.now()),
         log: (message) => this.pollLog("graph", message),
         spent,
+        // Trip/clear the per-provider 429 circuit breaker at the meter (WS4/WS5).
+        onTwelveData429: () => recordTwelveData429(Date.now()),
+        onTwelveDataSuccess: () => recordTwelveDataSuccess(),
+        onTiingo429: () => recordTiingo429(Date.now()),
       }),
     });
 

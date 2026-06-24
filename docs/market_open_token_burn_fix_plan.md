@@ -1,5 +1,21 @@
 # Action Plan — Market-open token-burn fix (web companion)
 
+> **Status (implemented in v4.2.0):** WS1–WS4 and the load-bearing parts of WS5
+> are done. The intraday staleness gate now treats a fresh, just-opened session
+> as expected-empty (`market-hours.sessionIsWarmingUp`), so a cold start issues
+> **0** intraday-bar requests at the open and derives headline quotes from the
+> sliced daily (1W) bars. The prefetch/warm-up bar path now routes through the
+> capacity split (Twelve Data leads, sliced to the live minute budget; Tiingo
+> takes only the overflow), carries the per-symbol Tier-1 series backoff, and is
+> gated by a new per-provider **429 circuit breaker** (`provider-breaker.ts`): a
+> Twelve Data 429 zeroes its live minute budget for ~60s (escalating to ~2min on
+> a second consecutive strike), and a Tiingo 429 defers its overflow until the
+> next clock `:00`. The hard-refresh escape hatches still only clear the soft
+> Tier-1 backoff and freshness TTLs — never the budget or the breaker.
+> *Follow-up:* reading Twelve Data's `api-credits-left`/`api-credits-used`
+> response headers to reconcile the local ledger even more tightly than the 429
+> freeze already does.
+
 **Context:** Root-causing the catastrophic provider-credit burn at the US market
 open on **2026-06-24 ~15:30 CET** (app **v4.1.0**, observed on two devices). At the
 open the app demanded a full intraday **and** full-week history for the entire
