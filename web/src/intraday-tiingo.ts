@@ -201,9 +201,9 @@ export async function fetchTiingoIntradayBars(
         { retryable: false },
       );
     }
-    // The daily feed (1W curve) carries OHLC per day, so we reconstruct up to
-    // five points per session (open / +1/4 / midday / +3/4 / close) for a richer
-    // line; the intraday feed marks off the close.
+    // The daily feed (1W curve) carries OHLC per day, but only its open and
+    // close are genuinely time-stamped, so we plot just those two points per
+    // session; the intraday feed marks off the close.
     result.set(symbol, param === "daily" ? barsFromTiingoDaily(body) : barsFromTiingoIntraday(body));
   }
   return result;
