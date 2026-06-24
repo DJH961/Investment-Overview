@@ -849,6 +849,18 @@ def _warm_snapshots() -> None:
         log.warning("Snapshot warming failed; continuing", exc_info=True)
 
 
+def _apply_persisted_log_level() -> None:
+    """Apply the user's persisted logging verbosity, if any (best-effort)."""
+    try:
+        from investment_dashboard.services.logging_service import (  # noqa: PLC0415
+            apply_persisted_log_level,
+        )
+
+        apply_persisted_log_level()
+    except Exception:  # pragma: no cover - defensive: never block boot on this
+        log.debug("could not apply persisted log level", exc_info=True)
+
+
 def run_boot_sequence(*, skip_network: bool = False) -> None:
     """Run all startup steps.
 
@@ -865,6 +877,7 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
     _integrity_check_tiers()
     _rolling_backup()
     _run_migrations()
+    _apply_persisted_log_level()
     register_plotly_template()
     _run_cache_janitor()
     if skip_network:
@@ -896,6 +909,10 @@ def run_deferred_network_refresh() -> None:
     Like the in-sequence refresh it is best-effort: every failure is logged and
     swallowed so an offline machine still gets a working dashboard.
     """
+    import time as _time  # noqa: PLC0415
+
+    started = _time.monotonic()
+    log.info("deferred network refresh: starting (FX, prices, splits, benchmark, snapshots)")
     _refresh_fx()
     _backfill_transaction_legs()
     _refresh_prices()
@@ -906,3 +923,7 @@ def run_deferred_network_refresh() -> None:
     # _warm_snapshots) so a full-history page like /yearly never cold-recomputes
     # its daily curve on the request thread.
     _warm_snapshots()
+    log.info(
+        "deferred network refresh: complete in %.1fs",
+        _time.monotonic() - started,
+    )

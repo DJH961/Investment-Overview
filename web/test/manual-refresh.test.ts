@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   allPricesLive,
   buildCoverageFacts,
+  classifyConnectivity,
+  connectivityNotice,
   describePrefetch,
   liveRefreshProgress,
   manualRefreshSummary,
@@ -369,6 +371,53 @@ describe("allPricesLive", () => {
   });
 });
 
+describe("classifyConnectivity", () => {
+  const base = {
+    online: true,
+    fetched: 0,
+    fxFetched: false,
+    quoteError: null,
+    tiingoError: null,
+  } as const;
+
+  it("is offline whenever the device reports no link, regardless of what else happened", () => {
+    expect(classifyConnectivity({ ...base, online: false })).toBe("offline");
+    // Even a fetch that 'landed' is moot once the device says it is offline.
+    expect(classifyConnectivity({ ...base, online: false, fetched: 3 })).toBe("offline");
+  });
+
+  it("is online when a quote or a live FX rate actually landed", () => {
+    expect(classifyConnectivity({ ...base, fetched: 2 })).toBe("online");
+    expect(classifyConnectivity({ ...base, fxFetched: true })).toBe("online");
+  });
+
+  it("is unreachable when nothing landed and a provider failed transiently", () => {
+    const err = new PriceError("network down", { retryable: true });
+    expect(classifyConnectivity({ ...base, quoteError: err })).toBe("unreachable");
+    expect(classifyConnectivity({ ...base, tiingoError: err })).toBe("unreachable");
+  });
+
+  it("stays online (up to date) when nothing landed but nothing errored either", () => {
+    // A clean round with nothing newer to fetch is not a connectivity problem.
+    expect(classifyConnectivity(base)).toBe("online");
+  });
+
+  it("does not mark a fatal (config) error as unreachable — that routes to Settings", () => {
+    const fatal = new PriceError("bad key", { fatal: true });
+    expect(classifyConnectivity({ ...base, quoteError: fatal })).toBe("online");
+  });
+});
+
+describe("connectivityNotice", () => {
+  it("names the offline and unreachable cases plainly, and is silent when online", () => {
+    expect(connectivityNotice("offline")).toBe("No internet connection — showing last known prices.");
+    expect(connectivityNotice("unreachable")).toBe(
+      "Couldn't reach any price service — showing last known prices.",
+    );
+    expect(connectivityNotice("online")).toBeNull();
+  });
+});
+
 describe("describePrefetch", () => {
   const at = new Date(2024, 4, 15, 18, 0, 0).getTime();
   const now = new Date(2024, 4, 15, 18, 3, 0).getTime(); // 3 min later
@@ -436,5 +485,33 @@ describe("describePrefetch", () => {
         lastPullAt: null,
       }),
     ).toBe("Live prices ready");
+  });
+
+  it("counts graph bars as freshly pulled, even when no quote/FX moved", () => {
+    const s = describePrefetch({
+      inFlight: false,
+      hasPlan: true,
+      quoteFetched: 0,
+      quoteTotal: 5,
+      fxLive: false,
+      graphFetched: 7,
+      lastPullAt: at,
+      now,
+    });
+    expect(s).toMatch(/^Prefetched 7 graph · last pulled/);
+  });
+
+  it("combines quote, graph and FX clauses when all moved", () => {
+    const s = describePrefetch({
+      inFlight: false,
+      hasPlan: true,
+      quoteFetched: 3,
+      quoteTotal: 10,
+      fxLive: true,
+      graphFetched: 4,
+      lastPullAt: at,
+      now,
+    });
+    expect(s).toMatch(/^Prefetched 3\/10 live · 4 graph · FX live · last pulled/);
   });
 });

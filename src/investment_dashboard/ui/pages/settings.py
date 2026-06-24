@@ -36,6 +36,7 @@ from investment_dashboard.services import (
     display_currency_service,
     fetch_report,
     instrument_enrichment_service,
+    logging_service,
     prices_service,
     provider_status,
     risk_free_service,
@@ -48,7 +49,12 @@ from investment_dashboard.services.prices_service import (
     TiingoNotConfiguredError,
     refresh_prices,
 )
-from investment_dashboard.ui.components import confirm_dialog, page_header, section
+from investment_dashboard.ui.components import (
+    collapsible_section,
+    confirm_dialog,
+    page_header,
+    section,
+)
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import fmt_pct
 
@@ -215,6 +221,18 @@ def _seed_clicked() -> None:  # pragma: no cover - UI
         type="positive",
     )
     _settings_refresh()
+
+
+def _set_log_level(value: str) -> None:  # pragma: no cover - UI
+    """Persist + live-apply the logging verbosity (no restart needed)."""
+    try:
+        with session_scope() as session:
+            logging_service.set_log_level(session, value)
+    except ValueError as exc:
+        ui.notify(str(exc), type="negative")
+        return
+    label = logging_service.LEVEL_LABELS.get(value, value)
+    ui.notify(f"Logging set to {label}.", type="positive")
 
 
 def _set_display_currency(value: str) -> None:  # pragma: no cover - UI
@@ -672,8 +690,9 @@ _RESET_OPTIONS = (
     (
         "cache",
         "Reset cached market data",
-        "Clears downloaded prices, FX rates and position snapshots. They are "
-        "re-downloaded automatically on the next refresh.",
+        "Clears downloaded prices, FX rates, splits, the intraday samples "
+        "behind the 1D/1W graphs and position snapshots. They are "
+        "re-downloaded and recomputed automatically on the next refresh.",
         "Keeps every account, instrument, transaction and setting.",
         "refresh",
     ),
@@ -783,58 +802,111 @@ def _render_audit_export_controls() -> None:  # pragma: no cover - UI
     ).props("unelevated color=primary no-caps")
 
 
+def _download_support_bundle() -> None:  # pragma: no cover - UI
+    """Build the logs-plus-context diagnostics bundle and offer it as a download."""
+    from investment_dashboard.services.support_bundle import (  # noqa: PLC0415
+        build_support_bundle,
+        bundle_filename,
+    )
+
+    try:
+        content = build_support_bundle()
+    except Exception as exc:
+        log.exception("support bundle build failed")
+        ui.notify(f"Support bundle failed: {exc}", type="negative")
+        return
+    ui.download.content(content, bundle_filename())
+    ui.notify("Support bundle downloaded — attach it when reporting an issue.", type="positive")
+
+
+def _render_logging_section() -> None:  # pragma: no cover - UI
+    """Logging verbosity picker + the on-disk log location and a bundle download.
+
+    Verbose (``DEBUG``) logging records every data pull, calculation and internal
+    step — the quickest way to capture *why* a price or graph misbehaved. The
+    choice applies live (no restart) and is remembered across restarts.
+    """
+    from investment_dashboard.config import get_settings  # noqa: PLC0415
+
+    with session_scope() as session:
+        current = logging_service.get_log_level(session)
+    options = {lvl: logging_service.LEVEL_LABELS.get(lvl, lvl) for lvl in logging_service.LEVELS}
+    # A persisted/env level outside the offered set (e.g. WARNING) still needs a
+    # valid current value so the select doesn't render blank.
+    if current not in options:
+        options = {current: current, **options}
+
+    with ui.row().classes("items-center gap-md"):
+        ui.label("Log detail:").classes("text-body2")
+        ui.select(
+            options,
+            value=current,
+            on_change=lambda e: _set_log_level(e.value),
+        ).props("dense outlined").classes("min-w-[12rem]")
+    ui.label(
+        "Verbose adds detailed debug lines for every data pull and calculation. "
+        "Turn it on, reproduce the problem, then download the support bundle below.",
+    ).classes("text-caption opacity-70 q-mt-xs")
+
+    log_path = get_settings().log_file_path
+    ui.label(f"Log file: {log_path}").classes("text-caption opacity-70 q-mt-sm")
+    ui.button(
+        "Download support bundle",
+        icon="download",
+        on_click=_download_support_bundle,
+    ).props("flat color=primary no-caps q-mt-xs")
+
+
 def _render_dev_tools_section() -> None:  # pragma: no cover - UI
-    """Collapsed developer panel: a password-gated full audit export.
+    """Password-gated full audit export (rendered inside the diagnostics group).
 
     The export bundles every dashboard's computed figures and the raw ledger
     into one JSON file so the app's totals and growth rates can be reconciled
-    against an external source. It lives behind a collapsed expansion (and an
-    optional dev password) so it stays out of the everyday flow.
+    against an external source.
     """
     from investment_dashboard.services.audit_export_service import (  # noqa: PLC0415
         dev_password_configured,
         verify_dev_password,
     )
 
-    with ui.expansion("Developer tools", icon="developer_mode").classes("w-full"):
+    ui.label(
+        "Advanced diagnostics. The audit export bundles every dashboard's "
+        "computed figures (overview, monthly, yearly, analytics, "
+        "calculator, deposits) together with the raw ledger into a single "
+        "JSON file, so the app's totals and growth rates can be reconciled "
+        "against an external source and any divergence pinned down.",
+    ).classes("text-caption opacity-70 q-mb-sm")
+    if not dev_password_configured():
         ui.label(
-            "Advanced diagnostics. The audit export bundles every dashboard's "
-            "computed figures (overview, monthly, yearly, analytics, "
-            "calculator, deposits) together with the raw ledger into a single "
-            "JSON file, so the app's totals and growth rates can be reconciled "
-            "against an external source and any divergence pinned down.",
-        ).classes("text-caption opacity-70 q-mb-sm")
-        if not dev_password_configured():
-            ui.label(
-                "No developer password is set, so this export is ungated. Set "
-                "the INV_DASHBOARD_DEV_PASSWORD environment variable to require "
-                "one here.",
-            ).classes("text-caption text-grey q-mb-sm")
-            _render_audit_export_controls()
+            "No developer password is set, so this export is ungated. Set "
+            "the INV_DASHBOARD_DEV_PASSWORD environment variable to require "
+            "one here.",
+        ).classes("text-caption text-grey q-mb-sm")
+        _render_audit_export_controls()
+        return
+
+    ui.label("Enter the developer password to unlock the audit export.").classes(
+        "text-caption opacity-70"
+    )
+    pw_in = (
+        ui.input("Developer password")
+        .props("outlined dense type=password")
+        .classes("w-full max-w-md")
+    )
+    slot = ui.column().classes("gap-sm q-mt-sm")
+
+    def _unlock() -> None:
+        if not verify_dev_password(pw_in.value or ""):
+            ui.notify("Incorrect developer password.", type="warning")
             return
+        slot.clear()
+        with slot:
+            _render_audit_export_controls()
+        ui.notify("Developer tools unlocked.", type="positive")
 
-        ui.label("Enter the developer password to unlock the audit export.").classes(
-            "text-caption opacity-70"
-        )
-        pw_in = (
-            ui.input("Developer password")
-            .props("outlined dense type=password")
-            .classes("w-full max-w-md")
-        )
-        slot = ui.column().classes("gap-sm q-mt-sm")
-
-        def _unlock() -> None:
-            if not verify_dev_password(pw_in.value or ""):
-                ui.notify("Incorrect developer password.", type="warning")
-                return
-            slot.clear()
-            with slot:
-                _render_audit_export_controls()
-            ui.notify("Developer tools unlocked.", type="positive")
-
-        ui.button("Unlock", icon="lock_open", on_click=_unlock).props(
-            "unelevated color=primary no-caps"
-        )
+    ui.button("Unlock", icon="lock_open", on_click=_unlock).props(
+        "unelevated color=primary no-caps"
+    )
 
 
 def _render_reset_section() -> None:  # pragma: no cover - UI
@@ -1811,11 +1883,19 @@ def _render_help_section() -> None:  # pragma: no cover - UI
         ).props("unelevated color=primary no-caps")
 
 
+def _group_heading(text: str) -> None:  # pragma: no cover - UI
+    """A lightweight, card-less label that introduces a cluster of sections."""
+    ui.label(text).classes("inv-settings-group-heading w-full")
+
+
 def register() -> None:
     @ui.page(PATH)
     def _settings() -> None:  # pragma: no cover
         with page_frame("Settings", current=PATH):
-            page_header("Settings", subtitle="Display preferences, data refresh, accounts")
+            page_header(
+                "Settings",
+                subtitle="Preferences, data, portfolio setup, storage and diagnostics",
+            )
             with session_scope() as session:
                 accounts = list(accounts_repo.list_accounts(session))
                 instruments = list(instruments_repo.list_instruments(session))
@@ -1831,6 +1911,10 @@ def register() -> None:
                     fetcher=lambda symbol: None,  # don't hit the network on a settings render
                 )
 
+            # --- Preferences -------------------------------------------------
+            # The two everyday knobs. Display preferences stay open (most-used);
+            # analytics inputs fold away.
+            _group_heading("Preferences")
             with section("Display preferences"):
                 ui.label(
                     "Controls how figures are shown across the app. These "
@@ -1838,37 +1922,22 @@ def register() -> None:
                     "transactions or move money.",
                 ).classes("text-caption opacity-70 q-mb-sm")
                 _render_display_prefs(current_currency, current_timezone)
-            with section("Analytics preferences"):
-                ui.label(
+            with collapsible_section(
+                "Analytics preferences",
+                icon="tune",
+                caption=(
                     "Inputs used by the risk metrics on the Analytics page. The "
                     "benchmark is what your portfolio is compared against; the "
-                    "risk-free rate feeds Sharpe, Sortino and Alpha.",
-                ).classes("text-caption opacity-70 q-mb-sm")
+                    "risk-free rate feeds Sharpe, Sortino and Alpha."
+                ),
+            ):
                 _render_analytics_prefs(
                     benchmark_symbol=benchmark_symbol,
                     rf_snapshot=rf_snapshot,
                 )
-            with section("Storage"):
-                ui.label(
-                    "Where your data files live and whether encryption or "
-                    "cloud-sync is in effect. You can point the ledger and "
-                    "config tiers at a sync folder of your choice below.",
-                ).classes("text-caption opacity-70 q-mb-sm")
-                _render_storage_section()
-            with section("Server"):
-                ui.label(
-                    "Start/stop controls for the local server. Hand off the "
-                    "writer lock to another instance, or shut the server down "
-                    "cleanly when you're done.",
-                ).classes("text-caption opacity-70 q-mb-sm")
-                _render_server_section()
-            with section("Live web companion"):
-                ui.label(
-                    "Publish an encrypted, read-only snapshot to a GitHub "
-                    "release for a browser companion that shows live figures "
-                    "on the go. Off until you add a repo, passphrase and token.",
-                ).classes("text-caption opacity-70 q-mb-sm")
-                _render_live_web_companion_section()
+
+            # --- Data & connectivity ----------------------------------------
+            _group_heading("Data & connectivity")
             with section("Data refresh"):
                 ui.label(
                     "Pull fresh prices and FX rates on demand. The app also "
@@ -1876,47 +1945,117 @@ def register() -> None:
                     "the latest numbers right now.",
                 ).classes("text-caption opacity-70 q-mb-sm")
                 _render_data_refresh()
-            with section("Connectivity"):
-                ui.label(
+            with collapsible_section(
+                "Connectivity",
+                icon="lan",
+                caption=(
                     "Whether the last call to each data provider succeeded. "
-                    "Green is good; check here if a refresh is not updating.",
-                ).classes("text-caption opacity-70 q-mb-sm")
+                    "Green is good; check here if a refresh is not updating."
+                ),
+            ):
                 _render_connectivity_section()
-            with section("Accounts"):
-                ui.label(
+
+            # --- Portfolio setup --------------------------------------------
+            _group_heading("Portfolio setup")
+            with collapsible_section(
+                "Accounts",
+                icon="account_balance",
+                caption=(
                     "Your brokerage and savings accounts. Mark an account "
                     "inactive to keep its history while hiding it from the live "
-                    "view.",
-                ).classes("text-caption opacity-70 q-mb-sm")
+                    "view."
+                ),
+            ):
                 _render_accounts_section(accounts)
-            with section("Instruments"):
-                ui.label(
+            with collapsible_section(
+                "Instruments",
+                icon="candlestick_chart",
+                caption=(
                     "The funds, ETFs and cash lines you hold. The expense ratio "
                     "is a decimal fraction (0.0007 = 0.07%); categories group "
-                    "instruments in allocation views.",
-                ).classes("text-caption opacity-70 q-mb-sm")
+                    "instruments in allocation views."
+                ),
+            ):
                 _render_instruments_section(instruments, instrument_overrides)
-            with section("Target allocations"):
-                ui.label(
+            with collapsible_section(
+                "Target allocations",
+                icon="donut_small",
+                caption=(
                     "Your desired instrument mix by percentage (weights must sum "
                     "to 100%). Activate one to drive the allocation-drift "
-                    "metrics; only one is active at a time.",
-                ).classes("text-caption opacity-70 q-mb-sm")
+                    "metrics; only one is active at a time."
+                ),
+            ):
                 _render_allocations_section(allocations)
-            with section("Help & documentation"):
+
+            # --- Storage & sync ---------------------------------------------
+            _group_heading("Storage & sync")
+            with collapsible_section(
+                "Storage",
+                icon="folder",
+                caption=(
+                    "Where your data files live and whether encryption or "
+                    "cloud-sync is in effect. You can point the ledger and "
+                    "config tiers at a sync folder of your choice below."
+                ),
+            ):
+                _render_storage_section()
+            with collapsible_section(
+                "Server",
+                icon="dns",
+                caption=(
+                    "Start/stop controls for the local server. Hand off the "
+                    "writer lock to another instance, or shut the server down "
+                    "cleanly when you're done."
+                ),
+            ):
+                _render_server_section()
+            with collapsible_section(
+                "Live web companion",
+                icon="cloud_upload",
+                caption=(
+                    "Publish an encrypted, read-only snapshot to a GitHub "
+                    "release for a browser companion that shows live figures "
+                    "on the go. Off until you add a repo, passphrase and token."
+                ),
+            ):
+                _render_live_web_companion_section()
+
+            # --- Diagnostics & logging --------------------------------------
+            _group_heading("Diagnostics & logging")
+            with collapsible_section(
+                "Logging",
+                icon="article",
+                caption=(
+                    "Control how much the app logs and grab a diagnostics bundle "
+                    "when something looks wrong."
+                ),
+            ):
+                _render_logging_section()
+            with collapsible_section("Help & documentation", icon="help_outline"):
                 _render_help_section()
-            with section("Developer tools"):
-                ui.label(
+            with collapsible_section(
+                "Developer tools",
+                icon="developer_mode",
+                caption=(
                     "Diagnostics for reconciling the app against another "
-                    "source. Tucked away and optionally password-gated.",
-                ).classes("text-caption opacity-70 q-mb-sm")
+                    "source. Optionally password-gated."
+                ),
+            ):
                 _render_dev_tools_section()
+
+            # --- Reset ------------------------------------------------------
             # Reset lives last — it's the most destructive action, so it sits
-            # at the bottom of the page rather than near the top (v2.8).
-            with section("Reset data"):
-                ui.label(
+            # at the bottom of the page rather than near the top (v2.8), folded
+            # away so a stray tap can't reach it.
+            _group_heading("Reset data")
+            with collapsible_section(
+                "Reset data",
+                icon="restart_alt",
+                caption=(
                     "Wipe data so you can start over or re-import. Pick the "
                     "smallest option that fits — each asks for confirmation, and "
-                    "the factory reset cannot be undone.",
-                ).classes("text-caption opacity-70 q-mb-sm")
+                    "the factory reset cannot be undone."
+                ),
+            ):
                 _render_reset_section()

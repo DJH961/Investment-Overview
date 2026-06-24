@@ -173,10 +173,24 @@ def refresh_prices(
         anchors.append(anchor)
 
     if not symbols_to_fetch:
+        log.debug(
+            "refresh_prices: nothing to fetch (%d instrument(s), all synthetic/inactive/current)",
+            len(instruments),
+        )
         return result
 
     start = min(earliest_per_symbol.values())
     end = max(anchors) + timedelta(days=1)
+    log.info(
+        "refresh_prices: pulling %d symbol(s) from yfinance over %s..%s "
+        "(market_open=%s, settled=%s): %s",
+        len(symbols_to_fetch),
+        start,
+        end,
+        market_open,
+        settled,
+        ", ".join(sorted(symbols_to_fetch)),
+    )
     try:
         closes_by_symbol = fetch_closes(symbols_to_fetch, start, end)
     except YFinanceError as exc:
@@ -199,6 +213,13 @@ def refresh_prices(
         # overview's per-symbol "updated" time advances even when the feed
         # returned nothing new for that symbol.
         price_cache_repo.upsert_last_refreshed_at(cache, instr.id, now)
+    written = sum(result.values())
+    log.info(
+        "refresh_prices: wrote %d new close(s) across %d symbol(s); symbols with fresh data: %s",
+        written,
+        len(result),
+        ", ".join(sorted(s for s, n in result.items() if n)) or "none",
+    )
     return result
 
 
@@ -597,6 +618,7 @@ def refresh_due_prices(
     now = now or datetime.now(UTC).replace(tzinfo=None)
     due = instruments_due_for_refresh(session, cache, now=now)
     if not due:
+        log.debug("refresh_due_prices: no instruments due for refresh")
         return {}
 
     symbols_to_fetch: list[str] = []
@@ -612,6 +634,13 @@ def refresh_due_prices(
 
     fetch_start = min(earliest_per_symbol.values())
     fetch_end = today + timedelta(days=1)
+    log.info(
+        "refresh_due_prices: %d instrument(s) due; fetching %s..%s: %s",
+        len(due),
+        fetch_start,
+        fetch_end,
+        ", ".join(sorted(symbols_to_fetch)),
+    )
     try:
         closes_by_symbol = fetch_closes(symbols_to_fetch, fetch_start, fetch_end)
     except YFinanceError as exc:
@@ -663,6 +692,11 @@ def refresh_due_prices(
         today=today,
         primary_closes=closes_by_symbol,
         result=result,
+    )
+    log.info(
+        "refresh_due_prices: wrote %d new close(s) across %d symbol(s)",
+        sum(result.values()),
+        len(result),
     )
     return result
 
