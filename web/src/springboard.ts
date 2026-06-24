@@ -27,6 +27,21 @@
  *     most today's daily point, which the live tip supplies, so it springboards;
  *     anything older has slid out of the window and rebuilds live.
  *
+ * Freshness is necessary but **not sufficient**: a blob can be perfectly current
+ * yet only carry a sliver of the span it claims (e.g. an export that shipped just
+ * the last day of the week, or only the final minutes of the session). Trusting
+ * such a blob paints a stunted curve, so each decider also runs a **completeness
+ * gate** and falls back to a live rebuild when the exported data does not cover
+ * nearly all of the window (see {@link MIN_WEEK_DAY_COVERAGE} /
+ * {@link MIN_SESSION_COVERAGE}):
+ *
+ *   - **1W** — the exported points must span almost all of the trading sessions
+ *     the window expects up to `end_date` (the live tip may supply the final
+ *     remaining day). A blob missing more than a stray session is rejected.
+ *   - **1D** — the exported points must begin within the session's opening
+ *     sliver, not partway through it, so the curve is the whole session rather
+ *     than just its tail.
+ *
  * Pure and DOM-/network-free: `now`, the live tip and the exported data are all
  * injected, so the decision is unit-testable in isolation.
  */
@@ -39,14 +54,44 @@ import {
   previousTradingSession,
   recentTradingSessions,
   sessionCloseMs,
+  sessionOpenMs,
 } from "./market-hours";
 import type { CurvePoint } from "./timeseries";
 import type { ExportLiveCurvePoint, ExportLiveGraphSeries, ExportLiveGraphs } from "./types";
 import { DEFAULT_WEEK_SESSIONS } from "./week";
 
+/**
+ * Minimum share of the trading sessions a 1W blob *claims* (those in the window
+ * up to its `end_date`) that its points must actually cover for it to be trusted
+ * as a whole-week curve. Below this the export is too sparse — missing a chunk of
+ * the week — and we rebuild live instead. Strict by design: only a near-complete
+ * week (the live tip may still supply the final missing session) springboards.
+ */
+export const MIN_WEEK_DAY_COVERAGE = 0.9;
+
+/**
+ * Minimum share of the session a 1D blob's points must already cover before the
+ * live tip is allowed to bridge the rest. The earliest exported point must land
+ * within the first `1 - MIN_SESSION_COVERAGE` of the elapsed session; a blob that
+ * misses more than the session's opening sliver is rebuilt live.
+ */
+export const MIN_SESSION_COVERAGE = 0.9;
+
 /** Epoch-ms of a `YYYY-MM-DD` New-York session at UTC midnight (window floor). */
 function dayStartMs(day: string): number {
   return Date.parse(`${day}T00:00:00Z`);
+}
+
+/**
+ * The number of distinct trading days the points fall on. US regular-session
+ * instants (and daily closes at 16:00 ET = 20:00Z) share the UTC calendar date of
+ * their New-York session, so a UTC-date bucket counts sessions without needing the
+ * exchange-offset maths.
+ */
+function distinctSessionDays(points: CurvePoint[]): number {
+  const days = new Set<string>();
+  for (const p of points) days.add(new Date(p.t).toISOString().slice(0, 10));
+  return days.size;
 }
 
 /**
@@ -108,6 +153,19 @@ export function springboardSessionCurve(input: SpringboardInput): CurvePoint[] |
 
   const marketOpen = isUsMarketOpen(now);
   const closeMs = sessionCloseMs(sessionDate);
+  // Completeness gate: the export must cover the session from its open, not just
+  // a late sliver — otherwise the curve would jump straight to the tip and hide
+  // most of the day. The tip still bridges the open end, so we only require the
+  // *earliest* point to land within the session's opening sliver (1 - 90%).
+  const openMs = sessionOpenMs(sessionDate);
+  const elapsedEnd = marketOpen ? now.getTime() : closeMs;
+  if (
+    elapsedEnd > openMs &&
+    points[0].t > openMs + (elapsedEnd - openMs) * (1 - MIN_SESSION_COVERAGE)
+  ) {
+    return null;
+  }
+
   const tipT = marketOpen ? now.getTime() : closeMs;
   if (input.liveTip) points = appendLiveTip(points, tipT, input.liveTip);
   if (!marketOpen) points = capAtClose(points, closeMs);
@@ -143,6 +201,15 @@ export function springboardWeekCurve(input: SpringboardInput): CurvePoint[] | nu
   const windowStartMs = dayStartMs(window[0] ?? last);
   let points = allPoints.filter((p) => p.t >= windowStartMs);
   if (points.length < 1) return null;
+
+  // Completeness gate: a fresh `end_date` is not enough — the blob must actually
+  // span nearly the whole week, not just the last session or two. We compare the
+  // distinct trading days the points cover against the sessions the window
+  // expects up to `end_date` (the live tip supplies the final missing session),
+  // and rebuild live when the export is too sparse to be a trustworthy week curve.
+  const expectedSessions = window.filter((d) => d <= endDate).length;
+  const requiredDays = Math.max(2, Math.ceil(expectedSessions * MIN_WEEK_DAY_COVERAGE));
+  if (distinctSessionDays(points) < requiredDays) return null;
 
   const marketOpen = isUsMarketOpen(now);
   const tipT = marketOpen ? now.getTime() : sessionCloseMs(last);

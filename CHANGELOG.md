@@ -26,6 +26,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   leave the per-holding daily figure blank (an em dash) — a money-market fund has
   no daily price move to report. Total growth (driven by reinvested dividends) is
   unchanged.
+- **The 1D/1W graph no longer over-trusts a sparse exported blob (#127).** The
+  web companion springboards its live "1 Day" / "1 Week" curves off the desktop's
+  exported session, but it only gated on *freshness* (the blob's `session_date` /
+  `end_date`), never on whether the blob actually covered the span it claimed. A
+  recent export that shipped just the last day of the week (or only the tail of a
+  session) was therefore painted as a full curve, leaving the 1W graph showing a
+  single day instead of the week. Both deciders (`web/src/springboard.ts`) now add
+  a **completeness gate**: the 1W springboard requires the exported points to span
+  nearly all of the trading sessions the window expects up to `end_date`
+  (`MIN_WEEK_DAY_COVERAGE`, 90%), and the 1D springboard requires the earliest
+  point to begin within the session's opening sliver (`MIN_SESSION_COVERAGE`,
+  90%). When the blob is too sparse, the web falls back to building its own curve
+  (the live daily/intraday backfill) rather than trusting the stunted export. The
+  bar is deliberately strict — a blob must cover almost the whole window, with the
+  live tip bridging only the final missing point.
 
 ## [4.0.1] — 2026-06-24
 

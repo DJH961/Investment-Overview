@@ -74,7 +74,7 @@ describe("parseExportedPoints", () => {
 
 describe("springboardSessionCurve", () => {
   const freshPoints = [
-    pt("2024-06-05T13:35:00Z", "1000", "1100"),
+    pt("2024-06-05T13:30:00Z", "1000", "1100"),
     pt("2024-06-05T13:50:00Z", "1005", "1105"),
   ];
 
@@ -128,6 +128,35 @@ describe("springboardSessionCurve", () => {
     expect(curve).toBeNull();
   });
 
+  it("falls back (null) when the export only carries the session's late tail", () => {
+    // Points start ~13:55 ET (17:55Z), well past the 09:30 open, so the export is
+    // only a sliver of the day — the curve should rebuild live, not springboard.
+    const curve = springboardSessionCurve({
+      exported: dayExport(TODAY, [
+        pt("2024-06-05T17:55:00Z", "1050", "1150"),
+        pt("2024-06-05T17:58:00Z", "1055", "1155"),
+      ]),
+      now: POST_CLOSE,
+      liveTip: tip,
+    });
+    expect(curve).toBeNull();
+  });
+
+  it("falls back (null) when the export starts partway into the session", () => {
+    // Points begin ~13:40Z — ~33% into the elapsed session at MID_SESSION. That
+    // cleared the old lenient (50%) gate but misses the 90% coverage bar, so the
+    // curve rebuilds live rather than springboarding off a part-session blob.
+    const curve = springboardSessionCurve({
+      exported: dayExport(TODAY, [
+        pt("2024-06-05T13:40:00Z", "1002", "1102"),
+        pt("2024-06-05T13:50:00Z", "1005", "1105"),
+      ]),
+      now: MID_SESSION,
+      liveTip: tip,
+    });
+    expect(curve).toBeNull();
+  });
+
   it("returns null when there is no day export or too few points", () => {
     expect(springboardSessionCurve({ exported: undefined, now: MID_SESSION })).toBeNull();
     expect(
@@ -142,6 +171,8 @@ describe("springboardSessionCurve", () => {
 
 describe("springboardWeekCurve", () => {
   const weekPoints = [
+    pt("2024-05-30T20:00:00Z", "880", "980"),
+    pt("2024-05-31T20:00:00Z", "890", "990"),
     pt("2024-06-03T20:00:00Z", "900", "1000"),
     pt("2024-06-04T20:00:00Z", "950", "1050"),
   ];
@@ -184,6 +215,33 @@ describe("springboardWeekCurve", () => {
     });
     expect(curve).not.toBeNull();
     expect(curve![curve!.length - 1].t).toBe(Date.parse("2024-06-05T20:00:00Z"));
+  });
+
+  it("falls back (null) when the week export covers only part of the window", () => {
+    // Three of the five expected sessions (60%) — enough under the old 50% gate,
+    // but short of the 90% completeness bar, so the partial week rebuilds live.
+    const curve = springboardWeekCurve({
+      exported: weekExport(TODAY, [
+        pt("2024-05-30T20:00:00Z", "880", "980"),
+        pt("2024-05-31T20:00:00Z", "890", "990"),
+        pt("2024-06-03T20:00:00Z", "900", "1000"),
+      ]),
+      now: MID_SESSION,
+      liveTip: tip,
+    });
+    expect(curve).toBeNull();
+  });
+
+  it("falls back (null) when the week export only carries a single day", () => {
+    // The desktop shipped only the last session within the week window. Even
+    // though `end_date` is current, a one-day blob must not be trusted as a whole
+    // week — the web should rebuild its own week instead.
+    const curve = springboardWeekCurve({
+      exported: weekExport(TODAY, [pt("2024-06-05T13:50:00Z", "960", "1060")]),
+      now: MID_SESSION,
+      liveTip: tip,
+    });
+    expect(curve).toBeNull();
   });
 
   it("returns null when there is no week export", () => {
