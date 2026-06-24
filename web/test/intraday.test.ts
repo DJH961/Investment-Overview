@@ -13,11 +13,12 @@ import {
   loadOrBuildSessionCurve,
   marketSleeveSymbols,
   mergeBreadcrumbs,
+  rebaseBreadcrumbs,
   type AnchorHoldingInput,
   type IntradayAnchor,
 } from "../src/intraday";
 import type { Bar, CurvePoint } from "../src/timeseries";
-import { memoryBackend, TimeSeriesStore } from "../src/timeseries-store";
+import { memoryBackend, TimeSeriesStore, type Breadcrumb } from "../src/timeseries-store";
 
 const d = (v: string | number): Decimal => new Decimal(v);
 const bar = (t: number, value: string): Bar => ({ t, value: new Decimal(value) });
@@ -216,6 +217,25 @@ describe("mergeBreadcrumbs", () => {
   it("drops breadcrumbs at or before the last bar instant", () => {
     const tips: CurvePoint[] = [{ t: 200, valueEur: d(9), valueUsd: d(9) }];
     expect(mergeBreadcrumbs(barPoints, tips)).toBe(barPoints);
+  });
+});
+
+describe("rebaseBreadcrumbs", () => {
+  it("shifts a base-tagged crumb by the change in base (NAV strike / FX move)", () => {
+    // Struck at base 100; the current base has risen to 250 (an intraday NAV mark).
+    const tips: Breadcrumb[] = [
+      { t: 100, valueEur: d(1000), valueUsd: d(1100), baseEur: d(100), baseUsd: d(100) },
+    ];
+    const out = rebaseBreadcrumbs(tips, d(250), d(260));
+    // 1000 − 100 + 250 = 1150 ; 1100 − 100 + 260 = 1260 — the market component is
+    // preserved while the whole trail rides the new base.
+    expect(out).toEqual([{ t: 100, valueEur: d(1150), valueUsd: d(1260) }]);
+  });
+
+  it("passes a legacy (untagged) crumb through unchanged", () => {
+    const tips: Breadcrumb[] = [{ t: 100, valueEur: d(1000), valueUsd: d(1100) }];
+    const out = rebaseBreadcrumbs(tips, d(250), d(260));
+    expect(out).toEqual([{ t: 100, valueEur: d(1000), valueUsd: d(1100) }]);
   });
 });
 
@@ -508,6 +528,90 @@ describe("loadOrBuildSessionCurve", () => {
     });
     expect(fetchBars).not.toHaveBeenCalled();
     expect(result.points).toEqual([]);
+  });
+
+  it("carries an all-NAV (empty-sleeve) book on the live tip + breadcrumb trail", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    const now = new Date("2026-06-23T14:00:00Z");
+    // A book with no market-priced sleeve (all NAV funds + cash fold into the base).
+    // Previously the 1D graph returned blank; now the whole-book line is carried by
+    // the live tip, with the moving tip persisted as a breadcrumb for next build.
+    const result = await loadOrBuildSessionCurve({
+      anchor: { holdings: [], baseEur: d(5000), baseUsd: d(5500), baseFx: d("0.9") },
+      store,
+      fetchBars,
+      now,
+      liveTip: { valueEur: d(5000), valueUsd: d(5500) },
+    });
+    expect(fetchBars).not.toHaveBeenCalled();
+    expect(result.points).toEqual([{ t: now.getTime(), valueEur: d(5000), valueUsd: d(5500) }]);
+    // The tip is persisted (base-tagged) so the trail thickens on later builds.
+    const stored = await store.loadSession("2026-06-23");
+    expect(stored!.tips).toHaveLength(1);
+    expect(stored!.tips![0].baseEur!.toString()).toBe("5000");
+  });
+
+  it("persists each open-market breadcrumb tagged with the base it was struck against", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    const now = new Date("2026-06-23T14:00:00Z");
+    await store.saveSession({
+      day: "2026-06-23",
+      bars: { VTI: [bar(Date.parse("2026-06-23T13:35:00Z"), "100")] },
+      fx: [],
+      updatedAt: now.getTime() - 5 * 60_000,
+    });
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(), // base 100/100
+      store,
+      fetchBars,
+      now,
+      liveTip: { valueEur: d(1010), valueUsd: d(1110) },
+    });
+    const stored = await store.loadSession("2026-06-23");
+    const crumb = stored!.tips![stored!.tips!.length - 1];
+    expect(crumb.valueEur.toString()).toBe("1010"); // whole-book total
+    expect(crumb.baseEur!.toString()).toBe("100"); // base it was struck at
+    expect(crumb.baseUsd!.toString()).toBe("100");
+  });
+
+  it("rebases a stale breadcrumb trail onto the current base (NAV moved since)", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    // A breadcrumb struck earlier at base 100 (whole-book 1050), after the last bar.
+    await store.saveSession({
+      day: "2026-06-23",
+      bars: { VTI: [bar(Date.parse("2026-06-23T15:00:00Z"), "100")] },
+      fx: [],
+      tips: [
+        {
+          t: Date.parse("2026-06-23T19:30:00Z"),
+          valueEur: d(1050),
+          valueUsd: d(1150),
+          baseEur: d(100),
+          baseUsd: d(100),
+        },
+      ],
+      updatedAt: Date.parse("2026-06-23T19:30:00Z"),
+    });
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    const now = new Date("2026-06-23T22:00:00Z"); // closed → renders stored trail
+    // The NAV has since been re-struck: the current base is 300 (up 200).
+    const anchor: IntradayAnchor = {
+      holdings: [
+        { priceSymbol: "VTI", valueEur: d(900), valueUsd: d(1000), closeNative: d(100), isUsdNative: true, priceType: "market" },
+      ],
+      baseEur: d(300),
+      baseUsd: d(300),
+      baseFx: d("0.9"),
+    };
+    const result = await loadOrBuildSessionCurve({ anchor, store, fetchBars, now });
+    // The trailing crumb rides the new base: 1050 − 100 + 300 = 1250 (not a flat
+    // 1050 floor that would step off the rebased bar curve).
+    const last = result.points[result.points.length - 1];
+    expect(last.t).toBe(Date.parse("2026-06-23T19:30:00Z"));
+    expect(last.valueEur.toString()).toBe("1250");
+    expect(last.valueUsd.toString()).toBe("1350");
   });
 
   it("survives an FX fetch failure, falling back to baseFx", async () => {

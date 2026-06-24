@@ -21,8 +21,31 @@ import type { Bar, CurvePoint } from "./timeseries";
 /** A bar serialised for storage: `[epochMs, decimalString]`. */
 type StoredBar = [number, string];
 
-/** A breadcrumb serialised for storage: `[epochMs, eurString, usdString]`. */
-type StoredTip = [number, string, string];
+/**
+ * A breadcrumb serialised for storage. The 3-tuple `[epochMs, eurString,
+ * usdString]` is the legacy whole-book form; the 5-tuple additionally carries the
+ * base (settled cash + NAV funds) the total was struck against — `[…, baseEur,
+ * baseUsd]` — so a later build can rebase the trail onto the current base.
+ */
+type StoredTip =
+  | [number, string, string]
+  | [number, string, string, string, string];
+
+/**
+ * A live-tip **breadcrumb**: the whole-book headline total at instant `t`,
+ * optionally tagged with the constant base (settled cash + NAV funds) it was
+ * struck against. Recording the base lets a later build **rebase** the persisted
+ * trail onto the *current* base, so an intraday NAV strike or FX move shifts the
+ * whole curve uniformly instead of leaving a step where stale crumbs meet fresh
+ * bars. Crumbs written before the base was recorded simply omit it and render
+ * unrebased (their whole-book total as-is).
+ */
+export interface Breadcrumb extends CurvePoint {
+  /** Constant EUR base the whole-book `valueEur` was struck against (omit ⇒ no rebase). */
+  baseEur?: Decimal;
+  /** Constant USD base the whole-book `valueUsd` was struck against (omit ⇒ no rebase). */
+  baseUsd?: Decimal;
+}
 
 /** A session's worth of bars, persisted under its trading-day key. */
 export interface StoredSession {
@@ -40,9 +63,10 @@ export interface StoredSession {
    * of showing a single lone moving dot. Real bars are ground truth, so a build
    * keeps a build's breadcrumbs only when they fall *after* its freshest bar (see
    * `mergeBreadcrumbs`). Optional/absent on records written before breadcrumbs
-   * existed (treated as an empty trail).
+   * existed (treated as an empty trail). Each crumb may carry the base it was
+   * struck against ({@link Breadcrumb}) so the trail can be rebased on render.
    */
-  tips?: CurvePoint[];
+  tips?: Breadcrumb[];
   /** Epoch ms the session's *bars* were last fetched — for the refetch throttle. */
   updatedAt: number;
 }
@@ -84,17 +108,34 @@ function deserializeBars(stored: StoredBar[] | undefined): Bar[] {
   return stored.map(([t, value]) => ({ t, value: new Decimal(value) }));
 }
 
-function serializeTips(tips: CurvePoint[]): StoredTip[] {
-  return tips.map((t) => [t.t, t.valueEur.toString(), t.valueUsd.toString()]);
+function serializeTips(tips: Breadcrumb[]): StoredTip[] {
+  return tips.map((t) =>
+    t.baseEur !== undefined && t.baseUsd !== undefined
+      ? [
+          t.t,
+          t.valueEur.toString(),
+          t.valueUsd.toString(),
+          t.baseEur.toString(),
+          t.baseUsd.toString(),
+        ]
+      : [t.t, t.valueEur.toString(), t.valueUsd.toString()],
+  );
 }
 
-function deserializeTips(stored: StoredTip[] | undefined): CurvePoint[] {
+function deserializeTips(stored: StoredTip[] | undefined): Breadcrumb[] {
   if (!Array.isArray(stored)) return [];
-  return stored.map(([t, eur, usd]) => ({
-    t,
-    valueEur: new Decimal(eur),
-    valueUsd: new Decimal(usd),
-  }));
+  return stored.map((entry) => {
+    const crumb: Breadcrumb = {
+      t: entry[0],
+      valueEur: new Decimal(entry[1]),
+      valueUsd: new Decimal(entry[2]),
+    };
+    if (entry.length === 5) {
+      crumb.baseEur = new Decimal(entry[3]);
+      crumb.baseUsd = new Decimal(entry[4]);
+    }
+    return crumb;
+  });
 }
 
 function serialize(session: StoredSession): SerializedSession {
@@ -298,9 +339,9 @@ export class TimeSeriesStore {
    */
   async appendTip(
     day: string,
-    tip: CurvePoint,
+    tip: Breadcrumb,
     options: { spacingMs?: number; maxTips?: number } = {},
-  ): Promise<CurvePoint[]> {
+  ): Promise<Breadcrumb[]> {
     const spacing = options.spacingMs ?? DEFAULT_TIP_SPACING_MS;
     const maxTips = options.maxTips ?? DEFAULT_MAX_TIPS;
     const existing =

@@ -37,7 +37,7 @@ import {
   type CurvePoint,
   type ReconHolding,
 } from "./timeseries";
-import { TimeSeriesStore } from "./timeseries-store";
+import { TimeSeriesStore, type Breadcrumb } from "./timeseries-store";
 
 /**
  * One intraday-priced holding (a stock/ETF) as the curve needs it. `closeNative`
@@ -237,6 +237,32 @@ export function mergeBreadcrumbs(points: CurvePoint[], tips: CurvePoint[]): Curv
   const lastBarT = points[points.length - 1].t;
   const tail = tips.filter((tip) => tip.t > lastBarT).sort((a, b) => a.t - b.t);
   return tail.length > 0 ? [...points, ...tail] : points;
+}
+
+/**
+ * Rebase a persisted breadcrumb trail onto the *current* base (settled cash + NAV
+ * funds). Each crumb stored the whole-book total **and** the base it was struck
+ * against; re-expressing it as `total − struckBase + currentBase` shifts the whole
+ * trail by any intraday change in the base — a NAV strike, an FX move — so it joins
+ * the freshly reconstructed bars without a step instead of carrying a stale floor.
+ * Crumbs written before the base was recorded (no `baseEur`/`baseUsd`) pass through
+ * unchanged — their whole-book total as-is, exactly the pre-rebasing behaviour.
+ */
+export function rebaseBreadcrumbs(
+  tips: Breadcrumb[],
+  baseEur: Decimal,
+  baseUsd: Decimal,
+): CurvePoint[] {
+  return tips.map((tip) => {
+    if (tip.baseEur === undefined || tip.baseUsd === undefined) {
+      return { t: tip.t, valueEur: tip.valueEur, valueUsd: tip.valueUsd };
+    }
+    return {
+      t: tip.t,
+      valueEur: tip.valueEur.minus(tip.baseEur).plus(baseEur),
+      valueUsd: tip.valueUsd.minus(tip.baseUsd).plus(baseUsd),
+    };
+  });
 }
 
 /** Native price bars fetched per Twelve Data ticker (1 credit/symbol/request). */
@@ -490,34 +516,47 @@ export async function loadOrBuildSessionCurve(
 
   await pruneOldSessions(store, day, options.retainSessions ?? 7);
 
-  if (!stored || anchor.holdings.length === 0) {
-    return { day, points: [], marketOpen };
-  }
-
-  const barsBySymbol = new Map<string, Bar[]>(Object.entries(stored.bars));
+  // Reconstruct the intraday-priced sleeve bar by bar over the session's stored
+  // bars. An **empty sleeve** — an all-NAV/cash book, or a round where no market
+  // holding could be priced — yields no bar points, but the curve is **not**
+  // abandoned: the breadcrumb trail and live tip below still carry the whole-book
+  // line, which for such a book is the flat NAV + cash base moving only as the base
+  // itself is re-struck. (A `null` store simply means no bars yet — same effect.)
+  const barsBySymbol = new Map<string, Bar[]>(Object.entries(stored?.bars ?? {}));
   let points = reconstructSessionCurve({
     holdings: toReconHoldings(anchor.holdings),
     barsBySymbol,
-    fxBars: stored.fx,
+    fxBars: stored?.fx ?? [],
     baseFx: anchor.baseFx,
     baseEur: anchor.baseEur,
     baseUsd: anchor.baseUsd,
   });
 
   // While open, drop a breadcrumb at the live tip (free — a value already in
-  // hand) and splice the gathered trail onto the curve so it self-thickens
-  // between the slow bar re-fetches; real bars always supersede stale crumbs.
+  // hand) and splice the gathered trail onto the curve so it self-thickens between
+  // the slow bar re-fetches; real bars always supersede stale crumbs. The crumb
+  // records the base it was struck against so the whole trail can be **rebased**
+  // onto the current base (an intraday NAV strike / FX move) instead of leaving a
+  // step where stale crumbs meet fresh bars.
   if (marketOpen && options.liveTip) {
-    const tip: CurvePoint = {
+    const tip: Breadcrumb = {
       t: now.getTime(),
       valueEur: options.liveTip.valueEur,
       valueUsd: options.liveTip.valueUsd,
+      baseEur: anchor.baseEur,
+      baseUsd: anchor.baseUsd,
     };
     const breadcrumbs = await store.appendTip(day, tip);
-    points = mergeBreadcrumbs(points, breadcrumbs);
+    points = mergeBreadcrumbs(
+      points,
+      rebaseBreadcrumbs(breadcrumbs, anchor.baseEur, anchor.baseUsd),
+    );
     points = appendLiveTip(points, now.getTime(), options.liveTip);
   } else if (!marketOpen) {
-    points = mergeBreadcrumbs(points, stored.tips ?? []);
+    points = mergeBreadcrumbs(
+      points,
+      rebaseBreadcrumbs(stored?.tips ?? [], anchor.baseEur, anchor.baseUsd),
+    );
     points = capAtClose(points, sessionCloseMs(day));
   }
 
