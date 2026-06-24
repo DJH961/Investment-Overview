@@ -41,6 +41,7 @@ import {
   formatCurrency,
   formatCurrencyShortRaw,
   formatCurrencyWhole,
+  formatMoneyRaw,
   formatDualCurrency,
   formatDualCurrencyParts,
   type DualCurrencyParts,
@@ -1787,7 +1788,7 @@ export function liveCurveToChart(
   const prevCloseValue = prevClose ? (inUsd ? prevClose.usd : prevClose.eur) : null;
   const referenceLine =
     prevCloseValue !== null && prevCloseValue !== undefined
-      ? { value: prevCloseValue, label: `Prev close ${formatCurrencyShortRaw(prevCloseValue, code)}` }
+      ? { value: prevCloseValue, label: `Prev close ${formatMoneyRaw(prevCloseValue, code)}` }
       : undefined;
   return { dates: cols.dates, series, yAxisLabel, legend, referenceLine };
 }
@@ -1853,12 +1854,25 @@ function renderValueChart(
 
   // In experimental mode, wire the live 1D/1W builders so their presets fetch and
   // draw on demand; otherwise the chart keeps to the exported history alone. The
-  // 1D curve also marks the previous session's settled close (the last exported
-  // settled point, in both currencies) as a dashed reference line — the same cue
-  // the desktop "1 Day" chart draws.
-  const prevClose = points.length > 0
-    ? { eur: points[points.length - 1].portfolioValue, usd: points[points.length - 1].portfolioValueUsd }
-    : null;
+  // 1D curve marks the previous session's settled close as a dashed reference
+  // line — the same cue the desktop "1 Day" chart draws. We anchor it on the live
+  // "today" baseline (`totalValue − todayMove`, in each currency) rather than the
+  // last exported settled point, so the rule lands exactly where the headline
+  // "% today" is measured from. The two can differ — the exported point may be
+  // an older session or carry a different FX snapshot — which left the line at
+  // the wrong height (e.g. hugging the live value while the day was clearly down).
+  // Fall back to the last exported point only when no live move is known.
+  const lastPoint = points[points.length - 1];
+  const prevClose =
+    o.todayMovePct !== null
+      ? {
+          eur: o.totalValueEur.minus(o.todayMoveEur),
+          usd:
+            o.totalValueUsd !== null && o.todayMoveUsd !== null
+              ? o.totalValueUsd.minus(o.todayMoveUsd)
+              : null,
+        }
+      : { eur: lastPoint.portfolioValue, usd: lastPoint.portfolioValueUsd };
   const liveBuilder: LiveCurveBuilder | undefined =
     liveGraph && experimentalGraphsEnabled()
       ? async (range) => {
