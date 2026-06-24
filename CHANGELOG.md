@@ -14,6 +14,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.0.2] — 2026-06-24
+
+### Fixed
+
+- **Money-market / settlement funds no longer show a daily growth value
+  (#131).** Funds like VMFXX hold a constant $1.00 NAV by design and genuinely
+  never move in price, yet both the desktop and the web companion had started
+  rendering a daily move/growth for them (the desktop reported a flat `0`; the
+  web derived a spurious move from a repeated $1.00 previous-close bar). Both now
+  leave the per-holding daily figure blank (an em dash) — a money-market fund has
+  no daily price move to report. Total growth (driven by reinvested dividends) is
+  unchanged.
+
 ## [4.0.1] — 2026-06-24
 
 ### Fixed
