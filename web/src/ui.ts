@@ -1310,6 +1310,8 @@ export interface LiveCurveChart {
   yAxisLabel?: (value: number, fractionDigits?: number) => string;
   /** Legend rows to show beneath the live chart (series class → label). */
   legend?: Array<{ className: string; label: string }>;
+  /** Optional horizontal reference line (e.g. the 1D curve's previous close). */
+  referenceLine?: { value: Decimal; label?: string };
 }
 
 /**
@@ -1386,10 +1388,18 @@ function chartWithTimeframe(
   chartOpts: { yAxisLabel?: (v: number) => string } = {},
   persistKey?: string,
   live?: LiveCurveBuilder,
+  baseLegend?: Array<{ className: string; label: string }>,
 ): HTMLElement | null {
   const full = buildLineChart({ dates, series, ...chartOpts });
   if (!full) return null;
-  const wrap = h("div", { class: "chart-wrap" }, [full as unknown as HTMLElement]);
+  // When a base legend is supplied the wrapper *owns* the legend, redrawing it
+  // alongside each preset (history or live) so the chart never shows two copies —
+  // the live re-draw used to duplicate a legend the caller also printed below.
+  const legendEl = (rows: Array<{ className: string; label: string }>): HTMLElement =>
+    h("div", { class: "chart-legend" }, rows.map((row) => legendItem(row.className, row.label)));
+  const withLegend = (chart: HTMLElement, rows?: Array<{ className: string; label: string }>): HTMLElement[] =>
+    rows && rows.length > 0 ? [chart, legendEl(rows)] : [chart];
+  const wrap = h("div", { class: "chart-wrap" }, withLegend(full as unknown as HTMLElement, baseLegend));
 
   const span = dates.length >= 2 ? daysBetween(dates[0], dates[dates.length - 1]) : 0;
   const options = chartTimeframeOptions(span, experimentalGraphsEnabled(), Boolean(live));
@@ -1417,7 +1427,7 @@ function chartWithTimeframe(
     const slicedDates = dates.slice(start);
     const slicedSeries = rebaseWindowOverlays(series.map((s) => ({ ...s, values: s.values.slice(start) })));
     const chart = buildLineChart({ dates: slicedDates, series: slicedSeries, ...chartOpts });
-    if (chart) wrap.replaceChildren(chart as unknown as HTMLElement);
+    if (chart) wrap.replaceChildren(...withLegend(chart as unknown as HTMLElement, baseLegend));
   };
 
   const applyLive = async (range: LiveRange, token: number): Promise<void> => {
@@ -1438,6 +1448,7 @@ function chartWithTimeframe(
       dates: built.dates,
       series: built.series,
       yAxisLabel: built.yAxisLabel ?? chartOpts.yAxisLabel,
+      referenceLine: built.referenceLine,
     });
     if (!chart) {
       wrap.replaceChildren(liveStatus("Not enough live points to draw a curve yet."));
@@ -1445,18 +1456,9 @@ function chartWithTimeframe(
     }
     // Re-draw the legend for the live series (e.g. the rebased other-currency
     // line) so a 1D/1W selection labels its own lines rather than inheriting the
-    // exported-history legend.
-    const nodes: HTMLElement[] = [chart as unknown as HTMLElement];
-    if (built.legend && built.legend.length > 0) {
-      nodes.push(
-        h(
-          "div",
-          { class: "chart-legend" },
-          built.legend.map((row) => legendItem(row.className, row.label)),
-        ),
-      );
-    }
-    wrap.replaceChildren(...nodes);
+    // exported-history legend. The wrapper owns the legend, so the caller no
+    // longer prints a second copy beneath the chart.
+    wrap.replaceChildren(...withLegend(chart as unknown as HTMLElement, built.legend));
   };
 
   const select = (index: number, persist = true): void => {
@@ -1751,8 +1753,16 @@ function renderDrawdownChart(curve: AnalyticsView["curve"]): HTMLElement | null 
  * with the other currency overlaid (rebased to share the axis) — the same
  * treatment {@link renderValueChart} gives the exported history. Returns null
  * when there are too few points to draw.
+ *
+ * `prevClose` (the previous session's settled total, in EUR and USD) is supplied
+ * only for the intraday 1D curve: when present, a neutral dashed reference line
+ * marks it so the user reads whether the live value sits above or below where the
+ * portfolio last *closed* — exactly as the desktop "1 Day" chart does.
  */
-function liveCurveToChart(points: CurvePoint[]): LiveCurveChart | null {
+export function liveCurveToChart(
+  points: CurvePoint[],
+  prevClose?: { eur: Decimal | null; usd: Decimal | null } | null,
+): LiveCurveChart | null {
   const cols = curveColumns(points);
   if (cols.dates.length < 2) return null;
   const inUsd = getDisplayCurrency() === "USD" && canConvertToUsd();
@@ -1772,7 +1782,14 @@ function liveCurveToChart(points: CurvePoint[]): LiveCurveChart | null {
   }
   const yAxisLabel = (value: number, digits?: number): string =>
     formatCurrencyShortRaw(new Decimal(value), code, digits);
-  return { dates: cols.dates, series, yAxisLabel, legend };
+  // The previous-session close (display-currency value) as a dashed reference
+  // line, marked only when it is known for the active currency.
+  const prevCloseValue = prevClose ? (inUsd ? prevClose.usd : prevClose.eur) : null;
+  const referenceLine =
+    prevCloseValue !== null && prevCloseValue !== undefined
+      ? { value: prevCloseValue, label: `Prev close ${formatCurrencyShortRaw(prevCloseValue, code)}` }
+      : undefined;
+  return { dates: cols.dates, series, yAxisLabel, legend, referenceLine };
 }
 
 /**
@@ -1835,14 +1852,31 @@ function renderValueChart(
   }
 
   // In experimental mode, wire the live 1D/1W builders so their presets fetch and
-  // draw on demand; otherwise the chart keeps to the exported history alone.
+  // draw on demand; otherwise the chart keeps to the exported history alone. The
+  // 1D curve also marks the previous session's settled close (the last exported
+  // settled point, in both currencies) as a dashed reference line — the same cue
+  // the desktop "1 Day" chart draws.
+  const prevClose = points.length > 0
+    ? { eur: points[points.length - 1].portfolioValue, usd: points[points.length - 1].portfolioValueUsd }
+    : null;
   const liveBuilder: LiveCurveBuilder | undefined =
     liveGraph && experimentalGraphsEnabled()
       ? async (range) => {
           const built = range === "1D" ? await liveGraph.session() : await liveGraph.week();
-          return built ? liveCurveToChart(built) : null;
+          if (!built) return null;
+          return liveCurveToChart(built, range === "1D" ? prevClose : null);
         }
       : undefined;
+
+  // The legend rows for the exported history; the chart wrapper owns rendering
+  // them (and swaps in the live preset's own legend) so only one copy is ever
+  // shown — the chart used to print a second, duplicate legend below itself.
+  const baseLegend = currencyLine !== null
+    ? [
+        { className: "series-portfolio", label: disp.code },
+        { className: "series-currency", label: `${currencyLine.code} (rebased)` },
+      ]
+    : undefined;
 
   const chart = chartWithTimeframe(
     dates,
@@ -1850,6 +1884,7 @@ function renderValueChart(
     { yAxisLabel: disp.yAxisLabel },
     "portfolio",
     liveBuilder,
+    baseLegend,
   );
   if (!chart) return null;
 
@@ -1872,14 +1907,6 @@ function renderValueChart(
     ]),
     chart,
   ];
-  if (currencyLine !== null) {
-    children.push(
-      h("div", { class: "chart-legend" }, [
-        legendItem("series-portfolio", disp.code),
-        legendItem("series-currency", `${currencyLine.code} (rebased)`),
-      ]),
-    );
-  }
   if (note) children.push(h("p", { class: "note" }, [note]));
   return h("section", { class: "card value-chart" }, children);
 }
