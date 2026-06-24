@@ -255,6 +255,23 @@ describe("buildCoverageFacts", () => {
     expect(f.navAwaiting).toBe(0);
   });
 
+  it("does not flag an after-midnight fund as awaiting before its real publish time", () => {
+    // Mutual funds that strike after midnight: the US session has just closed but
+    // tonight's NAV won't land for hours, so the latest NAV we can hold is the
+    // prior session's. The coverage "main status" must agree with the per-row
+    // chip and report it as in-hand, not "awaiting", until its publish moment.
+    const evening = new Date(2024, 0, 10, 22, 30); // Wed 17:30 ET — session settled
+    const quotes = new Map([["VTSAX", { valueDate: "2024-01-09" }]]); // prior session NAV
+    const f = buildCoverageFacts(
+      report({ servedFresh: ["VTSAX"] }),
+      quotes,
+      new Set(["VTSAX"]),
+      { now: evening, marketOpen: false, publishHourFor: () => 1 },
+    );
+    expect(f.navTotal).toBe(1);
+    expect(f.navAwaiting).toBe(0);
+  });
+
   it("counts a failed market symbol toward the total (held only if it has a cached price)", () => {
     // A symbol the provider attempted but couldn't price this round is reported in
     // `failed`; it must still count toward marketTotal (and as held when a cached
