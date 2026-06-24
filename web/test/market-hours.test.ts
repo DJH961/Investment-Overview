@@ -9,6 +9,9 @@ import {
   recentTradingSessions,
   sessionCloseMs,
   sessionOpenMs,
+  elapsedSessionMs,
+  sessionIsWarmingUp,
+  INTRADAY_BAR_INTERVAL_MS,
 } from "../src/market-hours";
 
 /**
@@ -193,5 +196,41 @@ describe("recentTradingSessions", () => {
   it("returns an empty list for a non-positive count", () => {
     expect(recentTradingSessions(0, new Date("2026-03-14T16:00:00Z"))).toEqual([]);
     expect(recentTradingSessions(-3, new Date("2026-03-14T16:00:00Z"))).toEqual([]);
+  });
+});
+
+describe("elapsedSessionMs / sessionIsWarmingUp (market_open_token_burn WS1)", () => {
+  // Mon 2026-06-22 is a regular trading day. Open is 09:30 ET == 13:30 UTC (EDT).
+  it("reports near-zero elapsed trading time at the open", () => {
+    // 13:31 UTC == 09:31 ET, one minute after the open.
+    const now = new Date("2026-06-22T13:31:00Z");
+    expect(elapsedSessionMs(now)).toBe(60 * 1000);
+  });
+
+  it("treats a just-opened session as warming up (expected-empty, not stale)", () => {
+    // 13:35 UTC == 09:35 ET, well under one intraday bar interval.
+    expect(sessionIsWarmingUp(new Date("2026-06-22T13:35:00Z"))).toBe(true);
+  });
+
+  it("stops warming up once a full intraday bar interval has elapsed", () => {
+    // 14:31 UTC == 10:31 ET, > 1h after the 09:30 open.
+    expect(sessionIsWarmingUp(new Date("2026-06-22T14:31:00Z"))).toBe(false);
+    expect(elapsedSessionMs(new Date("2026-06-22T14:31:00Z"))).toBeGreaterThan(
+      INTRADAY_BAR_INTERVAL_MS,
+    );
+  });
+
+  it("never treats a past/closed session as warming up", () => {
+    // After Monday's close (20:30 UTC == 16:30 ET): the last session is fully
+    // elapsed, so a missing bar there is genuinely stale, not expected-empty.
+    expect(sessionIsWarmingUp(new Date("2026-06-22T20:30:00Z"))).toBe(false);
+    // Before Tuesday's open (12:00 UTC == 08:00 ET): lastSessionDate is Monday,
+    // whose elapsed time is over a day — never warming up.
+    expect(sessionIsWarmingUp(new Date("2026-06-23T12:00:00Z"))).toBe(false);
+  });
+
+  it("treats a weekend as a fully-elapsed prior session", () => {
+    // Sat 2026-06-27 — lastSessionDate is Friday, long since closed.
+    expect(sessionIsWarmingUp(new Date("2026-06-27T15:00:00Z"))).toBe(false);
   });
 });

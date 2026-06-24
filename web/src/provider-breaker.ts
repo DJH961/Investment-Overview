@@ -1,0 +1,170 @@
+/**
+ * Per-provider **429 circuit breaker** — the second tier of the two-tier brake
+ * from `market_open_token_burn_fix_plan.md` (WS4) and the cross-device budget
+ * integrity it enforces (WS5).
+ *
+ * Our internal credit ledger ({@link ../cache.readCreditLog}) is an *optimistic
+ * local estimate*: on a **shared** API key, a second device's spend is invisible
+ * to it, so the only authoritative, cross-device "you are out" signal is the
+ * provider's own `429`. This module turns that hard "no" into a short, persisted
+ * freeze so we stop hammering a provider that has already said no — the residual
+ * backstop once demand-minimisation (WS1) and per-minute slicing (WS2) have
+ * removed the bulk of the load.
+ *
+ *  - **Twelve Data 429 → freeze all Twelve Data for ~60s.** A *second consecutive*
+ *    TD 429 (no successful TD call between) escalates to a **2-minute** freeze to
+ *    absorb cross-device clock-skew, then the cycle resets (the next 429 starts
+ *    fresh at 60s). A successful TD call clears the streak.
+ *  - **Tiingo 429 → freeze Tiingo until the next clock hour (`:00`).** Tiingo is
+ *    the scarce last line; once it says no, every further attempt is pure waste
+ *    until its hourly bucket resets, so the freeze auto-clears at `:00` like the
+ *    normal counter — no separate timer.
+ *
+ * The freeze is consulted at the bar-fetch chokepoint: it zeroes Twelve Data's
+ * live per-minute budget (so the capacity split routes nothing to it) and gates
+ * the Tiingo overflow leg. State is persisted (survives reload) and pure over an
+ * injected clock + storage, so every transition is unit-testable with no network.
+ */
+
+import { startOfHour, type StorageLike } from "./cache";
+
+const BREAKER_KEY = "iv.web.provider_breaker";
+
+/** First-strike Twelve Data freeze: one rolling minute. */
+export const TD_FREEZE_MS = 60 * 1000;
+/** Second consecutive Twelve Data 429: a two-minute cushion for clock-skew. */
+export const TD_ESCALATED_FREEZE_MS = 2 * 60 * 1000;
+
+interface TwelveDataBreaker {
+  /** Epoch-ms the freeze lifts; ≤ now means not frozen. */
+  frozenUntil: number;
+  /** Consecutive-429 streak (reset by a success or after the 2-min escalation). */
+  streak: number;
+}
+
+interface TiingoBreaker {
+  /** Epoch-ms the freeze lifts (the next clock `:00`). */
+  frozenUntil: number;
+}
+
+interface BreakerState {
+  td?: TwelveDataBreaker;
+  tiingo?: TiingoBreaker;
+}
+
+function defaultStorage(): StorageLike | null {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function readState(storage: StorageLike | null): BreakerState {
+  if (!storage) return {};
+  try {
+    const raw = storage.getItem(BREAKER_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as BreakerState;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeState(storage: StorageLike | null, state: BreakerState): void {
+  if (!storage) return;
+  try {
+    storage.setItem(BREAKER_KEY, JSON.stringify(state));
+  } catch {
+    /* best-effort: a full/unavailable store just means no persisted breaker. */
+  }
+}
+
+/**
+ * Record a Twelve Data `429` (over-quota). Arms a 60s freeze on the first strike
+ * and a 2-minute freeze on a second consecutive strike, then resets the cycle.
+ */
+export function recordTwelveData429(
+  now: number,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  const state = readState(storage);
+  const prevStreak = state.td?.streak ?? 0;
+  const newStreak = prevStreak + 1;
+  if (newStreak >= 2) {
+    // Escalate, then reset the cycle: the *next* 429 starts fresh at 60s.
+    state.td = { frozenUntil: now + TD_ESCALATED_FREEZE_MS, streak: 0 };
+  } else {
+    state.td = { frozenUntil: now + TD_FREEZE_MS, streak: newStreak };
+  }
+  writeState(storage, state);
+}
+
+/** A successful Twelve Data call clears the consecutive-429 streak. */
+export function recordTwelveDataSuccess(
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  const state = readState(storage);
+  if (!state.td || state.td.streak === 0) return;
+  state.td = { ...state.td, streak: 0 };
+  writeState(storage, state);
+}
+
+/** Whether Twelve Data is in an armed freeze at `now`. */
+export function twelveDataFrozen(
+  now: number,
+  storage: StorageLike | null = defaultStorage(),
+): boolean {
+  return (readState(storage).td?.frozenUntil ?? 0) > now;
+}
+
+/**
+ * Record a Tiingo `429` (hourly reserve spent). Freezes Tiingo until the next
+ * clock hour, mirroring Tiingo's own `:00` reset — no further attempt fires until
+ * then because each one is pure waste.
+ */
+export function recordTiingo429(
+  now: number,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  const state = readState(storage);
+  const HOUR_MS = 60 * 60 * 1000;
+  state.tiingo = { frozenUntil: startOfHour(now) + HOUR_MS };
+  writeState(storage, state);
+}
+
+/** Whether Tiingo is frozen at `now` (until the next clock `:00`). */
+export function tiingoFrozen(
+  now: number,
+  storage: StorageLike | null = defaultStorage(),
+): boolean {
+  return (readState(storage).tiingo?.frozenUntil ?? 0) > now;
+}
+
+/**
+ * Apply the Twelve Data freeze to a live budget reading: while frozen, Twelve
+ * Data's per-minute headroom reads **0**, so the capacity split (which slices to
+ * `min(len, minute, day)`) routes nothing to it. This is the chokepoint that
+ * makes the breaker authoritative — a 429 reconciles the optimistic local ledger
+ * *down* to "no room" regardless of our internal count (WS5).
+ */
+export function applyTwelveDataFreeze(
+  budget: { minute: number; day: number },
+  now: number,
+  storage: StorageLike | null = defaultStorage(),
+): { minute: number; day: number } {
+  return twelveDataFrozen(now, storage) ? { minute: 0, day: budget.day } : budget;
+}
+
+/** Forget all breaker state (test/reset helper). Not wired to hard-refresh. */
+export function clearProviderBreaker(
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  if (!storage) return;
+  try {
+    storage.removeItem(BREAKER_KEY);
+  } catch {
+    /* best-effort */
+  }
+}

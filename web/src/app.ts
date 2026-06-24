@@ -50,12 +50,8 @@ import {
   readLastPull,
   readNavPublishStats,
   readSymbolPlan,
-  recordCredits,
-  releaseCredits,
   type PlannedSymbol,
   recordNavPublish,
-  recordTiingoCredits,
-  releaseTiingoCredits,
   primeQuotesFromBars,
   readSessionStatus,
   writeSessionStatus,
@@ -77,14 +73,13 @@ import {
   marketCacheTtlMs,
   navCacheTtlMs,
   navPublishWindow,
-  twelveDataBudgetRemaining,
   type EurUsdSource,
   type LoadQuotesOptions,
   type QuoteLoadReport,
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate } from "./market-hours";
+import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, sessionIsWarmingUp } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -119,6 +114,12 @@ import {
   weekFxWindow,
   type LiveGraphProviders,
 } from "./live-graph";
+import {
+  recordTwelveData429,
+  recordTwelveDataSuccess,
+  recordTiingo429,
+} from "./provider-breaker";
+import { ledgerReservation } from "./reservation";
 import { springboardSessionCurve, springboardWeekCurve } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
 import { TimeSeriesStore } from "./timeseries-store";
@@ -742,7 +743,15 @@ export class App {
     const store = this.ensureTimeSeriesStore();
     const day = lastSessionDate(now);
     const today = await store.loadSession(day).catch(() => null);
-    const session = marketSymbols.filter((s) => !(today?.bars[s]?.length));
+    // Expected-empty ≠ stale (market_open_token_burn_fix_plan.md WS1): a fresh,
+    // just-opened session has no completed intraday bar yet, so the absence of
+    // today's bars is *expected*. Queueing a 1D backfill for a window that has
+    // not elapsed is the market-open burn — skip it and let the curve accrue
+    // tick-by-tick from the live tip. Only once a full bar interval of trading
+    // time has passed does a still-missing symbol read genuinely stale.
+    const session = sessionIsWarmingUp(now)
+      ? []
+      : marketSymbols.filter((s) => !(today?.bars[s]?.length));
     const weekStored = await store.loadSession(WEEK_STORE_KEY).catch(() => null);
     // Match the 1W build's coverage test, not a looser presence check: a
     // stale-but-present store (only pre-settlement bars) must read *stale* here,
@@ -828,19 +837,28 @@ export class App {
       extra: { interval?: string; outputsize?: number } = {},
     ): Promise<void> => {
       if (symbols.length === 0) return;
-      // Instrument the spend recorders so every Tiingo (bars + FX) and Twelve
-      // Data spend this backfill makes is written to the data-polling log and
-      // tallied — the warm-up backfill used to record its credits silently, so a
-      // refill could "download something once without logging". Now it never does.
+      // Every metered request this backfill makes flows through the single
+      // reservation authority (audit Rec 4): it atomically reserves each leg's
+      // credits against the live shared budgets (Twelve Data per-minute/day + 429
+      // freeze, Tiingo hourly/daily + freeze) before the call fires, so no path
+      // can overshoot. The meters below are therefore *observation-only* — they
+      // log/tally the spend and trip the 429 breaker, and a not-billed result
+      // releases the reservation rather than touching the raw ledger twice.
+      const reservation = ledgerReservation();
       const spent = { credits: 0 };
       const { tiingoMeter, twelveDataMeter } = instrumentedGraphRecorders({
         range: `${label} warm-up`,
-        bookTwelveData: (n) => recordCredits(n, Date.now()),
-        refundTwelveData: (n) => releaseCredits(n, Date.now()),
-        bookTiingo: (n) => recordTiingoCredits(n, Date.now()),
-        refundTiingo: (n) => releaseTiingoCredits(n, Date.now()),
+        bookTwelveData: () => undefined,
+        refundTwelveData: (n) => reservation.release("twelvedata", n, Date.now()),
+        bookTiingo: () => undefined,
+        refundTiingo: (n) => reservation.release("tiingo", n, Date.now()),
         log: (message) => this.pollLog("graph", message),
         spent,
+        // Two-tier braking, tier 2 (WS4/WS5): a provider 429 is the authoritative
+        // cross-device "out of credits" signal, so trip its circuit breaker here.
+        onTwelveData429: () => recordTwelveData429(Date.now()),
+        onTwelveDataSuccess: () => recordTwelveDataSuccess(),
+        onTiingo429: () => recordTiingo429(Date.now()),
       });
       const fetchBars = makePriceBarFetcher({
         apiKey: config.apiKey,
@@ -850,6 +868,18 @@ export class App {
         endDate: window.endDate,
         tiingoMeter,
         twelveDataMeter,
+        // One routing path (WS3) through the reservation authority: fill Twelve
+        // Data up to whatever its shared per-minute/day budget has left (sliced to
+        // the minute cap, WS2, so a 12-credit batch can never 429 a fresh 8-credit
+        // minute), then route only the genuine overflow to Tiingo up to *its*
+        // scarce budget — never Tiingo-first, and never over either cap. The
+        // remainder is deferred to the next refresh round. A 429 freeze zeroes the
+        // frozen provider's grant, so the split routes nothing to it until it lifts.
+        reservation,
+        // Two-tier braking, tier 1 (WS4): a per-symbol series backoff parks a
+        // dead/empty series instead of re-pulling it every ~60s round, exactly as
+        // the FX leg below already is.
+        backoff: { memo: cacheSeriesBackoff(), scope: `bars:${param}`, now: () => Date.now() },
         ...extra,
       });
       if (!fetchBars) return;
@@ -875,6 +905,7 @@ export class App {
         twelveDataMeter,
         backoff: cacheSeriesBackoff(),
         backoffKey: `fx:${label}:${fxResample}`,
+        reservation,
       });
       let fx: Bar[] | undefined;
       if (fetchFx) fx = await fetchFx().catch(() => undefined);
@@ -3493,13 +3524,18 @@ export class App {
               o.totalValueUsd ?? (baseFx !== null ? o.totalValueEur.times(baseFx) : o.totalValueEur),
           }
         : null;
+    const reservation = ledgerReservation();
     const providers: LiveGraphProviders = {
       apiKey: config.apiKey,
       priceProxyUrl: resolvePriceProxyUrl(config),
-      // The graph fills Twelve Data first up to whatever its shared per-minute/day
-      // budget has left after the (prefetch-led) quote pass, then spills the
-      // overflow to Tiingo (item 8). Reads the live shared credit ledger.
-      budget: () => twelveDataBudgetRemaining(Date.now()),
+      // Every metered graph request — bars, overflow, spill and both FX legs —
+      // passes through the single reservation authority (audit Rec 4): it
+      // atomically reserves each leg's credits against the live shared budgets
+      // (Twelve Data per-minute/day + 429 freeze, Tiingo hourly/daily + freeze)
+      // before the call fires, so Twelve Data fills first up to its budget, the
+      // overflow goes to Tiingo only up to *its* scarce budget, and nothing ever
+      // fires over a cap or while a provider is frozen.
+      reservation,
     };
     const store = this.ensureTimeSeriesStore();
     const exported = this.state.data?.live_graphs ?? undefined;
@@ -3523,12 +3559,19 @@ export class App {
       ...providers,
       ...instrumentedGraphRecorders({
         range,
-        bookTwelveData: (n) => recordCredits(n, Date.now()),
-        refundTwelveData: (n) => releaseCredits(n, Date.now()),
-        bookTiingo: (n) => recordTiingoCredits(n, Date.now()),
-        refundTiingo: (n) => releaseTiingoCredits(n, Date.now()),
+        // The reservation authority is the sole booker, so the meters are
+        // observation-only: they log/tally and trip the 429 breaker, and a
+        // not-billed result releases the reservation rather than the raw ledger.
+        bookTwelveData: () => undefined,
+        refundTwelveData: (n) => reservation.release("twelvedata", n, Date.now()),
+        bookTiingo: () => undefined,
+        refundTiingo: (n) => reservation.release("tiingo", n, Date.now()),
         log: (message) => this.pollLog("graph", message),
         spent,
+        // Trip/clear the per-provider 429 circuit breaker at the meter (WS4/WS5).
+        onTwelveData429: () => recordTwelveData429(Date.now()),
+        onTwelveDataSuccess: () => recordTwelveDataSuccess(),
+        onTiingo429: () => recordTiingo429(Date.now()),
       }),
     });
 
