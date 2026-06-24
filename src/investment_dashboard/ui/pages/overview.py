@@ -885,7 +885,11 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
             has_secondary = True
     fig.update_layout(
         title=(
-            f"Portfolio value today ({currency})"
+            (
+                f"Portfolio value today — {currency} vs {secondary_currency}"
+                if has_secondary
+                else f"Portfolio value today ({currency})"
+            )
             if intraday
             else (
                 f"Portfolio value over time — {currency} vs {secondary_currency}"
@@ -971,17 +975,22 @@ def _value_over_time_section(  # type: ignore[no-untyped-def]
             )
             if intraday:
                 _install_intraday_live_update(
-                    plot, display_ccy=display_ccy, tz=display_tz, prev_close=prev_close
+                    plot,
+                    display_ccy=display_ccy,
+                    tz=display_tz,
+                    prev_close=prev_close,
+                    secondary_ccy=secondary_ccy,
                 )
 
 
-def _install_intraday_live_update(plot, *, display_ccy, tz, prev_close=None):  # type: ignore[no-untyped-def]  # pragma: no cover - UI timer
+def _install_intraday_live_update(plot, *, display_ccy, tz, prev_close=None, secondary_ccy=None):  # type: ignore[no-untyped-def]  # pragma: no cover - UI timer
     """Redraw the "1 Day" chart in place each time a price refresh lands.
 
     Polls the shared refresh-activity counter (cheap, in-memory) and only does
     real work when a refresh has *completed* with new data — rebuilding the
     intraday series and swapping the Plotly figure so the curve tracks the live
-    price without a disruptive full-page reload.
+    price without a disruptive full-page reload. ``secondary_ccy`` (when set)
+    rebuilds the other-currency companion line too so it keeps tracking live.
     """
     state = {"last": refresh_status.snapshot().last_update_at}
 
@@ -993,10 +1002,22 @@ def _install_intraday_live_update(plot, *, display_ccy, tz, prev_close=None):  #
         try:
             with session_scope() as session:
                 series = build_intraday_value_series(session, currency=display_ccy, tz=tz)
+                secondary = None
+                if secondary_ccy:
+                    secondary = build_intraday_value_series(session, currency=secondary_ccy, tz=tz)
+                    # Only keep the companion when it lines up point-for-point
+                    # with the primary (so the shared-start scaling is valid).
+                    if not secondary or len(secondary) != len(series):
+                        secondary = None
             if series:
                 plot.update_figure(
                     _value_curve_figure(
-                        series, currency=display_ccy, intraday=True, prev_close=prev_close
+                        series,
+                        currency=display_ccy,
+                        intraday=True,
+                        prev_close=prev_close,
+                        secondary=secondary,
+                        secondary_currency=secondary_ccy if secondary else None,
                     )
                 )
         except Exception:  # pragma: no cover - best-effort live redraw
@@ -1062,6 +1083,11 @@ def register() -> None:  # noqa: PLR0915
                         intraday_snapshots_service.reconstruct_last_session(session)
                         value_series = build_intraday_value_series(
                             session, currency=display_ccy, tz=display_tz, positions=positions
+                        )
+                        # Built in both currencies (from the same intraday samples)
+                        # so the right-axis comparison line shares the same start.
+                        value_series_secondary = build_intraday_value_series(
+                            session, currency=secondary_ccy, tz=display_tz, positions=positions
                         )
                         # The reference line marking yesterday's settled close.
                         intraday_prev_close = previous_session_close_value(
