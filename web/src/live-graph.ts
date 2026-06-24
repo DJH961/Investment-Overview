@@ -468,7 +468,9 @@ export function cacheSeriesBackoff(
   return {
     suppressed: (key, now) => {
       const e = read(key);
-      return e !== null && e.armedAt !== null && now - e.armedAt < cooldownMs;
+      return (
+        e !== null && e.armedAt !== null && e.fails >= attempts && now - e.armedAt < cooldownMs
+      );
     },
     fail: (key, now) => {
       let e = read(key) ?? { fails: 0, armedAt: null };

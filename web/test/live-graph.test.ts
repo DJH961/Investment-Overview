@@ -43,7 +43,7 @@ function mapStorage(): {
 } {
   const m = new Map<string, string>();
   return {
-    getItem: (k) => (m.has(k) ? (m.get(k) as string) : null),
+    getItem: (k) => m.get(k) ?? null,
     setItem: (k, v) => void m.set(k, v),
     removeItem: (k) => void m.delete(k),
   };
