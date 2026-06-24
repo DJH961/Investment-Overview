@@ -12,6 +12,7 @@ import {
   DEFAULT_WEEK_SESSIONS,
   WEEK_STORE_KEY,
   loadOrBuildWeekCurve,
+  weekStaleSymbols,
 } from "../src/week";
 import type { Bar } from "../src/timeseries";
 import { memoryBackend, TimeSeriesStore } from "../src/timeseries-store";
@@ -356,5 +357,61 @@ describe("loadOrBuildWeekCurve", () => {
 describe("week constants", () => {
   it("defaults to a five-session window", () => {
     expect(DEFAULT_WEEK_SESSIONS).toBe(5);
+  });
+});
+
+describe("weekStaleSymbols (refresh-dedup coverage test, item 5b)", () => {
+  it("reports a symbol stale when the store holds only pre-settlement bars", () => {
+    // Closed Saturday: the settled cutoff is Friday 03-13. A store carrying only
+    // Wednesday's close is *present* but does not *cover* through settlement, so
+    // the looser presence check would wrongly read it fresh — coverage must not.
+    const stored = { bars: { VTI: [bar(dayMs("2026-03-11"), "98")] } };
+    expect(weekStaleSymbols(stored, ["VTI"], SAT_CLOSED)).toEqual(["VTI"]);
+  });
+
+  it("reports a symbol fresh when a bar at/after the settled cutoff exists", () => {
+    const stored = { bars: { VTI: [bar(dayMs("2026-03-13"), "100")] } };
+    expect(weekStaleSymbols(stored, ["VTI"], SAT_CLOSED)).toEqual([]);
+  });
+
+  it("treats a missing or empty store as fully stale", () => {
+    expect(weekStaleSymbols(null, ["VTI", "VOO"], SAT_CLOSED)).toEqual(["VTI", "VOO"]);
+    expect(weekStaleSymbols({ bars: {} }, ["VTI"], SAT_CLOSED)).toEqual(["VTI"]);
+  });
+
+  it("uses the second-to-last session as the cutoff while the market is open", () => {
+    // Thu 03-12 open: today rides the live tip, so Wednesday 03-11's close is the
+    // latest *settled* one — a store covering through Wednesday reads fresh.
+    const stored = { bars: { VTI: [bar(dayMs("2026-03-11"), "98")] } };
+    expect(weekStaleSymbols(stored, ["VTI"], THU_OPEN)).toEqual([]);
+    // ...but a store stopping at Tuesday is still stale mid-open-session.
+    const older = { bars: { VTI: [bar(dayMs("2026-03-10"), "97")] } };
+    expect(weekStaleSymbols(older, ["VTI"], THU_OPEN)).toEqual(["VTI"]);
+  });
+
+  it("matches the cutoff the build uses: a pre-settlement store is rebuilt, not reused", async () => {
+    // End-to-end check that the dedup's coverage test agrees with the build. A
+    // store holding only Wednesday's close on closed Saturday must be treated as
+    // stale by BOTH weekStaleSymbols AND loadOrBuildWeekCurve (which re-fetches).
+    const s = store();
+    await s.mergeSession(
+      WEEK_STORE_KEY,
+      { bars: { VTI: [bar(dayMs("2026-03-11"), "98")] } },
+      dayMs("2026-03-11"),
+    );
+    const pre = await s.loadSession(WEEK_STORE_KEY);
+    expect(weekStaleSymbols(pre, ["VTI"], SAT_CLOSED)).toEqual(["VTI"]);
+    let fetched = false;
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => {
+        fetched = true;
+        return new Map<string, Bar[]>([["VTI", [bar(dayMs("2026-03-13"), "100")]]]);
+      },
+      now: SAT_CLOSED,
+    });
+    expect(fetched).toBe(true);
   });
 });

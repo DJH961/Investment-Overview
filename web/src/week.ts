@@ -84,6 +84,40 @@ function coversThrough(
   return symbols.every((s) => (bars[s] ?? []).some((b) => b.t >= fromMs));
 }
 
+/**
+ * The instant the 1W curve treats as its freshness cutoff for a given `now`: a
+ * stored daily-close cache is "fresh" only if it carries a bar at/after this
+ * instant for every needed symbol. While the market is open today rides on the
+ * live tip, so the latest *settled* close is the window's second-to-last day;
+ * otherwise it is the window's last day. Exposed so the refresh-layer dedup test
+ * ({@link App.prefetchGraphStaleness}) can apply the *same* coverage test the
+ * build uses, instead of a looser presence check that misfires on stale-but-
+ * present stores (`docs/tiingo_polling_storm_cleanup_plan.md` item 5b).
+ */
+export function weekCoverageCutoffMs(now: Date = new Date(), sessions = DEFAULT_WEEK_SESSIONS): number {
+  const window = recentTradingSessions(sessions, now);
+  const startDay = window[0] ?? lastSessionDate(now);
+  const endDay = window[window.length - 1] ?? startDay;
+  const settledEnd = isUsMarketOpen(now) ? (window[window.length - 2] ?? startDay) : endDay;
+  return dayStartMs(settledEnd);
+}
+
+/**
+ * Which of `symbols` a stored weekly cache does **not** yet cover through the
+ * settled cutoff for `now` — the stale set the 1W build would re-fetch. Mirrors
+ * the build's `coversThrough(settledEnd)` test (item 5b).
+ */
+export function weekStaleSymbols(
+  stored: { bars: Record<string, Bar[]> } | null,
+  symbols: string[],
+  now: Date = new Date(),
+  sessions = DEFAULT_WEEK_SESSIONS,
+): string[] {
+  const cutoff = weekCoverageCutoffMs(now, sessions);
+  const bars = stored?.bars ?? {};
+  return symbols.filter((s) => !(bars[s] ?? []).some((b) => b.t >= cutoff));
+}
+
 /** Inputs to {@link loadOrBuildWeekCurve}. */
 export interface WeekCurveOptions {
   anchor: IntradayAnchor;

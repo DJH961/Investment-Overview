@@ -120,7 +120,7 @@ import {
 import { springboardSessionCurve, springboardWeekCurve } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
 import { TimeSeriesStore } from "./timeseries-store";
-import { WEEK_STORE_KEY } from "./week";
+import { WEEK_STORE_KEY, weekStaleSymbols } from "./week";
 import type { Bar } from "./timeseries";
 import type { MobileExport } from "./types";
 import {
@@ -735,7 +735,11 @@ export class App {
     const today = await store.loadSession(day).catch(() => null);
     const session = marketSymbols.filter((s) => !(today?.bars[s]?.length));
     const weekStored = await store.loadSession(WEEK_STORE_KEY).catch(() => null);
-    const week = marketSymbols.filter((s) => !(weekStored?.bars[s]?.length));
+    // Match the 1W build's coverage test, not a looser presence check: a
+    // stale-but-present store (only pre-settlement bars) must read *stale* here,
+    // else priming is skipped and the dashboard build re-pulls it via Tiingo
+    // moments later (docs/tiingo_polling_storm_cleanup_plan.md item 5b).
+    const week = weekStaleSymbols(weekStored, marketSymbols, now);
     return { session, week };
   }
 
@@ -2920,15 +2924,17 @@ export class App {
         return;
       }
     }
-    // Smart Tiingo gate (any rapid-fire quote pull, not just a hard reset): when
-    // this round leans on Tiingo for speed — the "via backup" rapid-fire, or a
-    // from-scratch reset — pull any *stale* 1D/1W graph package first. Each bar's
-    // newest point doubles as the quote, so priming the holdings' quote cache
-    // from those bars makes the quote pull below skip them — Tiingo is never
-    // spent on both the rapid-fire quote *and* the 1D/1W graph for one symbol.
-    // It self-gates on staleness (a fully-loaded graph fetches nothing) so a
-    // closed-market book already in hand fires no download here.
-    if ((opts.viaTiingo ?? false) || (opts.primeGraphs ?? false)) {
+    // Smart Tiingo gate — run on **any** network round, not just one explicitly
+    // flagged Tiingo-leaning: any force/auto refresh can quietly fall back to
+    // Tiingo for the symbols Twelve Data defers, so the dedup must fire whenever a
+    // round *might* lean on Tiingo (docs/tiingo_polling_storm_cleanup_plan.md item
+    // 5a). Pull any *stale* 1D/1W graph package first — each bar's newest point
+    // doubles as the quote, so priming the holdings' quote cache from those bars
+    // makes the quote pull below skip them, so Tiingo is never spent on both the
+    // rapid-fire quote *and* the 1D/1W graph for one symbol. It self-gates on
+    // staleness (a fully-loaded graph fetches nothing), so a closed-market book
+    // already in hand fires no download here regardless of the round's flags.
+    {
       await this.primeStaleGraphPackages().catch(() => undefined);
       if (session !== this.sessionId) {
         this.refreshing = false;
