@@ -175,6 +175,87 @@ class TestBuildWeekValueSeries:
         monkeypatch.setattr(iss, "week_series_with_fx", lambda *a, **k: [])
         assert _overview_query.build_week_value_series(session, currency="EUR") == []
 
+    def _seed_fund(
+        self, session: Session, *, symbol: str, asset_class: str, name: str | None = None
+    ) -> int:
+        """Seed a 10-share EUR holding of ``symbol`` bought before the week."""
+        a = accounts_repo.create_account(
+            session,
+            broker="vanguard",
+            account_label="EUR Brokerage",
+            native_currency="EUR",
+            account_type="brokerage",
+        )
+        instr = instruments_repo.get_or_create(
+            session, symbol=symbol, name=name, asset_class=asset_class, native_currency="EUR"
+        )
+        session.add(
+            Transaction(
+                account_id=a.id,
+                instrument_id=instr.id,
+                date=date(2024, 1, 2),
+                kind="buy",
+                quantity=Decimal("10"),
+                price_native=Decimal("100.00"),
+                net_native=Decimal("-1000.00"),
+                net_eur=Decimal("-1000.00"),
+                source="manual",
+            )
+        )
+        session.flush()
+        return instr.id
+
+    def test_drifting_nav_fund_slopes_across_week(self, session: Session, monkeypatch) -> None:
+        """A mutual fund whose NAV moved across the week contributes a *sloped* track."""
+        from investment_dashboard.services import intraday_snapshots_service as iss
+        from investment_dashboard.ui.pages import _overview_query
+
+        iid = self._seed_fund(session, symbol="GROWTHX", asset_class="mutual_fund")
+        # NAV published 100 on Jun 3, 110 on Jun 5 (forward-filled to today).
+        prices_repo.upsert_closes(
+            session, iid, {date(2024, 6, 3): Decimal("100.00"), date(2024, 6, 5): Decimal("110.00")}
+        )
+        session.flush()
+
+        # No intraday-priced holdings, so the market component is flat zero; the
+        # plotted value is purely the per-day NAV-fund track.
+        t_mon = datetime(2024, 6, 3, 18, 0)
+        t_wed = datetime(2024, 6, 5, 18, 0)
+        samples = [(t_mon, Decimal("0"), None), (t_wed, Decimal("0"), None)]
+        monkeypatch.setattr(iss, "week_series_with_fx", lambda *a, **k: list(samples))
+
+        points = _overview_query.build_week_value_series(
+            session, currency="EUR", now=datetime(2024, 6, 5, 20, 0, tzinfo=UTC)
+        )
+        # Monday rides the Jun-3 NAV (10 × 100), Wednesday the Jun-5 NAV (10 × 110):
+        # the fund sleeve *slopes* instead of sitting flat at today's NAV.
+        assert [p.value for p in points][:2] == [Decimal("1000.00"), Decimal("1100.00")]
+
+    def test_money_market_fund_stays_flat(self, session: Session, monkeypatch) -> None:
+        """A money-market fund rides flat in the base — it never slopes."""
+        from investment_dashboard.services import intraday_snapshots_service as iss
+        from investment_dashboard.ui.pages import _overview_query
+
+        iid = self._seed_fund(
+            session, symbol="MMFUND", asset_class="mutual_fund", name="Acme Money Market Fund"
+        )
+        # Even with dated closes, an MMF is valued at par $1.00 NAV and must not drift.
+        prices_repo.upsert_closes(
+            session, iid, {date(2024, 6, 3): Decimal("100.00"), date(2024, 6, 5): Decimal("110.00")}
+        )
+        session.flush()
+
+        t_mon = datetime(2024, 6, 3, 18, 0)
+        t_wed = datetime(2024, 6, 5, 18, 0)
+        samples = [(t_mon, Decimal("0"), None), (t_wed, Decimal("0"), None)]
+        monkeypatch.setattr(iss, "week_series_with_fx", lambda *a, **k: list(samples))
+
+        points = _overview_query.build_week_value_series(
+            session, currency="EUR", now=datetime(2024, 6, 5, 20, 0, tzinfo=UTC)
+        )
+        # 10 shares × par 1.00 = €10, constant across every point (no slope).
+        assert {p.value for p in points} == {Decimal("10.00")}
+
 
 class TestPreviousSessionCloseValue:
     def test_returns_prior_trading_day_settled_value(self, session: Session) -> None:

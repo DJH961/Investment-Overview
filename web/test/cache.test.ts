@@ -16,6 +16,11 @@ import {
   readCachedFx,
   readCachedQuotes,
   readCreditLog,
+  releaseCredits,
+  releaseTiingoCredits,
+  recordTiingoCredits,
+  readTiingoCreditLog,
+  tiingoCreditsSpentToday,
   readNavPublishStats,
   readSymbolPlan,
   recordCredits,
@@ -29,6 +34,10 @@ import {
   readSessionStatus,
   writeSessionStatus,
   clearPriceCaches,
+  readSeriesBackoff,
+  writeSeriesBackoff,
+  clearSeriesBackoff,
+  clearAllSeriesBackoff,
   NAV_PUBLISH_SAMPLES,
   type StorageLike,
 } from "../src/cache";
@@ -200,6 +209,35 @@ describe("credit log", () => {
     const s = memStorage();
     recordCredits(0, 1000, s);
     expect(readCreditLog(1000, 60_000, s).length).toBe(0);
+  });
+
+  it("releaseCredits refunds a reserved spend so the running total nets out", () => {
+    const s = memStorage();
+    // Reserve 3 up-front, then learn the call was never billed and refund it.
+    recordCredits(3, 1000, s);
+    releaseCredits(3, 1100, s);
+    const log = readCreditLog(2000, 24 * 60 * 60 * 1000, s);
+    expect(creditsSpentWithin(log, 2000, 60 * 1000)).toBe(0);
+    // A partial refund leaves only the genuinely-billed remainder on the books.
+    recordCredits(2, 1500, s);
+    releaseCredits(1, 1600, s);
+    expect(creditsSpentWithin(readCreditLog(2000, 24 * 60 * 60 * 1000, s), 2000, 60 * 1000)).toBe(1);
+  });
+
+  it("releaseCredits ignores non-positive refunds", () => {
+    const s = memStorage();
+    recordCredits(2, 1000, s);
+    releaseCredits(0, 1100, s);
+    releaseCredits(-5, 1100, s);
+    expect(creditsSpentWithin(readCreditLog(2000, 60_000, s), 2000, 60_000)).toBe(2);
+  });
+
+  it("releaseTiingoCredits refunds against the separate Tiingo ledger", () => {
+    const s = memStorage();
+    recordTiingoCredits(1, 1000, s);
+    releaseTiingoCredits(1, 1100, s);
+    const log = readTiingoCreditLog(2000, 24 * 60 * 60 * 1000, s);
+    expect(tiingoCreditsSpentToday(log, 1100)).toBe(0);
   });
 
   it("counts the daily budget from UTC midnight, not a rolling 24h window", () => {
@@ -462,5 +500,45 @@ describe("clearPriceCaches", () => {
 
   it("is a safe no-op when storage is unavailable", () => {
     expect(() => clearPriceCaches(null)).not.toThrow();
+  });
+});
+
+describe("time-series backoff store", () => {
+  it("round-trips and clears a single series' backoff entry", () => {
+    const s = memStorage();
+    expect(readSeriesBackoff("1W:AAPL", s)).toBeNull();
+    writeSeriesBackoff("1W:AAPL", { fails: 2, armedAt: null }, s);
+    expect(readSeriesBackoff("1W:AAPL", s)).toEqual({ fails: 2, armedAt: null });
+    writeSeriesBackoff("1W:AAPL", { fails: 3, armedAt: 5000 }, s);
+    expect(readSeriesBackoff("1W:AAPL", s)).toEqual({ fails: 3, armedAt: 5000 });
+    clearSeriesBackoff("1W:AAPL", s);
+    expect(readSeriesBackoff("1W:AAPL", s)).toBeNull();
+  });
+
+  it("keeps distinct keys independent (1D vs 1W, price vs fx)", () => {
+    const s = memStorage();
+    writeSeriesBackoff("1D:AAPL", { fails: 3, armedAt: 1000 }, s);
+    writeSeriesBackoff("1W:AAPL", { fails: 1, armedAt: null }, s);
+    writeSeriesBackoff("fx:1W:1day", { fails: 3, armedAt: 1000 }, s);
+    clearSeriesBackoff("1D:AAPL", s);
+    expect(readSeriesBackoff("1D:AAPL", s)).toBeNull();
+    expect(readSeriesBackoff("1W:AAPL", s)).toEqual({ fails: 1, armedAt: null });
+    expect(readSeriesBackoff("fx:1W:1day", s)).toEqual({ fails: 3, armedAt: 1000 });
+  });
+
+  it("clearAllSeriesBackoff wipes every entry (Settings hard refresh)", () => {
+    const s = memStorage();
+    writeSeriesBackoff("1D:AAPL", { fails: 3, armedAt: 1000 }, s);
+    writeSeriesBackoff("fx:1D:1hour", { fails: 3, armedAt: 1000 }, s);
+    clearAllSeriesBackoff(s);
+    expect(readSeriesBackoff("1D:AAPL", s)).toBeNull();
+    expect(readSeriesBackoff("fx:1D:1hour", s)).toBeNull();
+  });
+
+  it("tolerates malformed persisted entries", () => {
+    const s = memStorage();
+    s.setItem("iv.web.series_backoff", JSON.stringify({ "1W:AAPL": { fails: "x", armedAt: "y" } }));
+    expect(readSeriesBackoff("1W:AAPL", s)).toEqual({ fails: 0, armedAt: null });
+    expect(() => clearAllSeriesBackoff(null)).not.toThrow();
   });
 });

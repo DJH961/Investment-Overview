@@ -388,6 +388,25 @@ export function recordCredits(
   writeJson(storage, CREDIT_KEY, log);
 }
 
+/**
+ * Refund `n` credits previously {@link recordCredits reserved} but not actually
+ * billed by the provider (the *settle* half of the two-phase reserve/settle
+ * accounting — see `docs/tiingo_polling_storm_cleanup_plan.md` item 1). Booked as
+ * a negative spend so the running totals ({@link creditsSpentWithin},
+ * {@link creditsSpentToday}) net it back out; concurrent dispatches still saw the
+ * worst-case reservation while the call was in flight, so they paced themselves.
+ */
+export function releaseCredits(
+  n: number,
+  now: number,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  if (n <= 0) return;
+  const log = readCreditLog(now, 24 * 60 * 60 * 1000, storage);
+  log.push({ at: now, n: -n });
+  writeJson(storage, CREDIT_KEY, log);
+}
+
 /** Sum the credits spent within the trailing `windowMs` up to `now`. */
 export function creditsSpentWithin(log: CreditSpend[], now: number, windowMs: number): number {
   return log.reduce((acc, e) => (now - e.at < windowMs ? acc + e.n : acc), 0);
@@ -498,12 +517,117 @@ export function recordTiingoCredits(
 }
 
 /**
+ * Refund `n` Tiingo credits previously {@link recordTiingoCredits reserved} but
+ * not actually forwarded to Tiingo by the Worker (e.g. a Worker-side `400`/`429`/
+ * `502`/`503` reject that never reached Tiingo's meter — see the two-phase
+ * accounting in `docs/tiingo_polling_storm_cleanup_plan.md` item 1). Booked as a
+ * negative spend so the running total nets it back out. This is what stops the
+ * FX-storm failure mode leaving a phantom charge on the ledger.
+ */
+export function releaseTiingoCredits(
+  n: number,
+  now: number,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  if (n <= 0) return;
+  const log = readTiingoCreditLog(now, 24 * 60 * 60 * 1000, storage);
+  log.push({ at: now, n: -n });
+  writeJson(storage, TIINGO_CREDIT_KEY, log);
+}
+
+/**
  * Tiingo credits spent so far **today**, measured from the most recent ET
  * midnight — the window Tiingo's shared daily cap actually resets on.
  */
 export function tiingoCreditsSpentToday(log: CreditSpend[], now: number): number {
   const dayStart = startOfEtDay(now);
   return log.reduce((acc, e) => (e.at >= dayStart ? acc + e.n : acc), 0);
+}
+
+// --- Live-graph time-series backoff (price bars + FX) ----------------------
+
+const SERIES_BACKOFF_KEY = "iv.web.series_backoff";
+
+/**
+ * Default cooldown a persistently empty/failing time-series endpoint is
+ * suppressed for once it has armed. Wall-clock (epoch-ms) based, so it is
+ * measured against the real clock and survives the app being closed and
+ * reopened — not "time the app has been open".
+ */
+export const DEFAULT_SERIES_BACKOFF_MS = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * How many consecutive failed attempts a series gets *before* the cooldown
+ * arms. The app should try hard in a short session, so a symbol is retried this
+ * many times across rebuilds; only a genuinely dead series (still failing after
+ * the 3rd try) is parked for {@link DEFAULT_SERIES_BACKOFF_MS}.
+ */
+export const DEFAULT_SERIES_BACKOFF_ATTEMPTS = 3;
+
+/** One series' backoff state: the strike count and when (epoch-ms) it armed. */
+export interface SeriesBackoffEntry {
+  /** Consecutive failed attempts since the last success / cooldown reset. */
+  fails: number;
+  /** Epoch-ms the cooldown armed (`fails` reached the threshold), or null. */
+  armedAt: number | null;
+}
+
+/**
+ * Read the backoff state for a time-series `key` (a price symbol like
+ * `"1W:AAPL"` or an FX leg like `"fx:1W:1day"`), or null when untracked. Backs
+ * the per-symbol negative-result memo (`docs/tiingo_polling_storm_cleanup_plan.md`
+ * item 4): a symbol that keeps failing is suppressed from the network so a
+ * graph-switch storm cannot re-arm the refill gate on every render — while
+ * quotes are never gated, so the headline price still updates.
+ */
+export function readSeriesBackoff(
+  key: string,
+  storage: StorageLike | null = defaultStorage(),
+): SeriesBackoffEntry | null {
+  const raw = readJson<Record<string, SeriesBackoffEntry>>(storage, SERIES_BACKOFF_KEY);
+  const entry = raw && typeof raw === "object" ? raw[key] : undefined;
+  if (!entry || typeof entry !== "object") return null;
+  const fails = typeof entry.fails === "number" && Number.isFinite(entry.fails) ? entry.fails : 0;
+  const armedAt =
+    typeof entry.armedAt === "number" && Number.isFinite(entry.armedAt) ? entry.armedAt : null;
+  return { fails, armedAt };
+}
+
+/** Persist the backoff state for a time-series `key`. */
+export function writeSeriesBackoff(
+  key: string,
+  entry: SeriesBackoffEntry,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  const raw = readJson<Record<string, SeriesBackoffEntry>>(storage, SERIES_BACKOFF_KEY);
+  const next: Record<string, SeriesBackoffEntry> =
+    raw && typeof raw === "object" ? { ...raw } : {};
+  next[key] = entry;
+  writeJson(storage, SERIES_BACKOFF_KEY, next);
+}
+
+/** Clear one series' backoff state (e.g. after a successful, non-empty pull). */
+export function clearSeriesBackoff(
+  key: string,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  const raw = readJson<Record<string, SeriesBackoffEntry>>(storage, SERIES_BACKOFF_KEY);
+  if (!raw || typeof raw !== "object" || !(key in raw)) return;
+  const next = { ...raw };
+  delete next[key];
+  writeJson(storage, SERIES_BACKOFF_KEY, next);
+}
+
+/**
+ * Wipe **all** time-series backoff state. Wired to the Settings hard refreshes
+ * (force-fetch-all / backup provider / hard reset) so a deliberate user-driven
+ * refresh always re-attempts every symbol immediately, regardless of any armed
+ * cooldown — the automatic rebuild loop keeps the storm protection, an explicit
+ * tap overrides it.
+ */
+export function clearAllSeriesBackoff(storage: StorageLike | null = defaultStorage()): void {
+  if (!storage) return;
+  storage.removeItem(SERIES_BACKOFF_KEY);
 }
 
 // --- Tiingo NAV canary + quick-refresh state -------------------------------

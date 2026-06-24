@@ -36,7 +36,7 @@ import {
   MAX_AUTO_LOCK_MINUTES,
   type AppConfig,
 } from "./config";
-import { PriceError, type FxRates } from "./prices";
+import { PriceError, type FxRates, type Quote } from "./prices";
 import { Decimal } from "./decimal-config";
 import {
   readCachedEnvelope,
@@ -45,14 +45,17 @@ import {
   readCachedQuotes,
   readCreditLog,
   clearPriceCaches,
+  clearAllSeriesBackoff,
   creditsSpentToday,
   readLastPull,
   readNavPublishStats,
   readSymbolPlan,
   recordCredits,
+  releaseCredits,
   type PlannedSymbol,
   recordNavPublish,
   recordTiingoCredits,
+  releaseTiingoCredits,
   primeQuotesFromBars,
   readSessionStatus,
   writeSessionStatus,
@@ -74,6 +77,7 @@ import {
   marketCacheTtlMs,
   navCacheTtlMs,
   navPublishWindow,
+  twelveDataBudgetRemaining,
   type EurUsdSource,
   type LoadQuotesOptions,
   type QuoteLoadReport,
@@ -107,6 +111,7 @@ import { APP_VERSION } from "./version";
 import {
   buildLiveSessionCurve,
   buildLiveWeekCurve,
+  cacheSeriesBackoff,
   instrumentedGraphRecorders,
   makePriceBarFetcher,
   makeWindowFxFetcher,
@@ -117,7 +122,7 @@ import {
 import { springboardSessionCurve, springboardWeekCurve } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
 import { TimeSeriesStore } from "./timeseries-store";
-import { WEEK_STORE_KEY } from "./week";
+import { WEEK_STORE_KEY, navBarsFromQuotes, weekStaleSymbols } from "./week";
 import type { Bar } from "./timeseries";
 import type { MobileExport } from "./types";
 import {
@@ -175,6 +180,12 @@ const BLOB_CHECK_MIN_INTERVAL_MS = 5 * 60 * 1000;
  * instead of going silent until the user reopens it.
  */
 const SETTLED_HEARTBEAT_MS = 5 * 60 * 1000;
+
+/**
+ * localStorage key holding the app version this device last booted, so the next
+ * boot can spot a version change and note it in the polling log (item 6).
+ */
+const APP_VERSION_KEY = "iv.web.app_version";
 
 /**
  * Daily free-tier credits remaining at or below which the UI warns the user it
@@ -436,6 +447,7 @@ export class App {
   }
 
   async start(): Promise<void> {
+    this.logVersionUpdate();
     this.state.config = await loadConfig();
     const demoParams = this.demoParams();
     if (demoParams.requested) this.enterDemo(demoParams);
@@ -732,7 +744,11 @@ export class App {
     const today = await store.loadSession(day).catch(() => null);
     const session = marketSymbols.filter((s) => !(today?.bars[s]?.length));
     const weekStored = await store.loadSession(WEEK_STORE_KEY).catch(() => null);
-    const week = marketSymbols.filter((s) => !(weekStored?.bars[s]?.length));
+    // Match the 1W build's coverage test, not a looser presence check: a
+    // stale-but-present store (only pre-settlement bars) must read *stale* here,
+    // else priming is skipped and the dashboard build re-pulls it via Tiingo
+    // moments later (docs/tiingo_polling_storm_cleanup_plan.md item 5b).
+    const week = weekStaleSymbols(weekStored, marketSymbols, now);
     return { session, week };
   }
 
@@ -817,10 +833,12 @@ export class App {
       // tallied — the warm-up backfill used to record its credits silently, so a
       // refill could "download something once without logging". Now it never does.
       const spent = { credits: 0 };
-      const { onTiingoSpend, onTwelveDataSpend } = instrumentedGraphRecorders({
+      const { tiingoMeter, twelveDataMeter } = instrumentedGraphRecorders({
         range: `${label} warm-up`,
         bookTwelveData: (n) => recordCredits(n, Date.now()),
+        refundTwelveData: (n) => releaseCredits(n, Date.now()),
         bookTiingo: (n) => recordTiingoCredits(n, Date.now()),
+        refundTiingo: (n) => releaseTiingoCredits(n, Date.now()),
         log: (message) => this.pollLog("graph", message),
         spent,
       });
@@ -830,8 +848,8 @@ export class App {
         param,
         startDate: window.startDate,
         endDate: window.endDate,
-        onTiingoSpend,
-        onTwelveDataSpend,
+        tiingoMeter,
+        twelveDataMeter,
         ...extra,
       });
       if (!fetchBars) return;
@@ -852,7 +870,12 @@ export class App {
       primeQuotesFromBars(bars, currencyBySymbol, Date.now());
       // Grab the matching FX track in the same pass so the curve re-marks each
       // point at its own settled rate (finest granularity) for one more credit.
-      const fetchFx = makeWindowFxFetcher(proxyUrl, window, fxResample, undefined, onTiingoSpend);
+      const fetchFx = makeWindowFxFetcher(proxyUrl, window, fxResample, undefined, tiingoMeter, {
+        apiKey: config.apiKey,
+        twelveDataMeter,
+        backoff: cacheSeriesBackoff(),
+        backoffKey: `fx:${label}:${fxResample}`,
+      });
       let fx: Bar[] | undefined;
       if (fetchFx) fx = await fetchFx().catch(() => undefined);
       await store.mergeSession(storeKey, { bars: incoming, fx }, now.getTime());
@@ -2495,6 +2518,10 @@ export class App {
       fxEurUsdSource: eurUsdSource,
     });
     model.overview.lastDataPullAt = this.lastDataPullAt;
+    // Remember each fund's freshly-settled NAV as a daily bar in the 1W store, so
+    // the week curve re-marks NAV funds from their real per-day drift at zero
+    // graph cost (item 7a.1). Best-effort: a store failure never sinks the paint.
+    if (network) this.persistFundNavBars(quoteLoad.quotes);
     // Refresh the live-coverage summary on a network pull; keep the last one on a
     // cache-only re-paint so a currency toggle / blob swap doesn't blank it.
     if (network) {
@@ -2593,6 +2620,13 @@ export class App {
   private updateAllFromScratch(): void {
     // Forget every cached price so nothing is served from a stale window.
     clearPriceCaches();
+    // A from-scratch reset must also drop any armed time-series backoff so every
+    // graph symbol is re-pulled, not parked on a stale cooldown.
+    clearAllSeriesBackoff();
+    this.pollLog(
+      "note",
+      "Hard reset (Settings) — cleared price caches and wiping the 1D/1W graph store, then re-pulling everything from scratch.",
+    );
     // Force the blob check to re-download (rather than short-circuit on an
     // unchanged version stamp) the next time it runs.
     this.metaVersion = null;
@@ -2648,6 +2682,13 @@ export class App {
     // Back to the dashboard, then force a pull of every symbol.
     this.exitSettings();
     this.toast("Pulling every live price now…");
+    // A deliberate hard refresh overrides any armed time-series backoff so every
+    // graph symbol is re-attempted immediately (the automatic loop keeps it).
+    clearAllSeriesBackoff();
+    this.pollLog(
+      "note",
+      "Hard refresh (Settings) — force-fetching every live price now, bypassing the freshness/NAV-schedule gates.",
+    );
     const session = this.sessionId;
     if (this.refreshing) return; // a pull is already in flight; it will repaint
     void this.runScheduledRefresh(session, "manual", { force: true, forceAll: true });
@@ -2666,6 +2707,13 @@ export class App {
   private refreshViaBackupProvider(): void {
     this.exitSettings();
     this.toast("Trying the backup data provider…");
+    // A deliberate hard refresh overrides any armed time-series backoff so every
+    // graph symbol is re-attempted immediately on the backup provider.
+    clearAllSeriesBackoff();
+    this.pollLog(
+      "note",
+      "Hard refresh (Settings) — routing the whole book through the backup provider (Tiingo) for one pull.",
+    );
     const session = this.sessionId;
     if (this.refreshing) return; // a pull is already in flight; it will repaint
     void this.runScheduledRefresh(session, "manual", { viaTiingo: true });
@@ -2911,15 +2959,17 @@ export class App {
         return;
       }
     }
-    // Smart Tiingo gate (any rapid-fire quote pull, not just a hard reset): when
-    // this round leans on Tiingo for speed — the "via backup" rapid-fire, or a
-    // from-scratch reset — pull any *stale* 1D/1W graph package first. Each bar's
-    // newest point doubles as the quote, so priming the holdings' quote cache
-    // from those bars makes the quote pull below skip them — Tiingo is never
-    // spent on both the rapid-fire quote *and* the 1D/1W graph for one symbol.
-    // It self-gates on staleness (a fully-loaded graph fetches nothing) so a
-    // closed-market book already in hand fires no download here.
-    if ((opts.viaTiingo ?? false) || (opts.primeGraphs ?? false)) {
+    // Smart Tiingo gate — run on **any** network round, not just one explicitly
+    // flagged Tiingo-leaning: any force/auto refresh can quietly fall back to
+    // Tiingo for the symbols Twelve Data defers, so the dedup must fire whenever a
+    // round *might* lean on Tiingo (docs/tiingo_polling_storm_cleanup_plan.md item
+    // 5a). Pull any *stale* 1D/1W graph package first — each bar's newest point
+    // doubles as the quote, so priming the holdings' quote cache from those bars
+    // makes the quote pull below skip them, so Tiingo is never spent on both the
+    // rapid-fire quote *and* the 1D/1W graph for one symbol. It self-gates on
+    // staleness (a fully-loaded graph fetches nothing), so a closed-market book
+    // already in hand fires no download here regardless of the round's flags.
+    {
       await this.primeStaleGraphPackages().catch(() => undefined);
       if (session !== this.sessionId) {
         this.refreshing = false;
@@ -3216,6 +3266,31 @@ export class App {
   }
 
   /**
+   * On boot, note in the polling log whenever the running app version differs
+   * from the one this device last recorded — so a reader of a downloaded log can
+   * see which build produced a given window, and spot the exact tick a new
+   * deploy took effect (docs/tiingo_polling_storm_cleanup_plan.md item 6).
+   * Best-effort: a missing/blocked localStorage simply skips the note.
+   */
+  private logVersionUpdate(): void {
+    try {
+      if (typeof localStorage === "undefined") return;
+      const previous = localStorage.getItem(APP_VERSION_KEY);
+      if (previous !== APP_VERSION) {
+        this.pollLog(
+          "note",
+          previous
+            ? `App updated — version ${previous} → ${APP_VERSION} on this device.`
+            : `App version ${APP_VERSION} — first run recorded on this device.`,
+        );
+        localStorage.setItem(APP_VERSION_KEY, APP_VERSION);
+      }
+    } catch {
+      /* version-stamping is best-effort */
+    }
+  }
+
+  /**
    * Export the recorded data-polling log to a downloadable text file. Gives the
    * user a detailed, timestamped trail of exactly what every refresh did — which
    * symbols were served from cache, fetched live, or filled from the fallback,
@@ -3421,11 +3496,20 @@ export class App {
     const providers: LiveGraphProviders = {
       apiKey: config.apiKey,
       priceProxyUrl: resolvePriceProxyUrl(config),
+      // The graph fills Twelve Data first up to whatever its shared per-minute/day
+      // budget has left after the (prefetch-led) quote pass, then spills the
+      // overflow to Tiingo (item 8). Reads the live shared credit ledger.
+      budget: () => twelveDataBudgetRemaining(Date.now()),
     };
     const store = this.ensureTimeSeriesStore();
     const exported = this.state.data?.live_graphs ?? undefined;
     const anchor = (): ReturnType<typeof buildModelAnchor> =>
       buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx);
+    // The 1W anchor folds NAV funds into the sleeve (re-marked from their daily
+    // NAV bars) rather than the flat base, so the week's NAV drift shows on the
+    // curve for a NAV-heavy book (docs/tiingo_polling_storm_cleanup_plan.md item 7).
+    const weekAnchor = (): ReturnType<typeof buildModelAnchor> =>
+      buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx, { navInSleeve: true });
     // Feed a graph's freshly fetched bars back into the holdings' quote cache so
     // a big load primes the rows instead of each re-buying the same price.
     const onFreshBars = (bars: Map<string, Bar[]>): void =>
@@ -3440,7 +3524,9 @@ export class App {
       ...instrumentedGraphRecorders({
         range,
         bookTwelveData: (n) => recordCredits(n, Date.now()),
+        refundTwelveData: (n) => releaseCredits(n, Date.now()),
         bookTiingo: (n) => recordTiingoCredits(n, Date.now()),
+        refundTiingo: (n) => releaseTiingoCredits(n, Date.now()),
         log: (message) => this.pollLog("graph", message),
         spent,
       }),
@@ -3479,7 +3565,21 @@ export class App {
         const spent = { credits: 0 };
         try {
           const curve = await buildLiveWeekCurve(
-            { anchor: anchor(), store, liveTip, onFreshBars },
+            {
+              anchor: weekAnchor(),
+              store,
+              liveTip,
+              onFreshBars,
+              // Item 7b: only genuine, NAV-fetchable moving funds are eligible for
+              // the daily-NAV gap-fill; money-market / pinned-$1 funds are absent
+              // from `lastNavSymbols`, so they stay flat and are never fetched.
+              navBackfillSymbols: [...this.lastNavSymbols],
+              onNavBackfill: (symbols) =>
+                this.pollLog(
+                  "graph",
+                  `1W graph: gap-filled NAV history for ${symbols.length} fund(s): ${symbols.join(", ")}.`,
+                ),
+            },
             loggingProviders("1W", spent),
           );
           if (spent.credits === 0) {
@@ -3515,6 +3615,23 @@ export class App {
       if (symbol) currencyBySymbol.set(symbol, h.nativeCurrency ?? null);
     }
     primeQuotesFromBars(barsBySymbol, currencyBySymbol, Date.now());
+  }
+
+  /**
+   * Persist each fund's freshly-settled NAV as a daily bar in the 1W store
+   * (`navBarsFromQuotes`, item 7a.1). The NAV was already pulled for the headline
+   * total, so accumulating it here costs no extra credit and lets the week curve
+   * re-mark NAV funds from their authentic per-day drift. Fire-and-forget and
+   * fully best-effort — a store failure must never disturb the price paint.
+   */
+  private persistFundNavBars(quotes: Map<string, Quote>): void {
+    const navSymbols = this.lastNavSymbols;
+    if (navSymbols.size === 0) return;
+    const bars = navBarsFromQuotes(quotes.values(), navSymbols);
+    if (Object.keys(bars).length === 0) return;
+    void this.ensureTimeSeriesStore()
+      .mergeSession(WEEK_STORE_KEY, { bars }, Date.now())
+      .catch(() => undefined);
   }
 
   /** Re-render the current model in place (e.g. after a currency toggle). */

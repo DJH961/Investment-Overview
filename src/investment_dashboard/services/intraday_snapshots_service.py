@@ -68,6 +68,7 @@ from investment_dashboard.domain.market_hours import (
     is_us_market_open,
     regular_session_close,
 )
+from investment_dashboard.domain.money_market import is_money_market
 from investment_dashboard.repositories import app_config_repo, intraday_repo
 
 if TYPE_CHECKING:
@@ -102,6 +103,18 @@ RECONSTRUCT_INTERVAL = "15m"
 #: the coarse 15-min grid. 7.5 min = half the bar width, so each bar is suppressed
 #: only by a live sample inside its own slot (never by one in a neighbouring slot).
 RECONSTRUCT_COVERAGE_GAP_SECONDS = 7 * 60 + 30
+
+#: Minimum number of stored "1 Day" samples below which a reconstructed session is
+#: judged under-covered (a stray bar from a partial / stalled fetch) and re-pulled
+#: rather than trusted complete. A single sample carries no time-spread to assess.
+RECONSTRUCT_MIN_COVERAGE_SAMPLES = 2
+
+#: Fraction of the elapsed session that the stored "1 Day" samples must *span*
+#: before the reconstruction is trusted as complete (a coverage test, not a mere
+#: presence test). A morning-only or stray-bar fetch spans too little and is
+#: re-pulled — cheap, since the desktop's yfinance primary is unmetered, so we can
+#: safely bias toward re-pulling when coverage is uncertain.
+RECONSTRUCT_COVERAGE_FRACTION = Decimal("0.6")
 
 #: ``app_config`` key recording the last session date we reconstructed, so we
 #: fetch intraday bars at most once per session instead of on every page load.
@@ -184,6 +197,85 @@ def market_value_eur(positions: list[Position]) -> Decimal:
         ),
         start=Decimal(0),
     )
+
+
+def is_drifting_nav(position: Position) -> bool:
+    """Whether ``position`` is a NAV mutual fund whose value drifts day to day.
+
+    Ordinary mutual funds publish a fresh NAV every session, so across the
+    multi-day "Week" curve their contribution should slope with their dated
+    closes rather than ride flat at *today's* NAV (≈ half the book can be funds,
+    so a week of flat funds materially understates the curve's movement). Their
+    daily close — which *is* the NAV — is already persisted to ``price_history``
+    by the normal close pull, so the per-day value is free to read.
+
+    Excluded (they stay in the truly-flat render-time base): cash, savings, and
+    money-market / settlement funds (≈ $1.00 NAV), which do not meaningfully
+    drift and should never wiggle on the curve.
+    """
+    effective = position.effective
+    asset_class = (
+        effective.asset_class if effective is not None else position.instrument.asset_class
+    )
+    if asset_class != "mutual_fund":
+        return False
+    name = effective.name if effective is not None else position.instrument.name
+    return not is_money_market(position.instrument.symbol, asset_class=asset_class, name=name)
+
+
+def nav_drift_value_eur(positions: list[Position]) -> Decimal:
+    """EUR value of the day-drifting NAV funds among ``positions``.
+
+    Companion to :func:`market_value_eur`: the intraday sleeve moves minute to
+    minute, this sleeve moves once per session (its NAV). Both are pulled out of
+    the flat render-time base so the "Week" curve can reapply each at its own
+    dated value. Money-market funds and cash stay in the flat base.
+    """
+    return sum(
+        (p.current_value_eur for p in positions if p.shares > _MIN_SHARES and is_drifting_nav(p)),
+        start=Decimal(0),
+    )
+
+
+def session_date_of(at_utc: datetime) -> date:
+    """Exchange (session) date of a naive- or aware-UTC sample instant."""
+    aware = at_utc if at_utc.tzinfo is not None else at_utc.replace(tzinfo=UTC)
+    return aware.astimezone(_MARKET_TZ).date()
+
+
+def week_nav_drift_with_fx(
+    session: Session, *, now: datetime | None = None
+) -> dict[date, tuple[Decimal, Decimal | None]]:
+    """Per-session NAV-fund EUR value (and that day's settled EUR/USD) for the week.
+
+    For each of the recent trading sessions the "Week" curve plots, the
+    day-drifting NAV funds (see :func:`is_drifting_nav`) are revalued at *that
+    day's* persisted close — their published NAV — and that day's settled
+    EUR/USD rate, so the fund sleeve slopes per-day instead of riding flat at
+    today's NAV. The EUR value carries each day's own settled FX so the USD view
+    cancels it exactly to native USD (the same currency model the intraday market
+    component uses); the rate is returned alongside.
+
+    Reads only the price cache the daily close pulls already populate — no extra
+    network fetch. Returns ``{}`` when there are no drifting NAV funds.
+    """
+    from investment_dashboard.services import fx_service, positions_service  # noqa: PLC0415
+
+    now = now or datetime.now(UTC)
+    out: dict[date, tuple[Decimal, Decimal | None]] = {}
+    for session_date in recent_trading_sessions(now):
+        positions = positions_service.compute_positions(session, as_of=session_date)
+        drifting = [p for p in positions if p.shares > _MIN_SHARES and is_drifting_nav(p)]
+        if not drifting:
+            continue
+        nav_eur = sum((p.current_value_eur for p in drifting), start=Decimal(0))
+        fx = (
+            fx_service.get_rate_eur_to_quote(session, session_date, quote="USD")
+            if any(_is_usd_native(p) for p in drifting)
+            else None
+        )
+        out[session_date] = (nav_eur, fx)
+    return out
 
 
 def _intraday_sleeve_complete(positions: list[Position]) -> bool:
@@ -294,6 +386,17 @@ def _session_start_utc(session_date: date) -> datetime:
     """Naive-UTC instant of 00:00 exchange-time on ``session_date``."""
     start_local = datetime.combine(session_date, time(0, 0), tzinfo=_MARKET_TZ)
     return start_local.astimezone(UTC).replace(tzinfo=None)
+
+
+def _session_open_utc(session_date: date) -> datetime:
+    """Naive-UTC instant of the regular-session open (09:30 ET) on ``session_date``."""
+    open_local = datetime.combine(session_date, _MARKET_OPEN, tzinfo=_MARKET_TZ)
+    return open_local.astimezone(UTC).replace(tzinfo=None)
+
+
+def _session_close_utc(session_date: date) -> datetime:
+    """Naive-UTC instant of the regular-session close (16:00 ET) on ``session_date``."""
+    return regular_session_close(session_date).astimezone(UTC).replace(tzinfo=None)
 
 
 def session_window_utc(now: datetime | None = None) -> tuple[datetime, datetime]:
@@ -509,20 +612,21 @@ def reconstruct_last_session(
     now = now or datetime.now(UTC)
     session_date = last_session_date(now)
     with _reconstruct_lock:
-        # Skip the network fetch only once the session has *actually* been
-        # populated. The per-session marker alone is not enough: a first attempt
-        # that wrote nothing — a transient feed failure, or opening the app
-        # before the bars were published — would otherwise pin the curve empty
-        # for the rest of the session (it is never retried). Re-running while the
-        # session still holds no samples means the last market day always loads,
-        # no matter when the app is opened (e.g. before the next session's open).
-        # A portfolio with no intraday-priced holdings still short-circuits cheaply
-        # inside ``_reconstruct_session`` (before any network call), so this never
-        # spams the feed for a genuinely empty day.
+        # Skip the network fetch only once the session is *adequately covered*.
+        # The per-session marker alone is not enough, and neither is a mere
+        # presence test: a first attempt that wrote nothing — or only a stray bar
+        # before the feed stalled / before the rest of the day's bars published —
+        # would otherwise pin a gappy curve for the rest of the session (it is
+        # never retried). Re-running while the session is under-covered means the
+        # last market day always fills in, no matter when the app is opened (e.g.
+        # before the next session's open) or how the prior fetch fared. A portfolio
+        # with no intraday-priced holdings still short-circuits cheaply inside
+        # ``_reconstruct_session`` (before any network call), so this never spams
+        # the feed for a genuinely empty day.
         if (
             not force
             and _already_reconstructed(session, session_date)
-            and _session_has_samples(session, session_date)
+            and _session_is_covered(session, session_date, now)
         ):
             return 0
         try:
@@ -640,20 +744,35 @@ def _already_reconstructed(session: Session, session_date: date) -> bool:
     return app_config_repo.get(session, _RECONSTRUCTED_KEY) == session_date.isoformat()
 
 
-def _session_has_samples(session: Session, session_date: date) -> bool:
-    """Whether any intraday sample is already stored for ``session_date``.
+def _session_is_covered(session: Session, session_date: date, now: datetime) -> bool:
+    """Whether the stored "1 Day" samples *adequately cover* ``session_date``.
 
-    Used to decide whether a reconstruction marked "done" can be trusted: if the
-    session window holds no samples at all, the prior attempt produced nothing
-    (a failed/early fetch), so it is worth retrying rather than leaving the "1
-    Day" curve stuck on a bare live tip.
+    A coverage test, not a mere presence test. Used to decide whether a
+    reconstruction marked "done" can be trusted: a prior attempt that landed
+    nothing, a single stray bar, or only the morning before the feed stalled
+    leaves the curve gappy yet would pass an "any sample exists" check and pin the
+    done-marker for the rest of the session (it is never retried). The session is
+    judged covered only when the stored samples both number at least
+    :data:`RECONSTRUCT_MIN_COVERAGE_SAMPLES` *and* span at least
+    :data:`RECONSTRUCT_COVERAGE_FRACTION` of the session elapsed so far; otherwise
+    it is re-pulled to fill the gaps (cheap — yfinance is unmetered).
     """
     from investment_dashboard.db import cache_read_session  # noqa: PLC0415
 
     start = _session_start_utc(session_date)
     end = _session_start_utc(session_date + timedelta(days=1))
     with cache_read_session(session) as cache:
-        return bool(intraday_repo.list_in_range(cache, start, end))
+        times = sorted(r.captured_at for r in intraday_repo.list_in_range(cache, start, end))
+    if len(times) < RECONSTRUCT_MIN_COVERAGE_SAMPLES:
+        return False
+    open_utc = _session_open_utc(session_date)
+    elapsed_end = min(_to_naive_utc(now), _session_close_utc(session_date))
+    expected_span = (elapsed_end - open_utc).total_seconds()
+    if expected_span <= 0:
+        # Before the open there is no span to require; any stored samples suffice.
+        return True
+    actual_span = (times[-1] - times[0]).total_seconds()
+    return Decimal(actual_span) >= RECONSTRUCT_COVERAGE_FRACTION * Decimal(expected_span)
 
 
 def _mark_reconstructed(session: Session, session_date: date) -> None:
@@ -786,8 +905,15 @@ def week_series_with_fx(
         sample_times = {at for at, _, _ in cached if start <= at < end}
         if not sample_times:
             return False
-        if session_date == anchor:
-            # The current session grows from live captures; any sample counts.
+        if session_date == anchor and _to_naive_utc(now) <= _session_close_utc(session_date):
+            # While the anchor session is still in progress it grows from today's
+            # dense live captures, so any sample counts and it is never
+            # re-downloaded (those live points are denser than a coarse re-fetch
+            # and must be preserved). Once its close has passed it becomes a
+            # *finished* session like any other and must carry the full triplet —
+            # so a day left with only a stray capture (live feed or reconstruction
+            # stalled) is re-pulled to fill its gaps rather than frozen at one
+            # point.
             return True
         # A finished session must carry the full representative span; fewer points
         # means data is missing, so report it uncovered to trigger a re-pull.
