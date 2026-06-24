@@ -582,6 +582,21 @@ describe("latestExpectedNavDate — US-session anchored", () => {
     const wed1200 = new Date(2024, 0, 10, 12, 0);
     expect(latestExpectedNavDate(wed1200, 22)).toBe("2024-01-09");
   });
+
+  it("does not expect the just-settled NAV until a late fund's publish moment passes", () => {
+    // Regression for funds that strike *after midnight*. Their learned publish
+    // hour is in the small hours (e.g. 01:00), so for a session that closes at
+    // 16:00 ET the NAV does not land until ~01:00 local the *next* day. In the
+    // evening right after the US close we must therefore still rest on the prior
+    // session's NAV — which we already hold — instead of reporting the
+    // not-yet-published session as "awaiting".
+    const wed2230 = new Date(2024, 0, 10, 22, 30); // 17:30 ET — Wednesday settled
+    // Late (post-midnight) publisher: Wednesday's NAV is not due yet this evening.
+    expect(latestExpectedNavDate(wed2230, 1)).toBe("2024-01-09");
+    // Past midnight, once 01:00 local has passed, Wednesday's NAV is finally due.
+    const thu0130 = new Date(2024, 0, 11, 1, 30); // 20:30 ET Wed — Wednesday settled
+    expect(latestExpectedNavDate(thu0130, 1)).toBe("2024-01-10");
+  });
 });
 
 describe("marketCacheTtlMs — adaptive market refresh", () => {

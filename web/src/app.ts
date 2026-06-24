@@ -88,6 +88,7 @@ import {
   planStartupRefresh,
   planPrefetch,
   tiingoRemainingCredits,
+  tiingoBudgetView,
   STARTUP_TIINGO_RESERVE,
   type TiingoBudgetView,
 } from "./tiingo-fallback";
@@ -736,7 +737,42 @@ export class App {
   }
 
   /**
-   * Pull a stale graph's price bars during the login warm-up, **market sleeve
+   * The decrypted holdings' native-currency map (price symbol → currency), used
+   * to prime quotes from graph bars after unlock. Empty before the first render.
+   */
+  private primingCurrencyMap(): Map<string, string | null> {
+    const map = new Map<string, string | null>();
+    for (const h of this.model?.holdings ?? []) {
+      const symbol = h.priceSymbol ?? h.symbol;
+      if (symbol) map.set(symbol, h.nativeCurrency ?? null);
+    }
+    return map;
+  }
+
+  /**
+   * Smart Tiingo gate for **any** rapid-fire quote pull: before a fast Tiingo
+   * round fetches plain quotes, pull any *stale* 1D/1W graph package instead —
+   * each bar's newest point doubles as the quote, so priming the quote cache from
+   * those bars lets the quote pull skip them. This stops Tiingo being spent twice
+   * for one symbol (once for the rapid-fire quote, once for the 1D/1W graph),
+   * whether the round is a hard reset or a routine "via backup" rapid-fire.
+   *
+   * Self-gating: only the genuinely missing (stale) bars are pulled, so a graph
+   * already fully loaded — e.g. a closed-market book in hand — fetches nothing.
+   */
+  private async primeStaleGraphPackages(now: Date = new Date()): Promise<void> {
+    const { config } = this.state;
+    if (!config.apiKey || resolvePriceProxyUrl(config) === null) return;
+    const marketSymbols = readSymbolPlan()
+      .filter((e) => e.priceType === "market")
+      .map((e) => e.symbol);
+    if (marketSymbols.length === 0) return;
+    const stale = await this.prefetchGraphStaleness(marketSymbols, now);
+    if (stale.session.length === 0 && stale.week.length === 0) return;
+    await this.prefetchGraphBars(stale.session, stale.week, config, now, this.primingCurrencyMap());
+  }
+
+  /**
    * only** (NAV funds are never plotted, so never fetched), and fold the result
    * back into the device store + quote cache:
    *
@@ -758,13 +794,12 @@ export class App {
     weekSymbols: string[],
     config: AppConfig,
     now: Date,
+    currencyBySymbol: Map<string, string | null> = new Map(),
   ): Promise<number> {
     if (sessionSymbols.length === 0 && weekSymbols.length === 0) return 0;
     const proxyUrl = resolvePriceProxyUrl(config);
     if (!proxyUrl) return 0; // graph bars only come cheaply via the Tiingo /price pipe
     const store = this.ensureTimeSeriesStore();
-    const onTiingoSpend = (n: number): void => recordTiingoCredits(n, Date.now());
-    const onTwelveDataSpend = (n: number): void => recordCredits(n, Date.now());
     let stored = 0;
 
     const pull = async (
@@ -777,6 +812,18 @@ export class App {
       extra: { interval?: string; outputsize?: number } = {},
     ): Promise<void> => {
       if (symbols.length === 0) return;
+      // Instrument the spend recorders so every Tiingo (bars + FX) and Twelve
+      // Data spend this backfill makes is written to the data-polling log and
+      // tallied — the warm-up backfill used to record its credits silently, so a
+      // refill could "download something once without logging". Now it never does.
+      const spent = { credits: 0 };
+      const { onTiingoSpend, onTwelveDataSpend } = instrumentedGraphRecorders({
+        range: `${label} warm-up`,
+        bookTwelveData: (n) => recordCredits(n, Date.now()),
+        bookTiingo: (n) => recordTiingoCredits(n, Date.now()),
+        log: (message) => this.pollLog("graph", message),
+        spent,
+      });
       const fetchBars = makePriceBarFetcher({
         apiKey: config.apiKey,
         proxyUrl,
@@ -795,12 +842,14 @@ export class App {
       }
       const incoming: Record<string, Bar[]> = {};
       for (const [symbol, list] of bars) if (list.length > 0) incoming[symbol] = list;
-      // Bars double as quotes. We pass an empty currency map on purpose: every
-      // symbol reaching here is an *already-cached* outdated market holding, so
-      // primeQuotesFromBars reuses each one's existing cached currency (it only
-      // ever extends freshness and skips any symbol it can't currency-resolve).
-      // This runs pre-decrypt, where the real currency map isn't available yet.
-      primeQuotesFromBars(bars, new Map<string, string | null>(), Date.now());
+      // Bars double as quotes. When a caller hands in the decrypted holdings'
+      // currency map (e.g. the post-unlock hard reset) each bar primes its
+      // holding row's quote so the forced refresh's Tiingo quote fallback skips
+      // it — that is the smart gate that stops Tiingo being spent on both the
+      // rapid-fire quote *and* the 1D/1W graph for the same symbol. Pre-decrypt
+      // (the empty-map default) primeQuotesFromBars reuses each symbol's existing
+      // cached currency and skips any it cannot resolve.
+      primeQuotesFromBars(bars, currencyBySymbol, Date.now());
       // Grab the matching FX track in the same pass so the curve re-marks each
       // point at its own settled rate (finest granularity) for one more credit.
       const fetchFx = makeWindowFxFetcher(proxyUrl, window, fxResample, undefined, onTiingoSpend);
@@ -2502,12 +2551,16 @@ export class App {
       model.overview.dailyCreditLimit - quoteLoad.report.dayRemaining,
     );
     // Surface the Tiingo fallback's own hourly/daily usage, mirroring the Twelve
-    // Data line, and append a discreet note when any price came via Tiingo.
-    if (this.lastTiingoBudget) {
-      model.overview.tiingoHourUsed = this.lastTiingoBudget.hourUsed;
-      model.overview.tiingoHourLimit = this.lastTiingoBudget.hourLimit;
-      model.overview.tiingoDayUsed = this.lastTiingoBudget.dayUsed;
-      model.overview.tiingoDayLimit = this.lastTiingoBudget.dayLimit;
+    // Data line, and append a discreet note when any price came via Tiingo. Read
+    // the budget *live* from the credit log (not the snapshot taken when the
+    // quote fallback last ran) so the 1D/1W graph-bar and FX-history pulls — which
+    // spend the same Tiingo budget — are counted here too.
+    const liveTiingoBudget = tiingoBudgetView(Date.now());
+    if (this.lastTiingoBudget || liveTiingoBudget.dayUsed > 0 || liveTiingoBudget.hourUsed > 0) {
+      model.overview.tiingoHourUsed = liveTiingoBudget.hourUsed;
+      model.overview.tiingoHourLimit = liveTiingoBudget.hourLimit;
+      model.overview.tiingoDayUsed = liveTiingoBudget.dayUsed;
+      model.overview.tiingoDayLimit = liveTiingoBudget.dayLimit;
     }
     if (this.lastTiingoSymbols.length > 0) {
       const note = `${this.lastTiingoSymbols.length} price${this.lastTiingoSymbols.length === 1 ? "" : "s"} via fallback`;
@@ -2572,7 +2625,10 @@ export class App {
     const session = this.sessionId;
     void this.maybeRefreshBlob(session);
     if (this.refreshing) return; // a pull is already in flight; it will repaint
-    void this.runScheduledRefresh(session, "manual", { force: true });
+    // The store was just wiped, so the 1D/1W graphs are stale: `primeGraphs` makes
+    // the forced refresh pull those packages first (their bars double as quotes),
+    // so Tiingo isn't spent on both the rapid-fire quote and the 1W graph.
+    void this.runScheduledRefresh(session, "manual", { force: true, primeGraphs: true });
   }
 
   /**
@@ -2793,7 +2849,7 @@ export class App {
   private async runScheduledRefresh(
     session: number,
     kind: RefreshKind = "auto",
-    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean; tiingoReserve?: number; startup?: boolean; kickoff?: boolean } = {},
+    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean; tiingoReserve?: number; startup?: boolean; kickoff?: boolean; primeGraphs?: boolean } = {},
   ): Promise<void> {
     // A manual tap (and the post-unlock kickoff) refreshes even when the tab is
     // technically "hidden" (e.g. mid-transition right after a fingerprint
@@ -2850,6 +2906,21 @@ export class App {
     // ordinary auto ticks see an already-settled promise (a no-op).
     if ((opts.kickoff ?? false) && this.prefetchPromise) {
       await this.prefetchPromise.catch(() => undefined);
+      if (session !== this.sessionId) {
+        this.refreshing = false;
+        return;
+      }
+    }
+    // Smart Tiingo gate (any rapid-fire quote pull, not just a hard reset): when
+    // this round leans on Tiingo for speed — the "via backup" rapid-fire, or a
+    // from-scratch reset — pull any *stale* 1D/1W graph package first. Each bar's
+    // newest point doubles as the quote, so priming the holdings' quote cache
+    // from those bars makes the quote pull below skip them — Tiingo is never
+    // spent on both the rapid-fire quote *and* the 1D/1W graph for one symbol.
+    // It self-gates on staleness (a fully-loaded graph fetches nothing) so a
+    // closed-market book already in hand fires no download here.
+    if ((opts.viaTiingo ?? false) || (opts.primeGraphs ?? false)) {
+      await this.primeStaleGraphPackages().catch(() => undefined);
       if (session !== this.sessionId) {
         this.refreshing = false;
         return;

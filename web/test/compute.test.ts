@@ -212,6 +212,38 @@ describe("buildDashboard", () => {
     approx(vmfxx.totalGrowthPct, 0.005, 1e-3);
   });
 
+  it("never shows a daily move for a money-market fund (par NAV)", () => {
+    // Even when the export carries a previous close (a repeated $1.00 bar), a
+    // money-market fund holds a constant $1.00 NAV and genuinely does not move
+    // in price — its today's move must stay blank, not render as 0%.
+    const exp = makeExport();
+    exp.holdings = [
+      {
+        symbol: "VMFXX",
+        name: "Vanguard Federal Money Market",
+        asset_class: "money_market",
+        broker: "Broker",
+        account: "Settlement",
+        native_currency: "USD",
+        shares: "1000",
+        cost_basis_native: "1000",
+        cumulative_dividends_cash_native: "0",
+        price_symbol: "VMFXX",
+        price_type: "nav",
+        last_known_price_native: "1",
+        previous_close_native: "1",
+        previous_close_date: "2024-05-31",
+        cashflows: [{ date: "2023-01-01", amount: "-1000" }],
+      },
+    ];
+    const m = buildDashboard(exp, new Map(), fx, new Date("2024-06-01T12:00:00Z"));
+    const vmfxx = m.holdings.find((h) => h.symbol === "VMFXX")!;
+    expect(vmfxx.todayMoveEur).toBeNull();
+    expect(vmfxx.todayMovePct).toBeNull();
+    expect(vmfxx.todayMoveUsd).toBeNull();
+    expect(vmfxx.todayMovePctUsd).toBeNull();
+  });
+
   it("produces a portfolio XIRR (sign change present)", () => {
     expect(model.overview.portfolioXirr).not.toBeNull();
   });

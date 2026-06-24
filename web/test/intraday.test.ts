@@ -490,6 +490,57 @@ describe("loadOrBuildSessionCurve", () => {
     expect(result.points).toHaveLength(1);
   });
 
+  it("back-fills a missing FX track without re-buying bars (secondary currency diverges)", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    // Bars already on the device (price == close → ratio 1) but no FX track, the
+    // exact self-fetched state where the rebased EUR line would otherwise collapse
+    // onto USD. Market closed: bars must NOT be re-fetched, only the cheap FX.
+    await store.mergeSession("2026-06-23", {
+      bars: { VTI: [bar(Date.parse("2026-06-23T15:00:00Z"), "100")] },
+    });
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    const fetchFx = vi.fn(async () => [bar(Date.parse("2026-06-23T15:00:00Z"), "1.0")]);
+    const now = new Date("2026-06-23T22:00:00Z");
+    const result = await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      fetchFx,
+      now,
+    });
+    // No bar pull (already loaded + closed), but the FX track is filled once.
+    expect(fetchBars).not.toHaveBeenCalled();
+    expect(fetchFx).toHaveBeenCalledOnce();
+    // EUR rebased to the bar's rate (1.0) instead of the settled baseFx (0.9):
+    // contrib = 900 · 0.9 / 1.0 = 810 ⇒ valueEur = base 100 + 810 = 910 (≠ 1000).
+    expect(result.points).toHaveLength(1);
+    expect(result.points[0].valueEur.toString()).toBe("910");
+    // USD stays FX-free: base 100 + 1000 = 1100.
+    expect(result.points[0].valueUsd.toString()).toBe("1100");
+    // The refilled FX track is now persisted for next time.
+    expect((await store.loadSession("2026-06-23"))?.fx).toHaveLength(1);
+  });
+
+  it("does not re-fire the FX refill when the track is already in hand (no autofire)", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.mergeSession("2026-06-23", {
+      bars: { VTI: [bar(Date.parse("2026-06-23T15:00:00Z"), "100")] },
+      fx: [bar(Date.parse("2026-06-23T15:00:00Z"), "1.0")],
+    });
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    const fetchFx = vi.fn(async () => [bar(Date.parse("2026-06-23T15:00:00Z"), "1.0")]);
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      fetchFx,
+      now: new Date("2026-06-23T22:00:00Z"),
+    });
+    // Already loaded + closed + FX in hand: neither pipe fires.
+    expect(fetchBars).not.toHaveBeenCalled();
+    expect(fetchFx).not.toHaveBeenCalled();
+  });
+
   it("prunes stored sessions outside the rolling retention window", async () => {
     const store = new TimeSeriesStore(memoryBackend());
     for (const day of ["2026-06-01", "2026-06-22", "2026-06-23"]) {

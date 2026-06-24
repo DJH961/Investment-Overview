@@ -106,6 +106,73 @@ describe("loadOrBuildWeekCurve", () => {
     expect(fetched).toBe(false);
   });
 
+  it("back-fills a missing FX track without re-buying daily bars (secondary currency diverges)", async () => {
+    const s = store();
+    // Daily closes already cover the settled window but the per-day FX track is
+    // missing — the self-fetched state where the rebased EUR line collapses onto
+    // USD. Market closed: the daily bars must NOT be re-fetched, only the FX.
+    await s.saveSession({
+      day: WEEK_STORE_KEY,
+      bars: { VTI: [bar(dayMs("2026-03-12"), "99"), bar(dayMs("2026-03-13"), "100")] },
+      fx: [],
+      updatedAt: 0,
+    });
+    let barsFetched = false;
+    let fxCalls = 0;
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    const curve = await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => {
+        barsFetched = true;
+        return new Map();
+      },
+      fetchFx: async () => {
+        fxCalls += 1;
+        return [bar(dayMs("2026-03-12"), "1.0"), bar(dayMs("2026-03-13"), "1.0")];
+      },
+      now: SAT_CLOSED,
+    });
+    expect(barsFetched).toBe(false);
+    expect(fxCalls).toBe(1);
+    // EUR rebased to the per-day rate (1.0) rather than the settled baseFx (0.9):
+    // at close (ratio 1) contrib = 900 · 0.9 / 1.0 = 810 (≠ the 900 it would be
+    // without an FX track), so EUR and USD genuinely diverge.
+    const last = curve.points[curve.points.length - 1];
+    expect(last.valueEur.toString()).toBe("810");
+    expect(last.valueUsd.toString()).toBe("1000");
+    // Persisted, so a later build does not re-fire the refill.
+    expect((await s.loadSession(WEEK_STORE_KEY))?.fx.length).toBeGreaterThan(0);
+  });
+
+  it("does not re-fire the FX refill when the track is already in hand (no autofire)", async () => {
+    const s = store();
+    await s.saveSession({
+      day: WEEK_STORE_KEY,
+      bars: { VTI: [bar(dayMs("2026-03-12"), "99"), bar(dayMs("2026-03-13"), "100")] },
+      fx: [bar(dayMs("2026-03-13"), "1.0")],
+      updatedAt: 0,
+    });
+    let barsFetched = false;
+    let fxCalled = false;
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => {
+        barsFetched = true;
+        return new Map();
+      },
+      fetchFx: async () => {
+        fxCalled = true;
+        return [];
+      },
+      now: SAT_CLOSED,
+    });
+    expect(barsFetched).toBe(false);
+    expect(fxCalled).toBe(false);
+  });
+
   it("re-fetches when a new session has settled since the last backfill", async () => {
     const s = store();
     // Cache only reaches Thursday; Friday has since settled (Saturday view).

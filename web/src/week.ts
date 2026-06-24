@@ -157,6 +157,7 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
     symbols.length === 0 ||
     (stored !== null && coversThrough(stored.bars, symbols, dayStartMs(settledEnd)));
 
+  let fxAttempted = false;
   if (!fresh) {
     const barsBySymbol = await fetchDailyBars(symbols);
     const incomingBars: Record<string, Bar[]> = {};
@@ -166,6 +167,7 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
     if (options.onFreshBars) options.onFreshBars(barsBySymbol);
     let incomingFx: Bar[] | undefined;
     if (fetchFx) {
+      fxAttempted = true;
       try {
         incomingFx = await fetchFx();
       } catch {
@@ -175,6 +177,30 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
       }
     }
     stored = await store.mergeSession(key, { bars: incomingBars, fx: incomingFx }, now.getTime());
+  }
+
+  // Secondary-currency refill: when the week's daily closes are already cached
+  // (so `fresh`) but the per-day FX track is missing, pull it once. Without it
+  // every point rebases on the flat `baseFx` and the secondary-currency line
+  // collapses onto the primary instead of diverging by the week's FX move. Gated
+  // on having bars to rebase and on not having just tried FX above, so a
+  // fully-loaded closed-market week never re-fires once its FX is in hand.
+  const loaded = stored;
+  if (
+    fetchFx &&
+    !fxAttempted &&
+    loaded !== null &&
+    loaded.fx.length === 0 &&
+    symbols.some((s) => (loaded.bars[s]?.length ?? 0) > 0)
+  ) {
+    try {
+      const incomingFx = await fetchFx();
+      if (incomingFx.length > 0) {
+        stored = await store.mergeSession(key, { fx: incomingFx }, now.getTime());
+      }
+    } catch {
+      // Best-effort refinement; the curve still draws on `baseFx`.
+    }
   }
 
   if (!stored || anchor.holdings.length === 0) {
