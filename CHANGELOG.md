@@ -14,6 +14,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.0.4] — 2026-06-24
+
+### Fixed
+
+- **Reopening the desktop app no longer re-downloads the 1D/1W intraday curves
+  or re-computes the entire portfolio-lifetime snapshot history on every boot.**
+  The deferred network refresh hardcoded `force=True` on the intraday 1D/1W
+  re-pull and on the snapshot warm, so a routine reopen of an already-warm cache
+  redundantly re-fetched both intraday curves and force-recomputed every settled
+  (immutable) day of history — the chief reason boot felt slow even moments after
+  closing the app. The three steps now share a single `_is_large_pull()` decision
+  (a from-scratch / post-reset / long-absence re-download): a large pull still
+  forces a complete rebuild, while a routine reopen runs the intraday re-pulls
+  cache-first and warms only the still-missing older days plus a force-refreshed
+  trailing 7-day tail (the only window a non-forced warm could leave stale).
+- **The 1-week curve now re-pulls a completed past session that is missing
+  intraday points.** The week-coverage check treated a session as covered if it
+  had *any* cached sample, so a past day stuck with a single stray point was
+  never re-fetched and rendered with a gap. A *completed* (non-anchor) session
+  now requires its full open/mid/close point triplet to count as covered; the
+  current anchor session stays lenient (it is reused via live captures).
+
 ## [4.0.3] — 2026-06-24
 
 ### Fixed
