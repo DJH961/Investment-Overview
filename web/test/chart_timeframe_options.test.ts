@@ -18,7 +18,7 @@ describe("chartTimeframeOptions", () => {
     expect(labels(730, false, true)).toEqual(["1D", "1W", "1M", "1Y", "All"]);
   });
 
-  it("extra ranges on adds the 3M/6M slices back", () => {
+  it("extra ranges enabled adds the 3M/6M slices back", () => {
     expect(labels(730, true, true)).toEqual(["1D", "1W", "1M", "3M", "6M", "1Y", "All"]);
   });
 

@@ -26,6 +26,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "Settings → Graphs → Extra ranges" toggle (**off by default**) adds the longer
   `3M` and `6M` history slices back for anyone who wants them, so the standard
   chart stays uncluttered while power users can opt in.
+- **The prefetch FX pull is now logged.** It was previously silent; the login
+  warm-up's EUR/USD pull now writes its value, source (live/Tiingo/EOD) and
+  fresh-vs-cached status to the `FX` polling-log category, and the routing
+  decision itself is spelled out under `LOGIN`. The unlock-screen status line and
+  the one-off refresh-glyph spin now also count freshly backfilled graph bars as
+  genuinely "pulled".
 
 ### Added
 - **Deduplicated value-chart legend and a 1D previous-close reference line
@@ -58,14 +64,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **A session-status snapshot** is saved on log-out and after every pull (coverage
   flags + market phase + on-device graph day; no prices or secrets), so the next
   login's pre-flight can log the delta against what we last held.
-
-### Changed
-- **The prefetch FX pull is now logged.** It was previously silent; the login
-  warm-up's EUR/USD pull now writes its value, source (live/Tiingo/EOD) and
-  fresh-vs-cached status to the `FX` polling-log category, and the routing
-  decision itself is spelled out under `LOGIN`. The unlock-screen status line and
-  the one-off refresh-glyph spin now also count freshly backfilled graph bars as
-  genuinely "pulled".
 
 ## [3.20.2] — 2026-06-24
 
