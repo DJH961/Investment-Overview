@@ -86,6 +86,16 @@ describe("TimeSeriesStore", () => {
     expect(await store.listDays()).not.toContain("2024-01-08");
   });
 
+  it("clear() wipes every record — dated sessions and namespaced caches", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.saveSession(session("2024-01-08"));
+    await store.saveSession(session("2024-01-10"));
+    await store.saveSession({ ...session("2024-01-10"), day: "1W-daily" });
+    await store.clear();
+    expect(await store.listDays()).toEqual([]);
+    expect(await store.loadSession("2024-01-10")).toBeNull();
+  });
+
   it("round-trips live-tip breadcrumbs preserving precision", async () => {
     const store = new TimeSeriesStore(memoryBackend());
     await store.saveSession({

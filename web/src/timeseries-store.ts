@@ -348,6 +348,20 @@ export class TimeSeriesStore {
       if (DATE_KEY_RE.test(day) && day < oldestDay) await this.backend.delete(day);
     }
   }
+
+  /**
+   * Drop **every** stored record — dated sessions *and* namespaced caches (e.g.
+   * the 1W daily-close sleeve). This is the intraday counterpart to clearing the
+   * price caches: the live 1D/1W graphs are rebuilt from the bars/tips persisted
+   * here, so a "reset cache" that left this store intact would leave a stale or
+   * malformed 1D/1W curve on screen even after the wipe. Clearing it forces the
+   * next refresh to rebuild those curves from scratch.
+   */
+  async clear(): Promise<void> {
+    for (const key of await this.backend.keys()) {
+      await this.backend.delete(key);
+    }
+  }
 }
 
 /**

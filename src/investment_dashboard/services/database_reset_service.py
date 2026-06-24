@@ -2,9 +2,14 @@
 
 The dashboard accumulates three logical kinds of data:
 
-* **Cached market data** — prices, FX rates, position snapshots and the
-  price-cache bookkeeping. All of it is derived and re-downloaded on the
-  next refresh, so clearing it is completely safe.
+* **Cached market data** — prices, FX rates, splits, the within-day
+  intraday samples (which power the Overview "1 Day"/"1 Week" graphs),
+  position snapshots and the price-cache bookkeeping. All of it is derived
+  and re-downloaded/recomputed on the next refresh, so clearing it is
+  completely safe. The intraday samples in particular must be wiped here:
+  a stale or malformed intraday curve is exactly the kind of thing a user
+  resets the cache to get rid of, so leaving it behind would make the
+  "1 Day"/"1 Week" graphs look broken even after a reset.
 * **Transactions** — the imported buy/sell/dividend ledger. Clearing it
   lets the user re-import a corrected CSV/XLSX without first deleting rows
   by hand. The cached market data is cleared alongside it because position
@@ -34,9 +39,11 @@ from investment_dashboard.models import (
     FxHistory,
     Instrument,
     InstrumentOverride,
+    IntradayValue,
     PositionSnapshot,
     PriceCacheMetadata,
     PriceHistory,
+    PriceSplit,
     TargetAllocation,
     TargetAllocationItem,
     Transaction,
@@ -60,9 +67,19 @@ class ResetLevel(enum.Enum):
 # Cached/derived tables, ordered so children are deleted before parents.
 # None of these carry foreign keys today, but the order is kept explicit so
 # adding one later stays safe.
+#
+# IntradayValue and PriceSplit are easy to forget here because they live in
+# their own little services, but both are pure cache: IntradayValue holds the
+# within-day samples behind the Overview "1 Day"/"1 Week" graphs, and PriceSplit
+# holds the cached split factors used to adjust historical closes. If either is
+# left behind, a "Reset cached market data" leaves the very curves the user was
+# trying to fix untouched — so they are wiped alongside the prices they derive
+# from.
 _CACHE_MODELS: tuple[type, ...] = (
+    IntradayValue,
     PositionSnapshot,
     PriceHistory,
+    PriceSplit,
     PriceCacheMetadata,
     FxHistory,
 )
@@ -71,8 +88,10 @@ _CACHE_MODELS: tuple[type, ...] = (
 # transactions reference accounts + instruments; allocation items reference
 # allocations; so those parents are deleted last.
 _ALL_MODELS_FK_SAFE_ORDER: tuple[type, ...] = (
+    IntradayValue,
     PositionSnapshot,
     PriceHistory,
+    PriceSplit,
     PriceCacheMetadata,
     FxHistory,
     InstrumentOverride,
@@ -126,6 +145,13 @@ def reset_database(level: ResetLevel) -> ResetResult:
     config_models = tuple(m for m in models if m.__table__.metadata is ConfigBase.metadata)
     ledger_models = tuple(m for m in models if m not in config_models)
 
+    log.info(
+        "database reset (%s): wiping %s table(s): %s",
+        level.value,
+        len(models),
+        ", ".join(m.__tablename__ for m in models),
+    )
+
     deleted: dict[str, int] = {}
 
     if ledger_models:
@@ -140,9 +166,10 @@ def reset_database(level: ResetLevel) -> ResetResult:
 
     result = ResetResult(level=level, deleted=deleted)
     log.info(
-        "database reset (%s): removed %s row(s) across %s table(s)",
+        "database reset (%s): removed %s row(s) across %s table(s) (%s)",
         level.value,
         result.total_deleted,
         len(deleted),
+        ", ".join(f"{name}={count}" for name, count in deleted.items()),
     )
     return result
