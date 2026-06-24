@@ -327,6 +327,7 @@ def _compose_currency_points(
     currency: str,
     rate: Decimal | None,
     tz: tzinfo | None,
+    nav_components: dict[datetime, tuple[Decimal, Decimal | None]] | None = None,
 ) -> list[ValueSeriesPoint]:
     """Turn ``(at_utc, market_eur, fx_eur_usd)`` samples into display-currency points.
 
@@ -336,15 +337,28 @@ def _compose_currency_points(
     EUR→``currency`` spot used for the EUR-native base. See
     :func:`build_intraday_value_series` for the full currency model — USD is the
     booked currency and stays FX-free, EUR is derived per-minute.
+
+    ``nav_components`` (Week curve only) carries an extra per-sample
+    ``(nav_eur, nav_fx)`` — the day-drifting NAV funds revalued at *that* session
+    date's own NAV and settled FX — so the fund sleeve slopes per-day instead of
+    sitting in the flat ``base``. It is added on the same currency basis as the
+    market component (FX-free in USD via that day's own rate; per-day EUR
+    otherwise). When ``None`` the base alone carries every NAV holding (the "Day"
+    curve, unchanged).
     """
     points: list[ValueSeriesPoint] = []
+    no_nav: tuple[Decimal, Decimal | None] = (ZERO, None)
     for at_utc, market_eur, sample_fx in samples:
+        nav_eur, nav_fx = (
+            nav_components.get(at_utc, no_nav) if nav_components is not None else no_nav
+        )
         if currency == "EUR" or not rate:
             # EUR view (derived): the base is already EUR; the market component
             # carries its own per-minute FX in ``market_eur`` (USD-booked holdings
             # were converted to euros at each minute's rate during capture /
-            # reconstruction), so the EUR line moves with both price *and* FX.
-            value = base + market_eur
+            # reconstruction), so the EUR line moves with both price *and* FX. The
+            # NAV sleeve adds its own dated EUR value on top.
+            value = base + market_eur + nav_eur
         else:
             # USD view (native): USD is the booked currency, so the market
             # component must be FX-free / price-only. The EUR pivot stored it
@@ -354,7 +368,10 @@ def _compose_currency_points(
             # is converted, at today's spot. A sample with no recorded rate falls
             # back to today's spot (FX still cancels for that point).
             point_rate = sample_fx if (sample_fx and currency == "USD") else rate
-            value = base * rate + market_eur * point_rate
+            # The NAV sleeve cancels with *its* session date's own settled rate
+            # (the rate its EUR pivot was struck at), recovering native USD.
+            nav_rate = nav_fx if (nav_fx and currency == "USD") else rate
+            value = base * rate + market_eur * point_rate + nav_eur * nav_rate
         when: datetime = at_utc
         if tz is not None:
             when = at_utc.replace(tzinfo=UTC).astimezone(tz).replace(tzinfo=None)
@@ -381,9 +398,13 @@ def build_week_value_series(
     The intraday-priced (market) component at each chosen instant is sourced
     best-effort from the price feed (see
     :func:`intraday_snapshots_service.week_series_with_fx`); the constant cash +
-    NAV base is reapplied here exactly as the Day curve does, and the same
-    per-minute FX / currency model applies (USD native and FX-free, EUR derived).
-    The live current value caps the curve so the tip matches the headline figure.
+    savings + money-market base is reapplied here exactly as the Day curve does,
+    and the same per-minute FX / currency model applies (USD native and FX-free,
+    EUR derived). Unlike the Day curve, the day-drifting NAV funds are *not* held
+    flat: each session's points carry that day's published NAV (see
+    :func:`intraday_snapshots_service.week_nav_drift_with_fx`), so a fund whose
+    NAV moved across the week slopes instead of sitting flat. The live current
+    value caps the curve so the tip matches the headline figure.
 
     Returns ``[]`` when no intraday history could be sourced (e.g. offline, or an
     empty ledger), letting the caller fall back to the daily snapshot series.
@@ -395,7 +416,12 @@ def build_week_value_series(
         positions = compute_positions(session)
     total_now = total_portfolio_value(session, positions=positions)
     market_now = intraday_snapshots_service.market_value_eur(positions)
-    base = total_now - market_now
+    # Pull the day-drifting NAV funds out of the flat base so the week curve can
+    # reapply each at *its own* dated NAV (sloping per-day) instead of riding
+    # flat at today's. ``flat_base`` keeps only the genuinely constant cash +
+    # savings + money-market remainder.
+    nav_now = intraday_snapshots_service.nav_drift_value_eur(positions)
+    flat_base = total_now - market_now - nav_now
 
     samples = intraday_snapshots_service.week_series_with_fx(session, now=now)
 
@@ -414,7 +440,23 @@ def build_week_value_series(
     if not samples:
         return []
 
-    return _compose_currency_points(samples, base=base, currency=currency, rate=rate, tz=tz)
+    # Per-session NAV-fund track, mapped onto each sample by its exchange date —
+    # so every point gets the fund sleeve's value *as published that day* rather
+    # than today's. The map reads only the price cache (no extra network fetch).
+    nav_by_date = intraday_snapshots_service.week_nav_drift_with_fx(session, now=now)
+    nav_components = {
+        at_utc: nav_by_date.get(intraday_snapshots_service.session_date_of(at_utc), (ZERO, None))
+        for at_utc, _market, _fx in samples
+    }
+
+    return _compose_currency_points(
+        samples,
+        base=flat_base,
+        currency=currency,
+        rate=rate,
+        tz=tz,
+        nav_components=nav_components,
+    )
 
 
 def previous_session_close_value(
