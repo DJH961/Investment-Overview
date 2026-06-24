@@ -130,10 +130,12 @@ yfinance→Tiingo. It **degrades gracefully** today (catches `FrankfurterError`,
 keeps stale rates, records provider status — fx_service.py:324–332) and a
 per-session fetch guard prevents any re-fire storm
 (intraday_snapshots_service.py:801,927–932), so this is **lower priority**.
-- **Change:** add a fallback chain for FX **history** mirroring the live-spot
-  pattern: Frankfurter → yfinance `EURUSD=X` daily → (optional, budget-gated)
-  Tiingo FX daily. Keep the existing stale-rate degradation as the final floor.
-- Tests: Frankfurter empty/error ⇒ yfinance consulted ⇒ Tiingo (if budget) ⇒ stale
+- **Change:** add a fallback for FX **history** mirroring the live-spot
+  pattern: Frankfurter → (optional, budget-gated) Tiingo FX today-tip. The
+  yfinance leg is intentionally omitted to keep ECB/Frankfurter the sole source
+  of record for FX history (per the prior ECB-only reversal). Keep the existing
+  stale-rate degradation as the final floor.
+- Tests: Frankfurter empty/error ⇒ Tiingo (if budget) ⇒ stale
   floor; provider status records which source served each day.
 
 ---
