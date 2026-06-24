@@ -347,6 +347,21 @@ export class App {
    * -braces trigger to resume the refresh the moment the app is shown again.
    */
   private pageShowHandler: ((event: PageTransitionEvent) => void) | null = null;
+  /**
+   * Installed `online` listener, kept so it can be removed on lock. Fires the
+   * moment the device regains a network link, so a dashboard that was paused on
+   * "No internet connection" pulls fresh prices immediately rather than waiting
+   * out the slow auto-refresh cadence.
+   */
+  private onlineHandler: (() => void) | null = null;
+  /**
+   * Connectivity verdict from the last refresh round (see {@link classifyConnectivity}):
+   * `offline` (the device has no link), `unreachable` (online, but no price
+   * service responded), or `online` (a service answered). Drives the honest
+   * "no connection / no new prices" messaging so a refresh never claims to be
+   * updating when nothing could actually be fetched.
+   */
+  private lastConnectivity: ConnectivityState = "online";
   /** Guards against overlapping price refreshes. */
   private refreshing = false;
   /**
@@ -1980,7 +1995,7 @@ export class App {
   private async refreshPrices(
     session: number,
     network: boolean,
-    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean; tiingoReserve?: number } = {},
+    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean; tiingoReserve?: number; connectivity?: ConnectivityState } = {},
   ): Promise<QuoteLoadReport | null> {
     const { data, config } = this.state;
     if (!data) return null;
@@ -2137,12 +2152,27 @@ export class App {
 
     const unresolvedFailures = network ? this.unresolvedFailedSymbols(quoteLoad.report) : [];
     if (network) this.lastUnresolvedFailures = unresolvedFailures;
+    // Classify what this round actually achieved on the wire so the UI never
+    // claims to be "updating" when nothing could be fetched. A network round
+    // derives it from what landed vs. which providers errored; a cache-only
+    // paint carries the verdict in from the caller (the offline short-circuit).
+    if (network) {
+      this.lastConnectivity = classifyConnectivity({
+        online: this.isOnline(),
+        fetched: quoteLoad.report.fetched.length,
+        fxFetched: !fxReport.cached && fxReport.error === null,
+        quoteError: quoteLoad.report.error,
+        tiingoError: this.lastTiingoError,
+      });
+    } else if (opts.connectivity !== undefined) {
+      this.lastConnectivity = opts.connectivity;
+    }
     const degradedReason = network
       ? this.describeDegradation(quoteLoad.report, fxReport, this.lastTiingoError, {
           eurUsdError,
           eurUsdSource,
-        }, unresolvedFailures)
-      : null;
+        }, unresolvedFailures, this.lastConnectivity)
+      : connectivityNotice(this.lastConnectivity);
     // Record when fresh market data actually landed: a live quote fetch, or a
     // live (non-cached) FX pull. This is "when we last pulled", independent of
     // how old the prices themselves are — so even over a closed-market weekend
@@ -2318,6 +2348,13 @@ export class App {
       this.toast("Already refreshing prices…");
       return;
     }
+    // No network link: skip the credit/market-phase logic (and its toasts) and
+    // go straight to the offline handler, which repaints last-known values and
+    // confirms the lack of connection honestly.
+    if (!this.isOnline()) {
+      void this.runScheduledRefresh(this.sessionId, "manual", { force: false });
+      return;
+    }
     // A manual tap means "pull new market values now". What that should fetch
     // depends on the market phase (see {@link currentRefreshPhase}):
     //   - market open   → only live stock prices can have moved (NAV is exempt
@@ -2436,6 +2473,31 @@ export class App {
   }
 
   /**
+   * Whether the device currently believes it has a network link. A `false` from
+   * `navigator.onLine` is authoritative ("definitely offline"); a `true` is only
+   * a hint (the link may still be dead), so the post-fetch {@link classifyConnectivity}
+   * still catches the "online but no price service answered" case.
+   */
+  private isOnline(): boolean {
+    return typeof navigator === "undefined" || navigator.onLine !== false;
+  }
+
+  /**
+   * Handle a refresh tick fired while the device is offline: repaint the held
+   * values behind an honest "No internet connection" banner instead of running a
+   * fetch-less round that would read as "up to date". A manual tap also gets a
+   * confirming toast. The auto-refresh loop is kept alive so it resumes the
+   * moment connectivity returns (also nudged immediately by the `online` listener).
+   */
+  private handleNoNetwork(session: number, kind: RefreshKind): void {
+    this.lastConnectivity = "offline";
+    this.pollLog("refresh", `Refresh skipped (${kind}) — device offline. Showing last known prices.`);
+    void this.refreshPrices(session, false, { connectivity: "offline" });
+    if (kind === "manual") this.toast(connectivityNotice("offline") ?? "No internet connection.");
+    this.scheduleNext(session, this.state.config.updateMinutes * 60 * 1000);
+  }
+
+  /**
    * One auto-refresh tick: do a live refresh and schedule the next one. On
    * startup, while symbols are still being filled in (deferred to stay within
    * the free-tier per-minute budget), it bursts roughly once a minute so every
@@ -2481,6 +2543,16 @@ export class App {
         "refresh",
         "Auto tick skipped — book fully up to date (market closed, all closes + NAVs held). Heartbeat only.",
       );
+      return;
+    }
+    // No network link at all: don't pretend to "update". Skipping the network
+    // pass entirely is the honest signal — a cache-fresh book would otherwise
+    // sail through a fetch-less round and read as "up to date", hiding that we
+    // are offline. Repaint the held values behind a clear "No internet
+    // connection" banner, confirm it on a manual tap, and keep the loop alive
+    // (the `online` listener pulls fresh prices the instant the link returns).
+    if (!this.isOnline()) {
+      this.handleNoNetwork(session, kind);
       return;
     }
     this.refreshing = true;
@@ -2548,10 +2620,15 @@ export class App {
     // Confirm the outcome of a manual tap so the user understands what happened
     // (fresh prices pulled, already up to date, or some deferred by the budget).
     if (kind === "manual") {
-      // A failed backup is the most actionable thing to say on a manual tap —
-      // especially the "Try the backup data provider now" button — so lead with
-      // it when the Tiingo backup couldn't be reached this round.
-      if (this.lastTiingoError) {
+      const connectivityToast = connectivityNotice(this.lastConnectivity);
+      // No service answered (offline, or every provider failed): say so plainly
+      // rather than a coverage summary that would read like a successful pull.
+      if (connectivityToast) {
+        this.toast(connectivityToast);
+      } else if (this.lastTiingoError) {
+        // A failed backup is the most actionable thing to say on a manual tap —
+        // especially the "Try the backup data provider now" button — so lead with
+        // it when the Tiingo backup couldn't be reached this round.
         this.toast(
           this.lastTiingoError.status === 429
             ? "Backup provider (Tiingo) is rate-limited — its API credits look used up."
@@ -2572,7 +2649,9 @@ export class App {
     // so the staged fill ends with a clear "you're fully up to date" signal
     // instead of silently stopping. Tracked across rounds so a portfolio that
     // was live all along stays quiet, and it only fires on the transition.
-    const nowAllLive = allPricesLive(report);
+    // Suppressed when no service actually answered, so a cache-served round is
+    // never mis-announced as a fresh "all prices live".
+    const nowAllLive = allPricesLive(report) && this.lastConnectivity === "online";
     // Only the automatic scheduler pops this — a manual tap already gets the
     // descriptive manualRefreshSummary toast above (e.g. "All 18 holdings up to
     // date"), so firing both would double up.
@@ -2663,6 +2742,16 @@ export class App {
       };
       window.addEventListener("pageshow", onShow);
       this.pageShowHandler = onShow;
+      // The instant the device regains a network link, pull fresh prices rather
+      // than waiting out the slow cadence — a dashboard parked on "No internet
+      // connection" then updates the moment connectivity is back.
+      const onOnline = (): void => {
+        if (session !== this.sessionId) return;
+        if (typeof document !== "undefined" && document.hidden) return;
+        void this.runScheduledRefresh(session, "manual", { force: false });
+      };
+      window.addEventListener("online", onOnline);
+      this.onlineHandler = onOnline;
     }
   }
 
@@ -2675,6 +2764,10 @@ export class App {
       window.removeEventListener("pageshow", this.pageShowHandler);
     }
     this.pageShowHandler = null;
+    if (this.onlineHandler && typeof window !== "undefined") {
+      window.removeEventListener("online", this.onlineHandler);
+    }
+    this.onlineHandler = null;
   }
 
   /**
@@ -2849,8 +2942,18 @@ export class App {
       eurUsdSource: "none",
     },
     failedSymbols: readonly string[] = [],
+    connectivity: ConnectivityState = "online",
   ): string | null {
     const reasons: string[] = [];
+
+    // Lead with the honest connectivity headline when the round reached no price
+    // service at all — the device is offline, or every provider failed to
+    // respond (a dead link `navigator.onLine` failed to notice). This replaces
+    // the generic "didn't refresh just now" clause below so the banner says
+    // plainly *why* nothing moved, while the finer FX / backup / budget detail
+    // still appends underneath.
+    const notice = connectivityNotice(connectivity);
+    if (notice) reasons.push(notice);
 
     // Daily free-tier budget: a distinct, useful signal — warn as it runs low
     // and clearly when it's gone, so the user understands why live updates are
@@ -2875,8 +2978,9 @@ export class App {
     const rateLimited = quote.error?.status === 429;
     const stagedFill = quote.dayRemaining > 0 && quote.error === null;
     const deferredByMinute = quote.deferred.length > 0 && !stagedFill;
-    if (quote.error && !rateLimited) {
-      // A real, non-rate-limit fetch problem (network blip, 404, 5xx).
+    if (quote.error && !rateLimited && notice === null) {
+      // A real, non-rate-limit fetch problem (network blip, 404, 5xx). Skipped
+      // when the connectivity headline already said no service was reachable.
       reasons.push("Live prices didn't refresh just now — showing last known values.");
     } else if (rateLimited || deferredByMinute) {
       reasons.push("Live prices are waiting on the free-tier limit — showing last known values for now.");
@@ -3420,6 +3524,68 @@ export function summarizeCoverage(f: CoverageFacts): string {
 export function manualRefreshSummary(facts: CoverageFacts): string {
   if (facts.error) return "Couldn't reach live prices — showing last known values";
   return summarizeCoverage(facts);
+}
+
+/**
+ * Verdict on whether a refresh round actually reached a price service:
+ *   - `offline`     — the device reports no network link at all;
+ *   - `unreachable` — online, but no pricing service responded (every provider
+ *                     errored and nothing landed — a dead link `navigator.onLine`
+ *                     never noticed, or all providers are down);
+ *   - `online`      — at least one service answered (a quote or live FX landed),
+ *                     or there was simply nothing newer to fetch.
+ */
+export type ConnectivityState = "offline" | "unreachable" | "online";
+
+/**
+ * Decide the {@link ConnectivityState} of a network refresh round from what it
+ * actually achieved on the wire. The honest guard against the app claiming to be
+ * "updating" when nothing could be fetched: a device-reported offline flag wins
+ * outright, otherwise a round that landed *nothing* while a provider failed
+ * transiently is treated as unreachable (even when `navigator.onLine` wrongly
+ * says we are connected). A clean round with nothing newer to fetch — or any
+ * round where a quote / live FX did land — is `online`. A fatal (config) error
+ * is handled elsewhere (it routes to Settings), so it does not mark unreachable.
+ */
+export function classifyConnectivity(input: {
+  /** `navigator.onLine` — `false` means the device knows it has no link. */
+  online: boolean;
+  /** Count of symbols freshly fetched this round (0 = nothing new landed). */
+  fetched: number;
+  /** Whether a fresh (non-cached) FX / EUR-USD spot landed this round. */
+  fxFetched: boolean;
+  /** Primary (Twelve Data) quote error this round, if any. */
+  quoteError: PriceError | null;
+  /** Backup (Tiingo) error this round, if the backup was needed. */
+  tiingoError: PriceError | null;
+}): ConnectivityState {
+  if (!input.online) return "offline";
+  // Something genuinely landed ⇒ a service answered.
+  if (input.fetched > 0 || input.fxFetched) return "online";
+  // Nothing landed. If a provider actually failed transiently (and none
+  // succeeded), no price service was reachable this round. A fatal config error
+  // is excluded — that is a key problem, not a connectivity one.
+  const primaryFailed = input.quoteError !== null && !input.quoteError.fatal;
+  const backupFailed = input.tiingoError !== null && !input.tiingoError.fatal;
+  if (primaryFailed || backupFailed) return "unreachable";
+  // Nothing fetched and no errors: simply nothing newer to pull — up to date.
+  return "online";
+}
+
+/**
+ * The user-facing banner / toast line for a {@link ConnectivityState}, or null
+ * when a service answered (no notice needed). Kept deliberately plain so the
+ * dashboard is honest that it is showing last-known — never "live" — values.
+ */
+export function connectivityNotice(state: ConnectivityState): string | null {
+  switch (state) {
+    case "offline":
+      return "No internet connection — showing last known prices.";
+    case "unreachable":
+      return "Couldn't reach any price service — showing last known prices.";
+    default:
+      return null;
+  }
 }
 
 /**
