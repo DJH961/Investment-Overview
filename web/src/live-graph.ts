@@ -55,6 +55,7 @@ import { makeTiingoFxBarFetcher } from "./tiingo";
 import type { Bar } from "./timeseries";
 import {
   loadOrBuildWeekCurve,
+  wrapDailyNavFetcher,
   DEFAULT_WEEK_SESSIONS,
   type WeekCurve,
   type WeekCurveOptions,
@@ -742,7 +743,11 @@ export function buildLiveWeekCurve(
       backoffMemo: cacheFxBackoffMemo("1W:1day"),
     },
   );
-  return loadOrBuildWeekCurve({ ...base, fetchDailyBars, fetchFx });
+  // Item 7b: gap-fill moving-fund NAV history through the *same* capacity-split
+  // daily fetcher (Twelve Data up to budget, Tiingo overflow), re-stamped onto
+  // the NAV day-start cadence so it aligns with the free-accumulated NAV bars.
+  const fetchNavBars = wrapDailyNavFetcher(fetchDailyBars);
+  return loadOrBuildWeekCurve({ ...base, fetchDailyBars, fetchFx, fetchNavBars });
 }
 
 /** A no-op {@link BarFetcher} used when neither price pipe is configured. */

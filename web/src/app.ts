@@ -3568,7 +3568,16 @@ export class App {
         const spent = { credits: 0 };
         try {
           const curve = await buildLiveWeekCurve(
-            { anchor: weekAnchor(), store, liveTip, onFreshBars },
+            {
+              anchor: weekAnchor(),
+              store,
+              liveTip,
+              onFreshBars,
+              // Item 7b: only genuine, NAV-fetchable moving funds are eligible for
+              // the daily-NAV gap-fill; money-market / pinned-$1 funds are absent
+              // from `lastNavSymbols`, so they stay flat and are never fetched.
+              navBackfillSymbols: [...this.lastNavSymbols],
+            },
             loggingProviders("1W", spent),
           );
           if (spent.credits === 0) {

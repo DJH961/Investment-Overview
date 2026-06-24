@@ -72,6 +72,48 @@ function dayStartMs(day: string): number {
   return Date.parse(`${day}T00:00:00Z`);
 }
 
+/** The `YYYY-MM-DD` UTC calendar day an epoch-ms instant falls on. */
+function utcDayOf(t: number): string {
+  return new Date(t).toISOString().slice(0, 10);
+}
+
+/**
+ * Collapse arbitrary intraday/daily price bars to **one NAV bar per UTC day**,
+ * each stamped at that day's UTC midnight ({@link dayStartMs}) and carrying the
+ * day's *last* (settling) value. This re-stamps a price-bar fetch (whose daily
+ * bars land at 09:30/16:00 ET session instants — {@link barsFromTiingoDaily})
+ * onto the **same cadence** as the NAV bars accumulated for free from quotes
+ * ({@link navBarsFromQuotes}), so the gap-filled history and the free history
+ * share one instant grid under a fund's symbol (item 7b). Exposed so the live
+ * builder can wrap its capacity-split daily fetcher into a NAV-cadence fetcher.
+ */
+export function toDailyNavBars(bars: Bar[]): Bar[] {
+  const byDay = new Map<string, Bar>();
+  for (const b of bars) {
+    const day = utcDayOf(b.t);
+    const prev = byDay.get(day);
+    if (!prev || b.t >= prev.t) byDay.set(day, b);
+  }
+  return [...byDay.entries()]
+    .map(([day, b]) => ({ t: dayStartMs(day), value: b.value }))
+    .sort((a, b) => a.t - b.t);
+}
+
+/**
+ * Wrap a price-bar fetcher into a daily-NAV fetcher: every fetched symbol's bars
+ * are collapsed to one settling value per UTC day at day-start ({@link
+ * toDailyNavBars}). Used for the item-7b gap-fill so the NAV history pulled
+ * through the item-8 capacity split aligns with the free-accumulated NAV bars.
+ */
+export function wrapDailyNavFetcher(fetch: BarFetcher): BarFetcher {
+  return async (symbols) => {
+    const raw = await fetch(symbols);
+    const out = new Map<string, Bar[]>();
+    for (const [symbol, bars] of raw) out.set(symbol, toDailyNavBars(bars));
+    return out;
+  };
+}
+
 /** Keep only bars at or after `fromMs` (drops days that have rolled out of the window). */
 function barsFrom(bars: Bar[], fromMs: number): Bar[] {
   return bars.filter((b) => b.t >= fromMs);
@@ -121,6 +163,44 @@ export function weekStaleSymbols(
 }
 
 /**
+ * The settled session day-start instants the week window expects a NAV bar at:
+ * every trading day in the window except today while the market is still open
+ * (today's NAV has not published yet — the live tip carries it). Used to judge
+ * which moving-fund NAV days the stored cache is missing (item 7b).
+ */
+function settledSessionStarts(now: Date, sessions: number): number[] {
+  const window = recentTradingSessions(sessions, now);
+  const settled = isUsMarketOpen(now) ? window.slice(0, -1) : window;
+  return settled.map(dayStartMs);
+}
+
+/**
+ * Which **moving-fund** `navSymbols` the stored week cache is missing a daily-NAV
+ * bar for on one or more settled sessions — the item-7b gap-fill set. A
+ * once-per-login NAV stamp ({@link navBarsFromQuotes}) leaves interior holes when
+ * a user logs in irregularly; this finds the funds whose NAV history is not yet
+ * continuous across the window so their drift can be backfilled.
+ *
+ * **Money-market / stable-value funds must never be passed here**: their NAV is
+ * pinned at ~$1 by design, so they stay flat and are never fetched (the caller —
+ * `app.ts` — supplies only genuine, NAV-fetchable `mutual_fund` symbols).
+ */
+export function navBackfillStaleSymbols(
+  stored: { bars: Record<string, Bar[]> } | null,
+  navSymbols: string[],
+  now: Date = new Date(),
+  sessions = DEFAULT_WEEK_SESSIONS,
+): string[] {
+  const sessionStarts = settledSessionStarts(now, sessions);
+  if (sessionStarts.length === 0) return [];
+  const bars = stored?.bars ?? {};
+  return navSymbols.filter((s) => {
+    const have = new Set((bars[s] ?? []).map((b) => b.t));
+    return sessionStarts.some((t) => !have.has(t));
+  });
+}
+
+/**
  * Build the daily-NAV bars to merge into the **week** store from a refresh's
  * fund quotes — the "remember NAVs for free" step (item 7a.1). Each fund NAV is
  * already pulled for the headline total with its *authentic* strike date
@@ -148,6 +228,19 @@ export interface WeekCurveOptions {
   store: TimeSeriesStore;
   /** Fetch daily-close bars for the given tickers (browser-direct `interval=1day`). */
   fetchDailyBars: BarFetcher;
+  /**
+   * Fetch daily-**NAV** bars (one settling value per UTC day, day-start stamped —
+   * see {@link wrapDailyNavFetcher}) for moving funds whose week history has gaps
+   * (item 7b). Routed by the caller through the item-8 capacity split. Omit to
+   * disable gap-fill; NAV funds then re-mark only from the free-accumulated bars.
+   */
+  fetchNavBars?: BarFetcher | null;
+  /**
+   * The genuine, NAV-fetchable **moving-fund** symbols eligible for the item-7b
+   * gap-fill. Money-market / pinned-$1 funds must be excluded by the caller so
+   * they stay flat and are never fetched.
+   */
+  navBackfillSymbols?: string[];
   /** Fetch EUR→USD daily bars for the window; omit/null to fall back to `baseFx`. */
   fetchFx?: (() => Promise<Bar[]>) | null;
   /** Reference instant (defaults to now). */
@@ -244,7 +337,29 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
     stored = await store.mergeSession(key, { bars: incomingBars, fx: incomingFx }, now.getTime());
   }
 
-  // Secondary-currency refill: when the week's daily closes are already cached
+  // Item 7b — gap-fill the daily-NAV history of *moving* funds (mutual funds)
+  // whose stored week cache is missing settled-session NAV days from irregular
+  // logins. Runs independently of market freshness (the market closes can be
+  // fully cached while the NAV days have holes), and only ever fetches the
+  // caller-vetted moving-fund symbols — money-market / pinned-$1 funds are never
+  // in this set, so they stay flat and spend nothing. The fetch is routed through
+  // the item-8 capacity split and re-stamped to the NAV day-start cadence.
+  const navBackfillSymbols = options.navBackfillSymbols ?? [];
+  const fetchNavBars = options.fetchNavBars ?? null;
+  if (fetchNavBars && navBackfillSymbols.length > 0) {
+    const staleNav = navBackfillStaleSymbols(stored, navBackfillSymbols, now, sessions);
+    if (staleNav.length > 0) {
+      const navBars = await fetchNavBars(staleNav);
+      const incomingNav: Record<string, Bar[]> = {};
+      for (const [symbol, bars] of navBars) {
+        if (bars.length > 0) incomingNav[symbol] = bars;
+      }
+      if (Object.keys(incomingNav).length > 0) {
+        stored = await store.mergeSession(key, { bars: incomingNav }, now.getTime());
+      }
+    }
+  }
+
   // (so `fresh`) but the per-day FX track is missing, pull it once. Without it
   // every point rebases on the flat `baseFx` and the secondary-currency line
   // collapses onto the primary instead of diverging by the week's FX move. Gated

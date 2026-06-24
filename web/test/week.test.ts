@@ -12,8 +12,11 @@ import {
   DEFAULT_WEEK_SESSIONS,
   WEEK_STORE_KEY,
   loadOrBuildWeekCurve,
+  navBackfillStaleSymbols,
   navBarsFromQuotes,
+  toDailyNavBars,
   weekStaleSymbols,
+  wrapDailyNavFetcher,
 } from "../src/week";
 import type { Bar } from "../src/timeseries";
 import { memoryBackend, TimeSeriesStore } from "../src/timeseries-store";
@@ -504,5 +507,197 @@ describe("weekStaleSymbols (refresh-dedup coverage test, item 5b)", () => {
       now: SAT_CLOSED,
     });
     expect(fetched).toBe(true);
+  });
+});
+
+describe("toDailyNavBars (re-stamp price bars to NAV day-start cadence, item 7b)", () => {
+  it("collapses each UTC day to its last value at day-start", () => {
+    // Session open (09:30 ET) + close (16:00 ET) bars for one day → one bar at
+    // UTC midnight carrying the settling (close) value.
+    const open = Date.parse("2026-03-13T13:30:00Z");
+    const close = Date.parse("2026-03-13T20:00:00Z");
+    const out = toDailyNavBars([bar(close, "101"), bar(open, "100")]);
+    expect(out).toHaveLength(1);
+    expect(out[0].t).toBe(dayMs("2026-03-13"));
+    expect(out[0].value.toString()).toBe("101");
+  });
+
+  it("keeps one bar per day, ascending", () => {
+    const out = toDailyNavBars([
+      bar(Date.parse("2026-03-13T20:00:00Z"), "101"),
+      bar(Date.parse("2026-03-12T20:00:00Z"), "100"),
+    ]);
+    expect(out.map((b) => b.t)).toEqual([dayMs("2026-03-12"), dayMs("2026-03-13")]);
+  });
+});
+
+describe("navBackfillStaleSymbols (item 7b gap detection)", () => {
+  it("flags a moving fund missing any settled-session NAV day", () => {
+    // Window Mon 03-09 → Fri 03-13 (closed Sat). Only Friday's NAV is stored.
+    const stored = { bars: { FXAIX: [bar(dayMs("2026-03-13"), "100")] } };
+    expect(navBackfillStaleSymbols(stored, ["FXAIX"], SAT_CLOSED)).toEqual(["FXAIX"]);
+  });
+
+  it("is clean once every settled session day is covered", () => {
+    const stored = {
+      bars: {
+        FXAIX: [
+          bar(dayMs("2026-03-09"), "96"),
+          bar(dayMs("2026-03-10"), "97"),
+          bar(dayMs("2026-03-11"), "98"),
+          bar(dayMs("2026-03-12"), "99"),
+          bar(dayMs("2026-03-13"), "100"),
+        ],
+      },
+    };
+    expect(navBackfillStaleSymbols(stored, ["FXAIX"], SAT_CLOSED)).toEqual([]);
+  });
+
+  it("does not require today's NAV while the market is open", () => {
+    // Thu open: settled sessions are Fri 03-06..Wed 03-11; Thursday's NAV is not
+    // expected (the live tip carries today).
+    const stored = {
+      bars: {
+        FXAIX: [
+          bar(dayMs("2026-03-06"), "95"),
+          bar(dayMs("2026-03-09"), "96"),
+          bar(dayMs("2026-03-10"), "97"),
+          bar(dayMs("2026-03-11"), "98"),
+        ],
+      },
+    };
+    expect(navBackfillStaleSymbols(stored, ["FXAIX"], THU_OPEN)).toEqual([]);
+  });
+
+  it("treats an empty / missing store as fully stale", () => {
+    expect(navBackfillStaleSymbols(null, ["FXAIX"], SAT_CLOSED)).toEqual(["FXAIX"]);
+  });
+});
+
+describe("loadOrBuildWeekCurve NAV gap-fill (item 7b)", () => {
+  // A moving NAV fund in the week sleeve (navInSleeve), with one stored login-day
+  // NAV bar but holes across the rest of the window.
+  const navHolding = (): AnchorHoldingInput =>
+    holding({
+      priceSymbol: "FXAIX",
+      priceType: "nav",
+      nativeCurrency: "USD",
+      shares: d(5),
+      priceNative: d(100),
+      valueEur: d(450),
+      valueUsd: d(500),
+    });
+
+  it("backfills missing moving-fund NAV days through fetchNavBars", async () => {
+    const s = store();
+    await s.saveSession({
+      day: WEEK_STORE_KEY,
+      bars: {
+        VTI: [bar(dayMs("2026-03-12"), "99"), bar(dayMs("2026-03-13"), "100")],
+        FXAIX: [bar(dayMs("2026-03-13"), "100")], // only Friday cached so far
+      },
+      fx: [],
+      updatedAt: 0,
+    });
+    const anchor = buildIntradayAnchor([holding(), navHolding()], d(0), d(0), d("0.9"), {
+      navInSleeve: true,
+    });
+    const requested: string[][] = [];
+    await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => new Map(),
+      fetchNavBars: async (symbols) => {
+        requested.push(symbols);
+        return new Map([
+          [
+            "FXAIX",
+            [
+              bar(dayMs("2026-03-09"), "96"),
+              bar(dayMs("2026-03-10"), "97"),
+              bar(dayMs("2026-03-11"), "98"),
+              bar(dayMs("2026-03-12"), "99"),
+            ],
+          ],
+        ]);
+      },
+      navBackfillSymbols: ["FXAIX"],
+      now: SAT_CLOSED,
+    });
+    expect(requested).toEqual([["FXAIX"]]);
+    const reread = await s.loadSession(WEEK_STORE_KEY);
+    // All five settled sessions are now covered for the moving fund.
+    expect(navBackfillStaleSymbols(reread, ["FXAIX"], SAT_CLOSED)).toEqual([]);
+  });
+
+  it("does not fetch when the moving fund is already fully covered", async () => {
+    const s = store();
+    await s.saveSession({
+      day: WEEK_STORE_KEY,
+      bars: {
+        FXAIX: [
+          bar(dayMs("2026-03-09"), "96"),
+          bar(dayMs("2026-03-10"), "97"),
+          bar(dayMs("2026-03-11"), "98"),
+          bar(dayMs("2026-03-12"), "99"),
+          bar(dayMs("2026-03-13"), "100"),
+        ],
+      },
+      fx: [],
+      updatedAt: 0,
+    });
+    const anchor = buildIntradayAnchor([navHolding()], d(0), d(0), d("0.9"), { navInSleeve: true });
+    let fetched = false;
+    await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => new Map(),
+      fetchNavBars: async () => {
+        fetched = true;
+        return new Map();
+      },
+      navBackfillSymbols: ["FXAIX"],
+      now: SAT_CLOSED,
+    });
+    expect(fetched).toBe(false);
+  });
+
+  it("never fetches a money-market fund (absent from navBackfillSymbols)", async () => {
+    const s = store();
+    const anchor = buildIntradayAnchor([navHolding()], d(0), d(0), d("0.9"), { navInSleeve: true });
+    let fetched = false;
+    await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => new Map(),
+      fetchNavBars: async () => {
+        fetched = true;
+        return new Map();
+      },
+      navBackfillSymbols: [], // money-market funds are excluded by the caller
+      now: SAT_CLOSED,
+    });
+    expect(fetched).toBe(false);
+  });
+});
+
+describe("wrapDailyNavFetcher (item 7b cadence normaliser)", () => {
+  it("re-stamps each symbol's price bars onto NAV day-start", async () => {
+    const inner = async (): Promise<Map<string, Bar[]>> =>
+      new Map([
+        [
+          "FXAIX",
+          [
+            bar(Date.parse("2026-03-12T13:30:00Z"), "98"),
+            bar(Date.parse("2026-03-12T20:00:00Z"), "99"),
+            bar(Date.parse("2026-03-13T20:00:00Z"), "100"),
+          ],
+        ],
+      ]);
+    const wrapped = wrapDailyNavFetcher(inner);
+    const out = await wrapped(["FXAIX"]);
+    const bars = out.get("FXAIX") ?? [];
+    expect(bars.map((b) => b.t)).toEqual([dayMs("2026-03-12"), dayMs("2026-03-13")]);
+    expect(bars.map((b) => b.value.toString())).toEqual(["99", "100"]);
   });
 });
