@@ -38,7 +38,7 @@ const PRICE_PROXY = "https://worker.example.dev/price";
 function anchor(): IntradayAnchor {
   return {
     holdings: [
-      { priceSymbol: "VTI", valueEur: d(900), valueUsd: d(1000), closeNative: d(100), isUsdNative: true },
+      { priceSymbol: "VTI", valueEur: d(900), valueUsd: d(1000), closeNative: d(100), isUsdNative: true, priceType: "market" },
     ],
     baseEur: d(100),
     baseUsd: d(100),

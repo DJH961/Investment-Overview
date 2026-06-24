@@ -12,6 +12,7 @@ import {
   DEFAULT_WEEK_SESSIONS,
   WEEK_STORE_KEY,
   loadOrBuildWeekCurve,
+  navBarsFromQuotes,
   weekStaleSymbols,
 } from "../src/week";
 import type { Bar } from "../src/timeseries";
@@ -351,6 +352,96 @@ describe("loadOrBuildWeekCurve", () => {
     });
     expect(curve.points).toHaveLength(1);
     expect(curve.points[0].valueUsd.toString()).toBe("1000");
+  });
+});
+
+describe("navBarsFromQuotes (remember NAVs for free, item 7a.1)", () => {
+  it("stamps each fund's NAV at its authentic value-date, market symbols ignored", () => {
+    const navSymbols = new Set(["FXAIX", "VMFXX"]);
+    const bars = navBarsFromQuotes(
+      [
+        { symbol: "FXAIX", valueDate: "2026-03-12", price: d("180.5") },
+        { symbol: "VMFXX", valueDate: "2026-03-12", price: d("1") },
+        { symbol: "VTI", valueDate: "2026-03-12", price: d("250") }, // market — skipped
+      ],
+      navSymbols,
+    );
+    expect(Object.keys(bars).sort()).toEqual(["FXAIX", "VMFXX"]);
+    expect(bars.FXAIX).toEqual([{ t: dayMs("2026-03-12"), value: d("180.5") }]);
+  });
+
+  it("skips quotes missing a value-date or a positive price", () => {
+    const navSymbols = new Set(["FXAIX"]);
+    expect(navBarsFromQuotes([{ symbol: "FXAIX", valueDate: null, price: d("1") }], navSymbols)).toEqual({});
+    expect(navBarsFromQuotes([{ symbol: "FXAIX", valueDate: "2026-03-12", price: null }], navSymbols)).toEqual({});
+    expect(navBarsFromQuotes([{ symbol: "FXAIX", valueDate: "2026-03-12", price: d("0") }], navSymbols)).toEqual({});
+  });
+});
+
+describe("1W curve NAV funds (item 7)", () => {
+  // A book that is half a market ETF, half a moving NAV fund.
+  function mixedBook(): AnchorHoldingInput[] {
+    return [
+      holding({ priceSymbol: "VTI", priceType: "market", priceNative: d(100), valueEur: d(900), valueUsd: d(1000) }),
+      holding({ priceSymbol: "FXAIX", priceType: "nav", priceNative: d(200), valueEur: d(900), valueUsd: d(1000) }),
+    ];
+  }
+
+  it("re-marks the NAV fund from its stored daily-NAV bars, and never fetches funds", async () => {
+    const s = store();
+    // Pre-load both a market close history and the accumulated fund NAV history.
+    await s.mergeSession(
+      WEEK_STORE_KEY,
+      {
+        bars: {
+          VTI: [bar(dayMs("2026-03-12"), "98"), bar(dayMs("2026-03-13"), "100")],
+          FXAIX: [bar(dayMs("2026-03-12"), "190"), bar(dayMs("2026-03-13"), "200")],
+        },
+      },
+      dayMs("2026-03-13"),
+    );
+    const anchor = buildIntradayAnchor(mixedBook(), d(0), d(0), d("0.9"), { navInSleeve: true });
+    const fetched: string[][] = [];
+    const curve = await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async (syms) => {
+        fetched.push(syms);
+        return new Map<string, Bar[]>();
+      },
+      now: SAT_CLOSED,
+    });
+    // The fund symbol is NEVER handed to the price fetcher — only the market one.
+    for (const call of fetched) expect(call).not.toContain("FXAIX");
+    // The fund contributes its own per-day NAV drift: the 03-12 point re-marks
+    // FXAIX at 190/200 of its 1000 value (not a flat 1000).
+    const at0312 = curve.points.find((p) => p.t === dayMs("2026-03-12"));
+    expect(at0312).toBeDefined();
+    // VTI: 1000·98/100 = 980 ; FXAIX: 1000·190/200 = 950 → 1930 USD.
+    expect(at0312!.valueUsd.toString()).toBe("1930");
+  });
+
+  it("does not re-pull market closes just because a fund NAV day is missing", async () => {
+    const s = store();
+    // Market fully covered through Friday; the fund has NO bars at all.
+    await s.mergeSession(
+      WEEK_STORE_KEY,
+      { bars: { VTI: [bar(dayMs("2026-03-13"), "100")] } },
+      dayMs("2026-03-13"),
+    );
+    const anchor = buildIntradayAnchor(mixedBook(), d(0), d(0), d("0.9"), { navInSleeve: true });
+    let fetchedAny = false;
+    await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => {
+        fetchedAny = true;
+        return new Map<string, Bar[]>();
+      },
+      now: SAT_CLOSED,
+    });
+    // The market sleeve is covered, so no network pull fires despite the fund gap.
+    expect(fetchedAny).toBe(false);
   });
 });
 

@@ -26,6 +26,7 @@
 import {
   appendLiveTip,
   intradaySymbols,
+  marketSleeveSymbols,
   type IntradayAnchor,
   type LiveTip,
   type BarFetcher,
@@ -41,6 +42,7 @@ import {
   type CurvePoint,
   type ReconHolding,
 } from "./timeseries";
+import type { Decimal } from "./decimal-config";
 import { TimeSeriesStore } from "./timeseries-store";
 
 /**
@@ -118,6 +120,27 @@ export function weekStaleSymbols(
   return symbols.filter((s) => !(bars[s] ?? []).some((b) => b.t >= cutoff));
 }
 
+/**
+ * Build the daily-NAV bars to merge into the **week** store from a refresh's
+ * fund quotes — the "remember NAVs for free" step (item 7a.1). Each fund NAV is
+ * already pulled for the headline total with its *authentic* strike date
+ * (`Quote.valueDate`), so stamping it as a daily bar under the fund symbol
+ * accumulates one NAV/fund/day at **zero** graph cost. Only `navSymbols` are
+ * kept, and only quotes carrying both a positive price and a value-date.
+ */
+export function navBarsFromQuotes(
+  quotes: Iterable<{ symbol: string; valueDate?: string | null; price: Decimal | null }>,
+  navSymbols: ReadonlySet<string>,
+): Record<string, Bar[]> {
+  const bars: Record<string, Bar[]> = {};
+  for (const q of quotes) {
+    if (!navSymbols.has(q.symbol)) continue;
+    if (!q.valueDate || q.price === null || !q.price.greaterThan(0)) continue;
+    bars[q.symbol] = [{ t: dayStartMs(q.valueDate), value: q.price }];
+  }
+  return bars;
+}
+
 /** Inputs to {@link loadOrBuildWeekCurve}. */
 export interface WeekCurveOptions {
   anchor: IntradayAnchor;
@@ -178,7 +201,12 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
   const startDay = window[0] ?? lastSessionDate(now);
   const endDay = window[window.length - 1] ?? startDay;
   const marketOpen = isUsMarketOpen(now);
+  // The full sleeve (market + any NAV funds) drives reconstruction; only the
+  // **market** members are ever network-fetched as daily closes. NAV funds
+  // re-mark from daily-NAV bars accumulated for free on each refresh (and the
+  // item-7b gap-fill), so they never spend a graph credit here (item 7).
   const symbols = intradaySymbols(anchor);
+  const fetchSymbols = marketSleeveSymbols(anchor);
 
   // The newest day we expect a *settled* daily close for: today only once it has
   // closed; while the market is still open, the latest settled session is the
@@ -187,13 +215,16 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
   const windowStartMs = dayStartMs(startDay);
 
   let stored = await store.loadSession(key);
+  // Freshness is judged on the *fetchable* (market) symbols only — NAV funds
+  // never gate a network pull, so a fund still missing a NAV day cannot force a
+  // re-pull storm of the market closes (item 5b coverage, item 7 range-split).
   const fresh =
     symbols.length === 0 ||
-    (stored !== null && coversThrough(stored.bars, symbols, dayStartMs(settledEnd)));
+    (stored !== null && coversThrough(stored.bars, fetchSymbols, dayStartMs(settledEnd)));
 
   let fxAttempted = false;
   if (!fresh) {
-    const barsBySymbol = await fetchDailyBars(symbols);
+    const barsBySymbol = await fetchDailyBars(fetchSymbols);
     const incomingBars: Record<string, Bar[]> = {};
     for (const [symbol, bars] of barsBySymbol) {
       if (bars.length > 0) incomingBars[symbol] = bars;

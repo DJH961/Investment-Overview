@@ -31,6 +31,7 @@ export function buildModelAnchor(
   cashValueEur: Decimal,
   cashValueUsd: Decimal,
   baseFx: Decimal | null,
+  options: { navInSleeve?: boolean } = {},
 ): IntradayAnchor {
   const inputs: AnchorHoldingInput[] = holdings.map((h) => ({
     // The bars are keyed by the Twelve Data ticker (`price_symbol`); fall back to
@@ -43,7 +44,7 @@ export function buildModelAnchor(
     valueEur: h.valueEur,
     valueUsd: h.valueUsd,
   }));
-  return buildIntradayAnchor(inputs, cashValueEur, cashValueUsd, baseFx);
+  return buildIntradayAnchor(inputs, cashValueEur, cashValueUsd, baseFx, options);
 }
 
 /** Chart-ready columns for a live curve: aligned dates + per-currency values. */

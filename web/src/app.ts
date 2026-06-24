@@ -36,7 +36,7 @@ import {
   MAX_AUTO_LOCK_MINUTES,
   type AppConfig,
 } from "./config";
-import { PriceError, type FxRates } from "./prices";
+import { PriceError, type FxRates, type Quote } from "./prices";
 import { Decimal } from "./decimal-config";
 import {
   readCachedEnvelope,
@@ -120,7 +120,7 @@ import {
 import { springboardSessionCurve, springboardWeekCurve } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
 import { TimeSeriesStore } from "./timeseries-store";
-import { WEEK_STORE_KEY, weekStaleSymbols } from "./week";
+import { WEEK_STORE_KEY, navBarsFromQuotes, weekStaleSymbols } from "./week";
 import type { Bar } from "./timeseries";
 import type { MobileExport } from "./types";
 import {
@@ -2515,6 +2515,10 @@ export class App {
       fxEurUsdSource: eurUsdSource,
     });
     model.overview.lastDataPullAt = this.lastDataPullAt;
+    // Remember each fund's freshly-settled NAV as a daily bar in the 1W store, so
+    // the week curve re-marks NAV funds from their real per-day drift at zero
+    // graph cost (item 7a.1). Best-effort: a store failure never sinks the paint.
+    if (network) this.persistFundNavBars(quoteLoad.quotes);
     // Refresh the live-coverage summary on a network pull; keep the last one on a
     // cache-only re-paint so a currency toggle / blob swap doesn't blank it.
     if (network) {
@@ -3499,6 +3503,11 @@ export class App {
     const exported = this.state.data?.live_graphs ?? undefined;
     const anchor = (): ReturnType<typeof buildModelAnchor> =>
       buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx);
+    // The 1W anchor folds NAV funds into the sleeve (re-marked from their daily
+    // NAV bars) rather than the flat base, so the week's NAV drift shows on the
+    // curve for a NAV-heavy book (docs/tiingo_polling_storm_cleanup_plan.md item 7).
+    const weekAnchor = (): ReturnType<typeof buildModelAnchor> =>
+      buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx, { navInSleeve: true });
     // Feed a graph's freshly fetched bars back into the holdings' quote cache so
     // a big load primes the rows instead of each re-buying the same price.
     const onFreshBars = (bars: Map<string, Bar[]>): void =>
@@ -3554,7 +3563,7 @@ export class App {
         const spent = { credits: 0 };
         try {
           const curve = await buildLiveWeekCurve(
-            { anchor: anchor(), store, liveTip, onFreshBars },
+            { anchor: weekAnchor(), store, liveTip, onFreshBars },
             loggingProviders("1W", spent),
           );
           if (spent.credits === 0) {
@@ -3590,6 +3599,23 @@ export class App {
       if (symbol) currencyBySymbol.set(symbol, h.nativeCurrency ?? null);
     }
     primeQuotesFromBars(barsBySymbol, currencyBySymbol, Date.now());
+  }
+
+  /**
+   * Persist each fund's freshly-settled NAV as a daily bar in the 1W store
+   * (`navBarsFromQuotes`, item 7a.1). The NAV was already pulled for the headline
+   * total, so accumulating it here costs no extra credit and lets the week curve
+   * re-mark NAV funds from their authentic per-day drift. Fire-and-forget and
+   * fully best-effort — a store failure must never disturb the price paint.
+   */
+  private persistFundNavBars(quotes: Map<string, Quote>): void {
+    const navSymbols = this.lastNavSymbols;
+    if (navSymbols.size === 0) return;
+    const bars = navBarsFromQuotes(quotes.values(), navSymbols);
+    if (Object.keys(bars).length === 0) return;
+    void this.ensureTimeSeriesStore()
+      .mergeSession(WEEK_STORE_KEY, { bars }, Date.now())
+      .catch(() => undefined);
   }
 
   /** Re-render the current model in place (e.g. after a currency toggle). */
