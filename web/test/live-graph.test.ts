@@ -23,6 +23,8 @@ import {
   sessionFxWindow,
   weekFxWindow,
   withFxBackoff,
+  withBarBackoff,
+  cacheSeriesBackoff,
   type BackfillMeter,
   type LiveGraphProviders,
   type SpendRequest,
@@ -32,6 +34,20 @@ import { PriceError, type FetchLike } from "../src/prices";
 import type { Bar } from "../src/timeseries";
 
 const d = (v: string | number): Decimal => new Decimal(v);
+
+/** A minimal in-memory `StorageLike` for backoff persistence tests. */
+function mapStorage(): {
+  getItem(k: string): string | null;
+  setItem(k: string, v: string): void;
+  removeItem(k: string): void;
+} {
+  const m = new Map<string, string>();
+  return {
+    getItem: (k) => (m.has(k) ? (m.get(k) as string) : null),
+    setItem: (k, v) => void m.set(k, v),
+    removeItem: (k) => void m.delete(k),
+  };
+}
 
 const PRICE_PROXY = "https://worker.example.dev/price";
 
@@ -181,17 +197,9 @@ describe("FX dual pipe + backoff (item 4)", () => {
     expect(fellBack).toBe(false);
   });
 
-  it("withFxBackoff suppresses re-attempts after an empty result, then clears on success", async () => {
-    let store: number | null = null;
-    const memo = {
-      read: () => store,
-      write: (at: number) => {
-        store = at;
-      },
-      clear: () => {
-        store = null;
-      },
-    };
+  it("withFxBackoff suppresses re-attempts only after the 3rd failure, then clears on success", async () => {
+    const memory = mapStorage();
+    const backoff = cacheSeriesBackoff({ attempts: 3, cooldownMs: 10_000, storage: memory });
     let calls = 0;
     let result: Bar[] = [];
     let t = 1000;
@@ -200,50 +208,144 @@ describe("FX dual pipe + backoff (item 4)", () => {
         calls += 1;
         return result;
       },
-      memo,
-      { now: () => t, cooldownMs: 10_000 },
+      backoff,
+      "fx:1W:1day",
+      { now: () => t },
     );
-    // First call returns empty → memoised.
+    // Three empty pulls are still attempted (it tries hard in a short session)…
     expect(await fx()).toEqual([]);
-    expect(calls).toBe(1);
-    expect(store).toBe(1000);
-    // A rebuild inside the cooldown short-circuits to [] without touching `inner`.
-    t = 5000;
     expect(await fx()).toEqual([]);
-    expect(calls).toBe(1);
+    expect(await fx()).toEqual([]);
+    expect(calls).toBe(3);
+    // …only now is the cooldown armed: a 4th rebuild short-circuits to [].
+    expect(await fx()).toEqual([]);
+    expect(calls).toBe(3);
     // Past the cooldown it tries again; a non-empty pull clears the memo.
     t = 20_000;
     result = [bar(1.1)];
     expect(await fx()).toEqual([bar(1.1)]);
-    expect(calls).toBe(2);
-    expect(store).toBeNull();
+    expect(calls).toBe(4);
+    // Cleared: a later empty result starts a fresh 3-strike count.
+    t = 40_000;
+    result = [];
+    expect(await fx()).toEqual([]);
+    expect(calls).toBe(5);
+    expect(backoff.suppressed("fx:1W:1day", t)).toBe(false);
   });
 
-  it("withFxBackoff arms the cooldown on a throw and re-raises it once", async () => {
-    let store: number | null = null;
-    const memo = {
-      read: () => store,
-      write: (at: number) => {
-        store = at;
-      },
-      clear: () => {
-        store = null;
-      },
-    };
+  it("withFxBackoff counts a throw as a strike and re-raises it, arming after 3", async () => {
+    const memory = mapStorage();
+    const backoff = cacheSeriesBackoff({ attempts: 3, cooldownMs: 10_000, storage: memory });
     let calls = 0;
     const fx = withFxBackoff(
       async () => {
         calls += 1;
         throw new PriceError("boom");
       },
-      memo,
-      { now: () => 1000, cooldownMs: 10_000 },
+      backoff,
+      "fx:1D:1hour",
+      { now: () => 1000 },
     );
     await expect(fx()).rejects.toThrow("boom");
-    expect(store).toBe(1000);
-    // Within the cooldown the next rebuild is suppressed (no second network hit).
+    await expect(fx()).rejects.toThrow("boom");
+    await expect(fx()).rejects.toThrow("boom");
+    expect(calls).toBe(3);
+    // Armed after the 3rd throw: the next rebuild is suppressed (no network hit).
     expect(await fx()).toEqual([]);
+    expect(calls).toBe(3);
+  });
+});
+
+describe("withBarBackoff (per-symbol time-series backoff)", () => {
+  it("drops a symbol from the network only after 3 empty/failed pulls, sparing the quote", async () => {
+    const memory = mapStorage();
+    const backoff = cacheSeriesBackoff({ attempts: 3, cooldownMs: 10_000, storage: memory });
+    const seen: string[][] = [];
+    let t = 1000;
+    // AAPL always comes back empty; MSFT always returns bars.
+    const inner: BarFetcher = async (symbols) => {
+      seen.push(symbols);
+      const out = new Map<string, Bar[]>();
+      for (const s of symbols) if (s === "MSFT") out.set(s, [{ t: 1, value: d(1) }]);
+      return out;
+    };
+    const fetch = withBarBackoff(inner, backoff, (s) => `1W:${s}`, { now: () => t });
+    // Three rounds: AAPL is attempted each time (still trying), MSFT keeps clearing.
+    await fetch(["AAPL", "MSFT"]);
+    await fetch(["AAPL", "MSFT"]);
+    await fetch(["AAPL", "MSFT"]);
+    expect(seen).toEqual([
+      ["AAPL", "MSFT"],
+      ["AAPL", "MSFT"],
+      ["AAPL", "MSFT"],
+    ]);
+    // 4th round: AAPL is now suppressed (parked), only MSFT reaches the network.
+    seen.length = 0;
+    const out = await fetch(["AAPL", "MSFT"]);
+    expect(seen).toEqual([["MSFT"]]);
+    expect(out.has("AAPL")).toBe(false); // absent ⇒ curve holds AAPL flat at its quote
+    expect(out.get("MSFT")?.length).toBe(1);
+    // Past the cooldown AAPL is retried again.
+    t = 20_000;
+    seen.length = 0;
+    await fetch(["AAPL", "MSFT"]);
+    expect(seen).toEqual([["AAPL", "MSFT"]]);
+  });
+
+  it("returns an empty map (no network) when every symbol is suppressed", async () => {
+    const memory = mapStorage();
+    const backoff = cacheSeriesBackoff({ attempts: 1, cooldownMs: 10_000, storage: memory });
+    let calls = 0;
+    const inner: BarFetcher = async () => {
+      calls += 1;
+      return new Map<string, Bar[]>();
+    };
+    const fetch = withBarBackoff(inner, backoff, (s) => `1D:${s}`, { now: () => 1000 });
+    await fetch(["AAPL"]); // first attempt fails ⇒ arms (attempts: 1)
     expect(calls).toBe(1);
+    const out = await fetch(["AAPL"]); // suppressed
+    expect(calls).toBe(1);
+    expect(out.size).toBe(0);
+  });
+
+  it("keeps 1D and 1W scopes independent (a 1D error never suppresses 1W)", async () => {
+    const memory = mapStorage();
+    const backoff = cacheSeriesBackoff({ attempts: 1, cooldownMs: 10_000, storage: memory });
+    const inner = (label: string): BarFetcher => async (symbols) => {
+      // The 1D leg always fails for AAPL; the 1W leg always serves it.
+      const out = new Map<string, Bar[]>();
+      if (label === "1W") for (const s of symbols) out.set(s, [{ t: 1, value: d(1) }]);
+      return out;
+    };
+    const day = withBarBackoff(inner("1D"), backoff, (s) => `1D:${s}`, { now: () => 1000 });
+    const week = withBarBackoff(inner("1W"), backoff, (s) => `1W:${s}`, { now: () => 1000 });
+    await day(["AAPL"]); // arms 1D:AAPL
+    expect(backoff.suppressed("1D:AAPL", 1000)).toBe(true);
+    expect(backoff.suppressed("1W:AAPL", 1000)).toBe(false); // 1W untouched
+    const out = await week(["AAPL"]); // still fetched on the 1W scope
+    expect(out.get("AAPL")?.length).toBe(1);
+  });
+
+  it("retroactively recovers a symbol: the bars flow again once it succeeds after the cooldown", async () => {
+    const memory = mapStorage();
+    const backoff = cacheSeriesBackoff({ attempts: 1, cooldownMs: 10_000, storage: memory });
+    let alive = false;
+    let t = 1000;
+    const inner: BarFetcher = async (symbols) => {
+      const out = new Map<string, Bar[]>();
+      if (alive) for (const s of symbols) out.set(s, [{ t: 2, value: d(2) }]);
+      return out;
+    };
+    const fetch = withBarBackoff(inner, backoff, (s) => `1W:${s}`, { now: () => t });
+    await fetch(["AAPL"]); // fails ⇒ armed; curve holds AAPL flat at its quote meanwhile
+    expect(backoff.suppressed("1W:AAPL", t)).toBe(true);
+    // The endpoint recovers; once the cooldown elapses the retry succeeds and the
+    // memo clears, so the corrected bars flow back into the curve.
+    alive = true;
+    t = 20_000;
+    const out = await fetch(["AAPL"]);
+    expect(out.get("AAPL")?.length).toBe(1);
+    expect(backoff.suppressed("1W:AAPL", t)).toBe(false);
   });
 });
 

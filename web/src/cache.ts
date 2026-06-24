@@ -544,51 +544,90 @@ export function tiingoCreditsSpentToday(log: CreditSpend[], now: number): number
   return log.reduce((acc, e) => (e.at >= dayStart ? acc + e.n : acc), 0);
 }
 
-// --- Live-graph FX backoff memo --------------------------------------------
+// --- Live-graph time-series backoff (price bars + FX) ----------------------
 
-const FX_BACKOFF_KEY = "iv.web.fx_backoff";
-
-/** Default cooldown a persistently empty/failing FX endpoint is suppressed for. */
-export const DEFAULT_FX_BACKOFF_MS = 30 * 60 * 1000; // 30 minutes
+const SERIES_BACKOFF_KEY = "iv.web.series_backoff";
 
 /**
- * Read the epoch-ms of the last empty/failed live-graph FX pull for `key` (the
- * FX cadence, e.g. `"1hour"`/`"1day"`), or null. Backs the negative-result memo
- * (`docs/tiingo_polling_storm_cleanup_plan.md` item 4): once an FX attempt comes
- * back empty (or the pipe rejects), subsequent rebuilds within the cooldown skip
- * the network entirely instead of re-arming the refill gate on every render.
+ * Default cooldown a persistently empty/failing time-series endpoint is
+ * suppressed for once it has armed. Wall-clock (epoch-ms) based, so it is
+ * measured against the real clock and survives the app being closed and
+ * reopened — not "time the app has been open".
  */
-export function readFxBackoff(
-  key: string,
-  storage: StorageLike | null = defaultStorage(),
-): number | null {
-  const raw = readJson<Record<string, number>>(storage, FX_BACKOFF_KEY);
-  const at = raw && typeof raw[key] === "number" ? raw[key] : null;
-  return at !== null && Number.isFinite(at) ? at : null;
+export const DEFAULT_SERIES_BACKOFF_MS = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * How many consecutive failed attempts a series gets *before* the cooldown
+ * arms. The app should try hard in a short session, so a symbol is retried this
+ * many times across rebuilds; only a genuinely dead series (still failing after
+ * the 3rd try) is parked for {@link DEFAULT_SERIES_BACKOFF_MS}.
+ */
+export const DEFAULT_SERIES_BACKOFF_ATTEMPTS = 3;
+
+/** One series' backoff state: the strike count and when (epoch-ms) it armed. */
+export interface SeriesBackoffEntry {
+  /** Consecutive failed attempts since the last success / cooldown reset. */
+  fails: number;
+  /** Epoch-ms the cooldown armed (`fails` reached the threshold), or null. */
+  armedAt: number | null;
 }
 
-/** Memoise that the FX pull for `key` produced no usable bars at `at`. */
-export function recordFxBackoff(
+/**
+ * Read the backoff state for a time-series `key` (a price symbol like
+ * `"1W:AAPL"` or an FX leg like `"fx:1W:1day"`), or null when untracked. Backs
+ * the per-symbol negative-result memo (`docs/tiingo_polling_storm_cleanup_plan.md`
+ * item 4): a symbol that keeps failing is suppressed from the network so a
+ * graph-switch storm cannot re-arm the refill gate on every render — while
+ * quotes are never gated, so the headline price still updates.
+ */
+export function readSeriesBackoff(
   key: string,
-  at: number,
   storage: StorageLike | null = defaultStorage(),
-): void {
-  const raw = readJson<Record<string, number>>(storage, FX_BACKOFF_KEY) ?? {};
-  const next: Record<string, number> = typeof raw === "object" && raw !== null ? { ...raw } : {};
-  next[key] = at;
-  writeJson(storage, FX_BACKOFF_KEY, next);
+): SeriesBackoffEntry | null {
+  const raw = readJson<Record<string, SeriesBackoffEntry>>(storage, SERIES_BACKOFF_KEY);
+  const entry = raw && typeof raw === "object" ? raw[key] : undefined;
+  if (!entry || typeof entry !== "object") return null;
+  const fails = typeof entry.fails === "number" && Number.isFinite(entry.fails) ? entry.fails : 0;
+  const armedAt =
+    typeof entry.armedAt === "number" && Number.isFinite(entry.armedAt) ? entry.armedAt : null;
+  return { fails, armedAt };
 }
 
-/** Clear the FX backoff memo for `key` (e.g. after a successful non-empty pull). */
-export function clearFxBackoff(
+/** Persist the backoff state for a time-series `key`. */
+export function writeSeriesBackoff(
+  key: string,
+  entry: SeriesBackoffEntry,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  const raw = readJson<Record<string, SeriesBackoffEntry>>(storage, SERIES_BACKOFF_KEY);
+  const next: Record<string, SeriesBackoffEntry> =
+    raw && typeof raw === "object" ? { ...raw } : {};
+  next[key] = entry;
+  writeJson(storage, SERIES_BACKOFF_KEY, next);
+}
+
+/** Clear one series' backoff state (e.g. after a successful, non-empty pull). */
+export function clearSeriesBackoff(
   key: string,
   storage: StorageLike | null = defaultStorage(),
 ): void {
-  const raw = readJson<Record<string, number>>(storage, FX_BACKOFF_KEY);
+  const raw = readJson<Record<string, SeriesBackoffEntry>>(storage, SERIES_BACKOFF_KEY);
   if (!raw || typeof raw !== "object" || !(key in raw)) return;
   const next = { ...raw };
   delete next[key];
-  writeJson(storage, FX_BACKOFF_KEY, next);
+  writeJson(storage, SERIES_BACKOFF_KEY, next);
+}
+
+/**
+ * Wipe **all** time-series backoff state. Wired to the Settings hard refreshes
+ * (force-fetch-all / backup provider / hard reset) so a deliberate user-driven
+ * refresh always re-attempts every symbol immediately, regardless of any armed
+ * cooldown — the automatic rebuild loop keeps the storm protection, an explicit
+ * tap overrides it.
+ */
+export function clearAllSeriesBackoff(storage: StorageLike | null = defaultStorage()): void {
+  if (!storage) return;
+  storage.removeItem(SERIES_BACKOFF_KEY);
 }
 
 // --- Tiingo NAV canary + quick-refresh state -------------------------------

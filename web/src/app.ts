@@ -45,6 +45,7 @@ import {
   readCachedQuotes,
   readCreditLog,
   clearPriceCaches,
+  clearAllSeriesBackoff,
   creditsSpentToday,
   readLastPull,
   readNavPublishStats,
@@ -110,7 +111,7 @@ import { APP_VERSION } from "./version";
 import {
   buildLiveSessionCurve,
   buildLiveWeekCurve,
-  cacheFxBackoffMemo,
+  cacheSeriesBackoff,
   instrumentedGraphRecorders,
   makePriceBarFetcher,
   makeWindowFxFetcher,
@@ -872,7 +873,8 @@ export class App {
       const fetchFx = makeWindowFxFetcher(proxyUrl, window, fxResample, undefined, tiingoMeter, {
         apiKey: config.apiKey,
         twelveDataMeter,
-        backoffMemo: cacheFxBackoffMemo(`${label}:${fxResample}`),
+        backoff: cacheSeriesBackoff(),
+        backoffKey: `fx:${label}:${fxResample}`,
       });
       let fx: Bar[] | undefined;
       if (fetchFx) fx = await fetchFx().catch(() => undefined);
@@ -2618,6 +2620,9 @@ export class App {
   private updateAllFromScratch(): void {
     // Forget every cached price so nothing is served from a stale window.
     clearPriceCaches();
+    // A from-scratch reset must also drop any armed time-series backoff so every
+    // graph symbol is re-pulled, not parked on a stale cooldown.
+    clearAllSeriesBackoff();
     this.pollLog(
       "note",
       "Hard reset (Settings) — cleared price caches and wiping the 1D/1W graph store, then re-pulling everything from scratch.",
@@ -2677,6 +2682,9 @@ export class App {
     // Back to the dashboard, then force a pull of every symbol.
     this.exitSettings();
     this.toast("Pulling every live price now…");
+    // A deliberate hard refresh overrides any armed time-series backoff so every
+    // graph symbol is re-attempted immediately (the automatic loop keeps it).
+    clearAllSeriesBackoff();
     this.pollLog(
       "note",
       "Hard refresh (Settings) — force-fetching every live price now, bypassing the freshness/NAV-schedule gates.",
@@ -2699,6 +2707,9 @@ export class App {
   private refreshViaBackupProvider(): void {
     this.exitSettings();
     this.toast("Trying the backup data provider…");
+    // A deliberate hard refresh overrides any armed time-series backoff so every
+    // graph symbol is re-attempted immediately on the backup provider.
+    clearAllSeriesBackoff();
     this.pollLog(
       "note",
       "Hard refresh (Settings) — routing the whole book through the backup provider (Tiingo) for one pull.",

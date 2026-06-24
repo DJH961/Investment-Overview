@@ -34,6 +34,10 @@ import {
   readSessionStatus,
   writeSessionStatus,
   clearPriceCaches,
+  readSeriesBackoff,
+  writeSeriesBackoff,
+  clearSeriesBackoff,
+  clearAllSeriesBackoff,
   NAV_PUBLISH_SAMPLES,
   type StorageLike,
 } from "../src/cache";
@@ -496,5 +500,45 @@ describe("clearPriceCaches", () => {
 
   it("is a safe no-op when storage is unavailable", () => {
     expect(() => clearPriceCaches(null)).not.toThrow();
+  });
+});
+
+describe("time-series backoff store", () => {
+  it("round-trips and clears a single series' backoff entry", () => {
+    const s = memStorage();
+    expect(readSeriesBackoff("1W:AAPL", s)).toBeNull();
+    writeSeriesBackoff("1W:AAPL", { fails: 2, armedAt: null }, s);
+    expect(readSeriesBackoff("1W:AAPL", s)).toEqual({ fails: 2, armedAt: null });
+    writeSeriesBackoff("1W:AAPL", { fails: 3, armedAt: 5000 }, s);
+    expect(readSeriesBackoff("1W:AAPL", s)).toEqual({ fails: 3, armedAt: 5000 });
+    clearSeriesBackoff("1W:AAPL", s);
+    expect(readSeriesBackoff("1W:AAPL", s)).toBeNull();
+  });
+
+  it("keeps distinct keys independent (1D vs 1W, price vs fx)", () => {
+    const s = memStorage();
+    writeSeriesBackoff("1D:AAPL", { fails: 3, armedAt: 1000 }, s);
+    writeSeriesBackoff("1W:AAPL", { fails: 1, armedAt: null }, s);
+    writeSeriesBackoff("fx:1W:1day", { fails: 3, armedAt: 1000 }, s);
+    clearSeriesBackoff("1D:AAPL", s);
+    expect(readSeriesBackoff("1D:AAPL", s)).toBeNull();
+    expect(readSeriesBackoff("1W:AAPL", s)).toEqual({ fails: 1, armedAt: null });
+    expect(readSeriesBackoff("fx:1W:1day", s)).toEqual({ fails: 3, armedAt: 1000 });
+  });
+
+  it("clearAllSeriesBackoff wipes every entry (Settings hard refresh)", () => {
+    const s = memStorage();
+    writeSeriesBackoff("1D:AAPL", { fails: 3, armedAt: 1000 }, s);
+    writeSeriesBackoff("fx:1D:1hour", { fails: 3, armedAt: 1000 }, s);
+    clearAllSeriesBackoff(s);
+    expect(readSeriesBackoff("1D:AAPL", s)).toBeNull();
+    expect(readSeriesBackoff("fx:1D:1hour", s)).toBeNull();
+  });
+
+  it("tolerates malformed persisted entries", () => {
+    const s = memStorage();
+    s.setItem("iv.web.series_backoff", JSON.stringify({ "1W:AAPL": { fails: "x", armedAt: "y" } }));
+    expect(readSeriesBackoff("1W:AAPL", s)).toEqual({ fails: 0, armedAt: null });
+    expect(() => clearAllSeriesBackoff(null)).not.toThrow();
   });
 });

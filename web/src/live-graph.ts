@@ -35,10 +35,13 @@ import {
   recordTiingoCredits,
   releaseCredits,
   releaseTiingoCredits,
-  readFxBackoff,
-  recordFxBackoff,
-  clearFxBackoff,
-  DEFAULT_FX_BACKOFF_MS,
+  readSeriesBackoff,
+  writeSeriesBackoff,
+  clearSeriesBackoff,
+  DEFAULT_SERIES_BACKOFF_MS,
+  DEFAULT_SERIES_BACKOFF_ATTEMPTS,
+  type SeriesBackoffEntry,
+  type StorageLike,
 } from "./cache";
 import {
   lastSessionDate,
@@ -247,6 +250,12 @@ export function makePriceBarFetcher(opts: {
    * Tiingo-first dual pipe.
    */
   budget?: () => { minute: number; day: number };
+  /**
+   * Per-symbol time-series backoff (item 4). When supplied, symbols whose
+   * `${scope}:${symbol}` key is in an armed cooldown are skipped (no credit, no
+   * attempt) and fall back to their flat quote value on the curve.
+   */
+  backoff?: { memo: SeriesBackoff; scope: string; now?: () => number };
 }): BarFetcher | null {
   const {
     apiKey,
@@ -260,6 +269,7 @@ export function makePriceBarFetcher(opts: {
     tiingoMeter,
     twelveDataMeter,
     budget,
+    backoff,
   } = opts;
   let pipeA = makeTwelveDataBarFetcher(apiKey, { interval, outputsize, fetchImpl });
   let pipeB = proxyUrl
@@ -270,14 +280,24 @@ export function makePriceBarFetcher(opts: {
   // primary records only the fallback's spend).
   if (pipeA && twelveDataMeter) pipeA = recordingBarFetcher(pipeA, twelveDataMeter);
   if (pipeB && tiingoMeter) pipeB = recordingBarFetcher(pipeB, tiingoMeter);
+  let combined: BarFetcher | null;
   if (pipeB && pipeA) {
     // With a live budget, fill Twelve Data first and spill the overflow to Tiingo
     // (item 8); otherwise keep the legacy Tiingo-first failover dual pipe.
-    return budget
+    combined = budget
       ? makeCapacitySplitBarFetcher(pipeA, pipeB, budget)
       : makeDualPipeBarFetcher(pipeB, pipeA);
+  } else {
+    combined = pipeB ?? pipeA;
   }
-  return pipeB ?? pipeA;
+  // The per-symbol backoff sits outermost, scoring the post-fallback result, so a
+  // symbol is only parked once *both* providers have failed to serve it.
+  if (combined && backoff) {
+    return withBarBackoff(combined, backoff.memo, (s) => `${backoff.scope}:${s}`, {
+      now: backoff.now,
+    });
+  }
+  return combined;
 }
 
 /** Merge two symbol→bars maps; non-empty bars from `extra` win over `base` gaps. */
@@ -405,55 +425,127 @@ export function makeDualFxFetcher(
   };
 }
 
-/** Persisted negative-result memo for the FX backoff (see {@link withFxBackoff}). */
-export interface FxBackoffMemo {
-  /** Epoch ms the last empty/failed FX attempt was memoised, or null. */
-  read(): number | null;
-  /** Record that an attempt produced no usable FX bars at `at`. */
-  write(at: number): void;
-  /** Forget the memo after a successful, non-empty pull. */
-  clear(): void;
+/**
+ * A persisted, timestamp-based **time-series backoff** shared by the price-bar
+ * and FX-history fetchers (`docs/tiingo_polling_storm_cleanup_plan.md` item 4).
+ * It tracks, per `key` (a price symbol or an FX leg), how many consecutive
+ * attempts have failed and — once that count crosses the threshold — when the
+ * cooldown armed, so a *genuinely dead* series stops being re-pulled on every
+ * graph switch while a transient miss is still retried. Quotes are never gated
+ * by this; only time-series pulls are.
+ */
+export interface SeriesBackoff {
+  /** True when `key` is in an armed cooldown at `now` (skip the network). */
+  suppressed(key: string, now: number): boolean;
+  /** Record a failed/empty attempt; arms the cooldown at the Nth strike. */
+  fail(key: string, now: number): void;
+  /** Forget `key` after a successful, non-empty pull. */
+  succeed(key: string): void;
 }
 
 /**
- * Wrap an FX fetcher with a **negative-result backoff** (item 4, defence in
- * depth even with the Worker fixed): once an attempt comes back empty — or the
- * pipe rejects — suppress further attempts for `cooldownMs`, returning `[]`
- * **without touching the network or the credit ledger**, so a persistently
- * failing FX endpoint cannot re-arm the week refill gate on every rebuild and
- * bleed credits. A non-empty pull clears the memo immediately.
+ * The shared {@link SeriesBackoff}: an attempt is allowed until it has failed
+ * `attempts` times in a row, after which the series is suppressed for
+ * `cooldownMs` (wall-clock, persisted). Once that window elapses the strike
+ * count resets, so the next rebuild gets a fresh set of attempts.
+ */
+export function cacheSeriesBackoff(
+  options: {
+    attempts?: number;
+    cooldownMs?: number;
+    storage?: StorageLike | null;
+  } = {},
+): SeriesBackoff {
+  const attempts = options.attempts ?? DEFAULT_SERIES_BACKOFF_ATTEMPTS;
+  const cooldownMs = options.cooldownMs ?? DEFAULT_SERIES_BACKOFF_MS;
+  const storage = options.storage;
+  const read = (key: string): SeriesBackoffEntry | null =>
+    storage === undefined ? readSeriesBackoff(key) : readSeriesBackoff(key, storage);
+  const write = (key: string, entry: SeriesBackoffEntry): void =>
+    storage === undefined ? writeSeriesBackoff(key, entry) : writeSeriesBackoff(key, entry, storage);
+  const clear = (key: string): void =>
+    storage === undefined ? clearSeriesBackoff(key) : clearSeriesBackoff(key, storage);
+  return {
+    suppressed: (key, now) => {
+      const e = read(key);
+      return e !== null && e.armedAt !== null && now - e.armedAt < cooldownMs;
+    },
+    fail: (key, now) => {
+      let e = read(key) ?? { fails: 0, armedAt: null };
+      // A fully-elapsed cooldown is a fresh window: reset the strike count so the
+      // series earns another `attempts` tries before re-arming.
+      if (e.armedAt !== null && now - e.armedAt >= cooldownMs) e = { fails: 0, armedAt: null };
+      const fails = e.fails + 1;
+      const armedAt = fails >= attempts ? now : e.armedAt;
+      write(key, { fails, armedAt });
+    },
+    succeed: (key) => clear(key),
+  };
+}
+
+/**
+ * Wrap the single-batch FX fetcher with the {@link SeriesBackoff}: skip the
+ * network (return `[]`, no credit) while `key` is in an armed cooldown, count an
+ * empty window or a thrown reject as a failure, and clear the memo on a non-empty
+ * pull. FX is just another time series, so it shares the bars' 3-strike model.
  */
 export function withFxBackoff(
   inner: () => Promise<Bar[]>,
-  memo: FxBackoffMemo,
-  options: { now?: () => number; cooldownMs?: number } = {},
+  backoff: SeriesBackoff,
+  key: string,
+  options: { now?: () => number } = {},
 ): () => Promise<Bar[]> {
   const now = options.now ?? ((): number => Date.now());
-  const cooldown = options.cooldownMs ?? DEFAULT_FX_BACKOFF_MS;
   return async () => {
-    const last = memo.read();
     const t = now();
-    if (last !== null && t - last < cooldown) return []; // suppressed: no fetch, no charge
+    if (backoff.suppressed(key, t)) return []; // suppressed: no fetch, no charge
     try {
       const bars = await inner();
-      if (bars.length === 0) memo.write(t);
-      else memo.clear();
+      if (bars.length > 0) backoff.succeed(key);
+      else backoff.fail(key, t);
       return bars;
     } catch (err) {
-      // A reject arms the cooldown too (so rebuilds don't hammer it) but still
+      // A reject is a strike too (so rebuilds don't hammer it) but still
       // propagates once so the recorder boundary logs the failure.
-      memo.write(t);
+      backoff.fail(key, t);
       throw err;
     }
   };
 }
 
-/** A {@link FxBackoffMemo} backed by the persisted cache, keyed by FX cadence. */
-export function cacheFxBackoffMemo(key: string): FxBackoffMemo {
-  return {
-    read: () => readFxBackoff(key),
-    write: (at) => recordFxBackoff(key, at),
-    clear: () => clearFxBackoff(key),
+/**
+ * Wrap a multi-symbol {@link BarFetcher} with a **per-symbol** time-series
+ * backoff. Symbols whose `keyFor(symbol)` is in an armed cooldown are dropped
+ * before the network call (no credit, no attempt) and are simply absent from the
+ * result — so the curve reconstruction holds them flat at their latest **quote**
+ * value (`ratioAt` → 1 for a symbol with no bars), the quote fallback. Every
+ * fetched symbol is scored: non-empty bars clear its memo, an empty/missing
+ * symbol takes a strike, and a whole-batch reject strikes every attempted symbol.
+ * Quotes are untouched — only the graph's time-series pulls back off.
+ */
+export function withBarBackoff(
+  inner: BarFetcher,
+  backoff: SeriesBackoff,
+  keyFor: (symbol: string) => string,
+  options: { now?: () => number } = {},
+): BarFetcher {
+  const now = options.now ?? ((): number => Date.now());
+  return async (symbols) => {
+    const t = now();
+    const uniq = uniqueSymbols(symbols);
+    const allowed = uniq.filter((s) => !backoff.suppressed(keyFor(s), t));
+    if (allowed.length === 0) return new Map<string, Bar[]>();
+    try {
+      const bars = await inner(allowed);
+      for (const s of allowed) {
+        if (bars.get(s)?.length) backoff.succeed(keyFor(s));
+        else backoff.fail(keyFor(s), t);
+      }
+      return bars;
+    } catch (err) {
+      for (const s of allowed) backoff.fail(keyFor(s), t);
+      throw err;
+    }
   };
 }
 
@@ -463,12 +555,12 @@ export interface WindowFxOptions {
   apiKey?: string;
   /** Meter the Twelve Data forex spend (Pipe A) in two phases. */
   twelveDataMeter?: BackfillMeter;
-  /** Negative-result backoff memo; omit to disable the cooldown. */
-  backoffMemo?: FxBackoffMemo | null;
+  /** Shared time-series backoff; omit to disable the cooldown. */
+  backoff?: SeriesBackoff | null;
+  /** Backoff key for this FX leg (e.g. `"fx:1W:1day"`). Required with `backoff`. */
+  backoffKey?: string;
   /** Override `Date.now` for the backoff (tests). */
   now?: () => number;
-  /** Override the backoff cooldown window. */
-  cooldownMs?: number;
 }
 
 /**
@@ -518,10 +610,9 @@ export function makeWindowFxFetcher(
   else composite = tiingoFx ?? twelveFx;
   if (!composite) return null;
 
-  if (options.backoffMemo) {
-    composite = withFxBackoff(composite, options.backoffMemo, {
+  if (options.backoff && options.backoffKey) {
+    composite = withFxBackoff(composite, options.backoff, options.backoffKey, {
       now: options.now,
-      cooldownMs: options.cooldownMs,
     });
   }
   return composite;
@@ -551,6 +642,12 @@ export interface LiveGraphProviders {
    * budget, Tiingo for the overflow. Omit to keep the legacy Tiingo-first pipe.
    */
   budget?: () => { minute: number; day: number };
+  /**
+   * Shared per-symbol time-series backoff (item 4). Defaults to the persisted
+   * {@link cacheSeriesBackoff}. Symbols that keep failing are parked off the
+   * network and fall back to their flat quote value; quotes are never gated.
+   */
+  backoff?: SeriesBackoff;
 }
 
 /** Resolve the Tiingo/Twelve Data meters, defaulting to the real ledgers. */
@@ -668,6 +765,7 @@ export function buildLiveSessionCurve(
   const now = base.now ?? new Date();
   const window = sessionFxWindow(now);
   const { tiingoMeter, twelveDataMeter } = spendMeters(providers);
+  const backoff = providers.backoff ?? cacheSeriesBackoff();
   const fetchBars =
     makePriceBarFetcher({
       apiKey: providers.apiKey,
@@ -681,6 +779,7 @@ export function buildLiveSessionCurve(
       tiingoMeter,
       twelveDataMeter,
       budget: providers.budget,
+      backoff: { memo: backoff, scope: "1D" },
     }) ?? emptyBarFetcher;
   const fetchFx = makeWindowFxFetcher(
     providers.priceProxyUrl,
@@ -691,7 +790,8 @@ export function buildLiveSessionCurve(
     {
       apiKey: providers.apiKey,
       twelveDataMeter,
-      backoffMemo: cacheFxBackoffMemo(`1D:${tuning.fxResampleFreq ?? "1hour"}`),
+      backoff,
+      backoffKey: `fx:1D:${tuning.fxResampleFreq ?? "1hour"}`,
     },
   );
   return loadOrBuildSessionCurve({ ...base, fetchBars, fetchFx });
@@ -712,6 +812,7 @@ export function buildLiveWeekCurve(
   const sessions = base.sessions ?? DEFAULT_WEEK_SESSIONS;
   const window = weekFxWindow(now, sessions);
   const { tiingoMeter, twelveDataMeter } = spendMeters(providers);
+  const backoff = providers.backoff ?? cacheSeriesBackoff();
   // The 1W curve is built from one daily close per session. Tiingo's `/price`
   // route serves those via `?daily=<ticker>` (a single batched window per
   // symbol, off Tiingo's own budget), so it is preferred for a prompt paint; the
@@ -731,6 +832,7 @@ export function buildLiveWeekCurve(
       tiingoMeter,
       twelveDataMeter,
       budget: providers.budget,
+      backoff: { memo: backoff, scope: "1W" },
     }) ?? emptyBarFetcher;
   const fetchFx = makeWindowFxFetcher(
     providers.priceProxyUrl,
@@ -741,7 +843,8 @@ export function buildLiveWeekCurve(
     {
       apiKey: providers.apiKey,
       twelveDataMeter,
-      backoffMemo: cacheFxBackoffMemo("1W:1day"),
+      backoff,
+      backoffKey: "fx:1W:1day",
     },
   );
   // Item 7b: gap-fill moving-fund NAV history through the *same* capacity-split
