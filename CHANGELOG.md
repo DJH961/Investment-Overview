@@ -14,6 +14,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [3.20.2] — 2026-06-24
+
+### Fixed
+
+- **FX history refresh no longer reports a spurious "Failed" before the ECB
+  publishes (desktop app).** When the price refresh runs early in the day, the
+  Frankfurter backfill asks for the only missing day — *today* — as a single-day
+  window. The ECB doesn't publish its daily reference rate until ~16:00 CET, so
+  Frankfurter answers that empty window with `HTTP 404 {"message":"not found"}`,
+  which surfaced as a red `EUR/USD fetch failed` provider-status badge even
+  though nothing was actually wrong. The adapter now treats a `404` on a date
+  range as a benign "no published rates in this window yet" and returns an empty
+  series, so the backfill cleanly no-ops instead of recording an error. Today's
+  displayed EUR/USD rate is unaffected — it already comes from the live intraday
+  spot (yfinance, with a Tiingo backup), independent of the ECB daily history.
+  Genuine failures (5xx, network, malformed payloads) still raise as before. The
+  ECB-only `fx_history` golden-master invariant is preserved; no fallback rows
+  are written into it.
+
 ## [3.20.1] — 2026-06-24
 
 ### Added
