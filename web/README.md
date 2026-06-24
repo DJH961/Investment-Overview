@@ -85,7 +85,19 @@ graphs (Settings → Experimental → "Live graphs", **off by default** so the p
 `1M / 3M / 6M / 1Y` chart never regresses). When on, the Overview value chart
 drops the longer `3M / 6M` slices and adds live 1D and 1W curves, reconstructed
 from intraday/daily bars cached on the device (IndexedDB `TimeSeriesStore`) — see
-`docs/v3.0_live_web_companion_proposal.md` §10.8. The companion is now an
+`docs/v3.0_live_web_companion_proposal.md` §10.8. Two touches keep the live curves
+cheap on a long watch: the 1D curve **leaves breadcrumbs** — each time the live tip
+moves it persists that whole-book value (a figure already computed, so **zero
+credits**), and the curve splices the trail back in so it self-thickens between
+bar fetches. Because that free trail (roughly one point a minute, *finer* than the
+5-minute bars) carries the line forward on its own, an open dashboard needs **just
+one bar fetch per session** — leaving the tab open for hours adds **no further bar
+pulls** (real bars always supersede a breadcrumb they have since caught up to). And
+in the other
+direction, when a build does pay to fetch price bars it **hands the newest bar back
+to the holdings' quote cache** (extending freshness only, never overwriting a fresher
+quote), so the holding rows reuse that price rather than re-buying it — see
+`primeQuotesFromBars` in `src/cache.ts`. The companion is now an
 installable **progressive web app**: a
 web manifest + icon make it add-to-home-screen capable, and a service worker
 caches **only the public, static app shell** so the UI opens instantly and works

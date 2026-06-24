@@ -325,6 +325,38 @@ re-fetching prices that could not have changed:
   `navCacheTtlMs` now simply polls a fund like a normal symbol whenever it is
   behind its expected NAV — no upper cap — and a manual Refresh re-pulls a behind
   NAV (via `loadQuotes`' `forceFetch`) while still sparing an up-to-date one.
+- **5H.20 The live 1D graph re-fetched intraday bars every ~minute while open** —
+  ✅ done. With the dashboard left open to auto-update, `loadOrBuildSessionCurve`
+  (`web/src/intraday.ts`) refreshed all of the 1D sleeve's intraday bars on a 60s
+  throttle, so a 20-minute watch re-spent a free-tier credit per symbol several
+  times over for interior points that barely move. The open-market cadence
+  re-fetch is now **disabled by default** (`DEFAULT_OPEN_REFETCH_MS` = `Infinity`):
+  the **live-tip breadcrumb trail** (each whole-book headline total, already
+  computed for the dashboard, so free — persisted ~once a minute, *finer* than the
+  5-minute bars) is spliced onto the curve and carries it forward on every build,
+  so a session needs **just one bar fetch** and a long open watch adds no further
+  bar pulls. A caller can still pass a finite `minRefetchMs` (e.g. 15 min) to opt
+  back into periodic interior top-ups; missing symbols are always backfilled. The
+  1W curve already fetched its daily closes only once
+  per window advance, so it was already economical; the history (1M+) graphs end
+  on the same appended live tip (`renderValueChart`), so their final value tracks
+  the live total on each refresh too.
+
+- **5H.21 A log-out / log-in-again left a flat gap in the live 1D curve** —
+  ✅ done. The breadcrumb trail (5H.20) only grows while the tab is visible and
+  auto-refresh is ticking; locking the app or hiding the tab pauses refresh, so an
+  absence stops the trail. On return, the curve jumped in a single straight line
+  from where it was left to the live tip — a dead span that looked like a glitch.
+  `loadOrBuildSessionCurve` now takes a `resumeBackfillMs` window
+  (`DEFAULT_RESUME_BACKFILL_MS` = 10 min, safely above the slow ~5-min refresh
+  cadence). While open, if the session's freshness anchor — `max(updatedAt, newest
+  breadcrumb)`, i.e. the last time the dashboard actually touched the session — has
+  aged past the window, the next build repulls the **whole** session (every symbol
+  plus the FX track), bridging the gap with real bars instead of a jump. A
+  continuously-open dashboard lays breadcrumbs faster than the window, so it never
+  trips; only a genuine absence does. Since the credit is spent on return anyway,
+  the repull grabs the full session for the best possible curve. Pass
+  `resumeBackfillMs = Infinity` for pure breadcrumb mode.
 
 ## 6. Observability / shareable diagnostics (added 2026-06-21 — ✅ done)
 

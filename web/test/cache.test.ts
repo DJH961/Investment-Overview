@@ -20,6 +20,7 @@ import {
   readSymbolPlan,
   recordCredits,
   recordNavPublish,
+  primeQuotesFromBars,
   writeCachedEnvelope,
   writeCachedEurUsd,
   writeCachedFx,
@@ -31,6 +32,7 @@ import {
 } from "../src/cache";
 import type { Envelope } from "../src/crypto";
 import type { Quote } from "../src/prices";
+import type { Bar } from "../src/timeseries";
 
 function memStorage(): StorageLike {
   const map = new Map<string, string>();
@@ -105,6 +107,60 @@ describe("quote cache", () => {
     const s = memStorage();
     expect(readCachedQuotes(s).size).toBe(0);
     s.setItem("iv.web.quote_cache", "not json");
+    expect(readCachedQuotes(s).size).toBe(0);
+  });
+});
+
+describe("primeQuotesFromBars", () => {
+  const bar = (t: number, value: string): Bar => ({ t, value: new Decimal(value) });
+
+  it("primes an uncached symbol from its newest bar using the supplied currency", () => {
+    const s = memStorage();
+    primeQuotesFromBars(
+      new Map([["VTI", [bar(1000, "99"), bar(2000, "101")]]]),
+      new Map([["VTI", "USD"]]),
+      5000,
+      s,
+    );
+    const got = readCachedQuotes(s).get("VTI")!;
+    expect(got.quote.price?.toString()).toBe("101"); // the latest bar
+    expect(got.at).toBe(5000); // fetch-fresh
+    expect(got.quote.priceTime).toBe(2000); // the bar's own strike instant
+    expect(got.quote.currency).toBe("USD");
+  });
+
+  it("only extends freshness — never overwrites a newer genuine quote", () => {
+    const s = memStorage();
+    writeCachedQuotes(new Map([["VTI", { ...quote("VTI", "100"), priceTime: 3000 }]]), 3000, s);
+    // A bar older than the cached priceTime must not clobber the fresher quote.
+    primeQuotesFromBars(new Map([["VTI", [bar(2000, "200")]]]), new Map(), 9000, s);
+    const got = readCachedQuotes(s).get("VTI")!;
+    expect(got.quote.price?.toString()).toBe("100");
+    expect(got.at).toBe(3000);
+  });
+
+  it("advances a stale cached quote when the bar is newer, preserving prior close/currency", () => {
+    const s = memStorage();
+    writeCachedQuotes(new Map([["VTI", { ...quote("VTI", "100", "95") }]]), 1000, s);
+    primeQuotesFromBars(new Map([["VTI", [bar(4000, "108")]]]), new Map(), 9000, s);
+    const got = readCachedQuotes(s).get("VTI")!;
+    expect(got.quote.price?.toString()).toBe("108");
+    expect(got.quote.priceTime).toBe(4000);
+    expect(got.at).toBe(9000);
+    // Bars carry no prior close / currency — the cached ones are preserved.
+    expect(got.quote.previousClose?.toString()).toBe("95");
+    expect(got.quote.currency).toBe("USD");
+  });
+
+  it("skips an uncached symbol with no known currency (cannot denominate)", () => {
+    const s = memStorage();
+    primeQuotesFromBars(new Map([["MYSTERY", [bar(2000, "10")]]]), new Map(), 5000, s);
+    expect(readCachedQuotes(s).has("MYSTERY")).toBe(false);
+  });
+
+  it("ignores empty bar lists and a no-op write", () => {
+    const s = memStorage();
+    primeQuotesFromBars(new Map([["VTI", []]]), new Map([["VTI", "USD"]]), 5000, s);
     expect(readCachedQuotes(s).size).toBe(0);
   });
 });

@@ -29,8 +29,13 @@ export interface LineChartOptions {
   /** ISO `YYYY-MM-DD` labels, one per index, shared by every series. */
   dates: string[];
   series: ChartSeries[];
-  /** Optional custom formatter for y-axis labels. Defaults to formatCurrencyShort. */
-  yAxisLabel?: (value: number) => string;
+  /**
+   * Optional custom formatter for y-axis labels. Defaults to formatCurrencyShort.
+   * `fractionDigits` is the number of decimals the axis needs for adjacent ticks
+   * to read distinctly (derived from the "nice" step); currency formatters honour
+   * it, while ratio formatters (e.g. drawdown percent) may ignore it.
+   */
+  yAxisLabel?: (value: number, fractionDigits?: number) => string;
 }
 
 function svgEl<K extends keyof SVGElementTagNameMap>(name: K): SVGElementTagNameMap[K] {
@@ -133,7 +138,8 @@ export function xAxisTicks(dates: string[], count = 5): XAxisTick[] {
  */
 export function buildLineChart(options: LineChartOptions): SVGSVGElement | null {
   const { dates, series } = options;
-  const yAxisLabel = options.yAxisLabel ?? ((v: number) => formatCurrencyShort(seriesValueAt(series, v)));
+  const yAxisLabel =
+    options.yAxisLabel ?? ((v: number, digits?: number) => formatCurrencyShort(seriesValueAt(series, v), digits));
   const n = dates.length;
   const primary = series[0]?.values ?? [];
   const plottable = primary.filter((v) => v !== null).length;
@@ -172,7 +178,10 @@ export function buildLineChart(options: LineChartOptions): SVGSVGElement | null 
 
   // --- Y axis: gridlines + value labels ----------------------------------
   // One gridline per "nice" tick value, so the labels read as round numbers and
-  // there are a few more of them (more exact) without widening the axis.
+  // there are a few more of them (more exact) without widening the axis. The
+  // label precision is derived from the step so a narrow window (e.g. an intraday
+  // curve hugging €47k) reads "47.0k / 47.2k …" instead of "47k" on every tick.
+  const fractionDigits = axisFractionDigits(axis.ticks, axis.step, yAxisLabel);
   for (const value of axis.ticks) {
     const yy = y(value);
     const grid = svgEl("line");
@@ -188,7 +197,7 @@ export function buildLineChart(options: LineChartOptions): SVGSVGElement | null 
     label.setAttribute("y", (yy + 3).toFixed(1));
     label.setAttribute("text-anchor", "end");
     label.setAttribute("class", "chart-axis-label");
-    label.textContent = yAxisLabel(value);
+    label.textContent = yAxisLabel(value, fractionDigits);
     svg.appendChild(label);
   }
 
@@ -246,6 +255,42 @@ function linePath(
 
 function uniqueIndexes(idx: number[]): number[] {
   return [...new Set(idx)].filter((i) => i >= 0).sort((a, b) => a - b);
+}
+
+/**
+ * The number of decimal places the y-axis labels need so adjacent ticks read
+ * distinctly. Starts from the precision implied by the "nice" step at its k/M
+ * display scale (e.g. a €200 step on a €47k axis ⇒ "0.2k" ⇒ 1 decimal), then —
+ * because the formatter may round (or be a non-currency label) — bumps the
+ * precision until no two consecutive tick labels collide, capped so the axis
+ * never sprouts a long tail of digits.
+ */
+export function axisFractionDigits(
+  ticks: number[],
+  step: number,
+  label: (value: number, fractionDigits?: number) => string,
+): number {
+  const MAX_DIGITS = 3;
+  const maxAbs = Math.max(...ticks.map((t) => Math.abs(t)), 0);
+  const scale = maxAbs >= 1_000_000 ? 1_000_000 : maxAbs >= 1_000 ? 1_000 : 1;
+  const stepInScale = step / scale;
+  let digits =
+    !Number.isFinite(stepInScale) || stepInScale <= 0 || stepInScale >= 1
+      ? 0
+      : Math.min(MAX_DIGITS, Math.ceil(-Math.log10(stepInScale)));
+  // Guard against rounding collisions (e.g. the formatter snapping 47.0k/47.2k
+  // to the same string): raise precision until consecutive labels differ.
+  for (; digits < MAX_DIGITS; digits += 1) {
+    let collision = false;
+    for (let i = 1; i < ticks.length; i += 1) {
+      if (label(ticks[i], digits) === label(ticks[i - 1], digits)) {
+        collision = true;
+        break;
+      }
+    }
+    if (!collision) break;
+  }
+  return digits;
 }
 
 /** A "nice" value axis: rounded bounds, a round step, and the tick values. */

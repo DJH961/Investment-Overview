@@ -5,7 +5,10 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { niceAxis } from "../src/chart";
+import { axisFractionDigits, niceAxis } from "../src/chart";
+
+import Decimal from "decimal.js";
+import { formatCurrencyShortRaw } from "../src/format";
 
 describe("niceAxis", () => {
   it("rounds the bounds outward and steps on round numbers", () => {
@@ -45,5 +48,33 @@ describe("niceAxis", () => {
     expect(axis.ticks.length).toBeGreaterThan(0);
     expect(Number.isFinite(axis.min)).toBe(true);
     expect(Number.isFinite(axis.max)).toBe(true);
+  });
+});
+
+describe("axisFractionDigits", () => {
+  const eurLabel = (v: number, digits?: number): string =>
+    formatCurrencyShortRaw(new Decimal(v), "EUR", digits);
+
+  it("adds decimals so a narrow intraday axis no longer reads 47k on every tick", () => {
+    // A ~€47k curve with a €200 step would collapse to "€47k" four times over.
+    const axis = niceAxis(47_000, 47_600);
+    const digits = axisFractionDigits(axis.ticks, axis.step, eurLabel);
+    expect(digits).toBeGreaterThanOrEqual(1);
+    const labels = axis.ticks.map((t) => eurLabel(t, digits));
+    // Every adjacent pair is distinct — the whole point of the fix.
+    for (let i = 1; i < labels.length; i += 1) {
+      expect(labels[i]).not.toBe(labels[i - 1]);
+    }
+  });
+
+  it("keeps whole-number labels when the step is already coarse enough", () => {
+    const axis = niceAxis(30_000, 38_000);
+    const digits = axisFractionDigits(axis.ticks, axis.step, eurLabel);
+    expect(digits).toBe(0);
+  });
+
+  it("never exceeds the precision cap", () => {
+    const axis = niceAxis(47_000, 47_010);
+    expect(axisFractionDigits(axis.ticks, axis.step, eurLabel)).toBeLessThanOrEqual(3);
   });
 });

@@ -30,6 +30,7 @@ export type PollLogCategory =
   | "primary" // Twelve Data primary fetch results + budget
   | "fallback" // Tiingo secondary provider activity
   | "fx" // EUR/USD currency pull
+  | "graph" // live 1D/1W value-graph backfills (bars/FX) + reuse decisions
   | "blob" // encrypted data-file (blob) checks/downloads
   | "schedule" // next auto-refresh timing
   | "budget" // budget warnings / reserves

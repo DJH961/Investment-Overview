@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  barsFromTiingoDaily,
   barsFromTiingoIntraday,
   fetchTiingoIntradayBars,
   makeTiingoBarFetcher,
@@ -46,6 +47,34 @@ describe("barsFromTiingoIntraday", () => {
 
   it("returns an empty array for a non-array body", () => {
     expect(barsFromTiingoIntraday({ detail: "Error" })).toEqual([]);
+  });
+});
+
+describe("barsFromTiingoDaily", () => {
+  it("emits an open and a close bar per day at the session bounds", () => {
+    const bars = barsFromTiingoDaily([
+      { date: "2026-06-22T00:00:00.000Z", open: 100, close: 102 },
+    ]);
+    // Two points: open (09:30 ET) then close (16:00 ET), ascending.
+    expect(bars).toHaveLength(2);
+    expect(bars[0].value.toString()).toBe("100");
+    expect(bars[1].value.toString()).toBe("102");
+    expect(bars[0].t).toBeLessThan(bars[1].t);
+  });
+
+  it("orders multiple days and keeps the price a row does have", () => {
+    const bars = barsFromTiingoDaily([
+      { date: "2026-06-23", open: 103, close: 105 },
+      { date: "2026-06-22", close: 102 }, // no open ⇒ only a close bar
+    ]);
+    // Day 22 (close only) then day 23 (open + close): 3 bars, ascending.
+    expect(bars.map((b) => b.value.toString())).toEqual(["102", "103", "105"]);
+    for (let i = 1; i < bars.length; i += 1) expect(bars[i].t).toBeGreaterThan(bars[i - 1].t);
+  });
+
+  it("drops rows without a usable day and non-array bodies", () => {
+    expect(barsFromTiingoDaily([{ open: 1, close: 2 }])).toEqual([]);
+    expect(barsFromTiingoDaily({ detail: "Error" })).toEqual([]);
   });
 });
 

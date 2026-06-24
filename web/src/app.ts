@@ -49,8 +49,11 @@ import {
   readLastPull,
   readNavPublishStats,
   readSymbolPlan,
+  recordCredits,
   type PlannedSymbol,
   recordNavPublish,
+  recordTiingoCredits,
+  primeQuotesFromBars,
   writeCachedEnvelope,
   writeLastPull,
   writeSymbolPlan,
@@ -97,10 +100,11 @@ import { setEurUsdRate } from "./currency";
 import { formatLastPull } from "./format";
 import { appendPollLog, clearPollLog, formatPollLog, readPollLog, type PollLogCategory } from "./polling-log";
 import { APP_VERSION } from "./version";
-import { buildLiveSessionCurve, buildLiveWeekCurve, type LiveGraphProviders } from "./live-graph";
+import { buildLiveSessionCurve, buildLiveWeekCurve, instrumentedGraphRecorders, type LiveGraphProviders } from "./live-graph";
 import { springboardSessionCurve, springboardWeekCurve } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
 import { TimeSeriesStore } from "./timeseries-store";
+import type { Bar } from "./timeseries";
 import type { MobileExport } from "./types";
 import {
   experimentalGraphsEnabled,
@@ -2978,27 +2982,68 @@ export class App {
     const exported = this.state.data?.live_graphs ?? undefined;
     const anchor = (): ReturnType<typeof buildModelAnchor> =>
       buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx);
+    // Feed a graph's freshly fetched bars back into the holdings' quote cache so
+    // a big load primes the rows instead of each re-buying the same price.
+    const onFreshBars = (bars: Map<string, Bar[]>): void =>
+      this.primeQuotesFromGraphBars(bars, model);
+
+    // Providers whose spend recorders also write each graph pull to the Settings
+    // data-polling log (and tally a per-build credit counter), so the user can
+    // see exactly what each 1D/1W render pulled, from which provider, and when —
+    // and, crucially, when a render pulled *nothing* because the bars were reused.
+    const loggingProviders = (range: string, spent: { credits: number }): LiveGraphProviders => ({
+      ...providers,
+      ...instrumentedGraphRecorders({
+        range,
+        bookTwelveData: (n) => recordCredits(n, Date.now()),
+        bookTiingo: (n) => recordTiingoCredits(n, Date.now()),
+        log: (message) => this.pollLog("graph", message),
+        spent,
+      }),
+    });
 
     return {
       session: async () => {
         // Springboard off the exported session first — instant paint, no fetch —
         // and only build live when the export is absent or too stale.
         const sprung = springboardSessionCurve({ exported, liveTip });
-        if (sprung) return sprung;
+        if (sprung) {
+          this.pollLog("graph", "1D graph: reused the exported session (no live pull, 0 credits).");
+          return sprung;
+        }
+        const spent = { credits: 0 };
         try {
-          const curve = await buildLiveSessionCurve({ anchor: anchor(), store, liveTip }, providers);
+          const curve = await buildLiveSessionCurve(
+            { anchor: anchor(), store, liveTip, onFreshBars },
+            loggingProviders("1D", spent),
+          );
+          if (spent.credits === 0) {
+            this.pollLog("graph", "1D graph: reused stored session bars (no live pull, 0 credits).");
+          }
           return curve.points.length >= 2 ? curve.points : null;
         } catch {
+          this.pollLog("graph", "1D graph: live build failed — no curve drawn.");
           return null;
         }
       },
       week: async () => {
         const sprung = springboardWeekCurve({ exported, liveTip });
-        if (sprung) return sprung;
+        if (sprung) {
+          this.pollLog("graph", "1W graph: reused the exported week sleeve (no live pull, 0 credits).");
+          return sprung;
+        }
+        const spent = { credits: 0 };
         try {
-          const curve = await buildLiveWeekCurve({ anchor: anchor(), store, liveTip }, providers);
+          const curve = await buildLiveWeekCurve(
+            { anchor: anchor(), store, liveTip, onFreshBars },
+            loggingProviders("1W", spent),
+          );
+          if (spent.credits === 0) {
+            this.pollLog("graph", "1W graph: reused stored week bars (no live pull, 0 credits).");
+          }
           return curve.points.length >= 2 ? curve.points : null;
         } catch {
+          this.pollLog("graph", "1W graph: live build failed — no curve drawn.");
           return null;
         }
       },
@@ -3009,6 +3054,23 @@ export class App {
   private ensureTimeSeriesStore(): TimeSeriesStore {
     if (this.timeSeriesStore === null) this.timeSeriesStore = new TimeSeriesStore();
     return this.timeSeriesStore;
+  }
+
+  /**
+   * Prime the quote cache from a graph build's freshly fetched price bars so the
+   * holding rows reuse the current price the graph already paid for, rather than
+   * re-requesting it. Native currency is sourced per symbol from the model so a
+   * not-yet-cached symbol can still be denominated; {@link primeQuotesFromBars}
+   * only ever extends freshness, never overwriting a newer genuine quote.
+   */
+  private primeQuotesFromGraphBars(barsBySymbol: Map<string, Bar[]>, model: DashboardModel): void {
+    if (barsBySymbol.size === 0) return;
+    const currencyBySymbol = new Map<string, string | null>();
+    for (const h of model.holdings) {
+      const symbol = h.priceSymbol ?? h.symbol;
+      if (symbol) currencyBySymbol.set(symbol, h.nativeCurrency ?? null);
+    }
+    primeQuotesFromBars(barsBySymbol, currencyBySymbol, Date.now());
   }
 
   /** Re-render the current model in place (e.g. after a currency toggle). */

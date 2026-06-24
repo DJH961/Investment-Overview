@@ -27,6 +27,7 @@
 
 import { Decimal } from "./decimal-config";
 import { PriceError, type FetchLike } from "./prices";
+import { sessionCloseMs, sessionOpenMs } from "./market-hours";
 import type { Bar } from "./timeseries";
 import type { BarFetcher } from "./intraday";
 
@@ -63,6 +64,40 @@ export function barsFromTiingoIntraday(body: unknown): Bar[] {
     const t = parseBarTime(node.date);
     const close = parseDecimal(node.close);
     if (t !== null && close !== null) bars.push({ t, value: close });
+  }
+  bars.sort((a, b) => a.t - b.t);
+  return bars;
+}
+
+/** Extract the `YYYY-MM-DD` New-York session day from a Tiingo `date` field. */
+function dayFromBarDate(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(value);
+  return m ? m[1] : null;
+}
+
+/**
+ * Turn a Tiingo **daily** `prices` array into ascending bars carrying *both* the
+ * session **open** and **close** — two points per trading day instead of one —
+ * so the 1W curve reads as a richer line that captures each day's intraday swing
+ * rather than only its settling close. Each row's `date` is a calendar day; the
+ * open bar is stamped at that day's 09:30 ET, the close at 16:00 ET (the genuine
+ * session bounds), so the points land at meaningful instants on the time axis.
+ * Rows missing a usable day are dropped; a row missing one of open/close still
+ * contributes the price it does have.
+ */
+export function barsFromTiingoDaily(body: unknown): Bar[] {
+  if (!Array.isArray(body)) return [];
+  const bars: Bar[] = [];
+  for (const row of body) {
+    if (!row || typeof row !== "object") continue;
+    const node = row as Record<string, unknown>;
+    const day = dayFromBarDate(node.date);
+    if (day === null) continue;
+    const open = parseDecimal(node.open);
+    const close = parseDecimal(node.close);
+    if (open !== null) bars.push({ t: sessionOpenMs(day), value: open });
+    if (close !== null) bars.push({ t: sessionCloseMs(day), value: close });
   }
   bars.sort((a, b) => a.t - b.t);
   return bars;
@@ -159,7 +194,9 @@ export async function fetchTiingoIntradayBars(
         { retryable: false },
       );
     }
-    result.set(symbol, barsFromTiingoIntraday(body));
+    // The daily feed (1W curve) carries OHLC per day, so we take both the open
+    // and the close for a richer line; the intraday feed marks off the close.
+    result.set(symbol, param === "daily" ? barsFromTiingoDaily(body) : barsFromTiingoIntraday(body));
   }
   return result;
 }

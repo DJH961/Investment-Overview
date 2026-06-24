@@ -190,6 +190,26 @@ export function capAtClose(points: CurvePoint[], closeMs: number): CurvePoint[] 
   return kept.length > 0 ? kept : points;
 }
 
+/**
+ * Splice persisted live-tip **breadcrumbs** onto the reconstructed curve so it
+ * draws its own trail between the slow, credit-conscious bar re-fetches.
+ *
+ * Real bars are ground truth: any breadcrumb at or before the curve's freshest
+ * bar instant is dropped (the bars have since caught up and re-marked that span),
+ * so the trail is self-correcting — it only ever fills the gap *after* the last
+ * bar, exactly where the lone moving live tip would otherwise leave the line
+ * bare. Breadcrumbs are assumed ascending and instant-deduplicated (the store
+ * keeps them so); an empty reconstruction falls back to the breadcrumbs alone, so
+ * a cold open mid-session still shows the trail it has gathered.
+ */
+export function mergeBreadcrumbs(points: CurvePoint[], tips: CurvePoint[]): CurvePoint[] {
+  if (tips.length === 0) return points;
+  if (points.length === 0) return [...tips].sort((a, b) => a.t - b.t);
+  const lastBarT = points[points.length - 1].t;
+  const tail = tips.filter((tip) => tip.t > lastBarT).sort((a, b) => a.t - b.t);
+  return tail.length > 0 ? [...points, ...tail] : points;
+}
+
 /** Native price bars fetched per Twelve Data ticker (1 credit/symbol/request). */
 export type BarFetcher = (symbols: string[]) => Promise<Map<string, Bar[]>>;
 
@@ -208,7 +228,116 @@ export interface SessionCurveOptions {
   liveTip?: LiveTip | null;
   /** Trading sessions to retain in the store (rolling window); default 7. */
   retainSessions?: number;
+  /**
+   * The minimum age a stored session must reach before its bars are re-fetched
+   * while the market is open.
+   *
+   * **Breadcrumbs make a cadence re-fetch unnecessary, so by default there is
+   * none ({@link DEFAULT_OPEN_REFETCH_MS} is `Infinity`).** One fetch per session
+   * backfills the interior bars; from then on the free live-tip *trail* (the
+   * persisted breadcrumbs, see {@link appendLiveTip}/{@link mergeBreadcrumbs})
+   * thickens the curve forward on every build — at roughly one point a minute,
+   * *finer* than the 5-minute bars it replaces. So leaving the dashboard open for
+   * hours adds **zero** further bar pulls: the data already in hand carries the
+   * line, exactly as intended. Re-fetching the bars again would only re-spend a
+   * free-tier credit per symbol for interior points the breadcrumbs already cover.
+   *
+   * Set a finite value to opt back into a periodic interior top-up (a session
+   * whose bars were fetched within the window is reused as-is), or 0 to refresh
+   * the bars on every open-market build (maximal resolution, maximal credit cost).
+   * Missing symbols are always backfilled regardless of this window.
+   */
+  minRefetchMs?: number;
+  /**
+   * **Resume backfill window.** The maximum age the freshest data already on the
+   * device (newest stored bar *or* breadcrumb) may reach, while the market is
+   * open, before the next build re-pulls the whole session's bars to fill the gap
+   * — regardless of `minRefetchMs`.
+   *
+   * This is what makes a **log-out / log-in-again** repull, *without* re-pulling
+   * while the dashboard simply stays open. The breadcrumb trail thickens the curve
+   * only while the tab is visible and auto-refresh is ticking (roughly one point a
+   * minute, at most the slow refresh cadence apart); the moment the app is locked
+   * or the tab is hidden, refresh pauses and the trail stops growing. So the *age
+   * of the freshest point* is a free, faithful "have we been away?" signal:
+   *
+   *   - **Open the whole time** → the newest breadcrumb is at most a refresh
+   *     cadence old, comfortably under this window → no repull (breadcrumbs carry
+   *     the line, zero credits — exactly as intended).
+   *   - **Came back after a while** (re-login, or a long tab switch) → the newest
+   *     point is stale → one repull of *every* symbol's bars (plus the session FX
+   *     track) bridges the dead span with real, ground-truth data rather than a
+   *     single straight jump to the live tip. Since the credit is spent anyway, the
+   *     fetch grabs the full session for the best possible curve.
+   *
+   * Defaults to {@link DEFAULT_RESUME_BACKFILL_MS} (10 min — safely above the slow
+   * refresh cadence so a continuously-open dashboard never trips it). Set to
+   * `Infinity` to disable resume backfill entirely (pure breadcrumb mode); a small
+   * value makes more spans trigger a repull. Only ever applies to a *stored*
+   * session while the market is open.
+   */
+  resumeBackfillMs?: number;
+  /**
+   * Invoked with the freshly fetched native price bars whenever a build actually
+   * spends credits on a bar fetch (never on a cache-only reuse). The app wires
+   * this to prime the holdings' quote cache from each symbol's newest bar, so a
+   * big graph load hands the current price *back* to the holding rows — they then
+   * skip a separate per-symbol quote request. A no-op by default.
+   */
+  onFreshBars?: (barsBySymbol: Map<string, Bar[]>) => void;
 }
+
+/**
+ * Default open-market bar re-fetch cadence for the live 1D curve: **disabled**
+ * (`Infinity`), because the breadcrumb trail removes the need for one.
+ *
+ * Once a session's bars have been fetched once, the free live-tip breadcrumbs
+ * carry the curve forward on every subsequent build (finer than 5-minute bars,
+ * at zero credits), so a dashboard left open for hours never needs to re-buy
+ * bars to stay current. A caller that wants periodic interior top-ups can pass a
+ * finite `minRefetchMs`; the default trusts the data already on the device.
+ */
+export const DEFAULT_OPEN_REFETCH_MS = Number.POSITIVE_INFINITY;
+
+/**
+ * Default **resume backfill** window for the live 1D curve: **10 minutes**.
+ *
+ * While the market is open, a stored session whose freshest point (newest bar or
+ * breadcrumb) is older than this is re-pulled in full on the next build — the
+ * log-out/log-in-again repull. The value sits safely above the slow auto-refresh
+ * cadence (~5 min), so a dashboard left open and ticking keeps laying breadcrumbs
+ * inside the window and never trips a repull; only a genuine absence (a re-login,
+ * or a long hidden-tab spell where refresh is paused and the trail stops growing)
+ * lets the freshest point age past it. Pass `Infinity` to disable (pure
+ * breadcrumb mode), or a smaller value to repull after shorter gaps.
+ */
+export const DEFAULT_RESUME_BACKFILL_MS = 10 * 60_000;
+
+/**
+ * How fresh the stored session is — the last instant the dashboard actively
+ * touched it: the later of its last *bar fetch* (`updatedAt`) and its newest
+ * *breadcrumb* (laid on every open-market build). This is the "have we been
+ * away?" signal for resume backfill, and deliberately ignores the bars' own
+ * timestamps: a 5-minute bar always lags the wall clock (and a just-fetched
+ * session may carry no breadcrumb yet), so bar times would false-positive right
+ * after a legitimate fetch. While the dashboard stays open and ticking, either
+ * `updatedAt` (on a fetch) or the breadcrumb trail (on every build) keeps this
+ * recent; only a genuine absence — locked app or hidden tab, both pausing refresh
+ * — lets it age.
+ */
+function sessionFreshnessInstant(stored: {
+  tips?: CurvePoint[];
+  updatedAt: number;
+}): number {
+  let freshest = stored.updatedAt;
+  const tips = stored.tips;
+  if (tips && tips.length > 0) {
+    const lastTip = tips[tips.length - 1].t;
+    if (lastTip > freshest) freshest = lastTip;
+  }
+  return freshest;
+}
+
 
 /** A built 1D session curve plus the day it covers. */
 export interface SessionCurve {
@@ -223,12 +352,20 @@ export interface SessionCurve {
 /**
  * Build the live 1D session curve, fetching at most once per session day.
  *
- * Fetches a symbol's bars only when the store has none for the day, except while
- * the market is open (when all symbols are refreshed so the curve extends to the
- * latest bar). Newly fetched bars are merged into the store; the reconstruction
- * then runs off the merged session. While open, the live tip is pinned as the
- * final point; once closed, the curve is capped at the 16:00 ET close. Older
- * sessions are pruned to a rolling window so the store does not grow unbounded.
+ * Fetches a symbol's bars only when the store has none for the day. It does
+ * **not** re-fetch on a cadence while the market is open: the free live-tip
+ * breadcrumbs (persisted on every build) thicken the curve forward for nothing,
+ * so an open, auto-updating dashboard stays current without ever re-spending a
+ * credit per symbol — the whole point of the breadcrumb trail. A caller can pass
+ * a finite `minRefetchMs` to opt into periodic interior bar top-ups. A separate
+ * `resumeBackfillMs` window triggers a one-off full repull when the freshest data
+ * on the device has gone stale (a re-login or long absence), so a break in the
+ * breadcrumb trail is bridged with real bars rather than a single straight jump.
+ * Newly fetched bars are merged into the store; the reconstruction then runs off
+ * the merged session, with the breadcrumb trail spliced on after the freshest bar.
+ * While open, the live tip is pinned as the final point; once closed, the curve
+ * is capped at the 16:00 ET close. Older sessions are pruned to a rolling window
+ * so the store does not grow unbounded.
  */
 export async function loadOrBuildSessionCurve(
   options: SessionCurveOptions,
@@ -241,7 +378,32 @@ export async function loadOrBuildSessionCurve(
 
   let stored = await store.loadSession(day);
   const missing = symbols.filter((s) => !(stored?.bars[s]?.length));
-  const needFetch = symbols.length > 0 && (missing.length > 0 || marketOpen);
+  // Breadcrumbs remove the need for a cadence re-fetch: once the session's bars
+  // are on the device, the free live-tip trail below carries the curve forward on
+  // every build (finer than the 5-min bars, at zero credits), so a long
+  // open-browser watch re-spends nothing. By default (`minRefetchMs` = Infinity)
+  // any stored session therefore counts as "recently fetched" and is reused as-is;
+  // only *missing* symbols are ever backfilled. A finite `minRefetchMs` opts back
+  // into periodic interior bar top-ups (0 = every open-market build).
+  const minRefetchMs = options.minRefetchMs ?? DEFAULT_OPEN_REFETCH_MS;
+  const recentlyFetched =
+    stored !== null && minRefetchMs > 0 && now.getTime() - stored.updatedAt < minRefetchMs;
+  // Resume backfill: while open, if the freshest point already on the device
+  // (newest bar or breadcrumb) has aged past `resumeBackfillMs`, the trail must
+  // have stopped growing — i.e. the app was locked or the tab hidden (refresh
+  // paused) — so a log-in-again should repull the whole session to bridge the
+  // dead span with real bars instead of one straight jump to the live tip. A
+  // continuously-open dashboard lays breadcrumbs faster than this window, so it
+  // never trips. Independent of `minRefetchMs`; only applies to a stored session.
+  const resumeBackfillMs = options.resumeBackfillMs ?? DEFAULT_RESUME_BACKFILL_MS;
+  const resumedAfterGap =
+    marketOpen &&
+    stored !== null &&
+    Number.isFinite(resumeBackfillMs) &&
+    now.getTime() - sessionFreshnessInstant(stored) > resumeBackfillMs;
+  const needFetch =
+    symbols.length > 0 &&
+    (missing.length > 0 || (marketOpen && (!recentlyFetched || resumedAfterGap)));
 
   if (needFetch) {
     // Closed: only backfill the gaps. Open: refresh every symbol so the curve
@@ -252,6 +414,10 @@ export async function loadOrBuildSessionCurve(
     for (const [symbol, bars] of barsBySymbol) {
       if (bars.length > 0) incomingBars[symbol] = bars;
     }
+    // Hand the freshly paid-for bars back to the holdings' quote cache: the
+    // newest bar is a current native mark, so a holding row can skip its own
+    // per-symbol quote request rather than re-buy the same price.
+    if (options.onFreshBars) options.onFreshBars(barsBySymbol);
     let incomingFx: Bar[] | undefined;
     if (fetchFx) {
       try {
@@ -281,9 +447,20 @@ export async function loadOrBuildSessionCurve(
     baseUsd: anchor.baseUsd,
   });
 
+  // While open, drop a breadcrumb at the live tip (free — a value already in
+  // hand) and splice the gathered trail onto the curve so it self-thickens
+  // between the slow bar re-fetches; real bars always supersede stale crumbs.
   if (marketOpen && options.liveTip) {
+    const tip: CurvePoint = {
+      t: now.getTime(),
+      valueEur: options.liveTip.valueEur,
+      valueUsd: options.liveTip.valueUsd,
+    };
+    const breadcrumbs = await store.appendTip(day, tip);
+    points = mergeBreadcrumbs(points, breadcrumbs);
     points = appendLiveTip(points, now.getTime(), options.liveTip);
   } else if (!marketOpen) {
+    points = mergeBreadcrumbs(points, stored.tips ?? []);
     points = capAtClose(points, sessionCloseMs(day));
   }
 

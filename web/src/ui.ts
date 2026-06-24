@@ -1307,7 +1307,9 @@ export type LiveRange = "1D" | "1W";
 export interface LiveCurveChart {
   dates: string[];
   series: ChartSeries[];
-  yAxisLabel?: (value: number) => string;
+  yAxisLabel?: (value: number, fractionDigits?: number) => string;
+  /** Legend rows to show beneath the live chart (series class → label). */
+  legend?: Array<{ className: string; label: string }>;
 }
 
 /**
@@ -1437,9 +1439,24 @@ function chartWithTimeframe(
       series: built.series,
       yAxisLabel: built.yAxisLabel ?? chartOpts.yAxisLabel,
     });
-    wrap.replaceChildren(
-      (chart as unknown as HTMLElement) ?? liveStatus("Not enough live points to draw a curve yet."),
-    );
+    if (!chart) {
+      wrap.replaceChildren(liveStatus("Not enough live points to draw a curve yet."));
+      return;
+    }
+    // Re-draw the legend for the live series (e.g. the rebased other-currency
+    // line) so a 1D/1W selection labels its own lines rather than inheriting the
+    // exported-history legend.
+    const nodes: HTMLElement[] = [chart as unknown as HTMLElement];
+    if (built.legend && built.legend.length > 0) {
+      nodes.push(
+        h(
+          "div",
+          { class: "chart-legend" },
+          built.legend.map((row) => legendItem(row.className, row.label)),
+        ),
+      );
+    }
+    wrap.replaceChildren(...nodes);
   };
 
   const select = (index: number, persist = true): void => {
@@ -1517,7 +1534,7 @@ interface CurveDisplay {
   /** Convert an EUR-pivot amount into {@link code}. */
   convert: (eur: Decimal | null) => Decimal | null;
   /** y-axis tick formatter for values already in {@link code}. */
-  yAxisLabel: (value: number) => string;
+  yAxisLabel: (value: number, fractionDigits?: number) => string;
 }
 
 function curveDisplay(points: EquityPoint[]): CurveDisplay {
@@ -1532,7 +1549,8 @@ function curveDisplay(points: EquityPoint[]): CurveDisplay {
   };
   const portfolio = (p: EquityPoint): Decimal | null =>
     displayInUsd && p.portfolioValueUsd !== null ? p.portfolioValueUsd : convert(p.portfolioValue);
-  const yAxisLabel = (value: number): string => formatCurrencyShortRaw(new Decimal(value), code);
+  const yAxisLabel = (value: number, digits?: number): string =>
+    formatCurrencyShortRaw(new Decimal(value), code, digits);
   return { code, portfolio, convert, yAxisLabel };
 }
 
@@ -1745,11 +1763,16 @@ function liveCurveToChart(points: CurvePoint[]): LiveCurveChart | null {
   // the FX move rather than sitting a flat ~1.08× apart (mirrors renderValueChart).
   const other: Array<Decimal | null> = inUsd ? cols.eur : cols.usd;
   const currencyLine = secondaryCurrencyLine({ code } as CurveDisplay, other, primary);
+  const legend: Array<{ className: string; label: string }> = [
+    { className: "series-portfolio", label: code },
+  ];
   if (currencyLine !== null) {
     series.push({ values: currencyLine.values, className: "series-currency" });
+    legend.push({ className: "series-currency", label: `${currencyLine.code} (rebased)` });
   }
-  const yAxisLabel = (value: number): string => formatCurrencyShortRaw(new Decimal(value), code);
-  return { dates: cols.dates, series, yAxisLabel };
+  const yAxisLabel = (value: number, digits?: number): string =>
+    formatCurrencyShortRaw(new Decimal(value), code, digits);
+  return { dates: cols.dates, series, yAxisLabel, legend };
 }
 
 /**

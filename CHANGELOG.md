@@ -14,6 +14,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [3.20.1] — 2026-06-24
+
+### Added
+- **Live 1D/1W value graphs now write to the Settings data-polling log.** Every
+  graph backfill is recorded under a new `GRAPH` category: which provider it hit
+  (Twelve Data Pipe A or Tiingo Pipe B), how many price series it pulled, and the
+  credit cost — plus an explicit zero-credit line whenever a render reused the
+  exported session/week or the already-stored bars instead of pulling. This makes
+  the live graphs' provider traffic visible in the downloadable log alongside the
+  quote/FX/blob activity, so it's clear exactly what gets pulled where and when.
+
+### Changed
+- **Live 1D breadcrumbs now fully replace the open-market bar re-fetch.** Once a
+  session's intraday bars have been fetched once, the free live-tip *breadcrumb*
+  trail (roughly one point a minute — finer than the 5-minute bars) carries the
+  curve forward on every subsequent build at zero credits. The slow 15-minute
+  cadence re-fetch is therefore gone by default: leaving the dashboard open for
+  hours now adds **no further bar pulls**, using the data already on the device
+  over re-buying near-identical bars. A finite `minRefetchMs` still opts into a
+  periodic interior top-up; missing symbols are always backfilled.
+- **The live 1D curve now repulls the whole session when you log back in after
+  being away.** The breadcrumb trail only grows while the tab is open and
+  refreshing; locking the app or hiding the tab pauses refresh, so an absence used
+  to leave a flat straight jump from where the curve was left to the live tip. The
+  build now tracks how long since the session was actually touched (the later of
+  the last bar fetch and the newest breadcrumb) and, while the market is open,
+  re-pulls every symbol's bars plus the session FX track once that gap exceeds a
+  10-minute window — bridging the dead span with real data instead of a jump.
+  Staying open keeps laying breadcrumbs faster than the window, so a
+  continuously-watched dashboard never triggers it and spends nothing; only a true
+  log-out/log-in-again does, and since the credit is spent anyway the repull grabs
+  the full session for the best possible curve.
+
 ## [3.20.0] — 2026-06-23
 
 ### Changed

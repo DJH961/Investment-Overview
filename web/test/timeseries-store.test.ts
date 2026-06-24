@@ -85,4 +85,91 @@ describe("TimeSeriesStore", () => {
     expect(await store.listDays()).toContain("1W-daily");
     expect(await store.listDays()).not.toContain("2024-01-08");
   });
+
+  it("round-trips live-tip breadcrumbs preserving precision", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.saveSession({
+      ...session("2024-01-10"),
+      tips: [{ t: 300, valueEur: new Decimal("1000.5"), valueUsd: new Decimal("1100.25") }],
+    });
+    const loaded = await store.loadSession("2024-01-10");
+    expect(loaded!.tips).toHaveLength(1);
+    expect(loaded!.tips![0].valueEur.toString()).toBe("1000.5");
+    expect(loaded!.tips![0].valueUsd.toString()).toBe("1100.25");
+  });
+
+  it("treats a session without a tips field as an empty trail", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.saveSession(session("2024-01-10")); // no tips
+    const loaded = await store.loadSession("2024-01-10");
+    expect(loaded!.tips).toEqual([]);
+  });
+
+  it("appendTip accumulates a trail once breadcrumbs are spaced out", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    const tip = (t: number, v: string) => ({
+      t,
+      valueEur: new Decimal(v),
+      valueUsd: new Decimal(v),
+    });
+    await store.appendTip("2024-01-10", tip(0, "100"));
+    await store.appendTip("2024-01-10", tip(60_000, "101"));
+    await store.appendTip("2024-01-10", tip(120_000, "102"));
+    const loaded = await store.loadSession("2024-01-10");
+    expect(loaded!.tips!.map((p) => p.valueEur.toString())).toEqual(["100", "101", "102"]);
+  });
+
+  it("appendTip decimates breadcrumbs closer than the spacing window", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    const tip = (t: number, v: string) => ({
+      t,
+      valueEur: new Decimal(v),
+      valueUsd: new Decimal(v),
+    });
+    await store.appendTip("2024-01-10", tip(0, "100"));
+    // Within the 1-minute default spacing — replaces the tail rather than crowd it.
+    await store.appendTip("2024-01-10", tip(10_000, "100.5"));
+    await store.appendTip("2024-01-10", tip(30_000, "101"));
+    const loaded = await store.loadSession("2024-01-10");
+    expect(loaded!.tips!.map((p) => [p.t, p.valueEur.toString()])).toEqual([[30_000, "101"]]);
+  });
+
+  it("appendTip caps the trail at the most-recent maxTips", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    for (let i = 0; i < 5; i += 1) {
+      await store.appendTip(
+        "2024-01-10",
+        { t: i * 60_000, valueEur: new Decimal(i), valueUsd: new Decimal(i) },
+        { maxTips: 3 },
+      );
+    }
+    const loaded = await store.loadSession("2024-01-10");
+    expect(loaded!.tips!.map((p) => p.valueEur.toString())).toEqual(["2", "3", "4"]);
+  });
+
+  it("appendTip does not bump updatedAt (never fools the bar-refetch throttle)", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.saveSession({ ...session("2024-01-10"), updatedAt: 5000 });
+    await store.appendTip("2024-01-10", {
+      t: 9_999_999,
+      valueEur: new Decimal("1"),
+      valueUsd: new Decimal("1"),
+    });
+    const loaded = await store.loadSession("2024-01-10");
+    expect(loaded!.updatedAt).toBe(5000);
+  });
+
+  it("mergeSession preserves an existing breadcrumb trail", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.appendTip("2024-01-10", {
+      t: 100,
+      valueEur: new Decimal("1"),
+      valueUsd: new Decimal("1"),
+    });
+    await store.mergeSession("2024-01-10", { bars: { VTI: [bar(300, "60")] } }, 7000);
+    const loaded = await store.loadSession("2024-01-10");
+    expect(loaded!.tips).toHaveLength(1);
+    expect(loaded!.bars.VTI.at(-1)!.value.toString()).toBe("60");
+    expect(loaded!.updatedAt).toBe(7000);
+  });
 });
