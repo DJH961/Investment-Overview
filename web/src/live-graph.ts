@@ -29,12 +29,16 @@
  * falls back to the day's settled `baseFx`), and the graph still draws.
  */
 
-import { fetchTimeSeries, type FetchLike } from "./prices";
+import { fetchTimeSeries, EUR_USD_SYMBOL, PriceError, type FetchLike } from "./prices";
 import {
   recordCredits,
   recordTiingoCredits,
   releaseCredits,
   releaseTiingoCredits,
+  readFxBackoff,
+  recordFxBackoff,
+  clearFxBackoff,
+  DEFAULT_FX_BACKOFF_MS,
 } from "./cache";
 import {
   lastSessionDate,
@@ -260,11 +264,137 @@ export function makePriceBarFetcher(opts: {
   return pipeB ?? pipeA;
 }
 
+/** Map a Tiingo FX `resampleFreq` to the nearest Twelve Data `time_series` interval. */
+function twelveDataFxInterval(resampleFreq: string): string {
+  const map: Record<string, string> = {
+    "1min": "1min",
+    "5min": "5min",
+    "15min": "15min",
+    "30min": "30min",
+    "1hour": "1h",
+    "2hour": "2h",
+    "4hour": "4h",
+    "1day": "1day",
+    "1week": "1week",
+  };
+  return map[resampleFreq] ?? "1h";
+}
+
 /**
- * Bind the batched Tiingo FX-history fetcher to a window + cadence, or `null`
- * when there is no `/price` proxy to reach it through (the curve then falls back
- * to the day's settled `baseFx` for every point). One request covers the whole
- * window — the FX analogue of the price backfill.
+ * Build the Twelve Data **forex** FX-history fetcher: the `EUR/USD`
+ * `time_series` (1 credit, browser-direct) re-shaped as the curve's EUR→USD bar
+ * track. This is the FX analogue of Pipe A — the fallback the Tiingo FX leg
+ * degrades to when the Worker FX route is empty or unavailable
+ * (`docs/tiingo_polling_storm_cleanup_plan.md` item 4). Returns `null` with no key.
+ */
+export function makeTwelveDataFxFetcher(
+  apiKey: string,
+  options: { interval?: string; outputsize?: number; fetchImpl?: FetchLike } = {},
+): (() => Promise<Bar[]>) | null {
+  const key = apiKey.trim();
+  if (!key) return null;
+  return async () => {
+    const map = await fetchTimeSeries([EUR_USD_SYMBOL], key, options);
+    return map.get(EUR_USD_SYMBOL) ?? [];
+  };
+}
+
+/**
+ * Compose two FX fetchers into a dual pipe mirroring {@link makeDualPipeBarFetcher}:
+ * try `primary` (Tiingo FX), and fall back to `fallback` (Twelve Data forex) when
+ * the primary **throws** (a Worker reject) *or* returns **no bars** (an empty
+ * window that would otherwise pin every point to the flat `baseFx`).
+ */
+export function makeDualFxFetcher(
+  primary: () => Promise<Bar[]>,
+  fallback: () => Promise<Bar[]>,
+): () => Promise<Bar[]> {
+  return async () => {
+    try {
+      const bars = await primary();
+      if (bars.length > 0) return bars;
+      return await fallback();
+    } catch (err) {
+      if (err instanceof PriceError) return fallback();
+      throw err;
+    }
+  };
+}
+
+/** Persisted negative-result memo for the FX backoff (see {@link withFxBackoff}). */
+export interface FxBackoffMemo {
+  /** Epoch ms the last empty/failed FX attempt was memoised, or null. */
+  read(): number | null;
+  /** Record that an attempt produced no usable FX bars at `at`. */
+  write(at: number): void;
+  /** Forget the memo after a successful, non-empty pull. */
+  clear(): void;
+}
+
+/**
+ * Wrap an FX fetcher with a **negative-result backoff** (item 4, defence in
+ * depth even with the Worker fixed): once an attempt comes back empty — or the
+ * pipe rejects — suppress further attempts for `cooldownMs`, returning `[]`
+ * **without touching the network or the credit ledger**, so a persistently
+ * failing FX endpoint cannot re-arm the week refill gate on every rebuild and
+ * bleed credits. A non-empty pull clears the memo immediately.
+ */
+export function withFxBackoff(
+  inner: () => Promise<Bar[]>,
+  memo: FxBackoffMemo,
+  options: { now?: () => number; cooldownMs?: number } = {},
+): () => Promise<Bar[]> {
+  const now = options.now ?? ((): number => Date.now());
+  const cooldown = options.cooldownMs ?? DEFAULT_FX_BACKOFF_MS;
+  return async () => {
+    const last = memo.read();
+    const t = now();
+    if (last !== null && t - last < cooldown) return []; // suppressed: no fetch, no charge
+    try {
+      const bars = await inner();
+      if (bars.length === 0) memo.write(t);
+      else memo.clear();
+      return bars;
+    } catch (err) {
+      // A reject arms the cooldown too (so rebuilds don't hammer it) but still
+      // propagates once so the recorder boundary logs the failure.
+      memo.write(t);
+      throw err;
+    }
+  };
+}
+
+/** A {@link FxBackoffMemo} backed by the persisted cache, keyed by FX cadence. */
+export function cacheFxBackoffMemo(key: string): FxBackoffMemo {
+  return {
+    read: () => readFxBackoff(key),
+    write: (at) => recordFxBackoff(key, at),
+    clear: () => clearFxBackoff(key),
+  };
+}
+
+/** Tunables for the FX fallback/backoff added to {@link makeWindowFxFetcher}. */
+export interface WindowFxOptions {
+  /** Twelve Data key for the forex fallback (`EUR/USD` time_series). Empty ⇒ Tiingo-only. */
+  apiKey?: string;
+  /** Meter the Twelve Data forex spend (Pipe A) in two phases. */
+  twelveDataMeter?: BackfillMeter;
+  /** Negative-result backoff memo; omit to disable the cooldown. */
+  backoffMemo?: FxBackoffMemo | null;
+  /** Override `Date.now` for the backoff (tests). */
+  now?: () => number;
+  /** Override the backoff cooldown window. */
+  cooldownMs?: number;
+}
+
+/**
+ * Bind the batched FX-history fetcher to a window + cadence. Prefers the Tiingo
+ * `/price?fxHistory=` route (Pipe B) and — when a Twelve Data key is supplied —
+ * **falls back to the Twelve Data forex `EUR/USD` series** the moment Tiingo FX
+ * is empty or unavailable, mirroring the price dual pipe. A negative-result
+ * backoff suppresses re-attempts after an empty/failed window. Returns `null`
+ * only when *neither* an FX pipe is configured (no proxy and no key) — the curve
+ * then falls back to the day's settled `baseFx` for every point.
  */
 export function makeWindowFxFetcher(
   priceProxyUrl: string | null,
@@ -272,15 +402,45 @@ export function makeWindowFxFetcher(
   resampleFreq: string,
   fetchImpl?: FetchLike,
   tiingoMeter?: BackfillMeter,
+  options: WindowFxOptions = {},
 ): (() => Promise<Bar[]>) | null {
-  if (!priceProxyUrl) return null;
-  const fetchFx = makeTiingoFxBarFetcher(priceProxyUrl, {
-    resampleFreq,
-    startDate: window.startDate,
-    endDate: window.endDate,
+  const tiingoFxRaw = priceProxyUrl
+    ? makeTiingoFxBarFetcher(priceProxyUrl, {
+        resampleFreq,
+        startDate: window.startDate,
+        endDate: window.endDate,
+        fetchImpl,
+      })
+    : null;
+  const tiingoFx = tiingoFxRaw
+    ? tiingoMeter
+      ? recordingFxFetcher(tiingoFxRaw, tiingoMeter)
+      : tiingoFxRaw
+    : null;
+
+  const twelveRaw = makeTwelveDataFxFetcher(options.apiKey ?? "", {
+    interval: twelveDataFxInterval(resampleFreq),
+    outputsize: 60,
     fetchImpl,
   });
-  return tiingoMeter ? recordingFxFetcher(fetchFx, tiingoMeter) : fetchFx;
+  const twelveFx = twelveRaw
+    ? options.twelveDataMeter
+      ? recordingFxFetcher(twelveRaw, options.twelveDataMeter)
+      : twelveRaw
+    : null;
+
+  let composite: (() => Promise<Bar[]>) | null;
+  if (tiingoFx && twelveFx) composite = makeDualFxFetcher(tiingoFx, twelveFx);
+  else composite = tiingoFx ?? twelveFx;
+  if (!composite) return null;
+
+  if (options.backoffMemo) {
+    composite = withFxBackoff(composite, options.backoffMemo, {
+      now: options.now,
+      cooldownMs: options.cooldownMs,
+    });
+  }
+  return composite;
 }
 
 /** Shared network/persistence wiring for the live-graph builders. */
@@ -437,6 +597,11 @@ export function buildLiveSessionCurve(
     tuning.fxResampleFreq ?? "1hour",
     providers.fetchImpl,
     tiingoMeter,
+    {
+      apiKey: providers.apiKey,
+      twelveDataMeter,
+      backoffMemo: cacheFxBackoffMemo(`1D:${tuning.fxResampleFreq ?? "1hour"}`),
+    },
   );
   return loadOrBuildSessionCurve({ ...base, fetchBars, fetchFx });
 }
@@ -481,6 +646,11 @@ export function buildLiveWeekCurve(
     "1day",
     providers.fetchImpl,
     tiingoMeter,
+    {
+      apiKey: providers.apiKey,
+      twelveDataMeter,
+      backoffMemo: cacheFxBackoffMemo("1W:1day"),
+    },
   );
   return loadOrBuildWeekCurve({ ...base, fetchDailyBars, fetchFx });
 }

@@ -544,6 +544,53 @@ export function tiingoCreditsSpentToday(log: CreditSpend[], now: number): number
   return log.reduce((acc, e) => (e.at >= dayStart ? acc + e.n : acc), 0);
 }
 
+// --- Live-graph FX backoff memo --------------------------------------------
+
+const FX_BACKOFF_KEY = "iv.web.fx_backoff";
+
+/** Default cooldown a persistently empty/failing FX endpoint is suppressed for. */
+export const DEFAULT_FX_BACKOFF_MS = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Read the epoch-ms of the last empty/failed live-graph FX pull for `key` (the
+ * FX cadence, e.g. `"1hour"`/`"1day"`), or null. Backs the negative-result memo
+ * (`docs/tiingo_polling_storm_cleanup_plan.md` item 4): once an FX attempt comes
+ * back empty (or the pipe rejects), subsequent rebuilds within the cooldown skip
+ * the network entirely instead of re-arming the refill gate on every render.
+ */
+export function readFxBackoff(
+  key: string,
+  storage: StorageLike | null = defaultStorage(),
+): number | null {
+  const raw = readJson<Record<string, number>>(storage, FX_BACKOFF_KEY);
+  const at = raw && typeof raw[key] === "number" ? raw[key] : null;
+  return at !== null && Number.isFinite(at) ? at : null;
+}
+
+/** Memoise that the FX pull for `key` produced no usable bars at `at`. */
+export function recordFxBackoff(
+  key: string,
+  at: number,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  const raw = readJson<Record<string, number>>(storage, FX_BACKOFF_KEY) ?? {};
+  const next: Record<string, number> = typeof raw === "object" && raw !== null ? { ...raw } : {};
+  next[key] = at;
+  writeJson(storage, FX_BACKOFF_KEY, next);
+}
+
+/** Clear the FX backoff memo for `key` (e.g. after a successful non-empty pull). */
+export function clearFxBackoff(
+  key: string,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  const raw = readJson<Record<string, number>>(storage, FX_BACKOFF_KEY);
+  if (!raw || typeof raw !== "object" || !(key in raw)) return;
+  const next = { ...raw };
+  delete next[key];
+  writeJson(storage, FX_BACKOFF_KEY, next);
+}
+
 // --- Tiingo NAV canary + quick-refresh state -------------------------------
 
 const TIINGO_STATE_KEY = "iv.web.tiingo_state";

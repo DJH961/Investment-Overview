@@ -14,12 +14,14 @@ import {
   buildLiveSessionCurve,
   buildLiveWeekCurve,
   instrumentedGraphRecorders,
+  makeDualFxFetcher,
   makePriceBarFetcher,
   makeWindowFxFetcher,
   recordingBarFetcher,
   recordingFxFetcher,
   sessionFxWindow,
   weekFxWindow,
+  withFxBackoff,
   type BackfillMeter,
   type LiveGraphProviders,
   type SpendRequest,
@@ -125,6 +127,122 @@ describe("makeWindowFxFetcher", () => {
 
   it("is null (baseFx-only FX) when no price proxy is configured", () => {
     expect(makeWindowFxFetcher(null, { startDate: "a", endDate: "b" }, "1day")).toBeNull();
+  });
+
+  it("falls back to Twelve Data forex when there is no proxy but a key is held", async () => {
+    const { calls, fetchImpl } = recordingFetch({ values: [{ datetime: "2026-06-23", close: "1.1" }] });
+    const fetchFx = makeWindowFxFetcher(null, { startDate: "2026-06-19", endDate: "2026-06-23" }, "1day", fetchImpl, undefined, {
+      apiKey: "KEY",
+    });
+    const bars = await fetchFx!();
+    // The EUR/USD forex series is pulled browser-direct (no Worker fxHistory).
+    expect(calls.some((u) => u.includes("symbol=EUR%2FUSD") || u.includes("symbol=EUR/USD"))).toBe(true);
+    expect(bars[0].value.toString()).toBe("1.1");
+  });
+});
+
+describe("FX dual pipe + backoff (item 4)", () => {
+  const bar = (v: number): Bar => ({ t: 1, value: d(v) });
+
+  it("makeDualFxFetcher falls back to Twelve Data on an empty Tiingo result", async () => {
+    let fellBack = false;
+    const fx = makeDualFxFetcher(
+      async () => [],
+      async () => {
+        fellBack = true;
+        return [bar(1.1)];
+      },
+    );
+    expect(await fx()).toEqual([bar(1.1)]);
+    expect(fellBack).toBe(true);
+  });
+
+  it("makeDualFxFetcher falls back when the Tiingo pipe throws a PriceError", async () => {
+    const fx = makeDualFxFetcher(
+      async () => {
+        throw new PriceError("Tiingo FX history proxy returned HTTP 400");
+      },
+      async () => [bar(1.2)],
+    );
+    expect(await fx()).toEqual([bar(1.2)]);
+  });
+
+  it("makeDualFxFetcher keeps a non-empty Tiingo result (no fallback)", async () => {
+    let fellBack = false;
+    const fx = makeDualFxFetcher(
+      async () => [bar(1.3)],
+      async () => {
+        fellBack = true;
+        return [bar(9)];
+      },
+    );
+    expect(await fx()).toEqual([bar(1.3)]);
+    expect(fellBack).toBe(false);
+  });
+
+  it("withFxBackoff suppresses re-attempts after an empty result, then clears on success", async () => {
+    let store: number | null = null;
+    const memo = {
+      read: () => store,
+      write: (at: number) => {
+        store = at;
+      },
+      clear: () => {
+        store = null;
+      },
+    };
+    let calls = 0;
+    let result: Bar[] = [];
+    let t = 1000;
+    const fx = withFxBackoff(
+      async () => {
+        calls += 1;
+        return result;
+      },
+      memo,
+      { now: () => t, cooldownMs: 10_000 },
+    );
+    // First call returns empty → memoised.
+    expect(await fx()).toEqual([]);
+    expect(calls).toBe(1);
+    expect(store).toBe(1000);
+    // A rebuild inside the cooldown short-circuits to [] without touching `inner`.
+    t = 5000;
+    expect(await fx()).toEqual([]);
+    expect(calls).toBe(1);
+    // Past the cooldown it tries again; a non-empty pull clears the memo.
+    t = 20_000;
+    result = [bar(1.1)];
+    expect(await fx()).toEqual([bar(1.1)]);
+    expect(calls).toBe(2);
+    expect(store).toBeNull();
+  });
+
+  it("withFxBackoff arms the cooldown on a throw and re-raises it once", async () => {
+    let store: number | null = null;
+    const memo = {
+      read: () => store,
+      write: (at: number) => {
+        store = at;
+      },
+      clear: () => {
+        store = null;
+      },
+    };
+    let calls = 0;
+    const fx = withFxBackoff(
+      async () => {
+        calls += 1;
+        throw new PriceError("boom");
+      },
+      memo,
+      { now: () => 1000, cooldownMs: 10_000 },
+    );
+    await expect(fx()).rejects.toThrow("boom");
+    expect(store).toBe(1000);
+    // Within the cooldown the next rebuild is suppressed (no second network hit).
+    expect(await fx()).toEqual([]);
+    expect(calls).toBe(1);
   });
 });
 
