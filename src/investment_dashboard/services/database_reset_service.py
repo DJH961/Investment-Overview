@@ -32,7 +32,11 @@ from dataclasses import dataclass, field
 from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
-from investment_dashboard.db import config_session_scope, ledger_session_scope
+from investment_dashboard.db import (
+    cache_session_scope,
+    config_session_scope,
+    ledger_session_scope,
+)
 from investment_dashboard.models import (
     Account,
     AppConfig,
@@ -48,7 +52,7 @@ from investment_dashboard.models import (
     TargetAllocationItem,
     Transaction,
 )
-from investment_dashboard.models.base import ConfigBase
+from investment_dashboard.models.base import CacheBase, ConfigBase
 
 log = logging.getLogger(__name__)
 
@@ -137,13 +141,23 @@ def reset_database(level: ResetLevel) -> ResetResult:
     """Delete the data covered by ``level`` and return per-table counts.
 
     Models are grouped by storage tier so the deletes run inside the correct
-    transactional session (config-tier overrides live in their own engine in
-    split-DB deployments; everything else is ledger-tier). Each tier commits
-    atomically when its ``with`` block exits.
+    transactional session. In a split-DB deployment each tier lives on its own
+    SQLite file (config overrides in one engine, the regenerable cache —
+    prices/FX/snapshots/intraday samples — in another, the ledger in a third),
+    so a delete issued on the wrong tier's session targets a file that does not
+    even contain that table and silently leaves the cached rows in place. That
+    is exactly how a "Reset cached market data" could appear to do nothing while
+    the 1 Day / 1 Week graphs kept their stale samples. Each tier therefore runs
+    through its own ``*_session_scope`` and commits atomically when its ``with``
+    block exits.
     """
     models = _models_for_level(level)
     config_models = tuple(m for m in models if m.__table__.metadata is ConfigBase.metadata)
-    ledger_models = tuple(m for m in models if m not in config_models)
+    cache_models = tuple(m for m in models if m.__table__.metadata is CacheBase.metadata)
+    # Anything that is neither config- nor cache-tier is a ledger (source-of-truth)
+    # table; routing the remainder this way keeps the legacy ``Base``/``LedgerBase``
+    # alias working without enumerating every ledger model here.
+    ledger_models = tuple(m for m in models if m not in config_models and m not in cache_models)
 
     log.info(
         "database reset (%s): wiping %s table(s): %s",
@@ -157,6 +171,11 @@ def reset_database(level: ResetLevel) -> ResetResult:
     if ledger_models:
         with ledger_session_scope() as session:
             for model in ledger_models:
+                deleted[model.__tablename__] = _delete_all(session, model)
+
+    if cache_models:
+        with cache_session_scope() as session:
+            for model in cache_models:
                 deleted[model.__tablename__] = _delete_all(session, model)
 
     if config_models:
