@@ -76,6 +76,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exported settled point, so it lands exactly where the headline "% today" is
   measured from instead of drifting to hug the live value; it falls back to the
   last exported point only when no live move is known.
+- **A refresh no longer claims to be "updating" when there is no connection
+  (web).** With the device offline — or online but with no pricing service
+  reachable — a cache-fresh round used to sail through silently and read as
+  "up to date", and the auto/manual pill still said "Auto-updating prices…".
+  The refresh layer now derives an explicit connectivity verdict
+  (`classifyConnectivity` → offline / unreachable / online): an offline tick
+  skips the network pass entirely and repaints last-known values behind a clear
+  **"No internet connection — showing last known prices."** banner (and a
+  confirming toast on a manual tap), while a round that landed nothing because
+  every provider errored shows **"Couldn't reach any price service — showing
+  last known prices."** The false "all prices live" confirmation is suppressed
+  unless a service genuinely answered, and the dashboard auto-refreshes the
+  instant the browser fires its `online` event.
 
 ## [3.20.2] — 2026-06-24
 
