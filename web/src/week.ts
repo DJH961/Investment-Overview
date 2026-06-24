@@ -257,6 +257,13 @@ export interface WeekCurveOptions {
    * newest mark. A no-op by default. See {@link SessionCurveOptions.onFreshBars}.
    */
   onFreshBars?: (barsBySymbol: Map<string, Bar[]>) => void;
+  /**
+   * Invoked with the moving-fund symbols whose NAV history was just gap-filled
+   * (item 7b) — the rare path that spends graph credits on an otherwise quiet
+   * day. Lets the app surface *why* a 1W render pulled, keeping the polling log
+   * self-explaining (the visibility theme of items 2 & 6). A no-op by default.
+   */
+  onNavBackfill?: (symbols: string[]) => void;
 }
 
 /** A built 1W curve plus the window it covers. */
@@ -349,6 +356,7 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
   if (fetchNavBars && navBackfillSymbols.length > 0) {
     const staleNav = navBackfillStaleSymbols(stored, navBackfillSymbols, now, sessions);
     if (staleNav.length > 0) {
+      if (options.onNavBackfill) options.onNavBackfill(staleNav);
       const navBars = await fetchNavBars(staleNav);
       const incomingNav: Record<string, Bar[]> = {};
       for (const [symbol, bars] of navBars) {

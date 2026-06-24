@@ -3577,6 +3577,11 @@ export class App {
               // the daily-NAV gap-fill; money-market / pinned-$1 funds are absent
               // from `lastNavSymbols`, so they stay flat and are never fetched.
               navBackfillSymbols: [...this.lastNavSymbols],
+              onNavBackfill: (symbols) =>
+                this.pollLog(
+                  "graph",
+                  `1W graph: gap-filled NAV history for ${symbols.length} fund(s): ${symbols.join(", ")}.`,
+                ),
             },
             loggingProviders("1W", spent),
           );

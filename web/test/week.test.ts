@@ -630,6 +630,22 @@ describe("loadOrBuildWeekCurve NAV gap-fill (item 7b)", () => {
     expect(navBackfillStaleSymbols(reread, ["FXAIX"], SAT_CLOSED)).toEqual([]);
   });
 
+  it("announces the gap-fill via onNavBackfill (polling-log visibility)", async () => {
+    const s = store();
+    const anchor = buildIntradayAnchor([navHolding()], d(0), d(0), d("0.9"), { navInSleeve: true });
+    const announced: string[][] = [];
+    await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => new Map(),
+      fetchNavBars: async () => new Map([["FXAIX", [bar(dayMs("2026-03-13"), "100")]]]),
+      navBackfillSymbols: ["FXAIX"],
+      onNavBackfill: (symbols) => announced.push(symbols),
+      now: SAT_CLOSED,
+    });
+    expect(announced).toEqual([["FXAIX"]]);
+  });
+
   it("does not fetch when the moving fund is already fully covered", async () => {
     const s = store();
     await s.saveSession({
