@@ -130,7 +130,9 @@ class TestTiingoTodayFallback:
             base="EUR",
             quote="USD",
             yf_fetcher=self._yf_empty,
-            tiingo_fetcher=lambda: SimpleNamespace(rate=Decimal("1.11"), value_date=date(2024, 6, 5)),
+            tiingo_fetcher=lambda: SimpleNamespace(
+                rate=Decimal("1.11"), value_date=date(2024, 6, 5)
+            ),
             tiingo_token="",  # vanilla install — no Tiingo backup
             charge_budget=lambda: True,
         )
@@ -147,7 +149,8 @@ class TestTiingoTodayFallback:
             quote="USD",
             yf_fetcher=self._yf_empty,
             tiingo_fetcher=lambda: SimpleNamespace(
-                rate=Decimal("1.11"), value_date=date(2024, 6, 4)  # yesterday — stale
+                rate=Decimal("1.11"),
+                value_date=date(2024, 6, 4),  # yesterday — stale
             ),
             tiingo_token="tok",
             charge_budget=lambda: True,
