@@ -14,32 +14,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.3.0] — 2026-06-24
-
-### Changed
-
-- **All metered live-graph provider calls now flow through a single reservation
-  authority (`web/src/reservation.ts`).** An independent rate-limit audit on
-  `main` (`docs/provider_rate_limit_audit.md`) found that the 1D/1W graph and FX
-  layer *counted* every credit it spent but never *limited* the scarce Tiingo
-  hourly/daily budget, and that budget reads were non-atomic across legs and
-  overlapping builds — so a market-open burst could collectively overshoot the
-  per-minute cap. Every graph bar, FX-history, FX-fallback and NAV gap-fill leg
-  now calls `reserve(provider, n, now)`, which **atomically reads-and-debits**
-  the shared credit ledger (folding in the per-provider 429 freezes) and returns
-  how many credits were granted; callers fetch only the granted count and let the
-  rest degrade to flat quote values. The graph spend meters are demoted to
-  **observation-only** (a refund releases credits back to the authority) so
-  nothing is double-booked. This closes audit Flags 1–6 and Recommendations 1–4;
-  the prefetch/warm-up path now routes through the gated capacity split rather
-  than the legacy ungated Tiingo-first pipe.
-
-### Fixed
-
-- **A hard refresh during a provider 429 freeze now issues zero calls to the
-  frozen provider** — the breaker is authoritative through the reservation
-  authority, so mashing refresh while rate-limited no longer burns wasted calls.
-
 ## [4.2.0] — 2026-06-24
 
 ### Added
@@ -52,6 +26,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Twelve Data is now always the preferred live provider; Tiingo only catches
+  the overflow.** Every metered live-graph provider call flows through a single
+  reservation authority (`web/src/reservation.ts`). An independent rate-limit
+  audit on `main` (`docs/provider_rate_limit_audit.md`) found that the 1D/1W
+  graph and FX layer *counted* every credit it spent but never *limited* the
+  scarce Tiingo hourly/daily budget, and that budget reads were non-atomic across
+  legs and overlapping builds — so a market-open burst could collectively
+  overshoot the per-minute cap. Every graph bar, FX-history, FX-fallback and NAV
+  gap-fill leg now calls `reserve(provider, n, now)`, which **atomically
+  reads-and-debits** the shared credit ledger (folding in the per-provider 429
+  freezes) and returns how many credits were granted; callers fetch only the
+  granted count and let the rest degrade to flat quote values. The graph spend
+  meters are demoted to **observation-only** (a refund releases credits back to
+  the authority) so nothing is double-booked. This closes audit Flags 1–6 and
+  Recommendations 1–4; the prefetch/warm-up path now routes through the gated
+  capacity split rather than the legacy ungated Tiingo-first pipe.
 - **Market-open token-burn fix.** The intraday staleness gate now treats a fresh,
   just-opened session as expected-empty, so a cold start at the US open issues
   **0** intraday-bar requests and derives headline quotes from the sliced daily
@@ -59,6 +49,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (Twelve Data leads, sliced to the live minute budget; Tiingo takes only the
   overflow) and carries the per-symbol Tier-1 series backoff. See
   `docs/market_open_token_burn_fix_plan.md`.
+
+### Fixed
+
+- **A hard refresh during a provider 429 freeze now issues zero calls to the
+  frozen provider** — the breaker is authoritative through the reservation
+  authority, so mashing refresh while rate-limited no longer burns wasted calls.
 
 ## [4.1.0] — 2026-06-24
 
