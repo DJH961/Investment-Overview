@@ -14,6 +14,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.0.3] — 2026-06-24
+
+### Fixed
+
+- **The 1D/1W graph download no longer spends Tiingo twice, skips the
+  data-polling log, or flattens the secondary-currency line.** Several fixes to
+  the web companion's live graph-bar backfill:
+  - **Smart Tiingo gate (`web/src/app.ts`).** Any rapid-fire quote pull that
+    leans on Tiingo for speed — the "via backup" round or a from-scratch reset —
+    now primes the quote cache from any *stale* 1D/1W graph package first. Each
+    bar's newest point doubles as the quote, so the quote pull skips those
+    symbols and Tiingo is never spent on both the rapid-fire quote *and* the
+    1D/1W graph for one symbol. It self-gates on staleness, so a fully-loaded
+    closed-market book downloads nothing.
+  - **Fallback usage is now counted live and logged.** The Overview's Tiingo
+    "used fallback" line now reads the budget live from the credit log
+    (`tiingoBudgetView`) so the graph-bar and FX-history pulls — which spend the
+    same Tiingo budget — are tallied too, and the warm-up backfill's spends are
+    written to the data-polling log instead of being recorded silently.
+  - **Secondary-currency refill (`web/src/intraday.ts`, `web/src/week.ts`).**
+    When a curve's price bars are already cached but its FX track is missing, the
+    builder now pulls the FX track once so the rebased EUR/USD secondary line
+    genuinely diverges from the primary instead of collapsing onto it. Gated on
+    having bars to rebase and on not having just attempted FX, so a fully-loaded
+    closed-market curve never re-fires once its FX is in hand.
+
 ## [4.0.2] — 2026-06-24
 
 ### Fixed

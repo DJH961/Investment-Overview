@@ -405,6 +405,7 @@ export async function loadOrBuildSessionCurve(
     symbols.length > 0 &&
     (missing.length > 0 || (marketOpen && (!recentlyFetched || resumedAfterGap)));
 
+  let fxAttempted = false;
   if (needFetch) {
     // Closed: only backfill the gaps. Open: refresh every symbol so the curve
     // grows to the freshest bar (still 1 credit each — bars are free).
@@ -420,6 +421,7 @@ export async function loadOrBuildSessionCurve(
     if (options.onFreshBars) options.onFreshBars(barsBySymbol);
     let incomingFx: Bar[] | undefined;
     if (fetchFx) {
+      fxAttempted = true;
       try {
         incomingFx = await fetchFx();
       } catch {
@@ -429,6 +431,32 @@ export async function loadOrBuildSessionCurve(
       }
     }
     stored = await store.mergeSession(day, { bars: incomingBars, fx: incomingFx }, now.getTime());
+  }
+
+  // Secondary-currency refill. A self-fetched curve only diverges EUR from USD
+  // when it has the day's FX track; without it `reconstructSessionCurve` falls
+  // back to the flat `baseFx` for every point and the rebased secondary line
+  // collapses onto the primary one. So when the price bars are already on the
+  // device (no `needFetch`, e.g. a prior backfill stored bars without FX) but
+  // the FX track is missing, pull it once. Gated on having bars to rebase and on
+  // not having just tried FX above, so a fully-loaded closed-market curve never
+  // re-fires once its FX is in hand.
+  const loaded = stored;
+  if (
+    fetchFx &&
+    !fxAttempted &&
+    loaded !== null &&
+    loaded.fx.length === 0 &&
+    symbols.some((s) => (loaded.bars[s]?.length ?? 0) > 0)
+  ) {
+    try {
+      const incomingFx = await fetchFx();
+      if (incomingFx.length > 0) {
+        stored = await store.mergeSession(day, { fx: incomingFx }, now.getTime());
+      }
+    } catch {
+      // Best-effort refinement; the curve still draws on `baseFx`.
+    }
   }
 
   await pruneOldSessions(store, day, options.retainSessions ?? 7);
