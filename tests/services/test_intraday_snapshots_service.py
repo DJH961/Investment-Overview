@@ -467,9 +467,9 @@ class TestReconstruct:
         # A fetch that covers the session span (open → near close) so the
         # coverage-aware guard trusts it complete and the second call short-circuits.
         covering_bars = {
-            datetime(2024, 6, 3, 13, 30): Decimal("100"),  # 09:30 ET — open
-            datetime(2024, 6, 3, 16, 30): Decimal("100"),  # 12:30 ET — midday
-            datetime(2024, 6, 3, 19, 45): Decimal("100"),  # 15:45 ET — near close
+            datetime(2024, 6, 3, 13, 30): Decimal("100"),  # 13:30 UTC (09:30 ET) — open
+            datetime(2024, 6, 3, 16, 30): Decimal("100"),  # 16:30 UTC (12:30 ET) — midday
+            datetime(2024, 6, 3, 19, 45): Decimal("100"),  # 19:45 UTC (15:45 ET) — near close
         }
 
         def fetch(symbols, day, *, interval):  # type: ignore[no-untyped-def]

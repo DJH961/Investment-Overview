@@ -347,9 +347,10 @@ def _compose_currency_points(
     curve, unchanged).
     """
     points: list[ValueSeriesPoint] = []
+    no_nav: tuple[Decimal, Decimal | None] = (ZERO, None)
     for at_utc, market_eur, sample_fx in samples:
         nav_eur, nav_fx = (
-            nav_components.get(at_utc, (ZERO, None)) if nav_components is not None else (ZERO, None)
+            nav_components.get(at_utc, no_nav) if nav_components is not None else no_nav
         )
         if currency == "EUR" or not rate:
             # EUR view (derived): the base is already EUR; the market component
