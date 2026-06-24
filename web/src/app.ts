@@ -120,10 +120,9 @@ import { WEEK_STORE_KEY } from "./week";
 import type { Bar } from "./timeseries";
 import type { MobileExport } from "./types";
 import {
-  experimentalGraphsEnabled,
   h,
   renderDashboard,
-  renderExperimentalGraphsToggle,
+  renderExtendedGraphsToggle,
   renderThemeToggle,
   renderTimeFormatToggle,
   type LiveGraphHooks,
@@ -266,7 +265,7 @@ export class App {
   /** The last computed model, kept so the currency toggle can re-render it. */
   private model: DashboardModel | null = null;
   /**
-   * Persistent IndexedDB-backed store for the experimental live 1D/1W graphs'
+   * Persistent IndexedDB-backed store for the live 1D/1W graphs'
    * intraday/daily bars (smart-backfill across re-opens). Created lazily on the
    * first live-graph build so the default chart path never touches IndexedDB.
    */
@@ -689,14 +688,14 @@ export class App {
    * graphs are still missing bars for on this device — the pre-flight that lets
    * the login warm-up pull a stale graph's bars in the same expensive Tiingo pass
    * as the catch-up quotes. NAV funds are never included: the graphs never plot
-   * them, so they never need (or get) bars. Returns empty sets when the graphs are
-   * switched off, so a user without the feature never pays for bars.
+   * them, so they never need (or get) bars. Returns empty sets when there are no
+   * market symbols to plot.
    */
   private async prefetchGraphStaleness(
     marketSymbols: string[],
     now: Date,
   ): Promise<{ session: string[]; week: string[] }> {
-    if (!experimentalGraphsEnabled() || marketSymbols.length === 0) {
+    if (marketSymbols.length === 0) {
       return { session: [], week: [] };
     }
     const store = this.ensureTimeSeriesStore();
@@ -1177,15 +1176,15 @@ export class App {
         ),
       );
     }
-    // Experimental: opt-in features that may change. The live 1D/1W value graphs
-    // are gated here so the default chart never regresses (Settings only).
+    // Graphs: the live 1D/1W curves are always on now; this opt-in only adds the
+    // longer 3M / 6M history ranges back for anyone who wants them (Settings only).
     if (settingsMode) {
       formChildren.push(
-        h("h2", { class: "settings-section" }, ["Experimental"]),
+        h("h2", { class: "settings-section" }, ["Graphs"]),
         field(
-          "Live graphs",
-          renderExperimentalGraphsToggle(),
-          "Swap the value chart's 3M / 6M ranges for live 1D and 1W curves, built from intraday data cached on this device. Takes effect when you return to the dashboard.",
+          "Extra ranges",
+          renderExtendedGraphsToggle(),
+          "Add the longer 3M and 6M history ranges to the value chart. Off by default for a cleaner look; the live 1D and 1W curves are always shown. Takes effect when you return to the dashboard.",
         ),
       );
     }
@@ -3195,14 +3194,12 @@ export class App {
   }
 
   /**
-   * Assemble the experimental value chart's live 1D/1W builders from the current
-   * model + config, or `null` when the mode is off (so the default chart never
-   * spins up the live pipeline). Each hook lazily builds its whole-book curve via
-   * the already-shipped {@link buildLiveSessionCurve}/{@link buildLiveWeekCurve}
-   * orchestration; the bars are device-cached, so a re-open does not re-backfill.
+   * Assemble the value chart's live 1D/1W builders from the current model +
+   * config. Each hook lazily builds its whole-book curve via the already-shipped
+   * {@link buildLiveSessionCurve}/{@link buildLiveWeekCurve} orchestration; the
+   * bars are device-cached, so a re-open does not re-backfill.
    */
   private buildLiveGraphHooks(model: DashboardModel): LiveGraphHooks | undefined {
-    if (!experimentalGraphsEnabled()) return undefined;
     const config = this.state.config;
     const o = model.overview;
     const baseFx = o.fxRateEurUsd;

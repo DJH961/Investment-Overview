@@ -1057,7 +1057,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* --- Charts (shared line chart: value-over-time + equity curve) ------------ */
 .chart-wrap { width: 100%; }
-/* Placeholder shown while an experimental live (1D/1W) curve loads, or when it
+/* Placeholder shown while a live (1D/1W) curve loads, or when it
    has no data yet — keeps the chart area from collapsing during the fetch. */
 .chart-live-status {
   display: flex;

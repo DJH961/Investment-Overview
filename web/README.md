@@ -80,12 +80,12 @@ Concretely, that means:
 ## Status
 
 **Phase 5 (PWA) implemented**, building on the Phase 4 periods/projection/
-analytics work, plus an **experimental Phase 6 opt-in**: live **1D / 1W** value
-graphs (Settings → Experimental → "Live graphs", **off by default** so the proven
-`1M / 3M / 6M / 1Y` chart never regresses). When on, the Overview value chart
-drops the longer `3M / 6M` slices and adds live 1D and 1W curves, reconstructed
+analytics work, with live **1D / 1W** value graphs now **on by default**: the
+Overview value chart leads with the live 1D and 1W curves, reconstructed
 from intraday/daily bars cached on the device (IndexedDB `TimeSeriesStore`) — see
-`docs/v3.0_live_web_companion_proposal.md` §10.8. Two touches keep the live curves
+`docs/v3.0_live_web_companion_proposal.md` §10.8. The default range strip is
+`1D · 1W · 1M · 1Y · All`; the longer `3M / 6M` history slices are an opt-in
+(Settings → Graphs → "Extra ranges", **off by default** for a cleaner look). Two touches keep the live curves
 cheap on a long watch: the 1D curve **leaves breadcrumbs** — each time the live tip
 moves it persists that whole-book value (a figure already computed, so **zero
 credits**), and the curve splices the trail back in so it self-thickens between
