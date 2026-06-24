@@ -200,6 +200,19 @@ const UP_TO_DATE_WINDOW_MS = 60 * 1000;
 const FORCE_REFRESH_MIN_CREDIT_FRACTION = 0.1;
 
 /**
+ * How long an *auto* refresh round may reuse a freshly cached EUR/USD spot
+ * before spending another credit to re-pull it. The login warm-up pulls a live
+ * spot, then the coalesced kickoff refresh fires seconds later (and on/visibility
+ * triggers can overlap a scheduled tick too); with a zero TTL each of those
+ * re-pulled the pair independently, double-spending the per-minute budget for a
+ * rate that hadn't moved. This window is comfortably below the burst cadence
+ * ({@link DEFAULT_BURST_INTERVAL_MS}, 60s) so every genuine refresh round still
+ * re-polls the live spot, while back-to-back rounds reuse it for free. A manual
+ * tap (`force`) ignores this and always re-pulls (ttlMs 0).
+ */
+const REFRESH_EURUSD_REUSE_MS = 45 * 1000;
+
+/**
  * What triggered a price refresh: a `manual` tap of the Refresh button or an
  * `auto` background pull by the scheduler. Drives the distinct visual feedback
  * each gets (a spinning button + "Refreshing…" pill vs. an "Auto-updating…"
@@ -2277,18 +2290,23 @@ export class App {
       fx = fxLoad.fx;
       fxReport = fxLoad;
       // Live EUR/USD (current + prior close) for an FX-aware today's move.
-      // The conversion rate is the one thing we *always* re-poll on every network
-      // refresh (ttlMs: 0, so the cache is only ever a fallback): the forex market
-      // trades ~24/5, so the most recent live spot is always the right rate for
-      // valuing the book. This only fires on a network round with an API key in
-      // hand; a cache-only paint takes the `else` branch below. It still degrades
-      // gracefully — when the pair can't be fetched (no budget/key, a transient
-      // failure, or the weekend FX close) loadEurUsd falls back to the Tiingo
-      // backup FX provider (via the /price Worker), then today's cached spot,
-      // then the ECB end-of-day rate.
+      // The conversion rate is the one thing we re-poll on *every* genuine
+      // refresh round — the forex market trades ~24/5, so the most recent live
+      // spot is always the right rate for valuing the book. A short reuse window
+      // ({@link REFRESH_EURUSD_REUSE_MS}, well under the 60s burst cadence) lets
+      // back-to-back rounds reuse a just-pulled spot instead of double-spending a
+      // credit: the login warm-up pulls the live pair, then the coalesced kickoff
+      // (and any overlapping on/visibility tick) reuses it rather than re-pulling.
+      // A manual tap (`force`) ignores the window and always re-pulls (ttlMs 0).
+      // This only fires on a network round with an API key in hand; a cache-only
+      // paint takes the `else` branch below. It still degrades gracefully — when
+      // the pair can't be fetched (no budget/key, a transient failure, or the
+      // weekend FX close) loadEurUsd falls back to the Tiingo backup FX provider
+      // (via the /price Worker), then today's cached spot, then the ECB rate.
+      const forceFreshFx = (opts.force ?? false) || forceAll;
       const eurUsd = await loadEurUsd(apiKey, {
         eodFallback: fx.rates.USD ?? null,
-        ttlMs: 0,
+        ttlMs: forceFreshFx ? 0 : REFRESH_EURUSD_REUSE_MS,
         tiingoProxyUrl: resolvePriceProxyUrl(config),
       });
       eurUsdNow = eurUsd.now;
@@ -2522,23 +2540,35 @@ export class App {
   private updateAllFromScratch(): void {
     // Forget every cached price so nothing is served from a stale window.
     clearPriceCaches();
-    // Forget the persisted intraday bars/tips too: the live 1D/1W graphs are
-    // rebuilt from this IndexedDB store, so a price-only wipe would leave a
-    // stale or malformed 1D/1W curve on screen (the exact thing a user resets
-    // the cache to fix). Clearing it forces those curves to rebuild from
-    // scratch on the next refresh. Best-effort: a store failure must not block
-    // the rest of the reset.
-    void this.ensureTimeSeriesStore()
-      .clear()
-      .catch(() => {
-        /* best-effort: leave the intraday store as-is if the wipe fails. */
-      });
     // Force the blob check to re-download (rather than short-circuit on an
     // unchanged version stamp) the next time it runs.
     this.metaVersion = null;
-    // Back to the dashboard, then kick off the from-scratch pulls.
+    // Back to the dashboard immediately so the reset feels responsive, then
+    // wipe the persisted intraday store and re-pull (see below — the wipe must
+    // finish before the refresh runs).
     this.exitSettings();
     this.toast("Re-pulling all prices from scratch…");
+    void this.wipeGraphStoreThenRefresh();
+  }
+
+  /**
+   * Wipe the persisted intraday bars/tips and **only then** kick off the
+   * from-scratch refresh.
+   *
+   * The live 1D/1W graphs are rebuilt from this IndexedDB store, so a price-only
+   * wipe would leave a stale or malformed curve on screen (the exact thing a
+   * user resets the cache to fix). Crucially the clear must *complete* before
+   * the refresh starts: the rebuild reads this store (smart backfill) and
+   * re-persists the live-tip breadcrumbs / bars, so a fire-and-forget wipe races
+   * the refresh and the old "in-between" values survive the reset — the bug this
+   * ordering fixes. Best-effort: a store failure must not block the re-pull.
+   */
+  private async wipeGraphStoreThenRefresh(): Promise<void> {
+    try {
+      await this.ensureTimeSeriesStore().clear();
+    } catch {
+      /* best-effort: leave the intraday store as-is if the wipe fails. */
+    }
     const session = this.sessionId;
     void this.maybeRefreshBlob(session);
     if (this.refreshing) return; // a pull is already in flight; it will repaint
