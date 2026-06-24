@@ -87,3 +87,55 @@ def test_thread_safe_under_concurrent_begin_finish() -> None:
     assert snap.active is False
     assert snap.seq == 8 * 200 * 2
     assert snap.last_update_at is not None
+
+
+def test_progress_defaults_are_inert() -> None:
+    snap = refresh_status.snapshot()
+    assert snap.historical is False
+    assert snap.progress_total == 0
+    assert snap.progress_done == 0
+    assert snap.progress_label is None
+
+
+def test_set_progress_marks_historical_and_records_stage() -> None:
+    refresh_status.begin("Cache reset re-download")
+    refresh_status.set_progress(2, 7, "Prices")
+    snap = refresh_status.snapshot()
+    assert snap.active is True
+    assert snap.historical is True
+    assert snap.progress_done == 2
+    assert snap.progress_total == 7
+    assert snap.progress_label == "Prices"
+
+
+def test_set_progress_advances_sequence() -> None:
+    before = refresh_status.sequence()
+    refresh_status.set_progress(1, 7, "Exchange rates")
+    assert refresh_status.sequence() == before + 1
+
+
+def test_finish_clears_historical_progress() -> None:
+    refresh_status.begin("Cache reset re-download")
+    refresh_status.set_progress(7, 7, "Daily snapshots")
+    refresh_status.finish("Cache reset re-download", updated=True)
+    snap = refresh_status.snapshot()
+    assert snap.active is False
+    assert snap.historical is False
+    assert snap.progress_total == 0
+    assert snap.progress_done == 0
+    assert snap.progress_label is None
+
+
+def test_progress_held_while_an_overlapping_refresh_runs() -> None:
+    # The historic download and a quick live tick can overlap; the progress must
+    # survive until the *last* refresh finishes, not the first.
+    refresh_status.begin("Cache reset re-download")
+    refresh_status.set_progress(3, 7, "Prices")
+    refresh_status.begin("Live price refresh")
+    refresh_status.finish("Live price refresh", updated=False)
+    snap = refresh_status.snapshot()
+    assert snap.active is True
+    assert snap.historical is True
+    assert snap.progress_done == 3
+    refresh_status.finish("Cache reset re-download", updated=True)
+    assert refresh_status.snapshot().historical is False

@@ -33,14 +33,25 @@ class RefreshActivity:
     """An immutable snapshot of the automatic-refresh state.
 
     ``seq`` is a monotonically increasing counter the UI uses to detect a change
-    cheaply (it advances on every :func:`begin`/:func:`finish`), so a poller can
-    skip redrawing when nothing has moved.
+    cheaply (it advances on every :func:`begin`/:func:`finish`/:func:`set_progress`),
+    so a poller can skip redrawing when nothing has moved.
+
+    ``historical``/``progress_total``/``progress_done``/``progress_label`` describe
+    a **historic-data download** in flight — a from-scratch re-pull of the full
+    price/FX/snapshot history (after a cache reset, or simply re-opening the app
+    after a long absence). They let the UI paint a small determinate progress bar
+    showing how far the historic download has got, rather than the indeterminate
+    "Updating…" cue a quick live tick gets.
     """
 
     active: bool
     source: str | None
     seq: int
     last_update_at: datetime | None
+    historical: bool = False
+    progress_done: int = 0
+    progress_total: int = 0
+    progress_label: str | None = None
 
 
 _lock = threading.Lock()
@@ -51,7 +62,18 @@ _state: dict[str, object] = {
     "source": None,
     "seq": 0,
     "last_update_at": None,
+    "historical": False,
+    "progress_done": 0,
+    "progress_total": 0,
+    "progress_label": None,
 }
+
+
+def _clear_progress() -> None:
+    _state["historical"] = False
+    _state["progress_done"] = 0
+    _state["progress_total"] = 0
+    _state["progress_label"] = None
 
 
 def begin(source: str) -> None:
@@ -66,6 +88,24 @@ def begin(source: str) -> None:
         _state["seq"] = int(_state["seq"]) + 1
 
 
+def set_progress(done: int, total: int, label: str | None = None) -> None:
+    """Record how far a historic-data download has progressed.
+
+    ``done``/``total`` are coarse stage counts (e.g. FX, prices, splits, …) and
+    ``label`` names the stage now running. The first call (``total > 0``) flags
+    the in-flight refresh as *historical* so the UI switches from the plain
+    "Updating…" cue to a determinate progress bar. Best-effort and idempotent:
+    safe to call even when no refresh is active. Advances ``seq`` so pollers
+    notice the move.
+    """
+    with _lock:
+        _state["historical"] = total > 0
+        _state["progress_done"] = max(0, done)
+        _state["progress_total"] = max(0, total)
+        _state["progress_label"] = label
+        _state["seq"] = int(_state["seq"]) + 1
+
+
 def finish(source: str, *, updated: bool) -> None:
     """Mark an automatic refresh as finished.
 
@@ -77,6 +117,9 @@ def finish(source: str, *, updated: bool) -> None:
         _state["depth"] = max(0, int(_state["depth"]) - 1)
         if int(_state["depth"]) == 0:
             _state["source"] = None
+            # The historic download (if any) is done — drop its progress so the
+            # next quick tick shows the plain cue, not a stale full bar.
+            _clear_progress()
         if updated:
             _state["last_update_at"] = datetime.now(UTC)
         _state["seq"] = int(_state["seq"]) + 1
@@ -90,6 +133,10 @@ def snapshot() -> RefreshActivity:
             source=_state["source"],  # type: ignore[arg-type]
             seq=int(_state["seq"]),
             last_update_at=_state["last_update_at"],  # type: ignore[arg-type]
+            historical=bool(_state["historical"]),
+            progress_done=int(_state["progress_done"]),
+            progress_total=int(_state["progress_total"]),
+            progress_label=_state["progress_label"],  # type: ignore[arg-type]
         )
 
 
@@ -106,3 +153,4 @@ def reset() -> None:
         _state["source"] = None
         _state["seq"] = 0
         _state["last_update_at"] = None
+        _clear_progress()

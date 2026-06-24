@@ -189,6 +189,53 @@ html, body {{
   .inv-refresh-icon.inv-refresh-spin {{ animation: none; }}
   .inv-refresh-icon.inv-refresh-live {{ animation: none; }}
   #inv-refreshbar.is-active {{ animation: none; }}
+  #inv-history-progress-fill {{ transition: none; }}
+}}
+
+/* Small bottom-corner determinate progress bar shown while a from-scratch
+   historic re-download runs (after a cache reset, or re-opening the app after a
+   long absence). Hidden until ``.is-active`` so it never clutters an idle page.
+   Sits in the corner, clear of the centred toasts/notifications. */
+#inv-history-progress {{
+  position: fixed;
+  left: max(12px, env(safe-area-inset-left, 0px));
+  bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  z-index: 100002;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 220px;
+  max-width: 60vw;
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--inv-accent);
+  background: var(--inv-surface);
+  border: 1px solid var(--inv-hairline);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}}
+#inv-history-progress.is-active {{
+  opacity: 1;
+  transform: translateY(0);
+}}
+#inv-history-progress-track {{
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--inv-accent) 18%, transparent);
+  overflow: hidden;
+}}
+#inv-history-progress-fill {{
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: var(--inv-accent);
+  transition: width 0.3s ease;
 }}
 
 /* ------------------------------------------------------------------ */
