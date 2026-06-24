@@ -8,7 +8,7 @@ import threading
 from nicegui import app, ui
 
 from investment_dashboard import __version__
-from investment_dashboard.boot import run_boot_sequence, run_deferred_network_refresh
+from investment_dashboard.boot import run_boot_sequence
 from investment_dashboard.config import get_settings
 from investment_dashboard.logging import configure_logging
 from investment_dashboard.ui import connectivity
@@ -89,26 +89,9 @@ def _live_refresh_tick() -> None:  # pragma: no cover - background loop
 
 def _run_deferred_network_refresh_guarded() -> None:  # pragma: no cover - thread body
     """Run the deferred refresh, recording any unexpected failure for the UI."""
-    from investment_dashboard.services import refresh_status  # noqa: PLC0415
+    from investment_dashboard.boot import run_full_history_refresh  # noqa: PLC0415
 
-    refresh_status.begin("Startup data refresh")
-    updated = False
-    try:
-        run_deferred_network_refresh()
-        updated = True
-        # Success: clear any stale startup-refresh failure from a prior boot/run.
-        from investment_dashboard.services import runtime_status  # noqa: PLC0415
-
-        runtime_status.resolve("Startup data refresh")
-    except Exception as exc:
-        log.warning(
-            "deferred startup refresh failed", exc_info=True, extra={"runtime_status_skip": True}
-        )
-        from investment_dashboard.services import runtime_status  # noqa: PLC0415
-
-        runtime_status.record_error("Startup data refresh", f"{type(exc).__name__}: {exc}")
-    finally:
-        refresh_status.finish("Startup data refresh", updated=updated)
+    run_full_history_refresh("Startup data refresh")
 
 
 def _start_deferred_network_refresh() -> None:

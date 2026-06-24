@@ -906,24 +906,82 @@ def run_deferred_network_refresh() -> None:
     renders straight away from cached data and quietly updates once the refresh
     lands (the periodic live-refresh timer keeps it current thereafter).
 
+    Each stage reports its progress to
+    :mod:`investment_dashboard.services.refresh_status`, so the UI can paint a
+    small determinate "downloading history…" bar — the same historic re-pull runs
+    after a cache reset and when re-opening the app after a long absence, and in
+    every case the user can see it working rather than wondering if anything is.
+
     Like the in-sequence refresh it is best-effort: every failure is logged and
     swallowed so an offline machine still gets a working dashboard.
     """
     import time as _time  # noqa: PLC0415
 
+    from investment_dashboard.services import refresh_status  # noqa: PLC0415
+
+    # Ordered stages of the full historic re-download. The labels are what the
+    # progress bar shows as each one runs; keep them short and user-legible.
+    steps: tuple[tuple[str, object], ...] = (
+        ("Exchange rates", _refresh_fx),
+        ("Transaction history", _backfill_transaction_legs),
+        ("Prices", _refresh_prices),
+        ("Live FX", _refresh_live_fx),
+        ("Stock splits", _refresh_splits),
+        ("Benchmark", _refresh_benchmark),
+        ("Daily snapshots", _warm_snapshots),
+    )
+    total = len(steps)
+
     started = _time.monotonic()
     log.info("deferred network refresh: starting (FX, prices, splits, benchmark, snapshots)")
-    _refresh_fx()
-    _backfill_transaction_legs()
-    _refresh_prices()
-    _refresh_live_fx()
-    _refresh_splits()
-    _refresh_benchmark()
-    # Rebuild the snapshot cache in place (no delete-all window — see
-    # _warm_snapshots) so a full-history page like /yearly never cold-recomputes
-    # its daily curve on the request thread.
-    _warm_snapshots()
+    for index, (label, step) in enumerate(steps):
+        # Announce the stage *before* running it so the bar names what is being
+        # downloaded right now; advance the completed count after it returns.
+        refresh_status.set_progress(index, total, label)
+        step()  # type: ignore[operator]
+        refresh_status.set_progress(index + 1, total, label)
     log.info(
         "deferred network refresh: complete in %.1fs",
         _time.monotonic() - started,
     )
+
+
+def run_full_history_refresh(source: str) -> bool:
+    """Run the full historic re-download, wrapped in the activity + error cues.
+
+    Shared by the startup deferred refresh and the post-cache-reset re-pull so
+    both animate the header chip and the bottom-corner historic-download progress
+    bar (via :mod:`investment_dashboard.services.refresh_status`) and surface any
+    failure on the runtime-error strip. Returns ``True`` when the sequence ran to
+    completion. Never raises — a failure is logged, recorded and swallowed.
+    """
+    from investment_dashboard.services import refresh_status, runtime_status  # noqa: PLC0415
+
+    refresh_status.begin(source)
+    ok = False
+    try:
+        run_deferred_network_refresh()
+        ok = True
+        runtime_status.resolve(source)
+    except Exception as exc:
+        log.warning("%s failed", source, exc_info=True, extra={"runtime_status_skip": True})
+        runtime_status.record_error(source, f"{type(exc).__name__}: {exc}")
+    finally:
+        refresh_status.finish(source, updated=ok)
+    return ok
+
+
+def start_full_history_refresh(source: str) -> None:
+    """Kick off :func:`run_full_history_refresh` on a daemon thread (non-blocking).
+
+    Used by the Settings "Reset cached market data" action so the wiped price /
+    FX / snapshot history is re-downloaded straight away — visibly, via the
+    progress bar — instead of waiting for the next app restart.
+    """
+    import threading  # noqa: PLC0415
+
+    threading.Thread(
+        target=lambda: run_full_history_refresh(source),
+        name="inv-dashboard-history-refresh",
+        daemon=True,
+    ).start()

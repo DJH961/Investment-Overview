@@ -34,7 +34,13 @@ POLL_INTERVAL_SECONDS = 1.5
 #: Re-exported from :mod:`domain.market_hours` so the header chip, the per-row
 #: "As Of" badge and the Daily Growth caption all share one definition of how
 #: recently a price must have landed to count as "live".
-__all__ = ["LIVE_PRICE_WINDOW_SECONDS", "decide_reload", "is_live_now"]
+__all__ = [
+    "LIVE_PRICE_WINDOW_SECONDS",
+    "decide_reload",
+    "history_progress_percent",
+    "history_progress_text",
+    "is_live_now",
+]
 
 #: If a user-initiated refresh hasn't finished within this window, repaint the
 #: page anyway ("page first") so it never feels stuck, then reload once more when
@@ -98,6 +104,32 @@ def is_live_now(
     return feed_is_fresh(last_update_at, now, window_seconds=window_seconds)
 
 
+def history_progress_percent(done: int, total: int) -> int:
+    """Fill percentage (0–100, clamped + rounded) for the historic-download bar.
+
+    Pure (no side effects) so it can be unit-tested. ``done``/``total`` are the
+    coarse stage counts of a full historic re-download. A non-positive total
+    reads as complete, so the bar never sticks empty when there is no work.
+    """
+    if total <= 0:
+        return 100
+    ratio = done / total
+    clamped = 0.0 if ratio < 0 else 1.0 if ratio > 1 else ratio
+    return round(clamped * 100)
+
+
+def history_progress_text(done: int, total: int, label: str | None) -> str:
+    """Caption for the historic-download progress bar (e.g. "Prices · 3/7").
+
+    Pure (no side effects). Falls back to a generic heading when no stage label
+    is supplied so the bar always reads sensibly.
+    """
+    stage = label or "Downloading history"
+    if total <= 0:
+        return stage
+    return f"{stage} \u00b7 {min(done, total)}/{total}"
+
+
 def install_header_indicator(tz: tzinfo | None = None) -> None:  # noqa: PLR0915 - one cohesive widget builder
     """Render the auto-refresh chip and a timer that keeps it in sync.
 
@@ -121,6 +153,18 @@ def install_header_indicator(tz: tzinfo | None = None) -> None:  # noqa: PLR0915
     # Thin top-of-page progress bar — pulses while a refresh runs. Rendered once
     # per page; toggled via its CSS class from the poll below.
     ui.add_body_html('<div id="inv-refreshbar" aria-hidden="true"></div>')
+
+    # Small bottom-corner *determinate* progress bar shown only while a historic
+    # re-download is in flight (after a cache reset, or re-opening the app after a
+    # long absence). It names the stage and fills as the download advances, so the
+    # historic reload is unmistakably visible rather than a silent background pull.
+    ui.add_body_html(
+        '<div id="inv-history-progress" role="progressbar" aria-label="Downloading price history" '
+        'aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">'
+        '<div id="inv-history-progress-text"></div>'
+        '<div id="inv-history-progress-track"><div id="inv-history-progress-fill"></div></div>'
+        "</div>"
+    )
 
     # Per-client bookkeeping for a user-initiated update. ``since_seq`` is the
     # activity counter captured when the user clicked; the refresh is "done" once
@@ -182,6 +226,43 @@ def install_header_indicator(tz: tzinfo | None = None) -> None:  # noqa: PLR0915
             f"if(b)b.classList.toggle('is-active',{str(active).lower()});"
         )
 
+    # Track the last-applied history-bar visual so a quiet poll (nothing moved)
+    # doesn't keep shipping identical DOM updates over the socket.
+    history_state: dict[str, object] = {"shown": None, "pct": -1, "text": None}
+
+    def _update_history_bar(snap: refresh_status.RefreshActivity) -> None:
+        # A historic re-download is in flight when a refresh is active *and* it
+        # flagged itself as historical with a positive stage total. Anything else
+        # (a quick live tick, idle) hides the bar.
+        show = bool(snap.active and snap.historical and snap.progress_total > 0)
+        pct = history_progress_percent(snap.progress_done, snap.progress_total) if show else 0
+        text = history_progress_text(snap.progress_done, snap.progress_total, snap.progress_label)
+        if (
+            history_state["shown"] == show
+            and history_state["pct"] == pct
+            and (not show or history_state["text"] == text)
+        ):
+            return
+        history_state["shown"] = show
+        history_state["pct"] = pct
+        history_state["text"] = text
+        # Drive the bar straight on the DOM (id-scoped) so the fill animates and
+        # the caption updates without rebuilding any server-side element. ``text``
+        # is composed from our own fixed stage labels, so a JSON dump is safe.
+        import json  # noqa: PLC0415
+
+        ui.run_javascript(
+            "var p=document.getElementById('inv-history-progress');"
+            "if(p){"
+            f"p.classList.toggle('is-active',{str(show).lower()});"
+            f"p.setAttribute('aria-valuenow',{pct});"
+            "var f=document.getElementById('inv-history-progress-fill');"
+            f"if(f)f.style.width={json.dumps(f'{pct}%')};"
+            "var t=document.getElementById('inv-history-progress-text');"
+            f"if(t)t.textContent={json.dumps(text)};"
+            "}"
+        )
+
     def _maybe_handle_pending() -> bool:
         """Reload the page when a user-initiated refresh warrants it.
 
@@ -239,6 +320,9 @@ def install_header_indicator(tz: tzinfo | None = None) -> None:  # noqa: PLR0915
             tip.set_text("Automatic price updates are on — click to refresh now")
 
     def _poll() -> None:
+        # Drive the historic-download bar first, every tick, so it keeps filling
+        # even while the chip sits on its cached "Updating…" visual.
+        _update_history_bar(refresh_status.snapshot())
         if _maybe_handle_pending():
             return
         snap = refresh_status.snapshot()

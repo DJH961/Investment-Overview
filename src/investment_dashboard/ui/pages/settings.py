@@ -692,7 +692,8 @@ _RESET_OPTIONS = (
         "Reset cached market data",
         "Clears downloaded prices, FX rates, splits, the intraday samples "
         "behind the 1D/1W graphs and position snapshots. They are "
-        "re-downloaded and recomputed automatically on the next refresh.",
+        "re-downloaded and recomputed right away — a small progress bar in the "
+        "corner shows the history reloading.",
         "Keeps every account, instrument, transaction and setting.",
         "refresh",
     ),
@@ -734,8 +735,18 @@ def _perform_reset(level_value: str) -> None:  # pragma: no cover - UI
     )
     if level_value == "everything":
         ui.navigate.to("/onboarding")
-    else:
-        _settings_refresh()
+        return
+    # A cache/transactions reset just wiped the downloaded price, FX, split and
+    # snapshot history. Re-download it *now*, in the background, so the graphs and
+    # historical figures come back on their own — visibly, via the header chip and
+    # the bottom-corner "downloading history…" progress bar — instead of silently
+    # waiting for the next app restart's deferred refresh (the "it never reloaded
+    # the history after a reset" bug).
+    from investment_dashboard.boot import start_full_history_refresh  # noqa: PLC0415
+
+    start_full_history_refresh("Cache reset re-download")
+    ui.notify("Re-downloading price history…", type="ongoing", timeout=2500)
+    _settings_refresh()
 
 
 def _open_reset_dialog(

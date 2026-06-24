@@ -96,3 +96,27 @@ def test_future_timestamp_is_not_live() -> None:
         last_update_at=_NOW + timedelta(seconds=30),
         now=_NOW,
     )
+
+
+def test_history_progress_percent_clamps_and_rounds() -> None:
+    from investment_dashboard.ui.refresh_indicator import history_progress_percent
+
+    assert history_progress_percent(0, 7) == 0
+    assert history_progress_percent(7, 7) == 100
+    assert history_progress_percent(3, 7) == 43  # 42.857… rounds to 43
+    # Out-of-range inputs are clamped rather than overflowing the bar.
+    assert history_progress_percent(9, 7) == 100
+    assert history_progress_percent(-1, 7) == 0
+    # No work to do reads as complete, so the bar never sticks empty.
+    assert history_progress_percent(0, 0) == 100
+
+
+def test_history_progress_text_names_stage_and_counts() -> None:
+    from investment_dashboard.ui.refresh_indicator import history_progress_text
+
+    assert history_progress_text(2, 7, "Prices") == "Prices \u00b7 2/7"
+    # ``done`` never reads past ``total`` in the caption.
+    assert history_progress_text(9, 7, "Snapshots") == "Snapshots \u00b7 7/7"
+    # Missing label falls back to a generic heading; zero total drops the count.
+    assert history_progress_text(0, 0, None) == "Downloading history"
+    assert history_progress_text(1, 0, "Prices") == "Prices"
