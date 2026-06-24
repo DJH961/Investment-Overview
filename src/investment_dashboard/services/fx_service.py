@@ -40,10 +40,10 @@ log = logging.getLogger(__name__)
 DEFAULT_QUOTES: tuple[str, ...] = ("USD",)
 
 _PROVIDER = "frankfurter"
-#: Legacy provider tag for any yfinance ``EURUSD=X`` end-of-day rows. The
-#: ECB/Frankfurter fixings are the sole source of record for FX history; the
-#: boot purge (:func:`purge_legacy_yfinance_fx_history`) retires any lingering
-#: yfinance-sourced rows so ECB reclaims those dates.
+#: Legacy provider tag for yfinance ``EURUSD=X`` end-of-day rows. **No longer
+#: written** — ECB/Frankfurter is the sole source of record for FX history.
+#: Retained only so the boot purge (:func:`purge_legacy_yfinance_fx_history`)
+#: can retire any lingering yfinance-sourced rows and let ECB reclaim the dates.
 _YF_PROVIDER = "yfinance"
 #: Provider tag for the budget-gated Tiingo FX history gap-filler (today's tip
 #: only) — engaged when Frankfurter errors/returns nothing.
