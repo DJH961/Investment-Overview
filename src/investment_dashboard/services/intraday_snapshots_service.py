@@ -130,20 +130,20 @@ _WEEK_FETCHED_PREFIX = "intraday_week_fetched:"
 #: Number of recent trading sessions the Overview "Week" (1W) curve spans.
 WEEK_SESSIONS = 5
 
-#: Bar width used to source the "Week" curve's intraday path. Only three points
-#: per day are kept (start / midday / close), so a coarse bar is plenty and keeps
-#: the multi-day download small.
+#: Bar width used to source the "Week" curve's intraday path. A handful of
+#: representative points per day are kept (open / +1/4 / midday / +3/4 / close),
+#: so a coarse bar is plenty and keeps the multi-day download small.
 WEEK_INTERVAL = "30m"
 
 #: How many representative intraday points a *completed* week session should
-#: carry once fully sourced — the start / midday / close triplet
-#: :func:`_pick_open_mid_close` keeps. A finished session holding fewer than this
+#: carry once fully sourced — the open / +1/4 / midday / +3/4 / close span
+#: :func:`_pick_session_points` keeps. A finished session holding fewer than this
 #: is treated as missing data and re-pulled (see ``_is_covered`` in
 #: :func:`week_series_with_fx`), so a partial earlier fetch or a single stray live
 #: capture can't freeze a day at an incomplete curve. The in-progress session is
 #: exempt: its close hasn't happened yet, so it grows from live captures and any
 #: sample counts.
-WEEK_POINTS_PER_COMPLETE_SESSION = 3
+WEEK_POINTS_PER_COMPLETE_SESSION = 5
 
 #: Smallest share count treated as a real holding (mirrors the Overview filter).
 _MIN_SHARES = Decimal("0.0000001")
@@ -817,22 +817,28 @@ def week_window_start_utc(now: datetime | None = None) -> datetime:
     return _week_window_start_for(last_session_date(now))
 
 
-def _pick_open_mid_close(bar_times: list[datetime]) -> list[datetime]:
-    """Choose a day's start / midday / close instants from its sorted bar times.
+def _pick_session_points(bar_times: list[datetime]) -> list[datetime]:
+    """Choose a day's representative instants from its sorted bar times.
 
-    Returns up to three distinct timestamps (fewer when the day has fewer bars):
-    the first bar (start), the bar nearest the open→close midpoint (midday) and
-    the last bar (close). Preserves chronological order.
+    Returns up to :data:`WEEK_POINTS_PER_COMPLETE_SESSION` distinct timestamps
+    (fewer when the day has fewer bars): the bars nearest equally-spaced fractions
+    of the open→close span — open, +1/4, midday, +3/4, close — so the finer time
+    scale carries each day's intraday shape instead of a coarse step. The first
+    (open) and last (close) instants are kept exact so the day's endpoints still
+    match the settled values. Preserves chronological order.
     """
     if not bar_times:
         return []
-    if len(bar_times) <= 3:
+    n = WEEK_POINTS_PER_COMPLETE_SESSION
+    if len(bar_times) <= n:
         return list(bar_times)
     first, last = bar_times[0], bar_times[-1]
-    midpoint = first + (last - first) / 2
-    mid = min(bar_times, key=lambda t: abs((t - midpoint).total_seconds()))
-    chosen = sorted({first, mid, last})
-    return chosen
+    span = last - first
+    chosen: set[datetime] = set()
+    for i in range(n):
+        target = first + span * (i / (n - 1))
+        chosen.add(min(bar_times, key=lambda t, tt=target: abs((t - tt).total_seconds())))
+    return sorted(chosen)
 
 
 def week_series_with_fx(
@@ -843,7 +849,7 @@ def week_series_with_fx(
     fetcher: object | None = None,
     fx_fetcher: object | None = None,
 ) -> list[tuple[datetime, Decimal, Decimal | None]]:
-    """Start / midday / close market-component samples over the last week's sessions.
+    """Open / +1/4 / midday / +3/4 / close market-component samples over the week.
 
     Returns ``[(at_utc, market_value_eur, fx_eur_usd), ...]`` (oldest first) — the
     same shape as :func:`day_series_with_fx`, so the render path
@@ -853,8 +859,8 @@ def week_series_with_fx(
     EUR/USD rate, so the two currency lines genuinely diverge across the week.
 
     Each session is repriced against *that day's* held positions (so a buy or
-    sell mid-week is reflected), with three representative instants kept per day
-    for a smooth-yet-cheap curve.
+    sell mid-week is reflected), with up to five representative instants kept per
+    day (open / +1/4 / midday / +3/4 / close) for a smooth-yet-cheap curve.
 
     **Cache-first.** The rolling-week intraday cache (live "1 Day" captures plus
     previously-fetched/reconstructed earlier days — all on the identical EUR
@@ -886,13 +892,13 @@ def week_series_with_fx(
     window_end = min(_to_naive_utc(now), _session_start_utc(sessions[-1] + timedelta(days=1)))
 
     # 1. Cache first — the rolling week already on hand. A *completed* (earlier)
-    #    session is covered only once it holds its full start/midday/close
-    #    triplet, so a partial earlier fetch or a single stray live capture no
-    #    longer freezes a day at an incomplete curve — it is re-pulled to fill the
-    #    gaps. The current/anchor session is exempt: its close may not have
-    #    happened yet and it grows from today's dense live captures, so any sample
-    #    counts and it is never re-downloaded (those live points are denser than a
-    #    coarse re-fetch and must be preserved).
+    #    session is covered only once it holds its full open / +1/4 / midday /
+    #    +3/4 / close span, so a partial earlier fetch or a single stray live
+    #    capture no longer freezes a day at an incomplete curve — it is re-pulled
+    #    to fill the gaps. The current/anchor session is exempt: its close may not
+    #    have happened yet and it grows from today's dense live captures, so any
+    #    sample counts and it is never re-downloaded (those live points are denser
+    #    than a coarse re-fetch and must be preserved).
     with cache_read_session(session) as cache:
         cached = [
             (r.captured_at, r.market_value_eur, r.fx_eur_usd)
@@ -910,7 +916,7 @@ def week_series_with_fx(
             # dense live captures, so any sample counts and it is never
             # re-downloaded (those live points are denser than a coarse re-fetch
             # and must be preserved). Once its close has passed it becomes a
-            # *finished* session like any other and must carry the full triplet —
+            # *finished* session like any other and must carry its full span —
             # so a day left with only a stray capture (live feed or reconstruction
             # stalled) is re-pulled to fill its gaps rather than frozen at one
             # point.
@@ -962,7 +968,7 @@ def _build_week_day_samples(
     bars_by_symbol: dict[str, dict[datetime, Decimal]],
     fx_bars: dict[datetime, Decimal],
 ) -> list[tuple[datetime, Decimal, Decimal | None]]:
-    """Start / midday / close market-component samples for one session day."""
+    """Open / +1/4 / midday / +3/4 / close market-component samples for one session day."""
     from investment_dashboard.services import fx_service  # noqa: PLC0415
 
     start = _session_start_utc(session_date)
@@ -979,7 +985,7 @@ def _build_week_day_samples(
         else None
     )
     samples: list[tuple[datetime, Decimal, Decimal | None]] = []
-    for t in _pick_open_mid_close(day_bar_times):
+    for t in _pick_session_points(day_bar_times):
         fx_t = _forward_filled(fx_bars, t) if fx_bars else None
         point_fx = fx_t or base_fx
         market = _market_component_pivot_eur(priced, bars_by_symbol, t, fx_t=fx_t, base_fx=base_fx)

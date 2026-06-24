@@ -757,8 +757,8 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
     ``intraday`` switches the x-axis + hover to a time-of-day read-out for the
     "1 Day" range, whose points are timestamps within a single session. ``week``
     keeps the multi-day "1 Week" curve's datetime x-axis on a weekday/date grid
-    while showing the time of day in the hover (its points are start/midday/close
-    instants across several sessions).
+    while showing the time of day in the hover (its points are open / +1/4 /
+    midday / +3/4 / close instants across several sessions).
 
     ``secondary`` (with ``secondary_currency``) adds a comparison line for the
     *other* currency on a right-hand axis, scaled so both lines share the same
@@ -1206,9 +1206,10 @@ def register() -> None:  # noqa: PLR0915
                             session, currency=display_ccy
                         )
                     elif range_label == "Week":
-                        # Multi-day intraday curve (start/midday/close per session),
-                        # inspired by the "1 Day" curve. Built in both currencies so
-                        # the right-axis comparison line shares the same start.
+                        # Multi-day intraday curve (open / +1/4 / midday / +3/4 /
+                        # close per session), inspired by the "1 Day" curve. Built
+                        # in both currencies so the right-axis comparison line
+                        # shares the same start.
                         value_series = build_week_value_series(
                             session, currency=display_ccy, tz=display_tz, positions=positions
                         )

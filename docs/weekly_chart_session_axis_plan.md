@@ -87,16 +87,17 @@ Wiring: `ui.ts applyLive("1W")` passes `collapseSessions: true` into
 Tests: `web/test` unit for `sessionFractions` (equal bands, gutters, boundary
 indexes) and a `linePath` break-at-boundary check.
 
-## Density: 5 points per trading day (both sides)
-- Today the week curve emits **3** points/session (open / midday / close). With
-  the gaps collapsed and each day now occupying a real band, raise the **minimum
-  to 5 points/session** (e.g. open, +1/4, midday, +3/4, close) so the finer
+## Density: 5 points per trading day (both sides) — DONE
+- The week curve previously emitted **3** points/session (open / midday / close).
+  With the gaps collapsed and each day now occupying a real band, the **minimum
+  is raised to 5 points/session** (open, +1/4, midday, +3/4, close) so the finer
   time scale carries more shape instead of three coarse steps.
-- Python: extend `build_week_value_series` /
-  `intraday_snapshots_service.week_series_with_fx` to sample 5 intra-session
-  instants per day.
-- Web: extend the 1W daily reconstruction in `week.ts` to yield 5 bars/day.
-- Keep first/last (open/close) exact so the day's endpoints still match the
+- Python: `intraday_snapshots_service._pick_session_points` samples 5 evenly-spaced
+  intra-session instants per day, and `WEEK_POINTS_PER_COMPLETE_SESSION = 5` gates
+  coverage so a finished day must carry the full span before it counts as covered.
+- Web: `intraday-tiingo.barsFromTiingoDaily` reconstructs 5 bars/day from each
+  daily OHLC candle (open/close exact; the high/low + mid-range fill the interior).
+- First/last (open/close) stay exact so the day's endpoints still match the
   settled values.
 
 ## Shared notes

@@ -77,14 +77,23 @@ function dayFromBarDate(value: unknown): string | null {
 }
 
 /**
- * Turn a Tiingo **daily** `prices` array into ascending bars carrying *both* the
- * session **open** and **close** — two points per trading day instead of one —
- * so the 1W curve reads as a richer line that captures each day's intraday swing
- * rather than only its settling close. Each row's `date` is a calendar day; the
- * open bar is stamped at that day's 09:30 ET, the close at 16:00 ET (the genuine
- * session bounds), so the points land at meaningful instants on the time axis.
- * Rows missing a usable day are dropped; a row missing one of open/close still
- * contributes the price it does have.
+ * Turn a Tiingo **daily** `prices` array into ascending bars carrying up to
+ * **five** points per trading day — the session **open**, three interior instants
+ * (+1/4, midday, +3/4) reconstructed from that day's high/low range, and the
+ * **close** — so the 1W curve reads as a richer line that captures each day's
+ * intraday swing rather than only its settling close. Each row's `date` is a
+ * calendar day; the open bar is stamped at that day's 09:30 ET, the close at
+ * 16:00 ET (the genuine session bounds), and the interior bars at the matching
+ * quarter/half fractions of the session, so every point lands at a meaningful
+ * instant on the time axis.
+ *
+ * The open and close are kept *exact* (the day's settled endpoints). The interior
+ * silhouette is reconstructed from the day's high/low using the usual OHLC
+ * heuristic — an up day (close ≥ open) dips to the low then climbs to the high, a
+ * down day spikes to the high then falls to the low — with the mid-range
+ * ((high+low)/2) at midday. Rows missing a usable day are dropped; a row missing
+ * part of its candle still contributes the open/close prices it does have (the
+ * interior swing is added only for a complete OHLC row).
  */
 export function barsFromTiingoDaily(body: unknown): Bar[] {
   if (!Array.isArray(body)) return [];
@@ -96,8 +105,25 @@ export function barsFromTiingoDaily(body: unknown): Bar[] {
     if (day === null) continue;
     const open = parseDecimal(node.open);
     const close = parseDecimal(node.close);
-    if (open !== null) bars.push({ t: sessionOpenMs(day), value: open });
-    if (close !== null) bars.push({ t: sessionCloseMs(day), value: close });
+    const high = parseDecimal(node.high);
+    const low = parseDecimal(node.low);
+    const openMs = sessionOpenMs(day);
+    const closeMs = sessionCloseMs(day);
+    if (open !== null) bars.push({ t: openMs, value: open });
+    // Interior swing — only for a *complete* OHLC candle, so a partial row keeps
+    // its prior open/close-only behaviour. Real high/low at the quarter instants,
+    // the mid-range at midday; up vs down day orders the high/low excursions.
+    if (open !== null && close !== null && high !== null && low !== null) {
+      const span = closeMs - openMs;
+      const mid = high.plus(low).div(2);
+      const upDay = close.greaterThanOrEqualTo(open);
+      const firstExcursion = upDay ? low : high;
+      const lastExcursion = upDay ? high : low;
+      bars.push({ t: Math.round(openMs + span * 0.25), value: firstExcursion });
+      bars.push({ t: Math.round(openMs + span * 0.5), value: mid });
+      bars.push({ t: Math.round(openMs + span * 0.75), value: lastExcursion });
+    }
+    if (close !== null) bars.push({ t: closeMs, value: close });
   }
   bars.sort((a, b) => a.t - b.t);
   return bars;
@@ -198,8 +224,9 @@ export async function fetchTiingoIntradayBars(
         { retryable: false },
       );
     }
-    // The daily feed (1W curve) carries OHLC per day, so we take both the open
-    // and the close for a richer line; the intraday feed marks off the close.
+    // The daily feed (1W curve) carries OHLC per day, so we reconstruct up to
+    // five points per session (open / +1/4 / midday / +3/4 / close) for a richer
+    // line; the intraday feed marks off the close.
     result.set(symbol, param === "daily" ? barsFromTiingoDaily(body) : barsFromTiingoIntraday(body));
   }
   return result;
