@@ -26,6 +26,7 @@
 import {
   appendLiveTip,
   intradaySymbols,
+  rebaseBreadcrumbs,
   type IntradayAnchor,
   type LiveTip,
   type BarFetcher,
@@ -41,7 +42,7 @@ import {
   type CurvePoint,
   type ReconHolding,
 } from "./timeseries";
-import { TimeSeriesStore } from "./timeseries-store";
+import { TimeSeriesStore, type Breadcrumb } from "./timeseries-store";
 
 /**
  * The store key the weekly daily-close cache lives under. Deliberately **not** a
