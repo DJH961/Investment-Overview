@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 
 import { Decimal } from "../src/decimal-config";
-import type { IntradayAnchor } from "../src/intraday";
+import type { BarFetcher, IntradayAnchor } from "../src/intraday";
 import {
   buildLiveSessionCurve,
   buildLiveWeekCurve,
@@ -20,10 +20,12 @@ import {
   recordingFxFetcher,
   sessionFxWindow,
   weekFxWindow,
+  type BackfillMeter,
   type LiveGraphProviders,
+  type SpendRequest,
 } from "../src/live-graph";
 import { memoryBackend, TimeSeriesStore } from "../src/timeseries-store";
-import type { FetchLike } from "../src/prices";
+import { PriceError, type FetchLike } from "../src/prices";
 import type { Bar } from "../src/timeseries";
 
 const d = (v: string | number): Decimal => new Decimal(v);
@@ -50,6 +52,38 @@ function recordingFetch(body: unknown = []): { calls: string[]; fetchImpl: Fetch
     return { ok: true, status: 200, json: async () => body } as unknown as Response;
   };
   return { calls, fetchImpl };
+}
+
+/** A two-phase {@link BackfillMeter} that records every reserve/settle/refund. */
+function recordingMeter(): {
+  meter: BackfillMeter;
+  events: Array<{ phase: "reserve" | "settle" | "refund"; req: SpendRequest & { bars?: number; reason?: string } }>;
+  /** Net credits left on the ledger: reservations minus refunds (settle is a no-op debit). */
+  net: () => number;
+} {
+  const events: Array<{ phase: "reserve" | "settle" | "refund"; req: SpendRequest & { bars?: number; reason?: string } }> = [];
+  const meter: BackfillMeter = {
+    reserve: (req) => events.push({ phase: "reserve", req }),
+    settle: (req) => events.push({ phase: "settle", req }),
+    refund: (req) => events.push({ phase: "refund", req }),
+  };
+  const net = (): number =>
+    events.reduce(
+      (acc, e) => acc + (e.phase === "reserve" ? e.req.n : e.phase === "refund" ? -e.req.n : 0),
+      0,
+    );
+  return { meter, events, net };
+}
+
+/** A fetch stub that answers every request with a fixed HTTP status + body. */
+function statusFetch(status: number, body: unknown = []): FetchLike {
+  return async () =>
+    ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      json: async () => body,
+    }) as unknown as Response;
 }
 
 describe("FX windows", () => {
@@ -225,60 +259,116 @@ describe("buildLiveWeekCurve", () => {
   });
 });
 
-describe("credit accounting (live-graph backfills count against a source budget)", () => {
-  it("recordingBarFetcher books one credit per requested symbol on success", async () => {
-    const spends: number[] = [];
+describe("two-phase credit accounting (reserve up-front, settle on result)", () => {
+  it("recordingBarFetcher reserves one credit per symbol up-front and settles on success", async () => {
     const inner = async (symbols: string[]) =>
       new Map<string, Bar[]>(symbols.map((s) => [s, [{ t: 1, value: d(1) }]]));
-    const fetcher = recordingBarFetcher(inner, (n) => spends.push(n));
+    const { meter, events, net } = recordingMeter();
+    const fetcher = recordingBarFetcher(inner, meter);
     await fetcher(["AAPL", "MSFT", "AAPL", "  "]); // dedup + blank-drop ⇒ 2
-    expect(spends).toEqual([2]);
+    expect(events.map((e) => e.phase)).toEqual(["reserve", "settle"]);
+    expect(events[0].req).toMatchObject({ n: 2, leg: "bars", symbols: ["AAPL", "MSFT"] });
+    expect(net()).toBe(2);
   });
 
-  it("recordingBarFetcher books nothing when the inner pipe throws", async () => {
-    const spends: number[] = [];
-    const inner = async (): Promise<Map<string, Bar[]>> => {
-      throw new Error("429");
+  it("recordingBarFetcher reserves before the network resolves (paces concurrent dispatches)", async () => {
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>((r) => (release = r));
+    const inner: BarFetcher = async (symbols) => {
+      await gate;
+      return new Map<string, Bar[]>(symbols.map((s) => [s, []]));
     };
-    const fetcher = recordingBarFetcher(inner, (n) => spends.push(n));
-    await expect(fetcher(["AAPL"])).rejects.toThrow();
-    expect(spends).toEqual([]);
+    const { meter, events } = recordingMeter();
+    const pending = recordingBarFetcher(inner, meter)(["AAPL"]);
+    // The reservation is already on the books while the call is still in flight.
+    expect(events.map((e) => e.phase)).toEqual(["reserve"]);
+    release!();
+    await pending;
+    expect(events.map((e) => e.phase)).toEqual(["reserve", "settle"]);
   });
 
-  it("recordingFxFetcher books one credit per successful FX pull", async () => {
-    const spends: number[] = [];
-    const fetcher = recordingFxFetcher(async () => [], (n) => spends.push(n));
-    await fetcher();
-    expect(spends).toEqual([1]);
+  it("recordingBarFetcher refunds the reservation when the pipe throws (not billed)", async () => {
+    const inner = async (): Promise<Map<string, Bar[]>> => {
+      throw new PriceError("429");
+    };
+    const { meter, events, net } = recordingMeter();
+    await expect(recordingBarFetcher(inner, meter)(["AAPL"])).rejects.toThrow();
+    expect(events.map((e) => e.phase)).toEqual(["reserve", "refund"]);
+    expect(net()).toBe(0);
+  });
+
+  it("recordingFxFetcher settles a returned FX pull (reached the meter, even when empty)", async () => {
+    const { meter, events, net } = recordingMeter();
+    await recordingFxFetcher(async () => [], meter)();
+    expect(events.map((e) => e.phase)).toEqual(["reserve", "settle"]);
+    expect(events[0].req).toMatchObject({ n: 1, leg: "fx", symbols: ["eurusd"] });
+    expect(net()).toBe(1);
+  });
+
+  it("recordingFxFetcher refunds a thrown FX pull (the Worker-400 phantom-charge fix)", async () => {
+    const { meter, net } = recordingMeter();
+    await expect(
+      recordingFxFetcher(async () => {
+        throw new PriceError("Tiingo FX history proxy returned HTTP 400");
+      }, meter)(),
+    ).rejects.toThrow();
+    expect(net()).toBe(0);
+  });
+
+  it("books a Tiingo 200+[] and a 404 (reached the meter) but refunds Worker rejects", async () => {
+    // A Tiingo-only price pipe (no Twelve Data fallback) so the per-status billing
+    // outcome is visible directly on the meter.
+    const cases: Array<[number, number]> = [
+      [200, 1], // empty array — reached Tiingo, billed
+      [404, 1], // ticker unknown to Tiingo — reached Tiingo, billed
+      [400, 0], // Worker rejected bad params before forwarding — not billed
+      [429, 0], // hourly reserve spent, never forwarded — not billed
+      [502, 0], // upstream fetch failed — not billed
+      [503, 0], // no token — not billed
+    ];
+    for (const [status, expected] of cases) {
+      const { meter, net } = recordingMeter();
+      const fetcher = makePriceBarFetcher({
+        apiKey: "",
+        proxyUrl: PRICE_PROXY,
+        param: "intraday",
+        fetchImpl: statusFetch(status),
+        tiingoMeter: meter,
+      })!;
+      try {
+        await fetcher(["VTI"]);
+      } catch {
+        // A pipe-level reject with no fallback configured propagates — expected.
+      }
+      expect(net(), `status ${status}`).toBe(expected);
+    }
   });
 
   it("the 1D build books the Tiingo budget for both prices and FX", async () => {
     const { fetchImpl } = recordingFetch([{ date: "2026-06-23T13:35:00.000Z", close: 100 }]);
-    const tiingo: number[] = [];
-    const twelve: number[] = [];
+    const tiingo = recordingMeter();
+    const twelve = recordingMeter();
     const store = new TimeSeriesStore(memoryBackend());
     const providers: LiveGraphProviders = {
       apiKey: "KEY",
       priceProxyUrl: PRICE_PROXY,
       fetchImpl,
-      onTiingoSpend: (n) => tiingo.push(n),
-      onTwelveDataSpend: (n) => twelve.push(n),
+      tiingoMeter: tiingo.meter,
+      twelveDataMeter: twelve.meter,
     };
     await buildLiveSessionCurve(
       { anchor: anchor(), store, now: new Date("2026-06-23T14:00:00Z") },
       providers,
     );
     // One credit for the single price symbol + one for the batched FX pull.
-    expect(tiingo).toEqual([1, 1]);
-    expect(twelve).toEqual([]);
+    expect(tiingo.net()).toBe(2);
+    expect(twelve.net()).toBe(0);
   });
 
   it("books the Twelve Data budget when prices fall back to Pipe A", async () => {
     // Tiingo prices answer empty (fallback to Twelve Data); FX still via Tiingo.
-    const calls: string[] = [];
     const fetchImpl: FetchLike = async (url) => {
       const u = String(url);
-      calls.push(u);
       const body = u.includes("fxHistory")
         ? [{ date: "2026-06-23T00:00:00.000Z", close: 1.1 }]
         : u.includes("time_series")
@@ -286,53 +376,104 @@ describe("credit accounting (live-graph backfills count against a source budget)
           : [];
       return { ok: true, status: 200, json: async () => body } as unknown as Response;
     };
-    const tiingo: number[] = [];
-    const twelve: number[] = [];
+    const tiingo = recordingMeter();
+    const twelve = recordingMeter();
     const store = new TimeSeriesStore(memoryBackend());
     const providers: LiveGraphProviders = {
       apiKey: "KEY",
       priceProxyUrl: PRICE_PROXY,
       fetchImpl,
-      onTiingoSpend: (n) => tiingo.push(n),
-      onTwelveDataSpend: (n) => twelve.push(n),
+      tiingoMeter: tiingo.meter,
+      twelveDataMeter: twelve.meter,
     };
     await buildLiveSessionCurve(
       { anchor: anchor(), store, now: new Date("2026-06-23T14:00:00Z") },
       providers,
     );
-    // Twelve Data served the price symbol (1 credit). Tiingo still spent a
-    // credit on the price attempt (an empty answer is not a throw) plus the FX.
-    expect(twelve).toEqual([1]);
-    expect(tiingo).toEqual([1, 1]);
+    // Twelve Data served the price symbol (1 credit). Tiingo still booked its
+    // billed price attempt (an empty answer is not a throw) plus the FX pull.
+    expect(twelve.net()).toBe(1);
+    expect(tiingo.net()).toBe(2);
   });
 });
 
 describe("instrumentedGraphRecorders", () => {
-  it("books each pull against its provider budget, tallies credits, and logs it", () => {
+  it("books each pull, tallies credits, and logs the leg + symbols", () => {
     const twelveBooked: number[] = [];
     const tiingoBooked: number[] = [];
     const messages: string[] = [];
     const spent = { credits: 0 };
-    const { onTwelveDataSpend, onTiingoSpend } = instrumentedGraphRecorders({
+    const { twelveDataMeter, tiingoMeter } = instrumentedGraphRecorders({
       range: "1D",
       bookTwelveData: (n) => twelveBooked.push(n),
+      refundTwelveData: () => undefined,
       bookTiingo: (n) => tiingoBooked.push(n),
+      refundTiingo: () => undefined,
       log: (m) => messages.push(m),
       spent,
     });
 
-    onTwelveDataSpend(3);
-    onTiingoSpend(1);
+    twelveDataMeter.reserve({ leg: "bars", symbols: ["SCHK", "MSFT", "VOO"], n: 3 });
+    twelveDataMeter.settle({ leg: "bars", symbols: ["SCHK", "MSFT", "VOO"], n: 3, bars: 30 });
+    tiingoMeter.reserve({ leg: "fx", symbols: ["eurusd"], n: 1 });
+    tiingoMeter.settle({ leg: "fx", symbols: ["eurusd"], n: 1, bars: 5 });
 
-    // Credits are booked against the matching provider budget…
+    // Credits are booked against the matching provider budget on reserve…
     expect(twelveBooked).toEqual([3]);
     expect(tiingoBooked).toEqual([1]);
-    // …the shared counter tells a real pull from a fully-reused render…
+    // …the shared counter tallies only billed (settled) pulls…
     expect(spent.credits).toBe(4);
-    // …and each pull is reported in plain language with provider + credit cost.
+    // …and each billed pull names the leg + symbols (or `FX <pair>`).
     expect(messages).toEqual([
-      "1D graph: fetched 3 price series via Twelve Data (Pipe A) — 3 credits.",
-      "1D graph: fetched 1 series via Tiingo (Pipe B) — 1 Tiingo credit.",
+      "1D graph: fetched bars SCHK, MSFT, VOO via Twelve Data (Pipe A) — 3 credits.",
+      "1D graph: fetched fx FX eurusd via Tiingo (Pipe B) — 1 Tiingo credit.",
+    ]);
+  });
+
+  it("refunds and logs a labelled failure when a pull is not billed", () => {
+    const tiingoBooked: number[] = [];
+    const tiingoRefunded: number[] = [];
+    const messages: string[] = [];
+    const spent = { credits: 0 };
+    const { tiingoMeter } = instrumentedGraphRecorders({
+      range: "1D",
+      bookTwelveData: () => undefined,
+      refundTwelveData: () => undefined,
+      bookTiingo: (n) => tiingoBooked.push(n),
+      refundTiingo: (n) => tiingoRefunded.push(n),
+      log: (m) => messages.push(m),
+      spent,
+    });
+
+    tiingoMeter.reserve({ leg: "fx", symbols: ["eurusd"], n: 1 });
+    tiingoMeter.refund({ leg: "fx", symbols: ["eurusd"], n: 1, reason: "Tiingo FX history proxy returned HTTP 400" });
+
+    expect(tiingoBooked).toEqual([1]);
+    expect(tiingoRefunded).toEqual([1]);
+    // A refunded (not-billed) pull never counts toward the build's real spend.
+    expect(spent.credits).toBe(0);
+    expect(messages).toEqual([
+      "1D graph: fx FX eurusd via Tiingo (Pipe B) not billed (1 Tiingo credit refunded) — Tiingo FX history proxy returned HTTP 400.",
+    ]);
+  });
+
+  it("annotates a billed-but-empty pull (reached the provider, no bars)", () => {
+    const messages: string[] = [];
+    const spent = { credits: 0 };
+    const { tiingoMeter } = instrumentedGraphRecorders({
+      range: "1W",
+      bookTwelveData: () => undefined,
+      refundTwelveData: () => undefined,
+      bookTiingo: () => undefined,
+      refundTiingo: () => undefined,
+      log: (m) => messages.push(m),
+      spent,
+    });
+    tiingoMeter.reserve({ leg: "bars", symbols: ["DAX"], n: 1 });
+    tiingoMeter.settle({ leg: "bars", symbols: ["DAX"], n: 1, bars: 0 });
+    expect(spent.credits).toBe(1);
+    expect(messages).toEqual([
+      "1W graph: fetched bars DAX via Tiingo (Pipe B) — 1 Tiingo credit (empty — reached the provider, no bars).",
     ]);
   });
 
@@ -341,7 +482,9 @@ describe("instrumentedGraphRecorders", () => {
     instrumentedGraphRecorders({
       range: "1W",
       bookTwelveData: () => undefined,
+      refundTwelveData: () => undefined,
       bookTiingo: () => undefined,
+      refundTiingo: () => undefined,
       log: () => undefined,
       spent,
     });

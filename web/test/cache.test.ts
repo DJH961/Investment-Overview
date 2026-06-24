@@ -16,6 +16,11 @@ import {
   readCachedFx,
   readCachedQuotes,
   readCreditLog,
+  releaseCredits,
+  releaseTiingoCredits,
+  recordTiingoCredits,
+  readTiingoCreditLog,
+  tiingoCreditsSpentToday,
   readNavPublishStats,
   readSymbolPlan,
   recordCredits,
@@ -200,6 +205,35 @@ describe("credit log", () => {
     const s = memStorage();
     recordCredits(0, 1000, s);
     expect(readCreditLog(1000, 60_000, s).length).toBe(0);
+  });
+
+  it("releaseCredits refunds a reserved spend so the running total nets out", () => {
+    const s = memStorage();
+    // Reserve 3 up-front, then learn the call was never billed and refund it.
+    recordCredits(3, 1000, s);
+    releaseCredits(3, 1100, s);
+    const log = readCreditLog(2000, 24 * 60 * 60 * 1000, s);
+    expect(creditsSpentWithin(log, 2000, 60 * 1000)).toBe(0);
+    // A partial refund leaves only the genuinely-billed remainder on the books.
+    recordCredits(2, 1500, s);
+    releaseCredits(1, 1600, s);
+    expect(creditsSpentWithin(readCreditLog(2000, 24 * 60 * 60 * 1000, s), 2000, 60 * 1000)).toBe(1);
+  });
+
+  it("releaseCredits ignores non-positive refunds", () => {
+    const s = memStorage();
+    recordCredits(2, 1000, s);
+    releaseCredits(0, 1100, s);
+    releaseCredits(-5, 1100, s);
+    expect(creditsSpentWithin(readCreditLog(2000, 60_000, s), 2000, 60_000)).toBe(2);
+  });
+
+  it("releaseTiingoCredits refunds against the separate Tiingo ledger", () => {
+    const s = memStorage();
+    recordTiingoCredits(1, 1000, s);
+    releaseTiingoCredits(1, 1100, s);
+    const log = readTiingoCreditLog(2000, 24 * 60 * 60 * 1000, s);
+    expect(tiingoCreditsSpentToday(log, 1100)).toBe(0);
   });
 
   it("counts the daily budget from UTC midnight, not a rolling 24h window", () => {

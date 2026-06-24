@@ -388,6 +388,25 @@ export function recordCredits(
   writeJson(storage, CREDIT_KEY, log);
 }
 
+/**
+ * Refund `n` credits previously {@link recordCredits reserved} but not actually
+ * billed by the provider (the *settle* half of the two-phase reserve/settle
+ * accounting — see `docs/tiingo_polling_storm_cleanup_plan.md` item 1). Booked as
+ * a negative spend so the running totals ({@link creditsSpentWithin},
+ * {@link creditsSpentToday}) net it back out; concurrent dispatches still saw the
+ * worst-case reservation while the call was in flight, so they paced themselves.
+ */
+export function releaseCredits(
+  n: number,
+  now: number,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  if (n <= 0) return;
+  const log = readCreditLog(now, 24 * 60 * 60 * 1000, storage);
+  log.push({ at: now, n: -n });
+  writeJson(storage, CREDIT_KEY, log);
+}
+
 /** Sum the credits spent within the trailing `windowMs` up to `now`. */
 export function creditsSpentWithin(log: CreditSpend[], now: number, windowMs: number): number {
   return log.reduce((acc, e) => (now - e.at < windowMs ? acc + e.n : acc), 0);
@@ -494,6 +513,25 @@ export function recordTiingoCredits(
   if (n <= 0) return;
   const log = readTiingoCreditLog(now, 24 * 60 * 60 * 1000, storage);
   log.push({ at: now, n });
+  writeJson(storage, TIINGO_CREDIT_KEY, log);
+}
+
+/**
+ * Refund `n` Tiingo credits previously {@link recordTiingoCredits reserved} but
+ * not actually forwarded to Tiingo by the Worker (e.g. a Worker-side `400`/`429`/
+ * `502`/`503` reject that never reached Tiingo's meter — see the two-phase
+ * accounting in `docs/tiingo_polling_storm_cleanup_plan.md` item 1). Booked as a
+ * negative spend so the running total nets it back out. This is what stops the
+ * FX-storm failure mode leaving a phantom charge on the ledger.
+ */
+export function releaseTiingoCredits(
+  n: number,
+  now: number,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  if (n <= 0) return;
+  const log = readTiingoCreditLog(now, 24 * 60 * 60 * 1000, storage);
+  log.push({ at: now, n: -n });
   writeJson(storage, TIINGO_CREDIT_KEY, log);
 }
 

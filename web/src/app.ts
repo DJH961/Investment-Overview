@@ -50,9 +50,11 @@ import {
   readNavPublishStats,
   readSymbolPlan,
   recordCredits,
+  releaseCredits,
   type PlannedSymbol,
   recordNavPublish,
   recordTiingoCredits,
+  releaseTiingoCredits,
   primeQuotesFromBars,
   readSessionStatus,
   writeSessionStatus,
@@ -817,10 +819,12 @@ export class App {
       // tallied — the warm-up backfill used to record its credits silently, so a
       // refill could "download something once without logging". Now it never does.
       const spent = { credits: 0 };
-      const { onTiingoSpend, onTwelveDataSpend } = instrumentedGraphRecorders({
+      const { tiingoMeter, twelveDataMeter } = instrumentedGraphRecorders({
         range: `${label} warm-up`,
         bookTwelveData: (n) => recordCredits(n, Date.now()),
+        refundTwelveData: (n) => releaseCredits(n, Date.now()),
         bookTiingo: (n) => recordTiingoCredits(n, Date.now()),
+        refundTiingo: (n) => releaseTiingoCredits(n, Date.now()),
         log: (message) => this.pollLog("graph", message),
         spent,
       });
@@ -830,8 +834,8 @@ export class App {
         param,
         startDate: window.startDate,
         endDate: window.endDate,
-        onTiingoSpend,
-        onTwelveDataSpend,
+        tiingoMeter,
+        twelveDataMeter,
         ...extra,
       });
       if (!fetchBars) return;
@@ -852,7 +856,7 @@ export class App {
       primeQuotesFromBars(bars, currencyBySymbol, Date.now());
       // Grab the matching FX track in the same pass so the curve re-marks each
       // point at its own settled rate (finest granularity) for one more credit.
-      const fetchFx = makeWindowFxFetcher(proxyUrl, window, fxResample, undefined, onTiingoSpend);
+      const fetchFx = makeWindowFxFetcher(proxyUrl, window, fxResample, undefined, tiingoMeter);
       let fx: Bar[] | undefined;
       if (fetchFx) fx = await fetchFx().catch(() => undefined);
       await store.mergeSession(storeKey, { bars: incoming, fx }, now.getTime());
@@ -3454,7 +3458,9 @@ export class App {
       ...instrumentedGraphRecorders({
         range,
         bookTwelveData: (n) => recordCredits(n, Date.now()),
+        refundTwelveData: (n) => releaseCredits(n, Date.now()),
         bookTiingo: (n) => recordTiingoCredits(n, Date.now()),
+        refundTiingo: (n) => releaseTiingoCredits(n, Date.now()),
         log: (message) => this.pollLog("graph", message),
         spent,
       }),

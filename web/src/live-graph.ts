@@ -30,7 +30,12 @@
  */
 
 import { fetchTimeSeries, type FetchLike } from "./prices";
-import { recordCredits, recordTiingoCredits } from "./cache";
+import {
+  recordCredits,
+  recordTiingoCredits,
+  releaseCredits,
+  releaseTiingoCredits,
+} from "./cache";
 import {
   lastSessionDate,
   recentTradingSessions,
@@ -75,35 +80,122 @@ export function weekFxWindow(
 /** A callback that books `n` API credits against a source's budget log. */
 export type SpendRecorder = (n: number) => void;
 
+/** Which backfill leg produced a spend — for the data-polling log's leg tag. */
+export type SpendLeg = "bars" | "fx" | "quote";
+
+/** A single backfill request the {@link BackfillMeter} accounts for. */
+export interface SpendRequest {
+  /** The leg tag (`bars`/`fx`/`quote`) for the log line. */
+  leg: SpendLeg;
+  /**
+   * The symbols requested (deduped). For the FX leg this is the pair, e.g.
+   * `["eurusd"]`, rendered as `FX eurusd` in the log.
+   */
+  symbols: string[];
+  /** Worst-case credit cost of the request (1 per symbol; 1 for the FX batch). */
+  n: number;
+}
+
 /**
- * Wrap a {@link BarFetcher} so a **successful** fetch books one credit per
- * symbol requested against the given source's budget (Tiingo or Twelve Data) —
- * the live-graph backfill is real API traffic and must show up in the same
- * credit accounting the quote layer uses, so the budget gauges and refresh
- * pacing stay honest. A throw (e.g. a 429 fall-through) books nothing, so the
- * fallback pipe records its own spend instead.
+ * Two-phase credit meter for a live-graph backfill leg
+ * (`docs/tiingo_polling_storm_cleanup_plan.md` items 1–3). Every dispatch
+ * **reserves** its worst-case cost up-front so concurrent/subsequent calls see
+ * the budget already committed and pace themselves; the result is then
+ * **settled** (the provider billed it — keep the reservation, log what we
+ * pulled) or **refunded** (the provider never metered it — a Worker reject,
+ * provider error, or transport throw — so the reservation is released and a
+ * labelled failure line is logged instead of leaving a phantom charge).
  */
-export function recordingBarFetcher(inner: BarFetcher, record: SpendRecorder): BarFetcher {
+export interface BackfillMeter {
+  /** Debit the worst-case cost before dispatch. */
+  reserve(req: SpendRequest): void;
+  /** Provider billed the call: keep the reservation; `bars` is the count returned. */
+  settle(req: SpendRequest & { bars: number }): void;
+  /** Provider did not bill (reject/error/throw): refund and log why. */
+  refund(req: SpendRequest & { reason: string }): void;
+}
+
+/** The deduped, non-blank symbol set of a request. */
+function uniqueSymbols(symbols: string[]): string[] {
+  return [...new Set(symbols.map((s) => s.trim()).filter((s) => s.length > 0))];
+}
+
+/** Total bars across a fetched symbol→bars map (to spot a billed-but-empty pull). */
+function totalBars(bars: Map<string, Bar[]>): number {
+  let n = 0;
+  for (const list of bars.values()) n += list.length;
+  return n;
+}
+
+/** A short, log-safe description of why a pull was not billed. */
+function describeError(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  return String(err);
+}
+
+/**
+ * Wrap a {@link BarFetcher} in the two-phase {@link BackfillMeter}: reserve one
+ * credit per requested symbol up-front, then **settle** (keep) the reservation
+ * when the provider returns — even an empty `[]`/`404`, which still reached the
+ * meter — or **refund** it when the pipe throws (a Worker `400`/`429`/`502`/`503`
+ * reject, provider error, or transport abort that the provider never billed). A
+ * fallback after a thrown primary therefore records only the fallback's spend.
+ */
+export function recordingBarFetcher(
+  inner: BarFetcher,
+  meter: BackfillMeter,
+  leg: SpendLeg = "bars",
+): BarFetcher {
   return async (symbols) => {
-    const bars = await inner(symbols);
-    const n = new Set(symbols.map((s) => s.trim()).filter((s) => s.length > 0)).size;
-    if (n > 0) record(n);
-    return bars;
+    const uniq = uniqueSymbols(symbols);
+    const n = uniq.length;
+    if (n > 0) meter.reserve({ leg, symbols: uniq, n });
+    try {
+      const bars = await inner(symbols);
+      if (n > 0) meter.settle({ leg, symbols: uniq, n, bars: totalBars(bars) });
+      return bars;
+    } catch (err) {
+      if (n > 0) meter.refund({ leg, symbols: uniq, n, reason: describeError(err) });
+      throw err;
+    }
   };
 }
 
 /**
- * Wrap an FX-history fetcher so a successful pull books one Tiingo credit (the
- * FX track is a single batched request). A throw books nothing.
+ * Wrap an FX-history fetcher (a single batched request) in the two-phase meter:
+ * reserve one Tiingo credit, **settle** it when the pull returns (the meter was
+ * reached — even an empty window), or **refund** it when the pipe throws. This is
+ * the precise fix for the polling-storm phantom charge: a dead `fxHistory` route
+ * returns a Worker `400` (now a throw) → the reservation is refunded, not booked.
  */
 export function recordingFxFetcher(
   inner: () => Promise<Bar[]>,
-  record: SpendRecorder,
+  meter: BackfillMeter,
 ): () => Promise<Bar[]> {
+  const req: SpendRequest = { leg: "fx", symbols: ["eurusd"], n: 1 };
   return async () => {
-    const bars = await inner();
-    record(1);
-    return bars;
+    meter.reserve(req);
+    try {
+      const bars = await inner();
+      meter.settle({ ...req, bars: bars.length });
+      return bars;
+    } catch (err) {
+      meter.refund({ ...req, reason: describeError(err) });
+      throw err;
+    }
+  };
+}
+
+/**
+ * The simplest {@link BackfillMeter}: book the reservation against `record` and
+ * release a not-billed reservation back via `refund`, with no logging. Used as
+ * the default wiring when a caller does not supply an instrumented meter.
+ */
+export function ledgerMeter(record: SpendRecorder, refund: SpendRecorder): BackfillMeter {
+  return {
+    reserve: (req) => record(req.n),
+    settle: () => undefined,
+    refund: (req) => refund(req.n),
   };
 }
 
@@ -138,10 +230,10 @@ export function makePriceBarFetcher(opts: {
   startDate?: string;
   endDate?: string;
   fetchImpl?: FetchLike;
-  /** Book a Tiingo spend (Pipe B) when it serves bars. */
-  onTiingoSpend?: SpendRecorder;
-  /** Book a Twelve Data spend (Pipe A) when it serves bars. */
-  onTwelveDataSpend?: SpendRecorder;
+  /** Meter the Tiingo (Pipe B) bar spend in two phases. */
+  tiingoMeter?: BackfillMeter;
+  /** Meter the Twelve Data (Pipe A) bar spend in two phases. */
+  twelveDataMeter?: BackfillMeter;
 }): BarFetcher | null {
   const {
     apiKey,
@@ -152,8 +244,8 @@ export function makePriceBarFetcher(opts: {
     startDate,
     endDate,
     fetchImpl,
-    onTiingoSpend,
-    onTwelveDataSpend,
+    tiingoMeter,
+    twelveDataMeter,
   } = opts;
   let pipeA = makeTwelveDataBarFetcher(apiKey, { interval, outputsize, fetchImpl });
   let pipeB = proxyUrl
@@ -162,8 +254,8 @@ export function makePriceBarFetcher(opts: {
   // Meter each pipe against its own source budget, so whichever one actually
   // serves the bars is the one that books the credits (a fallback after a thrown
   // primary records only the fallback's spend).
-  if (pipeA && onTwelveDataSpend) pipeA = recordingBarFetcher(pipeA, onTwelveDataSpend);
-  if (pipeB && onTiingoSpend) pipeB = recordingBarFetcher(pipeB, onTiingoSpend);
+  if (pipeA && twelveDataMeter) pipeA = recordingBarFetcher(pipeA, twelveDataMeter);
+  if (pipeB && tiingoMeter) pipeB = recordingBarFetcher(pipeB, tiingoMeter);
   if (pipeB && pipeA) return makeDualPipeBarFetcher(pipeB, pipeA);
   return pipeB ?? pipeA;
 }
@@ -179,7 +271,7 @@ export function makeWindowFxFetcher(
   window: DateWindow,
   resampleFreq: string,
   fetchImpl?: FetchLike,
-  onTiingoSpend?: SpendRecorder,
+  tiingoMeter?: BackfillMeter,
 ): (() => Promise<Bar[]>) | null {
   if (!priceProxyUrl) return null;
   const fetchFx = makeTiingoFxBarFetcher(priceProxyUrl, {
@@ -188,7 +280,7 @@ export function makeWindowFxFetcher(
     endDate: window.endDate,
     fetchImpl,
   });
-  return onTiingoSpend ? recordingFxFetcher(fetchFx, onTiingoSpend) : fetchFx;
+  return tiingoMeter ? recordingFxFetcher(fetchFx, tiingoMeter) : fetchFx;
 }
 
 /** Shared network/persistence wiring for the live-graph builders. */
@@ -200,25 +292,35 @@ export interface LiveGraphProviders {
   /** Injected fetch (defaults to the global). */
   fetchImpl?: FetchLike;
   /**
-   * Book a Tiingo spend (price bars via Pipe B, plus the FX-history pull) against
-   * its budget log. Defaults to the persisted Tiingo credit log.
+   * Meter the Tiingo spend (price bars via Pipe B, plus the FX-history pull).
+   * Defaults to the persisted Tiingo credit log (reserve + refund, no logging).
    */
-  onTiingoSpend?: SpendRecorder;
+  tiingoMeter?: BackfillMeter;
   /**
-   * Book a Twelve Data spend (price bars via Pipe A) against its budget log.
-   * Defaults to the persisted Twelve Data credit log.
+   * Meter the Twelve Data spend (price bars via Pipe A). Defaults to the
+   * persisted Twelve Data credit log (reserve + refund, no logging).
    */
-  onTwelveDataSpend?: SpendRecorder;
+  twelveDataMeter?: BackfillMeter;
 }
 
-/** Resolve the Tiingo/Twelve Data spend recorders, defaulting to the real logs. */
-function spendRecorders(providers: LiveGraphProviders): {
-  onTiingoSpend: SpendRecorder;
-  onTwelveDataSpend: SpendRecorder;
+/** Resolve the Tiingo/Twelve Data meters, defaulting to the real ledgers. */
+function spendMeters(providers: LiveGraphProviders): {
+  tiingoMeter: BackfillMeter;
+  twelveDataMeter: BackfillMeter;
 } {
   return {
-    onTiingoSpend: providers.onTiingoSpend ?? ((n) => recordTiingoCredits(n, Date.now())),
-    onTwelveDataSpend: providers.onTwelveDataSpend ?? ((n) => recordCredits(n, Date.now())),
+    tiingoMeter:
+      providers.tiingoMeter ??
+      ledgerMeter(
+        (n) => recordTiingoCredits(n, Date.now()),
+        (n) => releaseTiingoCredits(n, Date.now()),
+      ),
+    twelveDataMeter:
+      providers.twelveDataMeter ??
+      ledgerMeter(
+        (n) => recordCredits(n, Date.now()),
+        (n) => releaseCredits(n, Date.now()),
+      ),
   };
 }
 
@@ -226,41 +328,69 @@ function spendRecorders(providers: LiveGraphProviders): {
 export interface GraphRecorderOptions {
   /** Range label for the log line, e.g. `"1D"` or `"1W"`. */
   range: string;
-  /** Book a Twelve Data (Pipe A) spend against its budget log. */
+  /** Reserve a Twelve Data (Pipe A) spend against its budget log. */
   bookTwelveData: SpendRecorder;
-  /** Book a Tiingo (Pipe B / FX) spend against its budget log. */
+  /** Refund a not-billed Twelve Data reservation. */
+  refundTwelveData: SpendRecorder;
+  /** Reserve a Tiingo (Pipe B / FX) spend against its budget log. */
   bookTiingo: SpendRecorder;
+  /** Refund a not-billed Tiingo reservation. */
+  refundTiingo: SpendRecorder;
   /** Sink for a plain-language log line (e.g. the Settings polling log). */
   log: (message: string) => void;
   /** Shared counter: total credits this build actually pulled (0 ⇒ all reused). */
   spent: { credits: number };
 }
 
+/** Render a request's subject for the log: the symbol list, or `FX <pair>`. */
+function spendSubject(req: SpendRequest): string {
+  if (req.leg === "fx") return `FX ${req.symbols.join(",")}`;
+  return req.symbols.join(", ");
+}
+
 /**
- * Wrap the two graph spend recorders so every live 1D/1W backfill pull is, in
- * one step: (1) booked against its provider's budget log, (2) tallied into a
- * shared `spent` counter so the caller can tell a real pull from a fully-reused
- * (cache/springboard) render, and (3) reported in plain language to `log` — so
- * the Settings data-polling log shows exactly what each graph pulled, from which
- * provider, and at what credit cost. A bar fetch bills one credit per symbol; an
- * FX-history pull bills one Tiingo credit for the whole window.
+ * Wrap the two graph spend ledgers as instrumented {@link BackfillMeter}s so
+ * every live 1D/1W backfill pull is, in one step: (1) reserved against its
+ * provider's budget log up-front, (2) on a billed result, tallied into a shared
+ * `spent` counter (so the caller can tell a real pull from a fully-reused render)
+ * and reported in plain language to `log` — naming the **leg** (`bars`/`fx`) and
+ * the **symbols** (or `FX eurusd`) so the data-polling log shows exactly what
+ * each graph pulled — and (3) on a not-billed result, refunded *and* logged as a
+ * labelled failure, so a Worker reject/empty never leaves a phantom charge or a
+ * silent gap. A bar fetch bills one credit per symbol; an FX-history pull bills
+ * one Tiingo credit for the whole window.
  */
 export function instrumentedGraphRecorders(
   opts: GraphRecorderOptions,
-): { onTwelveDataSpend: SpendRecorder; onTiingoSpend: SpendRecorder } {
-  const { range, bookTwelveData, bookTiingo, log, spent } = opts;
+): { twelveDataMeter: BackfillMeter; tiingoMeter: BackfillMeter } {
+  const { range, bookTwelveData, refundTwelveData, bookTiingo, refundTiingo, log, spent } = opts;
   const plural = (n: number): string => (n === 1 ? "" : "s");
+  const meter = (
+    provider: string,
+    creditNoun: string,
+    book: SpendRecorder,
+    refund: SpendRecorder,
+  ): BackfillMeter => ({
+    reserve: (req) => book(req.n),
+    settle: (req) => {
+      spent.credits += req.n;
+      const empty = req.bars === 0 ? " (empty — reached the provider, no bars)" : "";
+      log(
+        `${range} graph: fetched ${req.leg} ${spendSubject(req)} via ${provider} — ` +
+          `${req.n} ${creditNoun}${plural(req.n)}${empty}.`,
+      );
+    },
+    refund: (req) => {
+      refund(req.n);
+      log(
+        `${range} graph: ${req.leg} ${spendSubject(req)} via ${provider} not billed ` +
+          `(${req.n} ${creditNoun}${plural(req.n)} refunded) — ${req.reason}.`,
+      );
+    },
+  });
   return {
-    onTwelveDataSpend: (n) => {
-      bookTwelveData(n);
-      spent.credits += n;
-      log(`${range} graph: fetched ${n} price series via Twelve Data (Pipe A) — ${n} credit${plural(n)}.`);
-    },
-    onTiingoSpend: (n) => {
-      bookTiingo(n);
-      spent.credits += n;
-      log(`${range} graph: fetched ${n} series via Tiingo (Pipe B) — ${n} Tiingo credit${plural(n)}.`);
-    },
+    twelveDataMeter: meter("Twelve Data (Pipe A)", "credit", bookTwelveData, refundTwelveData),
+    tiingoMeter: meter("Tiingo (Pipe B)", "Tiingo credit", bookTiingo, refundTiingo),
   };
 }
 
@@ -287,7 +417,7 @@ export function buildLiveSessionCurve(
 ): Promise<SessionCurve> {
   const now = base.now ?? new Date();
   const window = sessionFxWindow(now);
-  const { onTiingoSpend, onTwelveDataSpend } = spendRecorders(providers);
+  const { tiingoMeter, twelveDataMeter } = spendMeters(providers);
   const fetchBars =
     makePriceBarFetcher({
       apiKey: providers.apiKey,
@@ -298,15 +428,15 @@ export function buildLiveSessionCurve(
       startDate: window.startDate,
       endDate: window.endDate,
       fetchImpl: providers.fetchImpl,
-      onTiingoSpend,
-      onTwelveDataSpend,
+      tiingoMeter,
+      twelveDataMeter,
     }) ?? emptyBarFetcher;
   const fetchFx = makeWindowFxFetcher(
     providers.priceProxyUrl,
     window,
     tuning.fxResampleFreq ?? "1hour",
     providers.fetchImpl,
-    onTiingoSpend,
+    tiingoMeter,
   );
   return loadOrBuildSessionCurve({ ...base, fetchBars, fetchFx });
 }
@@ -325,7 +455,7 @@ export function buildLiveWeekCurve(
   const now = base.now ?? new Date();
   const sessions = base.sessions ?? DEFAULT_WEEK_SESSIONS;
   const window = weekFxWindow(now, sessions);
-  const { onTiingoSpend, onTwelveDataSpend } = spendRecorders(providers);
+  const { tiingoMeter, twelveDataMeter } = spendMeters(providers);
   // The 1W curve is built from one daily close per session. Tiingo's `/price`
   // route serves those via `?daily=<ticker>` (a single batched window per
   // symbol, off Tiingo's own budget), so it is preferred for a prompt paint; the
@@ -342,15 +472,15 @@ export function buildLiveWeekCurve(
       startDate: window.startDate,
       endDate: window.endDate,
       fetchImpl: providers.fetchImpl,
-      onTiingoSpend,
-      onTwelveDataSpend,
+      tiingoMeter,
+      twelveDataMeter,
     }) ?? emptyBarFetcher;
   const fetchFx = makeWindowFxFetcher(
     providers.priceProxyUrl,
     window,
     "1day",
     providers.fetchImpl,
-    onTiingoSpend,
+    tiingoMeter,
   );
   return loadOrBuildWeekCurve({ ...base, fetchDailyBars, fetchFx });
 }
