@@ -55,6 +55,7 @@ import {
 } from "./intraday";
 import { makeTiingoBarFetcher, makeDualPipeBarFetcher } from "./intraday-tiingo";
 import { makeTiingoFxBarFetcher } from "./tiingo";
+import { type Reservation, type Provider } from "./reservation";
 import type { Bar } from "./timeseries";
 import {
   loadOrBuildWeekCurve,
@@ -249,24 +250,22 @@ export function makePriceBarFetcher(opts: {
   /** Meter the Twelve Data (Pipe A) bar spend in two phases. */
   twelveDataMeter?: BackfillMeter;
   /**
-   * Live remaining Twelve Data per-minute/day budget. When supplied (and both
-   * pipes exist), the fetch becomes the capacity-aware split (item 8): Twelve
-   * Data first up to this budget, Tiingo for the overflow. Omit for the legacy
-   * Tiingo-first dual pipe.
+   * The single reservation authority (`reservation.ts`, audit Rec 4). When
+   * supplied (and both pipes exist), the fetch becomes the capacity-aware split:
+   * each leg first {@link Reservation.reserve}s its credits atomically — Twelve
+   * Data up to its live per-minute/day budget, then Tiingo for the overflow up to
+   * *its* scarce hourly/daily budget (closing audit Flags 1, 5, 6) — and fetches
+   * only the granted symbols. Omit to keep the legacy Tiingo-first dual pipe.
    */
-  budget?: () => { minute: number; day: number };
+  reservation?: Reservation;
+  /** Clock for the reservation/freeze reads (tests inject a fixed clock). */
+  now?: () => number;
   /**
    * Per-symbol time-series backoff (item 4). When supplied, symbols whose
    * `${scope}:${symbol}` key is in an armed cooldown are skipped (no credit, no
    * attempt) and fall back to their flat quote value on the curve.
    */
   backoff?: { memo: SeriesBackoff; scope: string; now?: () => number };
-  /**
-   * Whether the Tiingo overflow leg may be used right now (WS4/WS5 — false while
-   * Tiingo is in a 429 freeze). Only consulted on the capacity-split path (when a
-   * `budget` is supplied and both pipes exist). Defaults to always-available.
-   */
-  tiingoAvailable?: () => boolean;
 }): BarFetcher | null {
   const {
     apiKey,
@@ -279,9 +278,9 @@ export function makePriceBarFetcher(opts: {
     fetchImpl,
     tiingoMeter,
     twelveDataMeter,
-    budget,
+    reservation,
+    now,
     backoff,
-    tiingoAvailable,
   } = opts;
   let pipeA = makeTwelveDataBarFetcher(apiKey, { interval, outputsize, fetchImpl });
   let pipeB = proxyUrl
@@ -294,10 +293,11 @@ export function makePriceBarFetcher(opts: {
   if (pipeB && tiingoMeter) pipeB = recordingBarFetcher(pipeB, tiingoMeter);
   let combined: BarFetcher | null;
   if (pipeB && pipeA) {
-    // With a live budget, fill Twelve Data first and spill the overflow to Tiingo
-    // (item 8); otherwise keep the legacy Tiingo-first failover dual pipe.
-    combined = budget
-      ? makeCapacitySplitBarFetcher(pipeA, pipeB, budget, tiingoAvailable)
+    // With a reservation authority, fill Twelve Data first and spill the overflow
+    // to Tiingo (item 8), both gated by the shared budgets; otherwise keep the
+    // legacy Tiingo-first failover dual pipe.
+    combined = reservation
+      ? makeCapacitySplitBarFetcher(pipeA, pipeB, reservation, now)
       : makeDualPipeBarFetcher(pipeB, pipeA);
   } else {
     combined = pipeB ?? pipeA;
@@ -342,44 +342,49 @@ async function fetchBarLeg(
  * Capacity-aware provider split for graph bars (price **and** NAV series), item
  * 8 — the reverse of the old Tiingo-first dual pipe. Fill **Twelve Data (Pipe A)**
  * up to the live remaining per-minute/day budget, route the overflow to **Tiingo
- * (Pipe B)**, and run both legs concurrently so the paint stays instant. A symbol
- * that *fails or comes back empty* on Twelve Data still spills to Tiingo
- * underneath the split. Rationale: Twelve Data's 8/min replenishes every minute
- * (the plentiful pool) while Tiingo's 40/hour is scarce — so fill the plentiful
- * one first and spend the scarce one only on the overflow.
+ * (Pipe B)** up to *its* scarce hourly/daily budget, and run both legs
+ * concurrently so the paint stays instant. A symbol that *fails or comes back
+ * empty* on Twelve Data still spills to Tiingo underneath the split, within
+ * Tiingo's remaining budget. Rationale: Twelve Data's 8/min replenishes every
+ * minute (the plentiful pool) while Tiingo's 40/hour is scarce — so fill the
+ * plentiful one first and spend the scarce one only on the overflow.
  *
- * `budget()` must read the **live** shared credit log so the graph only takes
- * what the (earlier, prefetch-led) quote pass left — see
- * {@link ../quotes.twelveDataBudgetRemaining}.
+ * Every leg is gated by the single {@link Reservation} authority (audit Rec 4):
+ * each `reserve(provider, n)` **atomically** reads the live shared ledger (after
+ * the 429 freeze) *and* debits the grant before the fetch fires, so the overflow
+ * can never exceed Tiingo's budget (audit Flags 1, 5) and concurrent legs/builds
+ * cannot collectively overshoot (audit Flag 6). A grant of `0` (budget spent or
+ * the provider frozen) defers those symbols to a later round rather than firing —
+ * the curve tolerates the missing bars and falls back to the flat quote value.
  */
 export function makeCapacitySplitBarFetcher(
   twelveData: BarFetcher,
   tiingo: BarFetcher,
-  budget: () => { minute: number; day: number },
-  /**
-   * Whether the Tiingo overflow leg may be used right now (WS4/WS5). When it
-   * returns `false` — e.g. Tiingo is in a 429 freeze until the next `:00` — the
-   * overflow is **deferred** to a later round rather than wasted on a provider
-   * that has already said no. Defaults to always-available.
-   */
-  tiingoAvailable: () => boolean = () => true,
+  reservation: Reservation,
+  now: () => number = () => Date.now(),
 ): BarFetcher {
   return async (symbols) => {
     const uniq = uniqueSymbols(symbols);
     if (uniq.length === 0) return new Map<string, Bar[]>();
-    const { minute, day } = budget();
-    const capacity = Math.max(0, Math.min(uniq.length, minute, day));
-    const toTwelveData = uniq.slice(0, capacity);
-    const tiingoOpen = tiingoAvailable();
-    const toTiingo = tiingoOpen ? uniq.slice(capacity) : [];
+    // Atomic read-and-debit: Twelve Data first, up to its live minute/day budget.
+    const tdGrant = reservation.reserve("twelvedata", uniq.length, now());
+    const toTwelveData = uniq.slice(0, tdGrant);
+    // The overflow goes to Tiingo, but only up to *its* scarce hourly/daily
+    // budget — the proactive cap the split never had (audit Flags 1, 5). What
+    // neither provider can pay for this round is deferred (not dumped on Tiingo).
+    const overflow = uniq.slice(tdGrant);
+    const tiGrant = reservation.reserve("tiingo", overflow.length, now());
+    const toTiingo = overflow.slice(0, tiGrant);
     const [a, b] = await Promise.all([
       fetchBarLeg(twelveData, toTwelveData),
       fetchBarLeg(tiingo, toTiingo),
     ]);
     let result = mergeBarMaps(a.bars, b.bars);
-    // Spill any Twelve Data misses (failed/empty) to Tiingo, unless the overflow
-    // leg already covered them — but never onto a frozen Tiingo (defer instead).
-    const spill = tiingoOpen ? a.missing.filter((s) => !(result.get(s)?.length)) : [];
+    // Spill any Twelve Data misses (failed/empty) to Tiingo — within Tiingo's
+    // remaining budget — unless the overflow leg already covered them.
+    const spillCandidates = a.missing.filter((s) => !(result.get(s)?.length));
+    const spillGrant = reservation.reserve("tiingo", spillCandidates.length, now());
+    const spill = spillCandidates.slice(0, spillGrant);
     if (spill.length > 0) {
       const spilled = await fetchBarLeg(tiingo, spill);
       result = mergeBarMaps(result, spilled.bars);
@@ -583,6 +588,35 @@ export interface WindowFxOptions {
   backoffKey?: string;
   /** Override `Date.now` for the backoff (tests). */
   now?: () => number;
+  /**
+   * The single reservation authority (audit Rec 4). When supplied, each FX leg
+   * first {@link Reservation.reserve}s its 1 credit against the provider's live
+   * budget — Tiingo against its scarce hourly/daily budget (audit Flag 2), Twelve
+   * Data against its per-minute/day budget and 429 freeze (audit Flag 3) — and
+   * only fires when a credit is granted; a `0` grant skips the call so the curve
+   * degrades to the day's settled `baseFx` rather than firing over the cap.
+   */
+  reservation?: Reservation;
+}
+
+/**
+ * Gate one FX leg through the reservation authority: reserve its single credit
+ * up-front and only fire when granted, so no FX pull ever fires over the
+ * provider's budget (or while it is frozen). The wrapped `leg` is the
+ * meter-recorded fetcher, so on a billed result the reservation stands and on a
+ * thrown (not-billed) result the meter's refund releases the reserved credit.
+ */
+function gateFxLeg(
+  leg: () => Promise<Bar[]>,
+  provider: Provider,
+  reservation: Reservation | undefined,
+  now: () => number,
+): () => Promise<Bar[]> {
+  if (!reservation) return leg;
+  return async () => {
+    if (reservation.reserve(provider, 1, now()) <= 0) return [];
+    return leg();
+  };
 }
 
 /**
@@ -602,6 +636,7 @@ export function makeWindowFxFetcher(
   tiingoMeter?: BackfillMeter,
   options: WindowFxOptions = {},
 ): (() => Promise<Bar[]>) | null {
+  const fxNow = options.now ?? (() => Date.now());
   const tiingoFxRaw = priceProxyUrl
     ? makeTiingoFxBarFetcher(priceProxyUrl, {
         resampleFreq,
@@ -611,9 +646,12 @@ export function makeWindowFxFetcher(
       })
     : null;
   const tiingoFx = tiingoFxRaw
-    ? tiingoMeter
-      ? recordingFxFetcher(tiingoFxRaw, tiingoMeter)
-      : tiingoFxRaw
+    ? gateFxLeg(
+        tiingoMeter ? recordingFxFetcher(tiingoFxRaw, tiingoMeter) : tiingoFxRaw,
+        "tiingo",
+        options.reservation,
+        fxNow,
+      )
     : null;
 
   const twelveRaw = makeTwelveDataFxFetcher(options.apiKey ?? "", {
@@ -622,9 +660,12 @@ export function makeWindowFxFetcher(
     fetchImpl,
   });
   const twelveFx = twelveRaw
-    ? options.twelveDataMeter
-      ? recordingFxFetcher(twelveRaw, options.twelveDataMeter)
-      : twelveRaw
+    ? gateFxLeg(
+        options.twelveDataMeter ? recordingFxFetcher(twelveRaw, options.twelveDataMeter) : twelveRaw,
+        "twelvedata",
+        options.reservation,
+        fxNow,
+      )
     : null;
 
   let composite: (() => Promise<Bar[]>) | null;
@@ -659,43 +700,48 @@ export interface LiveGraphProviders {
    */
   twelveDataMeter?: BackfillMeter;
   /**
-   * Live remaining Twelve Data per-minute/day budget. When supplied, the bar
-   * fetch becomes the capacity-aware split (item 8): Twelve Data first up to this
-   * budget, Tiingo for the overflow. Omit to keep the legacy Tiingo-first pipe.
+   * The single reservation authority (`reservation.ts`, audit Rec 4). When
+   * supplied, the bar fetch becomes the capacity-aware split (item 8) and the FX
+   * legs are gated too: every metered request is reserved against the live shared
+   * budgets (Twelve Data per-minute/day + 429 freeze, Tiingo hourly/daily +
+   * freeze) before it fires. Omit to keep the legacy Tiingo-first pipe.
    */
-  budget?: () => { minute: number; day: number };
+  reservation?: Reservation;
+  /** Clock for the reservation/freeze reads (tests inject a fixed clock). */
+  now?: () => number;
   /**
    * Shared per-symbol time-series backoff (item 4). Defaults to the persisted
    * {@link cacheSeriesBackoff}. Symbols that keep failing are parked off the
    * network and fall back to their flat quote value; quotes are never gated.
    */
   backoff?: SeriesBackoff;
-  /**
-   * Whether the Tiingo overflow leg may be used right now (WS4/WS5). Returns
-   * `false` while Tiingo is in a 429 freeze so the overflow defers to a later
-   * round instead of being wasted on a provider that has already said no.
-   * Defaults to always-available.
-   */
-  tiingoAvailable?: () => boolean;
 }
 
-/** Resolve the Tiingo/Twelve Data meters, defaulting to the real ledgers. */
+/**
+ * Resolve the Tiingo/Twelve Data meters. When a {@link Reservation} authority is
+ * present it is the sole booker (it debited the grant up-front), so the default
+ * meters become **observation-only**: they no longer book on reserve, and a
+ * not-billed result releases the reservation instead of the raw ledger. Without
+ * a reservation (the legacy dual-pipe path) they book/refund the ledger directly.
+ */
 function spendMeters(providers: LiveGraphProviders): {
   tiingoMeter: BackfillMeter;
   twelveDataMeter: BackfillMeter;
 } {
+  const res = providers.reservation;
+  const noop = (): void => undefined;
   return {
     tiingoMeter:
       providers.tiingoMeter ??
       ledgerMeter(
-        (n) => recordTiingoCredits(n, Date.now()),
-        (n) => releaseTiingoCredits(n, Date.now()),
+        res ? noop : (n) => recordTiingoCredits(n, Date.now()),
+        res ? (n) => res.release("tiingo", n, Date.now()) : (n) => releaseTiingoCredits(n, Date.now()),
       ),
     twelveDataMeter:
       providers.twelveDataMeter ??
       ledgerMeter(
-        (n) => recordCredits(n, Date.now()),
-        (n) => releaseCredits(n, Date.now()),
+        res ? noop : (n) => recordCredits(n, Date.now()),
+        res ? (n) => res.release("twelvedata", n, Date.now()) : (n) => releaseCredits(n, Date.now()),
       ),
   };
 }
@@ -835,9 +881,9 @@ export function buildLiveSessionCurve(
       fetchImpl: providers.fetchImpl,
       tiingoMeter,
       twelveDataMeter,
-      budget: providers.budget,
+      reservation: providers.reservation,
+      now: providers.now,
       backoff: { memo: backoff, scope: "1D" },
-      tiingoAvailable: providers.tiingoAvailable,
     }) ?? emptyBarFetcher;
   const fetchFx = makeWindowFxFetcher(
     providers.priceProxyUrl,
@@ -850,6 +896,8 @@ export function buildLiveSessionCurve(
       twelveDataMeter,
       backoff,
       backoffKey: `fx:1D:${tuning.fxResampleFreq ?? "1hour"}`,
+      reservation: providers.reservation,
+      now: providers.now,
     },
   );
   return loadOrBuildSessionCurve({ ...base, fetchBars, fetchFx });
@@ -889,9 +937,9 @@ export function buildLiveWeekCurve(
       fetchImpl: providers.fetchImpl,
       tiingoMeter,
       twelveDataMeter,
-      budget: providers.budget,
+      reservation: providers.reservation,
+      now: providers.now,
       backoff: { memo: backoff, scope: "1W" },
-      tiingoAvailable: providers.tiingoAvailable,
     }) ?? emptyBarFetcher;
   const fetchFx = makeWindowFxFetcher(
     providers.priceProxyUrl,
@@ -904,6 +952,8 @@ export function buildLiveWeekCurve(
       twelveDataMeter,
       backoff,
       backoffKey: "fx:1W:1day",
+      reservation: providers.reservation,
+      now: providers.now,
     },
   );
   // Item 7b: gap-fill moving-fund NAV history through the *same* capacity-split

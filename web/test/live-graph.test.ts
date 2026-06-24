@@ -32,8 +32,39 @@ import {
 import { memoryBackend, TimeSeriesStore } from "../src/timeseries-store";
 import { PriceError, type FetchLike } from "../src/prices";
 import type { Bar } from "../src/timeseries";
+import type { Provider, Reservation } from "../src/reservation";
 
 const d = (v: string | number): Decimal => new Decimal(v);
+
+/**
+ * A fake {@link Reservation} over two integer credit pools (Twelve Data, Tiingo).
+ * Each `reserve` grants `min(requested, remaining)` and debits the pool; `release`
+ * returns credits. Records every grant so a test can assert the split's routing.
+ * A pool of `0` models a fully-spent budget or a frozen provider.
+ */
+function fakeReservation(
+  tdAvail: number,
+  tiiAvail: number,
+): { reservation: Reservation; grants: Array<{ provider: Provider; requested: number; granted: number }> } {
+  let td = tdAvail;
+  let tii = tiiAvail;
+  const grants: Array<{ provider: Provider; requested: number; granted: number }> = [];
+  const reservation: Reservation = {
+    reserve(provider, requested) {
+      const pool = provider === "twelvedata" ? td : tii;
+      const granted = Math.max(0, Math.min(requested, pool));
+      if (provider === "twelvedata") td -= granted;
+      else tii -= granted;
+      grants.push({ provider, requested, granted });
+      return granted;
+    },
+    release(provider, n) {
+      if (provider === "twelvedata") td += n;
+      else tii += n;
+    },
+  };
+  return { reservation, grants };
+}
 
 /** A minimal in-memory `StorageLike` for backoff persistence tests. */
 function mapStorage(): {
@@ -406,7 +437,7 @@ describe("makeCapacitySplitBarFetcher (provider split, item 8)", () => {
     const fetch = makeCapacitySplitBarFetcher(
       fakeFetcher("TD", calls),
       fakeFetcher("TII", calls),
-      () => ({ minute: 2, day: 100 }),
+      fakeReservation(2, 100).reservation,
     );
     const bars = await fetch(["A", "B", "C", "D"]);
     expect(bars.size).toBe(4);
@@ -421,7 +452,7 @@ describe("makeCapacitySplitBarFetcher (provider split, item 8)", () => {
     const fetch = makeCapacitySplitBarFetcher(
       fakeFetcher("TD", calls),
       fakeFetcher("TII", calls),
-      () => ({ minute: 0, day: 100 }),
+      fakeReservation(0, 100).reservation,
     );
     await fetch(["A", "B"]);
     expect(calls.find((c) => c.who === "TD")?.symbols ?? []).toEqual([]);
@@ -433,7 +464,7 @@ describe("makeCapacitySplitBarFetcher (provider split, item 8)", () => {
     const fetch = makeCapacitySplitBarFetcher(
       fakeFetcher("TD", calls),
       fakeFetcher("TII", calls),
-      () => ({ minute: 8, day: 1 }),
+      fakeReservation(1, 100).reservation,
     );
     await fetch(["A", "B", "C"]);
     expect(calls.find((c) => c.who === "TD")?.symbols).toEqual(["A"]); // day budget caps at 1
@@ -445,7 +476,7 @@ describe("makeCapacitySplitBarFetcher (provider split, item 8)", () => {
     const fetch = makeCapacitySplitBarFetcher(
       fakeFetcher("TD", calls, { fail: true }),
       fakeFetcher("TII", calls),
-      () => ({ minute: 2, day: 100 }),
+      fakeReservation(2, 100).reservation,
     );
     const bars = await fetch(["A", "B"]);
     // Twelve Data threw, so both assigned symbols spill to Tiingo and still resolve.
@@ -461,7 +492,7 @@ describe("makeCapacitySplitBarFetcher (provider split, item 8)", () => {
     const fetch = makeCapacitySplitBarFetcher(
       fakeFetcher("TD", calls, { empty: new Set(["A"]) }),
       fakeFetcher("TII", calls),
-      () => ({ minute: 2, day: 100 }),
+      fakeReservation(2, 100).reservation,
     );
     const bars = await fetch(["A", "B"]);
     expect(bars.get("A")?.length).toBe(1); // refilled from Tiingo
@@ -474,8 +505,7 @@ describe("makeCapacitySplitBarFetcher (provider split, item 8)", () => {
     const fetch = makeCapacitySplitBarFetcher(
       fakeFetcher("TD", calls),
       fakeFetcher("TII", calls),
-      () => ({ minute: 2, day: 100 }),
-      () => false, // Tiingo frozen
+      fakeReservation(2, 0).reservation, // Tiingo frozen ⇒ 0 grant
     );
     const bars = await fetch(["A", "B", "C", "D"]);
     // Twelve Data still serves up to its budget; the overflow is held back for a
@@ -491,8 +521,7 @@ describe("makeCapacitySplitBarFetcher (provider split, item 8)", () => {
     const fetch = makeCapacitySplitBarFetcher(
       fakeFetcher("TD", calls, { empty: new Set(["A"]) }),
       fakeFetcher("TII", calls),
-      () => ({ minute: 8, day: 100 }),
-      () => false, // Tiingo frozen
+      fakeReservation(8, 0).reservation, // Tiingo frozen ⇒ 0 grant
     );
     const bars = await fetch(["A", "B"]);
     expect(calls.find((c) => c.who === "TII")).toBeUndefined();

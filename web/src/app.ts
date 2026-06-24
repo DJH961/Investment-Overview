@@ -50,12 +50,8 @@ import {
   readLastPull,
   readNavPublishStats,
   readSymbolPlan,
-  recordCredits,
-  releaseCredits,
   type PlannedSymbol,
   recordNavPublish,
-  recordTiingoCredits,
-  releaseTiingoCredits,
   primeQuotesFromBars,
   readSessionStatus,
   writeSessionStatus,
@@ -77,7 +73,6 @@ import {
   marketCacheTtlMs,
   navCacheTtlMs,
   navPublishWindow,
-  twelveDataBudgetRemaining,
   type EurUsdSource,
   type LoadQuotesOptions,
   type QuoteLoadReport,
@@ -120,12 +115,11 @@ import {
   type LiveGraphProviders,
 } from "./live-graph";
 import {
-  applyTwelveDataFreeze,
   recordTwelveData429,
   recordTwelveDataSuccess,
   recordTiingo429,
-  tiingoFrozen,
 } from "./provider-breaker";
+import { ledgerReservation } from "./reservation";
 import { springboardSessionCurve, springboardWeekCurve } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
 import { TimeSeriesStore } from "./timeseries-store";
@@ -843,17 +837,21 @@ export class App {
       extra: { interval?: string; outputsize?: number } = {},
     ): Promise<void> => {
       if (symbols.length === 0) return;
-      // Instrument the spend recorders so every Tiingo (bars + FX) and Twelve
-      // Data spend this backfill makes is written to the data-polling log and
-      // tallied — the warm-up backfill used to record its credits silently, so a
-      // refill could "download something once without logging". Now it never does.
+      // Every metered request this backfill makes flows through the single
+      // reservation authority (audit Rec 4): it atomically reserves each leg's
+      // credits against the live shared budgets (Twelve Data per-minute/day + 429
+      // freeze, Tiingo hourly/daily + freeze) before the call fires, so no path
+      // can overshoot. The meters below are therefore *observation-only* — they
+      // log/tally the spend and trip the 429 breaker, and a not-billed result
+      // releases the reservation rather than touching the raw ledger twice.
+      const reservation = ledgerReservation();
       const spent = { credits: 0 };
       const { tiingoMeter, twelveDataMeter } = instrumentedGraphRecorders({
         range: `${label} warm-up`,
-        bookTwelveData: (n) => recordCredits(n, Date.now()),
-        refundTwelveData: (n) => releaseCredits(n, Date.now()),
-        bookTiingo: (n) => recordTiingoCredits(n, Date.now()),
-        refundTiingo: (n) => releaseTiingoCredits(n, Date.now()),
+        bookTwelveData: () => undefined,
+        refundTwelveData: (n) => reservation.release("twelvedata", n, Date.now()),
+        bookTiingo: () => undefined,
+        refundTiingo: (n) => reservation.release("tiingo", n, Date.now()),
         log: (message) => this.pollLog("graph", message),
         spent,
         // Two-tier braking, tier 2 (WS4/WS5): a provider 429 is the authoritative
@@ -870,20 +868,18 @@ export class App {
         endDate: window.endDate,
         tiingoMeter,
         twelveDataMeter,
-        // One routing path (WS3): fill Twelve Data up to whatever its shared
-        // per-minute/day budget has left, slicing the request to the minute cap
-        // (WS2) so a 12-credit batch can never 429 a fresh 8-credit minute, and
-        // route only the genuine overflow to Tiingo — never Tiingo-first. The
-        // remainder is deferred to the next refresh round, not dumped on Tiingo.
-        // While Twelve Data is in a 429 freeze its live minute reads 0 (WS5), so
-        // the split routes nothing to it until the freeze lifts.
-        budget: () => applyTwelveDataFreeze(twelveDataBudgetRemaining(Date.now()), Date.now()),
+        // One routing path (WS3) through the reservation authority: fill Twelve
+        // Data up to whatever its shared per-minute/day budget has left (sliced to
+        // the minute cap, WS2, so a 12-credit batch can never 429 a fresh 8-credit
+        // minute), then route only the genuine overflow to Tiingo up to *its*
+        // scarce budget — never Tiingo-first, and never over either cap. The
+        // remainder is deferred to the next refresh round. A 429 freeze zeroes the
+        // frozen provider's grant, so the split routes nothing to it until it lifts.
+        reservation,
         // Two-tier braking, tier 1 (WS4): a per-symbol series backoff parks a
         // dead/empty series instead of re-pulling it every ~60s round, exactly as
         // the FX leg below already is.
         backoff: { memo: cacheSeriesBackoff(), scope: `bars:${param}`, now: () => Date.now() },
-        // Defer (don't waste) the overflow while Tiingo is frozen to the next :00.
-        tiingoAvailable: () => !tiingoFrozen(Date.now()),
         ...extra,
       });
       if (!fetchBars) return;
@@ -909,6 +905,7 @@ export class App {
         twelveDataMeter,
         backoff: cacheSeriesBackoff(),
         backoffKey: `fx:${label}:${fxResample}`,
+        reservation,
       });
       let fx: Bar[] | undefined;
       if (fetchFx) fx = await fetchFx().catch(() => undefined);
@@ -3527,16 +3524,18 @@ export class App {
               o.totalValueUsd ?? (baseFx !== null ? o.totalValueEur.times(baseFx) : o.totalValueEur),
           }
         : null;
+    const reservation = ledgerReservation();
     const providers: LiveGraphProviders = {
       apiKey: config.apiKey,
       priceProxyUrl: resolvePriceProxyUrl(config),
-      // The graph fills Twelve Data first up to whatever its shared per-minute/day
-      // budget has left after the (prefetch-led) quote pass, then spills the
-      // overflow to Tiingo (item 8). Reads the live shared credit ledger, and
-      // reads 0 for Twelve Data's minute while it is in a 429 freeze (WS5).
-      budget: () => applyTwelveDataFreeze(twelveDataBudgetRemaining(Date.now()), Date.now()),
-      // Defer (don't waste) the Tiingo overflow while Tiingo is frozen (WS4/WS5).
-      tiingoAvailable: () => !tiingoFrozen(Date.now()),
+      // Every metered graph request — bars, overflow, spill and both FX legs —
+      // passes through the single reservation authority (audit Rec 4): it
+      // atomically reserves each leg's credits against the live shared budgets
+      // (Twelve Data per-minute/day + 429 freeze, Tiingo hourly/daily + freeze)
+      // before the call fires, so Twelve Data fills first up to its budget, the
+      // overflow goes to Tiingo only up to *its* scarce budget, and nothing ever
+      // fires over a cap or while a provider is frozen.
+      reservation,
     };
     const store = this.ensureTimeSeriesStore();
     const exported = this.state.data?.live_graphs ?? undefined;
@@ -3560,10 +3559,13 @@ export class App {
       ...providers,
       ...instrumentedGraphRecorders({
         range,
-        bookTwelveData: (n) => recordCredits(n, Date.now()),
-        refundTwelveData: (n) => releaseCredits(n, Date.now()),
-        bookTiingo: (n) => recordTiingoCredits(n, Date.now()),
-        refundTiingo: (n) => releaseTiingoCredits(n, Date.now()),
+        // The reservation authority is the sole booker, so the meters are
+        // observation-only: they log/tally and trip the 429 breaker, and a
+        // not-billed result releases the reservation rather than the raw ledger.
+        bookTwelveData: () => undefined,
+        refundTwelveData: (n) => reservation.release("twelvedata", n, Date.now()),
+        bookTiingo: () => undefined,
+        refundTiingo: (n) => reservation.release("tiingo", n, Date.now()),
         log: (message) => this.pollLog("graph", message),
         spent,
         // Trip/clear the per-provider 429 circuit breaker at the meter (WS4/WS5).
