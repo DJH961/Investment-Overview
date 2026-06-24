@@ -10,7 +10,8 @@ import { describe, expect, it, vi } from "vitest";
 import { Decimal } from "../src/decimal-config";
 import { PriceError, type Quote } from "../src/prices";
 import { latestSettledSessionDate } from "../src/market-hours";
-import { runTiingoFallback, shouldQuickRefresh, planStartupRefresh, planPrefetch } from "../src/tiingo-fallback";
+import { runTiingoFallback, shouldQuickRefresh, planStartupRefresh, planPrefetch, tiingoBudgetView } from "../src/tiingo-fallback";
+import { WEB_DAILY_CAP, WEB_HOURLY_CAP } from "../src/tiingo-gate";
 import { tiingoCreditsSpentToday, readTiingoCreditLog, readTiingoNoNewer, recordTiingoCredits, type StorageLike } from "../src/cache";
 
 function memStorage(): StorageLike {
@@ -393,6 +394,27 @@ describe("runTiingoFallback", () => {
     });
     expect(fallback.tiingoSymbols).toEqual(symbols);
     expect(tiingoCreditsSpentToday(readTiingoCreditLog(NOW, undefined, open), NOW)).toBe(40);
+  });
+});
+
+describe("tiingoBudgetView", () => {
+  it("reflects every Tiingo spend live from the credit log (graph pulls included)", () => {
+    const storage = memStorage();
+    // Simulate a 1D + 1W graph backfill spending Tiingo credits directly — no
+    // quote fallback ran, so a snapshot taken there would miss these entirely.
+    recordTiingoCredits(3, NOW, storage); // e.g. 1D bars
+    recordTiingoCredits(2, NOW, storage); // e.g. 1W bars + FX
+    const view = tiingoBudgetView(NOW, storage);
+    expect(view.hourUsed).toBe(5);
+    expect(view.dayUsed).toBe(5);
+    expect(view.hourLimit).toBe(WEB_HOURLY_CAP);
+    expect(view.dayLimit).toBe(WEB_DAILY_CAP);
+  });
+
+  it("starts at zero usage when nothing has been spent", () => {
+    const view = tiingoBudgetView(NOW, memStorage());
+    expect(view.hourUsed).toBe(0);
+    expect(view.dayUsed).toBe(0);
   });
 });
 

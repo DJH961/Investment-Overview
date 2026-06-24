@@ -144,6 +144,17 @@ export function tiingoRemainingCredits(now: number, storage?: StorageLike | null
   return readBudget(now, storage).remaining();
 }
 
+/**
+ * The Tiingo hourly/daily usage as it stands **right now**, read live from the
+ * persisted credit log. Unlike the snapshot returned inside a
+ * {@link TiingoFallbackResult} (taken when the quote fallback last ran), this
+ * reflects *every* Tiingo spend since — including the 1D/1W graph-bar and
+ * FX-history pulls — so the Overview's "used fallback" line counts those too.
+ */
+export function tiingoBudgetView(now: number, storage?: StorageLike | null): TiingoBudgetView {
+  return budgetView(now, storage);
+}
+
 function budgetView(now: number, storage: StorageLike | null | undefined): TiingoBudgetView {
   const b = readBudget(now, storage);
   return { hourUsed: b.hourUsed, hourLimit: b.hourlyCap, dayUsed: b.dayUsed, dayLimit: b.dailyCap };
