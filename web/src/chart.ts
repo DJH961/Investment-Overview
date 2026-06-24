@@ -3,7 +3,11 @@
  * "value over time" graph and the Risk equity curve. It draws one or more value
  * series onto a padded plot area with a y-axis (value gridlines) and an x-axis
  * (date or, for the intraday "1D" curve, time-of-day ticks) so the curve reads
- * as a chart, not abstract art.
+ * as a chart, not abstract art. Points are placed along a true **time** axis
+ * when the labels parse as a non-decreasing timeline, so a dense cluster of
+ * samples (e.g. extra final-hour points) occupies only its real slice of elapsed
+ * time rather than stretching out by point count; non-timeline labels fall back
+ * to even index spacing.
  *
  * The SVG keeps its aspect ratio (`xMidYMid meet`) and scales to its container
  * width via CSS, so axis text never stretches. Everything is built with the DOM
@@ -109,6 +113,59 @@ function evenIndexes(n: number, count: number): number[] {
   return uniqueIndexes(idx);
 }
 
+/**
+ * The fractional x position (0…1) of each point along a **time** axis: when
+ * every label parses to a timestamp and the timeline is non-decreasing with a
+ * positive span, points are placed by *when* they occurred rather than by their
+ * ordinal index. This keeps clustered samples (e.g. extra blob-backed points in
+ * the final hour) from stretching that hour across the whole plot — a dense burst
+ * occupies only its true slice of elapsed time. Returns `null` when the labels
+ * aren't a usable timeline, so the caller falls back to even index spacing.
+ */
+export function timeFractions(dates: string[]): number[] | null {
+  const n = dates.length;
+  if (n < 2) return null;
+  const ms: number[] = [];
+  for (const d of dates) {
+    const t = Date.parse(d);
+    if (Number.isNaN(t)) return null;
+    ms.push(t);
+  }
+  const first = ms[0];
+  const span = ms[n - 1] - first;
+  if (!(span > 0)) return null;
+  for (let i = 1; i < n; i += 1) if (ms[i] < ms[i - 1]) return null;
+  return ms.map((t) => (t - first) / span);
+}
+
+/**
+ * Up to `count` indexes whose positions are roughly even **along the axis**
+ * given each point's fractional position (always including both ends),
+ * de-duplicated. Unlike {@link evenIndexes}, this spaces ticks by where the
+ * points actually sit, so on a time axis with clustered samples the labels stay
+ * visually even instead of bunching up under the dense region.
+ */
+function evenIndexesByFraction(fracs: number[], count: number): number[] {
+  const n = fracs.length;
+  if (n <= 1) return [0];
+  const c = Math.max(2, Math.min(count, n));
+  const idx: number[] = [];
+  for (let t = 0; t < c; t += 1) {
+    const target = t / (c - 1);
+    let best = 0;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < n; i += 1) {
+      const dist = Math.abs(fracs[i] - target);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = i;
+      }
+    }
+    idx.push(best);
+  }
+  return uniqueIndexes(idx);
+}
+
 export interface XAxisTick {
   index: number;
   text: string;
@@ -124,14 +181,19 @@ export interface XAxisTick {
  * month — while wider windows keep the compact "Jun '26" month label. Up to
  * `count` roughly-even ticks are returned (more than the old start/middle/end)
  * so the axis is easier to read when it fits.
+ *
+ * When `positions` (each point's fractional x along a time axis) is supplied,
+ * ticks are spaced evenly **along the axis** rather than by ordinal index, so a
+ * cluster of points (e.g. a dense final hour) doesn't pull every label into it.
  */
-export function xAxisTicks(dates: string[], count = 5): XAxisTick[] {
+export function xAxisTicks(dates: string[], count = 5, positions?: number[] | null): XAxisTick[] {
   const n = dates.length;
   if (n === 0) return [];
   const span = spanDays(dates);
   const labelFor =
     span < 1 && hasClockTime(dates[0]) ? timeLabel : span <= 92 ? dayLabel : monthLabel;
-  const idx = evenIndexes(n, count);
+  const idx =
+    positions && positions.length === n ? evenIndexesByFraction(positions, count) : evenIndexes(n, count);
   const last = idx[idx.length - 1];
   return idx.map((i) => ({
     index: i,
@@ -179,7 +241,12 @@ export function buildLineChart(options: LineChartOptions): SVGSVGElement | null 
   const max = axis.max;
   const span = max - min;
 
-  const x = (i: number): number => padL + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+  // Place points along a time axis when the labels are a usable timeline, so a
+  // dense burst of samples (e.g. extra blob-backed points in the final hour)
+  // takes only its true slice of elapsed time instead of stretching out by count.
+  const positions = timeFractions(dates);
+  const x = (i: number): number =>
+    padL + (n === 1 ? plotW / 2 : (positions ? positions[i] : i / (n - 1)) * plotW);
   const y = (v: number): number => padT + plotH - ((v - min) / span) * plotH;
 
   const svg = svgEl("svg");
@@ -214,7 +281,7 @@ export function buildLineChart(options: LineChartOptions): SVGSVGElement | null 
   }
 
   // --- X axis: date ticks ------------------------------------------------
-  for (const tick of xAxisTicks(dates)) {
+  for (const tick of xAxisTicks(dates, 5, positions)) {
     const label = svgEl("text");
     label.setAttribute("x", x(tick.index).toFixed(1));
     label.setAttribute("y", String(height - 8));

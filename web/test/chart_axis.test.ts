@@ -72,4 +72,32 @@ describe("xAxisTicks", () => {
     expect(ticks[0]!.anchor).toBe("start");
     expect(ticks[ticks.length - 1]!.anchor).toBe("end");
   });
+
+  it("spaces ticks by elapsed time, not point index, when positions are supplied", () => {
+    // A timeline where the final hour carries many more samples than the rest of
+    // the day (the blob-backed "extra data in the final hour" case). Index-based
+    // ticks would bunch under that dense tail; fraction-based ticks stay even.
+    const dates: string[] = [];
+    const start = new Date("2026-06-19T13:30:00Z").getTime();
+    // Sparse points across ~6h (every 30 min), then a dense burst in the last hour.
+    for (let i = 0; i < 12; i += 1) dates.push(new Date(start + i * 30 * 60_000).toISOString());
+    const denseStart = start + 6 * 3_600_000;
+    for (let i = 1; i <= 40; i += 1) dates.push(new Date(denseStart + i * 60_000).toISOString());
+
+    const first = Date.parse(dates[0]);
+    const span = Date.parse(dates[dates.length - 1]) - first;
+    const positions = dates.map((d) => (Date.parse(d) - first) / span);
+
+    const ticks = xAxisTicks(dates, 5, positions);
+    // Interior ticks should sit at roughly-even fractions across the axis, so the
+    // selected indexes are NOT clustered at the dense tail.
+    const fracs = ticks.map((t) => positions[t.index]);
+    expect(fracs[0]).toBeCloseTo(0, 2);
+    expect(fracs[fracs.length - 1]).toBeCloseTo(1, 2);
+    // The mid tick should be near the middle of elapsed time, not near the end
+    // where most of the points live.
+    const mid = fracs[Math.floor(fracs.length / 2)]!;
+    expect(mid).toBeGreaterThan(0.3);
+    expect(mid).toBeLessThan(0.7);
+  });
 });
