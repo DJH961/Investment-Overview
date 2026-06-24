@@ -11,6 +11,7 @@ import {
   capAtClose,
   intradaySymbols,
   loadOrBuildSessionCurve,
+  marketSleeveSymbols,
   mergeBreadcrumbs,
   rebaseBreadcrumbs,
   type AnchorHoldingInput,
@@ -76,14 +77,52 @@ describe("buildIntradayAnchor", () => {
     expect(anchor.baseEur.toString()).toBe("10");
   });
 
-  it("falls back to the EUR value when a holding has no USD twin", () => {
+  it("folds NAV funds into the week sleeve (priceType nav) when navInSleeve is set", () => {
     const anchor = buildIntradayAnchor(
-      [holding({ priceType: "nav", valueEur: d(40), valueUsd: null })],
+      [
+        holding({ priceSymbol: "VTI" }),
+        holding({ priceSymbol: "FXAIX", priceType: "nav", valueEur: d(50), valueUsd: d(55) }),
+      ],
+      d(100),
+      d(110),
+      d("0.9"),
+      { navInSleeve: true },
+    );
+    // Both the market ETF and the priced NAV fund now sit in the sleeve...
+    expect(anchor.holdings.map((h) => h.priceSymbol)).toEqual(["VTI", "FXAIX"]);
+    expect(anchor.holdings.map((h) => h.priceType)).toEqual(["market", "nav"]);
+    // ...so the fund's value is no longer double-counted in the flat base.
+    expect(anchor.baseEur.toString()).toBe("100");
+    expect(anchor.baseUsd.toString()).toBe("110");
+  });
+
+  it("keeps an unpriced NAV fund in the base even with navInSleeve set", () => {
+    const anchor = buildIntradayAnchor(
+      [holding({ priceSymbol: "VMFXX", priceType: "nav", priceNative: null, valueEur: d(50), valueUsd: d(50) })],
       d(0),
       d(0),
       null,
+      { navInSleeve: true },
     );
-    expect(anchor.baseUsd.toString()).toBe("40");
+    expect(anchor.holdings).toHaveLength(0);
+    expect(anchor.baseEur.toString()).toBe("50");
+  });
+});
+
+describe("marketSleeveSymbols", () => {
+  it("returns only the market sleeve members (NAV funds excluded from fetch)", () => {
+    const anchor = buildIntradayAnchor(
+      [
+        holding({ priceSymbol: "VTI" }),
+        holding({ priceSymbol: "FXAIX", priceType: "nav", valueEur: d(50), valueUsd: d(55) }),
+      ],
+      d(0),
+      d(0),
+      d("0.9"),
+      { navInSleeve: true },
+    );
+    expect(intradaySymbols(anchor)).toEqual(["VTI", "FXAIX"]);
+    expect(marketSleeveSymbols(anchor)).toEqual(["VTI"]);
   });
 });
 
@@ -91,9 +130,9 @@ describe("intradaySymbols", () => {
   it("returns the distinct tickers of the sleeve", () => {
     const anchor: IntradayAnchor = {
       holdings: [
-        { priceSymbol: "VTI", valueEur: d(1), valueUsd: d(1), closeNative: d(1), isUsdNative: true },
-        { priceSymbol: "VTI", valueEur: d(1), valueUsd: d(1), closeNative: d(1), isUsdNative: true },
-        { priceSymbol: "QQQ", valueEur: d(1), valueUsd: d(1), closeNative: d(1), isUsdNative: true },
+        { priceSymbol: "VTI", valueEur: d(1), valueUsd: d(1), closeNative: d(1), isUsdNative: true, priceType: "market" },
+        { priceSymbol: "VTI", valueEur: d(1), valueUsd: d(1), closeNative: d(1), isUsdNative: true, priceType: "market" },
+        { priceSymbol: "QQQ", valueEur: d(1), valueUsd: d(1), closeNative: d(1), isUsdNative: true, priceType: "market" },
       ],
       baseEur: d(0),
       baseUsd: d(0),
@@ -207,7 +246,7 @@ describe("loadOrBuildSessionCurve", () => {
   function singleEtfAnchor(): IntradayAnchor {
     return {
       holdings: [
-        { priceSymbol: "VTI", valueEur: d(900), valueUsd: d(1000), closeNative: d(100), isUsdNative: true },
+        { priceSymbol: "VTI", valueEur: d(900), valueUsd: d(1000), closeNative: d(100), isUsdNative: true, priceType: "market" },
       ],
       baseEur: d(100),
       baseUsd: d(100),
@@ -560,7 +599,7 @@ describe("loadOrBuildSessionCurve", () => {
     // The NAV has since been re-struck: the current base is 300 (up 200).
     const anchor: IntradayAnchor = {
       holdings: [
-        { priceSymbol: "VTI", valueEur: d(900), valueUsd: d(1000), closeNative: d(100), isUsdNative: true },
+        { priceSymbol: "VTI", valueEur: d(900), valueUsd: d(1000), closeNative: d(100), isUsdNative: true, priceType: "market" },
       ],
       baseEur: d(300),
       baseUsd: d(300),
