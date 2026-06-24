@@ -14,6 +14,67 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.1.0] — 2026-06-24
+
+### Added
+
+- **Mutual-fund NAVs now move the 1-week curve on both the desktop app and the
+  web companion.** Roughly half a typical portfolio can sit in NAV-priced funds,
+  whose daily close changes were previously folded into a single flat base for
+  the 1W range — so a week of real NAV drift rendered as a straight line. The 1W
+  base is now computed per-day across the week window from stored fund closes
+  (already persisted to `price_history` / the cache, so no backfill or new table
+  was needed), while genuinely static sleeves — cash, savings, and money-market
+  funds — correctly stay flat. The 1D curve is unchanged.
+- **The web companion gap-fills moving-fund NAV history on quiet days and
+  rebases its 1W breadcrumbs against the enriched curve.** Cached per-day fine
+  bars are reused first; only the still-missing days are fetched, and a
+  capacity-aware split decides how aggressively to pull. Money-market funds are
+  explicitly excluded from gap-fill and stay flat.
+- **Tiingo is now a budget-gated secondary FX provider on the desktop, on both
+  FX paths.** For the live EUR→USD spot, Tiingo backs up the existing keyless
+  yfinance primary when yfinance is unavailable or returns a stale (pre-today)
+  reading. For the 1D/1W FX history week-base, a Tiingo "today-tip" fill closes
+  the most recent day's gap when Frankfurter/ECB errors or returns nothing.
+  Both are single, budget-gated calls that never fire on a vanilla install (no
+  Tiingo token) and degrade gracefully without any retry storm; Frankfurter/ECB
+  remains the sole source of record for FX history.
+
+### Changed
+
+- **Live graph backfill now spends Twelve Data first and lets Tiingo catch the
+  overflow.** A capacity-aware provider split routes each 1D/1W time-series pull
+  to Twelve Data while its per-minute quota has headroom, pushing only the excess
+  to Tiingo — preserving the rarer Tiingo budget while keeping graphs instant
+  because prefetch loads everything before a graph renders.
+- **Tiingo/Twelve Data budgeting is now provider-aware with two-phase
+  reserve/settle accounting.** Credits are reserved worst-case on dispatch (so
+  concurrent fan-out can't overcommit) and settled on result — kept or trued-up
+  when the provider actually billed, refunded when it didn't (e.g. a non-billing
+  error). This mirrors each provider's real metering rather than counting local
+  attempts.
+- **Overview pull status messages are trimmed and de-duplicated** so a single
+  refresh no longer emits repeated or redundant progress lines.
+
+### Fixed
+
+- **A failed or partial intraday fetch is now retried instead of being treated
+  as covered.** Both the desktop week-coverage check and the 1D session check
+  previously used a presence test — any single cached sample marked a session
+  "done" — so a day stuck with one stray point was never re-fetched and rendered
+  with a gap. Completed sessions now require their full point coverage to count
+  as covered; the current anchor session stays lenient.
+- **Repeatedly failing symbols no longer hammer the providers.** A timestamp-
+  based, per-symbol 3-strike backoff isolates a misbehaving 1D/1W time-series
+  symbol after three consecutive failures, preventing it from burning budget or
+  spamming the poll log while leaving healthy symbols unaffected.
+- **Quiet-day NAV gap-fills are now self-explaining in the data-polling log** via
+  an `onNavBackfill` hook, so a backfill that runs on a day with no live quotes
+  no longer looks like an unexplained pull.
+- **Legacy yfinance-sourced FX-history rows are purged on boot** so the
+  ECB/Frankfurter reference rates remain the single source of record for
+  historical FX after the short-lived yfinance overlay was reverted.
+
 ## [4.0.4] — 2026-06-24
 
 ### Fixed
