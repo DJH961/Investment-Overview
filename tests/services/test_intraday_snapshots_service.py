@@ -464,15 +464,41 @@ class TestReconstruct:
         _seed_eur_holding(session)
         calls = {"n": 0}
 
+        # A fetch that covers the session span (open → near close) so the
+        # coverage-aware guard trusts it complete and the second call short-circuits.
+        covering_bars = {
+            datetime(2024, 6, 3, 13, 30): Decimal("100"),  # 09:30 ET — open
+            datetime(2024, 6, 3, 16, 30): Decimal("100"),  # 12:30 ET — midday
+            datetime(2024, 6, 3, 19, 45): Decimal("100"),  # 15:45 ET — near close
+        }
+
         def fetch(symbols, day, *, interval):  # type: ignore[no-untyped-def]
             calls["n"] += 1
-            return {sym: {datetime(2024, 6, 3, 13, 30): Decimal("100")} for sym in symbols}
+            return {sym: dict(covering_bars) for sym in symbols}
 
         iss.reconstruct_last_session(session, now=_NOW, fetcher=fetch)
         session.flush()
         iss.reconstruct_last_session(session, now=_NOW, fetcher=fetch)
         session.flush()
         assert calls["n"] == 1  # second call short-circuits on the app_config guard
+
+    def test_under_covered_session_is_repulled_despite_marker(self, session: Session) -> None:
+        # A prior attempt that landed only a stray morning bar leaves the curve
+        # gappy. The coverage-aware guard must not trust the done-marker: a later
+        # call re-runs and fills the rest of the session once the feed recovers.
+        _seed_eur_holding(session)
+        calls = {"n": 0}
+
+        def stray(symbols, day, *, interval):  # type: ignore[no-untyped-def]
+            calls["n"] += 1
+            return {sym: {datetime(2024, 6, 3, 13, 30): Decimal("100")} for sym in symbols}
+
+        iss.reconstruct_last_session(session, now=_NOW, fetcher=stray)
+        session.flush()
+        # One early bar spans none of the session → under-covered → re-pulled.
+        iss.reconstruct_last_session(session, now=_NOW, fetcher=stray)
+        session.flush()
+        assert calls["n"] == 2
 
     def test_retries_when_prior_attempt_left_no_samples(self, session: Session) -> None:
         # A first attempt that wrote nothing (a transient feed failure / opening
@@ -840,6 +866,30 @@ class TestWeekSeries:
         # The cached live point survives and is the only point for today.
         today_points = [(at, eur) for at, eur, _ in out if at.date() == date(2024, 6, 3)]
         assert today_points == [(live_at, Decimal("5555.00"))]
+
+    def test_anchor_repulled_after_close_when_under_covered(self, session: Session) -> None:
+        # Once the anchor session's close has passed it is a *finished* session:
+        # a single stray live capture no longer marks the whole day "covered". The
+        # day is re-pulled to fill its start/midday/close span (the live point is
+        # preserved alongside).
+        _seed_eur_holding_for_week(session)
+        after_close = datetime(2024, 6, 3, 20, 30, tzinfo=UTC)  # 16:30 ET — closed
+        lone_at = datetime(2024, 6, 3, 15, 0)
+        intraday_repo.insert_sample(session, lone_at, Decimal("5555.00"))
+        session.flush()
+        seen: dict[str, date] = {}
+        base = _fake_week_fetcher(self._DAY_BARS)
+
+        def fetch(symbols, start_day, end_day, *, interval):  # type: ignore[no-untyped-def]
+            seen["end"] = end_day
+            return base(symbols, start_day, end_day, interval=interval)
+
+        out = iss.week_series_with_fx(session, now=after_close, fetcher=fetch)
+        # The closed anchor day is now included in the fetch range and filled.
+        assert seen["end"] == date(2024, 6, 3)
+        day_values = [eur for at, eur, _ in out if at.date() == date(2024, 6, 3)]
+        assert len(day_values) >= iss.WEEK_POINTS_PER_COMPLETE_SESSION
+        assert Decimal("5555.00") in day_values  # the live point is preserved
 
     def test_completed_session_with_missing_points_is_repulled(self, session: Session) -> None:
         # A finished earlier session that holds only a single stray sample (a
