@@ -14,7 +14,40 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [3.20.1] — 2026-06-24
+## [3.20.2] — 2026-06-24
+
+### Added
+- **Smart-routing login prefetch.** The login warm-up no longer blindly fetches
+  quotes — it now decides, entirely from cached state before the blob is even
+  decrypted, the *minimum* worth pulling and the cheapest route for it:
+  - **NAV funds always route to Twelve Data, never Tiingo.** A mutual fund has no
+    intraday series and the 1D/1W graphs never plot it, so spending a scarce
+    (hourly-capped) Tiingo credit on one is pure waste. The plan now splits NAVs
+    out of any Tiingo rapid-fire and warms them on the cheap Twelve Data primary —
+    e.g. "closed market, only 3 mutual funds behind → Twelve Data, funds only".
+  - **Stale 1D/1W graphs are backfilled in the same expensive pass.** When a live
+    graph is out of date and a Tiingo pipe is available, the warm-up pulls the
+    market sleeve's intraday/daily bars (and the matching FX track) now, so the
+    graph is warm on first paint instead of triggering a second on-demand pull.
+  - **Bars double as quotes (no double-buy).** Each freshly fetched bar's newest
+    point is a current mark, primed straight back into the quote cache, so the
+    symbols a graph pull covered are dropped from the quote set — one spend serves
+    both the graph and the holdings table. Bars merge into the device store, so the
+    later dashboard build reuses them rather than re-spending the hourly-capped
+    Tiingo budget.
+- **A session-status snapshot** is saved on log-out and after every pull (coverage
+  flags + market phase + on-device graph day; no prices or secrets), so the next
+  login's pre-flight can log the delta against what we last held.
+
+### Changed
+- **The prefetch FX pull is now logged.** It was previously silent; the login
+  warm-up's EUR/USD pull now writes its value, source (live/Tiingo/EOD) and
+  fresh-vs-cached status to the `FX` polling-log category, and the routing
+  decision itself is spelled out under `LOGIN`. The unlock-screen status line and
+  the one-off refresh-glyph spin now also count freshly backfilled graph bars as
+  genuinely "pulled".
+
+
 
 ### Added
 - **Live 1D/1W value graphs now write to the Settings data-polling log.** Every

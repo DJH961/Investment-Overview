@@ -523,10 +523,34 @@ export function planStartupRefresh(args: {
 export type PrefetchRoute = "twelve" | "tiingo";
 
 export interface PrefetchPlan {
-  /** The stock/ETF/fund symbols to warm this round (FX is warmed separately). */
+  /**
+   * The stock/ETF/fund symbols to warm via a plain **quote** pull this round on
+   * {@link route} (FX is warmed separately). Market sleeve only — NAV funds are
+   * split out into {@link navSymbols}, and any symbol a graph-bar pull already
+   * covers is removed (its bar doubles as the quote, so it is never re-bought).
+   */
   symbols: string[];
-  /** Which provider to route the warm-up quote pull through. */
+  /** Which provider to route the quote pull through. */
   route: PrefetchRoute;
+  /**
+   * NAV funds to warm — **always via Twelve Data**, never Tiingo. A fund's NAV
+   * has no intraday series and the 1D/1W graphs never pull it, so spending an
+   * expensive (hourly-capped) Tiingo credit on one would be pure waste; the cheap
+   * Twelve Data quote is the right tool. Empty while the market is open (a NAV
+   * cannot strike mid-session).
+   */
+  navSymbols: string[];
+  /**
+   * Market sleeve symbols whose **1D intraday bars** are worth pulling now (the
+   * live session graph is stale). Fetched via Tiingo's `?intraday=` feed — which
+   * also yields each symbol's current mark, so these double as the quote refresh.
+   */
+  graphSessionSymbols: string[];
+  /**
+   * Market sleeve symbols whose **1W daily bars** are worth pulling now (the week
+   * graph is stale). Fetched via Tiingo's `?daily=` feed.
+   */
+  graphWeekSymbols: string[];
 }
 
 /**
@@ -534,9 +558,11 @@ export interface PrefetchPlan {
  * Kept pure so the market-aware policy is testable without the app shell.
  *
  * The forex market trades ~24/5 and values the *whole* book, so the caller warms
- * FX first in line, unconditionally — it is not represented here. This only
- * decides the stock/ETF/fund quote set, so no credit is spent on prices that
- * cannot have changed since the last session:
+ * FX first in line, unconditionally — it is not represented here. This decides
+ * the stock/ETF/fund quote set **and** the live-graph bar pulls, so no credit is
+ * spent on prices that cannot have changed since the last session, and the
+ * expensive (hourly-capped) Tiingo credits are reserved for symbols that truly
+ * need bars:
  *
  *  - **Market open** — warm only the stocks/ETFs (`marketSymbols`): intraday
  *    prices move continuously, while a fund's once-a-day NAV cannot change mid
@@ -546,10 +572,21 @@ export interface PrefetchPlan {
  *    market symbol still missing its latest settled close (an outdated catch-up).
  *    With everything in hand the warm-up makes no quote call at all.
  *
- * A large closed-market catch-up (more than `minBatch`, default
- * {@link STARTUP_TIINGO_MIN_OUTDATED}) is rapid-fired through Tiingo — one
- * batched request with no per-minute cap — instead of trickling ~8/min through
- * the Twelve Data primary; every other case stays on the primary.
+ * **NAV funds always route to Twelve Data** (`navSymbols`), never Tiingo — they
+ * have no intraday series and the graphs never pull them, so the scarce Tiingo
+ * budget goes only where bars are needed.
+ *
+ * **Graph staleness folds in (idea #1 — bars double as quotes).** When the 1D/1W
+ * graph is stale and Tiingo is available, the market sleeve symbols missing bars
+ * (`graphSessionStale`/`graphWeekStale`) are pulled as Tiingo intraday/daily
+ * bars. Each bar's newest point *is* the current mark, so those symbols are
+ * removed from the quote set — one Tiingo spend covers both the graph and the
+ * holding row, never double-buying.
+ *
+ * A large residual closed-market quote catch-up (more than `minBatch`, default
+ * {@link STARTUP_TIINGO_MIN_OUTDATED}) is rapid-fired through Tiingo — one batched
+ * request with no per-minute cap — instead of trickling ~8/min through the Twelve
+ * Data primary; every other case stays on the primary.
  */
 export function planPrefetch(args: {
   marketOpen: boolean;
@@ -561,18 +598,33 @@ export function planPrefetch(args: {
   awaitingNavSymbols: string[];
   /** Whether the Tiingo backup (a configured /price proxy) is available. */
   tiingoAvailable: boolean;
+  /** Market sleeve symbols missing 1D intraday bars (graphs enabled & stale). */
+  graphSessionStale?: string[];
+  /** Market sleeve symbols missing 1W daily bars (graphs enabled & stale). */
+  graphWeekStale?: string[];
   minBatch?: number;
 }): PrefetchPlan {
   const minBatch = args.minBatch ?? STARTUP_TIINGO_MIN_OUTDATED;
+  // Graph bars only when there is a Tiingo pipe to pull them cheaply through.
+  const graphSessionSymbols = args.tiingoAvailable ? [...(args.graphSessionStale ?? [])] : [];
+  const graphWeekSymbols = args.tiingoAvailable ? [...(args.graphWeekStale ?? [])] : [];
+  // Symbols whose current mark a graph-bar pull will already deliver — drop them
+  // from the quote set so one Tiingo spend is never double-bought as a quote too.
+  const coveredByGraph = new Set([...graphSessionSymbols, ...graphWeekSymbols]);
   if (args.marketOpen) {
-    // Open: only the stocks/ETFs move now; warm them on the primary.
-    return { symbols: [...args.marketSymbols], route: "twelve" };
+    // Open: only the stocks/ETFs move now; warm them on the primary, minus any a
+    // graph-bar pull already covers. NAVs cannot strike mid-session ⇒ none.
+    const symbols = args.marketSymbols.filter((s) => !coveredByGraph.has(s));
+    return { symbols, route: "twelve", navSymbols: [], graphSessionSymbols, graphWeekSymbols };
   }
-  // Closed: warm whatever is behind — outdated settled closes plus funds still
-  // awaiting today's NAV — and nothing when everything is already in hand.
-  const symbols = [...args.outdatedMarketSymbols, ...args.awaitingNavSymbols];
-  const route: PrefetchRoute = args.tiingoAvailable && symbols.length > minBatch ? "tiingo" : "twelve";
-  return { symbols, route };
+  // Closed: warm whatever market closes are behind, minus those a graph pull
+  // already covers; NAV funds are split out to Twelve Data unconditionally.
+  const marketQuote = args.outdatedMarketSymbols.filter((s) => !coveredByGraph.has(s));
+  const navSymbols = [...args.awaitingNavSymbols];
+  // Tiingo rapid-fire only for a genuinely large residual *market* catch-up.
+  const route: PrefetchRoute =
+    args.tiingoAvailable && marketQuote.length > minBatch ? "tiingo" : "twelve";
+  return { symbols: marketQuote, route, navSymbols, graphSessionSymbols, graphWeekSymbols };
 }
 
 export const TIINGO_GATE_TIMING = {

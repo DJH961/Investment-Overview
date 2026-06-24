@@ -704,6 +704,7 @@ export function recordNavPublish(
 // --- Live-data prefetch plan ------------------------------------------------
 
 const SYMBOL_PLAN_KEY = "iv.web.symbol_plan";
+const SESSION_STATUS_KEY = "iv.web.session_status";
 
 /**
  * A single symbol the companion knows it will want to price, with just enough
@@ -751,6 +752,58 @@ export function writeSymbolPlan(plan: PlannedSymbol[], storage: StorageLike | nu
   writeJson(storage, SYMBOL_PLAN_KEY, plan);
 }
 
+/**
+ * A compact snapshot of *what the book looked like when we last left* — written
+ * on every successful pull and again on log-out — so the next login can reason,
+ * **before the blob is even decrypted**, about how much actually needs fetching.
+ *
+ * It is the "good saving when logging off" half of smart-routing prefetch: rather
+ * than re-discover the world from scratch, the pre-flight reads this to log (and,
+ * coarsely, explain) the delta — e.g. "last seen: closed market, NAVs missing →
+ * warm only the mutual funds". The graph/quote staleness is still re-checked live
+ * against the caches/{@link TimeSeriesStore}; this only records the *prior* state
+ * for context. Holds only flags + timestamps — never a price, holding or secret.
+ */
+export interface SessionStatus {
+  /** When this snapshot was written (epoch ms). */
+  at: number;
+  /** When live data was last genuinely pulled (epoch ms), or null. */
+  lastPullAt: number | null;
+  /** Coarse market phase at snapshot time (`open` | `closed` | `settled`). */
+  marketPhase: string;
+  /** Whether every market (stock/ETF) settled close was in hand. */
+  marketCovered: boolean;
+  /** Whether every NAV fund's latest expected publish was in hand. */
+  navCovered: boolean;
+  /** The 1D session day whose intraday bars were on the device, or null. */
+  sessionGraphDay: string | null;
+  /** Whether the 1W daily-bar window was fully covered for the market sleeve. */
+  weekGraphCovered: boolean;
+}
+
+/** Read the last persisted session-status snapshot, or null when absent/corrupt. */
+export function readSessionStatus(storage: StorageLike | null = defaultStorage()): SessionStatus | null {
+  const raw = readJson<Partial<SessionStatus>>(storage, SESSION_STATUS_KEY);
+  if (!raw || typeof raw !== "object" || typeof raw.at !== "number") return null;
+  return {
+    at: raw.at,
+    lastPullAt: typeof raw.lastPullAt === "number" ? raw.lastPullAt : null,
+    marketPhase: typeof raw.marketPhase === "string" ? raw.marketPhase : "settled",
+    marketCovered: raw.marketCovered === true,
+    navCovered: raw.navCovered === true,
+    sessionGraphDay: typeof raw.sessionGraphDay === "string" ? raw.sessionGraphDay : null,
+    weekGraphCovered: raw.weekGraphCovered === true,
+  };
+}
+
+/** Persist the session-status snapshot (best-effort). */
+export function writeSessionStatus(
+  status: SessionStatus,
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  writeJson(storage, SESSION_STATUS_KEY, status);
+}
+
 export const CACHE_KEYS = {
   QUOTE_KEY,
   FX_KEY,
@@ -761,6 +814,7 @@ export const CACHE_KEYS = {
   NAV_PUBLISH_KEY,
   BLOB_KEY,
   SYMBOL_PLAN_KEY,
+  SESSION_STATUS_KEY,
 } as const;
 
 /**

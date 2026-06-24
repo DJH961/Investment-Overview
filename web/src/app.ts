@@ -54,6 +54,9 @@ import {
   recordNavPublish,
   recordTiingoCredits,
   primeQuotesFromBars,
+  readSessionStatus,
+  writeSessionStatus,
+  type SessionStatus,
   writeCachedEnvelope,
   writeLastPull,
   writeSymbolPlan,
@@ -77,7 +80,7 @@ import {
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { isUsMarketOpen, latestSettledSessionDate } from "./market-hours";
+import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -100,10 +103,20 @@ import { setEurUsdRate } from "./currency";
 import { formatLastPull } from "./format";
 import { appendPollLog, clearPollLog, formatPollLog, readPollLog, type PollLogCategory } from "./polling-log";
 import { APP_VERSION } from "./version";
-import { buildLiveSessionCurve, buildLiveWeekCurve, instrumentedGraphRecorders, type LiveGraphProviders } from "./live-graph";
+import {
+  buildLiveSessionCurve,
+  buildLiveWeekCurve,
+  instrumentedGraphRecorders,
+  makePriceBarFetcher,
+  makeWindowFxFetcher,
+  sessionFxWindow,
+  weekFxWindow,
+  type LiveGraphProviders,
+} from "./live-graph";
 import { springboardSessionCurve, springboardWeekCurve } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
 import { TimeSeriesStore } from "./timeseries-store";
+import { WEEK_STORE_KEY } from "./week";
 import type { Bar } from "./timeseries";
 import type { MobileExport } from "./types";
 import {
@@ -465,6 +478,11 @@ export class App {
       this.pollLog("login", "Login warm-up started — no symbol plan yet, warming FX only.");
       const warmth = await this.warmPrefetchFx(config);
       this.pollLog(
+        "fx",
+        `Login warm-up: EUR/USD ${warmth.eurUsd !== null ? warmth.eurUsd.toFixed(5) : "—"} ` +
+          `from ${warmth.spotSource} (${warmth.fxLive ? "freshly pulled" : "served from cache"}).`,
+      );
+      this.pollLog(
         "primary",
         `Login warm-up: no symbol plan yet, only warmed FX (EUR/USD spot ${warmth.spotSource}). No quote credits spent.`,
       );
@@ -474,36 +492,43 @@ export class App {
     // Market-aware plan: only fetch what is actually worth a credit right now —
     // stocks/ETFs while the market is open, the after-close (pre-NAV) mutual
     // funds and any outdated settled close while it is shut, nothing when the
-    // book is already current. Decided purely from the cached plan + caches, no
-    // decrypted data needed.
+    // book is already current. Decided purely from the cached plan + caches +
+    // device-stored graph bars, no decrypted data needed.
     const navFetchSymbols = new Set(plan.filter((e) => e.priceType !== "market").map((e) => e.symbol));
-    const targets = this.prefetchTargets(plan);
     const marketOpen = isUsMarketOpen();
+    const now = new Date();
+    const targets = this.prefetchTargets(plan, now);
+    // Graph staleness is read cache-only from the device's bar store (no decrypt),
+    // and only matters when the live graphs are switched on. The market sleeve is
+    // the *only* thing the 1D/1W graphs ever pull — NAV funds never get bars.
+    const graphStale = await this.prefetchGraphStaleness(targets.marketSymbols, now);
     const prefetch = planPrefetch({
       marketOpen,
       marketSymbols: targets.marketSymbols,
       outdatedMarketSymbols: targets.outdatedMarketSymbols,
       awaitingNavSymbols: targets.awaitingNavSymbols,
       tiingoAvailable: resolvePriceProxyUrl(config) !== null,
+      graphSessionStale: graphStale.session,
+      graphWeekStale: graphStale.week,
     });
+    const quoteTotal =
+      prefetch.symbols.length +
+      prefetch.navSymbols.length +
+      new Set([...prefetch.graphSessionSymbols, ...prefetch.graphWeekSymbols]).size;
     this.prefetchStatus = describePrefetch({
       inFlight: true,
       hasPlan: true,
       quoteFetched: 0,
-      quoteTotal: prefetch.symbols.length,
+      quoteTotal,
       fxLive: false,
       lastPullAt: this.lastDataPullAt,
     });
     this.updatePrefetchStatus();
     // The warm-up draws on the *same* free-tier per-minute/day budget as the
     // kickoff refresh that follows, so log it like any other pull (otherwise the
-    // kickoff's "PRIMARY 0/min" looks unexplained in the polling log).
-    this.pollLog(
-      "login",
-      `Login warm-up started — market ${marketOpen ? "open" : "closed"}, ` +
-        `${prefetch.symbols.length} symbol(s) worth warming via ${prefetch.route === "tiingo" ? "Tiingo" : "Twelve Data"} ` +
-        `(plan of ${plan.length}).`,
-    );
+    // kickoff's "PRIMARY 0/min" looks unexplained in the polling log). Spell out
+    // which branch of the routing fired and why, plus the prior-session delta.
+    this.pollLog("login", this.describePrefetchRoute(plan.length, marketOpen, prefetch, graphStale));
     // Currency first, always: the forex market trades longest and values the
     // whole book, so warm the FX cache before any ticker — FX simply goes first
     // in line, with no per-minute reserve held back from the quotes. The live
@@ -511,26 +536,87 @@ export class App {
     // a USD-booked book), not just the keyless end-of-day base rates.
     const warmth = await this.warmPrefetchFx(config);
     const fxLive = warmth.fxLive;
-    if (prefetch.symbols.length === 0) {
+    // The prefetch FX pull shares the same EUR/USD budget as every other pull, so
+    // it must show up in the polling log too (it was previously silent).
+    this.pollLog(
+      "fx",
+      `Login warm-up: EUR/USD ${warmth.eurUsd !== null ? warmth.eurUsd.toFixed(5) : "—"} ` +
+        `from ${warmth.spotSource} (${fxLive ? "freshly pulled" : "served from cache"}).`,
+    );
+    // Graph-bar backfill (idea #1): when a 1D/1W curve is stale and we have a
+    // Tiingo pipe, pull its bars now — the market sleeve only, *never* NAV funds —
+    // so the graph is warm on first paint and each bar's newest mark is folded
+    // back into the quote cache, sparing those symbols a separate quote credit.
+    const graphFetched = await this.prefetchGraphBars(
+      prefetch.graphSessionSymbols,
+      prefetch.graphWeekSymbols,
+      config,
+      now,
+    );
+    const quoteWork = prefetch.symbols.length + prefetch.navSymbols.length;
+    if (quoteWork === 0) {
       this.pollLog(
         "primary",
-        `Login warm-up: market ${marketOpen ? "open" : "closed"} and nothing outdated — ` +
-          `only warmed FX (EUR/USD spot ${warmth.spotSource}). No quote credits spent.`,
+        `Login warm-up: no quotes to warm beyond the graph backfill — ` +
+          `${graphFetched} graph series, FX ${warmth.spotSource}. No extra quote credits spent.`,
       );
-      this.finishPrefetch({ quoteFetched: 0, quoteTotal: 0, hasPlan: true, fxLive });
+      this.finishPrefetch({ quoteFetched: 0, quoteTotal, hasPlan: true, fxLive, graphFetched });
       return;
     }
     const options = this.buildQuoteOptions(navFetchSymbols, config);
-    const fetchedCount =
-      prefetch.route === "tiingo"
-        ? await this.prefetchViaTiingo(prefetch.symbols, navFetchSymbols, plan, config, options)
-        : await this.prefetchViaPrimary(prefetch.symbols, config, options);
+    // NAV funds always warm on the cheap Twelve Data primary (they have no
+    // intraday series and the graphs never pull them), so the scarce hourly Tiingo
+    // budget is reserved for the market symbols that genuinely need bars.
+    let fetchedCount = 0;
+    if (prefetch.route === "tiingo") {
+      fetchedCount += await this.prefetchViaTiingo(prefetch.symbols, navFetchSymbols, plan, config, options);
+      if (prefetch.navSymbols.length > 0) {
+        fetchedCount += await this.prefetchViaPrimary(prefetch.navSymbols, config, options);
+      }
+    } else {
+      const twelveSymbols = [...prefetch.symbols, ...prefetch.navSymbols];
+      fetchedCount += await this.prefetchViaPrimary(twelveSymbols, config, options);
+    }
     this.finishPrefetch({
       quoteFetched: fetchedCount,
-      quoteTotal: prefetch.symbols.length,
+      quoteTotal,
       hasPlan: true,
       fxLive,
+      graphFetched,
     });
+  }
+
+  /**
+   * Compose the one-line routing-decision log for the login warm-up: which branch
+   * of {@link planPrefetch} fired and why, the NAV-to-Twelve split, the graph-bar
+   * backfill, and a short delta against the prior-session snapshot — so the
+   * Settings polling log explains *why* this login spent (or saved) what it did.
+   */
+  private describePrefetchRoute(
+    planSize: number,
+    marketOpen: boolean,
+    prefetch: ReturnType<typeof planPrefetch>,
+    graphStale: { session: string[]; week: string[] },
+  ): string {
+    const prior = readSessionStatus();
+    const priorBit = prior
+      ? ` Last seen: market ${prior.marketPhase}, ` +
+        `closes ${prior.marketCovered ? "in hand" : "behind"}, NAVs ${prior.navCovered ? "in hand" : "behind"}.`
+      : "";
+    const graphBits: string[] = [];
+    if (graphStale.session.length > 0) graphBits.push(`1D bars ×${prefetch.graphSessionSymbols.length}`);
+    if (graphStale.week.length > 0) graphBits.push(`1W bars ×${prefetch.graphWeekSymbols.length}`);
+    const graphClause = graphBits.length > 0 ? ` Graph backfill via Tiingo: ${graphBits.join(", ")}.` : "";
+    const quoteClause =
+      prefetch.symbols.length > 0
+        ? `${prefetch.symbols.length} quote(s) via ${prefetch.route === "tiingo" ? "Tiingo rapid-fire" : "Twelve Data"}`
+        : "no market quotes";
+    const navClause =
+      prefetch.navSymbols.length > 0 ? `, ${prefetch.navSymbols.length} NAV fund(s) via Twelve Data` : "";
+    return (
+      `Login warm-up started — market ${marketOpen ? "open" : "closed"} (plan of ${planSize}). ` +
+      `${quoteClause}${navClause}.${graphClause}${priorBit}`
+    );
   }
 
   /**
@@ -547,7 +633,9 @@ export class App {
    * fresh base rates) so the login spin + status read honestly, plus the spot's
    * provenance for the polling log.
    */
-  private async warmPrefetchFx(config: AppConfig): Promise<{ fxLive: boolean; spotSource: EurUsdSource }> {
+  private async warmPrefetchFx(
+    config: AppConfig,
+  ): Promise<{ fxLive: boolean; spotSource: EurUsdSource; eurUsd: Decimal | null }> {
     const fx = await loadFxRates().catch(() => undefined);
     const eurUsd = await loadEurUsd(config.apiKey, {
       eodFallback: fx?.fx.rates.USD ?? null,
@@ -557,7 +645,7 @@ export class App {
     const spotSource: EurUsdSource = eurUsd?.source ?? "none";
     const spotLive = spotSource === "live" || spotSource === "tiingo";
     const baseLive = fx ? !fx.cached : false;
-    return { fxLive: spotLive || baseLive, spotSource };
+    return { fxLive: spotLive || baseLive, spotSource, eurUsd: eurUsd?.now ?? null };
   }
 
   /**
@@ -567,13 +655,15 @@ export class App {
    * Pure cache reads (no decrypted data): mirrors {@link outdatedFetchCount}'s
    * per-symbol "behind" test against the latest settled close / expected NAV.
    */
-  private prefetchTargets(plan: PlannedSymbol[]): {
+  private prefetchTargets(
+    plan: PlannedSymbol[],
+    now: Date = new Date(),
+  ): {
     marketSymbols: string[];
     outdatedMarketSymbols: string[];
     awaitingNavSymbols: string[];
   } {
     const cached = readCachedQuotes();
-    const now = new Date();
     const settled = latestSettledSessionDate(now);
     const navStats = readNavPublishStats();
     const publishHourFor = (symbol: string): number => navPublishWindow(navStats.get(symbol)?.hours).publishHour;
@@ -592,6 +682,116 @@ export class App {
       }
     }
     return { marketSymbols, outdatedMarketSymbols, awaitingNavSymbols };
+  }
+
+  /**
+   * Read, **cache-only** (no decrypt), which market sleeve symbols the live 1D/1W
+   * graphs are still missing bars for on this device — the pre-flight that lets
+   * the login warm-up pull a stale graph's bars in the same expensive Tiingo pass
+   * as the catch-up quotes. NAV funds are never included: the graphs never plot
+   * them, so they never need (or get) bars. Returns empty sets when the graphs are
+   * switched off, so a user without the feature never pays for bars.
+   */
+  private async prefetchGraphStaleness(
+    marketSymbols: string[],
+    now: Date,
+  ): Promise<{ session: string[]; week: string[] }> {
+    if (!experimentalGraphsEnabled() || marketSymbols.length === 0) {
+      return { session: [], week: [] };
+    }
+    const store = this.ensureTimeSeriesStore();
+    const day = lastSessionDate(now);
+    const today = await store.loadSession(day).catch(() => null);
+    const session = marketSymbols.filter((s) => !(today?.bars[s]?.length));
+    const weekStored = await store.loadSession(WEEK_STORE_KEY).catch(() => null);
+    const week = marketSymbols.filter((s) => !(weekStored?.bars[s]?.length));
+    return { session, week };
+  }
+
+  /**
+   * Pull a stale graph's price bars during the login warm-up, **market sleeve
+   * only** (NAV funds are never plotted, so never fetched), and fold the result
+   * back into the device store + quote cache:
+   *
+   *  - the bars are merged into the {@link TimeSeriesStore} under their day/window
+   *    key, so the dashboard's later 1D/1W build finds them already present and
+   *    does **not** re-spend the same Tiingo credit (no double-buy of the
+   *    hourly-capped budget);
+   *  - each symbol's newest bar is a current native mark, so {@link primeQuotesFromBars}
+   *    hands it back to the holding rows — they skip a separate quote credit;
+   *  - the session/window FX track is pulled in the same pass, so the one
+   *    expensive spend grabs the most data it can.
+   *
+   * Every pull is metered against the Tiingo/Twelve Data budget logs (the shared
+   * accounting that keeps the live-quote refresh from overrunning the free tier).
+   * Returns the number of symbol-series actually stored.
+   */
+  private async prefetchGraphBars(
+    sessionSymbols: string[],
+    weekSymbols: string[],
+    config: AppConfig,
+    now: Date,
+  ): Promise<number> {
+    if (sessionSymbols.length === 0 && weekSymbols.length === 0) return 0;
+    const proxyUrl = resolvePriceProxyUrl(config);
+    if (!proxyUrl) return 0; // graph bars only come cheaply via the Tiingo /price pipe
+    const store = this.ensureTimeSeriesStore();
+    const onTiingoSpend = (n: number): void => recordTiingoCredits(n, Date.now());
+    const onTwelveDataSpend = (n: number): void => recordCredits(n, Date.now());
+    let stored = 0;
+
+    const pull = async (
+      symbols: string[],
+      param: "intraday" | "daily",
+      window: { startDate: string; endDate: string },
+      fxResample: string,
+      storeKey: string,
+      label: string,
+      extra: { interval?: string; outputsize?: number } = {},
+    ): Promise<void> => {
+      if (symbols.length === 0) return;
+      const fetchBars = makePriceBarFetcher({
+        apiKey: config.apiKey,
+        proxyUrl,
+        param,
+        startDate: window.startDate,
+        endDate: window.endDate,
+        onTiingoSpend,
+        onTwelveDataSpend,
+        ...extra,
+      });
+      if (!fetchBars) return;
+      const bars = await fetchBars(symbols).catch(() => null);
+      if (!bars) {
+        this.pollLog("graph", `Login warm-up: ${label} bar backfill failed; graph left for on-demand build.`);
+        return;
+      }
+      const incoming: Record<string, Bar[]> = {};
+      for (const [symbol, list] of bars) if (list.length > 0) incoming[symbol] = list;
+      // Bars double as quotes: already-cached symbols are primed from their newest
+      // bar (currency taken from the existing cache entry), sparing a quote credit.
+      primeQuotesFromBars(bars, new Map<string, string | null>(), Date.now());
+      // Grab the matching FX track in the same pass so the curve re-marks each
+      // point at its own settled rate (finest granularity) for one more credit.
+      const fetchFx = makeWindowFxFetcher(proxyUrl, window, fxResample, undefined, onTiingoSpend);
+      let fx: Bar[] | undefined;
+      if (fetchFx) fx = await fetchFx().catch(() => undefined);
+      await store.mergeSession(storeKey, { bars: incoming, fx }, now.getTime());
+      const count = Object.keys(incoming).length;
+      stored += count;
+      this.pollLog(
+        "graph",
+        `Login warm-up: ${label} backfill stored ${count} series (Tiingo ${param} bars) ` +
+          `and primed those quotes.`,
+      );
+    };
+
+    await pull(sessionSymbols, "intraday", sessionFxWindow(now), "1hour", lastSessionDate(now), "1D");
+    await pull(weekSymbols, "daily", weekFxWindow(now), "1day", WEEK_STORE_KEY, "1W", {
+      interval: "1day",
+      outputsize: 8,
+    });
+    return stored;
   }
 
   /** Warm the chosen symbols on the Twelve Data primary; returns how many it fetched. */
@@ -669,8 +869,10 @@ export class App {
     quoteTotal: number;
     hasPlan: boolean;
     fxLive: boolean;
+    graphFetched?: number;
   }): void {
-    const gotNew = outcome.quoteFetched > 0 || outcome.fxLive;
+    const graphFetched = outcome.graphFetched ?? 0;
+    const gotNew = outcome.quoteFetched > 0 || outcome.fxLive || graphFetched > 0;
     this.prefetchFetchedSomething = gotNew;
     if (gotNew) {
       // The prefetch really did pull fresh data, so "last pulled" is now — keep it
@@ -678,15 +880,44 @@ export class App {
       this.lastDataPullAt = Date.now();
       writeLastPull(this.lastDataPullAt);
     }
+    // Save what we now hold, so the *next* login's pre-flight can reason about the
+    // delta before any decrypt (the "good saving when logging off" half).
+    this.saveSessionStatus();
     this.prefetchStatus = describePrefetch({
       inFlight: false,
       hasPlan: outcome.hasPlan,
       quoteFetched: outcome.quoteFetched,
       quoteTotal: outcome.quoteTotal,
       fxLive: outcome.fxLive,
+      graphFetched,
       lastPullAt: this.lastDataPullAt,
     });
     this.updatePrefetchStatus();
+  }
+
+  /**
+   * Persist a compact {@link SessionStatus} snapshot of what the book looks like
+   * right now — coverage flags + market phase + on-device graph days — so the next
+   * login's pre-flight can explain (and coarsely route) the delta before the blob
+   * is decrypted. Cache-only and best-effort; holds no price, holding, or secret.
+   */
+  private saveSessionStatus(now: Date = new Date()): void {
+    try {
+      const plan = readSymbolPlan();
+      const marketSymbols = plan.filter((e) => e.priceType === "market").map((e) => e.symbol);
+      const status: SessionStatus = {
+        at: now.getTime(),
+        lastPullAt: this.lastDataPullAt,
+        marketPhase: isUsMarketOpen(now) ? "open" : this.fullyUpToDate(now) ? "settled" : "closed",
+        marketCovered: !this.marketDataOutdated(now),
+        navCovered: !this.navOutstanding(now),
+        sessionGraphDay: this.timeSeriesStore !== null ? lastSessionDate(now) : null,
+        weekGraphCovered: marketSymbols.length === 0,
+      };
+      writeSessionStatus(status);
+    } catch {
+      // A snapshot is a pure optimisation for the next login; never let it throw.
+    }
   }
 
   /** Live-update the unlock-screen prefetch status line, if it is on screen. */
@@ -3095,6 +3326,9 @@ export class App {
   }
 
   private lock(): void {
+    // Snapshot what we hold *before* tearing down, so the next login's pre-flight
+    // can reason about the delta (the "good saving when logging off" half).
+    this.saveSessionStatus();
     // Invalidate any in-flight background work and tear down the auto-refresh.
     this.sessionId += 1;
     this.clearRefreshTimer();
@@ -3444,6 +3678,8 @@ export function describePrefetch(input: {
   quoteTotal: number;
   /** Whether the EUR/USD FX rate was freshly pulled (not served from cache). */
   fxLive: boolean;
+  /** Graph price-series freshly backfilled this prefetch (1D/1W bars). */
+  graphFetched?: number;
   /** When live data was last genuinely pulled, for the "last pulled" clause. */
   lastPullAt: number | null;
   /** Injectable clock for the "last pulled" formatting (tests). */
@@ -3456,13 +3692,15 @@ export function describePrefetch(input: {
   if (input.inFlight) {
     return pulled ? `Warming live prices… · ${pulled}` : "Warming live prices…";
   }
+  const graphFetched = input.graphFetched ?? 0;
   const parts: string[] = [];
   if (!input.hasPlan) {
     // First ever run: nothing to compare against, just confirm we warmed up.
     parts.push("Live prices ready");
-  } else if (input.quoteFetched > 0 || input.fxLive) {
+  } else if (input.quoteFetched > 0 || input.fxLive || graphFetched > 0) {
     const bits: string[] = [];
     if (input.quoteFetched > 0) bits.push(`${input.quoteFetched}/${input.quoteTotal} live`);
+    if (graphFetched > 0) bits.push(`${graphFetched} graph`);
     if (input.fxLive) bits.push("FX live");
     parts.push(`Prefetched ${bits.join(" · ")}`);
   } else {

@@ -26,6 +26,8 @@ import {
   writeCachedFx,
   writeCachedQuotes,
   writeSymbolPlan,
+  readSessionStatus,
+  writeSessionStatus,
   clearPriceCaches,
   NAV_PUBLISH_SAMPLES,
   type StorageLike,
@@ -369,6 +371,47 @@ describe("symbol plan cache", () => {
       { symbol: "OK", priceType: "market", assetClass: "", sizeEur: 0 },
       { symbol: "TYPED", priceType: "nav", assetClass: "mutual_fund", sizeEur: 12 },
     ]);
+  });
+});
+
+describe("session status snapshot", () => {
+  const sample = {
+    at: 1_700_000_000_000,
+    lastPullAt: 1_699_999_000_000,
+    marketPhase: "closed",
+    marketCovered: true,
+    navCovered: false,
+    sessionGraphDay: "2026-06-23",
+    weekGraphCovered: false,
+  };
+
+  it("round-trips a snapshot", () => {
+    const s = memStorage();
+    writeSessionStatus(sample, s);
+    expect(readSessionStatus(s)).toEqual(sample);
+  });
+
+  it("returns null for missing/corrupt storage", () => {
+    const s = memStorage();
+    expect(readSessionStatus(s)).toBeNull();
+    s.setItem("iv.web.session_status", "{ not json");
+    expect(readSessionStatus(s)).toBeNull();
+    s.setItem("iv.web.session_status", JSON.stringify({ no: "at field" }));
+    expect(readSessionStatus(s)).toBeNull();
+  });
+
+  it("defaults missing/odd fields safely", () => {
+    const s = memStorage();
+    s.setItem("iv.web.session_status", JSON.stringify({ at: 42 }));
+    expect(readSessionStatus(s)).toEqual({
+      at: 42,
+      lastPullAt: null,
+      marketPhase: "settled",
+      marketCovered: false,
+      navCovered: false,
+      sessionGraphDay: null,
+      weekGraphCovered: false,
+    });
   });
 });
 
