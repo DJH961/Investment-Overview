@@ -32,6 +32,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   decision itself is spelled out under `LOGIN`. The unlock-screen status line and
   the one-off refresh-glyph spin now also count freshly backfilled graph bars as
   genuinely "pulled".
+- **The Settings page is reorganised into tidy, collapsible groups (desktop
+  app).** The long flat list of always-expanded sections is now clustered under
+  labelled headings (Preferences, Data & connectivity, Portfolio setup, Storage &
+  sync, Diagnostics & logging, Reset data). The two everyday controls — display
+  preferences and data refresh — stay open; everything else folds away so the
+  page is far easier to scan.
 
 ### Added
 - **Deduplicated value-chart legend and a 1D previous-close reference line
@@ -65,6 +71,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **A session-status snapshot** is saved on log-out and after every pull (coverage
   flags + market phase + on-device graph day; no prices or secrets), so the next
   login's pre-flight can log the delta against what we last held.
+- **Logging verbosity is now a Settings option (desktop app).** A new
+  *Diagnostics & logging → Logging* control flips between **Normal** (`INFO`) and
+  **Verbose** (`DEBUG`) logging. The change applies immediately (no restart) and
+  is remembered across restarts. The section also shows the on-disk log file path
+  and offers a one-tap support-bundle download, so capturing *why* something
+  misbehaved is: turn on Verbose, reproduce, download the bundle.
+- **Much richer debug logging across the data-pull and calculation internals.**
+  Price and FX refreshes now log how many symbols/pairs are being pulled, over
+  which window, and how many new rows landed; intraday capture and session
+  reconstruction log each sample/backfill; the deferred boot refresh logs its
+  phases and total duration; and the database reset logs exactly which tables it
+  wiped and the per-table row counts.
 
 ### Fixed
 - **The live 1D "Prev close" reference line now reads in full and sits at the
@@ -89,6 +107,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   last known prices."** The false "all prices live" confirmation is suppressed
   unless a service genuinely answered, and the dashboard auto-refreshes the
   instant the browser fires its `online` event.
+- **"Reset cached market data" now also clears the 1D/1W intraday curves
+  (desktop app).** The cache reset wiped prices, FX and position snapshots but
+  left the within-day intraday samples (and the cached split factors) in place,
+  so a stale or malformed "1 Day"/"1 Week" graph survived the very reset meant
+  to fix it. Both the `intraday_value` and `price_split` cache tables are now
+  cleared alongside the rest, so the short-range graphs rebuild from scratch on
+  the next refresh.
+- **"Reset cache & re-pull everything" now also clears the live 1D/1W store
+  (web companion).** The browser companion keeps its intraday bars/tips in a
+  separate IndexedDB store that the price-cache wipe never touched, so the same
+  stale-1D/1W-graph problem could persist there too. The reset now clears that
+  store as well (`TimeSeriesStore.clear()`).
 
 ## [3.20.2] — 2026-06-24
 
