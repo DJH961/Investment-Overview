@@ -62,29 +62,19 @@ describe("barsFromTiingoDaily", () => {
     expect(bars[0].t).toBeLessThan(bars[1].t);
   });
 
-  it("reconstructs five points from a complete OHLC candle, open/close exact", () => {
-    // An up day (close ≥ open): open → low → mid-range → high → close.
+  it("ignores high/low and emits only the exact open and close per day", () => {
+    // A complete OHLC candle still yields just the two timestamped endpoints —
+    // the daily feed has no within-day clock for the high/low, so we never
+    // synthesise interior points.
     const bars = barsFromTiingoDaily([
       { date: "2026-06-22", open: 100, high: 110, low: 95, close: 108 },
     ]);
-    expect(bars).toHaveLength(5);
-    // Endpoints stay exact; interior carries the real low/high + mid-range.
+    expect(bars).toHaveLength(2);
     expect(bars.map((b) => b.value.toString())).toEqual([
       "100", // open (exact)
-      "95", // +1/4 → low (up day dips first)
-      "102.5", // midday → (high+low)/2
-      "110", // +3/4 → high
       "108", // close (exact)
     ]);
-    for (let i = 1; i < bars.length; i += 1) expect(bars[i].t).toBeGreaterThan(bars[i - 1].t);
-  });
-
-  it("orders a down-day candle high → low between the exact endpoints", () => {
-    // A down day (close < open): open → high → mid-range → low → close.
-    const bars = barsFromTiingoDaily([
-      { date: "2026-06-22", open: 108, high: 110, low: 95, close: 100 },
-    ]);
-    expect(bars.map((b) => b.value.toString())).toEqual(["108", "110", "102.5", "95", "100"]);
+    expect(bars[0].t).toBeLessThan(bars[1].t);
   });
 
   it("orders multiple days and keeps the price a row does have", () => {

@@ -95,8 +95,10 @@ indexes) and a `linePath` break-at-boundary check.
 - Python: `intraday_snapshots_service._pick_session_points` samples 5 evenly-spaced
   intra-session instants per day, and `WEEK_POINTS_PER_COMPLETE_SESSION = 5` gates
   coverage so a finished day must carry the full span before it counts as covered.
-- Web: `intraday-tiingo.barsFromTiingoDaily` reconstructs 5 bars/day from each
-  daily OHLC candle (open/close exact; the high/low + mid-range fill the interior).
+- Web: `intraday-tiingo.barsFromTiingoDaily` emits only the **2** genuinely
+  time-stamped points/day (open at 09:30 ET, close at 16:00 ET). The daily OHLC
+  candle has no within-day clock for the high/low, so no interior points are
+  synthesised — only actually-timestamped marks are plotted.
 - First/last (open/close) stay exact so the day's endpoints still match the
   settled values.
 
