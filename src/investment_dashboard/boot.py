@@ -26,6 +26,7 @@ unavailable and let the app start anyway, so the UI is usable offline.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -921,7 +922,7 @@ def run_deferred_network_refresh() -> None:
 
     # Ordered stages of the full historic re-download. The labels are what the
     # progress bar shows as each one runs; keep them short and user-legible.
-    steps: tuple[tuple[str, object], ...] = (
+    steps: tuple[tuple[str, Callable[[], None]], ...] = (
         ("Exchange rates", _refresh_fx),
         ("Transaction history", _backfill_transaction_legs),
         ("Prices", _refresh_prices),
@@ -938,7 +939,7 @@ def run_deferred_network_refresh() -> None:
         # Announce the stage *before* running it so the bar names what is being
         # downloaded right now; advance the completed count after it returns.
         refresh_status.set_progress(index, total, label)
-        step()  # type: ignore[operator]
+        step()
         refresh_status.set_progress(index + 1, total, label)
     log.info(
         "deferred network refresh: complete in %.1fs",

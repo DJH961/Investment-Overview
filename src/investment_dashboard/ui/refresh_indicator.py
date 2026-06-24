@@ -19,6 +19,7 @@ It is the always-on, "things are working" counterpart to
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import UTC, datetime, tzinfo
 
@@ -249,8 +250,6 @@ def install_header_indicator(tz: tzinfo | None = None) -> None:  # noqa: PLR0915
         # Drive the bar straight on the DOM (id-scoped) so the fill animates and
         # the caption updates without rebuilding any server-side element. ``text``
         # is composed from our own fixed stage labels, so a JSON dump is safe.
-        import json  # noqa: PLC0415
-
         ui.run_javascript(
             "var p=document.getElementById('inv-history-progress');"
             "if(p){"

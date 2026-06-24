@@ -35,7 +35,7 @@ def test_deferred_refresh_reports_progress_through_every_stage(
 ) -> None:
     seen: list[tuple[int, int, str | None, bool]] = []
 
-    def _spy(_attr: str):
+    def _spy(_: str):
         def _run() -> None:
             snap = refresh_status.snapshot()
             seen.append(
