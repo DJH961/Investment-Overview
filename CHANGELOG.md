@@ -42,7 +42,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `buildLineChart` takes an optional `referenceLine` folded into the y-axis range
   and rendered as a muted dashed rule (neutral slate, carrying no gain/loss
   meaning), and `liveCurveToChart` emits it in the active display currency (USD
-  verbatim, EUR FX-derived) sourced from the last exported settled point.
+  verbatim, EUR FX-derived). (Its precision and anchor are refined under
+  *Fixed*, below.)
 - **Smart-routing login prefetch.** The login warm-up no longer blindly fetches
   quotes — it now decides, entirely from cached state before the blob is even
   decrypted, the *minimum* worth pulling and the cheapest route for it:
@@ -64,6 +65,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **A session-status snapshot** is saved on log-out and after every pull (coverage
   flags + market phase + on-device graph day; no prices or secrets), so the next
   login's pre-flight can log the delta against what we last held.
+
+### Fixed
+- **The live 1D "Prev close" reference line now reads in full and sits at the
+  right height (web).** Its label was rounded to a k/M axis figure (e.g.
+  `$54k`), so the number barely matched where the line was drawn; it now shows
+  the exact, locale-grouped amount with cents (e.g. `$53,800.00`), mirroring the
+  desktop "1 Day" chart annotation. The rule itself is now anchored on the live
+  "today" baseline (`totalValue − todayMove`, per currency) rather than the last
+  exported settled point, so it lands exactly where the headline "% today" is
+  measured from instead of drifting to hug the live value; it falls back to the
+  last exported point only when no live move is known.
 
 ## [3.20.2] — 2026-06-24
 
