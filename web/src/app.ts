@@ -1966,8 +1966,8 @@ export class App {
       // value), say so honestly instead of a blanket "up to date".
       if (this.lastUnresolvedFailures.length > 0) {
         this.toast(
-          `Couldn't get a live price for ${this.lastUnresolvedFailures.join(", ")} — ` +
-            `showing last-known values · last pulled ${formatLastPull(this.lastDataPullAt)}`,
+          `No live price for ${this.lastUnresolvedFailures.join(", ")} · ` +
+            `last pulled ${formatLastPull(this.lastDataPullAt)}`,
         );
       } else {
         this.toast(`Prices up to date · last pulled ${formatLastPull(this.lastDataPullAt)}`);
@@ -2710,7 +2710,7 @@ export class App {
     // burnt in one tap.
     const canForce = this.canForceRefresh();
     if (!canForce) {
-      this.toast("Low on credits — showing recent prices.");
+      this.toast("Low on credits, showing recent prices.");
       void this.runScheduledRefresh(this.sessionId, "manual", { force: false });
       return;
     }
@@ -2985,16 +2985,12 @@ export class App {
         // A failed backup is the most actionable thing to say on a manual tap —
         // especially the "Try the backup data provider now" button — so lead with
         // it when the Tiingo backup couldn't be reached this round.
-        this.toast(
-          this.lastTiingoError.status === 429
-            ? "Backup provider (Tiingo) is rate-limited — its API credits look used up."
-            : "Backup price source (Tiingo) is unreachable — check the Worker /price route.",
-        );
+        this.toast(describeTiingoError(this.lastTiingoError));
       } else {
         this.toast(
           this.lastCoverageFacts
             ? manualRefreshSummary(this.lastCoverageFacts)
-            : "Couldn't reach live prices — showing last known values",
+            : `Couldn't reach live prices, ${SHOWING_LAST_KNOWN}.`,
         );
       }
     }
@@ -3012,7 +3008,7 @@ export class App {
     // descriptive manualRefreshSummary toast above (e.g. "All 18 holdings up to
     // date"), so firing both would double up.
     if (nowAllLive && !this.pricesAllLive && kind !== "manual") {
-      this.toast("All prices live — every holding is now on a fresh price.");
+      this.toast("All prices live, every holding is now on a fresh price.");
     }
     this.pricesAllLive = nowAllLive;
     const delayMs = nextRefreshDelayMs({
@@ -3182,7 +3178,7 @@ export class App {
     const id = "updating-pill";
     const existing = document.getElementById(id);
     if (on) {
-      const base = kind === "manual" ? "Refreshing prices…" : "Auto-updating prices…";
+      const base = kind === "manual" ? "Refreshing…" : "Auto-updating…";
       // Append a live "N of M" fill count when supplied, so a portfolio larger
       // than the per-minute budget shows visible progress across burst rounds.
       const label = detail ? `${base} ${detail}` : base;
@@ -3316,13 +3312,12 @@ export class App {
     // spacing out or paused.
     if (quote.dayRemaining <= 0) {
       reasons.push(
-        `Today's free-tier data budget (${FREE_TIER.creditsPerDay}/day) is used up — ` +
-          `live updates pause until it resets.`,
+        `Daily free-tier budget (${FREE_TIER.creditsPerDay}/day) used up; updates pause until it resets.`,
       );
     } else if (quote.dayRemaining <= DAILY_BUDGET_WARN_CREDITS) {
       reasons.push(
-        `Close to today's free-tier limit (${quote.dayRemaining} of ${FREE_TIER.creditsPerDay} ` +
-          `credits left) — updates are spacing out to last the day.`,
+        `Close to today's free-tier limit (${quote.dayRemaining} of ${FREE_TIER.creditsPerDay} left); ` +
+          `updates are spacing out to last the day.`,
       );
     }
 
@@ -3330,16 +3325,18 @@ export class App {
     // of a portfolio larger than the per-minute cap are the **same** underlying
     // situation — describe it once, not as two overlapping clauses. A genuine
     // staged fill isn't an error at all (the spinning glyph + "N of M" pill show
-    // it as progress), so it raises no banner.
+    // it as progress), so it raises no banner. The coverage note above already
+    // states what we're showing, so these clauses give only the *reason* and
+    // never repeat the "last known" tail.
     const rateLimited = quote.error?.status === 429;
     const stagedFill = quote.dayRemaining > 0 && quote.error === null;
     const deferredByMinute = quote.deferred.length > 0 && !stagedFill;
     if (quote.error && !rateLimited && notice === null) {
       // A real, non-rate-limit fetch problem (network blip, 404, 5xx). Skipped
       // when the connectivity headline already said no service was reachable.
-      reasons.push("Live prices didn't refresh just now — showing last known values.");
+      reasons.push("Didn't refresh just now.");
     } else if (rateLimited || deferredByMinute) {
-      reasons.push("Live prices are waiting on the free-tier limit — showing last known values for now.");
+      reasons.push("Waiting on the free-tier limit.");
     }
 
     // Only surface FX when it's genuinely unavailable; a cached rate within its
@@ -3348,36 +3345,27 @@ export class App {
     // and the live EUR/USD spot (`eurUsd`, including the Tiingo backup). The
     // live spot is degraded only when its fetch actually failed *and* we ended
     // up on a flat end-of-day rate or no rate at all (a fresh live/backup spot,
-    // or a still-fresh cached one, is fine and stays silent).
+    // or a still-fresh cached one, is fine and stays silent). The coverage note
+    // already carries an FX-freshness tail, so we only add a warn clause when FX
+    // is genuinely *unavailable* — never restating a state the tail covers.
     const liveFxFailed =
       eurUsd.eurUsdError !== null &&
       (eurUsd.eurUsdSource === "eod" || eurUsd.eurUsdSource === "none");
     if (fx.error && !fx.cached) {
       // The keyless ECB daily rate itself failed with nothing cached: no FX at all.
-      reasons.push("FX rates are temporarily unavailable.");
+      reasons.push("FX rates temporarily unavailable.");
     } else if (liveFxFailed) {
       reasons.push(
         eurUsd.eurUsdSource === "none"
-          ? "FX rates are temporarily unavailable — portfolio values may be incomplete."
-          : "Live FX rate is unavailable — values use the last known exchange rate.",
+          ? "FX rates temporarily unavailable; values may be incomplete."
+          : "Live FX rate unavailable; using the last known rate.",
       );
     }
 
-    // The Tiingo backup was needed this round but couldn't deliver. Distinguish
-    // the two causes the user can act on differently: a 429 means Tiingo's own
-    // hourly/daily API quota is spent (e.g. our self-budget had room, but
-    // independent/manual use of the same token burned the real account quota),
-    // whereas any other failure means the proxy/Worker is unreachable or
-    // misconfigured. Without this, a holding the primary can't price (e.g. an
-    // FSKAX-style NAV fund) would just sit blank with no explanation.
+    // The Tiingo backup was needed this round but couldn't deliver. The shared
+    // {@link describeTiingoError} keeps the banner and the manual toast in step.
     if (tiingoError) {
-      reasons.push(
-        tiingoError.status === 429
-          ? "Backup price source (Tiingo) is rate-limited — its API credits look used up. " +
-              "Showing last-known prices until the quota resets."
-          : "Backup price source (Tiingo) is unreachable — showing last-known prices. " +
-              "If this persists, redeploy the price proxy Worker.",
-      );
+      reasons.push(describeTiingoError(tiingoError));
     }
 
     // Name the holdings the providers *tried* to price this round but couldn't —
@@ -3388,9 +3376,7 @@ export class App {
     // failures instead of repeating it. Without this, such a holding would sit on
     // a stale value with no explanation, looking like it is merely "awaiting".
     if (quote.error === null && failedSymbols.length > 0) {
-      reasons.push(
-        `Couldn't get a live price for ${failedSymbols.join(", ")} — showing last-known values.`,
-      );
+      reasons.push(`No live price for ${failedSymbols.join(", ")}.`);
     }
 
     return reasons.length === 0 ? null : reasons.join(" ");
@@ -3804,7 +3790,7 @@ function joinBuckets(buckets: { n: number; label: string }[], total: number): st
  * FX-freshness clause. E.g.:
  *   - market open:   "13/13 live, 5 NAVs expected tonight · FX live"
  *   - split fill:    "8 live, 5 cached, 5 NAVs expected tonight · FX live"
- *   - market closed: "Market closed, at closing prices — up to date · FX end of day"
+ *   - market closed: "Market closed, up to date · FX end of day"
  *   - closed split:  "Market closed, 11 at last close, 2 awaiting, awaiting 3/5 NAVs · FX live"
  */
 export function summarizeCoverage(f: CoverageFacts): string {
@@ -3815,7 +3801,7 @@ export function summarizeCoverage(f: CoverageFacts): string {
   const withFx = (priceText: string): string => capitalizeFirst(`${priceText} · ${fx}`);
 
   if (total === 0) return withFx("no live-priced holdings");
-  if (f.error) return withFx("showing last known prices");
+  if (f.error) return withFx(SHOWING_LAST_KNOWN);
 
   const cached = Math.max(0, f.marketHeld - f.marketFresh);
   const missing = Math.max(0, f.marketTotal - f.marketHeld);
@@ -3848,11 +3834,11 @@ export function summarizeCoverage(f: CoverageFacts): string {
   const allAtClose = f.marketTotal > 0 && atClose === f.marketTotal;
 
   // Best case: every market close is in hand (or there are no market holdings)
-  // and no NAV is overdue → the cached figures are the latest there are. Say so
-  // plainly and make clear no update is needed, rather than an apologetic count.
+  // and no NAV is overdue → the cached figures are the latest there are. Whether
+  // the book is all-market or all-NAV is a distinction the reader doesn't care
+  // about, so both collapse to one calm "up to date" line.
   if ((f.marketTotal === 0 || allAtClose) && f.navAwaiting === 0) {
-    if (f.marketTotal === 0) return withFx("market closed, all up to date");
-    return withFx("market closed, at closing prices — up to date");
+    return withFx("market closed, up to date");
   }
 
   const parts: string[] = [];
@@ -3879,7 +3865,7 @@ export function summarizeCoverage(f: CoverageFacts): string {
  * transparent coverage line; only a genuine fetch failure overrides it.
  */
 export function manualRefreshSummary(facts: CoverageFacts): string {
-  if (facts.error) return "Couldn't reach live prices — showing last known values";
+  if (facts.error) return `Couldn't reach live prices, ${SHOWING_LAST_KNOWN}.`;
   return summarizeCoverage(facts);
 }
 
@@ -3937,12 +3923,31 @@ export function classifyConnectivity(input: {
 export function connectivityNotice(state: ConnectivityState): string | null {
   switch (state) {
     case "offline":
-      return "No internet connection — showing last known prices.";
+      return `No internet connection, ${SHOWING_LAST_KNOWN}.`;
     case "unreachable":
-      return "Couldn't reach any price service — showing last known prices.";
+      return `Couldn't reach any price service, ${SHOWING_LAST_KNOWN}.`;
     default:
       return null;
   }
+}
+
+/**
+ * The single canonical "we're on cached data" tail. The noun (prices/values) is
+ * implied by context, so every status line that needs to say it falls back to
+ * the same three words and the wording can never drift apart again.
+ */
+const SHOWING_LAST_KNOWN = "showing last known";
+
+/**
+ * One description of a failed Tiingo backup round, shared by the degradation
+ * banner and the manual-refresh toast so the two never drift in wording. A 429
+ * means the backup's own API quota is spent; anything else means the proxy
+ * Worker is unreachable or misconfigured.
+ */
+export function describeTiingoError(error: PriceError): string {
+  return error.status === 429
+    ? "Backup (Tiingo) rate-limited; its credits look used up."
+    : "Backup (Tiingo) unreachable; check the price proxy Worker.";
 }
 
 /**
