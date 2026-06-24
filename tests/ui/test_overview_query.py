@@ -123,9 +123,9 @@ def test_live_eur_usd_spot_shifts_daily_growth_not_history(session: Session, see
         fx_service.clear_live_spot()
 
 
-def test_money_market_daily_growth_is_flat_zero(session: Session) -> None:
-    """Settlement funds have no price feed; their single-day growth is a flat
-    0 (par did not move) rather than an inconsistent em dash."""
+def test_money_market_daily_growth_is_blank(session: Session) -> None:
+    """Settlement funds have no price feed and never move in price; their
+    single-day growth is blank (``None`` → em dash), not a misleading 0."""
     from investment_dashboard.models import Transaction
     from investment_dashboard.models.transaction import TransactionSource
     from investment_dashboard.ui.pages._overview_query import (
@@ -158,8 +158,10 @@ def test_money_market_daily_growth_is_flat_zero(session: Session) -> None:
     positions = get_positions(session)
     metrics = compute_instrument_metrics(session, positions)
     im = metrics[spaxx.id]
-    assert im.daily_growth_usd == Decimal("0")
-    assert im.daily_growth_eur == Decimal("0")
+    assert im.daily_growth_usd is None
+    assert im.daily_growth_eur is None
+    assert im.daily_move_eur is None
+    assert im.daily_move_usd is None
 
 
 def test_money_market_reinvested_dividends_count_as_gain(session: Session) -> None:

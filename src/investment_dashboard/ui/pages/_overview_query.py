@@ -830,12 +830,12 @@ def _instrument_daily_growth(
     ``close_as_of`` calls were an N+1 over the holdings table).
 
     Money-market / settlement funds hold a constant $1.00 NAV with no price
-    feed, so they have no print dates to diff. Rather than render an em dash
-    (which looked inconsistent next to their other, computed figures) their
-    single-day growth is a flat ``0`` — the par value did not move.
+    feed, so they have no print dates to diff and genuinely do not move in
+    price. Their single-day growth is therefore blank (an em dash) rather than
+    a misleading ``0`` — a money-market fund has no daily move to report.
     """
     if is_money_market:
-        return ZERO, ZERO, ZERO, ZERO, None
+        return None, None, None, None, None
     pairs = recent_closes.get(instrument_id, [])
     if len(pairs) < 2:
         return None, None, None, None, None

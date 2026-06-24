@@ -18,6 +18,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Money-market / settlement funds no longer show a daily growth value
+  (#131).** Funds like VMFXX hold a constant $1.00 NAV by design and genuinely
+  never move in price, yet both the desktop and the web companion had started
+  rendering a daily move/growth for them (the desktop reported a flat `0`; the
+  web derived a spurious move from a repeated $1.00 previous-close bar). Both now
+  leave the per-holding daily figure blank (an em dash) — a money-market fund has
+  no daily price move to report. Total growth (driven by reinvested dividends) is
+  unchanged.
 - **The 1D/1W graph no longer over-trusts a sparse exported blob (#127).** The
   web companion springboards its live "1 Day" / "1 Week" curves off the desktop's
   exported session, but it only gated on *freshness* (the blob's `session_date` /

@@ -717,7 +717,13 @@ function buildHolding(
   // freshest peer) decides whether that move counts as "today".
   let curMark: Decimal | null = null;
   let priorMark: Decimal | null = null;
-  if (liveMoveApplies && quotePrice !== null && previousClose !== null) {
+  // Money-market / settlement funds hold a constant $1.00 NAV by design and so
+  // genuinely never move in price. Some exports still carry a `previous_close`
+  // (a repeated $1.00 bar) which would otherwise drive a spurious "today's
+  // move"; skip the move entirely so the row shows a blank dash, not a 0%.
+  if (isMoneyMarketHolding(holding)) {
+    // intentionally leave curMark/priorMark null — no daily move for par NAVs.
+  } else if (liveMoveApplies && quotePrice !== null && previousClose !== null) {
     curMark = quotePrice;
     priorMark = previousClose;
   } else if (price !== null && !isLive) {
