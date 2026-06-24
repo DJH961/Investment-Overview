@@ -14,6 +14,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.0.1] — 2026-06-24
+
+### Fixed
+
+- **The 1D/1W value graph now scales its x-axis by elapsed time, not point
+  count.** Points were placed by their ordinal index, so a window that happened
+  to carry more samples (e.g. extra blob-backed data points concentrated in the
+  final hour) stretched across the plot — making that final hour look like the
+  whole day. The shared chart now positions each point along a true time axis
+  (and spaces the x-axis tick labels evenly along that axis) whenever the labels
+  parse as a non-decreasing timeline, falling back to even index spacing
+  otherwise. Applies to both the live **1D** and **1W** curves.
+- **"Reset cache & re-pull everything" now actually clears the 1D/1W graph's
+  saved in-between values (#121).** The Settings reset fired the intraday
+  IndexedDB wipe as fire-and-forget and started the from-scratch refresh in the
+  same tick; the refresh's smart-backfill read that same store and re-persisted
+  the live-tip breadcrumbs, racing the un-awaited `clear()` — so the stale data
+  was written straight back and the reset appeared to do nothing. The wipe is now
+  `await`ed *before* the rebuild refresh is triggered, guaranteeing it starts
+  from an empty store. UI responsiveness is unchanged (the exit + toast still
+  fire synchronously; only the data pull waits on the wipe).
+- **The login kickoff no longer double-pulls EUR/USD, saving a free-tier credit
+  (#122).** At login the warm-up pulls a live EUR/USD spot, then the coalesced
+  kickoff refresh fired ~5s later and re-pulled the same unchanged pair because
+  the refresh FX call passed `ttlMs: 0`, forcing a fresh pull. The refresh now
+  uses a short reuse window (`REFRESH_EURUSD_REUSE_MS`, 45s — deliberately under
+  the 60s burst cadence) so only the warm-up→kickoff (and overlapping
+  online/visibility ticks) dedupe, while every genuine refresh round and manual
+  tap (`force`/`forceAll`) still re-polls a live spot.
+
 ## [4.0.0] — 2026-06-24
 
 ### Changed
