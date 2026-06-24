@@ -84,7 +84,7 @@ import {
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate } from "./market-hours";
+import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, sessionIsWarmingUp } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -742,7 +742,15 @@ export class App {
     const store = this.ensureTimeSeriesStore();
     const day = lastSessionDate(now);
     const today = await store.loadSession(day).catch(() => null);
-    const session = marketSymbols.filter((s) => !(today?.bars[s]?.length));
+    // Expected-empty ≠ stale (market_open_token_burn_fix_plan.md WS1): a fresh,
+    // just-opened session has no completed intraday bar yet, so the absence of
+    // today's bars is *expected*. Queueing a 1D backfill for a window that has
+    // not elapsed is the market-open burn — skip it and let the curve accrue
+    // tick-by-tick from the live tip. Only once a full bar interval of trading
+    // time has passed does a still-missing symbol read genuinely stale.
+    const session = sessionIsWarmingUp(now)
+      ? []
+      : marketSymbols.filter((s) => !(today?.bars[s]?.length));
     const weekStored = await store.loadSession(WEEK_STORE_KEY).catch(() => null);
     // Match the 1W build's coverage test, not a looser presence check: a
     // stale-but-present store (only pre-settlement bars) must read *stale* here,
@@ -850,6 +858,16 @@ export class App {
         endDate: window.endDate,
         tiingoMeter,
         twelveDataMeter,
+        // One routing path (WS3): fill Twelve Data up to whatever its shared
+        // per-minute/day budget has left, slicing the request to the minute cap
+        // (WS2) so a 12-credit batch can never 429 a fresh 8-credit minute, and
+        // route only the genuine overflow to Tiingo — never Tiingo-first. The
+        // remainder is deferred to the next refresh round, not dumped on Tiingo.
+        budget: () => twelveDataBudgetRemaining(Date.now()),
+        // Two-tier braking, tier 1 (WS4): a per-symbol series backoff parks a
+        // dead/empty series instead of re-pulling it every ~60s round, exactly as
+        // the FX leg below already is.
+        backoff: { memo: cacheSeriesBackoff(), scope: `bars:${param}`, now: () => Date.now() },
         ...extra,
       });
       if (!fetchBars) return;
