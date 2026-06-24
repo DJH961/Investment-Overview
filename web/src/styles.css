@@ -1057,7 +1057,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* --- Charts (shared line chart: value-over-time + equity curve) ------------ */
 .chart-wrap { width: 100%; }
-/* Placeholder shown while an experimental live (1D/1W) curve loads, or when it
+/* Placeholder shown while a live (1D/1W) curve loads, or when it
    has no data yet — keeps the chart area from collapsing during the fetch. */
 .chart-live-status {
   display: flex;
@@ -1135,6 +1135,20 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   stroke-dasharray: 6 3;
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
+}
+/* Neutral dashed reference rule (e.g. the 1D curve's previous-session close) —
+   a muted slate so it carries no gain/loss meaning of its own. */
+.chart-refline {
+  stroke: var(--muted);
+  stroke-width: 1.2;
+  stroke-dasharray: 5 4;
+  opacity: 0.85;
+  vector-effect: non-scaling-stroke;
+}
+.chart-refline-label {
+  fill: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
 }
 
 .chart-legend {

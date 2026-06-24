@@ -358,6 +358,20 @@ re-fetching prices that could not have changed:
   the repull grabs the full session for the best possible curve. Pass
   `resumeBackfillMs = Infinity` for pure breadcrumb mode.
 
+- **5H.22 The login prefetch always fetched quotes and never the graphs, and
+  lumped mutual funds into Tiingo rapid-fires** — ✅ done. The warm-up now routes
+  smartly from cached state (pre-decrypt): NAV funds always go to the cheap Twelve
+  Data primary (never a scarce hourly-capped Tiingo credit — they have no intraday
+  series and the graphs never plot them); a stale 1D/1W graph is backfilled in the
+  *same* expensive Tiingo pass (market sleeve only), with each fetched bar primed
+  back into the quote cache so those symbols are dropped from the quote set (one
+  spend serves both graph and holdings, and the merged bars stop the later
+  dashboard build re-spending). A `SessionStatus` snapshot saved on log-out/after
+  each pull lets the next login log the delta. The prefetch FX pull — previously
+  silent — now writes to the `FX` polling-log category, and the routing decision is
+  spelled out under `LOGIN`. See `planPrefetch` (web/src/tiingo-fallback.ts) and
+  `prefetchGraphBars`/`prefetchGraphStaleness`/`saveSessionStatus` (web/src/app.ts).
+
 ## 6. Observability / shareable diagnostics (added 2026-06-21 — ✅ done)
 
 - **6.1 No persistent log file to share** — ✅ done. `logging.configure_logging`

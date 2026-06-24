@@ -41,6 +41,7 @@ import {
   formatCurrency,
   formatCurrencyShortRaw,
   formatCurrencyWhole,
+  formatMoneyRaw,
   formatDualCurrency,
   formatDualCurrencyParts,
   type DualCurrencyParts,
@@ -1300,7 +1301,7 @@ function daysBetween(a: string, b: string): number {
   return (Date.parse(b) - Date.parse(a)) / 86_400_000;
 }
 
-/** A live range the experimental mode plots from device-cached intraday/daily bars. */
+/** A live range the value chart plots from device-cached intraday/daily bars. */
 export type LiveRange = "1D" | "1W";
 
 /** Chart-ready output of a live-curve build (already denominated and dated). */
@@ -1310,17 +1311,19 @@ export interface LiveCurveChart {
   yAxisLabel?: (value: number, fractionDigits?: number) => string;
   /** Legend rows to show beneath the live chart (series class → label). */
   legend?: Array<{ className: string; label: string }>;
+  /** Optional horizontal reference line (e.g. the 1D curve's previous close). */
+  referenceLine?: { value: Decimal; label?: string };
 }
 
 /**
- * Lazily build a live 1D/1W curve for the experimental value chart, returning
+ * Lazily build a live 1D/1W curve for the value chart, returning
  * `null` when the curve can't be drawn (no data yet, missing key/proxy, or a
  * failed fetch). Only invoked when the user actually selects a live preset.
  */
 export type LiveCurveBuilder = (range: LiveRange) => Promise<LiveCurveChart | null>;
 
 /**
- * The app shell's hooks for the experimental live value chart: each lazily
+ * The app shell's hooks for the live value chart: each lazily
  * builds a whole-book curve (both currencies per point) for its range, returning
  * `null` when the curve can't be drawn. Currency denomination and overlays are
  * applied by the UI from the returned {@link CurvePoint}s, so the shell stays
@@ -1340,27 +1343,28 @@ export type RangeOption =
 
 /**
  * The ordered preset set for the value chart, given the history `span` (days),
- * whether experimental mode is on, and whether a live builder is available.
+ * whether the optional extra (3M / 6M) ranges are enabled, and whether a live
+ * builder is available.
  *
- * - **Default:** the proven history slices that fit the span, plus "All".
- * - **Experimental:** drops the 3M / 6M slices and — when a live builder exists —
- *   prepends the live **1D** and **1W** curves.
+ * - **Default:** the live **1D** and **1W** curves (when a builder exists) plus
+ *   the `1M` / `1Y` history slices that fit the span and "All". The longer
+ *   `3M` / `6M` slices are omitted for a cleaner strip.
+ * - **Extra ranges on:** adds the `3M` / `6M` history slices back.
  *
  * Returns `[]` when there is nothing worth toggling (no live presets and the
  * history is shorter than the smallest slice), so the caller draws a plain chart.
  */
-export function chartTimeframeOptions(span: number, experimental: boolean, hasLive: boolean): RangeOption[] {
-  const historySource = experimental
-    ? CHART_TIMEFRAMES.filter((t) => t.label !== "3M" && t.label !== "6M")
-    : CHART_TIMEFRAMES;
+export function chartTimeframeOptions(span: number, extended: boolean, hasLive: boolean): RangeOption[] {
+  const historySource = extended
+    ? CHART_TIMEFRAMES
+    : CHART_TIMEFRAMES.filter((t) => t.label !== "3M" && t.label !== "6M");
   const presets = historySource.filter((t) => span > t.days + 5);
-  const livePresets: RangeOption[] =
-    experimental && hasLive
-      ? [
-          { label: "1D", kind: "live", range: "1D" },
-          { label: "1W", kind: "live", range: "1W" },
-        ]
-      : [];
+  const livePresets: RangeOption[] = hasLive
+    ? [
+        { label: "1D", kind: "live", range: "1D" },
+        { label: "1W", kind: "live", range: "1W" },
+      ]
+    : [];
   if (presets.length === 0 && livePresets.length === 0) return [];
   return [
     ...livePresets,
@@ -1375,10 +1379,10 @@ export function chartTimeframeOptions(span: number, experimental: boolean, hasLi
  * small button group that re-slices the same series to the chosen look-back and
  * redraws in place (no re-fetch; purely a view of the already-loaded points).
  *
- * In the experimental graph mode ({@link experimentalGraphsEnabled}) the longer
- * 3M / 6M slices are dropped and, when a {@link LiveCurveBuilder} is supplied,
- * live **1D** and **1W** presets are prepended. Selecting one fetches/builds its
- * curve on demand (device-cached) and swaps it in; the default mode is untouched.
+ * The live **1D** and **1W** curves are prepended whenever a {@link LiveCurveBuilder}
+ * is supplied. The longer 3M / 6M slices are shown only when the optional extra
+ * ranges are enabled ({@link extendedGraphsEnabled}). Selecting a live preset
+ * fetches/builds its curve on demand (device-cached) and swaps it in.
  */
 function chartWithTimeframe(
   dates: string[],
@@ -1386,13 +1390,21 @@ function chartWithTimeframe(
   chartOpts: { yAxisLabel?: (v: number) => string } = {},
   persistKey?: string,
   live?: LiveCurveBuilder,
+  baseLegend?: Array<{ className: string; label: string }>,
 ): HTMLElement | null {
   const full = buildLineChart({ dates, series, ...chartOpts });
   if (!full) return null;
-  const wrap = h("div", { class: "chart-wrap" }, [full as unknown as HTMLElement]);
+  // When a base legend is supplied the wrapper *owns* the legend, redrawing it
+  // alongside each preset (history or live) so the chart never shows two copies —
+  // the live re-draw used to duplicate a legend the caller also printed below.
+  const legendEl = (rows: Array<{ className: string; label: string }>): HTMLElement =>
+    h("div", { class: "chart-legend" }, rows.map((row) => legendItem(row.className, row.label)));
+  const withLegend = (chart: HTMLElement, rows?: Array<{ className: string; label: string }>): HTMLElement[] =>
+    rows && rows.length > 0 ? [chart, legendEl(rows)] : [chart];
+  const wrap = h("div", { class: "chart-wrap" }, withLegend(full as unknown as HTMLElement, baseLegend));
 
   const span = dates.length >= 2 ? daysBetween(dates[0], dates[dates.length - 1]) : 0;
-  const options = chartTimeframeOptions(span, experimentalGraphsEnabled(), Boolean(live));
+  const options = chartTimeframeOptions(span, extendedGraphsEnabled(), Boolean(live));
   // Nothing worth toggling (no live presets and history shorter than the smallest
   // slice): plain chart.
   if (options.length === 0) return wrap;
@@ -1417,7 +1429,7 @@ function chartWithTimeframe(
     const slicedDates = dates.slice(start);
     const slicedSeries = rebaseWindowOverlays(series.map((s) => ({ ...s, values: s.values.slice(start) })));
     const chart = buildLineChart({ dates: slicedDates, series: slicedSeries, ...chartOpts });
-    if (chart) wrap.replaceChildren(chart as unknown as HTMLElement);
+    if (chart) wrap.replaceChildren(...withLegend(chart as unknown as HTMLElement, baseLegend));
   };
 
   const applyLive = async (range: LiveRange, token: number): Promise<void> => {
@@ -1438,6 +1450,7 @@ function chartWithTimeframe(
       dates: built.dates,
       series: built.series,
       yAxisLabel: built.yAxisLabel ?? chartOpts.yAxisLabel,
+      referenceLine: built.referenceLine,
     });
     if (!chart) {
       wrap.replaceChildren(liveStatus("Not enough live points to draw a curve yet."));
@@ -1445,18 +1458,9 @@ function chartWithTimeframe(
     }
     // Re-draw the legend for the live series (e.g. the rebased other-currency
     // line) so a 1D/1W selection labels its own lines rather than inheriting the
-    // exported-history legend.
-    const nodes: HTMLElement[] = [chart as unknown as HTMLElement];
-    if (built.legend && built.legend.length > 0) {
-      nodes.push(
-        h(
-          "div",
-          { class: "chart-legend" },
-          built.legend.map((row) => legendItem(row.className, row.label)),
-        ),
-      );
-    }
-    wrap.replaceChildren(...nodes);
+    // exported-history legend. The wrapper owns the legend, so the caller no
+    // longer prints a second copy beneath the chart.
+    wrap.replaceChildren(...withLegend(chart as unknown as HTMLElement, built.legend));
   };
 
   const select = (index: number, persist = true): void => {
@@ -1751,8 +1755,16 @@ function renderDrawdownChart(curve: AnalyticsView["curve"]): HTMLElement | null 
  * with the other currency overlaid (rebased to share the axis) — the same
  * treatment {@link renderValueChart} gives the exported history. Returns null
  * when there are too few points to draw.
+ *
+ * `prevClose` (the previous session's settled total, in EUR and USD) is supplied
+ * only for the intraday 1D curve: when present, a neutral dashed reference line
+ * marks it so the user reads whether the live value sits above or below where the
+ * portfolio last *closed* — exactly as the desktop "1 Day" chart does.
  */
-function liveCurveToChart(points: CurvePoint[]): LiveCurveChart | null {
+export function liveCurveToChart(
+  points: CurvePoint[],
+  prevClose?: { eur: Decimal | null; usd: Decimal | null } | null,
+): LiveCurveChart | null {
   const cols = curveColumns(points);
   if (cols.dates.length < 2) return null;
   const inUsd = getDisplayCurrency() === "USD" && canConvertToUsd();
@@ -1772,7 +1784,14 @@ function liveCurveToChart(points: CurvePoint[]): LiveCurveChart | null {
   }
   const yAxisLabel = (value: number, digits?: number): string =>
     formatCurrencyShortRaw(new Decimal(value), code, digits);
-  return { dates: cols.dates, series, yAxisLabel, legend };
+  // The previous-session close (display-currency value) as a dashed reference
+  // line, marked only when it is known for the active currency.
+  const prevCloseValue = prevClose ? (inUsd ? prevClose.usd : prevClose.eur) : null;
+  const referenceLine =
+    prevCloseValue !== null && prevCloseValue !== undefined
+      ? { value: prevCloseValue, label: `Prev close ${formatMoneyRaw(prevCloseValue, code)}` }
+      : undefined;
+  return { dates: cols.dates, series, yAxisLabel, legend, referenceLine };
 }
 
 /**
@@ -1834,15 +1853,45 @@ function renderValueChart(
     series.push({ values: currencyLine.values, className: "series-currency" });
   }
 
-  // In experimental mode, wire the live 1D/1W builders so their presets fetch and
-  // draw on demand; otherwise the chart keeps to the exported history alone.
+  // Live 1D/1W are now always on: wire the builders so their presets fetch and
+  // draw on demand whenever a live graph is available. The 1D curve marks the
+  // previous session's settled close as a dashed reference line — the same cue
+  // the desktop "1 Day" chart draws. We anchor it on the live "today" baseline
+  // (`totalValue − todayMove`, in each currency) rather than the last exported
+  // settled point, so the rule lands exactly where the headline "% today" is
+  // measured from. The two can differ — the exported point may be an older
+  // session or carry a different FX snapshot — which left the line at the wrong
+  // height (e.g. hugging the live value while the day was clearly down). Fall
+  // back to the last exported point only when no live move is known.
+  const lastPoint = points[points.length - 1];
+  const prevClose =
+    o.todayMovePct !== null
+      ? {
+          eur: o.totalValueEur.minus(o.todayMoveEur),
+          usd:
+            o.totalValueUsd !== null && o.todayMoveUsd !== null
+              ? o.totalValueUsd.minus(o.todayMoveUsd)
+              : null,
+        }
+      : { eur: lastPoint.portfolioValue, usd: lastPoint.portfolioValueUsd };
   const liveBuilder: LiveCurveBuilder | undefined =
-    liveGraph && experimentalGraphsEnabled()
+    liveGraph
       ? async (range) => {
           const built = range === "1D" ? await liveGraph.session() : await liveGraph.week();
-          return built ? liveCurveToChart(built) : null;
+          if (!built) return null;
+          return liveCurveToChart(built, range === "1D" ? prevClose : null);
         }
       : undefined;
+
+  // The legend rows for the exported history; the chart wrapper owns rendering
+  // them (and swaps in the live preset's own legend) so only one copy is ever
+  // shown — the chart used to print a second, duplicate legend below itself.
+  const baseLegend = currencyLine !== null
+    ? [
+        { className: "series-portfolio", label: disp.code },
+        { className: "series-currency", label: `${currencyLine.code} (rebased)` },
+      ]
+    : undefined;
 
   const chart = chartWithTimeframe(
     dates,
@@ -1850,6 +1899,7 @@ function renderValueChart(
     { yAxisLabel: disp.yAxisLabel },
     "portfolio",
     liveBuilder,
+    baseLegend,
   );
   if (!chart) return null;
 
@@ -1872,14 +1922,6 @@ function renderValueChart(
     ]),
     chart,
   ];
-  if (currencyLine !== null) {
-    children.push(
-      h("div", { class: "chart-legend" }, [
-        legendItem("series-portfolio", disp.code),
-        legendItem("series-currency", `${currencyLine.code} (rebased)`),
-      ]),
-    );
-  }
   if (note) children.push(h("p", { class: "note" }, [note]));
   return h("section", { class: "card value-chart" }, children);
 }
@@ -3274,33 +3316,32 @@ export function renderTimeFormatToggle(): HTMLElement {
 }
 
 /**
- * Persisted opt-in for the experimental live-graph mode. When on, the Overview
- * value chart swaps its longer presets (3M / 6M) for the live **1D** and **1W**
- * curves (docs/v3.0_live_web_companion_proposal.md §10.8); when off, the proven
- * 1M / 3M / 6M / 1Y export-history chart is shown unchanged, so the default
- * experience never regresses.
+ * Persisted opt-in for the optional extra (3M / 6M) chart ranges. Live **1D** and
+ * **1W** plus the `1M` / `1Y` slices are always shown; turning this on adds the
+ * longer `3M` and `6M` history slices back to the value chart's range strip. Off
+ * by default for a cleaner look.
  */
-const EXPERIMENTAL_GRAPHS_KEY = "iv.web.experimentalGraphs";
+const EXTENDED_GRAPHS_KEY = "iv.web.extendedGraphs";
 
-/** Whether the experimental 1D/1W live-graph mode is currently enabled. */
-export function experimentalGraphsEnabled(): boolean {
-  return loadBoolPref(EXPERIMENTAL_GRAPHS_KEY, false);
+/** Whether the optional 3M / 6M chart ranges are currently enabled. */
+export function extendedGraphsEnabled(): boolean {
+  return loadBoolPref(EXTENDED_GRAPHS_KEY, false);
 }
 
 /**
- * Self-contained toggle for the experimental live-graph mode. Persists its own
+ * Self-contained toggle for the optional 3M / 6M chart ranges. Persists its own
  * choice; the change takes effect the next time the dashboard renders (e.g. on
  * returning from Settings), exactly like the theme and clock toggles.
  */
-export function renderExperimentalGraphsToggle(): HTMLElement {
-  const select = h("select", { class: "select", "data-action": "experimental-graphs" }, [
-    h("option", { value: "0" }, ["Off — 1M · 3M · 6M · 1Y"]),
-    h("option", { value: "1" }, ["On — adds live 1D & 1W"]),
+export function renderExtendedGraphsToggle(): HTMLElement {
+  const select = h("select", { class: "select", "data-action": "extended-graphs" }, [
+    h("option", { value: "0" }, ["Off — 1D · 1W · 1M · 1Y"]),
+    h("option", { value: "1" }, ["On — also 3M & 6M"]),
   ]) as HTMLSelectElement;
-  select.value = experimentalGraphsEnabled() ? "1" : "0";
-  select.setAttribute("aria-label", "Experimental graphs");
+  select.value = extendedGraphsEnabled() ? "1" : "0";
+  select.setAttribute("aria-label", "Extra chart ranges");
   select.addEventListener("change", () => {
-    saveBoolPref(EXPERIMENTAL_GRAPHS_KEY, select.value === "1");
+    saveBoolPref(EXTENDED_GRAPHS_KEY, select.value === "1");
   });
   return select;
 }

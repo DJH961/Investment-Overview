@@ -36,6 +36,14 @@ export interface LineChartOptions {
    * it, while ratio formatters (e.g. drawdown percent) may ignore it.
    */
   yAxisLabel?: (value: number, fractionDigits?: number) => string;
+  /**
+   * Optional horizontal reference line drawn across the plot — the intraday "1D"
+   * curve uses it to mark the previous session's settled close (mirroring the
+   * desktop chart), so the user reads whether the live value sits above or below
+   * where the portfolio last closed. Its value is folded into the y-axis range so
+   * the rule is always on-screen, and an optional label is printed above it.
+   */
+  referenceLine?: { value: Decimal; label?: string };
 }
 
 function svgEl<K extends keyof SVGElementTagNameMap>(name: K): SVGElementTagNameMap[K] {
@@ -159,6 +167,10 @@ export function buildLineChart(options: LineChartOptions): SVGSVGElement | null 
   for (const s of series) {
     for (const v of s.values) if (v !== null) allValues.push(v.toNumber());
   }
+  // Fold the reference line into the scale so the rule is always on-screen, even
+  // when the whole curve stayed above or below it (mirrors the desktop chart).
+  const refLine = options.referenceLine ?? null;
+  if (refLine) allValues.push(refLine.value.toNumber());
   // "Nice" rounded bounds + step so the y-axis gridlines land on tidy round
   // numbers (e.g. 30k, 32.5k, 35k) instead of arbitrary fractions of the raw
   // data range, while keeping the same compact label width.
@@ -228,6 +240,32 @@ export function buildLineChart(options: LineChartOptions): SVGSVGElement | null 
     path.setAttribute("class", current.className);
     path.setAttribute("fill", "none");
     svg.appendChild(path);
+  }
+
+  // --- Reference line (e.g. the 1D curve's previous-session close) -------
+  // Drawn last so the muted dashed rule sits above the translucent area fill and
+  // reads clearly; its value was folded into the axis range above so it is always
+  // on-screen. A short label is printed just above the line.
+  if (refLine) {
+    const yy = y(refLine.value.toNumber());
+    const rule = svgEl("line");
+    rule.setAttribute("x1", String(padL));
+    rule.setAttribute("x2", String(width - padR));
+    rule.setAttribute("y1", yy.toFixed(1));
+    rule.setAttribute("y2", yy.toFixed(1));
+    rule.setAttribute("class", "chart-refline");
+    svg.appendChild(rule);
+    if (refLine.label) {
+      const label = svgEl("text");
+      label.setAttribute("x", String(padL + 4));
+      // Keep the label below the line when it would otherwise clip the top edge.
+      const above = yy - padT > 12;
+      label.setAttribute("y", (above ? yy - 4 : yy + 11).toFixed(1));
+      label.setAttribute("text-anchor", "start");
+      label.setAttribute("class", "chart-refline-label");
+      label.textContent = refLine.label;
+      svg.appendChild(label);
+    }
   }
 
   return svg;
