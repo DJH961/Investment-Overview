@@ -710,6 +710,7 @@ def week_series_with_fx(
     session: Session,
     *,
     now: datetime | None = None,
+    force: bool = False,
     fetcher: object | None = None,
     fx_fetcher: object | None = None,
 ) -> list[tuple[datetime, Decimal, Decimal | None]]:
@@ -738,6 +739,12 @@ def week_series_with_fx(
     Best-effort and network-backed: returns ``[]`` when nothing is cached and no
     intraday bars could be sourced, letting the caller fall back to the daily
     snapshot series.
+
+    ``force`` bypasses the per-session fetched-day guard so every uncovered day
+    is re-pulled even if it was already attempted this anchor session — used by
+    the historic re-download (e.g. after a cache reset), where the intraday
+    samples are wiped but the ``app_config`` markers survive, which would
+    otherwise leave the "1 Week" curve empty until the next anchor session.
     """
     from investment_dashboard.db import cache_read_session  # noqa: PLC0415
 
@@ -763,9 +770,12 @@ def week_series_with_fx(
         end = _session_start_utc(session_date + timedelta(days=1))
         return any(start <= at < end for at, _, _ in cached)
 
-    # 2. Fetch only the gaps, and only days not already attempted this session.
+    # 2. Fetch only the gaps, and only days not already attempted this session
+    #    (``force`` re-pulls every uncovered day regardless of the marker).
     to_fetch = [
-        d for d in sessions if not _is_covered(d) and not _week_day_fetched(session, d, anchor)
+        d
+        for d in sessions
+        if not _is_covered(d) and (force or not _week_day_fetched(session, d, anchor))
     ]
 
     fetched: list[tuple[datetime, Decimal, Decimal | None]] = []

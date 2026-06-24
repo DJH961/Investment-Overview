@@ -19,6 +19,8 @@ _STAGE_ATTRS = (
     "_refresh_live_fx",
     "_refresh_splits",
     "_refresh_benchmark",
+    "_refresh_intraday_day",
+    "_refresh_intraday_week",
     "_warm_snapshots",
 )
 
@@ -62,6 +64,8 @@ def test_deferred_refresh_reports_progress_through_every_stage(
         "Live FX",
         "Stock splits",
         "Benchmark",
+        "Intraday (1 Day)",
+        "Intraday (1 Week)",
         "Daily snapshots",
     ]
 
@@ -69,6 +73,7 @@ def test_deferred_refresh_reports_progress_through_every_stage(
 def test_full_history_refresh_wraps_activity_and_clears_progress(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(boot, "_history_is_stale", lambda: True)
     for attr in _STAGE_ATTRS:
         monkeypatch.setattr(boot, attr, lambda: None)
 
@@ -86,6 +91,8 @@ def test_full_history_refresh_wraps_activity_and_clears_progress(
 def test_full_history_refresh_swallows_stage_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(boot, "_history_is_stale", lambda: True)
+
     def _boom() -> None:
         raise RuntimeError("network down")
 
@@ -98,3 +105,75 @@ def test_full_history_refresh_swallows_stage_failure(
     snap = refresh_status.snapshot()
     assert snap.active is False
     assert snap.historical is False
+
+
+def _historical_probe() -> tuple[list[bool], object]:
+    """A ``(seen, probe)`` pair: ``probe`` is a no-op stage that records whether
+    the determinate "downloading history…" bar was active when it ran."""
+    seen: list[bool] = []
+
+    def _probe() -> None:
+        seen.append(refresh_status.snapshot().historical)
+
+    return seen, _probe
+
+
+def test_deferred_refresh_skips_bar_when_progress_not_shown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A routine catch-up runs every stage but never paints the determinate bar.
+    seen: list[tuple[int, bool]] = []
+
+    def _spy() -> None:
+        snap = refresh_status.snapshot()
+        seen.append((snap.progress_total, snap.historical))
+
+    for attr in _STAGE_ATTRS:
+        monkeypatch.setattr(boot, attr, _spy)
+
+    boot.run_deferred_network_refresh(show_progress=False)
+
+    assert len(seen) == len(_STAGE_ATTRS)
+    assert all(total == 0 and not hist for total, hist in seen)
+
+
+def test_full_history_refresh_skips_bar_for_a_fresh_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Logging on after a trivial delay: the cache is fresh, so no bar pops up.
+    monkeypatch.setattr(boot, "_history_is_stale", lambda: False)
+    seen, _probe = _historical_probe()
+    monkeypatch.setattr(boot, "_refresh_fx", _probe)
+    for attr in _STAGE_ATTRS[1:]:
+        monkeypatch.setattr(boot, attr, lambda: None)
+
+    assert boot.run_full_history_refresh("Startup data refresh") is True
+    assert seen == [False]
+
+
+def test_full_history_refresh_shows_bar_when_history_is_stale(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A long absence (stale cache) is a large pull and gets the determinate bar.
+    monkeypatch.setattr(boot, "_history_is_stale", lambda: True)
+    seen, _probe = _historical_probe()
+    monkeypatch.setattr(boot, "_refresh_fx", _probe)
+    for attr in _STAGE_ATTRS[1:]:
+        monkeypatch.setattr(boot, attr, lambda: None)
+
+    assert boot.run_full_history_refresh("Startup data refresh") is True
+    assert seen == [True]
+
+
+def test_full_history_refresh_force_progress_overrides_fresh_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A cache reset forces the bar even though the (wiped) cache would read fresh.
+    monkeypatch.setattr(boot, "_history_is_stale", lambda: False)
+    seen, _probe = _historical_probe()
+    monkeypatch.setattr(boot, "_refresh_fx", _probe)
+    for attr in _STAGE_ATTRS[1:]:
+        monkeypatch.setattr(boot, attr, lambda: None)
+
+    assert boot.run_full_history_refresh("Cache reset re-download", force_progress=True) is True
+    assert seen == [True]

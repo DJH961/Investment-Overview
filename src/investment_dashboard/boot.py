@@ -43,6 +43,50 @@ log = logging.getLogger(__name__)
 #: ``/monthly`` and ``/yearly`` to actually differ between EUR and USD.
 _BOOT_BACKFILL_DAYS = 14
 
+#: How many days the newest cached close may lag before the deferred re-download
+#: is treated as a *large* historic backfill that warrants the determinate
+#: "downloading history…" progress bar. A routine catch-up (logging on after a
+#: day or two, or over a weekend) stays under this and shows only the quiet
+#: "Updating…" chip; a genuinely outdated/from-scratch pull crosses it and gets
+#: the bar. A full week comfortably clears normal weekend/holiday gaps.
+_HISTORICAL_PROGRESS_STALE_DAYS = 7
+
+
+def _history_is_stale(*, threshold_days: int = _HISTORICAL_PROGRESS_STALE_DAYS) -> bool:
+    """Whether the cached market history lags far enough to warrant the bar.
+
+    Cheap, best-effort staleness probe gating the determinate "downloading
+    history…" progress bar. Returns ``True`` when the pull is *large*: there is
+    no cached close for at least one held instrument (a from-scratch / post-reset
+    backfill), or the newest cached close is more than ``threshold_days`` days
+    old (a long absence). A normal day-or-two catch-up returns ``False`` so the
+    bar stays hidden and only the quiet "Updating…" chip shows. Never raises —
+    any probe failure conservatively reports ``False`` so a hiccup can't
+    spuriously animate a big download.
+    """
+    try:
+        from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+        from investment_dashboard.services import positions_service, prices_service  # noqa: PLC0415
+
+        with ledger_session_scope() as session:
+            ids = [
+                p.instrument.id
+                for p in positions_service.compute_positions(session)
+                if p.shares > 0
+            ]
+            if not ids:
+                return False
+            dates = prices_service.latest_price_dates_for(session, ids)
+        if len(dates) < len(ids):
+            # At least one held instrument has no cached close at all — a
+            # from-scratch / post-reset pull, which is exactly the "large" case.
+            return True
+        newest = max(dates.values())
+    except Exception:  # pragma: no cover - defensive: never block on the probe
+        log.debug("history staleness probe failed; assuming fresh", exc_info=True)
+        return False
+    return (date.today() - newest).days > threshold_days
+
 
 def _earliest_needed_date() -> date:
     """Return the floor date FX / price refresh must cover on this boot.
@@ -802,6 +846,46 @@ def _refresh_benchmark() -> None:
         log.warning("Benchmark refresh failed; continuing with cached benchmark", exc_info=True)
 
 
+def _refresh_intraday_day() -> None:
+    """Re-pull the most recent session's intraday "1 Day" curve.
+
+    The Overview "1 Day" graph reconstructs the last trading session from
+    ~15-minute intraday bars (the within-day samples a cache reset wipes). Until
+    this runs the curve is only rebuilt lazily the first time the user opens that
+    range, so a fresh re-download would otherwise leave it blank. ``force`` makes
+    it re-fetch even if the session was already marked reconstructed.
+    Best-effort: a failure just leaves the lazy first-open path to rebuild it."""
+    try:
+        from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+        from investment_dashboard.services import intraday_snapshots_service  # noqa: PLC0415
+
+        with ledger_session_scope() as session:
+            written = intraday_snapshots_service.reconstruct_last_session(session, force=True)
+        log.info("Intraday 1 Day curve reconstructed (%d point(s))", written)
+    except Exception:
+        log.warning("Intraday 1 Day refresh failed; continuing", exc_info=True)
+
+
+def _refresh_intraday_week() -> None:
+    """Warm the multi-day intraday "1 Week" sleeve (start/midday/close per day).
+
+    Mirrors :func:`_refresh_intraday_day` for the Overview "1 Week" graph: it
+    fetches and persists any uncovered sessions in the rolling week so the curve
+    renders straight away after a re-download instead of being fetched on first
+    open. ``force`` bypasses the per-session fetched-day markers (which survive a
+    cache reset that wipes the samples), so the week is genuinely re-pulled.
+    Best-effort: a failure just leaves the lazy first-open path to rebuild it."""
+    try:
+        from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+        from investment_dashboard.services import intraday_snapshots_service  # noqa: PLC0415
+
+        with ledger_session_scope() as session:
+            samples = intraday_snapshots_service.week_series_with_fx(session, force=True)
+        log.info("Intraday 1 Week sleeve warmed (%d sample(s))", len(samples))
+    except Exception:
+        log.warning("Intraday 1 Week refresh failed; continuing", exc_info=True)
+
+
 def _invalidate_snapshots() -> None:
     """Deprecated no-op kept for backwards compatibility.
 
@@ -890,13 +974,15 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
     _refresh_live_fx()
     _refresh_splits()
     _refresh_benchmark()
+    _refresh_intraday_day()
+    _refresh_intraday_week()
     # Rebuild the snapshot cache in place (no delete-all window — see
     # _warm_snapshots) so a full-history page like /yearly never cold-recomputes
     # its daily curve on the request thread.
     _warm_snapshots()
 
 
-def run_deferred_network_refresh() -> None:
+def run_deferred_network_refresh(*, show_progress: bool = True) -> None:
     """Best-effort FX + price refresh meant to run *after* the server starts.
 
     Pulling fresh FX rates and market prices is the slowest part of boot and
@@ -907,11 +993,12 @@ def run_deferred_network_refresh() -> None:
     renders straight away from cached data and quietly updates once the refresh
     lands (the periodic live-refresh timer keeps it current thereafter).
 
-    Each stage reports its progress to
+    When ``show_progress`` is set, each stage reports its progress to
     :mod:`investment_dashboard.services.refresh_status`, so the UI can paint a
-    small determinate "downloading history…" bar — the same historic re-pull runs
-    after a cache reset and when re-opening the app after a long absence, and in
-    every case the user can see it working rather than wondering if anything is.
+    small determinate "downloading history…" bar — the intended cue for a *large*
+    re-pull (after a cache reset, or re-opening the app after a long absence). For
+    a routine day-or-two catch-up the caller leaves it ``False`` so only the quiet
+    "Updating…" chip shows and the bar doesn't pop up over a trivial refresh.
 
     Like the in-sequence refresh it is best-effort: every failure is logged and
     swallowed so an offline machine still gets a working dashboard.
@@ -929,39 +1016,56 @@ def run_deferred_network_refresh() -> None:
         ("Live FX", _refresh_live_fx),
         ("Stock splits", _refresh_splits),
         ("Benchmark", _refresh_benchmark),
+        ("Intraday (1 Day)", _refresh_intraday_day),
+        ("Intraday (1 Week)", _refresh_intraday_week),
         ("Daily snapshots", _warm_snapshots),
     )
     total = len(steps)
 
     started = _time.monotonic()
-    log.info("deferred network refresh: starting (FX, prices, splits, benchmark, snapshots)")
+    log.info(
+        "deferred network refresh: starting "
+        "(FX, prices, splits, benchmark, intraday 1D/1W, snapshots; progress_bar=%s)",
+        show_progress,
+    )
     for index, (label, step) in enumerate(steps):
         # Announce the stage *before* running it so the bar names what is being
-        # downloaded right now; advance the completed count after it returns.
-        refresh_status.set_progress(index, total, label)
+        # downloaded right now; advance the completed count after it returns. The
+        # progress bar is only painted for a large re-pull (``show_progress``);
+        # a routine catch-up runs the same stages under the plain "Updating…" cue.
+        if show_progress:
+            refresh_status.set_progress(index, total, label)
         step()
-        refresh_status.set_progress(index + 1, total, label)
+        if show_progress:
+            refresh_status.set_progress(index + 1, total, label)
     log.info(
         "deferred network refresh: complete in %.1fs",
         _time.monotonic() - started,
     )
 
 
-def run_full_history_refresh(source: str) -> bool:
+def run_full_history_refresh(source: str, *, force_progress: bool = False) -> bool:
     """Run the full historic re-download, wrapped in the activity + error cues.
 
     Shared by the startup deferred refresh and the post-cache-reset re-pull so
-    both animate the header chip and the bottom-corner historic-download progress
-    bar (via :mod:`investment_dashboard.services.refresh_status`) and surface any
-    failure on the runtime-error strip. Returns ``True`` when the sequence ran to
-    completion. Never raises — a failure is logged, recorded and swallowed.
+    both animate the header chip and surface any failure on the runtime-error
+    strip. Returns ``True`` when the sequence ran to completion. Never raises — a
+    failure is logged, recorded and swallowed.
+
+    The determinate bottom-corner historic-download progress bar (via
+    :mod:`investment_dashboard.services.refresh_status`) is shown only for a
+    *large* pull: when ``force_progress`` is set (an explicit cache-reset
+    re-download) or :func:`_history_is_stale` reports the cache has fallen far
+    enough behind. A routine day-or-two catch-up runs under the plain "Updating…"
+    chip with no bar, so it doesn't pop up over a trivial refresh.
     """
     from investment_dashboard.services import refresh_status, runtime_status  # noqa: PLC0415
 
+    show_progress = force_progress or _history_is_stale()
     refresh_status.begin(source)
     ok = False
     try:
-        run_deferred_network_refresh()
+        run_deferred_network_refresh(show_progress=show_progress)
         ok = True
         runtime_status.resolve(source)
     except Exception as exc:
@@ -972,17 +1076,20 @@ def run_full_history_refresh(source: str) -> bool:
     return ok
 
 
-def start_full_history_refresh(source: str) -> None:
+def start_full_history_refresh(source: str, *, force_progress: bool = False) -> None:
     """Kick off :func:`run_full_history_refresh` on a daemon thread (non-blocking).
 
     Used by the Settings "Reset cached market data" action so the wiped price /
     FX / snapshot history is re-downloaded straight away — visibly, via the
-    progress bar — instead of waiting for the next app restart.
+    progress bar — instead of waiting for the next app restart. A reset is always
+    a from-scratch pull, so callers pass ``force_progress=True`` to show the bar
+    regardless of the staleness probe (the wiped cache would read as stale anyway,
+    but being explicit keeps the cue robust to changes in reset semantics).
     """
     import threading  # noqa: PLC0415
 
     threading.Thread(
-        target=lambda: run_full_history_refresh(source),
+        target=lambda: run_full_history_refresh(source, force_progress=force_progress),
         name="inv-dashboard-history-refresh",
         daemon=True,
     ).start()

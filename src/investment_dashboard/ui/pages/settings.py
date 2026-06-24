@@ -744,7 +744,7 @@ def _perform_reset(level_value: str) -> None:  # pragma: no cover - UI
     # the history after a reset" bug).
     from investment_dashboard.boot import start_full_history_refresh  # noqa: PLC0415
 
-    start_full_history_refresh("Cache reset re-download")
+    start_full_history_refresh("Cache reset re-download", force_progress=True)
     ui.notify("Re-downloading price history…", type="ongoing", timeout=2500)
     _settings_refresh()
 
