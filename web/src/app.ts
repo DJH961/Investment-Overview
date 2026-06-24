@@ -768,8 +768,11 @@ export class App {
       }
       const incoming: Record<string, Bar[]> = {};
       for (const [symbol, list] of bars) if (list.length > 0) incoming[symbol] = list;
-      // Bars double as quotes: already-cached symbols are primed from their newest
-      // bar (currency taken from the existing cache entry), sparing a quote credit.
+      // Bars double as quotes. We pass an empty currency map on purpose: every
+      // symbol reaching here is an *already-cached* outdated market holding, so
+      // primeQuotesFromBars reuses each one's existing cached currency (it only
+      // ever extends freshness and skips any symbol it can't currency-resolve).
+      // This runs pre-decrypt, where the real currency map isn't available yet.
       primeQuotesFromBars(bars, new Map<string, string | null>(), Date.now());
       // Grab the matching FX track in the same pass so the curve re-marks each
       // point at its own settled rate (finest granularity) for one more credit.
@@ -882,7 +885,7 @@ export class App {
     }
     // Save what we now hold, so the *next* login's pre-flight can reason about the
     // delta before any decrypt (the "good saving when logging off" half).
-    this.saveSessionStatus();
+    void this.saveSessionStatus();
     this.prefetchStatus = describePrefetch({
       inFlight: false,
       hasPlan: outcome.hasPlan,
@@ -901,10 +904,19 @@ export class App {
    * login's pre-flight can explain (and coarsely route) the delta before the blob
    * is decrypted. Cache-only and best-effort; holds no price, holding, or secret.
    */
-  private saveSessionStatus(now: Date = new Date()): void {
+  private async saveSessionStatus(now: Date = new Date()): Promise<void> {
     try {
       const plan = readSymbolPlan();
       const marketSymbols = plan.filter((e) => e.priceType === "market").map((e) => e.symbol);
+      // Reflect what the device store actually holds for the 1W daily window: the
+      // week graph is "covered" only when every market symbol already has bars (an
+      // empty sleeve is trivially covered). Read best-effort; a missing/failed store
+      // read just leaves the coarse "no market symbols" answer.
+      let weekGraphCovered = marketSymbols.length === 0;
+      if (this.timeSeriesStore !== null && marketSymbols.length > 0) {
+        const weekStored = await this.timeSeriesStore.loadSession(WEEK_STORE_KEY).catch(() => null);
+        weekGraphCovered = marketSymbols.every((s) => (weekStored?.bars[s]?.length ?? 0) > 0);
+      }
       const status: SessionStatus = {
         at: now.getTime(),
         lastPullAt: this.lastDataPullAt,
@@ -912,7 +924,7 @@ export class App {
         marketCovered: !this.marketDataOutdated(now),
         navCovered: !this.navOutstanding(now),
         sessionGraphDay: this.timeSeriesStore !== null ? lastSessionDate(now) : null,
-        weekGraphCovered: marketSymbols.length === 0,
+        weekGraphCovered,
       };
       writeSessionStatus(status);
     } catch {
@@ -3328,7 +3340,7 @@ export class App {
   private lock(): void {
     // Snapshot what we hold *before* tearing down, so the next login's pre-flight
     // can reason about the delta (the "good saving when logging off" half).
-    this.saveSessionStatus();
+    void this.saveSessionStatus();
     // Invalidate any in-flight background work and tear down the auto-refresh.
     this.sessionId += 1;
     this.clearRefreshTimer();
