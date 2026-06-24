@@ -14,6 +14,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [3.21.0] — 2026-06-24
+
+### Fixed
+
+- **"Reset cached market data" now also clears the 1D/1W intraday curves
+  (desktop app).** The cache reset wiped prices, FX and position snapshots but
+  left the within-day intraday samples (and the cached split factors) in place,
+  so a stale or malformed "1 Day"/"1 Week" graph survived the very reset meant
+  to fix it. Both the `intraday_value` and `price_split` cache tables are now
+  cleared alongside the rest, so the short-range graphs rebuild from scratch on
+  the next refresh.
+- **"Reset cache & re-pull everything" now also clears the live 1D/1W store
+  (web companion).** The browser companion keeps its intraday bars/tips in a
+  separate IndexedDB store that the price-cache wipe never touched, so the same
+  stale-1D/1W-graph problem could persist there too. The reset now clears that
+  store as well (`TimeSeriesStore.clear()`).
+
+### Added
+
+- **Logging verbosity is now a Settings option (desktop app).** A new
+  *Diagnostics & logging → Logging* control flips between **Normal** (`INFO`) and
+  **Verbose** (`DEBUG`) logging. The change applies immediately (no restart) and
+  is remembered across restarts. The section also shows the on-disk log file path
+  and offers a one-tap support-bundle download, so capturing *why* something
+  misbehaved is: turn on Verbose, reproduce, download the bundle.
+- **Much richer debug logging across the data-pull and calculation internals.**
+  Price and FX refreshes now log how many symbols/pairs are being pulled, over
+  which window, and how many new rows landed; intraday capture and session
+  reconstruction log each sample/backfill; the deferred boot refresh logs its
+  phases and total duration; and the database reset logs exactly which tables it
+  wiped and the per-table row counts.
+
+### Changed
+
+- **The Settings page is reorganised into tidy, collapsible groups.** The long
+  flat list of always-expanded sections is now clustered under labelled headings
+  (Preferences, Data & connectivity, Portfolio setup, Storage & sync,
+  Diagnostics & logging, Reset data). The two everyday controls — display
+  preferences and data refresh — stay open; everything else folds away so the
+  page is far easier to scan.
+
 ## [3.20.2] — 2026-06-24
 
 ### Fixed

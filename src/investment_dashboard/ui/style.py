@@ -355,6 +355,52 @@ html, body {{
 }}
 
 /* ------------------------------------------------------------------ */
+/* Collapsible settings sections + group headings (Settings tidy-up)   */
+/* ------------------------------------------------------------------ */
+/* A collapsible section reuses the section card look but is a Quasar
+   expansion so advanced/rarely-touched groups can stay tucked away. The
+   header carries the same weight as ``.inv-section-title`` so an expanded
+   collapsible is indistinguishable from a plain section. */
+.inv-collapse {{
+  background: var(--inv-surface) !important;
+  border: 1px solid var(--inv-hairline);
+  border-radius: var(--inv-radius-lg);
+  box-shadow: var(--inv-shadow-soft);
+  overflow: hidden;
+  min-width: 0;
+}}
+.inv-collapse :deep(.q-expansion-item__container > .q-item) {{
+  padding: 0.9rem 1.25rem;
+  min-height: unset;
+}}
+.inv-collapse :deep(.q-expansion-item__content) {{
+  padding: 0 1.25rem 1rem;
+}}
+/* Match the header text weight to a plain section title so an expanded
+   collapsible is indistinguishable from a `section`. */
+.inv-collapse :deep(.q-item__label),
+.inv-collapse :deep(.q-expansion-item__toggle-icon) {{
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--inv-ink);
+  letter-spacing: -0.005em;
+}}
+/* A lightweight, card-less heading that labels a group of sections, so the
+   page reads as a few labelled clusters rather than one long flat list. */
+.inv-settings-group-heading {{
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--inv-ink-subtle, var(--inv-ink));
+  opacity: 0.6;
+  margin: 1.25rem 0 0.25rem 0.25rem;
+}}
+.inv-settings-group-heading:first-child {{
+  margin-top: 0;
+}}
+
+/* ------------------------------------------------------------------ */
 /* KPI / metric cards                                                  */
 /* ------------------------------------------------------------------ */
 /* v2.8.1 — all Overview KPI tiles share one responsive grid so every
