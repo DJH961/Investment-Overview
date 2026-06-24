@@ -298,6 +298,168 @@ describe("loadOrBuildWeekCurve", () => {
     expect(Number(lifted?.valueUsd.toString())).toBeGreaterThan(1000);
   });
 
+  it("splices a previous day's cached 1D intraday bars (not just today)", async () => {
+    const s = store();
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    // Settled week (Saturday view): coarse daily closes Wed→Fri, all flat 100.
+    await s.saveSession({
+      day: WEEK_STORE_KEY,
+      bars: {
+        VTI: [
+          bar(dayMs("2026-03-11"), "100"),
+          bar(dayMs("2026-03-12"), "100"),
+          bar(dayMs("2026-03-13"), "100"),
+        ],
+      },
+      fx: [],
+      updatedAt: 0,
+    });
+    // 1D session cache for Wednesday (a *previous* day) holds fine intraday bars.
+    await s.saveSession({
+      day: "2026-03-11",
+      bars: {
+        VTI: [
+          bar(Date.parse("2026-03-11T14:00:00Z"), "100"),
+          bar(Date.parse("2026-03-11T17:00:00Z"), "110"),
+        ],
+      },
+      fx: [],
+      updatedAt: 0,
+    });
+    let fetched = false;
+    const curve = await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => {
+        fetched = true;
+        return new Map();
+      },
+      now: SAT_CLOSED,
+    });
+    // Pure cache read — never hits the network.
+    expect(fetched).toBe(false);
+    const instants = curve.points.map((p) => p.t);
+    expect(instants).toContain(Date.parse("2026-03-11T14:00:00Z"));
+    expect(instants).toContain(Date.parse("2026-03-11T17:00:00Z"));
+    // Wednesday's lone coarse close is replaced by its fine bars.
+    expect(instants).not.toContain(dayMs("2026-03-11"));
+    // The 110 intraday print lifts USD above the flat 100 daily closes.
+    const lifted = curve.points.find((p) => p.t === Date.parse("2026-03-11T17:00:00Z"));
+    expect(Number(lifted?.valueUsd.toString())).toBeGreaterThan(1000);
+  });
+
+  it("splices a previous day's breadcrumb trail into the otherwise-flat coarse gap", async () => {
+    const s = store();
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    await s.saveSession({
+      day: WEEK_STORE_KEY,
+      bars: {
+        VTI: [
+          bar(dayMs("2026-03-11"), "100"),
+          bar(dayMs("2026-03-12"), "100"),
+          bar(dayMs("2026-03-13"), "100"),
+        ],
+      },
+      fx: [],
+      updatedAt: 0,
+    });
+    // Wednesday's 1D session has NO fine bars, only live-tip breadcrumbs the
+    // dashboard laid while watching that day — the curve should still thicken.
+    await s.saveSession({
+      day: "2026-03-11",
+      bars: {},
+      fx: [],
+      tips: [
+        { t: Date.parse("2026-03-11T14:00:00Z"), valueEur: d(945), valueUsd: d(1050), baseEur: d(0), baseUsd: d(0) },
+        { t: Date.parse("2026-03-11T17:00:00Z"), valueEur: d(990), valueUsd: d(1100), baseEur: d(0), baseUsd: d(0) },
+      ],
+      updatedAt: 0,
+    });
+    const curve = await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => new Map(),
+      now: SAT_CLOSED,
+    });
+    const byT = new Map(curve.points.map((p) => [p.t, p]));
+    // Both breadcrumbs are spliced after Wednesday's lone (UTC-midnight) close.
+    expect(byT.has(Date.parse("2026-03-11T14:00:00Z"))).toBe(true);
+    expect(byT.get(Date.parse("2026-03-11T17:00:00Z"))?.valueUsd.toString()).toBe("1100");
+    // Curve stays ascending after the splice.
+    const times = curve.points.map((p) => p.t);
+    expect(times).toEqual([...times].sort((a, b) => a - b));
+  });
+
+  it("rebases spliced breadcrumbs onto the current base", async () => {
+    const s = store();
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    await s.saveSession({
+      day: WEEK_STORE_KEY,
+      bars: { VTI: [bar(dayMs("2026-03-13"), "100")] },
+      fx: [],
+      updatedAt: 0,
+    });
+    // Crumb struck against a base of 50 (USD): rebased onto the current base of 0
+    // it shifts down by 50 → 1100 - 50 + 0 = 1050.
+    await s.saveSession({
+      day: "2026-03-11",
+      bars: {},
+      fx: [],
+      tips: [
+        { t: Date.parse("2026-03-11T17:00:00Z"), valueEur: d(990), valueUsd: d(1100), baseEur: d(40), baseUsd: d(50) },
+      ],
+      updatedAt: 0,
+    });
+    const curve = await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => new Map(),
+      now: SAT_CLOSED,
+    });
+    const crumb = curve.points.find((p) => p.t === Date.parse("2026-03-11T17:00:00Z"));
+    expect(crumb?.valueUsd.toString()).toBe("1050");
+    expect(crumb?.valueEur.toString()).toBe("950");
+  });
+
+  it("keeps a day's real bars ground truth: drops crumbs before its last bar, keeps after", async () => {
+    const s = store();
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    await s.saveSession({
+      day: WEEK_STORE_KEY,
+      bars: { VTI: [bar(dayMs("2026-03-11"), "100"), bar(dayMs("2026-03-13"), "100")] },
+      fx: [],
+      updatedAt: 0,
+    });
+    // Wednesday has fine bars through 15:00 plus a stray crumb at 14:30 (covered
+    // by the bars) and one at 16:00 (past the last bar, filling the tail gap).
+    await s.saveSession({
+      day: "2026-03-11",
+      bars: {
+        VTI: [
+          bar(Date.parse("2026-03-11T14:00:00Z"), "100"),
+          bar(Date.parse("2026-03-11T15:00:00Z"), "100"),
+        ],
+      },
+      fx: [],
+      tips: [
+        { t: Date.parse("2026-03-11T14:30:00Z"), valueEur: d(900), valueUsd: d(1000), baseEur: d(0), baseUsd: d(0) },
+        { t: Date.parse("2026-03-11T16:00:00Z"), valueEur: d(990), valueUsd: d(1100), baseEur: d(0), baseUsd: d(0) },
+      ],
+      updatedAt: 0,
+    });
+    const curve = await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => new Map(),
+      now: SAT_CLOSED,
+    });
+    const instants = curve.points.map((p) => p.t);
+    // The crumb inside the bar span is dropped (bars are ground truth)…
+    expect(instants).not.toContain(Date.parse("2026-03-11T14:30:00Z"));
+    // …the crumb past the last bar is kept (fills the tail gap to the next day).
+    expect(instants).toContain(Date.parse("2026-03-11T16:00:00Z"));
+  });
+
   it("returns an empty curve when the anchor has no intraday holdings", async () => {
     const anchor = buildIntradayAnchor(
       [holding({ priceType: "nav" })], // folds into the base, no sleeve
