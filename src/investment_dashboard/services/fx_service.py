@@ -40,9 +40,16 @@ log = logging.getLogger(__name__)
 DEFAULT_QUOTES: tuple[str, ...] = ("USD",)
 
 _PROVIDER = "frankfurter"
-#: Provider tag of the retired yfinance ``EURUSD=X`` end-of-day overlay; kept so
-#: any rows it left behind can be purged in favour of the ECB reference rates.
+#: Provider tag for yfinance ``EURUSD=X`` end-of-day rows. The ECB/Frankfurter
+#: fixings remain the source of record for FX history; yfinance is engaged only
+#: as a *gap-filler* when Frankfurter errors/returns nothing (see
+#: :func:`_refresh_single_quote_fallback`). The boot purge
+#: (:func:`purge_legacy_yfinance_fx_history`) clears these rows so ECB reclaims
+#: the dates once it recovers — which is also what retires the legacy overlay.
 _YF_PROVIDER = "yfinance"
+#: Provider tag for the budget-gated Tiingo FX history gap-filler (today's tip
+#: only), the secondary fallback after yfinance.
+_TIINGO_PROVIDER = "tiingo"
 
 
 @dataclass(frozen=True)
@@ -319,28 +326,182 @@ def _refresh_single_quote(
     if start > today:
         return 0
     log.debug("fx %s→%s: fetching %s..%s from Frankfurter", base, quote, start, today)
+    frankfurter_failed = False
     try:
         records = fetch_rates(start, today, base=base, quote=quote)
     except FrankfurterError as exc:
         log.warning(
-            "FX refresh failed for %s→%s (%s); continuing with stale rates",
+            "FX refresh failed for %s→%s (%s); trying fallback providers",
             base,
             quote,
             exc,
         )
         _record_status("error", f"{base}/{quote} fetch failed: {exc}")
-        return 0
+        records = []
+        frankfurter_failed = True
     rates = {r.date: r.rate for r in records}
-    written = fx_repo.upsert_rates(session, rates, base=base, quote=quote)
-    # Note the pair we just pulled from Frankfurter, so Settings can report it.
+    written = 0
+    if rates:
+        written = fx_repo.upsert_rates(session, rates, base=base, quote=quote)
+        # Note the pair we just pulled from Frankfurter, so Settings can report it.
+        from investment_dashboard.services import fetch_report  # noqa: PLC0415
+
+        fetch_report.record("frankfurter", [f"{base}/{quote}"])
+        _record_status(
+            "ok",
+            f"Fetched {len(rates)} {base}/{quote} rate(s) for {start}..{today}; {written} new",
+        )
+    # Fallback chain (EUR→USD only): when Frankfurter errored or returned nothing,
+    # mirror the live-spot pattern — yfinance ``EURUSD=X`` daily, then a
+    # budget-gated Tiingo reading for today — so a Frankfurter outage no longer
+    # freezes the per-day week-base FX (the rest of the app already has this
+    # resilience for the *live* spot). Frankfurter/ECB stays the source of record:
+    # these gap-fill rows are provider-tagged so the boot purge reclaims the dates
+    # once ECB recovers, and a successful Frankfurter pull overwrites them.
+    if quote.upper() == "USD" and (frankfurter_failed or not rates):
+        written += _refresh_single_quote_fallback(
+            session, start=start, today=today, base=base, quote=quote
+        )
+    return written
+
+
+def _refresh_single_quote_fallback(
+    session: Session,
+    *,
+    start: date,
+    today: date,
+    base: str,
+    quote: str,
+    yf_fetcher: object | None = None,
+    tiingo_fetcher: object | None = None,
+    tiingo_token: str | None = None,
+    charge_budget: object | None = None,
+) -> int:
+    """Source EUR→USD history from yfinance (then budget-gated Tiingo) gap-fillers.
+
+    Engaged only after Frankfurter failed/returned nothing (see
+    :func:`_refresh_single_quote`). Tries yfinance ``EURUSD=X`` daily closes across
+    ``start``..``today`` first; if today's tip is still missing it falls back to
+    one budget-gated Tiingo FX reading, mirroring the live-spot chain. Rows are
+    tagged with their provider so the existing ECB-only purge keeps Frankfurter
+    authoritative. Best-effort — every provider failure is caught and logged, and
+    the stale cached rates remain the final floor. Returns rows written.
+    """
+    from investment_dashboard.adapters.yfinance_client import (  # noqa: PLC0415
+        EUR_USD_YF_SYMBOL,
+        fetch_closes,
+    )
     from investment_dashboard.services import fetch_report  # noqa: PLC0415
 
-    fetch_report.record("frankfurter", [f"{base}/{quote}"])
-    _record_status(
-        "ok",
-        f"Fetched {len(rates)} {base}/{quote} rate(s) for {start}..{today}; {written} new",
-    )
+    written = 0
+    have_today = False
+
+    fetch = yf_fetcher or fetch_closes
+    try:
+        # ``fetch_closes`` treats ``end`` as exclusive, so add a day to include
+        # today's close. ``EURUSD=X`` quotes USD per 1 EUR — exactly the EUR→USD
+        # rate stored here, so no inversion is needed.
+        closes = fetch(  # type: ignore[operator]
+            [EUR_USD_YF_SYMBOL], start, today + timedelta(days=1)
+        )
+    except Exception as exc:  # pragma: no cover - defensive: best-effort fallback
+        log.warning("yfinance EUR/USD history fallback failed (%s); trying Tiingo", exc)
+        closes = {}
+    yf_rates = {
+        d: r
+        for d, r in (closes.get(EUR_USD_YF_SYMBOL) or {}).items()
+        if r is not None and r > 0 and start <= d <= today
+    }
+    if yf_rates:
+        written += fx_repo.upsert_rates(
+            session, yf_rates, base=base, quote=quote, source=_YF_PROVIDER
+        )
+        fetch_report.record(_YF_PROVIDER, [f"{base}/{quote}"])
+        _record_status(
+            "ok",
+            f"Sourced {len(yf_rates)} {base}/{quote} rate(s) from yfinance fallback "
+            f"for {start}..{today}",
+        )
+        have_today = today in yf_rates
+
+    if not have_today:
+        rate = _fallback_today_via_tiingo(
+            quote=quote,
+            today=today,
+            fetcher=tiingo_fetcher,
+            token=tiingo_token,
+            charge_budget=charge_budget,
+        )
+        if rate is not None:
+            written += fx_repo.upsert_rates(
+                session, {today: rate}, base=base, quote=quote, source=_TIINGO_PROVIDER
+            )
+            fetch_report.record(_TIINGO_PROVIDER, [f"{base}/{quote}"])
+            _record_status(
+                "ok",
+                f"Sourced {base}/{quote} {today} from Tiingo fallback ({rate})",
+            )
     return written
+
+
+def _fallback_today_via_tiingo(
+    *,
+    quote: str,
+    today: date,
+    fetcher: object | None,
+    token: str | None,
+    charge_budget: object | None,
+) -> Decimal | None:
+    """One budget-gated Tiingo EUR→``quote`` reading for ``today``'s tip, or ``None``.
+
+    Mirrors :func:`_refresh_live_spot_via_tiingo` (token resolution + desktop
+    budget gate), but returns the rate for the FX-*history* backfill rather than
+    setting the live spot. Returns ``None`` when no token is configured, the
+    budget is exhausted, the fetch fails, or the reading is stale (not dated
+    today) — leaving the cached/stale rate as the floor.
+    """
+    if quote.upper() != "USD":
+        return None
+    if token is None:
+        from investment_dashboard.services.prices_service import (  # noqa: PLC0415
+            _resolve_tiingo_token,
+        )
+
+        token = _resolve_tiingo_token()
+    if not token:
+        return None  # No Tiingo configured — vanilla install, no backup.
+
+    gate = charge_budget if charge_budget is not None else _charge_desktop_tiingo_budget
+    if not gate():  # type: ignore[operator]
+        log.info("Tiingo FX history fallback skipped: desktop Tiingo budget exhausted")
+        return None
+
+    if fetcher is None:
+        from investment_dashboard.adapters.tiingo_client import (  # noqa: PLC0415
+            fetch_fx_rate,
+        )
+
+        resolved_token = token
+
+        def fetcher() -> object:
+            return fetch_fx_rate(base="EUR", quote="USD", token=resolved_token)
+
+    try:
+        reading = fetcher()  # type: ignore[operator]
+    except Exception as exc:  # pragma: no cover - network churn
+        log.warning("Tiingo FX history fallback fetch failed (%s); keeping stale rate", exc)
+        return None
+    # Reject an unusable or stale reading (e.g. a weekend/holiday last quote) —
+    # only a genuine today-dated mark may stand in for the missing ECB fixing.
+    if (
+        reading is None
+        or reading.rate is None
+        or reading.rate <= 0
+        or (reading.value_date is not None and reading.value_date != today)
+    ):
+        return None
+    log.info("EUR/USD %s history tip sourced from Tiingo fallback (%s)", today, reading.rate)
+    return reading.rate
 
 
 def purge_legacy_yfinance_fx_history(
