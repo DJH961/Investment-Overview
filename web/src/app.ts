@@ -2540,23 +2540,35 @@ export class App {
   private updateAllFromScratch(): void {
     // Forget every cached price so nothing is served from a stale window.
     clearPriceCaches();
-    // Forget the persisted intraday bars/tips too: the live 1D/1W graphs are
-    // rebuilt from this IndexedDB store, so a price-only wipe would leave a
-    // stale or malformed 1D/1W curve on screen (the exact thing a user resets
-    // the cache to fix). Clearing it forces those curves to rebuild from
-    // scratch on the next refresh. Best-effort: a store failure must not block
-    // the rest of the reset.
-    void this.ensureTimeSeriesStore()
-      .clear()
-      .catch(() => {
-        /* best-effort: leave the intraday store as-is if the wipe fails. */
-      });
     // Force the blob check to re-download (rather than short-circuit on an
     // unchanged version stamp) the next time it runs.
     this.metaVersion = null;
-    // Back to the dashboard, then kick off the from-scratch pulls.
+    // Back to the dashboard immediately so the reset feels responsive, then
+    // wipe the persisted intraday store and re-pull (see below — the wipe must
+    // finish before the refresh runs).
     this.exitSettings();
     this.toast("Re-pulling all prices from scratch…");
+    void this.wipeGraphStoreThenRefresh();
+  }
+
+  /**
+   * Wipe the persisted intraday bars/tips and **only then** kick off the
+   * from-scratch refresh.
+   *
+   * The live 1D/1W graphs are rebuilt from this IndexedDB store, so a price-only
+   * wipe would leave a stale or malformed curve on screen (the exact thing a
+   * user resets the cache to fix). Crucially the clear must *complete* before
+   * the refresh starts: the rebuild reads this store (smart backfill) and
+   * re-persists the live-tip breadcrumbs / bars, so a fire-and-forget wipe races
+   * the refresh and the old "in-between" values survive the reset — the bug this
+   * ordering fixes. Best-effort: a store failure must not block the re-pull.
+   */
+  private async wipeGraphStoreThenRefresh(): Promise<void> {
+    try {
+      await this.ensureTimeSeriesStore().clear();
+    } catch {
+      /* best-effort: leave the intraday store as-is if the wipe fails. */
+    }
     const session = this.sessionId;
     void this.maybeRefreshBlob(session);
     if (this.refreshing) return; // a pull is already in flight; it will repaint
