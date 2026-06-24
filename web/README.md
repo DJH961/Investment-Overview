@@ -160,12 +160,17 @@ game**. Everything slow happens *after* you're already looking at your numbers:
   Modified** — no transfer, no decrypt. A genuinely new publish is picked up
   automatically within minutes via the slow background cadence, at essentially
   zero bandwidth. (Requires the one-time CORS-proxy redeploy; see below.)
-- **Warm-on-login prefetch.** The moment the unlock screen appears, the app
-  starts fetching live quotes for the symbols it already knows about (from a
-  cached, tickers-only *symbol plan*) **while you type your passphrase and the
-  blob decrypts** — and pulls EUR FX in parallel. By the time you're in, the
-  first per-minute credit window is already spent on the data you care about, so
-  the dashboard paints live instead of starting the rate-limit clock from zero.
+- **Warm-on-login prefetch (market-aware, FX-first).** The moment the unlock
+  screen appears, the app warms live data for the symbols it already knows about
+  (from a cached, tickers-only *symbol plan*) **while you type your passphrase and
+  the blob decrypts**. EUR FX goes **first in line** — the forex market trades
+  longest and values the whole book — and then quotes are warmed only for what can
+  actually have changed since the last session: the stocks/ETFs while the market
+  is open; nothing while it's closed and already up to date; the after-close,
+  pre-NAV mutual funds (and any outdated settled close) once the bell has rung. A
+  big closed-market catch-up rapid-fires through Tiingo in one batched request
+  rather than trickling through the per-minute primary. By the time you're in, the
+  dashboard paints live instead of starting the rate-limit clock from zero.
 - **Biggest first.** Quotes are fetched in priority order — ETFs/stocks
   (largest EUR value first), then mutual funds (largest first); money-market
   funds are never requested (their NAV is pinned at $1). Under the per-minute

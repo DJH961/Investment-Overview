@@ -14,7 +14,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [3.19.3] — 2026-06-24
+## [3.20.1] — 2026-06-24
 
 ### Added
 - **Live 1D/1W value graphs now write to the Settings data-polling log.** Every
@@ -34,6 +34,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   hours now adds **no further bar pulls**, using the data already on the device
   over re-buying near-identical bars. A finite `minRefetchMs` still opts into a
   periodic interior top-up; missing symbols are always backfilled.
+
+## [3.20.0] — 2026-06-23
+
+### Changed
+
+- **The login warm-up (live companion) is now market-aware and FX-first.** The
+  pre-unlock prefetch used to warm the *same* symbol list every time regardless
+  of whether the market was open, and held a per-minute credit back "in reserve"
+  for the following EUR/USD pull. It now puts **FX first in line** instead — the
+  forex market trades longest and values the whole book, so it is warmed before
+  any ticker with no credit reserved away from the quotes — and only spends quote
+  credits on what can actually have changed since the last session:
+  - **Market open** → only the stocks/ETFs (their once-a-day fund NAVs can't move
+    intraday).
+  - **Market closed and up to date** → nothing (FX only); no credits spent.
+  - **After the close / pre-NAV** → the mutual-fund NAVs still awaiting today's
+    publish, plus any market symbol still missing its latest settled close.
+  A large (>8) closed-market catch-up rapid-fires through Tiingo in one batched
+  request instead of trickling ~8/min through the Twelve Data primary. A new pure
+  `planPrefetch` helper captures the policy with unit tests.
+- **The login warm-up now pulls the live Twelve Data EUR/USD spot first**, not
+  just the keyless ECB end-of-day base rates. Currency is the most relevant mark
+  for a USD-booked book, so the prefetch warms the genuine intraday EUR/USD spot
+  (one credit, Tiingo backup then ECB end-of-day as graceful fallbacks) ahead of
+  any ticker. A still-fresh cached spot (< 15 min) is reused for free, so a
+  re-login moments after a refresh spends nothing.
 
 ## [3.19.2] — 2026-06-24
 
