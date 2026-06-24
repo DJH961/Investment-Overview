@@ -46,7 +46,7 @@ import {
   type Quote,
 } from "./prices";
 import type { Decimal } from "./decimal-config";
-import { latestSettledSessionDate } from "./market-hours";
+import { latestSettledSessionDate, previousTradingSession, sessionCloseMs } from "./market-hours";
 import { fetchTiingoEurUsd } from "./tiingo";
 import { Budget, etMinutesOfDay, WEB_DAILY_CAP, WEB_HOURLY_CAP } from "./tiingo-gate";
 
@@ -126,19 +126,6 @@ export interface NavRefreshOptions {
   longTtlMs?: number;
 }
 
-/** Is `d` (in local time) a weekday a fund could publish a NAV on? */
-function isBusinessDay(d: Date): boolean {
-  const day = d.getDay();
-  return day !== 0 && day !== 6;
-}
-
-function localYmd(d: Date): string {
-  const y = d.getFullYear();
-  const m = `${d.getMonth() + 1}`.padStart(2, "0");
-  const day = `${d.getDate()}`.padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 /**
  * The most recent business day (`YYYY-MM-DD`) whose NAV should already be
  * published as of `now`.
@@ -152,34 +139,47 @@ function localYmd(d: Date): string {
  * the US session keeps such a late NAV matched to the right date instead of
  * being chased forever as a "tomorrow" that cannot exist yet.
  *
- * `publishHour` is a local-time hint for *when in the evening* a fund habitually
- * publishes (learned per fund; see {@link navPublishWindow}). Before that hour we
- * rest on the prior session; once past it the just-closed session's NAV is due.
- * The result is then capped at {@link latestSettledSessionDate} — the latest US
- * session whose 16:00 ET close has actually happened — so neither a small learned
- * publish hour nor the local midnight rollover can ever make us expect a US NAV
- * whose session has not yet closed.
+ * `publishHour` is a local-time hint for *when* a fund habitually publishes
+ * (learned per fund; see {@link navPublishWindow}). The answer is anchored to the
+ * latest US session whose 16:00 ET close has actually happened
+ * ({@link latestSettledSessionDate}) — never a rolled-over local date — but that
+ * session's NAV is only treated as *due* once its publish moment has elapsed.
+ *
+ * The publish moment is computed from the session's actual close instant, not the
+ * raw local hour-of-day: a fund's NAV strikes *after* the US close, so the
+ * relevant `publishHour` is the first local-clock occurrence of that hour
+ * **at or after** the close. This is what stops a fund that publishes after
+ * midnight from being reported as "awaiting" all evening between the US close and
+ * its real (post-midnight) publish — until then we still rest on the prior
+ * session's NAV, which we already hold.
  */
 export function latestExpectedNavDate(now: Date, publishHour = NAV_PUBLISH_HOUR): string {
-  const d = new Date(now);
-  // The local-time evening heuristic: today once past the publish hour on a
-  // business day, otherwise the previous business day. This still drives the
-  // pre-publish "rest" that conserves credits in the evening.
-  let candidate: string;
-  if (isBusinessDay(d) && d.getHours() >= publishHour) {
-    candidate = localYmd(d);
-  } else {
-    do {
-      d.setDate(d.getDate() - 1);
-    } while (!isBusinessDay(d));
-    candidate = localYmd(d);
-  }
-  // Anchor to the US trading calendar: a NAV's value-date can never be newer
-  // than the latest US session that has actually closed, so cap the local guess
-  // there. This is what makes a late / post-midnight NAV resolve to the correct
-  // US date rather than a rolled-over European one.
   const settled = latestSettledSessionDate(now);
-  return candidate < settled ? candidate : settled;
+  // The settled session's NAV publishes after its close. Until that publish
+  // moment has passed, the latest NAV that can exist is the *prior* session's.
+  if (now.getTime() < navPublishMomentMs(settled, publishHour)) {
+    return previousTradingSession(settled);
+  }
+  return settled;
+}
+
+/**
+ * Absolute epoch-ms at which the NAV for US session `settledDay` is expected to
+ * publish: the first local-clock occurrence of `publishHour` (on the minute)
+ * **at or after** that session's 16:00 ET close. Anchoring to the close instant
+ * (rather than the bare local hour-of-day) makes a post-midnight publish hour —
+ * e.g. a fund that strikes around 01:00 local — resolve to the small hours of the
+ * day *after* the close, instead of being mistaken for that same hour earlier on
+ * the close day.
+ */
+function navPublishMomentMs(settledDay: string, publishHour: number): number {
+  const closeMs = sessionCloseMs(settledDay);
+  const publishAt = new Date(closeMs);
+  publishAt.setHours(publishHour, 0, 0, 0);
+  if (publishAt.getTime() < closeMs) {
+    publishAt.setDate(publishAt.getDate() + 1);
+  }
+  return publishAt.getTime();
 }
 
 /**
