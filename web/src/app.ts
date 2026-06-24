@@ -2510,16 +2510,29 @@ export class App {
    * value ever looks stuck — a NAV that published late, a provider hiccup, a bug
    * in the staleness logic — this guarantees a clean re-fetch with one tap.
    *
-   * It clears the quote/FX/EUR-USD caches, drops the in-memory blob version
-   * stamp so the next check re-pulls the data file unconditionally, returns to
-   * the dashboard, and runs a forced full refresh. Only the soft "conserve the
-   * last credits" gate is bypassed — the hard free-tier per-minute/day budget in
-   * {@link loadQuotes} still applies, so a from-scratch pull can never blow the
-   * daily allowance (any overflow simply defers and back-fills on later ticks).
+   * It clears the quote/FX/EUR-USD caches **and the persisted intraday store**
+   * (the bars/tips behind the live 1D/1W graphs), drops the in-memory blob
+   * version stamp so the next check re-pulls the data file unconditionally,
+   * returns to the dashboard, and runs a forced full refresh. Only the soft
+   * "conserve the last credits" gate is bypassed — the hard free-tier
+   * per-minute/day budget in {@link loadQuotes} still applies, so a from-scratch
+   * pull can never blow the daily allowance (any overflow simply defers and
+   * back-fills on later ticks).
    */
   private updateAllFromScratch(): void {
     // Forget every cached price so nothing is served from a stale window.
     clearPriceCaches();
+    // Forget the persisted intraday bars/tips too: the live 1D/1W graphs are
+    // rebuilt from this IndexedDB store, so a price-only wipe would leave a
+    // stale or malformed 1D/1W curve on screen (the exact thing a user resets
+    // the cache to fix). Clearing it forces those curves to rebuild from
+    // scratch on the next refresh. Best-effort: a store failure must not block
+    // the rest of the reset.
+    void this.ensureTimeSeriesStore()
+      .clear()
+      .catch(() => {
+        /* best-effort: leave the intraday store as-is if the wipe fails. */
+      });
     // Force the blob check to re-download (rather than short-circuit on an
     // unchanged version stamp) the next time it runs.
     this.metaVersion = null;

@@ -672,8 +672,9 @@ _RESET_OPTIONS = (
     (
         "cache",
         "Reset cached market data",
-        "Clears downloaded prices, FX rates and position snapshots. They are "
-        "re-downloaded automatically on the next refresh.",
+        "Clears downloaded prices, FX rates, splits, the intraday samples "
+        "behind the 1D/1W graphs and position snapshots. They are "
+        "re-downloaded and recomputed automatically on the next refresh.",
         "Keeps every account, instrument, transaction and setting.",
         "refresh",
     ),

@@ -45,9 +45,11 @@ def _seed_everything() -> None:
         FxHistory,
         Instrument,
         InstrumentOverride,
+        IntradayValue,
         PositionSnapshot,
         PriceCacheMetadata,
         PriceHistory,
+        PriceSplit,
         TargetAllocation,
         TargetAllocationItem,
         Transaction,
@@ -68,12 +70,21 @@ def _seed_everything() -> None:
             )
         )
         s.add(PriceHistory(instrument_id=1, date=date(2026, 1, 2), close_native=Decimal("100")))
+        s.add(
+            PriceSplit(instrument_id=1, date=date(2026, 1, 2), ratio=Decimal("2"))
+        )
         s.add(FxHistory(date=date(2026, 1, 2), base="USD", quote="EUR", rate=Decimal("0.9")))
         s.add(
             PositionSnapshot(
                 snapshot_date=date(2026, 1, 2),
                 total_value_eur=Decimal("100"),
                 computed_at=now,
+            )
+        )
+        s.add(
+            IntradayValue(
+                captured_at=now.replace(tzinfo=None),
+                market_value_eur=Decimal("100"),
             )
         )
         s.add(PriceCacheMetadata(instrument_id=1, last_refreshed_at=now))
@@ -96,9 +107,11 @@ def _counts() -> dict[str, int]:
         FxHistory,
         Instrument,
         InstrumentOverride,
+        IntradayValue,
         PositionSnapshot,
         PriceCacheMetadata,
         PriceHistory,
+        PriceSplit,
         TargetAllocation,
         TargetAllocationItem,
         Transaction,
@@ -109,8 +122,10 @@ def _counts() -> dict[str, int]:
         Instrument,
         Transaction,
         PriceHistory,
+        PriceSplit,
         FxHistory,
         PositionSnapshot,
+        IntradayValue,
         PriceCacheMetadata,
         AppConfig,
         TargetAllocation,
@@ -132,15 +147,17 @@ def test_cache_reset_clears_only_derived_data(app_db: None) -> None:
     counts = _counts()
     # Derived/cache tables emptied.
     assert counts["price_history"] == 0
+    assert counts["price_split"] == 0
     assert counts["fx_history"] == 0
     assert counts["position_snapshots"] == 0
+    assert counts["intraday_value"] == 0
     assert counts["price_cache_metadata"] == 0
     # Source-of-truth untouched.
     assert counts["transactions"] == 1
     assert counts["accounts"] == 1
     assert counts["instruments"] == 1
     assert counts["instrument_overrides"] == 1
-    assert result.total_deleted == 4
+    assert result.total_deleted == 6
 
 
 def test_transactions_reset_clears_ledger_and_cache(app_db: None) -> None:
@@ -151,6 +168,7 @@ def test_transactions_reset_clears_ledger_and_cache(app_db: None) -> None:
     assert counts["transactions"] == 0
     assert counts["price_history"] == 0
     assert counts["position_snapshots"] == 0
+    assert counts["intraday_value"] == 0
     # Accounts / instruments / overrides / allocations remain for re-import.
     assert counts["accounts"] == 1
     assert counts["instruments"] == 1
