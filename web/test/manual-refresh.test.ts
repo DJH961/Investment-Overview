@@ -486,4 +486,32 @@ describe("describePrefetch", () => {
       }),
     ).toBe("Live prices ready");
   });
+
+  it("counts graph bars as freshly pulled, even when no quote/FX moved", () => {
+    const s = describePrefetch({
+      inFlight: false,
+      hasPlan: true,
+      quoteFetched: 0,
+      quoteTotal: 5,
+      fxLive: false,
+      graphFetched: 7,
+      lastPullAt: at,
+      now,
+    });
+    expect(s).toMatch(/^Prefetched 7 graph · last pulled/);
+  });
+
+  it("combines quote, graph and FX clauses when all moved", () => {
+    const s = describePrefetch({
+      inFlight: false,
+      hasPlan: true,
+      quoteFetched: 3,
+      quoteTotal: 10,
+      fxLive: true,
+      graphFetched: 4,
+      lastPullAt: at,
+      now,
+    });
+    expect(s).toMatch(/^Prefetched 3\/10 live · 4 graph · FX live · last pulled/);
+  });
 });

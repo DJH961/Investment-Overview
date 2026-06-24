@@ -35,7 +35,10 @@ describe("liveCurveToChart previous-close reference line", () => {
     expect(chart).not.toBeNull();
     expect(chart!.referenceLine).toBeDefined();
     expect(chart!.referenceLine!.value.toNumber()).toBe(49800);
-    expect(chart!.referenceLine!.label).toMatch(/^Prev close €/);
+    // The label shows the full, detailed figure (locale grouping + cents),
+    // mirroring the desktop "Prev close €49,800.00" annotation — not a rounded
+    // "€50k" k-scaled axis label.
+    expect(chart!.referenceLine!.label).toMatch(/^Prev close €49[.,]800[.,]00$/);
   });
 
   it("marks the USD previous close when USD is shown and FX is known", () => {
@@ -46,7 +49,8 @@ describe("liveCurveToChart previous-close reference line", () => {
     expect(chart!.referenceLine).toBeDefined();
     // The USD figure is used verbatim (FX-free), not a rescale of the EUR close.
     expect(chart!.referenceLine!.value.toNumber()).toBe(53800);
-    expect(chart!.referenceLine!.label).toMatch(/^Prev close \$/);
+    // Full-precision, detailed label (locale grouping + cents), not "$54k".
+    expect(chart!.referenceLine!.label).toMatch(/^Prev close \$53[.,]800[.,]00$/);
   });
 
   it("draws no reference line when no previous close is supplied (e.g. 1W)", () => {

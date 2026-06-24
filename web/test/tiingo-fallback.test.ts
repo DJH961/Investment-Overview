@@ -447,11 +447,13 @@ describe("planPrefetch", () => {
     awaitingNavSymbols: ["FUND"],
     tiingoAvailable: true,
   };
+  const empty = { navSymbols: [], graphSessionSymbols: [], graphWeekSymbols: [] };
 
   it("warms only the stocks/ETFs while the market is open", () => {
     expect(planPrefetch({ ...base, marketOpen: true })).toEqual({
       symbols: ["AAA", "BBB"],
       route: "twelve",
+      ...empty,
     });
   });
 
@@ -460,6 +462,7 @@ describe("planPrefetch", () => {
     expect(planPrefetch({ ...base, marketOpen: true, marketSymbols: many })).toEqual({
       route: "twelve",
       symbols: many,
+      ...empty,
     });
   });
 
@@ -472,27 +475,38 @@ describe("planPrefetch", () => {
         awaitingNavSymbols: [],
         tiingoAvailable: true,
       }),
-    ).toEqual({ symbols: [], route: "twelve" });
+    ).toEqual({ symbols: [], route: "twelve", ...empty });
   });
 
-  it("warms the after-close (pre-NAV) funds and any outdated close while closed", () => {
+  it("warms the outdated close on the primary and routes NAV funds to Twelve Data", () => {
+    // The mutual fund is split out into navSymbols (always Twelve Data), never
+    // lumped with the market quote — so a Tiingo route never burns a credit on it.
     expect(planPrefetch({ ...base, marketOpen: false })).toEqual({
-      symbols: ["AAA", "FUND"],
+      symbols: ["AAA"],
       route: "twelve",
+      navSymbols: ["FUND"],
+      graphSessionSymbols: [],
+      graphWeekSymbols: [],
     });
   });
 
-  it("rapid-fires a large (>8) closed-market catch-up through Tiingo", () => {
+  it("rapid-fires a large (>8) closed-market catch-up through Tiingo, NAVs still on Twelve", () => {
     const outdated = Array.from({ length: 9 }, (_, i) => `S${i}`);
     expect(
       planPrefetch({
         marketOpen: false,
         marketSymbols: outdated,
         outdatedMarketSymbols: outdated,
-        awaitingNavSymbols: [],
+        awaitingNavSymbols: ["FUND"],
         tiingoAvailable: true,
       }),
-    ).toEqual({ symbols: outdated, route: "tiingo" });
+    ).toEqual({
+      symbols: outdated,
+      route: "tiingo",
+      navSymbols: ["FUND"],
+      graphSessionSymbols: [],
+      graphWeekSymbols: [],
+    });
   });
 
   it("keeps a small (≤8) closed-market catch-up on the Twelve Data primary", () => {
@@ -505,7 +519,7 @@ describe("planPrefetch", () => {
         awaitingNavSymbols: [],
         tiingoAvailable: true,
       }),
-    ).toEqual({ symbols: outdated, route: "twelve" });
+    ).toEqual({ symbols: outdated, route: "twelve", ...empty });
   });
 
   it("stays on the primary for a large catch-up when Tiingo isn't configured", () => {
@@ -518,7 +532,51 @@ describe("planPrefetch", () => {
         awaitingNavSymbols: [],
         tiingoAvailable: false,
       }),
-    ).toEqual({ symbols: outdated, route: "twelve" });
+    ).toEqual({ symbols: outdated, route: "twelve", ...empty });
+  });
+
+  it("pulls a stale 1D graph's bars and drops those symbols from the quote set (bars double as quotes)", () => {
+    // AAA is outdated AND its 1D graph is stale → its Tiingo intraday bar covers
+    // both, so it must NOT also appear in the quote `symbols` (no double-buy).
+    const plan = planPrefetch({
+      marketOpen: false,
+      marketSymbols: ["AAA", "BBB"],
+      outdatedMarketSymbols: ["AAA"],
+      awaitingNavSymbols: [],
+      tiingoAvailable: true,
+      graphSessionStale: ["AAA", "BBB"],
+    });
+    expect(plan.graphSessionSymbols).toEqual(["AAA", "BBB"]);
+    expect(plan.symbols).toEqual([]); // AAA covered by the bar pull
+    expect(plan.route).toBe("twelve");
+  });
+
+  it("pulls a stale 1W graph's daily bars and dedupes them from the quote set too", () => {
+    const plan = planPrefetch({
+      marketOpen: false,
+      marketSymbols: ["AAA", "BBB"],
+      outdatedMarketSymbols: ["AAA", "BBB"],
+      awaitingNavSymbols: [],
+      tiingoAvailable: true,
+      graphWeekStale: ["AAA"],
+    });
+    expect(plan.graphWeekSymbols).toEqual(["AAA"]);
+    expect(plan.symbols).toEqual(["BBB"]); // BBB still needs a quote; AAA covered by bars
+  });
+
+  it("never pulls graph bars when Tiingo is unavailable (no proxy to reach them cheaply)", () => {
+    const plan = planPrefetch({
+      marketOpen: true,
+      marketSymbols: ["AAA"],
+      outdatedMarketSymbols: [],
+      awaitingNavSymbols: [],
+      tiingoAvailable: false,
+      graphSessionStale: ["AAA"],
+      graphWeekStale: ["AAA"],
+    });
+    expect(plan.graphSessionSymbols).toEqual([]);
+    expect(plan.graphWeekSymbols).toEqual([]);
+    expect(plan.symbols).toEqual(["AAA"]); // falls back to a plain Twelve Data quote
   });
 });
 

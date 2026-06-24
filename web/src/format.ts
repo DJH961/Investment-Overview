@@ -169,6 +169,18 @@ export function formatCurrencyShortRaw(
   return formatCurrencyShortIn(value, code, fractionDigits);
 }
 
+/**
+ * Format an amount that is **already** in the given display currency at full
+ * precision (locale grouping + the currency symbol), without re-converting it by
+ * today's spot rate — the companion of {@link formatCurrencyShortRaw} for places
+ * that want the exact figure rather than a k/M-scaled axis label (e.g. the 1D
+ * chart's "Prev close" annotation, mirroring the desktop's `$54,123.45`).
+ */
+export function formatMoneyRaw(value: Decimal | null, code: string, fractionDigits = 2): string {
+  if (value === null) return "—";
+  return formatMoneyValue(value, code, fractionDigits);
+}
+
 function formatCurrencyShortIn(amount: Decimal, code: string, fractionDigits?: number): string {
   const num = amount.toNumber();
   const abs = Math.abs(num);

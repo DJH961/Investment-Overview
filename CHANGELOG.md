@@ -14,6 +14,69 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.0.0] — 2026-06-24
+
+### Changed
+- **Live 1D and 1W are now the default value graphs; the experimental toggle is
+  gone.** The Overview "Value over time" chart now ships with the live **1D** and
+  **1W** curves always on — no Settings opt-in required. The old
+  "Settings → Experimental → Live graphs" toggle has been removed entirely.
+- **3M and 6M are now optional ranges, off by default for a cleaner look.** The
+  default range strip is `1D · 1W · 1M · 1Y · All`. A new
+  "Settings → Graphs → Extra ranges" toggle (**off by default**) adds the longer
+  `3M` and `6M` history slices back for anyone who wants them, so the standard
+  chart stays uncluttered while power users can opt in.
+- **The prefetch FX pull is now logged.** It was previously silent; the login
+  warm-up's EUR/USD pull now writes its value, source (live/Tiingo/EOD) and
+  fresh-vs-cached status to the `FX` polling-log category, and the routing
+  decision itself is spelled out under `LOGIN`. The unlock-screen status line and
+  the one-off refresh-glyph spin now also count freshly backfilled graph bars as
+  genuinely "pulled".
+
+### Added
+- **Deduplicated value-chart legend and a 1D previous-close reference line
+  (web, incorporates #119).** `chartWithTimeframe` now owns the single chart
+  legend and redraws it for every preset (history *and* live), so a live preset
+  no longer prints the currency legend twice. The live **1D** curve also gains
+  the previous-session close reference line the desktop "1 Day" chart draws:
+  `buildLineChart` takes an optional `referenceLine` folded into the y-axis range
+  and rendered as a muted dashed rule (neutral slate, carrying no gain/loss
+  meaning), and `liveCurveToChart` emits it in the active display currency (USD
+  verbatim, EUR FX-derived). (Its precision and anchor are refined under
+  *Fixed*, below.)
+- **Smart-routing login prefetch.** The login warm-up no longer blindly fetches
+  quotes — it now decides, entirely from cached state before the blob is even
+  decrypted, the *minimum* worth pulling and the cheapest route for it:
+  - **NAV funds always route to Twelve Data, never Tiingo.** A mutual fund has no
+    intraday series and the 1D/1W graphs never plot it, so spending a scarce
+    (hourly-capped) Tiingo credit on one is pure waste. The plan now splits NAVs
+    out of any Tiingo rapid-fire and warms them on the cheap Twelve Data primary —
+    e.g. "closed market, only 3 mutual funds behind → Twelve Data, funds only".
+  - **Stale 1D/1W graphs are backfilled in the same expensive pass.** When a live
+    graph is out of date and a Tiingo pipe is available, the warm-up pulls the
+    market sleeve's intraday/daily bars (and the matching FX track) now, so the
+    graph is warm on first paint instead of triggering a second on-demand pull.
+  - **Bars double as quotes (no double-buy).** Each freshly fetched bar's newest
+    point is a current mark, primed straight back into the quote cache, so the
+    symbols a graph pull covered are dropped from the quote set — one spend serves
+    both the graph and the holdings table. Bars merge into the device store, so the
+    later dashboard build reuses them rather than re-spending the hourly-capped
+    Tiingo budget.
+- **A session-status snapshot** is saved on log-out and after every pull (coverage
+  flags + market phase + on-device graph day; no prices or secrets), so the next
+  login's pre-flight can log the delta against what we last held.
+
+### Fixed
+- **The live 1D "Prev close" reference line now reads in full and sits at the
+  right height (web).** Its label was rounded to a k/M axis figure (e.g.
+  `$54k`), so the number barely matched where the line was drawn; it now shows
+  the exact, locale-grouped amount with cents (e.g. `$53,800.00`), mirroring the
+  desktop "1 Day" chart annotation. The rule itself is now anchored on the live
+  "today" baseline (`totalValue − todayMove`, per currency) rather than the last
+  exported settled point, so it lands exactly where the headline "% today" is
+  measured from instead of drifting to hug the live value; it falls back to the
+  last exported point only when no live move is known.
+
 ## [3.20.2] — 2026-06-24
 
 ### Fixed
