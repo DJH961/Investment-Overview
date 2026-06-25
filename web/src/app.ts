@@ -232,7 +232,19 @@ const REFRESH_EURUSD_REUSE_MS = 45 * 1000;
  * pill) so the user can tell their tap registered *and* that the automatic
  * refresh keeps working on its own.
  */
-export type RefreshKind = "manual" | "auto";
+export type RefreshKind = "start" | "auto" | "manual" | "reset";
+
+/**
+ * Whether a refresh `kind` is one the **user explicitly triggered** and therefore
+ * expects visible, held-on-screen feedback and an outcome confirmation toast for:
+ * the manual Refresh tap and the Settings "reset & re-pull everything". The
+ * background mechanisms (`start` login warm-up, `auto` cadence) instead show the
+ * quieter auto-updating affordance. Pillar 6: `kind` is the mechanism; this is the
+ * one place feedback policy keys off it.
+ */
+export function isUserRefresh(kind: RefreshKind): boolean {
+  return kind === "manual" || kind === "reset";
+}
 
 /** What a scheduled refresh tick should do — see {@link refreshTickAction}. */
 export type RefreshTickAction = "run" | "defer" | "stop";
@@ -255,6 +267,9 @@ export type RefreshTickAction = "run" | "defer" | "stop";
  * un-armed forever — so no price update fired at all until a manual tap. The
  * kickoff is user-initiated (they are actively waiting on fresh prices), so it
  * bypasses the hidden skip.
+ *
+ * Only the steady `auto` cadence ever defers on a hidden tab; the three
+ * user-/login-driven mechanisms (`start`, `manual`, `reset`) always run.
  */
 export function refreshTickAction(args: {
   sessionMatches: boolean;
@@ -2034,7 +2049,7 @@ export class App {
     // This surfaces fresh prices immediately (with a guaranteed-visible startup
     // animation) and arms the auto-refresh loop via the scheduleNext at the end
     // of the round.
-    void this.runScheduledRefresh(session, "auto", { ...quickOpts, startup: true, kickoff: true });
+    void this.runScheduledRefresh(session, "start", { ...quickOpts, startup: true, kickoff: true });
   }
 
   // --- Idle auto-lock ---------------------------------------------------------
@@ -2697,7 +2712,7 @@ export class App {
     // The store was just wiped, so the 1D/1W graphs are stale: `primeGraphs` makes
     // the forced refresh pull those packages first (their bars double as quotes),
     // so Tiingo isn't spent on both the rapid-fire quote and the 1W graph.
-    void this.runScheduledRefresh(session, "manual", { force: true, primeGraphs: true });
+    void this.runScheduledRefresh(session, "reset", { force: true, primeGraphs: true });
   }
 
   /**
@@ -2917,7 +2932,7 @@ export class App {
     this.lastConnectivity = "offline";
     this.pollLog("refresh", `Refresh skipped (${kind}) — device offline. Showing last known prices.`);
     void this.refreshPrices(session, false, { connectivity: "offline" });
-    if (kind === "manual") this.toast(connectivityNotice("offline") ?? "No internet connection.");
+    if (isUserRefresh(kind)) this.toast(connectivityNotice("offline") ?? "No internet connection.");
     this.scheduleNext(session, this.state.config.updateMinutes * 60 * 1000);
   }
 
@@ -2960,7 +2975,7 @@ export class App {
     // *only* when the data is genuinely current: a closed market whose cached
     // close is stale (offline across the close) still refreshes here. A manual
     // tap is never skipped — it forces a full verification re-pull.
-    if (kind === "auto" && this.fullyUpToDate()) {
+    if ((kind === "auto" || kind === "start") && this.fullyUpToDate()) {
       if (this.blobCheckDue()) void this.maybeRefreshBlob(session);
       this.scheduleNext(session, SETTLED_HEARTBEAT_MS);
       this.pollLog(
@@ -3060,7 +3075,7 @@ export class App {
     this.setUpdating(false, feedbackKind);
     // Confirm the outcome of a manual tap so the user understands what happened
     // (fresh prices pulled, already up to date, or some deferred by the budget).
-    if (kind === "manual") {
+    if (isUserRefresh(kind)) {
       const connectivityToast = connectivityNotice(this.lastConnectivity);
       // No service answered (offline, or every provider failed): say so plainly
       // rather than a coverage summary that would read like a successful pull.
@@ -3092,7 +3107,7 @@ export class App {
     // Only the automatic scheduler pops this — a manual tap already gets the
     // descriptive manualRefreshSummary toast above (e.g. "All 18 holdings up to
     // date"), so firing both would double up.
-    if (nowAllLive && !this.pricesAllLive && kind !== "manual") {
+    if (nowAllLive && !this.pricesAllLive && !isUserRefresh(kind)) {
       this.toast("All prices live, every holding is now on a fresh price.");
     }
     this.pricesAllLive = nowAllLive;
@@ -3115,7 +3130,7 @@ export class App {
     // doesn't compete with the startup burst. To keep the automatic check alive
     // for portfolios whose prices never fully stop deferring (more symbols than
     // the budget), it also runs on a slow wall-clock cadence regardless.
-    if (kind === "manual" || report.deferred.length === 0 || this.blobCheckDue()) {
+    if (isUserRefresh(kind) || report.deferred.length === 0 || this.blobCheckDue()) {
       void this.maybeRefreshBlob(session);
     }
     this.scheduleNext(session, delayMs);
@@ -3222,7 +3237,7 @@ export class App {
    */
   private setUpdating(on: boolean, kind: RefreshKind = "auto", detail: string | null = null): void {
     if (typeof document === "undefined") return;
-    if (kind === "manual") {
+    if (isUserRefresh(kind)) {
       if (on) {
         // (Re)start the minimum-visible window and cancel any pending teardown
         // so a fresh tap can't be torn down by a previous refresh's timer.
@@ -3263,19 +3278,19 @@ export class App {
     const id = "updating-pill";
     const existing = document.getElementById(id);
     if (on) {
-      const base = kind === "manual" ? "Refreshing…" : "Auto-updating…";
+      const base = isUserRefresh(kind) ? "Refreshing…" : "Auto-updating…";
       // Append a live "N of M" fill count when supplied, so a portfolio larger
       // than the per-minute budget shows visible progress across burst rounds.
       const label = detail ? `${base} ${detail}` : base;
       if (existing) {
-        existing.classList.toggle("is-auto", kind === "auto");
+        existing.classList.toggle("is-auto", !isUserRefresh(kind));
         const text = existing.querySelector(".updating-pill-text");
         if (text) text.textContent = label;
         return;
       }
       const pill = h(
         "div",
-        { id, class: kind === "auto" ? "updating-pill is-auto" : "updating-pill", role: "status", "aria-live": "polite" },
+        { id, class: !isUserRefresh(kind) ? "updating-pill is-auto" : "updating-pill", role: "status", "aria-live": "polite" },
         [
           h("span", { class: "updating-pill-spinner", "aria-hidden": "true" }, []),
           h("span", { class: "updating-pill-text" }, [label]),
