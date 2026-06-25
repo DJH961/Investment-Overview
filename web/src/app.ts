@@ -2341,32 +2341,55 @@ export class App {
    * when there is no data yet (nothing to chase).
    */
   private outdatedFetchCount(marketOpen: boolean): number {
+    return this.staleFetchSymbols(marketOpen, new Date()).length;
+  }
+
+  /**
+   * The symbols whose price the freshness ledger still considers stale — the
+   * single source of truth behind both {@link outdatedFetchCount} and the WS5
+   * post-decrypt reconcile ({@link reconcileHandshake}). While the market is open
+   * every fetchable symbol is stale (an intraday mark is always chaseable); while
+   * it is shut a market symbol is stale only until its latest *settled* close is in
+   * hand, and a NAV fund only until its expected publish date lands. Returns `[]`
+   * when there is no data yet (nothing to chase).
+   */
+  private staleFetchSymbols(marketOpen: boolean, now: Date): string[] {
     const data = this.state.data;
-    if (!data) return 0;
+    if (!data) return [];
     const plan = buildFetchPlan(data, FETCHABLE_NAV_CLASSES);
-    if (plan.length === 0) return 0;
-    if (marketOpen) return plan.length;
+    if (plan.length === 0) return [];
+    if (marketOpen) return plan.map((entry) => entry.symbol);
     const cached = readCachedQuotes();
-    const now = new Date();
     const settled = latestSettledSessionDate(now);
     const navStats = readNavPublishStats();
     const publishHourFor = (symbol: string): number =>
       navPublishWindow(navStats.get(symbol)?.hours).publishHour;
-    let count = 0;
+    const stale: string[] = [];
     for (const entry of plan) {
       const cq = cached.get(entry.symbol)?.quote;
       if (entry.priceType === "market") {
         // Market symbol: outdated unless we hold the latest *settled* close — an
         // intraday-only print still counts as outdated so the official close is
         // captured once after the bell.
-        if (!holdsSettledClose(cq, settled)) count++;
+        if (!holdsSettledClose(cq, settled)) stale.push(entry.symbol);
       } else {
         const have = cq?.valueDate ?? null;
         const expected = latestExpectedNavDate(now, publishHourFor(entry.symbol));
-        if (!have || have < expected) count++;
+        if (!have || have < expected) stale.push(entry.symbol);
       }
     }
-    return count;
+    return stale;
+  }
+
+  /**
+   * Whether the live EUR/USD spot is stale per the rolling FX TTL — the FX arm of
+   * the freshness ledger the WS5 reconcile keys on. Stale when no live spot is
+   * cached or the cached one is older than {@link DEFAULT_EURUSD_TTL_MS}.
+   */
+  private isFxStale(now: Date): boolean {
+    const cached = readCachedEurUsd();
+    if (!cached || cached.now === null) return true;
+    return now.getTime() - cached.at > DEFAULT_EURUSD_TTL_MS;
   }
 
   /**
@@ -3112,17 +3135,19 @@ export class App {
       }
       // Pillar 2 (WS5) — the **post-decrypt reconcile**. Step 1 (the prefetch) ran
       // against the *predicted* (last-known) holdings; now the decrypted blob has
-      // revealed the truth. Diff the real book against what Step 1 booked so the
-      // kickoff below pulls only what is genuinely new (a newly-bought symbol the
-      // prediction never knew) and never re-fetches a symbol the prefetch already
-      // paid for. Logged whether or not there is work, so a re-login no-op is
-      // visible too. The kickoff refresh itself executes the diff under the same
-      // freshness ledger that deduped Step 1, so this is the decision of record.
+      // revealed the truth. Diff the real book — the symbols (and FX) the freshness
+      // ledger still considers stale ({@link staleFetchSymbols} / {@link isFxStale})
+      // — against what Step 1 booked, so the diff names only what is genuinely still
+      // needed (e.g. a newly-bought symbol the prediction never knew) and never a
+      // symbol the prefetch already paid for. Logged whether or not there is work,
+      // so a re-login no-op is visible too. The kickoff refresh below executes that
+      // same ledger (its per-symbol cache TTL skips the booked-and-fresh symbols),
+      // so the diff is the decision of record, not a misleading log.
       if (this.prefetchBooked !== null) {
-        const truthSymbols = readSymbolPlan().map((e) => e.symbol);
+        const reconcileNow = new Date();
         const diff = reconcileHandshake(this.prefetchBooked, {
-          staleSymbols: truthSymbols,
-          fxStale: false,
+          staleSymbols: this.staleFetchSymbols(isUsMarketOpen(reconcileNow), reconcileNow),
+          fxStale: this.isFxStale(reconcileNow),
         });
         this.pollLog("login", diff.reason);
         this.prefetchBooked = null;
@@ -3834,12 +3859,19 @@ export class App {
       return webCurve;
     }
     const { baseUsd, baseEur } = overlap;
-    const webSleeve: SleevePoint[] = webCurve.map((p) => ({
-      t: p.t,
-      valueNativeUsd: p.valueUsd.minus(baseUsd),
-      // The whole-book FX (USD/EUR) is the per-instant rate the web point carries.
-      fxEurUsd: p.valueEur.gt(0) ? p.valueUsd.div(p.valueEur) : fallbackFx,
-    }));
+    const webSleeve: SleevePoint[] = webCurve.map((p) => {
+      const valueNativeUsd = p.valueUsd.minus(baseUsd);
+      const valueNativeEur = p.valueEur.minus(baseEur);
+      // The sleeve's true per-instant FX (USD/EUR) is the ratio of the *sleeve-only*
+      // values — after the calibrated whole-book base is removed from both currencies.
+      // Using the whole-book ratio would fold the constant cash + NAV base into the
+      // rate and skew the EUR line wherever a web point survives the merge.
+      return {
+        t: p.t,
+        valueNativeUsd,
+        fxEurUsd: valueNativeEur.gt(0) ? valueNativeUsd.div(valueNativeEur) : fallbackFx,
+      };
+    });
 
     const gridMs = exported?.grid === "15m" ? 15 * 60 * 1000 : 30 * 60 * 1000;
     const merge = mergeSleeveSeries(webSleeve, blobSleeve, { gridMs });

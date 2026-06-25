@@ -40,7 +40,11 @@ export const FANOUT_INSTANT_THRESHOLD = 16;
 /** The last Tiingo credits a *non-login* fan-out must leave untouched (Pillar 5.4). */
 export const TIINGO_RESERVE_CREDITS = 10;
 
-/** Which mechanism is asking — only `start`/`manual` may fan out (Pillar 5.3). */
+/**
+ * Which mechanism is asking. Fan-out is decided by **size and priority, not kind**:
+ * `start` (login) is top-priority and always eligible to spill, while *any* kind
+ * fans out once the sleeve clears the instant threshold (>16). See {@link planFanout}.
+ */
 export type FanoutKind = "start" | "auto" | "manual" | "reset";
 
 export interface FanoutInputs {
@@ -87,11 +91,11 @@ export function isPriorityPull(kind: FanoutKind): boolean {
  * The Twelve Data leg is filled first (up to {@link TWELVE_DATA_BATCH} and the TD
  * budget). Tiingo takes the overflow **only** when it is worthwhile and allowed:
  *
- * - **Below the instant threshold** (≤16 symbols) on a non-priority pull: no
+ * - **At or below the instant threshold** (≤16 symbols) on a non-priority pull: no
  *   parallel spill — the overflow waits for the next TD minute (steady spacing).
- * - **At/above the threshold**, or any **login/start** pull: spill the overflow to
- *   Tiingo in parallel, clamped to the Tiingo budget. A non-login spill must leave
- *   the last {@link TIINGO_RESERVE_CREDITS} untouched; login/start may use them.
+ * - **Strictly above the threshold** (>16), or any **login/start** pull: spill the
+ *   overflow to Tiingo in parallel, clamped to the Tiingo budget. A non-login spill
+ *   must leave the last {@link TIINGO_RESERVE_CREDITS} untouched; login/start may use them.
  */
 export function planFanout(input: FanoutInputs): FanoutPlan {
   const instantThreshold = input.instantThreshold ?? FANOUT_INSTANT_THRESHOLD;

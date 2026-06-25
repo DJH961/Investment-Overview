@@ -212,7 +212,9 @@ def _market_series(
     samples = intraday_snapshots_service.week_series_with_fx(session, now=now, interval=grid)
     if len(samples) < 2:
         return None
-    fallback_rate = fx_service.get_rate_eur_to_quote(session, date.today(), quote="USD")
+    fallback_rate = fx_service.get_rate_eur_to_quote(
+        session, (now or datetime.now(UTC)).date(), quote="USD"
+    )
     capped = _cap_backbone(samples, MAX_BACKBONE_CELLS)
     times: list[str] = []
     value_native: list[str | None] = []
