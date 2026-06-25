@@ -79,7 +79,7 @@ import {
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, sessionIsWarmingUp } from "./market-hours";
+import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, sessionIsWarmingUp, sessionOpenMs, elapsedSessionMs } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -119,12 +119,24 @@ import {
   recordTwelveDataSuccess,
   recordTiingo429,
 } from "./provider-breaker";
-import { ledgerReservation } from "./reservation";
+import { ledgerReservation, tiingoAvailable, twelveDataAvailable } from "./reservation";
+import { planFanout } from "./provider-fanout";
+import { reconcileHandshake } from "./login-handshake";
 import { springboardSessionCurve, springboardWeekCurve } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
 import { TimeSeriesStore } from "./timeseries-store";
 import { WEEK_STORE_KEY, navBarsFromQuotes, weekStaleSymbols } from "./week";
-import type { Bar } from "./timeseries";
+import { barClockHourDue } from "./freshness";
+import {
+  describeFlag,
+  describeMerge,
+  hasMarketSleeve,
+  mergeSleeveSeries,
+  parseMarketSeries,
+  rebaseSleeveToWholeBook,
+  type SleevePoint,
+} from "./market-sleeve";
+import type { Bar, CurvePoint } from "./timeseries";
 import type { MobileExport } from "./types";
 import {
   h,
@@ -351,6 +363,13 @@ export class App {
    */
   private prefetchPromise: Promise<void> | null = null;
   /**
+   * What Step 1 (the login prefetch) actually booked — the market/NAV symbol set
+   * and whether FX was warmed — so the post-decrypt kickoff (Step 2) can reconcile
+   * the decrypted truth against it via {@link reconcileHandshake} and pull only the
+   * deduped diff (Pillar 2 / WS5). Null until the first prefetch books a set.
+   */
+  private prefetchBooked: { symbols: string[]; fx: boolean } | null = null;
+  /**
    * Whether the login prefetch actually fetched *new* data (≥1 quote or a live
    * FX pull). Drives the one-off login spin of the Refresh glyph: it spins only
    * when the prefetch genuinely got something newer, and stays still when the
@@ -433,6 +452,14 @@ export class App {
    * forever and never auto-detect new data.
    */
   private lastBlobCheckAt = 0;
+  /**
+   * Epoch-ms the 1D/1W graph bars were last primed this session, or `null` if not
+   * yet primed. The **sole 1D-bar authority** during market hours (Pillar 4): the
+   * clock-hour gate ({@link barClockHourDue}) keys off this so a bar is primed at
+   * most once per `:00`, instead of `primeStaleGraphPackages` firing every refresh
+   * round (the self-perpetuating storm Pillar 1 dissolved it to avoid).
+   */
+  private lastBarPrimeMs: number | null = null;
   /**
    * When the manual refresh feedback (pill + spinning glyph) may be torn down.
    * A cache-served refresh finishes almost instantly, so we hold the feedback
@@ -617,9 +644,26 @@ export class App {
           `${graphFetched} graph series, FX ${warmth.spotSource}. No extra quote credits spent.`,
       );
       this.finishPrefetch({ quoteFetched: 0, quoteTotal, hasPlan: true, fxLive, graphFetched });
+      this.prefetchBooked = { symbols: [], fx: true };
       return;
     }
     const options = this.buildQuoteOptions(navFetchSymbols, config);
+    // Pillar 5 (WS6) — log the *provider fan-out* decision for this login pull
+    // before dispatch, so every login spends its credits through one logged
+    // authority. The planner only proposes the split (the legs below re-clamp
+    // against the live reservation + 429 breaker, so it can never overspend); it
+    // is logged here whether or not it fans out, so no login routing is silent.
+    {
+      const fanoutNow = Date.now();
+      const fanout = planFanout({
+        kind: "start",
+        symbols: prefetch.symbols,
+        twelveDataSpendable: twelveDataAvailable(fanoutNow),
+        tiingoSpendable: tiingoAvailable(fanoutNow),
+        tiingoAvailable: resolvePriceProxyUrl(config) !== null,
+      });
+      this.pollLog("login", `Login fan-out (${prefetch.symbols.length} mkt symbol(s)): ${fanout.reason}`);
+    }
     // NAV funds always warm on the cheap Twelve Data primary (they have no
     // intraday series and the graphs never pull them), so the scarce hourly Tiingo
     // budget is reserved for the market symbols that genuinely need bars.
@@ -640,6 +684,12 @@ export class App {
       fxLive,
       graphFetched,
     });
+    // Record what Step 1 booked so the post-decrypt kickoff (Step 2) can reconcile
+    // the decrypted truth against it and pull only the deduped diff (Pillar 2/WS5).
+    this.prefetchBooked = {
+      symbols: [...prefetch.symbols, ...prefetch.navSymbols],
+      fx: true,
+    };
   }
 
   /**
@@ -790,6 +840,55 @@ export class App {
   }
 
   /**
+   * Whether the 1D/1W graph bars should be primed this round, and why — the
+   * **dissolution of the old unconditional `primeStaleGraphPackages()` pre-step**
+   * into the orchestrator's freshness decision (Pillar 1/4). The clock-hour bar
+   * gate is the *sole* 1D-bar authority during market hours, so this is what stops
+   * the prime self-perpetuating on every refresh round:
+   *
+   * - **reset / force-all** — always due (the heaviest escape hatch re-pulls all).
+   * - **market open** — due only when the clock-hour gate ({@link barClockHourDue})
+   *   says a bar is due: the first bar once ≥1 interval of session has elapsed,
+   *   then at most once per `:00`. Between gates, breadcrumbs carry the line.
+   * - **market closed** — due (the prime self-gates on staleness, so a loaded book
+   *   pulls nothing; a stale close still backfills).
+   */
+  private graphPrimeDecision(
+    kind: RefreshKind,
+    opts: { force?: boolean; forceAll?: boolean },
+    now: Date,
+  ): { due: boolean; market: "open" | "closed"; reason: string } {
+    const market: "open" | "closed" = isUsMarketOpen(now) ? "open" : "closed";
+    if (kind === "reset" || (opts.forceAll ?? false)) {
+      return { due: true, market, reason: `${kind === "reset" ? "reset" : "force-all"} → full graph re-prime` };
+    }
+    if (market === "closed") {
+      return { due: true, market, reason: "market closed → prime self-gates on staleness (no clock-hour gate)" };
+    }
+    const sessionOpen = sessionOpenMs(lastSessionDate(now));
+    const due = barClockHourDue({
+      nowMs: now.getTime(),
+      lastBarPullMs: this.lastBarPrimeMs,
+      sessionOpenMs: sessionOpen,
+    });
+    if (!due) {
+      const reason =
+        this.lastBarPrimeMs === null
+          ? `market open <1 bar-interval in (session +${Math.round(elapsedSessionMs(now) / 60000)}m) → no bar yet, breadcrumbs carry the line`
+          : "market open, within the same clock hour as the last bar → held (breadcrumbs carry the line)";
+      return { due: false, market, reason };
+    }
+    return {
+      due: true,
+      market,
+      reason:
+        this.lastBarPrimeMs === null
+          ? "market open, first bar of the session is due"
+          : "market open, a new clock hour → bar due",
+    };
+  }
+
+  /**
    * Smart Tiingo gate for **any** rapid-fire quote pull: before a fast Tiingo
    * round fetches plain quotes, pull any *stale* 1D/1W graph package instead —
    * each bar's newest point doubles as the quote, so priming the quote cache from
@@ -799,17 +898,20 @@ export class App {
    *
    * Self-gating: only the genuinely missing (stale) bars are pulled, so a graph
    * already fully loaded — e.g. a closed-market book in hand — fetches nothing.
+   * Returns the number of symbol-series actually stored this prime (0 when the
+   * graphs were already loaded), so the caller can stamp the clock-hour gate only
+   * when a market-hours prime genuinely pulled bars.
    */
-  private async primeStaleGraphPackages(now: Date = new Date()): Promise<void> {
+  private async primeStaleGraphPackages(now: Date = new Date()): Promise<number> {
     const { config } = this.state;
-    if (!config.apiKey || resolvePriceProxyUrl(config) === null) return;
+    if (!config.apiKey || resolvePriceProxyUrl(config) === null) return 0;
     const marketSymbols = readSymbolPlan()
       .filter((e) => e.priceType === "market")
       .map((e) => e.symbol);
-    if (marketSymbols.length === 0) return;
+    if (marketSymbols.length === 0) return 0;
     const stale = await this.prefetchGraphStaleness(marketSymbols, now);
-    if (stale.session.length === 0 && stale.week.length === 0) return;
-    await this.prefetchGraphBars(stale.session, stale.week, config, now, this.primingCurrencyMap());
+    if (stale.session.length === 0 && stale.week.length === 0) return 0;
+    return this.prefetchGraphBars(stale.session, stale.week, config, now, this.primingCurrencyMap());
   }
 
   /**
@@ -3008,6 +3110,23 @@ export class App {
         this.refreshing = false;
         return;
       }
+      // Pillar 2 (WS5) — the **post-decrypt reconcile**. Step 1 (the prefetch) ran
+      // against the *predicted* (last-known) holdings; now the decrypted blob has
+      // revealed the truth. Diff the real book against what Step 1 booked so the
+      // kickoff below pulls only what is genuinely new (a newly-bought symbol the
+      // prediction never knew) and never re-fetches a symbol the prefetch already
+      // paid for. Logged whether or not there is work, so a re-login no-op is
+      // visible too. The kickoff refresh itself executes the diff under the same
+      // freshness ledger that deduped Step 1, so this is the decision of record.
+      if (this.prefetchBooked !== null) {
+        const truthSymbols = readSymbolPlan().map((e) => e.symbol);
+        const diff = reconcileHandshake(this.prefetchBooked, {
+          staleSymbols: truthSymbols,
+          fxStale: false,
+        });
+        this.pollLog("login", diff.reason);
+        this.prefetchBooked = null;
+      }
     }
     // Smart Tiingo gate — run on **any** network round, not just one explicitly
     // flagged Tiingo-leaning: any force/auto refresh can quietly fall back to
@@ -3016,14 +3135,29 @@ export class App {
     // 5a). Pull any *stale* 1D/1W graph package first — each bar's newest point
     // doubles as the quote, so priming the holdings' quote cache from those bars
     // makes the quote pull below skip them, so Tiingo is never spent on both the
-    // rapid-fire quote *and* the 1D/1W graph for one symbol. It self-gates on
-    // staleness (a fully-loaded graph fetches nothing), so a closed-market book
-    // already in hand fires no download here regardless of the round's flags.
+    // rapid-fire quote *and* the 1D/1W graph for one symbol.
+    //
+    // Pillar 1/4 (WS-part-2): this is **no longer a standing pre-step that fires
+    // every round** — it is dissolved into the orchestrator's freshness decision.
+    // During market hours the clock-hour bar gate ({@link graphPrimeDecision}) is
+    // the sole 1D-bar authority, so the prime runs at most once per `:00` instead
+    // of self-perpetuating each tick; a reset/force-all still primes in full, and
+    // a closed-market round still self-gates on staleness inside the prime.
     {
-      await this.primeStaleGraphPackages().catch(() => undefined);
-      if (session !== this.sessionId) {
-        this.refreshing = false;
-        return;
+      const decision = this.graphPrimeDecision(kind, opts, new Date());
+      this.pollLog("graph", `Graph-prime decision (${kind}): ${decision.reason}`);
+      if (decision.due) {
+        const stored = await this.primeStaleGraphPackages().catch(() => undefined);
+        if (session !== this.sessionId) {
+          this.refreshing = false;
+          return;
+        }
+        // Stamp the clock-hour gate only when a market-hours prime actually pulled
+        // bars, so the next bar is held until the next `:00` (breadcrumbs bridge).
+        if (decision.market === "open" && typeof stored === "number" && stored > 0) {
+          this.lastBarPrimeMs = Date.now();
+          this.pollLog("graph", `Graph-prime pulled ${stored} series; next 1D bar held until the next clock hour.`);
+        }
       }
     }
     // Describe what kicked off this round for the downloadable polling log: the
@@ -3196,11 +3330,16 @@ export class App {
       this.pageShowHandler = onShow;
       // The instant the device regains a network link, pull fresh prices rather
       // than waiting out the slow cadence — a dashboard parked on "No internet
-      // connection" then updates the moment connectivity is back.
+      // connection" then updates the moment connectivity is back. Pillar 6 routes
+      // `online` (like `visibilitychange`/`pageshow`) through the **`auto`**
+      // mechanism — one funnel, fully gated by the freshness ledger — rather than
+      // masquerading as a user `manual` tap (which would force-pull and surface
+      // manual-only toasts for an event the user never triggered).
       const onOnline = (): void => {
         if (session !== this.sessionId) return;
         if (typeof document !== "undefined" && document.hidden) return;
-        void this.runScheduledRefresh(session, "manual", { force: false });
+        this.pollLog("refresh", "Network link returned → auto refresh (online listener).");
+        void this.runScheduledRefresh(session, "auto");
       };
       window.addEventListener("online", onOnline);
       this.onlineHandler = onOnline;
@@ -3624,7 +3763,7 @@ export class App {
         const sprung = springboardWeekCurve({ exported, liveTip });
         if (sprung) {
           this.pollLog("graph", "1W graph: reused the exported week sleeve (no live pull, 0 credits).");
-          return sprung;
+          return this.enrichWeekWithBlobSleeve(sprung, exported, baseFx);
         }
         const spent = { credits: 0 };
         try {
@@ -3650,13 +3789,101 @@ export class App {
           if (spent.credits === 0) {
             this.pollLog("graph", "1W graph: reused stored week bars (no live pull, 0 credits).");
           }
-          return curve.points.length >= 2 ? curve.points : null;
+          if (curve.points.length < 2) return null;
+          return this.enrichWeekWithBlobSleeve(curve.points, exported, baseFx);
         } catch {
           this.pollLog("graph", "1W graph: live build failed — no curve drawn.");
           return null;
         }
       },
     };
+  }
+
+  /**
+   * WS7 — merge the web's reconstructed 1W curve with the blob's **v3 aggregate
+   * market-sleeve backbone** (Pillar 3). Both sides speak the same FX-free sleeve
+   * value over time, so they reconcile per grid slot: agreeing slots thicken the
+   * line, a slot that disagrees beyond τ keeps the desktop-authoritative blob and
+   * raises a **reconciliation flag** — surfaced verbatim in the polling log so the
+   * owner can deep-dive *why* the two apps diverge instead of seeing a silently
+   * averaged lie (the cross-app scenario this merge exists for).
+   *
+   * Degrades gracefully: a v1/v2 blob carries no `market_series`, so the web curve
+   * is returned unchanged. The whole-book base is **auto-calibrated** from a real
+   * web↔blob time overlap (so the constant cash + NAV base never has to be guessed
+   * or double-counted), and the merged curve is only rendered when it is strictly
+   * richer than the web curve and its live tip stays sane — otherwise the trusted
+   * web curve is kept. Either way the reconciliation is fully logged.
+   */
+  private enrichWeekWithBlobSleeve(
+    webCurve: CurvePoint[],
+    exported: MobileExport["live_graphs"] | undefined,
+    fallbackFx: Decimal | null,
+  ): CurvePoint[] {
+    if (!hasMarketSleeve(exported) || webCurve.length < 2) return webCurve;
+    const blobSleeve = parseMarketSeries(exported?.market_series);
+    if (blobSleeve.length < 2) return webCurve;
+
+    // Auto-calibrate the constant whole-book base (cash + NAV) from the closest
+    // web↔blob time overlap: base = webValue − blobSleeveValue at that instant. By
+    // reading the base off the actual rendered web curve we sidestep the
+    // NAV-in-sleeve vs NAV-in-base ambiguity entirely and align the two series.
+    const overlap = this.calibrateSleeveBase(webCurve, blobSleeve);
+    if (!overlap) {
+      this.pollLog("graph", "1W merge: no web↔blob time overlap to calibrate the base — kept the web curve.");
+      return webCurve;
+    }
+    const { baseUsd, baseEur } = overlap;
+    const webSleeve: SleevePoint[] = webCurve.map((p) => ({
+      t: p.t,
+      valueNativeUsd: p.valueUsd.minus(baseUsd),
+      // The whole-book FX (USD/EUR) is the per-instant rate the web point carries.
+      fxEurUsd: p.valueEur.gt(0) ? p.valueUsd.div(p.valueEur) : fallbackFx,
+    }));
+
+    const gridMs = exported?.grid === "15m" ? 15 * 60 * 1000 : 30 * 60 * 1000;
+    const merge = mergeSleeveSeries(webSleeve, blobSleeve, { gridMs });
+    this.pollLog("graph", `1W merge: ${describeMerge(merge)}.`);
+    for (const flag of merge.flags) {
+      this.pollLog("graph", `1W reconciliation: ${describeFlag(flag)}.`);
+    }
+
+    // Render the merged curve only when it is genuinely richer (more points) than
+    // the web curve — never coarsen the carefully-built week line (Pillar 3 + the
+    // WS8 regression guard). Reapply the calibrated base + per-instant FX.
+    if (merge.points.length <= webCurve.length) {
+      this.pollLog("graph", "1W merge: web curve already as dense — kept it (no coarsening).");
+      return webCurve;
+    }
+    const merged = rebaseSleeveToWholeBook(merge.points, { baseUsd, baseEur }, fallbackFx);
+    this.pollLog("graph", `1W merge: rendered the richer merged curve (${merged.length} points, was ${webCurve.length}).`);
+    return merged;
+  }
+
+  /**
+   * Calibrate the constant whole-book base from the nearest web↔blob time overlap
+   * (within one hour): `baseUsd = webValueUsd − blobSleeveUsd`, `baseEur` likewise
+   * with the blob's per-instant FX. Returns `null` when the two series never come
+   * within an hour of each other (no trustworthy calibration point).
+   */
+  private calibrateSleeveBase(
+    webCurve: CurvePoint[],
+    blobSleeve: SleevePoint[],
+  ): { baseUsd: Decimal; baseEur: Decimal } | null {
+    const MAX_GAP_MS = 60 * 60 * 1000;
+    let best: { web: CurvePoint; blob: SleevePoint; gap: number } | null = null;
+    for (const w of webCurve) {
+      for (const b of blobSleeve) {
+        const gap = Math.abs(w.t - b.t);
+        if (best === null || gap < best.gap) best = { web: w, blob: b, gap };
+      }
+    }
+    if (!best || best.gap > MAX_GAP_MS) return null;
+    const baseUsd = best.web.valueUsd.minus(best.blob.valueNativeUsd);
+    const fx = best.blob.fxEurUsd;
+    const blobSleeveEur = fx && fx.gt(0) ? best.blob.valueNativeUsd.div(fx) : best.blob.valueNativeUsd;
+    const baseEur = best.web.valueEur.minus(blobSleeveEur);
+    return { baseUsd, baseEur };
   }
 
   /** Lazily create (once) the IndexedDB-backed live-graph bar store. */

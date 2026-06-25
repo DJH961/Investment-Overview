@@ -45,6 +45,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     age), gates the clock-hour 1D bar, and decides the rolling quote TTL — while
     a regenerate-only curve seam merges the desktop backbone with live data
     without base-change spikes.
+  - **Web — login handshake, provider fan-out, 1W merge, and the orchestrator
+    take-over (part 2 / WS5–8).** The pull *decisions* are now wired into the
+    live app, each one logged so no call or branch is silent:
+    - **Two-step login handshake** (`web/src/login-handshake.ts`). The prefetch
+      books a *predicted* symbol set (Step 1); the post-decrypt kickoff
+      reconciles the decrypted truth against it (Step 2) and pulls only the
+      deduped diff — a newly-bought symbol the prediction never knew — so a
+      seconds-later re-login is a logged no-op instead of a double pull.
+    - **Provider fan-out for login/manual** (`web/src/provider-fanout.ts`). A
+      pure planner spills a big sleeve across Twelve Data + Tiingo in parallel
+      for an instant first paint, under five hard invariants (TD leg always one
+      request ≤8; fan-out only above the 16-symbol instant threshold or on
+      login; a 10-credit Tiingo floor kept for non-login pulls; every leg
+      clamped to the live reservation + 429 breaker budgets).
+    - **1W web⇄blob sleeve merge + reconciliation flags**
+      (`web/src/market-sleeve.ts`). The web's reconstructed aggregate
+      market-sleeve series is merged with the blob's dense full-week series per
+      grid slot (τ ≤ 0.25%, true timestamps preserved): agreeing slots thicken
+      the line, disagreements keep the authoritative blob value and raise a
+      flag (never a spike), and the whole-book cash+NAV base is auto-calibrated
+      from the nearest web↔blob overlap and reapplied per-instant (USD FX-free,
+      EUR derived). Degrades gracefully on schema-v2 blobs; the merged curve is
+      rendered only when strictly richer than the web curve, so 1W detail is
+      never coarsened.
+    - **`primeStaleGraphPackages` dissolved into the orchestrator.** The
+      standing per-round graph prime is replaced by a logged freshness decision:
+      during market hours a clock-hour bar gate is the **sole** 1D-bar authority
+      (at most one prime per `:00`); reset/force-all still primes in full; a
+      closed-market round self-gates on staleness. The `online` / visibility /
+      `pageshow` listeners are rerouted through `auto` (not `manual`) so an
+      un-triggered reconnect no longer forces a pull or surfaces manual-only
+      toasts.
+    - **Regression guards** (`web/test/regression-guards.test.ts`): 1W
+      detail-accretion is never coarsened by the merge, no fan-out path bypasses
+      the budget/breaker, and a re-login issues no redundant work.
 
 ## [4.3.2] — 2026-06-25
 
