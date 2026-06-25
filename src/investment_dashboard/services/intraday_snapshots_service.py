@@ -920,6 +920,7 @@ def week_series_with_fx(
     force: bool = False,
     fetcher: object | None = None,
     fx_fetcher: object | None = None,
+    interval: str = WEEK_INTERVAL,
 ) -> list[tuple[datetime, Decimal, Decimal | None]]:
     """All sourced 30-minute market-component samples over the week.
 
@@ -952,6 +953,10 @@ def week_series_with_fx(
     the historic re-download (e.g. after a cache reset), where the intraday
     samples are wiped but the ``app_config`` markers survive, which would
     otherwise leave the "1 Week" curve empty until the next anchor session.
+
+    ``interval`` overrides the bar width used to reconstruct *gap* days (default
+    :data:`WEEK_INTERVAL`); the centralized data export passes its configurable
+    grid (e.g. ``"15m"``) so the blob's market-sleeve backbone can be denser.
     """
     from investment_dashboard.db import cache_read_session  # noqa: PLC0415
 
@@ -1021,7 +1026,13 @@ def week_series_with_fx(
     fetched: list[tuple[datetime, Decimal, Decimal | None]] = []
     if to_fetch:
         fetched = _fetch_and_persist_week_days(
-            session, to_fetch, anchor, week_start, fetcher=fetcher, fx_fetcher=fx_fetcher
+            session,
+            to_fetch,
+            anchor,
+            week_start,
+            fetcher=fetcher,
+            fx_fetcher=fx_fetcher,
+            interval=interval,
         )
 
     # 3. Merge cached + freshly fetched (disjoint by session), oldest first.
@@ -1090,6 +1101,7 @@ def _fetch_and_persist_week_days(
     *,
     fetcher: object | None,
     fx_fetcher: object | None,
+    interval: str = WEEK_INTERVAL,
 ) -> list[tuple[datetime, Decimal, Decimal | None]]:
     """Fetch, build, persist and mark the uncovered week sessions in ``to_fetch``.
 
@@ -1110,7 +1122,7 @@ def _fetch_and_persist_week_days(
         fetch = fetcher or yfinance_client.fetch_intraday_closes_range
         try:
             bars_by_symbol: dict[str, dict[datetime, Decimal]] = fetch(  # type: ignore[operator]
-                symbols, to_fetch[0], to_fetch[-1], interval=WEEK_INTERVAL
+                symbols, to_fetch[0], to_fetch[-1], interval=interval
             )
         except Exception:  # pragma: no cover - defensive: best-effort network fetch
             log.warning("week curve intraday fetch failed", exc_info=True)
@@ -1120,7 +1132,7 @@ def _fetch_and_persist_week_days(
         if needs_fx and bars_by_symbol:
             fx_fetch = fx_fetcher or yfinance_client.fetch_eur_usd_intraday_range
             try:
-                fx_bars = fx_fetch(to_fetch[0], to_fetch[-1], interval=WEEK_INTERVAL)  # type: ignore[operator]
+                fx_bars = fx_fetch(to_fetch[0], to_fetch[-1], interval=interval)  # type: ignore[operator]
             except Exception:  # pragma: no cover - defensive: FX overlay is best-effort
                 log.warning("week curve EUR/USD fetch failed", exc_info=True)
                 fx_bars = {}
