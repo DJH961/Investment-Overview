@@ -126,7 +126,8 @@ import { springboardSessionCurve, springboardWeekCurve } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
 import { TimeSeriesStore } from "./timeseries-store";
 import { WEEK_STORE_KEY, navBarsFromQuotes, weekStaleSymbols } from "./week";
-import { barClockHourDue } from "./freshness";
+import { ONE_HOUR_MS } from "./freshness";
+import { planPull, describePlan, type PullKind } from "./data-orchestrator";
 import {
   describeFlag,
   describeMerge,
@@ -648,34 +649,45 @@ export class App {
       return;
     }
     const options = this.buildQuoteOptions(navFetchSymbols, config);
-    // Pillar 5 (WS6) — log the *provider fan-out* decision for this login pull
-    // before dispatch, so every login spends its credits through one logged
-    // authority. The planner only proposes the split (the legs below re-clamp
-    // against the live reservation + 429 breaker, so it can never overspend); it
-    // is logged here whether or not it fans out, so no login routing is silent.
-    {
-      const fanoutNow = Date.now();
-      const fanout = planFanout({
-        kind: "start",
-        symbols: prefetch.symbols,
-        twelveDataSpendable: twelveDataAvailable(fanoutNow),
-        tiingoSpendable: tiingoAvailable(fanoutNow),
-        tiingoAvailable: resolvePriceProxyUrl(config) !== null,
-      });
-      this.pollLog("login", `Login fan-out (${prefetch.symbols.length} mkt symbol(s)): ${fanout.reason}`);
-    }
-    // NAV funds always warm on the cheap Twelve Data primary (they have no
-    // intraday series and the graphs never pull them), so the scarce hourly Tiingo
-    // budget is reserved for the market symbols that genuinely need bars.
+    // Pillar 5 (WS6) — the *provider fan-out* is now the **decision of record** for
+    // this login pull, not just a log line. The pure planner owns the split of the
+    // market sleeve across the two providers; the dispatch below simply executes
+    // the legs it names. Each leg still re-clamps against the live reservation +
+    // 429 breaker, so the planner can only ever propose *fewer* credits than are
+    // truly spendable — it cannot overspend. Logged whether or not it fans out, so
+    // no login routing is silent.
+    const fanoutNow = Date.now();
+    const fanout = planFanout({
+      kind: "start",
+      symbols: prefetch.symbols,
+      twelveDataSpendable: twelveDataAvailable(fanoutNow),
+      tiingoSpendable: tiingoAvailable(fanoutNow),
+      tiingoAvailable: resolvePriceProxyUrl(config) !== null,
+    });
+    this.pollLog("login", `Login fan-out (${prefetch.symbols.length} mkt symbol(s)): ${fanout.reason}`);
+    // Execute the fan-out the planner decided: the Twelve Data lead (≤8) runs
+    // alongside any Tiingo overflow for an instant first paint, while NAV funds
+    // always warm on the cheap Twelve Data primary (they have no intraday series
+    // and the graphs never pull them), so the scarce hourly Tiingo budget is
+    // reserved for the market symbols that genuinely need bars. Symbols that fit no
+    // budget this round are deferred to the post-unlock kickoff (its per-symbol
+    // cache TTL re-pulls them), so nothing is dropped.
     let fetchedCount = 0;
-    if (prefetch.route === "tiingo") {
-      fetchedCount += await this.prefetchViaTiingo(prefetch.symbols, navFetchSymbols, plan, config, options);
-      if (prefetch.navSymbols.length > 0) {
-        fetchedCount += await this.prefetchViaPrimary(prefetch.navSymbols, config, options);
-      }
-    } else {
-      const twelveSymbols = [...prefetch.symbols, ...prefetch.navSymbols];
-      fetchedCount += await this.prefetchViaPrimary(twelveSymbols, config, options);
+    const twelveSymbols = [...fanout.twelveData, ...prefetch.navSymbols];
+    const legs: Promise<number>[] = [];
+    if (twelveSymbols.length > 0) {
+      legs.push(this.prefetchViaPrimary(twelveSymbols, config, options));
+    }
+    if (fanout.tiingo.length > 0) {
+      legs.push(this.prefetchViaTiingo(fanout.tiingo, navFetchSymbols, plan, config, options));
+    }
+    for (const filled of await Promise.all(legs)) fetchedCount += filled;
+    if (fanout.deferred.length > 0) {
+      this.pollLog(
+        "login",
+        `Login fan-out: ${fanout.deferred.length} symbol(s) over budget, deferred to the post-unlock kickoff ` +
+          `[${fanout.deferred.join(", ")}].`,
+      );
     }
     this.finishPrefetch({
       quoteFetched: fetchedCount,
@@ -842,14 +854,17 @@ export class App {
   /**
    * Whether the 1D/1W graph bars should be primed this round, and why — the
    * **dissolution of the old unconditional `primeStaleGraphPackages()` pre-step**
-   * into the orchestrator's freshness decision (Pillar 1/4). The clock-hour bar
-   * gate is the *sole* 1D-bar authority during market hours, so this is what stops
-   * the prime self-perpetuating on every refresh round:
+   * into the orchestrator's freshness decision (Pillar 1/4). The decision is no
+   * longer re-implemented inline: it is delegated to the one pull orchestrator
+   * ({@link planPull} in `data-orchestrator.ts`), so the bar gate is decided in
+   * exactly one place. The clock-hour bar gate is the *sole* 1D-bar authority
+   * during market hours, so this is what stops the prime self-perpetuating on
+   * every refresh round:
    *
    * - **reset / force-all** — always due (the heaviest escape hatch re-pulls all).
-   * - **market open** — due only when the clock-hour gate ({@link barClockHourDue})
-   *   says a bar is due: the first bar once ≥1 interval of session has elapsed,
-   *   then at most once per `:00`. Between gates, breadcrumbs carry the line.
+   * - **market open** — due only when the orchestrator's clock-hour overlay says a
+   *   bar is due: the first bar once ≥1 interval of session has elapsed, then at
+   *   most once per `:00`. Between gates, breadcrumbs carry the line.
    * - **market closed** — due (the prime self-gates on staleness, so a loaded book
    *   pulls nothing; a stale close still backfills).
    */
@@ -859,23 +874,30 @@ export class App {
     now: Date,
   ): { due: boolean; market: "open" | "closed"; reason: string } {
     const market: "open" | "closed" = isUsMarketOpen(now) ? "open" : "closed";
+    // The bar-prime "due" verdict is owned by the central orchestrator. We hand it
+    // a "bars are candidates" freshness context (the prime itself self-gates on
+    // staleness downstream) and read back its bar legs: during market hours its
+    // clock-hour overlay gates them; on reset / closed market they stay on. This
+    // reproduces the previous inline `barClockHourDue` decision exactly, but now
+    // routed through the single source of truth (Pillar 1) rather than re-derived.
+    const plan = this.planGraphBarPull(kind, opts, now);
+    const due = plan.legs.dayBars || plan.legs.weekBars;
+    const orchestrator = `orchestrator: ${describePlan(plan)}`;
     if (kind === "reset" || (opts.forceAll ?? false)) {
-      return { due: true, market, reason: `${kind === "reset" ? "reset" : "force-all"} → full graph re-prime` };
+      return {
+        due,
+        market,
+        reason: `${kind === "reset" ? "reset" : "force-all"} → full graph re-prime (${orchestrator})`,
+      };
     }
     if (market === "closed") {
-      return { due: true, market, reason: "market closed → prime self-gates on staleness (no clock-hour gate)" };
+      return { due, market, reason: `market closed → prime self-gates on staleness (${orchestrator})` };
     }
-    const sessionOpen = sessionOpenMs(lastSessionDate(now));
-    const due = barClockHourDue({
-      nowMs: now.getTime(),
-      lastBarPullMs: this.lastBarPrimeMs,
-      sessionOpenMs: sessionOpen,
-    });
     if (!due) {
       const reason =
         this.lastBarPrimeMs === null
-          ? `market open <1 bar-interval in (session +${Math.round(elapsedSessionMs(now) / 60000)}m) → no bar yet, breadcrumbs carry the line`
-          : "market open, within the same clock hour as the last bar → held (breadcrumbs carry the line)";
+          ? `market open <1 bar-interval in (session +${Math.round(elapsedSessionMs(now) / 60000)}m) → no bar yet, breadcrumbs carry the line (${orchestrator})`
+          : `market open, within the same clock hour as the last bar → held (breadcrumbs carry the line) (${orchestrator})`;
       return { due: false, market, reason };
     }
     return {
@@ -883,9 +905,49 @@ export class App {
       market,
       reason:
         this.lastBarPrimeMs === null
-          ? "market open, first bar of the session is due"
-          : "market open, a new clock hour → bar due",
+          ? `market open, first bar of the session is due (${orchestrator})`
+          : `market open, a new clock hour → bar due (${orchestrator})`,
     };
+  }
+
+  /**
+   * Build the bar-prime {@link PullContext} and ask {@link planPull} for its
+   * verdict. Graph priming only ever cares about the 1D/1W bar legs, and the prime
+   * self-gates on staleness, so we feed the orchestrator a deliberately
+   * "heavily-outdated" freshness context: that makes the bar legs *candidates*, and
+   * the orchestrator's clock-hour overlay (the sole market-hours 1D-bar authority)
+   * then gates them. A `reset` / `force-all` round maps to the orchestrator's
+   * `reset` mechanism (every leg on); every other round maps to `auto`, where the
+   * overlay holds the bar between clock hours exactly as before.
+   */
+  private planGraphBarPull(
+    kind: RefreshKind,
+    opts: { force?: boolean; forceAll?: boolean },
+    now: Date,
+  ): ReturnType<typeof planPull> {
+    const pullKind: PullKind = kind === "reset" || (opts.forceAll ?? false) ? "reset" : "auto";
+    return planPull({
+      kind: pullKind,
+      nowMs: now.getTime(),
+      market: isUsMarketOpen(now) ? "open" : "closed",
+      minutesSinceOpenMs: isUsMarketOpen(now) ? elapsedSessionMs(now) : 0,
+      // Unused under the heavily-outdated short-circuit below, but supplied for a
+      // complete context; mirrors the 15-min default auto cadence.
+      autoIntervalMs: 15 * 60 * 1000,
+      // Bars are candidates: heavily-outdated turns every leg on so the only thing
+      // gating the bar legs is the clock-hour overlay (open) or nothing (closed).
+      freshness: {
+        dataAgeMs: 2 * ONE_HOUR_MS,
+        deviceDaysMissing: 2,
+        blobDaysOld: 2,
+        quoteAgeMs: 0,
+        navHeldForToday: false,
+      },
+      barGate: {
+        lastBarPullMs: this.lastBarPrimeMs,
+        sessionOpenMs: sessionOpenMs(lastSessionDate(now)),
+      },
+    });
   }
 
   /**
