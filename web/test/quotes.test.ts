@@ -739,7 +739,7 @@ describe("loadEurUsd", () => {
     expect(res.source).toBe("live");
     expect(res.now?.toString()).toBe("1.09");
     expect(res.previousClose?.toString()).toBe("1.075");
-    expect(res.at).toBe(0); // stamped at the fetch moment
+    expect(res.at).toBe(0); // mock clock starts at 0, so the fetch moment is 0
     // Cached for the next call.
     const again = await loadEurUsd("key", { fetchImpl, storage, now: clock(1000), ttlMs: 60_000 });
     expect(again.source).toBe("cache");
