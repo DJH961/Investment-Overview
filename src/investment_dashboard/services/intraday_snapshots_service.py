@@ -135,7 +135,7 @@ RECONSTRUCT_COVERAGE_FRACTION = Decimal("0.6")
 #: (a late first sample with a still-wide overall span). A fully reconstructed
 #: 15-min grid has ~15-min spacing, so 45 min (3 bars) clears a normal curve while
 #: still catching a genuine multi-bar gap, which the next render refills.
-RECONSTRUCT_MAX_GAP_SECONDS = 45 * 60
+RECONSTRUCT_MAX_GAP_SECONDS = 45 * 60  # 45 minutes
 
 #: Fraction of a *finished* week session (open→close) that its cached samples must
 #: span before that day is trusted complete. Mirrors
