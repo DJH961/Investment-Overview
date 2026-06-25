@@ -725,6 +725,8 @@ describe("loadEurUsd", () => {
     expect(res.source).toBe("cache");
     expect(res.now?.toString()).toBe("1.085");
     expect(res.previousClose?.toString()).toBe("1.0725");
+    // The stamp reflects when the cached reading was originally stored, not now.
+    expect(res.at).toBe(0);
   });
 
   it("fetches a live pair (spot + prior close) and caches it", async () => {
@@ -737,6 +739,7 @@ describe("loadEurUsd", () => {
     expect(res.source).toBe("live");
     expect(res.now?.toString()).toBe("1.09");
     expect(res.previousClose?.toString()).toBe("1.075");
+    expect(res.at).toBe(0); // mock clock starts at 0, so the fetch moment is 0
     // Cached for the next call.
     const again = await loadEurUsd("key", { fetchImpl, storage, now: clock(1000), ttlMs: 60_000 });
     expect(again.source).toBe("cache");
@@ -758,6 +761,8 @@ describe("loadEurUsd", () => {
     expect(res.source).toBe("eod");
     expect(res.now?.toString()).toBe("1.07");
     expect(res.previousClose).toBeNull();
+    // The keyless ECB rate has no intraday observation time.
+    expect(res.at).toBeNull();
   });
 
   it("prefers an expired cached reading from today over the end-of-day rate", async () => {

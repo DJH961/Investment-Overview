@@ -14,6 +14,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.3.2] — 2026-06-25
+
+### Fixed
+
+- **USD headline is now FX-free; EUR is derived.** `buildHolding` takes each
+  holding's `valueUsd` natively from its own USD price (`shares × price`, no FX
+  conversion), and `totalValueUsd` / `holdingsValueUsd` are summed from those
+  native USD figures plus native USD cash — not re-derived by converting the EUR
+  pivot back through EUR/USD. A holding that only has an EUR export fallback still
+  derives USD from EUR, matching previous behaviour for that narrow case.
+- **FX observation timestamp on the overview hero.** `loadEurUsd` now returns an
+  `at` epoch-ms alongside the rate; this timestamp is plumbed through
+  `buildDashboard` into `OverviewView.fxObservedAt`. The hero FX line renders
+  `FX <time>` (clock time when from today, a date once older) with the exact
+  instant on hover. The existing "end-of-day FX" tag still covers the
+  timestamp-less ECB fallback.
+
 ## [4.3.1] — 2026-06-25
 
 ### Fixed

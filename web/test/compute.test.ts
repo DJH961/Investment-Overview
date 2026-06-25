@@ -1263,3 +1263,59 @@ describe("pricesAreLive honesty", () => {
     expect(m.overview.pricesAreLive).toBe(true);
   });
 });
+
+describe("USD total is native (holding prices added together), EUR derived via the live rate", () => {
+  // A pure USD-priced book with no cash, so the USD total is *exactly* the sum
+  // of the holding prices and never touches FX. The user's invariant: logging in
+  // repeatedly while the market is closed but the EUR/USD rate drifts must show
+  // the SAME USD value every time, yet a different EUR value.
+  function usdOnlyExport(): MobileExport {
+    const exp = makeExport();
+    exp.cash = []; // drop the EUR cash leg so only USD holdings remain
+    return exp;
+  }
+
+  const usdQuotes = new Map<string, Quote>([
+    ["VTI", { symbol: "VTI", price: new Decimal("100"), previousClose: new Decimal("95"), currency: "USD" }],
+    // FXAIX falls back to last_known_price_native = 100 → 5 × 100 = 500 USD.
+  ]);
+
+  const weakDollar: FxRates = { base: "EUR", rates: { USD: new Decimal("1.10") } };
+  const strongDollar: FxRates = { base: "EUR", rates: { USD: new Decimal("1.25") } };
+
+  it("keeps the USD total identical when only the FX rate moves, but changes EUR", () => {
+    const at = new Date("2024-06-01T12:00:00Z");
+    const a = buildDashboard(usdOnlyExport(), usdQuotes, weakDollar, at);
+    const b = buildDashboard(usdOnlyExport(), usdQuotes, strongDollar, at);
+    // VTI 10 × 100 = 1000 USD, FXAIX 5 × 100 = 500 USD → 1500 USD, FX-free.
+    approx(a.overview.totalValueUsd, 1500, 1e-9);
+    approx(b.overview.totalValueUsd, 1500, 1e-9);
+    // EUR is USD ÷ the live rate, so it genuinely differs between the two logins.
+    approx(a.overview.totalValueEur, 1500 / 1.1, 1e-3);
+    approx(b.overview.totalValueEur, 1500 / 1.25, 1e-3);
+    expect(a.overview.totalValueEur!.equals(b.overview.totalValueEur!)).toBe(false);
+  });
+
+  it("values each USD holding FX-free (exactly shares × price)", () => {
+    const m = buildDashboard(usdOnlyExport(), usdQuotes, strongDollar, new Date("2024-06-01T12:00:00Z"));
+    const vti = m.holdings.find((h) => h.symbol === "VTI")!;
+    expect(vti.valueUsd!.toString()).toBe("1000");
+    // EUR = 1000 / 1.25 = 800, the live-rate conversion.
+    approx(vti.valueEur, 800, 1e-9);
+  });
+});
+
+describe("fxObservedAt", () => {
+  it("surfaces the FX observation time passed through the build options", () => {
+    const observedAt = Date.UTC(2024, 5, 1, 11, 30);
+    const m = buildDashboard(makeExport(), quotes, fx, new Date("2024-06-01T12:00:00Z"), null, {
+      fxObservedAt: observedAt,
+    });
+    expect(m.overview.fxObservedAt).toBe(observedAt);
+  });
+
+  it("defaults to null when no FX observation time is provided", () => {
+    const m = buildDashboard(makeExport(), quotes, fx, new Date("2024-06-01T12:00:00Z"));
+    expect(m.overview.fxObservedAt).toBeNull();
+  });
+});

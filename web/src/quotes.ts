@@ -702,6 +702,12 @@ export interface LoadEurUsdResult {
   previousClose: Decimal | null;
   /** Provenance of the figures, so the UI can label end-of-day FX honestly. */
   source: EurUsdSource;
+  /**
+   * Epoch-ms the `now` rate was observed (a live/Tiingo pull's moment, or when a
+   * cached reading was originally stored). Null for the keyless end-of-day ECB
+   * rate, which carries no intraday timestamp, and when no rate is available.
+   */
+  at: number | null;
   cached: boolean;
   error: PriceError | null;
 }
@@ -783,7 +789,7 @@ export async function loadEurUsd(
 
   const cached = readCachedEurUsd(storage ?? undefined);
   if (cached && cached.now !== null && now() - cached.at < ttlMs) {
-    return { now: cached.now, previousClose: cached.previousClose, source: "cache", cached: true, error: null };
+    return { now: cached.now, previousClose: cached.previousClose, source: "cache", at: cached.at, cached: true, error: null };
   }
 
   let liveError: PriceError | null = null;
@@ -801,7 +807,7 @@ export async function loadEurUsd(
         if (reading.now !== null) {
           const at = now();
           writeCachedEurUsd(reading, at, storage ?? undefined);
-          return { now: reading.now, previousClose: reading.previousClose, source: "live", cached: false, error: null };
+          return { now: reading.now, previousClose: reading.previousClose, source: "live", at, cached: false, error: null };
         }
       } catch (err) {
         liveError = err instanceof PriceError ? err : new PriceError((err as Error).message, { retryable: true });
@@ -832,8 +838,9 @@ export async function loadEurUsd(
         if (reading && reading.now.greaterThan(0)) {
           const at = now();
           const prevClose = cached && isSameUtcDay(cached.at, at) ? cached.previousClose : null;
-          writeCachedEurUsd({ now: reading.now, previousClose: prevClose }, reading.at ?? at, storage ?? undefined);
-          return { now: reading.now, previousClose: prevClose, source: "tiingo", cached: false, error: liveError };
+          const observedAt = reading.at ?? at;
+          writeCachedEurUsd({ now: reading.now, previousClose: prevClose }, observedAt, storage ?? undefined);
+          return { now: reading.now, previousClose: prevClose, source: "tiingo", at: observedAt, cached: false, error: liveError };
         }
       } catch (err) {
         // A transient backup failure is non-fatal: record it on `error` and keep
@@ -849,18 +856,18 @@ export async function loadEurUsd(
   // end-of-day fallback (which has no prior close). Only drop to end-of-day
   // when we have nothing from today at all.
   if (cached && cached.now !== null && isSameUtcDay(cached.at, now())) {
-    return { now: cached.now, previousClose: cached.previousClose, source: "cache", cached: true, error: liveError };
+    return { now: cached.now, previousClose: cached.previousClose, source: "cache", at: cached.at, cached: true, error: liveError };
   }
 
   // Fall back to the end-of-day ECB rate (keyless, no prior close).
   if (eodFallback !== null && eodFallback.greaterThan(0)) {
-    return { now: eodFallback, previousClose: null, source: "eod", cached: false, error: liveError };
+    return { now: eodFallback, previousClose: null, source: "eod", at: null, cached: false, error: liveError };
   }
   // Last resort: a stale (pre-today) cached reading keeps the spot populated.
   if (cached && cached.now !== null) {
-    return { now: cached.now, previousClose: cached.previousClose, source: "cache", cached: true, error: liveError };
+    return { now: cached.now, previousClose: cached.previousClose, source: "cache", at: cached.at, cached: true, error: liveError };
   }
-  return { now: null, previousClose: null, source: "none", cached: false, error: liveError };
+  return { now: null, previousClose: null, source: "none", at: null, cached: false, error: liveError };
 }
 
 /** Fetch one batch, retrying a transient failure with capped exponential backoff. */
