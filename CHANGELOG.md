@@ -14,6 +14,40 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.3.0] — 2026-06-25
+
+### Added
+
+- **Smart internal-gap refill for the "1 Day" and "1 Week" intraday curves.** The
+  desktop reconstruction (`services/intraday_snapshots_service.py`) already filled
+  *trailing* gaps, but a transient **midday hole** — live captures that stalled
+  around lunch and resumed, or a session whose morning was never captured — slipped
+  through: the coverage guard only measured the first→last *span*, so a curve with
+  a wide hole in the middle still read as "covered" and was drawn as a flat
+  straight line across the gap for the rest of the session. `_session_is_covered`
+  now also rejects any session whose open→first or consecutive-sample gap exceeds
+  `RECONSTRUCT_MAX_GAP_SECONDS` (45 min ≈ 3 reconstruction bars), so the next
+  render re-pulls and lays its 15-minute grid across the hole. The "1 Week" curve
+  applies the same idea per *finished* session: a day whose cached points don't
+  reach across at least `WEEK_COVERAGE_FRACTION` (60%) of its open→close — e.g. five
+  points all clustered in the morning — is re-pulled to source the day's full set
+  of 30-minute bars rather than frozen at a morning-only stub.
+
+### Changed
+
+- **1W graph session-axis redesign (PR #141, previously shipped without a
+  changelog entry).** The "1 Week" chart now reads like a broker terminal:
+  non-trading time (overnights, weekends, holidays) is collapsed off the x-axis,
+  light vertical separators divide trading days, and the line **breaks** between
+  sessions instead of drawing a smoothing line across a closed period. On both
+  platforms the per-session minimum is raised to **5 points/session**, and the
+  Python week curve now **keeps every sourced 30-minute bar** (~13/day, via
+  `_pick_session_points`) for each day's real intraday shape, with a build-once
+  binary-search forward-fill (`_make_forward_fill`) so repricing many instants no
+  longer re-sorts each symbol's bars per point. The web 1W graph drops its
+  synthetic interior points (open/close only). See
+  `docs/weekly_chart_session_axis_plan.md`.
+
 ## [4.2.0] — 2026-06-24
 
 ### Added
