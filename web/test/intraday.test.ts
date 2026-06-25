@@ -391,65 +391,23 @@ describe("loadOrBuildSessionCurve", () => {
     expect(fetchBars).not.toHaveBeenCalled();
   });
 
-  it("repulls the whole session on resume when the freshest point has gone stale", async () => {
+  it("does not resume-repull a stale-but-present session (clock-hour gate is the sole 1D authority)", async () => {
+    // Resume-backfill is deleted (docs/centralized_data_pull_plan.md): a re-login
+    // or long absence whose freshest point has aged well past the old 10-minute
+    // window must NOT force a second, hour-conflicting bar pull while the session's
+    // bars are already on the device. Breadcrumbs bridge the gap until the next
+    // clock hour, which the orchestrator owns.
     const store = new TimeSeriesStore(memoryBackend());
     const now = new Date("2026-06-23T16:00:00Z");
-    // Logged in earlier, then left: the newest data on the device (both the bar
-    // and the last breadcrumb) is ~2h old because refresh paused while away. On
-    // logging back in, the default 10-minute resume window is blown, so the whole
-    // session is re-pulled to bridge the dead span with real bars rather than a
-    // single straight jump to the live tip.
     await store.saveSession({
       day: "2026-06-23",
-      bars: { VTI: [bar(Date.parse("2026-06-23T14:00:00Z"), "100")] },
+      bars: { VTI: [bar(Date.parse("2026-06-23T12:00:00Z"), "100")] },
       fx: [],
       tips: [{ t: now.getTime() - 2 * 60 * 60_000, valueEur: d(1010), valueUsd: d(1110) }],
       updatedAt: now.getTime() - 2 * 60 * 60_000,
     });
-    const fetchBars = vi.fn(async () =>
-      new Map<string, Bar[]>([["VTI", [bar(Date.parse("2026-06-23T19:55:00Z"), "100")]]]),
-    );
-    await loadOrBuildSessionCurve({ anchor: singleEtfAnchor(), store, fetchBars, now });
-    expect(fetchBars).toHaveBeenCalledOnce();
-    // The resume repull grabs every symbol (best possible curve), not just gaps.
-    expect(fetchBars).toHaveBeenCalledWith(["VTI"]);
-  });
-
-  it("does not resume-repull while the breadcrumb trail is younger than the window", async () => {
-    const store = new TimeSeriesStore(memoryBackend());
-    const now = new Date("2026-06-23T16:00:00Z");
-    // Continuously open: the bars are old but the newest breadcrumb is only 5
-    // minutes back (inside the 10-minute resume window), so nothing is re-pulled.
-    await store.saveSession({
-      day: "2026-06-23",
-      bars: { VTI: [bar(Date.parse("2026-06-23T12:00:00Z"), "100")] },
-      fx: [],
-      tips: [{ t: now.getTime() - 5 * 60_000, valueEur: d(1010), valueUsd: d(1110) }],
-      updatedAt: now.getTime() - 4 * 60 * 60_000,
-    });
     const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
     await loadOrBuildSessionCurve({ anchor: singleEtfAnchor(), store, fetchBars, now });
-    expect(fetchBars).not.toHaveBeenCalled();
-  });
-
-  it("resumeBackfillMs=Infinity disables resume repull (pure breadcrumb mode)", async () => {
-    const store = new TimeSeriesStore(memoryBackend());
-    const now = new Date("2026-06-23T16:00:00Z");
-    await store.saveSession({
-      day: "2026-06-23",
-      bars: { VTI: [bar(Date.parse("2026-06-23T12:00:00Z"), "100")] },
-      fx: [],
-      tips: [{ t: now.getTime() - 3 * 60 * 60_000, valueEur: d(1010), valueUsd: d(1110) }],
-      updatedAt: now.getTime() - 4 * 60 * 60_000,
-    });
-    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
-    await loadOrBuildSessionCurve({
-      anchor: singleEtfAnchor(),
-      store,
-      fetchBars,
-      now,
-      resumeBackfillMs: Number.POSITIVE_INFINITY,
-    });
     expect(fetchBars).not.toHaveBeenCalled();
   });
 
