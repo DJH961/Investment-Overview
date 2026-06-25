@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -285,7 +286,7 @@ def test_market_series_threads_grid_to_week_fetch(session: Session, monkeypatch)
 
     real = live_graphs.intraday_snapshots_service.week_series_with_fx
 
-    def spy(*args, **kwargs):  # type: ignore[no-untyped-def]
+    def spy(*args: Any, **kwargs: Any) -> list[tuple[datetime, Decimal, Decimal | None]]:
         captured["interval"] = kwargs.get("interval", "")
         return real(*args, **kwargs)
 
