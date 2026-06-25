@@ -233,6 +233,13 @@ export interface OverviewView {
   dividendYieldPct: Decimal | null;
   /** EUR→USD reference rate carried in the export meta (for the FX line). */
   fxRateEurUsd: Decimal | null;
+  /**
+   * Epoch-ms the live/cached EUR→USD spot that valued the book was observed, so
+   * the hero FX line can stamp when the rate is from (a clock time today, a date
+   * once it is older). Null when only the keyless end-of-day rate was available
+   * (no intraday timestamp) or no rate is known.
+   */
+  fxObservedAt: number | null;
   holdingsCount: number;
   /**
    * Symbols with no value at all — no live quote, no `last_known_price_native`,
@@ -636,8 +643,9 @@ function buildHolding(
   const currency = holding.native_currency;
 
   let valueEur: Decimal | null = null;
+  let valueNative: Decimal | null = null;
   if (price !== null) {
-    const valueNative = shares.times(price);
+    valueNative = shares.times(price);
     valueEur = convert(valueNative, currency, EUR, fx);
   }
 
@@ -804,7 +812,17 @@ function buildHolding(
   // --- USD companions (currency-correct growth when USD is selected) --------
   // Current marks use today's spot (matching the desktop's terminal-value
   // treatment); the cost basis uses the export's per-trade-date USD figure.
-  const valueUsd = valueEur !== null ? convert(valueEur, EUR, USD, fx) : null;
+  // The USD value is taken **natively** from the holding's own price — for a
+  // USD-priced holding `convert` is a no-op (FX-free), so the figure is exactly
+  // `shares × price` and never drifts when the live EUR/USD rate moves between
+  // logins. EUR is the one derived via FX. Only a holding valued purely from the
+  // EUR export fallback (no live native price) derives its USD back from EUR.
+  const valueUsd =
+    valueNative !== null
+      ? convert(valueNative, currency, USD, fx)
+      : valueEur !== null
+        ? convert(valueEur, EUR, USD, fx)
+        : null;
   const costBasisUsd =
     holding.cost_basis_usd !== null && holding.cost_basis_usd !== undefined
       ? new Decimal(holding.cost_basis_usd)
@@ -893,6 +911,13 @@ export interface BuildDashboardOptions {
   fxPrevEurUsd?: Decimal | null;
   /** Where today's EUR/USD spot came from, for honest UI labelling. */
   fxEurUsdSource?: EurUsdSourceLabel;
+  /**
+   * Epoch-ms the EUR/USD spot that valued the book was observed (a live/cached
+   * pull's moment). Surfaced as `OverviewView.fxObservedAt` so the hero FX line
+   * can stamp when the rate is from. Null when only the keyless end-of-day rate
+   * was available (it carries no intraday timestamp).
+   */
+  fxObservedAt?: number | null;
 }
 
 interface HoldingAggregationContext {
@@ -960,6 +985,7 @@ export function buildDashboard(
 
   // Cash / savings balances count toward total value as-is (converted to EUR).
   let cashValueEur = new Decimal(0);
+  let cashValueUsd: Decimal | null = new Decimal(0);
   let cashPrevValueEur = new Decimal(0);
   let cashPrevValueUsd: Decimal | null = new Decimal(0);
   for (const row of data.cash) {
@@ -970,6 +996,10 @@ export function buildDashboard(
       continue;
     }
     cashValueEur = cashValueEur.plus(eur);
+    if (cashValueUsd !== null) {
+      const usd = convert(native, row.native_currency, USD, fx);
+      cashValueUsd = usd !== null ? cashValueUsd.plus(usd) : null;
+    }
     cashPrevValueEur = cashPrevValueEur.plus(
       convert(native, row.native_currency, EUR, fxPrev) ?? eur,
     );
@@ -1115,8 +1145,25 @@ export function buildDashboard(
   // in USD so toggling currency shows currency-correct growth. Everything is
   // null when USD is unavailable (no live/known EUR→USD rate), in which case the
   // UI falls back to the EUR figure.
-  const holdingsValueUsd = convert(holdingsValueEur, EUR, USD, fx);
-  const totalValueUsd = convert(totalValueEur, EUR, USD, fx);
+  //
+  // The USD total is the **native** sum of each holding's own USD value (and
+  // USD cash), NOT the EUR total rescaled back through FX. For the typical
+  // USD-priced book that makes the headline literally "the most recent holding
+  // prices added together": it stays identical across logins even as the live
+  // EUR/USD rate drifts, while the EUR total (each holding converted at that
+  // live rate) moves with it. A holding counted in EUR but missing a USD leg
+  // (an FX-fallback row with no rate) leaves the USD total unknown (null), the
+  // same degradation the old EUR→USD conversion produced when no rate existed.
+  const holdingsValueUsd = holdings.reduce<Decimal | null>((acc, h) => {
+    if (acc === null) return null;
+    if (h.valueEur === null) return acc; // not counted in the EUR total either
+    if (h.valueUsd === null) return null; // valued in EUR but not USD → total unknown
+    return acc.plus(h.valueUsd);
+  }, new Decimal(0));
+  const totalValueUsd =
+    holdingsValueUsd === null || cashValueUsd === null
+      ? null
+      : holdingsValueUsd.plus(cashValueUsd);
   const totalCostBasisUsd = holdings.reduce<Decimal | null>(
     (acc, h) => (acc !== null && h.costBasisUsd !== null ? acc.plus(h.costBasisUsd) : acc),
     holdingsValueUsd === null ? null : new Decimal(0),
@@ -1273,6 +1320,7 @@ export function buildDashboard(
     totalDividendsEur,
     dividendYieldPct,
     fxRateEurUsd,
+    fxObservedAt: opts.fxObservedAt ?? null,
     holdingsCount: holdings.length,
     missingPriceSymbols: missingPrice,
     staleValueSymbols: staleValue,

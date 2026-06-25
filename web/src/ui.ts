@@ -138,7 +138,7 @@ function renderHero(o: OverviewView, now: Date = new Date()): HTMLElement {
     h("span", { class: "hero-value" }, [formatCurrency(o.totalValueEur)]),
     change,
   ];
-  const fxLine = renderHeroFx(o);
+  const fxLine = renderHeroFx(o, now);
   if (fxLine) children.push(fxLine);
   return h("section", { class: "hero" }, children);
 }
@@ -191,10 +191,12 @@ function valueBasisLabel(o: OverviewView, now: Date = new Date()): string {
 
 /**
  * The live FX context under today's move: the current spot and how far it has
- * moved today (the % deviation), plus an honest "end-of-day FX" tag when only
- * the ECB daily rate was available. Returns null when there's no rate to show.
+ * moved today (the % deviation), a stamp of *when* that rate is from (the clock
+ * time today, the date once it is older), plus an honest "end-of-day FX" tag
+ * when only the ECB daily rate was available. Returns null when there's no rate
+ * to show.
  */
-function renderHeroFx(o: OverviewView): HTMLElement | null {
+function renderHeroFx(o: OverviewView, now: Date = new Date()): HTMLElement | null {
   const inUsd = getDisplayCurrency() === "USD";
   const parts: HTMLElement[] = [];
   if (o.fxRateEurUsd !== null) {
@@ -210,6 +212,24 @@ function renderHeroFx(o: OverviewView): HTMLElement | null {
         ? `${pair} ${formatFxRate(rate)} (${formatSignedPercent(dev)} today)`
         : `${pair} ${formatFxRate(rate)}`;
     parts.push(h("span", { class: "hero-fx-rate" }, [rateLabel]));
+  }
+  // When the rate carries an intraday observation time, stamp when it is from so
+  // the EUR figure (holding prices × this live rate) is honest about its
+  // freshness: a clock time while it's today, the date it settled once older.
+  // The end-of-day ECB fallback carries no such timestamp (the tag below covers
+  // it instead).
+  if (o.fxObservedAt !== null) {
+    const when = new Date(o.fxObservedAt);
+    const title = Number.isNaN(when.getTime())
+      ? undefined
+      : `EUR/USD rate observed ${when.toLocaleString()}`;
+    parts.push(
+      h(
+        "span",
+        title ? { class: "hero-fx-asof", title } : { class: "hero-fx-asof" },
+        [`FX ${formatAsOf(o.fxObservedAt, o.liveAsOfFallbackDate, now)}`],
+      ),
+    );
   }
   if (o.eurUsdSource === "eod") {
     parts.push(h("span", { class: "hero-fx-eod" }, ["end-of-day FX"]));

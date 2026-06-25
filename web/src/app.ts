@@ -2388,6 +2388,7 @@ export class App {
     let eurUsdPrev: Decimal | null = null;
     let eurUsdSource: EurUsdSource = "none";
     let eurUsdError: PriceError | null = null;
+    let eurUsdAt: number | null = null;
     if (network) {
       const fxLoad = await loadFxRates();
       fx = fxLoad.fx;
@@ -2416,6 +2417,7 @@ export class App {
       eurUsdPrev = eurUsd.previousClose;
       eurUsdSource = eurUsd.source;
       eurUsdError = eurUsd.error;
+      eurUsdAt = eurUsd.at;
     } else {
       // Cache-only paint: don't touch the network for FX either.
       const cachedFx = readCachedFx();
@@ -2426,6 +2428,7 @@ export class App {
         eurUsdNow = cachedEurUsd.now;
         eurUsdPrev = cachedEurUsd.previousClose;
         eurUsdSource = "cache";
+        eurUsdAt = cachedEurUsd.at;
       }
     }
     // Prefer the live EUR/USD spot (more current than the ECB daily rate) for
@@ -2547,6 +2550,7 @@ export class App {
     const model = buildDashboard(data, quoteLoad.quotes, fx, new Date(), degradedReason, {
       fxPrevEurUsd: eurUsdPrev,
       fxEurUsdSource: eurUsdSource,
+      fxObservedAt: eurUsdAt,
     });
     model.overview.lastDataPullAt = this.lastDataPullAt;
     // Remember each fund's freshly-settled NAV as a daily bar in the 1W store, so
