@@ -14,6 +14,8 @@ import {
   type FanoutKind,
 } from "../src/provider-fanout";
 import { reconcileHandshake } from "../src/login-handshake";
+import { describePlan, planPull, type PullContext } from "../src/data-orchestrator";
+import { ONE_HOUR_MS } from "../src/freshness";
 
 /**
  * WS8 — the part-2 regression guards (`docs/centralized_data_pull_plan.md`
@@ -188,5 +190,72 @@ describe("WS8 guard — a re-login issues no redundant work", () => {
     expect(diff.newlyDiscovered).toEqual(["ZZZ"]);
     // FX was already booked by Step 1 — never re-pulled.
     expect(diff.fx).toBe(false);
+  });
+});
+
+/**
+ * WS-part-2 follow-up — the orchestrator is now the *authority*, not a logger.
+ * These guard the two structural gaps that were closed by wiring `app.ts` through
+ * the pure decision modules:
+ *
+ *  4. **`planPull` owns the 1D/1W bar gate.** `app.ts::graphPrimeDecision` no
+ *     longer re-implements the clock-hour gate inline — it delegates to
+ *     {@link planPull} with a "bars-are-candidates" (heavily-outdated) context and
+ *     reads back the bar legs. These lock that contract so the delegation keeps
+ *     reproducing the previous gate exactly.
+ *  5. **`planFanout` owns the login provider split** (proven by the budget guards
+ *     above): the login dispatch now executes the legs the planner names rather
+ *     than logging them, so the split is the decision of record.
+ */
+describe("WS-part-2 guard — planPull owns the bar-prime gate (graphPrimeDecision delegation)", () => {
+  const sessionOpenMs = Date.UTC(2026, 5, 25, 13, 30, 0); // 09:30 ET
+  // Mirror the exact context app.ts hands planPull for graph priming: bars are
+  // candidates (heavily-outdated), so the only thing gating them is the overlay.
+  function graphCtx(over: Partial<PullContext>): PullContext {
+    return {
+      kind: "auto",
+      nowMs: sessionOpenMs,
+      market: "open",
+      minutesSinceOpenMs: 0,
+      autoIntervalMs: 15 * 60 * 1000,
+      freshness: { dataAgeMs: 2 * ONE_HOUR_MS, deviceDaysMissing: 2, blobDaysOld: 2, quoteAgeMs: 0, navHeldForToday: false },
+      barGate: { lastBarPullMs: null, sessionOpenMs },
+      ...over,
+    };
+  }
+  const barsDue = (ctx: PullContext): boolean => {
+    const plan = planPull(ctx);
+    return plan.legs.dayBars || plan.legs.weekBars;
+  };
+
+  it("reset → full re-prime: bars always due", () => {
+    expect(barsDue(graphCtx({ kind: "reset" }))).toBe(true);
+  });
+
+  it("market closed → bars due (the prime self-gates downstream, no clock-hour gate)", () => {
+    expect(barsDue(graphCtx({ market: "closed", minutesSinceOpenMs: 0 }))).toBe(true);
+  });
+
+  it("market open, first bar < one interval into the session → held", () => {
+    // 5 minutes after the open: no bar yet, breadcrumbs carry the line.
+    expect(barsDue(graphCtx({ nowMs: sessionOpenMs + 5 * 60 * 1000, minutesSinceOpenMs: 5 * 60 * 1000 }))).toBe(false);
+  });
+
+  it("market open, first bar once ≥1 interval has elapsed → due", () => {
+    expect(barsDue(graphCtx({ nowMs: sessionOpenMs + ONE_HOUR_MS, minutesSinceOpenMs: ONE_HOUR_MS }))).toBe(true);
+  });
+
+  it("market open, within the same clock hour as the last bar → held until the next :00", () => {
+    const lastBarPullMs = Date.UTC(2026, 5, 25, 15, 30, 0);
+    expect(barsDue(graphCtx({ nowMs: lastBarPullMs + 10 * 60 * 1000, barGate: { lastBarPullMs, sessionOpenMs } }))).toBe(false);
+  });
+
+  it("market open, a new clock hour after the last bar → due", () => {
+    const lastBarPullMs = Date.UTC(2026, 5, 25, 15, 30, 0);
+    expect(barsDue(graphCtx({ nowMs: Date.UTC(2026, 5, 25, 17, 0, 0), barGate: { lastBarPullMs, sessionOpenMs } }))).toBe(true);
+  });
+
+  it("the decision is rendered into a log-ready orchestrator line", () => {
+    expect(describePlan(planPull(graphCtx({ kind: "reset" })))).toContain("reset");
   });
 });
