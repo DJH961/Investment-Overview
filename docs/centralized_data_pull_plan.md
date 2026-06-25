@@ -50,10 +50,10 @@ executors. Centralize the *decisions*, not the *plumbing*.
    breadcrumbs), not by exceeding provider caps. Login is allowed to **spend**
    (it is a "glance for 2 minutes" app), but it still obeys the freshness ledger,
    so a log-out/log-in seconds later pulls nothing.
-3. **1D fills 1W; never the reverse — and merge all sources.** 1D intraday detail
-   accretes into the 1W graph (already implemented). Add multi-source merge
-   (device bars + freshly-pulled bars + blob bars) with disagreement *flagged*,
-   not blended into spikes.
+3. **1D fills 1W; never the reverse — and merge web + blob.** 1D intraday detail
+   accretes into the 1W graph (already implemented). Add a merge of the web's
+   reconstructed **aggregate market-sleeve series** with the blob's **dense
+   full-week series**, with disagreement *flagged*, not blended into spikes.
 4. **Graded freshness.** A truth-table keyed on data-age × blob-age × market-state
    decides the pull. **Bars are clock-hour-aligned during market; quotes use a
    rolling TTL.**
@@ -78,7 +78,7 @@ interface PullContext {
   kind: PullKind;
   now: number;
   market: MarketState;          // from market-hours.ts
-  freshness: FreshnessLedger;   // quote ages, last-bar-by-clock-hour, blob age/coverage
+  freshness: FreshnessLedger;   // quote ages, last-bar-by-clock-hour, best-available-blob recency+coverage (from metadata)
   holdings: SymbolSet;          // market + NAV split
   blob: BlobView;               // decrypted truth (may be absent at prefetch time)
 }
@@ -94,6 +94,14 @@ async function pull(ctx: PullContext): Promise<PullReport>;
   …), each already routed through `reservation.ts`.
 - **`primeStaleGraphPackages` is dissolved** into `pull()` as a *decision*, not a
   standing pre-step. It can no longer fire unconditionally every round.
+- **Blob metadata is the prediction signal — not the on-device blob's age.** The
+  orchestrator reads the **blob metadata** it already fetches to decide whether to
+  download (timestamp + coverage) and feeds *that* into the freshness ledger. So
+  before spending a market token it asks *"will the **best available** blob satisfy
+  this need?"* — a fresh remote blob that covers the gap is downloaded (cheap, zero
+  per-symbol tokens) instead of pulling quotes/bars. Metadata doesn't guarantee
+  contents, so this always hands off to the Pillar-2 post-decrypt reconcile, which
+  re-engages the market pull for anything the blob turned out to lack.
 - **Readability acceptance:** a developer can read `data-orchestrator.ts` top to
   bottom and state, for any (kind, market, freshness), exactly what will be
   fetched and from which provider — without opening another file.
@@ -119,9 +127,16 @@ additive, never redundant:
    what Step 1 already booked.
 
 **Definition of "fresh on login":** *no older than the freshest point our
-providers could legally have returned within budget* — not a real-time tick. The
-17th+ symbol of a large sleeve may be one minute behind at the instant of login;
-that falls inside the owner's own carve-out and is acceptable.
+providers could legally have returned within budget* — not a real-time tick.
+
+**Login is explicitly allowed to spend Tiingo for instant first paint.** A large
+sleeve does **not** leave the 17th+ symbol a minute behind: Twelve Data serves the
+first 8 and **Tiingo serves the overflow immediately**, by design — login is the
+"glance for 2 minutes" moment worth spending on. Only when **Tiingo credits are
+exhausted** does login degrade to Twelve-Data-only at 8 symbols/min staggering.
+Login may even consume the **last-10-credit reserve** (see Pillar 5): login is top
+priority, and the 16+ release valve exists only to keep *big non-login reloads*
+from being slow, never to throttle login itself.
 
 **Re-login is a no-op by construction:** login bypasses the *latency* throttle
 (spacing / the 16+ gate — see Pillar 5) but still honours the *staleness* ledger
@@ -131,7 +146,7 @@ re-login guard is needed.**
 
 ---
 
-## Pillar 3 — 1D fills 1W, and multi-source merge
+## Pillar 3 — 1D fills 1W, and web⇄blob merge
 
 **Already implemented (protect, don't rebuild):** intraday bars are retained for
 **7 trading days** (`pruneOldSessions`, `intraday.ts` ~567; merge-not-replace in
@@ -142,72 +157,100 @@ at intraday resolution in the 1W view; a day skipped falls back to its daily
 close. This *is* the "regular logins ⇒ richer graphs" reward. The redesign must
 **not** prune or coarsen it — add a regression guard.
 
-**New: treat the 1W curve as a union of homogeneous per-symbol sources.** Once the
-v3 export ships (separate Python plan), the web can see up to three **per-symbol
-native-price** sources for a given day:
+**New: merge the web's reconstruction with the blob's dense series.** The v3 export
+(separate Python plan) ships, per the owner's decision, **not** per-symbol bars but
+the desktop's own representation, *un-coarsened and across the whole week*:
 
-1. device-captured 1D intraday bars (already on device),
-2. freshly-pulled 1W daily / intraday bars,
-3. **blob bars** from the desktop (token-free, so potentially the richest).
+- an **aggregate market-sleeve value series** — the value of the intraday-priced
+  holdings only (cash + NAV deliberately excluded), at true capture instants;
+- a **per-instant FX rate** aligned to it (so either currency is recoverable at the
+  true per-timestamp rate); and
+- **daily NAV prices** + settled **daily closes** as authoritative anchors.
 
-Because all three are `(symbol, time, native price)` and are **repriced against
-the current anchor** (holdings + FX), there is **no base-change step** to create
-spikes. Merge is **per nominal time-slot, per symbol**:
+Both sides therefore speak **one homogeneous quantity — the market-sleeve value
+over time** — so they merge without the base-change steps per-symbol was meant to
+avoid: the **cash + NAV base is reapplied once at render** with the web's *current*
+holdings and the shipped NAV prices (exactly how the desktop renders), and FX is
+applied per-instant from the shipped rate. No per-symbol decomposition is shipped
+or needed — drawing the *total* curve never required it.
+
+The web builds its **own** market-sleeve series from data it already has (device 1D
+bars + any fresh pulls) and treats the blob's series as a second, usually richer
+source. Merge is **per nominal time-slot**:
 
 | Slot state | Action |
 |---|---|
 | One source present | use it |
-| Multiple agree within **τ ≤ 0.25%** | **keep all** (denser, richer line) |
-| Multiple disagree > τ | keep the authoritative source for the line **and emit a reconciliation flag** |
+| Both agree within **τ ≤ 0.25%** | **keep the denser coverage** (richer line) |
+| Both disagree > τ | keep the **blob** series for the line (token-free, desktop-authoritative history) **and emit a reconciliation flag** |
 
+- **This is the owner's cross-app scenario.** Web open in the morning, desktop open
+  midday (its data sealed into the blob), web re-opened late: the two market-sleeve
+  series are **merged**, not picked — overlapping slots that agree thicken the line;
+  slots that disagree raise a flag so the owner can deep-dive *why* the two apps
+  diverge, instead of a silently averaged lie.
 - **Timestamps are real, not snapped.** Live-captured points land just before/after
   the nominal mark (14:03, not 14:00). Keep true timestamps; the 30/15-min grid is
-  only a **bucketing rule for comparison**, never a snapping rule. Off-grid points
-  are *more detail*, not a problem.
-- **Disagreement is a feature.** Out-of-tolerance cells surface in a quiet
-  reconciliation report `(symbol, slot, web_price, blob_price, Δ%)` — the owner's
-  early-warning that the two apps diverge, instead of a silently averaged lie.
-- **Breadcrumb / whole-book layers stay display-only.** The desktop's live-tip
-  trail (whole-book value, base-dependent) is rebased on import like the web's own
-  `session.tips` and spliced after the freshest real bar; it thickens the line but
-  is **never** cross-checked (no per-symbol price to check).
+  only a **bucketing rule for comparison**, never a snapping rule.
+- **Disagreement is a feature.** Out-of-tolerance slots surface in a quiet
+  reconciliation report `(slot, web_value, blob_value, Δ%)` — early warning, not a
+  blended spike.
+- **Trail stays display-only.** The desktop's dense ~20-second whole-book live
+  captures ship as an optional `trail`; like the web's own `session.tips` they are
+  rebased on import and spliced *after* the freshest real point — they thicken the
+  line but are **never** cross-checked.
+- **Holdings drift (named limitation).** Because the sleeve series is aggregate, a
+  market symbol *bought or sold since capture* cannot be retroactively re-weighted
+  into the blob's history; the blob is treated as **actual-historical** for past
+  days, and a gross divergence simply raises a reconciliation flag. This is the
+  accepted cost of dropping per-symbol detail — and it matches how the portfolio's
+  value *actually* evolved.
 
-**Graceful degradation:** on a schema-v2 blob (no per-symbol bars) the merge
-simply has fewer sources and behaves as today. No web release is blocked on the
-Python plan.
+**Graceful degradation:** on a schema-v2 blob (whole-book pre-folded values, no
+sleeve/FX split) the merge has only the web's own reconstruction plus the legacy
+value line and behaves as today. No web release is blocked on the Python plan.
 
 ---
 
 ## Pillar 4 — Graded freshness truth-table
 
-Inputs: data-age (device), blob-age, blob-completeness, market state,
-minutes-since-open, last-pull-by-clock-hour. Applies to **start / manual / reset**
-(prefill / login pull and reset pull); auto is the steady cadence below.
+Inputs: data-age (device), **best-available-blob recency + coverage (from blob
+metadata, not the on-device blob's age)**, market state, minutes-since-open,
+last-pull-by-clock-hour. Applies to **start / manual / reset** (prefill / login
+pull and reset pull); auto is the steady cadence below. **The table decides only
+*what* to pull and *when*; *which provider* serves each leg is orthogonal and lives
+entirely in Pillar 5.**
 
-| Tier (condition) | Market state | Pull | Provider strategy |
-|---|---|---|---|
-| **Heavily outdated** — >1 market day missing **AND** newest blob >1 market day old | any | **1W + 1D** series, full (all graphs + holding values) | login: instant fan-out; else 16+ rule |
-| **Minorly outdated** — on-device **and** blob ≤1 market day old, but older than 1h | open ≥30 min, **or** closed | **1D** series only (1W fills from it) | Twelve Data first, Tiingo overflow |
-| ″ | open <30 min | **quotes only**; fill 1D from quote + breadcrumbs (no bars) | Twelve Data first |
-| ″ — only NAV prices missing, no newer blob | n/a | **NAV quote + FX quote** only | TD; Tiingo NAV per existing gates |
-| **Relatively fresh** — latest <1h old but older than last auto-update interval | open | market data; + NAV if missing | Twelve Data first |
-| ″ | closed, NAV present | **FX value only** | cheap leg |
-| **Blob-trust re-engage** (overlay) | any | if a leg was skipped expecting blob data and the decrypted blob lacked it → **re-run the matching row, ignoring the blob** | per row above |
+| Tier (condition) | Market state | Pull |
+|---|---|---|
+| **Heavily outdated** — >1 market day missing **AND** best-available blob >1 market day old | any | **1W + 1D** series, full (all graphs + holding values) |
+| **Minorly outdated** — device data **and** best-available blob ≤1 market day old, but older than 1h | open ≥30 min, **or** closed | **1D** series only (1W fills from it) |
+| ″ | open <30 min | **quotes only**; fill 1D from quote + breadcrumbs (no bars) |
+| **NAV prices missing** — settled NAV absent, no newer blob | **closed only** — NAV prints once, post-close, so it *cannot* be missing intraday | **NAV quote + FX quote** only |
+| **Relatively fresh** — latest <1h old but older than last auto-update interval | open | market data |
+| ″ | closed, NAV present | **FX value only** |
+| **Blob-trust re-engage** (overlay) | any | if a leg was skipped expecting blob data and the decrypted blob lacked it → **re-run the matching row, ignoring the blob** |
 
 **Two overlays that apply on every tier during market hours:**
 
-- **Bar clock-hour gate (authoritative — wins over resume-backfill).** A 1D
-  **bar** is pulled **at most once per clock hour** per symbol. After a pull at
-  15:30, the next bar pull is allowed at **17:00** (the next `:00`), not before;
-  breadcrumbs fill the line until then. This **supersedes** the existing 10-minute
-  `DEFAULT_RESUME_BACKFILL_MS` re-pull *during* market hours — that 10-min resume
-  now applies **only** to re-entry after the app was closed across an hour
-  boundary. Aligning to `:00` also matches Tiingo's hourly reset and naturally
-  dedupes across refreshes and devices.
+- **Bar clock-hour gate (the *sole* 1D-bar authority).** A 1D **bar** is pulled
+  **at most once per clock hour** per symbol. After a pull at 15:30, the next bar
+  pull is allowed at **17:00** (the next `:00`), not before; breadcrumbs fill the
+  line until then. This is the **only** trigger that pulls 1D bars during market
+  hours — aligning to `:00` also matches Tiingo's hourly reset and naturally dedupes
+  across refreshes and devices.
   - Consequence (free): "open <30 min ⇒ no bars" falls out automatically, since
     the first bar cannot be due until a clock hour after ≥1 interval of session
     has elapsed. Gate the *first* bar on "≥1 bar-interval elapsed" so a 09:30 open
     does not chase a 10:00 bar off five minutes of trading.
+  - **Resume-backfill removed.** The legacy 10-minute `DEFAULT_RESUME_BACKFILL_MS`
+    was a *second* bar-pull trigger that would fire **inside** a quiet hour (e.g.
+    re-focus at 15:40 after a 15:30 pull), contradicting the gate. It is **deleted**:
+    the re-login case is handled by the orchestrator's freshness check (which
+    already respects a new clock hour), and a mid-hour absence is bridged by
+    breadcrumbs until the next `:00`. The only forgone behaviour — *instant*
+    real-bar backfill of a mid-hour dead span instead of a flat breadcrumb segment —
+    is already the accepted design ("breadcrumbs fill until the next hour").
 - **Quote rolling TTL.** Quotes refresh on a **rolling 15-minute** window for a
   live feel (the existing `DEFAULT_CACHE_TTL_MS`).
 
@@ -237,10 +280,15 @@ them):**
    providers*, never a bigger TD batch.
 2. **The "instant" trigger is ">2 TD-minutes of work" (>16 symbols).** Above it,
    spend Tiingo to parallelise. Below it, the normal lead/overflow spacing applies.
-3. **Login is exempt from the spacing/16+ *latency* throttle** (it may spend
-   Tiingo freely for instant first paint) **but never from the freshness ledger,
-   the reservation authority, or the 429 breaker.**
-4. **Never cut into the last 10 Tiingo credits** when the 16+ instant rule fires.
+3. **Login/start is top priority and exempt from the spacing/16+ *latency*
+   throttle** (it may spend Tiingo freely for instant first paint) **but never from
+   the freshness ledger, the reservation authority, or the 429 breaker.**
+4. **Never cut into the last 10 Tiingo credits when the 16+ instant rule fires —
+   *except on login/start*, which may consume even the reserve.** The 16+ release
+   valve exists only to keep *big non-login reloads* from being slow; it must not
+   throttle login. (A seconds-later **re-login** still pulls nothing — the freshness
+   ledger, which login *does* obey, makes it a no-op — so this exemption cannot be
+   abused to burn credits by toggling login.)
 5. **No path is ever exempt from the hard provider caps.** Hard-refresh/reset may
    clear soft Tier-1 series backoff and freshness TTLs **only** — never the budget
    or the breaker. (This preserves the June burn-fix invariant verbatim.)
@@ -298,15 +346,19 @@ four mechanisms.
 3. **Stand up `data-orchestrator.ts`** `[pillar-1]` — move the pull *decision* in;
    dissolve `primeStaleGraphPackages` into it. Fetchers/reservation unchanged.
 4. **Truth-table + clock-hour bar gate + rolling quote TTL** `[pillar-4]` — encode
-   the table as a tested decision function; clock-hour gate wins over resume
-   backfill during market.
+   the table as a tested decision function; make the clock-hour gate the **sole**
+   1D-bar authority and **delete `DEFAULT_RESUME_BACKFILL_MS`**; consume blob
+   **metadata** (not on-device blob age) as the freshness input. Provider routing
+   stays out of the table (Pillar 5).
 5. **Two-step login handshake** `[pillar-2]` — prefetch predicts, post-decrypt
    reconciles the diff through the ledger; remove the loose double-pull.
 6. **Provider fan-out for login/manual** `[pillar-5]` — bounded parallel spill with
    the five invariants; 16+ instant rule, 10-credit Tiingo floor.
-7. **Multi-source 1W merge + reconciliation flags** `[pillar-3]` — per-slot,
-   per-symbol, τ ≤ 0.25%, true timestamps, display-only breadcrumb layer.
-   Degrades gracefully on schema-v2 blobs; fully lights up with the v3 export.
+7. **1W merge + reconciliation flags** `[pillar-3]` — merge the web's reconstructed
+   **aggregate market-sleeve series** with the blob's **dense full-week series** per
+   slot (τ ≤ 0.25%, true timestamps); reapply current cash+NAV base via shipped NAV
+   prices + per-instant FX; display-only trail. Degrades gracefully on schema-v2
+   blobs; fully lights up with the v3 export.
 8. **Regression guards** — 1W detail-accretion not coarsened; no path bypasses
    budget/breaker; interaction stays network-free.
 
@@ -315,11 +367,13 @@ four mechanisms.
 ## Verification
 
 - **Unit (`web/test`):** decision-function truth-table cases (each tier × market
-  state); clock-hour bar gate (pull at 15:30 ⇒ none until 17:00; breadcrumbs fill);
+  state); clock-hour bar gate (pull at 15:30 ⇒ none until 17:00; breadcrumbs fill;
+  no resume-repull inside the hour); NAV-missing row fires **only when closed**;
   rolling quote TTL; regenerate-only issues zero fetches; login handshake dedupes
   Step 2 against Step 1; fan-out keeps TD ≤8 and never touches the last 10 Tiingo
-  credits; reset clears soft backoff but not budget/breaker; 1W merge keeps all
-  agreeing points and flags > τ disagreements without spiking.
+  credits **except on login/start**; reset clears soft backoff but not
+  budget/breaker; the 1W aggregate merge keeps agreeing slots and flags > τ
+  disagreements without spiking.
 - **Manual:** cold login mid-session (fresh, sliced, no double-pull); seconds-later
   re-login (zero pulls); range toggle + graph click (zero pulls); market-open hour
   boundary (bar pull only at `:00`).
@@ -330,14 +384,19 @@ four mechanisms.
 
 1. Four mechanisms are the complete set the owner wants: `start`, `auto`,
    `manual`, `reset`.
-2. Clock-hour bar gate **wins** over the 10-min resume-backfill during market;
-   resume-backfill survives only for cross-hour re-entry after the app was closed.
+2. The clock-hour bar gate is the **sole** 1D-bar trigger during market;
+   `DEFAULT_RESUME_BACKFILL_MS` is **removed** (re-login handled by the freshness
+   check, mid-hour gaps bridged by breadcrumbs until the next `:00`).
 3. "Last auto-update" = the **user-editable** refresh interval (default 15 min).
-4. Login may spend Tiingo for instant first paint, exempt from spacing/16+ only,
-   never from freshness/reservation/breaker.
+4. Login/start may spend Tiingo for instant first paint — exempt from spacing/16+
+   **and from the last-10-credit reserve** (login is priority) — but never from the
+   freshness ledger, reservation authority, or 429 breaker.
 5. This device owns its full Tiingo allotment (no competing second device for the
    40-credit cap).
 6. Reconciliation tolerance τ = **0.25%**; bucketing grid 30-min default.
-7. All Python-side changes (the v3 per-symbol export) live in the **separate**
-   `docs/centralized_data_export_plan.md`; this web plan degrades gracefully
-   without them.
+7. All Python-side changes (the v3 **dense aggregate** export) live in the
+   **separate** `docs/centralized_data_export_plan.md`; this web plan degrades
+   gracefully without them.
+8. The freshness truth-table keys on **blob metadata (best-available recency +
+   coverage)**, not the on-device blob's age, so it can predict whether a fresh
+   remote blob will satisfy a need before spending a token.
