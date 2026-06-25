@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from bisect import bisect_right
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -72,6 +73,8 @@ from investment_dashboard.domain.money_market import is_money_market
 from investment_dashboard.repositories import app_config_repo, intraday_repo
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from investment_dashboard.services.positions_service import Position
 
 log = logging.getLogger(__name__)
@@ -130,19 +133,20 @@ _WEEK_FETCHED_PREFIX = "intraday_week_fetched:"
 #: Number of recent trading sessions the Overview "Week" (1W) curve spans.
 WEEK_SESSIONS = 5
 
-#: Bar width used to source the "Week" curve's intraday path. A handful of
-#: representative points per day are kept (open / +1/4 / midday / +3/4 / close),
-#: so a coarse bar is plenty and keeps the multi-day download small.
+#: Bar width used to source the "Week" curve's intraday path. Every sourced bar
+#: is kept (no token/credit limit on the desktop feed), so a full session yields
+#: ~13 genuine 30-minute marks — a coarse-enough bar to keep the multi-day
+#: download small while still drawing each day's real intraday shape.
 WEEK_INTERVAL = "30m"
 
-#: How many representative intraday points a *completed* week session should
-#: carry once fully sourced — the open / +1/4 / midday / +3/4 / close span
-#: :func:`_pick_session_points` keeps. A finished session holding fewer than this
-#: is treated as missing data and re-pulled (see ``_is_covered`` in
+#: Minimum number of intraday points a *completed* week session must carry to
+#: count as fully sourced. A finished session holding fewer than this is treated
+#: as missing data and re-pulled (see ``_is_covered`` in
 #: :func:`week_series_with_fx`), so a partial earlier fetch or a single stray live
-#: capture can't freeze a day at an incomplete curve. The in-progress session is
-#: exempt: its close hasn't happened yet, so it grows from live captures and any
-#: sample counts.
+#: capture can't freeze a day at an incomplete curve. This is only a *floor*:
+#: :func:`_pick_session_points` keeps *every* sourced bar (~13/day), well above
+#: it. The in-progress session is exempt: its close hasn't happened yet, so it
+#: grows from live captures and any sample counts.
 WEEK_POINTS_PER_COMPLETE_SESSION = 5
 
 #: Smallest share count treated as a real holding (mirrors the Overview filter).
@@ -538,7 +542,7 @@ def day_series_with_fx(
 
 def _market_component_pivot_eur(
     priced: list[Position],
-    bars_by_symbol: dict[str, dict[datetime, Decimal]],
+    price_lookups: dict[str, Callable[[datetime], Decimal | None]],
     at: datetime,
     *,
     fx_t: Decimal | None,
@@ -554,10 +558,15 @@ def _market_component_pivot_eur(
     bar is a corrupt non-positive close (a known feed glitch that elsewhere flags
     an instrument as anomalous) — is carried at a flat ratio of 1 rather than
     punching a spurious spike into the curve.
+
+    ``price_lookups`` maps each symbol to a forward-fill closure built once via
+    :func:`_make_forward_fill`, so repricing many instants never re-sorts a
+    symbol's bars per point.
     """
     market = Decimal(0)
     for p in priced:
-        price_t = _forward_filled(bars_by_symbol.get(p.instrument.symbol, {}), at)
+        lookup = price_lookups.get(p.instrument.symbol)
+        price_t = lookup(at) if lookup is not None else None
         if price_t is None or price_t <= 0:
             price_t = p.current_price_native
         ratio = price_t / p.current_price_native  # type: ignore[operator]
@@ -568,18 +577,35 @@ def _market_component_pivot_eur(
     return market
 
 
-def _forward_filled(bars: dict[datetime, Decimal], at: datetime) -> Decimal | None:
-    """Latest bar value at/just-before ``at`` (or the earliest, if all later)."""
+def _make_forward_fill(
+    bars: dict[datetime, Decimal],
+) -> Callable[[datetime], Decimal | None]:
+    """Build a forward-fill lookup over ``bars`` that sorts the keys only once.
+
+    Returns a closure mapping an instant to the latest bar value at or just before
+    it (or the earliest bar when every bar is later), via binary search — matching
+    :func:`_forward_filled` exactly but without re-sorting on every call, so a hot
+    loop repricing many instants over the same bars stays cheap.
+    """
     if not bars:
-        return None
+        return lambda _at: None
     times = sorted(bars)
-    chosen: datetime | None = None
-    for t in times:
-        if t <= at:
-            chosen = t
-        else:
-            break
-    return bars[chosen] if chosen is not None else bars[times[0]]
+    values = [bars[t] for t in times]
+
+    def lookup(at: datetime) -> Decimal | None:
+        idx = bisect_right(times, at)
+        return values[idx - 1] if idx else values[0]
+
+    return lookup
+
+
+def _forward_filled(bars: dict[datetime, Decimal], at: datetime) -> Decimal | None:
+    """Latest bar value at/just-before ``at`` (or the earliest, if all later).
+
+    Convenience wrapper over :func:`_make_forward_fill` for a single lookup; hot
+    loops should build the closure once and reuse it instead.
+    """
+    return _make_forward_fill(bars)(at)
 
 
 def reconstruct_last_session(
@@ -713,19 +739,23 @@ def _reconstruct_session(
         ]
 
     written = 0
+    # Build each forward-fill lookup once (sorts per symbol a single time) so the
+    # per-instant repricing below never re-sorts a symbol's bars per point.
+    price_lookups = {sym: _make_forward_fill(bars) for sym, bars in bars_by_symbol.items()}
+    fx_lookup = _make_forward_fill(fx_bars)
     with cache_write_session(session) as cache:
         for t in bar_times:
             if _covered_by_live(live_times, t):
                 continue
             # The rate struck at this minute (forward-filled), or the day's
             # settled spot when no intraday FX is available.
-            fx_t = _forward_filled(fx_bars, t) if fx_bars else None
+            fx_t = fx_lookup(t) if fx_bars else None
             point_fx = fx_t or base_fx
             # The intraday-priced (market) component only — the cash + NAV base is
             # reapplied at render time, keeping reconstruction on the same basis
             # as the live captures.
             market = _market_component_pivot_eur(
-                priced, bars_by_symbol, t, fx_t=fx_t, base_fx=base_fx
+                priced, price_lookups, t, fx_t=fx_t, base_fx=base_fx
             )
             intraday_repo.insert_sample(cache, t, market, point_fx)
             written += 1
@@ -818,27 +848,16 @@ def week_window_start_utc(now: datetime | None = None) -> datetime:
 
 
 def _pick_session_points(bar_times: list[datetime]) -> list[datetime]:
-    """Choose a day's representative instants from its sorted bar times.
+    """Return a day's bar instants to plot — *all* of them, chronologically.
 
-    Returns up to :data:`WEEK_POINTS_PER_COMPLETE_SESSION` distinct timestamps
-    (fewer when the day has fewer bars): the bars nearest equally-spaced fractions
-    of the open→close span — open, +1/4, midday, +3/4, close — so the finer time
-    scale carries each day's intraday shape instead of a coarse step. The first
-    (open) and last (close) instants are kept exact so the day's endpoints still
-    match the settled values. Preserves chronological order.
+    The week curve is sourced at :data:`WEEK_INTERVAL` (30-minute) bars with no
+    token/credit limit, so every sourced bar is kept rather than thinned to a few
+    representative points: a full trading day yields ~13 genuine 30-minute marks,
+    giving the curve its real intraday shape instead of a coarse five-point step.
+    De-duplicates and sorts defensively; the open and close stay exact as the
+    first and last instants.
     """
-    if not bar_times:
-        return []
-    n = WEEK_POINTS_PER_COMPLETE_SESSION
-    if len(bar_times) <= n:
-        return list(bar_times)
-    first, last = bar_times[0], bar_times[-1]
-    span = last - first
-    chosen: set[datetime] = set()
-    for i in range(n):
-        target = first + span * (i / (n - 1))
-        chosen.add(min(bar_times, key=lambda t, tt=target: abs((t - tt).total_seconds())))
-    return sorted(chosen)
+    return sorted(set(bar_times))
 
 
 def week_series_with_fx(
@@ -849,7 +868,7 @@ def week_series_with_fx(
     fetcher: object | None = None,
     fx_fetcher: object | None = None,
 ) -> list[tuple[datetime, Decimal, Decimal | None]]:
-    """Open / +1/4 / midday / +3/4 / close market-component samples over the week.
+    """All sourced 30-minute market-component samples over the week.
 
     Returns ``[(at_utc, market_value_eur, fx_eur_usd), ...]`` (oldest first) — the
     same shape as :func:`day_series_with_fx`, so the render path
@@ -859,8 +878,8 @@ def week_series_with_fx(
     EUR/USD rate, so the two currency lines genuinely diverge across the week.
 
     Each session is repriced against *that day's* held positions (so a buy or
-    sell mid-week is reflected), with up to five representative instants kept per
-    day (open / +1/4 / midday / +3/4 / close) for a smooth-yet-cheap curve.
+    sell mid-week is reflected), keeping *every* sourced 30-minute bar (~13/day)
+    so the curve carries each day's full intraday shape.
 
     **Cache-first.** The rolling-week intraday cache (live "1 Day" captures plus
     previously-fetched/reconstructed earlier days — all on the identical EUR
@@ -892,13 +911,14 @@ def week_series_with_fx(
     window_end = min(_to_naive_utc(now), _session_start_utc(sessions[-1] + timedelta(days=1)))
 
     # 1. Cache first — the rolling week already on hand. A *completed* (earlier)
-    #    session is covered only once it holds its full open / +1/4 / midday /
-    #    +3/4 / close span, so a partial earlier fetch or a single stray live
-    #    capture no longer freezes a day at an incomplete curve — it is re-pulled
-    #    to fill the gaps. The current/anchor session is exempt: its close may not
-    #    have happened yet and it grows from today's dense live captures, so any
-    #    sample counts and it is never re-downloaded (those live points are denser
-    #    than a coarse re-fetch and must be preserved).
+    #    session is covered only once it holds at least
+    #    :data:`WEEK_POINTS_PER_COMPLETE_SESSION` points, so a partial earlier
+    #    fetch or a single stray live capture no longer freezes a day at an
+    #    incomplete curve — it is re-pulled to fill the gaps. The current/anchor
+    #    session is exempt: its close may not have happened yet and it grows from
+    #    today's dense live captures, so any sample counts and it is never
+    #    re-downloaded (those live points are denser than a coarse re-fetch and
+    #    must be preserved).
     with cache_read_session(session) as cache:
         cached = [
             (r.captured_at, r.market_value_eur, r.fx_eur_usd)
@@ -921,7 +941,7 @@ def week_series_with_fx(
             # stalled) is re-pulled to fill its gaps rather than frozen at one
             # point.
             return True
-        # A finished session must carry the full representative span; fewer points
+        # A finished session must carry at least the minimum point floor; fewer
         # means data is missing, so report it uncovered to trigger a re-pull.
         return len(sample_times) >= WEEK_POINTS_PER_COMPLETE_SESSION
 
@@ -968,7 +988,7 @@ def _build_week_day_samples(
     bars_by_symbol: dict[str, dict[datetime, Decimal]],
     fx_bars: dict[datetime, Decimal],
 ) -> list[tuple[datetime, Decimal, Decimal | None]]:
-    """Open / +1/4 / midday / +3/4 / close market-component samples for one session day."""
+    """All 30-minute market-component samples for one session day."""
     from investment_dashboard.services import fx_service  # noqa: PLC0415
 
     start = _session_start_utc(session_date)
@@ -984,11 +1004,15 @@ def _build_week_day_samples(
         if any(_is_usd_native(p) for p in priced)
         else None
     )
+    # Build each forward-fill lookup once so repricing every 30-minute instant
+    # below never re-sorts a symbol's bars per point.
+    price_lookups = {sym: _make_forward_fill(bars) for sym, bars in bars_by_symbol.items()}
+    fx_lookup = _make_forward_fill(fx_bars)
     samples: list[tuple[datetime, Decimal, Decimal | None]] = []
     for t in _pick_session_points(day_bar_times):
-        fx_t = _forward_filled(fx_bars, t) if fx_bars else None
+        fx_t = fx_lookup(t) if fx_bars else None
         point_fx = fx_t or base_fx
-        market = _market_component_pivot_eur(priced, bars_by_symbol, t, fx_t=fx_t, base_fx=base_fx)
+        market = _market_component_pivot_eur(priced, price_lookups, t, fx_t=fx_t, base_fx=base_fx)
         samples.append((t, market, point_fx))
     return samples
 

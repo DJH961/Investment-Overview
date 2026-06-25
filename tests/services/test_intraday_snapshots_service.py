@@ -761,21 +761,28 @@ _WEEK_DAY_BARS = [
     ((19, 30), Decimal("130")),  # close
 ]
 
+#: A full regular session of 30-minute bars (09:30→16:00 ET == 13:30→20:00 UTC),
+#: i.e. 14 instants — denser than the WEEK_POINTS_PER_COMPLETE_SESSION floor, used
+#: to prove every sourced bar is kept rather than thinned.
+_HALF_HOUR_SESSION = [(h, m) for h in range(13, 20) for m in (0, 30) if (h, m) >= (13, 30)] + [
+    (20, 0)
+]
+
 
 class TestWeekSeries:
-    # Five bars per session day spanning open→close; _pick_session_points keeps
-    # the open / +1/4 / midday / +3/4 / close span (all five here).
+    # Five bars per session day spanning open→close. With all data kept, every
+    # sourced bar is plotted (here that is all five).
     _DAY_BARS = _WEEK_DAY_BARS
 
-    def test_five_points_per_session(self, session: Session) -> None:
+    def test_keeps_every_sourced_bar_per_session(self, session: Session) -> None:
         _seed_eur_holding_for_week(session)
         samples = iss.week_series_with_fx(
             session, now=_NOW, fetcher=_fake_week_fetcher(self._DAY_BARS)
         )
         sessions = iss.recent_trading_sessions(_NOW)
         assert len(sessions) == iss.WEEK_SESSIONS
-        # Open / +1/4 / midday / +3/4 / close kept for each of the week's sessions.
-        assert len(samples) == iss.WEEK_POINTS_PER_COMPLETE_SESSION * len(sessions)
+        # Every sourced bar is kept for each of the week's sessions.
+        assert len(samples) == len(self._DAY_BARS) * len(sessions)
         # Oldest-first and the market component scales with the intraday price.
         first_day = [s for s in samples if s[0].date() == sessions[0]]
         assert [eur for _, eur, _ in first_day] == [
@@ -785,6 +792,23 @@ class TestWeekSeries:
             Decimal("1250.00"),  # 125/100 (+3/4)
             Decimal("1300.00"),  # 130/100 (close)
         ]
+
+    def test_keeps_all_bars_when_day_is_denser_than_the_floor(self, session: Session) -> None:
+        # A full 30-minute session carries far more than the coverage floor; none
+        # of those genuine bars are dropped.
+        dense = [((h, m), Decimal(100 + i)) for i, (h, m) in enumerate(_HALF_HOUR_SESSION)]
+        assert len(dense) > iss.WEEK_POINTS_PER_COMPLETE_SESSION
+        _seed_eur_holding_for_week(session)
+        samples = iss.week_series_with_fx(session, now=_NOW, fetcher=_fake_week_fetcher(dense))
+        sessions = iss.recent_trading_sessions(_NOW)
+        assert len(samples) == len(dense) * len(sessions)
+        # Every bar instant for the first session is present (no thinning).
+        first_day_times = sorted(s[0] for s in samples if s[0].date() == sessions[0])
+        expected = [
+            datetime(sessions[0].year, sessions[0].month, sessions[0].day, h, m)
+            for h, m in _HALF_HOUR_SESSION
+        ]
+        assert first_day_times == expected
 
     def test_empty_when_feed_has_no_bars(self, session: Session) -> None:
         _seed_eur_holding_for_week(session)

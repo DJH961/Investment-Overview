@@ -87,14 +87,18 @@ Wiring: `ui.ts applyLive("1W")` passes `collapseSessions: true` into
 Tests: `web/test` unit for `sessionFractions` (equal bands, gutters, boundary
 indexes) and a `linePath` break-at-boundary check.
 
-## Density: 5 points per trading day (both sides) — DONE
-- The week curve previously emitted **3** points/session (open / midday / close).
-  With the gaps collapsed and each day now occupying a real band, the **minimum
-  is raised to 5 points/session** (open, +1/4, midday, +3/4, close) so the finer
-  time scale carries more shape instead of three coarse steps.
-- Python: `intraday_snapshots_service._pick_session_points` samples 5 evenly-spaced
-  intra-session instants per day, and `WEEK_POINTS_PER_COMPLETE_SESSION = 5` gates
-  coverage so a finished day must carry the full span before it counts as covered.
+## Density: keep all sourced bars per trading day — DONE
+- The week curve previously emitted **3** points/session (open / midday / close),
+  then a thinned **5**. It now keeps **every** genuinely time-stamped bar each
+  side sources, so the finer time scale carries each day's real intraday shape
+  instead of a coarse few-point step.
+- Python: `intraday_snapshots_service._pick_session_points` keeps *all* sourced
+  30-minute bars (~13/day) rather than sampling a handful; the desktop feed has no
+  token/credit limit, so there is no reason to drop good data. The
+  `WEEK_POINTS_PER_COMPLETE_SESSION = 5` constant is now only a *coverage floor* —
+  a finished day with fewer points is treated as missing and re-pulled — not a cap.
+  Per-instant repricing builds each forward-fill lookup once (`_make_forward_fill`)
+  so keeping more points doesn't re-sort bars per point.
 - Web: `intraday-tiingo.barsFromTiingoDaily` emits only the **2** genuinely
   time-stamped points/day (open at 09:30 ET, close at 16:00 ET). The daily OHLC
   candle has no within-day clock for the high/low, so no interior points are
