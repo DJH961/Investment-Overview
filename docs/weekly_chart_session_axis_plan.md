@@ -1,5 +1,12 @@
 # Weekly chart: collapse dead time, break gaps, mark sessions
 
+> **Update (2026):** with a sparse week the per-session line *break* (item 4) left
+> the days as disconnected islands and the inter-band *gutter* added distracting
+> whitespace. The 1W view now packs the session bands **directly adjacent (no
+> gutter)** and draws **one continuous line** that connects across days, while
+> still drawing a vertical **separator rule at each day boundary** (item 3). The
+> historical plan below is kept for context.
+
 Goal: make the 1W graph read like a broker terminal. A regular session is ~6.5h
 but a calendar week is 168h, so on a continuous wall-clock axis ~80% of the width
 is dead air (nights / weekends / holidays) and the real price action is crushed

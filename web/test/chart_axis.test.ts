@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { xAxisTicks } from "../src/chart";
+import { intradayTimeTicks, xAxisTicks } from "../src/chart";
 
 /** Build a run of consecutive ISO dates starting at `start`. */
 function days(start: string, count: number): string[] {
@@ -129,5 +129,68 @@ describe("xAxisTicks", () => {
     const mid = fracs[Math.floor(fracs.length / 2)]!;
     expect(mid).toBeGreaterThan(0.3);
     expect(mid).toBeLessThan(0.7);
+  });
+});
+
+describe("intradayTimeTicks", () => {
+  /** Build `count` ISO instants `stepMin` minutes apart from `start`. */
+  function instants(start: string, count: number, stepMin: number): string[] {
+    const base = new Date(start).getTime();
+    const out: string[] = [];
+    for (let i = 0; i < count; i += 1) out.push(new Date(base + i * stepMin * 60_000).toISOString());
+    return out;
+  }
+
+  it("returns regular, clock-aligned ticks positioned by elapsed fraction", () => {
+    // A full ~6.5h session sampled every 30 min (14 points).
+    const ticks = intradayTimeTicks(instants("2026-06-22T13:30:00Z", 14, 30))!;
+    expect(ticks).not.toBeNull();
+    expect(ticks.length).toBeGreaterThanOrEqual(2);
+    // Every tick reads as a clock time, never a date.
+    for (const t of ticks) {
+      expect(t.text).toMatch(/\d:\d{2}/);
+      expect(t.text).not.toMatch(/^\d{1,2} [A-Z][a-z]{2}$/);
+    }
+    // Fractions are within range and strictly ascending (regular spacing).
+    for (const t of ticks) {
+      expect(t.frac).toBeGreaterThanOrEqual(0);
+      expect(t.frac).toBeLessThanOrEqual(1);
+    }
+    for (let i = 1; i < ticks.length; i += 1) {
+      expect(ticks[i].frac).toBeGreaterThan(ticks[i - 1].frac);
+    }
+  });
+
+  it("ticks land on round clock boundaries regardless of where data starts", () => {
+    // Mid-session login: the first sample is at an odd minute, but the ticks must
+    // still snap to round clock instants (e.g. on the hour / half hour).
+    const ticks = intradayTimeTicks(instants("2026-06-22T13:47:00Z", 10, 14))!;
+    const minutes = ticks.map((t) => {
+      const m = /:(\d{2})/.exec(t.text);
+      return m ? Number(m[1]) : NaN;
+    });
+    // The chosen step divides the hour evenly, so every tick minute is a multiple
+    // of the step — never the raw 13:47 start offset.
+    const stepMin = minutes.length >= 2 ? ((minutes[1] - minutes[0]) % 60 + 60) % 60 : 0;
+    expect(stepMin).toBeGreaterThan(0);
+    for (const min of minutes) expect(min % stepMin).toBe(0);
+  });
+
+  it("adapts the step to a short window so it stays well populated", () => {
+    // A ~40-minute window must not collapse to a single tick — it should pick a
+    // finer step and still place several regular ticks.
+    const ticks = intradayTimeTicks(instants("2026-06-22T13:30:00Z", 9, 5))!;
+    expect(ticks.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("falls back (null) for non-intraday or degenerate windows", () => {
+    // Plain calendar dates carry no clock time.
+    expect(intradayTimeTicks(["2026-06-20", "2026-06-21"])).toBeNull();
+    // A single point is not a window.
+    expect(intradayTimeTicks(["2026-06-22T13:30:00Z"])).toBeNull();
+    // A multi-day span is not intraday.
+    expect(
+      intradayTimeTicks(["2026-06-20T13:30:00Z", "2026-06-23T13:30:00Z"]),
+    ).toBeNull();
   });
 });
