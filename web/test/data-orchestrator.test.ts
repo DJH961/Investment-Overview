@@ -137,3 +137,35 @@ describe("describePlan", () => {
     }
   });
 });
+
+describe("planPull — FX freshness overlay (Overlay 3)", () => {
+  // Base: a relatively-fresh scenario where the graded tier would enable FX.
+  const staleQuotes = { dataAgeMs: 30 * MIN, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 30 * MIN, navHeldForToday: true };
+
+  it("auto suppresses FX when it was pulled within the interval", () => {
+    const fxAge = 2 * MIN; // well within 15-min interval
+    const freshness = { ...staleQuotes, fxAgeMs: fxAge };
+    const plan = planPull(ctx({ kind: "auto", freshness }));
+    expect(plan.legs.fx).toBe(false);
+    expect(plan.reason).toContain("FX held");
+  });
+
+  it("manual always re-pulls FX even when it was just pulled", () => {
+    const freshness = { ...staleQuotes, fxAgeMs: 30 * 1000 }; // 30 seconds old
+    const plan = planPull(ctx({ kind: "manual", freshness }));
+    expect(plan.legs.fx).toBe(true);
+  });
+
+  it("auto pulls FX once the interval has elapsed", () => {
+    const fxAge = 20 * MIN; // beyond 15-min interval
+    const freshness = { ...staleQuotes, fxAgeMs: fxAge };
+    const plan = planPull(ctx({ kind: "auto", freshness }));
+    expect(plan.legs.fx).toBe(true);
+  });
+
+  it("treats missing fxAgeMs (undefined) as always stale — FX is pulled", () => {
+    // Fixtures without fxAgeMs: undefined defaults to Infinity → always due.
+    const plan = planPull(ctx({ kind: "auto", freshness: staleQuotes }));
+    expect(plan.legs.fx).toBe(true);
+  });
+});

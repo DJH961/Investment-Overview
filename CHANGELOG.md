@@ -80,6 +80,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     - **Regression guards** (`web/test/regression-guards.test.ts`): 1W
       detail-accretion is never coarsened by the merge, no fan-out path bypasses
       the budget/breaker, and a re-login issues no redundant work.
+    - **Pillar 1 full centralization — all five legs through one plan.** The
+      central `planPull` in `data-orchestrator.ts` is now the true single
+      authority for every leg: quotes, NAV, and FX are gated by the plan inside
+      `refreshPrices` (not by executor-level timers). Concretely:
+      - **Quote freshness = user-set auto-refresh interval.** The hardcoded
+        15-minute `QUOTE_ROLLING_TTL_MS` default is deleted; `quoteRefreshDue`
+        now requires an explicit `ttlMs` (the user's interval) so lowering the
+        refresh setting visibly speeds up quotes without a hidden override.
+      - **FX Overlay 3 in orchestrator.** The 45-second `REFRESH_EURUSD_REUSE_MS`
+        constant and its reuse logic are deleted. A new Overlay 3 in `planPull`
+        suppresses the FX leg when the live EUR/USD spot is younger than the
+        user interval (`fxAgeMs < autoIntervalMs`), and always re-pulls on a
+        manual tap. The login warm-up → kickoff dedup that the 45 s window
+        provided is now covered by this overlay.
+      - **`refreshPrices` accepts `plan?: PullPlan`** and gates FX, quotes, and
+        NAV per `plan.legs.*`. A missing plan defaults all legs to on (cache-only
+        calls); every network round passes the plan from `runRefresh`.
+      - **`isFxStale` and `buildPullFreshness`** updated to use the user-set
+        interval (not `DEFAULT_EURUSD_TTL_MS`); `fxAgeMs` exposed in the
+        freshness ledger so Overlay 3 can read it.
+      - **Plan doc and comments now match the code.** `docs/centralized_data_pull_plan.md`
+        Pillar 4 updated; the two formerly-lying comments in `app.ts` are now
+        true. 973 web tests pass; build clean.
 
 ## [4.3.2] — 2026-06-25
 

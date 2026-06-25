@@ -50,6 +50,12 @@ export interface PullFreshness {
   blobDaysOld: number;
   /** Age of the freshest live quote, ms (for the rolling quote-TTL overlay). */
   quoteAgeMs: number;
+  /**
+   * Age of the cached live EUR/USD spot, ms (for the FX-freshness overlay).
+   * Omitting this (or `undefined`) is treated as `Infinity` — FX is considered
+   * stale and the orchestrator will turn the FX leg on when the tier calls for it.
+   */
+  fxAgeMs?: number;
   /** Whether today's NAV prices are already held. */
   navHeldForToday: boolean;
 }
@@ -149,12 +155,28 @@ export function planPull(ctx: PullContext): PullPlan {
     }
   }
 
-  // Overlay 2 — rolling quote TTL. A manual tap always re-pulls quotes; auto /
-  // start respect the rolling window so a within-TTL quote isn't re-bought.
+  // Overlay 2 — rolling quote TTL, keyed on the **user-set auto-refresh interval**.
+  // A manual tap always re-pulls quotes (the user is asking "is there anything
+  // new?"); auto / start respect the window so a within-interval quote isn't
+  // re-bought. Removing the old hardcoded 15-min default: the window is now
+  // whatever the user configured, so lowering the refresh rate visibly speeds up
+  // quotes.
   if (legs.quotes && ctx.kind !== "manual") {
-    if (!quoteRefreshDue(ctx.nowMs - ctx.freshness.quoteAgeMs, ctx.nowMs)) {
+    if (!quoteRefreshDue(ctx.nowMs - ctx.freshness.quoteAgeMs, ctx.nowMs, ctx.autoIntervalMs)) {
       legs.quotes = false;
       notes.push("quotes held (within rolling TTL)");
+    }
+  }
+
+  // Overlay 3 — FX freshness gate, keyed on the same user-set interval.
+  // A manual tap always re-pulls FX; auto / start suppress it when the live spot
+  // was pulled within the interval, so the login warm-up pull isn't wasted by the
+  // immediately-following kickoff round (the 45-second reuse window this replaces).
+  if (legs.fx && ctx.kind !== "manual") {
+    const fxAge = ctx.freshness.fxAgeMs ?? Number.POSITIVE_INFINITY;
+    if (fxAge < ctx.autoIntervalMs) {
+      legs.fx = false;
+      notes.push("FX held (within interval)");
     }
   }
 

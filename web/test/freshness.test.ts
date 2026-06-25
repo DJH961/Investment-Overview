@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   ONE_HOUR_MS,
-  QUOTE_ROLLING_TTL_MS,
   allLegs,
   barClockHourDue,
   ceilToClockHour,
@@ -139,7 +138,8 @@ describe("clock-hour bar gate", () => {
 describe("rolling quote TTL", () => {
   it("is due only once the rolling window has elapsed", () => {
     const now = Date.UTC(2026, 5, 25, 15, 0, 0);
-    expect(quoteRefreshDue(now - (QUOTE_ROLLING_TTL_MS - 1), now)).toBe(false);
-    expect(quoteRefreshDue(now - QUOTE_ROLLING_TTL_MS, now)).toBe(true);
+    const FIFTEEN_MIN = 15 * MIN;
+    expect(quoteRefreshDue(now - (FIFTEEN_MIN - 1), now, FIFTEEN_MIN)).toBe(false);
+    expect(quoteRefreshDue(now - FIFTEEN_MIN, now, FIFTEEN_MIN)).toBe(true);
   });
 });

@@ -61,7 +61,6 @@ import {
   writeSymbolPlan,
 } from "./cache";
 import {
-  DEFAULT_EURUSD_TTL_MS,
   DEFAULT_NAV_CACHE_TTL_MS,
   FREE_TIER,
   NAV_PUBLISH_HOUR,
@@ -224,19 +223,6 @@ const UP_TO_DATE_WINDOW_MS = 60 * 1000;
  * credits available" rule.
  */
 const FORCE_REFRESH_MIN_CREDIT_FRACTION = 0.1;
-
-/**
- * How long an *auto* refresh round may reuse a freshly cached EUR/USD spot
- * before spending another credit to re-pull it. The login warm-up pulls a live
- * spot, then the coalesced kickoff refresh fires seconds later (and on/visibility
- * triggers can overlap a scheduled tick too); with a zero TTL each of those
- * re-pulled the pair independently, double-spending the per-minute budget for a
- * rate that hadn't moved. This window is comfortably below the burst cadence
- * ({@link DEFAULT_BURST_INTERVAL_MS}, 60s) so every genuine refresh round still
- * re-polls the live spot, while back-to-back rounds reuse it for free. A manual
- * tap (`force`) ignores this and always re-pulls (ttlMs 0).
- */
-const REFRESH_EURUSD_REUSE_MS = 45 * 1000;
 
 /**
  * What triggered a price refresh: a `manual` tap of the Refresh button or an
@@ -752,8 +738,9 @@ export class App {
    * USD-booked book), with the Tiingo backup FX provider and the keyless ECB
    * end-of-day rate as graceful fallbacks; the keyless base rates
    * ({@link loadFxRates}) are warmed alongside for any non-USD holdings and feed
-   * the end-of-day fallback. A still-fresh cached spot (< {@link DEFAULT_EURUSD_TTL_MS})
-   * is reused for free, so a re-login moments after a refresh spends nothing.
+   * the end-of-day fallback. A still-fresh cached spot (within the user-set
+   * auto-refresh interval) is reused for free, so a re-login moments after a
+   * refresh spends nothing.
    *
    * Returns whether a genuinely fresh rate was pulled (a live/Tiingo spot, or
    * fresh base rates) so the login spin + status read honestly, plus the spot's
@@ -765,7 +752,9 @@ export class App {
     const fx = await loadFxRates().catch(() => undefined);
     const eurUsd = await loadEurUsd(config.apiKey, {
       eodFallback: fx?.fx.rates.USD ?? null,
-      ttlMs: DEFAULT_EURUSD_TTL_MS,
+      // Use the user-set interval: a still-fresh spot within the interval is
+      // reused for free; older than the interval we pull fresh. No hardcoded 15 min.
+      ttlMs: config.updateMinutes * 60 * 1000,
       tiingoProxyUrl: resolvePriceProxyUrl(config),
     }).catch(() => null);
     const spotSource: EurUsdSource = eurUsd?.source ?? "none";
@@ -972,7 +961,7 @@ export class App {
     const nowMs = now.getTime();
     const blobDaysOldMeta = this.blobDaysOld(now);
     if (!data) {
-      return { dataAgeMs: 0, deviceDaysMissing: 0, blobDaysOld: blobDaysOldMeta, quoteAgeMs: 0, navHeldForToday: true };
+      return { dataAgeMs: 0, deviceDaysMissing: 0, blobDaysOld: blobDaysOldMeta, quoteAgeMs: 0, fxAgeMs: Number.POSITIVE_INFINITY, navHeldForToday: true };
     }
     const plan = buildFetchPlan(data, FETCHABLE_NAV_CLASSES);
     const cached = readCachedQuotes();
@@ -988,12 +977,13 @@ export class App {
       }
       if (oldestQuoteAt === null || at < oldestQuoteAt) oldestQuoteAt = at;
     }
-    // FX age folds into the same "is everything fresh?" signal so the FX leg can
-    // never be skipped while the live spot itself is stale.
+    // FX age: tracked separately so the orchestrator's Overlay 3 can suppress the
+    // FX leg individually (e.g. after the login warm-up just pulled a fresh spot)
+    // without that freshness masking a stale quote leg in dataAgeMs.
     const fxCached = readCachedEurUsd();
-    const fxAge = fxCached && fxCached.now !== null ? nowMs - fxCached.at : Number.POSITIVE_INFINITY;
+    const fxAgeMs = fxCached && fxCached.now !== null ? nowMs - fxCached.at : Number.POSITIVE_INFINITY;
     const quoteAgeMs = anyQuoteMissing || oldestQuoteAt === null ? Number.POSITIVE_INFINITY : nowMs - oldestQuoteAt;
-    const dataAgeMs = Math.max(quoteAgeMs, fxAge);
+    const dataAgeMs = Math.max(quoteAgeMs, fxAgeMs);
     // Market-side device gap, biased *up* when uncertain so the heavily-outdated
     // tier (which simply restores today's full pass) can never under-pull.
     const marketOpen = isUsMarketOpen(now);
@@ -1012,7 +1002,7 @@ export class App {
     // *raise* the floor, never mask the observed on-device gap. See the docstring.
     const blobDaysOld = Math.max(blobDaysOldMeta, deviceDaysMissing);
     const navHeldForToday = !this.navStale(now);
-    return { dataAgeMs, deviceDaysMissing, blobDaysOld, quoteAgeMs, navHeldForToday };
+    return { dataAgeMs, deviceDaysMissing, blobDaysOld, quoteAgeMs, fxAgeMs, navHeldForToday };
   }
 
   /** Whether any NAV-priced fund is still behind its expected publish (closed-NAV row). */
@@ -2562,14 +2552,14 @@ export class App {
   }
 
   /**
-   * Whether the live EUR/USD spot is stale per the rolling FX TTL — the FX arm of
-   * the freshness ledger the WS5 reconcile keys on. Stale when no live spot is
-   * cached or the cached one is older than {@link DEFAULT_EURUSD_TTL_MS}.
+   * Whether the live EUR/USD spot is stale per the user-set auto-refresh interval —
+   * the FX arm of the freshness ledger the WS5 reconcile keys on. Stale when no
+   * live spot is cached or the cached one is older than the refresh interval.
    */
   private isFxStale(now: Date): boolean {
     const cached = readCachedEurUsd();
     if (!cached || cached.now === null) return true;
-    return now.getTime() - cached.at > DEFAULT_EURUSD_TTL_MS;
+    return now.getTime() - cached.at > this.state.config.updateMinutes * 60 * 1000;
   }
 
   /**
@@ -2669,11 +2659,16 @@ export class App {
    * are fetched, and the staleness banner is suppressed because a real refresh
    * follows. When `network` is true it does a budgeted live refresh and returns
    * the load report so the auto-refresh scheduler can decide what to do next.
+   *
+   * `opts.plan` is the central orchestrator's verdict for this round (Pillar 1):
+   * the FX, quotes, and NAV legs are only executed when the plan has turned them
+   * on. A missing plan (cache-only calls) is treated conservatively — all legs
+   * allowed — but in practice every `network === true` call passes the plan.
    */
   private async refreshPrices(
     session: number,
     network: boolean,
-    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean; tiingoReserve?: number; connectivity?: ConnectivityState } = {},
+    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean; tiingoReserve?: number; connectivity?: ConnectivityState; plan?: PullPlan } = {},
   ): Promise<QuoteLoadReport | null> {
     const { data, config } = this.state;
     if (!data) return null;
@@ -2699,9 +2694,29 @@ export class App {
     // cache only, so the Tiingo pass below sources every non-recent holding.
     const quotesApiKey = viaTiingo ? "" : apiKey;
 
+    // Orchestrator leg gates: only fetch what the central plan approved.
+    // The plan is always provided for network rounds (from planRoundPull); a
+    // missing plan (cache-only calls) defaults to "all on" so nothing is silently
+    // dropped. A reset / force-all plan has all legs on already.
+    const plan = opts.plan;
+    const fetchFx = plan?.legs.fx ?? true;
+    const fetchQuotes = plan?.legs.quotes ?? true;
+    const fetchNav = plan?.legs.nav ?? true;
+    // Filter the symbol list to only the legs the orchestrator approved. This
+    // ensures NAV-only rounds don't spend market credits and vice versa.
+    const symbolsToFetch = network
+      ? symbols.filter((s) => {
+          const isNav = this.lastNavSymbols.has(s);
+          return isNav ? fetchNav : fetchQuotes;
+        })
+      : symbols;
+
     // Pull the live currency (FX + EUR/USD spot) FIRST — before any stock, ETF or
     // fund quote — so the per-minute free-tier budget always funds the rate that
     // values the whole book, never spending it all on tickers and leaving FX last.
+    // The orchestrator's FX leg gate ({@link fetchFx}) is the sole authority here:
+    // when the FX spot was recently pulled (within the user-set interval) and this
+    // is not a manual tap, Overlay 3 suppresses the leg and we serve from cache.
     let fx: FxRates;
     let fxReport: { cached: boolean; error: PriceError | null };
     let eurUsdNow: Decimal | null = null;
@@ -2709,28 +2724,21 @@ export class App {
     let eurUsdSource: EurUsdSource = "none";
     let eurUsdError: PriceError | null = null;
     let eurUsdAt: number | null = null;
-    if (network) {
+    if (network && fetchFx) {
       const fxLoad = await loadFxRates();
       fx = fxLoad.fx;
       fxReport = fxLoad;
       // Live EUR/USD (current + prior close) for an FX-aware today's move.
-      // The conversion rate is the one thing we re-poll on *every* genuine
-      // refresh round — the forex market trades ~24/5, so the most recent live
-      // spot is always the right rate for valuing the book. A short reuse window
-      // ({@link REFRESH_EURUSD_REUSE_MS}, well under the 60s burst cadence) lets
-      // back-to-back rounds reuse a just-pulled spot instead of double-spending a
-      // credit: the login warm-up pulls the live pair, then the coalesced kickoff
-      // (and any overlapping on/visibility tick) reuses it rather than re-pulling.
-      // A manual tap (`force`) ignores the window and always re-pulls (ttlMs 0).
-      // This only fires on a network round with an API key in hand; a cache-only
-      // paint takes the `else` branch below. It still degrades gracefully — when
-      // the pair can't be fetched (no budget/key, a transient failure, or the
-      // weekend FX close) loadEurUsd falls back to the Tiingo backup FX provider
-      // (via the /price Worker), then today's cached spot, then the ECB rate.
-      const forceFreshFx = (opts.force ?? false) || forceAll;
+      // The orchestrator decided this is due, so fetch fresh (ttlMs: 0). No
+      // separate reuse window: the FX overlay in planPull suppresses this leg
+      // when the spot is within the user's interval, replacing the old 45-second
+      // REFRESH_EURUSD_REUSE_MS guard. Degrades gracefully — when the pair can't
+      // be fetched (no budget/key, a transient failure, or the weekend FX close)
+      // loadEurUsd falls back to the Tiingo backup FX provider (via the /price
+      // Worker), then today's cached spot, then the ECB rate.
       const eurUsd = await loadEurUsd(apiKey, {
         eodFallback: fx.rates.USD ?? null,
-        ttlMs: forceFreshFx ? 0 : REFRESH_EURUSD_REUSE_MS,
+        ttlMs: 0,
         tiingoProxyUrl: resolvePriceProxyUrl(config),
       });
       eurUsdNow = eurUsd.now;
@@ -2739,8 +2747,8 @@ export class App {
       eurUsdError = eurUsd.error;
       eurUsdAt = eurUsd.at;
     } else {
-      // Cache-only paint: don't touch the network for FX, reuse the last cached
-      // pair so the dashboard still values the book off the most recent spot.
+      // Cache-only paint (or FX leg suppressed by orchestrator): reuse the last
+      // cached pair so the dashboard values the book off the most recent spot.
       const cachedFx = readCachedFx();
       fx = cachedFx?.fx ?? { base: "EUR", rates: {} };
       fxReport = { cached: cachedFx !== null, error: null };
@@ -2759,7 +2767,8 @@ export class App {
     }
 
     // Now fetch the stock / ETF / fund quotes with whatever budget remains.
-    const quotePromise = loadQuotes(symbols, quotesApiKey, options);
+    // `symbolsToFetch` is already filtered by the orchestrator's leg gates.
+    const quotePromise = loadQuotes(symbolsToFetch, quotesApiKey, options);
 
     const quoteLoad = await quotePromise;
     // A superseded session (lock, or a newer unlock) must not paint over the UI.
@@ -2814,7 +2823,7 @@ export class App {
       const isManualReload = ((opts.force ?? false) || forceAll) && !viaTiingo;
       let reserveCredits = opts.tiingoReserve ?? 0;
       if (isManualReload) {
-        const marketSleeve = symbols.filter((s) => !this.lastNavSymbols.has(s));
+        const marketSleeve = symbolsToFetch.filter((s) => !this.lastNavSymbols.has(s));
         const fanoutNow = Date.now();
         const fanout = planFanout({
           kind: "manual",
@@ -2827,7 +2836,7 @@ export class App {
         if (fanout.fannedOut) reserveCredits = Math.max(reserveCredits, TIINGO_RESERVE_CREDITS);
       }
       const fallback = await runTiingoFallback({
-        symbols,
+        symbols: symbolsToFetch,
         navSymbols: this.lastNavSymbols,
         quotes: quoteLoad.quotes,
         report: quoteLoad.report,
@@ -3432,6 +3441,7 @@ export class App {
         forceAll: opts.forceAll ?? false,
         viaTiingo: opts.viaTiingo ?? false,
         tiingoReserve: opts.tiingoReserve ?? 0,
+        plan: roundPlan,
       });
     } finally {
       this.refreshing = false;

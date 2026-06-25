@@ -25,14 +25,6 @@ export const ONE_HOUR_MS = 60 * 60 * 1000;
  */
 export const MARKET_WARMUP_MS = 30 * 60 * 1000;
 
-/**
- * Rolling quote freshness window (15 min) — mirrors `quotes.ts`
- * `DEFAULT_CACHE_TTL_MS`. Quotes refresh on this rolling cadence for a live feel,
- * independent of the (clock-hour-aligned) bar gate. Kept as a local constant so
- * this pure policy module pulls in none of the heavy fetch plumbing.
- */
-export const QUOTE_ROLLING_TTL_MS = 15 * 60 * 1000;
-
 /** Whether the regular US session is open or closed at the decision instant. */
 export type MarketPhase = "open" | "closed";
 
@@ -224,14 +216,15 @@ export function barClockHourDue(input: BarGateInput): boolean {
 }
 
 /**
- * Rolling quote TTL: whether a fresh quote is due given the last quote instant.
- * Quotes refresh on a rolling 15-minute window for a live feel — independent of
- * the clock-hour bar gate.
+ * Rolling quote freshness: whether a quote is due given the last fetch instant.
+ * The window is the **user-set auto-refresh interval** (`autoIntervalMs` from
+ * config), so lowering the refresh rate immediately speeds up quote updates.
+ * Independent of the clock-hour bar gate.
  */
 export function quoteRefreshDue(
   lastQuoteMs: number,
   nowMs: number,
-  ttlMs: number = QUOTE_ROLLING_TTL_MS,
+  ttlMs: number,
 ): boolean {
   return nowMs - lastQuoteMs >= ttlMs;
 }
