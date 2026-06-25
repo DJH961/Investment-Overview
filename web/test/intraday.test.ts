@@ -9,6 +9,7 @@ import {
   appendLiveTip,
   buildIntradayAnchor,
   capAtClose,
+  clampFromOpen,
   intradaySymbols,
   loadOrBuildSessionCurve,
   marketSleeveSymbols,
@@ -187,6 +188,22 @@ describe("capAtClose", () => {
   });
 });
 
+describe("clampFromOpen", () => {
+  const points: CurvePoint[] = [
+    { t: 100, valueEur: d(1), valueUsd: d(1) },
+    { t: 200, valueEur: d(2), valueUsd: d(2) },
+    { t: 300, valueEur: d(3), valueUsd: d(3) },
+  ];
+
+  it("drops points before the open", () => {
+    expect(clampFromOpen(points, 200).map((p) => p.t)).toEqual([200, 300]);
+  });
+
+  it("returns the curve untouched rather than blanking it", () => {
+    expect(clampFromOpen(points, 400)).toBe(points);
+  });
+});
+
 describe("mergeBreadcrumbs", () => {
   const barPoints: CurvePoint[] = [
     { t: 100, valueEur: d(1), valueUsd: d(1) },
@@ -281,6 +298,70 @@ describe("loadOrBuildSessionCurve", () => {
       valueEur: d(1010),
       valueUsd: d(1110),
     });
+  });
+
+  it("clamps prior-day bars out of the stored session and the curve (1D = one day)", async () => {
+    // Twelve Data's primary fetch (fixed bar count, no start_date) over-reaches:
+    // early in Tuesday's session it hands back bars from Monday plus today's.
+    const store = new TimeSeriesStore(memoryBackend());
+    const fetchBars = vi.fn(async () =>
+      new Map<string, Bar[]>([
+        [
+          "VTI",
+          [
+            bar(Date.parse("2026-06-22T15:00:00Z"), "80"), // Monday — must be dropped
+            bar(Date.parse("2026-06-22T19:00:00Z"), "85"), // Monday — must be dropped
+            bar(Date.parse("2026-06-23T13:35:00Z"), "90"), // Tuesday open
+            bar(Date.parse("2026-06-23T14:00:00Z"), "95"), // Tuesday
+          ],
+        ],
+      ]),
+    );
+    // Tue 2026-06-23 14:05 UTC == 10:05 ET, early in the session.
+    const now = new Date("2026-06-23T14:05:00Z");
+    const result = await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      now,
+      liveTip: null,
+    });
+
+    // The store must only retain Tuesday's bars, so the cache never accumulates
+    // cross-day bars across the session.
+    const session = await store.loadSession("2026-06-23");
+    expect(session?.bars.VTI?.map((b) => b.t)).toEqual([
+      Date.parse("2026-06-23T13:35:00Z"),
+      Date.parse("2026-06-23T14:00:00Z"),
+    ]);
+    // The reconstructed curve starts at Tuesday's open, never Monday.
+    expect(result.points.every((p) => p.t >= Date.parse("2026-06-23T13:30:00Z"))).toBe(true);
+  });
+
+  it("defensively clamps cross-day bars already in the cache from a pre-fix build", async () => {
+    // A session persisted before the store-side filter existed still holds a
+    // prior-day bar; the render-side clamp keeps it out of the drawn curve.
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.mergeSession("2026-06-23", {
+      bars: {
+        VTI: [
+          bar(Date.parse("2026-06-22T15:00:00Z"), "80"), // Monday — defensively dropped
+          bar(Date.parse("2026-06-23T13:35:00Z"), "90"), // Tuesday open
+          bar(Date.parse("2026-06-23T15:00:00Z"), "100"), // Tuesday
+        ],
+      },
+    });
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    // After the close: Tue 2026-06-23 22:00 UTC == 18:00 ET.
+    const now = new Date("2026-06-23T22:00:00Z");
+    const result = await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      now,
+      liveTip: null,
+    });
+    expect(result.points.every((p) => p.t >= Date.parse("2026-06-23T13:30:00Z"))).toBe(true);
   });
 
   it("reconstructs the USD curve FX-free off the stored bars", async () => {
