@@ -334,9 +334,10 @@ export function intradayTimeTicks(dates: string[], target = 5): TimeTick[] | nul
   const tN = Date.parse(dates[n - 1]);
   if (Number.isNaN(t0) || Number.isNaN(tN) || tN <= t0) return null;
   const spanMs = tN - t0;
-  // Only sub-day windows read as intraday; longer spans keep the date axis.
-  if (spanMs > 86_400_000) return null;
   const MIN = 60_000;
+  const DAY_MS = 24 * 60 * MIN;
+  // Only sub-day windows read as intraday; longer spans keep the date axis.
+  if (spanMs > DAY_MS) return null;
   let stepMs = INTRADAY_STEPS_MIN[INTRADAY_STEPS_MIN.length - 1] * MIN;
   for (const m of INTRADAY_STEPS_MIN) {
     if (spanMs / (m * MIN) <= target) {

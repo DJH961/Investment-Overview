@@ -171,7 +171,7 @@ describe("intradayTimeTicks", () => {
     });
     // The chosen step divides the hour evenly, so every tick minute is a multiple
     // of the step — never the raw 13:47 start offset.
-    const stepMin = minutes.length >= 2 ? (minutes[1] - minutes[0] + 60) % 60 : 0;
+    const stepMin = minutes.length >= 2 ? ((minutes[1] - minutes[0]) % 60 + 60) % 60 : 0;
     expect(stepMin).toBeGreaterThan(0);
     for (const min of minutes) expect(min % stepMin).toBe(0);
   });
