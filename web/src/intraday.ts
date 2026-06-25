@@ -340,6 +340,16 @@ export interface SessionCurveOptions {
    * skip a separate per-symbol quote request. A no-op by default.
    */
   onFreshBars?: (barsBySymbol: Map<string, Bar[]>) => void;
+  /**
+   * **Regenerate-only (Pillar 6, the decisive seam).** When `true` the build is
+   * pure: it reconstructs the curve from bars already in the store (plus fresh
+   * breadcrumbs) and **never** touches the network — no bar backfill, no FX
+   * refill. This is the mode every *UI interaction* (a 1D/1W toggle, a graph
+   * click/tap/hover) must use, so chart interaction is guaranteed network-free;
+   * only the four pull mechanisms (`start`/`auto`/`manual`/`reset`) build with
+   * fetching enabled. Defaults to `false` (legacy fetch-then-reconstruct).
+   */
+  regenerateOnly?: boolean;
 }
 
 /**
@@ -457,6 +467,7 @@ export async function loadOrBuildSessionCurve(
     Number.isFinite(resumeBackfillMs) &&
     now.getTime() - sessionFreshnessInstant(stored) > resumeBackfillMs;
   const needFetch =
+    !(options.regenerateOnly ?? false) &&
     symbols.length > 0 &&
     (missing.length > 0 || (marketOpen && (!recentlyFetched || resumedAfterGap)));
 
@@ -498,6 +509,7 @@ export async function loadOrBuildSessionCurve(
   // re-fires once its FX is in hand.
   const loaded = stored;
   if (
+    !(options.regenerateOnly ?? false) &&
     fetchFx &&
     !fxAttempted &&
     loaded !== null &&

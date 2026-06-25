@@ -758,3 +758,60 @@ describe("loadOrBuildSessionCurve", () => {
     expect(onFreshBars).not.toHaveBeenCalled();
   });
 });
+
+describe("loadOrBuildSessionCurve — regenerateOnly seam (Pillar 6)", () => {
+  function anchor(): IntradayAnchor {
+    return {
+      holdings: [
+        { priceSymbol: "VTI", valueEur: d(900), valueUsd: d(1000), closeNative: d(100), isUsdNative: true, priceType: "market" },
+      ],
+      baseEur: d(100),
+      baseUsd: d(100),
+      baseFx: d("0.9"),
+    };
+  }
+
+  it("never fetches bars when regenerateOnly is set, even mid-session with missing symbols", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    const fetchFx = vi.fn(async () => [] as Bar[]);
+    // Mid-session, store empty (would normally cold-fetch): regenerate-only forbids it.
+    const now = new Date("2026-06-23T15:00:00Z");
+    const result = await loadOrBuildSessionCurve({
+      anchor: anchor(),
+      store,
+      fetchBars,
+      fetchFx,
+      now,
+      regenerateOnly: true,
+      liveTip: { valueEur: d(1010), valueUsd: d(1110) },
+    });
+    expect(fetchBars).not.toHaveBeenCalled();
+    expect(fetchFx).not.toHaveBeenCalled();
+    // Pure reconstruct still pins the live tip so the curve isn't blank.
+    expect(result.points.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("reconstructs from already-stored bars without a network call", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    // Seed the store via a normal fetching build first.
+    const seedBars = vi.fn(async () =>
+      new Map<string, Bar[]>([["VTI", [bar(Date.parse("2026-06-23T13:35:00Z"), "90")]]]),
+    );
+    const seedNow = new Date("2026-06-23T14:00:00Z");
+    await loadOrBuildSessionCurve({ anchor: anchor(), store, fetchBars: seedBars, now: seedNow });
+    expect(seedBars).toHaveBeenCalledOnce();
+
+    // A regenerate-only rebuild must reuse the stored bars and fetch nothing.
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    const result = await loadOrBuildSessionCurve({
+      anchor: anchor(),
+      store,
+      fetchBars,
+      now: new Date("2026-06-23T15:00:00Z"),
+      regenerateOnly: true,
+    });
+    expect(fetchBars).not.toHaveBeenCalled();
+    expect(result.points.length).toBeGreaterThanOrEqual(1);
+  });
+});

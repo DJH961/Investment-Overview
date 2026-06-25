@@ -879,3 +879,67 @@ describe("wrapDailyNavFetcher (item 7b cadence normaliser)", () => {
     expect(bars.map((b) => b.value.toString())).toEqual(["99", "100"]);
   });
 });
+
+describe("loadOrBuildWeekCurve — regenerateOnly seam (Pillar 6)", () => {
+  it("never fetches daily closes, NAV gap-fill, or FX when regenerateOnly is set", async () => {
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    let fetched = false;
+    let navFetched = false;
+    let fxFetched = false;
+    const curve = await loadOrBuildWeekCurve({
+      anchor,
+      store: store(),
+      regenerateOnly: true,
+      navBackfillSymbols: ["VTI"],
+      fetchDailyBars: async () => {
+        fetched = true;
+        return new Map<string, Bar[]>();
+      },
+      fetchNavBars: async () => {
+        navFetched = true;
+        return new Map<string, Bar[]>();
+      },
+      fetchFx: async () => {
+        fxFetched = true;
+        return [] as Bar[];
+      },
+      now: SAT_CLOSED,
+    });
+    expect(fetched).toBe(false);
+    expect(navFetched).toBe(false);
+    expect(fxFetched).toBe(false);
+    // An empty store under regenerate-only simply yields no drawable curve.
+    expect(curve.points.length).toBe(0);
+  });
+
+  it("reconstructs from already-stored closes without any network call", async () => {
+    const s = store();
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    // Seed via a normal fetching build.
+    let seeded = false;
+    await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => {
+        seeded = true;
+        return new Map([["VTI", [bar(dayMs("2026-03-11"), "98"), bar(dayMs("2026-03-12"), "99"), bar(dayMs("2026-03-13"), "100")]]]);
+      },
+      now: SAT_CLOSED,
+    });
+    expect(seeded).toBe(true);
+
+    let refetched = false;
+    const curve = await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      regenerateOnly: true,
+      fetchDailyBars: async () => {
+        refetched = true;
+        return new Map<string, Bar[]>();
+      },
+      now: SAT_CLOSED,
+    });
+    expect(refetched).toBe(false);
+    expect(curve.points.length).toBeGreaterThanOrEqual(2);
+  });
+});

@@ -3580,7 +3580,8 @@ export class App {
     });
 
     return {
-      session: async () => {
+      session: async (opts) => {
+        const regenerateOnly = opts?.regenerateOnly ?? false;
         // Springboard off the exported session first — instant paint, no fetch —
         // and only build live when the export is absent or too stale.
         const sprung = springboardSessionCurve({ exported, liveTip });
@@ -3591,7 +3592,7 @@ export class App {
         const spent = { credits: 0 };
         try {
           const curve = await buildLiveSessionCurve(
-            { anchor: anchor(), store, liveTip, onFreshBars },
+            { anchor: anchor(), store, liveTip, onFreshBars, regenerateOnly },
             loggingProviders("1D", spent),
           );
           if (spent.credits === 0) {
@@ -3603,7 +3604,8 @@ export class App {
           return null;
         }
       },
-      week: async () => {
+      week: async (opts) => {
+        const regenerateOnly = opts?.regenerateOnly ?? false;
         const sprung = springboardWeekCurve({ exported, liveTip });
         if (sprung) {
           this.pollLog("graph", "1W graph: reused the exported week sleeve (no live pull, 0 credits).");
@@ -3617,6 +3619,7 @@ export class App {
               store,
               liveTip,
               onFreshBars,
+              regenerateOnly,
               // Item 7b: only genuine, NAV-fetchable moving funds are eligible for
               // the daily-NAV gap-fill; money-market / pinned-$1 funds are absent
               // from `lastNavSymbols`, so they stay flat and are never fetched.
