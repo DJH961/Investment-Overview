@@ -102,3 +102,56 @@ class TestSecondaryCurrencyAxis:
         ]
         fig = _value_curve_figure(pts, currency="EUR", week=True)
         assert fig.layout.xaxis.tickformat == "%a %d"
+
+
+def _week_session_pts() -> list[ValueSeriesPoint]:
+    """Two trading sessions, three intraday points each (start/midday/close)."""
+    out: list[ValueSeriesPoint] = []
+    for day, base in ((3, 100.0), (4, 104.0)):  # Mon 3rd, Tue 4th of June 2024
+        for hour, bump in ((15, 0.0), (18, 1.0), (22, 2.0)):
+            out.append(
+                ValueSeriesPoint(
+                    date=datetime(2024, 6, day, hour, 0), value=Decimal(str(base + bump))
+                )
+            )
+    return out
+
+
+class TestWeekSessionAxis:
+    def test_collapses_dead_time_with_rangebreaks(self) -> None:
+        # The 1W axis drops weekends + the overnight non-session hours so the real
+        # price action isn't crushed into thin slivers (docs plan, opt 1).
+        fig = _value_curve_figure(_week_session_pts(), currency="EUR", week=True)
+        breaks = fig.layout.xaxis.rangebreaks
+        assert breaks  # non-empty
+        kinds = [rb.to_plotly_json() for rb in breaks]
+        # Weekend drop is always present.
+        assert any(rb.get("bounds") == ["sat", "mon"] for rb in kinds)
+        # The overnight hour window is collapsed (a pattern="hour" bound).
+        assert any(rb.get("pattern") == "hour" for rb in kinds)
+
+    def test_breaks_the_line_between_sessions(self) -> None:
+        # A None gap is inserted between the two sessions so the area renders one
+        # island per day rather than one interpolated ribbon (opt 4).
+        fig = _value_curve_figure(_week_session_pts(), currency="EUR", week=True)
+        primary = fig.data[0]
+        assert primary.connectgaps is False
+        ys = list(primary.y)
+        assert None in ys  # a per-session break is present
+        # Exactly one break for two sessions.
+        assert sum(1 for y in ys if y is None) == 1
+
+    def test_draws_a_separator_per_session_boundary(self) -> None:
+        # A thin vertical rule marks each session boundary (opt 3): one boundary
+        # between two sessions ⇒ one vline shape.
+        fig = _value_curve_figure(_week_session_pts(), currency="EUR", week=True)
+        vlines = [s for s in fig.layout.shapes if s.type == "line"]
+        assert len(vlines) == 1
+
+    def test_daily_fallback_series_keeps_plain_axis(self) -> None:
+        # When the week range falls back to the daily snapshot series (plain
+        # ``date`` points, no intraday shape), no rangebreaks/None-gaps are added.
+        fig = _value_curve_figure(_pts([100, 101, 102]), currency="EUR", week=True)
+        assert not fig.layout.xaxis.rangebreaks
+        assert None not in list(fig.data[0].y)
+        assert not [s for s in fig.layout.shapes if s.type == "line"]

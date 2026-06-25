@@ -48,6 +48,16 @@ export interface LineChartOptions {
    * the rule is always on-screen, and an optional label is printed above it.
    */
   referenceLine?: { value: Decimal; label?: string };
+  /**
+   * Collapse non-trading time on the x-axis (the "1W" session view). When set,
+   * points are laid out in equal-width per-session bands separated by a small
+   * gutter — so nights/weekends/holidays no longer eat ~80% of the width — the
+   * line is broken per session (never interpolated across a closed period), thin
+   * separators are drawn between bands, and the x-axis is labelled one weekday +
+   * day-of-month per band. See {@link sessionFractions}. Off elsewhere (the 1D
+   * single-session and the long history ranges stay on the plain time axis).
+   */
+  collapseSessions?: boolean;
 }
 
 function svgEl<K extends keyof SVGElementTagNameMap>(name: K): SVGElementTagNameMap[K] {
@@ -70,6 +80,21 @@ function dayLabel(iso: string): string {
   if (!m) return iso;
   const month = MONTH_NAMES[Number(m[2]) - 1] ?? m[2];
   return `${Number(m[3])} ${month}`;
+}
+
+const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/**
+ * "2026-06-22" → "Mon 22": the weekday name + day-of-month, used to label each
+ * collapsed-session band on the "1W" view so a band reads as a trading day at a
+ * glance ("Mon 22 · Tue 23 …"). Passes through anything unexpected.
+ */
+function weekdayDayLabel(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return iso;
+  const when = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00Z`);
+  if (Number.isNaN(when.getTime())) return iso;
+  return `${WEEKDAY_NAMES[when.getUTCDay()]} ${Number(m[3])}`;
 }
 
 /** True when an ISO label carries a wall-clock time (e.g. an intraday instant). */
@@ -136,6 +161,91 @@ export function timeFractions(dates: string[]): number[] | null {
   if (!(span > 0)) return null;
   for (let i = 1; i < n; i += 1) if (ms[i] < ms[i - 1]) return null;
   return ms.map((t) => (t - first) / span);
+}
+
+/** The fraction of the full plot width left as a gutter between session bands. */
+export const SESSION_GUTTER = 0.02;
+
+/** One collapsed-session band: the point-index run it spans + its layout. */
+export interface SessionBand {
+  /** Index of the band's first point (its session open). */
+  start: number;
+  /** Index of the band's last point (its session close). */
+  end: number;
+  /** Fractional x (0…1) of the band's centre — where its day label is anchored. */
+  center: number;
+  /** The band's calendar day (`YYYY-MM-DD`). */
+  day: string;
+}
+
+/** The collapsed-session x layout produced by {@link sessionFractions}. */
+export interface SessionLayout {
+  /** Fractional x (0…1) per point, packed into equal-width per-session bands. */
+  fractions: number[];
+  /** Index of each band's first point — where the line/area starts a new island. */
+  boundaryIndexes: number[];
+  /** Fractional x of each inter-band gutter centre — where a separator is drawn. */
+  separators: number[];
+  /** The bands, in order, for per-session axis labels. */
+  bands: SessionBand[];
+}
+
+/**
+ * Lay points out on a **collapsed session** x-axis (the "1W" view): group
+ * consecutive points by calendar day, give every session an equal-width band,
+ * and within a band place each point by its fraction of that session's own
+ * first→last elapsed span — so the dead air between sessions (nights, weekends,
+ * holidays) is dropped instead of eating ~80% of the width. A small fixed
+ * {@link SESSION_GUTTER} separates adjacent bands. Returns the per-point
+ * fractions, each band's first-point index (so the line/area can break per
+ * session), the gutter-centre positions (for separators), and the band list
+ * (for day labels). Returns `null` when there are too few points or the labels
+ * don't carry a parseable calendar day.
+ */
+export function sessionFractions(dates: string[]): SessionLayout | null {
+  const n = dates.length;
+  if (n < 2) return null;
+  // Group consecutive points into per-day runs (points are ascending in time).
+  const groups: Array<{ start: number; end: number; day: string }> = [];
+  for (let i = 0; i < n; i += 1) {
+    const day = dates[i].slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+    const last = groups[groups.length - 1];
+    if (last && last.day === day) last.end = i;
+    else groups.push({ start: i, end: i, day });
+  }
+  const g = groups.length;
+  if (g < 1) return null;
+  const gutter = g > 1 ? SESSION_GUTTER : 0;
+  const bandWidth = (1 - gutter * (g - 1)) / g;
+  const fractions = new Array<number>(n).fill(0);
+  const boundaryIndexes: number[] = [];
+  const separators: number[] = [];
+  const bands: SessionBand[] = [];
+  for (let k = 0; k < g; k += 1) {
+    const grp = groups[k];
+    const bandStart = k * (bandWidth + gutter);
+    boundaryIndexes.push(grp.start);
+    if (k > 0) separators.push(bandStart - gutter / 2);
+    const t0 = Date.parse(dates[grp.start]);
+    const tEnd = Date.parse(dates[grp.end]);
+    const span = tEnd - t0;
+    const count = grp.end - grp.start;
+    for (let i = grp.start; i <= grp.end; i += 1) {
+      let f: number;
+      if (count === 0) {
+        f = 0.5; // a lone close sits mid-band
+      } else if (span > 0) {
+        const ti = Date.parse(dates[i]);
+        f = Number.isNaN(ti) ? (i - grp.start) / count : (ti - t0) / span;
+      } else {
+        f = (i - grp.start) / count; // unparseable / zero-span: even by index
+      }
+      fractions[i] = bandStart + f * bandWidth;
+    }
+    bands.push({ start: grp.start, end: grp.end, center: bandStart + bandWidth / 2, day: grp.day });
+  }
+  return { fractions, boundaryIndexes, separators, bands };
 }
 
 /**
@@ -244,7 +354,10 @@ export function buildLineChart(options: LineChartOptions): SVGSVGElement | null 
   // Place points along a time axis when the labels are a usable timeline, so a
   // dense burst of samples (e.g. extra blob-backed points in the final hour)
   // takes only its true slice of elapsed time instead of stretching out by count.
-  const positions = timeFractions(dates);
+  // For the "1W" view, collapse the dead time between sessions into equal-width
+  // bands instead (so nights/weekends/holidays don't crush the real action).
+  const sessionLayout = options.collapseSessions ? sessionFractions(dates) : null;
+  const positions = sessionLayout ? sessionLayout.fractions : timeFractions(dates);
   const x = (i: number): number =>
     padL + (n === 1 ? plotW / 2 : (positions ? positions[i] : i / (n - 1)) * plotW);
   const y = (v: number): number => padT + plotH - ((v - min) / span) * plotH;
@@ -280,20 +393,81 @@ export function buildLineChart(options: LineChartOptions): SVGSVGElement | null 
     svg.appendChild(label);
   }
 
+  // --- Session separators (collapsed "1W" view only) ---------------------
+  // Thin vertical rules at each inter-band gutter centre so the eye reads one
+  // trading day per band. Drawn before the series so the curve sits on top.
+  if (sessionLayout) {
+    for (const sep of sessionLayout.separators) {
+      const line = svgEl("line");
+      const sx = (padL + sep * plotW).toFixed(1);
+      line.setAttribute("x1", sx);
+      line.setAttribute("x2", sx);
+      line.setAttribute("y1", String(padT));
+      line.setAttribute("y2", (padT + plotH).toFixed(1));
+      line.setAttribute("class", "chart-session-sep");
+      svg.appendChild(line);
+    }
+  }
+
   // --- X axis: date ticks ------------------------------------------------
-  for (const tick of xAxisTicks(dates, 5, positions)) {
-    const label = svgEl("text");
-    label.setAttribute("x", x(tick.index).toFixed(1));
-    label.setAttribute("y", String(height - 8));
-    label.setAttribute("text-anchor", tick.anchor);
-    label.setAttribute("class", "chart-axis-label");
-    label.textContent = tick.text;
-    svg.appendChild(label);
+  if (sessionLayout) {
+    // One weekday + day-of-month label per session band, centred under its band.
+    const last = sessionLayout.bands.length - 1;
+    sessionLayout.bands.forEach((band, k) => {
+      const label = svgEl("text");
+      label.setAttribute("x", (padL + band.center * plotW).toFixed(1));
+      label.setAttribute("y", String(height - 8));
+      label.setAttribute("text-anchor", k === 0 ? "start" : k === last ? "end" : "middle");
+      label.setAttribute("class", "chart-axis-label");
+      label.textContent = weekdayDayLabel(band.day);
+      svg.appendChild(label);
+    });
+  } else {
+    for (const tick of xAxisTicks(dates, 5, positions)) {
+      const label = svgEl("text");
+      label.setAttribute("x", x(tick.index).toFixed(1));
+      label.setAttribute("y", String(height - 8));
+      label.setAttribute("text-anchor", tick.anchor);
+      label.setAttribute("class", "chart-axis-label");
+      label.textContent = tick.text;
+      svg.appendChild(label);
+    }
   }
 
   // --- Series paths (drawn back-to-front so the primary sits on top) ------
+  // On the collapsed "1W" view the line and its area fill break per session
+  // (never interpolating across a closed period), so each trading day reads as
+  // its own island; otherwise a single continuous line + area is drawn.
+  const boundaries = sessionLayout ? new Set(sessionLayout.boundaryIndexes) : null;
+  const baselineY = padT + plotH;
   for (let s = series.length - 1; s >= 0; s -= 1) {
     const current = series[s];
+    if (boundaries) {
+      const line = sessionLinePath(current.values, x, y, boundaries);
+      if (line === "") continue;
+      if (current.area) {
+        const areaPath = svgEl("path");
+        areaPath.setAttribute("d", sessionAreaPath(current.values, x, y, baselineY, boundaries));
+        areaPath.setAttribute("class", `${current.className}-area`);
+        svg.appendChild(areaPath);
+      }
+      const path = svgEl("path");
+      path.setAttribute("d", line);
+      path.setAttribute("class", current.className);
+      path.setAttribute("fill", "none");
+      svg.appendChild(path);
+      // A session with a lone point draws no stroke; mark it with a small dot so
+      // a coarse close-only day stays visible rather than vanishing.
+      for (const cx of soloPointXs(current.values, x, boundaries)) {
+        const dot = svgEl("circle");
+        dot.setAttribute("cx", cx.x.toFixed(1));
+        dot.setAttribute("cy", y(cx.v).toFixed(1));
+        dot.setAttribute("r", "1.8");
+        dot.setAttribute("class", current.className);
+        svg.appendChild(dot);
+      }
+      continue;
+    }
     const d = linePath(current.values, x, y);
     if (d === "") continue;
     if (current.area) {
@@ -356,6 +530,95 @@ function linePath(
     d += `${d === "" ? "M" : "L"}${x(i).toFixed(1)} ${y(v.toNumber()).toFixed(1)} `;
   });
   return d.trim();
+}
+
+/**
+ * Like {@link linePath}, but starts a fresh subpath (`M`) at every session
+ * boundary (and after any `null` gap), so the collapsed "1W" line is never
+ * interpolated across a closed period — each trading day is its own stroke.
+ */
+export function sessionLinePath(
+  values: Array<Decimal | null>,
+  x: (i: number) => number,
+  y: (v: number) => number,
+  boundaries: Set<number>,
+): string {
+  let d = "";
+  let move = true;
+  values.forEach((v, i) => {
+    if (v === null) {
+      move = true;
+      return;
+    }
+    const cmd = d === "" || move || boundaries.has(i) ? "M" : "L";
+    d += `${cmd}${x(i).toFixed(1)} ${y(v.toNumber()).toFixed(1)} `;
+    move = false;
+  });
+  return d.trim();
+}
+
+/**
+ * The per-session area fill for the collapsed "1W" view: one closed shape per
+ * session (and per `null`-bounded run), each dropping to the baseline at its own
+ * first and last point, so the fill islands match the broken line rather than
+ * smearing under the gaps between sessions.
+ */
+export function sessionAreaPath(
+  values: Array<Decimal | null>,
+  x: (i: number) => number,
+  y: (v: number) => number,
+  baselineY: number,
+  boundaries: Set<number>,
+): string {
+  let d = "";
+  let seg: number[] = [];
+  const flush = (): void => {
+    if (seg.length >= 2) {
+      d += `M${x(seg[0]).toFixed(1)} ${baselineY.toFixed(1)} `;
+      for (const i of seg) d += `L${x(i).toFixed(1)} ${y(values[i]!.toNumber()).toFixed(1)} `;
+      d += `L${x(seg[seg.length - 1]).toFixed(1)} ${baselineY.toFixed(1)} Z `;
+    }
+    seg = [];
+  };
+  values.forEach((v, i) => {
+    if (v === null) {
+      flush();
+      return;
+    }
+    if (boundaries.has(i)) flush();
+    seg.push(i);
+  });
+  flush();
+  return d.trim();
+}
+
+/**
+ * The x position + value of every **isolated** point in the collapsed view — a
+ * session (or `null`-bounded run) that contributes a single point and so draws
+ * no stroke. The caller renders a small dot there so a coarse, close-only day
+ * stays visible instead of vanishing.
+ */
+function soloPointXs(
+  values: Array<Decimal | null>,
+  x: (i: number) => number,
+  boundaries: Set<number>,
+): Array<{ x: number; v: number }> {
+  const out: Array<{ x: number; v: number }> = [];
+  let seg: number[] = [];
+  const flush = (): void => {
+    if (seg.length === 1) out.push({ x: x(seg[0]), v: values[seg[0]]!.toNumber() });
+    seg = [];
+  };
+  values.forEach((v, i) => {
+    if (v === null) {
+      flush();
+      return;
+    }
+    if (boundaries.has(i)) flush();
+    seg.push(i);
+  });
+  flush();
+  return out;
 }
 
 function uniqueIndexes(idx: number[]): number[] {

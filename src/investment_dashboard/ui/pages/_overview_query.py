@@ -390,10 +390,10 @@ def build_week_value_series(
     """Multi-day portfolio-value series for the Overview "Week" (1W) range.
 
     Inspired by the intraday "Day" curve, but instead of a single closing value
-    per day this plots **three** points for each of the last few trading
-    sessions — the day's *start* (first intraday bar), *midday* (the bar nearest
-    the session midpoint) and *close* (last bar) — so a week reads as a smooth,
-    detailed curve rather than five jagged daily steps.
+    per day this plots up to **five** points for each of the last few trading
+    sessions — the day's *open* (first intraday bar), three evenly-spaced interior
+    instants (+1/4, *midday*, +3/4) and the *close* (last bar) — so a week reads
+    as a smooth, detailed curve rather than five jagged daily steps.
 
     The intraday-priced (market) component at each chosen instant is sourced
     best-effort from the price feed (see

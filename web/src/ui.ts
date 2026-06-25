@@ -1451,6 +1451,9 @@ function chartWithTimeframe(
       series: built.series,
       yAxisLabel: built.yAxisLabel ?? chartOpts.yAxisLabel,
       referenceLine: built.referenceLine,
+      // The "1W" curve collapses the dead time between sessions into per-day
+      // bands (broken line + separators); the 1D single session stays plain.
+      collapseSessions: range === "1W",
     });
     if (!chart) {
       wrap.replaceChildren(liveStatus("Not enough live points to draw a curve yet."));
