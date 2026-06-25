@@ -961,7 +961,14 @@ export class App {
     const nowMs = now.getTime();
     const blobDaysOldMeta = this.blobDaysOld(now);
     if (!data) {
-      return { dataAgeMs: 0, deviceDaysMissing: 0, blobDaysOld: blobDaysOldMeta, quoteAgeMs: 0, fxAgeMs: Number.POSITIVE_INFINITY, navHeldForToday: true };
+      return {
+        dataAgeMs: 0,
+        deviceDaysMissing: 0,
+        blobDaysOld: blobDaysOldMeta,
+        quoteAgeMs: 0,
+        fxAgeMs: Number.POSITIVE_INFINITY,
+        navHeldForToday: true,
+      };
     }
     const plan = buildFetchPlan(data, FETCHABLE_NAV_CLASSES);
     const cached = readCachedQuotes();
