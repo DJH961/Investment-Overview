@@ -910,7 +910,7 @@ def _refresh_intraday_day() -> None:
 
 
 def _refresh_intraday_week() -> None:
-    """Warm the multi-day intraday "1 Week" sleeve (start/midday/close per day).
+    """Warm the multi-day intraday "1 Week" sleeve (5 points/day: open→close).
 
     Mirrors :func:`_refresh_intraday_day` for the Overview "1 Week" graph: it
     fetches and persists any uncovered sessions in the rolling week so the curve

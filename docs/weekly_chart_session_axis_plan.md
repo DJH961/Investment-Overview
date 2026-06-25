@@ -87,16 +87,23 @@ Wiring: `ui.ts applyLive("1W")` passes `collapseSessions: true` into
 Tests: `web/test` unit for `sessionFractions` (equal bands, gutters, boundary
 indexes) and a `linePath` break-at-boundary check.
 
-## Density: 5 points per trading day (both sides)
-- Today the week curve emits **3** points/session (open / midday / close). With
-  the gaps collapsed and each day now occupying a real band, raise the **minimum
-  to 5 points/session** (e.g. open, +1/4, midday, +3/4, close) so the finer
-  time scale carries more shape instead of three coarse steps.
-- Python: extend `build_week_value_series` /
-  `intraday_snapshots_service.week_series_with_fx` to sample 5 intra-session
-  instants per day.
-- Web: extend the 1W daily reconstruction in `week.ts` to yield 5 bars/day.
-- Keep first/last (open/close) exact so the day's endpoints still match the
+## Density: keep all sourced bars per trading day — DONE
+- The week curve previously emitted **3** points/session (open / midday / close),
+  then a thinned **5**. It now keeps **every** genuinely time-stamped bar each
+  side sources, so the finer time scale carries each day's real intraday shape
+  instead of a coarse few-point step.
+- Python: `intraday_snapshots_service._pick_session_points` keeps *all* sourced
+  30-minute bars (~13/day) rather than sampling a handful; the desktop feed has no
+  token/credit limit, so there is no reason to drop good data. The
+  `WEEK_POINTS_PER_COMPLETE_SESSION = 5` constant is now only a *coverage floor* —
+  a finished day with fewer points is treated as missing and re-pulled — not a cap.
+  Per-instant repricing builds each forward-fill lookup once (`_make_forward_fill`)
+  so keeping more points doesn't re-sort bars per point.
+- Web: `intraday-tiingo.barsFromTiingoDaily` emits only the **2** genuinely
+  time-stamped points/day (open at 09:30 ET, close at 16:00 ET). The daily OHLC
+  candle has no within-day clock for the high/low, so no interior points are
+  synthesised — only actually-timestamped marks are plotted.
+- First/last (open/close) stay exact so the day's endpoints still match the
   settled values.
 
 ## Shared notes

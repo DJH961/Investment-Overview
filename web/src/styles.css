@@ -1107,6 +1107,14 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
+/* Thin vertical rules between collapsed trading-day bands on the "1W" view, so
+   each session reads as its own slot. Lighter than the y gridlines. */
+.chart-session-sep {
+  stroke: var(--border);
+  stroke-width: 1;
+  opacity: 0.55;
+  vector-effect: non-scaling-stroke;
+}
 /* Series strokes share the colourblind-safe accent/neutral palette. */
 .series-portfolio { stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .series-portfolio-area { fill: color-mix(in srgb, var(--accent) 14%, transparent); stroke: none; }

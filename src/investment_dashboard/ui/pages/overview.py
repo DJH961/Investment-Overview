@@ -11,6 +11,7 @@ from html import escape
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
+from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.market_hours import is_us_market_open
 from investment_dashboard.domain.returns import years_between
 from investment_dashboard.services import (
@@ -656,6 +657,85 @@ def _treemap_figure(data, *, currency: str, fx_rate: Decimal | None):  # type: i
     return fig
 
 
+def _week_session_breaks(
+    dates: list[datetime], values: list[float]
+) -> tuple[list[datetime], list[float | None]]:
+    """Insert a ``None`` gap between consecutive trading sessions (1W curve).
+
+    The week curve carries several points per session across several days. On a
+    collapsed (rangebreak) axis the sessions sit edge-to-edge, so without a break
+    Plotly would draw one smoothing line straight from a Friday close to the next
+    Monday open. Splitting on the local calendar date — every realistic display
+    timezone keeps a single NYSE session within one local day — and inserting a
+    ``(session_open, None)`` row makes ``mode="lines"`` + ``fill="tozeroy"`` render
+    one area "island" per session instead of a single interpolated ribbon
+    (``connectgaps`` stays False, the Plotly default).
+    """
+    out_dates: list[datetime] = []
+    out_values: list[float | None] = []
+    prev_day: date | None = None
+    for when, value in zip(dates, values, strict=False):
+        day = when.date()
+        if prev_day is not None and day != prev_day:
+            out_dates.append(when)
+            out_values.append(None)
+        out_dates.append(when)
+        out_values.append(value)
+        prev_day = day
+    return out_dates, out_values
+
+
+def _week_session_opens(dates: list[datetime]) -> list[datetime]:
+    """The opening instant of each session *after* the first (1W separators).
+
+    One per local-calendar-date change — where :func:`_week_session_breaks` cuts
+    the line — so a thin vertical rule can mark the boundary between trading days.
+    """
+    opens: list[datetime] = []
+    prev_day: date | None = None
+    for when in dates:
+        day = when.date()
+        if prev_day is not None and day != prev_day:
+            opens.append(when)
+        prev_day = day
+    return opens
+
+
+def _week_rangebreaks(dates: list[datetime]) -> list[dict[str, object]]:
+    """Plotly x-axis ``rangebreaks`` that collapse the 1W curve's dead time.
+
+    A regular session is ~6.5h but a calendar week is 168h, so on a continuous
+    wall-clock axis ~80% of the width is nights/weekends/holidays. We drop:
+
+    * **weekends** — ``bounds=["sat", "mon"]``;
+    * the **overnight** non-session hours — ``pattern="hour"`` between the day's
+      last and first plotted time-of-day. The bounds are derived from the data so
+      they line up with the session regardless of the display timezone (the
+      points are already in the axis's displayed tz), sidestepping the ET-vs-local
+      hour-bound caveat; and
+    * **holidays** in the spanned window — ``values=[…]`` sourced from
+      :func:`market_hours._holidays_for_year`.
+    """
+    breaks: list[dict[str, object]] = [{"bounds": ["sat", "mon"]}]
+    if not dates:
+        return breaks
+    tods = [d.hour + d.minute / 60 + d.second / 3600 for d in dates]
+    open_h, close_h = min(tods), max(tods)
+    # Only collapse the overnight gap when the session stays within one local day
+    # (close later than open); a session that wraps past local midnight is left
+    # on the plain axis rather than risk dropping live points.
+    if close_h > open_h:
+        breaks.append({"pattern": "hour", "bounds": [close_h, open_h]})
+    first, last = dates[0].date(), dates[-1].date()
+    holidays: set[date] = set()
+    for year in range(first.year, last.year + 1):
+        holidays |= set(market_hours._holidays_for_year(year))
+    holiday_values = [h.isoformat() for h in sorted(holidays) if first <= h <= last]
+    if holiday_values:
+        breaks.append({"values": holiday_values})
+    return breaks
+
+
 def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR0912
     points,
     *,
@@ -677,8 +757,8 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
     ``intraday`` switches the x-axis + hover to a time-of-day read-out for the
     "1 Day" range, whose points are timestamps within a single session. ``week``
     keeps the multi-day "1 Week" curve's datetime x-axis on a weekday/date grid
-    while showing the time of day in the hover (its points are start/midday/close
-    instants across several sessions).
+    while showing the time of day in the hover (its points are open / +1/4 /
+    midday / +3/4 / close instants across several sessions).
 
     ``secondary`` (with ``secondary_currency``) adds a comparison line for the
     *other* currency on a right-hand axis, scaled so both lines share the same
@@ -708,6 +788,12 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
         points = downsample(points)
         dates = [p.date for p in points]
         values = [float(p.value) for p in points]
+        # The session-collapse treatment (break per day + rangebreaks +
+        # separators) only applies to the *intraday* 1W curve, whose points are
+        # datetimes within each session. When the week range falls back to the
+        # daily snapshot series (one ``date`` per day) there is no intraday shape
+        # to collapse, so it keeps the plain datetime axis.
+        week_sessions = week and bool(dates) and isinstance(dates[0], datetime)
         # Adapt the x-axis tick density/format to the span so a one-day range
         # shows the time of day and a multi-year range shows months/years.
         span_days = (dates[-1] - dates[0]).days if len(dates) > 1 else 0
@@ -743,16 +829,25 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
             line_color = GAIN_COLOR if up else LOSS_COLOR
             # Wong orange #E69F00 @ 12% for the loss fill (matches LOSS_COLOR).
             fill_color = "rgba(0,114,178,0.12)" if up else "rgba(230,159,0,0.12)"
+        # On the "1 Week" range, break the line/area per session so it is never
+        # interpolated across a closed period (Fri-close → Mon-open). The x-axis
+        # rangebreaks below then collapse the dead time so the islands sit
+        # edge-to-edge like a broker terminal.
+        primary_dates: list[object] = dates
+        primary_values: list[float | None] = values
+        if week_sessions:
+            primary_dates, primary_values = _week_session_breaks(dates, values)
         fig.add_trace(
             go.Scatter(
-                x=dates,
-                y=values,
+                x=primary_dates,
+                y=primary_values,
                 mode="lines",
                 name=f"In {currency}",
                 line={"width": 2.4, "color": line_color},
                 fill="tozeroy",
                 fillcolor=fill_color,
                 hovertemplate=hovertemplate,
+                connectgaps=False,
             )
         )
         fig.update_xaxes(
@@ -767,7 +862,17 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
             spikethickness=1,
             spikedash="dot",
             spikecolor="rgba(91,107,124,0.5)",
+            # Collapse nights/weekends/holidays on the 1W axis only.
+            rangebreaks=_week_rangebreaks(dates) if week_sessions else None,
         )
+        # Thin separators between trading days on the 1W axis (each session's
+        # open), so the collapsed bands read as distinct sessions.
+        if week_sessions:
+            for open_at in _week_session_opens(dates):
+                fig.add_vline(
+                    x=open_at,
+                    line={"width": 1, "color": "rgba(91,107,124,0.35)"},
+                )
         # Prepare the optional companion line *before* fitting the value scale so
         # its data can widen that scale. The two currency lines are linked by a
         # single ``scale`` (right axis = left axis × scale) that pins their two
@@ -852,10 +957,16 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
             sec_dates, sec_values, scale = secondary_plot
             sec_symbol = currency_symbol(secondary_currency)
             sec_color = "#CC79A7"  # Wong reddish-purple (colourblind-safe)
+            # Break the companion line per session too on the 1W range, so both
+            # currency lines read as the same per-day islands.
+            sec_x: list[object] = sec_dates
+            sec_y: list[float | None] = sec_values
+            if week_sessions:
+                sec_x, sec_y = _week_session_breaks(sec_dates, sec_values)
             fig.add_trace(
                 go.Scatter(
-                    x=sec_dates,
-                    y=sec_values,
+                    x=sec_x,
+                    y=sec_y,
                     mode="lines",
                     name=f"In {secondary_currency}",
                     yaxis="y2",
@@ -863,6 +974,7 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
                     hovertemplate=(
                         f"<b>{sec_symbol}%{{y:,.2f}}</b> ({secondary_currency})<extra></extra>"
                     ),
+                    connectgaps=False,
                 )
             )
             fig.update_layout(
@@ -1094,9 +1206,10 @@ def register() -> None:  # noqa: PLR0915
                             session, currency=display_ccy
                         )
                     elif range_label == "Week":
-                        # Multi-day intraday curve (start/midday/close per session),
-                        # inspired by the "1 Day" curve. Built in both currencies so
-                        # the right-axis comparison line shares the same start.
+                        # Multi-day intraday curve (open / +1/4 / midday / +3/4 /
+                        # close per session), inspired by the "1 Day" curve. Built
+                        # in both currencies so the right-axis comparison line
+                        # shares the same start.
                         value_series = build_week_value_series(
                             session, currency=display_ccy, tz=display_tz, positions=positions
                         )

@@ -77,14 +77,17 @@ function dayFromBarDate(value: unknown): string | null {
 }
 
 /**
- * Turn a Tiingo **daily** `prices` array into ascending bars carrying *both* the
- * session **open** and **close** — two points per trading day instead of one —
- * so the 1W curve reads as a richer line that captures each day's intraday swing
- * rather than only its settling close. Each row's `date` is a calendar day; the
- * open bar is stamped at that day's 09:30 ET, the close at 16:00 ET (the genuine
- * session bounds), so the points land at meaningful instants on the time axis.
- * Rows missing a usable day are dropped; a row missing one of open/close still
- * contributes the price it does have.
+ * Turn a Tiingo **daily** `prices` array into ascending bars carrying only the
+ * two points per trading day that the feed actually time-stamps — the session
+ * **open** and **close**. Each row's `date` is a calendar day; the open bar is
+ * stamped at that day's 09:30 ET and the close at 16:00 ET (the genuine session
+ * bounds), so every plotted point lands at a real instant on the time axis.
+ *
+ * The daily feed carries OHLC but no within-day clock for the high/low, so we do
+ * **not** synthesise interior swing points: a reconstructed high/low/mid would be
+ * pinned to invented midday/quarter slots, mislabelling guessed instants as real.
+ * Open and close are the only honestly-timestamped marks, so they are all we plot.
+ * Rows missing a usable day are dropped; a row keeps whichever of open/close it has.
  */
 export function barsFromTiingoDaily(body: unknown): Bar[] {
   if (!Array.isArray(body)) return [];
@@ -198,8 +201,9 @@ export async function fetchTiingoIntradayBars(
         { retryable: false },
       );
     }
-    // The daily feed (1W curve) carries OHLC per day, so we take both the open
-    // and the close for a richer line; the intraday feed marks off the close.
+    // The daily feed (1W curve) carries OHLC per day, but only its open and
+    // close are genuinely time-stamped, so we plot just those two points per
+    // session; the intraday feed marks off the close.
     result.set(symbol, param === "daily" ? barsFromTiingoDaily(body) : barsFromTiingoIntraday(body));
   }
   return result;

@@ -62,6 +62,21 @@ describe("barsFromTiingoDaily", () => {
     expect(bars[0].t).toBeLessThan(bars[1].t);
   });
 
+  it("ignores high/low and emits only the exact open and close per day", () => {
+    // A complete OHLC candle still yields just the two timestamped endpoints —
+    // the daily feed has no within-day clock for the high/low, so we never
+    // synthesise interior points.
+    const bars = barsFromTiingoDaily([
+      { date: "2026-06-22", open: 100, high: 110, low: 95, close: 108 },
+    ]);
+    expect(bars).toHaveLength(2);
+    expect(bars.map((b) => b.value.toString())).toEqual([
+      "100", // open (exact)
+      "108", // close (exact)
+    ]);
+    expect(bars[0].t).toBeLessThan(bars[1].t);
+  });
+
   it("orders multiple days and keeps the price a row does have", () => {
     const bars = barsFromTiingoDaily([
       { date: "2026-06-23", open: 103, close: 105 },
