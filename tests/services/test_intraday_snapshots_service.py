@@ -464,12 +464,13 @@ class TestReconstruct:
         _seed_eur_holding(session)
         calls = {"n": 0}
 
-        # A fetch that covers the session span (open → near close) so the
-        # coverage-aware guard trusts it complete and the second call short-circuits.
+        # A fetch that covers the session gap-free (a ~15-min grid from the open
+        # to near the close) so the coverage-aware guard trusts it complete and the
+        # second call short-circuits. Spaced within RECONSTRUCT_MAX_GAP_SECONDS so
+        # no internal hole is flagged.
         covering_bars = {
-            datetime(2024, 6, 3, 13, 30): Decimal("100"),  # 13:30 UTC (09:30 ET) — open
-            datetime(2024, 6, 3, 16, 30): Decimal("100"),  # 16:30 UTC (12:30 ET) — midday
-            datetime(2024, 6, 3, 19, 45): Decimal("100"),  # 19:45 UTC (15:45 ET) — near close
+            datetime(2024, 6, 3, 13, 30) + timedelta(minutes=15 * i): Decimal("100")
+            for i in range(26)  # 13:30 (09:30 ET) → 19:45 (15:45 ET) every 15 min
         }
 
         def fetch(symbols, day, *, interval):  # type: ignore[no-untyped-def]
@@ -481,6 +482,53 @@ class TestReconstruct:
         iss.reconstruct_last_session(session, now=_NOW, fetcher=fetch)
         session.flush()
         assert calls["n"] == 1  # second call short-circuits on the app_config guard
+
+    def test_midday_gap_is_repulled_despite_good_span(self, session: Session) -> None:
+        # A session whose stored samples span open→close well (so the span test is
+        # satisfied) but hold a wide *midday hole* — live captures that stalled
+        # around lunch and resumed — must still be re-pulled: the span test cannot
+        # see an internal gap, so without the gap check the curve would draw a flat
+        # straight line across the hole for the rest of the session.
+        _seed_eur_holding(session)
+        # Dense morning (13:30–15:00) + dense afternoon (18:00–19:45), a 3-hour
+        # hole between: span 13:30→19:45 is ~96% of the session, but the 15:00→18:00
+        # gap dwarfs RECONSTRUCT_MAX_GAP_SECONDS.
+        for i in range(7):  # 13:30 .. 15:00
+            intraday_repo.insert_sample(
+                session, datetime(2024, 6, 3, 13, 30) + timedelta(minutes=15 * i), Decimal("100")
+            )
+        for i in range(8):  # 18:00 .. 19:45
+            intraday_repo.insert_sample(
+                session, datetime(2024, 6, 3, 18, 0) + timedelta(minutes=15 * i), Decimal("100")
+            )
+        iss._mark_reconstructed(session, _SESSION_DAY)
+        session.flush()
+        assert iss._session_is_covered(session, _SESSION_DAY, _NOW) is False
+
+        # A re-pull whose feed serves the missing midday bars fills the hole.
+        gap_fill = {
+            datetime(2024, 6, 3, 15, 30) + timedelta(minutes=15 * i): Decimal("105")
+            for i in range(10)  # 15:30 .. 17:45 — bridges the gap
+        }
+        written = iss.reconstruct_last_session(session, now=_NOW, fetcher=_fake_fetcher(gap_fill))
+        session.flush()
+        assert written > 0
+        filled = dict(iss.day_series_market_eur(session, now=_NOW))
+        assert datetime(2024, 6, 3, 16, 30) in filled  # a bar now sits inside the hole
+
+    def test_missing_morning_is_repulled_despite_good_span(self, session: Session) -> None:
+        # A curve whose first sample is hours after the open (the morning never
+        # captured) but whose first→last still spans most of the session would pass
+        # the span test, yet the open→first hole means the morning is missing. The
+        # gap check (which anchors on the session open) catches it.
+        _seed_eur_holding(session)
+        for i in range(16):  # 16:00 (12:00 ET) .. 19:45 — late start, wide span
+            intraday_repo.insert_sample(
+                session, datetime(2024, 6, 3, 16, 0) + timedelta(minutes=15 * i), Decimal("100")
+            )
+        iss._mark_reconstructed(session, _SESSION_DAY)
+        session.flush()
+        assert iss._session_is_covered(session, _SESSION_DAY, _NOW) is False
 
     def test_under_covered_session_is_repulled_despite_marker(self, session: Session) -> None:
         # A prior attempt that landed only a stray morning bar leaves the curve
@@ -908,6 +956,26 @@ class TestWeekSeries:
         # the scaled _DAY_BARS) is now present alongside the original stray point.
         day_values = [eur for at, eur, _ in out if at.date() == stale_day]
         assert len(day_values) >= iss.WEEK_POINTS_PER_COMPLETE_SESSION
+        assert {Decimal("1000.00"), Decimal("1200.00"), Decimal("1300.00")} <= set(day_values)
+
+    def test_completed_session_with_clustered_points_is_repulled(self, session: Session) -> None:
+        # A finished earlier session that holds enough points (≥ the triplet count)
+        # but all *clustered* in the morning — the feed stalled before midday —
+        # spans too little of the open→close day. The span-aware coverage check
+        # must treat it as gappy and re-pull to lay a proper start/midday/close
+        # triplet, rather than freezing it at a morning-only stub.
+        _seed_eur_holding_for_week(session)
+        sessions = iss.recent_trading_sessions(_NOW)
+        stale_day = sessions[1]  # a completed, non-anchor session
+        # Three points all within the first half hour → count passes, span fails.
+        for minute in (30, 35, 40):
+            at = datetime(stale_day.year, stale_day.month, stale_day.day, 13, minute)
+            intraday_repo.insert_sample(session, at, Decimal("4242.00"))
+        session.flush()
+
+        out = iss.week_series_with_fx(session, now=_NOW, fetcher=_fake_week_fetcher(self._DAY_BARS))
+        # Re-pulled: the full start/midday/close triplet now spans the day.
+        day_values = [eur for at, eur, _ in out if at.date() == stale_day]
         assert {Decimal("1000.00"), Decimal("1200.00"), Decimal("1300.00")} <= set(day_values)
 
     def test_completed_session_with_full_triplet_is_not_repulled(self, session: Session) -> None:

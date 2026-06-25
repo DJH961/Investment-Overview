@@ -28,7 +28,14 @@ Two complementary sources feed the samples:
   so opening the app late in the day, after the close, or over a weekend still
   shows a full "1 Day" curve for the last trading day rather than a stub. It
   fills *gaps* only: any 15-minute mark already captured live is left untouched,
-  so a live-watched stretch keeps its denser, real points.
+  so a live-watched stretch keeps its denser, real points. The coverage guard
+  (:func:`_session_is_covered`) re-pulls not just an under-spanned curve but one
+  with an *internal hole* — a midday stall where live captures stopped and later
+  resumed, or a missing morning — so a transient gap is smartly refilled on the
+  next render instead of being drawn as a flat straight line. The coarser "1 Week"
+  curve (:func:`week_series_with_fx`) applies the same idea per finished session:
+  a day whose cached points don't *span* the open→close is re-pulled to lay a
+  proper start/midday/close triplet.
 
 :func:`day_series_market_eur` returns the current session's merged market
 components; :func:`build_intraday_value_series` (in the Overview query layer)
@@ -58,6 +65,7 @@ import logging
 import threading
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
+from itertools import pairwise
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
@@ -115,6 +123,25 @@ RECONSTRUCT_MIN_COVERAGE_SAMPLES = 2
 #: re-pulled — cheap, since the desktop's yfinance primary is unmetered, so we can
 #: safely bias toward re-pulling when coverage is uncertain.
 RECONSTRUCT_COVERAGE_FRACTION = Decimal("0.6")
+
+#: Largest tolerated hole (seconds) between consecutive "1 Day" samples — and
+#: between the session open and the first sample — before the session is judged
+#: gappy and re-pulled to fill it. The span check above only measures first→last,
+#: so it cannot see a *hole in the middle* (live captures that stalled midday and
+#: resumed, leaving a flat straight line across the gap) or a *missing morning*
+#: (a late first sample with a still-wide overall span). A fully reconstructed
+#: 15-min grid has ~15-min spacing, so 45 min (3 bars) clears a normal curve while
+#: still catching a genuine multi-bar gap, which the next render refills.
+RECONSTRUCT_MAX_GAP_SECONDS = 45 * 60
+
+#: Fraction of a *finished* week session (open→close) that its cached samples must
+#: span before that day is trusted complete. Mirrors
+#: :data:`RECONSTRUCT_COVERAGE_FRACTION` for the coarser "1 Week" curve: a day
+#: left with only clustered morning points (the feed stalled before midday) spans
+#: too little, so it is re-pulled to lay a proper open/mid/close triplet rather
+#: than frozen at a gappy curve. The in-progress anchor session is exempt (it
+#: grows from today's dense live captures, gap-filled by the 1D reconstruction).
+WEEK_COVERAGE_FRACTION = Decimal("0.6")
 
 #: ``app_config`` key recording the last session date we reconstructed, so we
 #: fetch intraday bars at most once per session instead of on every page load.
@@ -752,10 +779,19 @@ def _session_is_covered(session: Session, session_date: date, now: datetime) -> 
     nothing, a single stray bar, or only the morning before the feed stalled
     leaves the curve gappy yet would pass an "any sample exists" check and pin the
     done-marker for the rest of the session (it is never retried). The session is
-    judged covered only when the stored samples both number at least
-    :data:`RECONSTRUCT_MIN_COVERAGE_SAMPLES` *and* span at least
-    :data:`RECONSTRUCT_COVERAGE_FRACTION` of the session elapsed so far; otherwise
-    it is re-pulled to fill the gaps (cheap — yfinance is unmetered).
+    judged covered only when the stored samples all hold:
+
+    * at least :data:`RECONSTRUCT_MIN_COVERAGE_SAMPLES` points;
+    * a first→last span of at least :data:`RECONSTRUCT_COVERAGE_FRACTION` of the
+      session elapsed so far (catches a morning-only / trailing-stalled curve); and
+    * no *internal hole* — neither the gap from the open to the first sample nor
+      any gap between consecutive samples exceeds :data:`RECONSTRUCT_MAX_GAP_SECONDS`
+      (catches a midday stall the span test cannot see, where captures stopped and
+      later resumed, leaving a flat straight line across the gap).
+
+    Any failure re-pulls to fill the gaps (cheap — yfinance is unmetered). The
+    next render's reconstruction lays its 15-min grid across the hole, after which
+    the session reads as covered and the re-pulling stops.
     """
     from investment_dashboard.db import cache_read_session  # noqa: PLC0415
 
@@ -772,7 +808,24 @@ def _session_is_covered(session: Session, session_date: date, now: datetime) -> 
         # Before the open there is no span to require; any stored samples suffice.
         return True
     actual_span = (times[-1] - times[0]).total_seconds()
-    return Decimal(actual_span) >= RECONSTRUCT_COVERAGE_FRACTION * Decimal(expected_span)
+    if Decimal(actual_span) < RECONSTRUCT_COVERAGE_FRACTION * Decimal(expected_span):
+        return False
+    # No internal hole: measure the open→first gap and every consecutive gap so an
+    # early premarket point can't mask a missing morning. A hole wider than the
+    # tolerance means data is missing mid-session, so re-pull to fill it.
+    return _max_gap_seconds([open_utc, *times]) <= RECONSTRUCT_MAX_GAP_SECONDS
+
+
+def _max_gap_seconds(times: list[datetime]) -> float:
+    """Largest gap (seconds) between consecutive instants in ``times`` (sorted).
+
+    ``0`` for fewer than two instants. Used to spot an internal hole in an
+    otherwise well-spanned "1 Day" curve — the span test only sees first→last.
+    """
+    ordered = sorted(times)
+    if len(ordered) < 2:
+        return 0.0
+    return max((b - a).total_seconds() for a, b in pairwise(ordered))
 
 
 def _mark_reconstructed(session: Session, session_date: date) -> None:
@@ -902,22 +955,34 @@ def week_series_with_fx(
     def _is_covered(session_date: date) -> bool:
         start = _session_start_utc(session_date)
         end = _session_start_utc(session_date + timedelta(days=1))
-        sample_times = {at for at, _, _ in cached if start <= at < end}
+        sample_times = sorted(at for at, _, _ in cached if start <= at < end)
         if not sample_times:
             return False
         if session_date == anchor and _to_naive_utc(now) <= _session_close_utc(session_date):
             # While the anchor session is still in progress it grows from today's
             # dense live captures, so any sample counts and it is never
             # re-downloaded (those live points are denser than a coarse re-fetch
-            # and must be preserved). Once its close has passed it becomes a
-            # *finished* session like any other and must carry the full triplet —
-            # so a day left with only a stray capture (live feed or reconstruction
-            # stalled) is re-pulled to fill its gaps rather than frozen at one
-            # point.
+            # and must be preserved). Its midday gaps are filled by the "1 Day"
+            # reconstruction, which writes to this very cache. Once its close has
+            # passed it becomes a *finished* session like any other and must carry
+            # the full triplet *spanning the day* — so a day left with only a stray
+            # capture (live feed or reconstruction stalled) is re-pulled to fill
+            # its gaps rather than frozen at one point.
             return True
-        # A finished session must carry the full representative span; fewer points
-        # means data is missing, so report it uncovered to trigger a re-pull.
-        return len(sample_times) >= WEEK_POINTS_PER_COMPLETE_SESSION
+        # A finished session must carry the full representative span: enough points
+        # *and* a first→last reach across at least :data:`WEEK_COVERAGE_FRACTION` of
+        # the open→close session. Fewer points — or points all clustered in one
+        # stretch (the feed stalled before midday) — means data is missing, so
+        # report it uncovered to trigger a re-pull that lays a proper
+        # start/midday/close triplet.
+        if len(sample_times) < WEEK_POINTS_PER_COMPLETE_SESSION:
+            return False
+        open_utc = _session_open_utc(session_date)
+        session_span = (_session_close_utc(session_date) - open_utc).total_seconds()
+        if session_span <= 0:
+            return True
+        actual_span = (sample_times[-1] - sample_times[0]).total_seconds()
+        return Decimal(actual_span) >= WEEK_COVERAGE_FRACTION * Decimal(session_span)
 
     # 2. Fetch only the gaps, and only days not already attempted this session
     #    (``force`` re-pulls every uncovered day regardless of the marker).
