@@ -198,19 +198,21 @@ describe("WS8 guard — a re-login issues no redundant work", () => {
  * These guard the two structural gaps that were closed by wiring `app.ts` through
  * the pure decision modules:
  *
- *  4. **`planPull` owns the 1D/1W bar gate.** `app.ts::graphPrimeDecision` no
- *     longer re-implements the clock-hour gate inline — it delegates to
- *     {@link planPull} with a "bars-are-candidates" (heavily-outdated) context and
- *     reads back the bar legs. These lock that contract so the delegation keeps
- *     reproducing the previous gate exactly.
- *  5. **`planFanout` owns the login provider split** (proven by the budget guards
- *     above): the login dispatch now executes the legs the planner names rather
- *     than logging them, so the split is the decision of record.
+ *  4. **`planPull` owns the 1D/1W bar gate, from the *one* round plan.**
+ *     `app.ts::graphPrimeDecision` no longer builds a second bars-only plan — it
+ *     reads the bar legs off the single per-round {@link planPull} result, whose
+ *     clock-hour overlay is the sole 1D-bar authority while open (it turns the bar
+ *     *on* at a new `:00` even when quotes are fresh, *off* otherwise). These lock
+ *     that gate so one plan decides legs and bars together and they never disagree.
+ *  5. **`planFanout` owns the login *and* manual provider split** (proven by the
+ *     budget guards above): the dispatch executes the legs the planner names rather
+ *     than logging them, and a non-login fan-out keeps the Tiingo reserve.
  */
-describe("WS-part-2 guard — planPull owns the bar-prime gate (graphPrimeDecision delegation)", () => {
+describe("WS-part-2 guard — planPull owns the bar-prime gate (graphPrimeDecision reads the round plan)", () => {
   const sessionOpenMs = Date.UTC(2026, 5, 25, 13, 30, 0); // 09:30 ET
-  // Mirror the exact context app.ts hands planPull for graph priming: bars are
-  // candidates (heavily-outdated), so the only thing gating them is the overlay.
+  // The real per-round freshness context graphPrimeDecision now reads: a live
+  // (not bars-only) ledger. Bars are owned solely by the clock-hour overlay while
+  // open, so even this "fresh" context must surface a due bar.
   function graphCtx(over: Partial<PullContext>): PullContext {
     return {
       kind: "auto",
@@ -218,7 +220,7 @@ describe("WS-part-2 guard — planPull owns the bar-prime gate (graphPrimeDecisi
       market: "open",
       minutesSinceOpenMs: 0,
       autoIntervalMs: 15 * 60 * 1000,
-      freshness: { dataAgeMs: 2 * ONE_HOUR_MS, deviceDaysMissing: 2, blobDaysOld: 2, quoteAgeMs: 0, navHeldForToday: false },
+      freshness: { dataAgeMs: 5 * 60 * 1000, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 5 * 60 * 1000, navHeldForToday: true },
       barGate: { lastBarPullMs: null, sessionOpenMs },
       ...over,
     };
@@ -232,16 +234,12 @@ describe("WS-part-2 guard — planPull owns the bar-prime gate (graphPrimeDecisi
     expect(barsDue(graphCtx({ kind: "reset" }))).toBe(true);
   });
 
-  it("market closed → bars due (the prime self-gates downstream, no clock-hour gate)", () => {
-    expect(barsDue(graphCtx({ market: "closed", minutesSinceOpenMs: 0 }))).toBe(true);
-  });
-
   it("market open, first bar < one interval into the session → held", () => {
     // 5 minutes after the open: no bar yet, breadcrumbs carry the line.
     expect(barsDue(graphCtx({ nowMs: sessionOpenMs + 5 * 60 * 1000, minutesSinceOpenMs: 5 * 60 * 1000 }))).toBe(false);
   });
 
-  it("market open, first bar once ≥1 interval has elapsed → due", () => {
+  it("market open, first bar once ≥1 interval has elapsed → due (even on a fresh-quote tier)", () => {
     expect(barsDue(graphCtx({ nowMs: sessionOpenMs + ONE_HOUR_MS, minutesSinceOpenMs: ONE_HOUR_MS }))).toBe(true);
   });
 

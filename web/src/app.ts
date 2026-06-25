@@ -79,7 +79,7 @@ import {
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, sessionIsWarmingUp, sessionOpenMs, elapsedSessionMs } from "./market-hours";
+import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, sessionIsWarmingUp, sessionOpenMs, elapsedSessionMs, settledSessionsSince } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -120,14 +120,14 @@ import {
   recordTiingo429,
 } from "./provider-breaker";
 import { ledgerReservation, tiingoAvailable, twelveDataAvailable } from "./reservation";
-import { planFanout } from "./provider-fanout";
+import { planFanout, TIINGO_RESERVE_CREDITS } from "./provider-fanout";
 import { reconcileHandshake } from "./login-handshake";
 import { springboardSessionCurve, springboardWeekCurve } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
 import { TimeSeriesStore } from "./timeseries-store";
 import { WEEK_STORE_KEY, navBarsFromQuotes, weekStaleSymbols } from "./week";
 import { ONE_HOUR_MS } from "./freshness";
-import { planPull, describePlan, type PullKind } from "./data-orchestrator";
+import { planPull, describePlan, type PullKind, type PullFreshness, type PullPlan } from "./data-orchestrator";
 import {
   describeFlag,
   describeMerge,
@@ -329,6 +329,14 @@ export class App {
   private envelopeAt: number | null = null;
   /** Last `portfolio.meta.json` version stamp seen, for the cheap freshness probe. */
   private metaVersion: string | null = null;
+  /**
+   * ISO publish time of the **best-available** blob, read from the
+   * `portfolio.meta.json` sidecar (`published_at`). This is the Pillar-1
+   * "will a fresh blob save a token?" signal (assumption 8) — the orchestrator
+   * keys its `blobDaysOld` freshness on the *remote metadata's* recency, never the
+   * on-device blob's download age. Null until a sidecar with a publish time is read.
+   */
+  private blobPublishedAt: string | null = null;
   /**
    * Epoch ms of the last successful network data pull (fresh quotes or FX),
    * loaded from persistent storage at startup so the very first cache-only
@@ -871,28 +879,31 @@ export class App {
   private graphPrimeDecision(
     kind: RefreshKind,
     opts: { force?: boolean; forceAll?: boolean },
+    plan: PullPlan,
     now: Date,
   ): { due: boolean; market: "open" | "closed"; reason: string } {
     const market: "open" | "closed" = isUsMarketOpen(now) ? "open" : "closed";
-    // The bar-prime "due" verdict is owned by the central orchestrator. We hand it
-    // a "bars are candidates" freshness context (the prime itself self-gates on
-    // staleness downstream) and read back its bar legs: during market hours its
-    // clock-hour overlay gates them; on reset / closed market they stay on. This
-    // reproduces the previous inline `barClockHourDue` decision exactly, but now
-    // routed through the single source of truth (Pillar 1) rather than re-derived.
-    const plan = this.planGraphBarPull(kind, opts, now);
-    const due = plan.legs.dayBars || plan.legs.weekBars;
+    // The bar-prime "due" verdict is read from the **one** plan this round already
+    // computed for its quote / NAV / FX legs (Pillar 1 — a single orchestrator
+    // decision per round, so the bar gate and the leg gate can never disagree and
+    // bars are never decided — or pulled — twice). During market hours the plan's
+    // clock-hour overlay is the sole 1D-bar authority (it turns the bar leg on at a
+    // new `:00` even when quotes are fresh, off otherwise). On reset / force-all the
+    // plan is a full re-pull. A closed-market round always hands off to the prime,
+    // which self-gates on bar-package staleness downstream (so a loaded book pulls
+    // nothing; a stale settled close still backfills).
     const orchestrator = `orchestrator: ${describePlan(plan)}`;
     if (kind === "reset" || (opts.forceAll ?? false)) {
       return {
-        due,
+        due: true,
         market,
         reason: `${kind === "reset" ? "reset" : "force-all"} → full graph re-prime (${orchestrator})`,
       };
     }
     if (market === "closed") {
-      return { due, market, reason: `market closed → prime self-gates on staleness (${orchestrator})` };
+      return { due: true, market, reason: `market closed → prime self-gates on staleness (${orchestrator})` };
     }
+    const due = plan.legs.dayBars || plan.legs.weekBars;
     if (!due) {
       const reason =
         this.lastBarPrimeMs === null
@@ -911,38 +922,141 @@ export class App {
   }
 
   /**
-   * Build the bar-prime {@link PullContext} and ask {@link planPull} for its
-   * verdict. Graph priming only ever cares about the 1D/1W bar legs, and the prime
-   * self-gates on staleness, so we feed the orchestrator a deliberately
-   * "heavily-outdated" freshness context: that makes the bar legs *candidates*, and
-   * the orchestrator's clock-hour overlay (the sole market-hours 1D-bar authority)
-   * then gates them. A `reset` / `force-all` round maps to the orchestrator's
-   * `reset` mechanism (every leg on); every other round maps to `auto`, where the
-   * overlay holds the bar between clock hours exactly as before.
+   * Whole market days the **best-available** blob trails by — the Pillar-1
+   * `blobDaysOld` freshness signal (assumption 8), read from the remote
+   * `portfolio.meta.json` `published_at`, **not** the on-device blob's download
+   * age. A blob published after the latest settled close is 0 days old. When the
+   * sidecar carried no publish time (older desktop export / no sidecar) it falls
+   * back to the on-device envelope's download age in settled sessions, then to a
+   * large value (treated as "heavily behind") so a missing signal never *masks* a
+   * genuine market-data gap.
+   *
+   * This is the **metadata prediction** only ("will a fresh blob save a token?").
+   * Its suppressive power is honoured solely while the blob is still *pending* — a
+   * live refresh round runs *after* the blob is decrypted and applied, so
+   * {@link buildPullFreshness} layers the **Pillar-4 blob-trust re-engage overlay**
+   * on top of this value (see there) and never lets a recent metadata timestamp
+   * mask a gap the applied blob turned out not to cover.
    */
-  private planGraphBarPull(
+  private blobDaysOld(now: Date): number {
+    if (this.blobPublishedAt) return settledSessionsSince(this.blobPublishedAt, now);
+    if (this.envelopeAt !== null) return settledSessionsSince(new Date(this.envelopeAt).toISOString(), now);
+    return 10;
+  }
+
+  /**
+   * Build the **real** freshness ledger the single orchestrator keys on, so the
+   * quote / NAV / FX round decision is genuinely routed through {@link planPull}
+   * (Pillar 1) rather than decided ad-hoc in {@link refreshPrices}.
+   *
+   * Every age is deliberately the **most-stale** component (the *oldest* still
+   * fetchable quote, the live FX spot, any wholly-missing symbol ⇒ `Infinity`), so
+   * the orchestrator can only ever land on the "fresh — pull nothing" tier when
+   * *every* fetchable symbol and FX are already within their rolling window. That
+   * makes the orchestrator's leg gating in {@link refreshPrices} strictly no more
+   * aggressive than the per-symbol cache TTLs the executors already enforce: it can
+   * skip a leg only when the executor would itself have fetched nothing.
+   *
+   * **Pillar-4 blob-trust re-engage overlay.** The metadata `blobDaysOld` predicts
+   * "a fresh blob will cover the gap, so don't spend a market token". That
+   * prediction is only safe *before* the blob is decrypted. A refresh round runs
+   * *after* decrypt (the dashboard is already built from the blob), so here we lift
+   * `blobDaysOld` to at least the observed on-device gap (`deviceDaysMissing`): if
+   * the applied blob actually covered the gap the device is fresh and this is a
+   * no-op, but if it *lacked* the coverage its metadata can no longer mask the gap —
+   * the heavily-outdated row re-engages and the skipped leg is pulled for real
+   * (`docs/centralized_data_pull_plan.md`, "Blob-trust re-engage" overlay).
+   */
+  private buildPullFreshness(now: Date): PullFreshness {
+    const data = this.state.data;
+    const nowMs = now.getTime();
+    const blobDaysOldMeta = this.blobDaysOld(now);
+    if (!data) {
+      return { dataAgeMs: 0, deviceDaysMissing: 0, blobDaysOld: blobDaysOldMeta, quoteAgeMs: 0, navHeldForToday: true };
+    }
+    const plan = buildFetchPlan(data, FETCHABLE_NAV_CLASSES);
+    const cached = readCachedQuotes();
+    let oldestQuoteAt: number | null = null;
+    let anyQuoteMissing = false;
+    let anyMarketMissing = false;
+    for (const entry of plan) {
+      const at = cached.get(entry.symbol)?.quote?.at ?? null;
+      if (at === null) {
+        anyQuoteMissing = true;
+        if (entry.priceType === "market") anyMarketMissing = true;
+        continue;
+      }
+      if (oldestQuoteAt === null || at < oldestQuoteAt) oldestQuoteAt = at;
+    }
+    // FX age folds into the same "is everything fresh?" signal so the FX leg can
+    // never be skipped while the live spot itself is stale.
+    const fxCached = readCachedEurUsd();
+    const fxAge = fxCached && fxCached.now !== null ? nowMs - fxCached.at : Number.POSITIVE_INFINITY;
+    const quoteAgeMs = anyQuoteMissing || oldestQuoteAt === null ? Number.POSITIVE_INFINITY : nowMs - oldestQuoteAt;
+    const dataAgeMs = Math.max(quoteAgeMs, fxAge);
+    // Market-side device gap, biased *up* when uncertain so the heavily-outdated
+    // tier (which simply restores today's full pass) can never under-pull.
+    const marketOpen = isUsMarketOpen(now);
+    const marketStale = this.staleFetchSymbols(marketOpen, now).some((s) => {
+      const e = plan.find((p) => p.symbol === s);
+      return e?.priceType === "market";
+    });
+    const deviceDaysMissing = anyMarketMissing
+      ? 10
+      : marketStale
+        ? dataAgeMs > 26 * ONE_HOUR_MS
+          ? 2
+          : 1
+        : 0;
+    // Blob-trust re-engage overlay (post-decrypt): the metadata prediction can only
+    // *raise* the floor, never mask the observed on-device gap. See the docstring.
+    const blobDaysOld = Math.max(blobDaysOldMeta, deviceDaysMissing);
+    const navHeldForToday = !this.navStale(now);
+    return { dataAgeMs, deviceDaysMissing, blobDaysOld, quoteAgeMs, navHeldForToday };
+  }
+
+  /** Whether any NAV-priced fund is still behind its expected publish (closed-NAV row). */
+  private navStale(now: Date): boolean {
+    const data = this.state.data;
+    if (!data) return false;
+    const navPlan = buildFetchPlan(data, FETCHABLE_NAV_CLASSES).filter((e) => e.priceType !== "market");
+    if (navPlan.length === 0) return false;
+    const stale = new Set(this.staleFetchSymbols(false, now));
+    return navPlan.some((e) => stale.has(e.symbol));
+  }
+
+  /**
+   * The single orchestrator's verdict for a whole refresh round, keyed on the
+   * **real** freshness ledger — the decision of record for the quote / NAV / FX
+   * legs (Pillar 1). {@link refreshPrices} dispatches only the legs this names; the
+   * existing fetchers re-clamp each against the per-symbol cache TTL, the
+   * reservation authority and the 429 breaker, so this can only ever propose *less*
+   * work than the executors would do, never more. A `reset` / `force-all` round
+   * maps to the orchestrator's `reset` mechanism (every leg on); a `manual` tap
+   * maps to `manual` (skips the rolling-TTL quote suppression — the user is asking
+   * "is there anything new?"); every other round is `auto`.
+   */
+  private planRoundPull(
     kind: RefreshKind,
     opts: { force?: boolean; forceAll?: boolean },
     now: Date,
-  ): ReturnType<typeof planPull> {
-    const pullKind: PullKind = kind === "reset" || (opts.forceAll ?? false) ? "reset" : "auto";
+  ): PullPlan {
+    const pullKind: PullKind =
+      kind === "reset" || (opts.forceAll ?? false)
+        ? "reset"
+        : kind === "manual" || (opts.force ?? false)
+          ? "manual"
+          : kind === "start"
+            ? "start"
+            : "auto";
+    const marketOpen = isUsMarketOpen(now);
     return planPull({
       kind: pullKind,
       nowMs: now.getTime(),
-      market: isUsMarketOpen(now) ? "open" : "closed",
-      minutesSinceOpenMs: isUsMarketOpen(now) ? elapsedSessionMs(now) : 0,
-      // Unused under the heavily-outdated short-circuit below, but supplied for a
-      // complete context; mirrors the 15-min default auto cadence.
-      autoIntervalMs: 15 * 60 * 1000,
-      // Bars are candidates: heavily-outdated turns every leg on so the only thing
-      // gating the bar legs is the clock-hour overlay (open) or nothing (closed).
-      freshness: {
-        dataAgeMs: 2 * ONE_HOUR_MS,
-        deviceDaysMissing: 2,
-        blobDaysOld: 2,
-        quoteAgeMs: 0,
-        navHeldForToday: false,
-      },
+      market: marketOpen ? "open" : "closed",
+      minutesSinceOpenMs: marketOpen ? elapsedSessionMs(now) : 0,
+      autoIntervalMs: this.state.config.updateMinutes * 60 * 1000,
+      freshness: this.buildPullFreshness(now),
       barGate: {
         lastBarPullMs: this.lastBarPrimeMs,
         sessionOpenMs: sessionOpenMs(lastSessionDate(now)),
@@ -2286,6 +2400,10 @@ export class App {
       const metaUrl = resolveMetaUrl(config);
       const meta = metaUrl ? await fetchBlobMeta(metaUrl) : null;
       if (session !== this.sessionId) return;
+      // Remember the best-available blob's publish time so the orchestrator's
+      // `blobDaysOld` freshness keys on the *remote* recency (Pillar 1 assumption
+      // 8), not the on-device download age.
+      if (meta?.publishedAt) this.blobPublishedAt = meta.publishedAt;
       if (meta && this.metaVersion !== null && meta.version === this.metaVersion) {
         this.pollLog("blob", `Data-file check: unchanged (meta version ${meta.version}).`);
         return;
@@ -2621,7 +2739,8 @@ export class App {
       eurUsdError = eurUsd.error;
       eurUsdAt = eurUsd.at;
     } else {
-      // Cache-only paint: don't touch the network for FX either.
+      // Cache-only paint: don't touch the network for FX, reuse the last cached
+      // pair so the dashboard still values the book off the most recent spot.
       const cachedFx = readCachedFx();
       fx = cachedFx?.fx ?? { base: "EUR", rates: {} };
       fxReport = { cached: cachedFx !== null, error: null };
@@ -2682,6 +2801,31 @@ export class App {
     if (network) {
       const proxyUrl = resolvePriceProxyUrl(config);
       const sizes = new Map(readSymbolPlan().map((e) => [e.symbol, e.sizeEur] as const));
+      // Pillar 5 (WS6) — wire the *provider fan-out* as the decision of record for a
+      // **manual reload** too (not just login): a manual tap of a big sleeve fans
+      // the market symbols across Twelve Data + Tiingo in parallel for an instant
+      // first paint, and — crucially — the planner is the authority for invariant 4
+      // (a *non-login* fan-out must leave the last {@link TIINGO_RESERVE_CREDITS}
+      // Tiingo credits untouched), so a big manual reload can't drain the hourly
+      // Tiingo floor the next auto round and other devices rely on. The existing
+      // TD-primary pass + this fallback execute the split; the planner owns the
+      // reserve. Scoped to the force/force-all manual tap (the "via backup" route is
+      // a deliberate drain and keeps its own reserve).
+      const isManualReload = ((opts.force ?? false) || forceAll) && !viaTiingo;
+      let reserveCredits = opts.tiingoReserve ?? 0;
+      if (isManualReload) {
+        const marketSleeve = symbols.filter((s) => !this.lastNavSymbols.has(s));
+        const fanoutNow = Date.now();
+        const fanout = planFanout({
+          kind: "manual",
+          symbols: marketSleeve,
+          twelveDataSpendable: twelveDataAvailable(fanoutNow),
+          tiingoSpendable: tiingoAvailable(fanoutNow),
+          tiingoAvailable: proxyUrl !== null,
+        });
+        this.pollLog("fallback", `Manual fan-out (${marketSleeve.length} mkt symbol(s)): ${fanout.reason}`);
+        if (fanout.fannedOut) reserveCredits = Math.max(reserveCredits, TIINGO_RESERVE_CREDITS);
+      }
       const fallback = await runTiingoFallback({
         symbols,
         navSymbols: this.lastNavSymbols,
@@ -2691,7 +2835,7 @@ export class App {
         now: Date.now(),
         manual: (opts.force ?? false) || viaTiingo,
         forceAll: viaTiingo,
-        reserveCredits: network ? (opts.tiingoReserve ?? 0) : 0,
+        reserveCredits,
         sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
       });
       if (session !== this.sessionId) return quoteLoad.report;
@@ -3226,12 +3370,22 @@ export class App {
     //
     // Pillar 1/4 (WS-part-2): this is **no longer a standing pre-step that fires
     // every round** — it is dissolved into the orchestrator's freshness decision.
-    // During market hours the clock-hour bar gate ({@link graphPrimeDecision}) is
-    // the sole 1D-bar authority, so the prime runs at most once per `:00` instead
-    // of self-perpetuating each tick; a reset/force-all still primes in full, and
-    // a closed-market round still self-gates on staleness inside the prime.
+    // Pillar 1 — compute the **one** orchestrator plan for this whole round, keyed
+    // on the real freshness ledger (incl. the runtime-active best-available
+    // `blobDaysOld` from blob metadata + the post-decrypt re-engage overlay). The
+    // single plan governs *both* the 1D/1W bar gate (below) and the quote / NAV / FX
+    // legs (in {@link refreshPrices}), so bars are never decided — or pulled — twice
+    // and the two gates can never disagree.
+    const now = new Date();
+    const roundPlan = this.planRoundPull(kind, opts, now);
+    this.pollLog("orchestrator", `Round decision (${kind}): ${describePlan(roundPlan)}`);
+    // During market hours the clock-hour bar gate ({@link graphPrimeDecision},
+    // reading this same plan) is the sole 1D-bar authority, so the prime runs at
+    // most once per `:00` instead of self-perpetuating each tick; a reset/force-all
+    // still primes in full, and a closed-market round still self-gates on staleness
+    // inside the prime.
     {
-      const decision = this.graphPrimeDecision(kind, opts, new Date());
+      const decision = this.graphPrimeDecision(kind, opts, roundPlan, now);
       this.pollLog("graph", `Graph-prime decision (${kind}): ${decision.reason}`);
       if (decision.due) {
         const stored = await this.primeStaleGraphPackages().catch(() => undefined);

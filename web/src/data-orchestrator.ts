@@ -122,16 +122,27 @@ export function planPull(ctx: PullContext): PullPlan {
   const notes: string[] = [];
 
   // Overlay 1 — the clock-hour bar gate is the SOLE 1D-bar authority during
-  // market hours. If a bar isn't due this hour, drop the bar legs; breadcrumbs
-  // carry the line until the next `:00`. Outside market hours the table governs
-  // bar pulls directly (a missing settled close still backfills).
-  if (ctx.market === "open" && (legs.dayBars || legs.weekBars)) {
+  // market hours, in **both** directions, so one plan per round decides bars and
+  // legs together (no second bars-only plan that could disagree):
+  //   - a new clock hour is **due** ⇒ turn the 1D bar leg *on*, even when the
+  //     freshness tier alone wouldn't have asked for it (e.g. quotes are fresh but
+  //     a `:00` has passed) — the gate, not the tier, owns the bar during hours;
+  //   - **not** due ⇒ drop the bar legs; breadcrumbs carry the line to the next
+  //     `:00`.
+  // Outside market hours the table governs bar pulls directly (a missing settled
+  // close still backfills, self-gated by the executor).
+  if (ctx.market === "open") {
     const barsDue = barClockHourDue({
       nowMs: ctx.nowMs,
       lastBarPullMs: ctx.barGate.lastBarPullMs,
       sessionOpenMs: ctx.barGate.sessionOpenMs,
     });
-    if (!barsDue) {
+    if (barsDue) {
+      if (!legs.dayBars) {
+        legs.dayBars = true;
+        notes.push("1D bar due (clock-hour gate)");
+      }
+    } else if (legs.dayBars || legs.weekBars) {
       legs.dayBars = false;
       legs.weekBars = false;
       notes.push("bars held (clock-hour gate)");

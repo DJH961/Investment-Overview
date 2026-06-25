@@ -65,6 +65,21 @@ describe("planPull — bar clock-hour overlay (sole 1D-bar authority while open)
     const plan = planPull(ctx({ kind: "manual", market: "closed", minutesSinceOpenMs: 0, freshness: stale }));
     expect(plan.legs.dayBars).toBe(true);
   });
+
+  it("turns the 1D bar ON when a clock hour is due even if the freshness tier is fresh (sole authority, both directions)", () => {
+    // Quotes/FX are inside one interval (fresh tier ⇒ no quote/FX leg), but a new
+    // clock hour is due and no bar has been pulled this session: the gate — not the
+    // tier — owns the bar during market hours, so the 1D bar leg turns on. This is
+    // the single-plan unification: one plan decides both legs and the bar gate.
+    const open = Date.UTC(2026, 5, 25, 13, 30, 0);
+    const now = Date.UTC(2026, 5, 25, 18, 0, 0);
+    const fresh = { dataAgeMs: 5 * MIN, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 5 * MIN, navHeldForToday: true };
+    const plan = planPull(ctx({ kind: "auto", nowMs: now, freshness: fresh, barGate: { lastBarPullMs: null, sessionOpenMs: open } }));
+    expect(plan.tier).toBe("fresh");
+    expect(plan.legs.quotes).toBe(false);
+    expect(plan.legs.dayBars).toBe(true);
+    expect(plan.reason).toContain("1D bar due");
+  });
 });
 
 describe("planPull — rolling quote TTL overlay", () => {
@@ -89,7 +104,18 @@ describe("planPull — rolling quote TTL overlay", () => {
 
 describe("planPull — fresh tick is a no-op", () => {
   it("a seconds-later re-login (data younger than one interval) pulls nothing", () => {
-    const plan = planPull(ctx({ kind: "start", freshness: { dataAgeMs: 5 * MIN, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 5 * MIN, navHeldForToday: true } }));
+    // The first login already pulled this clock hour's 1D bar, so the bar gate is
+    // satisfied (next bar held until the next :00); with quotes/FX inside one
+    // interval too, the seconds-later re-login is a pure no-op.
+    const nowMs = Date.UTC(2026, 5, 25, 18, 0, 0);
+    const plan = planPull(
+      ctx({
+        kind: "start",
+        nowMs,
+        freshness: { dataAgeMs: 5 * MIN, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 5 * MIN, navHeldForToday: true },
+        barGate: { lastBarPullMs: nowMs - 5 * MIN, sessionOpenMs: Date.UTC(2026, 5, 25, 13, 30, 0) },
+      }),
+    );
     expect(plan.tier).toBe("fresh");
     expect(planPullsAnything(plan)).toBe(false);
   });

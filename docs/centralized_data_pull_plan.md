@@ -362,6 +362,36 @@ four mechanisms.
 8. **Regression guards** — 1W detail-accretion not coarsened; no path bypasses
    budget/breaker; interaction stays network-free.
 
+### Runtime wiring status (part-2 follow-up)
+
+The pure modules above are now the **runtime authorities**, not loggers:
+
+- **One plan per round (Pillar 1).** `app.ts` builds a single `planPull` result per
+  refresh round from the **real** freshness ledger and uses it as the **sole**
+  1D/1W bar authority (`graphPrimeDecision` reads its bar legs) — so bars are never
+  decided, or pulled, twice and the clock-hour bar gate is consulted once per round
+  in **both** directions (turns the bar on at a new `:00`, off otherwise). The
+  per-symbol quote / NAV / FX legs stay governed by their executors' own finer
+  freshness windows (`loadQuotes`' 15-min per-symbol TTL, `loadEurUsd`'s 45-s spot
+  reuse) — the same windows the plan's tiers mirror. Those executor TTLs are
+  deliberately *finer* than the graded tier, so the orchestrator must not override
+  them downward: doing so would coarsen the per-minute FX tip (and under-fetch
+  quotes whenever the user widens the auto-interval past the quote TTL). The plan
+  therefore feeds the round's **bar gate** and **fan-out**; the executors remain the
+  hard per-leg floor.
+- **`blobDaysOld` is runtime-active (assumption 8) + blob-trust re-engage.** It is
+  populated from the remote `portfolio.meta.json` `published_at` (best-available
+  recency), not the on-device blob age. Because a refresh round runs *after* the
+  blob is decrypted, the **blob-trust re-engage overlay** is applied there: the
+  metadata value can only *raise* the freshness floor, never mask the observed
+  on-device gap — so a blob whose metadata promised coverage but which lacked it
+  after decrypt re-engages the skipped row instead of trapping the book stale.
+- **Provider fan-out covers login *and* manual (Pillar 5).** `planFanout` is the
+  decision of record for the login split *and* for a manual reload's Tiingo budget:
+  a non-login fan-out keeps the 10-credit Tiingo floor that auto rounds / other
+  devices rely on.
+
+
 ---
 
 ## Verification
