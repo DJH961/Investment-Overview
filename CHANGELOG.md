@@ -14,6 +14,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.4.0] — 2026-06-25
+
+### Added
+
+- **Centralized data export + pull orchestration (the "one readable brain").**
+  The desktop and the web companion now share a single, schema-aligned data
+  backbone so the 1W graph is rich, base-stable, and cheap to render.
+  - **Desktop — schema-v3 `live_graphs` export** (`readmodels/live_graphs.py`,
+    inner `schema_version` → 3). The desktop ships its own intraday
+    representation as an **aggregate market-sleeve series** rather than a coarse
+    line: columnar `market_series` (`times[]` / FX-free `value_native[]` /
+    per-instant `fx_eur_usd[]`, un-downsampled across the whole window),
+    `daily_close_native` settled closes per session date, per-day `nav_prices`
+    so the web reapplies the NAV/cash base per day, and a dense `display_only`
+    `trail`. A `live_graphs_grid` app-config key (`"30m"` default / `"15m"`)
+    plus a `MAX_BACKBONE_CELLS` hard cap coarsen **older days to their close
+    first**. The grid is threaded through
+    `services/intraday_snapshots_service.py` so token-free gap reconstruction
+    honours it. Legacy `day` / `week` curves are retained, so older v1/v2
+    readers ignore the new sections (absent-tolerance contract documented in
+    `docs/mobile_export_schema.md`).
+  - **Web — the single pull orchestrator and graded-freshness truth-table**
+    (`web/src/data-orchestrator.ts`, `web/src/freshness.ts`). One pure decision
+    brain owns *what / when / which-leg* every network pull does across four
+    explicit mechanisms (`start` / `auto` / `manual` / `reset`), with an
+    `isUserRefresh` gate so only user-initiated refreshes surface feedback. A
+    side-effect-free, clock-injected freshness table grades device-data age
+    against best-available blob **metadata** recency (never the on-device blob's
+    age), gates the clock-hour 1D bar, and decides the rolling quote TTL — while
+    a regenerate-only curve seam merges the desktop backbone with live data
+    without base-change spikes.
+
 ## [4.3.2] — 2026-06-25
 
 ### Fixed
