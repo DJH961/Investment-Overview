@@ -1,5 +1,58 @@
 # Action Plan — Market-open token-burn fix (web companion)
 
+> **Status (implemented in v4.2.0):** WS1–WS4 and the load-bearing parts of WS5
+> are done. The intraday staleness gate now treats a fresh, just-opened session
+> as expected-empty (`market-hours.sessionIsWarmingUp`), so a cold start issues
+> **0** intraday-bar requests at the open and derives headline quotes from the
+> sliced daily (1W) bars. The prefetch/warm-up bar path now routes through the
+> capacity split (Twelve Data leads, sliced to the live minute budget; Tiingo
+> takes only the overflow), carries the per-symbol Tier-1 series backoff, and is
+> gated by a new per-provider **429 circuit breaker** (`provider-breaker.ts`): a
+> Twelve Data 429 zeroes its live minute budget for ~60s (escalating to ~2min on
+> a second consecutive strike), and a Tiingo 429 defers its overflow until the
+> next clock `:00`. The hard-refresh escape hatches still only clear the soft
+> Tier-1 backoff and freshness TTLs — never the budget or the breaker.
+> *Follow-up:* reading Twelve Data's `api-credits-left`/`api-credits-used`
+> response headers to reconcile the local ledger even more tightly than the 429
+> freeze already does.
+
+> **Status (implemented post-v4.2.0):** the independent rate-limit audit on
+> `main` (`docs/provider_rate_limit_audit.md`) found that the graph/FX layer
+> *counts* every spend but did not *limit* the scarce Tiingo budget, and that
+> budget reads were non-atomic across legs/builds. All of its **genuinely open**
+> flags are now closed by routing every metered graph/FX/NAV leg through a single
+> reservation authority (`web/src/reservation.ts`, audit Rec 4): `reserve(provider,
+> n, now)` atomically reads-and-debits the shared credit ledger (folding in the
+> 429 freezes) and returns how many credits were granted; callers fetch only the
+> grant. The graph `BackfillMeter`s are demoted to **observation-only** (a refund
+> releases credits back to the authority) so nothing double-books. See the
+> *Audit reconciliation* table below for the per-flag/per-recommendation status.
+
+## Audit reconciliation (`docs/provider_rate_limit_audit.md`)
+
+How this branch resolves each finding from the `main` audit:
+
+| Audit item | Status | Where |
+|---|---|---|
+| **Flag 1** — uncapped Tiingo bar overflow/spill in the capacity split | ✅ Closed | `makeCapacitySplitBarFetcher` reserves the overflow **and** the spill against Tiingo's live budget via the authority (`live-graph.ts`) |
+| **Flag 2** — uncapped Tiingo FX-history pulls | ✅ Closed | `gateFxLeg` reserves 1 Tiingo credit before the FX leg fires (`makeWindowFxFetcher`) |
+| **Flag 3** — Twelve Data FX fallback ignores the minute/day budget | ✅ Closed | `gateFxLeg` reserves 1 Twelve Data credit before the forex fallback fires |
+| **Flag 4** — legacy prefetch/prime pipe ungated | ✅ Closed | `prefetchGraphBars` now passes a `reservation`, so `makePriceBarFetcher` routes through the capacity split instead of the legacy Tiingo-first dual pipe (`app.ts`) |
+| **Flag 5** — 1W NAV gap-fill inherits Flag 1 | ✅ Closed | NAV gap-fill shares the same gated capacity split |
+| **Flag 6** — non-atomic budget reads → per-minute overshoot | ✅ Closed | `reserve()` reads-and-debits in one synchronous call; all legs/builds share one authority over one ledger |
+| **Rec 1** — gate the scarce budget on the graph path (Flags 1/2/5) | ✅ Done | reservation authority on bars + FX + NAV |
+| **Rec 2** — gate the Twelve Data FX fallback (Flag 3) | ✅ Done | `gateFxLeg` |
+| **Rec 3** — gate the legacy prefetch/prime pipe (Flag 4) | ✅ Done | prefetch now uses the capacity split |
+| **Rec 4** — single reservation authority (Flag 6 + obs 2–3) | ✅ Done | `web/src/reservation.ts` is the sole credit booker on the graph path |
+| **Rec 5** — add a daily Tiingo cap to the Worker | ⏭️ Dropped | Out of scope for this branch (server-side defence-in-depth; the client now enforces both Tiingo limits) |
+| **Rec 6** — global circuit breaker | ✅ Already on branch | per-provider 429 breaker `provider-breaker.ts` (WS4/WS5), now folded into the reservation authority |
+
+**Added regression coverage (beyond the audit's suggestions):** a hard refresh
+issued **while both providers are in a 429 freeze** issues **zero** provider calls
+(`web/test/live-graph.test.ts`), plus authority unit tests
+(`web/test/reservation.test.ts`) and FX-gating / proactive-cap / cross-build
+atomicity tests.
+
 **Context:** Root-causing the catastrophic provider-credit burn at the US market
 open on **2026-06-24 ~15:30 CET** (app **v4.1.0**, observed on two devices). At the
 open the app demanded a full intraday **and** full-week history for the entire

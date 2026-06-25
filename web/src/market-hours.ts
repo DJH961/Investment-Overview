@@ -333,3 +333,39 @@ export function sessionCloseMs(day: string): number {
 export function sessionOpenMs(day: string): number {
   return exchangeWallToUtcMs(day, OPEN_MINUTES);
 }
+
+/**
+ * The intraday 1D curve is built from one-hour resampled bars (Tiingo IEX
+ * `resampleFreq=1hour`, Twelve Data falls back to a coarser series), so no
+ * completed intraday bar can exist until a full bar interval of trading time has
+ * elapsed since the open. Used to tell an *expected-empty* fresh session apart
+ * from a genuinely *stale* one (market_open_token_burn_fix_plan.md WS1).
+ */
+export const INTRADAY_BAR_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
+ * Trading time (ms) elapsed since the open of the current 1D session as of `now`.
+ *
+ * For a session that has already started today this is small right after 09:30
+ * and grows through the day; for any *past* session (before today's open, on a
+ * weekend, or overnight after the close) it is at least a full day, because the
+ * open being measured is that earlier session's 09:30. Never negative:
+ * {@link lastSessionDate} only advances to today once its open has passed.
+ */
+export function elapsedSessionMs(now: Date = new Date()): number {
+  const open = sessionOpenMs(lastSessionDate(now));
+  return Math.max(0, now.getTime() - open);
+}
+
+/**
+ * Whether the current 1D session is still *warming up* — open, but with less than
+ * one intraday bar interval of trading time elapsed, so no completed intraday bar
+ * can exist yet. At the open this is true, so the absence of today's bars is
+ * **expected**, not stale: no 1D backfill is queued for a window that has not
+ * happened, and the curve accrues tick-by-tick from the live tip instead
+ * (market_open_token_burn_fix_plan.md WS1). Any past session reads `false`
+ * (its elapsed time is ≥ a day), so its genuinely-missing bars still backfill.
+ */
+export function sessionIsWarmingUp(now: Date = new Date()): boolean {
+  return elapsedSessionMs(now) < INTRADAY_BAR_INTERVAL_MS;
+}

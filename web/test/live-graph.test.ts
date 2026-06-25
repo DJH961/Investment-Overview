@@ -32,8 +32,40 @@ import {
 import { memoryBackend, TimeSeriesStore } from "../src/timeseries-store";
 import { PriceError, type FetchLike } from "../src/prices";
 import type { Bar } from "../src/timeseries";
+import { ledgerReservation, type Provider, type Reservation } from "../src/reservation";
+import { recordTwelveData429, recordTiingo429 } from "../src/provider-breaker";
 
 const d = (v: string | number): Decimal => new Decimal(v);
+
+/**
+ * A fake {@link Reservation} over two integer credit pools (Twelve Data, Tiingo).
+ * Each `reserve` grants `min(requested, remaining)` and debits the pool; `release`
+ * returns credits. Records every grant so a test can assert the split's routing.
+ * A pool of `0` models a fully-spent budget or a frozen provider.
+ */
+function fakeReservation(
+  tdAvail: number,
+  tiiAvail: number,
+): { reservation: Reservation; grants: Array<{ provider: Provider; requested: number; granted: number }> } {
+  let td = tdAvail;
+  let tii = tiiAvail;
+  const grants: Array<{ provider: Provider; requested: number; granted: number }> = [];
+  const reservation: Reservation = {
+    reserve(provider, requested) {
+      const pool = provider === "twelvedata" ? td : tii;
+      const granted = Math.max(0, Math.min(requested, pool));
+      if (provider === "twelvedata") td -= granted;
+      else tii -= granted;
+      grants.push({ provider, requested, granted });
+      return granted;
+    },
+    release(provider, n) {
+      if (provider === "twelvedata") td += n;
+      else tii += n;
+    },
+  };
+  return { reservation, grants };
+}
 
 /** A minimal in-memory `StorageLike` for backoff persistence tests. */
 function mapStorage(): {
@@ -155,6 +187,57 @@ describe("makeWindowFxFetcher", () => {
     // The EUR/USD forex series is pulled browser-direct (no Worker fxHistory).
     expect(calls.some((u) => u.includes("symbol=EUR%2FUSD") || u.includes("symbol=EUR/USD"))).toBe(true);
     expect(bars[0].value.toString()).toBe("1.1");
+  });
+});
+
+describe("makeWindowFxFetcher — reservation gating (audit Flags 2, 3)", () => {
+  it("does not fire the Tiingo FX leg when its budget is spent/frozen; falls back to Twelve Data", async () => {
+    const { calls, fetchImpl } = recordingFetch({ values: [{ datetime: "2026-06-23", close: "1.1" }] });
+    // Tiingo budget 0 (frozen), Twelve Data has room.
+    const fetchFx = makeWindowFxFetcher(
+      PRICE_PROXY,
+      { startDate: "2026-06-19", endDate: "2026-06-23" },
+      "1day",
+      fetchImpl,
+      undefined,
+      { apiKey: "KEY", reservation: fakeReservation(8, 0).reservation },
+    );
+    const bars = await fetchFx!();
+    // No Tiingo fxHistory pull was attempted; the Twelve Data forex leg served it.
+    expect(calls.some((u) => u.includes("fxHistory"))).toBe(false);
+    expect(calls.some((u) => u.includes("symbol=EUR%2FUSD") || u.includes("symbol=EUR/USD"))).toBe(true);
+    expect(bars[0].value.toString()).toBe("1.1");
+  });
+
+  it("does not fire the Twelve Data FX fallback when its budget is spent/frozen", async () => {
+    // Tiingo answers empty (would normally fall back to Twelve Data), but Twelve
+    // Data's budget is 0 (frozen / inside the 60s lockout) so it must NOT fire.
+    const { calls, fetchImpl } = recordingFetch([]); // empty fxHistory + empty time_series
+    const fetchFx = makeWindowFxFetcher(
+      PRICE_PROXY,
+      { startDate: "2026-06-19", endDate: "2026-06-23" },
+      "1day",
+      fetchImpl,
+      undefined,
+      { apiKey: "KEY", reservation: fakeReservation(0, 8).reservation },
+    );
+    const bars = await fetchFx!();
+    expect(bars).toEqual([]); // degrades to the day's settled baseFx
+    expect(calls.some((u) => u.includes("symbol=EUR%2FUSD") || u.includes("symbol=EUR/USD"))).toBe(false);
+  });
+
+  it("fires nothing when both FX budgets are exhausted", async () => {
+    const { calls, fetchImpl } = recordingFetch([]);
+    const fetchFx = makeWindowFxFetcher(
+      PRICE_PROXY,
+      { startDate: "2026-06-19", endDate: "2026-06-23" },
+      "1day",
+      fetchImpl,
+      undefined,
+      { apiKey: "KEY", reservation: fakeReservation(0, 0).reservation },
+    );
+    expect(await fetchFx!()).toEqual([]);
+    expect(calls).toHaveLength(0);
   });
 });
 
@@ -406,7 +489,7 @@ describe("makeCapacitySplitBarFetcher (provider split, item 8)", () => {
     const fetch = makeCapacitySplitBarFetcher(
       fakeFetcher("TD", calls),
       fakeFetcher("TII", calls),
-      () => ({ minute: 2, day: 100 }),
+      fakeReservation(2, 100).reservation,
     );
     const bars = await fetch(["A", "B", "C", "D"]);
     expect(bars.size).toBe(4);
@@ -421,7 +504,7 @@ describe("makeCapacitySplitBarFetcher (provider split, item 8)", () => {
     const fetch = makeCapacitySplitBarFetcher(
       fakeFetcher("TD", calls),
       fakeFetcher("TII", calls),
-      () => ({ minute: 0, day: 100 }),
+      fakeReservation(0, 100).reservation,
     );
     await fetch(["A", "B"]);
     expect(calls.find((c) => c.who === "TD")?.symbols ?? []).toEqual([]);
@@ -433,7 +516,7 @@ describe("makeCapacitySplitBarFetcher (provider split, item 8)", () => {
     const fetch = makeCapacitySplitBarFetcher(
       fakeFetcher("TD", calls),
       fakeFetcher("TII", calls),
-      () => ({ minute: 8, day: 1 }),
+      fakeReservation(1, 100).reservation,
     );
     await fetch(["A", "B", "C"]);
     expect(calls.find((c) => c.who === "TD")?.symbols).toEqual(["A"]); // day budget caps at 1
@@ -445,7 +528,7 @@ describe("makeCapacitySplitBarFetcher (provider split, item 8)", () => {
     const fetch = makeCapacitySplitBarFetcher(
       fakeFetcher("TD", calls, { fail: true }),
       fakeFetcher("TII", calls),
-      () => ({ minute: 2, day: 100 }),
+      fakeReservation(2, 100).reservation,
     );
     const bars = await fetch(["A", "B"]);
     // Twelve Data threw, so both assigned symbols spill to Tiingo and still resolve.
@@ -461,12 +544,96 @@ describe("makeCapacitySplitBarFetcher (provider split, item 8)", () => {
     const fetch = makeCapacitySplitBarFetcher(
       fakeFetcher("TD", calls, { empty: new Set(["A"]) }),
       fakeFetcher("TII", calls),
-      () => ({ minute: 2, day: 100 }),
+      fakeReservation(2, 100).reservation,
     );
     const bars = await fetch(["A", "B"]);
     expect(bars.get("A")?.length).toBe(1); // refilled from Tiingo
     const spill = calls.filter((c) => c.who === "TII").flatMap((c) => c.symbols);
     expect(spill).toEqual(["A"]);
+  });
+
+  it("defers the overflow instead of dumping it on a frozen Tiingo (WS4/WS5)", async () => {
+    const calls: Array<{ who: string; symbols: string[] }> = [];
+    const fetch = makeCapacitySplitBarFetcher(
+      fakeFetcher("TD", calls),
+      fakeFetcher("TII", calls),
+      fakeReservation(2, 0).reservation, // Tiingo frozen ⇒ 0 grant
+    );
+    const bars = await fetch(["A", "B", "C", "D"]);
+    // Twelve Data still serves up to its budget; the overflow is held back for a
+    // later round rather than wasted on a provider that has already said no.
+    expect(calls.find((c) => c.who === "TD")?.symbols).toEqual(["A", "B"]);
+    expect(calls.find((c) => c.who === "TII")?.symbols ?? []).toEqual([]);
+    expect(bars.get("A")?.length).toBe(1);
+    expect(bars.get("C")).toBeUndefined();
+  });
+
+  it("does not spill Twelve Data misses to a frozen Tiingo", async () => {
+    const calls: Array<{ who: string; symbols: string[] }> = [];
+    const fetch = makeCapacitySplitBarFetcher(
+      fakeFetcher("TD", calls, { empty: new Set(["A"]) }),
+      fakeFetcher("TII", calls),
+      fakeReservation(8, 0).reservation, // Tiingo frozen ⇒ 0 grant
+    );
+    const bars = await fetch(["A", "B"]);
+    expect(calls.find((c) => c.who === "TII")).toBeUndefined();
+    expect(bars.get("A")?.length ?? 0).toBe(0); // empty miss left for a later round
+    expect(bars.get("B")?.length).toBe(1);
+  });
+
+  it("caps the Tiingo overflow at Tiingo's own budget and defers the rest (Flags 1, 5)", async () => {
+    const calls: Array<{ who: string; symbols: string[] }> = [];
+    // Twelve Data can take 2, Tiingo only 1 — so of the 4 symbols, A,B go to TD,
+    // C goes to Tiingo, and D is deferred (neither provider can pay for it now).
+    const fetch = makeCapacitySplitBarFetcher(
+      fakeFetcher("TD", calls),
+      fakeFetcher("TII", calls),
+      fakeReservation(2, 1).reservation,
+    );
+    const bars = await fetch(["A", "B", "C", "D"]);
+    expect(calls.find((c) => c.who === "TD")?.symbols).toEqual(["A", "B"]);
+    expect(calls.find((c) => c.who === "TII")?.symbols).toEqual(["C"]);
+    expect(bars.get("C")?.length).toBe(1);
+    expect(bars.get("D")).toBeUndefined(); // over both caps ⇒ deferred, not dumped
+  });
+
+  it("is atomic across concurrent builds: two splits over one ledger never overshoot", async () => {
+    const calls: Array<{ who: string; symbols: string[] }> = [];
+    // The *real* authority over a shared in-memory ledger (8 Twelve Data credits).
+    const store = mapStorage();
+    const reservation = ledgerReservation(store);
+    const td = fakeFetcher("TD", calls);
+    // Tiingo absorbs the overflow (and fails), but the point is that both builds
+    // read-and-debit the same ledger, so their *combined* Twelve Data dispatch
+    // must not exceed the 8-credit minute, with the rest spilling/deferring.
+    const split = makeCapacitySplitBarFetcher(td, fakeFetcher("TII", calls, { fail: true }), reservation);
+    await Promise.all([
+      split(["A", "B", "C", "D", "E"]),
+      split(["F", "G", "H", "I", "J"]),
+    ]);
+    const tdSymbols = calls.filter((c) => c.who === "TD").flatMap((c) => c.symbols);
+    expect(tdSymbols.length).toBe(8); // exactly the per-minute budget, never 10
+  });
+
+  it("regression: a hard refresh during a 429 freeze issues ZERO provider calls", async () => {
+    // The user's scenario: both providers are inside a 429 freeze and the user
+    // mashes refresh. A hard refresh may clear soft TTL/backoff, but the breaker
+    // is authoritative — the single reservation authority grants 0 to *both*
+    // providers, so not one leg fetcher fires and we burn no credits.
+    const store = mapStorage();
+    const now = 1_000_000;
+    recordTwelveData429(now, store);
+    recordTiingo429(now, store);
+    const calls: Array<{ who: string; symbols: string[] }> = [];
+    const fetch = makeCapacitySplitBarFetcher(
+      fakeFetcher("TD", calls),
+      fakeFetcher("TII", calls),
+      ledgerReservation(store),
+      () => now,
+    );
+    const bars = await fetch(["A", "B", "C"]);
+    expect(calls).toHaveLength(0); // no network leg attempted at all
+    expect(bars.size).toBe(0); // nothing fetched ⇒ curve falls back to cache
   });
 });
 
