@@ -14,6 +14,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.3.1] — 2026-06-25
+
+### Fixed
+
+- **1D and 1W intraday charts now read like a broker terminal.** The "1 Day"
+  curve (`web/src/chart.ts`) gained **regular, clock-aligned axis ticks** instead
+  of ticks placed at arbitrary sample positions, so the time axis lands on tidy
+  wall-clock boundaries. The "1 Week" view previously broke its line per session
+  and added an inter-band gutter, which left a sparse week as disconnected
+  "islands" of price action surrounded by distracting whitespace. The session
+  bands are now packed **directly adjacent (no gutter)** with **one continuous
+  line** connecting across days, while a vertical **separator rule** is still
+  drawn at each day boundary. A named `DAY_MS` constant and a more robust
+  modulo in the axis test back the change.
+
 ## [4.3.0] — 2026-06-25
 
 ### Added
