@@ -226,8 +226,8 @@ entirely in Pillar 5.**
 | **Heavily outdated** — >1 market day missing **AND** best-available blob >1 market day old | any | **1W + 1D** series, full (all graphs + holding values) |
 | **Minorly outdated** — device data **and** best-available blob ≤1 market day old, but older than 1h | open ≥30 min, **or** closed | **1D** series only (1W fills from it) |
 | ″ | open <30 min | **quotes only**; fill 1D from quote + breadcrumbs (no bars) |
-| **NAV prices missing** — settled NAV absent, no newer blob | **closed only** — NAV prints once, post-close, so it *cannot* be missing intraday | **NAV quote + FX quote** only |
 | **Relatively fresh** — latest <1h old but older than last auto-update interval | open | market data |
+| ″ | closed, NAV prices for that day missing | **NAV quote + FX quote** only |
 | ″ | closed, NAV present | **FX value only** |
 | **Blob-trust re-engage** (overlay) | any | if a leg was skipped expecting blob data and the decrypted blob lacked it → **re-run the matching row, ignoring the blob** |
 
