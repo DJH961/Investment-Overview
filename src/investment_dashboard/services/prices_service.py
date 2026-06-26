@@ -27,7 +27,7 @@ from investment_dashboard.repositories import (
     prices_repo,
     splits_repo,
 )
-from investment_dashboard.services import fetch_report
+from investment_dashboard.services import fetch_report, pull_log
 
 log = logging.getLogger(__name__)
 
@@ -103,13 +103,40 @@ def _force_refresh_window(
     return min(start, anchor), anchor
 
 
-def refresh_prices(
+def _report_suspect_data(
+    cache: Session,
+    by_symbol: dict[str, Instrument],
+    written_ids: Sequence[int],
+    round_: pull_log.PullRound,
+) -> None:
+    """Flag any just-written instrument whose cached close is non-positive.
+
+    A ``0``/negative close is the classic "feed handed back garbage" failure —
+    it forward-fills into valuations and silently understates them. Surfacing it
+    in the pull narrative answers the user's "what generated wrong data?" without
+    waiting for the Data Health page to notice. Best-effort: a lookup failure
+    never disturbs the refresh itself.
+    """
+    if not written_ids:
+        return
+    try:
+        suspect_ids = instruments_with_price_anomalies(cache, list(written_ids))
+    except Exception:  # pragma: no cover - defensive: never break the refresh
+        return
+    if not suspect_ids:
+        return
+    id_to_symbol = {instr.id: sym for sym, instr in by_symbol.items()}
+    round_.suspect_data("yfinance", [id_to_symbol[i] for i in suspect_ids if i in id_to_symbol])
+
+
+def refresh_prices(  # noqa: PLR0915 - one cohesive pull round, narrated start to end
     session: Session,
     cache_session: Session | None = None,
     *,
     earliest_needed: date,
     today: date | None = None,
     now: datetime | None = None,
+    source: str | None = None,
 ) -> dict[str, int]:
     """Backfill ``price_history`` for every active instrument.
 
@@ -140,87 +167,90 @@ def refresh_prices(
     settled = latest_settled_session_date(now_utc)
     result: dict[str, int] = {}
 
-    instruments = instruments_repo.list_instruments(session)
-    inactive = instrument_overrides_repo.inactive_ids(session)
-    # Batch the per-instrument MAX/MIN(date) lookups into two GROUP BY queries
-    # instead of 2N individual round-trips.
-    candidate_ids = [
-        instr.id
-        for instr in instruments
-        if instr.asset_class not in _SYNTHETIC_ASSET_CLASSES and instr.id not in inactive
-    ]
-    latest_dates = prices_repo.latest_price_dates(cache, candidate_ids)
-    earliest_dates = prices_repo.earliest_price_dates(cache, candidate_ids)
-    symbols_to_fetch: list[str] = []
-    earliest_per_symbol: dict[str, date] = {}
-    anchors: list[date] = []
-    for instr in instruments:
-        if instr.asset_class in _SYNTHETIC_ASSET_CLASSES:
-            continue
-        if instr.id in inactive:
-            continue
-        start, anchor = _force_refresh_window(
-            asset_class=instr.asset_class,
-            latest=latest_dates.get(instr.id),
-            earliest=earliest_dates.get(instr.id),
-            earliest_needed=earliest_needed,
-            today=today,
-            settled=settled,
-            market_open=market_open,
-        )
-        symbols_to_fetch.append(instr.symbol)
-        earliest_per_symbol[instr.symbol] = start
-        anchors.append(anchor)
-
-    if not symbols_to_fetch:
-        log.debug(
-            "refresh_prices: nothing to fetch (%d instrument(s), all synthetic/inactive/current)",
-            len(instruments),
-        )
-        return result
-
-    start = min(earliest_per_symbol.values())
-    end = max(anchors) + timedelta(days=1)
-    log.info(
-        "refresh_prices: pulling %d symbol(s) from yfinance over %s..%s "
-        "(market_open=%s, settled=%s): %s",
-        len(symbols_to_fetch),
-        start,
-        end,
-        market_open,
-        settled,
-        ", ".join(sorted(symbols_to_fetch)),
-    )
+    round_ = pull_log.current()
+    owns_round = round_ is None
+    if owns_round:
+        round_ = pull_log.begin(source or "Price re-pull", mode="full re-pull (recent window)")
     try:
-        closes_by_symbol = fetch_closes(symbols_to_fetch, start, end)
-    except YFinanceError as exc:
-        log.warning("yfinance refresh failed (%s); continuing with stale prices", exc)
-        return result
-    # Note which tickers we just asked yfinance for, so Settings can report it.
-    fetch_report.record("yfinance", symbols_to_fetch)
+        instruments = instruments_repo.list_instruments(session)
+        inactive = instrument_overrides_repo.inactive_ids(session)
+        # Batch the per-instrument MAX/MIN(date) lookups into two GROUP BY queries
+        # instead of 2N individual round-trips.
+        candidate_ids = [
+            instr.id
+            for instr in instruments
+            if instr.asset_class not in _SYNTHETIC_ASSET_CLASSES and instr.id not in inactive
+        ]
+        latest_dates = prices_repo.latest_price_dates(cache, candidate_ids)
+        earliest_dates = prices_repo.earliest_price_dates(cache, candidate_ids)
+        symbols_to_fetch: list[str] = []
+        earliest_per_symbol: dict[str, date] = {}
+        anchors: list[date] = []
+        for instr in instruments:
+            if instr.asset_class in _SYNTHETIC_ASSET_CLASSES:
+                continue
+            if instr.id in inactive:
+                continue
+            start, anchor = _force_refresh_window(
+                asset_class=instr.asset_class,
+                latest=latest_dates.get(instr.id),
+                earliest=earliest_dates.get(instr.id),
+                earliest_needed=earliest_needed,
+                today=today,
+                settled=settled,
+                market_open=market_open,
+            )
+            symbols_to_fetch.append(instr.symbol)
+            earliest_per_symbol[instr.symbol] = start
+            anchors.append(anchor)
 
-    by_symbol = {i.symbol: i for i in instruments}
-    now = datetime.now(UTC).replace(tzinfo=None)
-    for symbol in symbols_to_fetch:
-        instr = by_symbol.get(symbol)
-        if instr is None:
-            continue
-        closes = closes_by_symbol.get(symbol, {})
-        cutoff = earliest_per_symbol.get(symbol, earliest_needed)
-        filtered = {d: c for d, c in closes.items() if d >= cutoff}
-        result[symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
-        # Stamp every instrument we queried (see refresh_due_prices) so the
-        # overview's per-symbol "updated" time advances even when the feed
-        # returned nothing new for that symbol.
-        price_cache_repo.upsert_last_refreshed_at(cache, instr.id, now)
-    written = sum(result.values())
-    log.info(
-        "refresh_prices: wrote %d new close(s) across %d symbol(s); symbols with fresh data: %s",
-        written,
-        len(result),
-        ", ".join(sorted(s for s, n in result.items() if n)) or "none",
-    )
-    return result
+        if not symbols_to_fetch:
+            round_.note(
+                f"nothing to pull ({len(instruments)} instrument(s), "
+                "all synthetic/inactive/current)"
+            )
+            return result
+
+        start = min(earliest_per_symbol.values())
+        end = max(anchors) + timedelta(days=1)
+        round_.requested_window(
+            "yfinance",
+            symbols_to_fetch,
+            start,
+            end,
+            detail=f"market_open={market_open}, settled={settled}",
+        )
+        try:
+            closes_by_symbol = fetch_closes(symbols_to_fetch, start, end)
+        except YFinanceError as exc:
+            round_.provider_failed("yfinance", f"{exc}; continuing with stale prices")
+            return result
+        # Note which tickers we just asked yfinance for, so Settings can report it.
+        fetch_report.record("yfinance", symbols_to_fetch)
+
+        by_symbol = {i.symbol: i for i in instruments}
+        now = datetime.now(UTC).replace(tzinfo=None)
+        written_ids: list[int] = []
+        for symbol in symbols_to_fetch:
+            instr = by_symbol.get(symbol)
+            if instr is None:
+                continue
+            closes = closes_by_symbol.get(symbol, {})
+            cutoff = earliest_per_symbol.get(symbol, earliest_needed)
+            filtered = {d: c for d, c in closes.items() if d >= cutoff}
+            result[symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
+            if result[symbol]:
+                written_ids.append(instr.id)
+            # Stamp every instrument we queried (see refresh_due_prices) so the
+            # overview's per-symbol "updated" time advances even when the feed
+            # returned nothing new for that symbol.
+            price_cache_repo.upsert_last_refreshed_at(cache, instr.id, now)
+        round_.settled("yfinance", result)
+        _report_suspect_data(cache, by_symbol, written_ids, round_)
+        return result
+    finally:
+        if owns_round:
+            pull_log.end(round_)
 
 
 def refresh_splits(
@@ -591,12 +621,13 @@ def instruments_due_for_refresh(
     return due
 
 
-def refresh_due_prices(
+def refresh_due_prices(  # noqa: PLR0915 - one cohesive pull round, narrated start to end
     session: Session,
     cache_session: Session | None = None,
     *,
     today: date | None = None,
     now: datetime | None = None,
+    source: str | None = None,
 ) -> dict[str, int]:
     """Refresh only the instruments whose per-asset-class TTL has expired.
 
@@ -616,89 +647,101 @@ def refresh_due_prices(
     cache = cache_session if cache_session is not None else session
     today = today or date.today()
     now = now or datetime.now(UTC).replace(tzinfo=None)
-    due = instruments_due_for_refresh(session, cache, now=now)
-    if not due:
-        log.debug("refresh_due_prices: no instruments due for refresh")
-        return {}
 
-    symbols_to_fetch: list[str] = []
-    earliest_per_symbol: dict[str, date] = {}
-    latest_dates = prices_repo.latest_price_dates(cache, [i.id for i in due])
-    for instr in due:
-        latest = latest_dates.get(instr.id)
-        start = (latest + timedelta(days=1)) if latest is not None else today - timedelta(days=14)
-        # Always fetch today's window so intraday closes overwrite stale rows.
-        start = min(start, today)
-        symbols_to_fetch.append(instr.symbol)
-        earliest_per_symbol[instr.symbol] = start
-
-    fetch_start = min(earliest_per_symbol.values())
-    fetch_end = today + timedelta(days=1)
-    log.info(
-        "refresh_due_prices: %d instrument(s) due; fetching %s..%s: %s",
-        len(due),
-        fetch_start,
-        fetch_end,
-        ", ".join(sorted(symbols_to_fetch)),
-    )
+    round_ = pull_log.current()
+    owns_round = round_ is None
+    if owns_round:
+        round_ = pull_log.begin(source or "Live price refresh", mode="auto (TTL-due only)")
     try:
-        closes_by_symbol = fetch_closes(symbols_to_fetch, fetch_start, fetch_end)
-    except YFinanceError as exc:
-        # A hard yfinance failure no longer ends the cycle: fall through with no
-        # primary data so the Tiingo fallback can still cover the gap. Every due
-        # symbol counts as a primary failure for the gates.
-        log.warning("yfinance live refresh failed (%s); attempting Tiingo fallback", exc)
-        closes_by_symbol = {}
-    else:
-        # Note which tickers we just asked yfinance for, so Settings can report it.
-        fetch_report.record("yfinance", symbols_to_fetch)
+        due = instruments_due_for_refresh(session, cache, now=now)
+        if not due:
+            round_.note("no instruments due for refresh (all within their TTL)")
+            return {}
 
-    # Best-effort: stamp *when each price is from* on the exchange alongside the
-    # pull time, so the settled-today caption can date the figure by the
-    # provider's market time (e.g. a mutual fund's NAV publish time) instead of
-    # our fetch instant. Isolated so a quote-timing failure never disturbs the
-    # price refresh itself.
-    try:
-        market_times = fetch_market_times(symbols_to_fetch) if closes_by_symbol else {}
-    except Exception:  # pragma: no cover - defensive: never break the refresh
-        log.debug("market-time capture failed; continuing without it", exc_info=True)
-        market_times = {}
-
-    result: dict[str, int] = {}
-    # When the whole yfinance batch fails (hard error), skip the per-symbol write
-    # loop entirely so the result stays ``{}`` (the long-standing "nothing
-    # happened" contract) and the Tiingo fallback alone decides what to recover.
-    if closes_by_symbol:
+        symbols_to_fetch: list[str] = []
+        earliest_per_symbol: dict[str, date] = {}
+        latest_dates = prices_repo.latest_price_dates(cache, [i.id for i in due])
         for instr in due:
-            closes = closes_by_symbol.get(instr.symbol, {})
-            cutoff = earliest_per_symbol.get(instr.symbol, fetch_start)
-            filtered = {d: c for d, c in closes.items() if d >= cutoff}
-            result[instr.symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
-            # Stamp the refresh time for *every* instrument we successfully
-            # queried, not just those that returned new closes. Otherwise the
-            # per-symbol "updated" time on the overview freezes whenever the feed
-            # has nothing new (after hours / weekends / NAV not yet published),
-            # leaving it stuck at the last time a price actually changed. The "as
-            # of" date still reflects the real (possibly older) observation date.
-            price_cache_repo.upsert_last_refreshed_at(
-                cache, instr.id, now, market_time=market_times.get(instr.symbol)
+            latest = latest_dates.get(instr.id)
+            start = (
+                (latest + timedelta(days=1)) if latest is not None else today - timedelta(days=14)
             )
+            # Always fetch today's window so intraday closes overwrite stale rows.
+            start = min(start, today)
+            symbols_to_fetch.append(instr.symbol)
+            earliest_per_symbol[instr.symbol] = start
 
-    _maybe_run_tiingo_fallback(
-        session,
-        cache,
-        due=due,
-        now=now,
-        today=today,
-        primary_closes=closes_by_symbol,
-        result=result,
-    )
-    log.info(
-        "refresh_due_prices: wrote %d new close(s) across %d symbol(s)",
-        sum(result.values()),
-        len(result),
-    )
-    return result
+        fetch_start = min(earliest_per_symbol.values())
+        fetch_end = today + timedelta(days=1)
+        round_.requested_window(
+            "yfinance",
+            symbols_to_fetch,
+            fetch_start,
+            fetch_end,
+            detail=f"{len(due)} due",
+        )
+        try:
+            closes_by_symbol = fetch_closes(symbols_to_fetch, fetch_start, fetch_end)
+        except YFinanceError as exc:
+            # A hard yfinance failure no longer ends the cycle: fall through with
+            # no primary data so the Tiingo fallback can still cover the gap. Every
+            # due symbol counts as a primary failure for the gates.
+            round_.provider_failed("yfinance", f"{exc}; attempting Tiingo fallback")
+            closes_by_symbol = {}
+        else:
+            # Note which tickers we just asked yfinance for, so Settings can report it.
+            fetch_report.record("yfinance", symbols_to_fetch)
+
+        # Best-effort: stamp *when each price is from* on the exchange alongside the
+        # pull time, so the settled-today caption can date the figure by the
+        # provider's market time (e.g. a mutual fund's NAV publish time) instead of
+        # our fetch instant. Isolated so a quote-timing failure never disturbs the
+        # price refresh itself.
+        try:
+            market_times = fetch_market_times(symbols_to_fetch) if closes_by_symbol else {}
+        except Exception:  # pragma: no cover - defensive: never break the refresh
+            log.debug("market-time capture failed; continuing without it", exc_info=True)
+            market_times = {}
+
+        result: dict[str, int] = {}
+        written_ids: list[int] = []
+        # When the whole yfinance batch fails (hard error), skip the per-symbol
+        # write loop entirely so the result stays ``{}`` (the long-standing
+        # "nothing happened" contract) and the Tiingo fallback alone decides what
+        # to recover.
+        if closes_by_symbol:
+            for instr in due:
+                closes = closes_by_symbol.get(instr.symbol, {})
+                cutoff = earliest_per_symbol.get(instr.symbol, fetch_start)
+                filtered = {d: c for d, c in closes.items() if d >= cutoff}
+                result[instr.symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
+                if result[instr.symbol]:
+                    written_ids.append(instr.id)
+                # Stamp the refresh time for *every* instrument we successfully
+                # queried, not just those that returned new closes. Otherwise the
+                # per-symbol "updated" time on the overview freezes whenever the feed
+                # has nothing new (after hours / weekends / NAV not yet published),
+                # leaving it stuck at the last time a price actually changed. The "as
+                # of" date still reflects the real (possibly older) observation date.
+                price_cache_repo.upsert_last_refreshed_at(
+                    cache, instr.id, now, market_time=market_times.get(instr.symbol)
+                )
+            round_.settled("yfinance", result)
+            _report_suspect_data(cache, {i.symbol: i for i in due}, written_ids, round_)
+
+        _maybe_run_tiingo_fallback(
+            session,
+            cache,
+            due=due,
+            now=now,
+            today=today,
+            primary_closes=closes_by_symbol,
+            result=result,
+        )
+        return result
+    finally:
+        if owns_round:
+            pull_log.end(round_)
 
 
 def _maybe_run_tiingo_fallback(
@@ -816,14 +859,24 @@ def refresh_via_tiingo(
 
     from investment_dashboard.services import tiingo_fallback_wiring  # noqa: PLC0415
 
-    recovered, outcome = tiingo_fallback_wiring.apply_desktop_fallback(
-        session,
-        cache,
-        due=instruments,
-        now_utc=now,
-        today=today,
-        primary_closes={},
-        token=token,
-        manual=True,
-    )
-    return recovered, outcome.switched
+    round_ = pull_log.current()
+    owns_round = round_ is None
+    if owns_round:
+        round_ = pull_log.begin(
+            "Manual Tiingo re-pull (Settings)", mode="manual Tiingo-only fallback"
+        )
+    try:
+        recovered, outcome = tiingo_fallback_wiring.apply_desktop_fallback(
+            session,
+            cache,
+            due=instruments,
+            now_utc=now,
+            today=today,
+            primary_closes={},
+            token=token,
+            manual=True,
+        )
+        return recovered, outcome.switched
+    finally:
+        if owns_round:
+            pull_log.end(round_)

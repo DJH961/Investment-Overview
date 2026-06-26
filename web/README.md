@@ -109,7 +109,17 @@ in the other
 direction, when a build does pay to fetch price bars it **hands the newest bar back
 to the holdings' quote cache** (extending freshness only, never overwriting a fresher
 quote), so the holding rows reuse that price rather than re-buying it — see
-`primeQuotesFromBars` in `src/cache.ts`. The companion is now an
+`primeQuotesFromBars` in `src/cache.ts`. The **long-range** graphs (`1M / 3M /
+6M / 1Y`) stay honest the same way: they draw from the export blob's daily curve,
+but when that blob is **stale** (weeks old) while the app is opened daily, the
+companion **persists today's whole-book close** each refresh and **harvests the 1W
+curve's settled daily closes** into a small device history (`src/value-history.ts`,
+in the same `TimeSeriesStore`). The value chart **splices those closes into the gap**
+between the blob's last point and today, so the line is a genuine per-day curve
+rather than one straight diagonal. Storage stays tiny: when a **fresh** blob arrives
+its own history supersedes the device's, so the stored closes are **pruned** down to
+just the trailing week the 1W graph needs (a stale blob keeps the gap-filling days
+until a fresh export covers them). The companion is now an
 installable **progressive web app**: a
 web manifest + icon make it add-to-home-screen capable, and a service worker
 caches **only the public, static app shell** so the UI opens instantly and works

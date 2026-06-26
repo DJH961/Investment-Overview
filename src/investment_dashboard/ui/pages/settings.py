@@ -128,7 +128,11 @@ async def _refresh_fx_clicked(button: ui.button) -> None:  # pragma: no cover - 
 async def _refresh_prices_clicked(button: ui.button) -> None:  # pragma: no cover - UI
     def _work() -> int:
         with session_scope() as session:
-            result = refresh_prices(session, earliest_needed=date.today() - timedelta(days=30))
+            result = refresh_prices(
+                session,
+                earliest_needed=date.today() - timedelta(days=30),
+                source="Manual price re-pull (Settings)",
+            )
         return sum(result.values())
 
     async with _button_busy(button):

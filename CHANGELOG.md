@@ -14,7 +14,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.10.0] — 2026-06-26
+## [4.11.0] — 2026-06-26
 
 ### Added
 
@@ -44,6 +44,102 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   hours" and "Overnight" could be pushed onto a second line. The tag now rides in
   a dedicated value cell on the right, so the status label always stays on one
   line (`web/src/ui.ts`, `web/src/styles.css`).
+
+## [4.10.0] — 2026-06-26
+
+### Changed
+
+- **The downloadable data-polling log was redesigned into a genuine debugging
+  trail.** It was a flat wall of identically-formatted lines: you couldn't tell
+  who kicked off a pull, what actually settled, what failed, where we deliberately
+  backed off, or how much free-tier budget was left when a round ended. The log is
+  now sliced into clearly demarcated **pulling rounds**, each bounded by a `┏━━`
+  start banner (naming the trigger — unlock, kickoff, manual tap, auto tick, or a
+  skipped no-pull tick — plus the time span and duration) and a `┗━━` verdict
+  footer. Every line carries a severity glyph in the gutter (`✓` settled · `↩`
+  backed off / deferred to save budget · `⚠` degraded · `✗` failed), failures in a
+  round are re-listed under it so they can't hide, and a macro overview at the top
+  counts the rounds, flags how many hit a failure, and shows the latest budget
+  left. The round-completion line now reports the full settle breakdown
+  (`N live, M cached, K deferred, J failed`) **and the budget remaining** (primary
+  per-minute/day plus the backup provider's hourly/daily usage). Log entries gained
+  an optional severity level, set explicitly at the key fetch/fallback/failure
+  sites and inferred from wording elsewhere (`web/src/polling-log.ts`,
+  `web/src/app.ts`).
+- **The desktop app's data-pulling log got the same one-readable-story-per-round
+  treatment.** Every price pull — the live tick, a manual click, the startup
+  backfill, the Settings buttons — now opens a single *pull round* that prints a
+  clear `===== PULL <id> START =====` banner naming **who triggered it** and the
+  **mode** (auto/TTL-due, manual full re-pull, startup backfill, manual
+  Tiingo-only), narrates each step under a stable, greppable `pull <id> | …`
+  prefix, and closes with a one-line `summary:` plus an `===== PULL <id> END =====`
+  banner. A round spells out, in order: the symbols/window **requested**, what
+  **settled** (fresh closes, naming the symbols), what **FAILED** (a hard provider
+  error), what came back **SUSPECT** (a non-positive close the feed forward-fills
+  into valuations), every **backoff** wait, any **Tiingo fallback** coverage with
+  the **budget remaining** afterwards (`7/10 this hour, 188/200 today`), and the
+  live EUR/USD spot. New module `services/pull_log.py`; wired through
+  `prices_service`, `auto_refresh`, `tiingo_fallback_wiring`, `adapters/_retry`
+  and `boot`. Two overlapping pulls keep independent round ids (a per-thread
+  `ContextVar`), so the startup backfill and a live tick never interleave into
+  noise.
+- **The web log now also flags SUSPECT prices** (a non-positive quote the feed
+  would forward-fill into valuations), mirroring the desktop log, so "what
+  generated wrong data?" is answerable on both surfaces (`web/src/app.ts`,
+  `web/src/compute.ts`).
+
+## [4.9.3] — 2026-06-26
+
+### Fixed
+
+- **The "today" move no longer lies when the market is shut.** Both the hero's
+  headline daily move and the value-over-time chart's 1D headline always read
+  "… today", even on a weekend, a holiday, or before the opening bell — when the
+  figure they show is actually the *last* session's close-to-now move, not today's.
+  They now name the session the number really belongs to: "today" while the current
+  day is trading, otherwise "yesterday" or the older session's date (e.g. "20 Jun"),
+  so a Saturday glance reads "+1.2% Friday" instead of a false "+1.2% today". The
+  "All" window's headline also now reuses the lifetime compounded-growth KPI verbatim
+  rather than re-deriving it from the curve, where a near-zero inception value made
+  the seed collapse into a wildly inflated number
+  (`web/src/format.ts`, `web/src/market-hours.ts`, `web/src/ui.ts`).
+- **The session-aware "today" wording is now consistent across the whole web
+  app**, not just the hero. The "Today" return-horizon KPI now reads "Yesterday"
+  or the older session's date (e.g. "20 Jun") in lock-step with the hero, and a
+  stale per-holding row's tooltip names the same session instead of hard-coding
+  "today". A single `sessionMoveWord` helper backs every surface so they can
+  never disagree (`web/src/ui.ts`).
+- **Calmer 1D/1W live chart toggling** (changelog entry for #166, which shipped
+  without one). Toggling the live 1D/1W graphs flashed a collapsed "Loading…"
+  placeholder on every click before the (usually cached) curve resolved. A 220 ms
+  grace timer now holds the previous chart in place so a cache hit or re-toggle
+  swaps the new curve straight in; the placeholder reserves the chart's aspect
+  ratio so it no longer collapses the layout; and freshly built charts cross-fade
+  in (disabled under `prefers-reduced-motion`) (`web/src/ui.ts`, `web/src/styles.css`).
+
+## [4.9.2] — 2026-06-26
+
+### Fixed
+
+- **The persisted value-over-time history now buckets days on the same calendar
+  as the desktop blob.** The whole-book daily-close cache that back-fills the
+  long-range chart keyed each close at *UTC* midnight, but the Python export carries
+  bare calendar dates and derives "today" from `date.today()` — the desktop's
+  **local** calendar, with no time-of-day. For any viewer west of UTC an evening
+  live close therefore rolled onto the next UTC day, so the same day recorded from
+  `overview.asOf` (a local date) and harvested from the 1W curve could split across
+  two buckets and the chart's date-string splice could misalign. Day bucketing is
+  now local-midnight throughout, matching the blob (`web/src/value-history.ts`).
+- **Harvesting a day's close is now order- and garbage-resistant.** The 1W-curve
+  harvest resolves each day's close by the latest point *timestamp* rather than
+  trusting curve insertion order, and skips points with a non-finite instant
+  (`web/src/value-history.ts`).
+
+### Documentation
+
+- Expanded the in-code explanation of how the value-history **prune** keeps storage
+  small (cutoff = earlier of the day after the blob's last export and the trailing
+  1W-graph window, never starving the week) (`web/src/value-history.ts`).
 
 ## [4.9.1] — 2026-06-26
 

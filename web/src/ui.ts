@@ -21,6 +21,7 @@ import {
   forexMarketReopenMs,
   lastForexReopenMs,
   lastSessionDate,
+  exchangeDate,
   sessionOpenMs,
 } from "./market-hours";
 import { windowGrowthPct, type GrowthMode, type WindowPoint } from "./window-growth";
@@ -67,6 +68,7 @@ import {
   formatSignedMoneyEur,
   formatSignedMoneyUsd,
   formatSignedPercent,
+  formatSessionDayLabel,
   formatExportedAt,
   formatForexReopen,
   signClass,
@@ -86,6 +88,7 @@ import {
 import { buildLineChart, type ChartSeries } from "./chart";
 import { curveColumns } from "./value-graph";
 import type { CurvePoint } from "./timeseries";
+import type { DailyClose } from "./value-history";
 import { APP_VERSION } from "./version";
 import {
   expandCategoryWeights,
@@ -127,19 +130,44 @@ function signedPercentOrDash(value: Decimal | null): string {
   return value === null ? "—" : formatSignedPercent(value);
 }
 
+/**
+ * The single session word the whole app uses for the "today's move" figure.
+ *
+ * Every surface that shows the close-to-now daily move — the hero, the "Today"
+ * return segment, the per-holding row — describes the *same* session the 1D curve
+ * draws. Sharing this one helper keeps that wording consistent everywhere: "today"
+ * only while the current exchange day is trading, else "yesterday" or the older
+ * session's date (e.g. "20 Jun"), so a weekend/holiday close is never mislabelled
+ * "today" on one surface while reading honestly on another.
+ */
+function sessionMoveWord(now: Date = new Date()): string {
+  return formatSessionDayLabel(lastSessionDate(now), exchangeDate(now));
+}
+
+/** The {@link sessionMoveWord}, capitalised for use as a standalone label. */
+function sessionMoveLabel(now: Date = new Date()): string {
+  const word = sessionMoveWord(now);
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
 /** The headline portfolio value + today's move — the hero of the screen. */
 function renderHero(o: OverviewView, now: Date = new Date()): HTMLElement {
   // Today's move is currency-correct: in USD display we prefer the USD figures so
   // the headline daily change reflects the dollar view, not the EUR view rescaled.
   const todayMovePct = pickByCurrency(o.todayMovePct, o.todayMovePctUsd);
   const cls = signClass(pickByCurrency(o.todayMoveEur, o.todayMoveUsd));
+  // The hero's move is the same close-to-now figure the 1D curve draws, so it
+  // shares the curve's session word: "today" only when the market is open on the
+  // current day, else "yesterday" or the older session's date — never naming a
+  // weekend/holiday close "today".
+  const moveLabel = sessionMoveWord(now);
   const change = h("div", { class: `hero-change ${cls}` }, [
     h("span", { class: "hero-badge" }, [
       h("span", { class: "hero-arrow", "aria-hidden": "true" }, [trendGlyph(cls)]),
       formatSignedDualCurrency(o.todayMoveEur, o.todayMoveUsd),
     ]),
     h("span", { class: "hero-change-pct" }, [
-      todayMovePct !== null ? `${formatSignedPercent(todayMovePct)} today` : "today",
+      todayMovePct !== null ? `${formatSignedPercent(todayMovePct)} ${moveLabel}` : moveLabel,
     ]),
   ]);
 
@@ -612,9 +640,11 @@ function segment(label: string, value: Decimal | null): HTMLElement {
 }
 
 /** Today / month / year return horizons, side by side. */
-function renderReturns(o: OverviewView): HTMLElement {
+function renderReturns(o: OverviewView, now: Date = new Date()): HTMLElement {
   return h("section", { class: "segment", "aria-label": "Return by period" }, [
-    segment("Today", pickByCurrency(o.todayMovePct, o.todayMovePctUsd)),
+    // The first horizon names the same session the hero's move does, so the
+    // app never reads "Today" here while the hero reads "Yesterday" above it.
+    segment(sessionMoveLabel(now), pickByCurrency(o.todayMovePct, o.todayMovePctUsd)),
     segment("This month", pickByCurrency(o.mtdGrowthPct, o.mtdGrowthPctUsd)),
     segment("This year", pickByCurrency(o.ytdGrowthPct, o.ytdGrowthPctUsd)),
   ]);
@@ -890,7 +920,7 @@ const PROJ_KEYS = {
 } as const;
 
 /** A single holding as a list row (mobile-first, no wide horizontal table). */
-function renderHoldingRow(holding: HoldingView, badge?: string): HTMLElement {
+function renderHoldingRow(holding: HoldingView, badge?: string, now: Date = new Date()): HTMLElement {
   const symChildren: Array<Node | string> = [holding.symbol];
   if (holding.priceType === "nav") symChildren.push(h("span", { class: "pill" }, ["NAV"]));
   // A genuinely stale fallback (no price at all) is still flagged; the milder
@@ -911,6 +941,9 @@ function renderHoldingRow(holding: HoldingView, badge?: string): HTMLElement {
   // not today's — grey it so a live glance separates today's numbers from the
   // ones yet to refresh. Before the open nothing is stale, so nothing greys.
   const todayStaleCls = holding.todayMoveIsStale ? " holding-change-stale" : "";
+  // The same session word the hero/returns use, so a stale row's tooltip names
+  // the session everyone else is on rather than a hard-coded "today".
+  const moveWord = sessionMoveWord(now);
   const main = h("div", { class: "holding-main" }, [
     h("div", { class: "holding-id" }, [
       // Top line: symbol (+ NAV/stale pills) on the left, and the price's
@@ -929,7 +962,7 @@ function renderHoldingRow(holding: HoldingView, badge?: string): HTMLElement {
       h("span", { class: "holding-value" }, [formatCurrency(holding.valueEur)]),
       h("span", {
         class: `holding-change ${todayCls}${todayStaleCls}`,
-        ...(holding.todayMoveIsStale ? { title: "Not updated today — last session's move" } : {}),
+        ...(holding.todayMoveIsStale ? { title: `Not updated ${moveWord} — an earlier session's move` } : {}),
       }, [signedPercentOrDash(todayPct)]),
     ]),
   ]);
@@ -961,7 +994,7 @@ function renderHoldingRow(holding: HoldingView, badge?: string): HTMLElement {
   return h("li", { class: "holding" }, [main, meta]);
 }
 
-function renderHoldings(holdings: HoldingView[], badges?: Map<string, string>): HTMLElement {
+function renderHoldings(holdings: HoldingView[], badges?: Map<string, string>, now: Date = new Date()): HTMLElement {
   const sorted = [...holdings].sort((a, b) => {
     const av = a.valueEur?.toNumber() ?? -1;
     const bv = b.valueEur?.toNumber() ?? -1;
@@ -971,7 +1004,7 @@ function renderHoldings(holdings: HoldingView[], badges?: Map<string, string>): 
   const list = h(
     "ul",
     { class: "holding-list" },
-    sorted.map((holding) => renderHoldingRow(holding, badges?.get(holding.symbol))),
+    sorted.map((holding) => renderHoldingRow(holding, badges?.get(holding.symbol), now)),
   );
   return collapsibleSection("Holdings", count, list, "holdings");
 }
@@ -1205,7 +1238,7 @@ function renderOverviewPanel(model: DashboardModel, liveGraph?: LiveGraphHooks):
   // live coverage, budget) — so the leaderboard reads right after the graph and
   // the update text that frame it, mirroring the desktop layout. The badges
   // below still tie each mover back to its holding row.
-  const valueChart = renderValueChart(model.analytics, model.overview, liveGraph);
+  const valueChart = renderValueChart(model.analytics, model.overview, liveGraph, model.valueBackfill);
   if (valueChart) content.push(valueChart);
   content.push(renderStats(model.overview));
   const movers = renderMovers(model.holdings);
@@ -1841,6 +1874,14 @@ function chartWithTimeframe(
 
   const liveStatus = (text: string): HTMLElement => h("div", { class: "chart-live-status note muted" }, [text]);
 
+  // Mark a freshly drawn chart so the stylesheet can fade it in (a gentle
+  // cross-fade keeps re-toggling 1D/1W/… calm instead of snapping). Purely
+  // cosmetic — `prefers-reduced-motion` disables the animation in CSS.
+  const enter = (chart: SVGSVGElement): SVGSVGElement => {
+    chart.classList.add("chart-enter");
+    return chart;
+  };
+
   const applyHistory = (days: number | null): void => {
     let start = 0;
     if (days !== null) {
@@ -1853,19 +1894,35 @@ function chartWithTimeframe(
     const slicedDates = dates.slice(start);
     const slicedSeries = rebaseWindowOverlays(series.map((s) => ({ ...s, values: s.values.slice(start) })));
     const chart = buildLineChart({ dates: slicedDates, series: slicedSeries, ...chartOpts });
-    if (chart) wrap.replaceChildren(...withLegend(chart as unknown as HTMLElement, baseLegend));
+    if (chart) wrap.replaceChildren(...withLegend(enter(chart) as unknown as HTMLElement, baseLegend));
   };
 
   const applyLive = async (option: RangeOption & { kind: "live" }, token: number, regenerateOnly: boolean): Promise<void> => {
     if (!live) return;
     const range = option.range;
-    wrap.replaceChildren(liveStatus("Loading live data…"));
+    // Defer the "Loading live data…" placeholder. A re-toggle (regenerate-only)
+    // or any cache hit resolves almost instantly, so flashing the placeholder
+    // for a single frame — and collapsing the chart's height with it — is the
+    // visible "jump" when clicking 1D/1W. Holding the previous chart in place
+    // for a short grace period lets a fast build swap straight in, calmly; only
+    // a genuinely slow fetch ever shows the placeholder.
+    let placeholderTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      placeholderTimer = null;
+      if (token === activeToken) wrap.replaceChildren(liveStatus("Loading live data…"));
+    }, LIVE_PLACEHOLDER_DELAY_MS);
+    const clearPlaceholderTimer = (): void => {
+      if (placeholderTimer !== null) {
+        clearTimeout(placeholderTimer);
+        placeholderTimer = null;
+      }
+    };
     let built: LiveCurveChart | null = null;
     try {
       built = await live(range, { regenerateOnly });
     } catch {
       built = null;
     }
+    clearPlaceholderTimer();
     if (token !== activeToken) return; // a newer selection superseded this build
     if (!built) {
       wrap.replaceChildren(liveStatus("Live data isn't available yet — try refreshing."));
@@ -1890,7 +1947,7 @@ function chartWithTimeframe(
     // longer prints a second copy beneath the chart. A coverage caption (e.g. a
     // 1D curve drawn from only part of the sleeve) is appended below the legend so
     // a partly-flat line never reads as a complete day (scenario C).
-    const children = withLegend(chart as unknown as HTMLElement, built.legend);
+    const children = withLegend(enter(chart) as unknown as HTMLElement, built.legend);
     if (built.note) children.push(liveStatus(built.note));
     wrap.replaceChildren(...children);
     // Now that the live curve is drawn, refine the headline to the growth the
@@ -1941,6 +1998,14 @@ function chartWithTimeframe(
 }
 
 const CHART_RANGE_KEY_PREFIX = "iv.web.chartRange.";
+
+/**
+ * Grace period before a live (1D/1W) curve shows its "Loading…" placeholder.
+ * Re-toggles and cache hits resolve well within this window, so they swap the
+ * new chart straight in — no placeholder flash, no height collapse — keeping
+ * range switching visually calm. Only a genuinely slow fetch trips the timer.
+ */
+const LIVE_PLACEHOLDER_DELAY_MS = 220;
 
 /**
  * Rebase overlay series for the currently selected window so "benchmark" and
@@ -2288,6 +2353,34 @@ function lastNonNull(values: Array<Decimal | null>): Decimal | null {
 }
 
 /**
+ * Splice the device's persisted whole-book daily closes into the gap between the
+ * last exported point and today. When the export blob is stale (weeks old) but the
+ * app is opened daily, those days were recorded live (and harvested from the 1W
+ * curve), so the long-range chart draws a real per-day line across the gap instead
+ * of a single straight diagonal. Only closes strictly *after* the last exported
+ * day and strictly *before* `asOf` (today's live tip owns `asOf`) are added; an
+ * up-to-date blob already covers the range, so nothing is spliced.
+ */
+export function spliceDailyBackfill(
+  points: EquityPoint[],
+  backfill: DailyClose[],
+  asOf: string,
+): EquityPoint[] {
+  if (backfill.length === 0) return points;
+  const lastDate = points[points.length - 1].date;
+  const extra: EquityPoint[] = backfill
+    .filter((c) => c.date > lastDate && c.date < asOf)
+    .map((c) => ({
+      date: c.date,
+      portfolioValue: c.valueEur,
+      portfolioValueUsd: c.valueUsd,
+      contributions: null,
+      benchmarkValue: null,
+    }));
+  return extra.length === 0 ? points : [...points, ...extra];
+}
+
+/**
  * The Overview "value over time" graph. Reuses the exported equity curve and
  * appends today's live total value as the final point, so the headline figure
  * is the tip of the line. Returns null when no usable history was exported.
@@ -2296,10 +2389,14 @@ function renderValueChart(
   analytics: AnalyticsView | null,
   o: OverviewView,
   liveGraph?: LiveGraphHooks,
+  backfill: DailyClose[] = [],
 ): HTMLElement | null {
   if (analytics === null) return null;
-  const points = analytics.curve.filter((p) => p.portfolioValue !== null);
-  if (points.length < 1) return null;
+  const exported = analytics.curve.filter((p) => p.portfolioValue !== null);
+  if (exported.length < 1) return null;
+  // Rebuild the gap a stale blob leaves with the device's persisted daily closes
+  // before any windowing / live-tip work, so all of it just sees a denser curve.
+  const points = spliceDailyBackfill(exported, backfill, o.asOf);
 
   const dates = points.map((p) => p.date);
   // Denominate in the active display currency. USD is the native booked currency
@@ -2401,14 +2498,26 @@ function renderValueChart(
 
   const todayPct = pickByCurrency(o.todayMovePct, o.todayMovePctUsd);
   const todayCls = signClass(pickByCurrency(o.todayMoveEur, o.todayMoveUsd));
+  // The 1D curve draws the most recent session that has *started* (lastSessionDate).
+  // When the market is shut — a weekend, a holiday, before today's open — that is
+  // not today, so naming the headline "today" misreads the line. Label it by the
+  // session the graph actually shows: "today", "yesterday", or the date if older.
+  const oneDayLabel = formatSessionDayLabel(lastSessionDate(), exchangeDate());
+  // The full-history "All" window's money-weighted growth IS the overview's
+  // "Total growth" KPI (compounded XIRR over the invested lifetime). Reuse it
+  // verbatim so the headline matches that KPI exactly, instead of re-deriving it
+  // from the curve — at inception the opening value is ~0 (freshly deposited cash
+  // isn't a market position yet), which made the XIRR seed collapse to a wildly
+  // inflated Modified-Dietz fallback (e.g. 345% against a true 70%).
+  const allTimeGrowth = pickByCurrency(o.totalGrowthCompoundedPct, o.totalGrowthCompoundedPctUsd);
   // The headline beside the chart tracks the *selected* window so it matches the
   // graph: 1D reuses today's close-to-now move (measured from the previous
   // CLOSE, like the intraday graph's reference line); 1W a simple period growth;
   // anything longer an XIRR-scaled (money-weighted) growth so weekly DCA deposits
-  // don't make the number look wild. Defaults to "today" until a range is chosen
-  // (and stays there when there is nothing to toggle).
+  // don't make the number look wild. Defaults to the 1D session label until a
+  // range is chosen (and stays there when there is nothing to toggle).
   const headlineSpan = h("span", { class: `muted ${todayCls}` }, [
-    todayPct !== null ? `${formatSignedPercent(todayPct)} today` : "today",
+    todayPct !== null ? `${formatSignedPercent(todayPct)} ${oneDayLabel}` : oneDayLabel,
   ]) as HTMLElement;
   const lastWindowMs = Date.parse(dates[dates.length - 1]);
   const sliceWindow = (days: number | null): WindowPoint[] => {
@@ -2426,7 +2535,7 @@ function renderValueChart(
     }));
   };
   const headlineLabel = (option: RangeOption): string =>
-    option.kind === "live" && option.range === "1D" ? "today" : option.label;
+    option.kind === "live" && option.range === "1D" ? oneDayLabel : option.label;
   const setHeadline = (pct: Decimal | null, label: string): void => {
     headlineSpan.className = `muted ${signClass(pct)}`;
     headlineSpan.textContent =
@@ -2436,6 +2545,9 @@ function renderValueChart(
     let pct: Decimal | null;
     if (option.kind === "live" && option.range === "1D") {
       pct = todayPct;
+    } else if (option.kind === "history" && option.days === null) {
+      // "All" — show the lifetime compounded growth (the "Total growth" KPI).
+      pct = allTimeGrowth;
     } else {
       // 1W (live, ~7 day window) uses simple growth; every longer history slice
       // uses XIRR-scaled growth.

@@ -368,6 +368,29 @@ export function formatTimestamp(iso: string): string {
 }
 
 /**
+ * The relative-day word for the session a "1 Day" chart actually draws.
+ *
+ * Both arguments are `YYYY-MM-DD` calendar dates evaluated on the *same* clock
+ * (the exchange/New-York calendar — see `market-hours.exchangeDate`), so the
+ * comparison is timezone-safe. Returns `"today"` when the drawn session is the
+ * current day, `"yesterday"` when it is the previous calendar day, and otherwise
+ * the short date (e.g. `"20 Jun"`) so an older session (a long-weekend Friday, a
+ * holiday) is named honestly instead of being mislabelled "today". Falls back to
+ * the raw `sessionIso` when it can't be parsed.
+ */
+export function formatSessionDayLabel(sessionIso: string, todayIso: string): string {
+  if (sessionIso === todayIso) return "today";
+  const session = new Date(`${sessionIso}T00:00:00Z`);
+  const today = new Date(`${todayIso}T00:00:00Z`);
+  if (Number.isNaN(session.getTime())) return sessionIso;
+  if (!Number.isNaN(today.getTime())) {
+    const dayDiff = Math.round((today.getTime() - session.getTime()) / 86_400_000);
+    if (dayDiff === 1) return "yesterday";
+  }
+  return session.toLocaleDateString(undefined, { day: "numeric", month: "short", timeZone: "UTC" });
+}
+
+/**
  * The export ("Exported …") stamp. Like {@link formatLastPull}, it swaps the
  * date for the relative keyword "today"/"yesterday" when the export was made on
  * that day, and falls back to the date otherwise — always with the clock time.

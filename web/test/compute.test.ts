@@ -5,7 +5,7 @@
 import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 
-import { buildDashboard, buildFetchPlan, buildMovers, fxTodayDeviationPct } from "../src/compute";
+import { buildDashboard, buildFetchPlan, buildMovers, fxTodayDeviationPct, suspectQuoteSymbols } from "../src/compute";
 import type { OverviewView } from "../src/compute";
 import type { FxRates, Quote } from "../src/prices";
 import type { MobileExport } from "../src/types";
@@ -1440,5 +1440,31 @@ describe("C5 — bars-first NAV headline (bar-tip equals the quote-derived total
     const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
     expect(fxaix.priceIsLive).toBe(false);
     approx(fxaix.priceNative, 100); // exported last-known, not the dateless bar
+  });
+});
+
+describe("suspectQuoteSymbols", () => {
+  const q = (symbol: string, price: number | null): Quote => ({
+    symbol,
+    price: price === null ? null : new Decimal(price),
+    previousClose: null,
+    currency: "USD",
+    at: null,
+    priceTime: null,
+    valueDate: null,
+  });
+
+  it("flags only freshly-fetched symbols whose price is non-positive", () => {
+    const quotes = new Map<string, Quote>([
+      ["AAPL", q("AAPL", 187.5)],
+      ["BAD0", q("BAD0", 0)],
+      ["NEG", q("NEG", -3)],
+      ["NULL", q("NULL", null)],
+    ]);
+    // Only symbols actually fetched this round are considered.
+    expect(suspectQuoteSymbols(quotes, ["AAPL", "BAD0", "NEG", "NULL"])).toEqual(["BAD0", "NEG"]);
+    expect(suspectQuoteSymbols(quotes, ["AAPL"])).toEqual([]);
+    // A null price is "no data", not "wrong data": never suspect.
+    expect(suspectQuoteSymbols(quotes, ["NULL"])).toEqual([]);
   });
 });
