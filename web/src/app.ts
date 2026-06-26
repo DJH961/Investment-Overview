@@ -4019,6 +4019,7 @@ export class App {
           freshlyPulled: this.recentlyPulled(),
           fx: fxDisplaySource,
           fxMarketClosed: !isForexMarketOpen(),
+          liveStalenessMs: this.state.config.updateMinutes * 60 * 1000,
         },
       );
       this.lastCoverage = summarizeCoverage(this.lastCoverageFacts);
@@ -4049,6 +4050,7 @@ export class App {
           freshlyPulled: this.recentlyPulled(),
           fx: fxDisplaySource,
           fxMarketClosed: !isForexMarketOpen(),
+          liveStalenessMs: this.state.config.updateMinutes * 60 * 1000,
         },
       );
       this.lastCoverage = summarizeCoverage(this.lastCoverageFacts);
@@ -5923,7 +5925,7 @@ export function buildCoverageFacts(
   report: QuoteLoadReport,
   quotes: ReadonlyMap<
     string,
-    { valueDate?: string | null; marketOpen?: boolean | null; priceTime?: number | null; price?: unknown }
+    { valueDate?: string | null; marketOpen?: boolean | null; priceTime?: number | null; at?: number | null; price?: unknown }
   >,
   navSymbols: ReadonlySet<string>,
   ctx: {
@@ -5932,10 +5934,23 @@ export function buildCoverageFacts(
     freshlyPulled?: boolean;
     fx?: EurUsdSource;
     fxMarketClosed?: boolean;
+    /**
+     * The live-freshness window (ms, the user-set auto-refresh interval). A market
+     * holding served from cache but *observed* within this window is, to the user,
+     * just as live as one freshly pulled this round — so it is counted as "live",
+     * not "cached", mirroring {@link displayFxSource}. Falls back to
+     * {@link LIVE_PRICE_MAX_STALENESS_MS}.
+     */
+    liveStalenessMs?: number;
   },
 ): CoverageFacts {
   const now = ctx.now ?? new Date();
+  const nowMs = now.getTime();
   const fetched = new Set(report.fetched);
+  const liveWindowMs =
+    ctx.liveStalenessMs !== undefined && ctx.liveStalenessMs > 0
+      ? ctx.liveStalenessMs
+      : LIVE_PRICE_MAX_STALENESS_MS;
   // The latest US session whose 16:00 close has happened. Its NAV is the freshest
   // a fund should hold; after the close that is today's just-shut session.
   const settled = latestSettledSessionDate(now);
@@ -5971,7 +5986,19 @@ export function buildCoverageFacts(
       // "Held" = we have an actual price to show (fresh or cached), so a deferred
       // symbol that still has a usable cached value counts as held — never missing.
       if (q?.price != null) marketHeld += 1;
-      if (fetched.has(symbol)) marketFresh += 1;
+      // "Live" is a freshly-pulled quote *or* a cached one whose observation is
+      // still within the live window — a spot confirmed two minutes ago is, to the
+      // user, just as live as one re-pulled this round, so it must not read as
+      // "cached" (mirrors {@link displayFxSource}). Only promote while the session
+      // is open, where "live" is a meaningful claim.
+      const observedAt = q?.at ?? null;
+      const cacheStillLive =
+        ctx.marketOpen &&
+        q?.price != null &&
+        observedAt !== null &&
+        nowMs - observedAt >= 0 &&
+        nowMs - observedAt <= liveWindowMs;
+      if (fetched.has(symbol) || cacheStillLive) marketFresh += 1;
       if (holdsSettledClose(q, settled)) marketAtClose += 1;
     }
   }

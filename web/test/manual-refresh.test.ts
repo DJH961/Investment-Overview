@@ -368,6 +368,53 @@ describe("buildCoverageFacts", () => {
     expect(f.navTotal).toBe(1);
     expect(f.navAwaiting).toBe(1);
   });
+
+  it("counts a cache-served holding observed within the live window as live, not cached", () => {
+    // The "always cached" confusion: a budget-deferred symbol whose cached spot was
+    // observed two minutes ago is, to the user, just as live as one re-pulled this
+    // round — so it joins the "live" bucket rather than being labelled "cached".
+    const twoMinAgo = now.getTime() - 2 * 60 * 1000;
+    const quotes = new Map([["MSFT", { price: 1, at: twoMinAgo, valueDate: "2024-05-15" }]]);
+    const f = buildCoverageFacts(
+      report({ deferred: ["MSFT"] }),
+      quotes,
+      new Set(),
+      { now, marketOpen: true, liveStalenessMs: 15 * 60 * 1000 },
+    );
+    expect(f.marketTotal).toBe(1);
+    expect(f.marketHeld).toBe(1);
+    expect(f.marketFresh).toBe(1); // promoted: recently confirmed cache reads as live
+    expect(summarizeCoverage({ ...f, fx: "live" })).toBe("1/1 live · FX live");
+  });
+
+  it("keeps a genuinely aged cache-served holding as cached, not live", () => {
+    // Observed well beyond the live window → it has not been confirmed recently, so
+    // it honestly stays "cached" rather than overstating freshness.
+    const fortyMinAgo = now.getTime() - 40 * 60 * 1000;
+    const quotes = new Map([["MSFT", { price: 1, at: fortyMinAgo, valueDate: "2024-05-15" }]]);
+    const f = buildCoverageFacts(
+      report({ deferred: ["MSFT"] }),
+      quotes,
+      new Set(),
+      { now, marketOpen: true, liveStalenessMs: 15 * 60 * 1000 },
+    );
+    expect(f.marketFresh).toBe(0);
+    expect(summarizeCoverage({ ...f, fx: "live" })).toBe("1/1 cached · FX live");
+  });
+
+  it("does not promote a fresh cache to live while the market is closed", () => {
+    // "Live" is only a meaningful claim during the session; once closed, the
+    // settled-close messaging governs, so a recent cache must not read as live.
+    const oneMinAgo = now.getTime() - 60 * 1000;
+    const quotes = new Map([["MSFT", { price: 1, at: oneMinAgo, valueDate: "2024-05-15" }]]);
+    const f = buildCoverageFacts(
+      report({ deferred: ["MSFT"] }),
+      quotes,
+      new Set(),
+      { now, marketOpen: false, liveStalenessMs: 15 * 60 * 1000 },
+    );
+    expect(f.marketFresh).toBe(0);
+  });
 });
 
 describe("displayFxSource", () => {
