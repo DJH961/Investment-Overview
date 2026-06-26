@@ -812,6 +812,11 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   border-radius: 50%;
   background: var(--pos);
   flex: none;
+  box-shadow: 0 0 0 0 currentColor;
+  animation: market-pulse 2s ease-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fresh-dot { animation: none; }
 }
 .holding-figures { text-align: right; display: grid; gap: 0.1rem; flex: none; }
 .holding-value { font-weight: 700; font-variant-numeric: tabular-nums; }
