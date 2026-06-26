@@ -318,16 +318,30 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .market-status-live .market-status-dot {
   box-shadow: 0 0 0 0 currentColor;
-  animation: market-pulse 2s ease-out infinite;
+  animation: market-pulse 1.6s ease-in-out infinite;
 }
 .market-status-closed {
   color: var(--muted);
   background: color-mix(in srgb, var(--muted) 10%, transparent);
 }
+/* A clearly visible heartbeat: the dot itself brightens/dims and gently swells
+   while an accent ring ripples outward, so "Live" reads as genuinely live. */
 @keyframes market-pulse {
-  0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 55%, transparent); }
-  70% { box-shadow: 0 0 0 0.4rem transparent; }
-  100% { box-shadow: 0 0 0 0 transparent; }
+  0% {
+    transform: scale(0.85);
+    opacity: 0.55;
+    box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 70%, transparent);
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+    box-shadow: 0 0 0 0.35rem transparent;
+  }
+  100% {
+    transform: scale(0.85);
+    opacity: 0.55;
+    box-shadow: 0 0 0 0 transparent;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .market-status-live .market-status-dot { animation: none; }
@@ -793,24 +807,6 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   font-weight: 500;
   margin-left: auto;
   white-space: nowrap;
-  flex: none;
-}
-/* Per-row freshness chip (freshness-plan §2): a calm three-way split. "live"
-   gets the accent + a pulsing dot, "recent" a softer muted tone, and the aged
-   "as of <time>" stamp keeps the existing faint style. */
-.holding-asof.fresh-live {
-  color: var(--pos);
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-.holding-asof.fresh-recent { color: var(--muted); }
-.fresh-dot {
-  width: 0.42rem;
-  height: 0.42rem;
-  border-radius: 50%;
-  background: var(--pos);
   flex: none;
 }
 .holding-figures { text-align: right; display: grid; gap: 0.1rem; flex: none; }
