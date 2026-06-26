@@ -14,7 +14,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.4.1] — 2026-06-26
+## [4.5.0] — 2026-06-26
+
+### Changed
+
+- **Smart routing now has a reverse safety net: Tiingo → Twelve Data.** The
+  "hard refresh (route the whole book through the backup provider)" path makes
+  Tiingo the *sole* primary and skips the Twelve Data quote pass. Previously, if
+  Tiingo then failed somewhere — unreachable, over-quota, or returning nothing
+  newer — those holdings were left stuck on a cached / last-known price with no
+  provider behind them. A new pure planner `planTwelveDataSafetyNet`
+  (`web/src/provider-fanout.ts`) names exactly the symbols Tiingo left unpriced,
+  and `refreshPrices` (`web/src/app.ts`) re-pulls them on Twelve Data. The
+  re-pull routes through the same `loadQuotes` reservation, so it self-clamps to
+  the live Twelve Data per-minute / per-day budget and never overspends — a
+  Tiingo outage now degrades gracefully to the primary instead of to stale data.
+- **The auto-update interval is now the cadence for the new-data (blob) check
+  too.** The background "is there a newer desktop export?" probe used a fixed
+  5-minute gap; it now keys on the user's configured auto-update interval
+  (Settings → update frequency), floored at one minute so a very low setting
+  can't hammer the blob host every tick. A manual refresh still always checks the
+  blob immediately, regardless of the interval (`App.blobCheckDue` /
+  `runScheduledRefresh` in `web/src/app.ts`).
+
+
 
 ### Fixed
 
