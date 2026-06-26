@@ -180,12 +180,19 @@ import {
 } from "./resume-session";
 import {
   h,
+  markHoldingsUpdating,
   renderDashboard,
   renderExtendedGraphsToggle,
   renderThemeToggle,
   renderTimeFormatToggle,
   type LiveGraphHooks,
 } from "./ui";
+import {
+  HOLDING_UPDATED_FLASH_MS,
+  emptyHoldingStatusModel,
+  type HoldingLivePhase,
+  type HoldingStatusModel,
+} from "./holding-status";
 
 /** How long an auto-dismissing status toast stays on screen. */
 const TOAST_DURATION_MS = 6000;
@@ -524,6 +531,18 @@ export class App {
    * cannot drive an infinite burst.
    */
   private deferredQueue = new DeferredQueue();
+  /**
+   * Per-holding update-status signals threaded into the holdings render so each
+   * card narrates its own price-pull cycle:
+   *   - {@link holdingUpdatedAt}: epoch ms a symbol last had a *fresh* price land,
+   *     driving the brief "Updated ✓" success flash that settles to "Updated <time>";
+   *   - {@link holdingQueued}: symbols parked behind the free-tier budget this round,
+   *     shown as the calmer "Updating…" queued state until they actually pull.
+   * The live "Updating…" state at the *start* of a round is applied straight to
+   * the DOM ({@link markHoldingsUpdating}) so motion shows the instant a pull begins.
+   */
+  private holdingUpdatedAt = new Map<string, number>();
+  private holdingQueued = new Set<string>();
   /**
    * Whether the login prefetch actually fetched *new* data (≥1 quote or a live
    * FX pull). Drives the one-off login spin of the Refresh glyph: it spins only
@@ -3753,6 +3772,14 @@ export class App {
         })
       : symbols;
 
+    // Flip the on-screen status caption of every holding about to be pulled to a
+    // live "Updating…" (lit dots) the instant the round begins — straight to the
+    // DOM, so the motion shows immediately rather than only when the round lands.
+    // Cache-only paints don't pull, so they never claim to be updating.
+    if (network && symbolsToFetch.length > 0) {
+      markHoldingsUpdating(this.root, symbolsToFetch);
+    }
+
     // Pull the live currency (FX + EUR/USD spot) FIRST — before any stock, ETF or
     // fund quote — so the per-minute free-tier budget always funds the rate that
     // values the whole book, never spending it all on tickers and leaving FX last.
@@ -4151,6 +4178,18 @@ export class App {
     // gap a stale blob leaves between its last point and today. Best-effort: a
     // store failure must never sink the paint, so it falls back to no backfill.
     model.valueBackfill = await this.syncValueHistory(model).catch(() => []);
+    // Update each holding's status signals from this round before the re-render:
+    // freshly-pulled symbols flash "Updated ✓" (then settle to "Updated <time>"),
+    // and budget-deferred symbols carry the calmer "Updating…" queued state into
+    // the next round. Cache-only paints (currency toggle, blob swap) don't pull, so
+    // they leave both untouched and simply re-show whatever the last round left.
+    if (network) {
+      const landedAt = Date.now();
+      for (const symbol of quoteLoad.report.fetched) {
+        this.holdingUpdatedAt.set(symbol, landedAt);
+      }
+      this.holdingQueued = new Set(quoteLoad.report.deferred);
+    }
     this.renderDashboard(model);
     return quoteLoad.report;
   }
@@ -5285,8 +5324,29 @@ export class App {
         () => this.showSettings(),
         "Lock",
         this.buildLiveGraphHooks(model),
+        { holdingStatus: this.holdingStatusModel() },
       ),
     );
+  }
+
+  /**
+   * The current per-holding update-status signals, threaded into the holdings
+   * render so each card paints its place in the price-pull cycle: a quiet
+   * "Updated <time>" stamp, the "Updating…" queued state, or the brief
+   * "Updated ✓" success flash for symbols pulled within the last flash window.
+   * Stale entries (older than the flash window) are pruned so the map stays small.
+   */
+  private holdingStatusModel(): HoldingStatusModel {
+    const status = emptyHoldingStatusModel();
+    const cutoff = Date.now() - HOLDING_UPDATED_FLASH_MS;
+    for (const [symbol, at] of this.holdingUpdatedAt) {
+      if (at < cutoff) this.holdingUpdatedAt.delete(symbol);
+      else status.updatedAt.set(symbol, at);
+    }
+    for (const symbol of this.holdingQueued) {
+      status.phases.set(symbol, "queued" satisfies HoldingLivePhase);
+    }
+    return status;
   }
 
   /**
