@@ -14,6 +14,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.9.3] — 2026-06-26
+
+### Changed
+
+- **The data-pulling log is now one readable story per refresh instead of a
+  scatter of disconnected lines.** Every price pull — the live tick, a manual
+  click, the startup backfill, the Settings buttons — now opens a single *pull
+  round* that prints a clear `===== PULL <id> START =====` banner naming **who
+  triggered it** and the **mode** (auto/TTL-due, manual full re-pull, startup
+  backfill, manual Tiingo-only), narrates each step under a stable, greppable
+  `pull <id> | …` prefix, and closes with a one-line `summary:` plus an
+  `===== PULL <id> END =====` banner. A round now spells out, in order: the
+  symbols/window **requested**, what **settled** (fresh closes, naming the
+  symbols), what **FAILED** (a hard provider error), what came back **SUSPECT**
+  (a non-positive close the feed forward-fills into valuations), every
+  **backoff** wait, any **Tiingo fallback** coverage with the **budget
+  remaining** afterwards (`7/10 this hour, 188/200 today`), and the live EUR/USD
+  spot. New module `services/pull_log.py`; wired through `prices_service`,
+  `auto_refresh`, `tiingo_fallback_wiring`, `adapters/_retry` and `boot`. Two
+  overlapping pulls keep independent round ids (a per-thread `ContextVar`), so
+  the startup backfill and a live tick never interleave into noise.
+
 ## [4.9.2] — 2026-06-26
 
 ### Fixed

@@ -823,10 +823,15 @@ def _refresh_prices() -> None:
             cache_session_scope,
             ledger_session_scope,
         )
+        from investment_dashboard.services import pull_log  # noqa: PLC0415
         from investment_dashboard.services.prices_service import refresh_prices  # noqa: PLC0415
 
         earliest = _earliest_needed_date()
-        with ledger_session_scope() as ledger, cache_session_scope() as cache:
+        with (
+            pull_log.round_scope("Startup price backfill", mode="startup backfill (full history)"),
+            ledger_session_scope() as ledger,
+            cache_session_scope() as cache,
+        ):
             refresh_prices(ledger, cache, earliest_needed=earliest)
         log.info("Prices refreshed (floor=%s)", earliest)
     except Exception:
