@@ -341,7 +341,12 @@ def week_nav_drift_with_fx(
             if any(_is_usd_native(p) for p in drifting)
             else None
         )
-        complete = all(not p.value_warning and p.current_value_eur > 0 for p in drifting)
+        # A day is "complete" only when every drifting fund could actually be
+        # valued. ``value_warning`` is the single authoritative signal here: it is
+        # set precisely when the holding has no price, a zero native value, or no
+        # FX rate (see :func:`positions_service.compute_positions`), so a fund
+        # genuinely worth ~0 is *not* mistaken for an unvaluable one.
+        complete = all(not p.value_warning for p in drifting)
         raw[session_date] = (nav_eur, fx, complete)
 
     if not raw:

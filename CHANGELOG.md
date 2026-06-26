@@ -14,6 +14,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.10.1] — 2026-06-26
+
+### Fixed
+
+- **The "1 Week" graph no longer nose-dives at market start.** Right after the
+  US market opened, the curve's start could drop to roughly 60 % of its real
+  value — almost exactly the value of the stocks *without* their NAV funds — and
+  the resulting scale crushed all detail out of the line. The cause was the
+  day-drifting NAV-fund sleeve collapsing to **zero** for the oldest session(s)
+  in the rolling week window whenever that day's published NAV or its EUR/USD
+  rate hadn't been cached yet (a transient right after the window rolls forward
+  at the open). The week curve now **carries the NAV flat** from the nearest
+  fully-valued day (or, as a last resort, today's live NAV) instead of zeroing
+  it, so the line keeps its shape. The fix is **smart and self-correcting**: it
+  never speculatively fetches and is re-derived from the cache on every render,
+  so the moment a later good price-bar or FX pull patches the missing NAV/rate,
+  the very next render shows the genuine per-day value and the graph corrects
+  itself in retrospect. Both the desktop Overview and the exported data the web
+  companion reads inherit the fix
+  (`src/investment_dashboard/services/intraday_snapshots_service.py`,
+  `src/investment_dashboard/ui/pages/_overview_query.py`).
+
 ## [4.10.0] — 2026-06-26
 
 ### Changed
