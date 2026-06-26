@@ -414,9 +414,11 @@ function navQuoteFromNode(symbol: string, node: Record<string, unknown>): Quote 
 /**
  * Parse a Twelve Data `datetime` (`YYYY-MM-DD HH:MM:SS` intraday, or a bare
  * `YYYY-MM-DD` daily bar) into epoch milliseconds, treating the wall-clock as
- * UTC. The absolute zone offset is unimportant here: price bars and EUR/USD bars
- * come from the same provider with the same convention, so the curve's
- * forward-fill alignment is internally consistent. Returns null if unparseable.
+ * UTC. This is only correct because {@link fetchTimeSeries} explicitly requests
+ * `timezone=UTC`, so the provider's intraday datetimes are genuine UTC and align
+ * with the real session boundaries, the EUR/USD track and the live tip — one
+ * clock for the whole curve. Daily bars carry only a date. Returns null if
+ * unparseable.
  */
 function parseBarTime(value: unknown): number | null {
   if (typeof value !== "string") return null;
@@ -470,6 +472,13 @@ export async function fetchTimeSeries(
   url.searchParams.set("interval", interval);
   url.searchParams.set("outputsize", String(outputsize));
   url.searchParams.set("order", "desc");
+  // Ask Twelve Data for UTC datetimes explicitly. By default it stamps intraday
+  // bars in the *exchange-local* zone (e.g. America/New_York), which `parseBarTime`
+  // would then mis-read as UTC and shift every instant by the ET offset — pushing
+  // price bars off the real session boundaries, the FX track, and the live tip.
+  // Requesting UTC puts price bars, FX bars and session boundaries on one clock
+  // (the basis the whole curve pipeline assumes). Daily bars stay date-only.
+  url.searchParams.set("timezone", "UTC");
   url.searchParams.set("apikey", apiKey);
 
   let resp: Response;
