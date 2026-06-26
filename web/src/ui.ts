@@ -12,6 +12,8 @@
 import { Decimal } from "./decimal-config";
 import type { AllocationSlice, DashboardModel, HoldingView, MoverEntry, OverviewView } from "./compute";
 import { buildMovers, fxTodayDeviationPct } from "./compute";
+import { fxEffectSplit } from "./session-fx";
+import { isUsMarketOpen } from "./market-hours";
 import {
   type AnalyticsView,
   type DepositRowView,
@@ -140,6 +142,8 @@ function renderHero(o: OverviewView, now: Date = new Date()): HTMLElement {
   ];
   const fxLine = renderHeroFx(o, now);
   if (fxLine) children.push(fxLine);
+  const fxSplit = renderFxEffectSplit(o, now);
+  if (fxSplit) children.push(fxSplit);
   return h("section", { class: "hero" }, children);
 }
 
@@ -236,6 +240,70 @@ function renderHeroFx(o: OverviewView, now: Date = new Date()): HTMLElement | nu
   }
   if (parts.length === 0) return null;
   return h("div", { class: "hero-fx" }, parts);
+}
+
+/**
+ * The market-hours-vs-overnight breakdown of today's FX revaluation — the
+ * transparency cue for "what shifted during the trading day, and what changed
+ * overnight". The book is USD-booked, so once the US session has closed the euro
+ * value keeps drifting on FX alone; this isolates that after-hours slice from the
+ * in-session one so the user sees both.
+ *
+ * Shown only once the market is shut and the overnight slice is known (we hold a
+ * session-close rate to measure it from). While the session is open the whole
+ * move is "in session", which the hero FX line already conveys, so the split is
+ * omitted to keep the hero uncluttered.
+ */
+function renderFxEffectSplit(o: OverviewView, now: Date = new Date()): HTMLElement | null {
+  const marketOpen = isUsMarketOpen(now);
+  if (marketOpen) return null;
+  const split = fxEffectSplit({
+    marketOpen,
+    totalValueUsd: o.totalValueUsd,
+    liveFx: o.fxRateEurUsd,
+    sessionCloseFx: o.fxRateEurUsdSessionClose,
+    todayFxMoveEur: o.todayFxMoveEur,
+  });
+  const market = split.marketHoursEur;
+  const overnight = split.overnightEur;
+  // Need both legs to draw a meaningful split; otherwise there is nothing to show.
+  if (market === null || overnight === null) return null;
+  // Nothing moved on FX at all — no insight to surface.
+  if (market.isZero() && overnight.isZero()) return null;
+
+  const magMarket = market.abs();
+  const magOvernight = overnight.abs();
+  const totalMag = magMarket.plus(magOvernight);
+  // Proportional segment widths; guard the all-zero case handled above.
+  const pct = (part: Decimal): number =>
+    totalMag.isZero() ? 0 : part.dividedBy(totalMag).times(100).toNumber();
+
+  const seg = (value: Decimal, kind: "session" | "overnight"): HTMLElement => {
+    const width = pct(value.abs());
+    const el = h("span", { class: `fx-split-seg fx-split-${kind} ${signClass(value)}` }, []);
+    el.style.width = `${width}%`;
+    return el;
+  };
+  const bar = h("div", { class: "fx-split-bar", "aria-hidden": "true" }, [
+    seg(market, "session"),
+    seg(overnight, "overnight"),
+  ]);
+
+  const legRow = (swatch: string, label: string, value: Decimal): HTMLElement =>
+    h("div", { class: "fx-split-leg" }, [
+      h("span", { class: `fx-split-swatch ${swatch}`, "aria-hidden": "true" }, []),
+      h("span", { class: "fx-split-leg-label" }, [label]),
+      h("span", { class: `fx-split-leg-value ${signClass(value)}` }, [formatSignedCurrency(value)]),
+    ]);
+
+  return h("div", { class: "hero-fx-effect", role: "group", "aria-label": "Today's currency effect" }, [
+    h("div", { class: "fx-split-head" }, ["Currency effect today"]),
+    bar,
+    h("div", { class: "fx-split-legend" }, [
+      legRow("fx-split-session", "Market hours", market),
+      legRow("fx-split-overnight", "Overnight", overnight),
+    ]),
+  ]);
 }
 
 /** One return horizon (Today / This month / This year). */

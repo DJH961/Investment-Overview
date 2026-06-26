@@ -25,14 +25,24 @@ import type { HoldingView } from "./compute";
  * `priceSymbol`); everything else folds into the flat base — exactly the split
  * {@link buildIntradayAnchor} performs. `baseFx` is the EUR→USD rate the EUR
  * values are expressed at.
+ *
+ * `graphFx` **freezes** the EUR view to a specific EUR→USD rate (the session
+ * close, while the market is shut), so the 1D/1W market-day trajectory does not
+ * slide around with overnight FX. When supplied it overrides `baseFx`, re-marks
+ * each USD-booked holding's EUR value at that rate (`valueUsd / graphFx`, the USD
+ * leg staying FX-free), and re-derives the EUR cash sleeve's USD twin from it.
+ * Omitted/`null`, the holdings keep their live-FX EUR values exactly as before.
  */
 export function buildModelAnchor(
   holdings: HoldingView[],
   cashValueEur: Decimal,
   cashValueUsd: Decimal,
   baseFx: Decimal | null,
-  options: { navInSleeve?: boolean } = {},
+  options: { navInSleeve?: boolean; graphFx?: Decimal | null } = {},
 ): IntradayAnchor {
+  const graphFx = options.graphFx ?? null;
+  const freeze = graphFx !== null && graphFx.greaterThan(0);
+  const effectiveFx = freeze ? graphFx : baseFx;
   const inputs: AnchorHoldingInput[] = holdings.map((h) => ({
     // The bars are keyed by the Twelve Data ticker (`price_symbol`); fall back to
     // the display symbol only for fixtures that predate the `priceSymbol` field.
@@ -41,10 +51,24 @@ export function buildModelAnchor(
     priceType: h.priceType,
     shares: h.shares,
     priceNative: h.priceNative,
-    valueEur: h.valueEur,
+    valueEur: freeze ? frozenValueEur(h, graphFx) : h.valueEur,
     valueUsd: h.valueUsd,
   }));
-  return buildIntradayAnchor(inputs, cashValueEur, cashValueUsd, baseFx, options);
+  // The EUR cash sleeve's USD twin must agree with the rate the curve is anchored
+  // at, or the flat base would carry a stale FX floor under the frozen sleeve.
+  const cashUsd = freeze ? cashValueEur.times(graphFx) : cashValueUsd;
+  return buildIntradayAnchor(inputs, cashValueEur, cashUsd, effectiveFx, options);
+}
+
+/**
+ * A USD-booked holding's EUR value re-marked at the frozen `graphFx` (the USD leg
+ * is FX-free, so `valueEur = valueUsd / graphFx`). EUR-native holdings and rows
+ * with no USD twin keep their existing EUR value — FX does not apply to them.
+ */
+function frozenValueEur(h: HoldingView, graphFx: Decimal): Decimal | null {
+  const isUsd = h.nativeCurrency.toUpperCase() === "USD";
+  if (!isUsd || h.valueUsd === null) return h.valueEur;
+  return h.valueUsd.dividedBy(graphFx);
 }
 
 /** Chart-ready columns for a live curve: aligned dates + per-currency values. */
