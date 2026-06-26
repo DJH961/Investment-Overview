@@ -482,12 +482,6 @@ html, body {{
 .inv-fx-effect-net.pos {{ color: var(--inv-gain); }}
 .inv-fx-effect-net.neg {{ color: var(--inv-loss); }}
 .inv-fx-effect-net.flat {{ color: var(--inv-muted); }}
-.inv-fx-effect-note {{
-  margin: 0;
-  font-size: 0.78rem;
-  color: var(--inv-muted);
-  line-height: 1.45;
-}}
 /* The diverging bar: each leg grows from a shared centre line — right for a
  * gain, left for a loss — so two legs pulling in opposite directions read
  * clearly instead of being crammed into one stacked bar. The overnight leg is

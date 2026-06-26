@@ -11,6 +11,7 @@ import {
   resolvePriceProxyUrl,
   parseUpdateMinutes,
   parseProviderLimit,
+  parseInvestmentAmount,
   applyProviderLimits,
   serializeConfig,
   parseConfigPacket,
@@ -37,6 +38,7 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     tiingoPerHour: 40,
     tiingoPerDay: 800,
     resumeOnRefresh: false,
+    investmentAmountEur: 100,
     ...overrides,
   };
 }
@@ -134,6 +136,23 @@ describe("parseProviderLimit", () => {
   });
 });
 
+describe("parseInvestmentAmount", () => {
+  it("falls back to the €100 default for blank or invalid input", () => {
+    expect(parseInvestmentAmount("")).toBe(100);
+    expect(parseInvestmentAmount("abc")).toBe(100);
+    expect(parseInvestmentAmount("0")).toBe(100);
+    expect(parseInvestmentAmount("-50")).toBe(100);
+  });
+
+  it("keeps a valid amount, allowing cents, and clamps absurd values", () => {
+    expect(parseInvestmentAmount("300")).toBe(300);
+    expect(parseInvestmentAmount("12.5")).toBe(12.5);
+    expect(parseInvestmentAmount("12.345")).toBe(12.35);
+    expect(parseInvestmentAmount("1")).toBe(1);
+    expect(parseInvestmentAmount("99999999")).toBe(1_000_000);
+  });
+});
+
 describe("applyProviderLimits", () => {
   afterEach(() => resetProviderLimits());
 
@@ -197,6 +216,16 @@ describe("config packet", () => {
     );
     expect(restored.apiKey).toBe("k");
     expect(restored.blobUrl).toBe("u");
+  });
+
+  it("round-trips the regular investment amount and defaults it when absent", () => {
+    const restored = parseConfigPacket(serializeConfig(config({ investmentAmountEur: 250 })));
+    expect(restored.investmentAmountEur).toBe(250);
+    // Older packets predate the field ⇒ fall back to the €100 default.
+    const legacy = parseConfigPacket(
+      JSON.stringify({ type: CONFIG_PACKET_TYPE, version: 1, apiKey: "k", blobUrl: "u" }),
+    );
+    expect(legacy.investmentAmountEur).toBe(100);
   });
 
   it("rejects non-JSON input", () => {
