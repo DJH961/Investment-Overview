@@ -13,7 +13,15 @@ import { Decimal } from "./decimal-config";
 import type { AllocationSlice, DashboardModel, HoldingView, MoverEntry, OverviewView } from "./compute";
 import { buildMovers, fxSinceAnchorPct } from "./compute";
 import { fxEffectSplit } from "./session-fx";
-import { isUsMarketOpen, isUsTradingDay, isForexMarketOpen, forexMarketReopenMs } from "./market-hours";
+import {
+  isUsMarketOpen,
+  isUsMarketHoliday,
+  isForexMarketOpen,
+  forexMarketReopenMs,
+  lastForexReopenMs,
+  lastSessionDate,
+  sessionOpenMs,
+} from "./market-hours";
 import {
   type AnalyticsView,
   type DepositRowView,
@@ -191,6 +199,65 @@ function valueBasisLabel(o: OverviewView, now: Date = new Date()): string {
 }
 
 /**
+ * The currency box's market-state regime, derived purely from `now` and the
+ * US-equity / spot-FX clocks. Extracted so the (DOM-free) decision can be unit
+ * tested in isolation and shared between {@link renderFxBox} and
+ * {@link renderFxEffect} without drift.
+ *
+ * The regimes, in precedence order:
+ *   - **forexFrozen** — the spot-FX weekend close (Fri ≥17:00 ET, all Saturday,
+ *     Sun <17:00 ET). The rate is frozen at Friday's close, so the box shows the
+ *     *whole Friday session view*, frozen exactly as it looked at 17:01 ET (Today
+ *     = the full session move, the "Since close" stat, the two-leg split), badged
+ *     "Market closed". This is a {@link sessionView}.
+ *   - **marketOpen** — the live US session; the regular live view (a sessionView).
+ *   - **weekendOvernight** — forex has reopened (Sun ≥17:00 ET) but no US session
+ *     has opened since: Sunday evening through Monday's 09:30 open (extending past a
+ *     Monday holiday to the next real open). The only honest move is the single
+ *     overnight drift since Friday's close — no stale Friday market-hours leg.
+ *   - **holiday** — a US market holiday that is *not* an FX holiday (e.g. 4th of
+ *     July): forex trades but the US session is shut, so likewise a single
+ *     overnight number, kept under its "Market holiday" wording.
+ *   - otherwise a **regular weekday post-close / pre-open** (a sessionView).
+ *
+ * `singleOvernight` (holiday ∨ weekendOvernight, with forex open and US shut) marks
+ * the two one-number, no-split regimes; `sessionView` (its complement) marks the
+ * three-stat, two-leg-split regimes.
+ */
+export interface FxBoxRegime {
+  marketOpen: boolean;
+  forexOpen: boolean;
+  holiday: boolean;
+  forexFrozen: boolean;
+  weekendOvernight: boolean;
+  singleOvernight: boolean;
+  sessionView: boolean;
+}
+
+export function fxBoxRegime(now: Date = new Date()): FxBoxRegime {
+  const marketOpen = isUsMarketOpen(now);
+  const forexOpen = isForexMarketOpen(now);
+  const holiday = isUsMarketHoliday(now);
+  const forexFrozen = !forexOpen;
+  const weekendOvernight =
+    forexOpen &&
+    !marketOpen &&
+    !holiday &&
+    sessionOpenMs(lastSessionDate(now)) < lastForexReopenMs(now);
+  const singleOvernight = forexOpen && !marketOpen && (holiday || weekendOvernight);
+  const sessionView = !singleOvernight;
+  return {
+    marketOpen,
+    forexOpen,
+    holiday,
+    forexFrozen,
+    weekendOvernight,
+    singleOvernight,
+    sessionView,
+  };
+}
+
+/**
  * The standalone **Currency · EUR ↔ USD** box that sits full-width beneath the
  * Today/Month/Year return horizons (it used to be crammed under the headline
  * total). It carries three things: the live EUR/USD rate (the "current value"),
@@ -203,31 +270,38 @@ function valueBasisLabel(o: OverviewView, now: Date = new Date()): string {
  * plainly and surface the EUR-repatriation figure instead of printing a
  * meaningless dollar amount. Returns null only when there is no rate at all.
  */
-function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElement | null {
+export function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElement | null {
   if (o.fxRateEurUsd === null) return null;
   const inUsd = getDisplayCurrency() === "USD";
 
   // The rate + today's move. USD display shows the stored EUR/USD spot directly;
   // EUR display shows USD/EUR (its reciprocal). The % still follows the currency
   // strength convention used here (negated for the reciprocal).
-  const marketOpen = isUsMarketOpen(now);
-  const tradingDay = isUsTradingDay(now);
-  // Spot-FX (forex) market state: shut over the weekend, when the rate is frozen
-  // at Friday's close. Drives the explicit "FX market closed · reopens Sun …"
-  // badge so the frozen weekend quote never reads as live.
-  const forexClosed = !isForexMarketOpen(now);
-  // "Today" uses a market-state-dependent baseline so it never just mirrors the
-  // "Since open/close" stat beside it: while the session is live it is the move
-  // since the *prior close* (overnight + intraday so far); once a trading day has
-  // shut it re-bases to *this morning's open* (the full session move) so it stops
-  // collapsing onto "Since close" the moment the provider rolls its previousClose
-  // to today's settle. On a genuine non-market day (weekend/holiday) there is no
-  // session, so it stays the pure overnight move since the prior close.
-  const todayAnchor = !marketOpen && tradingDay ? o.fxRateEurUsdSessionOpen : o.fxRateEurUsdPrev;
+  const { marketOpen, forexFrozen, weekendOvernight, singleOvernight, sessionView } =
+    fxBoxRegime(now);
+
+  // "Today" baseline. Live: since the *prior close* (overnight + intraday so far).
+  // Single-overnight: the lone drift since the last session close — Friday's FX
+  // close for the weekend spill-over (or the settled previous close as a holiday's
+  // overnight). Session view (open or shut): the full move since this — or Friday's
+  // frozen — session open, so it never just mirrors the "Since close" stat beside it.
+  let todayAnchor: Decimal | null;
+  let todaySub: string;
+  if (marketOpen) {
+    todayAnchor = o.fxRateEurUsdPrev;
+    todaySub = "since last close";
+  } else if (singleOvernight) {
+    todayAnchor = weekendOvernight
+      ? (o.fxRateEurUsdSessionClose ?? o.fxRateEurUsdPrev)
+      : o.fxRateEurUsdPrev;
+    todaySub = "overnight";
+  } else {
+    todayAnchor = o.fxRateEurUsdSessionOpen;
+    todaySub = "since last open";
+  }
   const devPct = fxSinceAnchorPct(o, todayAnchor);
   const rate = inUsd ? o.fxRateEurUsd : new Decimal(1).dividedBy(o.fxRateEurUsd);
   const dev = devPct === null ? null : inUsd ? devPct : devPct.negated();
-  const todaySub = !tradingDay ? "overnight" : marketOpen ? "since last close" : "since last open";
   const pair = inUsd ? "EUR/USD" : "USD/EUR";
 
   // The "when is this rate from" stamps: an intraday clock/date when we have an
@@ -265,11 +339,11 @@ function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElement | nul
   // Third number: how far the rate has moved since the current session's reference
   // point — since the open while the market is live, since the close once shut.
   // Same strength convention as the "Today" move (negated for the EUR reciprocal).
-  // On a non-market day there is no session today, so this stat is dropped: its only
-  // possible anchor (the last session close) collapses onto the overnight "Today"
-  // figure beside it, and the FX market itself is shut, so it would read a stale "—".
+  // Dropped in the single-overnight regimes (weekend spill-over, US-only holiday):
+  // there is only one honest move to show, so a second stat would just echo the
+  // overnight "Today" figure beside it.
   const stats: HTMLElement[] = [rateStat, moveStat];
-  if (tradingDay) {
+  if (sessionView) {
     const anchorFx = marketOpen ? o.fxRateEurUsdSessionOpen : o.fxRateEurUsdSessionClose;
     const sincePctRaw = fxSinceAnchorPct(o, anchorFx);
     const sincePct = sincePctRaw === null ? null : inUsd ? sincePctRaw : sincePctRaw.negated();
@@ -289,14 +363,14 @@ function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElement | nul
   // Over the weekend forex close, badge the box plainly and stamp when it reopens,
   // so the frozen Friday rate is never mistaken for a live one.
   const head: HTMLElement[] = [h("span", { class: "fx-box-title" }, ["Currency · EUR ↔ USD"])];
-  if (forexClosed) {
+  if (forexFrozen) {
     head.push(h("span", { class: "fx-box-closed", title: "Forex market closed for the weekend" }, ["Market closed"]));
   }
   const children: HTMLElement[] = [
     h("div", { class: "fx-box-head" }, head),
     h("div", { class: statsClass }, stats),
   ];
-  if (forexClosed) {
+  if (forexFrozen) {
     children.push(
       h("div", { class: "fx-box-reopen" }, [
         `Frozen at Friday's close · ${formatForexReopen(forexMarketReopenMs(now), now)}`,
@@ -324,9 +398,12 @@ function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElement | nul
  * shared centre line (right for a gain, left for a loss), so two legs pulling in
  * opposite directions read clearly instead of being crammed into one stacked bar.
  *
- * On a genuine **non-market day** (weekend/holiday) there is no session at all, so
- * the whole swing is the overnight drift: the market-hours leg is dropped and the
- * remaining single bar is relabelled "Market holiday".
+ * In the two **single-overnight** regimes there is no fresh session to split, so
+ * the market-hours leg is dropped and one full-width bar carries the whole swing:
+ * a **US-only market holiday** (e.g. 4th of July, FX still trading) keeps the
+ * "Market holiday" label, while the **weekend spill-over** (Sunday evening through
+ * Monday's open, after the forex reopen) reads "Overnight". The frozen Friday
+ * weekend itself is *not* one of these — it keeps the full two-leg split, frozen.
  *
  * Returns null when there is no FX move to describe.
  */
@@ -347,18 +424,17 @@ function renderFxEffect(o: OverviewView, now: Date = new Date()): HTMLElement | 
 
   // Market-hours vs overnight split. The live leg is measured straight from the
   // relevant session anchor; the frozen leg is the remainder of today's move.
-  const marketOpen = isUsMarketOpen(now);
-  const nonMarketDay = !isUsTradingDay(now);
+  const { marketOpen, holiday, singleOvernight } = fxBoxRegime(now);
   const HALF_TRACK_PCT = 50;
-  if (nonMarketDay) {
-    // No session today (weekend/holiday): the whole swing is the "overnight"
-    // holiday drift, so a market-hours leg would be a meaningless ~zero stub —
-    // drop it and show a single full-width "Market holiday" bar instead.
+  if (singleOvernight) {
+    // No fresh session to split (US-only holiday, or the weekend spill-over): the
+    // whole swing is one overnight drift, so a market-hours leg would be a
+    // meaningless ~zero stub — drop it and show a single full-width bar instead.
     const fill = h("span", { class: `fx-diverge-fill ${signClass(net)} fx-diverge-overnight` }, []);
     fill.style.width = `${HALF_TRACK_PCT}%`;
     const row = h("div", { class: "fx-diverge-row" }, [
       h("span", { class: "fx-diverge-label" }, [
-        "Market holiday",
+        holiday ? "Market holiday" : "Overnight",
         h("span", { class: "fx-diverge-tag" }, ["live"]),
       ]),
       h("div", { class: "fx-diverge-track", "aria-hidden": "true" }, [fill]),

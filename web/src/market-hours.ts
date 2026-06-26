@@ -455,6 +455,31 @@ export function forexMarketReopenMs(now: Date = new Date()): number {
 }
 
 /**
+ * Absolute UTC epoch-ms of the spot-FX market's **most recent** Sunday 17:00 ET
+ * reopen at or before `now` — the mirror of {@link forexMarketReopenMs}, walking
+ * *backward* instead of forward.
+ *
+ * Only meaningful while the forex market is open (see {@link isForexMarketOpen}),
+ * which guarantees a Sunday 17:00 ET boundary has already passed this week. The
+ * currency box uses it to tell a **weekend spill-over** (forex reopened Sunday but
+ * no US session has opened since — Sunday evening through Monday's 09:30 open)
+ * apart from a regular weekday overnight: when the last US session opened *before*
+ * this reopen, the only honest move left is the single overnight drift since
+ * Friday's close, with no stale Friday market-hours leg to split out.
+ */
+export function lastForexReopenMs(now: Date = new Date()): number {
+  const moment = exchangeMoment(now);
+  // Walk backward (UTC day stepping; only the calendar date matters) to the first
+  // calendar day on/before today that is a Sunday in the New-York timezone.
+  let date = new Date(Date.UTC(moment.year, moment.month - 1, moment.day));
+  while (weekdayOf(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()) !== 0) {
+    date = new Date(date.getTime() - 24 * 60 * 60 * 1000);
+  }
+  const day = ymd(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+  return exchangeWallToUtcMs(day, FOREX_BOUNDARY_MINUTES);
+}
+
+/**
  * The intraday 1D curve is built from one-hour resampled bars (Tiingo IEX
  * `resampleFreq=1hour`, Twelve Data falls back to a coarser series), so no
  * completed intraday bar can exist until a full bar interval of trading time has

@@ -121,8 +121,31 @@ class TestSplitOrdering:
         assert ">last<" in html
 
 
-# 2024-06-08 is a Saturday — a genuine non-market day (no NYSE session at all).
-_HOLIDAY = datetime(2024, 6, 8, 15, 0, tzinfo=UTC)
+# 2024-06-07 is a Friday. Seed that session so the weekend "frozen Friday" view
+# has genuine open/close FX anchors to freeze to (the weekend `now` resolves its
+# session back to this Friday via ``last_session_date``). 13:30 UTC = 09:30 ET
+# (open anchor, 1.00); 19:30 UTC = 15:30 ET (close anchor, 1.25).
+def _seed_friday_fx_samples(session: Session) -> None:
+    intraday_repo.insert_sample(
+        session, datetime(2024, 6, 7, 13, 30), Decimal("1000.00"), fx_eur_usd=Decimal("1.00")
+    )
+    intraday_repo.insert_sample(
+        session, datetime(2024, 6, 7, 19, 30), Decimal("800.00"), fx_eur_usd=Decimal("1.25")
+    )
+    session.flush()
+
+
+# Weekend forex-close instants (all resolve their session back to Friday 06-07).
+# Forex shuts Fri 17:00 ET (21:00 UTC EDT) and reopens Sun 17:00 ET (21:00 UTC).
+_FRI_AFTER_CLOSE = datetime(2024, 6, 7, 21, 30, tzinfo=UTC)  # Fri 17:30 ET
+_SATURDAY = datetime(2024, 6, 8, 15, 0, tzinfo=UTC)  # Sat 11:00 ET
+_SUNDAY_MORNING = datetime(2024, 6, 9, 14, 0, tzinfo=UTC)  # Sun 10:00 ET (forex still shut)
+_SUNDAY_EVENING = datetime(2024, 6, 9, 22, 0, tzinfo=UTC)  # Sun 18:00 ET (forex reopened)
+_MONDAY_PREOPEN = datetime(2024, 6, 10, 12, 0, tzinfo=UTC)  # Mon 08:00 ET (before 09:30 open)
+
+# 2024-07-04 (Thursday) is Independence Day: a US market holiday that is *not* an
+# FX holiday, so forex trades while the NYSE is shut. 15:00 UTC = 11:00 ET.
+_US_HOLIDAY = datetime(2024, 7, 4, 15, 0, tzinfo=UTC)
 
 
 class TestTodayStatRebases:
@@ -149,22 +172,95 @@ class TestTodayStatRebases:
         assert "Since close" in html
 
 
-class TestNonMarketDay:
-    def test_holiday_collapses_split_to_single_market_holiday_bar(self, session: Session) -> None:
-        _seed_fx_samples(session)
-        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_HOLIDAY)
+class TestForexWeekendFreeze:
+    """Over the spot-FX weekend close (Fri 17:00 ET → Sun 17:00 ET) the box freezes
+    to the *whole Friday session view*, badged "Market closed", exactly as it looked
+    at 17:01 ET — Saturday and Sunday morning must look like Friday after close, not
+    like a "Market holiday"."""
+
+    def test_friday_after_close_is_frozen_session_view(self, session: Session) -> None:
+        _seed_friday_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_FRI_AFTER_CLOSE)
         assert html is not None
-        # The panel keeps its renamed title and shows a single "Market holiday" bar
-        # in place of the market-hours/overnight split.
-        assert "Currency effect since yesterday" in html
+        # Badged closed, with the "frozen / reopens" caption.
+        assert "Market closed" in html
+        assert "inv-fx-box-closed" in html
+        assert "Frozen at Friday" in html
+        assert "reopens" in html
+        # The full Friday session view survives: the "Since close" third stat and
+        # the two-leg split — and it is NOT relabelled a holiday.
+        assert "Since close" in html
+        assert "Market hours" in html
+        assert "Overnight" in html
+        assert "Market holiday" not in html
+
+    def test_saturday_looks_like_friday_after_close(self, session: Session) -> None:
+        _seed_friday_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_SATURDAY)
+        assert html is not None
+        assert "Market closed" in html
+        assert "Since close" in html
+        assert "Market hours" in html
+        # The old behaviour (Saturday => "Market holiday") is gone.
+        assert "Market holiday" not in html
+
+    def test_sunday_morning_still_frozen(self, session: Session) -> None:
+        _seed_friday_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_SUNDAY_MORNING)
+        assert html is not None
+        assert "Market closed" in html
+        assert "Market holiday" not in html
+
+
+class TestWeekendOvernight:
+    """Once forex reopens Sunday 17:00 ET but no US session has opened yet (Sunday
+    evening through Monday's 09:30 open), the only honest move is the single overnight
+    drift since Friday's close: one number, no second stat, no two-leg split, and no
+    "Market closed" badge."""
+
+    def test_sunday_evening_is_single_overnight(self, session: Session) -> None:
+        _seed_friday_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_SUNDAY_EVENING)
+        assert html is not None
+        # Forex is live again: no "closed" badge.
+        assert "Market closed" not in html
+        # A single "Overnight" bar, not the two-leg split, and not a holiday.
+        assert "Overnight" in html
+        assert "Market hours" not in html
+        assert "Market holiday" not in html
+        # The third "Since open/close" stat is dropped (clean two-stat row).
+        assert "Since close" not in html
+        assert "Since open" not in html
+        assert "inv-fx-box-stats-pair" in html
+        assert "overnight" in html
+
+    def test_monday_preopen_is_single_overnight(self, session: Session) -> None:
+        _seed_friday_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_MONDAY_PREOPEN)
+        assert html is not None
+        assert "Market closed" not in html
+        assert "Overnight" in html
+        assert "Market hours" not in html
+        assert "inv-fx-box-stats-pair" in html
+
+
+class TestUsMarketHoliday:
+    """A US market holiday that is *not* an FX holiday (e.g. 4th of July) keeps the
+    "Market holiday" wording: forex trades, the NYSE is shut, so it is a single
+    overnight number — but labelled as the holiday, not a weekend overnight."""
+
+    def test_july_fourth_keeps_market_holiday_wording(self, session: Session) -> None:
+        _seed_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_US_HOLIDAY)
+        assert html is not None
+        # The single-bar overnight view, kept under the "Market holiday" label.
         assert "Market holiday" in html
         assert "Market hours" not in html
         assert "Overnight" not in html
-        # "Today" is the pure overnight drift on a non-market day.
+        # Forex is open on a US holiday: no weekend "Market closed" badge.
+        assert "Market closed" not in html
+        # "Today" is the pure overnight drift, and the third stat is dropped.
         assert "overnight" in html
-        # The third "Since open/close" stat is dropped on a non-market day (its only
-        # anchor would collapse onto the overnight "Today" figure beside it), leaving
-        # a clean two-stat row.
         assert "Since close" not in html
         assert "Since open" not in html
         assert "inv-fx-box-stats-pair" in html

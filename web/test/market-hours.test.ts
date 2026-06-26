@@ -16,6 +16,7 @@ import {
   sessionIsWarmingUp,
   isForexMarketOpen,
   forexMarketReopenMs,
+  lastForexReopenMs,
   INTRADAY_BAR_INTERVAL_MS,
 } from "../src/market-hours";
 
@@ -360,5 +361,27 @@ describe("forexMarketReopenMs", () => {
   it("honours EST (winter): Sunday 17:00 ET is 22:00 UTC", () => {
     const now = new Date("2026-01-10T12:00:00Z"); // Sat in January (EST)
     expect(new Date(forexMarketReopenMs(now)).toISOString()).toBe("2026-01-11T22:00:00.000Z");
+  });
+});
+
+describe("lastForexReopenMs", () => {
+  it("resolves the most recent Sunday 17:00 ET from a Sunday evening (EDT)", () => {
+    const now = new Date("2026-06-28T22:00:00Z"); // Sun 18:00 ET, just reopened
+    expect(new Date(lastForexReopenMs(now)).toISOString()).toBe("2026-06-28T21:00:00.000Z");
+  });
+
+  it("resolves the prior Sunday from a Monday pre-open", () => {
+    const now = new Date("2026-06-29T12:00:00Z"); // Mon 08:00 ET
+    expect(new Date(lastForexReopenMs(now)).toISOString()).toBe("2026-06-28T21:00:00.000Z");
+  });
+
+  it("resolves the prior Sunday from mid-week", () => {
+    const now = new Date("2026-07-01T14:00:00Z"); // Wed 10:00 ET
+    expect(new Date(lastForexReopenMs(now)).toISOString()).toBe("2026-06-28T21:00:00.000Z");
+  });
+
+  it("honours EST (winter): Sunday 17:00 ET is 22:00 UTC", () => {
+    const now = new Date("2026-01-14T12:00:00Z"); // Wed in January (EST)
+    expect(new Date(lastForexReopenMs(now)).toISOString()).toBe("2026-01-11T22:00:00.000Z");
   });
 });

@@ -432,6 +432,22 @@ html, body {{
   color: var(--inv-muted);
   font-weight: 500;
 }}
+.inv-fx-box-closed {{
+  color: var(--inv-loss);
+  background: color-mix(in srgb, var(--inv-loss) 14%, transparent);
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}}
+.inv-fx-box-reopen {{
+  font-size: 0.74rem;
+  color: var(--inv-muted);
+  font-weight: 500;
+}}
 
 /* --- Currency effect since yesterday (net + diverging market-hours/overnight split) - *
  * How much of today's EUR/USD revaluation is real euro P/L, and — once the US

@@ -32,8 +32,17 @@ _MARKET_TZ = ZoneInfo("America/New_York")
 _OPEN = time(9, 30)
 _CLOSE = time(16, 0)
 
-#: ``datetime.weekday()`` returns 5/6 for Saturday/Sunday.
+#: ``datetime.weekday()`` returns 5/6 for Saturday/Sunday (Mon=0 … Sun=6).
 _SATURDAY = 5
+_FRIDAY = 4
+_SUNDAY = 6
+
+#: Spot-FX (forex) weekly boundary: the market closes Friday 17:00 ET and reopens
+#: Sunday 17:00 ET, dark only across the weekend. Unlike the NYSE daily session,
+#: forex trades nearly 24×5, so the EUR→USD spot that values the (USD-booked) book
+#: is only genuinely live inside that window — over the weekend it sits frozen at
+#: Friday's close. Mirrors the browser companion's ``FOREX_BOUNDARY_MINUTES``.
+_FOREX_REOPEN = time(17, 0)
 
 #: How recently a fresh price must have been pulled for a same-day figure to be
 #: called *live* (rather than merely settled-today) while the market is open.
@@ -169,6 +178,26 @@ def is_trading_day(day: date) -> bool:
     return day.weekday() < _SATURDAY and not is_us_market_holiday(day)
 
 
+def is_us_market_holiday_at(now: datetime | None = None) -> bool:
+    """Return ``True`` when ``now`` falls on a full-day NYSE market holiday.
+
+    The instant-aware companion of :func:`is_us_market_holiday` (which takes a bare
+    ``date``): it resolves ``now`` to the exchange-local (New York) calendar date
+    first, so it is correct regardless of the caller's timezone. Mirrors the browser
+    companion's ``isUsMarketHoliday(now)``. The currency box uses it to tell a
+    **US-only market holiday** (the NYSE is shut but spot-FX still trades, e.g. 4th
+    of July) apart from the forex weekend close, so the holiday keeps its "Market
+    holiday" wording while the weekend gets the frozen-Friday view.
+
+    ``now`` defaults to the current instant (UTC). It may be naive (interpreted as
+    exchange time) or timezone-aware (converted to exchange time first).
+    """
+    if now is None:
+        now = datetime.now(UTC)
+    local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
+    return is_us_market_holiday(local.date())
+
+
 def is_us_trading_day(now: datetime | None = None) -> bool:
     """Return ``True`` when ``now`` falls on a regular NYSE trading day.
 
@@ -284,3 +313,93 @@ def regular_session_close(day: date, *, tz: tzinfo | None = None) -> datetime:
     """
     close = datetime.combine(day, _CLOSE, tzinfo=_MARKET_TZ)
     return close.astimezone(tz) if tz is not None else close
+
+
+def regular_session_open(day: date, *, tz: tzinfo | None = None) -> datetime:
+    """The NYSE regular-session open (09:30 America/New_York) on ``day``.
+
+    The open-side companion of :func:`regular_session_close`. Returns a
+    timezone-aware instant; when ``tz`` is given it is converted to that display
+    timezone, otherwise it stays in exchange time. Holidays and half-days are
+    ignored (see the module docstring): the open is always modelled as 09:30
+    exchange time.
+    """
+    open_ = datetime.combine(day, _OPEN, tzinfo=_MARKET_TZ)
+    return open_.astimezone(tz) if tz is not None else open_
+
+
+def is_forex_market_open(now: datetime | None = None) -> bool:
+    """Return ``True`` when the spot-FX (forex) market is trading at ``now``.
+
+    Unlike the NYSE *daily* session, forex trades nearly 24×5: it is open from
+    **Sunday 17:00 ET** right through to **Friday 17:00 ET**, dark only across the
+    weekend (all of Saturday, plus Friday evening and Sunday morning either side of
+    it). The EUR→USD spot that values the (USD-booked) book is only genuinely live
+    inside this window; over the weekend close the rate is frozen at Friday's close.
+
+    The currency box uses this to stop dressing the frozen weekend quote up as
+    "live" and instead present the whole Friday session view, frozen, with an
+    explicit "Market closed · reopens Sun …" badge. Holiday / thin-liquidity
+    sessions are deliberately not modelled — the weekend is the only ~48h window in
+    which the spot sits frozen. Mirrors the browser companion's ``isForexMarketOpen``.
+
+    ``now`` defaults to the current instant (UTC); naive instants are treated as
+    exchange time, aware ones are converted to it first.
+    """
+    if now is None:
+        now = datetime.now(UTC)
+    local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
+    weekday = local.weekday()
+    if weekday == _SATURDAY:
+        return False
+    if weekday == _FRIDAY and local.time() >= _FOREX_REOPEN:
+        return False
+    return not (weekday == _SUNDAY and local.time() < _FOREX_REOPEN)
+
+
+def forex_market_reopen(now: datetime | None = None, *, tz: tzinfo | None = None) -> datetime:
+    """The spot-FX market's **next** Sunday 17:00 ET reopen at or after ``now``.
+
+    Only meaningful while the market is closed (see :func:`is_forex_market_open`);
+    from inside the weekend close it resolves to the upcoming Sunday's reopen —
+    today's reopen on a Sunday morning before 17:00 ET, else the next Sunday after a
+    Friday-evening / Saturday close. Drives the calm "reopens Sun …" caption so the
+    frozen weekend rate carries an explicit "back live at" stamp. Mirrors the
+    browser companion's ``forexMarketReopenMs``.
+
+    When ``tz`` is given the instant is converted to that display timezone (so the
+    caption reads on the user's own clock); otherwise it stays in exchange time.
+    """
+    if now is None:
+        now = datetime.now(UTC)
+    local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
+    day = local.date()
+    while day.weekday() != _SUNDAY:
+        day += timedelta(days=1)
+    reopen = datetime.combine(day, _FOREX_REOPEN, tzinfo=_MARKET_TZ)
+    return reopen.astimezone(tz) if tz is not None else reopen
+
+
+def last_forex_reopen(now: datetime | None = None) -> datetime:
+    """The spot-FX market's **most recent** Sunday 17:00 ET reopen at or before ``now``.
+
+    The backward-walking mirror of :func:`forex_market_reopen`. Only meaningful
+    while the forex market is open, which guarantees a Sunday 17:00 ET boundary has
+    already passed this week. The currency box uses it to tell a **weekend
+    spill-over** (forex reopened Sunday but no US session has opened since — Sunday
+    evening through Monday's 09:30 open) apart from a regular weekday overnight:
+    when the last US session opened *before* this reopen, the only honest move is
+    the single overnight drift since Friday's close. Mirrors the browser
+    companion's ``lastForexReopenMs``.
+
+    ``now`` defaults to the current instant (UTC); naive instants are treated as
+    exchange time, aware ones are converted to it first. Returns an exchange-time
+    instant.
+    """
+    if now is None:
+        now = datetime.now(UTC)
+    local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
+    day = local.date()
+    while day.weekday() != _SUNDAY:
+        day -= timedelta(days=1)
+    return datetime.combine(day, _FOREX_REOPEN, tzinfo=_MARKET_TZ)
