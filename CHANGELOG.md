@@ -14,6 +14,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.4.1] — 2026-06-26
+
+### Fixed
+
+- **Live 1D session curve is clamped to a single trading day.** Twelve Data's
+  primary intraday fetch (`outputsize=78`, no `start_date`) over-reaches into
+  prior sessions when today is barely traded (pre-market, early session, or just
+  after a weekend/holiday), and `TimeSeriesStore.mergeSession` unions bars by
+  timestamp — so those cross-day bars would otherwise persist and stretch the
+  "1 Day" line back into the previous trading day. `loadOrBuildSessionCurve`
+  (`web/src/intraday.ts`) now filters freshly-fetched price **and** FX bars to
+  `[sessionOpenMs(day), sessionCloseMs(day)]` before storing them, and applies a
+  defensive left-edge `clampFromOpen` to the rendered curve (mirroring the
+  existing right-edge `capAtClose`) so any cross-day bars left in the cache from
+  a pre-fix build are trimmed back to the 09:30 ET open.
+
 ## [4.4.0] — 2026-06-25
 
 ### Added
