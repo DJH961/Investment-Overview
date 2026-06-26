@@ -82,7 +82,7 @@ import {
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { isUsMarketOpen, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, recentTradingSessions, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
+import { isUsMarketOpen, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, previousTradingSession, recentTradingSessions, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -116,6 +116,7 @@ import {
   makePriceBarFetcher,
   makeWindowFxFetcher,
   sessionFxWindow,
+  sessionFxHistoryWindow,
   weekFxWindow,
   type LiveGraphProviders,
 } from "./live-graph";
@@ -1733,6 +1734,10 @@ export class App {
       storeKey: string,
       label: string,
       extra: { interval?: string; outputsize?: number } = {},
+      // The FX-history leg can span a wider window than the price bars (the 1D
+      // FX track reaches back to the prior session's close so the FX KPI's
+      // baseline survives an empty start), defaulting to the price window.
+      fxWindow: { startDate: string; endDate: string } = window,
     ): Promise<void> => {
       if (symbols.length === 0) return;
       // Every metered request this backfill makes flows through the single
@@ -1798,7 +1803,7 @@ export class App {
       primeQuotesFromBars(bars, currencyBySymbol, Date.now()).forEach((s) => primedSet.add(s));
       // Grab the matching FX track in the same pass so the curve re-marks each
       // point at its own settled rate (finest granularity) for one more credit.
-      const fetchFx = makeWindowFxFetcher(proxyUrl, window, fxResample, undefined, tiingoMeter, {
+      const fetchFx = makeWindowFxFetcher(proxyUrl, fxWindow, fxResample, undefined, tiingoMeter, {
         apiKey: config.apiKey,
         twelveDataMeter,
         backoff: cacheSeriesBackoff(),
@@ -1821,7 +1826,19 @@ export class App {
       );
     };
 
-    await pull(sessionSymbols, "intraday", sessionFxWindow(now), "1hour", lastSessionDate(now), "1D");
+    await pull(
+      sessionSymbols,
+      "intraday",
+      sessionFxWindow(now),
+      "1hour",
+      lastSessionDate(now),
+      "1D",
+      {},
+      // Pull the FX track one session wider than the price bars so the stored 1D
+      // EUR/USD track carries the prior session's settled close — the FX KPI's
+      // "today" baseline, recovered from here when the live provider omits it.
+      sessionFxHistoryWindow(now),
+    );
     await pull(weekSymbols, "daily", weekFxWindow(now), "1day", WEEK_STORE_KEY, "1W", {
       interval: "1day",
       outputsize: 8,
@@ -1936,7 +1953,10 @@ export class App {
   private async prefetchSessionFx(config: AppConfig, now: Date): Promise<boolean> {
     const proxyUrl = resolvePriceProxyUrl(config);
     if (!proxyUrl) return false; // graph FX bars only come cheaply via the Tiingo /price pipe
-    const window = sessionFxWindow(now);
+    // Span the prior session too (one batched request either way) so this after-
+    // hours completion also lands the prior session's settled close — the FX KPI's
+    // "today" baseline recovered by {@link barsPrevSessionCloseFx}.
+    const window = sessionFxHistoryWindow(now);
     // Same reservation + observation-only meters + breaker wiring as the graph
     // backfill's FX track, so this spend is governed identically.
     const reservation = ledgerReservation();
@@ -4040,6 +4060,23 @@ export class App {
       this.lastDataPullAt = Date.now();
       writeLastPull(this.lastDataPullAt);
     }
+    // FX KPI baseline recovery. The "today" FX move is measured from the prior
+    // session's settled EUR/USD close, which only the live provider's quote
+    // carries directly. When the spot came from cache / Tiingo / end-of-day (or a
+    // cold start) that prior close is missing, leaving the FX KPI stuck on "—"
+    // with no way to recover. Fall back to the close persisted in the on-device
+    // 1D FX bars (now fetched one session wide; see {@link sessionFxHistoryWindow})
+    // so the baseline — and with it the FX-aware move and KPI — recovers from an
+    // empty state rather than fabricating a swing.
+    if (eurUsdPrev === null) {
+      const recovered = await this.barsPrevSessionCloseFx(lastSessionDate(new Date()));
+      if (recovered !== null) {
+        eurUsdPrev = recovered;
+        if (network) {
+          this.pollLog("fx", "EUR/USD prior close recovered from on-device 1D FX bars.");
+        }
+      }
+    }
     const model = buildDashboard(data, quoteLoad.quotes, fx, new Date(), degradedReason, {
       fxPrevEurUsd: eurUsdPrev,
       fxEurUsdSource: eurUsdSource,
@@ -5751,6 +5788,38 @@ export class App {
       }
     } catch {
       // Best-effort: a store failure simply falls back to the live capture.
+    }
+    return null;
+  }
+
+  /**
+   * The **prior** session's settled EUR→USD close — the baseline the FX KPI's
+   * "today" move is measured from — recovered from the on-device 1D FX bars when
+   * the live provider hands back no `previous_close` (a cache / Tiingo / end-of-
+   * day reading, or a cold start). Without this the KPI sticks on "—" and cannot
+   * recover from that empty state, however much FX history the device holds.
+   *
+   * Reads the close at `sessionCloseMs(prevDay)` from two places, newest-first:
+   * the prior session's own stored 1D session (present when the app ran that day),
+   * then the current session's track — which {@link sessionFxHistoryWindow} now
+   * fetches one session wider, so it carries the prior close even on a device that
+   * was never open during the prior session. Returns `null` when neither track has
+   * reached that close yet (a genuinely empty device) or on any store error.
+   */
+  private async barsPrevSessionCloseFx(sessionDay: string): Promise<Decimal | null> {
+    const prevDay = previousTradingSession(sessionDay);
+    const prevCloseMs = sessionCloseMs(prevDay);
+    try {
+      const store = this.ensureTimeSeriesStore();
+      for (const key of [prevDay, sessionDay]) {
+        const session = await store.loadSession(key);
+        if (session && session.fx.length > 0) {
+          const close = sessionCloseFxFromBars(session.fx, prevCloseMs);
+          if (close !== null) return close;
+        }
+      }
+    } catch {
+      // Best-effort: a store failure simply leaves the KPI baseline unrecovered.
     }
     return null;
   }

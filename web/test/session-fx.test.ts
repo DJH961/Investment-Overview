@@ -135,6 +135,24 @@ describe("sessionCloseFxFromBars", () => {
     expect(sessionCloseFxFromBars(bars, closeMs)).toBeNull();
   });
 
+  it("recovers the prior session's close from a 2-session FX track (KPI baseline)", () => {
+    // The 1D FX-history pull now spans the prior session too, so the stored track
+    // carries both days. Reading it at the *prior* session's close ms yields that
+    // prior settled rate — the FX KPI's "today" baseline — and never bleeds into
+    // today's bars (which sit after the prior close).
+    const prevCloseMs = closeMs - 24 * 3600_000;
+    const bars = [
+      bar(prevCloseMs - 3600_000, "1.0680"),
+      bar(prevCloseMs, "1.0700"), // prior session settle
+      bar(prevCloseMs + 6 * 3600_000, "1.0720"), // prior after-hours drift
+      bar(closeMs - 3600_000, "1.0750"),
+      bar(closeMs, "1.0775"), // today's settle
+    ];
+    expect(sessionCloseFxFromBars(bars, prevCloseMs)?.toString()).toBe("1.07");
+    expect(sessionCloseFxFromBars(bars, closeMs)?.toString()).toBe("1.0775");
+  });
+
+
   it("an incomplete track degrades graphAnchorFx to the settled previous close (Fix 2 end-to-end)", () => {
     // The two links together: a mid-session-only FX track yields a null close-read,
     // which lets graphAnchorFx fall back to the stable settled previous close

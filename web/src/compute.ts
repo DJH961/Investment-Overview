@@ -195,7 +195,13 @@ export interface OverviewView {
   todayFxMoveEur: Decimal;
   /** Provenance of today's EUR/USD spot, for honest end-of-day-FX labelling. */
   eurUsdSource: EurUsdSourceLabel;
-  /** EUR→USD at the prior session close used for the FX-aware move; null when unknown. */
+  /**
+   * EUR→USD at the prior session close used for the FX-aware move; null when
+   * unknown. Sourced from the live provider's settled `previous_close`, and — when
+   * that is missing (a cache / Tiingo / end-of-day spot, or a cold start) —
+   * recovered from the on-device 1D FX bars so the FX KPI's "today" baseline
+   * survives an empty/stale state (see `App.barsPrevSessionCloseFx`).
+   */
   fxRateEurUsdPrev: Decimal | null;
   /** Month-to-date growth on the start-of-month value + net flows since. */
   mtdGrowthPct: Decimal | null;
