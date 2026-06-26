@@ -48,6 +48,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - **Accounted deferral queue (C9).** The deferred-symbol queue is extracted to a
     pure `DeferredQueue` module that caps retries and bounds size so no deferred
     entry ever vanishes unlogged.
+- **Polling-log clarity pass.** The downloadable polling log is the primary
+  debugging device, so its trail was tightened for the single-brain flow:
+  - The post-decrypt reconcile verdict is now recorded under the `orchestrator`
+    category (alongside the round decision it precedes) instead of `login`, so
+    every single-brain decision groups together rather than scattering one under
+    session lifecycle.
+  - The report column is padded to the widest category label (`orchestrator`),
+    so a long tag no longer knocks the message column out of alignment.
+  - The warm-up routing line now reads "Login warm-up route — …" instead of
+    "…started — …", since it is logged *after* the warm-up plan line; "plan" then
+    "route" reads as one ordered progression rather than two start markers.
 
 ## [4.8.0] — 2026-06-26
 

@@ -1026,7 +1026,7 @@ export class App {
     const navClause =
       prefetch.navSymbols.length > 0 ? `, ${prefetch.navSymbols.length} NAV fund(s) via Twelve Data` : "";
     return (
-      `Login warm-up started — market ${marketOpen ? "open" : "closed"} (plan of ${planSize}). ` +
+      `Login warm-up route — market ${marketOpen ? "open" : "closed"} (plan of ${planSize}). ` +
       `${quoteClause}${navClause}.${graphClause}${priorBit}`
     );
   }
@@ -4461,7 +4461,11 @@ export class App {
           fxStale: this.isFxStale(reconcileNow),
           currencyMismatches: this.currencyMismatchSymbols(),
         });
-        this.pollLog("login", diff.reason);
+        // The reconcile is a round-orchestration decision (Pillar 2 / WS5), the
+        // sibling of the "Round decision" log below — keep it in the orchestrator
+        // category so the trail groups every single-brain verdict together rather
+        // than scattering one of them under session-lifecycle "login".
+        this.pollLog("orchestrator", diff.reason);
         // C6: a wrongly-denominated primed quote must be re-pulled — queue the
         // mismatch symbols so the round below genuinely refetches them.
         if (diff.currencyMismatches.length > 0) {
