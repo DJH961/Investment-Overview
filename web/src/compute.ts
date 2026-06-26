@@ -28,6 +28,7 @@ import {
 } from "./phase4";
 import type { ExportCashflow, ExportHolding, MobileExport } from "./types";
 import { buildCalculatorData, type CalcData } from "./calculator";
+import type { DailyClose } from "./value-history";
 import { isMoneyMarketHolding } from "./money-market";
 import { LIVE_PRICE_MAX_STALENESS_MS, isUsMarketOpen } from "./market-hours";
 import { providerLimits } from "./provider-limits";
@@ -355,6 +356,14 @@ export interface DashboardModel {
   plan: PlanView;
   /** Allocation calculator: per-instrument/-category facts + saved targets. */
   calculator: CalcData;
+  /**
+   * Device-persisted whole-book daily closes (see `value-history.ts`), preloaded
+   * by the app shell so the Overview value chart can rebuild the gap a *stale*
+   * export blob leaves between its last point and today. Empty/absent when none
+   * are stored (e.g. a fresh blob, or a first run); the chart then behaves exactly
+   * as before. Not produced by {@link buildDashboard} — the shell attaches it.
+   */
+  valueBackfill?: DailyClose[];
 }
 
 /** Today's date as an ISO `YYYY-MM-DD` string in UTC (the live XIRR "now"). */
