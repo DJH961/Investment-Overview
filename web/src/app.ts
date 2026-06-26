@@ -1268,9 +1268,14 @@ export class App {
    * C9 — record budget-deferred symbols on the work-queue, delegating the bounded
    * bookkeeping to {@link DeferredQueue}. Each entry carries the reason it was
    * parked; re-deferring a still-queued symbol does not reset its attempt count.
+   *
+   * `force` marks the deferral as an explicit user-driven "update everything" pull
+   * (Reset base / Force-fetch every price now) that overflowed the free-tier
+   * budget: such entries were created *to* be re-pulled, so the drain must keep
+   * them queued rather than clearing them on a still-fresh cached value.
    */
-  private enqueueDeferred(symbols: Iterable<string>, reason: string): void {
-    this.deferredQueue.enqueue(symbols, reason);
+  private enqueueDeferred(symbols: Iterable<string>, reason: string, force = false): void {
+    this.deferredQueue.enqueue(symbols, reason, force);
   }
 
   /**
@@ -1319,7 +1324,7 @@ export class App {
     if (stillMissing.length > 0) {
       this.pollLog(
         "orchestrator",
-        `Deferred queue: ${stillMissing.length} still missing (stale cache), forcing a re-pull this round [${stillMissing.join(", ")}].`,
+        `Deferred queue: ${stillMissing.length} still missing (stale cache or explicit force pull), forcing a re-pull this round [${stillMissing.join(", ")}].`,
       );
     }
     return stillMissing;
@@ -4977,7 +4982,18 @@ export class App {
     // C9 — track this round's budget-deferred symbols on the work-queue so the
     // next round explicitly drains them (or clears them once the blob/cache covers
     // them), rather than silently relying on each symbol's cache TTL to re-pull.
-    if (report.deferred.length > 0) this.enqueueDeferred(report.deferred, `${effectiveKind} round over budget`);
+    // A symbol genuinely re-fetched this round has fulfilled its deferral promise,
+    // so forget it first — this is what stops an explicit force deferral (below)
+    // from re-pulling every round until the retry cap once it has actually landed.
+    if (report.fetched.length > 0) this.deferredQueue.clear(report.fetched);
+    // A Reset base / "Force-fetch every price now" round that overflows the budget
+    // parks its overflow as an **explicit** (force) deferral: those symbols were
+    // created *to* be updated, so the drain must keep re-pulling them across rounds
+    // instead of clearing them on a still-fresh cached value the way an ordinary
+    // auto-refresh deferral is optimised away.
+    const explicitRound = (opts.force ?? false) || (opts.forceAll ?? false);
+    if (report.deferred.length > 0)
+      this.enqueueDeferred(report.deferred, `${effectiveKind} round over budget`, explicitRound);
     let delayMs = nextRefreshDelayMs({
       deferred: report.deferred,
       // Pace auto-refresh out as the rolling daily free-tier budget runs low.
