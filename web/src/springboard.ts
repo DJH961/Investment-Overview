@@ -162,11 +162,24 @@ export function springboardSessionCurve(input: SpringboardInput): CurvePoint[] |
 
   const marketOpen = isUsMarketOpen(now);
   const closeMs = sessionCloseMs(sessionDate);
+  const openMs = sessionOpenMs(sessionDate);
+  // The 1D curve is exactly one regular session: drop any exported point before
+  // the 09:30 ET open so the sprung curve never reaches back into the prior
+  // trading day. A blob can over-reach (a reconstructed remainder or a stray
+  // pre-open sample), and the springboard is the path taken on a *cold* first
+  // paint — a hard reset, or a first login mid-session — when the store is empty,
+  // so without this trim that exact case would draw yesterday *and* today (the
+  // reported bug). Mirrors the live build's left-edge `clampFromOpen`
+  // (intraday.ts); the right edge is bounded by `capAtClose` once the market has
+  // shut. If no in-session point survives there is no session to spring off, so
+  // fall back to a full live rebuild.
+  points = points.filter((p) => p.t >= openMs);
+  if (points.length < 1) return null;
+
   // Completeness gate: the export must cover the session from its open, not just
   // a late sliver — otherwise the curve would jump straight to the tip and hide
   // most of the day. The tip still bridges the open end, so we only require the
   // *earliest* point to land within the session's opening sliver (1 - 90%).
-  const openMs = sessionOpenMs(sessionDate);
   const elapsedEnd = marketOpen ? now.getTime() : closeMs;
   if (
     elapsedEnd > openMs &&
