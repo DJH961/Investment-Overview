@@ -14,6 +14,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.12.0] — 2026-06-26
+
+### Added
+
+- **The USD-view "Investing power since yesterday" panel now shows its base
+  figures.** Until now the panel led with only the day's *swing* — a delta with
+  no visible anchor — so it wasn't obvious what amount that swing rode on. A new
+  quiet caption underneath now spells out both halves: the **regular investment
+  amount set in Settings** (e.g. "Regular €100") on the left, and the **dollars
+  that amount actually buys at today's live EUR/USD rate** (e.g. "$130.00 today")
+  on the right. Mirrored identically on the web companion (mobile-first) and the
+  Python desktop, baseline-aligned and muted so it reads as the footing the swing
+  rides rather than a competing headline.
+
 ## [4.11.1] — 2026-06-26
 
 ### Fixed
