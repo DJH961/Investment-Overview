@@ -14,6 +14,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.12.4] — 2026-06-26
+
+### Fixed
+
+- **The Currency KPI recovers its "today" baseline from an empty / stale state.**
+  The EUR ↔ USD box measures today's move from the prior session's settled
+  EUR/USD close, but that baseline used to come *only* from the live provider's
+  `previous_close`. Whenever the rate was served from cache, the Tiingo backup, or
+  the end-of-day ECB fallback — or on a cold start — that prior close was missing,
+  so the "Today" figure stuck on "—" with no way to recover and the FX-aware daily
+  move silently went FX-unaware. The 1D EUR/USD history puller now spans the prior
+  trading session as well as the current one (still a single batched request, no
+  extra credit), so the on-device FX bars carry that settled close, and the
+  refresh recovers the baseline from them when the provider omits it
+  (`web/src/live-graph.ts` `sessionFxHistoryWindow`, `web/src/app.ts`
+  `barsPrevSessionCloseFx`). The live 1D curve is unchanged — it still draws only
+  the current session.
+
 ## [4.12.3] — 2026-06-26
 
 ### Added
