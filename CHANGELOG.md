@@ -26,15 +26,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   binds (overflow simply defers) (`web/src/app.ts` `regenerateGraph`,
   `TimeSeriesStore.deleteSession`).
 
-### Fixed
+### Changed
 
-- **"Force-fetch every price now" re-pulls the graphs again.** The top Maintenance
-  escape hatch is meant to overrule what the scheduler thinks is sensible to pull
-  and re-fetch *everything*; a regression left it forcing only the live quotes while
-  the 1D/1W graph bars stayed on their per-symbol staleness gate, so an
-  already-loaded curve was never re-pulled. A force-all (and a from-scratch reset)
-  round now bypasses that gate and re-pulls every market symbol's 1D *and* 1W bars
-  alongside the quotes (`web/src/app.ts` `primeStaleGraphPackages` force path).
+- **"Force-fetch every price now" is a quotes-only escape hatch.** The top
+  Maintenance button re-pulls *every* quote — ETFs/stocks **and** the mutual-fund
+  NAVs — ignoring the NAV close-await and market-closed skips, but it deliberately
+  leaves the 1D/1W graphs alone so a force-all never spends credits on graph bars.
+  The dedicated "Regenerate 1D graph" / "Regenerate 1W graph" buttons own the
+  curves; a from-scratch reset still re-primes every graph (`web/src/app.ts`
+  `graphPrimeDecision`, `forceFetchAllNow`).
 
 ## [4.12.3] — 2026-06-26
 

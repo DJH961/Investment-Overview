@@ -1329,7 +1329,10 @@ export class App {
    * during market hours, so this is what stops the prime self-perpetuating on
    * every refresh round:
    *
-   * - **reset / force-all** — always due (the heaviest escape hatch re-pulls all).
+   * - **reset** — always due (the from-scratch escape hatch re-pulls all bars).
+   * - **force-all** — never due: "Force-fetch every price now" is a quotes-only
+   *   pull (NAV mutual funds included) and leaves the curves to the Regenerate
+   *   buttons.
    * - **market open** — due only when the orchestrator's clock-hour overlay says a
    *   bar is due: the first bar once ≥1 interval of session has elapsed, then at
    *   most once per `:00`. Between gates, breadcrumbs carry the line.
@@ -1353,11 +1356,23 @@ export class App {
     // which self-gates on bar-package staleness downstream (so a loaded book pulls
     // nothing; a stale settled close still backfills).
     const orchestrator = `orchestrator: ${describePlan(plan)}`;
-    if (kind === "reset" || (opts.forceAll ?? false)) {
+    if (kind === "reset") {
       return {
         due: true,
         market,
-        reason: `${kind === "reset" ? "reset" : "force-all"} → full graph re-prime (${orchestrator})`,
+        reason: `reset → full graph re-prime (${orchestrator})`,
+      };
+    }
+    // "Force-fetch every price now" (force-all) is a quotes-only escape hatch: it
+    // re-pulls every quote — NAV mutual funds included — but deliberately leaves
+    // the 1D/1W graphs alone. The dedicated "Regenerate 1D/1W graph" buttons own
+    // the curves, so a force-all never spends credits on graph bars (this skip
+    // also overrules the market-closed branch below).
+    if (opts.forceAll ?? false) {
+      return {
+        due: false,
+        market,
+        reason: `force-all → quotes only, graphs skipped (use the Regenerate buttons) (${orchestrator})`,
       };
     }
     if (market === "closed") {
@@ -1665,11 +1680,13 @@ export class App {
    * runs only while the market is shut and only when no session bar pull this round
    * would already grab the FX track; it never affects the returned bar count.
    *
-   * `force` is the Settings "Force-fetch every price now" escape hatch (and the
-   * dedicated graph-regeneration buttons): it bypasses the per-symbol staleness
-   * gate and re-pulls **every** market symbol's 1D *and* 1W bars, so a force-all
-   * genuinely re-pulls the graphs too rather than leaving an already-loaded curve
-   * untouched. The hard free-tier budget still binds, so overflow simply defers.
+   * `force` is the from-scratch **reset** path (and the dedicated graph-regeneration
+   * buttons): it bypasses the per-symbol staleness gate and re-pulls **every**
+   * market symbol's 1D *and* 1W bars rather than leaving an already-loaded curve
+   * untouched. The "Force-fetch every price now" (force-all) escape hatch is
+   * deliberately *not* a forced graph prime — it re-pulls every quote (NAV mutual
+   * funds included) but leaves the curves to the Regenerate buttons. The hard
+   * free-tier budget still binds, so overflow simply defers.
    */
   private async primeStaleGraphPackages(now: Date = new Date(), force = false): Promise<number> {
     const { config } = this.state;
@@ -2518,7 +2535,7 @@ export class App {
         field(
           "Force-fetch every price",
           forceAll,
-          "Re-pull every quote now, ignoring NAV close-await skips and market-closed skips — as if all prices were expected to update. Also re-pulls the 1D and 1W graph bars. Keeps your caches. Respects your daily free-tier budget.",
+          "Re-pull every quote now, ignoring NAV close-await skips and market-closed skips — as if all prices were expected to update. Includes the mutual-fund NAVs. Leaves the 1D/1W graphs alone (use the Regenerate buttons for those). Keeps your caches. Respects your daily free-tier budget.",
         ),
         field(
           "Regenerate the live graphs",
@@ -4300,19 +4317,19 @@ export class App {
    *
    * Unlike {@link updateAllFromScratch} this keeps the caches intact — it only
    * bypasses the freshness gates for this one pull (see {@link buildQuoteOptions}
-   * `forceAll`). The hard free-tier per-minute/day budget in {@link loadQuotes}
-   * still applies, so any overflow just defers.
+   * `forceAll`). It re-pulls every quote, mutual-fund NAVs included, but
+   * deliberately leaves the 1D/1W graphs alone — the dedicated "Regenerate 1D/1W
+   * graph" buttons own the curves. The hard free-tier per-minute/day budget in
+   * {@link loadQuotes} still applies, so any overflow just defers.
    */
   private forceFetchAllNow(): void {
     // Back to the dashboard, then force a pull of every symbol.
     this.exitSettings();
     this.toast("Pulling every live price now…");
-    // A deliberate hard refresh overrides any armed time-series backoff so every
-    // graph symbol is re-attempted immediately (the automatic loop keeps it).
     clearAllSeriesBackoff();
     this.pollLog(
       "note",
-      "Hard refresh (Settings) — force-fetching every live price now, bypassing the freshness/NAV-schedule gates.",
+      "Hard refresh (Settings) — force-fetching every live price (mutual-fund NAVs included) now, bypassing the freshness/NAV-schedule gates; the 1D/1W graphs are left to the Regenerate buttons.",
     );
     const session = this.sessionId;
     if (this.refreshing) return; // a pull is already in flight; it will repaint
@@ -4323,8 +4340,8 @@ export class App {
    * The Settings "Regenerate 1D graph" / "Regenerate 1W graph" escape hatches:
    * wipe the persisted bars/tips behind that one live curve and re-pull them from
    * scratch, then repaint. Unlike "Force-fetch every price now" (which re-pulls
-   * every quote *and* both graphs while keeping the caches intact) this is scoped
-   * to a single curve — use it when only the 1D or 1W line looks wrong or stuck.
+   * every quote but leaves the curves alone) this is scoped to a single curve —
+   * use it when only the 1D or 1W line looks wrong or stuck.
    *
    * The store wipe is deliberate: the live curve is rebuilt from these stored bars,
    * so a merge-only re-pull could leave a stale/malformed point in place (the exact
@@ -4798,10 +4815,11 @@ export class App {
       const decision = this.graphPrimeDecision(kind, opts, roundPlan, now);
       this.pollLog("graph", `Graph-prime decision (${kind}): ${decision.reason}`);
       if (decision.due) {
-        // A force-all / reset round overrules the per-symbol staleness gate so the
-        // graphs are re-pulled too — otherwise "Force-fetch every price now" would
-        // refresh quotes but leave an already-loaded 1D/1W curve untouched.
-        const forceGraphs = kind === "reset" || (opts.forceAll ?? false);
+        // A from-scratch reset overrules the per-symbol staleness gate so the
+        // graphs are re-pulled too. Force-all never reaches here (it returns
+        // not-due above): "Force-fetch every price now" is a quotes-only pull and
+        // leaves the 1D/1W curves to the dedicated Regenerate buttons.
+        const forceGraphs = kind === "reset";
         const stored = await this.primeStaleGraphPackages(now, forceGraphs).catch(() => undefined);
         if (session !== this.sessionId) {
           this.refreshing = false;
