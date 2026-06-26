@@ -330,11 +330,22 @@ describe("symbol plan cache", () => {
   it("round-trips a priority plan", () => {
     const s = memStorage();
     const plan = [
-      { symbol: "BIG_ETF", priceType: "market", assetClass: "etf", sizeEur: 9000 },
-      { symbol: "FUND", priceType: "nav", assetClass: "mutual_fund", sizeEur: 500 },
+      { symbol: "BIG_ETF", priceType: "market", assetClass: "etf", sizeEur: 9000, nativeCurrency: "USD" },
+      { symbol: "FUND", priceType: "nav", assetClass: "mutual_fund", sizeEur: 500, nativeCurrency: "EUR" },
     ];
     writeSymbolPlan(plan, s);
     expect(readSymbolPlan(s)).toEqual(plan);
+  });
+
+  it("defaults a legacy plan with no nativeCurrency to null (C2 back-compat)", () => {
+    const s = memStorage();
+    s.setItem(
+      "iv.web.symbol_plan",
+      JSON.stringify([{ symbol: "OLD", priceType: "market", assetClass: "etf", sizeEur: 7 }]),
+    );
+    expect(readSymbolPlan(s)).toEqual([
+      { symbol: "OLD", priceType: "market", assetClass: "etf", sizeEur: 7, nativeCurrency: null },
+    ]);
   });
 
   it("returns an empty array for missing/corrupt storage", () => {
@@ -358,8 +369,8 @@ describe("symbol plan cache", () => {
       ]),
     );
     expect(readSymbolPlan(s)).toEqual([
-      { symbol: "OK", priceType: "market", assetClass: "", sizeEur: 0 },
-      { symbol: "TYPED", priceType: "nav", assetClass: "mutual_fund", sizeEur: 12 },
+      { symbol: "OK", priceType: "market", assetClass: "", sizeEur: 0, nativeCurrency: null },
+      { symbol: "TYPED", priceType: "nav", assetClass: "mutual_fund", sizeEur: 12, nativeCurrency: null },
     ]);
   });
 });

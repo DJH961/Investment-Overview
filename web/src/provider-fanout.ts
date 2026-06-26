@@ -61,6 +61,15 @@ export interface FanoutInputs {
   kind: FanoutKind;
   /** Symbols needing a fresh quote/bar this round (priority-ordered, largest first). */
   symbols: string[];
+  /**
+   * NAV-fund symbols needing a fresh price this round (C8). NAVs prefer the cheap
+   * Twelve Data primary, but on a **login/start** pull they may spill to Tiingo
+   * when Twelve Data's minute is already spent (e.g. eaten by the 1D graph
+   * backfill) and Tiingo is idle — instead of starving and deferring. Optional;
+   * defaults to none. NAV *graph-bar* backfill is never routed here (NAVs have no
+   * intraday series) — this is purely the NAV EOD price/quote.
+   */
+  navSymbols?: string[];
   /** Twelve Data credits spendable right now (per-minute budget, post-reservation). */
   twelveDataSpendable: number;
   /** Tiingo credits spendable right now (hourly budget, post-reservation). */
@@ -85,6 +94,10 @@ export interface FanoutPlan {
   twelveData: string[];
   /** Symbols spilled to Tiingo for an instant parallel result. */
   tiingo: string[];
+  /** NAV symbols routed to the Twelve Data primary (the cheap default). */
+  navTwelveData: string[];
+  /** NAV symbols spilled to Tiingo (login/start only, when TD is spent). */
+  navTiingo: string[];
   /** Symbols that fit no budget this round — deferred to the next tick. */
   deferred: string[];
   /** Whether the parallel fan-out path was taken (vs. plain lead/overflow). */
@@ -117,20 +130,35 @@ export function planFanout(input: FanoutInputs): FanoutPlan {
   const instantThreshold = input.instantThreshold ?? tdBatch * 2;
   const reserve = input.tiingoReserve ?? TIINGO_RESERVE_CREDITS;
   const priority = isPriorityPull(input.kind);
+  const navSymbols = input.navSymbols ?? [];
 
   // Hard cap #5 / #1: the TD leg is one request of ≤ the batch size, clamped to
   // the live budget.
-  const tdCapacity = Math.max(0, Math.min(tdBatch, Math.floor(input.twelveDataSpendable)));
+  const tdSpendable = Math.max(0, Math.floor(input.twelveDataSpendable));
+  const tdCapacity = Math.min(tdBatch, tdSpendable);
   const twelveData = input.symbols.slice(0, tdCapacity);
   let rest = input.symbols.slice(tdCapacity);
+  const tiingoBudget = Math.max(0, Math.floor(input.tiingoSpendable));
+
+  // Running budget trackers, consumed by the market split first, then NAV (C8).
+  let tdLeft = Math.max(0, tdSpendable - twelveData.length);
+  let tiingoLeft = tiingoBudget;
+  let tiingo: string[] = [];
 
   if (rest.length === 0) {
+    // Market sleeve fit one TD request; NAVs still need routing (C8).
+    const nav = allocateNav(navSymbols, priority, input.tiingoAvailable, tdLeft, tiingoLeft);
     return {
       twelveData,
       tiingo: [],
-      deferred: [],
-      fannedOut: false,
-      reason: `Twelve Data only: ${twelveData.length} symbol(s) ≤ one TD request.`,
+      navTwelveData: nav.navTwelveData,
+      navTiingo: nav.navTiingo,
+      deferred: nav.deferred,
+      fannedOut: nav.navTiingo.length > 0,
+      reason:
+        `Twelve Data only: ${twelveData.length} symbol(s) ≤ one TD request` +
+        describeNav(nav) +
+        ".",
     };
   }
 
@@ -139,37 +167,92 @@ export function planFanout(input: FanoutInputs): FanoutPlan {
   const wantsFanout =
     input.tiingoAvailable && (priority || input.symbols.length > instantThreshold);
   if (!wantsFanout) {
+    const nav = allocateNav(navSymbols, priority, input.tiingoAvailable, tdLeft, tiingoLeft);
     return {
       twelveData,
       tiingo: [],
-      deferred: rest,
-      fannedOut: false,
+      navTwelveData: nav.navTwelveData,
+      navTiingo: nav.navTiingo,
+      deferred: [...rest, ...nav.deferred],
+      fannedOut: nav.navTiingo.length > 0,
       reason:
         `Twelve Data lead (${twelveData.length}), ${rest.length} deferred to next TD minute ` +
-        `(${input.symbols.length} ≤ ${instantThreshold} instant threshold; no Tiingo spill).`,
+        `(${input.symbols.length} ≤ ${instantThreshold} instant threshold; no Tiingo spill)` +
+        describeNav(nav) +
+        ".",
     };
   }
 
   // Invariant #4: a non-login spill must leave the last `reserve` Tiingo credits;
   // login/start may consume even the reserve. Invariant #5: clamp to the budget.
-  const tiingoBudget = Math.max(0, Math.floor(input.tiingoSpendable));
-  const tiingoUsable = priority ? tiingoBudget : Math.max(0, tiingoBudget - reserve);
-  const tiingo = rest.slice(0, tiingoUsable);
+  const tiingoUsable = priority ? tiingoLeft : Math.max(0, tiingoLeft - reserve);
+  tiingo = rest.slice(0, tiingoUsable);
   rest = rest.slice(tiingoUsable);
+  tiingoLeft = Math.max(0, tiingoLeft - tiingo.length);
 
+  const nav = allocateNav(navSymbols, priority, input.tiingoAvailable, tdLeft, tiingoLeft);
   const reservePart = priority
     ? "login may use the Tiingo reserve"
     : `last ${reserve} Tiingo credits reserved`;
   return {
     twelveData,
     tiingo,
-    deferred: rest,
-    fannedOut: tiingo.length > 0,
+    navTwelveData: nav.navTwelveData,
+    navTiingo: nav.navTiingo,
+    deferred: [...rest, ...nav.deferred],
+    fannedOut: tiingo.length > 0 || nav.navTiingo.length > 0,
     reason:
       `Fan-out: ${twelveData.length} via Twelve Data + ${tiingo.length} via Tiingo in parallel` +
       `${rest.length > 0 ? `, ${rest.length} deferred` : ""} ` +
-      `(${input.kind}; ${reservePart}).`,
+      `(${input.kind}; ${reservePart})` +
+      describeNav(nav) +
+      ".",
   };
+}
+
+/** The NAV slice of a fan-out: TD-first, Tiingo-overflow only on login/start. */
+interface NavSplit {
+  navTwelveData: string[];
+  navTiingo: string[];
+  deferred: string[];
+}
+
+/**
+ * Route the NAV EOD-price symbols (C8). NAVs always *prefer* the cheap Twelve
+ * Data primary; the genuine fix is that on a **login/start** (priority) pull a
+ * NAV that no longer fits the spent TD minute spills to idle Tiingo instead of
+ * starving. Non-priority pulls keep NAV on TD only (Tiingo stays reserved for the
+ * market sleeve that needs bars); whatever fits no budget is deferred. The NAV
+ * spill is budget-clamped, so it can never overspend Tiingo.
+ */
+function allocateNav(
+  navSymbols: string[],
+  priority: boolean,
+  tiingoAvailable: boolean,
+  tdLeft: number,
+  tiingoLeft: number,
+): NavSplit {
+  if (navSymbols.length === 0) return { navTwelveData: [], navTiingo: [], deferred: [] };
+  const navTwelveData = navSymbols.slice(0, Math.max(0, tdLeft));
+  let navRest = navSymbols.slice(navTwelveData.length);
+  let navTiingo: string[] = [];
+  if (navRest.length > 0 && priority && tiingoAvailable && tiingoLeft > 0) {
+    navTiingo = navRest.slice(0, tiingoLeft);
+    navRest = navRest.slice(navTiingo.length);
+  }
+  return { navTwelveData, navTiingo, deferred: navRest };
+}
+
+/** Append a short NAV-routing clause to a fan-out reason, or nothing when idle. */
+function describeNav(nav: NavSplit): string {
+  if (nav.navTwelveData.length === 0 && nav.navTiingo.length === 0 && nav.deferred.length === 0) {
+    return "";
+  }
+  const parts: string[] = [];
+  if (nav.navTwelveData.length > 0) parts.push(`${nav.navTwelveData.length} via Twelve Data`);
+  if (nav.navTiingo.length > 0) parts.push(`${nav.navTiingo.length} spilled to Tiingo`);
+  if (nav.deferred.length > 0) parts.push(`${nav.deferred.length} deferred`);
+  return `; NAV: ${parts.join(", ")}`;
 }
 
 /** Inputs for the reverse (Tiingo-primary → Twelve Data) safety net. */

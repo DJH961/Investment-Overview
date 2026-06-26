@@ -165,10 +165,10 @@ export function primeQuotesFromBars(
   currencyBySymbol: Map<string, string | null>,
   now: number,
   storage: StorageLike | null = defaultStorage(),
-): void {
-  if (barsBySymbol.size === 0) return;
+): string[] {
+  if (barsBySymbol.size === 0) return [];
   const file = readJson<QuoteCacheFile>(storage, QUOTE_KEY) ?? {};
-  let touched = false;
+  const primed: string[] = [];
   for (const [symbol, bars] of barsBySymbol) {
     const latest = latestBar(bars);
     if (latest === null) continue;
@@ -187,9 +187,10 @@ export function primeQuotesFromBars(
       valueDate: existing?.valueDate ?? null,
       marketOpen: existing?.marketOpen ?? null,
     };
-    touched = true;
+    primed.push(symbol);
   }
-  if (touched) writeJson(storage, QUOTE_KEY, file);
+  if (primed.length > 0) writeJson(storage, QUOTE_KEY, file);
+  return primed;
 }
 
 /** The newest (largest-`t`) bar in a list, or null when the list is empty. */
@@ -777,6 +778,14 @@ export interface PlannedSymbol {
   assetClass: string;
   /** Last-known EUR size, used only to order the fetch (largest first). */
   sizeEur: number;
+  /**
+   * Last-known native (booked) currency for this ticker, e.g. `USD`. Lets the
+   * *pre-decrypt* login warm-up denominate a quote primed from a bare native bar
+   * price before the encrypted model is available. `null` when unknown (legacy
+   * plans) or when holdings on one ticker disagreed — the warm-up then falls back
+   * to post-decrypt priming for that symbol. Never a decrypted figure or secret.
+   */
+  nativeCurrency: string | null;
 }
 
 /**
@@ -799,6 +808,9 @@ export function readSymbolPlan(storage: StorageLike | null = defaultStorage()): 
       priceType: typeof e.priceType === "string" ? e.priceType : "market",
       assetClass: typeof e.assetClass === "string" ? e.assetClass : "",
       sizeEur: typeof e.sizeEur === "number" && Number.isFinite(e.sizeEur) ? e.sizeEur : 0,
+      // Legacy plans (written before C2) carry no currency → default to `null`,
+      // so the pre-decrypt warm-up simply falls back to post-decrypt priming.
+      nativeCurrency: typeof e.nativeCurrency === "string" ? e.nativeCurrency : null,
     });
   }
   return out;

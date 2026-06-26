@@ -236,6 +236,43 @@ const PREFETCH_SPIN_MS = 1000;
 const BLOB_CHECK_MIN_INTERVAL_MS = 60 * 1000;
 
 /**
+ * C9 — bounds for the deferred work-queue. {@link DEFERRED_QUEUE_MAX} caps how
+ * many parked symbols are tracked (oldest evicted first); {@link DEFERRED_MAX_ATTEMPTS}
+ * caps per-symbol retries so a genuinely dead symbol cannot drive an endless burst.
+ */
+const DEFERRED_QUEUE_MAX = 64;
+const DEFERRED_MAX_ATTEMPTS = 4;
+
+/**
+ * C4 — how long the awaitable blob-meta probe ({@link App.refreshBlobMeta}) may
+ * block the login kickoff before it gives up and falls back to the current
+ * `blobDaysOld`. A few-byte GET; this only guards against a hung socket.
+ */
+const BLOB_META_PROBE_TIMEOUT_MS = 2500;
+
+/**
+ * Resolve `promise`, or reject once `ms` elapses — used to time-box the C4 blob
+ * meta probe so a hung network can never block the login kickoff. The timer is
+ * always cleared so it cannot keep the event loop alive after settling.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("timeout")), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
+
+/**
  * Heartbeat cadence for the auto-refresh scheduler while the market is **settled**
  * (closed, with every settled close and today's NAV already in hand). No prices
  * are fetched in this state — see {@link App.runScheduledRefresh} — but the timer
@@ -456,6 +493,16 @@ export class App {
    * deduped diff (Pillar 2 / WS5). Null until the first prefetch books a set.
    */
   private prefetchBooked: { symbols: string[]; predicted?: string[]; fx: boolean } | null = null;
+  /**
+   * C9 — the **deferred work-queue**: symbols a pull skipped for budget, each with
+   * the reason it was parked, so the next round *explicitly* drains them (or clears
+   * an entry with a logged reason once the decrypted blob's `nav_prices` already
+   * satisfied it) — never the old "hope its per-symbol cache TTL re-pulls it" that
+   * silently stranded NAVs when the blob didn't rescue them. Bounded by
+   * {@link DEFERRED_QUEUE_MAX} and per-entry retry-capped so a never-filling symbol
+   * cannot drive an infinite burst.
+   */
+  private deferredQueue: Map<string, { reason: string; attempts: number }> = new Map();
   /**
    * Whether the login prefetch actually fetched *new* data (≥1 quote or a live
    * FX pull). Drives the one-off login spin of the Refresh glyph: it spins only
@@ -811,11 +858,17 @@ export class App {
     // Tiingo pipe, pull its bars now — the market sleeve only, *never* NAV funds —
     // so the graph is warm on first paint and each bar's newest mark is folded
     // back into the quote cache, sparing those symbols a separate quote credit.
+    // C2: pass the *pre-decrypt* currency map (from the unencrypted plan) so the
+    // primed quotes actually land — without it `primeQuotesFromBars` skipped every
+    // bare native price and the post-decrypt kickoff saw an empty quote cache and
+    // re-pulled the whole market sleeve (the "31/40 Tiingo in 40s" double-pull).
+    const planCurrency = this.planCurrencyMap(plan);
     const graphFetched = await this.prefetchGraphBars(
       prefetch.graphSessionSymbols,
       prefetch.graphWeekSymbols,
       config,
       now,
+      planCurrency,
     );
     // After-hours FX close completion: when the session's price bars were already
     // in hand (so no 1D backfill ran above to grab the FX track alongside them)
@@ -832,10 +885,12 @@ export class App {
       this.pollLog(
         "primary",
         `Login warm-up: no quotes to warm beyond the graph backfill — ` +
-          `${graphFetched} graph series, FX ${warmth.spotSource}. No extra quote credits spent.`,
+          `${graphFetched.stored} graph series, FX ${warmth.spotSource}. No extra quote credits spent.`,
       );
-      this.finishPrefetch({ quoteFetched: 0, quoteTotal, hasPlan: true, fxLive, graphFetched });
-      this.prefetchBooked = { symbols: [], predicted: plan.map((e) => e.symbol), fx: true };
+      this.finishPrefetch({ quoteFetched: 0, quoteTotal, hasPlan: true, fxLive, graphFetched: graphFetched.stored });
+      // C3: even with no quote work, the graph backfill may have primed market
+      // quotes — book those *actual* fills so the reconcile doesn't re-pull them.
+      this.prefetchBooked = { symbols: [...graphFetched.primed], predicted: plan.map((e) => e.symbol), fx: true };
       return;
     }
     const options = this.buildQuoteOptions(navFetchSymbols, config);
@@ -850,6 +905,7 @@ export class App {
     const fanout = planFanout({
       kind: "start",
       symbols: prefetch.symbols,
+      navSymbols: prefetch.navSymbols,
       twelveDataSpendable: twelveDataAvailable(fanoutNow),
       tiingoSpendable: tiingoAvailable(fanoutNow),
       tiingoAvailable: resolvePriceProxyUrl(config) !== null,
@@ -857,20 +913,20 @@ export class App {
     });
     this.pollLog("login", `Login fan-out (${prefetch.symbols.length} mkt symbol(s)): ${fanout.reason}`);
     // Execute the fan-out the planner decided: the Twelve Data lead (≤8) runs
-    // alongside any Tiingo overflow for an instant first paint, while NAV funds
-    // always warm on the cheap Twelve Data primary (they have no intraday series
-    // and the graphs never pull them), so the scarce hourly Tiingo budget is
-    // reserved for the market symbols that genuinely need bars. Symbols that fit no
-    // budget this round are deferred to the post-unlock kickoff (its per-symbol
-    // cache TTL re-pulls them), so nothing is dropped.
+    // alongside any Tiingo overflow for an instant first paint. C8: NAV funds ride
+    // the planner's split too, so when Twelve Data's minute is already spent (e.g.
+    // the 1D graph backfill ate it) and Tiingo is idle, NAVs spill to Tiingo on the
+    // reserve-exempt login pull instead of starving. Symbols that fit no budget this
+    // round are recorded on the C9 deferred work-queue, drained by the next round.
     let fetchedCount = 0;
-    const twelveSymbols = [...fanout.twelveData, ...prefetch.navSymbols];
+    const twelveSymbols = [...fanout.twelveData, ...fanout.navTwelveData];
     const legs: Promise<number>[] = [];
     if (twelveSymbols.length > 0) {
       legs.push(this.prefetchViaPrimary(twelveSymbols, config, options));
     }
-    if (fanout.tiingo.length > 0) {
-      legs.push(this.prefetchViaTiingo(fanout.tiingo, navFetchSymbols, plan, config, options));
+    const tiingoSymbols = [...fanout.tiingo, ...fanout.navTiingo];
+    if (tiingoSymbols.length > 0) {
+      legs.push(this.prefetchViaTiingo(tiingoSymbols, navFetchSymbols, plan, config, options));
     }
     for (const filled of await Promise.all(legs)) fetchedCount += filled;
     if (fanout.deferred.length > 0) {
@@ -879,21 +935,36 @@ export class App {
         `Login fan-out: ${fanout.deferred.length} symbol(s) over budget, deferred to the post-unlock kickoff ` +
           `[${fanout.deferred.join(", ")}].`,
       );
+      // C9: a deferral is a tracked promise, not a hope. Queue it so the next round
+      // explicitly drains it (or clears it with a logged reason once the blob covers it).
+      this.enqueueDeferred(fanout.deferred, "login fan-out over budget");
     }
     this.finishPrefetch({
       quoteFetched: fetchedCount,
       quoteTotal,
       hasPlan: true,
       fxLive,
-      graphFetched,
+      graphFetched: graphFetched.stored,
     });
     // Record what Step 1 booked so the post-decrypt kickoff (Step 2) can reconcile
     // the decrypted truth against it and pull only the deduped diff (Pillar 2/WS5).
-    // `predicted` is the full last-known-holdings universe Step 1 reasoned about,
-    // so Step 2 can label a diff symbol "newly-bought" only when the prediction
-    // genuinely never knew it.
+    // C3: book the **true filled set** — the symbols actually dispatched to a
+    // provider leg this round plus the market symbols the graph backfill primed —
+    // and **exclude** the deferred set (handed to the C9 queue). Previously this
+    // booked *intent* (every planned symbol incl. deferred, but omitting the
+    // graph-primed ones), which made the reconcile re-pull the whole sleeve.
+    // `predicted` stays the full last-known-holdings universe so Step 2 can label a
+    // diff symbol "newly-bought" only when the prediction genuinely never knew it.
+    const deferredSet = new Set(fanout.deferred);
+    const bookedSet = new Set<string>([
+      ...fanout.twelveData,
+      ...fanout.tiingo,
+      ...fanout.navTwelveData,
+      ...fanout.navTiingo,
+      ...graphFetched.primed,
+    ]);
     this.prefetchBooked = {
-      symbols: [...prefetch.symbols, ...prefetch.navSymbols],
+      symbols: [...bookedSet].filter((s) => !deferredSet.has(s)),
       predicted: plan.map((e) => e.symbol),
       fx: true,
     };
@@ -1074,6 +1145,123 @@ export class App {
   }
 
   /**
+   * The **pre-decrypt** currency map (C2): native currency per ticker, read from
+   * the unencrypted symbol plan instead of the decrypted model. Lets the login
+   * warm-up's {@link prefetchGraphBars} prime a quote from a bare native bar price
+   * before unlock, so the freshness ledger is honest at the post-decrypt kickoff
+   * (no faked "market quote missing" → heavily-outdated full re-pull). A `null`
+   * entry (legacy plan, or a ticker whose holdings disagreed on currency) simply
+   * falls back to post-decrypt priming for that symbol.
+   */
+  /**
+   * C6 — the symbols whose decrypted native currency differs from the currency
+   * the pre-decrypt plan (C2) assumed. Compares the saved {@link readSymbolPlan}
+   * (written last session, read pre-decrypt) against the now-decrypted holdings'
+   * `nativeCurrency`. A difference means a quote Step 1 may have primed in the
+   * wrong denomination, so the reconcile must re-pull it. A plan entry with no
+   * stored currency (`null`, e.g. a legacy plan) never counts as a mismatch — it
+   * made no assumption to contradict. A steady-state USD-only book returns none.
+   */
+  private currencyMismatchSymbols(): string[] {
+    const planCurrency = this.planCurrencyMap();
+    if (planCurrency.size === 0) return [];
+    const mismatches: string[] = [];
+    const seen = new Set<string>();
+    for (const h of this.model?.holdings ?? []) {
+      const symbol = h.priceSymbol ?? h.symbol;
+      if (!symbol || seen.has(symbol)) continue;
+      seen.add(symbol);
+      const assumed = planCurrency.get(symbol);
+      const actual = h.nativeCurrency ?? null;
+      if (assumed != null && actual != null && assumed !== actual) mismatches.push(symbol);
+    }
+    return mismatches;
+  }
+
+  private planCurrencyMap(plan: PlannedSymbol[] = readSymbolPlan()): Map<string, string | null> {
+    const map = new Map<string, string | null>();
+    for (const e of plan) map.set(e.symbol, e.nativeCurrency);
+    return map;
+  }
+
+  /**
+   * C9 — record budget-deferred symbols on the work-queue. Each entry carries the
+   * reason it was parked; re-deferring a still-queued symbol does not reset its
+   * attempt count. The queue is bounded ({@link DEFERRED_QUEUE_MAX}); the oldest
+   * entries are evicted first so a flood of deferrals can never grow unbounded.
+   */
+  private enqueueDeferred(symbols: Iterable<string>, reason: string): void {
+    for (const symbol of symbols) {
+      if (!symbol) continue;
+      const existing = this.deferredQueue.get(symbol);
+      if (existing) {
+        existing.reason = reason;
+        continue;
+      }
+      this.deferredQueue.set(symbol, { reason, attempts: 0 });
+      while (this.deferredQueue.size > DEFERRED_QUEUE_MAX) {
+        const oldest = this.deferredQueue.keys().next().value;
+        if (oldest === undefined) break;
+        this.deferredQueue.delete(oldest);
+      }
+    }
+  }
+
+  /**
+   * C9 — drain the deferred work-queue at the start of a round. Any queued symbol
+   * the decrypted blob has since satisfied (a fresh cached quote now exists, e.g.
+   * carried by the blob's `nav_prices`) is **cleared with a logged reason** rather
+   * than re-fetched; the genuinely-still-missing symbols are returned so the round
+   * can pull them explicitly. Per-symbol attempts are capped so a never-filling
+   * symbol is dropped (logged) instead of bursting forever. Returns the symbols
+   * that still need a pull this round.
+   */
+  private drainDeferredQueue(now: Date): string[] {
+    if (this.deferredQueue.size === 0) return [];
+    const cached = readCachedQuotes();
+    const stillMissing: string[] = [];
+    const clearedByBlob: string[] = [];
+    const exhausted: string[] = [];
+    for (const [symbol, entry] of [...this.deferredQueue]) {
+      const have = cached.get(symbol)?.quote?.at ?? null;
+      if (have !== null) {
+        clearedByBlob.push(symbol);
+        this.deferredQueue.delete(symbol);
+        continue;
+      }
+      entry.attempts += 1;
+      if (entry.attempts > DEFERRED_MAX_ATTEMPTS) {
+        exhausted.push(symbol);
+        this.deferredQueue.delete(symbol);
+        continue;
+      }
+      stillMissing.push(symbol);
+    }
+    if (clearedByBlob.length > 0) {
+      this.pollLog(
+        "orchestrator",
+        `Deferred queue: ${clearedByBlob.length} cleared by cached/blob data (no re-fetch) ` +
+          `[${clearedByBlob.join(", ")}].`,
+      );
+    }
+    if (exhausted.length > 0) {
+      this.pollLog(
+        "orchestrator",
+        `Deferred queue: ${exhausted.length} dropped after ${DEFERRED_MAX_ATTEMPTS} attempts ` +
+          `[${exhausted.join(", ")}].`,
+      );
+    }
+    if (stillMissing.length > 0) {
+      this.pollLog(
+        "orchestrator",
+        `Deferred queue: ${stillMissing.length} still missing, draining this round [${stillMissing.join(", ")}].`,
+      );
+    }
+    void now;
+    return stillMissing;
+  }
+
+  /**
    * Whether the 1D/1W graph bars should be primed this round, and why — the
    * **dissolution of the old unconditional `primeStaleGraphPackages()` pre-step**
    * into the orchestrator's freshness decision (Pillar 1/4). The decision is no
@@ -1199,11 +1387,20 @@ export class App {
     let oldestQuoteAt: number | null = null;
     let anyQuoteMissing = false;
     let anyMarketMissing = false;
+    // C1 — currency-known gate. An empty quote cache is only *evidence* of a
+    // missing market day when we actually know the holding's currency: a genuine
+    // first-ever login (no saved plan, C2) has no currency yet, so an empty cache
+    // there is the unknown-start state, not a 10-day gap. Inflating
+    // `deviceDaysMissing` to 10 off that unknown cache is exactly the bug that
+    // faked "heavily-outdated" and triggered the full re-pull, so a missing market
+    // quote only counts when its native currency is known.
     for (const entry of plan) {
       const at = cached.get(entry.symbol)?.quote?.at ?? null;
       if (at === null) {
         anyQuoteMissing = true;
-        if (entry.priceType === "market") anyMarketMissing = true;
+        if (entry.priceType === "market" && entry.nativeCurrency !== null) {
+          anyMarketMissing = true;
+        }
         continue;
       }
       if (oldestQuoteAt === null || at < oldestQuoteAt) oldestQuoteAt = at;
@@ -1278,11 +1475,27 @@ export class App {
       minutesSinceOpenMs: marketOpen ? elapsedSessionMs(now) : 0,
       autoIntervalMs: this.state.config.updateMinutes * 60 * 1000,
       freshness: this.buildPullFreshness(now),
+      phase: "post-decrypt",
+      currencyKnown: this.currencyKnownForPlan(),
       barGate: {
         lastBarPullMs: this.lastBarPrimeMs,
         sessionOpenMs: sessionOpenMs(lastSessionDate(now)),
       },
     });
+  }
+
+  /**
+   * C1 — whether every market holding's native currency is known this pass. Only
+   * `false` on a genuine first-ever login with no decrypted model yet (so an empty
+   * quote cache is the unknown-start state, not a missing-days gap). Mirrors the
+   * gate {@link buildPullFreshness} applies to `deviceDaysMissing`.
+   */
+  private currencyKnownForPlan(): boolean {
+    const data = this.state.data;
+    if (!data) return false;
+    return buildFetchPlan(data, FETCHABLE_NAV_CLASSES).every(
+      (e) => e.priceType !== "market" || e.nativeCurrency !== null,
+    );
   }
 
   /**
@@ -1328,7 +1541,8 @@ export class App {
       await this.prefetchSessionFx(config, now);
     }
     if (stale.session.length === 0 && stale.week.length === 0) return 0;
-    return this.prefetchGraphBars(stale.session, stale.week, config, now, this.primingCurrencyMap());
+    const result = await this.prefetchGraphBars(stale.session, stale.week, config, now, this.primingCurrencyMap());
+    return result.stored;
   }
 
   /**
@@ -1354,12 +1568,17 @@ export class App {
     config: AppConfig,
     now: Date,
     currencyBySymbol: Map<string, string | null> = new Map(),
-  ): Promise<number> {
-    if (sessionSymbols.length === 0 && weekSymbols.length === 0) return 0;
+  ): Promise<{ stored: number; primed: string[] }> {
+    if (sessionSymbols.length === 0 && weekSymbols.length === 0) return { stored: 0, primed: [] };
     const proxyUrl = resolvePriceProxyUrl(config);
-    if (!proxyUrl) return 0; // graph bars only come cheaply via the Tiingo /price pipe
+    if (!proxyUrl) return { stored: 0, primed: [] }; // graph bars only come cheaply via the Tiingo /price pipe
     const store = this.ensureTimeSeriesStore();
     let stored = 0;
+    // C3/C7: track the symbols whose quote cache this backfill genuinely primed,
+    // so (a) the post-decrypt reconcile books the *true* filled set (not intent),
+    // and (b) the log reports the real primed count, not a blind "primed those
+    // quotes" that lies when `primeQuotesFromBars` skipped every bare native price.
+    const primedSet = new Set<string>();
 
     const pull = async (
       symbols: string[],
@@ -1431,7 +1650,7 @@ export class App {
       // rapid-fire quote *and* the 1D/1W graph for the same symbol. Pre-decrypt
       // (the empty-map default) primeQuotesFromBars reuses each symbol's existing
       // cached currency and skips any it cannot resolve.
-      primeQuotesFromBars(bars, currencyBySymbol, Date.now());
+      primeQuotesFromBars(bars, currencyBySymbol, Date.now()).forEach((s) => primedSet.add(s));
       // Grab the matching FX track in the same pass so the curve re-marks each
       // point at its own settled rate (finest granularity) for one more credit.
       const fetchFx = makeWindowFxFetcher(proxyUrl, window, fxResample, undefined, tiingoMeter, {
@@ -1446,10 +1665,14 @@ export class App {
       await store.mergeSession(storeKey, { bars: incoming, fx }, now.getTime());
       const count = Object.keys(incoming).length;
       stored += count;
+      // C7: report the *real* primed count for this leg, not a blind claim. The
+      // primed total may be < stored when a bar was older than an existing quote
+      // or its currency could not be resolved pre-decrypt.
+      const primedHere = Object.keys(incoming).filter((s) => primedSet.has(s)).length;
       this.pollLog(
         "graph",
         `Login warm-up: ${label} backfill stored ${count} series (Tiingo ${param} bars) ` +
-          `and primed those quotes.`,
+          `and primed ${primedHere} quote(s).`,
       );
     };
 
@@ -1458,7 +1681,7 @@ export class App {
       interval: "1day",
       outputsize: 8,
     });
-    return stored;
+    return { stored, primed: [...primedSet] };
   }
 
   /**
@@ -2909,6 +3132,33 @@ export class App {
    * Because the check is now near-free it runs on demand (no 2-minute guard).
    * Failures are swallowed — the already-rendered cached data stands.
    */
+  /**
+   * C4 — the **awaitable blob-meta probe**, split out of {@link maybeRefreshBlob}
+   * so the login kickoff can `await` *only* the cheap remote-recency signal before
+   * it decides the round, while the heavy blob *download* stays fire-and-forget.
+   * Without this the kickoff's `blobDaysOld` was always stale (every
+   * `maybeRefreshBlob` is `void`-called), so a fresh remote blob that already
+   * covered the gap was ignored and the round re-spent market credits.
+   *
+   * It fetches nothing but `portfolio.meta.json` (a few bytes) and updates
+   * {@link blobPublishedAt}. It is **time-boxed** ({@link BLOB_META_PROBE_TIMEOUT_MS})
+   * so a hung network can never block the kickoff — on timeout/failure it simply
+   * returns and the round falls back to the current `blobDaysOld`. It has **no**
+   * render/refresh side effects (unlike `maybeRefreshBlob`), so it is safe to await.
+   */
+  private async refreshBlobMeta(session: number): Promise<void> {
+    const { config } = this.state;
+    const metaUrl = resolveMetaUrl(config);
+    if (!metaUrl) return;
+    try {
+      const meta = await withTimeout(fetchBlobMeta(metaUrl), BLOB_META_PROBE_TIMEOUT_MS);
+      if (session !== this.sessionId) return;
+      if (meta?.publishedAt) this.blobPublishedAt = meta.publishedAt;
+    } catch {
+      /* time-boxed best-effort: keep the current blobDaysOld, never block the kickoff. */
+    }
+  }
+
   private async maybeRefreshBlob(session: number): Promise<void> {
     const { config, passphrase } = this.state;
     if (!passphrase) return;
@@ -3014,6 +3264,7 @@ export class App {
       priceType: e.priceType,
       assetClass: e.assetClass,
       sizeEur: e.sizeEur,
+      nativeCurrency: e.nativeCurrency,
     })));
 
     return { symbols, options: this.buildQuoteOptions(navFetchSymbols, config, force, forceAll) };
@@ -4036,11 +4287,22 @@ export class App {
         const diff = reconcileHandshake(this.prefetchBooked, {
           staleSymbols: this.staleFetchSymbols(isUsMarketOpen(reconcileNow), reconcileNow),
           fxStale: this.isFxStale(reconcileNow),
+          currencyMismatches: this.currencyMismatchSymbols(),
         });
         this.pollLog("login", diff.reason);
+        // C6: a wrongly-denominated primed quote must be re-pulled — queue the
+        // mismatch symbols so the round below genuinely refetches them.
+        if (diff.currencyMismatches.length > 0) {
+          this.enqueueDeferred(diff.currencyMismatches, "currency mismatch vs. pre-decrypt plan");
+        }
         this.prefetchBooked = null;
       }
     }
+    // C9 — drain the deferred work-queue: clear entries the decrypted blob already
+    // satisfied (logged, no re-fetch) and surface the genuinely-missing ones so
+    // they are re-pulled this round (they have no fresh quote, so the round's
+    // staleness check picks them up). Never lets a deferral vanish unlogged.
+    this.drainDeferredQueue(new Date());
     // Smart Tiingo gate — run on **any** network round, not just one explicitly
     // flagged Tiingo-leaning: any force/auto refresh can quietly fall back to
     // Tiingo for the symbols Twelve Data defers, so the dedup must fire whenever a
@@ -4058,6 +4320,19 @@ export class App {
     // single plan governs *both* the 1D/1W bar gate (below) and the quote / NAV / FX
     // legs (in {@link refreshPrices}), so bars are never decided — or pulled — twice
     // and the two gates can never disagree.
+    // C4 — on the login kickoff, await the cheap blob-meta probe so the round's
+    // `blobDaysOld` reflects the *remote* recency before the heavy spend decision.
+    // A fresh remote blob that already covers the gap then stops the kickoff
+    // re-pulling market credits. Time-boxed, render-free, kickoff-only (ordinary
+    // ticks must not pay a probe latency every cadence).
+    if (opts.kickoff ?? false) {
+      await this.refreshBlobMeta(session);
+      if (session !== this.sessionId) {
+        this.refreshing = false;
+        this.refreshingKind = null;
+        return;
+      }
+    }
     const now = new Date();
     const roundPlan = this.planRoundPull(kind, opts, now);
     this.pollLog("orchestrator", `Round decision (${kind}): ${describePlan(roundPlan)}`);
@@ -4180,6 +4455,10 @@ export class App {
       this.toast("All prices live, every holding is now on a fresh price.");
     }
     this.pricesAllLive = nowAllLive;
+    // C9 — track this round's budget-deferred symbols on the work-queue so the
+    // next round explicitly drains them (or clears them once the blob/cache covers
+    // them), rather than silently relying on each symbol's cache TTL to re-pull.
+    if (report.deferred.length > 0) this.enqueueDeferred(report.deferred, `${effectiveKind} round over budget`);
     let delayMs = nextRefreshDelayMs({
       deferred: report.deferred,
       // Pace auto-refresh out as the rolling daily free-tier budget runs low.

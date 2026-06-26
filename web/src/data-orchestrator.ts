@@ -79,6 +79,23 @@ export interface PullContext {
   autoIntervalMs: number;
   freshness: PullFreshness;
   barGate: PullBarGate;
+  /**
+   * C1 — which pass of the single planner this is. `"pre-decrypt"` is the login
+   * warm-up (the encrypted model is not yet available); `"post-decrypt"` is the
+   * kickoff/auto round. Defaults to `"post-decrypt"`. Decision-neutral today (the
+   * gradedPull math is unchanged); carried so the decision is self-describing and
+   * a pre-decrypt pass can be reasoned about as a first-class state.
+   */
+  phase?: "pre-decrypt" | "post-decrypt";
+  /**
+   * C1 — whether each holding's native currency is known this pass. `false` only
+   * on a genuine first-ever login with no saved plan (C2). When the currency is
+   * unknown an empty quote cache is **not** evidence of missing market days, so
+   * the caller must not inflate {@link PullFreshness.deviceDaysMissing} from it —
+   * that empty-cache inflation is the very bug that faked "heavily-outdated" and
+   * triggered a full re-pull. Defaults to `true` (currency known).
+   */
+  currencyKnown?: boolean;
 }
 
 /** The orchestrator's verdict: the legs to run, the tier, and a human reason. */

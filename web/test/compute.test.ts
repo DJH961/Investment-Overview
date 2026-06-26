@@ -946,6 +946,24 @@ describe("buildFetchPlan", () => {
     expect(plan.map((e) => e.symbol)).not.toContain("MMF");
   });
 
+  it("carries each ticker's native currency (C2), and null when holdings disagree", () => {
+    const data = planExport();
+    // Two holdings on one ticker that disagree on currency → collapses to null.
+    data.holdings.push({
+      ...data.holdings[0],
+      symbol: "BIG_ETF_EUR_LEG",
+      price_symbol: "BIG_ETF",
+      asset_class: "etf",
+      price_type: "market",
+      native_currency: "EUR",
+    });
+    const plan = buildFetchPlan(data, new Set(["mutual_fund"]));
+    const small = plan.find((e) => e.symbol === "SMALL_ETF");
+    const big = plan.find((e) => e.symbol === "BIG_ETF");
+    expect(small?.nativeCurrency).toBe("USD");
+    expect(big?.nativeCurrency).toBeNull();
+  });
+
   it("excludes money-market funds even when they carry the mutual_fund class (VMFXX)", () => {
     // The desktop keeps settlement funds in the broad mutual_fund class, so the
     // asset_class alone won't exclude them; they must be caught by ticker/flag.
