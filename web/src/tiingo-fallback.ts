@@ -30,7 +30,7 @@ import {
 } from "./cache";
 import { isUsMarketOpen, latestSettledSessionDate } from "./market-hours";
 import { PriceError, type FetchLike, type Quote } from "./prices";
-import type { QuoteLoadReport } from "./quotes";
+import { type QuoteLoadReport, FREE_TIER } from "./quotes";
 import { fetchTiingoQuotes } from "./tiingo";
 import {
   Budget,
@@ -491,12 +491,6 @@ export function noteQuickRefresh(now: number, storage?: StorageLike | null): voi
  * still has headroom.
  */
 export const STARTUP_TIINGO_RESERVE = 5;
-/**
- * Below this many outdated holdings the Twelve Data primary (8 credits/min)
- * repopulates the whole book within about a minute, so the startup quick-refresh
- * leaves the scarcer Tiingo budget untouched.
- */
-export const STARTUP_TIINGO_MIN_OUTDATED = 8;
 
 export type StartupRefreshRoute = "twelve" | "tiingo" | "split";
 
@@ -513,10 +507,11 @@ export interface StartupRefreshPlan {
  *
  *  - **Never spend the last {@link STARTUP_TIINGO_RESERVE} Tiingo credits** (nor
  *    the full cap): the usable Tiingo budget is `remaining − reserve`.
- *  - **Leave Tiingo alone for small outdated sets** (≤
- *    {@link STARTUP_TIINGO_MIN_OUTDATED}): the Twelve Data free tier (8 credits/
- *    min) clears that many holdings within a minute, so spending Tiingo buys
- *    nothing.
+ *  - **Leave Tiingo alone for small outdated sets** (≤ the Twelve Data
+ *    per-minute limit): the Twelve Data primary clears that many holdings within
+ *    a single minute, so spending the scarcer Tiingo budget buys nothing. The
+ *    threshold therefore tracks the configured `twelveDataPerMinute` limit
+ *    ({@link FREE_TIER}.creditsPerMinute) rather than a hard-coded number.
  *
  * Given those it routes everything via **Tiingo** when the usable budget covers
  * the whole outdated set, a **split** (Tiingo for as many as the usable budget
@@ -532,7 +527,7 @@ export function planStartupRefresh(args: {
   minOutdated?: number;
 }): StartupRefreshPlan {
   const reserve = args.reserve ?? STARTUP_TIINGO_RESERVE;
-  const minOutdated = args.minOutdated ?? STARTUP_TIINGO_MIN_OUTDATED;
+  const minOutdated = args.minOutdated ?? FREE_TIER.creditsPerMinute;
   const allTwelve: StartupRefreshPlan = { route: "twelve", tiingoBudget: 0 };
   if (!args.tiingoAvailable) return allTwelve;
   // Small outdated sets never warrant a Tiingo spend.
@@ -610,10 +605,11 @@ export interface PrefetchPlan {
  * removed from the quote set — one Tiingo spend covers both the graph and the
  * holding row, never double-buying.
  *
- * A large residual closed-market quote catch-up (more than `minBatch`, default
- * {@link STARTUP_TIINGO_MIN_OUTDATED}) is rapid-fired through Tiingo — one batched
- * request with no per-minute cap — instead of trickling ~8/min through the Twelve
- * Data primary; every other case stays on the primary.
+ * A large residual closed-market quote catch-up (more than `minBatch`, default the
+ * Twelve Data per-minute limit, {@link FREE_TIER}.creditsPerMinute) is rapid-fired
+ * through Tiingo — one batched request with no per-minute cap — instead of
+ * trickling that-many-per-minute through the Twelve Data primary; every other case
+ * stays on the primary.
  */
 export function planPrefetch(args: {
   marketOpen: boolean;
@@ -631,7 +627,7 @@ export function planPrefetch(args: {
   graphWeekStale?: string[];
   minBatch?: number;
 }): PrefetchPlan {
-  const minBatch = args.minBatch ?? STARTUP_TIINGO_MIN_OUTDATED;
+  const minBatch = args.minBatch ?? FREE_TIER.creditsPerMinute;
   // Graph bars only when there is a Tiingo pipe to pull them cheaply through.
   const graphSessionSymbols = args.tiingoAvailable ? [...(args.graphSessionStale ?? [])] : [];
   const graphWeekSymbols = args.tiingoAvailable ? [...(args.graphWeekStale ?? [])] : [];

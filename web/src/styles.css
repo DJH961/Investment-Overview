@@ -2003,3 +2003,20 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 @media (min-width: 64rem) {
   .app-toast.is-welcome { top: 4.4rem; bottom: auto; }
 }
+
+/* The idle "locking soon" warning: a bottom toast with a live countdown plus a
+   one-tap "Stay unlocked" extension and a dismiss. Tinted with the warning hue
+   so it reads as an actionable heads-up rather than a passive status line. */
+.app-toast.is-autolock-warn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  align-items: center;
+  border-color: color-mix(in srgb, var(--warn, #c47f00) 55%, var(--border));
+  font-weight: 600;
+  z-index: 70;
+}
+.app-toast.is-autolock-warn .auto-lock-warn-actions {
+  gap: 0.5rem;
+  align-items: center;
+}

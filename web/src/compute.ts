@@ -30,25 +30,10 @@ import type { ExportCashflow, ExportHolding, MobileExport } from "./types";
 import { buildCalculatorData, type CalcData } from "./calculator";
 import { isMoneyMarketHolding } from "./money-market";
 import { LIVE_PRICE_MAX_STALENESS_MS, isUsMarketOpen } from "./market-hours";
+import { providerLimits } from "./provider-limits";
 
 const EUR = "EUR";
 const USD = "USD";
-
-/**
- * Twelve Data free-tier daily credit cap, mirrored here so the pure compute
- * layer can default {@link OverviewView.dailyCreditLimit} without importing the
- * network/quotes module. Keep in step with `quotes.ts` `FREE_TIER.creditsPerDay`.
- */
-const FREE_TIER_CREDITS_PER_DAY = 800;
-
-/**
- * Tiingo fallback self-cap (web side: 80 % of the shared account), mirrored here
- * so the pure compute layer can default the {@link OverviewView} Tiingo-budget
- * limits without importing the network layer. Keep in step with `tiingo-gate.ts`
- * (`WEB_HOURLY_CAP` / `WEB_DAILY_CAP`).
- */
-const TIINGO_HOURLY_CAP = 40;
-const TIINGO_DAILY_CAP = 800;
 
 export interface HoldingView {
   symbol: string;
@@ -1307,6 +1292,9 @@ export function buildDashboard(
     liveFeedIsFresh &&
     !providerSaysClosed;
 
+  // Live provider rate limits (Settings-configurable) seed the budget ceilings
+  // the Overview surfaces; app.ts overrides the *used* counters post-fetch.
+  const limits = providerLimits();
   const overview: OverviewView = {
     generatedAt: data.meta.generated_at,
     asOf,
@@ -1321,11 +1309,11 @@ export function buildDashboard(
     ),
     lastDataPullAt: null,
     dailyCreditsUsed: null,
-    dailyCreditLimit: FREE_TIER_CREDITS_PER_DAY,
+    dailyCreditLimit: limits.twelveDataPerDay,
     tiingoHourUsed: null,
-    tiingoHourLimit: TIINGO_HOURLY_CAP,
+    tiingoHourLimit: limits.tiingoPerHour,
     tiingoDayUsed: null,
-    tiingoDayLimit: TIINGO_DAILY_CAP,
+    tiingoDayLimit: limits.tiingoPerDay,
     totalValueEur,
     cashValueEur,
     totalCostBasisEur,

@@ -22,7 +22,9 @@ import { startTour, DEMO_TOUR_STEPS } from "./tour";
 import {
   defaultConfig,
   loadConfig,
+  applyProviderLimits,
   parseAutoLockMinutes,
+  parseProviderLimit,
   parseUpdateMinutes,
   resolveBlobUrl,
   resolveMetaUrl,
@@ -34,6 +36,10 @@ import {
   MAX_UPDATE_MINUTES,
   DEFAULT_AUTO_LOCK_MINUTES,
   MAX_AUTO_LOCK_MINUTES,
+  DEFAULT_TWELVE_DATA_PER_MINUTE,
+  DEFAULT_TWELVE_DATA_PER_DAY,
+  DEFAULT_TIINGO_PER_HOUR,
+  DEFAULT_TIINGO_PER_DAY,
   type AppConfig,
 } from "./config";
 import { PriceError, type FxRates, type Quote } from "./prices";
@@ -143,6 +149,15 @@ import {
 import type { Bar, CurvePoint } from "./timeseries";
 import type { MobileExport } from "./types";
 import {
+  clearResumeToken,
+  isReloadNavigation,
+  isResumeTokenValid,
+  readResumeEnvelope,
+  saveResumeToken,
+  touchResumeActivity,
+  unwrapResumePassphrase,
+} from "./resume-session";
+import {
   h,
   renderDashboard,
   renderExtendedGraphsToggle,
@@ -161,6 +176,27 @@ const TOAST_DURATION_MS = 6000;
  * keep working underneath.
  */
 const WELCOME_BANNER_DURATION_MS = 3200;
+
+/**
+ * How long before the idle auto-lock fires to surface the dismissable "locking
+ * soon" warning, giving the user a chance to stay unlocked. Clamped to at most
+ * half the auto-lock window so a very short window still shows a sensible lead.
+ */
+const AUTO_LOCK_WARN_LEAD_MS = 15_000;
+
+/**
+ * Throttle for re-arming the idle auto-lock on high-frequency activity (pointer
+ * moves, wheel, …). Re-arming at most this often keeps the timers from thrashing
+ * while still measuring idle from the most recent second of activity. A visible
+ * warning always re-arms immediately, regardless of this throttle.
+ */
+const AUTO_LOCK_RESET_THROTTLE_MS = 1000;
+
+/**
+ * Throttle for re-stamping the resume token's last-activity time. Independent of
+ * the timer re-arm so storage writes stay infrequent under heavy interaction.
+ */
+const RESUME_TOUCH_THROTTLE_MS = 5000;
 
 /**
  * Minimum time the manual "Refreshing prices…" feedback stays on screen after
@@ -220,16 +256,21 @@ const APP_VERSION_KEY = "iv.web.app_version";
  * Daily free-tier credits remaining at or below which the UI warns the user it
  * is close to the limit (and starts spacing refreshes out). Two per-minute
  * windows' worth of headroom — enough warning to be useful without nagging.
+ * Derived from the live (Settings-configurable) per-minute limit, so lowering
+ * the limit tightens the warning band in step.
  */
-const DAILY_BUDGET_WARN_CREDITS = 2 * FREE_TIER.creditsPerMinute;
+function dailyBudgetWarnCredits(): number {
+  return 2 * FREE_TIER.creditsPerMinute;
+}
 
 /**
  * How recently the app must have actually pulled fresh data from the network for
- * the coverage summary to claim holdings are "up to date". Beyond this the
- * prices on screen are old enough that a confident "up to date" would be
- * misleading, so the summary names them as last-pulled instead.
+ * the coverage summary to claim holdings are "up to date". This is tied to the
+ * auto-refresh window (`config.updateMinutes`): within one refresh cycle of a real
+ * network pull the on-screen prices are as current as the schedule intends, so the
+ * summary may honestly say "up to date"; beyond it, it names them last-pulled
+ * instead. See {@link App.upToDateWindowMs}.
  */
-const UP_TO_DATE_WINDOW_MS = 60 * 1000;
 
 /**
  * Fraction of the daily free-tier credit budget that must remain for a manual
@@ -544,6 +585,20 @@ export class App {
   private manualFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
   /** Pending idle auto-lock timer, if any. */
   private autoLockTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Pending timer that surfaces the "locking soon" warning ahead of the lock. */
+  private autoLockWarnTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The live "locking soon" warning element, if currently shown. */
+  private autoLockWarnEl: HTMLElement | null = null;
+  /** Interval ticking the warning's countdown, if shown. */
+  private autoLockCountdownTimer: ReturnType<typeof setInterval> | null = null;
+  /** The configured idle-lock window in ms (0 = disabled). */
+  private autoLockTimeoutMs = 0;
+  /** Epoch-ms the idle-lock timers were last (re)armed, for the reset throttle. */
+  private autoLockArmedAt = 0;
+  /** Epoch-ms the resume token's activity stamp was last refreshed (throttle). */
+  private lastResumeTouchAt = 0;
+  /** True for the first paint after a page reload resumed the session. */
+  private resumedFromRefresh = false;
   /** Installed activity listeners that reset the idle auto-lock timer. */
   private activityHandler: (() => void) | null = null;
 
@@ -566,11 +621,17 @@ export class App {
   async start(): Promise<void> {
     this.logVersionUpdate();
     this.state.config = await loadConfig();
+    applyProviderLimits(this.state.config);
     const demoParams = this.demoParams();
     if (demoParams.requested) this.enterDemo(demoParams);
     else if (!this.isConfigured()) {
       this.showSetup();
     } else {
+      // A page reload (F5) of this tab may resume the unlocked session directly —
+      // opt-in, passphrase-wrapped and idle/version/context-bound — so a refresh
+      // behaves like the manual refresh button rather than forcing a re-login.
+      // Falls through to the normal unlock screen when resume isn't applicable.
+      if (await this.tryResumeFromRefresh()) return;
       // Warm live quotes for the symbols we already know about *before* the user
       // finishes unlocking, so the first post-login paint is live rather than
       // starting the per-minute clock from zero. Honours the shared credit budget
@@ -583,6 +644,53 @@ export class App {
       // and no extra tap.
       this.showUnlock(undefined, { autoPrompt: true });
     }
+  }
+
+  /**
+   * Attempt to resume the unlocked session after a full-page reload (F5).
+   *
+   * Returns `true` only when it took over the boot flow (the resume path is now
+   * driving the unlock); `false` means "not applicable — carry on to the normal
+   * unlock screen". All of these must hold for a resume to even be tried:
+   *   - the user opted in ({@link AppConfig.resumeOnRefresh});
+   *   - this navigation is a reload / back-forward, not a cold open;
+   *   - the device is **not** biometric-enrolled — a fingerprint auto-prompt is
+   *     the stronger path, so we prefer it and never weaken it with a token;
+   *   - a stored token exists and is still valid (version + data-source match and
+   *     within the idle window — see {@link isResumeTokenValid}).
+   *
+   * On a valid token we unwrap the passphrase and drive the ordinary
+   * {@link unlock} flow, so a newer blob that arrived since the last load is
+   * re-downloaded and re-decrypted exactly as on a manual refresh.
+   */
+  private async tryResumeFromRefresh(): Promise<boolean> {
+    if (!this.state.config.resumeOnRefresh) return false;
+    if (!isReloadNavigation()) return false;
+    // Prefer biometric: a single fingerprint touch is stronger than a stored
+    // token, so an enrolled device keeps the one-tap auto-prompt instead.
+    if (hasBiometricEnrolment()) return false;
+    const env = readResumeEnvelope();
+    const ok = isResumeTokenValid(env, {
+      now: Date.now(),
+      appVersion: APP_VERSION,
+      blobUrl: resolveBlobUrl(this.state.config) ?? "",
+      autoLockMinutes: this.state.config.autoLockMinutes,
+    });
+    if (!env || !ok) {
+      // Stale / mismatched / idle-expired token: drop it and re-authenticate.
+      clearResumeToken();
+      return false;
+    }
+    let passphrase: string;
+    try {
+      passphrase = await unwrapResumePassphrase(env);
+    } catch {
+      clearResumeToken();
+      return false;
+    }
+    this.resumedFromRefresh = true;
+    await this.unlock(passphrase);
+    return true;
   }
 
   /**
@@ -746,6 +854,7 @@ export class App {
       twelveDataSpendable: twelveDataAvailable(fanoutNow),
       tiingoSpendable: tiingoAvailable(fanoutNow),
       tiingoAvailable: resolvePriceProxyUrl(config) !== null,
+      twelveDataBatch: FREE_TIER.creditsPerMinute,
     });
     this.pollLog("login", `Login fan-out (${prefetch.symbols.length} mkt symbol(s)): ${fanout.reason}`);
     // Execute the fan-out the planner decided: the Twelve Data lead (≤8) runs
@@ -1640,6 +1749,31 @@ export class App {
       placeholder: String(DEFAULT_AUTO_LOCK_MINUTES),
       value: String(config.autoLockMinutes),
     });
+    // Data-provider rate limits (Settings only). Each defaults to the provider's
+    // documented free-tier value, *recommended* for a free account but not forced:
+    // lower them to share one account across more devices, or raise them above the
+    // free tier on a paid plan. No hard `max` — only a placeholder hint of the
+    // recommended value (`parseProviderLimit` guards against absurd entries).
+    const providerLimitInput = (id: string, value: number, recommended: number): HTMLInputElement =>
+      h("input", {
+        type: "number",
+        id,
+        min: "1",
+        step: "1",
+        autocomplete: "off",
+        placeholder: String(recommended),
+        value: String(value),
+      }) as HTMLInputElement;
+    const tdPerMinute = providerLimitInput("f-td-min", config.twelveDataPerMinute, DEFAULT_TWELVE_DATA_PER_MINUTE);
+    const tdPerDay = providerLimitInput("f-td-day", config.twelveDataPerDay, DEFAULT_TWELVE_DATA_PER_DAY);
+    const tiingoPerHour = providerLimitInput("f-ti-hour", config.tiingoPerHour, DEFAULT_TIINGO_PER_HOUR);
+    const tiingoPerDay = providerLimitInput("f-ti-day", config.tiingoPerDay, DEFAULT_TIINGO_PER_DAY);
+    const resumeOnRefresh = h("select", { id: "f-resume", class: "select" }, [
+      h("option", { value: "0" }, ["Off — re-login on every page refresh"]),
+      h("option", { value: "1" }, ["On — stay unlocked across a refresh (this tab)"]),
+    ]) as HTMLSelectElement;
+    resumeOnRefresh.value = config.resumeOnRefresh ? "1" : "0";
+    resumeOnRefresh.setAttribute("aria-label", "Stay unlocked across a page refresh");
 
     // Hidden file picker backing the "Import config" button: pick a previously
     // exported packet, repopulate the (still editable) fields, and let the user
@@ -1735,7 +1869,7 @@ export class App {
       field(
         "Update prices every (minutes)",
         updateMinutes,
-        `How often live prices refresh. Lower is fresher but spends more of the Twelve Data free tier (8/min, 800/day). Default is ${DEFAULT_UPDATE_MINUTES}.`,
+        `How often live prices refresh. Lower is fresher but spends more of the Twelve Data budget (${config.twelveDataPerMinute}/min, ${config.twelveDataPerDay}/day). Default is ${DEFAULT_UPDATE_MINUTES}.`,
       ),
     );
 
@@ -1753,6 +1887,39 @@ export class App {
       );
     }
 
+    // Data providers (Settings only): editable per-provider rate caps. They
+    // default to each provider's free-tier value — recommended for a free
+    // account — but are not forced: lower them to spread one account across
+    // several devices, or raise them above the free tier on a paid plan.
+    if (settingsMode) {
+      formChildren.push(
+        h("h2", { class: "settings-section" }, ["Data providers"]),
+        h("p", { class: "field-hint" }, [
+          "These cap how many API calls each price provider may spend. The defaults match each provider's free-tier limit — the recommended values for a free account. Lower them to share one account across more devices, or raise them above the free tier if you're on a paid plan.",
+        ]),
+        field(
+          "Twelve Data — per minute",
+          tdPerMinute,
+          `Primary-provider credits allowed each minute. Recommended ${DEFAULT_TWELVE_DATA_PER_MINUTE} for the free tier; raise it on a paid plan.`,
+        ),
+        field(
+          "Twelve Data — per day",
+          tdPerDay,
+          `Primary-provider credits allowed each day. Recommended ${DEFAULT_TWELVE_DATA_PER_DAY} for the free tier; raise it on a paid plan.`,
+        ),
+        field(
+          "Tiingo — per hour",
+          tiingoPerHour,
+          `Backup-provider credits allowed each clock hour. Recommended ${DEFAULT_TIINGO_PER_HOUR} for the free tier (the web share); raise it on a paid plan.`,
+        ),
+        field(
+          "Tiingo — per day",
+          tiingoPerDay,
+          `Backup-provider credits allowed each day. Recommended ${DEFAULT_TIINGO_PER_DAY} for the free tier (the web share); raise it on a paid plan.`,
+        ),
+      );
+    }
+
     // Preferences: appearance + security. Shown on first-run setup too (not just
     // Settings) so the user can pick dark mode, clock format and auto-lock once,
     // before ever typing the passphrase — and never has to revisit them.
@@ -1764,7 +1931,12 @@ export class App {
       field(
         "Auto-lock (minutes)",
         autoLock,
-        `Lock the dashboard after this many minutes of inactivity. Set 0 to never auto-lock. Default is ${DEFAULT_AUTO_LOCK_MINUTES}.`,
+        `Lock the dashboard after this many minutes of inactivity. Set 0 to never auto-lock. Default is ${DEFAULT_AUTO_LOCK_MINUTES}. A dismissable warning appears ~15s before locking.`,
+      ),
+      field(
+        "Stay unlocked across a page refresh",
+        resumeOnRefresh,
+        "When on, reloading the whole page (F5) in this tab resumes your session instead of asking for the passphrase again — like the refresh button. Closing the tab, or being idle past the auto-lock window, still locks. The passphrase is never stored in the clear, only ever this tab. Off by default.",
       ),
     );
     // Fingerprint unlock toggle — only meaningful while unlocked (we need the
@@ -1893,10 +2065,20 @@ export class App {
         priceProxyUrl: (priceProxyUrl as HTMLInputElement).value.trim(),
         updateMinutes: parseUpdateMinutes((updateMinutes as HTMLInputElement).value),
         autoLockMinutes: parseAutoLockMinutes((autoLock as HTMLInputElement).value),
+        twelveDataPerMinute: parseProviderLimit(tdPerMinute.value, DEFAULT_TWELVE_DATA_PER_MINUTE),
+        twelveDataPerDay: parseProviderLimit(tdPerDay.value, DEFAULT_TWELVE_DATA_PER_DAY),
+        tiingoPerHour: parseProviderLimit(tiingoPerHour.value, DEFAULT_TIINGO_PER_HOUR),
+        tiingoPerDay: parseProviderLimit(tiingoPerDay.value, DEFAULT_TIINGO_PER_DAY),
+        resumeOnRefresh: resumeOnRefresh.value === "1",
       };
       if (!next.apiKey) return this.showSetup("Enter your price API key.", mode);
       if (!next.blobUrl) return this.showSetup("Enter your data-source URL.", mode);
       this.state.config = next;
+      // A settings change can alter the resume identity (the data source) or turn
+      // resume off — drop any existing token so it can't apply to the new state;
+      // a still-enabled session re-mints a fresh, correctly-bound token via
+      // afterUnlock below.
+      clearResumeToken();
       // Persist (the API key is encrypted at rest) before advancing. In Settings
       // (already unlocked) re-run the load pipeline with the new config; otherwise
       // continue the first-run flow to the unlock screen.
@@ -1948,6 +2130,9 @@ export class App {
 
   private showUnlock(error?: string, options: { autoPrompt?: boolean } = {}): void {
     this.leaveDemoChrome();
+    // Back at the lock screen, a resume attempt (if any) is over — clear the flag
+    // so a later manual unlock doesn't mislabel itself as a refresh-resume.
+    this.resumedFromRefresh = false;
     const enrolled = hasBiometricEnrolment();
 
     const pass = h("input", {
@@ -2331,6 +2516,7 @@ export class App {
     this.leaveDemoChrome();
     void (async () => {
       this.state.config = await loadConfig();
+      applyProviderLimits(this.state.config);
       if (this.isConfigured()) this.showUnlock();
       else this.showSetup();
     })().catch(() => this.showSetup());
@@ -2404,8 +2590,16 @@ export class App {
     // confirms the login was detected and that a price refresh is about to run.
     // It sits clear of the bottom refreshing pill / coverage toast so both show
     // at once — the user sees "welcome back" *and* the live update underneath.
-    this.welcomeBanner("Welcome back — checking prices…");
-    this.pollLog("login", "Unlock detected — painting cache, starting refresh.");
+    // After a page-reload resume, say so explicitly so the restore is never
+    // silent or confusing — the Lock control stays available in the topbar.
+    if (this.resumedFromRefresh) {
+      this.welcomeBanner("Resumed after refresh — checking prices…");
+      this.pollLog("login", "Session resumed after page reload — painting cache, starting refresh.");
+    } else {
+      this.welcomeBanner("Welcome back — checking prices…");
+      this.pollLog("login", "Unlock detected — painting cache, starting refresh.");
+    }
+    this.resumedFromRefresh = false;
 
     // Once the login prefetch settles, spin the Refresh glyph briefly *iff* it
     // actually fetched new data — the honest "the prefetch got you something
@@ -2478,6 +2672,34 @@ export class App {
     this.startupRefresh(session, quick, quickOpts);
     // 5. Arm the idle auto-lock so an unattended session locks itself.
     this.installAutoLock();
+    // 6. Mint/refresh the tab-scoped resume token (opt-in) so a later page reload
+    //    can pick this session back up without a re-login. A no-op (and a clear)
+    //    when the option is off.
+    void this.persistResumeToken();
+  }
+
+  /**
+   * Mint or refresh the opt-in resume token after a successful unlock, wrapping
+   * the in-memory passphrase with the per-device key. Bound to the current data
+   * source so a later reload only resumes against the same book. When the option
+   * is off (or there is somehow no passphrase) it instead clears any stale token.
+   * Best-effort: a storage/crypto failure never blocks the dashboard.
+   */
+  private async persistResumeToken(): Promise<void> {
+    if (!this.state.config.resumeOnRefresh || !this.state.passphrase) {
+      clearResumeToken();
+      return;
+    }
+    try {
+      await saveResumeToken({
+        passphrase: this.state.passphrase,
+        blobUrl: resolveBlobUrl(this.state.config) ?? "",
+        now: Date.now(),
+      });
+      this.lastResumeTouchAt = Date.now();
+    } catch {
+      /* resume is a convenience; never let a persist failure surface. */
+    }
   }
 
   /**
@@ -2527,29 +2749,132 @@ export class App {
 
   /**
    * Arm an inactivity timer that locks the session after
-   * {@link AppConfig.autoLockMinutes} minutes without interaction. Pointer, key,
-   * touch and scroll activity (plus tab re-focus) reset the countdown. A value of
-   * `0` disables the feature. Safe to call repeatedly — it tears down any prior
-   * wiring first, so a Settings change re-arms with the new timeout.
+   * {@link AppConfig.autoLockMinutes} minutes without interaction. Genuine
+   * interaction — pointer/touch presses *and movement*, wheel, scroll, key,
+   * typing, clicks and tab re-focus — resets the countdown, so the lock truly
+   * only bites when the user has actually been away. A value of `0` disables the
+   * feature. Safe to call repeatedly — it tears down any prior wiring first, so a
+   * Settings change re-arms with the new timeout.
+   *
+   * Ahead of the lock, a dismissable warning ({@link showAutoLockWarning}) gives
+   * the user a few seconds (and a one-tap "Stay unlocked") before it fires.
    */
   private installAutoLock(): void {
     this.removeAutoLock();
     const minutes = this.state.config.autoLockMinutes;
-    if (minutes <= 0) return;
-    const timeoutMs = minutes * 60_000;
+    if (minutes <= 0) {
+      this.autoLockTimeoutMs = 0;
+      return;
+    }
+    this.autoLockTimeoutMs = minutes * 60_000;
     const reset = (): void => {
-      if (this.autoLockTimer) clearTimeout(this.autoLockTimer);
       // Only keep counting while a session is actually unlocked.
       if (!this.state.passphrase) return;
-      this.autoLockTimer = setTimeout(() => {
-        if (this.state.passphrase) this.lock();
-      }, timeoutMs);
+      const now = Date.now();
+      // Keep the resume token's idle clock honest, throttled so heavy movement
+      // doesn't thrash storage.
+      this.touchResume(now);
+      const warningUp = this.autoLockWarnEl !== null;
+      // High-frequency events (pointer/mouse moves, wheel) re-arm at most once a
+      // second — but a *visible* warning is always cancelled immediately, so any
+      // flicker of activity reliably keeps the user logged in.
+      if (!warningUp && now - this.autoLockArmedAt < AUTO_LOCK_RESET_THROTTLE_MS) return;
+      this.dismissAutoLockWarning();
+      this.armAutoLockTimers();
     };
     this.activityHandler = reset;
     for (const event of AUTO_LOCK_ACTIVITY_EVENTS) {
       window.addEventListener(event, reset, { passive: true });
     }
-    reset();
+    this.armAutoLockTimers();
+  }
+
+  /**
+   * (Re)arm the warning + lock timers for the current {@link autoLockTimeoutMs}.
+   * The warning fires {@link AUTO_LOCK_WARN_LEAD_MS} before the lock (clamped to
+   * at most half the window so a short window still shows a sensible lead).
+   */
+  private armAutoLockTimers(): void {
+    if (this.autoLockTimer) clearTimeout(this.autoLockTimer);
+    if (this.autoLockWarnTimer) clearTimeout(this.autoLockWarnTimer);
+    const timeoutMs = this.autoLockTimeoutMs;
+    if (timeoutMs <= 0) return;
+    this.autoLockArmedAt = Date.now();
+    const lead = Math.min(AUTO_LOCK_WARN_LEAD_MS, Math.floor(timeoutMs / 2));
+    this.autoLockWarnTimer = setTimeout(() => this.showAutoLockWarning(lead), Math.max(0, timeoutMs - lead));
+    this.autoLockTimer = setTimeout(() => {
+      if (this.state.passphrase) this.lock();
+    }, timeoutMs);
+  }
+
+  /** Throttled re-stamp of the resume token's last-activity time. */
+  private touchResume(now: number): void {
+    if (!this.state.config.resumeOnRefresh) return;
+    if (now - this.lastResumeTouchAt < RESUME_TOUCH_THROTTLE_MS) return;
+    this.lastResumeTouchAt = now;
+    touchResumeActivity(now);
+  }
+
+  /**
+   * Surface the dismissable "locking soon" warning with a live countdown and a
+   * one-tap "Stay unlocked" that extends the session. The banner is also
+   * dismissable (and any genuine interaction cancels it via the activity reset).
+   */
+  private showAutoLockWarning(leadMs: number): void {
+    if (typeof document === "undefined") return;
+    if (!this.state.passphrase) return;
+    this.dismissAutoLockWarning();
+    let remaining = Math.max(1, Math.ceil(leadMs / 1000));
+    const message = (secs: number): string =>
+      `Locking in ${secs} second${secs === 1 ? "" : "s"} due to inactivity`;
+    const text = h(
+      "span",
+      { id: "auto-lock-warn-text", class: "auto-lock-warn-text", "aria-atomic": "true" },
+      [message(remaining)],
+    );
+    const stay = h("button", { class: "btn", type: "button" }, ["Stay unlocked"]);
+    const dismiss = h(
+      "button",
+      { class: "icon-btn ghost icon-only", type: "button", "aria-label": "Dismiss" },
+      ["×"],
+    );
+    const node = h(
+      "div",
+      {
+        id: "auto-lock-warning",
+        class: "app-toast is-autolock-warn",
+        role: "alertdialog",
+        "aria-label": "Auto-lock warning",
+        "aria-labelledby": "auto-lock-warn-text",
+        "aria-live": "assertive",
+      },
+      [text, h("div", { class: "row auto-lock-warn-actions" }, [stay, dismiss])],
+    );
+    stay.addEventListener("click", () => {
+      // Extend: cancel the warning and re-arm the full window from now.
+      this.dismissAutoLockWarning();
+      this.armAutoLockTimers();
+      this.touchResume(Date.now());
+    });
+    dismiss.addEventListener("click", () => this.dismissAutoLockWarning());
+    document.body.append(node);
+    this.autoLockWarnEl = node;
+    this.autoLockCountdownTimer = setInterval(() => {
+      remaining -= 1;
+      text.textContent = remaining > 0 ? message(remaining) : "Locking…";
+    }, 1000);
+  }
+
+  /** Remove the "locking soon" warning and stop its countdown, if shown. */
+  private dismissAutoLockWarning(): void {
+    if (this.autoLockCountdownTimer) {
+      clearInterval(this.autoLockCountdownTimer);
+      this.autoLockCountdownTimer = null;
+    }
+    if (this.autoLockWarnEl) {
+      this.autoLockWarnEl.remove();
+      this.autoLockWarnEl = null;
+    }
   }
 
   /** Tear down the idle auto-lock timer and its activity listeners. */
@@ -2558,6 +2883,11 @@ export class App {
       clearTimeout(this.autoLockTimer);
       this.autoLockTimer = null;
     }
+    if (this.autoLockWarnTimer) {
+      clearTimeout(this.autoLockWarnTimer);
+      this.autoLockWarnTimer = null;
+    }
+    this.dismissAutoLockWarning();
     if (this.activityHandler) {
       for (const event of AUTO_LOCK_ACTIVITY_EVENTS) {
         window.removeEventListener(event, this.activityHandler);
@@ -3028,6 +3358,7 @@ export class App {
           twelveDataSpendable: twelveDataAvailable(fanoutNow),
           tiingoSpendable: tiingoAvailable(fanoutNow),
           tiingoAvailable: proxyUrl !== null,
+          twelveDataBatch: FREE_TIER.creditsPerMinute,
         });
         this.pollLog(
           "fallback",
@@ -3544,13 +3875,21 @@ export class App {
   }
 
   /**
+   * The "up to date" window in ms: one auto-refresh cycle
+   * (`config.updateMinutes`). See the module note above {@link App}.
+   */
+  private upToDateWindowMs(): number {
+    return this.state.config.updateMinutes * 60 * 1000;
+  }
+
+  /**
    * Whether the app actually pulled fresh data from the network recently enough
-   * to honestly claim holdings are "up to date" (see {@link UP_TO_DATE_WINDOW_MS}).
+   * to honestly claim holdings are "up to date" (see {@link App.upToDateWindowMs}).
    * Gating the coverage summary on this means a refresh fully served from cache
    * never falsely reports everything current.
    */
   private recentlyPulled(): boolean {
-    return this.lastDataPullAt !== null && Date.now() - this.lastDataPullAt < UP_TO_DATE_WINDOW_MS;
+    return this.lastDataPullAt !== null && Date.now() - this.lastDataPullAt < this.upToDateWindowMs();
   }
 
   /**
@@ -3576,6 +3915,41 @@ export class App {
     void this.refreshPrices(session, false, { connectivity: "offline" });
     if (isUserRefresh(kind)) this.toast(connectivityNotice("offline") ?? "No internet connection.");
     this.scheduleNext(session, this.state.config.updateMinutes * 60 * 1000);
+  }
+
+  /**
+   * The delay (ms) until the **oldest still-fresh** market quote/FX reaches the
+   * auto-update interval — the "jumpstart" cadence. When a round pulls nothing
+   * because everything is still within its window, the next automatic refresh
+   * should land exactly when the oldest held value *first* goes stale, not a full
+   * interval after this tick. Example: interval 15 min, oldest quote 12 min old on
+   * login ⇒ this returns ~3 min, so the schedule jumps then (and every 15 min
+   * thereafter) instead of waiting 15 min from login.
+   *
+   * Only market-priced symbols and FX ride the minute-level interval, so NAV funds
+   * (a market-day window) are excluded. Returns `null` when the cadence can't be
+   * anchored (no data, a missing quote, or stale FX) — those cases want the normal
+   * scheduler, which will pull rather than wait.
+   */
+  private msUntilOldestFreshExpires(now: Date): number | null {
+    const data = this.state.data;
+    if (!data) return null;
+    const intervalMs = this.state.config.updateMinutes * 60 * 1000;
+    const nowMs = now.getTime();
+    const plan = buildFetchPlan(data, FETCHABLE_NAV_CLASSES);
+    const cached = readCachedQuotes();
+    let oldestAt: number | null = null;
+    for (const entry of plan) {
+      // NAV funds ride a market-day window, not the minute cadence — skip them.
+      if (entry.priceType !== "market") continue;
+      const at = cached.get(entry.symbol)?.quote?.at ?? null;
+      if (at === null) return null; // a missing quote isn't "fresh" — let the scheduler pull.
+      if (oldestAt === null || at < oldestAt) oldestAt = at;
+    }
+    const fxCached = readCachedEurUsd();
+    if (!fxCached || fxCached.now === null) return null;
+    if (oldestAt === null || fxCached.at < oldestAt) oldestAt = fxCached.at;
+    return Math.max(0, oldestAt + intervalMs - nowMs);
   }
 
   /**
@@ -3831,6 +4205,16 @@ export class App {
     // of letting it resume seconds later.
     if (promoted) {
       delayMs = Math.max(delayMs, this.state.config.updateMinutes * 60 * 1000);
+    }
+    // Jumpstart: when this round settled with nothing deferred — typically a login
+    // round that pulled nothing because everything was still fresh — don't wait a
+    // full interval. Land the next automatic refresh when the *oldest* still-fresh
+    // value first reaches the auto-update window, so a 12-min-old book on a 15-min
+    // interval refreshes in ~3 min, then every 15 min after. A full pull leaves the
+    // oldest value ≈now, so this naturally equals the steady interval (no change).
+    if (report.deferred.length === 0 && !promoted) {
+      const jumpMs = this.msUntilOldestFreshExpires(new Date());
+      if (jumpMs !== null) delayMs = Math.min(delayMs, jumpMs);
     }
     // Idea A — near-free freshness polling: piggy-back the cheap meta/304 blob
     // check so a fresh desktop publish is picked up automatically within a few
@@ -4193,7 +4577,7 @@ export class App {
       reasons.push(
         `Daily free-tier budget (${FREE_TIER.creditsPerDay}/day) used up; updates pause until it resets.`,
       );
-    } else if (quote.dayRemaining <= DAILY_BUDGET_WARN_CREDITS) {
+    } else if (quote.dayRemaining <= dailyBudgetWarnCredits()) {
       reasons.push(
         `Close to today's free-tier limit (${quote.dayRemaining} of ${FREE_TIER.creditsPerDay} left); ` +
           `updates are spacing out to last the day.`,
@@ -4737,6 +5121,10 @@ export class App {
     this.clearRefreshTimer();
     this.removeVisibilityRefresh();
     this.removeAutoLock();
+    // An explicit lock (manual or idle) must not be resumable on the next reload:
+    // drop the tab-scoped resume token so a lock genuinely means "re-authenticate".
+    clearResumeToken();
+    this.resumedFromRefresh = false;
     this.clearManualFeedbackTimer();
     this.manualFeedbackUntil = 0;
     this.setUpdating(false);
@@ -5230,14 +5618,22 @@ export function describePrefetch(input: {
 
 /**
  * Interaction events that count as "activity" and reset the idle auto-lock
- * countdown. Kept passive and broad enough to cover touch, mouse and keyboard
- * use without interfering with the page's own handlers.
+ * countdown. Kept passive and broad enough that the lock only ever bites on a
+ * genuinely unattended session: presses *and movement* (pointer/mouse/touch),
+ * wheel and scroll, keyboard and typing, clicks, and tab re-focus. The
+ * high-frequency movement events are throttled where they are handled.
  */
 const AUTO_LOCK_ACTIVITY_EVENTS = [
   "pointerdown",
+  "pointermove",
+  "mousemove",
+  "wheel",
   "keydown",
   "scroll",
   "touchstart",
+  "touchmove",
+  "click",
+  "input",
   "focus",
 ] as const;
 

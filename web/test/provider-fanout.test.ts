@@ -31,6 +31,38 @@ describe("planFanout — Twelve Data leg invariant (#1)", () => {
     const plan = planFanout({ ...base, symbols: syms(20), twelveDataSpendable: 3 });
     expect(plan.twelveData.length).toBe(3);
   });
+
+  it("widens the TD leg when a larger per-minute batch is supplied (paid plan)", () => {
+    // A paid plan raises twelveDataPerMinute; the planner is wired to it, so the
+    // single TD request grows past the free-tier 8 instead of staying capped.
+    const plan = planFanout({
+      ...base,
+      symbols: syms(40),
+      twelveDataSpendable: 30,
+      twelveDataBatch: 30,
+    });
+    expect(plan.twelveData.length).toBe(30);
+  });
+
+  it("derives the instant threshold as 2× the supplied batch", () => {
+    // batch 20 ⇒ threshold 40: 40 symbols is AT the threshold ⇒ no spill on a
+    // non-priority pull (the overflow waits a TD minute).
+    const atThreshold = planFanout({
+      ...base,
+      symbols: syms(40),
+      twelveDataSpendable: 20,
+      twelveDataBatch: 20,
+    });
+    expect(atThreshold.fannedOut).toBe(false);
+    // 41 symbols is ABOVE it ⇒ spill to Tiingo.
+    const aboveThreshold = planFanout({
+      ...base,
+      symbols: syms(41),
+      twelveDataSpendable: 20,
+      twelveDataBatch: 20,
+    });
+    expect(aboveThreshold.fannedOut).toBe(true);
+  });
 });
 
 describe("planFanout — instant threshold (#2)", () => {

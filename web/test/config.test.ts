@@ -3,18 +3,27 @@
  * configured data-source URL; `resolveMetaUrl` derives the version-sidecar
  * endpoint; `serializeConfig`/`parseConfigPacket` round-trip an export file.
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   resolveBlobUrl,
   resolveMetaUrl,
   resolvePriceProxyUrl,
   parseUpdateMinutes,
+  parseProviderLimit,
+  applyProviderLimits,
   serializeConfig,
   parseConfigPacket,
   CONFIG_PACKET_TYPE,
   type AppConfig,
 } from "../src/config";
+import {
+  DEFAULT_PROVIDER_LIMITS,
+  providerLimits,
+  resetProviderLimits,
+} from "../src/provider-limits";
+import { FREE_TIER } from "../src/quotes";
+import { WEB_HOURLY_CAP, WEB_DAILY_CAP } from "../src/tiingo-gate";
 
 function config(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
@@ -23,6 +32,11 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     priceProxyUrl: "",
     updateMinutes: 15,
     autoLockMinutes: 5,
+    twelveDataPerMinute: 8,
+    twelveDataPerDay: 800,
+    tiingoPerHour: 40,
+    tiingoPerDay: 800,
+    resumeOnRefresh: false,
     ...overrides,
   };
 }
@@ -98,6 +112,49 @@ describe("parseUpdateMinutes", () => {
     expect(parseUpdateMinutes("7")).toBe(7);
     expect(parseUpdateMinutes("7.4")).toBe(7);
     expect(parseUpdateMinutes("9999")).toBe(240);
+  });
+});
+
+describe("parseProviderLimit", () => {
+  it("falls back to the recommended value for blank or invalid input", () => {
+    expect(parseProviderLimit("", 8)).toBe(8);
+    expect(parseProviderLimit("abc", 800)).toBe(800);
+    expect(parseProviderLimit("0", 40)).toBe(40);
+    expect(parseProviderLimit("-5", 800)).toBe(800);
+  });
+
+  it("rounds and clamps to 1..MAX, allowing values above the recommended free-tier", () => {
+    expect(parseProviderLimit("4", 8)).toBe(4);
+    expect(parseProviderLimit("4.6", 8)).toBe(5);
+    // A paid-plan value above the recommended free-tier ceiling is allowed.
+    expect(parseProviderLimit("999", 8)).toBe(999);
+    expect(parseProviderLimit("1", 8)).toBe(1);
+    // Only an absurd value is clamped, by the sanity ceiling.
+    expect(parseProviderLimit("100000000", 8)).toBe(100_000);
+  });
+});
+
+describe("applyProviderLimits", () => {
+  afterEach(() => resetProviderLimits());
+
+  it("pushes the configured limits into the shared store, then resets", () => {
+    applyProviderLimits(config({ twelveDataPerMinute: 4, twelveDataPerDay: 200, tiingoPerHour: 10, tiingoPerDay: 100 }));
+    expect(providerLimits()).toEqual({
+      twelveDataPerMinute: 4,
+      twelveDataPerDay: 200,
+      tiingoPerHour: 10,
+      tiingoPerDay: 100,
+    });
+    resetProviderLimits();
+    expect(providerLimits()).toEqual(DEFAULT_PROVIDER_LIMITS);
+  });
+
+  it("updates the live FREE_TIER / WEB_*_CAP mirrors in step", () => {
+    applyProviderLimits(config({ twelveDataPerMinute: 3, twelveDataPerDay: 150, tiingoPerHour: 7, tiingoPerDay: 90 }));
+    expect(FREE_TIER.creditsPerMinute).toBe(3);
+    expect(FREE_TIER.creditsPerDay).toBe(150);
+    expect(WEB_HOURLY_CAP).toBe(7);
+    expect(WEB_DAILY_CAP).toBe(90);
   });
 });
 

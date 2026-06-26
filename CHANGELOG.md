@@ -14,6 +14,92 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.8.0] — 2026-06-26
+
+### Changed
+
+- **Live-data "magic numbers" are now derived from the two real knobs — the
+  provider per-minute limit and the auto-update interval — instead of standing
+  on their own.** Following the Settings change that made provider rate limits
+  editable, the remaining hard-coded constants in the web companion's live-data
+  layer are wired to those same sources so one setting genuinely moves everything
+  that depends on it:
+  - **Default cache TTLs no longer hard-code 15 min / 24 h.** The market-quote and
+    EUR/USD default TTLs (`DEFAULT_CACHE_TTL_MS`, `DEFAULT_EURUSD_TTL_MS`) now
+    derive from the auto-update interval (`DEFAULT_UPDATE_MINUTES`). NAV holdings
+    are anchored to **market time** (rest until the next session close) on every
+    path — the old 24 h `DEFAULT_NAV_CACHE_TTL_MS` is demoted to an unreachable
+    backstop only.
+  - **Tiingo "leave the backup alone" threshold tracks the Twelve Data per-minute
+    limit.** `planStartupRefresh`/`planPrefetch` now skip the scarce Tiingo budget
+    for any outdated set the primary can clear within a minute — a number that
+    grows automatically when the per-minute limit is raised on a paid plan.
+  - **Fan-out batch + instant threshold track the per-minute limit.** The Twelve
+    Data `time_series` leg is sized from the live `twelveDataPerMinute` limit, and
+    the parallel-spill "instant" trigger derives as 2× that batch.
+  - **The "up to date" window is tied to the auto-refresh interval** rather than a
+    fixed 60 s.
+- **Provider limits may now be raised *above* the free-tier ceilings.** The
+  Settings inputs no longer clamp to the free-tier maximum; the documented values
+  are presented as the *recommended* free-tier limits and can be exceeded on a
+  paid plan (still guarded against absurd entries).
+- **The NAV posting-time window (17:30–19:00 ET) is deprecated.** The canary
+  probe now uses a single flat cooldown regardless of the time of day; the
+  first-probe floor already gates the evening, so the in-/off-window split changed
+  no decision. The window constants remain exported (deprecated) for compatibility.
+
+### Added
+
+- **Auto-update "jumpstart" on login.** When a refresh round pulls nothing because
+  everything is still fresh, the next automatic refresh is now scheduled for when
+  the **oldest still-fresh** value first reaches the auto-update window — not a
+  full interval after login. Example: a 15-min interval with a 12-min-old book on
+  login jumps in ~3 min, then every 15 min thereafter. The anchor also accounts
+  for EUR/USD freshness, since FX shares the same auto-update window.
+
+
+## [4.7.0] — 2026-06-26
+
+### Added
+
+- **Opt-in "stay unlocked across a page refresh" for the live web companion.** A
+  full-page reload (F5) — as opposed to the in-app refresh button — used to drop
+  the in-memory passphrase and force an immediate re-login. With the new
+  **Settings → Security → "Stay unlocked across a page refresh"** toggle (off by
+  default), a reload of the *current tab* now resumes the unlocked session and
+  behaves exactly like the manual refresh button: it re-decrypts from cache,
+  re-downloads the encrypted blob and refreshes prices. A short "Resumed after
+  refresh" banner makes the restore explicit, and the **Lock** control stays
+  available. Because the resume re-runs the normal unlock flow, a newer export
+  published since the last load is picked up automatically.
+
+  Safety is preserved by design (see `web/src/resume-session.ts`):
+  - the passphrase is **never** stored in the clear — only its AES-GCM
+    ciphertext, wrapped with the same non-extractable per-device key kept in
+    IndexedDB that protects the API key;
+  - the ciphertext lives in `sessionStorage`, so it is **wiped when the tab or
+    window closes** and is never shared with other tabs — closing the tab still
+    forces a fresh login;
+  - the resume path activates **only on an actual reload / back-forward**
+    navigation, never a cold open;
+  - it honours the **idle auto-lock window** — a session idle past the auto-lock
+    timeout (or a hard cap of a few hours when auto-lock is set to "never") still
+    re-authenticates;
+  - the token is **bound to the app version and the data-source URL**, so it
+    can't apply after an upgrade or a data-source change; an explicit lock,
+    sign-out or settings change drops it;
+  - **biometric devices are unaffected** — when a fingerprint is enrolled the app
+    keeps preferring the stronger one-tap unlock and never mints a token.
+
+### Changed
+
+- **Idle auto-lock now truly only bites when the session is unattended, and warns
+  first.** The activity detection was broadened beyond presses/scroll/focus to
+  also count pointer/mouse **movement**, wheel, touch-move, clicks and typing
+  (high-frequency events throttled), so simply using the dashboard reliably keeps
+  it unlocked. About 15 seconds before locking, a **dismissable "Locking in Ns due
+  to inactivity" warning** appears with a one-tap **"Stay unlocked"** extension.
+
 ## [4.6.2] — 2026-06-26
 
 ### Fixed
