@@ -313,6 +313,18 @@ them):**
 > hazard that motivated parts of the burn-fix no longer applies to credit
 > accounting, though the 429 breaker stays as defence-in-depth.
 
+**Reverse safety net (Tiingo → Twelve Data).** The forward fallback is Twelve
+Data (primary) → Tiingo. Smart routing adds a path where Tiingo is the *sole*
+primary — the "route the whole book through the backup provider" hard refresh,
+which skips the Twelve Data quote pass entirely. If Tiingo then fails somewhere
+(unreachable, over-quota, or nothing newer), those holdings would be stuck on a
+cached / last-known price with **no** provider behind them. The pure planner
+`planTwelveDataSafetyNet` names exactly the symbols Tiingo left unpriced and the
+caller re-pulls them on Twelve Data through the same `loadQuotes` reservation —
+so the safety net obeys the same TD per-minute / per-day budget + scheduling as
+any other primary pull (invariant 5), and a Tiingo outage degrades to the
+primary instead of to stale data.
+
 ---
 
 ## Pillar 6 — Exactly four mechanisms + regenerate-only interactions

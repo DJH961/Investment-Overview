@@ -83,6 +83,34 @@ describe("runTiingoFallback", () => {
     // Budget reserved up-front: one ticker spent today.
     expect(tiingoCreditsSpentToday(readTiingoCreditLog(NOW, undefined, storage), NOW)).toBe(1);
     expect(out.budget.dayUsed).toBe(1);
+    // AAPL was merely *deferred* by the primary (an efficiency reroute that was
+    // never attempted there), so it is not a genuine fallback.
+    expect(out.fallbackSymbols).toEqual([]);
+  });
+
+  it("flags a genuine fallback only for symbols the primary attempted and failed", async () => {
+    const storage = memStorage();
+    const fetchImpl = stubFetch([
+      iexRow("AAPL", 200, `${EXPECTED}T20:00:00Z`),
+      iexRow("MSFT", 300, `${EXPECTED}T20:00:00Z`),
+    ]);
+    const quotes = new Map<string, Quote>();
+    const out = await runTiingoFallback({
+      symbols: ["AAPL", "MSFT"],
+      navSymbols: new Set(),
+      quotes,
+      // AAPL: budget-deferred (never tried on primary) → efficiency reroute.
+      // MSFT: attempted on primary and failed (unavailable/outdated) → genuine.
+      report: { ...emptyReport(["AAPL"]), failed: ["MSFT"] },
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl,
+    });
+    expect(out.tiingoSymbols.sort()).toEqual(["AAPL", "MSFT"]);
+    // Both were backup-filled, but only the primary-attempted-and-failed MSFT
+    // counts as a genuine fallback the UI should flag.
+    expect(out.fallbackSymbols).toEqual(["MSFT"]);
   });
 
   it("does not overwrite a fresher primary value with an older Tiingo bar", async () => {

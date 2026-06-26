@@ -78,7 +78,7 @@ import {
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, sessionIsWarmingUp, sessionOpenMs, elapsedSessionMs, settledSessionsSince } from "./market-hours";
+import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, elapsedSessionMs, settledSessionsSince } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -119,7 +119,7 @@ import {
   recordTiingo429,
 } from "./provider-breaker";
 import { ledgerReservation, tiingoAvailable, twelveDataAvailable } from "./reservation";
-import { planFanout, TIINGO_RESERVE_CREDITS } from "./provider-fanout";
+import { planFanout, planTwelveDataSafetyNet, TIINGO_RESERVE_CREDITS } from "./provider-fanout";
 import { reconcileHandshake } from "./login-handshake";
 import { springboardSessionCurve, springboardWeekCurve, parseExportedPoints } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
@@ -168,6 +168,16 @@ const WELCOME_BANNER_DURATION_MS = 3200;
 const MANUAL_REFRESH_MIN_FEEDBACK_MS = 650;
 
 /**
+ * Smallest gap between two *accepted* manual refreshes. A tap that lands inside
+ * this window of the previous one is treated as an accidental double-tap and
+ * ignored (it still flashes the feedback, but spends no credits) — so a fumbled
+ * double-click can't burn two forced pulls back-to-back. It is deliberately
+ * tiny: long enough to swallow a double-tap, short enough that a user who
+ * genuinely wants to re-check the market a couple of seconds later still can.
+ */
+const MANUAL_REFRESH_COOLDOWN_MS = 3000;
+
+/**
  * How long the one-off login spin of the Refresh glyph lasts — the honest "the
  * prefetch got you something newer" signal fired once after unlock when (and
  * only when) the login prefetch actually fetched fresh data.
@@ -175,14 +185,16 @@ const MANUAL_REFRESH_MIN_FEEDBACK_MS = 650;
 const PREFETCH_SPIN_MS = 1000;
 
 /**
- * Minimum wall-clock gap between *automatic* background blob checks while prices
- * are still deferring. Matches the slow steady-state refresh cadence so an
- * always-deferred portfolio (more symbols than the free-tier budget) still polls
- * for a newer desktop export every few minutes instead of never, while the first
- * minute or two of startup burst — which checked the blob once on unlock — isn't
- * spammed with redundant probes.
+ * Hard floor on the wall-clock gap between *automatic* background blob checks,
+ * regardless of how low the user sets the auto-update interval. The cadence is
+ * primarily the user's configured auto-update interval (see
+ * {@link App.blobCheckDue}) — that interval *is* how often we look for a newer
+ * desktop export — but a 1-minute interval shouldn't hammer the blob host with a
+ * conditional probe every single tick, so the actual cadence is the larger of the
+ * configured interval and this floor. A *manual* refresh always checks, bypassing
+ * this floor entirely.
  */
-const BLOB_CHECK_MIN_INTERVAL_MS = 5 * 60 * 1000;
+const BLOB_CHECK_MIN_INTERVAL_MS = 60 * 1000;
 
 /**
  * Heartbeat cadence for the auto-refresh scheduler while the market is **settled**
@@ -278,6 +290,42 @@ export function refreshTickAction(args: {
 }): RefreshTickAction {
   if (!args.sessionMatches) return "stop";
   if (args.kind === "auto" && !args.kickoff && args.hidden) return "defer";
+  return "run";
+}
+
+/** What a tap of the Refresh button should do — see {@link manualRefreshDecision}. */
+export type ManualRefreshDecision = "run" | "promote" | "cooldown";
+
+/**
+ * Decide how to handle a manual tap of the Refresh button, kept pure so the
+ * (otherwise stateful) credit-saving rules are testable in isolation:
+ *
+ *  - **cooldown** — a manual refresh was accepted only moments ago (within
+ *    {@link MANUAL_REFRESH_COOLDOWN_MS}), or one is already in flight. Treat this
+ *    tap as an accidental double-click: acknowledge it on screen but spend no
+ *    credits on a second forced pull.
+ *  - **promote** — an *automatic* background pull is mid-flight. We can't start a
+ *    second overlapping refresh, but the user's deliberate tap should win, so the
+ *    in-flight round is upgraded to a manual one: it gets the manual feedback and
+ *    completion toast, and pushes the next automatic refresh out by the full
+ *    configured interval — so it truly feels like the manual refresh took over.
+ *  - **run** — nothing is in flight and the cooldown has lapsed: do the manual
+ *    pull now.
+ */
+export function manualRefreshDecision(args: {
+  refreshing: boolean;
+  inFlightKind: RefreshKind | null;
+  lastManualAt: number;
+  now: number;
+  cooldownMs?: number;
+}): ManualRefreshDecision {
+  const cooldownMs = args.cooldownMs ?? MANUAL_REFRESH_COOLDOWN_MS;
+  // A manual pull already running, or a second tap within the cooldown window of
+  // the last accepted one, is an accidental double-tap: don't spend more credits.
+  if (args.refreshing && args.inFlightKind === "manual") return "cooldown";
+  if (args.now - args.lastManualAt < cooldownMs) return "cooldown";
+  // An automatic pull is in flight: hand it the manual baton instead of bailing.
+  if (args.refreshing && args.inFlightKind === "auto") return "promote";
   return "run";
 }
 
@@ -390,6 +438,13 @@ export class App {
   /** Symbols served via the Tiingo fallback on the latest network round. */
   private lastTiingoSymbols: string[] = [];
   /**
+   * The subset of {@link lastTiingoSymbols} that were a *genuine* fallback this
+   * round — the primary tried and fell short (unavailable/outdated) so we pulled
+   * from the backup instead. Drives the "N prices via fallback" status note, so a
+   * symbol merely smart-routed to the backup for budget efficiency isn't flagged.
+   */
+  private lastFallbackSymbols: string[] = [];
+  /**
    * The Tiingo backup's own error from the latest network round, if it was
    * needed but couldn't be reached (proxy down, Worker `/price` route missing,
    * bad token). Drives the "backup unreachable" banner clause + manual toast so
@@ -431,6 +486,26 @@ export class App {
   private lastConnectivity: ConnectivityState = "online";
   /** Guards against overlapping price refreshes. */
   private refreshing = false;
+  /**
+   * Kind of the price refresh currently in flight (`null` when idle). Lets a
+   * manual tap tell an automatic background pull apart from another manual one,
+   * so {@link manualRefreshDecision} can hand an in-flight *auto* round the
+   * manual baton instead of bailing.
+   */
+  private refreshingKind: RefreshKind | null = null;
+  /**
+   * Set when a manual tap lands mid-flight on an automatic pull: the running
+   * round finishes as a *manual* one (manual feedback + toast, and the next
+   * auto-refresh pushed out by the full configured interval), so the tap takes
+   * priority and "feels like" a manual refresh without a second overlapping pull.
+   */
+  private promoteToManual = false;
+  /**
+   * Wall-clock time of the last *accepted* manual refresh, used by
+   * {@link manualRefreshDecision} to swallow accidental double-taps without
+   * spending a second forced pull's worth of credits.
+   */
+  private lastManualAt = 0;
   /**
    * Whether every live-priced holding was up to date as of the last network
    * refresh. Starts true so a portfolio that prices in a single round stays
@@ -2862,6 +2937,7 @@ export class App {
       });
       if (session !== this.sessionId) return quoteLoad.report;
       this.lastTiingoSymbols = fallback.tiingoSymbols;
+      this.lastFallbackSymbols = fallback.fallbackSymbols;
       this.lastTiingoBudget = fallback.budget;
       // Remember whether the backup itself failed this round (needed but
       // unreachable). Cleared to null on a clean round, so the banner/toast only
@@ -2880,8 +2956,43 @@ export class App {
               ? "Backup (Tiingo) not needed this round (primary covered the book or nothing newer to fetch)."
               : "Backup (Tiingo) not configured (no /price proxy URL).",
       );
+
+      // --- Reverse safety net: Tiingo (primary) → Twelve Data ----------------
+      // Smart routing lets a hard refresh route the whole book through Tiingo as
+      // the *sole* primary (the Twelve Data quote pass above was skipped). If
+      // Tiingo then fails somewhere — unreachable, over-quota, or nothing newer —
+      // those holdings would be stuck on a cached / last-known price with no
+      // provider behind them. Catch exactly Tiingo's holes on Twelve Data so a
+      // Tiingo outage degrades to the primary instead of to stale data. The
+      // re-pull self-clamps to the live Twelve Data per-minute/day budget (it
+      // routes through the same `loadQuotes` reservation), so it respects the
+      // same budget + scheduling as every other primary pull and never overspends.
+      const safetyNet = planTwelveDataSafetyNet({
+        viaTiingo,
+        unfilled: quoteLoad.report.deferred,
+        tiingoFilled: fallback.tiingoSymbols,
+      });
+      if (safetyNet.engaged && apiKey.length > 0) {
+        const tdNet = await loadQuotes(safetyNet.twelveData, apiKey, {
+          ...options,
+          forceMarketFetch: true,
+        });
+        if (session !== this.sessionId) return quoteLoad.report;
+        const filledNow = this.absorbSafetyNet(quoteLoad, tdNet);
+        const list = (xs: readonly string[]): string => (xs.length ? xs.join(", ") : "none");
+        this.pollLog(
+          "primary",
+          `Tiingo→Twelve Data safety net: ${safetyNet.reason} ` +
+            `Filled ${filledNow.length} [${list(filledNow)}]. ` +
+            `Budget left: ${tdNet.report.minuteRemaining}/min, ${tdNet.report.dayRemaining}/day.` +
+            (tdNet.report.error ? ` Non-fatal error: ${tdNet.report.error.message}.` : ""),
+        );
+      } else if (viaTiingo) {
+        this.pollLog("primary", `Tiingo→Twelve Data safety net: ${safetyNet.reason}`);
+      }
     } else if (this.lastTiingoBudget === null) {
       this.lastTiingoSymbols = [];
+      this.lastFallbackSymbols = [];
     }
 
     const unresolvedFailures = network ? this.unresolvedFailedSymbols(quoteLoad.report) : [];
@@ -2927,6 +3038,10 @@ export class App {
     if (network) this.persistFundNavBars(quoteLoad.quotes);
     // Refresh the live-coverage summary on a network pull; keep the last one on a
     // cache-only re-paint so a currency toggle / blob swap doesn't blank it.
+    // Promote a cache-served EUR/USD that is still extremely fresh to "live": a
+    // spot pulled moments ago and replayed from cache this round is, to the user,
+    // just as live as the market prices — only a genuinely aged cache reads "recent".
+    const fxDisplaySource = displayFxSource(eurUsdSource, eurUsdAt, Date.now());
     if (network) {
       const navStats = readNavPublishStats();
       this.lastCoverageFacts = buildCoverageFacts(
@@ -2938,7 +3053,7 @@ export class App {
           marketOpen: isUsMarketOpen(),
           publishHourFor: (symbol) => navPublishWindow(navStats.get(symbol)?.hours).publishHour,
           freshlyPulled: this.recentlyPulled(),
-          fx: eurUsdSource,
+          fx: fxDisplaySource,
         },
       );
       this.lastCoverage = summarizeCoverage(this.lastCoverageFacts);
@@ -2969,7 +3084,7 @@ export class App {
           marketOpen: isUsMarketOpen(),
           publishHourFor: (symbol) => navPublishWindow(navStats.get(symbol)?.hours).publishHour,
           freshlyPulled: this.recentlyPulled(),
-          fx: eurUsdSource,
+          fx: fxDisplaySource,
         },
       );
       this.lastCoverage = summarizeCoverage(this.lastCoverageFacts);
@@ -2992,8 +3107,8 @@ export class App {
       model.overview.tiingoDayUsed = liveTiingoBudget.dayUsed;
       model.overview.tiingoDayLimit = liveTiingoBudget.dayLimit;
     }
-    if (this.lastTiingoSymbols.length > 0) {
-      const note = `${this.lastTiingoSymbols.length} price${this.lastTiingoSymbols.length === 1 ? "" : "s"} via fallback`;
+    if (this.lastFallbackSymbols.length > 0) {
+      const note = `${this.lastFallbackSymbols.length} price${this.lastFallbackSymbols.length === 1 ? "" : "s"} via fallback`;
       model.overview.liveCoverage = model.overview.liveCoverage
         ? `${model.overview.liveCoverage} · ${note}`
         : note;
@@ -3129,17 +3244,46 @@ export class App {
    * and — crucially — acknowledges the tap *even when an automatic pull is
    * already in flight*, where the old code silently bailed and the button felt
    * dead. On completion it confirms the outcome with a brief toast.
+   *
+   * Two credit-savers guard the entry (see {@link manualRefreshDecision}):
+   *  - a tiny cooldown swallows an accidental double-tap so it can't fire two
+   *    forced pulls back-to-back; and
+   *  - a tap that lands while an *automatic* pull is mid-flight promotes that
+   *    round to a manual one rather than wasting a second overlapping fetch — the
+   *    auto refresh is effectively stopped and its next tick pushed out by the
+   *    full configured interval, so the tap takes priority and feels manual.
    */
   private manualRefresh(): void {
-    if (this.refreshing) {
-      // An automatic pull is already running and will paint fresh prices; we
-      // can't start a second overlapping refresh, but the tap must not feel
-      // ignored, so flash the manual feedback and let it clear on its minimum.
+    const decision = manualRefreshDecision({
+      refreshing: this.refreshing,
+      inFlightKind: this.refreshingKind,
+      lastManualAt: this.lastManualAt,
+      now: Date.now(),
+    });
+    if (decision === "cooldown") {
+      // An accidental double-tap (or a tap while a manual pull is still running):
+      // acknowledge it on screen so the button doesn't feel dead, but spend no
+      // credits on a second forced pull. Word it for which case it is: a refresh
+      // still in flight vs. one that just finished moments ago.
       this.setUpdating(true, "manual");
       this.setUpdating(false, "manual");
-      this.toast("Already refreshing prices…");
+      this.toast(
+        this.refreshing ? "Refresh already in progress…" : "Just refreshed, showing the latest prices.",
+      );
       return;
     }
+    if (decision === "promote") {
+      // An automatic pull is already running; we can't start a second overlapping
+      // refresh, so hand it the manual baton: flash the manual feedback now and
+      // let the in-flight round finish as a manual one (manual toast, and the
+      // next auto-refresh pushed out by the full interval).
+      this.lastManualAt = Date.now();
+      this.promoteToManual = true;
+      this.setUpdating(true, "manual");
+      this.toast("Refreshing prices now…");
+      return;
+    }
+    this.lastManualAt = Date.now();
     // No network link: skip the credit/market-phase logic (and its toasts) and
     // go straight to the offline handler, which repaints last-known values and
     // confirms the lack of connection honestly.
@@ -3348,6 +3492,10 @@ export class App {
       return;
     }
     this.refreshing = true;
+    this.refreshingKind = kind;
+    // A fresh round clears any stale promotion request from a prior round; a tap
+    // landing *during* this round will re-set it below.
+    if (kind === "manual") this.promoteToManual = false;
     // Coalesce the login warm-up with this kickoff: if the warm-up is still
     // priming the shared caches, let it finish *before* we start the network
     // pass. Otherwise the two race the same per-minute budget — both pulling FX
@@ -3359,6 +3507,7 @@ export class App {
       await this.prefetchPromise.catch(() => undefined);
       if (session !== this.sessionId) {
         this.refreshing = false;
+        this.refreshingKind = null;
         return;
       }
       // Pillar 2 (WS5) — the **post-decrypt reconcile**. Step 1 (the prefetch) ran
@@ -3413,6 +3562,7 @@ export class App {
         const stored = await this.primeStaleGraphPackages().catch(() => undefined);
         if (session !== this.sessionId) {
           this.refreshing = false;
+          this.refreshingKind = null;
           return;
         }
         // Stamp the clock-hour gate only when a market-hours prime actually pulled
@@ -3458,11 +3608,21 @@ export class App {
       });
     } finally {
       this.refreshing = false;
+      this.refreshingKind = null;
     }
     if (session !== this.sessionId || report === null) {
+      this.promoteToManual = false;
       this.setUpdating(false, feedbackKind);
       return;
     }
+    // A manual tap that landed while this (automatic) round was in flight promotes
+    // it to a manual refresh: from here on it gets the manual completion toast and
+    // pushes the next auto-refresh out by the full configured interval, so the
+    // user's tap takes priority and the automatic schedule is effectively reset —
+    // all without a second overlapping pull draining more credits.
+    const promoted = this.promoteToManual;
+    this.promoteToManual = false;
+    const effectiveKind: RefreshKind = promoted ? "manual" : kind;
     // The live refresh for this round is done: take the status pill down. While
     // a >per-minute-cap portfolio is still filling in we used to keep the pill
     // (with a live "N of M" count) up *between* burst rounds, but that left it
@@ -3470,10 +3630,10 @@ export class App {
     // still spins during each actual fetch, and the per-row "as of" chips show
     // which holdings are still on last-known values, so the staged fill stays
     // visible without a persistent floating banner.
-    this.setUpdating(false, feedbackKind);
+    this.setUpdating(false, effectiveKind);
     // Confirm the outcome of a manual tap so the user understands what happened
     // (fresh prices pulled, already up to date, or some deferred by the budget).
-    if (isUserRefresh(kind)) {
+    if (isUserRefresh(effectiveKind)) {
       const connectivityToast = connectivityNotice(this.lastConnectivity);
       // No service answered (offline, or every provider failed): say so plainly
       // rather than a coverage summary that would read like a successful pull.
@@ -3505,11 +3665,11 @@ export class App {
     // Only the automatic scheduler pops this — a manual tap already gets the
     // descriptive manualRefreshSummary toast above (e.g. "All 18 holdings up to
     // date"), so firing both would double up.
-    if (nowAllLive && !this.pricesAllLive && !isUserRefresh(kind)) {
+    if (nowAllLive && !this.pricesAllLive && !isUserRefresh(effectiveKind)) {
       this.toast("All prices live, every holding is now on a fresh price.");
     }
     this.pricesAllLive = nowAllLive;
-    const delayMs = nextRefreshDelayMs({
+    let delayMs = nextRefreshDelayMs({
       deferred: report.deferred,
       // Pace auto-refresh out as the rolling daily free-tier budget runs low.
       dayRemaining: report.dayRemaining,
@@ -3520,6 +3680,13 @@ export class App {
       // pull cleanly pushes the auto schedule out by the configured interval.
       slowIntervalMs: this.state.config.updateMinutes * 60 * 1000,
     });
+    // A tap that took over an in-flight auto pull (promotion) must push the next
+    // *automatic* refresh out by the full configured interval — never a ~1-minute
+    // burst — so the manual refresh genuinely supersedes the auto schedule instead
+    // of letting it resume seconds later.
+    if (promoted) {
+      delayMs = Math.max(delayMs, this.state.config.updateMinutes * 60 * 1000);
+    }
     // Idea A — near-free freshness polling: piggy-back the cheap meta/304 blob
     // check so a fresh desktop publish is picked up automatically within a few
     // minutes, without the user reopening the app. A *manual* tap always checks
@@ -3528,26 +3695,33 @@ export class App {
     // doesn't compete with the startup burst. To keep the automatic check alive
     // for portfolios whose prices never fully stop deferring (more symbols than
     // the budget), it also runs on a slow wall-clock cadence regardless.
-    if (isUserRefresh(kind) || report.deferred.length === 0 || this.blobCheckDue()) {
+    if (isUserRefresh(effectiveKind) || report.deferred.length === 0 || this.blobCheckDue()) {
       void this.maybeRefreshBlob(session);
     }
     this.scheduleNext(session, delayMs);
     this.pollLog(
       "schedule",
-      `Refresh finished (${kind}). ${report.deferred.length} still deferred. ` +
+      `Refresh finished (${effectiveKind}${promoted ? ", promoted from auto" : ""}). ${report.deferred.length} still deferred. ` +
         `Next auto-refresh in ~${Math.round(delayMs / 1000)}s` +
-        `${report.deferred.length > 0 ? " (burst)" : ""}.`,
+        `${report.deferred.length > 0 && !promoted ? " (burst)" : ""}.`,
     );
   }
 
   /**
    * Whether enough wall-clock time has passed since the last background blob
-   * check to run another one even while prices are still deferring. Ensures the
-   * automatic new-data probe keeps firing for always-deferred portfolios instead
-   * of being starved by a perpetual startup burst.
+   * check to run another automatic one. The cadence is the user's configured
+   * **auto-update interval** — that setting is the single knob for "how often do
+   * you look for new data", covering both live prices *and* a fresh desktop
+   * export — floored by {@link BLOB_CHECK_MIN_INTERVAL_MS} so a very low interval
+   * can't spam the blob host every tick. A manual refresh bypasses this entirely
+   * (it always checks; see {@link runScheduledRefresh}).
    */
   private blobCheckDue(): boolean {
-    return Date.now() - this.lastBlobCheckAt >= BLOB_CHECK_MIN_INTERVAL_MS;
+    const intervalMs = Math.max(
+      BLOB_CHECK_MIN_INTERVAL_MS,
+      this.state.config.updateMinutes * 60 * 1000,
+    );
+    return Date.now() - this.lastBlobCheckAt >= intervalMs;
   }
 
   /** Arm the next auto-refresh tick, replacing any pending one. */
@@ -3807,6 +3981,38 @@ export class App {
     if (report.failed.length === 0) return [];
     const filled = new Set(this.lastTiingoSymbols);
     return report.failed.filter((symbol) => !filled.has(symbol));
+  }
+
+  /**
+   * Fold a Twelve Data safety-net re-pull (the reverse Tiingo→TD fallback) back
+   * into the round's primary quote result and report. Freshly-priced symbols are
+   * merged into the quote map and moved from `deferred` into `fetched`; symbols
+   * Twelve Data attempted but still couldn't price move from `deferred` into
+   * `failed` (genuinely stuck on both providers). The budget counters are taken
+   * from the safety-net pass (the most recent spend). Returns the symbols the
+   * safety net actually filled, for the polling log. Mutates `quoteLoad`.
+   */
+  private absorbSafetyNet(
+    quoteLoad: { quotes: Map<string, Quote>; report: QuoteLoadReport },
+    tdNet: { quotes: Map<string, Quote>; report: QuoteLoadReport },
+  ): string[] {
+    const filled: string[] = [];
+    const deferred = new Set(quoteLoad.report.deferred);
+    for (const symbol of tdNet.report.fetched) {
+      const quote = tdNet.quotes.get(symbol);
+      if (!quote) continue;
+      quoteLoad.quotes.set(symbol, quote);
+      quoteLoad.report.fetched.push(symbol);
+      deferred.delete(symbol);
+      filled.push(symbol);
+    }
+    for (const symbol of tdNet.report.failed) {
+      if (deferred.delete(symbol)) quoteLoad.report.failed.push(symbol);
+    }
+    quoteLoad.report.deferred = [...deferred];
+    quoteLoad.report.minuteRemaining = tdNet.report.minuteRemaining;
+    quoteLoad.report.dayRemaining = tdNet.report.dayRemaining;
+    return filled;
   }
 
   /**
@@ -4300,6 +4506,8 @@ export class App {
     this.manualFeedbackUntil = 0;
     this.setUpdating(false);
     this.refreshing = false;
+    this.refreshingKind = null;
+    this.promoteToManual = false;
     this.state.passphrase = null;
     this.state.data = null;
     // Drop the prefetch warm-up state so its status never lingers on the unlock
@@ -4397,6 +4605,24 @@ export interface CoverageFacts {
   fx: EurUsdSource;
 }
 
+/**
+ * Choose the FX source label to *display* on the coverage line. A spot served
+ * from cache (`"cache"`) but observed within {@link LIVE_PRICE_MAX_STALENESS_MS}
+ * is, to the user, just as live as the market prices it values — so promote it to
+ * `"live"` and let it read "FX live" rather than "FX recent". Every other source
+ * (and a genuinely aged cache) passes through unchanged.
+ */
+export function displayFxSource(
+  source: EurUsdSource,
+  observedAtMs: number | null,
+  nowMs: number,
+): EurUsdSource {
+  if (source === "cache" && observedAtMs !== null && nowMs - observedAtMs <= LIVE_PRICE_MAX_STALENESS_MS) {
+    return "live";
+  }
+  return source;
+}
+
 /** Human FX-freshness clause for the coverage line (see {@link CoverageFacts.fx}). */
 function fxClause(fx: EurUsdSource): string {
   switch (fx) {
@@ -4416,14 +4642,6 @@ function fxClause(fx: EurUsdSource): string {
 /** Capitalise the first character of a status line (NAV/FX acronyms stay intact). */
 function capitalizeFirst(text: string): string {
   return text.length === 0 ? text : text[0].toUpperCase() + text.slice(1);
-}
-
-/** Local `YYYY-MM-DD` for `d` (matches the NAV value-date day boundary). */
-function localDateIso(d: Date): string {
-  const y = d.getFullYear();
-  const m = `${d.getMonth() + 1}`.padStart(2, "0");
-  const day = `${d.getDate()}`.padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }
 
 /**
@@ -4452,8 +4670,11 @@ export function buildCoverageFacts(
   const now = ctx.now ?? new Date();
   const publishHourFor = ctx.publishHourFor ?? (() => NAV_PUBLISH_HOUR);
   const fetched = new Set(report.fetched);
-  const todayIso = localDateIso(now);
   const settled = latestSettledSessionDate(now);
+  // The most recent NYSE session that has *started* (today once its open passes,
+  // else the prior session). A held NAV for an older session than this means
+  // today's session is still mid-flight, so its NAV is yet to strike tonight.
+  const startedSession = lastSessionDate(now);
   let marketTotal = 0;
   let marketHeld = 0;
   let marketFresh = 0;
@@ -4465,10 +4686,18 @@ export function buildCoverageFacts(
     if (navSymbols.has(symbol)) {
       navTotal += 1;
       const held = quotes.get(symbol)?.valueDate ?? null;
-      // Not yet holding today's NAV → it will publish later tonight.
-      if (!held || held < todayIso) navExpectedTonight += 1;
-      // Past its learned publish hour and still missing → genuinely overdue.
-      if (!held || held < latestExpectedNavDate(now, publishHourFor(symbol))) navAwaiting += 1;
+      // The latest NAV that *should* exist right now (its learned publish hour
+      // has passed). Anchored to the NY trading calendar, never the local day.
+      const due = latestExpectedNavDate(now, publishHourFor(symbol));
+      const haveDue = held !== null && held >= due;
+      if (!haveDue) {
+        // We don't yet hold the NAV that is genuinely due → still awaiting it.
+        navAwaiting += 1;
+      } else if (due < startedSession) {
+        // We hold the due NAV, but a newer session is already under way whose
+        // NAV will publish later tonight — "expected tonight", not missing.
+        navExpectedTonight += 1;
+      }
     } else {
       marketTotal += 1;
       const q = quotes.get(symbol);

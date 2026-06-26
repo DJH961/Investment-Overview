@@ -14,6 +14,69 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.5.0] — 2026-06-26
+
+### Changed
+
+- **Smart routing now has a reverse safety net: Tiingo → Twelve Data.** The
+  "hard refresh (route the whole book through the backup provider)" path makes
+  Tiingo the *sole* primary and skips the Twelve Data quote pass. Previously, if
+  Tiingo then failed somewhere — unreachable, over-quota, or returning nothing
+  newer — those holdings were left stuck on a cached / last-known price with no
+  provider behind them. A new pure planner `planTwelveDataSafetyNet`
+  (`web/src/provider-fanout.ts`) names exactly the symbols Tiingo left unpriced,
+  and `refreshPrices` (`web/src/app.ts`) re-pulls them on Twelve Data. The
+  re-pull routes through the same `loadQuotes` reservation, so it self-clamps to
+  the live Twelve Data per-minute / per-day budget and never overspends — a
+  Tiingo outage now degrades gracefully to the primary instead of to stale data.
+- **The auto-update interval is now the cadence for the new-data (blob) check
+  too.** The background "is there a newer desktop export?" probe used a fixed
+  5-minute gap; it now keys on the user's configured auto-update interval
+  (Settings → update frequency), floored at one minute so a very low setting
+  can't hammer the blob host every tick. A manual refresh still always checks the
+  blob immediately, regardless of the interval (`App.blobCheckDue` /
+  `runScheduledRefresh` in `web/src/app.ts`).
+
+### Fixed
+
+- **The price coverage line above holdings now tells the truth on three fronts.**
+  (1) *FX freshness:* an EUR/USD spot replayed from cache but observed within the
+  live-staleness window (15 min) now reads **"FX live"** instead of "FX recent" —
+  to the user it is just as live as the market prices it values
+  (`displayFxSource` in `web/src/app.ts`). (2) *Genuine fallback only:* the
+  "N prices via fallback" note now counts **only** symbols the primary actually
+  attempted and couldn't price (unavailable / outdated) before the backup filled
+  them — symbols merely smart-routed to the backup for budget efficiency are no
+  longer flagged as a fallback (`fallbackSymbols` on `runTiingoFallback`,
+  `web/src/tiingo-fallback.ts`; `lastFallbackSymbols` in `web/src/app.ts`).
+  (3) *NAV honesty:* when the most recent trading day's NAV is genuinely missing
+  the line now reads "awaiting" rather than claiming everything is up to date.
+- **NAV coverage no longer falsely claims today's NAV is missing.** The
+  "expected tonight" count was anchored to the local calendar day, so in the
+  early hours of a trading day — after we already held the latest settled
+  session's NAV but before that session's open — it wrongly reported today's NAV
+  as outstanding. The NAV counters in `buildCoverageFacts` are now anchored to
+  the New-York trading calendar (`latestExpectedNavDate` vs `lastSessionDate`)
+  and are mutually exclusive: a fund is *awaiting* only when we don't hold its
+  due NAV, and *expected tonight* only when we hold the due NAV but a newer
+  session is already under way.
+
+## [4.4.2] — 2026-06-26
+
+### Fixed
+
+- **Manual Refresh taps are debounced and can take over an in-flight automatic
+  pull.** An accidental double-tap of the Refresh control no longer fires a
+  second redundant network round: `manualRefreshDecision` swallows a repeat tap
+  inside a short cooldown window (`cooldown`), with a toast that distinguishes an
+  *in-flight* pull from one that *just finished*. A deliberate tap while an
+  automatic round is already running now **promotes** that round to a manual
+  refresh (`promote`) so the user's tap takes priority and is surfaced with the
+  manual coverage summary, and the next automatic refresh is pushed out by the
+  full configured interval instead of resuming seconds later. The cooldown wins
+  over promotion when a tap double-fires during an auto pull, so a single
+  promotion can never be re-promoted by an immediate second tap.
+
 ## [4.4.1] — 2026-06-26
 
 ### Fixed
