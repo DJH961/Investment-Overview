@@ -14,6 +14,8 @@ import {
   loadOrBuildWeekCurve,
   navBackfillStaleSymbols,
   navBarsFromQuotes,
+  navSafeBarsForPriming,
+  navTipCoveredSymbols,
   toDailyNavBars,
   weekStaleSymbols,
   wrapDailyNavFetcher,
@@ -734,6 +736,90 @@ describe("navBackfillStaleSymbols (item 7b gap detection)", () => {
 
   it("treats an empty / missing store as fully stale", () => {
     expect(navBackfillStaleSymbols(null, ["FXAIX"], SAT_CLOSED)).toEqual(["FXAIX"]);
+  });
+});
+
+describe("navTipCoveredSymbols (only drop genuinely-current funds from the quote leg, #184)", () => {
+  // SAT_CLOSED → latest settled session is Fri 2026-03-13.
+  const settled = "2026-03-13";
+
+  it("covers a fund whose freshest bar reaches the latest settled session", () => {
+    const bars = new Map([
+      ["FXAIX", [bar(dayMs("2026-03-12"), "99"), bar(dayMs("2026-03-13"), "100")]],
+    ]);
+    expect(navTipCoveredSymbols(bars, settled)).toEqual(["FXAIX"]);
+  });
+
+  it("does NOT cover a fund whose freshest bar is still behind — it stays on the quote leg", () => {
+    // The bar source (Tiingo /price) lagged: newest bar is Wed, not Fri. Twelve
+    // Data may still hold Friday's NAV, so this fund must not be dropped.
+    const bars = new Map([
+      ["FXAIX", [bar(dayMs("2026-03-10"), "97"), bar(dayMs("2026-03-11"), "98")]],
+    ]);
+    expect(navTipCoveredSymbols(bars, settled)).toEqual([]);
+  });
+
+  it("covers a fund whose tip is ahead of the settled floor", () => {
+    const bars = new Map([["FXAIX", [bar(dayMs("2026-03-16"), "101")]]]);
+    expect(navTipCoveredSymbols(bars, settled)).toEqual(["FXAIX"]);
+  });
+
+  it("ignores funds with no bars and reports each independently", () => {
+    const bars = new Map([
+      ["CURRENT", [bar(dayMs("2026-03-13"), "100")]],
+      ["BEHIND", [bar(dayMs("2026-03-11"), "98")]],
+      ["EMPTY", [] as ReturnType<typeof bar>[]],
+    ]);
+    expect(navTipCoveredSymbols(bars, settled)).toEqual(["CURRENT"]);
+  });
+});
+
+describe("navSafeBarsForPriming (normal/manual-refresh prime guard, #191 root cause)", () => {
+  // SAT_CLOSED → latest settled session is Fri 2026-03-13.
+  const settled = "2026-03-13";
+
+  it("keeps a current NAV fund and marks it covered", () => {
+    const bars = new Map([["FXAIX", [bar(dayMs("2026-03-13"), "100")]]]);
+    const { bars: out, navCovered } = navSafeBarsForPriming(bars, new Set(["FXAIX"]), settled);
+    expect([...out.keys()]).toEqual(["FXAIX"]);
+    expect([...navCovered]).toEqual(["FXAIX"]);
+  });
+
+  it("drops a stale NAV fund so its old tip never becomes the headline", () => {
+    // Tiingo /price lagged: newest bar is Wed, two sessions behind Friday. The
+    // fund must NOT be primed (it would pin the headline on an old day); it stays
+    // on its genuine quote / the NAV quote leg for a real fetch.
+    const bars = new Map([["FXAIX", [bar(dayMs("2026-03-11"), "98")]]]);
+    const { bars: out, navCovered } = navSafeBarsForPriming(bars, new Set(["FXAIX"]), settled);
+    expect(out.size).toBe(0);
+    expect(navCovered.size).toBe(0);
+  });
+
+  it("always passes market (non-NAV) bars through untouched", () => {
+    // A market symbol that happens to carry an old bar is still primed — only NAV
+    // funds are gated on reaching the settled session.
+    const bars = new Map([
+      ["VTI", [bar(dayMs("2026-03-10"), "300")]],
+      ["FXAIX", [bar(dayMs("2026-03-11"), "98")]],
+    ]);
+    const { bars: out, navCovered } = navSafeBarsForPriming(bars, new Set(["FXAIX"]), settled);
+    expect([...out.keys()]).toEqual(["VTI"]);
+    expect(navCovered.size).toBe(0);
+  });
+
+  it("primes a current NAV fund while dropping a stale sibling in one pass", () => {
+    const bars = new Map([
+      ["CURRENT", [bar(dayMs("2026-03-13"), "100")]],
+      ["BEHIND", [bar(dayMs("2026-03-11"), "98")]],
+      ["MKT", [bar(dayMs("2026-03-12"), "50")]],
+    ]);
+    const { bars: out, navCovered } = navSafeBarsForPriming(
+      bars,
+      new Set(["CURRENT", "BEHIND"]),
+      settled,
+    );
+    expect([...out.keys()].sort()).toEqual(["CURRENT", "MKT"]);
+    expect([...navCovered]).toEqual(["CURRENT"]);
   });
 });
 

@@ -179,8 +179,72 @@ function settledSessionStarts(now: Date, sessions: number): number[] {
 }
 
 /**
- * Which **moving-fund** `navSymbols` the stored week cache is missing a daily-NAV
- * bar for on one or more settled sessions — the item-7b gap-fill set. A
+ * Of the moving-fund NAV bars just (re)fetched for the week, which now carry a
+ * settled NAV **tip** that reaches `settledDate` — i.e. their headline NAV is
+ * genuinely current. Only these may be dropped from the separate NAV quote leg.
+ *
+ * A fund whose freshest fetched bar is still *behind* `settledDate` is
+ * deliberately **excluded**: the bar source (Tiingo `/price` daily) did not
+ * actually freshen it this round, so it must stay on the quote leg for a real
+ * fetch (which can reach Twelve Data, a potentially-fresher NAV source) instead
+ * of being pinned on an old day with the quote skipped. `settledDate` is the
+ * `YYYY-MM-DD` of {@link latestSettledSessionDate}; the tip's UTC day is compared
+ * lexically against it (ISO dates sort chronologically).
+ */
+export function navTipCoveredSymbols(
+  barsBySymbol: Map<string, Bar[]>,
+  settledDate: string,
+): string[] {
+  const covered: string[] = [];
+  for (const [symbol, bars] of barsBySymbol) {
+    if (bars.length === 0) continue;
+    const tip = Math.max(...bars.map((b) => b.t));
+    if (utcDayOf(tip) >= settledDate) covered.push(symbol);
+  }
+  return covered;
+}
+
+/**
+ * Make a graph build's freshly-fetched bars **safe to prime back into the quote
+ * cache** without pinning a NAV fund on an old day — the normal/manual-refresh
+ * mirror of the prefetch guard ({@link navTipCoveredSymbols}).
+ *
+ * A 1D/1W build folds its bars into the holding rows so they reuse the price the
+ * graph already paid for. For a NAV fund that bar tip is stamped as the *settled
+ * headline NAV*, but the daily bar source can lag the latest settled session — in
+ * which case stamping it would freeze the fund on a stale day (the bar is newer
+ * than the export yet older than the real settled NAV, so `priceForHolding`
+ * accepts it and nothing re-fetches). This splits the bars so that:
+ *   - NAV funds whose freshest bar reaches `settledDate` (`navCovered`) are the
+ *     only ones marked as a settled, value-dated headline NAV; and
+ *   - NAV funds whose tip is still **behind** `settledDate` are dropped from the
+ *     prime entirely, leaving the holding on its genuine quote / the NAV quote
+ *     leg instead of being pinned on an old day.
+ *
+ * Non-NAV (market) bars always pass through untouched. `settledDate` is the
+ * `YYYY-MM-DD` of {@link latestSettledSessionDate}.
+ */
+export function navSafeBarsForPriming(
+  barsBySymbol: Map<string, Bar[]>,
+  navSymbols: ReadonlySet<string>,
+  settledDate: string,
+): { bars: Map<string, Bar[]>; navCovered: Set<string> } {
+  const navBarsOnly = new Map<string, Bar[]>();
+  for (const [symbol, bars] of barsBySymbol) {
+    if (navSymbols.has(symbol)) navBarsOnly.set(symbol, bars);
+  }
+  const navCovered = new Set(navTipCoveredSymbols(navBarsOnly, settledDate));
+  const bars = new Map<string, Bar[]>();
+  for (const [symbol, list] of barsBySymbol) {
+    // Drop a NAV fund whose freshest bar is behind the latest settled session:
+    // its stale tip must never become the headline NAV.
+    if (navSymbols.has(symbol) && !navCovered.has(symbol)) continue;
+    bars.set(symbol, list);
+  }
+  return { bars, navCovered };
+}
+
+/**
  * once-per-login NAV stamp ({@link navBarsFromQuotes}) leaves interior holes when
  * a user logs in irregularly; this finds the funds whose NAV history is not yet
  * continuous across the window so their drift can be backfilled.
