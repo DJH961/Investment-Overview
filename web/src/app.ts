@@ -133,7 +133,9 @@ import { buildModelAnchor } from "./value-graph";
 import {
   graphAnchorFx,
   readSessionCloseFx,
+  readSessionOpenFx,
   recordSessionCloseFx,
+  recordSessionOpenFx,
   sessionBarsComplete,
   sessionCloseFxFromBars,
   sessionFxBarsComplete,
@@ -3975,7 +3977,15 @@ export class App {
       const marketOpen = isUsMarketOpen(now);
       const liveFx = fx.rates.USD ?? model.overview.fxRateEurUsd;
       const sessionDay = lastSessionDate(now);
-      if (marketOpen) recordSessionCloseFx(sessionDay, liveFx);
+      if (marketOpen) {
+        recordSessionCloseFx(sessionDay, liveFx);
+        // Capture the first live spot of the session as a stand-in open rate, so
+        // the currency split has an anchor immediately at the market start —
+        // before the session's own FX bars have been fetched (the first bar can
+        // lag 09:30 ET by minutes on the free tier, and a cold start mid-session
+        // has none yet). Earliest-only, so it stays a fixed open, not the spot.
+        recordSessionOpenFx(sessionDay, liveFx);
+      }
       // Prefer the close read straight from the session's EUR→USD bars — the same
       // authoritative source the 1D/1W graphs freeze to (so the hero's currency-
       // effect split and the graph never disagree on what "the close" is), and the
@@ -3991,8 +4001,12 @@ export class App {
       // market start); once the trading day has shut it is the "since last market
       // open" anchor the hero's "Today" stat re-bases to (so that stat stops
       // mirroring the now-settled "since close" move). Read on every session day —
-      // open or shut — and null only before the day's first FX bar has landed.
-      model.overview.fxRateEurUsdSessionOpen = await this.barsSessionOpenFx(sessionDay);
+      // open or shut. Until the day's first FX bar has landed (a common gap right
+      // at the market start), fall back to the first-seen live spot we captured
+      // above so the split shows immediately and then self-corrects to the precise
+      // bar-read open once it arrives.
+      model.overview.fxRateEurUsdSessionOpen =
+        (await this.barsSessionOpenFx(sessionDay)) ?? readSessionOpenFx(sessionDay);
     }
     // Remember each fund's freshly-settled NAV as a daily bar in the 1W store, so
     // the week curve re-marks NAV funds from their real per-day drift at zero

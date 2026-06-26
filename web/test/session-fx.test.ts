@@ -12,7 +12,9 @@ import {
   fxBuyingPowerSplit,
   graphAnchorFx,
   readSessionCloseFx,
+  readSessionOpenFx,
   recordSessionCloseFx,
+  recordSessionOpenFx,
   sessionBarsComplete,
   sessionCloseFxFromBars,
   sessionFxBarsComplete,
@@ -104,14 +106,50 @@ describe("sessionCloseFxFromBars", () => {
     expect(sessionCloseFxFromBars(bars, closeMs)?.toString()).toBe("1.0775");
   });
 
-  it("skips non-positive bar values", () => {
-    const bars = [bar(closeMs - 3600_000, "1.0750"), bar(closeMs, "0")];
-    expect(sessionCloseFxFromBars(bars, closeMs)?.toString()).toBe("1.075");
+  it("skips non-positive bar values within a complete track", () => {
+    // A positive bar reaches the close (track complete), and the earlier
+    // non-positive bar is ignored when picking the settle.
+    const bars = [bar(closeMs - 3600_000, "0"), bar(closeMs, "1.0775")];
+    expect(sessionCloseFxFromBars(bars, closeMs)?.toString()).toBe("1.0775");
   });
 
   it("returns null when no bar settled by the close (empty / all after-hours)", () => {
     expect(sessionCloseFxFromBars([], closeMs)).toBeNull();
     expect(sessionCloseFxFromBars([bar(closeMs + 60_000, "1.09")], closeMs)).toBeNull();
+  });
+
+  it("yields null for an incomplete (mid-session-only) track so the caller falls back", () => {
+    // The track was last fetched mid-session: its newest bar (14:00-ish) never
+    // reached 16:00 ET. Returning that stale rate would freeze the EUR view to a
+    // mid-session value; the read must yield null so graphAnchorFx degrades to the
+    // settled previous close / live spot (Fix 2 — guard the read).
+    const bars = [bar(closeMs - 7200_000, "1.07"), bar(closeMs - 3600_000, "1.0750")];
+    expect(sessionCloseFxFromBars(bars, closeMs)).toBeNull();
+  });
+
+  it("treats a non-positive bar at the close as not reaching the settle", () => {
+    // A zero/garbage bar sitting at the close is not a genuine settle, so the
+    // track reads incomplete and the read yields null rather than the mid-session
+    // rate before it.
+    const bars = [bar(closeMs - 3600_000, "1.0750"), bar(closeMs, "0")];
+    expect(sessionCloseFxFromBars(bars, closeMs)).toBeNull();
+  });
+
+  it("an incomplete track degrades graphAnchorFx to the settled previous close (Fix 2 end-to-end)", () => {
+    // The two links together: a mid-session-only FX track yields a null close-read,
+    // which lets graphAnchorFx fall back to the stable settled previous close
+    // instead of freezing the closed-market EUR curve to a 14:00 rate — so the KPI
+    // is never wrong even when the after-hours repair (Fix 1) has not run.
+    const bars = [bar(closeMs - 7200_000, "1.07"), bar(closeMs - 3600_000, "1.0750")];
+    const sessionCloseFx = sessionCloseFxFromBars(bars, closeMs);
+    expect(sessionCloseFx).toBeNull();
+    const fx = graphAnchorFx({
+      marketOpen: false,
+      liveFx: d("1.08"),
+      sessionCloseFx,
+      settledPrevFx: d("1.0725"),
+    });
+    expect(fx?.toString()).toBe("1.0725");
   });
 });
 
@@ -420,5 +458,52 @@ describe("session-close FX persistence", () => {
 
   it("returns null (not throw) when nothing is stored", () => {
     expect(readSessionCloseFx("2026-06-25")).toBeNull();
+  });
+});
+
+describe("session-open FX persistence", () => {
+  beforeEach(() => {
+    const store = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("round-trips the first-seen rate for the same session day", () => {
+    recordSessionOpenFx("2026-06-25", d("1.0834"));
+    expect(readSessionOpenFx("2026-06-25")?.toString()).toBe("1.0834");
+  });
+
+  it("keeps the earliest capture and never overwrites it with a later spot", () => {
+    recordSessionOpenFx("2026-06-25", d("1.0834"));
+    recordSessionOpenFx("2026-06-25", d("1.0900"));
+    expect(readSessionOpenFx("2026-06-25")?.toString()).toBe("1.0834");
+  });
+
+  it("ignores a rate captured for a different session", () => {
+    recordSessionOpenFx("2026-06-24", d("1.07"));
+    expect(readSessionOpenFx("2026-06-25")).toBeNull();
+  });
+
+  it("starts a fresh capture once the session day rolls over", () => {
+    recordSessionOpenFx("2026-06-24", d("1.07"));
+    recordSessionOpenFx("2026-06-25", d("1.0834"));
+    expect(readSessionOpenFx("2026-06-25")?.toString()).toBe("1.0834");
+  });
+
+  it("does not store a null or non-positive rate", () => {
+    recordSessionOpenFx("2026-06-25", null);
+    expect(readSessionOpenFx("2026-06-25")).toBeNull();
+    recordSessionOpenFx("2026-06-25", d("0"));
+    expect(readSessionOpenFx("2026-06-25")).toBeNull();
+  });
+
+  it("returns null (not throw) when nothing is stored", () => {
+    expect(readSessionOpenFx("2026-06-25")).toBeNull();
   });
 });
