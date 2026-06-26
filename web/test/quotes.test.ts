@@ -484,10 +484,13 @@ describe("navCacheTtlMs — adaptive NAV refresh", () => {
   const wed = (h: number, m = 0) => new Date(2024, 0, 10, h, m).getTime();
   const sat = (h: number) => new Date(2024, 0, 13, h).getTime();
 
-  it("relaxes to the long window once the settled session's NAV is in hand", () => {
-    // 17:30 ET Wed — market closed, Wednesday has settled and we hold it.
-    const ttl = navCacheTtlMs({ valueDate: "2024-01-10" }, { now: wed(22, 30) });
-    expect(ttl).toBe(DEFAULT_NAV_CACHE_TTL_MS);
+  it("relaxes to the market-day rest window once the settled session's NAV is in hand", () => {
+    // 17:30 ET Wed — market closed, Wednesday has settled and we hold it. With no
+    // cached observation time the rest window is anchored at `now` and reaches the
+    // next session close (market-day based), not a flat 24h.
+    const now = wed(22, 30);
+    const ttl = navCacheTtlMs({ valueDate: "2024-01-10" }, { now });
+    expect(ttl).toBe(nextSessionCloseMs(new Date(now)) - now);
   });
 
   it("polls like a normal fund while behind the settled NAV after the close", () => {
@@ -510,9 +513,10 @@ describe("navCacheTtlMs — adaptive NAV refresh", () => {
 
   it("rests before the close when the latest settled NAV is already in hand", () => {
     // 07:00 ET Wed (pre-open): the latest settled session is Tuesday (01-09),
-    // which we already hold — nothing to chase.
-    const ttl = navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(12) });
-    expect(ttl).toBe(DEFAULT_NAV_CACHE_TTL_MS);
+    // which we already hold — nothing to chase. Market-day rest window from now.
+    const now = wed(12);
+    const ttl = navCacheTtlMs({ valueDate: "2024-01-09" }, { now });
+    expect(ttl).toBe(nextSessionCloseMs(new Date(now)) - now);
   });
 
   it("polls when an earlier settled session's NAV is still missing", () => {
@@ -524,28 +528,39 @@ describe("navCacheTtlMs — adaptive NAV refresh", () => {
 
   it("rests on a weekend once Friday's NAV is in hand", () => {
     // Saturday evening: latest settled session is Friday's NAV, which we hold.
-    expect(navCacheTtlMs({ valueDate: "2024-01-12" }, { now: sat(22) })).toBe(DEFAULT_NAV_CACHE_TTL_MS);
+    const now = sat(22);
+    expect(navCacheTtlMs({ valueDate: "2024-01-12" }, { now })).toBe(
+      nextSessionCloseMs(new Date(now)) - now,
+    );
   });
 
-  it("rests on the long window all session while the market is open", () => {
+  it("rests on the market-day window all session while the market is open", () => {
     // 15:00 UTC Wed → 10:00 ET — session open. Even holding only Tuesday's NAV
-    // (tonight's has not struck yet) we wait on the long window; nothing to chase
-    // mid-session.
+    // (tonight's has not struck yet) we rest until the next close; nothing to
+    // chase mid-session.
     const wedOpen = new Date(2024, 0, 10, 15, 0).getTime();
-    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wedOpen })).toBe(DEFAULT_NAV_CACHE_TTL_MS);
+    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wedOpen })).toBe(
+      nextSessionCloseMs(new Date(wedOpen)) - wedOpen,
+    );
   });
 
   it("can be told the market is open explicitly", () => {
-    // Force-open overrides the session math: long window regardless of value-date.
-    expect(
-      navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(22, 30), marketOpen: true }),
-    ).toBe(DEFAULT_NAV_CACHE_TTL_MS);
+    // Force-open overrides the session math: rest window regardless of value-date.
+    const now = wed(22, 30);
+    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { now, marketOpen: true })).toBe(
+      nextSessionCloseMs(new Date(now)) - now,
+    );
   });
 
-  it("honours custom short/long TTL overrides", () => {
+  it("honours a custom short-TTL override while behind the settled NAV", () => {
     const opts = { now: wed(22, 30), shortTtlMs: 1234, longTtlMs: 5678 };
+    // Behind the settled session ⇒ poll on the short window.
     expect(navCacheTtlMs({ valueDate: "2024-01-09" }, opts)).toBe(1234);
-    expect(navCacheTtlMs({ valueDate: "2024-01-10" }, opts)).toBe(5678);
+    // Holding it ⇒ market-day rest window (the longTtlMs override is now only an
+    // unreachable non-positive-window guard, so the rest window wins).
+    expect(navCacheTtlMs({ valueDate: "2024-01-10" }, opts)).toBe(
+      nextSessionCloseMs(new Date(opts.now)) - opts.now,
+    );
   });
 
   it("rests until the next session close when the cache timestamp is known", () => {

@@ -31,10 +31,19 @@
  *    the caller-supplied spendable budgets.
  */
 
-/** The TD `time_series` per-request ceiling (all-or-nothing above this). */
+/**
+ * The default Twelve Data `time_series` batch size — recommended for the free
+ * tier, where it equals the 8 credits/minute budget. The real planner is wired
+ * (from `app.ts`) to the live `twelveDataPerMinute` limit via the
+ * `twelveDataBatch` input, so raising the limit on a paid plan widens the batch.
+ */
 export const TWELVE_DATA_BATCH = 8;
 
-/** Above this symbol count a pull is "instant" work worth a parallel Tiingo spill. */
+/**
+ * Above this symbol count a pull is "instant" work worth a parallel Tiingo spill.
+ * Defaults to two Twelve Data minutes of work (2 × {@link TWELVE_DATA_BATCH}); the
+ * planner derives it from the live batch size when one is supplied.
+ */
 export const FANOUT_INSTANT_THRESHOLD = 16;
 
 /** The last Tiingo credits a *non-login* fan-out must leave untouched (Pillar 5.4). */
@@ -60,6 +69,12 @@ export interface FanoutInputs {
   tiingoAvailable: boolean;
   /** Override the instant threshold (testing); defaults to {@link FANOUT_INSTANT_THRESHOLD}. */
   instantThreshold?: number;
+  /**
+   * The Twelve Data per-request batch size — the live `twelveDataPerMinute` limit
+   * in production. Defaults to {@link TWELVE_DATA_BATCH}; the instant threshold,
+   * when not given explicitly, derives as 2× this.
+   */
+  twelveDataBatch?: number;
   /** Override the Tiingo reserve (testing); defaults to {@link TIINGO_RESERVE_CREDITS}. */
   tiingoReserve?: number;
 }
@@ -98,12 +113,14 @@ export function isPriorityPull(kind: FanoutKind): boolean {
  *   must leave the last {@link TIINGO_RESERVE_CREDITS} untouched; login/start may use them.
  */
 export function planFanout(input: FanoutInputs): FanoutPlan {
-  const instantThreshold = input.instantThreshold ?? FANOUT_INSTANT_THRESHOLD;
+  const tdBatch = Math.max(1, Math.floor(input.twelveDataBatch ?? TWELVE_DATA_BATCH));
+  const instantThreshold = input.instantThreshold ?? tdBatch * 2;
   const reserve = input.tiingoReserve ?? TIINGO_RESERVE_CREDITS;
   const priority = isPriorityPull(input.kind);
 
-  // Hard cap #5 / #1: the TD leg is one request of ≤8, clamped to the live budget.
-  const tdCapacity = Math.max(0, Math.min(TWELVE_DATA_BATCH, Math.floor(input.twelveDataSpendable)));
+  // Hard cap #5 / #1: the TD leg is one request of ≤ the batch size, clamped to
+  // the live budget.
+  const tdCapacity = Math.max(0, Math.min(tdBatch, Math.floor(input.twelveDataSpendable)));
   const twelveData = input.symbols.slice(0, tdCapacity);
   let rest = input.symbols.slice(tdCapacity);
 

@@ -22,7 +22,9 @@ import { startTour, DEMO_TOUR_STEPS } from "./tour";
 import {
   defaultConfig,
   loadConfig,
+  applyProviderLimits,
   parseAutoLockMinutes,
+  parseProviderLimit,
   parseUpdateMinutes,
   resolveBlobUrl,
   resolveMetaUrl,
@@ -34,6 +36,10 @@ import {
   MAX_UPDATE_MINUTES,
   DEFAULT_AUTO_LOCK_MINUTES,
   MAX_AUTO_LOCK_MINUTES,
+  DEFAULT_TWELVE_DATA_PER_MINUTE,
+  DEFAULT_TWELVE_DATA_PER_DAY,
+  DEFAULT_TIINGO_PER_HOUR,
+  DEFAULT_TIINGO_PER_DAY,
   type AppConfig,
 } from "./config";
 import { PriceError, type FxRates, type Quote } from "./prices";
@@ -249,16 +255,21 @@ const APP_VERSION_KEY = "iv.web.app_version";
  * Daily free-tier credits remaining at or below which the UI warns the user it
  * is close to the limit (and starts spacing refreshes out). Two per-minute
  * windows' worth of headroom — enough warning to be useful without nagging.
+ * Derived from the live (Settings-configurable) per-minute limit, so lowering
+ * the limit tightens the warning band in step.
  */
-const DAILY_BUDGET_WARN_CREDITS = 2 * FREE_TIER.creditsPerMinute;
+function dailyBudgetWarnCredits(): number {
+  return 2 * FREE_TIER.creditsPerMinute;
+}
 
 /**
  * How recently the app must have actually pulled fresh data from the network for
- * the coverage summary to claim holdings are "up to date". Beyond this the
- * prices on screen are old enough that a confident "up to date" would be
- * misleading, so the summary names them as last-pulled instead.
+ * the coverage summary to claim holdings are "up to date". This is tied to the
+ * auto-refresh window (`config.updateMinutes`): within one refresh cycle of a real
+ * network pull the on-screen prices are as current as the schedule intends, so the
+ * summary may honestly say "up to date"; beyond it, it names them last-pulled
+ * instead. See {@link App.upToDateWindowMs}.
  */
-const UP_TO_DATE_WINDOW_MS = 60 * 1000;
 
 /**
  * Fraction of the daily free-tier credit budget that must remain for a manual
@@ -609,6 +620,7 @@ export class App {
   async start(): Promise<void> {
     this.logVersionUpdate();
     this.state.config = await loadConfig();
+    applyProviderLimits(this.state.config);
     const demoParams = this.demoParams();
     if (demoParams.requested) this.enterDemo(demoParams);
     else if (!this.isConfigured()) {
@@ -841,6 +853,7 @@ export class App {
       twelveDataSpendable: twelveDataAvailable(fanoutNow),
       tiingoSpendable: tiingoAvailable(fanoutNow),
       tiingoAvailable: resolvePriceProxyUrl(config) !== null,
+      twelveDataBatch: FREE_TIER.creditsPerMinute,
     });
     this.pollLog("login", `Login fan-out (${prefetch.symbols.length} mkt symbol(s)): ${fanout.reason}`);
     // Execute the fan-out the planner decided: the Twelve Data lead (≤8) runs
@@ -1735,6 +1748,25 @@ export class App {
       placeholder: String(DEFAULT_AUTO_LOCK_MINUTES),
       value: String(config.autoLockMinutes),
     });
+    // Data-provider rate limits (Settings only). Each defaults to the provider's
+    // documented free-tier value, *recommended* for a free account but not forced:
+    // lower them to share one account across more devices, or raise them above the
+    // free tier on a paid plan. No hard `max` — only a placeholder hint of the
+    // recommended value (`parseProviderLimit` guards against absurd entries).
+    const providerLimitInput = (id: string, value: number, recommended: number): HTMLInputElement =>
+      h("input", {
+        type: "number",
+        id,
+        min: "1",
+        step: "1",
+        autocomplete: "off",
+        placeholder: String(recommended),
+        value: String(value),
+      }) as HTMLInputElement;
+    const tdPerMinute = providerLimitInput("f-td-min", config.twelveDataPerMinute, DEFAULT_TWELVE_DATA_PER_MINUTE);
+    const tdPerDay = providerLimitInput("f-td-day", config.twelveDataPerDay, DEFAULT_TWELVE_DATA_PER_DAY);
+    const tiingoPerHour = providerLimitInput("f-ti-hour", config.tiingoPerHour, DEFAULT_TIINGO_PER_HOUR);
+    const tiingoPerDay = providerLimitInput("f-ti-day", config.tiingoPerDay, DEFAULT_TIINGO_PER_DAY);
     const resumeOnRefresh = h("select", { id: "f-resume", class: "select" }, [
       h("option", { value: "0" }, ["Off — re-login on every page refresh"]),
       h("option", { value: "1" }, ["On — stay unlocked across a refresh (this tab)"]),
@@ -1836,7 +1868,7 @@ export class App {
       field(
         "Update prices every (minutes)",
         updateMinutes,
-        `How often live prices refresh. Lower is fresher but spends more of the Twelve Data free tier (8/min, 800/day). Default is ${DEFAULT_UPDATE_MINUTES}.`,
+        `How often live prices refresh. Lower is fresher but spends more of the Twelve Data budget (${config.twelveDataPerMinute}/min, ${config.twelveDataPerDay}/day). Default is ${DEFAULT_UPDATE_MINUTES}.`,
       ),
     );
 
@@ -1850,6 +1882,39 @@ export class App {
           "Price proxy URL override",
           priceProxyUrl,
           "Advanced: the web/proxy Worker /price route for the price fallback. Leave blank to derive it from the data-source URL. The provider token stays in the Worker — never in the browser.",
+        ),
+      );
+    }
+
+    // Data providers (Settings only): editable per-provider rate caps. They
+    // default to each provider's free-tier value — recommended for a free
+    // account — but are not forced: lower them to spread one account across
+    // several devices, or raise them above the free tier on a paid plan.
+    if (settingsMode) {
+      formChildren.push(
+        h("h2", { class: "settings-section" }, ["Data providers"]),
+        h("p", { class: "field-hint" }, [
+          "These cap how many API calls each price provider may spend. The defaults match each provider's free-tier limit — the recommended values for a free account. Lower them to share one account across more devices, or raise them above the free tier if you're on a paid plan.",
+        ]),
+        field(
+          "Twelve Data — per minute",
+          tdPerMinute,
+          `Primary-provider credits allowed each minute. Recommended ${DEFAULT_TWELVE_DATA_PER_MINUTE} for the free tier; raise it on a paid plan.`,
+        ),
+        field(
+          "Twelve Data — per day",
+          tdPerDay,
+          `Primary-provider credits allowed each day. Recommended ${DEFAULT_TWELVE_DATA_PER_DAY} for the free tier; raise it on a paid plan.`,
+        ),
+        field(
+          "Tiingo — per hour",
+          tiingoPerHour,
+          `Backup-provider credits allowed each clock hour. Recommended ${DEFAULT_TIINGO_PER_HOUR} for the free tier (the web share); raise it on a paid plan.`,
+        ),
+        field(
+          "Tiingo — per day",
+          tiingoPerDay,
+          `Backup-provider credits allowed each day. Recommended ${DEFAULT_TIINGO_PER_DAY} for the free tier (the web share); raise it on a paid plan.`,
         ),
       );
     }
@@ -1999,6 +2064,10 @@ export class App {
         priceProxyUrl: (priceProxyUrl as HTMLInputElement).value.trim(),
         updateMinutes: parseUpdateMinutes((updateMinutes as HTMLInputElement).value),
         autoLockMinutes: parseAutoLockMinutes((autoLock as HTMLInputElement).value),
+        twelveDataPerMinute: parseProviderLimit(tdPerMinute.value, DEFAULT_TWELVE_DATA_PER_MINUTE),
+        twelveDataPerDay: parseProviderLimit(tdPerDay.value, DEFAULT_TWELVE_DATA_PER_DAY),
+        tiingoPerHour: parseProviderLimit(tiingoPerHour.value, DEFAULT_TIINGO_PER_HOUR),
+        tiingoPerDay: parseProviderLimit(tiingoPerDay.value, DEFAULT_TIINGO_PER_DAY),
         resumeOnRefresh: resumeOnRefresh.value === "1",
       };
       if (!next.apiKey) return this.showSetup("Enter your price API key.", mode);
@@ -2446,6 +2515,7 @@ export class App {
     this.leaveDemoChrome();
     void (async () => {
       this.state.config = await loadConfig();
+      applyProviderLimits(this.state.config);
       if (this.isConfigured()) this.showUnlock();
       else this.showSetup();
     })().catch(() => this.showSetup());
@@ -3287,6 +3357,7 @@ export class App {
           twelveDataSpendable: twelveDataAvailable(fanoutNow),
           tiingoSpendable: tiingoAvailable(fanoutNow),
           tiingoAvailable: proxyUrl !== null,
+          twelveDataBatch: FREE_TIER.creditsPerMinute,
         });
         this.pollLog(
           "fallback",
@@ -3796,13 +3867,21 @@ export class App {
   }
 
   /**
+   * The "up to date" window in ms: one auto-refresh cycle
+   * (`config.updateMinutes`). See the module note above {@link App}.
+   */
+  private upToDateWindowMs(): number {
+    return this.state.config.updateMinutes * 60 * 1000;
+  }
+
+  /**
    * Whether the app actually pulled fresh data from the network recently enough
-   * to honestly claim holdings are "up to date" (see {@link UP_TO_DATE_WINDOW_MS}).
+   * to honestly claim holdings are "up to date" (see {@link App.upToDateWindowMs}).
    * Gating the coverage summary on this means a refresh fully served from cache
    * never falsely reports everything current.
    */
   private recentlyPulled(): boolean {
-    return this.lastDataPullAt !== null && Date.now() - this.lastDataPullAt < UP_TO_DATE_WINDOW_MS;
+    return this.lastDataPullAt !== null && Date.now() - this.lastDataPullAt < this.upToDateWindowMs();
   }
 
   /**
@@ -3828,6 +3907,41 @@ export class App {
     void this.refreshPrices(session, false, { connectivity: "offline" });
     if (isUserRefresh(kind)) this.toast(connectivityNotice("offline") ?? "No internet connection.");
     this.scheduleNext(session, this.state.config.updateMinutes * 60 * 1000);
+  }
+
+  /**
+   * The delay (ms) until the **oldest still-fresh** market quote/FX reaches the
+   * auto-update interval — the "jumpstart" cadence. When a round pulls nothing
+   * because everything is still within its window, the next automatic refresh
+   * should land exactly when the oldest held value *first* goes stale, not a full
+   * interval after this tick. Example: interval 15 min, oldest quote 12 min old on
+   * login ⇒ this returns ~3 min, so the schedule jumps then (and every 15 min
+   * thereafter) instead of waiting 15 min from login.
+   *
+   * Only market-priced symbols and FX ride the minute-level interval, so NAV funds
+   * (a market-day window) are excluded. Returns `null` when the cadence can't be
+   * anchored (no data, a missing quote, or stale FX) — those cases want the normal
+   * scheduler, which will pull rather than wait.
+   */
+  private msUntilOldestFreshExpires(now: Date): number | null {
+    const data = this.state.data;
+    if (!data) return null;
+    const intervalMs = this.state.config.updateMinutes * 60 * 1000;
+    const nowMs = now.getTime();
+    const plan = buildFetchPlan(data, FETCHABLE_NAV_CLASSES);
+    const cached = readCachedQuotes();
+    let oldestAt: number | null = null;
+    for (const entry of plan) {
+      // NAV funds ride a market-day window, not the minute cadence — skip them.
+      if (entry.priceType !== "market") continue;
+      const at = cached.get(entry.symbol)?.quote?.at ?? null;
+      if (at === null) return null; // a missing quote isn't "fresh" — let the scheduler pull.
+      if (oldestAt === null || at < oldestAt) oldestAt = at;
+    }
+    const fxCached = readCachedEurUsd();
+    if (!fxCached || fxCached.now === null) return null;
+    if (oldestAt === null || fxCached.at < oldestAt) oldestAt = fxCached.at;
+    return Math.max(0, oldestAt + intervalMs - nowMs);
   }
 
   /**
@@ -4083,6 +4197,16 @@ export class App {
     // of letting it resume seconds later.
     if (promoted) {
       delayMs = Math.max(delayMs, this.state.config.updateMinutes * 60 * 1000);
+    }
+    // Jumpstart: when this round settled with nothing deferred — typically a login
+    // round that pulled nothing because everything was still fresh — don't wait a
+    // full interval. Land the next automatic refresh when the *oldest* still-fresh
+    // value first reaches the auto-update window, so a 12-min-old book on a 15-min
+    // interval refreshes in ~3 min, then every 15 min after. A full pull leaves the
+    // oldest value ≈now, so this naturally equals the steady interval (no change).
+    if (report.deferred.length === 0 && !promoted) {
+      const jumpMs = this.msUntilOldestFreshExpires(new Date());
+      if (jumpMs !== null) delayMs = Math.min(delayMs, jumpMs);
     }
     // Idea A — near-free freshness polling: piggy-back the cheap meta/304 blob
     // check so a fresh desktop publish is picked up automatically within a few
@@ -4445,7 +4569,7 @@ export class App {
       reasons.push(
         `Daily free-tier budget (${FREE_TIER.creditsPerDay}/day) used up; updates pause until it resets.`,
       );
-    } else if (quote.dayRemaining <= DAILY_BUDGET_WARN_CREDITS) {
+    } else if (quote.dayRemaining <= dailyBudgetWarnCredits()) {
       reasons.push(
         `Close to today's free-tier limit (${quote.dayRemaining} of ${FREE_TIER.creditsPerDay} left); ` +
           `updates are spacing out to last the day.`,

@@ -12,6 +12,7 @@ import { PriceError, type Quote } from "../src/prices";
 import { latestSettledSessionDate } from "../src/market-hours";
 import { runTiingoFallback, shouldQuickRefresh, planStartupRefresh, planPrefetch, tiingoBudgetView } from "../src/tiingo-fallback";
 import { WEB_DAILY_CAP, WEB_HOURLY_CAP } from "../src/tiingo-gate";
+import { DEFAULT_PROVIDER_LIMITS, setProviderLimits, resetProviderLimits } from "../src/provider-limits";
 import { tiingoCreditsSpentToday, readTiingoCreditLog, readTiingoNoNewer, recordTiingoCredits, type StorageLike } from "../src/cache";
 
 function memStorage(): StorageLike {
@@ -487,6 +488,26 @@ describe("planStartupRefresh", () => {
       route: "twelve",
       tiingoBudget: 0,
     });
+  });
+
+  it("tracks the Twelve Data per-minute limit for the 'leave Tiingo alone' threshold", () => {
+    // Raising twelveDataPerMinute (a paid plan) means the primary clears a bigger
+    // outdated set within a minute, so the Tiingo-skip threshold grows with it.
+    setProviderLimits({ ...DEFAULT_PROVIDER_LIMITS, twelveDataPerMinute: 30 });
+    try {
+      // 20 outdated ≤ 30/min ⇒ the primary handles it, Tiingo stays untouched.
+      expect(planStartupRefresh({ outdatedCount: 20, tiingoRemaining: 40, tiingoAvailable: true })).toEqual({
+        route: "twelve",
+        tiingoBudget: 0,
+      });
+      // 40 outdated > 30/min ⇒ worth spending Tiingo again (reserve 5 ⇒ usable 35).
+      expect(planStartupRefresh({ outdatedCount: 40, tiingoRemaining: 40, tiingoAvailable: true })).toEqual({
+        route: "split",
+        tiingoBudget: 35,
+      });
+    } finally {
+      resetProviderLimits();
+    }
   });
 });
 
