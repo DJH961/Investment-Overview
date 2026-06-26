@@ -156,6 +156,16 @@ const WELCOME_BANNER_DURATION_MS = 3200;
 const MANUAL_REFRESH_MIN_FEEDBACK_MS = 650;
 
 /**
+ * Smallest gap between two *accepted* manual refreshes. A tap that lands inside
+ * this window of the previous one is treated as an accidental double-tap and
+ * ignored (it still flashes the feedback, but spends no credits) — so a fumbled
+ * double-click can't burn two forced pulls back-to-back. It is deliberately
+ * tiny: long enough to swallow a double-tap, short enough that a user who
+ * genuinely wants to re-check the market a couple of seconds later still can.
+ */
+const MANUAL_REFRESH_COOLDOWN_MS = 3000;
+
+/**
  * How long the one-off login spin of the Refresh glyph lasts — the honest "the
  * prefetch got you something newer" signal fired once after unlock when (and
  * only when) the login prefetch actually fetched fresh data.
@@ -264,6 +274,42 @@ export function refreshTickAction(args: {
 }): RefreshTickAction {
   if (!args.sessionMatches) return "stop";
   if (args.kind === "auto" && !args.kickoff && args.hidden) return "defer";
+  return "run";
+}
+
+/** What a tap of the Refresh button should do — see {@link manualRefreshDecision}. */
+export type ManualRefreshDecision = "run" | "promote" | "cooldown";
+
+/**
+ * Decide how to handle a manual tap of the Refresh button, kept pure so the
+ * (otherwise stateful) credit-saving rules are testable in isolation:
+ *
+ *  - **cooldown** — a manual refresh was accepted only moments ago (within
+ *    {@link MANUAL_REFRESH_COOLDOWN_MS}), or one is already in flight. Treat this
+ *    tap as an accidental double-click: acknowledge it on screen but spend no
+ *    credits on a second forced pull.
+ *  - **promote** — an *automatic* background pull is mid-flight. We can't start a
+ *    second overlapping refresh, but the user's deliberate tap should win, so the
+ *    in-flight round is upgraded to a manual one: it gets the manual feedback and
+ *    completion toast, and pushes the next automatic refresh out by the full
+ *    configured interval — so it truly feels like the manual refresh took over.
+ *  - **run** — nothing is in flight and the cooldown has lapsed: do the manual
+ *    pull now.
+ */
+export function manualRefreshDecision(args: {
+  refreshing: boolean;
+  inFlightKind: RefreshKind | null;
+  lastManualAt: number;
+  now: number;
+  cooldownMs?: number;
+}): ManualRefreshDecision {
+  const cooldownMs = args.cooldownMs ?? MANUAL_REFRESH_COOLDOWN_MS;
+  // A manual pull already running, or a second tap within the cooldown window of
+  // the last accepted one, is an accidental double-tap: don't spend more credits.
+  if (args.refreshing && args.inFlightKind === "manual") return "cooldown";
+  if (args.now - args.lastManualAt < cooldownMs) return "cooldown";
+  // An automatic pull is in flight: hand it the manual baton instead of bailing.
+  if (args.refreshing && args.inFlightKind === "auto") return "promote";
   return "run";
 }
 
@@ -402,6 +448,26 @@ export class App {
   private lastConnectivity: ConnectivityState = "online";
   /** Guards against overlapping price refreshes. */
   private refreshing = false;
+  /**
+   * Kind of the price refresh currently in flight (`null` when idle). Lets a
+   * manual tap tell an automatic background pull apart from another manual one,
+   * so {@link manualRefreshDecision} can hand an in-flight *auto* round the
+   * manual baton instead of bailing.
+   */
+  private refreshingKind: RefreshKind | null = null;
+  /**
+   * Set when a manual tap lands mid-flight on an automatic pull: the running
+   * round finishes as a *manual* one (manual feedback + toast, and the next
+   * auto-refresh pushed out by the full configured interval), so the tap takes
+   * priority and "feels like" a manual refresh without a second overlapping pull.
+   */
+  private promoteToManual = false;
+  /**
+   * Wall-clock time of the last *accepted* manual refresh, used by
+   * {@link manualRefreshDecision} to swallow accidental double-taps without
+   * spending a second forced pull's worth of credits.
+   */
+  private lastManualAt = 0;
   /**
    * Whether every live-priced holding was up to date as of the last network
    * refresh. Starts true so a portfolio that prices in a single round stays
@@ -2761,17 +2827,43 @@ export class App {
    * and — crucially — acknowledges the tap *even when an automatic pull is
    * already in flight*, where the old code silently bailed and the button felt
    * dead. On completion it confirms the outcome with a brief toast.
+   *
+   * Two credit-savers guard the entry (see {@link manualRefreshDecision}):
+   *  - a tiny cooldown swallows an accidental double-tap so it can't fire two
+   *    forced pulls back-to-back; and
+   *  - a tap that lands while an *automatic* pull is mid-flight promotes that
+   *    round to a manual one rather than wasting a second overlapping fetch — the
+   *    auto refresh is effectively stopped and its next tick pushed out by the
+   *    full configured interval, so the tap takes priority and feels manual.
    */
   private manualRefresh(): void {
-    if (this.refreshing) {
-      // An automatic pull is already running and will paint fresh prices; we
-      // can't start a second overlapping refresh, but the tap must not feel
-      // ignored, so flash the manual feedback and let it clear on its minimum.
+    const decision = manualRefreshDecision({
+      refreshing: this.refreshing,
+      inFlightKind: this.refreshingKind,
+      lastManualAt: this.lastManualAt,
+      now: Date.now(),
+    });
+    if (decision === "cooldown") {
+      // An accidental double-tap (or a tap while a manual pull is still running):
+      // acknowledge it on screen so the button doesn't feel dead, but spend no
+      // credits on a second forced pull.
       this.setUpdating(true, "manual");
       this.setUpdating(false, "manual");
-      this.toast("Already refreshing prices…");
+      this.toast("Just refreshed, showing the latest prices.");
       return;
     }
+    if (decision === "promote") {
+      // An automatic pull is already running; we can't start a second overlapping
+      // refresh, so hand it the manual baton: flash the manual feedback now and
+      // let the in-flight round finish as a manual one (manual toast, and the
+      // next auto-refresh pushed out by the full interval).
+      this.lastManualAt = Date.now();
+      this.promoteToManual = true;
+      this.setUpdating(true, "manual");
+      this.toast("Refreshing prices now…");
+      return;
+    }
+    this.lastManualAt = Date.now();
     // No network link: skip the credit/market-phase logic (and its toasts) and
     // go straight to the offline handler, which repaints last-known values and
     // confirms the lack of connection honestly.
@@ -2980,6 +3072,10 @@ export class App {
       return;
     }
     this.refreshing = true;
+    this.refreshingKind = kind;
+    // A fresh round clears any stale promotion request from a prior round; a tap
+    // landing *during* this round will re-set it below.
+    if (kind === "manual") this.promoteToManual = false;
     // Coalesce the login warm-up with this kickoff: if the warm-up is still
     // priming the shared caches, let it finish *before* we start the network
     // pass. Otherwise the two race the same per-minute budget — both pulling FX
@@ -2991,6 +3087,7 @@ export class App {
       await this.prefetchPromise.catch(() => undefined);
       if (session !== this.sessionId) {
         this.refreshing = false;
+        this.refreshingKind = null;
         return;
       }
     }
@@ -3008,6 +3105,7 @@ export class App {
       await this.primeStaleGraphPackages().catch(() => undefined);
       if (session !== this.sessionId) {
         this.refreshing = false;
+        this.refreshingKind = null;
         return;
       }
     }
@@ -3045,11 +3143,21 @@ export class App {
       });
     } finally {
       this.refreshing = false;
+      this.refreshingKind = null;
     }
     if (session !== this.sessionId || report === null) {
+      this.promoteToManual = false;
       this.setUpdating(false, feedbackKind);
       return;
     }
+    // A manual tap that landed while this (automatic) round was in flight promotes
+    // it to a manual refresh: from here on it gets the manual completion toast and
+    // pushes the next auto-refresh out by the full configured interval, so the
+    // user's tap takes priority and the automatic schedule is effectively reset —
+    // all without a second overlapping pull draining more credits.
+    const promoted = this.promoteToManual;
+    this.promoteToManual = false;
+    const effectiveKind: RefreshKind = promoted ? "manual" : kind;
     // The live refresh for this round is done: take the status pill down. While
     // a >per-minute-cap portfolio is still filling in we used to keep the pill
     // (with a live "N of M" count) up *between* burst rounds, but that left it
@@ -3057,10 +3165,10 @@ export class App {
     // still spins during each actual fetch, and the per-row "as of" chips show
     // which holdings are still on last-known values, so the staged fill stays
     // visible without a persistent floating banner.
-    this.setUpdating(false, feedbackKind);
+    this.setUpdating(false, effectiveKind);
     // Confirm the outcome of a manual tap so the user understands what happened
     // (fresh prices pulled, already up to date, or some deferred by the budget).
-    if (kind === "manual") {
+    if (effectiveKind === "manual") {
       const connectivityToast = connectivityNotice(this.lastConnectivity);
       // No service answered (offline, or every provider failed): say so plainly
       // rather than a coverage summary that would read like a successful pull.
@@ -3092,11 +3200,11 @@ export class App {
     // Only the automatic scheduler pops this — a manual tap already gets the
     // descriptive manualRefreshSummary toast above (e.g. "All 18 holdings up to
     // date"), so firing both would double up.
-    if (nowAllLive && !this.pricesAllLive && kind !== "manual") {
+    if (nowAllLive && !this.pricesAllLive && effectiveKind !== "manual") {
       this.toast("All prices live, every holding is now on a fresh price.");
     }
     this.pricesAllLive = nowAllLive;
-    const delayMs = nextRefreshDelayMs({
+    let delayMs = nextRefreshDelayMs({
       deferred: report.deferred,
       // Pace auto-refresh out as the rolling daily free-tier budget runs low.
       dayRemaining: report.dayRemaining,
@@ -3107,6 +3215,13 @@ export class App {
       // pull cleanly pushes the auto schedule out by the configured interval.
       slowIntervalMs: this.state.config.updateMinutes * 60 * 1000,
     });
+    // A tap that took over an in-flight auto pull (promotion) must push the next
+    // *automatic* refresh out by the full configured interval — never a ~1-minute
+    // burst — so the manual refresh genuinely supersedes the auto schedule instead
+    // of letting it resume seconds later.
+    if (promoted) {
+      delayMs = Math.max(delayMs, this.state.config.updateMinutes * 60 * 1000);
+    }
     // Idea A — near-free freshness polling: piggy-back the cheap meta/304 blob
     // check so a fresh desktop publish is picked up automatically within a few
     // minutes, without the user reopening the app. A *manual* tap always checks
@@ -3115,15 +3230,15 @@ export class App {
     // doesn't compete with the startup burst. To keep the automatic check alive
     // for portfolios whose prices never fully stop deferring (more symbols than
     // the budget), it also runs on a slow wall-clock cadence regardless.
-    if (kind === "manual" || report.deferred.length === 0 || this.blobCheckDue()) {
+    if (effectiveKind === "manual" || report.deferred.length === 0 || this.blobCheckDue()) {
       void this.maybeRefreshBlob(session);
     }
     this.scheduleNext(session, delayMs);
     this.pollLog(
       "schedule",
-      `Refresh finished (${kind}). ${report.deferred.length} still deferred. ` +
+      `Refresh finished (${effectiveKind}${promoted ? ", promoted from auto" : ""}). ${report.deferred.length} still deferred. ` +
         `Next auto-refresh in ~${Math.round(delayMs / 1000)}s` +
-        `${report.deferred.length > 0 ? " (burst)" : ""}.`,
+        `${report.deferred.length > 0 && !promoted ? " (burst)" : ""}.`,
     );
   }
 
@@ -3715,6 +3830,8 @@ export class App {
     this.manualFeedbackUntil = 0;
     this.setUpdating(false);
     this.refreshing = false;
+    this.refreshingKind = null;
+    this.promoteToManual = false;
     this.state.passphrase = null;
     this.state.data = null;
     // Drop the prefetch warm-up state so its status never lingers on the unlock
