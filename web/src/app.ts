@@ -1413,11 +1413,12 @@ export class App {
    * genuine market-data gap.
    *
    * This is the **metadata prediction** only ("will a fresh blob save a token?").
-   * Its suppressive power is honoured solely while the blob is still *pending* — a
-   * live refresh round runs *after* the blob is decrypted and applied, so
-   * {@link buildPullFreshness} layers the **Pillar-4 blob-trust re-engage overlay**
-   * on top of this value (see there) and never lets a recent metadata timestamp
-   * mask a gap the applied blob turned out not to cover.
+   * It is used **exclusively** by the pre-decrypt path
+   * ({@link buildPrefetchFreshness}), where the blob has not yet been applied and
+   * its recency predicts whether downloading it will cover the device gap (cheap,
+   * zero per-symbol tokens). The post-decrypt path ({@link buildPullFreshness})
+   * does NOT consult this value — after decrypt, the blob is on-device and only
+   * `deviceDaysMissing` drives the freshness tier.
    */
   private blobDaysOld(now: Date): number {
     if (this.blobPublishedAt) return settledSessionsSince(this.blobPublishedAt, now);
@@ -1438,29 +1439,29 @@ export class App {
    * aggressive than the per-symbol cache TTLs the executors already enforce: it can
    * skip a leg only when the executor would itself have fetched nothing.
    *
-   * **Pillar-4 blob-trust re-engage overlay.** The metadata `blobDaysOld` predicts
-   * "a fresh blob will cover the gap, so don't spend a market token". That
-   * prediction is only safe *before* the blob is decrypted. A refresh round runs
-   * *after* decrypt (the dashboard is already built from the blob), so here we lift
-   * `blobDaysOld` to at least the observed on-device gap (`deviceDaysMissing`): if
-   * the applied blob actually covered the gap the device is fresh and this is a
-   * no-op, but if it *lacked* the coverage its metadata can no longer mask the gap —
-   * the heavily-outdated row re-engages and the skipped leg is pulled for real
-   * (`docs/centralized_data_pull_plan.md`, "Blob-trust re-engage" overlay).
+   * **Post-decrypt: on-device age is the sole tier driver.** This method runs
+   * *after* the blob is decrypted and applied to on-device storage; the blob's data
+   * is already reflected in the cached quotes/bars. Therefore `blobDaysOld` is set
+   * to exactly `deviceDaysMissing` — eliminating the blob-metadata prediction signal
+   * from the tier decision. If the blob covered the gap, the device is fresh and
+   * tiers land correctly; if it didn't, `deviceDaysMissing` already reflects the
+   * remaining gap and the tier re-engages accordingly. The blob-metadata prediction
+   * (`blobDaysOld` from {@link blobDaysOld}) is relevant only **pre-decrypt** (in
+   * {@link buildPrefetchFreshness}), where it answers "will downloading the blob
+   * save a per-symbol token?".
    */
   private buildPullFreshness(now: Date): PullFreshness {
     const data = this.state.data;
-    const nowMs = now.getTime();
-    const blobDaysOldMeta = this.blobDaysOld(now);
     if (!data) {
       return {
         dataAgeMs: 0,
         deviceDaysMissing: 0,
-        blobDaysOld: blobDaysOldMeta,
+        blobDaysOld: 0,
         quoteAgeMs: 0,
         navHeldForToday: true,
       };
     }
+    const nowMs = now.getTime();
     const plan = buildFetchPlan(data, FETCHABLE_NAV_CLASSES);
     const cached = readCachedQuotes();
     let oldestQuoteAt: number | null = null;
@@ -1508,9 +1509,13 @@ export class App {
       return e?.priceType === "market";
     });
     const deviceDaysMissing_ = deviceDaysMissing({ anyMarketMissing, marketStale, dataAgeMs });
-    // Blob-trust re-engage overlay (post-decrypt): the metadata prediction can only
-    // *raise* the floor, never mask the observed on-device gap. See the docstring.
-    const blobDaysOld = Math.max(blobDaysOldMeta, deviceDaysMissing_);
+    // Post-decrypt: the blob is already applied to on-device storage, so on-device
+    // freshness (deviceDaysMissing) is the sole truth — the blob metadata age is
+    // irrelevant. If the blob covered the gap the device is fresh; if it didn't,
+    // deviceDaysMissing already reflects that. Passing blobDaysOld = deviceDaysMissing
+    // removes the blob-metadata signal from the tier decision entirely, so the
+    // heavily-outdated / minorly-outdated boundaries key only on the device state.
+    const blobDaysOld = deviceDaysMissing_;
     const navHeldForToday = !this.navStale(now);
     return { dataAgeMs, deviceDaysMissing: deviceDaysMissing_, blobDaysOld, quoteAgeMs, fxAgeMs, navHeldForToday };
   }
@@ -3529,9 +3534,10 @@ export class App {
       const metaUrl = resolveMetaUrl(config);
       const meta = metaUrl ? await fetchBlobMeta(metaUrl) : null;
       if (session !== this.sessionId) return;
-      // Remember the best-available blob's publish time so the orchestrator's
-      // `blobDaysOld` freshness keys on the *remote* recency (Pillar 1 assumption
-      // 8), not the on-device download age.
+      // Remember the best-available blob's publish time so the pre-decrypt
+      // orchestrator path ({@link buildPrefetchFreshness}) can key its
+      // `blobDaysOld` freshness on the *remote* recency — post-decrypt this value
+      // is unused (only on-device freshness drives the tier).
       if (meta?.publishedAt) this.blobPublishedAt = meta.publishedAt;
       if (!force && meta && this.metaVersion !== null && meta.version === this.metaVersion) {
         this.pollLog("blob", `Data-file check: unchanged (meta version ${meta.version}).`);
@@ -4859,16 +4865,17 @@ export class App {
     // Pillar 1/4 (WS-part-2): this is **no longer a standing pre-step that fires
     // every round** — it is dissolved into the orchestrator's freshness decision.
     // Pillar 1 — compute the **one** orchestrator plan for this whole round, keyed
-    // on the real freshness ledger (incl. the runtime-active best-available
-    // `blobDaysOld` from blob metadata + the post-decrypt re-engage overlay). The
+    // on the real freshness ledger (keyed solely on on-device freshness
+    // post-decrypt — `blobDaysOld` equals `deviceDaysMissing`). The
     // single plan governs *both* the 1D/1W bar gate (below) and the quote / NAV / FX
     // legs (in {@link refreshPrices}), so bars are never decided — or pulled — twice
     // and the two gates can never disagree.
-    // C4 — on the login kickoff, await the cheap blob-meta probe so the round's
-    // `blobDaysOld` reflects the *remote* recency before the heavy spend decision.
-    // A fresh remote blob that already covers the gap then stops the kickoff
-    // re-pulling market credits. Time-boxed, render-free, kickoff-only (ordinary
-    // ticks must not pay a probe latency every cadence).
+    // C4 — on the login kickoff, await the cheap blob-meta probe so we have the
+    // latest publish time for the blob-download version check (maybeRefreshBlob).
+    // Post-decrypt freshness tiers no longer use blob metadata (only on-device age),
+    // but the probe is still needed to know if a newer blob export is available.
+    // Time-boxed, render-free, kickoff-only (ordinary ticks must not pay a probe
+    // latency every cadence).
     if (opts.kickoff ?? false) {
       await this.refreshBlobMeta(session);
       if (session !== this.sessionId) {
