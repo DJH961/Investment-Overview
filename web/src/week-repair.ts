@@ -16,10 +16,12 @@
  * blob is unchanged, so its `live_graphs.week` whole-book points still carry the
  * nosedive — and the web {@link ./springboard.springboardWeekCurve} paints those
  * points verbatim on every render. A hard "Reset cache & re-pull everything"
- * clears the local price caches and the IndexedDB series store but **not** the
- * cached blob (an unchanged remote blob comes back `304`), so the same false
- * `week.points` is re-springboarded immediately. The cache reset therefore can
- * never fix it; only a render-time repair can.
+ * now forces an *unconditional* blob re-download (the cache reset used to be
+ * defeated by a `304 Not Modified` on the unchanged remote blob), but that still
+ * cannot help while the **remote** blob predates the 4.11.1 generator fix: a
+ * faithful re-download of a still-corrupt export re-paints the same false
+ * `week.points`. Until a fresh export lands, only a render-time repair can
+ * de-nosedive the springboarded curve.
  *
  * ## The repair
  * This is the web analogue of the desktop's `_nearest_complete_date` gap-fill: a

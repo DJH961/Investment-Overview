@@ -3372,7 +3372,16 @@ export class App {
     }
   }
 
-  private async maybeRefreshBlob(session: number): Promise<void> {
+  /**
+   * @param options.force A hard reset ("Update all data now"): re-download the
+   *   blob **unconditionally**, however new. The cheap meta-version short-circuit
+   *   is skipped and the conditional validators are withheld so the server can
+   *   never answer `304 Not Modified` and serve back the (possibly corrupt)
+   *   cached copy — the freshest published blob is always pulled and re-rendered,
+   *   even if it is byte-for-byte what we already hold.
+   */
+  private async maybeRefreshBlob(session: number, options: { force?: boolean } = {}): Promise<void> {
+    const force = options.force ?? false;
     const { config, passphrase } = this.state;
     if (!passphrase) return;
     const url = resolveBlobUrl(config);
@@ -3381,7 +3390,9 @@ export class App {
     // measures from when we last *tried*, regardless of the outcome below.
     this.lastBlobCheckAt = Date.now();
     try {
-      // 1. Lightweight version probe. A matching stamp means "no newer export".
+      // 1. Lightweight version probe. A matching stamp means "no newer export"
+      //    — but a forced reset re-downloads regardless, so it never short-
+      //    circuits here.
       const metaUrl = resolveMetaUrl(config);
       const meta = metaUrl ? await fetchBlobMeta(metaUrl) : null;
       if (session !== this.sessionId) return;
@@ -3389,22 +3400,26 @@ export class App {
       // `blobDaysOld` freshness keys on the *remote* recency (Pillar 1 assumption
       // 8), not the on-device download age.
       if (meta?.publishedAt) this.blobPublishedAt = meta.publishedAt;
-      if (meta && this.metaVersion !== null && meta.version === this.metaVersion) {
+      if (!force && meta && this.metaVersion !== null && meta.version === this.metaVersion) {
         this.pollLog("blob", `Data-file check: unchanged (meta version ${meta.version}).`);
         return;
       }
 
-      // 2. Conditional download: an unchanged blob comes back as 304.
+      // 2. Download. A routine check is *conditional* (an unchanged blob comes
+      //    back as a bodyless 304 — no transfer, no decrypt). A forced reset is
+      //    *unconditional* (validators withheld) so the server can never answer
+      //    304 and the full blob is always pulled afresh.
       const cached = readCachedEnvelope();
-      const result = await fetchEnvelopeConditional(url, {
-        etag: cached?.etag,
-        lastModified: cached?.lastModified,
-      });
+      const result = await fetchEnvelopeConditional(
+        url,
+        force ? null : { etag: cached?.etag, lastModified: cached?.lastModified },
+      );
       if (session !== this.sessionId) return;
 
       if (result.status === "not-modified") {
         // Nothing changed on the wire; just remember the latest meta version so
-        // the next probe can short-circuit on step 1.
+        // the next probe can short-circuit on step 1. (Unreachable when forced —
+        // a validator-less request can never 304 — but handled for safety.)
         if (meta) this.persistEnvelope(this.envelope, { metaVersion: meta.version, etag: cached?.etag, lastModified: cached?.lastModified });
         this.pollLog("blob", "Data-file check: 304 Not Modified (no new export).");
         return;
@@ -3420,18 +3435,26 @@ export class App {
       // Nothing to do if the ciphertext is byte-for-byte what we already have.
       // For AES-256-GCM the (nonce, ciphertext) pair uniquely identifies the
       // plaintext: a fresh export always re-encrypts under a new random nonce,
-      // so matching both fields means the decrypted portfolio is unchanged.
-      if (this.envelope && envelope.ciphertext === this.envelope.ciphertext && envelope.nonce === this.envelope.nonce) {
+      // so matching both fields means the decrypted portfolio is unchanged. A
+      // forced reset deliberately re-decrypts and re-renders even an unchanged
+      // blob — re-seeding the graphs from the freshly-pulled `live_graphs`.
+      if (!force && this.envelope && envelope.ciphertext === this.envelope.ciphertext && envelope.nonce === this.envelope.nonce) {
         return;
       }
       // A genuinely new export is on the wire — and it's worth telling the user:
       // a new blob means the desktop published a larger update (new holdings,
       // transactions, fresh history), so a bigger refresh is about to land. The
       // *checking* stays silent (no toast on a 304 / unchanged version); only an
-      // actual new-data load pops up.
+      // actual new-data load pops up. A forced reset already toasts "Re-pulling
+      // …" from its caller, so it stays quiet here.
       const hadData = this.envelope !== null;
-      if (hadData) this.toast("New data found — loading the latest portfolio…");
-      this.pollLog("blob", `New encrypted export downloaded (meta version ${meta?.version ?? "unknown"}) — decrypting and re-rendering.`);
+      if (hadData && !force) this.toast("New data found — loading the latest portfolio…");
+      this.pollLog(
+        "blob",
+        force
+          ? `Hard reset — forced full re-download of the encrypted export (meta version ${meta?.version ?? "unknown"}); decrypting and re-rendering.`
+          : `New encrypted export downloaded (meta version ${meta?.version ?? "unknown"}) — decrypting and re-rendering.`,
+      );
       const data = await decryptEnvelopeToJson<MobileExport>(envelope, passphrase);
       if (session !== this.sessionId) return;
       this.envelope = envelope;
@@ -4097,12 +4120,14 @@ export class App {
    *
    * It clears the quote/FX/EUR-USD caches **and the persisted intraday store**
    * (the bars/tips behind the live 1D/1W graphs), drops the in-memory blob
-   * version stamp so the next check re-pulls the data file unconditionally,
-   * returns to the dashboard, and runs a forced full refresh. Only the soft
-   * "conserve the last credits" gate is bypassed — the hard free-tier
-   * per-minute/day budget in {@link loadQuotes} still applies, so a from-scratch
-   * pull can never blow the daily allowance (any overflow simply defers and
-   * back-fills on later ticks).
+   * version stamp, and forces an **unconditional** re-download of the encrypted
+   * export — withholding the HTTP validators so the server can never answer
+   * `304 Not Modified` and hand back the cached copy, however new the remote
+   * blob is. It then returns to the dashboard and runs a forced full refresh.
+   * Only the soft "conserve the last credits" gate is bypassed — the hard
+   * free-tier per-minute/day budget in {@link loadQuotes} still applies, so a
+   * from-scratch pull can never blow the daily allowance (any overflow simply
+   * defers and back-fills on later ticks).
    */
   private updateAllFromScratch(): void {
     // Forget every cached price so nothing is served from a stale window.
@@ -4114,8 +4139,9 @@ export class App {
       "note",
       "Hard reset (Settings) — cleared price caches and wiping the 1D/1W graph store, then re-pulling everything from scratch.",
     );
-    // Force the blob check to re-download (rather than short-circuit on an
-    // unchanged version stamp) the next time it runs.
+    // Drop the in-memory version stamp too. The forced re-download below already
+    // pulls unconditionally, but clearing it keeps the post-reset state honest
+    // (the next routine probe re-establishes the stamp from the fresh blob).
     this.metaVersion = null;
     // Back to the dashboard immediately so the reset feels responsive, then
     // wipe the persisted intraday store and re-pull (see below — the wipe must
@@ -4144,7 +4170,7 @@ export class App {
       /* best-effort: leave the intraday store as-is if the wipe fails. */
     }
     const session = this.sessionId;
-    void this.maybeRefreshBlob(session);
+    void this.maybeRefreshBlob(session, { force: true });
     if (this.refreshing) return; // a pull is already in flight; it will repaint
     // The store was just wiped, so the 1D/1W graphs are stale: `primeGraphs` makes
     // the forced refresh pull those packages first (their bars double as quotes),

@@ -14,6 +14,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.11.3] — 2026-06-26
+
+### Fixed
+
+- **The hard reset ("Update all data now") now forces a full, unconditional
+  re-download of the encrypted blob, no matter how new it is.** Previously the
+  reset cleared the local price caches and the IndexedDB graph store and dropped
+  the in-memory version stamp, but the follow-up blob fetch was still
+  *conditional* — it sent the cached `ETag`/`Last-Modified` validators, so an
+  unchanged remote blob came back as a bodyless `304 Not Modified` and the
+  (possibly stale or corrupt) cached copy was reused verbatim. That was the
+  mechanism behind "a hard reset did nothing" for the 1W nosedive. The reset now
+  **withholds the validators** so the server can never answer `304`, always
+  pulls the freshest published blob, and re-decrypts and re-renders it even when
+  it is byte-for-byte what we already held. Routine background blob checks are
+  unchanged: they stay conditional (and free) so they still cost no transfer
+  when nothing has changed.
+
 ## [4.11.2] — 2026-06-26
 
 ### Fixed
