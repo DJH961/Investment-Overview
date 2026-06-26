@@ -132,6 +132,7 @@ import { reconcileHandshake } from "./login-handshake";
 import { springboardSessionCurve, springboardWeekCurve, parseExportedPoints } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
 import {
+  fxBaselinesDisagree,
   graphAnchorFx,
   readSessionCloseFx,
   readSessionOpenFx,
@@ -4060,21 +4061,35 @@ export class App {
       this.lastDataPullAt = Date.now();
       writeLastPull(this.lastDataPullAt);
     }
-    // FX KPI baseline recovery. The "today" FX move is measured from the prior
-    // session's settled EUR/USD close, which only the live provider's quote
-    // carries directly. When the spot came from cache / Tiingo / end-of-day (or a
-    // cold start) that prior close is missing, leaving the FX KPI stuck on "—"
-    // with no way to recover. Fall back to the close persisted in the on-device
-    // 1D FX bars (now fetched one session wide; see {@link sessionFxHistoryWindow})
-    // so the baseline — and with it the FX-aware move and KPI — recovers from an
-    // empty state rather than fabricating a swing.
-    if (eurUsdPrev === null) {
-      const recovered = await this.barsPrevSessionCloseFx(lastSessionDate(new Date()));
-      if (recovered !== null) {
-        eurUsdPrev = recovered;
+    // FX KPI baseline: recover **and validate** the prior session's settled
+    // EUR/USD close that the "today" FX move is measured from. A wrong/stale
+    // baseline doesn't blank the KPI — it fabricates a wildly incorrect swing
+    // across the whole EUR view (issue #192). The on-device 1D FX bars carry a
+    // *dated* prior-session close (gated on the track actually reaching that
+    // close; see {@link sessionFxHistoryWindow}), so it is the trustworthy
+    // reference. Use it to:
+    //   1. recover a missing baseline (cache / Tiingo / end-of-day / cold start), and
+    //   2. correct a provider `previous_close` that materially disagrees with the
+    //      dated close — that provider value is then stale/garbled, not the settle.
+    // A clearly-broken baseline that still slips through (no bars to validate it)
+    // is dropped downstream by buildDashboard's plausibility guard.
+    const barsPrevClose = await this.barsPrevSessionCloseFx(lastSessionDate(new Date()));
+    if (barsPrevClose !== null) {
+      if (eurUsdPrev === null) {
+        eurUsdPrev = barsPrevClose;
         if (network) {
           this.pollLog("fx", "EUR/USD prior close recovered from on-device 1D FX bars.");
         }
+      } else if (fxBaselinesDisagree(eurUsdPrev, barsPrevClose)) {
+        if (network) {
+          this.pollLog(
+            "fx",
+            `EUR/USD prior close ${eurUsdPrev.toString()} disagreed with the dated on-device ` +
+              `close ${barsPrevClose.toString()}; using the dated close for the FX KPI.`,
+            "warn",
+          );
+        }
+        eurUsdPrev = barsPrevClose;
       }
     }
     const model = buildDashboard(data, quoteLoad.quotes, fx, new Date(), degradedReason, {
