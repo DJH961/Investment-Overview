@@ -183,3 +183,27 @@ describe("planPull — FX freshness overlay (Overlay 3)", () => {
     expect(plan.legs.fx).toBe(true);
   });
 });
+
+describe("planPull — C1 currency-known / phase context", () => {
+  it("accepts the phase + currencyKnown context as decision-neutral (gate lives upstream)", () => {
+    // The currency-known gate prevents an empty quote cache being inflated into a
+    // 10-day gap in buildPullFreshness (app.ts); by the time planPull runs the
+    // ledger is already honest, so carrying the context must not itself change the
+    // plan — a pre-decrypt, currency-unknown pass plans the same as a known one for
+    // an identical freshness ledger.
+    const fresh = { dataAgeMs: 0, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 0, navHeldForToday: true };
+    const known = planPull(ctx({ kind: "auto", freshness: fresh, phase: "post-decrypt", currencyKnown: true }));
+    const unknown = planPull(ctx({ kind: "auto", freshness: fresh, phase: "pre-decrypt", currencyKnown: false }));
+    expect(unknown.tier).toBe(known.tier);
+    expect(unknown.legs).toEqual(known.legs);
+  });
+
+  it("defaults the context fields to a known post-decrypt pass when omitted", () => {
+    // Omitting the optional C1 fields must behave exactly as the explicit defaults.
+    const stale = { dataAgeMs: 2 * ONE_HOUR_MS, deviceDaysMissing: 1, blobDaysOld: 0, quoteAgeMs: 2 * ONE_HOUR_MS, navHeldForToday: true };
+    const implicit = planPull(ctx({ kind: "manual", market: "closed", minutesSinceOpenMs: 0, freshness: stale }));
+    const explicit = planPull(ctx({ kind: "manual", market: "closed", minutesSinceOpenMs: 0, freshness: stale, phase: "post-decrypt", currencyKnown: true }));
+    expect(implicit.legs).toEqual(explicit.legs);
+    expect(implicit.tier).toBe(explicit.tier);
+  });
+});

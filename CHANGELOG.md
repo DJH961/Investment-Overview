@@ -14,6 +14,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.9.0] — 2026-06-26
+
+### Changed
+
+- **Login warm-up and the post-decrypt pull now share one brain.** Previously the
+  pre-decrypt warm-up (`prefetchLiveData`) fetched live prices but failed to record
+  them honestly in the freshness ledger, so the post-decrypt kickoff treated the
+  whole portfolio as "heavily outdated" and re-pulled everything — burning the bulk
+  of a free-tier minute on data it already had. The two paths are now reconciled so
+  the second pull only fetches what the first genuinely missed
+  (`docs/single_brain_pull_plan.md`, changes C1–C9):
+  - **Honest priming (C2).** Warm-up priming carries each symbol's native currency
+    into the quote cache instead of dropping every symbol on a `null`-currency guard,
+    so primed quotes survive into the post-decrypt freshness check.
+  - **Honest booking (C3).** Prices actually fetched during warm-up are booked into
+    the freshness ledger, so they are not re-counted as missing.
+  - **Currency-known gate (C1).** A missing market quote only inflates an entry to
+    "heavily outdated" once the instrument's native currency is known, preventing a
+    pre-decrypt blind spot from forcing a full re-pull. The pull context now carries
+    decision-neutral `phase`/`currencyKnown` fields for downstream planners.
+  - **Blob-meta probe before the kickoff (C4).** The kickoff refreshes the shared
+    blob metadata (with a short timeout) before planning its round, so freshly
+    written prices are seen and not re-fetched.
+  - **Bars-first NAV (C5).** Week-stale moving NAV funds are primed from daily-NAV
+    bars stamped with a real settled `valueDate`, so the headline uses the bar value
+    instead of falling back to the export and the funds drop out of the NAV quote leg.
+  - **Currency-mismatch handshake (C6).** The login handshake reconciles currency
+    mismatches between cached and freshly observed quotes.
+  - **NAV provider routing (C8).** NAV symbols are routed to Twelve Data first and
+    only spill to Tiingo on priority (login/start) rounds when budget remains;
+    non-priority rounds keep "NAV via Twelve Data only".
+  - **Accounted deferral queue (C9).** The deferred-symbol queue is extracted to a
+    pure `DeferredQueue` module that caps retries and bounds size so no deferred
+    entry ever vanishes unlogged.
+
 ## [4.8.0] — 2026-06-26
 
 ### Changed

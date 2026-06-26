@@ -120,6 +120,7 @@ import {
   recordTiingo429,
 } from "./provider-breaker";
 import { ledgerReservation, tiingoAvailable, twelveDataAvailable } from "./reservation";
+import { DEFERRED_MAX_ATTEMPTS, DeferredQueue } from "./deferred-queue";
 import { planFanout, planTwelveDataSafetyNet, TIINGO_RESERVE_CREDITS } from "./provider-fanout";
 import { reconcileHandshake } from "./login-handshake";
 import { springboardSessionCurve, springboardWeekCurve, parseExportedPoints } from "./springboard";
@@ -240,14 +241,6 @@ const PREFETCH_SPIN_MS = 1000;
  * this floor entirely.
  */
 const BLOB_CHECK_MIN_INTERVAL_MS = 60 * 1000;
-
-/**
- * C9 — bounds for the deferred work-queue. {@link DEFERRED_QUEUE_MAX} caps how
- * many parked symbols are tracked (oldest evicted first); {@link DEFERRED_MAX_ATTEMPTS}
- * caps per-symbol retries so a genuinely dead symbol cannot drive an endless burst.
- */
-const DEFERRED_QUEUE_MAX = 64;
-const DEFERRED_MAX_ATTEMPTS = 4;
 
 /**
  * C4 — how long the awaitable blob-meta probe ({@link App.refreshBlobMeta}) may
@@ -508,7 +501,7 @@ export class App {
    * {@link DEFERRED_QUEUE_MAX} and per-entry retry-capped so a never-filling symbol
    * cannot drive an infinite burst.
    */
-  private deferredQueue: Map<string, { reason: string; attempts: number }> = new Map();
+  private deferredQueue = new DeferredQueue();
   /**
    * Whether the login prefetch actually fetched *new* data (≥1 quote or a live
    * FX pull). Drives the one-off login spin of the Refresh glyph: it spins only
@@ -1206,26 +1199,12 @@ export class App {
   }
 
   /**
-   * C9 — record budget-deferred symbols on the work-queue. Each entry carries the
-   * reason it was parked; re-deferring a still-queued symbol does not reset its
-   * attempt count. The queue is bounded ({@link DEFERRED_QUEUE_MAX}); the oldest
-   * entries are evicted first so a flood of deferrals can never grow unbounded.
+   * C9 — record budget-deferred symbols on the work-queue, delegating the bounded
+   * bookkeeping to {@link DeferredQueue}. Each entry carries the reason it was
+   * parked; re-deferring a still-queued symbol does not reset its attempt count.
    */
   private enqueueDeferred(symbols: Iterable<string>, reason: string): void {
-    for (const symbol of symbols) {
-      if (!symbol) continue;
-      const existing = this.deferredQueue.get(symbol);
-      if (existing) {
-        existing.reason = reason;
-        continue;
-      }
-      this.deferredQueue.set(symbol, { reason, attempts: 0 });
-      while (this.deferredQueue.size > DEFERRED_QUEUE_MAX) {
-        const oldest = this.deferredQueue.keys().next().value;
-        if (oldest === undefined) break;
-        this.deferredQueue.delete(oldest);
-      }
-    }
+    this.deferredQueue.enqueue(symbols, reason);
   }
 
   /**
@@ -1240,29 +1219,14 @@ export class App {
   private drainDeferredQueue(now: Date): string[] {
     if (this.deferredQueue.size === 0) return [];
     const cached = readCachedQuotes();
-    const stillMissing: string[] = [];
-    const clearedByBlob: string[] = [];
-    const exhausted: string[] = [];
-    for (const [symbol, entry] of [...this.deferredQueue]) {
-      const have = cached.get(symbol)?.quote?.at ?? null;
-      if (have !== null) {
-        clearedByBlob.push(symbol);
-        this.deferredQueue.delete(symbol);
-        continue;
-      }
-      entry.attempts += 1;
-      if (entry.attempts > DEFERRED_MAX_ATTEMPTS) {
-        exhausted.push(symbol);
-        this.deferredQueue.delete(symbol);
-        continue;
-      }
-      stillMissing.push(symbol);
-    }
-    if (clearedByBlob.length > 0) {
+    const { stillMissing, clearedBySatisfied, exhausted } = this.deferredQueue.drain(
+      (symbol) => (cached.get(symbol)?.quote?.at ?? null) !== null,
+    );
+    if (clearedBySatisfied.length > 0) {
       this.pollLog(
         "orchestrator",
-        `Deferred queue: ${clearedByBlob.length} cleared by cached/blob data (no re-fetch) ` +
-          `[${clearedByBlob.join(", ")}].`,
+        `Deferred queue: ${clearedBySatisfied.length} cleared by cached/blob data (no re-fetch) ` +
+          `[${clearedBySatisfied.join(", ")}].`,
       );
     }
     if (exhausted.length > 0) {

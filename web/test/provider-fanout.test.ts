@@ -208,3 +208,62 @@ describe("planTwelveDataSafetyNet — reverse Tiingo → Twelve Data fallback", 
     expect(plan.twelveData).toEqual(["MSFT"]);
   });
 });
+
+describe("planFanout — NAV routing (C8)", () => {
+  it("routes NAVs to Twelve Data first when the TD minute has room", () => {
+    const plan = planFanout({
+      ...base,
+      kind: "auto",
+      symbols: syms(2),
+      navSymbols: ["FUNDA", "FUNDB"],
+      twelveDataSpendable: 8,
+    });
+    expect(plan.navTwelveData).toEqual(["FUNDA", "FUNDB"]);
+    expect(plan.navTiingo).toEqual([]);
+    expect(plan.deferred).toEqual([]);
+  });
+
+  it("spills NAVs to Tiingo on a login pull when the TD minute is spent", () => {
+    // The 1D graph backfill ate the whole TD minute (spendable 0), Tiingo is idle:
+    // a top-priority login pull must let the NAVs ride Tiingo, not starve.
+    const plan = planFanout({
+      ...base,
+      kind: "start",
+      symbols: [],
+      navSymbols: ["FUNDA", "FUNDB"],
+      twelveDataSpendable: 0,
+      tiingoSpendable: 40,
+    });
+    expect(plan.navTwelveData).toEqual([]);
+    expect(plan.navTiingo).toEqual(["FUNDA", "FUNDB"]);
+    expect(plan.deferred).toEqual([]);
+  });
+
+  it("defers NAVs (never Tiingo) on a non-priority round when TD is spent", () => {
+    // An ordinary auto tick keeps the "NAV via Twelve Data only" policy: with no TD
+    // budget the NAVs defer to the next round rather than spilling to Tiingo.
+    const plan = planFanout({
+      ...base,
+      kind: "auto",
+      symbols: [],
+      navSymbols: ["FUNDA", "FUNDB"],
+      twelveDataSpendable: 0,
+      tiingoSpendable: 40,
+    });
+    expect(plan.navTiingo).toEqual([]);
+    expect(plan.deferred).toEqual(["FUNDA", "FUNDB"]);
+  });
+
+  it("clamps the NAV Tiingo spill to the live Tiingo budget", () => {
+    const plan = planFanout({
+      ...base,
+      kind: "start",
+      symbols: [],
+      navSymbols: ["FUNDA", "FUNDB", "FUNDC"],
+      twelveDataSpendable: 0,
+      tiingoSpendable: 1,
+    });
+    expect(plan.navTiingo).toEqual(["FUNDA"]);
+    expect(plan.deferred).toEqual(["FUNDB", "FUNDC"]);
+  });
+});

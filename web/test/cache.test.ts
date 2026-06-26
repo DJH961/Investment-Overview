@@ -171,6 +171,33 @@ describe("primeQuotesFromBars", () => {
     primeQuotesFromBars(new Map([["VTI", []]]), new Map([["VTI", "USD"]]), 5000, s);
     expect(readCachedQuotes(s).size).toBe(0);
   });
+
+  it("C5: stamps a NAV bar tip as a settled, value-dated close (not live)", () => {
+    const s = memStorage();
+    // 2026-06-19 UTC midnight — the settled NAV bar day.
+    const day = Date.parse("2026-06-19T00:00:00Z");
+    primeQuotesFromBars(
+      new Map([["FXAIX", [bar(day, "210.5")]]]),
+      new Map([["FXAIX", "USD"]]),
+      9_000_000,
+      s,
+      new Set(["FXAIX"]),
+    );
+    const got = readCachedQuotes(s).get("FXAIX")!;
+    expect(got.quote.price?.toString()).toBe("210.5");
+    // The value-date is the bar day so priceForHolding accepts it as the headline.
+    expect(got.quote.valueDate).toBe("2026-06-19");
+    // A NAV tip is settled, never a live tick.
+    expect(got.quote.marketOpen).toBe(false);
+  });
+
+  it("C5: a non-NAV symbol keeps a null value-date (never mislabelled settled NAV)", () => {
+    const s = memStorage();
+    const day = Date.parse("2026-06-19T00:00:00Z");
+    primeQuotesFromBars(new Map([["VTI", [bar(day, "300")]]]), new Map([["VTI", "USD"]]), 9_000_000, s);
+    const got = readCachedQuotes(s).get("VTI")!;
+    expect(got.quote.valueDate).toBeNull();
+  });
 });
 
 describe("fx cache", () => {

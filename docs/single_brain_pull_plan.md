@@ -1,6 +1,8 @@
 # Single-Brain Pull Plan
 
-> **Status:** Proposed (planning only — no code yet).
+> **Status:** Implemented in v4.9.0 (feature bump). See the *Implementation notes*
+> section at the end of this document for what shipped and where the as-built work
+> diverged from this plan.
 > **Source:** Diagnosis of the v4.6.0 fresh-device login polling log (2026-06-26).
 > **Anchored against:** current `origin/main` **v4.8.0**. All line numbers below are
 > v4.8.0. They will drift; re-grep the named symbol before editing. Symbols and
@@ -414,3 +416,65 @@ of one day plus a gamble (C5), look at the data file's freshness *before* spendi
 (C4), and make two lying log lines tell the truth (C7). Together they take a login that
 burned 31 of 40 hourly credits in 40 seconds down to the handful of pulls that were
 ever actually needed.
+
+---
+
+## Implementation notes (as built — v4.9.0)
+
+This plan shipped in **v4.9.0** (feature bump; see `CHANGELOG.md`). Each change below
+notes the symbols touched and any honest divergence from the plan as written. Line
+numbers in the plan above are v4.8.0 anchors and have since drifted — re-grep the named
+symbol.
+
+- **C1 — currency-known gate.** `buildPullFreshness` (`web/src/app.ts`) no longer
+  inflates an entry to the 10-day "heavily outdated" bucket on a missing market quote
+  unless that entry's `nativeCurrency` is known, so a pre-decrypt blind spot can't
+  force a full re-pull. A `currencyKnownForPlan()` helper plus decision-neutral
+  `phase` / `currencyKnown` fields on `PullContext` (`web/src/data-orchestrator.ts`)
+  thread the warm-up phase to downstream planners.
+  - **Divergence (faithfulness note):** the plan's ideal was to literally route the
+    warm-up *through* `planPull` so the two pulls share one code path. A full planner
+    merge was judged too risky for one change, so the *observable invariant* — the
+    second pull only fetches what the first genuinely missed — is delivered by the
+    honest-ledger pair (C2 priming + C3 booking) plus this gate. The new `PullContext`
+    fields are intentionally decision-neutral (the gate lives upstream in `app.ts`),
+    and the data-orchestrator test asserts they do not by themselves alter routing.
+- **C2 — honest priming.** Warm-up priming carries each symbol's `nativeCurrency` into
+  the quote cache (`primeQuotesFromBars` / `PlannedSymbol.nativeCurrency` in
+  `web/src/cache.ts`) instead of dropping every symbol on the old `currency === null`
+  guard, so primed quotes survive into the post-decrypt freshness check.
+- **C3 — honest booking.** Prices actually fetched during warm-up are booked into the
+  freshness ledger so they are not later re-counted as missing.
+- **C4 — blob-meta probe before the kickoff.** A module-level `withTimeout` helper and
+  a `refreshBlobMeta` method (`web/src/app.ts`) refresh the shared blob metadata
+  (bounded by `BLOB_META_PROBE_TIMEOUT_MS = 2500`) before `planRoundPull`, with a
+  session-validity recheck so a stale-but-already-written price is seen and not
+  re-fetched. Kickoff-only.
+- **C5 — bars-first NAV.** Root cause: `primeQuotesFromBars` stamped `valueDate: null`,
+  so `priceForHolding` (`web/src/compute.ts`) rejected bar-primed NAV quotes as stale
+  and the headline fell back to the export. Fix: `primeQuotesFromBars` gained a
+  `navValueDateSymbols` set that stamps NAV quotes with the bar day's settled
+  `valueDate` (and `marketOpen: false`); `prefetchNavWeekBars` pulls 1W daily-NAV bars
+  for week-stale moving funds via `wrapDailyNavFetcher(makePriceBarFetcher(...))`,
+  books them, and drops them from the NAV quote leg.
+- **C6 — currency-mismatch handshake.** The login handshake
+  (`web/src/login-handshake.ts`) reconciles currency mismatches between cached and
+  freshly observed quotes.
+- **C7 — truthful log lines.** The two misleading log lines now report what actually
+  happened.
+- **C8 — NAV provider routing.** `allocateNav` (`web/src/provider-fanout.ts`) routes
+  NAV symbols to Twelve Data first (up to remaining TD budget) and only spills to
+  Tiingo on a `priority` (login/start) round when Tiingo is available and budget
+  remains; otherwise defers. Non-priority rounds keep "NAV via Twelve Data only".
+- **C9 — accounted deferral queue.** The deferred-symbol logic is extracted to a pure
+  `DeferredQueue` module (`web/src/deferred-queue.ts`, `DEFERRED_QUEUE_MAX = 64`,
+  `DEFERRED_MAX_ATTEMPTS = 4`) so it is unit-testable and so no deferred entry vanishes
+  unlogged: blob-satisfied entries are cleared (logged), retries are capped, and the
+  queue is size-bounded (oldest evicted). `drainDeferredQueue` deliberately does *not*
+  re-inject symbols into `refreshPrices` — the normal round already re-pulls stale
+  uncached symbols; the queue exists for honest accounting, not re-fetching.
+
+**Tests added:** C1 (`data-orchestrator.test.ts`), C5 (`cache.test.ts`,
+`compute.test.ts`), C6 (`login-handshake.test.ts`), C8 (`provider-fanout.test.ts`),
+C9 (`deferred-queue.test.ts`). Full web suite green (typecheck + 1084 vitest tests +
+build); Python suite unaffected (web-only change).
