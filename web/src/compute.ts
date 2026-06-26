@@ -28,6 +28,7 @@ import {
 } from "./phase4";
 import type { ExportCashflow, ExportHolding, MobileExport } from "./types";
 import { buildCalculatorData, type CalcData } from "./calculator";
+import { fxBaselineImpliesImplausibleMove } from "./session-fx";
 import type { DailyClose } from "./value-history";
 import { isMoneyMarketHolding } from "./money-market";
 import { LIVE_PRICE_MAX_STALENESS_MS, isUsMarketOpen } from "./market-hours";
@@ -195,7 +196,16 @@ export interface OverviewView {
   todayFxMoveEur: Decimal;
   /** Provenance of today's EUR/USD spot, for honest end-of-day-FX labelling. */
   eurUsdSource: EurUsdSourceLabel;
-  /** EUR→USD at the prior session close used for the FX-aware move; null when unknown. */
+  /**
+   * EUR→USD at the prior session close used for the FX-aware move; null when
+   * unknown. Sourced from the live provider's settled `previous_close`, and — when
+   * that is missing (a cache / Tiingo / end-of-day spot, or a cold start) —
+   * recovered from the on-device 1D FX bars so the FX KPI's "today" baseline
+   * survives an empty/stale state (see `App.barsPrevSessionCloseFx`). A baseline
+   * that implies an implausibly large single-session EUR/USD move is treated as
+   * stale/garbled and dropped to null, so the move degrades to the FX-neutral
+   * figure rather than showing a wildly incorrect swing (issue #192).
+   */
   fxRateEurUsdPrev: Decimal | null;
   /** Month-to-date growth on the start-of-month value + net flows since. */
   mtdGrowthPct: Decimal | null;
@@ -1024,7 +1034,25 @@ export function buildDashboard(
   // with EUR→USD swapped for the prior session's close. When no prior EUR/USD is
   // known, `fxPrev` is just `fx`, so the move degrades to FX-unaware rather than
   // inventing a swing.
-  const fxPrevEurUsd = opts.fxPrevEurUsd ?? null;
+  //
+  // Safety net against a *stale / garbled* baseline (issue #192: the FX growth was
+  // always shown, just wildly incorrect). The same prior close re-marks the whole
+  // EUR view — the currency box, every holding's FX-aware move, the "Currency
+  // effect since yesterday" — so a wrong baseline (a stale provider
+  // `previous_close`, a days-old cached one) fabricates a huge one-session FX
+  // swing. When the baseline implies an implausibly large single-session EUR/USD
+  // move it is dropped here, so the move degrades to the FX-neutral figure and the
+  // KPI shows "—" rather than a wild number. This is the web analog of the desktop
+  // daily-growth FX guard (services/metrics_service.py::_compute_daily_growth).
+  const nowEurUsd =
+    fx.rates.USD ??
+    (data.meta.fx_rate_eur_usd !== null && data.meta.fx_rate_eur_usd !== undefined
+      ? new Decimal(data.meta.fx_rate_eur_usd)
+      : null);
+  const fxPrevEurUsdRaw = opts.fxPrevEurUsd ?? null;
+  const fxPrevEurUsd = fxBaselineImpliesImplausibleMove(nowEurUsd, fxPrevEurUsdRaw)
+    ? null
+    : fxPrevEurUsdRaw;
   const fxPrev: FxRates =
     fxPrevEurUsd !== null && fxPrevEurUsd.greaterThan(0)
       ? { base: fx.base, rates: { ...fx.rates, USD: fxPrevEurUsd } }
@@ -1229,11 +1257,9 @@ export function buildDashboard(
     ? (dividendsIncomeEur ?? totalDividendsEur).dividedBy(totalValueEur)
     : null;
 
-  const fxRateEurUsd =
-    fx.rates.USD ?? // the live/loaded spot that valued the current marks
-    (data.meta.fx_rate_eur_usd !== null && data.meta.fx_rate_eur_usd !== undefined
-      ? new Decimal(data.meta.fx_rate_eur_usd)
-      : null);
+  // The live/loaded spot that valued the current marks (see `nowEurUsd` above,
+  // computed early so the stale-baseline guard can measure today's move against it).
+  const fxRateEurUsd = nowEurUsd;
 
   // --- USD companions for the growth KPIs -----------------------------------
   // Current marks (value, today's move) use today's spot; the cost basis uses

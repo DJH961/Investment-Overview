@@ -45,6 +45,7 @@ import {
 } from "./cache";
 import {
   lastSessionDate,
+  previousTradingSession,
   recentTradingSessions,
 } from "./market-hours";
 import {
@@ -75,6 +76,28 @@ export interface DateWindow {
 export function sessionFxWindow(now: Date = new Date()): DateWindow {
   const day = lastSessionDate(now);
   return { startDate: day, endDate: day };
+}
+
+/**
+ * The window the **1D FX-history backfill** pulls — the prior trading session
+ * through the current one, one session wider than the curve's own
+ * {@link sessionFxWindow}.
+ *
+ * The live 1D curve only ever *draws* the current session (its bars are clamped
+ * to `[open, close]` before display), so a single-day FX pull is enough to mark
+ * the curve. But the FX **KPI's** "today" move is measured from the *prior*
+ * session's settled EUR/USD close, and that baseline must survive an empty /
+ * stale start: when the live provider hands back no `previous_close` (a cache,
+ * Tiingo or end-of-day reading, or a cold device), the only place to recover it
+ * is the on-device FX bars. A single-session pull never reaches back far enough,
+ * so the recovery had nothing to read and the KPI stuck on "—". Spanning the
+ * prior session here makes the stored 1D FX track long enough to carry that
+ * close (see `App.barsPrevSessionCloseFx`), at no extra credit cost — the FX
+ * history is one batched request regardless of the window's length.
+ */
+export function sessionFxHistoryWindow(now: Date = new Date()): DateWindow {
+  const day = lastSessionDate(now);
+  return { startDate: previousTradingSession(day), endDate: day };
 }
 
 /** The trailing trading-session window the live 1W curve (and FX) covers. */

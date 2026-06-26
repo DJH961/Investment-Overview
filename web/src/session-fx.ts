@@ -426,6 +426,74 @@ export function fxBuyingPowerSplit(opts: {
   return { totalUsd, marketHoursUsd, overnightUsd };
 }
 
+/**
+ * The largest single-session EUR/USD move the "today" FX baseline may imply
+ * before it is treated as **stale / garbled data** rather than a genuine one-day
+ * currency swing.
+ *
+ * The FX "today" move is `(now − prevClose) / prevClose`, and that same prior
+ * close re-marks the whole EUR view (the currency box, the per-holding FX-aware
+ * move, the "Currency effect since yesterday"). When the baseline is wrong — a
+ * stale provider `previous_close`, a days-old cached one, or a rate sourced weeks
+ * back — the move inherits all of that drift as if it happened in a single
+ * session and reads as a huge fabricated swing (issue #192: the growth was always
+ * shown, just *wildly* incorrect).
+ *
+ * EUR/USD has never moved anywhere near 8% in a single trading session (even the
+ * most violent crisis days are ~2–3%), so a "today" deviation beyond this can
+ * only be a broken baseline, not a real move. This is the web's magnitude
+ * backstop for the desktop's dated daily-growth FX guard
+ * (`services/metrics_service.py::_compute_daily_growth`,
+ * `_DAILY_GROWTH_FX_TOLERANCE_DAYS`), which falls back to the FX-neutral move
+ * when the FX marks span materially more time than the price dates do.
+ */
+export const MAX_PLAUSIBLE_SESSION_FX_MOVE = new Decimal("0.08");
+
+/**
+ * Whether a prior-close FX `baseline` implies an **implausibly large** single-
+ * session move against the live `now` rate — the signal that the baseline is
+ * stale/garbled and must not be used to fabricate a "today" FX swing.
+ *
+ * `false` (treat the baseline as usable) whenever either rate is missing or non-
+ * positive, so this only ever *suppresses* a present, clearly-broken baseline and
+ * never invents one. The caller drops such a baseline so the EUR view degrades to
+ * the FX-neutral move and the KPI shows "—" instead of a wild number.
+ */
+export function fxBaselineImpliesImplausibleMove(
+  now: Decimal | null,
+  baseline: Decimal | null,
+): boolean {
+  if (now === null || baseline === null) return false;
+  if (!now.greaterThan(0) || !baseline.greaterThan(0)) return false;
+  return now.minus(baseline).dividedBy(baseline).abs().greaterThan(MAX_PLAUSIBLE_SESSION_FX_MOVE);
+}
+
+/**
+ * How far two candidate prior-session EUR/USD closes may differ before they are
+ * judged to **materially disagree**. Both are meant to be the *same* settled
+ * rate (the provider's `previous_close` and the close read from the on-device 1D
+ * FX bars), so a small gap is just snapshot-time/provider noise; a larger one
+ * means one of them is stale/wrong. 1% comfortably absorbs the noise while still
+ * catching a genuinely garbled provider close.
+ */
+export const FX_BASELINE_DISAGREEMENT_TOLERANCE = new Decimal("0.01");
+
+/**
+ * Whether two prior-close candidates differ by more than
+ * {@link FX_BASELINE_DISAGREEMENT_TOLERANCE} (relative to `reference`). Used to
+ * decide whether a provider `previous_close` should be corrected by the **dated**
+ * close read from the on-device FX bars (the trustworthy, gated source). Returns
+ * `false` when either input is missing/non-positive (nothing to compare).
+ */
+export function fxBaselinesDisagree(
+  provider: Decimal | null,
+  reference: Decimal | null,
+): boolean {
+  if (provider === null || reference === null) return false;
+  if (!provider.greaterThan(0) || !reference.greaterThan(0)) return false;
+  return provider.minus(reference).dividedBy(reference).abs().greaterThan(FX_BASELINE_DISAGREEMENT_TOLERANCE);
+}
+
 
 const SESSION_CLOSE_FX_KEY = "iv.web.sessionCloseFx";
 

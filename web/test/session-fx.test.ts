@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Decimal } from "../src/decimal-config";
 import {
+  fxBaselineImpliesImplausibleMove,
+  fxBaselinesDisagree,
   fxEffectSplit,
   fxBuyingPowerSplit,
   graphAnchorFx,
@@ -134,6 +136,24 @@ describe("sessionCloseFxFromBars", () => {
     const bars = [bar(closeMs - 3600_000, "1.0750"), bar(closeMs, "0")];
     expect(sessionCloseFxFromBars(bars, closeMs)).toBeNull();
   });
+
+  it("recovers the prior session's close from a 2-session FX track (KPI baseline)", () => {
+    // The 1D FX-history pull now spans the prior session too, so the stored track
+    // carries both days. Reading it at the *prior* session's close ms yields that
+    // prior settled rate — the FX KPI's "today" baseline — and never bleeds into
+    // today's bars (which sit after the prior close).
+    const prevCloseMs = closeMs - 24 * 3600_000;
+    const bars = [
+      bar(prevCloseMs - 3600_000, "1.0680"),
+      bar(prevCloseMs, "1.0700"), // prior session settle
+      bar(prevCloseMs + 6 * 3600_000, "1.0720"), // prior after-hours drift
+      bar(closeMs - 3600_000, "1.0750"),
+      bar(closeMs, "1.0775"), // today's settle
+    ];
+    expect(sessionCloseFxFromBars(bars, prevCloseMs)?.toString()).toBe("1.07");
+    expect(sessionCloseFxFromBars(bars, closeMs)?.toString()).toBe("1.0775");
+  });
+
 
   it("an incomplete track degrades graphAnchorFx to the settled previous close (Fix 2 end-to-end)", () => {
     // The two links together: a mid-session-only FX track yields a null close-read,
@@ -505,5 +525,46 @@ describe("session-open FX persistence", () => {
 
   it("returns null (not throw) when nothing is stored", () => {
     expect(readSessionOpenFx("2026-06-25")).toBeNull();
+  });
+});
+
+describe("fxBaselineImpliesImplausibleMove (stale/garbled baseline guard)", () => {
+  it("flags a baseline that implies a > 8% single-session EUR/USD move", () => {
+    // now 1.08, baseline 0.90 → ~20% move: only a broken baseline does that.
+    expect(fxBaselineImpliesImplausibleMove(d("1.08"), d("0.90"))).toBe(true);
+    expect(fxBaselineImpliesImplausibleMove(d("1.08"), d("1.30"))).toBe(true);
+  });
+
+  it("accepts a plausible real session move (well within 8%)", () => {
+    // The compute fixtures use 1.10 vs 1.05 (~4.76%) and must stay usable.
+    expect(fxBaselineImpliesImplausibleMove(d("1.10"), d("1.05"))).toBe(false);
+    expect(fxBaselineImpliesImplausibleMove(d("1.1033"), d("1.10"))).toBe(false);
+    expect(fxBaselineImpliesImplausibleMove(d("1.08"), d("1.08"))).toBe(false);
+  });
+
+  it("never suppresses when a rate is missing or non-positive (only suppresses present, broken baselines)", () => {
+    expect(fxBaselineImpliesImplausibleMove(null, d("1.05"))).toBe(false);
+    expect(fxBaselineImpliesImplausibleMove(d("1.08"), null)).toBe(false);
+    expect(fxBaselineImpliesImplausibleMove(d("1.08"), d("0"))).toBe(false);
+    expect(fxBaselineImpliesImplausibleMove(d("0"), d("1.05"))).toBe(false);
+  });
+});
+
+describe("fxBaselinesDisagree (provider vs dated on-device close)", () => {
+  it("flags provider/reference closes that differ by more than 1%", () => {
+    expect(fxBaselinesDisagree(d("1.05"), d("1.08"))).toBe(true);
+    expect(fxBaselinesDisagree(d("1.20"), d("1.08"))).toBe(true);
+  });
+
+  it("tolerates sub-1% snapshot/provider noise", () => {
+    expect(fxBaselinesDisagree(d("1.0805"), d("1.08"))).toBe(false);
+    expect(fxBaselinesDisagree(d("1.08"), d("1.08"))).toBe(false);
+  });
+
+  it("returns false when either candidate is missing or non-positive", () => {
+    expect(fxBaselinesDisagree(null, d("1.08"))).toBe(false);
+    expect(fxBaselinesDisagree(d("1.08"), null)).toBe(false);
+    expect(fxBaselinesDisagree(d("0"), d("1.08"))).toBe(false);
+    expect(fxBaselinesDisagree(d("1.08"), d("0"))).toBe(false);
   });
 });

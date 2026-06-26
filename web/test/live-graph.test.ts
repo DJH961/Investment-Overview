@@ -21,6 +21,7 @@ import {
   recordingBarFetcher,
   recordingFxFetcher,
   sessionFxWindow,
+  sessionFxHistoryWindow,
   weekFxWindow,
   withFxBackoff,
   withBarBackoff,
@@ -151,6 +152,26 @@ describe("FX windows", () => {
     expect(w.endDate).toBe("2026-06-23");
     // Five trading sessions back from Tue 23rd reaches into the prior week.
     expect(Date.parse(w.startDate)).toBeLessThan(Date.parse(w.endDate));
+  });
+
+  it("the 1D FX-history window spans the prior session through the current one", () => {
+    // Tue 2026-06-23 14:00 UTC == 10:00 ET, a regular session; the prior session
+    // is Monday the 22nd, so the FX-history pull is one session wider than the
+    // curve's own single-day window (carrying the prior settled close).
+    expect(sessionFxHistoryWindow(new Date("2026-06-23T14:00:00Z"))).toEqual({
+      startDate: "2026-06-22",
+      endDate: "2026-06-23",
+    });
+  });
+
+  it("the 1D FX-history window skips weekends and holidays to the prior session", () => {
+    // Mon 2026-06-22 14:00 UTC == 10:00 ET; the prior session skips the weekend
+    // (20–21) *and* Juneteenth (Fri the 19th, an NYSE holiday) to Thursday the
+    // 18th, so the recovered close is always a real settled rate.
+    expect(sessionFxHistoryWindow(new Date("2026-06-22T14:00:00Z"))).toEqual({
+      startDate: "2026-06-18",
+      endDate: "2026-06-22",
+    });
   });
 });
 

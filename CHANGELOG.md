@@ -14,6 +14,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.13.1] — 2026-06-26
+
+### Fixed
+
+- **The Currency KPI no longer shows a wildly incorrect FX growth number from a
+  stale / garbled prior-close baseline (issue #192).** The EUR ↔ USD box, every
+  holding's FX-aware daily move, and "Currency effect since yesterday" all measure
+  today's move from one prior-session EUR/USD close. That baseline was trusted
+  blindly: a stale provider `previous_close` or a days-old cached one quietly
+  fabricated a huge one-session swing across the whole EUR view. The fix guards the
+  baseline at two layers — a magnitude backstop drops a baseline that implies an
+  implausibly large single-session move so the figure degrades to the honest
+  FX-neutral number and the KPI blanks rather than inventing a swing
+  (`web/src/compute.ts`, `web/src/session-fx.ts` `fxBaselineImpliesImplausibleMove`),
+  and a dated cross-validation corrects a provider `previous_close` that materially
+  disagrees with the trustworthy, dated close read from the on-device 1D FX bars
+  (`web/src/app.ts`, `web/src/session-fx.ts` `fxBaselinesDisagree`). This is the web
+  analog of the desktop daily-growth FX guard
+  (`services/metrics_service.py::_compute_daily_growth`).
+- **The Currency KPI recovers its "today" baseline from an empty / stale state.**
+  The EUR ↔ USD box measures today's move from the prior session's settled
+  EUR/USD close, but that baseline used to come *only* from the live provider's
+  `previous_close`. Whenever the rate was served from cache, the Tiingo backup, or
+  the end-of-day ECB fallback — or on a cold start — that prior close was missing,
+  so the "Today" figure stuck on "—" with no way to recover and the FX-aware daily
+  move silently went FX-unaware. The 1D EUR/USD history puller now spans the prior
+  trading session as well as the current one (still a single batched request, no
+  extra credit), so the on-device FX bars carry that settled close, and the
+  refresh recovers the baseline from them when the provider omits it
+  (`web/src/live-graph.ts` `sessionFxHistoryWindow`, `web/src/app.ts`
+  `barsPrevSessionCloseFx`). The live 1D curve is unchanged — it still draws only
+  the current session.
+
 ## [4.13.0] — 2026-06-26
 
 ### Added

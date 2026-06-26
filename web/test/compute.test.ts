@@ -698,6 +698,30 @@ describe("FX-aware today's move", () => {
     // fxRateEurUsd reflects the live spot that valued the marks (fx.rates.USD).
     approx(m.overview.fxRateEurUsd, 1.1, 1e-9);
   });
+
+  it("drops a stale/garbled prior rate that implies an implausible session swing", () => {
+    // Issue #192: the FX growth was always shown, just wildly wrong. A baseline
+    // of 0.90 against a live 1.10 spot implies a ~22% one-session EUR/USD move —
+    // only a broken baseline does that. It must be ignored so the move degrades
+    // to the FX-neutral figure and the KPI blanks, not fabricate a swing.
+    const m = buildDashboard(makeExport(), quotes, fx, new Date("2024-06-01T12:00:00Z"), null, {
+      fxPrevEurUsd: new Decimal("0.90"),
+    });
+    expect(m.overview.fxRateEurUsdPrev).toBeNull();
+    // With no usable prior rate, the FX-aware move collapses to the FX-neutral one.
+    const without = buildDashboard(makeExport(), quotes, fx, new Date("2024-06-01T12:00:00Z"));
+    approx(m.overview.todayMoveEur, without.overview.todayMoveEur.toNumber(), 1e-9);
+    expect(m.holdings[0].todayFxMoveEur!.toNumber()).toBeCloseTo(0, 9);
+  });
+
+  it("keeps a plausible prior rate (a real ~4.76% session move) intact", () => {
+    // 1.05 → 1.10 is a believable move and is preserved (guards the threshold
+    // against false positives on genuine FX swings).
+    const m = buildDashboard(makeExport(), quotes, fx, new Date("2024-06-01T12:00:00Z"), null, {
+      fxPrevEurUsd: new Decimal("1.05"),
+    });
+    approx(m.overview.fxRateEurUsdPrev, 1.05, 1e-9);
+  });
 });
 
 function makeAnalyticsWith(
