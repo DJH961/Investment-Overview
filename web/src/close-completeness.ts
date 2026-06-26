@@ -33,6 +33,51 @@ import type { StoredCloseProbe } from "./timeseries-store";
  */
 export const PROBE_MIN_MS = 10 * 60 * 1000;
 
+/** One hour in ms — the pacing quantum for provisional two-source agreements. */
+export const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * How many times both providers must independently agree on the same pre-close
+ * tip before the day's close is accepted (the first agreement counts toward this
+ * total). A single coincidental match is no longer terminal: the resolver records
+ * the first two agreements as **provisional** (`sources: 2, settled: false`) and
+ * only settles on the third, each re-check paced to the next full hour (see
+ * {@link nextFullHourStart}) so the scarce Tiingo budget is spent at most once an
+ * hour while the agreement is confirmed.
+ */
+export const AGREEMENTS_TO_SETTLE = 3;
+
+/**
+ * The start of the first full clock-hour strictly after `t` (wall-clock ms). A
+ * provisional agreement recorded at 15:48 may next be re-probed at 16:00, the one
+ * after that at the top of the following hour, and so on — so the confirmation
+ * re-checks land on hour boundaries regardless of when the app happens to be open
+ * (e.g. an attempt that only fires at 16:08 still gates its successor to 17:00).
+ */
+export function nextFullHourStart(t: number): number {
+  return Math.floor(t / HOUR_MS) * HOUR_MS + HOUR_MS;
+}
+
+/**
+ * Whether a stored close-probe's spacing gate permits another post-close fetch at
+ * `nowMs`. A **provisional two-source agreement** (`sources === 2 && !settled`)
+ * is paced to the start of the next full hour after its last attempt — the
+ * token-efficient confirmation cadence the two-step agreement needs — while every
+ * other still-unsettled probe uses the flat `probeMinMs` window. An absent probe
+ * (or a settled one, which callers exclude earlier) is always ready.
+ */
+export function closeProbeReady(
+  probe: { sources: number; settled: boolean; lastAttemptAt: number } | undefined,
+  nowMs: number,
+  probeMinMs: number,
+): boolean {
+  if (!probe) return true;
+  if (probe.sources === 2 && !probe.settled) {
+    return nowMs >= nextFullHourStart(probe.lastAttemptAt);
+  }
+  return nowMs - probe.lastAttemptAt >= probeMinMs;
+}
+
 /**
  * The slice of {@link SeriesBackoff} the resolver needs. Declared structurally
  * here (rather than imported from `live-graph.ts`) so this module stays free of a
@@ -269,22 +314,38 @@ export async function resolveCloseCompleteness(
       continue;
     }
     if (tipA !== null && tipB !== null && Math.abs(tipB - tipA) <= tol) {
-      // Two independent sources agree on the same last bar → this *is* the close.
+      // Two independent sources agree on the same last bar. One coincidental
+      // match is not enough: count it as a *provisional* agreement and only
+      // accept the close once both providers have agreed AGREEMENTS_TO_SETTLE
+      // times (the first counts). Until then the symbol stays unsettled and its
+      // re-check is paced to the next full hour by `closeProbeReady`.
+      const agreements = (probes?.[s]?.agreements ?? 0) + 1;
+      const settled = agreements >= AGREEMENTS_TO_SETTLE;
       result.bars[s] = aBars;
       result.closeProbe[s] = {
         lastBarAt: tipA,
         attempts,
         sources: 2,
-        settled: true,
+        settled,
         lastAttemptAt: now,
+        agreements,
       };
-      backoff?.succeed(key(s));
-      log?.({
-        symbol: s,
-        outcome: "settled-by-agreement",
-        level: "good",
-        message: `${label} graph · ${s}: both providers agree the last bar is ${fmt(tipA)} — settled for the day, no newer close exists (2 sources).`,
-      });
+      if (settled) {
+        backoff?.succeed(key(s));
+        log?.({
+          symbol: s,
+          outcome: "settled-by-agreement",
+          level: "good",
+          message: `${label} graph · ${s}: both providers agreed the last bar is ${fmt(tipA)} ${agreements}× — settled for the day, no newer close exists (2 sources).`,
+        });
+      } else {
+        log?.({
+          symbol: s,
+          outcome: "progressed",
+          level: "info",
+          message: `${label} graph · ${s}: both providers agree the last bar is ${fmt(tipA)} (agreement ${agreements}/${AGREEMENTS_TO_SETTLE}) — will re-confirm next hour.`,
+        });
+      }
       continue;
     }
     // Neither provider could advance or confirm — a real outage. Record the

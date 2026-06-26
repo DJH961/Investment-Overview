@@ -37,6 +37,7 @@ import { sessionBarsComplete } from "./session-fx";
 import {
   PROBE_MIN_MS,
   FX_PROBE_KEY,
+  closeProbeReady,
   resolveCloseCompleteness,
   resolveFxCompleteness,
   type CloseProbeBackoff,
@@ -500,9 +501,7 @@ export async function loadOrBuildSessionCurve(
   // symbol must still fetch immediately.)
   const fetchableShort = incompletePresent.filter((s) => {
     if (closeBackoff?.suppressed(closeKey(s), nowMs)) return false;
-    const probe = closeProbeFor(s);
-    if (probe && nowMs - probe.lastAttemptAt < probeMinMs) return false;
-    return true;
+    return closeProbeReady(closeProbeFor(s), nowMs, probeMinMs);
   });
   // Breadcrumbs remove the need for a cadence re-fetch: once the session's bars
   // are on the device, the free live-tip trail below carries the curve forward on
@@ -622,7 +621,7 @@ export async function loadOrBuildSessionCurve(
     const fxComplete =
       loaded.fx.length > 0 && sessionBarsComplete(loaded.fx, closeMs, INTRADAY_BAR_INTERVAL_MS);
     const fxKey = closeKey(FX_PROBE_KEY);
-    const fxSpaced = fxProbe ? nowMs - fxProbe.lastAttemptAt < probeMinMs : false;
+    const fxSpaced = fxProbe ? !closeProbeReady(fxProbe, nowMs, probeMinMs) : false;
     const fxFetchable =
       !(fxProbe?.settled ?? false) &&
       !(closeBackoff?.suppressed(fxKey, nowMs) ?? false) &&
