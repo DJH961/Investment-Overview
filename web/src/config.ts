@@ -27,6 +27,7 @@ const KEYS = {
   priceProxyUrl: "iv.web.price_proxy_url",
   updateMinutes: "iv.web.update_minutes",
   autoLockMinutes: "iv.web.auto_lock_minutes",
+  resumeOnRefresh: "iv.web.resume_on_refresh",
 } as const;
 
 /**
@@ -69,6 +70,14 @@ const MAX_UPDATE_MINUTES = 240;
 const DEFAULT_AUTO_LOCK_MINUTES = 5;
 /** Upper bound for the configurable idle auto-lock timeout, in minutes. */
 const MAX_AUTO_LOCK_MINUTES = 240;
+/**
+ * Default for the opt-in "stay unlocked across a page refresh" behaviour. Off by
+ * default so the safe, login-on-every-reload behaviour is unchanged unless the
+ * user deliberately opts in. When on, a full-page reload (F5) of *this* tab
+ * resumes the unlocked session — like the manual refresh button — while a closed
+ * tab or an idle-expired session still re-authenticates (see `resume-session.ts`).
+ */
+const DEFAULT_RESUME_ON_REFRESH = false;
 
 /** Wraps/unwraps the API key with a non-extractable per-device key (IndexedDB). */
 const secrets = createSecretBox();
@@ -117,6 +126,12 @@ export interface AppConfig {
    * session locks itself; `0` disables auto-lock.
    */
   autoLockMinutes: number;
+  /**
+   * Opt-in: when `true`, a full-page reload (F5) of the current tab resumes the
+   * unlocked session instead of forcing a re-login — while a closed tab or an
+   * idle-expired session still re-authenticates. Off by default.
+   */
+  resumeOnRefresh: boolean;
 }
 
 /**
@@ -151,6 +166,7 @@ export function defaultConfig(): AppConfig {
     priceProxyUrl: "",
     updateMinutes: DEFAULT_UPDATE_MINUTES,
     autoLockMinutes: DEFAULT_AUTO_LOCK_MINUTES,
+    resumeOnRefresh: DEFAULT_RESUME_ON_REFRESH,
   };
 }
 
@@ -217,6 +233,7 @@ export async function loadConfig(): Promise<AppConfig> {
     priceProxyUrl: read(KEYS.priceProxyUrl),
     updateMinutes: parseUpdateMinutes(read(KEYS.updateMinutes) || readLegacyUpdateMinutes()),
     autoLockMinutes: parseAutoLockMinutes(read(KEYS.autoLockMinutes)),
+    resumeOnRefresh: read(KEYS.resumeOnRefresh) === "1",
   };
 }
 
@@ -226,6 +243,7 @@ export async function saveConfig(config: AppConfig): Promise<void> {
   write(KEYS.priceProxyUrl, config.priceProxyUrl.trim());
   write(KEYS.updateMinutes, String(config.updateMinutes));
   write(KEYS.autoLockMinutes, String(config.autoLockMinutes));
+  write(KEYS.resumeOnRefresh, config.resumeOnRefresh ? "1" : "");
   // Retire the legacy keys now that their data lives in the simplified shape, so
   // the migration only fires once and old plumbing doesn't linger in storage.
   for (const legacyKey of Object.values(LEGACY_KEYS)) write(legacyKey, "");
@@ -319,6 +337,7 @@ export interface ConfigPacket {
   blobUrl: string;
   updateMinutes: number;
   autoLockMinutes: number;
+  resumeOnRefresh: boolean;
 }
 
 /** Serialize the portable parts of a config to a pretty JSON packet string. */
@@ -330,6 +349,7 @@ export function serializeConfig(config: AppConfig): string {
     blobUrl: config.blobUrl,
     updateMinutes: config.updateMinutes,
     autoLockMinutes: config.autoLockMinutes,
+    resumeOnRefresh: config.resumeOnRefresh,
   };
   return JSON.stringify(packet, null, 2);
 }
@@ -364,6 +384,7 @@ export function parseConfigPacket(text: string): AppConfig {
     priceProxyUrl: "",
     updateMinutes: parseUpdateMinutes(String(obj.updateMinutes ?? "")),
     autoLockMinutes: parseAutoLockMinutes(String(obj.autoLockMinutes ?? "")),
+    resumeOnRefresh: obj.resumeOnRefresh === true,
   };
 }
 
@@ -375,6 +396,7 @@ export {
   MAX_UPDATE_MINUTES,
   DEFAULT_AUTO_LOCK_MINUTES,
   MAX_AUTO_LOCK_MINUTES,
+  DEFAULT_RESUME_ON_REFRESH,
   CONFIG_PACKET_TYPE,
   CONFIG_PACKET_VERSION,
 };
