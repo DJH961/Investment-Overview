@@ -14,9 +14,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.12.0] — 2026-06-26
+## [4.11.2] — 2026-06-26
 
-### Added
+### Fixed
 
 - **The USD-view "Investing power since yesterday" panel now shows its base
   figures.** Until now the panel led with only the day's *swing* — a delta with
