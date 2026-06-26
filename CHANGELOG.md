@@ -14,7 +14,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.12.1] — 2026-06-26
+## [4.12.2] — 2026-06-26
 
 ### Fixed
 
@@ -26,6 +26,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   mark warranted; the restored stamp states exactly when each row's price is
   from. The `holdingFreshnessChip` helper and its supporting `.fresh-*` styles
   are dropped (`web/src/ui.ts`, `web/src/styles.css`).
+
+## [4.12.1] — 2026-06-26
+
+### Fixed
+
+- **The "1 Week" graph nose-dive can now heal itself retroactively, even from
+  already-stored data.** Version 4.11.1 fixed the *cause* of the nose-dive at
+  market open, but that fix only touched newly-generated data. The mobile/web
+  companion springboards the `live_graphs.week` curve straight out of the last
+  **published blob** on every render, so a blob that was exported *before* the
+  4.11.1 fix still carried the baked-in nose-dive — and kept re-painting it.
+  This also explains why a **hard cache reset did nothing**: the reset wipes the
+  local price caches and the IndexedDB time-series store, but it does *not*
+  re-download the blob, and the unchanged remote blob answers `304 Not Modified`,
+  so the stale (already-corrupt) week points are re-springboarded verbatim and
+  then re-harvested into the long-range history. The data really was coming from
+  the blob — just an old one that a reset can't refresh.
+- A new render-time self-heal (`web/src/week-repair.ts`,
+  `repairWeekNavCollapse`) now runs inside the week springboard. It detects the
+  signature of the NAV-collapse nose-dive — a contiguous *leading* run of
+  session days whose whole-book close sits well below the rest of a week that
+  otherwise recovers and stays recovered — and lifts that run back onto the
+  week's level by the boundary step (the web analogue of 4.11.1's "carry the
+  nearest complete day's NAV flat"), preserving each day's intraday shape. It is
+  conservative and a no-op on healthy weeks, genuine drawdowns, or deposits.
+  Because the repair feeds both the painted curve **and** the close-harvester,
+  previously-stored false closes are overwritten with healed values, so the
+  long-range chart self-corrects too — no new export or data migration required.
+- **The hard reset ("Update all data now") now forces a full, unconditional
+  re-download of the encrypted blob, no matter how new it is.** Previously the
+  reset cleared the local price caches and the IndexedDB graph store and dropped
+  the in-memory version stamp, but the follow-up blob fetch was still
+  *conditional* — it sent the cached `ETag`/`Last-Modified` validators, so an
+  unchanged remote blob came back as a bodyless `304 Not Modified` and the
+  (possibly stale or corrupt) cached copy was reused verbatim. That was the
+  mechanism behind "a hard reset did nothing" for the 1W nosedive. The reset now
+  **withholds the validators** so the server can never answer `304`, always
+  pulls the freshest published blob, and re-decrypts and re-renders it even when
+  it is byte-for-byte what we already held. Routine background blob checks are
+  unchanged: they stay conditional (and free) so they still cost no transfer
+  when nothing has changed.
 
 ## [4.12.0] — 2026-06-26
 
