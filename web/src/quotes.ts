@@ -20,6 +20,7 @@
 import {
   creditsSpentWithin,
   creditsSpentToday,
+  creditsSpentThisHour,
   readCachedEurUsd,
   readCachedFx,
   readCachedQuotes,
@@ -766,8 +767,8 @@ export async function loadEurUsd(
     const t = now();
     const log = readTiingoCreditLog(t, undefined, storage ?? undefined);
     const budget = new Budget(
-      creditsSpentWithin(log, t, MINUTE_MS * 60),
-      tiingoCreditsSpentToday(log, t),
+      Math.max(0, creditsSpentThisHour(log, t)),
+      Math.max(0, tiingoCreditsSpentToday(log, t)),
       WEB_HOURLY_CAP,
       WEB_DAILY_CAP,
     );
