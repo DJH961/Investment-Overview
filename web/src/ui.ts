@@ -20,6 +20,7 @@ import {
   forexMarketReopenMs,
   lastForexReopenMs,
   lastSessionDate,
+  exchangeDate,
   sessionOpenMs,
 } from "./market-hours";
 import { windowGrowthPct, type GrowthMode, type WindowPoint } from "./window-growth";
@@ -65,6 +66,7 @@ import {
   formatSignedDualCurrency,
   formatSignedMoneyEur,
   formatSignedPercent,
+  formatSessionDayLabel,
   formatExportedAt,
   formatForexReopen,
   signClass,
@@ -2301,14 +2303,26 @@ function renderValueChart(
 
   const todayPct = pickByCurrency(o.todayMovePct, o.todayMovePctUsd);
   const todayCls = signClass(pickByCurrency(o.todayMoveEur, o.todayMoveUsd));
+  // The 1D curve draws the most recent session that has *started* (lastSessionDate).
+  // When the market is shut — a weekend, a holiday, before today's open — that is
+  // not today, so naming the headline "today" misreads the line. Label it by the
+  // session the graph actually shows: "today", "yesterday", or the date if older.
+  const oneDayLabel = formatSessionDayLabel(lastSessionDate(), exchangeDate());
+  // The full-history "All" window's money-weighted growth IS the overview's
+  // "Total growth" KPI (compounded XIRR over the invested lifetime). Reuse it
+  // verbatim so the headline matches that KPI exactly, instead of re-deriving it
+  // from the curve — at inception the opening value is ~0 (freshly deposited cash
+  // isn't a market position yet), which made the XIRR seed collapse to a wildly
+  // inflated Modified-Dietz fallback (e.g. 345% against a true 70%).
+  const allTimeGrowth = pickByCurrency(o.totalGrowthCompoundedPct, o.totalGrowthCompoundedPctUsd);
   // The headline beside the chart tracks the *selected* window so it matches the
   // graph: 1D reuses today's close-to-now move (measured from the previous
   // CLOSE, like the intraday graph's reference line); 1W a simple period growth;
   // anything longer an XIRR-scaled (money-weighted) growth so weekly DCA deposits
-  // don't make the number look wild. Defaults to "today" until a range is chosen
-  // (and stays there when there is nothing to toggle).
+  // don't make the number look wild. Defaults to the 1D session label until a
+  // range is chosen (and stays there when there is nothing to toggle).
   const headlineSpan = h("span", { class: `muted ${todayCls}` }, [
-    todayPct !== null ? `${formatSignedPercent(todayPct)} today` : "today",
+    todayPct !== null ? `${formatSignedPercent(todayPct)} ${oneDayLabel}` : oneDayLabel,
   ]) as HTMLElement;
   const lastWindowMs = Date.parse(dates[dates.length - 1]);
   const sliceWindow = (days: number | null): WindowPoint[] => {
@@ -2326,7 +2340,7 @@ function renderValueChart(
     }));
   };
   const headlineLabel = (option: RangeOption): string =>
-    option.kind === "live" && option.range === "1D" ? "today" : option.label;
+    option.kind === "live" && option.range === "1D" ? oneDayLabel : option.label;
   const setHeadline = (pct: Decimal | null, label: string): void => {
     headlineSpan.className = `muted ${signClass(pct)}`;
     headlineSpan.textContent =
@@ -2336,6 +2350,9 @@ function renderValueChart(
     let pct: Decimal | null;
     if (option.kind === "live" && option.range === "1D") {
       pct = todayPct;
+    } else if (option.kind === "history" && option.days === null) {
+      // "All" — show the lifetime compounded growth (the "Total growth" KPI).
+      pct = allTimeGrowth;
     } else {
       // 1W (live, ~7 day window) uses simple growth; every longer history slice
       // uses XIRR-scaled growth.

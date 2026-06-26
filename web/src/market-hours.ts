@@ -223,6 +223,18 @@ function ymd(year: number, month: number, day: number): string {
 }
 
 /**
+ * The exchange-local (New York) calendar date (`YYYY-MM-DD`) of `now`, regardless
+ * of trading status or the viewer's own timezone. Unlike {@link lastSessionDate}
+ * this never walks back to a prior session — it is simply "what day is it on the
+ * NYSE wall clock" — so callers can tell whether the session the 1D curve draws
+ * ({@link lastSessionDate}) is genuinely *today* or an older (closed-market) one.
+ */
+export function exchangeDate(now: Date = new Date()): string {
+  const moment = exchangeMoment(now);
+  return ymd(moment.year, moment.month, moment.day);
+}
+
+/**
  * The trading day (`YYYY-MM-DD`, New-York calendar) of the most recent NYSE
  * regular session whose close has **already happened** as of `now`.
  *
