@@ -3495,8 +3495,16 @@ export class App {
       this.envelope = envelope;
       this.state.data = data;
       // Re-render the (possibly new) holdings from cache instantly; the running
-      // price scheduler will fetch anything freshly added on its next tick.
-      await this.refreshPrices(session, false);
+      // price scheduler will fetch anything freshly added on its next tick. A
+      // forced reset (the Settings hard reset) deliberately *skips* this cache-only
+      // repaint: its caller ({@link wipeGraphStoreThenRefresh}) has just **wiped**
+      // every price cache and immediately kicks off a full from-scratch network
+      // re-pull, so painting the just-emptied cache here would render every holding
+      // on its last-known (non-live) value — and, if that paint lands *after* the
+      // network re-pull, it sticks, making a hard reset wrongly read as "no
+      // live-priced holdings". Leaving the prior live model on screen until the
+      // re-pull repaints with fresh quotes avoids that race entirely.
+      if (!force) await this.refreshPrices(session, false);
     } catch {
       /* background, best-effort: keep showing the cached data. */
     }
