@@ -8,7 +8,12 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from investment_dashboard.models import Transaction
-from investment_dashboard.repositories import accounts_repo, instruments_repo, prices_repo
+from investment_dashboard.repositories import (
+    accounts_repo,
+    fx_repo,
+    instruments_repo,
+    prices_repo,
+)
 from investment_dashboard.ui.pages._overview_query import (
     MULTI_CCY_RANGES,
     VALUE_RANGES,
@@ -255,6 +260,121 @@ class TestBuildWeekValueSeries:
         )
         # 10 shares × par 1.00 = €10, constant across every point (no slope).
         assert {p.value for p in points} == {Decimal("10.00")}
+
+    def test_missing_oldest_nav_carries_flat_not_zero(self, session: Session, monkeypatch) -> None:
+        """A window day whose NAV hasn't been pulled inherits the nearest dated NAV.
+
+        Regression for issue #169: the oldest session's NAV close can be missing
+        right after the market-open window roll. The sleeve must carry the nearest
+        *known* NAV rather than collapse to zero (which nose-dived the 1W start to
+        roughly the value of the stocks *without* their funds).
+        """
+        from investment_dashboard.services import intraday_snapshots_service as iss
+        from investment_dashboard.ui.pages import _overview_query
+
+        iid = self._seed_fund(session, symbol="GROWTHX", asset_class="mutual_fund")
+        # Only Wednesday's NAV is cached; Monday has *no* close on or before it.
+        prices_repo.upsert_closes(session, iid, {date(2024, 6, 5): Decimal("110.00")})
+        session.flush()
+
+        t_mon = datetime(2024, 6, 3, 18, 0)
+        t_wed = datetime(2024, 6, 5, 18, 0)
+        samples = [(t_mon, Decimal("0"), None), (t_wed, Decimal("0"), None)]
+        monkeypatch.setattr(iss, "week_series_with_fx", lambda *a, **k: list(samples))
+
+        points = _overview_query.build_week_value_series(
+            session, currency="EUR", now=datetime(2024, 6, 5, 20, 0, tzinfo=UTC)
+        )
+        # Monday inherits Wednesday's €1100 NAV (carried flat) — never €0.
+        assert [p.value for p in points][:2] == [Decimal("1100.00"), Decimal("1100.00")]
+
+    def test_patched_nav_self_corrects_in_retrospect(self, session: Session, monkeypatch) -> None:
+        """Once the missing dated NAV lands in the cache, the 1W curve self-corrects.
+
+        The fill is re-derived from the cache on every render, so a later good
+        close-bar pull retroactively restores the genuine per-day slope with no
+        speculative fetching.
+        """
+        from investment_dashboard.services import intraday_snapshots_service as iss
+        from investment_dashboard.ui.pages import _overview_query
+
+        iid = self._seed_fund(session, symbol="GROWTHX", asset_class="mutual_fund")
+        prices_repo.upsert_closes(session, iid, {date(2024, 6, 5): Decimal("110.00")})
+        session.flush()
+
+        t_mon = datetime(2024, 6, 3, 18, 0)
+        t_wed = datetime(2024, 6, 5, 18, 0)
+        samples = [(t_mon, Decimal("0"), None), (t_wed, Decimal("0"), None)]
+        monkeypatch.setattr(iss, "week_series_with_fx", lambda *a, **k: list(samples))
+        now = datetime(2024, 6, 5, 20, 0, tzinfo=UTC)
+
+        # Before the patch: Monday is carried flat at Wednesday's NAV.
+        before = _overview_query.build_week_value_series(session, currency="EUR", now=now)
+        assert [p.value for p in before][:2] == [Decimal("1100.00"), Decimal("1100.00")]
+
+        # A later good pull lands Monday's genuine NAV in the cache.
+        prices_repo.upsert_closes(session, iid, {date(2024, 6, 3): Decimal("100.00")})
+        session.flush()
+
+        after = _overview_query.build_week_value_series(session, currency="EUR", now=now)
+        # The curve now slopes on the genuine Monday NAV — self-corrected.
+        assert [p.value for p in after][:2] == [Decimal("1000.00"), Decimal("1100.00")]
+
+    def test_missing_oldest_fx_carries_flat_not_zero(self, session: Session, monkeypatch) -> None:
+        """A USD fund whose oldest day lacks an FX rate inherits the nearest dated NAV.
+
+        The other half of the gap (a NAV close exists but no per-day EUR/USD rate)
+        also zeroed ``current_value_eur``; it must carry flat too.
+        """
+        from investment_dashboard.services import intraday_snapshots_service as iss
+        from investment_dashboard.ui.pages import _overview_query
+
+        acct = accounts_repo.create_account(
+            session,
+            broker="vanguard",
+            account_label="USD Brokerage",
+            native_currency="USD",
+            account_type="brokerage",
+        )
+        instr = instruments_repo.get_or_create(
+            session, symbol="USDFUND", asset_class="mutual_fund", native_currency="USD"
+        )
+        session.add(
+            Transaction(
+                account_id=acct.id,
+                instrument_id=instr.id,
+                date=date(2024, 1, 2),
+                kind="buy",
+                quantity=Decimal("10"),
+                price_native=Decimal("100.00"),
+                net_native=Decimal("-1000.00"),
+                net_eur=Decimal("-900.00"),
+                source="manual",
+            )
+        )
+        # NAV cached for both days; FX rate only for Wednesday (+ today) — Monday
+        # has no rate on or before it, so its EUR value would zero out.
+        prices_repo.upsert_closes(
+            session,
+            instr.id,
+            {date(2024, 6, 3): Decimal("100.00"), date(2024, 6, 5): Decimal("110.00")},
+        )
+        fx_repo.upsert_rates(
+            session, {date(2024, 6, 5): Decimal("1.10"), date.today(): Decimal("1.10")}
+        )
+        session.flush()
+
+        t_mon = datetime(2024, 6, 3, 18, 0)
+        t_wed = datetime(2024, 6, 5, 18, 0)
+        samples = [(t_mon, Decimal("0"), None), (t_wed, Decimal("0"), None)]
+        monkeypatch.setattr(iss, "week_series_with_fx", lambda *a, **k: list(samples))
+
+        points = _overview_query.build_week_value_series(
+            session, currency="EUR", now=datetime(2024, 6, 5, 20, 0, tzinfo=UTC)
+        )
+        # Wednesday: $1100 / 1.10 = €1000. Monday lacks an FX rate so it inherits
+        # Wednesday's €1000 rather than collapsing to €0.
+        assert [p.value for p in points][:2] == [Decimal("1000.00"), Decimal("1000.00")]
 
 
 class TestPreviousSessionCloseValue:
