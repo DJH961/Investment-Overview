@@ -140,10 +140,6 @@ function renderHero(o: OverviewView, now: Date = new Date()): HTMLElement {
     h("span", { class: "hero-value" }, [formatCurrency(o.totalValueEur)]),
     change,
   ];
-  const fxLine = renderHeroFx(o, now);
-  if (fxLine) children.push(fxLine);
-  const fxSplit = renderFxEffectSplit(o, now);
-  if (fxSplit) children.push(fxSplit);
   return h("section", { class: "hero" }, children);
 }
 
@@ -194,116 +190,157 @@ function valueBasisLabel(o: OverviewView, now: Date = new Date()): string {
 }
 
 /**
- * The live FX context under today's move: the current spot and how far it has
- * moved today (the % deviation), a stamp of *when* that rate is from (the clock
- * time today, the date once it is older), plus an honest "end-of-day FX" tag
- * when only the ECB daily rate was available. Returns null when there's no rate
- * to show.
+ * The standalone **Currency · EUR ↔ USD** box that sits full-width beneath the
+ * Today/Month/Year return horizons (it used to be crammed under the headline
+ * total). It carries three things: the live EUR/USD rate (the "current value"),
+ * how far that rate has moved today (the "growth rate"), and the FX effect on
+ * the book today.
+ *
+ * The book is **USD-booked**, so the FX move is only real money when measured
+ * back in EUR. In USD display the effect on the dollar value is exactly zero —
+ * the rate moving does not hand you a single extra dollar — so we say that
+ * plainly and surface the EUR-repatriation figure instead of printing a
+ * meaningless dollar amount. Returns null only when there is no rate at all.
  */
-function renderHeroFx(o: OverviewView, now: Date = new Date()): HTMLElement | null {
+function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElement | null {
+  if (o.fxRateEurUsd === null) return null;
   const inUsd = getDisplayCurrency() === "USD";
-  const parts: HTMLElement[] = [];
-  if (o.fxRateEurUsd !== null) {
-    const devPct = fxTodayDeviationPct(o);
-    // Roll back the PR 73 display swap: USD mode displays the stored EUR/USD
-    // spot directly; EUR mode displays USD/EUR by taking its reciprocal. The
-    // percentage still follows the currency strength convention used here.
-    const rate = inUsd ? o.fxRateEurUsd : new Decimal(1).dividedBy(o.fxRateEurUsd);
-    const dev = devPct === null ? null : inUsd ? devPct : devPct.negated();
-    const pair = inUsd ? "EUR/USD" : "USD/EUR";
-    const rateLabel =
-      dev !== null
-        ? `${pair} ${formatFxRate(rate)} (${formatSignedPercent(dev)} today)`
-        : `${pair} ${formatFxRate(rate)}`;
-    parts.push(h("span", { class: "hero-fx-rate" }, [rateLabel]));
-  }
-  // When the rate carries an intraday observation time, stamp when it is from so
-  // the EUR figure (holding prices × this live rate) is honest about its
-  // freshness: a clock time while it's today, the date it settled once older.
-  // The end-of-day ECB fallback carries no such timestamp (the tag below covers
-  // it instead).
+
+  // The rate + today's move. USD display shows the stored EUR/USD spot directly;
+  // EUR display shows USD/EUR (its reciprocal). The % still follows the currency
+  // strength convention used here (negated for the reciprocal).
+  const devPct = fxTodayDeviationPct(o);
+  const rate = inUsd ? o.fxRateEurUsd : new Decimal(1).dividedBy(o.fxRateEurUsd);
+  const dev = devPct === null ? null : inUsd ? devPct : devPct.negated();
+  const pair = inUsd ? "EUR/USD" : "USD/EUR";
+
+  // The "when is this rate from" stamps: an intraday clock/date when we have an
+  // observation time, and the honest "end-of-day FX" tag for the keyless ECB
+  // fallback that carries no intraday timestamp.
+  const stamps: HTMLElement[] = [];
   if (o.fxObservedAt !== null) {
     const when = new Date(o.fxObservedAt);
     const title = Number.isNaN(when.getTime())
       ? undefined
       : `EUR/USD rate observed ${when.toLocaleString()}`;
-    parts.push(
-      h(
-        "span",
-        title ? { class: "hero-fx-asof", title } : { class: "hero-fx-asof" },
-        [`FX ${formatAsOf(o.fxObservedAt, o.liveAsOfFallbackDate, now)}`],
-      ),
+    stamps.push(
+      h("span", title ? { class: "fx-box-asof", title } : { class: "fx-box-asof" }, [
+        `as of ${formatAsOf(o.fxObservedAt, o.liveAsOfFallbackDate, now)}`,
+      ]),
     );
   }
   if (o.eurUsdSource === "eod") {
-    parts.push(h("span", { class: "hero-fx-eod" }, ["end-of-day FX"]));
+    stamps.push(h("span", { class: "fx-box-eod" }, ["end-of-day FX"]));
   }
-  if (parts.length === 0) return null;
-  return h("div", { class: "hero-fx" }, parts);
+
+  const rateStat = h("div", { class: "fx-box-stat" }, [
+    h("span", { class: "fx-box-stat-label" }, [pair]),
+    h("span", { class: "fx-box-stat-value" }, [formatFxRate(rate)]),
+    ...(stamps.length > 0 ? [h("span", { class: "fx-box-stat-sub" }, stamps)] : []),
+  ]);
+  const moveStat = h("div", { class: "fx-box-stat" }, [
+    h("span", { class: "fx-box-stat-label" }, ["Today"]),
+    h("span", { class: `fx-box-stat-value ${signClass(dev)}` }, [
+      dev !== null ? formatSignedPercent(dev) : "—",
+    ]),
+    h("span", { class: "fx-box-stat-sub" }, ["rate move"]),
+  ]);
+
+  const children: HTMLElement[] = [
+    h("div", { class: "fx-box-head" }, [h("span", { class: "fx-box-title" }, ["Currency · EUR ↔ USD"])]),
+    h("div", { class: "fx-box-stats" }, [rateStat, moveStat]),
+  ];
+  const effect = renderFxEffect(o, inUsd, now);
+  if (effect) children.push(effect);
+  return h("section", { class: "fx-box", "aria-label": "Currency EUR to USD" }, children);
 }
 
 /**
- * The market-hours-vs-overnight breakdown of today's FX revaluation — the
- * transparency cue for "what shifted during the trading day, and what changed
- * overnight". The book is USD-booked, so once the US session has closed the euro
- * value keeps drifting on FX alone; this isolates that after-hours slice from the
- * in-session one so the user sees both.
+ * The "currency effect today" panel inside {@link renderFxBox}.
  *
- * Shown only once the market is shut and the overnight slice is known (we hold a
- * session-close rate to measure it from). While the session is open the whole
- * move is "in session", which the hero FX line already conveys, so the split is
- * omitted to keep the hero uncluttered.
+ * In **EUR** display the FX swing is genuine euro P&L, so we show the net figure
+ * and — once the US session is shut — a *diverging* bar splitting it into the
+ * slice that moved during market hours and the slice that drifted overnight. The
+ * diverging layout (each leg growing left for a loss or right for a gain from a
+ * shared centre line) reads correctly even when the two legs pull in opposite
+ * directions, which the old single stacked bar mangled into two crammed,
+ * misleading segments.
+ *
+ * In **USD** display the effect on the dollar value is exactly zero (the book is
+ * USD-booked), so a market-hours/overnight dollar split would be nonsense. We say
+ * the dollar value is unchanged and surface the EUR-repatriation figure instead.
+ *
+ * Returns null when there is no FX move to describe.
  */
-function renderFxEffectSplit(o: OverviewView, now: Date = new Date()): HTMLElement | null {
-  const marketOpen = isUsMarketOpen(now);
-  if (marketOpen) return null;
-  const split = fxEffectSplit({
-    marketOpen,
-    totalValueUsd: o.totalValueUsd,
-    liveFx: o.fxRateEurUsd,
-    sessionCloseFx: o.fxRateEurUsdSessionClose,
-    todayFxMoveEur: o.todayFxMoveEur,
-  });
-  const market = split.marketHoursEur;
-  const overnight = split.overnightEur;
-  // Need both legs to draw a meaningful split; otherwise there is nothing to show.
-  if (market === null || overnight === null) return null;
-  // Nothing moved on FX at all — no insight to surface.
-  if (market.isZero() && overnight.isZero()) return null;
+function renderFxEffect(o: OverviewView, inUsd: boolean, now: Date = new Date()): HTMLElement | null {
+  const net = o.todayFxMoveEur;
+  // No euro swing at all today ⇒ nothing worth a panel (the rate line still shows).
+  if (net.isZero()) return null;
 
-  const magMarket = market.abs();
-  const magOvernight = overnight.abs();
-  const totalMag = magMarket.plus(magOvernight);
-  // Proportional segment widths; guard the all-zero case handled above.
-  const pct = (part: Decimal): number =>
-    totalMag.isZero() ? 0 : part.dividedBy(totalMag).times(100).toNumber();
-
-  const seg = (value: Decimal, kind: "session" | "overnight"): HTMLElement => {
-    const width = pct(value.abs());
-    const el = h("span", { class: `fx-split-seg fx-split-${kind} ${signClass(value)}` }, []);
-    el.style.width = `${width}%`;
-    return el;
-  };
-  const bar = h("div", { class: "fx-split-bar", "aria-hidden": "true" }, [
-    seg(market, "session"),
-    seg(overnight, "overnight"),
-  ]);
-
-  const legRow = (swatch: string, label: string, value: Decimal): HTMLElement =>
-    h("div", { class: "fx-split-leg" }, [
-      h("span", { class: `fx-split-swatch ${swatch}`, "aria-hidden": "true" }, []),
-      h("span", { class: "fx-split-leg-label" }, [label]),
-      h("span", { class: `fx-split-leg-value ${signClass(value)}` }, [formatSignedCurrency(value)]),
+  const head = (valueEl: HTMLElement): HTMLElement =>
+    h("div", { class: "fx-effect-head" }, [
+      h("span", { class: "fx-effect-title" }, ["Currency effect today"]),
+      valueEl,
     ]);
 
-  return h("div", { class: "hero-fx-effect", role: "group", "aria-label": "Today's currency effect" }, [
-    h("div", { class: "fx-split-head" }, ["Currency effect today"]),
-    bar,
-    h("div", { class: "fx-split-legend" }, [
-      legRow("fx-split-session", "Market hours", market),
-      legRow("fx-split-overnight", "Overnight", overnight),
-    ]),
-  ]);
+  if (inUsd) {
+    // The dollar value is untouched by FX; be honest about it and give the EUR
+    // repatriation figure as the genuinely meaningful number.
+    const children: HTMLElement[] = [
+      head(h("span", { class: "fx-effect-net flat" }, ["$0"])),
+      h("p", { class: "fx-effect-note" }, [
+        "The rate moved, but your assets are priced in dollars — so it changed your USD value by nothing. " +
+          `It only matters when you convert back to euros: ${formatSignedMoneyEur(net)} today if you did.`,
+      ]),
+    ];
+    return h("div", { class: "fx-effect", role: "group", "aria-label": "Currency effect today" }, children);
+  }
+
+  const children: HTMLElement[] = [
+    head(h("span", { class: `fx-effect-net ${signClass(net)}` }, [formatSignedMoneyEur(net)])),
+  ];
+
+  // Market-hours vs overnight split — only once the session is shut and we hold a
+  // genuine session-close rate to measure the overnight slice from.
+  const marketOpen = isUsMarketOpen(now);
+  if (!marketOpen) {
+    const split = fxEffectSplit({
+      marketOpen,
+      totalValueUsd: o.totalValueUsd,
+      liveFx: o.fxRateEurUsd,
+      sessionCloseFx: o.fxRateEurUsdSessionClose,
+      todayFxMoveEur: o.todayFxMoveEur,
+    });
+    const market = split.marketHoursEur;
+    const overnight = split.overnightEur;
+    if (market !== null && overnight !== null && !(market.isZero() && overnight.isZero())) {
+      const maxMag = Decimal.max(market.abs(), overnight.abs());
+      const divergeRow = (label: string, value: Decimal, overnightLeg: boolean): HTMLElement => {
+        const width = maxMag.isZero() ? 0 : value.abs().dividedBy(maxMag).times(50).toNumber();
+        const fill = h(
+          "span",
+          {
+            class: `fx-diverge-fill ${signClass(value)}${overnightLeg ? " fx-diverge-overnight" : ""}`,
+          },
+          [],
+        );
+        fill.style.width = `${width}%`;
+        return h("div", { class: "fx-diverge-row" }, [
+          h("span", { class: "fx-diverge-label" }, [label]),
+          h("div", { class: "fx-diverge-track", "aria-hidden": "true" }, [fill]),
+          h("span", { class: `fx-diverge-value ${signClass(value)}` }, [formatSignedMoneyEur(value)]),
+        ]);
+      };
+      children.push(
+        h("div", { class: "fx-diverge" }, [
+          divergeRow("Market hours", market, false),
+          divergeRow("Overnight", overnight, true),
+        ]),
+      );
+    }
+  }
+
+  return h("div", { class: "fx-effect", role: "group", "aria-label": "Currency effect today" }, children);
 }
 
 /** One return horizon (Today / This month / This year). */
@@ -901,6 +938,8 @@ function renderOverviewPanel(model: DashboardModel, liveGraph?: LiveGraphHooks):
     renderHero(model.overview),
     renderReturns(model.overview),
   ];
+  const fxBox = renderFxBox(model.overview);
+  if (fxBox) content.push(fxBox);
   // Today's winners/losers sit as a distinct band below the value chart and the
   // stats block whose notes explain how fresh the data is ("data last pulled…",
   // live coverage, budget) — so the leaderboard reads right after the graph and

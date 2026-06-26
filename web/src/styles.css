@@ -365,65 +365,130 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .hero-change.pos .hero-change-pct { color: var(--pos); }
 .hero-change.neg .hero-change-pct { color: var(--neg); }
 
-/* Live EUR/USD context under today's move (rate, FX split, end-of-day tag). */
-.hero-fx {
+/* --- Currency · EUR ↔ USD box (full-width, below the return horizons) ------ */
+.fx-box {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1rem 1.1rem 1.1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+.fx-box-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; }
+.fx-box-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.fx-box-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem 1rem;
+}
+.fx-box-stat { display: grid; gap: 0.1rem; align-content: start; }
+.fx-box-stat-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.fx-box-stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.fx-box-stat-value.pos { color: var(--pos); }
+.fx-box-stat-value.neg { color: var(--neg); }
+.fx-box-stat-sub {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem 0.7rem;
-  margin-top: 0.6rem;
-  font-size: 0.8rem;
-  font-weight: 600;
+  gap: 0.3rem 0.5rem;
+  font-size: 0.74rem;
+  color: var(--muted);
+  font-weight: 500;
 }
-.hero-fx-rate { color: var(--text); }
-.hero-fx-asof { color: var(--muted); font-weight: 500; }
-.hero-fx-split { color: var(--muted); }
-.hero-fx-split.pos { color: var(--pos); }
-.hero-fx-split.neg { color: var(--neg); }
-.hero-fx-eod {
+.fx-box-asof { color: var(--muted); }
+.fx-box-eod {
   color: var(--muted);
   background: var(--surface-2, rgba(127, 127, 127, 0.14));
   border-radius: 999px;
-  padding: 0.1rem 0.5rem;
-  font-size: 0.72rem;
+  padding: 0.05rem 0.45rem;
+  font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
-/* --- Currency effect today (market hours vs overnight FX) ----------------- */
-.hero-fx-effect {
-  margin-top: 0.6rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+/* --- Currency effect today (net + diverging market-hours/overnight split) -- */
+.fx-effect {
+  display: grid;
+  gap: 0.55rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
 }
-.fx-split-head {
+.fx-effect-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; }
+.fx-effect-title {
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--muted);
 }
-.fx-split-bar {
-  display: flex;
-  width: 100%;
+.fx-effect-net {
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.fx-effect-net.pos { color: var(--pos); }
+.fx-effect-net.neg { color: var(--neg); }
+.fx-effect-net.flat { color: var(--muted); }
+.fx-effect-note { margin: 0; font-size: 0.78rem; color: var(--muted); line-height: 1.45; }
+
+/* The diverging bar: each leg grows from a shared centre line — right for a gain,
+   left for a loss — so two legs pulling in opposite directions read clearly
+   instead of being crammed into one stacked bar. The overnight leg is striped so
+   it is told apart from the market-hours leg by shape, not colour alone. */
+.fx-diverge { display: grid; gap: 0.4rem; }
+.fx-diverge-row {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr 5rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.fx-diverge-label { color: var(--muted); }
+.fx-diverge-track {
+  position: relative;
   height: 0.5rem;
   border-radius: 999px;
-  overflow: hidden;
   background: var(--surface-2, rgba(127, 127, 127, 0.14));
 }
-.fx-split-seg {
-  height: 100%;
+.fx-diverge-track::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -1px;
+  bottom: -1px;
+  width: 1px;
+  background: var(--border);
+}
+.fx-diverge-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
   min-width: 2px;
   transition: width 0.3s ease;
 }
-/* Market-hours slice reads in solid gain/loss colour; the overnight slice is the
-   same hue but striped, so the two are distinguishable at a glance and by shape
-   (not colour alone). */
-.fx-split-session.pos { background: var(--pos); }
-.fx-split-session.neg { background: var(--neg); }
-.fx-split-session.flat { background: var(--muted); }
-.fx-split-overnight.pos {
+.fx-diverge-fill.pos { left: 50%; border-radius: 0 999px 999px 0; background: var(--pos); }
+.fx-diverge-fill.neg { right: 50%; border-radius: 999px 0 0 999px; background: var(--neg); }
+.fx-diverge-fill.flat { left: 50%; width: 0; }
+.fx-diverge-overnight.pos {
   background: repeating-linear-gradient(
     45deg,
     var(--pos),
@@ -432,7 +497,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     var(--pos-soft) 6px
   );
 }
-.fx-split-overnight.neg {
+.fx-diverge-overnight.neg {
   background: repeating-linear-gradient(
     45deg,
     var(--neg),
@@ -441,40 +506,10 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     var(--neg-soft) 6px
   );
 }
-.fx-split-overnight.flat { background: var(--muted); }
-.fx-split-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem 1rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-.fx-split-leg {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-.fx-split-swatch {
-  width: 0.7rem;
-  height: 0.7rem;
-  border-radius: 0.2rem;
-  flex: none;
-}
-.fx-split-swatch.fx-split-session { background: var(--muted); }
-.fx-split-swatch.fx-split-overnight {
-  background: repeating-linear-gradient(
-    45deg,
-    var(--muted),
-    var(--muted) 2px,
-    transparent 2px,
-    transparent 4px
-  );
-  border: 1px solid var(--muted);
-}
-.fx-split-leg-label { color: var(--muted); }
-.fx-split-leg-value.pos { color: var(--pos); }
-.fx-split-leg-value.neg { color: var(--neg); }
-.fx-split-leg-value.flat { color: var(--fg); }
+.fx-diverge-value { text-align: right; font-variant-numeric: tabular-nums; }
+.fx-diverge-value.pos { color: var(--pos); }
+.fx-diverge-value.neg { color: var(--neg); }
+.fx-diverge-value.flat { color: var(--fg); }
 
 /* --- Return horizons (Today / This month / This year) --------------------- */
 .segment {
@@ -1586,6 +1621,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     grid-template-columns: minmax(0, 1fr) 22rem;
     grid-template-areas:
       "hero     returns"
+      "fx       fx"
       "value    value"
       "stats    stats"
       "movers   movers"
@@ -1613,6 +1649,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .panel-overview > .hero .hero-value { grid-area: value; }
   .panel-overview > .hero .hero-change { grid-area: change; margin-top: 0; align-self: center; }
   .panel-overview > .segment { grid-area: returns; align-self: stretch; align-content: center; }
+  .panel-overview > .fx-box { grid-area: fx; }
   .panel-overview > .value-chart { grid-area: value; }
   .panel-overview > .stats { grid-area: stats; }
   .panel-overview > .movers-band { grid-area: movers; }

@@ -171,9 +171,9 @@ export const DEMO_TOUR_STEPS: TourStep[] = [
     tab: "overview",
   },
   {
-    selector: ".hero-fx",
-    title: "FX-aware today's move",
-    body: "For a euro investor holding dollars, part of today's move comes from the EUR/USD swing. The app splits that out instead of hiding it.",
+    selector: ".fx-box",
+    title: "FX-aware currency box",
+    body: "For a euro investor holding dollars, part of today's move comes from the EUR/USD swing. This box splits that out — and in USD view it's honest that the rate changes nothing about your dollar value.",
     tab: "overview",
   },
   {
