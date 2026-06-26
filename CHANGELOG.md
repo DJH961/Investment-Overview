@@ -35,6 +35,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   an optional severity level, set explicitly at the key fetch/fallback/failure
   sites and inferred from wording elsewhere (`web/src/polling-log.ts`,
   `web/src/app.ts`).
+- **The desktop app's data-pulling log got the same one-readable-story-per-round
+  treatment.** Every price pull — the live tick, a manual click, the startup
+  backfill, the Settings buttons — now opens a single *pull round* that prints a
+  clear `===== PULL <id> START =====` banner naming **who triggered it** and the
+  **mode** (auto/TTL-due, manual full re-pull, startup backfill, manual
+  Tiingo-only), narrates each step under a stable, greppable `pull <id> | …`
+  prefix, and closes with a one-line `summary:` plus an `===== PULL <id> END =====`
+  banner. A round spells out, in order: the symbols/window **requested**, what
+  **settled** (fresh closes, naming the symbols), what **FAILED** (a hard provider
+  error), what came back **SUSPECT** (a non-positive close the feed forward-fills
+  into valuations), every **backoff** wait, any **Tiingo fallback** coverage with
+  the **budget remaining** afterwards (`7/10 this hour, 188/200 today`), and the
+  live EUR/USD spot. New module `services/pull_log.py`; wired through
+  `prices_service`, `auto_refresh`, `tiingo_fallback_wiring`, `adapters/_retry`
+  and `boot`. Two overlapping pulls keep independent round ids (a per-thread
+  `ContextVar`), so the startup backfill and a live tick never interleave into
+  noise.
+- **The web log now also flags SUSPECT prices** (a non-positive quote the feed
+  would forward-fill into valuations), mirroring the desktop log, so "what
+  generated wrong data?" is answerable on both surfaces (`web/src/app.ts`,
+  `web/src/compute.ts`).
 
 ## [4.9.3] — 2026-06-26
 
