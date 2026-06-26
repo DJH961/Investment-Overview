@@ -251,8 +251,22 @@ entirely in Pillar 5.**
     breadcrumbs until the next `:00`. The only forgone behaviour — *instant*
     real-bar backfill of a mid-hour dead span instead of a flat breadcrumb segment —
     is already the accepted design ("breadcrumbs fill until the next hour").
-- **Quote rolling TTL.** Quotes refresh on a **rolling 15-minute** window for a
-  live feel (the existing `DEFAULT_CACHE_TTL_MS`).
+- **Quote freshness = the user-set auto-refresh interval.** Quotes refresh on a
+  rolling window equal to whatever the user configured (default 15 min). This
+  replaces the old hardcoded `DEFAULT_CACHE_TTL_MS = 15 min`; lowering the
+  auto-refresh setting now visibly speeds up quotes with no hidden override.
+- **FX rides the same interval — no separate FX cadence.** The live EUR/USD
+  spot is suppressed by Overlay 3 in the orchestrator when it was pulled within
+  the user interval; it refreshes at the same rate as quotes. The old 45-second
+  `REFRESH_EURUSD_REUSE_MS` reuse window is deleted; the login warm-up →
+  kickoff dedup is handled by the orchestrator overlay instead.
+- **The only two cadence exceptions** (both physical, both already in the plan):
+  1. **NAV: once per day.** Funds publish once daily after close; the orchestrator
+     only enables the NAV leg when today's price is missing, never at the
+     auto-refresh rate.
+  2. **1D/1W bars: clock-hour gate only.** The `:00` gate is the sole bar authority
+     during market hours; a fast refresh rate never pulls full-history bars more
+     than hourly.
 
 **"Last auto-update" is the user-editable refresh interval.** The
 "relatively fresh" trigger compares against the configured interval (default
@@ -362,6 +376,34 @@ four mechanisms.
 8. **Regression guards** — 1W detail-accretion not coarsened; no path bypasses
    budget/breaker; interaction stays network-free.
 
+### Runtime wiring status (part-2 follow-up)
+
+The pure modules above are now the **runtime authorities**, not loggers:
+
+- **One plan per round — all five legs (Pillar 1).** `app.ts` builds a single
+  `planPull` result per refresh round from the **real** freshness ledger and
+  passes it into `refreshPrices` as the authority for **all five legs**:
+  1D/1W bars (`graphPrimeDecision`), quotes, NAV, and FX. Each leg is fetched
+  only when the plan enables it — the executors still do the fetching, but the
+  decision to fetch comes from the plan, not from private executor timers.
+  The clock-hour bar gate is consulted once per round in both directions; the
+  quote and FX freshness overlays (Overlays 2 and 3) suppress those legs
+  within the user interval; the NAV leg turns on only when today's price is
+  missing. A developer can read `planPull` top-to-bottom and state exactly
+  what every round pulls.
+- **`blobDaysOld` is runtime-active (assumption 8) + blob-trust re-engage.** It is
+  populated from the remote `portfolio.meta.json` `published_at` (best-available
+  recency), not the on-device blob age. Because a refresh round runs *after* the
+  blob is decrypted, the **blob-trust re-engage overlay** is applied there: the
+  metadata value can only *raise* the freshness floor, never mask the observed
+  on-device gap — so a blob whose metadata promised coverage but which lacked it
+  after decrypt re-engages the skipped row instead of trapping the book stale.
+- **Provider fan-out covers login *and* manual (Pillar 5).** `planFanout` is the
+  decision of record for the login split *and* for a manual reload's Tiingo budget:
+  a non-login fan-out keeps the 10-credit Tiingo floor that auto rounds / other
+  devices rely on.
+
+
 ---
 
 ## Verification
@@ -369,11 +411,12 @@ four mechanisms.
 - **Unit (`web/test`):** decision-function truth-table cases (each tier × market
   state); clock-hour bar gate (pull at 15:30 ⇒ none until 17:00; breadcrumbs fill;
   no resume-repull inside the hour); NAV-missing row fires **only when closed**;
-  rolling quote TTL; regenerate-only issues zero fetches; login handshake dedupes
-  Step 2 against Step 1; fan-out keeps TD ≤8 and never touches the last 10 Tiingo
-  credits **except on login/start**; reset clears soft backoff but not
-  budget/breaker; the 1W aggregate merge keeps agreeing slots and flags > τ
-  disagreements without spiking.
+  quote freshness overlay (user-set interval, not hardcoded 15 min); FX freshness
+  overlay (suppressed within interval, always pulled on manual); regenerate-only
+  issues zero fetches; login handshake dedupes Step 2 against Step 1; fan-out keeps
+  TD ≤8 and never touches the last 10 Tiingo credits **except on login/start**;
+  reset clears soft backoff but not budget/breaker; the 1W aggregate merge keeps
+  agreeing slots and flags > τ disagreements without spiking.
 - **Manual:** cold login mid-session (fresh, sliced, no double-pull); seconds-later
   re-login (zero pulls); range toggle + graph click (zero pulls); market-open hour
   boundary (bar pull only at `:00`).

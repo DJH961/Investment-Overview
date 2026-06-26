@@ -340,14 +340,66 @@ export interface ExportLiveGraphSeries {
 }
 
 /**
+ * The schema-v3 **aggregate market-sleeve backbone** (`docs/mobile_export_schema.md`):
+ * the value of the intraday-priced sleeve only (cash + NAV deliberately excluded)
+ * across the whole 1W window, in compact columnar form so it stays a few KB
+ * regardless of symbol count. The three arrays are index-aligned and share one
+ * length: `times[i]` ↔ `value_native[i]` ↔ `fx_eur_usd[i]`.
+ *
+ * Currency model: `value_native` is the FX-free booked (USD) sleeve value; the
+ * EUR sleeve is recovered as `value_native[i] / fx_eur_usd[i]` (the rate in force
+ * at that instant), so the two lines genuinely diverge — never a flat rescale. A
+ * `null` in `value_native` marks a capture gap (skip the slot); a `null` in
+ * `fx_eur_usd` tells the web to fall back to today's rate for that point.
+ */
+export interface ExportMarketSeries {
+  /** True capture instants, ISO-8601 UTC (each carries a `Z`). */
+  times: string[];
+  /** FX-free booked (USD) sleeve value at each instant; `null` = a capture gap. */
+  value_native: (DecimalString | null)[];
+  /** EUR→USD rate in force at each instant; `null` → web uses today's rate. */
+  fx_eur_usd: (DecimalString | null)[];
+}
+
+/**
+ * The desktop's dense whole-book live captures shipped as a **display-only**
+ * trail: like the web's own `session.tips`, these are rebased on import and
+ * spliced *after* the freshest real point to thicken the line, but are **never**
+ * merged into or cross-checked against the market-sleeve backbone.
+ */
+export interface ExportLiveTrail {
+  /** Always `true` — the contract that bars this series from any reconciliation. */
+  display_only: boolean;
+  /** Whole-book points (same shape as a legacy series), downsampled for size. */
+  points: ExportLiveCurvePoint[];
+}
+
+/**
  * The desktop's live 1D/1W graphs, serialized so the web can springboard the
  * curve from the blob instead of re-fetching intraday bars. `captured_at` stamps
  * when the desktop built it, so the web can judge freshness and never present a
  * stale session as the live one.
+ *
+ * Schema v3 adds the **market-sleeve backbone** ({@link market_series} +
+ * {@link daily_close_native} + {@link nav_prices} + {@link trail}); these are all
+ * optional so a reader stays tolerant of older v1/v2 exports that omit them
+ * (graceful degradation — the legacy `day`/`week` curves still drive the render).
  */
 export interface ExportLiveGraphs {
   /** ISO-8601 UTC instant the export was captured (the freshness stamp). */
   captured_at: string;
+  /** Bucketing grid the desktop sampled the backbone on (`"30m"` default). */
+  grid?: "30m" | "15m";
+  /** `YYYY-MM-DD` New-York sessions the 1W window spans (oldest first). */
+  session_dates?: string[];
+  /** v3 aggregate market-sleeve series across the whole window (absent on v1/v2). */
+  market_series?: ExportMarketSeries | null;
+  /** v3 settled sleeve close (native USD) per session date, `{ "YYYY-MM-DD": "…" }`. */
+  daily_close_native?: Record<string, DecimalString | null>;
+  /** v3 per-day published NAV per NAV/cash holding: `{ symbol: [[date, price], …] }`. */
+  nav_prices?: Record<string, [string, DecimalString | null][]>;
+  /** v3 display-only dense whole-book trail (never merged/cross-checked). */
+  trail?: ExportLiveTrail | null;
   /** The intraday 1D session, if the desktop had one to ship. */
   day?: ExportLiveGraphSeries | null;
   /** The multi-day 1W sleeve, if the desktop had one to ship. */

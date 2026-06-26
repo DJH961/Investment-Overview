@@ -268,6 +268,15 @@ export interface WeekCurveOptions {
    * self-explaining (the visibility theme of items 2 & 6). A no-op by default.
    */
   onNavBackfill?: (symbols: string[]) => void;
+  /**
+   * **Regenerate-only (Pillar 6, the decisive seam).** When `true` the 1W build
+   * is pure: it reconstructs from the stored daily closes (plus the live tip) and
+   * **never** fetches — no daily-close backfill, no NAV gap-fill, no FX refill. UI
+   * interaction (a 1D/1W toggle, a graph click) must use this so the render path
+   * is guaranteed network-free; only the four pull mechanisms build with fetching
+   * enabled. Defaults to `false`. See {@link SessionCurveOptions.regenerateOnly}.
+   */
+  regenerateOnly?: boolean;
 }
 
 /** A built 1W curve plus the window it covers. */
@@ -323,6 +332,7 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
   // never gate a network pull, so a fund still missing a NAV day cannot force a
   // re-pull storm of the market closes (item 5b coverage, item 7 range-split).
   const fresh =
+    (options.regenerateOnly ?? false) ||
     symbols.length === 0 ||
     (stored !== null && coversThrough(stored.bars, fetchSymbols, dayStartMs(settledEnd)));
 
@@ -356,7 +366,7 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
   // in this set, so they stay flat and spend nothing. The fetch is routed through
   // the item-8 capacity split and re-stamped to the NAV day-start cadence.
   const navBackfillSymbols = options.navBackfillSymbols ?? [];
-  const fetchNavBars = options.fetchNavBars ?? null;
+  const fetchNavBars = (options.regenerateOnly ?? false) ? null : options.fetchNavBars ?? null;
   if (fetchNavBars && navBackfillSymbols.length > 0) {
     const staleNav = navBackfillStaleSymbols(stored, navBackfillSymbols, now, sessions);
     if (staleNav.length > 0) {
@@ -379,6 +389,7 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
   // fully-loaded closed-market week never re-fires once its FX is in hand.
   const loaded = stored;
   if (
+    !(options.regenerateOnly ?? false) &&
     fetchFx &&
     !fxAttempted &&
     loaded !== null &&

@@ -1340,7 +1340,10 @@ export interface LiveCurveChart {
  * `null` when the curve can't be drawn (no data yet, missing key/proxy, or a
  * failed fetch). Only invoked when the user actually selects a live preset.
  */
-export type LiveCurveBuilder = (range: LiveRange) => Promise<LiveCurveChart | null>;
+export type LiveCurveBuilder = (
+  range: LiveRange,
+  opts?: { regenerateOnly?: boolean },
+) => Promise<LiveCurveChart | null>;
 
 /**
  * The app shell's hooks for the live value chart: each lazily
@@ -1350,10 +1353,15 @@ export type LiveCurveBuilder = (range: LiveRange) => Promise<LiveCurveChart | nu
  * currency-agnostic.
  */
 export interface LiveGraphHooks {
-  /** Build the live 1D (intraday) curve points, or null when unavailable. */
-  session: () => Promise<CurvePoint[] | null>;
+  /**
+   * Build the live 1D (intraday) curve points, or null when unavailable. When
+   * `opts.regenerateOnly` is set the build is pure (reconstruct from stored bars,
+   * **zero network**) — every UI interaction (range toggle, graph click) passes
+   * it so chart interaction never fetches; only the initial paint may pull.
+   */
+  session: (opts?: { regenerateOnly?: boolean }) => Promise<CurvePoint[] | null>;
   /** Build the live 1W (daily-close) curve points, or null when unavailable. */
-  week: () => Promise<CurvePoint[] | null>;
+  week: (opts?: { regenerateOnly?: boolean }) => Promise<CurvePoint[] | null>;
 }
 
 /** One selectable preset: either a history slice or a live (fetched) curve. */
@@ -1452,12 +1460,12 @@ function chartWithTimeframe(
     if (chart) wrap.replaceChildren(...withLegend(chart as unknown as HTMLElement, baseLegend));
   };
 
-  const applyLive = async (range: LiveRange, token: number): Promise<void> => {
+  const applyLive = async (range: LiveRange, token: number, regenerateOnly: boolean): Promise<void> => {
     if (!live) return;
     wrap.replaceChildren(liveStatus("Loading live data…"));
     let built: LiveCurveChart | null = null;
     try {
-      built = await live(range);
+      built = await live(range, { regenerateOnly });
     } catch {
       built = null;
     }
@@ -1486,7 +1494,11 @@ function chartWithTimeframe(
     wrap.replaceChildren(...withLegend(chart as unknown as HTMLElement, built.legend));
   };
 
-  const select = (index: number, persist = true): void => {
+  // `userInitiated` distinguishes a tap on a range button (Pillar 6: interaction
+  // = regenerate, never poll → network-free) from the one initial restore on
+  // mount (allowed to fetch for first paint until the pull mechanisms warm the
+  // store). All live re-selection by the user is regenerate-only.
+  const select = (index: number, persist = true, userInitiated = true): void => {
     const token = (activeToken += 1);
     const option = options[index];
     buttons.forEach((button, i) => {
@@ -1497,7 +1509,7 @@ function chartWithTimeframe(
     // Remember the chosen window (by label, stable across exports) so it survives
     // the full re-render a refresh or currency toggle triggers.
     if (persist && storageKey) saveStringPref(storageKey, option.label);
-    if (option.kind === "live") void applyLive(option.range, token);
+    if (option.kind === "live") void applyLive(option.range, token, userInitiated);
     else applyHistory(option.days);
   };
 
@@ -1508,11 +1520,12 @@ function chartWithTimeframe(
     buttons.push(button);
     controls.appendChild(button);
   });
-  // Reopen the remembered window (by label); default to the full history.
+  // Reopen the remembered window (by label); default to the full history. This
+  // sole initial selection is not user-initiated, so it may fetch for first paint.
   const savedLabel = storageKey ? loadStringPref(storageKey) : null;
   const savedIndex = savedLabel ? options.findIndex((o) => o.label === savedLabel) : -1;
   const initial = savedIndex >= 0 ? savedIndex : options.length - 1;
-  select(initial, false);
+  select(initial, false, false);
 
   return h("div", { class: "chart-block" }, [controls, wrap]);
 }
@@ -1899,8 +1912,9 @@ function renderValueChart(
       : { eur: lastPoint.portfolioValue, usd: lastPoint.portfolioValueUsd };
   const liveBuilder: LiveCurveBuilder | undefined =
     liveGraph
-      ? async (range) => {
-          const built = range === "1D" ? await liveGraph.session() : await liveGraph.week();
+      ? async (range, opts) => {
+          const built =
+            range === "1D" ? await liveGraph.session(opts) : await liveGraph.week(opts);
           if (!built) return null;
           return liveCurveToChart(built, range === "1D" ? prevClose : null);
         }
