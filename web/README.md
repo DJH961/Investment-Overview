@@ -183,6 +183,15 @@ game**. Everything slow happens *after* you're already looking at your numbers:
   big closed-market catch-up rapid-fires through Tiingo in one batched request
   rather than trickling through the per-minute primary. By the time you're in, the
   dashboard paints live instead of starting the rate-limit clock from zero.
+- **FX weekend close — frozen, never auto-dated silently.** The spot-FX (forex)
+  market trades ~24×5, shutting Friday 17:00 ET and reopening Sunday 17:00 ET
+  (`isForexMarketOpen` / `forexMarketReopenMs` in `src/market-hours.ts`). While it
+  is shut the EUR/USD rate is frozen at Friday's close, so the app says so plainly
+  rather than dressing the stale quote up as live: the status bar reads **"FX
+  market closed"** and the Currency box carries a **"Market closed"** badge with a
+  calm **"Frozen at Friday's close · reopens Sun …"** stamp in your own timezone.
+  It also stops spending a free-tier credit to re-confirm an unchanged weekend
+  quote — `loadEurUsd` serves the cached Friday spot instead.
 - **Biggest first.** Quotes are fetched in priority order — ETFs/stocks
   (largest EUR value first), then mutual funds (largest first); money-market
   funds are never requested (their NAV is pinned at $1). Under the per-minute

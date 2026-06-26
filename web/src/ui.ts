@@ -13,7 +13,7 @@ import { Decimal } from "./decimal-config";
 import type { AllocationSlice, DashboardModel, HoldingView, MoverEntry, OverviewView } from "./compute";
 import { buildMovers, fxSinceAnchorPct } from "./compute";
 import { fxEffectSplit } from "./session-fx";
-import { isUsMarketOpen, isUsTradingDay } from "./market-hours";
+import { isUsMarketOpen, isUsTradingDay, isForexMarketOpen, forexMarketReopenMs } from "./market-hours";
 import {
   type AnalyticsView,
   type DepositRowView,
@@ -57,6 +57,7 @@ import {
   formatSignedMoneyEur,
   formatSignedPercent,
   formatExportedAt,
+  formatForexReopen,
   signClass,
 } from "./format";
 import { computeCurrencyEffect } from "./currency-effect";
@@ -211,6 +212,10 @@ function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElement | nul
   // strength convention used here (negated for the reciprocal).
   const marketOpen = isUsMarketOpen(now);
   const tradingDay = isUsTradingDay(now);
+  // Spot-FX (forex) market state: shut over the weekend, when the rate is frozen
+  // at Friday's close. Drives the explicit "FX market closed · reopens Sun …"
+  // badge so the frozen weekend quote never reads as live.
+  const forexClosed = !isForexMarketOpen(now);
   // "Today" uses a market-state-dependent baseline so it never just mirrors the
   // "Since open/close" stat beside it: while the session is live it is the move
   // since the *prior close* (overnight + intraday so far); once a trading day has
@@ -281,10 +286,23 @@ function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElement | nul
   }
 
   const statsClass = stats.length === 2 ? "fx-box-stats fx-box-stats-pair" : "fx-box-stats";
+  // Over the weekend forex close, badge the box plainly and stamp when it reopens,
+  // so the frozen Friday rate is never mistaken for a live one.
+  const head: HTMLElement[] = [h("span", { class: "fx-box-title" }, ["Currency · EUR ↔ USD"])];
+  if (forexClosed) {
+    head.push(h("span", { class: "fx-box-closed", title: "Forex market closed for the weekend" }, ["Market closed"]));
+  }
   const children: HTMLElement[] = [
-    h("div", { class: "fx-box-head" }, [h("span", { class: "fx-box-title" }, ["Currency · EUR ↔ USD"])]),
+    h("div", { class: "fx-box-head" }, head),
     h("div", { class: statsClass }, stats),
   ];
+  if (forexClosed) {
+    children.push(
+      h("div", { class: "fx-box-reopen" }, [
+        `Frozen at Friday's close · ${formatForexReopen(forexMarketReopenMs(now), now)}`,
+      ]),
+    );
+  }
   const effect = renderFxEffect(o, now);
   if (effect) children.push(effect);
   return h("section", { class: "fx-box", "aria-label": "Currency EUR to USD" }, children);

@@ -405,6 +405,56 @@ export function nextSessionCloseMs(now: Date = new Date()): number {
 }
 
 /**
+ * Minutes since New-York midnight of the spot-FX (forex) weekly boundary: the
+ * market closes Friday 17:00 ET and reopens Sunday 17:00 ET.
+ */
+const FOREX_BOUNDARY_MINUTES = 17 * 60; // 17:00 ET
+
+/**
+ * Whether the spot-FX (forex) market is trading at `now` (defaults to the current
+ * instant). Unlike the NYSE *daily* session, forex trades nearly 24×5: it is open
+ * from **Sunday 17:00 ET** right through to **Friday 17:00 ET**, dark only across
+ * the weekend (all of Saturday, plus Friday evening and Sunday morning either side
+ * of it).
+ *
+ * The EUR→USD spot that values the (USD-booked) book is only genuinely live inside
+ * this window; over the weekend close the rate is frozen at Friday's close. The UI
+ * uses this to stop dressing that auto-dated weekend quote up as "live" and instead
+ * say plainly that the market is shut until Sunday — so the reader is never
+ * surprised by a stale rate that merely *looks* current. Holiday / thin-liquidity
+ * sessions are deliberately not modelled: the weekend is the only window in which
+ * the spot sits frozen for ~48h, which is the surprise this guards against.
+ */
+export function isForexMarketOpen(now: Date = new Date()): boolean {
+  const moment = exchangeMoment(now);
+  if (moment.weekday === 6) return false; // Saturday — dark all day
+  if (moment.weekday === 5 && moment.minutes >= FOREX_BOUNDARY_MINUTES) return false; // Fri ≥ 17:00 ET
+  if (moment.weekday === 0 && moment.minutes < FOREX_BOUNDARY_MINUTES) return false; // Sun < 17:00 ET
+  return true;
+}
+
+/**
+ * Absolute UTC epoch-ms of the spot-FX market's next **Sunday 17:00 ET** reopen,
+ * relative to `now`. Only meaningful while the market is closed (see
+ * {@link isForexMarketOpen}); from inside the weekend close it resolves to the
+ * upcoming Sunday's reopen — today's reopen on a Sunday morning before 17:00 ET,
+ * else the next Sunday after a Friday-evening / Saturday close. Drives the calm
+ * "FX market closed · reopens Sun …" display so the frozen weekend rate carries an
+ * explicit "back live at" stamp instead of a silent auto-date.
+ */
+export function forexMarketReopenMs(now: Date = new Date()): number {
+  const moment = exchangeMoment(now);
+  // Walk forward (UTC day stepping; only the calendar date matters) to the first
+  // calendar day on/after today that is a Sunday in the New-York timezone.
+  let date = new Date(Date.UTC(moment.year, moment.month - 1, moment.day));
+  while (weekdayOf(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()) !== 0) {
+    date = new Date(date.getTime() + 24 * 60 * 60 * 1000);
+  }
+  const day = ymd(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+  return exchangeWallToUtcMs(day, FOREX_BOUNDARY_MINUTES);
+}
+
+/**
  * The intraday 1D curve is built from one-hour resampled bars (Tiingo IEX
  * `resampleFreq=1hour`, Twelve Data falls back to a coarser series), so no
  * completed intraday bar can exist until a full bar interval of trading time has

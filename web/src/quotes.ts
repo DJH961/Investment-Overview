@@ -668,6 +668,16 @@ export interface LoadEurUsdOptions {
   tiingoProxyUrl?: string | null;
   /** Injectable fetch for the Tiingo FX call (defaults to {@link fetchImpl}). */
   tiingoFetchImpl?: FetchLike;
+  /**
+   * Whether the spot-FX (forex) market is open right now. Defaults to `true`.
+   * When `false` (the weekend close) the live legs — Twelve Data and the Tiingo
+   * backup — are skipped entirely: the rate is frozen at Friday's close, so a
+   * live pull would only spend a free-tier credit to re-confirm an unchanged
+   * quote. The reading is served from the cached Friday spot instead, keeping the
+   * view frozen on the last live value (with its real prior close) rather than
+   * collapsing to the flat end-of-day rate.
+   */
+  forexOpen?: boolean;
 }
 
 /**
@@ -716,6 +726,7 @@ export async function loadEurUsd(
     eodFallback = null,
     tiingoProxyUrl = null,
     tiingoFetchImpl,
+    forexOpen = true,
   } = options;
 
   const cached = readCachedEurUsd(storage ?? undefined);
@@ -724,7 +735,7 @@ export async function loadEurUsd(
   }
 
   let liveError: PriceError | null = null;
-  if (apiKey.length > 0) {
+  if (forexOpen && apiKey.length > 0) {
     const t = now();
     const log = readCreditLog(t, DAY_MS, storage ?? undefined);
     const minute = Math.max(0, creditsPerMinute - creditsSpentWithin(log, t, MINUTE_MS));
@@ -760,7 +771,7 @@ export async function loadEurUsd(
       WEB_HOURLY_CAP,
       WEB_DAILY_CAP,
     );
-    if (budget.hasRoom()) {
+    if (forexOpen && budget.hasRoom()) {
       recordTiingoCredits(1, t, storage ?? undefined);
       try {
         const reading = await fetchTiingoEurUsd(tiingoProxyUrl, {
@@ -787,6 +798,14 @@ export async function loadEurUsd(
   // end-of-day fallback (which has no prior close). Only drop to end-of-day
   // when we have nothing from today at all.
   if (cached && cached.now !== null && isSameUtcDay(cached.at, now())) {
+    return { now: cached.now, previousClose: cached.previousClose, source: "cache", at: cached.at, cached: true, error: liveError };
+  }
+
+  // Forex weekend close: freeze on the last cached spot (Friday's close) in
+  // preference to the flat ECB end-of-day rate, so the frozen view keeps its real
+  // prior close and FX-effect split intact rather than re-basing onto a rate with
+  // no prior close.
+  if (!forexOpen && cached && cached.now !== null) {
     return { now: cached.now, previousClose: cached.previousClose, source: "cache", at: cached.at, cached: true, error: liveError };
   }
 

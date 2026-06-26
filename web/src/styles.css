@@ -424,6 +424,22 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
+.fx-box-closed {
+  color: var(--neg);
+  background: color-mix(in srgb, var(--neg) 14%, transparent);
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.fx-box-reopen {
+  font-size: 0.74rem;
+  color: var(--muted);
+  font-weight: 500;
+}
 
 /* --- Currency effect since yesterday (net + diverging market-hours/overnight split) -- */
 .fx-effect {

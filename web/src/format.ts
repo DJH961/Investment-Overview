@@ -260,6 +260,26 @@ function calendarDayDiff(then: Date, now: Date): number {
 }
 
 /**
+ * The "FX market closed — reopens …" caption shown while the spot-FX (forex)
+ * market is shut over the weekend. `reopenAt` is the absolute epoch-ms of the
+ * Sunday 17:00 ET reopen (see `forexMarketReopenMs`), rendered in the viewer's own
+ * timezone so they read it on their own clock: "reopens today 23:00" when the
+ * reopen is later today, "reopens tomorrow 23:00" the day before, else the weekday
+ * + clock time ("reopens Sun 23:00"). Returns just "reopens soon" if the instant
+ * can't be parsed, so the caption never shows a broken date.
+ */
+export function formatForexReopen(reopenAt: number, now: Date = new Date()): string {
+  const when = new Date(reopenAt);
+  if (Number.isNaN(when.getTime())) return "reopens soon";
+  const time = when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", ...clockOptions() });
+  const dayDiff = calendarDayDiff(now, when);
+  if (dayDiff === 0) return `reopens today ${time}`;
+  if (dayDiff === 1) return `reopens tomorrow ${time}`;
+  const day = when.toLocaleDateString(undefined, { weekday: "short" });
+  return `reopens ${day} ${time}`;
+}
+
+/**
  * The market-situation-aware "as of" caption for the hero's total value and
  * today's move — the browser mirror of the desktop's Daily Growth caption
  * (`services/daily_growth_view.build_daily_growth_caption`).

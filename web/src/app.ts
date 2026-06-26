@@ -79,7 +79,7 @@ import {
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
+import { isUsMarketOpen, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -958,6 +958,8 @@ export class App {
       // reused for free; older than the interval we pull fresh. No hardcoded 15 min.
       ttlMs: config.updateMinutes * 60 * 1000,
       tiingoProxyUrl: resolvePriceProxyUrl(config),
+      // Frozen over the weekend forex close — serve the cached Friday spot.
+      forexOpen: isForexMarketOpen(),
     }).catch(() => null);
     const spotSource: EurUsdSource = eurUsd?.source ?? "none";
     const spotLive = spotSource === "live" || spotSource === "tiingo";
@@ -3267,6 +3269,9 @@ export class App {
         eodFallback: fx.rates.USD ?? null,
         ttlMs: 0,
         tiingoProxyUrl: resolvePriceProxyUrl(config),
+        // Over the weekend forex close, freeze on the last cached spot instead of
+        // spending a credit to re-confirm Friday's unchanged close.
+        forexOpen: isForexMarketOpen(),
       });
       eurUsdNow = eurUsd.now;
       eurUsdPrev = eurUsd.previousClose;
@@ -3534,6 +3539,7 @@ export class App {
           marketOpen: isUsMarketOpen(),
           freshlyPulled: this.recentlyPulled(),
           fx: fxDisplaySource,
+          fxMarketClosed: !isForexMarketOpen(),
         },
       );
       this.lastCoverage = summarizeCoverage(this.lastCoverageFacts);
@@ -3563,6 +3569,7 @@ export class App {
           marketOpen: isUsMarketOpen(),
           freshlyPulled: this.recentlyPulled(),
           fx: fxDisplaySource,
+          fxMarketClosed: !isForexMarketOpen(),
         },
       );
       this.lastCoverage = summarizeCoverage(this.lastCoverageFacts);
@@ -5229,6 +5236,13 @@ export interface CoverageFacts {
    *   - `none`  — no rate at all (awaiting FX; book values may be incomplete).
    */
   fx: EurUsdSource;
+  /**
+   * Whether the spot-FX (forex) market is *shut* right now (the weekend close,
+   * see {@link isForexMarketOpen}). When true the EUR/USD rate is frozen at
+   * Friday's close, so the FX clause says "FX market closed" rather than dressing
+   * the auto-dated weekend quote up as live/recent.
+   */
+  fxMarketClosed: boolean;
 }
 
 /**
@@ -5253,7 +5267,10 @@ export function displayFxSource(
 }
 
 /** Human FX-freshness clause for the coverage line (see {@link CoverageFacts.fx}). */
-function fxClause(fx: EurUsdSource): string {
+function fxClause(fx: EurUsdSource, fxMarketClosed = false): string {
+  // Weekend forex close: the rate is frozen at Friday's close, so say so plainly
+  // rather than implying a live/recent pull of an auto-dated quote.
+  if (fxMarketClosed) return "FX market closed";
   switch (fx) {
     case "live":
       return "FX live";
@@ -5300,6 +5317,7 @@ export function buildCoverageFacts(
     marketOpen: boolean;
     freshlyPulled?: boolean;
     fx?: EurUsdSource;
+    fxMarketClosed?: boolean;
   },
 ): CoverageFacts {
   const now = ctx.now ?? new Date();
@@ -5355,6 +5373,7 @@ export function buildCoverageFacts(
     freshlyPulled: ctx.freshlyPulled ?? true,
     error: report.error !== null,
     fx: ctx.fx ?? "none",
+    fxMarketClosed: ctx.fxMarketClosed ?? false,
   };
 }
 
@@ -5408,7 +5427,7 @@ function joinBuckets(buckets: { n: number; label: string }[], total: number): st
  */
 export function summarizeCoverage(f: CoverageFacts): string {
   const total = f.marketTotal + f.navTotal;
-  const fx = fxClause(f.fx);
+  const fx = fxClause(f.fx, f.fxMarketClosed);
   // Compose the price-coverage clause with the FX clause, then sentence-case the
   // whole line so it never reads as a lowercase fragment.
   const withFx = (priceText: string): string => capitalizeFirst(`${priceText} · ${fx}`);

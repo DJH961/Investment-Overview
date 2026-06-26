@@ -14,6 +14,8 @@ import {
   settledSessionsSince,
   elapsedSessionMs,
   sessionIsWarmingUp,
+  isForexMarketOpen,
+  forexMarketReopenMs,
   INTRADAY_BAR_INTERVAL_MS,
 } from "../src/market-hours";
 
@@ -305,5 +307,58 @@ describe("elapsedSessionMs / sessionIsWarmingUp (market_open_token_burn WS1)", (
   it("treats a weekend as a fully-elapsed prior session", () => {
     // Sat 2026-06-27 — lastSessionDate is Friday, long since closed.
     expect(sessionIsWarmingUp(new Date("2026-06-27T15:00:00Z"))).toBe(false);
+  });
+});
+
+describe("isForexMarketOpen (spot-FX weekend close)", () => {
+  it("is open across a normal weekday (EDT)", () => {
+    // Wed 2026-06-24 14:00 UTC == 10:00 ET.
+    expect(isForexMarketOpen(new Date("2026-06-24T14:00:00Z"))).toBe(true);
+    // Overnight on a weekday is still open (forex trades ~24×5).
+    expect(isForexMarketOpen(new Date("2026-06-24T03:00:00Z"))).toBe(true);
+  });
+
+  it("stays open on Friday until 17:00 ET, then closes", () => {
+    // Fri 2026-06-26 20:30 UTC == 16:30 ET — still open.
+    expect(isForexMarketOpen(new Date("2026-06-26T20:30:00Z"))).toBe(true);
+    // Fri 2026-06-26 21:00 UTC == 17:00 ET — closed.
+    expect(isForexMarketOpen(new Date("2026-06-26T21:00:00Z"))).toBe(false);
+    expect(isForexMarketOpen(new Date("2026-06-26T23:00:00Z"))).toBe(false);
+  });
+
+  it("is closed all day Saturday", () => {
+    expect(isForexMarketOpen(new Date("2026-06-27T02:00:00Z"))).toBe(false);
+    expect(isForexMarketOpen(new Date("2026-06-27T15:00:00Z"))).toBe(false);
+    expect(isForexMarketOpen(new Date("2026-06-27T23:59:00Z"))).toBe(false);
+  });
+
+  it("reopens Sunday at 17:00 ET", () => {
+    // Sun 2026-06-28 20:00 UTC == 16:00 ET — still closed.
+    expect(isForexMarketOpen(new Date("2026-06-28T20:00:00Z"))).toBe(false);
+    // Sun 2026-06-28 21:00 UTC == 17:00 ET — open again.
+    expect(isForexMarketOpen(new Date("2026-06-28T21:00:00Z"))).toBe(true);
+    expect(isForexMarketOpen(new Date("2026-06-28T23:00:00Z"))).toBe(true);
+  });
+});
+
+describe("forexMarketReopenMs", () => {
+  it("resolves the upcoming Sunday 17:00 ET from a Friday-evening close (EDT)", () => {
+    const now = new Date("2026-06-26T22:00:00Z"); // Fri 18:00 ET, closed
+    expect(new Date(forexMarketReopenMs(now)).toISOString()).toBe("2026-06-28T21:00:00.000Z");
+  });
+
+  it("resolves the upcoming Sunday from a Saturday", () => {
+    const now = new Date("2026-06-27T12:00:00Z");
+    expect(new Date(forexMarketReopenMs(now)).toISOString()).toBe("2026-06-28T21:00:00.000Z");
+  });
+
+  it("resolves today's reopen on a Sunday morning before 17:00 ET", () => {
+    const now = new Date("2026-06-28T13:00:00Z"); // Sun 09:00 ET
+    expect(new Date(forexMarketReopenMs(now)).toISOString()).toBe("2026-06-28T21:00:00.000Z");
+  });
+
+  it("honours EST (winter): Sunday 17:00 ET is 22:00 UTC", () => {
+    const now = new Date("2026-01-10T12:00:00Z"); // Sat in January (EST)
+    expect(new Date(forexMarketReopenMs(now)).toISOString()).toBe("2026-01-11T22:00:00.000Z");
   });
 });

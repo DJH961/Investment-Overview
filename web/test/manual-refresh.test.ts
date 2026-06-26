@@ -45,6 +45,7 @@ function facts(overrides: Partial<CoverageFacts> = {}): CoverageFacts {
     freshlyPulled: true,
     error: false,
     fx: "live",
+    fxMarketClosed: false,
     ...overrides,
   };
 }
@@ -213,6 +214,18 @@ describe("summarizeCoverage", () => {
     );
     expect(summarizeCoverage(facts({ ...base, fx: "none" }))).toBe(
       "Market closed, up to date · awaiting FX",
+    );
+  });
+
+  it("reports the forex weekend close as 'FX market closed', overriding the freshness label", () => {
+    const base = { marketOpen: false, marketTotal: 2, marketHeld: 2, marketAtClose: 2 } as const;
+    // Whatever the source label, a shut forex market freezes the rate at Friday's
+    // close, so the clause says so plainly rather than implying a live/recent pull.
+    expect(summarizeCoverage(facts({ ...base, fx: "cache", fxMarketClosed: true }))).toBe(
+      "Market closed, up to date · FX market closed",
+    );
+    expect(summarizeCoverage(facts({ ...base, fx: "live", fxMarketClosed: true }))).toBe(
+      "Market closed, up to date · FX market closed",
     );
   });
 });
