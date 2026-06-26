@@ -41,6 +41,76 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   plan (`refreshPrices` → `quoteRequest` → `buildQuoteOptions` force set), so a
   deferred symbol whose cache has aged out is explicitly re-pulled rather than
   relying on the per-symbol TTL alone (`web/src/app.ts`).
+## [4.11.4] — 2026-06-26
+
+### Fixed
+
+- **The hero's currency-effect split now shows immediately at the opening bell.**
+  The "market-hours vs overnight" FX breakdown anchors its live in-session slice
+  to the session's EUR/USD rate **at the 09:30 ET open**, read from the day's FX
+  bars. But the first intraday FX bar can lag the open by minutes on the free
+  tier, and a cold start mid-session has none yet, so the split sat blank in that
+  gap and last night's overnight slice momentarily collapsed to zero. The app now
+  captures the **first** live EUR/USD spot it sees once the US session is open as
+  a stand-in open anchor (earliest-only, so it stays a fixed open rather than
+  tracking the spot); the authoritative bar-read open takes over the moment the
+  first FX bar lands, so the fallback is self-correcting. The closed-market 1D FX
+  close-read is also guarded so an incomplete (mid-session-only) FX track degrades
+  to the settled previous close / live spot instead of freezing the EUR view to a
+  stale mid-session rate (`web/src/session-fx.ts`, `web/src/app.ts`).
+
+## [4.11.3] — 2026-06-26
+
+### Fixed
+
+- **The USD-view "Investing power since yesterday" panel now shows its base
+  figures.** Until now the panel led with only the day's *swing* — a delta with
+  no visible anchor — so it wasn't obvious what amount that swing rode on. A new
+  quiet caption underneath now spells out both halves: the **regular investment
+  amount set in Settings** (e.g. "Regular €100") on the left, and the **dollars
+  that amount actually buys at today's live EUR/USD rate** (e.g. "$130.00 today")
+  on the right. Mirrored identically on the web companion (mobile-first) and the
+  Python desktop, baseline-aligned and muted so it reads as the footing the swing
+  rides rather than a competing headline.
+
+## [4.11.2] — 2026-06-26
+
+### Fixed
+
+- **The live graphs stopped burning free-tier credits re-fetching illiquid
+  symbols (e.g. DAX) after the closing bell.** The old "is this bar near the
+  closing bell?" heuristic could never confirm a close for a symbol whose final
+  print arrives late or thin, so every dashboard render re-requested the same
+  session — silently draining the daily Twelve Data budget. The 1D and 1W paths
+  now settle a session through a shared multi-provider *close-completeness*
+  resolver (`web/src/close-completeness.ts`): once the closing bar is reached, a
+  second provider agrees, or the market has long since settled, the series is
+  marked done and never re-pulled. A short, backed-off probe window covers the
+  genuine late-print case without looping.
+- **The EUR/USD (FX) track now settles on the same footing as price bars.**
+  Previously FX was only refilled when *wholly* missing, so an incomplete-but-
+  present FX series could leave the EUR line stale after close while the USD line
+  moved on. FX now flows through the same close-completeness resolver
+  (`resolveFxCompleteness`, modelled as the single `EUR/USD` probe), so both
+  currency tracks reach their settled close and then stop.
+
+### Changed
+
+- **A two-source close agreement now requires three hour-paced confirmations
+  before it is accepted.** A single coincidental match between the two providers
+  no longer settles a session: the first two agreements on the same pre-close bar
+  are recorded as *provisional* (`sources: 2, settled: false`) and only the third
+  accepts the day's close. Each re-confirmation is paced to the **start of the
+  next full hour** (e.g. a first check at 15:48 re-confirms at 16:00+, then at the
+  following hour), so the scarce Tiingo budget is spent at most once an hour while
+  the close is verified. A genuine progression or outage between agreements resets
+  the counter. Applies symmetrically to the 1D, 1W, and EUR/USD (FX) tracks.
+- **The data-polling log now narrates graph close-settlement.** Building on the
+  round-by-round debugging trail, the close-completeness resolver emits clear,
+  severity-tagged lines into the `graph` category — e.g.
+  `1D graph · DAX: reached the closing bar at 2026-06-26 20:00 — settled (1 source).`
+  — so you can see exactly when a session was declared complete, when a second
+  provider confirmed it, and when a pull was deliberately backed off (`↩`).
 
 ## [4.11.1] — 2026-06-26
 

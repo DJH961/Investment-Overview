@@ -60,6 +60,7 @@ import {
   type DualCurrencyParts,
   formatFxRate,
   formatMoneyEur,
+  formatMoneyUsd,
   formatNativePrice,
   formatPercent,
   formatShares,
@@ -602,6 +603,19 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
     ]),
   ];
 
+  // Anchor the swing to the figures it rides: the regular EUR amount set in
+  // Settings on the left, and the dollars it actually buys at today's live rate
+  // on the right (amount · liveFx). Without this the headline is a delta with no
+  // visible base; with it the owner sees both the euros they wire and the dollars
+  // they would get today. Cents on the euro side only when the configured amount
+  // isn't whole, so a clean "€100" doesn't read "€100.00".
+  const amountDecimals = amountEur.isInteger() ? 0 : 2;
+  const totalUsd = amountEur.times(fxNow);
+  const amountRow = h("div", { class: "fx-effect-amount" }, [
+    h("span", { class: "fx-effect-amount-label" }, [`Regular ${formatMoneyEur(amountEur, amountDecimals)}`]),
+    h("span", { class: "fx-effect-amount-value" }, [`${formatMoneyUsd(totalUsd, 2)} today`]),
+  ]);
+
   const { marketOpen, holiday, singleOvernight } = fxBoxRegime(now);
   if (singleOvernight) {
     children.push(
@@ -616,6 +630,7 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
         }),
       ]),
     );
+    children.push(amountRow);
     return wrap(children);
   }
   const split = fxBuyingPowerSplit({
@@ -628,6 +643,7 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
   });
   const bar = fxDivergeBar(split.marketHoursUsd, split.overnightUsd, marketOpen, fmt);
   if (bar) children.push(bar);
+  children.push(amountRow);
   return wrap(children);
 }
 

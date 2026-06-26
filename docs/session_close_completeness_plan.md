@@ -37,18 +37,24 @@ The fix changes the question from **"is the newest bar near the clock?"** to
 2. **Decide by progress, not the clock.** If a re-fetch brings a *later* bar, that's
    real progress (this rescues the "I was online, then logged off right at the bell"
    case). If it brings the *same* last bar, there is nothing newer right now.
-3. **Confirm "nothing newer" across providers.** You have more than one data source.
-   When the primary stops advancing, ask the **second** provider **once**. If it has a
-   later bar, take it. If it agrees on the same last bar, two independent sources say
-   *this is the real close* — mark the symbol **settled** and never re-fetch it today.
+3. **Confirm "nothing newer" across providers — three times, hour-paced.** You have
+   more than one data source. When the primary stops advancing, ask the **second**
+   provider. If it has a later bar, take it. If it agrees on the same last bar, that is
+   one *provisional* agreement (`sources: 2, settled: false`): record it, but do **not**
+   settle on a single coincidental match. Re-confirm at the **start of the next full
+   hour** (Tiingo token efficiency — e.g. a 15:48 check re-confirms at 16:00+, the next
+   at the following hour); only the **third** agreement on the same bar marks the symbol
+   **settled** and stops re-fetching for the day. A genuine progression or outage between
+   agreements resets the count.
 4. **Treat a true outage as an outage.** If *both* providers come back empty/erroring,
    that's provider trouble, not an illiquid close — fall into a **bounded, spaced,
    provider-rotating** retry (a handful of attempts at growing gaps), never a
    per-redraw hammer.
 
 The result: a busy symbol with a closing bar = **0** extra fetches; a quiet or
-weak-on-primary symbol = about **two** credits once, then settled and remembered;
-a provider outage = a few spaced retries then parked. The same flaw exists on the
+weak-on-primary symbol = about **two** credits per confirmation across up to three
+hour-spaced agreements, then settled and remembered; a provider outage = a few spaced
+retries then parked. The same flaw exists on the
 weekly (1W) graph and is fixed by the same rule. The exact, code-level changes follow.
 
 ---

@@ -107,6 +107,7 @@ import { setInvestmentAmountEur } from "./investment-amount";
 import { formatLastPull } from "./format";
 import { appendPollLog, clearPollLog, formatPollLog, readPollLog, type PollLogCategory, type PollLogLevel } from "./polling-log";
 import { APP_VERSION } from "./version";
+import type { CloseResolveLog } from "./close-completeness";
 import {
   buildLiveSessionCurve,
   buildLiveWeekCurve,
@@ -132,7 +133,9 @@ import { buildModelAnchor } from "./value-graph";
 import {
   graphAnchorFx,
   readSessionCloseFx,
+  readSessionOpenFx,
   recordSessionCloseFx,
+  recordSessionOpenFx,
   sessionBarsComplete,
   sessionCloseFxFromBars,
   sessionFxBarsComplete,
@@ -4000,7 +4003,15 @@ export class App {
       const marketOpen = isUsMarketOpen(now);
       const liveFx = fx.rates.USD ?? model.overview.fxRateEurUsd;
       const sessionDay = lastSessionDate(now);
-      if (marketOpen) recordSessionCloseFx(sessionDay, liveFx);
+      if (marketOpen) {
+        recordSessionCloseFx(sessionDay, liveFx);
+        // Capture the first live spot of the session as a stand-in open rate, so
+        // the currency split has an anchor immediately at the market start —
+        // before the session's own FX bars have been fetched (the first bar can
+        // lag 09:30 ET by minutes on the free tier, and a cold start mid-session
+        // has none yet). Earliest-only, so it stays a fixed open, not the spot.
+        recordSessionOpenFx(sessionDay, liveFx);
+      }
       // Prefer the close read straight from the session's EUR→USD bars — the same
       // authoritative source the 1D/1W graphs freeze to (so the hero's currency-
       // effect split and the graph never disagree on what "the close" is), and the
@@ -4016,8 +4027,12 @@ export class App {
       // market start); once the trading day has shut it is the "since last market
       // open" anchor the hero's "Today" stat re-bases to (so that stat stops
       // mirroring the now-settled "since close" move). Read on every session day —
-      // open or shut — and null only before the day's first FX bar has landed.
-      model.overview.fxRateEurUsdSessionOpen = await this.barsSessionOpenFx(sessionDay);
+      // open or shut. Until the day's first FX bar has landed (a common gap right
+      // at the market start), fall back to the first-seen live spot we captured
+      // above so the split shows immediately and then self-corrects to the precise
+      // bar-read open once it arrives.
+      model.overview.fxRateEurUsdSessionOpen =
+        (await this.barsSessionOpenFx(sessionDay)) ?? readSessionOpenFx(sessionDay);
     }
     // Remember each fund's freshly-settled NAV as a daily bar in the 1W store, so
     // the week curve re-marks NAV funds from their real per-day drift at zero
@@ -5359,6 +5374,18 @@ export class App {
       }),
     });
 
+    // The structured after-close resolution events (plan C6 + new-requirement FX
+    // parity) fold straight into the same round-structured polling log as every
+    // other pull: each verdict carries an explicit severity, so a settle shows a
+    // `✓`, a still-filling step a `·`, and a both-sources outage a `↩` back-off —
+    // and the symbol/instant read in plain language rather than raw epoch ms.
+    const onCloseResolve = (event: CloseResolveLog): void =>
+      this.pollLog("graph", event.message, event.level);
+    // Render a bar instant as a compact `YYYY-MM-DD HH:MM` UTC stamp so the close
+    // verdict names exactly which bar settled, without leaking a raw epoch.
+    const formatInstant = (t: number): string =>
+      new Date(t).toISOString().slice(0, 16).replace("T", " ");
+
     return {
       session: async (opts) => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
@@ -5381,7 +5408,7 @@ export class App {
         const spent = { credits: 0 };
         try {
           const curve = await buildLiveSessionCurve(
-            { anchor: anchor(frozenFx), store, liveTip, onFreshBars, regenerateOnly },
+            { anchor: anchor(frozenFx), store, liveTip, onFreshBars, regenerateOnly, onCloseResolve, formatInstant },
             loggingProviders("1D", spent),
           );
           if (spent.credits === 0) {
@@ -5446,6 +5473,8 @@ export class App {
                   "graph",
                   `1W graph: gap-filled NAV history for ${symbols.length} fund(s): ${symbols.join(", ")}.`,
                 ),
+              onCloseResolve,
+              formatInstant,
             },
             loggingProviders("1W", spent),
           );
