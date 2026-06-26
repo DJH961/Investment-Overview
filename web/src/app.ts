@@ -1175,6 +1175,14 @@ export class App {
    * Returns the number of symbol-series actually stored this prime (0 when the
    * graphs were already loaded), so the caller can stamp the clock-hour gate only
    * when a market-hours prime genuinely pulled bars.
+   *
+   * It is also the shared after-hours home of the incomplete-1D-FX-close backfill
+   * ({@link prefetchSessionFx}): wiring it here — not only in the login warm-up —
+   * means every auto/manual/reset round repairs a session FX track that never
+   * reached the 16:00 ET close, so a failed login warm-up can no longer strand the
+   * freeze anchor / currency-effect split on a mid-session rate. The FX-only pull
+   * runs only while the market is shut and only when no session bar pull this round
+   * would already grab the FX track; it never affects the returned bar count.
    */
   private async primeStaleGraphPackages(now: Date = new Date()): Promise<number> {
     const { config } = this.state;
@@ -1184,6 +1192,18 @@ export class App {
       .map((e) => e.symbol);
     if (marketSymbols.length === 0) return 0;
     const stale = await this.prefetchGraphStaleness(marketSymbols, now);
+    // After-hours FX close completion — mirror of the login warm-up (see
+    // {@link prefetchOnStart}) so the FX-only backfill is wired into **every**
+    // pulling mechanic, not just the start prefetch. If the login warm-up ever
+    // fails before it reaches its FX step, the routine auto/manual/reset rounds all
+    // flow through here while the market is shut, so they repair the incomplete 1D
+    // EUR→USD close instead of leaving the freeze anchor + currency-effect split
+    // reading a mid-session rate as "the close" until the next session. Same gate
+    // as the start path: closed market, FX track short of the close, and no session
+    // bar pull this round (a session backfill already grabs the FX track alongside).
+    if (!isUsMarketOpen(now) && stale.fxIncomplete && stale.session.length === 0) {
+      await this.prefetchSessionFx(config, now);
+    }
     if (stale.session.length === 0 && stale.week.length === 0) return 0;
     return this.prefetchGraphBars(stale.session, stale.week, config, now, this.primingCurrencyMap());
   }
