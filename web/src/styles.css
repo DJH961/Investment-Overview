@@ -318,16 +318,30 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .market-status-live .market-status-dot {
   box-shadow: 0 0 0 0 currentColor;
-  animation: market-pulse 2s ease-out infinite;
+  animation: market-pulse 1.6s ease-in-out infinite;
 }
 .market-status-closed {
   color: var(--muted);
   background: color-mix(in srgb, var(--muted) 10%, transparent);
 }
+/* A clearly visible heartbeat: the dot itself brightens/dims and gently swells
+   while an accent ring ripples outward, so "Live" reads as genuinely live. */
 @keyframes market-pulse {
-  0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 55%, transparent); }
-  70% { box-shadow: 0 0 0 0.4rem transparent; }
-  100% { box-shadow: 0 0 0 0 transparent; }
+  0% {
+    transform: scale(0.85);
+    opacity: 0.55;
+    box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 70%, transparent);
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+    box-shadow: 0 0 0 0.35rem transparent;
+  }
+  100% {
+    transform: scale(0.85);
+    opacity: 0.55;
+    box-shadow: 0 0 0 0 transparent;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .market-status-live .market-status-dot { animation: none; }
@@ -813,7 +827,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   background: var(--pos);
   flex: none;
   box-shadow: 0 0 0 0 currentColor;
-  animation: market-pulse 2s ease-out infinite;
+  animation: market-pulse 1.6s ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
   .fresh-dot { animation: none; }
