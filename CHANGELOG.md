@@ -14,6 +14,44 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.5.2] — 2026-06-26
+
+### Fixed
+
+- **Freshness indicators now track the auto-refresh rate set in Settings.** The
+  headline "Live" badge (`pricesAreLive`) and the FX coverage "FX live" / "FX
+  recent" label (`displayFxSource`) previously judged freshness against a
+  hardcoded 15-minute window, so they stayed disconnected from the user's
+  configured update interval — a faster cadence still waited 15 minutes before a
+  price read as no-longer-live, and a slower cadence flipped to "recent" while a
+  pull was not yet due. Both now key their staleness window on
+  `config.updateMinutes` (the same interval the data orchestrator's quote/FX
+  pull gates already use), so lowering the refresh rate tightens "Live" and
+  raising it widens it. `LIVE_PRICE_MAX_STALENESS_MS` remains the fallback
+  default when no interval is supplied.
+
+## [4.5.1] — 2026-06-26
+
+### Fixed
+
+- **The 1W graph now reuses the dense 1D today slice on the springboard fast
+  path, so "1D fills 1W" holds without a live pull.** When the week curve was
+  drawn from the cached desktop export (the zero-credit springboard branch),
+  today's portion of the week was stitched from the coarse `week.points` tail
+  rather than the same dense intraday session the 1D graph shows — so the last
+  day of the 1W line looked blockier than, and could visibly diverge from, the
+  1D graph for the very same hours. The week builder (`graphProviders.week` in
+  `web/src/app.ts`) now reconstructs today's dense 1D slice network-free
+  (springboard off the blob, else a store-only `buildLiveSessionCurve`
+  reconstruction) and hands it to `springboardWeekCurve` as `todayCurve`, so the
+  fast path matches the live `buildLiveWeekCurve` path that already enriches
+  today from the store.
+- **A failed today-slice reconstruction on the 1W fast path is now logged
+  instead of silently swallowed.** The store-only rebuild should never throw, but
+  if it does the week still draws from its settled days plus the live tip; the
+  poll log now records that today's detail was dropped so the missing intraday
+  slice can be diagnosed rather than disappearing silently.
+
 ## [4.5.0] — 2026-06-26
 
 ### Changed

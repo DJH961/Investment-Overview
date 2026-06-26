@@ -121,9 +121,9 @@ import {
 import { ledgerReservation, tiingoAvailable, twelveDataAvailable } from "./reservation";
 import { planFanout, planTwelveDataSafetyNet, TIINGO_RESERVE_CREDITS } from "./provider-fanout";
 import { reconcileHandshake } from "./login-handshake";
-import { springboardSessionCurve, springboardWeekCurve } from "./springboard";
+import { springboardSessionCurve, springboardWeekCurve, parseExportedPoints } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
-import { TimeSeriesStore } from "./timeseries-store";
+import { TimeSeriesStore, type Breadcrumb } from "./timeseries-store";
 import { WEEK_STORE_KEY, navBarsFromQuotes, weekStaleSymbols } from "./week";
 import { ONE_HOUR_MS } from "./freshness";
 import { planPull, describePlan, type PullKind, type PullFreshness, type PullPlan } from "./data-orchestrator";
@@ -3030,6 +3030,8 @@ export class App {
       fxPrevEurUsd: eurUsdPrev,
       fxEurUsdSource: eurUsdSource,
       fxObservedAt: eurUsdAt,
+      // Tie the "live" freshness window to the user-set auto-refresh interval.
+      liveStalenessMs: this.state.config.updateMinutes * 60 * 1000,
     });
     model.overview.lastDataPullAt = this.lastDataPullAt;
     // Remember each fund's freshly-settled NAV as a daily bar in the 1W store, so
@@ -3041,7 +3043,12 @@ export class App {
     // Promote a cache-served EUR/USD that is still extremely fresh to "live": a
     // spot pulled moments ago and replayed from cache this round is, to the user,
     // just as live as the market prices — only a genuinely aged cache reads "recent".
-    const fxDisplaySource = displayFxSource(eurUsdSource, eurUsdAt, Date.now());
+    const fxDisplaySource = displayFxSource(
+      eurUsdSource,
+      eurUsdAt,
+      Date.now(),
+      this.state.config.updateMinutes * 60 * 1000,
+    );
     if (network) {
       const navStats = readNavPublishStats();
       this.lastCoverageFacts = buildCoverageFacts(
@@ -4211,6 +4218,11 @@ export class App {
         const sprung = springboardSessionCurve({ exported, liveTip });
         if (sprung) {
           this.pollLog("graph", "1D graph: reused the exported session (no live pull, 0 credits).");
+          // Persist the sprung session's dense points as today's breadcrumb trail
+          // so the *live* 1W path (when the week blob is too stale to springboard)
+          // still has dense current-day detail to splice — otherwise a 1D that
+          // springboarded off the blob would leave the store empty for today.
+          await this.persistSprungSessionDetail(exported, store).catch(() => undefined);
           return sprung;
         }
         const spent = { credits: 0 };
@@ -4230,7 +4242,27 @@ export class App {
       },
       week: async (opts) => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
-        const sprung = springboardWeekCurve({ exported, liveTip });
+        // The current day's slice of the week must be the same dense 1D session the
+        // 1D graph shows, not the coarse `week.points` tail. Build it once, network-
+        // free (springboard off the blob, else reconstruct from stored bars), and
+        // hand it to the springboard week builder so "1D fills 1W" holds on the fast
+        // path too. The live `buildLiveWeekCurve` already enriches today from the
+        // store, so it only needs this slice on the springboard branch.
+        const todaySlice =
+          springboardSessionCurve({ exported, liveTip }) ??
+          (await buildLiveSessionCurve(
+            { anchor: anchor(), store, liveTip, regenerateOnly: true },
+            loggingProviders("1D", { credits: 0 }),
+          )
+            .then((c) => (c.points.length >= 1 ? c.points : null))
+            .catch(() => {
+              // A store-only reconstruction should never throw, but if it does the
+              // week still draws from its settled days + live tip — log so the
+              // missing today detail can be diagnosed rather than swallowed silently.
+              this.pollLog("graph", "1W graph: could not build today's 1D slice — using the live tip for today.");
+              return null;
+            }));
+        const sprung = springboardWeekCurve({ exported, liveTip, todayCurve: todaySlice });
         if (sprung) {
           this.pollLog("graph", "1W graph: reused the exported week sleeve (no live pull, 0 credits).");
           return this.enrichWeekWithBlobSleeve(sprung, exported, baseFx);
@@ -4267,6 +4299,50 @@ export class App {
         }
       },
     };
+  }
+
+  /**
+   * Persist the **springboarded** 1D session's dense points as today's breadcrumb
+   * trail so the *live* 1W path has current-day detail to splice.
+   *
+   * When the 1D graph springboards straight off the blob it never fetches bars, so
+   * the per-day store stays empty for today — and if the 1W blob is too stale to
+   * springboard, `buildLiveWeekCurve`'s per-day enrichment would then find nothing
+   * dense for the current day. Recording the exported session as today's
+   * display-only breadcrumbs (the same trail mechanism the 1D/1W curves already
+   * splice) closes that gap for nothing: each point is a value the desktop already
+   * computed. Only ever writes today's session and never bumps `updatedAt`, so it
+   * cannot fool the bar-refetch throttle. Best-effort: a store failure is swallowed.
+   */
+  private async persistSprungSessionDetail(
+    exported: MobileExport["live_graphs"] | undefined,
+    store: TimeSeriesStore,
+  ): Promise<void> {
+    const day = exported?.day;
+    const sessionDate = day?.session_date;
+    if (!day || !sessionDate || sessionDate !== lastSessionDate(new Date())) return;
+    const points = parseExportedPoints(day.points);
+    if (points.length < 1) return;
+    const existing =
+      (await store.loadSession(sessionDate)) ??
+      { day: sessionDate, bars: {}, fx: [], tips: [], updatedAt: 0 };
+    // Don't clobber a richer live build: if the store already holds real bars or a
+    // breadcrumb trail at least as dense as the export, leave it untouched.
+    const hasBars = Object.values(existing.bars).some((b) => b.length > 0);
+    if (hasBars || (existing.tips?.length ?? 0) >= points.length) return;
+    const tips: Breadcrumb[] = points.map((p) => ({
+      t: p.t,
+      valueEur: p.valueEur,
+      valueUsd: p.valueUsd,
+    }));
+    await store.saveSession({
+      day: sessionDate,
+      bars: existing.bars,
+      fx: existing.fx,
+      tips,
+      // Breadcrumbs are not a bar fetch — leave the refetch throttle's stamp alone.
+      updatedAt: existing.updatedAt,
+    });
   }
 
   /**
@@ -4538,8 +4614,9 @@ export interface CoverageFacts {
 
 /**
  * Choose the FX source label to *display* on the coverage line. A spot served
- * from cache (`"cache"`) but observed within {@link LIVE_PRICE_MAX_STALENESS_MS}
- * is, to the user, just as live as the market prices it values — so promote it to
+ * from cache (`"cache"`) but observed within `maxStalenessMs` (the user-set
+ * auto-refresh interval, falling back to {@link LIVE_PRICE_MAX_STALENESS_MS}) is,
+ * to the user, just as live as the market prices it values — so promote it to
  * `"live"` and let it read "FX live" rather than "FX recent". Every other source
  * (and a genuinely aged cache) passes through unchanged.
  */
@@ -4547,8 +4624,10 @@ export function displayFxSource(
   source: EurUsdSource,
   observedAtMs: number | null,
   nowMs: number,
+  maxStalenessMs: number = LIVE_PRICE_MAX_STALENESS_MS,
 ): EurUsdSource {
-  if (source === "cache" && observedAtMs !== null && nowMs - observedAtMs <= LIVE_PRICE_MAX_STALENESS_MS) {
+  const window = maxStalenessMs > 0 ? maxStalenessMs : LIVE_PRICE_MAX_STALENESS_MS;
+  if (source === "cache" && observedAtMs !== null && nowMs - observedAtMs <= window) {
     return "live";
   }
   return source;

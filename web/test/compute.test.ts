@@ -1262,6 +1262,31 @@ describe("pricesAreLive honesty", () => {
     const m = buildDashboard(makeExport(), liveQuotes({ marketOpen: true }), fx, openNow);
     expect(m.overview.pricesAreLive).toBe(true);
   });
+
+  it("ties the live window to the configured refresh interval (tightens it)", () => {
+    // A quote 5 minutes old is "live" under the default 15-min window, but a
+    // 2-minute auto-refresh interval narrows the window so it no longer reads
+    // live — freshness tracks the cadence set in settings.
+    const fiveMinAgo = openNow.getTime() - 5 * 60 * 1000;
+    const quotes = liveQuotes({ at: fiveMinAgo });
+    expect(buildDashboard(makeExport(), quotes, fx, openNow).overview.pricesAreLive).toBe(true);
+    const tight = buildDashboard(makeExport(), quotes, fx, openNow, null, {
+      liveStalenessMs: 2 * 60 * 1000,
+    });
+    expect(tight.overview.pricesAreLive).toBe(false);
+  });
+
+  it("ties the live window to the configured refresh interval (widens it)", () => {
+    // A quote 20 minutes old is stale under the default window, but a 30-min
+    // auto-refresh interval widens the window so it still reads live.
+    const twentyMinAgo = openNow.getTime() - 20 * 60 * 1000;
+    const quotes = liveQuotes({ at: twentyMinAgo });
+    expect(buildDashboard(makeExport(), quotes, fx, openNow).overview.pricesAreLive).toBe(false);
+    const wide = buildDashboard(makeExport(), quotes, fx, openNow, null, {
+      liveStalenessMs: 30 * 60 * 1000,
+    });
+    expect(wide.overview.pricesAreLive).toBe(true);
+  });
 });
 
 describe("USD total is native (holding prices added together), EUR derived via the live rate", () => {
