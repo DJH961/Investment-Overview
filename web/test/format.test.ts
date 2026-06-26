@@ -12,6 +12,7 @@ import {
   formatExportedAt,
   formatForexReopen,
   formatLastPull,
+  formatSessionDayLabel,
   formatUpdatedAt,
 } from "../src/format";
 
@@ -146,6 +147,27 @@ describe("formatExportedAt", () => {
 
   it("returns the raw input when it can't be parsed", () => {
     expect(formatExportedAt("not-a-date", now)).toBe("not-a-date");
+  });
+});
+
+describe("formatSessionDayLabel", () => {
+  it("says 'today' when the drawn session is the current day", () => {
+    expect(formatSessionDayLabel("2026-06-23", "2026-06-23")).toBe("today");
+  });
+
+  it("says 'yesterday' when the session is the previous calendar day", () => {
+    expect(formatSessionDayLabel("2026-06-22", "2026-06-23")).toBe("yesterday");
+  });
+
+  it("shows the date for an older session (e.g. a long-weekend Friday)", () => {
+    // Monday's "today" with Friday's session two+ calendar days back.
+    const out = formatSessionDayLabel("2026-06-19", "2026-06-22");
+    expect(out).not.toMatch(/^(today|yesterday)$/);
+    expect(out).toMatch(/\d/);
+  });
+
+  it("returns the raw value when the session date can't be parsed", () => {
+    expect(formatSessionDayLabel("not-a-date", "2026-06-23")).toBe("not-a-date");
   });
 });
 

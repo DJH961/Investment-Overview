@@ -20,6 +20,7 @@ import {
   forexMarketReopenMs,
   lastForexReopenMs,
   lastSessionDate,
+  exchangeDate,
   sessionOpenMs,
 } from "./market-hours";
 import { windowGrowthPct, type GrowthMode, type WindowPoint } from "./window-growth";
@@ -65,6 +66,7 @@ import {
   formatSignedDualCurrency,
   formatSignedMoneyEur,
   formatSignedPercent,
+  formatSessionDayLabel,
   formatExportedAt,
   formatForexReopen,
   signClass,
@@ -126,19 +128,44 @@ function signedPercentOrDash(value: Decimal | null): string {
   return value === null ? "—" : formatSignedPercent(value);
 }
 
+/**
+ * The single session word the whole app uses for the "today's move" figure.
+ *
+ * Every surface that shows the close-to-now daily move — the hero, the "Today"
+ * return segment, the per-holding row — describes the *same* session the 1D curve
+ * draws. Sharing this one helper keeps that wording consistent everywhere: "today"
+ * only while the current exchange day is trading, else "yesterday" or the older
+ * session's date (e.g. "20 Jun"), so a weekend/holiday close is never mislabelled
+ * "today" on one surface while reading honestly on another.
+ */
+function sessionMoveWord(now: Date = new Date()): string {
+  return formatSessionDayLabel(lastSessionDate(now), exchangeDate(now));
+}
+
+/** The {@link sessionMoveWord}, capitalised for use as a standalone label. */
+function sessionMoveLabel(now: Date = new Date()): string {
+  const word = sessionMoveWord(now);
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
 /** The headline portfolio value + today's move — the hero of the screen. */
 function renderHero(o: OverviewView, now: Date = new Date()): HTMLElement {
   // Today's move is currency-correct: in USD display we prefer the USD figures so
   // the headline daily change reflects the dollar view, not the EUR view rescaled.
   const todayMovePct = pickByCurrency(o.todayMovePct, o.todayMovePctUsd);
   const cls = signClass(pickByCurrency(o.todayMoveEur, o.todayMoveUsd));
+  // The hero's move is the same close-to-now figure the 1D curve draws, so it
+  // shares the curve's session word: "today" only when the market is open on the
+  // current day, else "yesterday" or the older session's date — never naming a
+  // weekend/holiday close "today".
+  const moveLabel = sessionMoveWord(now);
   const change = h("div", { class: `hero-change ${cls}` }, [
     h("span", { class: "hero-badge" }, [
       h("span", { class: "hero-arrow", "aria-hidden": "true" }, [trendGlyph(cls)]),
       formatSignedDualCurrency(o.todayMoveEur, o.todayMoveUsd),
     ]),
     h("span", { class: "hero-change-pct" }, [
-      todayMovePct !== null ? `${formatSignedPercent(todayMovePct)} today` : "today",
+      todayMovePct !== null ? `${formatSignedPercent(todayMovePct)} ${moveLabel}` : moveLabel,
     ]),
   ]);
 
@@ -513,9 +540,11 @@ function segment(label: string, value: Decimal | null): HTMLElement {
 }
 
 /** Today / month / year return horizons, side by side. */
-function renderReturns(o: OverviewView): HTMLElement {
+function renderReturns(o: OverviewView, now: Date = new Date()): HTMLElement {
   return h("section", { class: "segment", "aria-label": "Return by period" }, [
-    segment("Today", pickByCurrency(o.todayMovePct, o.todayMovePctUsd)),
+    // The first horizon names the same session the hero's move does, so the
+    // app never reads "Today" here while the hero reads "Yesterday" above it.
+    segment(sessionMoveLabel(now), pickByCurrency(o.todayMovePct, o.todayMovePctUsd)),
     segment("This month", pickByCurrency(o.mtdGrowthPct, o.mtdGrowthPctUsd)),
     segment("This year", pickByCurrency(o.ytdGrowthPct, o.ytdGrowthPctUsd)),
   ]);
@@ -791,7 +820,7 @@ const PROJ_KEYS = {
 } as const;
 
 /** A single holding as a list row (mobile-first, no wide horizontal table). */
-function renderHoldingRow(holding: HoldingView, badge?: string): HTMLElement {
+function renderHoldingRow(holding: HoldingView, badge?: string, now: Date = new Date()): HTMLElement {
   const symChildren: Array<Node | string> = [holding.symbol];
   if (holding.priceType === "nav") symChildren.push(h("span", { class: "pill" }, ["NAV"]));
   // A genuinely stale fallback (no price at all) is still flagged; the milder
@@ -812,6 +841,9 @@ function renderHoldingRow(holding: HoldingView, badge?: string): HTMLElement {
   // not today's — grey it so a live glance separates today's numbers from the
   // ones yet to refresh. Before the open nothing is stale, so nothing greys.
   const todayStaleCls = holding.todayMoveIsStale ? " holding-change-stale" : "";
+  // The same session word the hero/returns use, so a stale row's tooltip names
+  // the session everyone else is on rather than a hard-coded "today".
+  const moveWord = sessionMoveWord(now);
   const main = h("div", { class: "holding-main" }, [
     h("div", { class: "holding-id" }, [
       // Top line: symbol (+ NAV/stale pills) on the left, and the price's
@@ -830,7 +862,7 @@ function renderHoldingRow(holding: HoldingView, badge?: string): HTMLElement {
       h("span", { class: "holding-value" }, [formatCurrency(holding.valueEur)]),
       h("span", {
         class: `holding-change ${todayCls}${todayStaleCls}`,
-        ...(holding.todayMoveIsStale ? { title: "Not updated today — last session's move" } : {}),
+        ...(holding.todayMoveIsStale ? { title: `Not updated ${moveWord} — an earlier session's move` } : {}),
       }, [signedPercentOrDash(todayPct)]),
     ]),
   ]);
@@ -862,7 +894,7 @@ function renderHoldingRow(holding: HoldingView, badge?: string): HTMLElement {
   return h("li", { class: "holding" }, [main, meta]);
 }
 
-function renderHoldings(holdings: HoldingView[], badges?: Map<string, string>): HTMLElement {
+function renderHoldings(holdings: HoldingView[], badges?: Map<string, string>, now: Date = new Date()): HTMLElement {
   const sorted = [...holdings].sort((a, b) => {
     const av = a.valueEur?.toNumber() ?? -1;
     const bv = b.valueEur?.toNumber() ?? -1;
@@ -872,7 +904,7 @@ function renderHoldings(holdings: HoldingView[], badges?: Map<string, string>): 
   const list = h(
     "ul",
     { class: "holding-list" },
-    sorted.map((holding) => renderHoldingRow(holding, badges?.get(holding.symbol))),
+    sorted.map((holding) => renderHoldingRow(holding, badges?.get(holding.symbol), now)),
   );
   return collapsibleSection("Holdings", count, list, "holdings");
 }
@@ -2366,14 +2398,26 @@ function renderValueChart(
 
   const todayPct = pickByCurrency(o.todayMovePct, o.todayMovePctUsd);
   const todayCls = signClass(pickByCurrency(o.todayMoveEur, o.todayMoveUsd));
+  // The 1D curve draws the most recent session that has *started* (lastSessionDate).
+  // When the market is shut — a weekend, a holiday, before today's open — that is
+  // not today, so naming the headline "today" misreads the line. Label it by the
+  // session the graph actually shows: "today", "yesterday", or the date if older.
+  const oneDayLabel = formatSessionDayLabel(lastSessionDate(), exchangeDate());
+  // The full-history "All" window's money-weighted growth IS the overview's
+  // "Total growth" KPI (compounded XIRR over the invested lifetime). Reuse it
+  // verbatim so the headline matches that KPI exactly, instead of re-deriving it
+  // from the curve — at inception the opening value is ~0 (freshly deposited cash
+  // isn't a market position yet), which made the XIRR seed collapse to a wildly
+  // inflated Modified-Dietz fallback (e.g. 345% against a true 70%).
+  const allTimeGrowth = pickByCurrency(o.totalGrowthCompoundedPct, o.totalGrowthCompoundedPctUsd);
   // The headline beside the chart tracks the *selected* window so it matches the
   // graph: 1D reuses today's close-to-now move (measured from the previous
   // CLOSE, like the intraday graph's reference line); 1W a simple period growth;
   // anything longer an XIRR-scaled (money-weighted) growth so weekly DCA deposits
-  // don't make the number look wild. Defaults to "today" until a range is chosen
-  // (and stays there when there is nothing to toggle).
+  // don't make the number look wild. Defaults to the 1D session label until a
+  // range is chosen (and stays there when there is nothing to toggle).
   const headlineSpan = h("span", { class: `muted ${todayCls}` }, [
-    todayPct !== null ? `${formatSignedPercent(todayPct)} today` : "today",
+    todayPct !== null ? `${formatSignedPercent(todayPct)} ${oneDayLabel}` : oneDayLabel,
   ]) as HTMLElement;
   const lastWindowMs = Date.parse(dates[dates.length - 1]);
   const sliceWindow = (days: number | null): WindowPoint[] => {
@@ -2391,7 +2435,7 @@ function renderValueChart(
     }));
   };
   const headlineLabel = (option: RangeOption): string =>
-    option.kind === "live" && option.range === "1D" ? "today" : option.label;
+    option.kind === "live" && option.range === "1D" ? oneDayLabel : option.label;
   const setHeadline = (pct: Decimal | null, label: string): void => {
     headlineSpan.className = `muted ${signClass(pct)}`;
     headlineSpan.textContent =
@@ -2401,6 +2445,9 @@ function renderValueChart(
     let pct: Decimal | null;
     if (option.kind === "live" && option.range === "1D") {
       pct = todayPct;
+    } else if (option.kind === "history" && option.days === null) {
+      // "All" — show the lifetime compounded growth (the "Total growth" KPI).
+      pct = allTimeGrowth;
     } else {
       // 1W (live, ~7 day window) uses simple growth; every longer history slice
       // uses XIRR-scaled growth.

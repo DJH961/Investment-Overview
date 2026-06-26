@@ -5,6 +5,7 @@ import {
   isUsMarketOpen,
   isUsTradingDay,
   lastSessionDate,
+  exchangeDate,
   latestSettledSessionDate,
   previousTradingSession,
   recentTradingSessions,
@@ -160,6 +161,20 @@ describe("lastSessionDate", () => {
   it("shows Friday's session across the weekend", () => {
     // Sat 2026-06-27 14:00 UTC → Friday 2026-06-26.
     expect(lastSessionDate(new Date("2026-06-27T14:00:00Z"))).toBe("2026-06-26");
+  });
+});
+
+describe("exchangeDate", () => {
+  it("is the New-York calendar date regardless of trading status", () => {
+    // Sat 2026-06-27 14:00 UTC → still Saturday on the NY wall clock.
+    expect(exchangeDate(new Date("2026-06-27T14:00:00Z"))).toBe("2026-06-27");
+    // Mid-session Tuesday.
+    expect(exchangeDate(new Date("2026-06-23T14:00:00Z"))).toBe("2026-06-23");
+  });
+
+  it("rolls back to the prior day late at night ET (UTC date is ahead)", () => {
+    // 2026-06-24 02:00 UTC == 2026-06-23 22:00 ET → still the 23rd in New York.
+    expect(exchangeDate(new Date("2026-06-24T02:00:00Z"))).toBe("2026-06-23");
   });
 });
 
