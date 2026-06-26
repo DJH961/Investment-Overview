@@ -134,13 +134,18 @@ function renderHero(o: OverviewView, now: Date = new Date()): HTMLElement {
   // the headline daily change reflects the dollar view, not the EUR view rescaled.
   const todayMovePct = pickByCurrency(o.todayMovePct, o.todayMovePctUsd);
   const cls = signClass(pickByCurrency(o.todayMoveEur, o.todayMoveUsd));
+  // The hero's move is the same close-to-now figure the 1D curve draws, so it
+  // shares the curve's session word: "today" only when the market is open on the
+  // current day, else "yesterday" or the older session's date — never naming a
+  // weekend/holiday close "today".
+  const moveLabel = formatSessionDayLabel(lastSessionDate(now), exchangeDate(now));
   const change = h("div", { class: `hero-change ${cls}` }, [
     h("span", { class: "hero-badge" }, [
       h("span", { class: "hero-arrow", "aria-hidden": "true" }, [trendGlyph(cls)]),
       formatSignedDualCurrency(o.todayMoveEur, o.todayMoveUsd),
     ]),
     h("span", { class: "hero-change-pct" }, [
-      todayMovePct !== null ? `${formatSignedPercent(todayMovePct)} today` : "today",
+      todayMovePct !== null ? `${formatSignedPercent(todayMovePct)} ${moveLabel}` : moveLabel,
     ]),
   ]);
 

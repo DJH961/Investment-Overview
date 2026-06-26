@@ -14,6 +14,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.9.3] — 2026-06-26
+
+### Fixed
+
+- **The "today" move no longer lies when the market is shut.** Both the hero's
+  headline daily move and the value-over-time chart's 1D headline always read
+  "… today", even on a weekend, a holiday, or before the opening bell — when the
+  figure they show is actually the *last* session's close-to-now move, not today's.
+  They now name the session the number really belongs to: "today" while the current
+  day is trading, otherwise "yesterday" or the older session's date (e.g. "20 Jun"),
+  so a Saturday glance reads "+1.2% Friday" instead of a false "+1.2% today". The
+  "All" window's headline also now reuses the lifetime compounded-growth KPI verbatim
+  rather than re-deriving it from the curve, where a near-zero inception value made
+  the seed collapse into a wildly inflated number
+  (`web/src/format.ts`, `web/src/market-hours.ts`, `web/src/ui.ts`).
+- **Calmer 1D/1W live chart toggling** (changelog entry for #166, which shipped
+  without one). Toggling the live 1D/1W graphs flashed a collapsed "Loading…"
+  placeholder on every click before the (usually cached) curve resolved. A 220 ms
+  grace timer now holds the previous chart in place so a cache hit or re-toggle
+  swaps the new curve straight in; the placeholder reserves the chart's aspect
+  ratio so it no longer collapses the layout; and freshly built charts cross-fade
+  in (disabled under `prefers-reduced-motion`) (`web/src/ui.ts`, `web/src/styles.css`).
+
 ## [4.9.2] — 2026-06-26
 
 ### Fixed
