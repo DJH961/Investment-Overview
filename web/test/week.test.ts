@@ -14,6 +14,7 @@ import {
   loadOrBuildWeekCurve,
   navBackfillStaleSymbols,
   navBarsFromQuotes,
+  navSafeBarsForPriming,
   navTipCoveredSymbols,
   toDailyNavBars,
   weekStaleSymbols,
@@ -770,6 +771,55 @@ describe("navTipCoveredSymbols (only drop genuinely-current funds from the quote
       ["EMPTY", [] as ReturnType<typeof bar>[]],
     ]);
     expect(navTipCoveredSymbols(bars, settled)).toEqual(["CURRENT"]);
+  });
+});
+
+describe("navSafeBarsForPriming (normal/manual-refresh prime guard, #191 root cause)", () => {
+  // SAT_CLOSED → latest settled session is Fri 2026-03-13.
+  const settled = "2026-03-13";
+
+  it("keeps a current NAV fund and marks it covered", () => {
+    const bars = new Map([["FXAIX", [bar(dayMs("2026-03-13"), "100")]]]);
+    const { bars: out, navCovered } = navSafeBarsForPriming(bars, new Set(["FXAIX"]), settled);
+    expect([...out.keys()]).toEqual(["FXAIX"]);
+    expect([...navCovered]).toEqual(["FXAIX"]);
+  });
+
+  it("drops a stale NAV fund so its old tip never becomes the headline", () => {
+    // Tiingo /price lagged: newest bar is Wed, two sessions behind Friday. The
+    // fund must NOT be primed (it would pin the headline on an old day); it stays
+    // on its genuine quote / the NAV quote leg for a real fetch.
+    const bars = new Map([["FXAIX", [bar(dayMs("2026-03-11"), "98")]]]);
+    const { bars: out, navCovered } = navSafeBarsForPriming(bars, new Set(["FXAIX"]), settled);
+    expect(out.size).toBe(0);
+    expect(navCovered.size).toBe(0);
+  });
+
+  it("always passes market (non-NAV) bars through untouched", () => {
+    // A market symbol that happens to carry an old bar is still primed — only NAV
+    // funds are gated on reaching the settled session.
+    const bars = new Map([
+      ["VTI", [bar(dayMs("2026-03-10"), "300")]],
+      ["FXAIX", [bar(dayMs("2026-03-11"), "98")]],
+    ]);
+    const { bars: out, navCovered } = navSafeBarsForPriming(bars, new Set(["FXAIX"]), settled);
+    expect([...out.keys()]).toEqual(["VTI"]);
+    expect(navCovered.size).toBe(0);
+  });
+
+  it("primes a current NAV fund while dropping a stale sibling in one pass", () => {
+    const bars = new Map([
+      ["CURRENT", [bar(dayMs("2026-03-13"), "100")]],
+      ["BEHIND", [bar(dayMs("2026-03-11"), "98")]],
+      ["MKT", [bar(dayMs("2026-03-12"), "50")]],
+    ]);
+    const { bars: out, navCovered } = navSafeBarsForPriming(
+      bars,
+      new Set(["CURRENT", "BEHIND"]),
+      settled,
+    );
+    expect([...out.keys()].sort()).toEqual(["CURRENT", "MKT"]);
+    expect([...navCovered]).toEqual(["CURRENT"]);
   });
 });
 

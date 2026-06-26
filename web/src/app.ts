@@ -146,6 +146,7 @@ import {
   WEEK_STORE_KEY,
   navBackfillStaleSymbols,
   navBarsFromQuotes,
+  navSafeBarsForPriming,
   navTipCoveredSymbols,
   weekStaleSymbols,
   wrapDailyNavFetcher,
@@ -5791,6 +5792,12 @@ export class App {
    * {@link priceForHolding} rejects a bar-primed NAV as stale and the headline
    * falls back to the exported value, so the 1W gap-fill bars would never serve as
    * the headline NAV. This is what makes NAV genuinely bars-first.
+   *
+   * A NAV fund whose freshest fetched bar is still **behind** the latest settled
+   * session is deliberately left out of the prime ({@link navSafeBarsForPriming}):
+   * stamping its stale tip as the headline would pin the fund on an old day (the
+   * normal/manual-refresh mirror of the prefetch guard). Such a fund keeps its
+   * genuine quote / stays on the NAV quote leg for a real fetch instead.
    */
   private primeQuotesFromGraphBars(barsBySymbol: Map<string, Bar[]>, model: DashboardModel): void {
     if (barsBySymbol.size === 0) return;
@@ -5802,7 +5809,15 @@ export class App {
       currencyBySymbol.set(symbol, h.nativeCurrency ?? null);
       if (h.priceType === "nav") navSymbols.add(symbol);
     }
-    primeQuotesFromBars(barsBySymbol, currencyBySymbol, Date.now(), undefined, navSymbols);
+    // Only stamp a NAV bar tip as the settled headline when it actually reaches
+    // the latest settled session; a lagging tip is dropped so it never pins the
+    // fund on an old day on the routine/manual graph-refresh path.
+    const { bars, navCovered } = navSafeBarsForPriming(
+      barsBySymbol,
+      navSymbols,
+      latestSettledSessionDate(new Date()),
+    );
+    primeQuotesFromBars(bars, currencyBySymbol, Date.now(), undefined, navCovered);
   }
 
   /**
