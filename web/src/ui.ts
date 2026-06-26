@@ -1741,6 +1741,14 @@ function chartWithTimeframe(
 
   const liveStatus = (text: string): HTMLElement => h("div", { class: "chart-live-status note muted" }, [text]);
 
+  // Mark a freshly drawn chart so the stylesheet can fade it in (a gentle
+  // cross-fade keeps re-toggling 1D/1W/… calm instead of snapping). Purely
+  // cosmetic — `prefers-reduced-motion` disables the animation in CSS.
+  const enter = (chart: SVGSVGElement): SVGSVGElement => {
+    chart.classList.add("chart-enter");
+    return chart;
+  };
+
   const applyHistory = (days: number | null): void => {
     let start = 0;
     if (days !== null) {
@@ -1753,19 +1761,35 @@ function chartWithTimeframe(
     const slicedDates = dates.slice(start);
     const slicedSeries = rebaseWindowOverlays(series.map((s) => ({ ...s, values: s.values.slice(start) })));
     const chart = buildLineChart({ dates: slicedDates, series: slicedSeries, ...chartOpts });
-    if (chart) wrap.replaceChildren(...withLegend(chart as unknown as HTMLElement, baseLegend));
+    if (chart) wrap.replaceChildren(...withLegend(enter(chart) as unknown as HTMLElement, baseLegend));
   };
 
   const applyLive = async (option: RangeOption & { kind: "live" }, token: number, regenerateOnly: boolean): Promise<void> => {
     if (!live) return;
     const range = option.range;
-    wrap.replaceChildren(liveStatus("Loading live data…"));
+    // Defer the "Loading live data…" placeholder. A re-toggle (regenerate-only)
+    // or any cache hit resolves almost instantly, so flashing the placeholder
+    // for a single frame — and collapsing the chart's height with it — is the
+    // visible "jump" when clicking 1D/1W. Holding the previous chart in place
+    // for a short grace period lets a fast build swap straight in, calmly; only
+    // a genuinely slow fetch ever shows the placeholder.
+    let placeholderTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      placeholderTimer = null;
+      if (token === activeToken) wrap.replaceChildren(liveStatus("Loading live data…"));
+    }, LIVE_PLACEHOLDER_DELAY_MS);
+    const clearPlaceholderTimer = (): void => {
+      if (placeholderTimer !== null) {
+        clearTimeout(placeholderTimer);
+        placeholderTimer = null;
+      }
+    };
     let built: LiveCurveChart | null = null;
     try {
       built = await live(range, { regenerateOnly });
     } catch {
       built = null;
     }
+    clearPlaceholderTimer();
     if (token !== activeToken) return; // a newer selection superseded this build
     if (!built) {
       wrap.replaceChildren(liveStatus("Live data isn't available yet — try refreshing."));
@@ -1790,7 +1814,7 @@ function chartWithTimeframe(
     // longer prints a second copy beneath the chart. A coverage caption (e.g. a
     // 1D curve drawn from only part of the sleeve) is appended below the legend so
     // a partly-flat line never reads as a complete day (scenario C).
-    const children = withLegend(chart as unknown as HTMLElement, built.legend);
+    const children = withLegend(enter(chart) as unknown as HTMLElement, built.legend);
     if (built.note) children.push(liveStatus(built.note));
     wrap.replaceChildren(...children);
     // Now that the live curve is drawn, refine the headline to the growth the
@@ -1841,6 +1865,14 @@ function chartWithTimeframe(
 }
 
 const CHART_RANGE_KEY_PREFIX = "iv.web.chartRange.";
+
+/**
+ * Grace period before a live (1D/1W) curve shows its "Loading…" placeholder.
+ * Re-toggles and cache hits resolve well within this window, so they swap the
+ * new chart straight in — no placeholder flash, no height collapse — keeping
+ * range switching visually calm. Only a genuinely slow fetch trips the timer.
+ */
+const LIVE_PLACEHOLDER_DELAY_MS = 220;
 
 /**
  * Rebase overlay series for the currently selected window so "benchmark" and
