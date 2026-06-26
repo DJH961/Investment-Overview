@@ -53,11 +53,21 @@ blocks the next request) and skip/defer when exhausted. They satisfy the mission
 
 | Path | Gate (won't fire when exhausted) | Count |
 |---|---|---|
-| **Quote market/NAV** — `loadQuotes` | `affordableCount = min(stale, minute, day)` (`quotes.ts:541`) | `recordCredits` up-front (`quotes.ts:554`) |
-| **Live EUR/USD (Twelve Data)** — `loadEurUsd` | `minute >= 1 && day >= 1` (`quotes.ts:795`) | `recordCredits` up-front (`quotes.ts:798`) |
-| **Tiingo EUR/USD quote fallback** | `budget.hasRoom()` (`quotes.ts:826`) | `recordTiingoCredits` (`quotes.ts:827`) |
-| **Tiingo market/NAV quote fallback** — `tiingo-fallback.ts` | `selectWithinBudget(...budgetNow())` on every batch — nav/laggard/canary/market (`:340,:394,:414`); manual canary also checks `budgetNow().hasRoom()` (`:372`) | `recordTiingoCredits` up-front (`:205`) |
+| **Quote market/NAV** — `loadQuotes` | `reservation.reserve("twelvedata", stale.length)` grants only the affordable slice | reservation authority debits the grant up-front (`reservation.ts`) |
+| **Live EUR/USD (Twelve Data)** — `loadEurUsd` | `reservation.reserve("twelvedata", 1) >= 1` | reservation authority debits the grant up-front (`reservation.ts`) |
+| **Tiingo EUR/USD quote fallback** — `loadEurUsd` | `reservation.reserve("tiingo", 1) > 0` (folds in the 429 freeze + hourly/daily caps) | reservation authority debits the grant up-front (`reservation.ts`) |
+| **Tiingo market/NAV quote fallback** — `tiingo-fallback.ts` | `selectWithinBudget(...budgetNow())` selects the batch; `reservation.reserve("tiingo", batch.length)` debits it | reservation authority debits the grant up-front (`reservation.ts`) |
 | **FX rates** — `loadFxRates` → `fetchFxRates` | n/a — Frankfurter, free, not a metered provider | n/a |
+
+> **Recommendation 4 now covers every call site.** The quote (`loadQuotes`), live
+> FX (`loadEurUsd`, both the Twelve Data and Tiingo legs) and Tiingo quote
+> fallback (`tiingo-fallback.ts`) paths no longer read-then-`recordCredits`
+> themselves; they book through the single {@link reservation.ts} authority, the
+> same one the graph/NAV legs already use. There is no remaining client path that
+> debits a provider ledger outside the authority (the only direct `recordCredits`
+> calls left are the dev-only `devkit/` harness and `live-graph.ts`'s explicit
+> no-reservation legacy meters, used only when a caller omits the authority).
+
 
 ---
 
