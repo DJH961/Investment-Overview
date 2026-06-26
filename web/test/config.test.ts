@@ -23,6 +23,7 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     priceProxyUrl: "",
     updateMinutes: 15,
     autoLockMinutes: 5,
+    resumeOnRefresh: false,
     ...overrides,
   };
 }
