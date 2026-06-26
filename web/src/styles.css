@@ -1210,6 +1210,10 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Match the chart's own aspect ratio (viewBox 600×220) so the deferred
+     "Loading…" placeholder occupies exactly the height a chart would — the
+     curve area never collapses, so swapping it in/out doesn't jump the page. */
+  aspect-ratio: 600 / 220;
   min-height: 8rem;
   text-align: center;
   padding: 0 1rem;
@@ -1243,6 +1247,16 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   width: 100%;
   height: auto;
   overflow: visible;
+}
+/* Gentle cross-fade when a freshly built chart is swapped in (range toggle,
+   refresh). Keeps switching between 1D/1W/… calm instead of snapping. */
+.chart-enter { animation: chart-fade-in 0.24s ease both; }
+@keyframes chart-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chart-enter { animation: none; }
 }
 .chart-grid {
   stroke: var(--border);

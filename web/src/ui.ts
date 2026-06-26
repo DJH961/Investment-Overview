@@ -86,6 +86,7 @@ import {
 import { buildLineChart, type ChartSeries } from "./chart";
 import { curveColumns } from "./value-graph";
 import type { CurvePoint } from "./timeseries";
+import type { DailyClose } from "./value-history";
 import { APP_VERSION } from "./version";
 import {
   expandCategoryWeights,
@@ -1107,7 +1108,7 @@ function renderOverviewPanel(model: DashboardModel, liveGraph?: LiveGraphHooks):
   // live coverage, budget) — so the leaderboard reads right after the graph and
   // the update text that frame it, mirroring the desktop layout. The badges
   // below still tie each mover back to its holding row.
-  const valueChart = renderValueChart(model.analytics, model.overview, liveGraph);
+  const valueChart = renderValueChart(model.analytics, model.overview, liveGraph, model.valueBackfill);
   if (valueChart) content.push(valueChart);
   content.push(renderStats(model.overview));
   const movers = renderMovers(model.holdings);
@@ -1743,6 +1744,14 @@ function chartWithTimeframe(
 
   const liveStatus = (text: string): HTMLElement => h("div", { class: "chart-live-status note muted" }, [text]);
 
+  // Mark a freshly drawn chart so the stylesheet can fade it in (a gentle
+  // cross-fade keeps re-toggling 1D/1W/… calm instead of snapping). Purely
+  // cosmetic — `prefers-reduced-motion` disables the animation in CSS.
+  const enter = (chart: SVGSVGElement): SVGSVGElement => {
+    chart.classList.add("chart-enter");
+    return chart;
+  };
+
   const applyHistory = (days: number | null): void => {
     let start = 0;
     if (days !== null) {
@@ -1755,19 +1764,35 @@ function chartWithTimeframe(
     const slicedDates = dates.slice(start);
     const slicedSeries = rebaseWindowOverlays(series.map((s) => ({ ...s, values: s.values.slice(start) })));
     const chart = buildLineChart({ dates: slicedDates, series: slicedSeries, ...chartOpts });
-    if (chart) wrap.replaceChildren(...withLegend(chart as unknown as HTMLElement, baseLegend));
+    if (chart) wrap.replaceChildren(...withLegend(enter(chart) as unknown as HTMLElement, baseLegend));
   };
 
   const applyLive = async (option: RangeOption & { kind: "live" }, token: number, regenerateOnly: boolean): Promise<void> => {
     if (!live) return;
     const range = option.range;
-    wrap.replaceChildren(liveStatus("Loading live data…"));
+    // Defer the "Loading live data…" placeholder. A re-toggle (regenerate-only)
+    // or any cache hit resolves almost instantly, so flashing the placeholder
+    // for a single frame — and collapsing the chart's height with it — is the
+    // visible "jump" when clicking 1D/1W. Holding the previous chart in place
+    // for a short grace period lets a fast build swap straight in, calmly; only
+    // a genuinely slow fetch ever shows the placeholder.
+    let placeholderTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      placeholderTimer = null;
+      if (token === activeToken) wrap.replaceChildren(liveStatus("Loading live data…"));
+    }, LIVE_PLACEHOLDER_DELAY_MS);
+    const clearPlaceholderTimer = (): void => {
+      if (placeholderTimer !== null) {
+        clearTimeout(placeholderTimer);
+        placeholderTimer = null;
+      }
+    };
     let built: LiveCurveChart | null = null;
     try {
       built = await live(range, { regenerateOnly });
     } catch {
       built = null;
     }
+    clearPlaceholderTimer();
     if (token !== activeToken) return; // a newer selection superseded this build
     if (!built) {
       wrap.replaceChildren(liveStatus("Live data isn't available yet — try refreshing."));
@@ -1792,7 +1817,7 @@ function chartWithTimeframe(
     // longer prints a second copy beneath the chart. A coverage caption (e.g. a
     // 1D curve drawn from only part of the sleeve) is appended below the legend so
     // a partly-flat line never reads as a complete day (scenario C).
-    const children = withLegend(chart as unknown as HTMLElement, built.legend);
+    const children = withLegend(enter(chart) as unknown as HTMLElement, built.legend);
     if (built.note) children.push(liveStatus(built.note));
     wrap.replaceChildren(...children);
     // Now that the live curve is drawn, refine the headline to the growth the
@@ -1843,6 +1868,14 @@ function chartWithTimeframe(
 }
 
 const CHART_RANGE_KEY_PREFIX = "iv.web.chartRange.";
+
+/**
+ * Grace period before a live (1D/1W) curve shows its "Loading…" placeholder.
+ * Re-toggles and cache hits resolve well within this window, so they swap the
+ * new chart straight in — no placeholder flash, no height collapse — keeping
+ * range switching visually calm. Only a genuinely slow fetch trips the timer.
+ */
+const LIVE_PLACEHOLDER_DELAY_MS = 220;
 
 /**
  * Rebase overlay series for the currently selected window so "benchmark" and
@@ -2190,6 +2223,34 @@ function lastNonNull(values: Array<Decimal | null>): Decimal | null {
 }
 
 /**
+ * Splice the device's persisted whole-book daily closes into the gap between the
+ * last exported point and today. When the export blob is stale (weeks old) but the
+ * app is opened daily, those days were recorded live (and harvested from the 1W
+ * curve), so the long-range chart draws a real per-day line across the gap instead
+ * of a single straight diagonal. Only closes strictly *after* the last exported
+ * day and strictly *before* `asOf` (today's live tip owns `asOf`) are added; an
+ * up-to-date blob already covers the range, so nothing is spliced.
+ */
+export function spliceDailyBackfill(
+  points: EquityPoint[],
+  backfill: DailyClose[],
+  asOf: string,
+): EquityPoint[] {
+  if (backfill.length === 0) return points;
+  const lastDate = points[points.length - 1].date;
+  const extra: EquityPoint[] = backfill
+    .filter((c) => c.date > lastDate && c.date < asOf)
+    .map((c) => ({
+      date: c.date,
+      portfolioValue: c.valueEur,
+      portfolioValueUsd: c.valueUsd,
+      contributions: null,
+      benchmarkValue: null,
+    }));
+  return extra.length === 0 ? points : [...points, ...extra];
+}
+
+/**
  * The Overview "value over time" graph. Reuses the exported equity curve and
  * appends today's live total value as the final point, so the headline figure
  * is the tip of the line. Returns null when no usable history was exported.
@@ -2198,10 +2259,14 @@ function renderValueChart(
   analytics: AnalyticsView | null,
   o: OverviewView,
   liveGraph?: LiveGraphHooks,
+  backfill: DailyClose[] = [],
 ): HTMLElement | null {
   if (analytics === null) return null;
-  const points = analytics.curve.filter((p) => p.portfolioValue !== null);
-  if (points.length < 1) return null;
+  const exported = analytics.curve.filter((p) => p.portfolioValue !== null);
+  if (exported.length < 1) return null;
+  // Rebuild the gap a stale blob leaves with the device's persisted daily closes
+  // before any windowing / live-tip work, so all of it just sees a denser curve.
+  const points = spliceDailyBackfill(exported, backfill, o.asOf);
 
   const dates = points.map((p) => p.date);
   // Denominate in the active display currency. USD is the native booked currency
