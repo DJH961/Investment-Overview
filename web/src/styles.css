@@ -385,7 +385,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .fx-box-stats {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 0.6rem 1rem;
 }
 .fx-box-stat { display: grid; gap: 0.1rem; align-content: start; }
@@ -456,13 +456,21 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .fx-diverge { display: grid; gap: 0.4rem; }
 .fx-diverge-row {
   display: grid;
-  grid-template-columns: 5.5rem 1fr 5rem;
+  grid-template-columns: 6.75rem 1fr 5rem;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.78rem;
   font-weight: 600;
 }
-.fx-diverge-label { color: var(--muted); }
+.fx-diverge-label { color: var(--muted); display: flex; align-items: baseline; gap: 0.35rem; }
+.fx-diverge-tag {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  color: var(--muted);
+  opacity: 0.75;
+}
 .fx-diverge-track {
   position: relative;
   height: 0.5rem;

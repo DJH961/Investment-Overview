@@ -125,6 +125,7 @@ import {
   sessionBarsComplete,
   sessionCloseFxFromBars,
   sessionFxBarsComplete,
+  sessionOpenFxFromBars,
 } from "./session-fx";
 import { TimeSeriesStore, type Breadcrumb } from "./timeseries-store";
 import { WEEK_STORE_KEY, navBarsFromQuotes, weekStaleSymbols } from "./week";
@@ -3168,6 +3169,13 @@ export class App {
       model.overview.fxRateEurUsdSessionClose = marketOpen
         ? null
         : (await this.barsSessionCloseFx(sessionDay)) ?? readSessionCloseFx(sessionDay);
+      // The mirror anchor for an open session: the rate at this morning's open,
+      // read from the same FX bars. Lets the currency-effect split carve out the
+      // live market-hours slice and keep last night's overnight as the remainder
+      // (so it survives the market start). Null while shut / before the first bar.
+      model.overview.fxRateEurUsdSessionOpen = marketOpen
+        ? await this.barsSessionOpenFx(sessionDay)
+        : null;
     }
     // Remember each fund's freshly-settled NAV as a daily bar in the 1W store, so
     // the week curve re-marks NAV funds from their real per-day drift at zero
@@ -4642,6 +4650,25 @@ export class App {
       }
     } catch {
       // Best-effort: a store failure simply falls back to the live capture.
+    }
+    return null;
+  }
+
+  /**
+   * The session's EUR→USD rate at the **open**, read from the same persisted FX
+   * bars {@link barsSessionCloseFx} reads the close from — the live market-hours
+   * anchor the hero's currency-effect split measures from while the session runs.
+   * Returns `null` when no FX bars are on the device yet (cold first paint), no
+   * positive bar has printed since 09:30 ET, or on any store error.
+   */
+  private async barsSessionOpenFx(sessionDay: string): Promise<Decimal | null> {
+    try {
+      const session = await this.ensureTimeSeriesStore().loadSession(sessionDay);
+      if (session && session.fx.length > 0) {
+        return sessionOpenFxFromBars(session.fx, sessionOpenMs(sessionDay));
+      }
+    } catch {
+      // Best-effort: a store failure simply hides the live/last split.
     }
     return null;
   }

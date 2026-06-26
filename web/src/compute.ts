@@ -243,6 +243,15 @@ export interface OverviewView {
    */
   fxRateEurUsdSessionClose: Decimal | null;
   /**
+   * EUR→USD around the current session's **open** (the rate captured shortly after
+   * 09:30 ET), or null when the market is shut or no open bar has printed yet. The
+   * hero's currency-effect split measures the live market-hours slice from this
+   * while the session is running, so last night's overnight slice can be carved
+   * out as the remainder and survive the market start. Populated by the app shell
+   * (it reads the session's FX bars), so the compute layer defaults it to null.
+   */
+  fxRateEurUsdSessionOpen: Decimal | null;
+  /**
    * Epoch-ms the live/cached EUR→USD spot that valued the book was observed, so
    * the hero FX line can stamp when the rate is from (a clock time today, a date
    * once it is older). Null when only the keyless end-of-day rate was available
@@ -1345,6 +1354,7 @@ export function buildDashboard(
     dividendYieldPct,
     fxRateEurUsd,
     fxRateEurUsdSessionClose: null,
+    fxRateEurUsdSessionOpen: null,
     fxObservedAt: opts.fxObservedAt ?? null,
     holdingsCount: holdings.length,
     missingPriceSymbols: missingPrice,
@@ -1381,6 +1391,20 @@ export function fxTodayDeviationPct(o: OverviewView): Decimal | null {
   const prev = o.fxRateEurUsdPrev;
   if (now === null || prev === null || !prev.greaterThan(0)) return null;
   return now.minus(prev).dividedBy(prev);
+}
+
+/**
+ * The fractional EUR/USD move from an arbitrary session anchor (the open while the
+ * market is live, the close once it has shut) to the live spot — the raw input for
+ * the currency box's "Since open"/"Since close" stat. Same sign convention as
+ * {@link fxTodayDeviationPct} (positive = EUR/USD up); the caller negates it for
+ * the EUR-display reciprocal. Null when either rate is missing or the anchor is
+ * non-positive.
+ */
+export function fxSinceAnchorPct(o: OverviewView, anchor: Decimal | null): Decimal | null {
+  const now = o.fxRateEurUsd;
+  if (now === null || anchor === null || !anchor.greaterThan(0)) return null;
+  return now.minus(anchor).dividedBy(anchor);
 }
 
 /** Group holding values by asset class into descending allocation slices. */
