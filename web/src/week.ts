@@ -197,9 +197,8 @@ export function navTipCoveredSymbols(
 ): string[] {
   const covered: string[] = [];
   for (const [symbol, bars] of barsBySymbol) {
-    let tip: number | null = null;
-    for (const b of bars) if (tip === null || b.t > tip) tip = b.t;
-    if (tip === null) continue;
+    if (bars.length === 0) continue;
+    const tip = Math.max(...bars.map((b) => b.t));
     if (utcDayOf(tip) >= settledDate) covered.push(symbol);
   }
   return covered;
