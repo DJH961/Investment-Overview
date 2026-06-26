@@ -73,7 +73,7 @@ import {
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, elapsedSessionMs, settledSessionsSince } from "./market-hours";
+import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -118,6 +118,13 @@ import { planFanout, planTwelveDataSafetyNet, TIINGO_RESERVE_CREDITS } from "./p
 import { reconcileHandshake } from "./login-handshake";
 import { springboardSessionCurve, springboardWeekCurve, parseExportedPoints } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
+import {
+  graphAnchorFx,
+  readSessionCloseFx,
+  recordSessionCloseFx,
+  sessionCloseFxFromBars,
+  sessionFxBarsComplete,
+} from "./session-fx";
 import { TimeSeriesStore, type Breadcrumb } from "./timeseries-store";
 import { WEEK_STORE_KEY, navBarsFromQuotes, weekStaleSymbols } from "./week";
 import { ONE_HOUR_MS } from "./freshness";
@@ -701,6 +708,16 @@ export class App {
       config,
       now,
     );
+    // After-hours FX close completion: when the session's price bars were already
+    // in hand (so no 1D backfill ran above to grab the FX track alongside them)
+    // but the stored EUR→USD track never reached the 16:00 ET close, pull the FX
+    // alone so the freeze anchor + currency-effect split read the true settle, not
+    // a mid-session rate. Gated to the closed market — during the session the
+    // close has simply not happened yet — and skipped when a session backfill just
+    // fetched the FX in the same pass. Routed through the same reservation/breaker.
+    if (!marketOpen && graphStale.fxIncomplete && prefetch.graphSessionSymbols.length === 0) {
+      await this.prefetchSessionFx(config, now);
+    }
     const quoteWork = prefetch.symbols.length + prefetch.navSymbols.length;
     if (quoteWork === 0) {
       this.pollLog(
@@ -882,13 +899,19 @@ export class App {
    * as the catch-up quotes. NAV funds are never included: the graphs never plot
    * them, so they never need (or get) bars. Returns empty sets when there are no
    * market symbols to plot.
+   *
+   * `fxIncomplete` is the after-hours signal the FX-only backfill keys on: the 1D
+   * EUR→USD track on the device has **not** reached the session close (it was last
+   * fetched mid-session, or never), so the freeze anchor / currency-effect split
+   * would otherwise read a mid-session rate as "the close" until the next session.
+   * See {@link sessionFxBarsComplete} and {@link prefetchSessionFx}.
    */
   private async prefetchGraphStaleness(
     marketSymbols: string[],
     now: Date,
-  ): Promise<{ session: string[]; week: string[] }> {
+  ): Promise<{ session: string[]; week: string[]; fxIncomplete: boolean }> {
     if (marketSymbols.length === 0) {
-      return { session: [], week: [] };
+      return { session: [], week: [], fxIncomplete: false };
     }
     const store = this.ensureTimeSeriesStore();
     const day = lastSessionDate(now);
@@ -908,7 +931,10 @@ export class App {
     // else priming is skipped and the dashboard build re-pulls it via Tiingo
     // moments later (docs/tiingo_polling_storm_cleanup_plan.md item 5b).
     const week = weekStaleSymbols(weekStored, marketSymbols, now);
-    return { session, week };
+    // The 1D FX track reads incomplete when no bar has reached this session's
+    // 16:00 ET close — the after-hours gap the FX-only backfill closes.
+    const fxIncomplete = !sessionFxBarsComplete(today?.fx ?? [], sessionCloseMs(day));
+    return { session, week, fxIncomplete };
   }
 
   /**
@@ -1149,6 +1175,14 @@ export class App {
    * Returns the number of symbol-series actually stored this prime (0 when the
    * graphs were already loaded), so the caller can stamp the clock-hour gate only
    * when a market-hours prime genuinely pulled bars.
+   *
+   * It is also the shared after-hours home of the incomplete-1D-FX-close backfill
+   * ({@link prefetchSessionFx}): wiring it here — not only in the login warm-up —
+   * means every auto/manual/reset round repairs a session FX track that never
+   * reached the 16:00 ET close, so a failed login warm-up can no longer strand the
+   * freeze anchor / currency-effect split on a mid-session rate. The FX-only pull
+   * runs only while the market is shut and only when no session bar pull this round
+   * would already grab the FX track; it never affects the returned bar count.
    */
   private async primeStaleGraphPackages(now: Date = new Date()): Promise<number> {
     const { config } = this.state;
@@ -1158,6 +1192,18 @@ export class App {
       .map((e) => e.symbol);
     if (marketSymbols.length === 0) return 0;
     const stale = await this.prefetchGraphStaleness(marketSymbols, now);
+    // After-hours FX close completion — mirror of the login warm-up (see
+    // {@link prefetchOnStart}) so the FX-only backfill is wired into **every**
+    // pulling mechanic, not just the start prefetch. If the login warm-up ever
+    // fails before it reaches its FX step, the routine auto/manual/reset rounds all
+    // flow through here while the market is shut, so they repair the incomplete 1D
+    // EUR→USD close instead of leaving the freeze anchor + currency-effect split
+    // reading a mid-session rate as "the close" until the next session. Same gate
+    // as the start path: closed market, FX track short of the close, and no session
+    // bar pull this round (a session backfill already grabs the FX track alongside).
+    if (!isUsMarketOpen(now) && stale.fxIncomplete && stale.session.length === 0) {
+      await this.prefetchSessionFx(config, now);
+    }
     if (stale.session.length === 0 && stale.week.length === 0) return 0;
     return this.prefetchGraphBars(stale.session, stale.week, config, now, this.primingCurrencyMap());
   }
@@ -1290,6 +1336,66 @@ export class App {
       outputsize: 8,
     });
     return stored;
+  }
+
+  /**
+   * Backfill **only** the 1D EUR→USD bar track for the current session, used by
+   * the after-hours pulls (the login warm-up's start prefetch **and** the routine
+   * auto/manual/reset rounds via {@link primeStaleGraphPackages}) when the price
+   * bars are already in hand (so the graph-bar backfill above never ran to grab
+   * the FX alongside them) yet the stored FX track stopped short of the 16:00 ET
+   * close — an *incomplete 1D FX bar*. Completing it means the freeze anchor
+   * ({@link graphAnchorFx}) and the hero currency-effect split read the genuine
+   * settle from the bars rather than a stale mid-session rate that would otherwise
+   * persist until the next session.
+   *
+   * It pulls nothing but the FX, and only through the Tiingo `/price` FX-history
+   * pipe (the same pipe the graph backfill uses for the FX track). The fetch is
+   * routed through the single {@link ledgerReservation} authority and the 429
+   * breaker exactly like every other pull, so it can never overshoot the shared
+   * EUR/USD budget, and a per-series backoff parks a dead/empty FX leg. Returns
+   * whether a fresh FX bar was stored.
+   */
+  private async prefetchSessionFx(config: AppConfig, now: Date): Promise<boolean> {
+    const proxyUrl = resolvePriceProxyUrl(config);
+    if (!proxyUrl) return false; // graph FX bars only come cheaply via the Tiingo /price pipe
+    const window = sessionFxWindow(now);
+    // Same reservation + observation-only meters + breaker wiring as the graph
+    // backfill's FX track, so this spend is governed identically.
+    const reservation = ledgerReservation();
+    const spent = { credits: 0 };
+    const { tiingoMeter, twelveDataMeter } = instrumentedGraphRecorders({
+      range: "1D FX close",
+      bookTwelveData: () => undefined,
+      refundTwelveData: (n) => reservation.release("twelvedata", n, Date.now()),
+      bookTiingo: () => undefined,
+      refundTiingo: (n) => reservation.release("tiingo", n, Date.now()),
+      log: (message) => this.pollLog("graph", message),
+      spent,
+      onTwelveData429: () => recordTwelveData429(Date.now()),
+      onTwelveDataSuccess: () => recordTwelveDataSuccess(),
+      onTiingo429: () => recordTiingo429(Date.now()),
+    });
+    const fetchFx = makeWindowFxFetcher(proxyUrl, window, "1hour", undefined, tiingoMeter, {
+      apiKey: config.apiKey,
+      twelveDataMeter,
+      backoff: cacheSeriesBackoff(),
+      backoffKey: "fx:1D:1hour",
+      reservation,
+    });
+    if (!fetchFx) return false;
+    const fx = await fetchFx().catch(() => undefined);
+    if (!fx || fx.length === 0) {
+      this.pollLog("graph", "After-hours FX close backfill found no new EUR/USD bars.");
+      return false;
+    }
+    await this.ensureTimeSeriesStore().mergeSession(lastSessionDate(now), { fx }, now.getTime());
+    this.pollLog(
+      "graph",
+      `After-hours FX close backfill stored ${fx.length} EUR/USD bar(s) to complete the session close ` +
+        `(price bars already in hand, FX track was short of the 16:00 ET settle).`,
+    );
+    return true;
   }
 
   /** Warm the chosen symbols on the Twelve Data primary; returns how many it fetched. */
@@ -3025,6 +3131,30 @@ export class App {
       liveStalenessMs: this.state.config.updateMinutes * 60 * 1000,
     });
     model.overview.lastDataPullAt = this.lastDataPullAt;
+    // Capture the session-close EUR/USD rate so the live 1D/1W graphs can freeze
+    // their EUR view to it overnight (the market-day trajectory must not slide
+    // with after-hours FX), and so the Overview can isolate the overnight FX
+    // slice. While the regular session is open we keep recording the live spot as
+    // the running close for today; the last value written before 16:00 ET is the
+    // settled close. Once shut, we resolve the single authoritative session close
+    // and surface it; the longer history graphs and the headline keep valuing at
+    // the live spot, unchanged.
+    {
+      const now = new Date();
+      const marketOpen = isUsMarketOpen(now);
+      const liveFx = fx.rates.USD ?? model.overview.fxRateEurUsd;
+      const sessionDay = lastSessionDate(now);
+      if (marketOpen) recordSessionCloseFx(sessionDay, liveFx);
+      // Prefer the close read straight from the session's EUR→USD bars — the same
+      // authoritative source the 1D/1W graphs freeze to (so the hero's currency-
+      // effect split and the graph never disagree on what "the close" is), and the
+      // only one that exists on a cold start / weekend when the app was never live
+      // at 16:00 ET to capture a running close. Fall back to the live-captured
+      // running close when no bars are on the device yet.
+      model.overview.fxRateEurUsdSessionClose = marketOpen
+        ? null
+        : (await this.barsSessionCloseFx(sessionDay)) ?? readSessionCloseFx(sessionDay);
+    }
     // Remember each fund's freshly-settled NAV as a daily bar in the 1W store, so
     // the week curve re-marks NAV funds from their real per-day drift at zero
     // graph cost (item 7a.1). Best-effort: a store failure never sinks the paint.
@@ -4137,13 +4267,50 @@ export class App {
     // The settled cash sleeve in both currencies (USD derived from the day's FX).
     const cashEur = o.cashValueEur;
     const cashUsd = baseFx !== null ? cashEur.times(baseFx) : cashEur;
-    const liveTip =
+    // Freeze the live 1D/1W graphs' EUR view to the session-close FX while the
+    // market is shut, so their market-day trajectory does not slide with
+    // overnight FX. While open, `frozenFx` is null and everything uses the live
+    // rate exactly as before. The longer history graphs are built elsewhere
+    // (renderValueChart) and deliberately keep the live after-hours rate.
+    const marketClosed = !isUsMarketOpen();
+    const sessionDay = lastSessionDate(new Date());
+    const store = this.ensureTimeSeriesStore();
+    // One shared procedure for BOTH the 1D and 1W graphs: read the session's FX
+    // close straight from the EUR→USD bars the curves are reconstructed from, so
+    // both freeze to the *same* authoritative close — and still have one when the
+    // app was not live at 16:00 ET (the bars are backfilled regardless). Falls
+    // back to the live-captured close, then the settled previous close, then the
+    // live rate, so the curve always has a rate to anchor to. Memoised so the two
+    // hooks resolve it once per render.
+    let frozenFxMemo: Decimal | null | undefined;
+    const resolveFrozenFx = async (): Promise<Decimal | null> => {
+      if (!marketClosed) return null;
+      if (frozenFxMemo !== undefined) return frozenFxMemo;
+      const barsClose = await this.barsSessionCloseFx(sessionDay);
+      frozenFxMemo = graphAnchorFx({
+        marketOpen: false,
+        liveFx: baseFx,
+        // The FX bars are the ground truth the curve is drawn from; prefer them
+        // so the frozen tip is continuous with the curve body, then the live
+        // capture, then the settled previous close (a stable weekend/cold-start
+        // proxy), then the live rate as a last resort.
+        sessionCloseFx: barsClose ?? o.fxRateEurUsdSessionClose,
+        settledPrevFx: o.fxRateEurUsdPrev,
+      });
+      return frozenFxMemo;
+    };
+    // The live tip drawn at the session close once shut: its USD leg is FX-free,
+    // but its EUR leg is re-marked at the frozen close rate so the 1D/1W curve
+    // ends on the market-day value, not the overnight-drifted one.
+    const makeLiveTip = (frozenFx: Decimal | null): { valueEur: Decimal; valueUsd: Decimal } | null =>
       o.totalValueIsComplete
-        ? {
-            valueEur: o.totalValueEur,
-            valueUsd:
-              o.totalValueUsd ?? (baseFx !== null ? o.totalValueEur.times(baseFx) : o.totalValueEur),
-          }
+        ? ((): { valueEur: Decimal; valueUsd: Decimal } => {
+            const valueUsd =
+              o.totalValueUsd ?? (baseFx !== null ? o.totalValueEur.times(baseFx) : o.totalValueEur);
+            const valueEur =
+              frozenFx !== null && frozenFx.greaterThan(0) ? valueUsd.dividedBy(frozenFx) : o.totalValueEur;
+            return { valueEur, valueUsd };
+          })()
         : null;
     const reservation = ledgerReservation();
     const providers: LiveGraphProviders = {
@@ -4158,15 +4325,17 @@ export class App {
       // fires over a cap or while a provider is frozen.
       reservation,
     };
-    const store = this.ensureTimeSeriesStore();
     const exported = this.state.data?.live_graphs ?? undefined;
-    const anchor = (): ReturnType<typeof buildModelAnchor> =>
-      buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx);
+    const anchor = (frozenFx: Decimal | null): ReturnType<typeof buildModelAnchor> =>
+      buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx, { graphFx: frozenFx });
     // The 1W anchor folds NAV funds into the sleeve (re-marked from their daily
     // NAV bars) rather than the flat base, so the week's NAV drift shows on the
     // curve for a NAV-heavy book (docs/tiingo_polling_storm_cleanup_plan.md item 7).
-    const weekAnchor = (): ReturnType<typeof buildModelAnchor> =>
-      buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx, { navInSleeve: true });
+    const weekAnchor = (frozenFx: Decimal | null): ReturnType<typeof buildModelAnchor> =>
+      buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx, {
+        navInSleeve: true,
+        graphFx: frozenFx,
+      });
     // Feed a graph's freshly fetched bars back into the holdings' quote cache so
     // a big load primes the rows instead of each re-buying the same price.
     const onFreshBars = (bars: Map<string, Bar[]>): void =>
@@ -4199,6 +4368,8 @@ export class App {
     return {
       session: async (opts) => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
+        const frozenFx = await resolveFrozenFx();
+        const liveTip = makeLiveTip(frozenFx);
         // Springboard off the exported session first — instant paint, no fetch —
         // and only build live when the export is absent or too stale.
         const sprung = springboardSessionCurve({ exported, liveTip });
@@ -4214,7 +4385,7 @@ export class App {
         const spent = { credits: 0 };
         try {
           const curve = await buildLiveSessionCurve(
-            { anchor: anchor(), store, liveTip, onFreshBars, regenerateOnly },
+            { anchor: anchor(frozenFx), store, liveTip, onFreshBars, regenerateOnly },
             loggingProviders("1D", spent),
           );
           if (spent.credits === 0) {
@@ -4228,6 +4399,8 @@ export class App {
       },
       week: async (opts) => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
+        const frozenFx = await resolveFrozenFx();
+        const liveTip = makeLiveTip(frozenFx);
         // The current day's slice of the week must be the same dense 1D session the
         // 1D graph shows, not the coarse `week.points` tail. Build it once, network-
         // free (springboard off the blob, else reconstruct from stored bars), and
@@ -4237,7 +4410,7 @@ export class App {
         const todaySlice =
           springboardSessionCurve({ exported, liveTip }) ??
           (await buildLiveSessionCurve(
-            { anchor: anchor(), store, liveTip, regenerateOnly: true },
+            { anchor: anchor(frozenFx), store, liveTip, regenerateOnly: true },
             loggingProviders("1D", { credits: 0 }),
           )
             .then((c) => (c.points.length >= 1 ? c.points : null))
@@ -4257,7 +4430,7 @@ export class App {
         try {
           const curve = await buildLiveWeekCurve(
             {
-              anchor: weekAnchor(),
+              anchor: weekAnchor(frozenFx),
               store,
               liveTip,
               onFreshBars,
@@ -4429,6 +4602,26 @@ export class App {
   private ensureTimeSeriesStore(): TimeSeriesStore {
     if (this.timeSeriesStore === null) this.timeSeriesStore = new TimeSeriesStore();
     return this.timeSeriesStore;
+  }
+
+  /**
+   * The session's settled EUR→USD close read straight from the stored 1D FX bars
+   * for `sessionDay` — the authoritative source both the live graphs' freeze
+   * ({@link graphAnchorFx}) and the hero's currency-effect split share, so they
+   * never disagree on what "the close" is. Returns `null` when no FX bars are on
+   * the device yet (cold first paint) or on any store error, leaving the caller
+   * to fall back to the live-captured running close.
+   */
+  private async barsSessionCloseFx(sessionDay: string): Promise<Decimal | null> {
+    try {
+      const session = await this.ensureTimeSeriesStore().loadSession(sessionDay);
+      if (session && session.fx.length > 0) {
+        return sessionCloseFxFromBars(session.fx, sessionCloseMs(sessionDay));
+      }
+    } catch {
+      // Best-effort: a store failure simply falls back to the live capture.
+    }
+    return null;
   }
 
   /**

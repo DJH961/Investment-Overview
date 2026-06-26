@@ -83,6 +83,50 @@ describe("buildModelAnchor", () => {
     expect(anchor.baseUsd.toString()).toBe("756");
     expect(anchor.baseFx?.toString()).toBe("1.08");
   });
+
+  it("freezes the EUR view to graphFx for USD holdings, leaving USD FX-free", () => {
+    // Live FX 1.08 (baseFx); freeze to the session-close 1.05. The USD leg is
+    // unchanged ($1080) but the EUR leg is re-marked at the frozen rate:
+    // 1080 / 1.05 = 1028.571…, not the live 1000.
+    const anchor = buildModelAnchor(
+      [holding({ priceSymbol: "VOO", nativeCurrency: "USD", valueEur: d(1000), valueUsd: d(1080) })],
+      d(0),
+      d(0),
+      d("1.08"),
+      { graphFx: d("1.05") },
+    );
+    expect(anchor.baseFx?.toString()).toBe("1.05");
+    expect(anchor.holdings[0].valueUsd.toString()).toBe("1080");
+    expect(anchor.holdings[0].valueEur.toNumber()).toBeCloseTo(1028.5714, 3);
+  });
+
+  it("re-derives the EUR cash sleeve's USD twin from graphFx", () => {
+    const anchor = buildModelAnchor(
+      [holding({ priceSymbol: "FUND", priceType: "nav", nativeCurrency: "EUR", valueEur: d(500), valueUsd: d(540) })],
+      d(200),
+      d(216),
+      d("1.08"),
+      { graphFx: d("1.05") },
+    );
+    // EUR-native NAV fund keeps its EUR value (500) and its USD value (540); the
+    // cash USD twin is re-derived from graphFx (200 * 1.05 = 210), so the flat
+    // base is 700 EUR / (210 + 540) = 750 USD at the frozen rate.
+    expect(anchor.baseEur.toString()).toBe("700");
+    expect(anchor.baseUsd.toString()).toBe("750");
+    expect(anchor.baseFx?.toString()).toBe("1.05");
+  });
+
+  it("ignores a non-positive graphFx (keeps the live-FX EUR values)", () => {
+    const anchor = buildModelAnchor(
+      [holding({ priceSymbol: "VOO", valueEur: d(1000), valueUsd: d(1080) })],
+      d(0),
+      d(0),
+      d("1.08"),
+      { graphFx: d(0) },
+    );
+    expect(anchor.baseFx?.toString()).toBe("1.08");
+    expect(anchor.holdings[0].valueEur.toString()).toBe("1000");
+  });
 });
 
 describe("curveColumns", () => {

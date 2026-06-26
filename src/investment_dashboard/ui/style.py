@@ -378,6 +378,97 @@ html, body {{
   margin-top: 0.5rem;
 }}
 
+/* --- Currency effect today (market hours vs overnight FX) ----------------- *
+ * Transparency cue under the FX line: how much of today's EUR/USD revaluation
+ * landed *while the market was open* versus *overnight* (after the close), since
+ * the USD-booked book keeps drifting on FX alone once US equities have shut. */
+.inv-fx-split {{
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  max-width: 22rem;
+}}
+.inv-fx-split-head {{
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--inv-muted);
+}}
+.inv-fx-split-bar {{
+  display: flex;
+  width: 100%;
+  height: 0.5rem;
+  border-radius: var(--inv-radius-pill);
+  overflow: hidden;
+  background: var(--inv-surface-alt);
+}}
+.inv-fx-split-seg {{
+  height: 100%;
+  min-width: 2px;
+  transition: width 0.3s ease;
+}}
+/* The market-hours slice reads as a solid gain/loss colour; the overnight slice
+ * is the same hue but striped, so the two are distinguishable by shape (not
+ * colour alone — colourblind-safe, matching the Wong blue-gain / orange-loss). */
+.inv-fx-split-session.pos {{ background: var(--inv-gain); }}
+.inv-fx-split-session.neg {{ background: var(--inv-loss); }}
+.inv-fx-split-session.flat {{ background: var(--inv-muted); }}
+.inv-fx-split-overnight.pos {{
+  background: repeating-linear-gradient(
+    45deg,
+    var(--inv-gain),
+    var(--inv-gain) 3px,
+    color-mix(in srgb, var(--inv-gain) 45%, transparent) 3px,
+    color-mix(in srgb, var(--inv-gain) 45%, transparent) 6px
+  );
+}}
+.inv-fx-split-overnight.neg {{
+  background: repeating-linear-gradient(
+    45deg,
+    var(--inv-loss),
+    var(--inv-loss) 3px,
+    color-mix(in srgb, var(--inv-loss) 45%, transparent) 3px,
+    color-mix(in srgb, var(--inv-loss) 45%, transparent) 6px
+  );
+}}
+.inv-fx-split-overnight.flat {{ background: var(--inv-muted); }}
+.inv-fx-split-legend {{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}}
+.inv-fx-split-leg {{
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}}
+.inv-fx-split-swatch {{
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 0.2rem;
+  flex: none;
+  background: var(--inv-muted);
+}}
+.inv-fx-split-swatch.inv-fx-split-overnight {{
+  background: repeating-linear-gradient(
+    45deg,
+    var(--inv-muted),
+    var(--inv-muted) 2px,
+    transparent 2px,
+    transparent 4px
+  );
+  border: 1px solid var(--inv-muted);
+}}
+.inv-fx-split-leg-label {{ color: var(--inv-muted); }}
+.inv-fx-split-leg-value.pos {{ color: var(--inv-gain); }}
+.inv-fx-split-leg-value.neg {{ color: var(--inv-loss); }}
+.inv-fx-split-leg-value.flat {{ color: var(--inv-ink); }}
+
 .inv-section {{
   background: var(--inv-surface) !important;
   border: 1px solid var(--inv-hairline);
