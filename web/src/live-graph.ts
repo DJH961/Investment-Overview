@@ -900,7 +900,52 @@ export function buildLiveSessionCurve(
       now: providers.now,
     },
   );
-  return loadOrBuildSessionCurve({ ...base, fetchBars, fetchFx });
+  // The after-close escalation legs (plan C3 / FX parity): a genuinely *second*
+  // provider used only for the symbols the primary could not advance to the
+  // close. Built only when both providers are configured (the primary capacity
+  // split prefers Twelve Data for prices and Tiingo for FX), so the secondary is
+  // the *other* source — two independent sources agreeing is what settles a quiet
+  // symbol / the FX track for the day. Null when only one provider exists (the
+  // resolution then settles on reached-close alone).
+  const hasBothProviders = Boolean(providers.apiKey.trim()) && Boolean(providers.priceProxyUrl);
+  const fetchSecondaryBars = hasBothProviders
+    ? makePriceBarFetcher({
+        apiKey: "", // Tiingo-only: the independent second price source
+        proxyUrl: providers.priceProxyUrl,
+        param: "intraday",
+        interval: tuning.interval,
+        outputsize: tuning.outputsize,
+        startDate: window.startDate,
+        endDate: window.endDate,
+        fetchImpl: providers.fetchImpl,
+        tiingoMeter,
+        reservation: providers.reservation,
+        now: providers.now,
+      })
+    : null;
+  const fetchSecondaryFx = hasBothProviders
+    ? makeWindowFxFetcher(
+        null, // Twelve-Data-only forex: the independent second FX source
+        window,
+        tuning.fxResampleFreq ?? "1hour",
+        providers.fetchImpl,
+        undefined,
+        {
+          apiKey: providers.apiKey,
+          twelveDataMeter,
+          reservation: providers.reservation,
+          now: providers.now,
+        },
+      )
+    : null;
+  return loadOrBuildSessionCurve({
+    ...base,
+    fetchBars,
+    fetchFx,
+    fetchSecondaryBars,
+    fetchSecondaryFx,
+    closeBackoff: base.closeBackoff ?? backoff,
+  });
 }
 
 /**
@@ -956,11 +1001,53 @@ export function buildLiveWeekCurve(
       now: providers.now,
     },
   );
+  // The after-close escalation legs (plan C5 / FX parity): a second, independent
+  // provider used only for the daily closes / FX the primary could not advance to
+  // the settled close. Built only when both providers exist (see the 1D builder).
+  const hasBothProviders = Boolean(providers.apiKey.trim()) && Boolean(providers.priceProxyUrl);
+  const fetchSecondaryDailyBars = hasBothProviders
+    ? makePriceBarFetcher({
+        apiKey: "", // Tiingo-only: the independent second daily-close source
+        proxyUrl: providers.priceProxyUrl,
+        param: "daily",
+        interval: "1day",
+        outputsize: Math.max(sessions + 2, 8),
+        startDate: window.startDate,
+        endDate: window.endDate,
+        fetchImpl: providers.fetchImpl,
+        tiingoMeter,
+        reservation: providers.reservation,
+        now: providers.now,
+      })
+    : null;
+  const fetchSecondaryFx = hasBothProviders
+    ? makeWindowFxFetcher(
+        null, // Twelve-Data-only forex: the independent second FX source
+        window,
+        "1day",
+        providers.fetchImpl,
+        undefined,
+        {
+          apiKey: providers.apiKey,
+          twelveDataMeter,
+          reservation: providers.reservation,
+          now: providers.now,
+        },
+      )
+    : null;
   // Item 7b: gap-fill moving-fund NAV history through the *same* capacity-split
   // daily fetcher (Twelve Data up to budget, Tiingo overflow), re-stamped onto
   // the NAV day-start cadence so it aligns with the free-accumulated NAV bars.
   const fetchNavBars = wrapDailyNavFetcher(fetchDailyBars);
-  return loadOrBuildWeekCurve({ ...base, fetchDailyBars, fetchFx, fetchNavBars });
+  return loadOrBuildWeekCurve({
+    ...base,
+    fetchDailyBars,
+    fetchFx,
+    fetchNavBars,
+    fetchSecondaryDailyBars,
+    fetchSecondaryFx,
+    closeBackoff: base.closeBackoff ?? backoff,
+  });
 }
 
 /** A no-op {@link BarFetcher} used when neither price pipe is configured. */

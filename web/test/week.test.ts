@@ -4,7 +4,7 @@
  * pinned to known NYSE sessions so the trading-day window is deterministic. The
  * chosen week (Mon 2026-03-09 → Fri 2026-03-13) is clear of any market holiday.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { Decimal } from "../src/decimal-config";
 import { buildIntradayAnchor, type AnchorHoldingInput } from "../src/intraday";
@@ -19,7 +19,8 @@ import {
   wrapDailyNavFetcher,
 } from "../src/week";
 import type { Bar } from "../src/timeseries";
-import { memoryBackend, TimeSeriesStore } from "../src/timeseries-store";
+import { memoryBackend, TimeSeriesStore, type StoredCloseProbe } from "../src/timeseries-store";
+import { FX_PROBE_KEY } from "../src/close-completeness";
 
 const d = (v: string | number): Decimal => new Decimal(v);
 const bar = (t: number, value: string): Bar => ({ t, value: new Decimal(value) });
@@ -941,5 +942,210 @@ describe("loadOrBuildWeekCurve — regenerateOnly seam (Pillar 6)", () => {
     });
     expect(refetched).toBe(false);
     expect(curve.points.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("loadOrBuildWeekCurve — multi-provider close completeness (C5)", () => {
+  // The window Mon 03-09 → Fri 03-13 with the market closed (SAT_CLOSED): the
+  // settled cutoff is Friday 03-13. A "behind" market symbol has bars only up to
+  // Thursday 03-12 — it has not yet covered the settled close.
+  const CUT = dayMs("2026-03-13");
+  const THU = dayMs("2026-03-12");
+
+  function anchor() {
+    return buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+  }
+
+  async function seedBehind(s: TimeSeriesStore): Promise<void> {
+    await s.saveSession({
+      day: WEEK_STORE_KEY,
+      bars: { VTI: [bar(dayMs("2026-03-11"), "98"), bar(THU, "99")] },
+      fx: [],
+      updatedAt: 0,
+    });
+  }
+
+  function fakeBackoff() {
+    const fails = new Map<string, number>();
+    const armed = new Set<string>();
+    return {
+      fails,
+      armed,
+      suppressed: (k: string): boolean => armed.has(k),
+      fail: (k: string): void => {
+        fails.set(k, (fails.get(k) ?? 0) + 1);
+      },
+      succeed: (k: string): void => {
+        fails.delete(k);
+        armed.delete(k);
+      },
+    };
+  }
+
+  it("reached-close: the primary supplies the settled day ⇒ merge + clear probe", async () => {
+    const s = store();
+    await seedBehind(s);
+    const fetchDailyBars = vi.fn(async () => new Map<string, Bar[]>([["VTI", [bar(CUT, "100")]]]));
+    const log: { outcome: string; level: string; message: string }[] = [];
+    await loadOrBuildWeekCurve({
+      anchor: anchor(),
+      store: s,
+      fetchDailyBars,
+      now: SAT_CLOSED,
+      onCloseResolve: (e) => log.push(e),
+    });
+    expect(fetchDailyBars).toHaveBeenCalledTimes(1);
+    const stored = (await s.loadSession(WEEK_STORE_KEY))!;
+    expect(stored.bars.VTI.some((b) => b.t === CUT)).toBe(true);
+    expect(stored.closeProbe).toBeUndefined();
+    expect(log.some((l) => l.outcome === "reached-close" && l.level === "good")).toBe(true);
+    expect(log.every((l) => l.message.startsWith("1W graph · VTI"))).toBe(true);
+  });
+
+  it("settled-by-agreement: two providers must agree 3× (hour-paced) before a daily close settles, no re-fetch after", async () => {
+    const s = store();
+    await seedBehind(s);
+    const fetchDailyBars = vi.fn(async () => new Map<string, Bar[]>([["VTI", [bar(THU, "99")]]]));
+    const fetchSecondaryDailyBars = vi.fn(async () => new Map<string, Bar[]>([["VTI", [bar(THU, "99")]]]));
+    const log: { outcome: string; level: string; message: string }[] = [];
+    const build = (now: Date): Promise<unknown> =>
+      loadOrBuildWeekCurve({
+        anchor: anchor(),
+        store: s,
+        fetchDailyBars,
+        fetchSecondaryDailyBars,
+        now,
+        onCloseResolve: (e) => log.push(e),
+      });
+    const probeNow = async (): Promise<StoredCloseProbe> =>
+      (await s.loadSession(WEEK_STORE_KEY))!.closeProbe!.VTI;
+
+    // Agreement #1 at 16:00Z — provisional only.
+    await build(SAT_CLOSED);
+    expect(fetchDailyBars).toHaveBeenCalledTimes(1);
+    expect(fetchSecondaryDailyBars).toHaveBeenCalledTimes(1);
+    let probe = await probeNow();
+    expect(probe.settled).toBe(false);
+    expect(probe.sources).toBe(2);
+    expect(probe.agreements).toBe(1);
+
+    // Held flat until the next full hour (no fetch on a sub-hour redraw).
+    fetchDailyBars.mockClear();
+    fetchSecondaryDailyBars.mockClear();
+    await build(new Date(SAT_CLOSED.getTime() + 5 * 60_000)); // 16:05Z
+    expect(fetchDailyBars).not.toHaveBeenCalled();
+
+    // Agreements #2 (17:00Z) and #3 (18:00Z) ⇒ settled on the third.
+    await build(new Date(Date.parse("2026-03-14T17:00:00Z")));
+    expect((await probeNow()).agreements).toBe(2);
+    await build(new Date(Date.parse("2026-03-14T18:00:00Z")));
+    probe = await probeNow();
+    expect(probe.settled).toBe(true);
+    expect(probe.sources).toBe(2);
+    expect(probe.agreements).toBe(3);
+    expect(log.some((l) => l.outcome === "settled-by-agreement" && l.level === "good")).toBe(true);
+
+    // Next build: the symbol is settled ⇒ neither provider is asked again.
+    fetchDailyBars.mockClear();
+    fetchSecondaryDailyBars.mockClear();
+    await build(new Date(Date.parse("2026-03-14T19:00:00Z")));
+    expect(fetchDailyBars).not.toHaveBeenCalled();
+    expect(fetchSecondaryDailyBars).not.toHaveBeenCalled();
+  });
+
+  it("deferred-outage: both providers empty ⇒ not settled, back-off struck under the 1W scope", async () => {
+    const s = store();
+    await seedBehind(s);
+    const fetchDailyBars = vi.fn(async () => new Map<string, Bar[]>());
+    const fetchSecondaryDailyBars = vi.fn(async () => new Map<string, Bar[]>());
+    const backoff = fakeBackoff();
+    const log: { outcome: string; level: string; message: string }[] = [];
+    await loadOrBuildWeekCurve({
+      anchor: anchor(),
+      store: s,
+      fetchDailyBars,
+      fetchSecondaryDailyBars,
+      closeBackoff: backoff,
+      now: SAT_CLOSED,
+      onCloseResolve: (e) => log.push(e),
+    });
+    const probe = (await s.loadSession(WEEK_STORE_KEY))!.closeProbe!.VTI;
+    expect(probe.settled).toBe(false);
+    expect(backoff.fails.get("close:1W:VTI")).toBe(1);
+    expect(log.some((l) => l.outcome === "deferred-outage" && l.level === "warn")).toBe(true);
+  });
+
+  it("spacing gate (C4): a behind symbol probed moments ago is held flat — no fetch", async () => {
+    const s = store();
+    await seedBehind(s);
+    await s.mergeSession(
+      WEEK_STORE_KEY,
+      {
+        closeProbe: {
+          VTI: { lastBarAt: THU, attempts: 1, sources: 1, settled: false, lastAttemptAt: SAT_CLOSED.getTime() - 60_000 },
+        },
+      },
+      0,
+    );
+    const fetchDailyBars = vi.fn(async () => new Map<string, Bar[]>());
+    await loadOrBuildWeekCurve({ anchor: anchor(), store: s, fetchDailyBars, now: SAT_CLOSED });
+    expect(fetchDailyBars).not.toHaveBeenCalled();
+  });
+
+  it("honors a persisted settled probe across a restart (zero fetches)", async () => {
+    const s = store();
+    await seedBehind(s);
+    await s.mergeSession(
+      WEEK_STORE_KEY,
+      {
+        closeProbe: {
+          VTI: { lastBarAt: THU, attempts: 2, sources: 2, settled: true, lastAttemptAt: 1 },
+        },
+      },
+      0,
+    );
+    const fetchDailyBars = vi.fn(async () => new Map<string, Bar[]>());
+    await loadOrBuildWeekCurve({ anchor: anchor(), store: s, fetchDailyBars, now: SAT_CLOSED });
+    expect(fetchDailyBars).not.toHaveBeenCalled();
+  });
+});
+
+describe("loadOrBuildWeekCurve — FX-track completeness (C5 currency parity)", () => {
+  const CUT = dayMs("2026-03-13");
+  const THU = dayMs("2026-03-12");
+
+  function anchor() {
+    return buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+  }
+
+  it("advances an incomplete-but-present FX track to the settled close, then stops re-pulling", async () => {
+    const s = store();
+    // Prices already cover the settled close (so they never gate FX), but the FX
+    // track stops on Thursday — short of Friday's settled cutoff.
+    await s.saveSession({
+      day: WEEK_STORE_KEY,
+      bars: { VTI: [bar(THU, "99"), bar(CUT, "100")] },
+      fx: [bar(THU, "1.00")],
+      updatedAt: 0,
+    });
+    const fetchDailyBars = vi.fn(async () => new Map<string, Bar[]>());
+    const fetchFx = vi.fn(async () => [bar(CUT, "1.10")]); // reaches the settled close
+    await loadOrBuildWeekCurve({
+      anchor: anchor(),
+      store: s,
+      fetchDailyBars,
+      fetchFx,
+      now: SAT_CLOSED,
+    });
+    expect(fetchDailyBars).not.toHaveBeenCalled(); // prices already settled
+    expect(fetchFx).toHaveBeenCalledTimes(1);
+    const stored = (await s.loadSession(WEEK_STORE_KEY))!;
+    expect(stored.fx.some((b) => b.t === CUT)).toBe(true);
+    expect(stored.closeProbe?.[FX_PROBE_KEY]).toBeUndefined(); // reached-close clears it
+
+    // Redraw: FX now covers the settled close ⇒ no further FX pull.
+    fetchFx.mockClear();
+    await loadOrBuildWeekCurve({ anchor: anchor(), store: s, fetchDailyBars, fetchFx, now: SAT_CLOSED });
+    expect(fetchFx).not.toHaveBeenCalled();
   });
 });

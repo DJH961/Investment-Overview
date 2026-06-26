@@ -482,6 +482,23 @@ html, body {{
 .inv-fx-effect-net.pos {{ color: var(--inv-gain); }}
 .inv-fx-effect-net.neg {{ color: var(--inv-loss); }}
 .inv-fx-effect-net.flat {{ color: var(--inv-muted); }}
+/* The base-amount caption: the regular EUR amount set in Settings on the left,
+ * the dollars it buys at today's live rate on the right. Quiet, compact, and
+ * baseline-aligned so it reads as the footing the swing rides — not a second
+ * headline. */
+.inv-fx-effect-amount {{
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--inv-muted);
+}}
+.inv-fx-effect-amount-value {{
+  font-weight: 700;
+  color: var(--inv-ink);
+}}
 /* The diverging bar: each leg grows from a shared centre line — right for a
  * gain, left for a loss — so two legs pulling in opposite directions read
  * clearly instead of being crammed into one stacked bar. The overnight leg is

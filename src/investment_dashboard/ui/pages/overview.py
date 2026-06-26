@@ -481,6 +481,23 @@ def _investing_power_html(
         f"{_fx_signed_usd(net_usd, decimals=decimals)}</span>"
     )
 
+    # Anchor the swing to the figures it rides: the regular EUR amount set in
+    # Settings on the left, and the dollars it actually buys at today's live rate
+    # on the right (``amount_eur · live_fx``). Without this the headline swing is a
+    # delta with no visible base; with it the owner sees both the euros they wire
+    # and the dollars they would get today. Cents on the euro side only when the
+    # configured amount isn't whole, so a clean "€100" doesn't read "€100.00".
+    amount_decimals = 0 if amount_eur == amount_eur.to_integral_value() else 2
+    total_usd = amount_eur * live_fx
+    amount_caption = (
+        '<div class="inv-fx-effect-amount">'
+        '<span class="inv-fx-effect-amount-label">Regular '
+        f"{fmt_money(amount_eur, 'EUR', decimals=amount_decimals)}</span>"
+        '<span class="inv-fx-effect-amount-value">'
+        f"{fmt_money(total_usd, 'USD')} today</span>"
+        "</div>"
+    )
+
     regime = _fx_box_regime(now)
     market_open = regime.market_open
     half_track_pct = 50
@@ -512,7 +529,7 @@ def _investing_power_html(
         return (
             '<div class="inv-fx-effect" role="group"'
             ' aria-label="Investing power since yesterday">'
-            f"{head.format(value=value)}{body}</div>"
+            f"{head.format(value=value)}{body}{amount_caption}</div>"
         )
 
     if market_open:
@@ -550,7 +567,7 @@ def _investing_power_html(
         body = f'<div class="inv-fx-diverge">{rows}</div>'
     return (
         '<div class="inv-fx-effect" role="group" aria-label="Investing power since yesterday">'
-        f"{head.format(value=value)}{body}</div>"
+        f"{head.format(value=value)}{body}{amount_caption}</div>"
     )
 
 
