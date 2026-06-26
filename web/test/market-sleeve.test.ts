@@ -192,6 +192,17 @@ describe("hasMarketSleeve / describers", () => {
     expect(describeFlag(merged.flags[0])).toMatch(/Δ/);
   });
 
+  it("describeFlag renders a non-finite delta (zero blob value) as ∞, not Infinity%", () => {
+    const web = [sleeve(0, "10000")];
+    const blob = [sleeve(0, "0")];
+    const merged = mergeSleeveSeries(web, blob);
+    expect(merged.flags).toHaveLength(1);
+    expect(merged.flags[0].deltaFraction).toBe(Number.POSITIVE_INFINITY);
+    const line = describeFlag(merged.flags[0]);
+    expect(line).toContain("(Δ ∞)");
+    expect(line).not.toContain("Infinity");
+  });
+
   it("exposes the documented default tolerance", () => {
     expect(DEFAULT_RECON_TAU).toBe(0.0025);
   });

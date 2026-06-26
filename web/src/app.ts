@@ -52,6 +52,7 @@ import {
   readCachedEurUsd,
   readCachedFx,
   readCachedQuotes,
+  type CachedQuote,
   readCreditLog,
   clearPriceCaches,
   clearAllSeriesBackoff,
@@ -4106,6 +4107,18 @@ export class App {
       this.lastDataPullAt = Date.now();
       writeLastPull(this.lastDataPullAt);
     }
+    // Keep every held symbol whose leg the orchestrator gated off this round on
+    // its last good cached quote, rather than letting the paint drop it to the
+    // (potentially days-old) exported value. Without this a market-only round —
+    // one where the NAV leg is held because today's NAV is already in hand —
+    // reverts a correct, current NAV to the export's stale price and value-date.
+    if (network) {
+      preserveCachedQuotesForGatedLegs(
+        quoteLoad.quotes,
+        data.holdings.map((h) => h.price_symbol),
+        readCachedQuotes(),
+      );
+    }
     const model = buildDashboard(data, quoteLoad.quotes, fx, new Date(), degradedReason, {
       fxPrevEurUsd: eurUsdPrev,
       fxEurUsdSource: eurUsdSource,
@@ -6078,6 +6091,37 @@ export class App {
  * showing "N of M" turns that unavoidable staging into visible, satisfying
  * progress instead of an update that can never complete in one go.
  */
+/**
+ * Re-seed a network round's painted quote map with the cached quote of any held
+ * symbol whose pull leg the orchestrator gated off this round.
+ *
+ * The orchestrator only fetches the legs it approved (e.g. it holds the NAV leg
+ * once today's NAV is in hand, or the quotes leg while it is within its rolling
+ * TTL), so those symbols are filtered out of `symbolsToFetch` and never enter the
+ * round's {@link loadQuotes} result. Painting that result directly would drop them
+ * to the *exported* last-known value in {@link buildHolding} — and a NAV fund's
+ * export price can be days behind the genuine cached NAV, so a market-only round
+ * would visibly revert a correct, current NAV to a stale one (with the export's
+ * old value-date) the instant it lands.
+ *
+ * This restores symmetry with a cache-only paint: a gated-off leg keeps serving
+ * its last good cached quote — exactly what skipping the fetch was supposed to
+ * mean — instead of regressing to the export. It only *adds* symbols missing from
+ * the map (never overwrites a fresher quote the round actually produced) and only
+ * seeds genuinely-priced cache entries.
+ */
+export function preserveCachedQuotesForGatedLegs(
+  painted: Map<string, Quote>,
+  heldSymbols: Iterable<string>,
+  cached: ReadonlyMap<string, CachedQuote>,
+): void {
+  for (const symbol of heldSymbols) {
+    if (!symbol || painted.has(symbol)) continue;
+    const entry = cached.get(symbol);
+    if (entry && entry.quote.price !== null) painted.set(symbol, entry.quote);
+  }
+}
+
 export function liveRefreshProgress(report: QuoteLoadReport): { live: number; total: number } {
   // Both deferred (skipped for budget) and failed (attempted, couldn't price)
   // symbols count toward the total but are *not* live — so a failed holding keeps
