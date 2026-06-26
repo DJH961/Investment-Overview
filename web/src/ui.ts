@@ -74,6 +74,7 @@ import {
 import { buildLineChart, type ChartSeries } from "./chart";
 import { curveColumns } from "./value-graph";
 import type { CurvePoint } from "./timeseries";
+import type { DailyClose } from "./value-history";
 import { APP_VERSION } from "./version";
 import {
   expandCategoryWeights,
@@ -950,7 +951,7 @@ function renderOverviewPanel(model: DashboardModel, liveGraph?: LiveGraphHooks):
   // live coverage, budget) — so the leaderboard reads right after the graph and
   // the update text that frame it, mirroring the desktop layout. The badges
   // below still tie each mover back to its holding row.
-  const valueChart = renderValueChart(model.analytics, model.overview, liveGraph);
+  const valueChart = renderValueChart(model.analytics, model.overview, liveGraph, model.valueBackfill);
   if (valueChart) content.push(valueChart);
   content.push(renderStats(model.overview));
   const movers = renderMovers(model.holdings);
@@ -1975,6 +1976,34 @@ export function liveCurveToChart(
 }
 
 /**
+ * Splice the device's persisted whole-book daily closes into the gap between the
+ * last exported point and today. When the export blob is stale (weeks old) but the
+ * app is opened daily, those days were recorded live (and harvested from the 1W
+ * curve), so the long-range chart draws a real per-day line across the gap instead
+ * of a single straight diagonal. Only closes strictly *after* the last exported
+ * day and strictly *before* `asOf` (today's live tip owns `asOf`) are added; an
+ * up-to-date blob already covers the range, so nothing is spliced.
+ */
+export function spliceDailyBackfill(
+  points: EquityPoint[],
+  backfill: DailyClose[],
+  asOf: string,
+): EquityPoint[] {
+  if (backfill.length === 0) return points;
+  const lastDate = points[points.length - 1].date;
+  const extra: EquityPoint[] = backfill
+    .filter((c) => c.date > lastDate && c.date < asOf)
+    .map((c) => ({
+      date: c.date,
+      portfolioValue: c.valueEur,
+      portfolioValueUsd: c.valueUsd,
+      contributions: null,
+      benchmarkValue: null,
+    }));
+  return extra.length === 0 ? points : [...points, ...extra];
+}
+
+/**
  * The Overview "value over time" graph. Reuses the exported equity curve and
  * appends today's live total value as the final point, so the headline figure
  * is the tip of the line. Returns null when no usable history was exported.
@@ -1983,10 +2012,14 @@ function renderValueChart(
   analytics: AnalyticsView | null,
   o: OverviewView,
   liveGraph?: LiveGraphHooks,
+  backfill: DailyClose[] = [],
 ): HTMLElement | null {
   if (analytics === null) return null;
-  const points = analytics.curve.filter((p) => p.portfolioValue !== null);
-  if (points.length < 1) return null;
+  const exported = analytics.curve.filter((p) => p.portfolioValue !== null);
+  if (exported.length < 1) return null;
+  // Rebuild the gap a stale blob leaves with the device's persisted daily closes
+  // before any windowing / live-tip work, so all of it just sees a denser curve.
+  const points = spliceDailyBackfill(exported, backfill, o.asOf);
 
   const dates = points.map((p) => p.date);
   // Denominate in the active display currency. USD is the native booked currency
