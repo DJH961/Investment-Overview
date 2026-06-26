@@ -1340,12 +1340,14 @@ export class App {
 
   /**
    * Backfill **only** the 1D EUR→USD bar track for the current session, used by
-   * the after-hours start prefetch when the price bars are already in hand (so the
-   * graph-bar backfill above never ran to grab the FX alongside them) yet the
-   * stored FX track stopped short of the 16:00 ET close — an *incomplete 1D FX
-   * bar*. Completing it means the freeze anchor ({@link graphAnchorFx}) and the
-   * hero currency-effect split read the genuine settle from the bars rather than a
-   * stale mid-session rate that would otherwise persist until the next session.
+   * the after-hours pulls (the login warm-up's start prefetch **and** the routine
+   * auto/manual/reset rounds via {@link primeStaleGraphPackages}) when the price
+   * bars are already in hand (so the graph-bar backfill above never ran to grab
+   * the FX alongside them) yet the stored FX track stopped short of the 16:00 ET
+   * close — an *incomplete 1D FX bar*. Completing it means the freeze anchor
+   * ({@link graphAnchorFx}) and the hero currency-effect split read the genuine
+   * settle from the bars rather than a stale mid-session rate that would otherwise
+   * persist until the next session.
    *
    * It pulls nothing but the FX, and only through the Tiingo `/price` FX-history
    * pipe (the same pipe the graph backfill uses for the FX track). The fetch is
@@ -1384,13 +1386,13 @@ export class App {
     if (!fetchFx) return false;
     const fx = await fetchFx().catch(() => undefined);
     if (!fx || fx.length === 0) {
-      this.pollLog("graph", "Login warm-up: 1D FX close backfill found no new EUR/USD bars.");
+      this.pollLog("graph", "After-hours FX close backfill found no new EUR/USD bars.");
       return false;
     }
     await this.ensureTimeSeriesStore().mergeSession(lastSessionDate(now), { fx }, now.getTime());
     this.pollLog(
       "graph",
-      `Login warm-up: 1D FX close backfill stored ${fx.length} EUR/USD bar(s) to complete the session close ` +
+      `After-hours FX close backfill stored ${fx.length} EUR/USD bar(s) to complete the session close ` +
         `(price bars already in hand, FX track was short of the 16:00 ET settle).`,
     );
     return true;
