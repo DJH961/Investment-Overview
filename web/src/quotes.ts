@@ -50,6 +50,7 @@ import { isUsMarketOpen, latestSettledSessionDate, nextSessionCloseMs } from "./
 import { fetchTiingoEurUsd } from "./tiingo";
 import { Budget, etMinutesOfDay, WEB_DAILY_CAP, WEB_HOURLY_CAP } from "./tiingo-gate";
 import { onProviderLimitsChange } from "./provider-limits";
+import { tiingoFrozen } from "./provider-breaker";
 import { DEFAULT_UPDATE_MINUTES } from "./config";
 
 /**
@@ -762,7 +763,10 @@ export async function loadEurUsd(
   // via the `/price` Worker, charged to the same ET-reset web Tiingo budget
   // (40/hr · 800/day). Tiingo carries no prior close, so reuse today's cached
   // one for an FX-aware move when available. Best-effort: never throws here.
-  if (tiingoProxyUrl) {
+  //
+  // Hard-limit invariant: Tiingo is NEVER used as FX fallback when its budget is
+  // exhausted or the 429 breaker is frozen — its hard limits win unconditionally.
+  if (tiingoProxyUrl && !tiingoFrozen(now(), storage ?? null)) {
     const t = now();
     const log = readTiingoCreditLog(t, undefined, storage ?? undefined);
     const budget = new Budget(

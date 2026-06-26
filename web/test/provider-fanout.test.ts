@@ -207,6 +207,39 @@ describe("planTwelveDataSafetyNet — reverse Tiingo → Twelve Data fallback", 
     });
     expect(plan.twelveData).toEqual(["MSFT"]);
   });
+
+  it("refuses to engage when Twelve Data hard limit is exhausted (twelveDataRemaining=0)", () => {
+    const plan = planTwelveDataSafetyNet({
+      viaTiingo: true,
+      unfilled: ["AAPL", "MSFT"],
+      tiingoFilled: [],
+      twelveDataRemaining: 0,
+    });
+    expect(plan.engaged).toBe(false);
+    expect(plan.twelveData).toHaveLength(0);
+    expect(plan.reason).toContain("hard limit exhausted");
+    expect(plan.reason).toContain("next hour boundary");
+  });
+
+  it("engages normally when twelveDataRemaining is positive", () => {
+    const plan = planTwelveDataSafetyNet({
+      viaTiingo: true,
+      unfilled: ["AAPL", "MSFT"],
+      tiingoFilled: [],
+      twelveDataRemaining: 5,
+    });
+    expect(plan.engaged).toBe(true);
+    expect(plan.twelveData).toEqual(["AAPL", "MSFT"]);
+  });
+
+  it("engages when twelveDataRemaining is not provided (backwards compat)", () => {
+    const plan = planTwelveDataSafetyNet({
+      viaTiingo: true,
+      unfilled: ["AAPL"],
+      tiingoFilled: [],
+    });
+    expect(plan.engaged).toBe(true);
+  });
 });
 
 describe("planFanout — NAV routing (unified with stocks)", () => {

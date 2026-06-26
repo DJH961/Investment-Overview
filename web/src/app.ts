@@ -4032,10 +4032,14 @@ export class App {
       // re-pull self-clamps to the live Twelve Data per-minute/day budget (it
       // routes through the same `loadQuotes` reservation), so it respects the
       // same budget + scheduling as every other primary pull and never overspends.
+      //
+      // Hard-limit invariant: pass the live Twelve Data availability so the
+      // safety net refuses to engage when TD's limits are exhausted.
       const safetyNet = planTwelveDataSafetyNet({
         viaTiingo,
         unfilled: quoteLoad.report.deferred,
         tiingoFilled: fallback.tiingoSymbols,
+        twelveDataRemaining: twelveDataAvailable(Date.now()),
       });
       if (safetyNet.engaged && apiKey.length > 0) {
         const tdNet = await loadQuotes(safetyNet.twelveData, apiKey, {
@@ -4989,6 +4993,21 @@ export class App {
       // pull cleanly pushes the auto schedule out by the configured interval.
       slowIntervalMs: this.state.config.updateMinutes * 60 * 1000,
     });
+    // Hard-limit retry routing: when a fallback was blocked because the target
+    // provider's limits are exhausted, schedule a retry at the next hour boundary
+    // (when quotas reset) so the *original* source is retried instead of the
+    // exhausted fallback. This is the alternative to using an over-limit provider.
+    if (this.lastTiingoError?.retryAfterMs) {
+      const retryAt = this.lastTiingoError.retryAfterMs;
+      // Use the longer of normal cadence or the hour-boundary delay, so we don't
+      // wake up only to find limits still exhausted.
+      delayMs = Math.max(delayMs, retryAt);
+      this.pollLog(
+        "fallback",
+        `Fallback blocked by hard limit — scheduling retry in ${Math.round(retryAt / 60000)}min (next hour boundary).`,
+        "info",
+      );
+    }
     // A tap that took over an in-flight auto pull (promotion) must push the next
     // *automatic* refresh out by the full configured interval — never a ~1-minute
     // burst — so the manual refresh genuinely supersedes the auto schedule instead

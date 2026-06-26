@@ -43,8 +43,19 @@ import {
   WEB_DAILY_CAP,
   WEB_HOURLY_CAP,
 } from "./tiingo-gate";
+import { tiingoFrozen } from "./provider-breaker";
 
 const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * Milliseconds from `now` until the start of the next clock hour (:00). Used to
+ * advise the caller how long to wait before retrying when Tiingo's hard limit
+ * blocks fallback usage.
+ */
+export function msUntilNextHour(now: number): number {
+  const ms = HOUR_MS - (now % HOUR_MS);
+  return ms > 0 ? ms : HOUR_MS;
+}
 
 /**
  * How long a backup "nothing newer" result suppresses re-pulling the same
@@ -251,6 +262,11 @@ async function fetchAndMerge(
  * failure: the primary's result always stands and any Tiingo gap is reported on
  * `error`. When `proxyUrl` is null (fallback not configured) this is a no-op that
  * just returns the input quotes and the current (zero-ish) budget snapshot.
+ *
+ * **Hard-limit invariant**: if Tiingo's budget is exhausted (hour or day) or the
+ * 429 circuit breaker is frozen, this function returns immediately without
+ * attempting any Tiingo calls — Tiingo's hard limits win unconditionally, even
+ * as a fallback. The caller should schedule a retry at the next hour boundary.
  */
 export async function runTiingoFallback(options: TiingoFallbackOptions): Promise<TiingoFallbackResult> {
   const {
@@ -268,6 +284,37 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
 
   if (!proxyUrl) {
     return { quotes, tiingoSymbols: [], fallbackSymbols: [], budget: budgetView(now, storage), error: null };
+  }
+
+  // Hard-limit guard: Tiingo's limits are ABSOLUTE — never use Tiingo as a
+  // fallback when its budget is exhausted or the 429 breaker is frozen. This is
+  // an unconditional early return: no attempt, no exceptions, no "just one more".
+  // The caller should schedule a retry at the next hour boundary instead.
+  if (tiingoFrozen(now, storage ?? null)) {
+    return {
+      quotes,
+      tiingoSymbols: [],
+      fallbackSymbols: [],
+      budget: budgetView(now, storage),
+      error: new PriceError(
+        "Tiingo hard limit: 429 breaker frozen until next clock hour — cannot use as fallback.",
+        { retryable: true, retryAfterMs: msUntilNextHour(now) },
+      ),
+    };
+  }
+  const preCheckBudget = readBudget(now, storage, reserveCredits);
+  if (!preCheckBudget.hasRoom()) {
+    return {
+      quotes,
+      tiingoSymbols: [],
+      fallbackSymbols: [],
+      budget: budgetView(now, storage),
+      error: new PriceError(
+        "Tiingo hard limit: hour/day budget exhausted — cannot use as fallback. " +
+          "Will retry original source at next hour boundary.",
+        { retryable: true, retryAfterMs: msUntilNextHour(now) },
+      ),
+    };
   }
 
   const expected = latestSettledSessionDate(new Date(now));

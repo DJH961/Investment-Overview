@@ -10,10 +10,11 @@ import { describe, expect, it, vi } from "vitest";
 import { Decimal } from "../src/decimal-config";
 import { PriceError, type Quote } from "../src/prices";
 import { latestSettledSessionDate } from "../src/market-hours";
-import { runTiingoFallback, shouldQuickRefresh, planStartupRefresh, planPrefetch, tiingoBudgetView } from "../src/tiingo-fallback";
+import { runTiingoFallback, shouldQuickRefresh, planStartupRefresh, planPrefetch, tiingoBudgetView, msUntilNextHour } from "../src/tiingo-fallback";
 import { WEB_DAILY_CAP, WEB_HOURLY_CAP } from "../src/tiingo-gate";
 import { DEFAULT_PROVIDER_LIMITS, setProviderLimits, resetProviderLimits } from "../src/provider-limits";
 import { tiingoCreditsSpentToday, readTiingoCreditLog, readTiingoNoNewer, recordTiingoCredits, type StorageLike } from "../src/cache";
+import { recordTiingo429 } from "../src/provider-breaker";
 
 function memStorage(): StorageLike {
   const map = new Map<string, string>();
@@ -424,6 +425,67 @@ describe("runTiingoFallback", () => {
     });
     expect(fallback.tiingoSymbols).toEqual(symbols);
     expect(tiingoCreditsSpentToday(readTiingoCreditLog(NOW, undefined, open), NOW)).toBe(40);
+  });
+});
+
+describe("runTiingoFallback — hard-limit guard", () => {
+  it("returns immediately with error when Tiingo 429 breaker is frozen", async () => {
+    const storage = memStorage();
+    // Freeze Tiingo by recording a 429 — freezes until next clock hour.
+    recordTiingo429(NOW, storage);
+    const fetchImpl = vi.fn();
+    const out = await runTiingoFallback({
+      symbols: ["AAPL"],
+      navSymbols: new Set(),
+      quotes: new Map(),
+      report: emptyReport(["AAPL"]),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(out.tiingoSymbols).toEqual([]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(out.error).not.toBeNull();
+    expect(out.error!.message).toContain("hard limit");
+    expect(out.error!.message).toContain("429 breaker frozen");
+    expect(out.error!.retryAfterMs).toBeGreaterThan(0);
+  });
+
+  it("returns immediately with error when Tiingo hourly budget is exhausted", async () => {
+    const storage = memStorage();
+    // Spend the entire hourly cap.
+    recordTiingoCredits(WEB_HOURLY_CAP, NOW, storage);
+    const fetchImpl = vi.fn();
+    const out = await runTiingoFallback({
+      symbols: ["AAPL"],
+      navSymbols: new Set(),
+      quotes: new Map(),
+      report: emptyReport(["AAPL"]),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(out.tiingoSymbols).toEqual([]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(out.error).not.toBeNull();
+    expect(out.error!.message).toContain("hard limit");
+    expect(out.error!.message).toContain("budget exhausted");
+    expect(out.error!.retryAfterMs).toBeGreaterThan(0);
+  });
+});
+
+describe("msUntilNextHour", () => {
+  it("returns time until the next :00 boundary", () => {
+    // 18:30:00 → 30 min until 19:00
+    const at1830 = Date.UTC(2026, 5, 23, 18, 30, 0);
+    expect(msUntilNextHour(at1830)).toBe(30 * 60 * 1000);
+  });
+
+  it("returns a full hour when exactly on :00", () => {
+    const atHour = Date.UTC(2026, 5, 23, 18, 0, 0);
+    expect(msUntilNextHour(atHour)).toBe(60 * 60 * 1000);
   });
 });
 
