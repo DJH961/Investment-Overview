@@ -56,6 +56,55 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it unlocked. About 15 seconds before locking, a **dismissable "Locking in Ns due
   to inactivity" warning** appears with a one-tap **"Stay unlocked"** extension.
 
+## [4.6.2] — 2026-06-26
+
+### Fixed
+
+- **The desktop overview now shows the same standalone "Currency · EUR ↔ USD"
+  box as the web companion, with the corrected currency-effect graphic.** The
+  EUR/USD spot and today's rate move were moved out of the cramped caption line
+  under the headline total into their own full-width box beneath the KPI grid,
+  and the old market-hours/overnight FX split — a single stacked bar that
+  mangled the two slices into crammed, misleading segments whenever they pulled
+  in opposite directions — was replaced by a *diverging* bar (each leg growing
+  from a shared centre line, right for a gain and left for a loss, with the
+  overnight leg striped so it is told apart by shape, not colour alone). The
+  effect is now currency-aware to match the web app: in EUR display it shows the
+  net euro figure and the diverging split once the US session has closed, while
+  in USD display it states the dollar value is unchanged (a rate move hands you
+  no extra dollars on a USD-booked book) and surfaces the EUR-repatriation figure
+  instead. The net figure is also shown while the market is still open, not only
+  after the close.
+
+## [4.6.1] — 2026-06-26
+
+### Fixed
+
+- **The live 1D graph no longer ends early or silently flattens when you open
+  the dashboard after the close with incomplete intraday bars.** Two after-hours
+  gaps in the 1D curve are closed, reusing the same "did the session track reach
+  the 16:00 ET close?" idea introduced for the after-hours FX backfill so price
+  and FX completeness are now decided by one shared primitive
+  (`sessionTrackReachedClose` in `web/src/session-fx.ts`, with
+  `sessionFxBarsComplete` / `sessionBarsComplete` as its FX and price faces):
+  - **Stale partial-day sessions now self-heal after the close.** If an earlier
+    session had fetched only part of the day's bars (e.g. a tab left open until
+    14:00 ET, then closed), those bars looked "present" and were never completed,
+    so the curve ended mid-afternoon instead of at 16:00 ET. The builder
+    (`loadOrBuildSessionCurve`) and the warm-up staleness pre-flight
+    (`App.prefetchGraphStaleness`) now treat a symbol whose newest bar never
+    reached the close — once the market is shut — exactly like a missing one and
+    re-pull it, completing the tail to the close. The same backfill grabs the FX
+    track alongside, so the existing FX-close repair stays a no-op when it runs.
+  - **A partial-coverage 1D curve now says so.** When the curve is reconstructed
+    from fewer than all of the intraday sleeve's holdings (the rest carried flat
+    for want of bars, understating the day's true shape), the chart shows an
+    honest caption — "Intraday shape from N of M holdings — the rest are held flat
+    until their prices load." — instead of presenting a silently-flat line as a
+    complete day. Full coverage (and the exported-springboard / 1W curves) stay
+    quiet. `SessionCurve` now carries a `coverage` count, threaded through the
+    live graph hooks to `liveCurveToChart`.
+
 ## [4.6.0] — 2026-06-26
 
 ### Added

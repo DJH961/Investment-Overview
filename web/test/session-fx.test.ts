@@ -12,6 +12,7 @@ import {
   graphAnchorFx,
   readSessionCloseFx,
   recordSessionCloseFx,
+  sessionBarsComplete,
   sessionCloseFxFromBars,
   sessionFxBarsComplete,
 } from "../src/session-fx";
@@ -139,6 +140,34 @@ describe("sessionFxBarsComplete", () => {
 
   it("ignores a non-positive bar at the close (still incomplete)", () => {
     expect(sessionFxBarsComplete([bar(closeMs, "0")], closeMs)).toBe(false);
+  });
+});
+
+describe("sessionBarsComplete (price tail)", () => {
+  const closeMs = 1_000_000;
+  const intervalMs = 3600_000; // one bar interval of slack
+  const bar = (t: number, value: string) => ({ t, value: d(value) });
+
+  it("is complete when the newest bar lands within one interval before the close", () => {
+    // The equity feed stops at the close, so a full session's last bar sits just
+    // shy of 16:00 ET — within a bar interval counts as complete.
+    const bars = [bar(closeMs - 7200_000, "100"), bar(closeMs - 300_000, "110")];
+    expect(sessionBarsComplete(bars, closeMs, intervalMs)).toBe(true);
+  });
+
+  it("is complete when a bar lands exactly one interval before the close (inclusive)", () => {
+    expect(sessionBarsComplete([bar(closeMs - intervalMs, "100")], closeMs, intervalMs)).toBe(true);
+  });
+
+  it("is incomplete when the newest bar is more than one interval short (stale partial)", () => {
+    // A mid-session fetch (e.g. at 14:00) whose tail never reached the close —
+    // scenario F: must read incomplete so the after-close backfill re-pulls it.
+    const bars = [bar(closeMs - 10800_000, "100"), bar(closeMs - 7200_000, "105")];
+    expect(sessionBarsComplete(bars, closeMs, intervalMs)).toBe(false);
+  });
+
+  it("is incomplete for an empty track", () => {
+    expect(sessionBarsComplete([], closeMs, intervalMs)).toBe(false);
   });
 });
 

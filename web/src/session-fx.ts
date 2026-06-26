@@ -125,6 +125,42 @@ export function sessionCloseFxFromBars(fxBars: Bar[], sessionCloseMs: number): D
 }
 
 /**
+ * The single completeness primitive both the price and FX session tracks share:
+ * does any positive bar land at or after `sessionCloseMs − toleranceMs`?
+ *
+ * A session track stored on the device is "complete for the day" once it carries
+ * a bar that reaches the session close — anything short of that was last fetched
+ * mid-session and ends early, so reading "the close" off it silently returns a
+ * stale mid-session value (see scenarios C/F in the 1D-graph investigation). The
+ * two tracks differ only in how close to 16:00 ET their last genuine bar lands,
+ * which is exactly what `toleranceMs` expresses:
+ *
+ *   - **FX** (`toleranceMs = 0`): EUR/USD trades on past the 16:00 ET equity
+ *     close, so a track fetched once the session shut always carries a bar **at
+ *     or after** the close — the presence of one is the exact "the close itself
+ *     is captured" signal (see {@link sessionFxBarsComplete}).
+ *   - **Price** (`toleranceMs ≈ one bar interval`): the equity feed stops at the
+ *     close, so a fully-fetched session's *last* bar sits within one bar interval
+ *     **before** 16:00 ET (e.g. a 15:55 five-minute bar, or a 15:00–16:00 hourly
+ *     bar). Allowing one interval of slack therefore reads a whole session as
+ *     complete while still flagging a stale partial-day fetch (the 14:00 tail in
+ *     scenario F), whose newest bar is more than an interval shy of the close.
+ *
+ * Bars need not be sorted. An empty track is incomplete by definition.
+ */
+export function sessionTrackReachedClose(
+  bars: Bar[],
+  sessionCloseMs: number,
+  toleranceMs = 0,
+): boolean {
+  const floor = sessionCloseMs - toleranceMs;
+  for (const bar of bars) {
+    if (bar.t >= floor && bar.value.greaterThan(0)) return true;
+  }
+  return false;
+}
+
+/**
  * Whether the stored 1D EUR→USD bar track has actually reached the session close.
  *
  * The freeze anchor and the hero currency-effect split both read "the close"
@@ -140,12 +176,30 @@ export function sessionCloseFxFromBars(fxBars: Bar[], sessionCloseMs: number): D
  * Returns `true` only when a positive bar lands at or after `sessionCloseMs`, so
  * the after-hours start prefetch can detect a still-incomplete track and complete
  * it (see `App.prefetchSessionFx`). An empty track is incomplete by definition.
+ * A thin wrapper over {@link sessionTrackReachedClose} with **zero** tolerance,
+ * since after-hours FX always prints a bar at or past the close.
  */
 export function sessionFxBarsComplete(fxBars: Bar[], sessionCloseMs: number): boolean {
-  for (const bar of fxBars) {
-    if (bar.t >= sessionCloseMs && bar.value.greaterThan(0)) return true;
-  }
-  return false;
+  return sessionTrackReachedClose(fxBars, sessionCloseMs, 0);
+}
+
+/**
+ * Whether the stored 1D **price** bars for a symbol have reached the session
+ * close — the equity-feed sibling of {@link sessionFxBarsComplete}.
+ *
+ * Unlike FX, the price feed stops printing at 16:00 ET, so a complete session's
+ * newest bar lands within one bar interval *before* the close; `barIntervalMs`
+ * (the cadence the curve was fetched at) is the allowed slack. A symbol last
+ * fetched mid-session (its newest bar more than an interval shy of 16:00) reads
+ * **incomplete**, so the after-close backfill knows to re-pull it and complete
+ * the missing tail rather than leaving the 1D curve ending early (scenario F).
+ */
+export function sessionBarsComplete(
+  bars: Bar[],
+  sessionCloseMs: number,
+  barIntervalMs: number,
+): boolean {
+  return sessionTrackReachedClose(bars, sessionCloseMs, barIntervalMs);
 }
 
 /** Today's FX revaluation split into its in-session and after-hours slices. */
