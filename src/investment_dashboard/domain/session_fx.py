@@ -37,8 +37,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-ZERO = Decimal(0)
-
 
 def graph_anchor_fx(
     *,
@@ -85,13 +83,23 @@ class FxEffectSplit:
 
     Every field is ``None`` when its inputs are missing (no USD exposure, no rate
     pair, or no FX move) so the UI shows "—" rather than a misleading zero.
+
+    The two slices are tagged by *which* one is currently **live** so the render
+    can put the live leg on top: while the market is open the live leg is
+    ``market_hours_eur`` (the session that is moving right now) and the frozen
+    ``overnight_eur`` is *last* night's drift; once the market shuts the live leg
+    is ``overnight_eur`` (the after-hours drift since the close) and the frozen
+    ``market_hours_eur`` is the *last* session's move.
     """
 
     #: The whole EUR P/L from today's EUR/USD move (prior close → now).
     total_eur: Decimal | None
-    #: The slice that moved while the market was open (prior close → session close).
+    #: The slice that moved while the market was open. Live while open (session
+    #: open → now); the frozen last-session move (prior close → session close)
+    #: once shut.
     market_hours_eur: Decimal | None
-    #: The slice that moved after the close (session close → now). Zero while open.
+    #: The slice that moved after-hours. Live once shut (session close → now);
+    #: the frozen last overnight (prior close → session open) while open.
     overnight_eur: Decimal | None
 
 
@@ -102,38 +110,61 @@ def fx_effect_split(
     live_fx: Decimal | None,
     session_close_fx: Decimal | None,
     today_fx_move_eur: Decimal | None,
+    session_open_fx: Decimal | None = None,
 ) -> FxEffectSplit:
     """Split today's FX revaluation into its **market-hours** and **overnight** parts.
 
-    The after-hours slice is the EUR impact of the rate drifting from the
-    session-close rate to the live rate on the current USD book:
-    ``value_usd · (1/live_fx − 1/close_fx)`` — i.e. the EUR total at the live spot
-    minus the EUR total at the frozen close spot. The in-session slice is then
-    simply the remainder of ``today_fx_move_eur`` (which spans the prior close to
-    now). While the market is open there is no overnight slice yet, so the whole
-    move is in-session.
+    Both legs are always derived from the day's whole move (``today_fx_move_eur``,
+    prior close → now), carving out the *live* leg directly from the relevant
+    session anchor and leaving the other as the remainder so the two always sum to
+    the total:
+
+    * **Market open** — the live leg is the **market-hours** drift since the
+      session opened: ``value_usd · (1/live_fx − 1/open_fx)``. The remainder is
+      *last* night's frozen overnight slice, which therefore **survives the market
+      start** instead of folding to zero. Needs ``session_open_fx``.
+    * **Market closed** — the live leg is the **overnight** drift since the close:
+      ``value_usd · (1/live_fx − 1/close_fx)``. The remainder is the *last*
+      session's frozen market-hours move. Needs ``session_close_fx``.
 
     Every field degrades to ``None`` when its inputs are missing so the UI shows
-    "—" rather than a misleading zero.
+    "—" rather than a misleading zero. When the live anchor is missing the whole
+    move falls back into the live leg (and the frozen leg is ``None``), so the UI
+    hides the split rather than inventing a zero counterpart.
     """
     total_eur = today_fx_move_eur
 
-    overnight_eur: Decimal | None = ZERO if market_open else None
-    if (
-        not market_open
-        and total_value_usd is not None
-        and live_fx is not None
-        and session_close_fx is not None
-        and live_fx > 0
-        and session_close_fx > 0
-    ):
-        eur_at_live = total_value_usd / live_fx
-        eur_at_close = total_value_usd / session_close_fx
-        overnight_eur = eur_at_live - eur_at_close
+    def _leg_from_anchor(anchor_fx: Decimal | None) -> Decimal | None:
+        """EUR impact of the rate drifting from ``anchor_fx`` to the live spot."""
+        if (
+            total_value_usd is None
+            or live_fx is None
+            or live_fx <= 0
+            or anchor_fx is None
+            or anchor_fx <= 0
+        ):
+            return None
+        return total_value_usd / live_fx - total_value_usd / anchor_fx
 
-    market_hours_eur: Decimal | None = None
-    if total_eur is not None:
-        market_hours_eur = total_eur if overnight_eur is None else total_eur - overnight_eur
+    market_hours_eur: Decimal | None
+    overnight_eur: Decimal | None
+
+    if market_open:
+        # Live leg = market hours (session open → now); frozen leg = last overnight.
+        live_leg = _leg_from_anchor(session_open_fx)
+        if live_leg is None:
+            market_hours_eur, overnight_eur = total_eur, None
+        else:
+            market_hours_eur = live_leg
+            overnight_eur = None if total_eur is None else total_eur - live_leg
+    else:
+        # Live leg = overnight (session close → now); frozen leg = last market hours.
+        live_leg = _leg_from_anchor(session_close_fx)
+        if live_leg is None:
+            market_hours_eur, overnight_eur = total_eur, None
+        else:
+            overnight_eur = live_leg
+            market_hours_eur = None if total_eur is None else total_eur - live_leg
 
     return FxEffectSplit(
         total_eur=total_eur,

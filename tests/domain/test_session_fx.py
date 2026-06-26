@@ -76,7 +76,10 @@ class TestGraphAnchorFx:
 
 
 class TestFxEffectSplit:
-    def test_whole_move_is_market_hours_while_open(self) -> None:
+    def test_whole_move_is_market_hours_while_open_without_open_fx(self) -> None:
+        # No session-open anchor yet (e.g. cold start mid-session): the whole move
+        # falls back into the live market-hours leg and the overnight leg is unknown
+        # (None) so the UI hides the split rather than inventing a zero counterpart.
         split = fx_effect_split(
             market_open=True,
             total_value_usd=d("108000"),
@@ -85,8 +88,27 @@ class TestFxEffectSplit:
             today_fx_move_eur=d("120"),
         )
         assert split.total_eur == d("120")
-        assert split.overnight_eur == d("0")
+        assert split.overnight_eur is None
         assert split.market_hours_eur == d("120")
+
+    def test_open_market_carves_live_market_hours_and_keeps_last_overnight(self) -> None:
+        # Market open. Today's whole FX move (prior close -> now) is +120 EUR. The
+        # session opened at 1.07; live now 1.08. The live market-hours slice is the
+        # drift since the open; last night's overnight slice survives as the
+        # remainder so it does not fold to zero at the market start.
+        split = fx_effect_split(
+            market_open=True,
+            total_value_usd=d("108000"),
+            live_fx=d("1.08"),
+            session_open_fx=d("1.07"),
+            session_close_fx=None,
+            today_fx_move_eur=d("120"),
+        )
+        expected_market = d("108000") / d("1.08") - d("108000") / d("1.07")
+        assert split.market_hours_eur == expected_market
+        assert split.overnight_eur == d("120") - expected_market
+        # The two legs always sum back to the day's whole move.
+        assert split.market_hours_eur + split.overnight_eur == d("120")
 
     def test_isolates_overnight_drift_once_shut(self) -> None:
         # USD book of $108,000. Closed at 1.08 -> EUR 100,000; live now 1.10 ->

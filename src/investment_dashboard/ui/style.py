@@ -406,9 +406,10 @@ html, body {{
 }}
 .inv-fx-box-stats {{
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 0.6rem 1rem;
 }}
+.inv-fx-box-stats-pair {{ grid-template-columns: repeat(2, 1fr); }}
 .inv-fx-box-stat {{ display: grid; gap: 0.1rem; align-content: start; }}
 .inv-fx-box-stat-label {{
   font-size: 0.6875rem;
@@ -431,8 +432,24 @@ html, body {{
   color: var(--inv-muted);
   font-weight: 500;
 }}
+.inv-fx-box-closed {{
+  color: var(--inv-loss);
+  background: color-mix(in srgb, var(--inv-loss) 14%, transparent);
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}}
+.inv-fx-box-reopen {{
+  font-size: 0.74rem;
+  color: var(--inv-muted);
+  font-weight: 500;
+}}
 
-/* --- Currency effect today (net + diverging market-hours/overnight split) - *
+/* --- Currency effect since yesterday (net + diverging market-hours/overnight split) - *
  * How much of today's EUR/USD revaluation is real euro P/L, and — once the US
  * session is shut — how much landed *while the market was open* versus
  * *overnight*, since the USD-booked book keeps drifting on FX alone after the
@@ -479,14 +496,22 @@ html, body {{
 .inv-fx-diverge {{ display: grid; gap: 0.4rem; }}
 .inv-fx-diverge-row {{
   display: grid;
-  grid-template-columns: 5.5rem 1fr 5rem;
+  grid-template-columns: 6.75rem 1fr 5rem;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.78rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }}
-.inv-fx-diverge-label {{ color: var(--inv-muted); }}
+.inv-fx-diverge-label {{ color: var(--inv-muted); display: flex; align-items: baseline; gap: 0.35rem; }}
+.inv-fx-diverge-tag {{
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--inv-muted);
+  opacity: 0.75;
+}}
 .inv-fx-diverge-track {{
   position: relative;
   height: 0.5rem;

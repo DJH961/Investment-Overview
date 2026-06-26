@@ -79,7 +79,7 @@ import {
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
+import { isUsMarketOpen, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -132,6 +132,7 @@ import {
   sessionBarsComplete,
   sessionCloseFxFromBars,
   sessionFxBarsComplete,
+  sessionOpenFxFromBars,
 } from "./session-fx";
 import { TimeSeriesStore, type Breadcrumb } from "./timeseries-store";
 import {
@@ -1056,6 +1057,8 @@ export class App {
       // reused for free; older than the interval we pull fresh. No hardcoded 15 min.
       ttlMs: config.updateMinutes * 60 * 1000,
       tiingoProxyUrl: resolvePriceProxyUrl(config),
+      // Frozen over the weekend forex close — serve the cached Friday spot.
+      forexOpen: isForexMarketOpen(),
     }).catch(() => null);
     const spotSource: EurUsdSource = eurUsd?.source ?? "none";
     const spotLive = spotSource === "live" || spotSource === "tiingo";
@@ -3689,6 +3692,9 @@ export class App {
         eodFallback: fx.rates.USD ?? null,
         ttlMs: 0,
         tiingoProxyUrl: resolvePriceProxyUrl(config),
+        // Over the weekend forex close, freeze on the last cached spot instead of
+        // spending a credit to re-confirm Friday's unchanged close.
+        forexOpen: isForexMarketOpen(),
       });
       eurUsdNow = eurUsd.now;
       eurUsdPrev = eurUsd.previousClose;
@@ -3922,6 +3928,14 @@ export class App {
       model.overview.fxRateEurUsdSessionClose = marketOpen
         ? null
         : (await this.barsSessionCloseFx(sessionDay)) ?? readSessionCloseFx(sessionDay);
+      // The session's open rate, read from the same FX bars. While the session is
+      // running it lets the currency-effect split carve out the live market-hours
+      // slice and keep last night's overnight as the remainder (so it survives the
+      // market start); once the trading day has shut it is the "since last market
+      // open" anchor the hero's "Today" stat re-bases to (so that stat stops
+      // mirroring the now-settled "since close" move). Read on every session day —
+      // open or shut — and null only before the day's first FX bar has landed.
+      model.overview.fxRateEurUsdSessionOpen = await this.barsSessionOpenFx(sessionDay);
     }
     // Remember each fund's freshly-settled NAV as a daily bar in the 1W store, so
     // the week curve re-marks NAV funds from their real per-day drift at zero
@@ -3948,6 +3962,7 @@ export class App {
           marketOpen: isUsMarketOpen(),
           freshlyPulled: this.recentlyPulled(),
           fx: fxDisplaySource,
+          fxMarketClosed: !isForexMarketOpen(),
         },
       );
       this.lastCoverage = summarizeCoverage(this.lastCoverageFacts);
@@ -3977,6 +3992,7 @@ export class App {
           marketOpen: isUsMarketOpen(),
           freshlyPulled: this.recentlyPulled(),
           fx: fxDisplaySource,
+          fxMarketClosed: !isForexMarketOpen(),
         },
       );
       this.lastCoverage = summarizeCoverage(this.lastCoverageFacts);
@@ -5486,6 +5502,25 @@ export class App {
   }
 
   /**
+   * The session's EUR→USD rate at the **open**, read from the same persisted FX
+   * bars {@link barsSessionCloseFx} reads the close from — the live market-hours
+   * anchor the hero's currency-effect split measures from while the session runs.
+   * Returns `null` when no FX bars are on the device yet (cold first paint), no
+   * positive bar has printed since 09:30 ET, or on any store error.
+   */
+  private async barsSessionOpenFx(sessionDay: string): Promise<Decimal | null> {
+    try {
+      const session = await this.ensureTimeSeriesStore().loadSession(sessionDay);
+      if (session && session.fx.length > 0) {
+        return sessionOpenFxFromBars(session.fx, sessionOpenMs(sessionDay));
+      }
+    } catch {
+      // Best-effort: a store failure simply hides the live/last split.
+    }
+    return null;
+  }
+
+  /**
    * Prime the quote cache from a graph build's freshly fetched price bars so the
    * holding rows reuse the current price the graph already paid for, rather than
    * re-requesting it. Native currency is sourced per symbol from the model so a
@@ -5665,6 +5700,13 @@ export interface CoverageFacts {
    *   - `none`  — no rate at all (awaiting FX; book values may be incomplete).
    */
   fx: EurUsdSource;
+  /**
+   * Whether the spot-FX (forex) market is *shut* right now (the weekend close,
+   * see {@link isForexMarketOpen}). When true the EUR/USD rate is frozen at
+   * Friday's close, so the FX clause says "FX market closed" rather than dressing
+   * the auto-dated weekend quote up as live/recent.
+   */
+  fxMarketClosed: boolean;
 }
 
 /**
@@ -5689,7 +5731,10 @@ export function displayFxSource(
 }
 
 /** Human FX-freshness clause for the coverage line (see {@link CoverageFacts.fx}). */
-function fxClause(fx: EurUsdSource): string {
+function fxClause(fx: EurUsdSource, fxMarketClosed = false): string {
+  // Weekend forex close: the rate is frozen at Friday's close, so say so plainly
+  // rather than implying a live/recent pull of an auto-dated quote.
+  if (fxMarketClosed) return "FX market closed";
   switch (fx) {
     case "live":
       return "FX live";
@@ -5736,6 +5781,7 @@ export function buildCoverageFacts(
     marketOpen: boolean;
     freshlyPulled?: boolean;
     fx?: EurUsdSource;
+    fxMarketClosed?: boolean;
   },
 ): CoverageFacts {
   const now = ctx.now ?? new Date();
@@ -5791,6 +5837,7 @@ export function buildCoverageFacts(
     freshlyPulled: ctx.freshlyPulled ?? true,
     error: report.error !== null,
     fx: ctx.fx ?? "none",
+    fxMarketClosed: ctx.fxMarketClosed ?? false,
   };
 }
 
@@ -5844,7 +5891,7 @@ function joinBuckets(buckets: { n: number; label: string }[], total: number): st
  */
 export function summarizeCoverage(f: CoverageFacts): string {
   const total = f.marketTotal + f.navTotal;
-  const fx = fxClause(f.fx);
+  const fx = fxClause(f.fx, f.fxMarketClosed);
   // Compose the price-coverage clause with the FX clause, then sentence-case the
   // whole line so it never reads as a lowercase fragment.
   const withFx = (priceText: string): string => capitalizeFirst(`${priceText} · ${fx}`);

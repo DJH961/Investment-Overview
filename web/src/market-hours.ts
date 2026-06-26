@@ -203,6 +203,21 @@ function isTradingDay(year: number, month: number, day: number): boolean {
   return !holidaysForYear(year).has(key(month, day));
 }
 
+/**
+ * Whether `now` (defaults to the current instant) falls on a regular NYSE trading
+ * day, evaluated against the exchange-local (New York) calendar date so it is
+ * correct regardless of the viewer's own timezone. `true` on any weekday that is
+ * not a full-day market holiday — at *any* time of day, so it stays `true`
+ * overnight and after-hours on a trading day, and only goes `false` on weekends
+ * and holidays. The hero uses this to tell a genuine *non-market day* (no session
+ * at all, so "today" is purely the overnight drift) apart from a trading day that
+ * merely happens to be shut right now.
+ */
+export function isUsTradingDay(now: Date = new Date()): boolean {
+  const moment = exchangeMoment(now);
+  return isTradingDay(moment.year, moment.month, moment.day);
+}
+
 function ymd(year: number, month: number, day: number): string {
   return `${year}-${`${month}`.padStart(2, "0")}-${`${day}`.padStart(2, "0")}`;
 }
@@ -387,6 +402,81 @@ export function nextSessionCloseMs(now: Date = new Date()): number {
     date = new Date(date.getTime() + 24 * 60 * 60 * 1000);
   } while (!isTradingDay(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()));
   return sessionCloseMs(ymd(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()));
+}
+
+/**
+ * Minutes since New-York midnight of the spot-FX (forex) weekly boundary: the
+ * market closes Friday 17:00 ET and reopens Sunday 17:00 ET.
+ */
+const FOREX_BOUNDARY_MINUTES = 17 * 60; // 17:00 ET
+
+/**
+ * Whether the spot-FX (forex) market is trading at `now` (defaults to the current
+ * instant). Unlike the NYSE *daily* session, forex trades nearly 24×5: it is open
+ * from **Sunday 17:00 ET** right through to **Friday 17:00 ET**, dark only across
+ * the weekend (all of Saturday, plus Friday evening and Sunday morning either side
+ * of it).
+ *
+ * The EUR→USD spot that values the (USD-booked) book is only genuinely live inside
+ * this window; over the weekend close the rate is frozen at Friday's close. The UI
+ * uses this to stop dressing that auto-dated weekend quote up as "live" and instead
+ * say plainly that the market is shut until Sunday — so the reader is never
+ * surprised by a stale rate that merely *looks* current. Holiday / thin-liquidity
+ * sessions are deliberately not modelled: the weekend is the only window in which
+ * the spot sits frozen for ~48h, which is the surprise this guards against.
+ */
+export function isForexMarketOpen(now: Date = new Date()): boolean {
+  const moment = exchangeMoment(now);
+  if (moment.weekday === 6) return false; // Saturday — dark all day
+  if (moment.weekday === 5 && moment.minutes >= FOREX_BOUNDARY_MINUTES) return false; // Fri ≥ 17:00 ET
+  if (moment.weekday === 0 && moment.minutes < FOREX_BOUNDARY_MINUTES) return false; // Sun < 17:00 ET
+  return true;
+}
+
+/**
+ * Absolute UTC epoch-ms of the spot-FX market's next **Sunday 17:00 ET** reopen,
+ * relative to `now`. Only meaningful while the market is closed (see
+ * {@link isForexMarketOpen}); from inside the weekend close it resolves to the
+ * upcoming Sunday's reopen — today's reopen on a Sunday morning before 17:00 ET,
+ * else the next Sunday after a Friday-evening / Saturday close. Drives the calm
+ * "FX market closed · reopens Sun …" display so the frozen weekend rate carries an
+ * explicit "back live at" stamp instead of a silent auto-date.
+ */
+export function forexMarketReopenMs(now: Date = new Date()): number {
+  const moment = exchangeMoment(now);
+  // Walk forward (UTC day stepping; only the calendar date matters) to the first
+  // calendar day on/after today that is a Sunday in the New-York timezone.
+  let date = new Date(Date.UTC(moment.year, moment.month - 1, moment.day));
+  while (weekdayOf(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()) !== 0) {
+    date = new Date(date.getTime() + 24 * 60 * 60 * 1000);
+  }
+  const day = ymd(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+  return exchangeWallToUtcMs(day, FOREX_BOUNDARY_MINUTES);
+}
+
+/**
+ * Absolute UTC epoch-ms of the spot-FX market's **most recent** Sunday 17:00 ET
+ * reopen at or before `now` — the mirror of {@link forexMarketReopenMs}, walking
+ * *backward* instead of forward.
+ *
+ * Only meaningful while the forex market is open (see {@link isForexMarketOpen}),
+ * which guarantees a Sunday 17:00 ET boundary has already passed this week. The
+ * currency box uses it to tell a **weekend spill-over** (forex reopened Sunday but
+ * no US session has opened since — Sunday evening through Monday's 09:30 open)
+ * apart from a regular weekday overnight: when the last US session opened *before*
+ * this reopen, the only honest move left is the single overnight drift since
+ * Friday's close, with no stale Friday market-hours leg to split out.
+ */
+export function lastForexReopenMs(now: Date = new Date()): number {
+  const moment = exchangeMoment(now);
+  // Walk backward (UTC day stepping; only the calendar date matters) to the first
+  // calendar day on/before today that is a Sunday in the New-York timezone.
+  let date = new Date(Date.UTC(moment.year, moment.month - 1, moment.day));
+  while (weekdayOf(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()) !== 0) {
+    date = new Date(date.getTime() - 24 * 60 * 60 * 1000);
+  }
+  const day = ymd(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+  return exchangeWallToUtcMs(day, FOREX_BOUNDARY_MINUTES);
 }
 
 /**
