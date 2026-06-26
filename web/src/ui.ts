@@ -1067,6 +1067,7 @@ function renderHoldingStatus(
           fallbackDate: holding.priceFallbackDate,
           updatedAt: null,
           nowMs: Date.now(),
+          now: new Date(),
         });
         renderStatusContent(span, settled);
         span.classList.add("holding-status--settling");
