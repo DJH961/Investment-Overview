@@ -199,17 +199,30 @@ const LEVEL_GLYPH: Record<PollLogLevel, string> = {
  * "left for on-demand", "no new", …), so a handled fallback reads as `warn`, not
  * a scary `error`.
  */
+// Wording buckets for {@link inferLevel}, named so the detection rules are easy
+// to read, test, and extend without decoding one mega-regex inline.
+const RECOVERED_RE =
+  /(fell back|left for|left to|left as-is|on-demand|no new|found no|not needed|already|reused|heartbeat)/;
+const FAILURE_RE =
+  /(fatal|unreachable|rejected|over[- ]?quota|couldn't|could not|can't|\bfailed\b|\bfailure\b|wrong|mismatch|stuck|denied)/;
+const BACKOFF_RE =
+  /(defer|skip|skipped|backed off|back off|reserve|conserve|stale|degrad|held|offline|fell back|left for|not configured|not needed|over budget)/;
+const SETTLED_RE =
+  /(fetched|filled|served|all prices live|up to date|downloaded|in line|reused|0 credits|complete|finished|warm)/;
+// A "stood-down" line (we *chose* not to pull) earns the distinct ↩ gutter mark.
+const STOOD_DOWN_RE =
+  /(defer|skip|skipped|reserve|conserve|backed off|back off|held|not needed|over budget|heartbeat)/i;
+
 export function inferLevel(entry: PollLogEntry): PollLogLevel {
   if (entry.level) return entry.level;
   const m = entry.message.toLowerCase();
-  const recovered = /(fell back|left for|left to|left as-is|on-demand|no new|found no|not needed|already|reused|heartbeat)/.test(m);
-  if (!recovered && /(fatal|unreachable|rejected|over[- ]?quota|couldn't|could not|can't|\bfailed\b|\bfailure\b|wrong|mismatch|stuck|denied)/.test(m)) {
+  if (!RECOVERED_RE.test(m) && FAILURE_RE.test(m)) {
     return "error";
   }
-  if (/(defer|skip|skipped|backed off|back off|reserve|conserve|stale|degrad|held|offline|fell back|left for|not configured|not needed|over budget)/.test(m)) {
+  if (BACKOFF_RE.test(m)) {
     return "warn";
   }
-  if (/(fetched|filled|served|all prices live|up to date|downloaded|in line|reused|0 credits|complete|finished|warm)/.test(m)) {
+  if (SETTLED_RE.test(m)) {
     return "good";
   }
   return "info";
@@ -218,7 +231,7 @@ export function inferLevel(entry: PollLogEntry): PollLogLevel {
 /** A "back-off"/"stood-down" line gets a distinct gutter mark so the user can
  * see exactly where we *chose* not to pull (the user's "did you back down?"). */
 function gutterGlyph(entry: PollLogEntry, level: PollLogLevel): string {
-  if (level === "warn" && /(defer|skip|skipped|reserve|conserve|backed off|back off|held|not needed|over budget|heartbeat)/i.test(entry.message)) {
+  if (level === "warn" && STOOD_DOWN_RE.test(entry.message)) {
     return "↩";
   }
   return LEVEL_GLYPH[level];
