@@ -274,8 +274,24 @@ def session_date_of(at_utc: datetime) -> date:
     return aware.astimezone(_MARKET_TZ).date()
 
 
+def _nearest_complete_date(target: date, candidates: list[date]) -> date | None:
+    """The complete-NAV session date closest to ``target`` (ties → the *later* one).
+
+    Used to gap-fill a session date whose own NAV sleeve could not be valued: it
+    inherits the value of the nearest day that *could*, preferring a more recent
+    (later) NAV when two are equidistant — the freshest published NAV is the
+    better stand-in for a missing one.
+    """
+    if not candidates:
+        return None
+    return min(candidates, key=lambda d: (abs((d - target).days), -d.toordinal()))
+
+
 def week_nav_drift_with_fx(
-    session: Session, *, now: datetime | None = None
+    session: Session,
+    *,
+    now: datetime | None = None,
+    live_fallback: tuple[Decimal, Decimal | None] | None = None,
 ) -> dict[date, tuple[Decimal, Decimal | None]]:
     """Per-session NAV-fund EUR value (and that day's settled EUR/USD) for the week.
 
@@ -287,25 +303,71 @@ def week_nav_drift_with_fx(
     cancels it exactly to native USD (the same currency model the intraday market
     component uses); the rate is returned alongside.
 
+    **Smart, self-correcting gap-fill.** A session date whose drifting funds
+    cannot be valued — its NAV close hasn't been pulled yet, or no FX rate exists
+    for that date so :func:`positions_service.compute_positions` returns a zero /
+    ``value_warning`` EUR value — would otherwise punch the whole NAV sleeve to
+    **zero** for that day, nose-diving the start of the "1 Week" curve to roughly
+    the value of the stocks *without* their NAV funds (issue #169). Instead such a
+    day inherits the nearest *complete* day's dated NAV (and that day's FX), and
+    when no day in the window is complete it falls back to ``live_fallback`` —
+    today's live NAV value + spot rate, supplied by the caller. This never
+    speculatively fetches: the value is re-derived from whatever the cache holds
+    on *every* render, so once a later good close-bar / FX pull patches the gap
+    the very next render uses the genuine per-day NAV and the curve self-corrects
+    in retrospect.
+
     Reads only the price cache the daily close pulls already populate — no extra
     network fetch. Returns ``{}`` when there are no drifting NAV funds.
     """
     from investment_dashboard.services import fx_service, positions_service  # noqa: PLC0415
 
     now = now or datetime.now(UTC)
-    out: dict[date, tuple[Decimal, Decimal | None]] = {}
+    # First pass: value each session date's drifting sleeve and flag whether the
+    # whole sleeve could actually be valued that day (a single unvaluable fund
+    # makes the day incomplete, so its zero contribution can't masquerade as a
+    # real NAV drop).
+    raw: dict[date, tuple[Decimal, Decimal | None, bool]] = {}
+    held_dates: list[date] = []
     for session_date in recent_trading_sessions(now):
         positions = positions_service.compute_positions(session, as_of=session_date)
         drifting = [p for p in positions if p.shares > _MIN_SHARES and is_drifting_nav(p)]
         if not drifting:
             continue
+        held_dates.append(session_date)
         nav_eur = sum((p.current_value_eur for p in drifting), start=Decimal(0))
         fx = (
             fx_service.get_rate_eur_to_quote(session, session_date, quote="USD")
             if any(_is_usd_native(p) for p in drifting)
             else None
         )
-        out[session_date] = (nav_eur, fx)
+        complete = all(not p.value_warning and p.current_value_eur > 0 for p in drifting)
+        raw[session_date] = (nav_eur, fx, complete)
+
+    if not raw:
+        return {}
+
+    complete_dates = [d for d, (_eur, _fx, ok) in raw.items() if ok]
+    out: dict[date, tuple[Decimal, Decimal | None]] = {}
+    for session_date in held_dates:
+        nav_eur, fx, complete = raw[session_date]
+        if complete:
+            out[session_date] = (nav_eur, fx)
+            continue
+        donor = _nearest_complete_date(session_date, complete_dates)
+        if donor is not None:
+            donor_eur, donor_fx, _ok = raw[donor]
+            # Pair the borrowed EUR value with the rate it was struck at so the
+            # USD line still cancels to native USD; keep this day's own rate only
+            # as a last resort when the donor had none.
+            out[session_date] = (donor_eur, donor_fx if donor_fx is not None else fx)
+        elif live_fallback is not None:
+            live_eur, live_fx = live_fallback
+            out[session_date] = (live_eur, live_fx if live_fx is not None else fx)
+        else:
+            # No complete day and no live fallback to lean on — keep the raw
+            # (possibly zero) value rather than invent one.
+            out[session_date] = (nav_eur, fx)
     return out
 
 
