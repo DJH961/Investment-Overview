@@ -288,6 +288,79 @@ class TestBuildWeekValueSeries:
         # Monday inherits Wednesday's €1100 NAV (carried flat) — never €0.
         assert [p.value for p in points][:2] == [Decimal("1100.00"), Decimal("1100.00")]
 
+    def test_usd_nav_recovery_is_fx_free_and_consistent(
+        self, session: Session, monkeypatch
+    ) -> None:
+        """The USD "1 Week" line recovers the NAV sleeve FX-free, never diverging.
+
+        Regression for issue #169 (the web companion's USD-only 1W nosedive): the
+        USD line used to recover the NAV sleeve as ``nav_eur × fx`` with an FX rate
+        looked up *independently* of the rate ``nav_eur`` was struck at. When the
+        two disagreed the USD NAV term collapsed while the EUR term stayed flat.
+        The sleeve now pairs ``nav_eur`` with the effective rate derived from the
+        *native* USD value, so for every session the USD line equals the FX-free
+        native USD (shares × that day's NAV) exactly, whatever the FX lookup says.
+        """
+        from investment_dashboard.services import intraday_snapshots_service as iss
+        from investment_dashboard.ui.pages import _overview_query
+
+        acct = accounts_repo.create_account(
+            session,
+            broker="vanguard",
+            account_label="USD Brokerage",
+            native_currency="USD",
+            account_type="brokerage",
+        )
+        instr = instruments_repo.get_or_create(
+            session, symbol="USDFUND", asset_class="mutual_fund", native_currency="USD"
+        )
+        session.add(
+            Transaction(
+                account_id=acct.id,
+                instrument_id=instr.id,
+                date=date(2024, 1, 2),
+                kind="buy",
+                quantity=Decimal("10"),
+                price_native=Decimal("100.00"),
+                net_native=Decimal("-1000.00"),
+                net_eur=Decimal("-900.00"),
+                source="manual",
+            )
+        )
+        # NAV 100 on Mon, 110 on Wed. A *different* EUR/USD rate each day proves the
+        # USD line is FX-free: native USD (shares × NAV) is the same regardless.
+        prices_repo.upsert_closes(
+            session,
+            instr.id,
+            {date(2024, 6, 3): Decimal("100.00"), date(2024, 6, 5): Decimal("110.00")},
+        )
+        fx_repo.upsert_rates(
+            session,
+            {
+                date(2024, 6, 3): Decimal("1.05"),
+                date(2024, 6, 5): Decimal("1.20"),
+                date.today(): Decimal("1.20"),
+            },
+        )
+        session.flush()
+
+        t_mon = datetime(2024, 6, 3, 18, 0)
+        t_wed = datetime(2024, 6, 5, 18, 0)
+        samples = [(t_mon, Decimal("0"), None), (t_wed, Decimal("0"), None)]
+        monkeypatch.setattr(iss, "week_series_with_fx", lambda *a, **k: list(samples))
+        now = datetime(2024, 6, 5, 20, 0, tzinfo=UTC)
+
+        usd = _overview_query.build_week_value_series(session, currency="USD", now=now)
+        # Native USD is FX-free: Mon 10×100 = $1000, Wed 10×110 = $1100 — never the
+        # ~60% collapse, and independent of the per-day EUR/USD rate.
+        assert [p.value for p in usd][:2] == [Decimal("1000.00"), Decimal("1100.00")]
+
+        eur = _overview_query.build_week_value_series(session, currency="EUR", now=now)
+        # EUR is the derived view: Mon $1000 / 1.05, Wed $1100 / 1.20.
+        eur_values = [p.value for p in eur]
+        assert eur_values[0] == Decimal("1000.00") / Decimal("1.05")
+        assert eur_values[1] == Decimal("1100.00") / Decimal("1.20")
+
     def test_patched_nav_self_corrects_in_retrospect(self, session: Session, monkeypatch) -> None:
         """Once the missing dated NAV lands in the cache, the 1W curve self-corrects.
 

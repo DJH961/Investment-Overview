@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { Decimal } from "../src/decimal-config";
 import type { CurvePoint } from "../src/timeseries";
-import { repairWeekNavCollapse, repairSessionNavCollapse } from "../src/week-repair";
+import { repairWeekNavCollapse, repairSessionNavCollapse, repairCurrencyDivergence } from "../src/week-repair";
 
 const d = (v: string | number): Decimal => new Decimal(v);
 
@@ -248,5 +248,95 @@ describe("repairSessionNavCollapse (the today / single-session case, issue #169)
     expect(repairSessionNavCollapse([])).toEqual([]);
     const one = [p("2024-06-05T18:00:00Z", 600, 660)];
     expect(repairSessionNavCollapse(one)).toBe(one);
+  });
+});
+
+describe("repairCurrencyDivergence", () => {
+  // EUR/USD ≈ 1.1 across these curves, so a healthy whole-book point has
+  // valueUsd ≈ valueEur × 1.1. The defect knocks ONE leg ~40% off that ratio.
+  const near = (got: number[], want: number[]): void => {
+    expect(got.length).toBe(want.length);
+    got.forEach((v, i) => expect(v).toBeCloseTo(want[i], 4));
+  };
+
+  it("heals a USD-only collapse in the body with a healthy snap-back tip (issue #169 screenshot)", () => {
+    // EUR healthy throughout; USD tracks at ×1.1 except the body (points 2–3),
+    // whose USD nosedives ~37% (NAV sleeve lost) before the live tip snaps back.
+    const points = [
+      p("2024-06-26T13:30:00Z", 1000, 1100),
+      p("2024-06-26T15:00:00Z", 1010, 1111),
+      p("2024-06-26T16:30:00Z", 1005, 700),
+      p("2024-06-26T18:00:00Z", 1008, 705),
+      p("2024-06-26T19:00:00Z", 1009, 1109.9),
+    ];
+    const repaired = repairCurrencyDivergence(points);
+    // EUR is untouched; the corrupt USD body is rebuilt at the prevailing ×1.1.
+    near(eur(repaired), [1000, 1010, 1005, 1008, 1009]);
+    near(usd(repaired), [1100, 1111, 1105.5, 1108.8, 1109.9]);
+  });
+
+  it("heals a USD-only leading run with no healthy neighbour to its left", () => {
+    // First two points collapsed in USD (defaults to rebuilding the USD leg),
+    // last two healthy at ×1.1.
+    const points = [
+      p("2024-06-24T20:00:00Z", 1000, 620),
+      p("2024-06-25T20:00:00Z", 1010, 626),
+      p("2024-06-26T20:00:00Z", 1005, 1105.5),
+      p("2024-06-26T20:05:00Z", 1008, 1108.8),
+    ];
+    const repaired = repairCurrencyDivergence(points);
+    near(eur(repaired), [1000, 1010, 1005, 1008]);
+    near(usd(repaired), [1100, 1111, 1105.5, 1108.8]);
+  });
+
+  it("heals an EUR-only interior dip (rebuilds the EUR leg, not USD)", () => {
+    // Point 1's EUR collapses while its USD stays healthy, so the EUR leg is the
+    // one that jumps relative to its consistent neighbours.
+    const points = [
+      p("2024-06-26T13:30:00Z", 1000, 1100),
+      p("2024-06-26T15:00:00Z", 600, 1102),
+      p("2024-06-26T17:00:00Z", 1005, 1105.5),
+      p("2024-06-26T19:00:00Z", 1008, 1108.8),
+    ];
+    const repaired = repairCurrencyDivergence(points);
+    near(usd(repaired), [1100, 1102, 1105.5, 1108.8]);
+    // EUR rebuilt from USD at the prevailing ×1.1 (1102 / 1.1 ≈ 1001.8).
+    near(eur(repaired), [1000, 1102 / 1.1, 1005, 1008]);
+  });
+
+  it("leaves a healthy curve untouched (same array reference)", () => {
+    const points = [
+      p("2024-06-26T13:30:00Z", 1000, 1100),
+      p("2024-06-26T15:00:00Z", 1010, 1111),
+      p("2024-06-26T17:00:00Z", 1005, 1105.5),
+      p("2024-06-26T19:00:00Z", 1008, 1108.8),
+    ];
+    expect(repairCurrencyDivergence(points)).toBe(points);
+  });
+
+  it("preserves genuine FX divergence within the band (does not flatten the ratio)", () => {
+    // EUR flat at 1000 while USD climbs 1.08→1.11 (a ~2.7% FX move) — real, well
+    // under the 12% band, so every point stays consistent and untouched.
+    const points = [
+      p("2024-06-26T13:30:00Z", 1000, 1080),
+      p("2024-06-26T15:00:00Z", 1000, 1090),
+      p("2024-06-26T17:00:00Z", 1000, 1100),
+      p("2024-06-26T19:00:00Z", 1000, 1110),
+    ];
+    expect(repairCurrencyDivergence(points)).toBe(points);
+  });
+
+  it("ignores points with a non-positive leg and short curves", () => {
+    expect(repairCurrencyDivergence([])).toEqual([]);
+    const two = [p("2024-06-26T13:30:00Z", 1000, 1100), p("2024-06-26T15:00:00Z", 1010, 1111)];
+    expect(repairCurrencyDivergence(two)).toBe(two);
+    // A zeroed leg is skipped (not treated as a ratio outlier).
+    const withZero = [
+      p("2024-06-26T13:30:00Z", 1000, 1100),
+      p("2024-06-26T15:00:00Z", 0, 0),
+      p("2024-06-26T17:00:00Z", 1005, 1105.5),
+      p("2024-06-26T19:00:00Z", 1008, 1108.8),
+    ];
+    expect(repairCurrencyDivergence(withZero)).toBe(withZero);
   });
 });

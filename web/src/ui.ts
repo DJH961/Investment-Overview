@@ -89,6 +89,7 @@ import {
 import { buildLineChart, type ChartSeries } from "./chart";
 import { curveColumns } from "./value-graph";
 import type { CurvePoint } from "./timeseries";
+import { repairCurrencyDivergence } from "./week-repair";
 import type { DailyClose } from "./value-history";
 import { APP_VERSION } from "./version";
 import {
@@ -2453,6 +2454,12 @@ export function liveCurveToChart(
   prevClose?: { eur: Decimal | null; usd: Decimal | null } | null,
   coverage?: { covered: number; total: number } | null,
 ): LiveCurveChart | null {
+  // Final safety net: heal any single-currency (typically USD-only) whole-book
+  // collapse the EUR-only NAV-collapse repairs cannot see, before the curve is
+  // drawn. Covers every build path (springboard / live / blob merge) and any
+  // already-published blob, in whichever currency the user is viewing. A no-op on
+  // a healthy curve (returns the same array).
+  points = repairCurrencyDivergence(points);
   const cols = curveColumns(points);
   if (cols.dates.length < 2) return null;
   const inUsd = getDisplayCurrency() === "USD" && canConvertToUsd();
