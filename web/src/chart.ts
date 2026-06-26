@@ -556,15 +556,28 @@ function seriesValueAt(series: ChartSeries[], value: number): Decimal {
   return sample.mul(0).plus(value);
 }
 
-function linePath(
+/**
+ * Build the SVG path `d` for a line series, breaking it into separate sub-paths
+ * at every gap (a `null` value) so a missing point is rendered as a real break
+ * rather than a straight bridge across the gap. Exported for unit testing.
+ */
+export function linePath(
   values: Array<Decimal | null>,
   x: (i: number) => number,
   y: (v: number) => number,
 ): string {
   let d = "";
+  // Lift the pen at the start and after every gap (null), so a missing point
+  // breaks the line into separate sub-paths rather than bridging across the gap
+  // with a straight `L` segment (which would invent a value the feed never had).
+  let penUp = true;
   values.forEach((v, i) => {
-    if (v === null) return;
-    d += `${d === "" ? "M" : "L"}${x(i).toFixed(1)} ${y(v.toNumber()).toFixed(1)} `;
+    if (v === null) {
+      penUp = true;
+      return;
+    }
+    d += `${penUp ? "M" : "L"}${x(i).toFixed(1)} ${y(v.toNumber()).toFixed(1)} `;
+    penUp = false;
   });
   return d.trim();
 }
