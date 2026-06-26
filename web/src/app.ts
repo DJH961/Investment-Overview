@@ -142,7 +142,7 @@ import {
   sessionFxBarsComplete,
   sessionOpenFxFromBars,
 } from "./session-fx";
-import { TimeSeriesStore, type Breadcrumb } from "./timeseries-store";
+import { TimeSeriesStore, type Breadcrumb, type StoredCloseProbe } from "./timeseries-store";
 import {
   WEEK_STORE_KEY,
   navBackfillStaleSymbols,
@@ -1464,7 +1464,6 @@ export class App {
     const plan = buildFetchPlan(data, FETCHABLE_NAV_CLASSES);
     const cached = readCachedQuotes();
     let oldestQuoteAt: number | null = null;
-    let anyQuoteMissing = false;
     let anyMarketMissing = false;
     // C1 — currency-known gate. An empty quote cache is only *evidence* of a
     // missing market day when we actually know the holding's currency: a genuine
@@ -1473,23 +1472,33 @@ export class App {
     // `deviceDaysMissing` to 10 off that unknown cache is exactly the bug that
     // faked "heavily-outdated" and triggered the full re-pull, so a missing market
     // quote only counts when its native currency is known.
+    let oldestMarketAt: number | null = null;
     for (const entry of plan) {
       const at = cached.get(entry.symbol)?.quote?.at ?? null;
       if (at === null) {
-        anyQuoteMissing = true;
         if (entry.priceType === "market" && entry.nativeCurrency !== null) {
           anyMarketMissing = true;
         }
         continue;
       }
       if (oldestQuoteAt === null || at < oldestQuoteAt) oldestQuoteAt = at;
+      if (entry.priceType === "market") {
+        if (oldestMarketAt === null || at < oldestMarketAt) oldestMarketAt = at;
+      }
     }
     // FX age: tracked separately so the orchestrator's Overlay 3 can suppress the
     // FX leg individually (e.g. after the login warm-up just pulled a fresh spot)
     // without that freshness masking a stale quote leg in dataAgeMs.
     const fxCached = readCachedEurUsd();
     const fxAgeMs = fxCached && fxCached.now !== null ? nowMs - fxCached.at : Number.POSITIVE_INFINITY;
-    const quoteAgeMs = anyQuoteMissing || oldestQuoteAt === null ? Number.POSITIVE_INFINITY : nowMs - oldestQuoteAt;
+    // Quote age: only market quotes drive the freshness tier. Deferred NAVs
+    // (budget-limited, long TTL) must NOT inflate quoteAgeMs to Infinity — that
+    // would classify every auto-tick as "minorly-outdated" and defeat the
+    // orchestrator's rolling-TTL suppression (Overlay 2). Fall back to the oldest
+    // market quote when NAVs are the only missing entries.
+    const quoteAgeMs = anyMarketMissing || oldestMarketAt === null
+      ? (oldestQuoteAt === null ? Number.POSITIVE_INFINITY : nowMs - oldestQuoteAt)
+      : nowMs - oldestMarketAt;
     const dataAgeMs = Math.max(quoteAgeMs, fxAgeMs);
     // Market-side device gap, biased *up* when uncertain so the heavily-outdated
     // tier (which simply restores today's full pass) can never under-pull.
@@ -1840,7 +1849,29 @@ export class App {
       });
       let fx: Bar[] | undefined;
       if (fetchFx) fx = await fetchFx().catch(() => undefined);
-      await store.mergeSession(storeKey, { bars: incoming, fx }, now.getTime());
+      // Seed close-probes for 1D session bars that are incomplete after close.
+      // Without this, the first graph build after a reset sees "no probe + bars
+      // short of close" → closeProbeReady(undefined) = true → immediate re-fetch,
+      // repeated on every concurrent build until one stores a probe. Seeding the
+      // probe here gates subsequent builds to the 10-min spacing window.
+      let closeProbe: Record<string, StoredCloseProbe> | undefined;
+      if (label === "1D" && !isUsMarketOpen(now)) {
+        const closeMs = sessionCloseMs(storeKey); // storeKey IS the session date for 1D
+        for (const symbol of Object.keys(incoming)) {
+          const bars = incoming[symbol];
+          if (bars.length > 0 && !sessionBarsComplete(bars, closeMs, INTRADAY_BAR_INTERVAL_MS)) {
+            if (!closeProbe) closeProbe = {};
+            closeProbe[symbol] = {
+              lastBarAt: bars[bars.length - 1].t,
+              attempts: 1,
+              sources: 1,
+              settled: false,
+              lastAttemptAt: now.getTime(),
+            };
+          }
+        }
+      }
+      await store.mergeSession(storeKey, { bars: incoming, fx, closeProbe }, now.getTime());
       const count = Object.keys(incoming).length;
       stored += count;
       // C7: report the *real* primed count for this leg, not a blind claim. The
@@ -5625,8 +5656,14 @@ export class App {
     const formatInstant = (t: number): string =>
       new Date(t).toISOString().slice(0, 16).replace("T", " ");
 
+    // Serialize concurrent session builds so two rapid re-renders don't both see
+    // "no probe" and race to fetch the same bars. The first build stores the probe;
+    // the second awaits the first and reads the updated store.
+    let sessionBuildLock: Promise<unknown> = Promise.resolve();
+
     return {
       session: async (opts) => {
+        const doSession = async () => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
         const frozenFx = await resolveFrozenFx();
         const liveTip = makeLiveTip(frozenFx);
@@ -5664,6 +5701,12 @@ export class App {
           this.pollLog("graph", "1D graph: live build failed — no curve drawn.", "warn");
           return null;
         }
+        };
+        // Serialize: chain on the previous build so concurrent calls don't race
+        // past the close-probe gate simultaneously.
+        const result = sessionBuildLock.then(doSession, doSession);
+        sessionBuildLock = result.catch(() => undefined);
+        return result;
       },
       week: async (opts) => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
