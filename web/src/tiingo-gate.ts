@@ -89,7 +89,12 @@ export class Budget {
   ) {}
 
   remaining(): number {
-    return Math.max(0, Math.min(this.hourlyCap - this.hourUsed, this.dailyCap - this.dayUsed));
+    // Clamp the used counts at 0 so an over-refund (a negative net spend, e.g. a
+    // refund booked in a fresh clock hour for a charge taken in the previous one)
+    // can never make `cap - used` exceed the cap and hand out phantom headroom.
+    const hourUsed = Math.max(0, this.hourUsed);
+    const dayUsed = Math.max(0, this.dayUsed);
+    return Math.max(0, Math.min(this.hourlyCap - hourUsed, this.dailyCap - dayUsed));
   }
 
   hasRoom(): boolean {

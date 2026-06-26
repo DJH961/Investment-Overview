@@ -408,6 +408,11 @@ export function recordCredits(
  * a negative spend so the running totals ({@link creditsSpentWithin},
  * {@link creditsSpentToday}) net it back out; concurrent dispatches still saw the
  * worst-case reservation while the call was in flight, so they paced themselves.
+ *
+ * The refund is clamped to the credits still **outstanding** on the ledger so it
+ * can never hand back more than was actually taken (a double-release or a buggy
+ * caller can't push the running total negative and so silently inflate the
+ * budget above the cap).
  */
 export function releaseCredits(
   n: number,
@@ -416,8 +421,19 @@ export function releaseCredits(
 ): void {
   if (n <= 0) return;
   const log = readCreditLog(now, 24 * 60 * 60 * 1000, storage);
-  log.push({ at: now, n: -n });
+  const refund = Math.min(n, outstandingCredits(log));
+  if (refund <= 0) return;
+  log.push({ at: now, n: -refund });
   writeJson(storage, CREDIT_KEY, log);
+}
+
+/**
+ * Net credits currently booked on a spend log (positive spends minus prior
+ * refunds), floored at 0. This is the most a refund may hand back without
+ * returning more than was ever taken.
+ */
+function outstandingCredits(log: CreditSpend[]): number {
+  return Math.max(0, log.reduce((acc, e) => acc + e.n, 0));
 }
 
 /** Sum the credits spent within the trailing `windowMs` up to `now`. */
@@ -536,6 +552,9 @@ export function recordTiingoCredits(
  * accounting in `docs/tiingo_polling_storm_cleanup_plan.md` item 1). Booked as a
  * negative spend so the running total nets it back out. This is what stops the
  * FX-storm failure mode leaving a phantom charge on the ledger.
+ *
+ * As with {@link releaseCredits} the refund is clamped to the credits still
+ * outstanding, so it can never return more Tiingo credits than were taken.
  */
 export function releaseTiingoCredits(
   n: number,
@@ -544,7 +563,9 @@ export function releaseTiingoCredits(
 ): void {
   if (n <= 0) return;
   const log = readTiingoCreditLog(now, 24 * 60 * 60 * 1000, storage);
-  log.push({ at: now, n: -n });
+  const refund = Math.min(n, outstandingCredits(log));
+  if (refund <= 0) return;
+  log.push({ at: now, n: -refund });
   writeJson(storage, TIINGO_CREDIT_KEY, log);
 }
 
