@@ -2846,10 +2846,13 @@ export class App {
     if (decision === "cooldown") {
       // An accidental double-tap (or a tap while a manual pull is still running):
       // acknowledge it on screen so the button doesn't feel dead, but spend no
-      // credits on a second forced pull.
+      // credits on a second forced pull. Word it for which case it is: a refresh
+      // still in flight vs. one that just finished moments ago.
       this.setUpdating(true, "manual");
       this.setUpdating(false, "manual");
-      this.toast("Just refreshed, showing the latest prices.");
+      this.toast(
+        this.refreshing ? "Refresh already in progress…" : "Just refreshed, showing the latest prices.",
+      );
       return;
     }
     if (decision === "promote") {
