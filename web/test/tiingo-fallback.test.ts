@@ -428,10 +428,11 @@ describe("runTiingoFallback", () => {
   });
 });
 
-describe("runTiingoFallback — hard-limit guard", () => {
-  it("returns immediately with error when Tiingo 429 breaker is frozen", async () => {
+describe("runTiingoFallback — budget enforcement via central readBudget", () => {
+  it("surfaces error without fetching when Tiingo 429 breaker is frozen", async () => {
     const storage = memStorage();
-    // Freeze Tiingo by recording a 429 — freezes until next clock hour.
+    // Freeze Tiingo by recording a 429 — readBudget folds in the frozen state
+    // and reports 0 remaining, so selectWithinBudget returns no symbols.
     recordTiingo429(NOW, storage);
     const fetchImpl = vi.fn();
     const out = await runTiingoFallback({
@@ -447,14 +448,13 @@ describe("runTiingoFallback — hard-limit guard", () => {
     expect(out.tiingoSymbols).toEqual([]);
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(out.error).not.toBeNull();
-    expect(out.error!.message).toContain("hard limit");
-    expect(out.error!.message).toContain("429 breaker frozen");
+    expect(out.error!.message).toContain("budget exhausted");
     expect(out.error!.retryAfterMs).toBeGreaterThan(0);
   });
 
-  it("returns immediately with error when Tiingo hourly budget is exhausted", async () => {
+  it("surfaces error without fetching when Tiingo hourly budget is exhausted", async () => {
     const storage = memStorage();
-    // Spend the entire hourly cap.
+    // Spend the entire hourly cap — readBudget reports 0 remaining.
     recordTiingoCredits(WEB_HOURLY_CAP, NOW, storage);
     const fetchImpl = vi.fn();
     const out = await runTiingoFallback({
@@ -470,8 +470,8 @@ describe("runTiingoFallback — hard-limit guard", () => {
     expect(out.tiingoSymbols).toEqual([]);
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(out.error).not.toBeNull();
-    expect(out.error!.message).toContain("hard limit");
     expect(out.error!.message).toContain("budget exhausted");
+    expect(out.error!.message).toContain("Central safety net");
     expect(out.error!.retryAfterMs).toBeGreaterThan(0);
   });
 });

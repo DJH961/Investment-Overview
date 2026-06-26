@@ -25,9 +25,7 @@ import {
   readCachedQuotes,
   readCreditLog,
   recordCredits,
-  readTiingoCreditLog,
   recordTiingoCredits,
-  tiingoCreditsSpentToday,
   writeCachedEurUsd,
   writeCachedFx,
   writeCachedQuotes,
@@ -48,9 +46,9 @@ import {
 import type { Decimal } from "./decimal-config";
 import { isUsMarketOpen, latestSettledSessionDate, nextSessionCloseMs } from "./market-hours";
 import { fetchTiingoEurUsd } from "./tiingo";
-import { Budget, etMinutesOfDay, WEB_DAILY_CAP, WEB_HOURLY_CAP } from "./tiingo-gate";
+import { etMinutesOfDay } from "./tiingo-gate";
 import { onProviderLimitsChange } from "./provider-limits";
-import { tiingoFrozen } from "./provider-breaker";
+import { tiingoAvailable } from "./reservation";
 import { DEFAULT_UPDATE_MINUTES } from "./config";
 
 /**
@@ -764,35 +762,27 @@ export async function loadEurUsd(
   // (40/hr · 800/day). Tiingo carries no prior close, so reuse today's cached
   // one for an FX-aware move when available. Best-effort: never throws here.
   //
-  // Hard-limit invariant: Tiingo is NEVER used as FX fallback when its budget is
-  // exhausted or the 429 breaker is frozen — its hard limits win unconditionally.
-  if (tiingoProxyUrl && !tiingoFrozen(now(), storage ?? null)) {
+  // Budget enforcement via the central reservation system (reservation.ts):
+  // tiingoAvailable folds in the 429 breaker AND the hourly/daily caps, so
+  // a single check replaces both a separate frozen guard and a budget check.
+  if (tiingoProxyUrl && forexOpen && tiingoAvailable(now(), storage ?? null) > 0) {
     const t = now();
-    const log = readTiingoCreditLog(t, undefined, storage ?? undefined);
-    const budget = new Budget(
-      creditsSpentWithin(log, t, MINUTE_MS * 60),
-      tiingoCreditsSpentToday(log, t),
-      WEB_HOURLY_CAP,
-      WEB_DAILY_CAP,
-    );
-    if (forexOpen && budget.hasRoom()) {
-      recordTiingoCredits(1, t, storage ?? undefined);
-      try {
-        const reading = await fetchTiingoEurUsd(tiingoProxyUrl, {
-          fetchImpl: tiingoFetchImpl ?? fetchImpl,
-        });
-        if (reading && reading.now.greaterThan(0)) {
-          const at = now();
-          const prevClose = cached && isSameUtcDay(cached.at, at) ? cached.previousClose : null;
-          const observedAt = reading.at ?? at;
-          writeCachedEurUsd({ now: reading.now, previousClose: prevClose }, observedAt, storage ?? undefined);
-          return { now: reading.now, previousClose: prevClose, source: "tiingo", at: observedAt, cached: false, error: liveError };
-        }
-      } catch (err) {
-        // A transient backup failure is non-fatal: record it on `error` and keep
-        // degrading to the cache / EOD rate below, never dead-ending the screen.
-        liveError = err instanceof PriceError ? err : new PriceError((err as Error).message, { retryable: true });
+    recordTiingoCredits(1, t, storage ?? undefined);
+    try {
+      const reading = await fetchTiingoEurUsd(tiingoProxyUrl, {
+        fetchImpl: tiingoFetchImpl ?? fetchImpl,
+      });
+      if (reading && reading.now.greaterThan(0)) {
+        const at = now();
+        const prevClose = cached && isSameUtcDay(cached.at, at) ? cached.previousClose : null;
+        const observedAt = reading.at ?? at;
+        writeCachedEurUsd({ now: reading.now, previousClose: prevClose }, observedAt, storage ?? undefined);
+        return { now: reading.now, previousClose: prevClose, source: "tiingo", at: observedAt, cached: false, error: liveError };
       }
+    } catch (err) {
+      // A transient backup failure is non-fatal: record it on `error` and keep
+      // degrading to the cache / EOD rate below, never dead-ending the screen.
+      liveError = err instanceof PriceError ? err : new PriceError((err as Error).message, { retryable: true });
     }
   }
 

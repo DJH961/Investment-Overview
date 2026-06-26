@@ -4032,14 +4032,10 @@ export class App {
       // re-pull self-clamps to the live Twelve Data per-minute/day budget (it
       // routes through the same `loadQuotes` reservation), so it respects the
       // same budget + scheduling as every other primary pull and never overspends.
-      //
-      // Hard-limit invariant: pass the live Twelve Data availability so the
-      // safety net refuses to engage when TD's limits are exhausted.
       const safetyNet = planTwelveDataSafetyNet({
         viaTiingo,
         unfilled: quoteLoad.report.deferred,
         tiingoFilled: fallback.tiingoSymbols,
-        twelveDataRemaining: twelveDataAvailable(Date.now()),
       });
       if (safetyNet.engaged && apiKey.length > 0) {
         const tdNet = await loadQuotes(safetyNet.twelveData, apiKey, {

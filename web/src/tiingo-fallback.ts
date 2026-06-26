@@ -49,8 +49,8 @@ const HOUR_MS = 60 * 60 * 1000;
 
 /**
  * Milliseconds from `now` until the start of the next clock hour (:00). Used to
- * advise the caller how long to wait before retrying when Tiingo's hard limit
- * blocks fallback usage.
+ * advise the caller how long to wait before retrying when the Tiingo budget
+ * resets and a blocked fallback becomes available again.
  */
 export function msUntilNextHour(now: number): number {
   const ms = HOUR_MS - (now % HOUR_MS);
@@ -143,6 +143,14 @@ function readBudget(
   storage: StorageLike | null | undefined,
   reserve = 0,
 ): Budget {
+  // Central safety-net integration: the 429 circuit breaker (provider-breaker.ts)
+  // freezes Tiingo until the next clock hour. Rather than a separate early-return
+  // guard, fold the frozen state directly into the budget — when frozen, report
+  // 0 remaining so selectWithinBudget naturally returns no symbols and the
+  // bi-directional safety net (planTwelveDataSafetyNet) catches the holes.
+  if (tiingoFrozen(now, storage ?? null)) {
+    return new Budget(WEB_HOURLY_CAP, WEB_DAILY_CAP, WEB_HOURLY_CAP, WEB_DAILY_CAP);
+  }
   const log = readTiingoCreditLog(now, undefined, storage ?? undefined);
   // The hourly cap resets on the clock hour (1:00, 2:00, …) rather than a
   // trailing 60-min window, so a burst at :55 doesn't suppress the fresh
@@ -263,10 +271,12 @@ async function fetchAndMerge(
  * `error`. When `proxyUrl` is null (fallback not configured) this is a no-op that
  * just returns the input quotes and the current (zero-ish) budget snapshot.
  *
- * **Hard-limit invariant**: if Tiingo's budget is exhausted (hour or day) or the
- * 429 circuit breaker is frozen, this function returns immediately without
- * attempting any Tiingo calls — Tiingo's hard limits win unconditionally, even
- * as a fallback. The caller should schedule a retry at the next hour boundary.
+ * Budget enforcement is structural: the 429 breaker and hourly/daily caps are
+ * folded into {@link readBudget}, so {@link selectWithinBudget} naturally returns
+ * 0 symbols when Tiingo is frozen or exhausted. Unfilled holes are left for the
+ * central safety net ({@link planTwelveDataSafetyNet}) to catch on Twelve Data,
+ * and the budget-blocked state is surfaced on `error` so the polling log reports
+ * it — fallback pulls never fall under the radar.
  */
 export async function runTiingoFallback(options: TiingoFallbackOptions): Promise<TiingoFallbackResult> {
   const {
@@ -284,37 +294,6 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
 
   if (!proxyUrl) {
     return { quotes, tiingoSymbols: [], fallbackSymbols: [], budget: budgetView(now, storage), error: null };
-  }
-
-  // Hard-limit guard: Tiingo's limits are ABSOLUTE — never use Tiingo as a
-  // fallback when its budget is exhausted or the 429 breaker is frozen. This is
-  // an unconditional early return: no attempt, no exceptions, no "just one more".
-  // The caller should schedule a retry at the next hour boundary instead.
-  if (tiingoFrozen(now, storage ?? null)) {
-    return {
-      quotes,
-      tiingoSymbols: [],
-      fallbackSymbols: [],
-      budget: budgetView(now, storage),
-      error: new PriceError(
-        "Tiingo hard limit: 429 breaker frozen until next clock hour — cannot use as fallback.",
-        { retryable: true, retryAfterMs: msUntilNextHour(now) },
-      ),
-    };
-  }
-  const preCheckBudget = readBudget(now, storage, reserveCredits);
-  if (!preCheckBudget.hasRoom()) {
-    return {
-      quotes,
-      tiingoSymbols: [],
-      fallbackSymbols: [],
-      budget: budgetView(now, storage),
-      error: new PriceError(
-        "Tiingo hard limit: hour/day budget exhausted — cannot use as fallback. " +
-          "Will retry original source at next hour boundary.",
-        { retryable: true, retryAfterMs: msUntilNextHour(now) },
-      ),
-    };
   }
 
   const expected = latestSettledSessionDate(new Date(now));
@@ -348,6 +327,9 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
 
   // Every budget check in this run honours the reserve, so the gate may use up to
   // `remaining − reserveCredits` credits (clamped at 0) and no further.
+  // When Tiingo is frozen (429 breaker) or its budget is exhausted, readBudget
+  // reports 0 remaining and selectWithinBudget returns no symbols — the central
+  // safety net then catches the holes.
   const budgetNow = (): Budget => readBudget(now, storage, reserveCredits);
 
   const merge = (batch: string[]): Promise<string[]> =>
@@ -375,7 +357,19 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     }
     if (candidates.length > 0) {
       const room = selectWithinBudget(candidates, budgetNow());
-      tiingoSymbols.push(...(await merge(room)));
+      if (room.length > 0) {
+        tiingoSymbols.push(...(await merge(room)));
+      } else {
+        // Budget blocked: candidates existed but the budget (or 429 breaker)
+        // prevented any spend. Surface this clearly so fallback pulls never fall
+        // under the radar — the caller logs it and the central safety net
+        // (planTwelveDataSafetyNet) catches the unfilled holes on Twelve Data.
+        error = new PriceError(
+          `Tiingo budget exhausted — ${candidates.length} symbol(s) needed but blocked by limits. ` +
+            "Central safety net will catch remaining holes on Twelve Data.",
+          { retryable: true, retryAfterMs: msUntilNextHour(now) },
+        );
+      }
     }
   } catch (err) {
     error = err instanceof PriceError ? err : new PriceError((err as Error).message, { retryable: true });

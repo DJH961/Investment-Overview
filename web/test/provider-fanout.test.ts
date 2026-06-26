@@ -208,37 +208,17 @@ describe("planTwelveDataSafetyNet — reverse Tiingo → Twelve Data fallback", 
     expect(plan.twelveData).toEqual(["MSFT"]);
   });
 
-  it("refuses to engage when Twelve Data hard limit is exhausted (twelveDataRemaining=0)", () => {
+  it("engages normally and lets loadQuotes handle budget enforcement", () => {
+    // Budget enforcement is structural: loadQuotes clamps via the reservation
+    // system, so the safety net always plans the re-pull and trusts the fetcher
+    // to respect the live budget.
     const plan = planTwelveDataSafetyNet({
       viaTiingo: true,
       unfilled: ["AAPL", "MSFT"],
       tiingoFilled: [],
-      twelveDataRemaining: 0,
-    });
-    expect(plan.engaged).toBe(false);
-    expect(plan.twelveData).toHaveLength(0);
-    expect(plan.reason).toContain("hard limit exhausted");
-    expect(plan.reason).toContain("next hour boundary");
-  });
-
-  it("engages normally when twelveDataRemaining is positive", () => {
-    const plan = planTwelveDataSafetyNet({
-      viaTiingo: true,
-      unfilled: ["AAPL", "MSFT"],
-      tiingoFilled: [],
-      twelveDataRemaining: 5,
     });
     expect(plan.engaged).toBe(true);
     expect(plan.twelveData).toEqual(["AAPL", "MSFT"]);
-  });
-
-  it("engages when twelveDataRemaining is not provided (backwards compat)", () => {
-    const plan = planTwelveDataSafetyNet({
-      viaTiingo: true,
-      unfilled: ["AAPL"],
-      tiingoFilled: [],
-    });
-    expect(plan.engaged).toBe(true);
   });
 });
 

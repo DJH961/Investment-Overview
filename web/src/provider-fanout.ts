@@ -279,13 +279,6 @@ export interface SafetyNetInputs {
   unfilled: string[];
   /** Symbols the Tiingo primary did fill this round (excluded from the re-pull). */
   tiingoFilled: string[];
-  /**
-   * Live remaining Twelve Data credits (from `twelveDataAvailable(now)`). When
-   * **0** the safety net refuses to engage — Twelve Data's hard limit wins over
-   * any fallback need. The caller should schedule a retry at the next hour
-   * boundary instead.
-   */
-  twelveDataRemaining?: number;
 }
 
 /** The reverse safety net's verdict: which symbols Twelve Data should catch. */
@@ -319,18 +312,6 @@ export function planTwelveDataSafetyNet(input: SafetyNetInputs): SafetyNetPlan {
       twelveData: [],
       engaged: false,
       reason: "Safety net idle: Twelve Data was the primary (no Tiingo-only route to back up).",
-    };
-  }
-  // Hard-limit guard: Twelve Data's limits are exhausted — it must NEVER be used
-  // as a fallback under any circumstance when its budget is 0. The caller should
-  // schedule a retry at the next hour boundary instead.
-  if (input.twelveDataRemaining !== undefined && input.twelveDataRemaining <= 0) {
-    return {
-      twelveData: [],
-      engaged: false,
-      reason:
-        "Safety net blocked: Twelve Data hard limit exhausted — cannot use as fallback. " +
-        "Will retry original source at next hour boundary.",
     };
   }
   const filled = new Set(input.tiingoFilled);
