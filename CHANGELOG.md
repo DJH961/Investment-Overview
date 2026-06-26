@@ -53,6 +53,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
 
+## [4.5.3] — 2026-06-26
+
 ### Changed
 
 - **NAV freshness is now "poll after the close until tonight's NAV lands" —
