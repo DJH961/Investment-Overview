@@ -22,8 +22,13 @@ from investment_dashboard.domain.market_hours import is_us_market_holiday
 from investment_dashboard.models import Instrument
 from investment_dashboard.repositories import price_cache_repo, prices_repo
 from investment_dashboard.repositories import tiingo_state_repo as state_repo
-from investment_dashboard.services import fetch_report, provider_status
-from investment_dashboard.services.tiingo_fallback import choose_canary, now_eastern
+from investment_dashboard.services import fetch_report, provider_status, pull_log
+from investment_dashboard.services.tiingo_fallback import (
+    DESKTOP_DAILY_CAP,
+    DESKTOP_HOURLY_CAP,
+    choose_canary,
+    now_eastern,
+)
 from investment_dashboard.services.tiingo_fallback_runner import (
     FallbackCandidate,
     FallbackOutcome,
@@ -223,6 +228,7 @@ def apply_desktop_fallback(
 
     state_repo.save(session, state)
 
+    round_ = pull_log.current()
     if outcome.switched:
         joined = ", ".join(outcome.used_symbols)
         provider_status.record(
@@ -240,7 +246,21 @@ def apply_desktop_fallback(
         # the automatic "yfinance couldn't deliver" toast here.
         if not manual:
             provider_status_runtime_warning(joined)
-        log.info("Tiingo fallback recovered %s", joined)
+        if round_ is not None:
+            round_.fallback("tiingo", result, outcome.reasons)
+            round_.budget(
+                "tiingo",
+                hour_remaining=max(0, DESKTOP_HOURLY_CAP - state.hour_used),
+                hourly_cap=DESKTOP_HOURLY_CAP,
+                day_remaining=max(0, DESKTOP_DAILY_CAP - state.day_used),
+                daily_cap=DESKTOP_DAILY_CAP,
+            )
+        else:
+            log.info("Tiingo fallback recovered %s", joined)
+    elif round_ is not None and outcome.reasons:
+        # No usable data, but the fallback still *did* something worth recording
+        # (waited for a peer NAV, probed a canary, found the budget spent, …).
+        round_.note("tiingo fallback: " + "; ".join(outcome.reasons))
 
     return result, outcome
 

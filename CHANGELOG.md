@@ -14,6 +14,49 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.10.0] — 2026-06-26
+
+### Changed
+
+- **The downloadable data-polling log was redesigned into a genuine debugging
+  trail.** It was a flat wall of identically-formatted lines: you couldn't tell
+  who kicked off a pull, what actually settled, what failed, where we deliberately
+  backed off, or how much free-tier budget was left when a round ended. The log is
+  now sliced into clearly demarcated **pulling rounds**, each bounded by a `┏━━`
+  start banner (naming the trigger — unlock, kickoff, manual tap, auto tick, or a
+  skipped no-pull tick — plus the time span and duration) and a `┗━━` verdict
+  footer. Every line carries a severity glyph in the gutter (`✓` settled · `↩`
+  backed off / deferred to save budget · `⚠` degraded · `✗` failed), failures in a
+  round are re-listed under it so they can't hide, and a macro overview at the top
+  counts the rounds, flags how many hit a failure, and shows the latest budget
+  left. The round-completion line now reports the full settle breakdown
+  (`N live, M cached, K deferred, J failed`) **and the budget remaining** (primary
+  per-minute/day plus the backup provider's hourly/daily usage). Log entries gained
+  an optional severity level, set explicitly at the key fetch/fallback/failure
+  sites and inferred from wording elsewhere (`web/src/polling-log.ts`,
+  `web/src/app.ts`).
+- **The desktop app's data-pulling log got the same one-readable-story-per-round
+  treatment.** Every price pull — the live tick, a manual click, the startup
+  backfill, the Settings buttons — now opens a single *pull round* that prints a
+  clear `===== PULL <id> START =====` banner naming **who triggered it** and the
+  **mode** (auto/TTL-due, manual full re-pull, startup backfill, manual
+  Tiingo-only), narrates each step under a stable, greppable `pull <id> | …`
+  prefix, and closes with a one-line `summary:` plus an `===== PULL <id> END =====`
+  banner. A round spells out, in order: the symbols/window **requested**, what
+  **settled** (fresh closes, naming the symbols), what **FAILED** (a hard provider
+  error), what came back **SUSPECT** (a non-positive close the feed forward-fills
+  into valuations), every **backoff** wait, any **Tiingo fallback** coverage with
+  the **budget remaining** afterwards (`7/10 this hour, 188/200 today`), and the
+  live EUR/USD spot. New module `services/pull_log.py`; wired through
+  `prices_service`, `auto_refresh`, `tiingo_fallback_wiring`, `adapters/_retry`
+  and `boot`. Two overlapping pulls keep independent round ids (a per-thread
+  `ContextVar`), so the startup backfill and a live tick never interleave into
+  noise.
+- **The web log now also flags SUSPECT prices** (a non-positive quote the feed
+  would forward-fill into valuations), mirroring the desktop log, so "what
+  generated wrong data?" is answerable on both surfaces (`web/src/app.ts`,
+  `web/src/compute.ts`).
+
 ## [4.9.3] — 2026-06-26
 
 ### Fixed

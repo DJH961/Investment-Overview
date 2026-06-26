@@ -75,7 +75,7 @@ def tick_refresh(source: str = "Live price refresh", *, force: bool = False) -> 
         cache_session_scope,
         ledger_session_scope,
     )
-    from investment_dashboard.services import refresh_status  # noqa: PLC0415
+    from investment_dashboard.services import pull_log, refresh_status  # noqa: PLC0415
     from investment_dashboard.services.prices_service import (  # noqa: PLC0415
         refresh_due_prices,
         refresh_prices,
@@ -83,6 +83,8 @@ def tick_refresh(source: str = "Live price refresh", *, force: bool = False) -> 
 
     refresh_status.begin(source)
     updated = False
+    mode = "manual full re-pull" if force else "auto (TTL-due only)"
+    round_ = pull_log.begin(source, mode=mode)
     try:
         # Open both tiers explicitly so the cached closes + ``last_refreshed_at``
         # stamps land in the cache database the overview actually reads. Passing
@@ -101,10 +103,10 @@ def tick_refresh(source: str = "Live price refresh", *, force: bool = False) -> 
         # Best-effort: a failed FX pull leaves the ECB daily rate in place.
         from investment_dashboard.services import fx_service  # noqa: PLC0415
 
-        fx_service.refresh_live_spot()
+        spot = fx_service.refresh_live_spot()
+        if spot is not None:
+            round_.note(f"FX: live EUR/USD spot {spot}")
         updated = any(refreshed.values())
-        if updated:
-            log.debug("%s updated %s", source, [s for s, n in refreshed.items() if n])
         # Capture a point for the Overview "1 Day" intraday curve while the US
         # market is open, so the graph fills in with real market-time samples as
         # the app keeps auto-updating prices (no-op + self-pruning otherwise).
@@ -121,10 +123,15 @@ def tick_refresh(source: str = "Live price refresh", *, force: bool = False) -> 
         # The explicit record_error below gives this a friendly label, so skip
         # the logging handler's mirror to avoid a duplicate (uglier) entry.
         log.warning("%s tick failed", source, exc_info=True, extra={"runtime_status_skip": True})
+        # A failure *here* (outside the inner refresh, which catches its own
+        # provider errors) aborts the whole round; record it against the trigger
+        # label so the round summary flags the pull as failed.
+        round_.provider_failed(source, f"{type(exc).__name__}: {exc}")
         from investment_dashboard.services import runtime_status  # noqa: PLC0415
 
         runtime_status.record_error(source, f"{type(exc).__name__}: {exc}")
     finally:
+        pull_log.end(round_)
         refresh_status.finish(source, updated=updated)
     return updated
 

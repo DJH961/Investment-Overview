@@ -103,28 +103,43 @@ def retry_call[T](
             delay = _delay(attempt)
             if exc.retry_after is not None:
                 delay = max(delay, exc.retry_after)
-            log.warning(
-                "%s rate-limited (attempt %d/%d); backing off %.2fs",
-                description,
-                attempt,
-                attempts,
-                delay,
-            )
+            _record_backoff(description, attempt, attempts, delay, reason="rate-limited")
             sleep(delay)
         except retry_on as exc:
             last_exc = exc
             if attempt == attempts:
                 break
             delay = _delay(attempt)
-            log.warning(
-                "%s failed (attempt %d/%d): %s; retrying in %.2fs",
-                description,
-                attempt,
-                attempts,
-                exc,
-                delay,
-            )
+            _record_backoff(description, attempt, attempts, delay, reason=f"transient error: {exc}")
             sleep(delay)
 
     assert last_exc is not None  # loop always sets it before breaking
     raise last_exc
+
+
+def _record_backoff(
+    description: str, attempt: int, attempts: int, delay: float, *, reason: str
+) -> None:
+    """Log one backoff wait, folding it into the active pull round when there is one.
+
+    During a data pull this routes the wait into the round's narrative (so a
+    "backed off" event is attributed to the round and counted in its summary);
+    outside a pull it falls back to a plain warning so non-pull callers still log.
+    """
+    try:
+        from investment_dashboard.services import pull_log  # noqa: PLC0415
+
+        round_ = pull_log.current()
+    except Exception:  # pragma: no cover - logging must never crash the caller
+        round_ = None
+    if round_ is not None:
+        round_.backoff(description, attempt, attempts, delay, reason=reason)
+        return
+    log.warning(
+        "%s backing off (%s): attempt %d/%d; waiting %.2fs",
+        description,
+        reason,
+        attempt,
+        attempts,
+        delay,
+    )
