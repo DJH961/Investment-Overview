@@ -9,7 +9,7 @@ import { Decimal } from "../src/decimal-config";
 import type { CurvePoint } from "../src/timeseries";
 import { memoryBackend, TimeSeriesStore } from "../src/timeseries-store";
 import {
-  VALUE_HISTORY_KEY,
+  VALUE_HISTORY_STORE_KEY,
   recordDailyClose,
   loadValueHistory,
   harvestDailyCloses,
@@ -71,7 +71,7 @@ describe("value-history", () => {
     const store = new TimeSeriesStore(memoryBackend());
     await recordDailyClose(store, { date: "2024-03-01", valueEur: new Decimal("1000"), valueUsd: new Decimal("1080") });
     // The history lives under its namespaced key, not a YYYY-MM-DD session.
-    expect(await store.listDays()).toEqual([VALUE_HISTORY_KEY]);
+    expect(await store.listDays()).toEqual([VALUE_HISTORY_STORE_KEY]);
     // A session prune (rolling 1W window) must never sweep the history away.
     await store.prune("2099-01-01");
     expect(await loadValueHistory(store)).toHaveLength(1);

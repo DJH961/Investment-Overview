@@ -12,7 +12,7 @@
  * per-day points rather than interpolated.
  *
  * Storage piggy-backs on the existing {@link TimeSeriesStore}: the closes live in
- * one **namespaced** record (key {@link VALUE_HISTORY_KEY}, not a `YYYY-MM-DD`
+ * one **namespaced** record (key {@link VALUE_HISTORY_STORE_KEY}, not a `YYYY-MM-DD`
  * session key), so a session prune never sweeps them, a cache reset (`clear`)
  * does, and the IndexedDB plumbing / Decimal (de)serialisation are reused as-is.
  * The two currency legs ride as two pseudo-symbol bar tracks (`EUR`/`USD`) keyed
@@ -35,7 +35,7 @@ import type { TimeSeriesStore } from "./timeseries-store";
  * daily-close cache and is never mistaken for — or swept away by — a session
  * prune (see {@link TimeSeriesStore.prune}).
  */
-export const VALUE_HISTORY_KEY = "value-history";
+export const VALUE_HISTORY_STORE_KEY = "value-history";
 
 /** Pseudo-symbol bar track holding the EUR whole-book close per day. */
 const EUR_SERIES = "EUR";
@@ -77,7 +77,7 @@ export async function recordDailyClose(
   if (!Number.isFinite(t)) return;
   const bars: Record<string, Bar[]> = { [EUR_SERIES]: [{ t, value: close.valueEur }] };
   if (close.valueUsd !== null) bars[USD_SERIES] = [{ t, value: close.valueUsd }];
-  await store.mergeSession(VALUE_HISTORY_KEY, { bars }, now);
+  await store.mergeSession(VALUE_HISTORY_STORE_KEY, { bars }, now);
 }
 
 /**
@@ -86,7 +86,7 @@ export async function recordDailyClose(
  * null` (the chart then spot-converts it for the USD view).
  */
 export async function loadValueHistory(store: TimeSeriesStore): Promise<DailyClose[]> {
-  const stored = await store.loadSession(VALUE_HISTORY_KEY);
+  const stored = await store.loadSession(VALUE_HISTORY_STORE_KEY);
   if (!stored) return [];
   const usdByT = new Map<number, Decimal>();
   for (const b of stored.bars[USD_SERIES] ?? []) usdByT.set(b.t, b.value);
@@ -122,7 +122,7 @@ export async function harvestDailyCloses(
     eur.push({ t, value: p.valueEur });
     usd.push({ t, value: p.valueUsd });
   }
-  await store.mergeSession(VALUE_HISTORY_KEY, { bars: { [EUR_SERIES]: eur, [USD_SERIES]: usd } }, now);
+  await store.mergeSession(VALUE_HISTORY_STORE_KEY, { bars: { [EUR_SERIES]: eur, [USD_SERIES]: usd } }, now);
 }
 
 /**
@@ -131,7 +131,7 @@ export async function harvestDailyCloses(
  * history. A no-op when nothing is stored or nothing rolls out.
  */
 export async function pruneValueHistory(store: TimeSeriesStore, oldestDay: string): Promise<void> {
-  const stored = await store.loadSession(VALUE_HISTORY_KEY);
+  const stored = await store.loadSession(VALUE_HISTORY_STORE_KEY);
   if (!stored) return;
   const cutoff = dayStartMs(oldestDay);
   if (!Number.isFinite(cutoff)) return;
@@ -142,7 +142,7 @@ export async function pruneValueHistory(store: TimeSeriesStore, oldestDay: strin
   const droppedUsd = usd.length !== (stored.bars[USD_SERIES]?.length ?? 0);
   if (!droppedEur && !droppedUsd) return;
   await store.saveSession({
-    day: VALUE_HISTORY_KEY,
+    day: VALUE_HISTORY_STORE_KEY,
     bars: { [EUR_SERIES]: eur, [USD_SERIES]: usd },
     fx: stored.fx,
     tips: stored.tips ?? [],
