@@ -124,6 +124,23 @@ describe("springboardSessionCurve", () => {
     expect(curve![curve!.length - 1].t).toBe(Date.parse("2024-06-04T20:00:00Z"));
   });
 
+  it("heals a NAV-collapsed today session baked into a stale blob (issue #169)", () => {
+    // A blob captured right after the open valued the whole intraday session
+    // without its NAV-fund sleeve (~60%); only the live tip (1100/1200) is sound.
+    const curve = springboardSessionCurve({
+      exported: dayExport(TODAY, [
+        pt("2024-06-05T13:30:00Z", "600", "660"),
+        pt("2024-06-05T13:50:00Z", "605", "665"),
+      ]),
+      now: MID_SESSION,
+      liveTip: tip,
+    });
+    expect(curve).not.toBeNull();
+    // The collapsed body lifts onto the live tip instead of nosediving to ~60%.
+    expect(curve![0].valueEur.toNumber()).toBeGreaterThan(1000);
+    expect(curve![curve!.length - 1].valueEur.toString()).toBe("1100");
+  });
+
   it("falls back (null) when the export is yesterday's but today is live", () => {
     const curve = springboardSessionCurve({
       exported: dayExport(PREV, freshPoints),

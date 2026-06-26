@@ -58,7 +58,7 @@ import {
 } from "./market-hours";
 import type { CurvePoint } from "./timeseries";
 import type { ExportLiveCurvePoint, ExportLiveGraphSeries, ExportLiveGraphs } from "./types";
-import { repairWeekNavCollapse, type RepairHealthyHint } from "./week-repair";
+import { repairWeekNavCollapse, repairSessionNavCollapse, type RepairHealthyHint } from "./week-repair";
 import { DEFAULT_WEEK_SESSIONS } from "./week";
 
 /**
@@ -191,6 +191,19 @@ export function springboardSessionCurve(input: SpringboardInput): CurvePoint[] |
   const tipT = marketOpen ? now.getTime() : closeMs;
   if (input.liveTip) points = appendLiveTip(points, tipT, input.liveTip);
   if (!marketOpen) points = capAtClose(points, closeMs);
+
+  // Heal a NAV-collapse nosedive baked into a *stale* blob's `day.points` (issue
+  // #169, the today case): an export captured right after the US open can value
+  // the whole intraday session *without* its NAV-fund sleeve (~60 % of the book),
+  // so the day nosedives and only the live tip — which always carries the NAV
+  // sleeve — snaps back. The whole-week repair cannot reach this (the collapse and
+  // its recovery sit inside one UTC day), so lift the collapsed body onto the live
+  // tip here, fixing both the 1D graph and the 1W graph's spliced today slice. A
+  // no-op on a healthy session.
+  points = repairSessionNavCollapse(
+    points,
+    input.liveTip ? { eur: input.liveTip.valueEur, usd: input.liveTip.valueUsd } : null,
+  );
 
   return points.length >= 2 ? points : null;
 }

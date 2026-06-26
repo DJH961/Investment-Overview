@@ -146,6 +146,8 @@ import {
   WEEK_STORE_KEY,
   navBackfillStaleSymbols,
   navBarsFromQuotes,
+  navSafeBarsForPriming,
+  navTipCoveredSymbols,
   weekStaleSymbols,
   wrapDailyNavFetcher,
   DEFAULT_WEEK_SESSIONS,
@@ -944,7 +946,10 @@ export class App {
     // headline NAV. The funds it primes are dropped from the quote leg below, so
     // the separate NAV quote is skipped — no duplicate spend, week correct in one.
     const navBarsPrimed = await this.prefetchNavWeekBars(prefetch.navSymbols, config, now, planCurrency);
-    const navPrimedSet = new Set(navBarsPrimed);
+    // Drop from the quote leg only the funds whose primed NAV tip is genuinely
+    // current (`covered`). Funds the bar source left behind stay on the quote leg
+    // for a real fetch — never pinned on an old day with the quote silently skipped.
+    const navPrimedSet = new Set(navBarsPrimed.covered);
     const navQuoteSymbols = prefetch.navSymbols.filter((s) => !navPrimedSet.has(s));
     const quoteWork = prefetch.symbols.length + navQuoteSymbols.length;
     if (quoteWork === 0) {
@@ -958,7 +963,7 @@ export class App {
       // quotes — book those *actual* fills so the reconcile doesn't re-pull them.
       // C5: bars-first NAV fills count as genuine fills too.
       this.prefetchBooked = {
-        symbols: [...graphFetched.primed, ...navBarsPrimed],
+        symbols: [...graphFetched.primed, ...navBarsPrimed.covered],
         predicted: plan.map((e) => e.symbol),
         fx: true,
       };
@@ -1033,7 +1038,7 @@ export class App {
       ...fanout.navTwelveData,
       ...fanout.navTiingo,
       ...graphFetched.primed,
-      ...navBarsPrimed,
+      ...navBarsPrimed.covered,
     ]);
     this.prefetchBooked = {
       symbols: [...bookedSet].filter((s) => !deferredSet.has(s)),
@@ -1870,21 +1875,27 @@ export class App {
    * pinned-$1 funds are not in `navSymbols`, stay flat, and are never fetched).
    * Routed through the same reservation authority + 429 breaker as every other
    * pull, and fully best-effort — a failure just leaves the NAV quote leg to run.
-   * Returns the funds whose headline NAV this primed (to drop from the quote leg).
+   * Returns the funds whose headline NAV this primed (`primed`, booked as real
+   * fills) and — separately — those whose primed NAV tip actually reaches the
+   * latest settled session (`covered`). Only the **covered** funds are dropped
+   * from the quote leg: a fund the bar source could not freshen this round stays
+   * on the quote leg for a real fetch (which can reach Twelve Data, a
+   * potentially-fresher NAV source) instead of being pinned on an old day.
    */
   private async prefetchNavWeekBars(
     navSymbols: string[],
     config: AppConfig,
     now: Date,
     currencyBySymbol: Map<string, string | null>,
-  ): Promise<string[]> {
-    if (navSymbols.length === 0) return [];
+  ): Promise<{ primed: string[]; covered: string[] }> {
+    const none = { primed: [] as string[], covered: [] as string[] };
+    if (navSymbols.length === 0) return none;
     const proxyUrl = resolvePriceProxyUrl(config);
-    if (!proxyUrl) return []; // NAV daily bars only come cheaply via the Tiingo /price pipe
+    if (!proxyUrl) return none; // NAV daily bars only come cheaply via the Tiingo /price pipe
     const store = this.ensureTimeSeriesStore();
     const weekStored = await store.loadSession(WEEK_STORE_KEY).catch(() => null);
     const stale = navBackfillStaleSymbols(weekStored, navSymbols, now);
-    if (stale.length === 0) return []; // week already covers every settled NAV → pull nothing
+    if (stale.length === 0) return none; // week already covers every settled NAV → pull nothing
     const reservation = ledgerReservation();
     const spent = { credits: 0 };
     const { tiingoMeter, twelveDataMeter } = instrumentedGraphRecorders({
@@ -1913,17 +1924,17 @@ export class App {
       interval: "1day",
       outputsize: 8,
     });
-    if (!fetchBars) return [];
+    if (!fetchBars) return none;
     // Collapse to one settling NAV per UTC day (day-start stamped) so the warmed
     // history aligns with the bars the 1W curve accumulates for free from quotes.
     const navBars = await wrapDailyNavFetcher(fetchBars)(stale).catch(() => null);
     if (!navBars) {
       this.pollLog("graph", "Login warm-up: NAV bar backfill failed; funds left to the quote leg.", "warn");
-      return [];
+      return none;
     }
     const incoming: Record<string, Bar[]> = {};
     for (const [symbol, list] of navBars) if (list.length > 0) incoming[symbol] = list;
-    if (Object.keys(incoming).length === 0) return [];
+    if (Object.keys(incoming).length === 0) return none;
     await store.mergeSession(WEEK_STORE_KEY, { bars: incoming }, now.getTime());
     // Prime each fund's headline NAV from its settled bar tip (value-dated, not
     // live) so the quote leg can skip it. The NAV set drives the value-date stamp.
@@ -1934,12 +1945,21 @@ export class App {
       undefined,
       new Set(stale),
     );
+    // Only funds whose primed bar tip actually reaches the latest settled session
+    // are genuinely current and safe to drop from the quote leg. A fund the bar
+    // source left behind stays on the quote leg for a real (Twelve Data) fetch —
+    // never pinned on an old day with its quote silently skipped.
+    const primedSet = new Set(primed);
+    const covered = navTipCoveredSymbols(navBars, latestSettledSessionDate(now)).filter((s) =>
+      primedSet.has(s),
+    );
     this.pollLog(
       "graph",
       `Login warm-up: NAV bars-first stored ${Object.keys(incoming).length} fund week(s) and ` +
-        `primed ${primed.length} headline NAV(s) from the settled bar tip — quote leg skips them.`,
+        `primed ${primed.length} headline NAV(s) from the settled bar tip — ${covered.length} current, ` +
+        `quote leg skips them (${primed.length - covered.length} still behind, left to the quote leg).`,
     );
-    return primed;
+    return { primed, covered };
   }
 
   /**
@@ -5896,6 +5916,12 @@ export class App {
    * {@link priceForHolding} rejects a bar-primed NAV as stale and the headline
    * falls back to the exported value, so the 1W gap-fill bars would never serve as
    * the headline NAV. This is what makes NAV genuinely bars-first.
+   *
+   * A NAV fund whose freshest fetched bar is still **behind** the latest settled
+   * session is deliberately left out of the prime ({@link navSafeBarsForPriming}):
+   * stamping its stale tip as the headline would pin the fund on an old day (the
+   * normal/manual-refresh mirror of the prefetch guard). Such a fund keeps its
+   * genuine quote / stays on the NAV quote leg for a real fetch instead.
    */
   private primeQuotesFromGraphBars(barsBySymbol: Map<string, Bar[]>, model: DashboardModel): void {
     if (barsBySymbol.size === 0) return;
@@ -5907,7 +5933,15 @@ export class App {
       currencyBySymbol.set(symbol, h.nativeCurrency ?? null);
       if (h.priceType === "nav") navSymbols.add(symbol);
     }
-    primeQuotesFromBars(barsBySymbol, currencyBySymbol, Date.now(), undefined, navSymbols);
+    // Only stamp a NAV bar tip as the settled headline when it actually reaches
+    // the latest settled session; a lagging tip is dropped so it never pins the
+    // fund on an old day on the routine/manual graph-refresh path.
+    const { bars, navCovered } = navSafeBarsForPriming(
+      barsBySymbol,
+      navSymbols,
+      latestSettledSessionDate(new Date()),
+    );
+    primeQuotesFromBars(bars, currencyBySymbol, Date.now(), undefined, navCovered);
   }
 
   /**
