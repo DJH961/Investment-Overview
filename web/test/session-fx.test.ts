@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Decimal } from "../src/decimal-config";
 import {
   fxEffectSplit,
+  fxBuyingPowerSplit,
   graphAnchorFx,
   readSessionCloseFx,
   recordSessionCloseFx,
@@ -301,6 +302,89 @@ describe("fxEffectSplit", () => {
     });
     expect(split.totalEur).toBeNull();
     expect(split.marketHoursEur).toBeNull();
+  });
+});
+
+describe("fxBuyingPowerSplit", () => {
+  it("nets the USD a fixed euro amount buys now versus the prior close", () => {
+    // €100 at 1.30 buys $130; at the prior close 1.20 it bought $120 ⇒ +$10.
+    const split = fxBuyingPowerSplit({
+      marketOpen: true,
+      amountEur: d("100"),
+      liveFx: d("1.30"),
+      prevFx: d("1.20"),
+      sessionCloseFx: null,
+      sessionOpenFx: d("1.25"),
+    });
+    expect(split.totalUsd!.toNumber()).toBeCloseTo(10, 6);
+    // Market hours since the open (1.25 → 1.30): €100 · 0.05 = +$5; overnight is
+    // the remainder so the two legs sum to the whole move.
+    expect(split.marketHoursUsd!.toNumber()).toBeCloseTo(5, 6);
+    expect(split.overnightUsd!.toNumber()).toBeCloseTo(5, 6);
+    expect(split.marketHoursUsd!.plus(split.overnightUsd!).toNumber()).toBeCloseTo(10, 6);
+  });
+
+  it("puts the live overnight drift in the overnight leg once shut", () => {
+    // Closed at 1.28, live now 1.30: overnight = €100 · 0.02 = +$2; whole move
+    // since the prior close 1.20 is +$10, so the frozen market-hours leg is +$8.
+    const split = fxBuyingPowerSplit({
+      marketOpen: false,
+      amountEur: d("100"),
+      liveFx: d("1.30"),
+      prevFx: d("1.20"),
+      sessionCloseFx: d("1.28"),
+    });
+    expect(split.overnightUsd!.toNumber()).toBeCloseTo(2, 6);
+    expect(split.marketHoursUsd!.toNumber()).toBeCloseTo(8, 6);
+  });
+
+  it("is negative when the euro weakens (fewer dollars per euro)", () => {
+    const split = fxBuyingPowerSplit({
+      marketOpen: true,
+      amountEur: d("100"),
+      liveFx: d("1.10"),
+      prevFx: d("1.20"),
+      sessionCloseFx: null,
+      sessionOpenFx: d("1.15"),
+    });
+    expect(split.totalUsd!.toNumber()).toBeCloseTo(-10, 6);
+    expect(split.marketHoursUsd!.toNumber()).toBeLessThan(0);
+  });
+
+  it("degrades to nulls when the amount or rate pair is missing", () => {
+    expect(
+      fxBuyingPowerSplit({
+        marketOpen: true,
+        amountEur: null,
+        liveFx: d("1.30"),
+        prevFx: d("1.20"),
+        sessionCloseFx: null,
+        sessionOpenFx: d("1.25"),
+      }).totalUsd,
+    ).toBeNull();
+    expect(
+      fxBuyingPowerSplit({
+        marketOpen: true,
+        amountEur: d("100"),
+        liveFx: d("1.30"),
+        prevFx: null,
+        sessionCloseFx: null,
+        sessionOpenFx: d("1.25"),
+      }).totalUsd,
+    ).toBeNull();
+  });
+
+  it("hides the split (one leg null) when the live session anchor is missing", () => {
+    const open = fxBuyingPowerSplit({
+      marketOpen: true,
+      amountEur: d("100"),
+      liveFx: d("1.30"),
+      prevFx: d("1.20"),
+      sessionCloseFx: null,
+      sessionOpenFx: null,
+    });
+    expect(open.totalUsd!.toNumber()).toBeCloseTo(10, 6);
+    expect(open.overnightUsd).toBeNull();
   });
 });
 
