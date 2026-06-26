@@ -14,6 +14,7 @@ import {
   loadOrBuildWeekCurve,
   navBackfillStaleSymbols,
   navBarsFromQuotes,
+  navTipCoveredSymbols,
   toDailyNavBars,
   weekStaleSymbols,
   wrapDailyNavFetcher,
@@ -734,6 +735,41 @@ describe("navBackfillStaleSymbols (item 7b gap detection)", () => {
 
   it("treats an empty / missing store as fully stale", () => {
     expect(navBackfillStaleSymbols(null, ["FXAIX"], SAT_CLOSED)).toEqual(["FXAIX"]);
+  });
+});
+
+describe("navTipCoveredSymbols (only drop genuinely-current funds from the quote leg, #184)", () => {
+  // SAT_CLOSED → latest settled session is Fri 2026-03-13.
+  const settled = "2026-03-13";
+
+  it("covers a fund whose freshest bar reaches the latest settled session", () => {
+    const bars = new Map([
+      ["FXAIX", [bar(dayMs("2026-03-12"), "99"), bar(dayMs("2026-03-13"), "100")]],
+    ]);
+    expect(navTipCoveredSymbols(bars, settled)).toEqual(["FXAIX"]);
+  });
+
+  it("does NOT cover a fund whose freshest bar is still behind — it stays on the quote leg", () => {
+    // The bar source (Tiingo /price) lagged: newest bar is Wed, not Fri. Twelve
+    // Data may still hold Friday's NAV, so this fund must not be dropped.
+    const bars = new Map([
+      ["FXAIX", [bar(dayMs("2026-03-10"), "97"), bar(dayMs("2026-03-11"), "98")]],
+    ]);
+    expect(navTipCoveredSymbols(bars, settled)).toEqual([]);
+  });
+
+  it("covers a fund whose tip is ahead of the settled floor", () => {
+    const bars = new Map([["FXAIX", [bar(dayMs("2026-03-16"), "101")]]]);
+    expect(navTipCoveredSymbols(bars, settled)).toEqual(["FXAIX"]);
+  });
+
+  it("ignores funds with no bars and reports each independently", () => {
+    const bars = new Map([
+      ["CURRENT", [bar(dayMs("2026-03-13"), "100")]],
+      ["BEHIND", [bar(dayMs("2026-03-11"), "98")]],
+      ["EMPTY", [] as ReturnType<typeof bar>[]],
+    ]);
+    expect(navTipCoveredSymbols(bars, settled)).toEqual(["CURRENT"]);
   });
 });
 

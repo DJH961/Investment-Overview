@@ -179,8 +179,33 @@ function settledSessionStarts(now: Date, sessions: number): number[] {
 }
 
 /**
- * Which **moving-fund** `navSymbols` the stored week cache is missing a daily-NAV
- * bar for on one or more settled sessions — the item-7b gap-fill set. A
+ * Of the moving-fund NAV bars just (re)fetched for the week, which now carry a
+ * settled NAV **tip** that reaches `settledDate` — i.e. their headline NAV is
+ * genuinely current. Only these may be dropped from the separate NAV quote leg.
+ *
+ * A fund whose freshest fetched bar is still *behind* `settledDate` is
+ * deliberately **excluded**: the bar source (Tiingo `/price` daily) did not
+ * actually freshen it this round, so it must stay on the quote leg for a real
+ * fetch (which can reach Twelve Data, a potentially-fresher NAV source) instead
+ * of being pinned on an old day with the quote skipped. `settledDate` is the
+ * `YYYY-MM-DD` of {@link latestSettledSessionDate}; the tip's UTC day is compared
+ * lexically against it (ISO dates sort chronologically).
+ */
+export function navTipCoveredSymbols(
+  barsBySymbol: Map<string, Bar[]>,
+  settledDate: string,
+): string[] {
+  const covered: string[] = [];
+  for (const [symbol, bars] of barsBySymbol) {
+    let tip: number | null = null;
+    for (const b of bars) if (tip === null || b.t > tip) tip = b.t;
+    if (tip === null) continue;
+    if (utcDayOf(tip) >= settledDate) covered.push(symbol);
+  }
+  return covered;
+}
+
+/**
  * once-per-login NAV stamp ({@link navBarsFromQuotes}) leaves interior holes when
  * a user logs in irregularly; this finds the funds whose NAV history is not yet
  * continuous across the window so their drift can be backfilled.
