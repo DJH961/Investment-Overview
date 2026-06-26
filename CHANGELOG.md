@@ -14,6 +14,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.13.1] — 2026-06-26
+
+### Fixed
+
+- **1W graph no longer nosedives on the current day after the US open (issue
+  #169).** A snapshot blob captured right after market open can value the whole
+  intraday session *without* its NAV-fund sleeve (~60 % of the book). The web
+  springboarded the 1D session — and the 1W graph's spliced "today" slice — from
+  those `day.points` verbatim, so the day plunged to ~60 % and only the live tip
+  snapped back, collapsing all detail under the autoscale. The earlier repairs
+  only healed the *settled* days of the week and structurally could not reach this
+  case (the collapse and its recovery sit inside one calendar day). A new
+  point-level `repairSessionNavCollapse` now lifts a NAV-collapsed session body
+  back onto the live tip — fixing both the 1D graph and the 1W graph's today slice
+  — and stays a no-op on a healthy session or a genuine drop (`web/src/week-repair.ts`
+  `repairSessionNavCollapse`, `web/src/springboard.ts` `springboardSessionCurve`).
+
 ## [4.13.0] — 2026-06-26
 
 ### Added
