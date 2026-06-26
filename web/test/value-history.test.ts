@@ -16,7 +16,12 @@ import {
   pruneValueHistory,
 } from "../src/value-history";
 
-const dayMs = (date: string): number => Date.parse(`${date}T00:00:00Z`);
+// Local midnight of a `YYYY-MM-DD` — mirrors value-history's own day stamping, which
+// is local (not UTC) to match the Python blob's bare-date `date.today()` calendar.
+const dayMs = (date: string): number => {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(y, m - 1, d).getTime();
+};
 
 function point(t: number, eur: string, usd: string): CurvePoint {
   return { t, valueEur: new Decimal(eur), valueUsd: new Decimal(usd) };
@@ -78,7 +83,7 @@ describe("value-history", () => {
   });
 
   describe("harvestDailyCloses", () => {
-    it("takes the last point of each UTC day as that day's close", async () => {
+    it("takes the latest-timestamp point of each local day as that day's close", async () => {
       const store = new TimeSeriesStore(memoryBackend());
       const points: CurvePoint[] = [
         point(dayMs("2024-03-01") + 1, "10", "11"),
@@ -91,6 +96,41 @@ describe("value-history", () => {
         { date: "2024-03-01", valueEur: new Decimal("12"), valueUsd: new Decimal("13") },
         { date: "2024-03-02", valueEur: new Decimal("20"), valueUsd: new Decimal("22") },
       ]);
+    });
+
+    it("resolves a day's close by latest timestamp, not curve order", async () => {
+      const store = new TimeSeriesStore(memoryBackend());
+      // Same day, fed out of order: the genuinely later instant must still win.
+      await harvestDailyCloses(store, [
+        point(dayMs("2024-03-01") + 9, "99", "108"), // latest instant
+        point(dayMs("2024-03-01") + 1, "10", "11"),
+      ]);
+      const history = await loadValueHistory(store);
+      expect(history).toEqual([
+        { date: "2024-03-01", valueEur: new Decimal("99"), valueUsd: new Decimal("108") },
+      ]);
+    });
+
+    it("skips points with a non-finite instant", async () => {
+      const store = new TimeSeriesStore(memoryBackend());
+      await harvestDailyCloses(store, [
+        point(Number.NaN, "10", "11"),
+        point(dayMs("2024-03-02") + 1, "20", "22"),
+      ]);
+      const history = await loadValueHistory(store);
+      expect(history).toEqual([
+        { date: "2024-03-02", valueEur: new Decimal("20"), valueUsd: new Decimal("22") },
+      ]);
+    });
+
+    it("files a wall-clock evening instant under its local calendar day", async () => {
+      const store = new TimeSeriesStore(memoryBackend());
+      // 2024-03-01 22:30 local — unambiguously the 1st in every timezone, the day a
+      // UTC bucket could mis-roll for viewers west of UTC. Matches the blob's calendar.
+      const eveningLocal = new Date(2024, 2, 1, 22, 30).getTime();
+      await harvestDailyCloses(store, [point(eveningLocal, "42", "45")]);
+      const history = await loadValueHistory(store);
+      expect(history[0].date).toBe("2024-03-01");
     });
 
     it("does not overwrite a day a more recent record already refined", async () => {
