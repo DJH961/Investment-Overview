@@ -6,6 +6,7 @@ import {
   ceilToClockHour,
   gradedPull,
   hasAnyLeg,
+  holdingFreshness,
   noLegs,
   quoteRefreshDue,
   type FreshnessInputs,
@@ -143,3 +144,47 @@ describe("rolling quote TTL", () => {
     expect(quoteRefreshDue(now - FIFTEEN_MIN, now, FIFTEEN_MIN)).toBe(true);
   });
 });
+
+describe("holdingFreshness (per-row tier)", () => {
+  // Use a local noon so "same local day" comparisons are unambiguous in any TZ.
+  const now = new Date(2026, 5, 25, 12, 0, 0).getTime();
+  const WINDOW = 15 * MIN;
+
+  it("is 'live' when the market is open and observed within the window", () => {
+    expect(
+      holdingFreshness({ observedAtMs: now - 2 * MIN, nowMs: now, marketOpen: true, liveWindowMs: WINDOW }),
+    ).toBe("live");
+  });
+
+  it("is 'recent' (not 'live') when the market is shut, even within the window", () => {
+    expect(
+      holdingFreshness({ observedAtMs: now - 2 * MIN, nowMs: now, marketOpen: false, liveWindowMs: WINDOW }),
+    ).toBe("recent");
+  });
+
+  it("is 'recent' when observed today but older than the live window", () => {
+    expect(
+      holdingFreshness({ observedAtMs: now - 90 * MIN, nowMs: now, marketOpen: true, liveWindowMs: WINDOW }),
+    ).toBe("recent");
+  });
+
+  it("is 'aged' when the newest observation is from an earlier day", () => {
+    const yesterday = new Date(2026, 5, 24, 16, 0, 0).getTime();
+    expect(
+      holdingFreshness({ observedAtMs: yesterday, nowMs: now, marketOpen: true, liveWindowMs: WINDOW }),
+    ).toBe("aged");
+  });
+
+  it("is 'aged' when there is no live/cached observation at all (export fallback)", () => {
+    expect(
+      holdingFreshness({ observedAtMs: null, nowMs: now, marketOpen: true, liveWindowMs: WINDOW }),
+    ).toBe("aged");
+  });
+
+  it("never reads 'live' for a future-stamped observation (clock skew)", () => {
+    expect(
+      holdingFreshness({ observedAtMs: now + 5 * MIN, nowMs: now, marketOpen: true, liveWindowMs: WINDOW }),
+    ).toBe("recent");
+  });
+});
+

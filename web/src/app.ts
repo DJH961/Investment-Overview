@@ -1247,23 +1247,37 @@ export class App {
 
   /**
    * C9 — drain the deferred work-queue at the start of a round. Any queued symbol
-   * the decrypted blob has since satisfied (a fresh cached quote now exists, e.g.
-   * carried by the blob's `nav_prices`) is **cleared with a logged reason** rather
-   * than re-fetched; the genuinely-still-missing symbols are returned so the round
-   * can pull them explicitly. Per-symbol attempts are capped so a never-filling
-   * symbol is dropped (logged) instead of bursting forever. Returns the symbols
-   * that still need a pull this round.
+   * the decrypted blob has since satisfied is **cleared with a logged reason**
+   * rather than re-fetched; the genuinely-still-missing symbols are returned so the
+   * round can pull them explicitly. Per-symbol attempts are capped so a
+   * never-filling symbol is dropped (logged) instead of bursting forever. Returns
+   * the symbols that still need a pull this round.
+   *
+   * "Satisfied" tests **freshness, not mere presence** (the freshness-plan §3
+   * fix): a parked symbol is only cleared when its cached observation `at` is
+   * within the live window (the user-set auto-refresh interval), so a symbol whose
+   * cache is *stale* stays queued and is threaded into the round's fetch set rather
+   * than being silently cleared on the strength of an aged value. The freshly-aged
+   * `at` must not be in the future (clock skew), mirroring the live-badge guards.
    */
   private drainDeferredQueue(now: Date): string[] {
     if (this.deferredQueue.size === 0) return [];
     const cached = readCachedQuotes();
-    const { stillMissing, clearedBySatisfied, exhausted } = this.deferredQueue.drain(
-      (symbol) => (cached.get(symbol)?.quote?.at ?? null) !== null,
-    );
+    const nowMs = now.getTime();
+    const liveWindowMs =
+      this.state.config.updateMinutes > 0
+        ? this.state.config.updateMinutes * 60 * 1000
+        : LIVE_PRICE_MAX_STALENESS_MS;
+    const { stillMissing, clearedBySatisfied, exhausted } = this.deferredQueue.drain((symbol) => {
+      const at = cached.get(symbol)?.quote?.at ?? null;
+      if (at === null) return false;
+      const age = nowMs - at;
+      return age >= 0 && age <= liveWindowMs;
+    });
     if (clearedBySatisfied.length > 0) {
       this.pollLog(
         "orchestrator",
-        `Deferred queue: ${clearedBySatisfied.length} cleared by cached/blob data (no re-fetch) ` +
+        `Deferred queue: ${clearedBySatisfied.length} cleared by fresh cached/blob data within the live window (no re-fetch) ` +
           `[${clearedBySatisfied.join(", ")}].`,
       );
     }
@@ -1277,10 +1291,9 @@ export class App {
     if (stillMissing.length > 0) {
       this.pollLog(
         "orchestrator",
-        `Deferred queue: ${stillMissing.length} still missing, draining this round [${stillMissing.join(", ")}].`,
+        `Deferred queue: ${stillMissing.length} still missing (stale cache), forcing a re-pull this round [${stillMissing.join(", ")}].`,
       );
     }
-    void now;
     return stillMissing;
   }
 
@@ -3460,6 +3473,7 @@ export class App {
     config: AppConfig,
     force = false,
     forceAll = false,
+    forceSymbols: ReadonlySet<string> = new Set(),
   ): { symbols: string[]; options: LoadQuotesOptions } {
     // Priority-ordered fetch plan: ETFs/stocks (largest first), then mutual
     // funds (largest first). Money-market/cash rows are excluded — their NAV is
@@ -3480,7 +3494,7 @@ export class App {
       nativeCurrency: e.nativeCurrency,
     })));
 
-    return { symbols, options: this.buildQuoteOptions(navFetchSymbols, config, force, forceAll) };
+    return { symbols, options: this.buildQuoteOptions(navFetchSymbols, config, force, forceAll, forceSymbols) };
   }
 
   /**
@@ -3575,6 +3589,7 @@ export class App {
     config: AppConfig,
     force = false,
     forceAll = false,
+    forceSymbols: ReadonlySet<string> = new Set(),
   ): LoadQuotesOptions {
     const cacheTtlMs = config.updateMinutes * 60 * 1000;
     return {
@@ -3619,10 +3634,16 @@ export class App {
       //     (the NAV cannot have struck mid-session), so a tap leaves them quiet.
       // `forceAll` overrides all of that and re-pulls *every* symbol — the
       // explicit "ignore NAV schedules and market-closed skips" escape hatch.
+      // `forceSymbols` (freshness-plan §3) is a per-round explicit drain of
+      // parked-but-stale deferred-queue entries: those symbols re-pull this round
+      // regardless of the per-symbol skip, so a deferral is resolved by an explicit
+      // pull rather than left waiting on its cache TTL.
       forceFetch: forceAll
         ? () => true
-        : force
+        : force || forceSymbols.size > 0
           ? (symbol, cached) => {
+              if (forceSymbols.has(symbol)) return true;
+              if (!force) return false;
               const at = new Date();
               if (!navFetchSymbols.has(symbol)) {
                 if (isUsMarketOpen(at)) return true;
@@ -3658,7 +3679,7 @@ export class App {
   private async refreshPrices(
     session: number,
     network: boolean,
-    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean; tiingoReserve?: number; connectivity?: ConnectivityState; plan?: PullPlan } = {},
+    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean; tiingoReserve?: number; connectivity?: ConnectivityState; plan?: PullPlan; forceSymbols?: ReadonlyArray<string> } = {},
   ): Promise<QuoteLoadReport | null> {
     const { data, config } = this.state;
     if (!data) return null;
@@ -3668,11 +3689,16 @@ export class App {
     // primary quote fetch entirely (serve quotes from cache only) and let the
     // Tiingo fallback below re-pull every still-behind holding instead.
     const viaTiingo = network && (opts.viaTiingo ?? false);
+    // Freshness-plan §3 — parked-but-stale symbols drained from the deferred queue
+    // are forced to re-pull this round (an explicit drain), not left to their cache
+    // TTL. Only meaningful on a network round.
+    const forceSymbols = network ? new Set(opts.forceSymbols ?? []) : new Set<string>();
     const { symbols, options } = this.quoteRequest(
       data,
       config,
       network && ((opts.force ?? false) || forceAll),
       forceAll,
+      forceSymbols,
     );
     // Remember which symbols are NAV-priced funds so the coverage summary can
     // split the live market count from the once-a-day NAVs that are still
@@ -4026,7 +4052,8 @@ export class App {
       const cf = this.lastCoverageFacts;
       this.pollLog(
         "note",
-        `Coverage: market ${cf.marketFresh} live / ${Math.max(0, cf.marketHeld - cf.marketFresh)} cached / ` +
+        `Coverage: market ${cf.marketFresh} live / ${cf.marketUpdating} updating / ` +
+          `${Math.max(0, cf.marketHeld - cf.marketFresh - cf.marketUpdating)} cached / ` +
           `${cf.marketAtClose} at last close of ${cf.marketTotal}; ` +
           `NAVs ${cf.navTotal - cf.navAwaiting}/${cf.navTotal} in (${cf.navAwaiting} awaiting); ` +
           `FX ${cf.fx}; market ${cf.marketOpen ? "open" : "closed"} → “${this.lastCoverage}”.`,
@@ -4554,11 +4581,13 @@ export class App {
         this.prefetchBooked = null;
       }
     }
-    // C9 — drain the deferred work-queue: clear entries the decrypted blob already
-    // satisfied (logged, no re-fetch) and surface the genuinely-missing ones so
-    // they are re-pulled this round (they have no fresh quote, so the round's
-    // staleness check picks them up). Never lets a deferral vanish unlogged.
-    this.drainDeferredQueue(new Date());
+    // C9 / freshness-plan §3 — drain the deferred work-queue: clear entries a fresh
+    // cached/blob value already satisfies (logged, no re-fetch) and surface the
+    // genuinely-still-missing ones (their cache is stale). These are threaded into
+    // this round's fetch set below as an explicit force, so a parked-but-stale
+    // symbol is re-pulled now rather than relying on its cache TTL alone. Never
+    // lets a deferral vanish unlogged.
+    const drainedStale = this.drainDeferredQueue(new Date());
     // Smart Tiingo gate — run on **any** network round, not just one explicitly
     // flagged Tiingo-leaning: any force/auto refresh can quietly fall back to
     // Tiingo for the symbols Twelve Data defers, so the dedup must fire whenever a
@@ -4647,6 +4676,7 @@ export class App {
         viaTiingo: opts.viaTiingo ?? false,
         tiingoReserve: opts.tiingoReserve ?? 0,
         plan: roundPlan,
+        forceSymbols: drainedStale,
       });
     } finally {
       this.refreshing = false;
@@ -5819,6 +5849,15 @@ export interface CoverageFacts {
   /** Market holdings whose price was *freshly fetched this round* (a subset of {@link marketHeld}). */
   marketFresh: number;
   /**
+   * Market holdings that hold a usable cached price but were *budget-deferred this
+   * round* (parked by the free-tier per-minute cap) and are not yet live — i.e.
+   * still waiting their turn in the burst cadence. A subset of {@link marketHeld},
+   * disjoint from {@link marketFresh}. Surfaced as its own honest "updating…"
+   * bucket so a still-draining holding is shown as actively catching up rather
+   * than folded silently into "cached" and read as a stall (freshness-plan §4.2).
+   */
+  marketUpdating: number;
+  /**
    * Market holdings that hold the latest *settled close* (see `holdsSettledClose`)
    * — i.e. the freshest value that exists while the exchange is shut. Drives the
    * "market closed · at closing prices, no need to update" messaging.
@@ -5947,6 +5986,9 @@ export function buildCoverageFacts(
   const now = ctx.now ?? new Date();
   const nowMs = now.getTime();
   const fetched = new Set(report.fetched);
+  // Symbols parked this round by the free-tier per-minute cap — held from cache but
+  // still draining. Surfaced as their own "updating…" bucket (freshness-plan §4.2).
+  const deferred = new Set(report.deferred);
   const liveWindowMs =
     ctx.liveStalenessMs !== undefined && ctx.liveStalenessMs > 0
       ? ctx.liveStalenessMs
@@ -5961,6 +6003,7 @@ export function buildCoverageFacts(
   let marketTotal = 0;
   let marketHeld = 0;
   let marketFresh = 0;
+  let marketUpdating = 0;
   let marketAtClose = 0;
   let navTotal = 0;
   let navExpectedTonight = 0;
@@ -6000,7 +6043,12 @@ export function buildCoverageFacts(
         observedAt !== null &&
         nowMs - observedAt >= 0 &&
         nowMs - observedAt <= liveWindowMs;
-      if (fetched.has(symbol) || cacheStillLive) marketFresh += 1;
+      const isFresh = fetched.has(symbol) || cacheStillLive;
+      if (isFresh) marketFresh += 1;
+      // A held holding that was budget-deferred this round and isn't otherwise live
+      // is actively "updating" (waiting its turn in the burst cadence) — its own
+      // honest bucket rather than being folded into "cached" and read as stalled.
+      else if (q?.price != null && deferred.has(symbol)) marketUpdating += 1;
       if (holdsSettledClose(q, settled)) marketAtClose += 1;
     }
   }
@@ -6009,6 +6057,7 @@ export function buildCoverageFacts(
     marketTotal,
     marketHeld,
     marketFresh,
+    marketUpdating,
     marketAtClose,
     navTotal,
     navExpectedTonight,
@@ -6078,18 +6127,23 @@ export function summarizeCoverage(f: CoverageFacts): string {
   if (total === 0) return withFx("no live-priced holdings");
   if (f.error) return withFx(SHOWING_LAST_KNOWN);
 
-  const cached = Math.max(0, f.marketHeld - f.marketFresh);
+  // Carve the budget-deferred "updating…" holdings out of the cached remainder so
+  // a still-draining holding reads as actively catching up, not silently stalled.
+  const updating = Math.max(0, Math.min(f.marketUpdating, f.marketHeld - f.marketFresh));
+  const cached = Math.max(0, f.marketHeld - f.marketFresh - updating);
   const missing = Math.max(0, f.marketTotal - f.marketHeld);
 
   if (f.marketOpen) {
-    // Session live: split freshly-pulled ("live") from cached, and flag any
-    // holding we have no value for at all as "awaiting".
+    // Session live: split freshly-pulled ("live") from still-draining ("updating…")
+    // and genuinely idle cached holdings, and flag any holding we have no value for
+    // at all as "awaiting".
     const parts: string[] = [];
     if (f.marketTotal > 0) {
       parts.push(
         joinBuckets(
           [
             { n: f.marketFresh, label: "live" },
+            { n: updating, label: "updating…" },
             { n: cached, label: "cached" },
             { n: missing, label: "awaiting prices" },
           ],

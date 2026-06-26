@@ -1,7 +1,10 @@
 # Auto-Updates, Deferred Symbols & Freshness Labels — investigation + action plan
 
-**Status:** investigation done; first fix landed (the "always cached" mislabel);
-the rest is a ranked backlog.
+**Status:** ✅ fully implemented. Investigation done; the "always cached"
+mislabel fix (§1.1) landed first, and the remaining backlog and original ideas
+(§2 per-row freshness chip, §3 deferred-queue freshness + threading, §4.1
+freshness legend, §4.2 explicit "updating…" bucket) have now all shipped.
+See the per-section **Implemented** notes below.
 **Issue:** "deferred symbols never update / the status never changes" plus
 "things keep being labelled *cached* even when the value is two minutes old", and
 "freshness labels for low-liquidity symbols are wrong (falsely live, or falsely
@@ -88,6 +91,15 @@ vs the live window, exactly mirroring `displayFxSource`'s three-way split, so an
 individual illiquid holding is neither dressed up as live nor falsely flagged
 old. Deferred here to keep this change surgical.
 
+**✅ Implemented.** `web/src/freshness.ts` now exports `holdingFreshness()`,
+returning a three-way `RowFreshness` tier (`"live"` / `"recent"` / `"aged"`)
+from a holding's observation epoch, the live window, and whether the market is
+open. `web/src/compute.ts` classifies each holding into `HoldingView.priceFreshness`
+during `buildDashboard`, and `web/src/ui.ts` renders a per-row chip
+(`holdingFreshnessChip`): a live dot + "live", a quiet "recent", or the honest
+"as of <time>" — the full timestamp always available on hover. Styling lives in
+`web/src/styles.css` (`.holding-asof.fresh-live` / `.fresh-recent` / `.fresh-dot`).
+
 ---
 
 ## 3. Deferred-queue bookkeeping (backlog, *not* changed here)
@@ -105,6 +117,15 @@ mere presence, and the `stillMissing` result should be threaded into the round's
 fetch set so a parked-but-stale symbol is explicitly drained rather than relying
 on the TTL alone.
 
+**✅ Implemented.** `drainDeferredQueue` now tests freshness — a parked symbol is
+only cleared when its cached `at` falls within the live window
+(`config.updateMinutes`, falling back to `LIVE_PRICE_MAX_STALENESS_MS`, with a
+clock-skew guard) — and returns the `stillMissing` set. The round captures that
+set and threads it through `refreshPrices({ forceSymbols })` →
+`quoteRequest` → `buildQuoteOptions`, whose `forceFetch` predicate now force-pulls
+any still-stale deferred symbol instead of leaving it to the TTL alone. The
+login-prefetch path passes no force set, so its behaviour is unchanged.
+
 ---
 
 ## 4. Original ideas (beyond the issue's list)
@@ -119,3 +140,15 @@ on the TTL alone.
    instead of folding them silently into "cached" — so the user sees the burst
    cadence working rather than inferring a stall. This builds on §1.1 by giving
    the still-draining symbols their own honest bucket.
+
+**✅ Implemented.**
+- §4.1 — `web/src/ui.ts` `freshnessLegend()` renders a native `<details>`/`<summary>`
+  "?" disclosure appended to the coverage note in `renderNotes`, glossing each
+  term ("live", "updating…", "recent", "cached = confirmed within the refresh
+  window", "at last close", "awaiting"). Styled via `.freshness-legend*` in
+  `web/src/styles.css`.
+- §4.2 — `CoverageFacts` gains a `marketUpdating` count (in `buildCoverageFacts`):
+  market holdings still held from cache but parked in `report.deferred` and not
+  yet live. `summarizeCoverage` carves these out of "cached" into their own
+  "updating…" bucket between "live" and "cached" (e.g. "8 live, 4 updating…"),
+  and the coverage poll log mirrors the count.

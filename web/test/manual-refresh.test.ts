@@ -38,6 +38,7 @@ function facts(overrides: Partial<CoverageFacts> = {}): CoverageFacts {
     marketTotal: 0,
     marketHeld: 0,
     marketFresh: 0,
+    marketUpdating: 0,
     marketAtClose: 0,
     navTotal: 0,
     navExpectedTonight: 0,
@@ -76,6 +77,22 @@ describe("summarizeCoverage", () => {
         facts({ marketOpen: true, marketTotal: 13, marketHeld: 13, marketFresh: 8 }),
       ),
     ).toBe("8 live, 5 cached · FX live");
+  });
+
+  it("market open: surfaces budget-deferred holdings as their own 'updating…' bucket", () => {
+    // freshness-plan §4.2: a still-draining holding (held from cache, deferred this
+    // round) reads as actively catching up, not folded silently into "cached".
+    expect(
+      summarizeCoverage(
+        facts({ marketOpen: true, marketTotal: 13, marketHeld: 13, marketFresh: 8, marketUpdating: 4 }),
+      ),
+    ).toBe("8 live, 4 updating…, 1 cached · FX live");
+    // When every still-held holding is updating, it reads as N/N updating….
+    expect(
+      summarizeCoverage(
+        facts({ marketOpen: true, marketTotal: 5, marketHeld: 5, marketFresh: 0, marketUpdating: 5 }),
+      ),
+    ).toBe("5/5 updating… · FX live");
   });
 
   it("market open: never says 0/N when everything is held from cache", () => {
@@ -389,17 +406,41 @@ describe("buildCoverageFacts", () => {
 
   it("keeps a genuinely aged cache-served holding as cached, not live", () => {
     // Observed well beyond the live window → it has not been confirmed recently, so
-    // it honestly stays "cached" rather than overstating freshness.
+    // it honestly stays "cached" rather than overstating freshness. Served from
+    // cache (not deferred this round), so it is idle-cached, not "updating…".
     const fortyMinAgo = now.getTime() - 40 * 60 * 1000;
     const quotes = new Map([["MSFT", { price: 1, at: fortyMinAgo, valueDate: "2024-05-15" }]]);
     const f = buildCoverageFacts(
-      report({ deferred: ["MSFT"] }),
+      report({ servedFresh: ["MSFT"] }),
       quotes,
       new Set(),
       { now, marketOpen: true, liveStalenessMs: 15 * 60 * 1000 },
     );
     expect(f.marketFresh).toBe(0);
+    expect(f.marketUpdating).toBe(0);
     expect(summarizeCoverage({ ...f, fx: "live" })).toBe("1/1 cached · FX live");
+  });
+
+  it("counts a budget-deferred, not-yet-live holding as 'updating…', not cached", () => {
+    // freshness-plan §4.2: a holding parked this round (deferred) but still held
+    // from cache is actively catching up — its own honest bucket. A second holding
+    // freshly fetched keeps the split visible.
+    const aged = now.getTime() - 40 * 60 * 1000;
+    const quotes = new Map([
+      ["MSFT", { price: 1, at: aged, valueDate: "2024-05-15" }],
+      ["AAPL", { price: 2, at: now.getTime(), valueDate: "2024-05-15" }],
+    ]);
+    const f = buildCoverageFacts(
+      report({ fetched: ["AAPL"], deferred: ["MSFT"] }),
+      quotes,
+      new Set(),
+      { now, marketOpen: true, liveStalenessMs: 15 * 60 * 1000 },
+    );
+    expect(f.marketTotal).toBe(2);
+    expect(f.marketHeld).toBe(2);
+    expect(f.marketFresh).toBe(1);
+    expect(f.marketUpdating).toBe(1);
+    expect(summarizeCoverage({ ...f, fx: "live" })).toBe("1 live, 1 updating… · FX live");
   });
 
   it("does not promote a fresh cache to live while the market is closed", () => {

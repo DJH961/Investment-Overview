@@ -781,6 +781,24 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   white-space: nowrap;
   flex: none;
 }
+/* Per-row freshness chip (freshness-plan §2): a calm three-way split. "live"
+   gets the accent + a pulsing dot, "recent" a softer muted tone, and the aged
+   "as of <time>" stamp keeps the existing faint style. */
+.holding-asof.fresh-live {
+  color: var(--pos);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.holding-asof.fresh-recent { color: var(--muted); }
+.fresh-dot {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  background: var(--pos);
+  flex: none;
+}
 .holding-figures { text-align: right; display: grid; gap: 0.1rem; flex: none; }
 .holding-value { font-weight: 700; font-variant-numeric: tabular-nums; }
 .holding-change { font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -895,6 +913,42 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .note { color: var(--muted); font-size: 0.85rem; margin: 0.2rem 0.15rem 0; }
 .note.warn { color: var(--warn); }
 .note.err { color: var(--neg); font-weight: 600; }
+/* Freshness legend (freshness-plan §4.1): a small inline `?` that opens a calm
+   glossary of the coverage-line terms. Native <details>, so tap-to-expand on
+   mobile with no hover dependency. */
+.freshness-legend { display: inline; }
+.freshness-legend-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-left: 0.35rem;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--card-2);
+  color: var(--faint);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+  list-style: none;
+}
+.freshness-legend-toggle::-webkit-details-marker { display: none; }
+.freshness-legend[open] .freshness-legend-toggle { color: var(--accent); border-color: var(--accent); }
+.freshness-legend-list {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--card-2);
+  font-size: 0.78rem;
+}
+.legend-row { display: flex; gap: 0.5rem; padding: 0.18rem 0; }
+.legend-term { flex: none; min-width: 6.5rem; font-weight: 600; color: var(--fg); }
+.legend-meaning { color: var(--muted); }
 .disclaimer { color: var(--faint); font-size: 0.8rem; text-align: center; margin: 0.5rem 0 0; }
 
 .demo-banner {

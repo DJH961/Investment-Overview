@@ -14,6 +14,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.12.0] — 2026-06-26
+
+### Added
+
+- **Per-row freshness chips and an honest "updating…" bucket** for the live web
+  companion, completing the deferred-symbols freshness plan
+  (`docs/deferred_symbols_freshness_plan.md`). Each holding row now carries a
+  three-way freshness tier — a live dot + "live" while its own price was
+  confirmed inside the refresh window during market hours, a quiet "recent", or
+  the honest "as of <time>" once genuinely aged — driven by the new
+  `holdingFreshness()` decision function (`web/src/freshness.ts`) and surfaced
+  through `HoldingView.priceFreshness` (`web/src/compute.ts`,
+  `web/src/ui.ts`). The coverage line no longer folds budget-deferred symbols
+  silently into "cached": symbols parked for the next free-tier minute now read
+  as their own "updating…" bucket (e.g. "8 live, 4 updating…"), backed by a new
+  `CoverageFacts.marketUpdating` count, so the burst cadence is visible rather
+  than looking like a stall. A small `?` freshness legend (`renderNotes`)
+  glosses every status term in one place.
+
+### Fixed
+
+- **Parked-but-stale quotes are now actively drained.** `drainDeferredQueue`
+  tests genuine freshness (cached observation within the live window) instead of
+  mere cache presence, and threads the still-stale set into the round's fetch
+  plan (`refreshPrices` → `quoteRequest` → `buildQuoteOptions` force set), so a
+  deferred symbol whose cache has aged out is explicitly re-pulled rather than
+  relying on the per-symbol TTL alone (`web/src/app.ts`).
+
 ## [4.11.1] — 2026-06-26
 
 ### Fixed
