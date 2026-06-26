@@ -344,6 +344,15 @@ describe("displayFxSource", () => {
     expect(displayFxSource("none", null, t)).toBe("none");
     expect(displayFxSource("cache", null, t)).toBe("cache");
   });
+
+  it("ties the FX live window to the configured refresh interval", () => {
+    // A spot observed 5 min ago is "live" under the default 15-min window, but a
+    // 2-min refresh interval narrows it to "cache"; a 30-min interval widens a
+    // 20-min-old spot back to "live".
+    expect(displayFxSource("cache", t - 5 * 60_000, t, 2 * 60_000)).toBe("cache");
+    expect(displayFxSource("cache", t - 5 * 60_000, t, 30 * 60_000)).toBe("live");
+    expect(displayFxSource("cache", t - 20 * 60_000, t, 30 * 60_000)).toBe("live");
+  });
 });
 
 describe("manualRefreshSummary", () => {

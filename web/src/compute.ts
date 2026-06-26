@@ -918,6 +918,14 @@ export interface BuildDashboardOptions {
    * was available (it carries no intraday timestamp).
    */
   fxObservedAt?: number | null;
+  /**
+   * How recent the freshest observation must be (in ms) for the total to still
+   * read as "live". Wired to the user-set auto-refresh interval so freshness
+   * tracks the configured cadence: a faster refresh tightens the window, a
+   * slower one widens it. Falls back to {@link LIVE_PRICE_MAX_STALENESS_MS} when
+   * omitted or non-positive, preserving the legacy 15-minute default.
+   */
+  liveStalenessMs?: number;
 }
 
 interface HoldingAggregationContext {
@@ -1263,9 +1271,16 @@ export function buildDashboard(
   //   4. no live quote's provider flag says its market is shut — Twelve Data's
   //      own `is_market_open=false` is ground truth for an unscheduled close or
   //      an early half-day close our modelled clock would miss.
+  // The "live" window tracks the user-set auto-refresh interval (so a faster
+  // cadence tightens "live" and a slower one widens it), falling back to the
+  // legacy 15-minute default when no positive interval was supplied.
+  const liveStalenessMs =
+    opts.liveStalenessMs !== undefined && opts.liveStalenessMs > 0
+      ? opts.liveStalenessMs
+      : LIVE_PRICE_MAX_STALENESS_MS;
   const liveFeedAge = liveAsOf !== null ? now.getTime() - liveAsOf : null;
   const liveFeedIsFresh =
-    liveFeedAge !== null && liveFeedAge >= 0 && liveFeedAge <= LIVE_PRICE_MAX_STALENESS_MS;
+    liveFeedAge !== null && liveFeedAge >= 0 && liveFeedAge <= liveStalenessMs;
   const providerSaysClosed = holdings.some((h) => h.priceIsLive && h.priceMarketOpen === false);
   const pricesAreLive =
     isUsMarketOpen(now) &&

@@ -3030,6 +3030,8 @@ export class App {
       fxPrevEurUsd: eurUsdPrev,
       fxEurUsdSource: eurUsdSource,
       fxObservedAt: eurUsdAt,
+      // Tie the "live" freshness window to the user-set auto-refresh interval.
+      liveStalenessMs: this.state.config.updateMinutes * 60 * 1000,
     });
     model.overview.lastDataPullAt = this.lastDataPullAt;
     // Remember each fund's freshly-settled NAV as a daily bar in the 1W store, so
@@ -3041,7 +3043,12 @@ export class App {
     // Promote a cache-served EUR/USD that is still extremely fresh to "live": a
     // spot pulled moments ago and replayed from cache this round is, to the user,
     // just as live as the market prices — only a genuinely aged cache reads "recent".
-    const fxDisplaySource = displayFxSource(eurUsdSource, eurUsdAt, Date.now());
+    const fxDisplaySource = displayFxSource(
+      eurUsdSource,
+      eurUsdAt,
+      Date.now(),
+      this.state.config.updateMinutes * 60 * 1000,
+    );
     if (network) {
       const navStats = readNavPublishStats();
       this.lastCoverageFacts = buildCoverageFacts(
@@ -4538,8 +4545,9 @@ export interface CoverageFacts {
 
 /**
  * Choose the FX source label to *display* on the coverage line. A spot served
- * from cache (`"cache"`) but observed within {@link LIVE_PRICE_MAX_STALENESS_MS}
- * is, to the user, just as live as the market prices it values — so promote it to
+ * from cache (`"cache"`) but observed within `maxStalenessMs` (the user-set
+ * auto-refresh interval, falling back to {@link LIVE_PRICE_MAX_STALENESS_MS}) is,
+ * to the user, just as live as the market prices it values — so promote it to
  * `"live"` and let it read "FX live" rather than "FX recent". Every other source
  * (and a genuinely aged cache) passes through unchanged.
  */
@@ -4547,8 +4555,10 @@ export function displayFxSource(
   source: EurUsdSource,
   observedAtMs: number | null,
   nowMs: number,
+  maxStalenessMs: number = LIVE_PRICE_MAX_STALENESS_MS,
 ): EurUsdSource {
-  if (source === "cache" && observedAtMs !== null && nowMs - observedAtMs <= LIVE_PRICE_MAX_STALENESS_MS) {
+  const window = maxStalenessMs > 0 ? maxStalenessMs : LIVE_PRICE_MAX_STALENESS_MS;
+  if (source === "cache" && observedAtMs !== null && nowMs - observedAtMs <= window) {
     return "live";
   }
   return source;
