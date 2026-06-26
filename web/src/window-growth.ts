@@ -9,9 +9,10 @@
  *     the intraday graph's dashed reference line).
  *   - **1W** uses a {@link modifiedDietzGrowth | simple} period growth over the
  *     window — short enough that cash-flow timing barely matters.
- *   - **1M / 1Y / All** (anything beyond a week) use an **XIRR-based scaled
- *     growth**: solve the window's money-weighted rate from its cash flows and
- *     compound it back over the window length. A dollar-cost-averaged book whose
+ *   - **1M / 1Y / All** (every history slice — the shortest offered is 1M) use
+ *     an **XIRR-based scaled growth**: solve the window's money-weighted rate
+ *     from its cash flows and compound it back over the window length. A
+ *     dollar-cost-averaged book whose
  *     weekly deposits make a naive value-over-value ratio look wild then reads as
  *     a stable, money-weighted period return.
  *
