@@ -4989,6 +4989,21 @@ export class App {
       // pull cleanly pushes the auto schedule out by the configured interval.
       slowIntervalMs: this.state.config.updateMinutes * 60 * 1000,
     });
+    // Hard-limit retry routing: when a fallback was blocked because the target
+    // provider's limits are exhausted, schedule a retry at the next hour boundary
+    // (when quotas reset) so the *original* source is retried instead of the
+    // exhausted fallback. This is the alternative to using an over-limit provider.
+    if (this.lastTiingoError?.retryAfterMs) {
+      const retryDelayMs = this.lastTiingoError.retryAfterMs;
+      // Use the longer of normal cadence or the hour-boundary delay, so we don't
+      // wake up only to find limits still exhausted.
+      delayMs = Math.max(delayMs, retryDelayMs);
+      this.pollLog(
+        "fallback",
+        `Fallback blocked by hard limit — scheduling retry in ${Math.round(retryDelayMs / 60000)}min (next hour boundary).`,
+        "info",
+      );
+    }
     // A tap that took over an in-flight auto pull (promotion) must push the next
     // *automatic* refresh out by the full configured interval — never a ~1-minute
     // burst — so the manual refresh genuinely supersedes the auto schedule instead

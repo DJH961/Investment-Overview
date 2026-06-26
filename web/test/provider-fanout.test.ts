@@ -207,6 +207,19 @@ describe("planTwelveDataSafetyNet — reverse Tiingo → Twelve Data fallback", 
     });
     expect(plan.twelveData).toEqual(["MSFT"]);
   });
+
+  it("engages normally and lets loadQuotes handle budget enforcement", () => {
+    // Budget enforcement is structural: loadQuotes clamps via the reservation
+    // system, so the safety net always plans the re-pull and trusts the fetcher
+    // to respect the live budget.
+    const plan = planTwelveDataSafetyNet({
+      viaTiingo: true,
+      unfilled: ["AAPL", "MSFT"],
+      tiingoFilled: [],
+    });
+    expect(plan.engaged).toBe(true);
+    expect(plan.twelveData).toEqual(["AAPL", "MSFT"]);
+  });
 });
 
 describe("planFanout — NAV routing (unified with stocks)", () => {

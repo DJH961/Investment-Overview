@@ -19,7 +19,6 @@ import {
   readTiingoCreditLog,
   readTiingoState,
   readTiingoNoNewer,
-  recordTiingoCredits,
   recordTiingoNoNewer,
   clearTiingoNoNewer,
   creditsSpentThisHour,
@@ -43,8 +42,20 @@ import {
   WEB_DAILY_CAP,
   WEB_HOURLY_CAP,
 } from "./tiingo-gate";
+import { tiingoFrozen } from "./provider-breaker";
+import { ledgerReservation, type Reservation } from "./reservation";
 
 const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * Milliseconds from `now` until the start of the next clock hour (:00). Used to
+ * advise the caller how long to wait before retrying when the Tiingo budget
+ * resets and a blocked fallback becomes available again.
+ */
+export function msUntilNextHour(now: number): number {
+  const ms = HOUR_MS - (now % HOUR_MS);
+  return ms > 0 ? ms : HOUR_MS;
+}
 
 /**
  * How long a backup "nothing newer" result suppresses re-pulling the same
@@ -119,6 +130,16 @@ export interface TiingoFallbackOptions {
   reserveCredits?: number;
   /** Last-known EUR size per symbol. Retained for callers; not used for routing. */
   sizeForSymbol?: (symbol: string) => number;
+  /**
+   * The single reservation authority (`reservation.ts`, audit Rec 4) every Tiingo
+   * spend in this run books through. Defaults to the production
+   * {@link ledgerReservation} over this call's `storage`. The eligibility/`reserve`
+   * gate above still selects which symbols are worth a call, but the actual debit
+   * now goes through the authority's atomic read-and-debit rather than a separate
+   * `recordTiingoCredits`, so the fallback can no longer get around the shared
+   * Tiingo budget (and its 429-breaker freeze) the graph/FX legs already respect.
+   */
+  reservation?: Reservation;
 }
 
 /**
@@ -132,6 +153,14 @@ function readBudget(
   storage: StorageLike | null | undefined,
   reserve = 0,
 ): Budget {
+  // Central safety-net integration: the 429 circuit breaker (provider-breaker.ts)
+  // freezes Tiingo until the next clock hour. Rather than a separate early-return
+  // guard, fold the frozen state directly into the budget — when frozen, report
+  // 0 remaining so selectWithinBudget naturally returns no symbols and the
+  // central safety net (planTwelveDataSafetyNet) catches the holes.
+  if (tiingoFrozen(now, storage ?? null)) {
+    return new Budget(WEB_HOURLY_CAP, WEB_DAILY_CAP, WEB_HOURLY_CAP, WEB_DAILY_CAP);
+  }
   const log = readTiingoCreditLog(now, undefined, storage ?? undefined);
   // The hourly cap resets on the clock hour (1:00, 2:00, …) rather than a
   // trailing 60-min window, so a burst at :55 doesn't suppress the fresh
@@ -195,6 +224,7 @@ async function fetchAndMerge(
     now: number;
     storage: StorageLike | null | undefined;
     fetchImpl?: FetchLike;
+    reservation: Reservation;
   },
 ): Promise<string[]> {
   if (batch.length === 0) return [];
@@ -202,9 +232,14 @@ async function fetchAndMerge(
   // tell afterwards whether the backup actually advanced it.
   const priorVdFor = new Map<string, string | null>();
   for (const symbol of batch) priorVdFor.set(symbol, opts.quotes.get(symbol)?.valueDate ?? null);
-  // Reserve the budget up-front (same discipline as the Twelve Data path), so a
-  // failed call still counts against the self-cap rather than allowing a retry storm.
-  recordTiingoCredits(batch.length, opts.now, opts.storage ?? undefined);
+  // Reserve the budget up-front through the single reservation authority (same
+  // discipline as the Twelve Data path): the grant atomically reads-and-debits
+  // the shared Tiingo ledger, so a failed call still counts against the self-cap
+  // rather than allowing a retry storm, and two overlapping runs can't both
+  // read a full budget and overshoot. The batch was already clamped to the
+  // budget (minus any soft reserve) by `selectWithinBudget`, so the grant covers
+  // the whole batch in the normal single-flight case.
+  opts.reservation.reserve("tiingo", batch.length, opts.now);
   const fetched = await fetchTiingoQuotes(batch, opts.proxyUrl, {
     fetchImpl: opts.fetchImpl,
     navSymbols: opts.navSymbols,
@@ -258,6 +293,13 @@ async function fetchAndMerge(
  * failure: the primary's result always stands and any Tiingo gap is reported on
  * `error`. When `proxyUrl` is null (fallback not configured) this is a no-op that
  * just returns the input quotes and the current (zero-ish) budget snapshot.
+ *
+ * Budget enforcement is structural: the 429 breaker and hourly/daily caps are
+ * folded into {@link readBudget}, so {@link selectWithinBudget} naturally returns
+ * 0 symbols when Tiingo is frozen or exhausted. Unfilled holes are left for the
+ * central safety net ({@link planTwelveDataSafetyNet}) to catch on Twelve Data,
+ * and the budget-blocked state is surfaced on `error` so the polling log reports
+ * it — fallback pulls never fall under the radar.
  */
 export async function runTiingoFallback(options: TiingoFallbackOptions): Promise<TiingoFallbackResult> {
   const {
@@ -271,6 +313,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     fetchImpl,
     forceAll = false,
     reserveCredits = 0,
+    reservation = ledgerReservation(storage ?? null),
   } = options;
 
   if (!proxyUrl) {
@@ -308,10 +351,13 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
 
   // Every budget check in this run honours the reserve, so the gate may use up to
   // `remaining − reserveCredits` credits (clamped at 0) and no further.
+  // When Tiingo is frozen (429 breaker) or its budget is exhausted, readBudget
+  // reports 0 remaining and selectWithinBudget returns no symbols — the central
+  // safety net then catches the holes.
   const budgetNow = (): Budget => readBudget(now, storage, reserveCredits);
 
   const merge = (batch: string[]): Promise<string[]> =>
-    fetchAndMerge(batch, { proxyUrl, navSymbols, quotes, expected, marketOpen, now, storage, fetchImpl });
+    fetchAndMerge(batch, { proxyUrl, navSymbols, quotes, expected, marketOpen, now, storage, fetchImpl, reservation });
 
   // --- Unified fallback: NAVs are treated exactly like stocks ---------------
   // The moment a symbol needs a price the primary couldn't supply — it failed on
@@ -335,7 +381,19 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     }
     if (candidates.length > 0) {
       const room = selectWithinBudget(candidates, budgetNow());
-      tiingoSymbols.push(...(await merge(room)));
+      if (room.length > 0) {
+        tiingoSymbols.push(...(await merge(room)));
+      } else {
+        // Budget blocked: candidates existed but the budget (or 429 breaker)
+        // prevented any spend. Surface this clearly so fallback pulls never fall
+        // under the radar — the caller logs it and the central safety net
+        // (planTwelveDataSafetyNet) catches the unfilled holes on Twelve Data.
+        error = new PriceError(
+          `Tiingo budget exhausted — ${candidates.length} symbol(s) needed but blocked by limits. ` +
+            "Central safety net will catch remaining holes on Twelve Data.",
+          { retryable: true, retryAfterMs: msUntilNextHour(now) },
+        );
+      }
     }
   } catch (err) {
     error = err instanceof PriceError ? err : new PriceError((err as Error).message, { retryable: true });
