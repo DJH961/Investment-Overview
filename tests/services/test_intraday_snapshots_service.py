@@ -400,6 +400,23 @@ class TestForwardFill:
         assert iss._forward_filled({}, datetime(2024, 6, 3, 14, 0)) is None
 
 
+class TestNearestCompleteDate:
+    def test_picks_closest_candidate(self) -> None:
+        target = date(2024, 6, 10)
+        candidates = [date(2024, 6, 5), date(2024, 6, 9), date(2024, 6, 14)]
+        assert iss._nearest_complete_date(target, candidates) == date(2024, 6, 9)
+
+    def test_equidistant_prefers_the_later_date(self) -> None:
+        # 6/8 and 6/12 are both 2 days from 6/10 → tie broken toward the later
+        # (more recent) NAV so a self-correcting render leans on fresher data.
+        target = date(2024, 6, 10)
+        candidates = [date(2024, 6, 8), date(2024, 6, 12)]
+        assert iss._nearest_complete_date(target, candidates) == date(2024, 6, 12)
+
+    def test_empty_candidates_returns_none(self) -> None:
+        assert iss._nearest_complete_date(date(2024, 6, 10), []) is None
+
+
 def _fake_fetcher(bars: dict[datetime, Decimal]):
     def fetch(symbols, day, *, interval):  # type: ignore[no-untyped-def]
         assert interval == iss.RECONSTRUCT_INTERVAL

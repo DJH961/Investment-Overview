@@ -36,6 +36,7 @@ from investment_dashboard.services import (
     display_currency_service,
     fetch_report,
     instrument_enrichment_service,
+    investing_power_service,
     logging_service,
     prices_service,
     provider_status,
@@ -127,7 +128,11 @@ async def _refresh_fx_clicked(button: ui.button) -> None:  # pragma: no cover - 
 async def _refresh_prices_clicked(button: ui.button) -> None:  # pragma: no cover - UI
     def _work() -> int:
         with session_scope() as session:
-            result = refresh_prices(session, earliest_needed=date.today() - timedelta(days=30))
+            result = refresh_prices(
+                session,
+                earliest_needed=date.today() - timedelta(days=30),
+                source="Manual price re-pull (Settings)",
+            )
         return sum(result.values())
 
     async with _button_busy(button):
@@ -274,6 +279,21 @@ def _set_refresh_interval(value: object) -> None:  # pragma: no cover - UI
     except Exception:  # pragma: no cover - defensive (e.g. timer not armed in tests)
         log.debug("could not re-arm live refresh timer", exc_info=True)
     ui.notify(f"Auto-update every {stored}s", type="positive")
+
+
+def _set_investing_power_amount(value: object) -> None:  # pragma: no cover - UI
+    """Persist the regular EUR investment amount used by the USD investing-power panel."""
+    try:
+        amount = Decimal(str(value))
+    except (TypeError, ValueError, InvalidOperation):
+        ui.notify("Enter a euro amount", type="negative")
+        return
+    if not amount.is_finite() or amount <= 0:
+        ui.notify("Enter a positive euro amount", type="negative")
+        return
+    with session_scope() as session:
+        stored = investing_power_service.set_amount_eur(session, amount)
+    ui.notify(f"Regular investment set to €{stored:,.2f}", type="positive")
 
 
 def _edit_account_dialog(
@@ -980,6 +1000,23 @@ def _render_display_prefs(
             "How often the app pulls fresh prices in the background "
             f"({auto_refresh.MIN_INTERVAL_SECONDS}-{auto_refresh.MAX_INTERVAL_SECONDS}s). "
             "A thin bar pulses at the top of the page while an update runs.",
+        ).classes("text-caption opacity-70")
+    with session_scope() as session:
+        current_amount = investing_power_service.get_amount_eur(session)
+    with ui.row().classes("items-center gap-md q-mt-sm"):
+        ui.label("Regular investment amount:").classes("text-body2")
+        ui.number(
+            value=float(current_amount),
+            min=float(investing_power_service.MIN_AMOUNT_EUR),
+            max=float(investing_power_service.MAX_AMOUNT_EUR),
+            step=10,
+            prefix="€",
+            on_change=lambda e: _set_investing_power_amount(e.value),
+        ).props("dense outlined").classes("w-[8rem]")
+        ui.label(
+            "The euros you regularly send to the US to keep investing. In USD "
+            "display the currency box shows how many more/fewer dollars this buys "
+            "since yesterday's close as the EUR/USD rate moves.",
         ).classes("text-caption opacity-70")
 
 

@@ -15,7 +15,7 @@
  * session and dropped on "Lock". Decrypted figures never leave the browser.
  */
 import { fetchBlobMeta, fetchEnvelopeConditional } from "./blob";
-import { buildDashboard, buildFetchPlan, type DashboardModel } from "./compute";
+import { buildDashboard, buildFetchPlan, suspectQuoteSymbols, type DashboardModel } from "./compute";
 import { decryptEnvelopeToJson, type Envelope } from "./crypto";
 import { buildDemoModel, parseDemoParams, getPersona, DEMO_PERSONAS, type DemoParams } from "./demo";
 import { startTour, DEMO_TOUR_STEPS } from "./tour";
@@ -26,6 +26,7 @@ import {
   parseAutoLockMinutes,
   parseProviderLimit,
   parseUpdateMinutes,
+  parseInvestmentAmount,
   resolveBlobUrl,
   resolveMetaUrl,
   resolvePriceProxyUrl,
@@ -40,6 +41,8 @@ import {
   DEFAULT_TWELVE_DATA_PER_DAY,
   DEFAULT_TIINGO_PER_HOUR,
   DEFAULT_TIINGO_PER_DAY,
+  DEFAULT_INVESTMENT_AMOUNT_EUR,
+  MAX_INVESTMENT_AMOUNT_EUR,
   type AppConfig,
 } from "./config";
 import { PriceError, type FxRates, type Quote } from "./prices";
@@ -100,8 +103,9 @@ import {
   unlockWithBiometric,
 } from "./webauthn";
 import { setEurUsdRate } from "./currency";
+import { setInvestmentAmountEur } from "./investment-amount";
 import { formatLastPull } from "./format";
-import { appendPollLog, clearPollLog, formatPollLog, readPollLog, type PollLogCategory } from "./polling-log";
+import { appendPollLog, clearPollLog, formatPollLog, readPollLog, type PollLogCategory, type PollLogLevel } from "./polling-log";
 import { APP_VERSION } from "./version";
 import {
   buildLiveSessionCurve,
@@ -540,6 +544,8 @@ export class App {
    * current while a holding actually failed to price.
    */
   private lastUnresolvedFailures: string[] = [];
+  /** Symbols whose freshly-fetched price was non-positive (suspect/wrong data). */
+  private lastSuspectSymbols: string[] = [];
   /** Tiingo fallback budget used so far (hour/day), for the usage overview. */
   private lastTiingoBudget: TiingoBudgetView | null = null;
   /** Symbols served via the Tiingo fallback on the latest network round. */
@@ -1744,7 +1750,7 @@ export class App {
       if (!fetchBars) return;
       const bars = await fetchBars(symbols).catch(() => null);
       if (!bars) {
-        this.pollLog("graph", `Login warm-up: ${label} bar backfill failed; graph left for on-demand build.`);
+        this.pollLog("graph", `Login warm-up: ${label} bar backfill failed; graph left for on-demand build.`, "warn");
         return;
       }
       const incoming: Record<string, Bar[]> = {};
@@ -1852,7 +1858,7 @@ export class App {
     // history aligns with the bars the 1W curve accumulates for free from quotes.
     const navBars = await wrapDailyNavFetcher(fetchBars)(stale).catch(() => null);
     if (!navBars) {
-      this.pollLog("graph", "Login warm-up: NAV bar backfill failed; funds left to the quote leg.");
+      this.pollLog("graph", "Login warm-up: NAV bar backfill failed; funds left to the quote leg.", "warn");
       return [];
     }
     const incoming: Record<string, Bar[]> = {};
@@ -1945,7 +1951,7 @@ export class App {
     const quoteLoad = await loadQuotes(symbols, config.apiKey, options).catch(() => null);
     const report = quoteLoad?.report ?? null;
     if (!report) {
-      this.pollLog("primary", "Login warm-up: quote fetch failed; caches left as-is.");
+      this.pollLog("primary", "Login warm-up: quote fetch failed; caches left as-is.", "warn");
       return 0;
     }
     const list = (xs: string[]): string => (xs.length ? xs.join(", ") : "none");
@@ -1974,7 +1980,7 @@ export class App {
   ): Promise<number> {
     const quoteLoad = await loadQuotes(symbols, "", options).catch(() => null);
     if (!quoteLoad) {
-      this.pollLog("fallback", "Login warm-up: cache read for the Tiingo rapid-fire failed; caches left as-is.");
+      this.pollLog("fallback", "Login warm-up: cache read for the Tiingo rapid-fire failed; caches left as-is.", "warn");
       return 0;
     }
     const sizes = new Map(plan.map((e) => [e.symbol, e.sizeEur] as const));
@@ -2163,6 +2169,16 @@ export class App {
       placeholder: String(DEFAULT_AUTO_LOCK_MINUTES),
       value: String(config.autoLockMinutes),
     });
+    const investmentAmount = h("input", {
+      type: "number",
+      id: "f-invest",
+      min: "1",
+      max: String(MAX_INVESTMENT_AMOUNT_EUR),
+      step: "1",
+      autocomplete: "off",
+      placeholder: String(DEFAULT_INVESTMENT_AMOUNT_EUR),
+      value: String(config.investmentAmountEur),
+    });
     // Data-provider rate limits (Settings only). Each defaults to the provider's
     // documented free-tier value, *recommended* for a free account but not forced:
     // lower them to share one account across more devices, or raise them above the
@@ -2341,6 +2357,11 @@ export class App {
       h("h2", { class: "settings-section" }, ["Appearance"]),
       field("Theme", renderThemeToggle(), "Switch between system, light and dark themes."),
       field("Clock format", renderTimeFormatToggle(), "Show times as 12-hour (AM/PM) or 24-hour. Auto follows your device locale."),
+      field(
+        "Regular investment amount (€)",
+        investmentAmount,
+        `The euros you wire over on a recurring basis to keep investing. In USD display the currency panel shows how many more or fewer dollars this buys as EUR/USD moves — your "bang for the buck". Default is €${DEFAULT_INVESTMENT_AMOUNT_EUR}.`,
+      ),
       h("h2", { class: "settings-section" }, ["Security"]),
       field(
         "Auto-lock (minutes)",
@@ -2484,6 +2505,7 @@ export class App {
         tiingoPerHour: parseProviderLimit(tiingoPerHour.value, DEFAULT_TIINGO_PER_HOUR),
         tiingoPerDay: parseProviderLimit(tiingoPerDay.value, DEFAULT_TIINGO_PER_DAY),
         resumeOnRefresh: resumeOnRefresh.value === "1",
+        investmentAmountEur: parseInvestmentAmount((investmentAmount as HTMLInputElement).value),
       };
       if (!next.apiKey) return this.showSetup("Enter your price API key.", mode);
       if (!next.blobUrl) return this.showSetup("Enter your data-source URL.", mode);
@@ -2762,6 +2784,7 @@ export class App {
     const model = buildDemoModel({ persona: this.demo.persona, tick: this.demo.tick });
     // Seed the EUR→USD rate from the sample export so the currency toggle works.
     setEurUsdRate(model.overview.fxRateEurUsd);
+    setInvestmentAmountEur(this.state.config.investmentAmountEur);
     this.model = model;
 
     const banner = this.renderDemoBanner();
@@ -3771,6 +3794,7 @@ export class App {
               `served ${r.servedFresh.length} from cache, deferred ${r.deferred.length} [${list(r.deferred)}]. ` +
               `Budget left: ${r.minuteRemaining}/min, ${r.dayRemaining}/day.` +
               (r.error ? ` Non-fatal error: ${r.error.message}.` : ""),
+        viaTiingo ? "info" : r.error ? "warn" : "good",
       );
     }
 
@@ -3843,6 +3867,7 @@ export class App {
             : proxyUrl
               ? "Backup (Tiingo) not needed this round (primary covered the book or nothing newer to fetch)."
               : "Backup (Tiingo) not configured (no /price proxy URL).",
+        fallback.tiingoSymbols.length > 0 ? (fallback.error ? "warn" : "good") : fallback.error ? "error" : "info",
       );
 
       // --- Reverse safety net: Tiingo (primary) → Twelve Data ----------------
@@ -3885,6 +3910,22 @@ export class App {
 
     const unresolvedFailures = network ? this.unresolvedFailedSymbols(quoteLoad.report) : [];
     if (network) this.lastUnresolvedFailures = unresolvedFailures;
+    // Suspect data — a freshly-fetched quote that came back with a non-positive
+    // price (zero/negative). It isn't a *failure* (we got a number) but it is
+    // *wrong data* the valuation would forward-fill, so it gets its own loud,
+    // greppable line and is folded into the round's verdict (stolen from the
+    // desktop pull-log's SUSPECT concept).
+    if (network) {
+      const suspect = suspectQuoteSymbols(quoteLoad.quotes, quoteLoad.report.fetched);
+      this.lastSuspectSymbols = suspect;
+      if (suspect.length > 0) {
+        this.pollLog(
+          "primary",
+          `SUSPECT data — non-positive price for ${suspect.join(", ")}; ignoring rather than booking it into the valuation.`,
+          "error",
+        );
+      }
+    }
     // Classify what this round actually achieved on the wire so the UI never
     // claims to be "updating" when nothing could be fetched. A network round
     // derives it from what landed vs. which providers errored; a cache-only
@@ -4376,7 +4417,7 @@ export class App {
    */
   private handleNoNetwork(session: number, kind: RefreshKind): void {
     this.lastConnectivity = "offline";
-    this.pollLog("refresh", `Refresh skipped (${kind}) — device offline. Showing last known prices.`);
+    this.pollLog("refresh", `Refresh skipped (${kind}) — device offline. Showing last known prices.`, "warn");
     void this.refreshPrices(session, false, { connectivity: "offline" });
     if (isUserRefresh(kind)) this.toast(connectivityNotice("offline") ?? "No internet connection.");
     this.scheduleNext(session, this.state.config.updateMinutes * 60 * 1000);
@@ -4462,6 +4503,7 @@ export class App {
       this.pollLog(
         "refresh",
         "Auto tick skipped — book fully up to date (market closed, all closes + NAVs held). Heartbeat only.",
+        "warn",
       );
       return;
     }
@@ -4725,11 +4767,36 @@ export class App {
       void this.maybeRefreshBlob(session);
     }
     this.scheduleNext(session, delayMs);
+    // The round's closing verdict — the single line that answers, at a glance,
+    // "what settled, what failed, did we back off, and how much budget is left?".
+    // The renderer lifts this into each round's footer banner, so it doubles as
+    // the human summary of the whole pull. Keep the "Round complete" prefix and
+    // the "Budget left N/min · M/day" shape stable: the log formatter keys its
+    // round-grouping and macro budget read-out off them.
+    const tiingo = tiingoBudgetView(Date.now());
+    const settledParts = [
+      `${report.fetched.length} live`,
+      `${report.servedFresh.length} cached`,
+      `${report.deferred.length} deferred`,
+      `${report.failed.length} failed`,
+    ];
+    // A round with suspect (non-positive) prices is as much "wrong data" as an
+    // outright failure, so call it out in the verdict and colour the line red.
+    const suspectCount = this.lastSuspectSymbols.length;
+    if (suspectCount > 0) settledParts.push(`${suspectCount} suspect`);
+    const tiingoTail =
+      tiingo.dayUsed > 0 || tiingo.hourUsed > 0
+        ? `; backup ${tiingo.hourUsed}/${tiingo.hourLimit} this hour · ${tiingo.dayUsed}/${tiingo.dayLimit} today`
+        : "";
+    const finishLevel: PollLogLevel =
+      report.failed.length > 0 || suspectCount > 0 ? "error" : report.deferred.length > 0 ? "warn" : "good";
     this.pollLog(
       "schedule",
-      `Refresh finished (${effectiveKind}${promoted ? ", promoted from auto" : ""}). ${report.deferred.length} still deferred. ` +
+      `Round complete (${effectiveKind}${promoted ? ", promoted from auto" : ""}): ${settledParts.join(", ")}. ` +
+        `Budget left ${report.minuteRemaining}/min · ${report.dayRemaining}/day${tiingoTail}. ` +
         `Next auto-refresh in ~${Math.round(delayMs / 1000)}s` +
-        `${report.deferred.length > 0 && !promoted ? " (burst)" : ""}.`,
+        `${report.deferred.length > 0 && !promoted ? " (burst to catch up)" : ""}.`,
+      finishLevel,
     );
   }
 
@@ -4908,11 +4975,14 @@ export class App {
   /**
    * Record one line in the downloadable data-polling log (Settings → "Download
    * data polling log"). Best-effort and never throws into the refresh path — a
-   * logging failure must not break a price pull. See {@link appendPollLog}.
+   * logging failure must not break a price pull. An optional `level` marks the
+   * line's severity (a failure, a deliberate back-off, a clean success) so the
+   * rendered trail can flag it; when omitted the renderer infers one from the
+   * wording. See {@link appendPollLog}.
    */
-  private pollLog(category: PollLogCategory, message: string): void {
+  private pollLog(category: PollLogCategory, message: string, level?: PollLogLevel): void {
     try {
-      appendPollLog(category, message);
+      appendPollLog(category, message, { level });
     } catch {
       /* logging is best-effort */
     }
@@ -5144,6 +5214,9 @@ export class App {
 
   private renderDashboard(model: DashboardModel): void {
     this.model = model;
+    // Mirror the configured regular investment amount into the render-layer store
+    // so the USD investing-power panel can read it without threading config through.
+    setInvestmentAmountEur(this.state.config.investmentAmountEur);
     this.mount(
       renderDashboard(
         model,
@@ -5304,7 +5377,7 @@ export class App {
           const coverage = curve.marketOpen ? undefined : curve.coverage;
           return { points: curve.points, coverage };
         } catch {
-          this.pollLog("graph", "1D graph: live build failed — no curve drawn.");
+          this.pollLog("graph", "1D graph: live build failed — no curve drawn.", "warn");
           return null;
         }
       },
@@ -5364,7 +5437,7 @@ export class App {
           if (curve.points.length < 2) return null;
           return this.harvestWeekCloses(this.enrichWeekWithBlobSleeve(curve.points, exported, baseFx));
         } catch {
-          this.pollLog("graph", "1W graph: live build failed — no curve drawn.");
+          this.pollLog("graph", "1W graph: live build failed — no curve drawn.", "warn");
           return null;
         }
       },

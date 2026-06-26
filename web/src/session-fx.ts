@@ -331,7 +331,102 @@ export function fxEffectSplit(opts: {
   return { totalEur, marketHoursEur, overnightEur };
 }
 
-/** localStorage key holding the most recent session's close EUR/USD rate. */
+/**
+ * The investing-power equivalent of {@link FxEffectSplit}, expressed in **USD**:
+ * how many more (+) or fewer (−) dollars the owner's regular EUR investment
+ * amount buys now versus yesterday's close, split into the same market-hours and
+ * overnight legs.
+ */
+export interface FxBuyingPowerSplit {
+  /** Whole USD buying-power change on the notional (prior close → now). */
+  totalUsd: Decimal | null;
+  /** The slice earned/lost while the market was open (live while open). */
+  marketHoursUsd: Decimal | null;
+  /** The slice earned/lost after-hours (live once shut). */
+  overnightUsd: Decimal | null;
+}
+
+/**
+ * Split the **buying-power** change on a fixed EUR notional into its
+ * market-hours and overnight legs, mirroring {@link fxEffectSplit} but for the
+ * owner's regular investment amount rather than the whole book.
+ *
+ * Because the notional is a fixed number of euros, the dollars it buys are
+ * simply `amountEur · fx`, so each leg is the *difference* in dollars bought
+ * across the relevant rate move:
+ *
+ *   - whole move (prior close → now): `amountEur · (liveFx − prevFx)`;
+ *   - **market open** — the live leg is market hours since the session open:
+ *     `amountEur · (liveFx − openFx)`; the remainder is last night's frozen
+ *     overnight leg, so it survives the market start;
+ *   - **market closed** — the live leg is the overnight drift since the close:
+ *     `amountEur · (liveFx − closeFx)`; the remainder is the last session's
+ *     frozen market-hours leg.
+ *
+ * A positive figure means the euro strengthened, so the same euros buy *more*
+ * dollars to invest. Every field degrades to `null` when its inputs are missing
+ * so the UI hides the split rather than inventing a misleading zero.
+ */
+export function fxBuyingPowerSplit(opts: {
+  marketOpen: boolean;
+  amountEur: Decimal | null;
+  liveFx: Decimal | null;
+  prevFx: Decimal | null;
+  sessionCloseFx: Decimal | null;
+  sessionOpenFx?: Decimal | null;
+}): FxBuyingPowerSplit {
+  const { marketOpen, amountEur, liveFx, prevFx, sessionCloseFx, sessionOpenFx } = opts;
+
+  const usableAmount =
+    amountEur !== null && amountEur.isFinite() && amountEur.greaterThan(0) ? amountEur : null;
+  const liveOk = liveFx !== null && liveFx.greaterThan(0);
+
+  const totalUsd =
+    usableAmount === null || !liveOk || prevFx === null || !prevFx.greaterThan(0)
+      ? null
+      : usableAmount.times(liveFx.minus(prevFx));
+
+  // USD bought now minus USD bought at `anchorFx`, on the fixed EUR notional.
+  const legFromAnchor = (anchorFx: Decimal | null | undefined): Decimal | null => {
+    if (
+      usableAmount === null ||
+      !liveOk ||
+      anchorFx === null ||
+      anchorFx === undefined ||
+      !anchorFx.greaterThan(0)
+    ) {
+      return null;
+    }
+    return usableAmount.times(liveFx!.minus(anchorFx));
+  };
+
+  let marketHoursUsd: Decimal | null;
+  let overnightUsd: Decimal | null;
+
+  if (marketOpen) {
+    const liveLeg = legFromAnchor(sessionOpenFx);
+    if (liveLeg === null) {
+      marketHoursUsd = totalUsd;
+      overnightUsd = null;
+    } else {
+      marketHoursUsd = liveLeg;
+      overnightUsd = totalUsd === null ? null : totalUsd.minus(liveLeg);
+    }
+  } else {
+    const liveLeg = legFromAnchor(sessionCloseFx);
+    if (liveLeg === null) {
+      overnightUsd = totalUsd;
+      marketHoursUsd = null;
+    } else {
+      overnightUsd = liveLeg;
+      marketHoursUsd = totalUsd === null ? null : totalUsd.minus(liveLeg);
+    }
+  }
+
+  return { totalUsd, marketHoursUsd, overnightUsd };
+}
+
+
 const SESSION_CLOSE_FX_KEY = "iv.web.sessionCloseFx";
 
 /**

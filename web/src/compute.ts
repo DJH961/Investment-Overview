@@ -602,6 +602,24 @@ function isBusinessDayIso(iso: string): boolean {
   return day !== 0 && day !== 6;
 }
 
+/**
+ * Identify **suspect** quotes among the symbols freshly fetched this round: a
+ * quote that *has* a price but whose price is non-positive (≤ 0). A null price
+ * is simply "no data" (already tracked as failed/deferred), but a zero or
+ * negative close is *wrong data* that the valuation logic would otherwise
+ * forward-fill into the book — exactly the "what generated wrong data?" case the
+ * polling log must surface. Returns the offending symbols, sorted. (Idea adapted
+ * from the desktop pull-log's `suspect_data`.)
+ */
+export function suspectQuoteSymbols(quotes: Map<string, Quote>, fetched: Iterable<string>): string[] {
+  const suspect: string[] = [];
+  for (const symbol of fetched) {
+    const quote = quotes.get(symbol);
+    if (quote && quote.price !== null && !quote.price.greaterThan(0)) suspect.push(symbol);
+  }
+  return suspect.sort();
+}
+
 function priceForHolding(
   holding: ExportHolding,
   quote: Quote | undefined,

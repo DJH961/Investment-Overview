@@ -14,6 +14,102 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.11.1] — 2026-06-26
+
+### Fixed
+
+- **The "1 Week" graph no longer nose-dives at market start.** Right after the
+  US market opened, the curve's start could drop to roughly 60 % of its real
+  value — almost exactly the value of the stocks *without* their NAV funds — and
+  the resulting scale crushed all detail out of the line. The cause was the
+  day-drifting NAV-fund sleeve collapsing to **zero** for the oldest session(s)
+  in the rolling week window whenever that day's published NAV or its EUR/USD
+  rate hadn't been cached yet (a transient right after the window rolls forward
+  at the open). The week curve now **carries the NAV flat** from the nearest
+  fully-valued day (or, as a last resort, today's live NAV) instead of zeroing
+  it, so the line keeps its shape. The fix is **smart and self-correcting**: it
+  never speculatively fetches and is re-derived from the cache on every render,
+  so the moment a later good price-bar or FX pull patches the missing NAV/rate,
+  the very next render shows the genuine per-day value and the graph corrects
+  itself in retrospect. Both the desktop Overview and the exported data the web
+  companion reads inherit the fix
+  (`src/investment_dashboard/services/intraday_snapshots_service.py`,
+  `src/investment_dashboard/ui/pages/_overview_query.py`).
+
+## [4.11.0] — 2026-06-26
+
+### Added
+
+- **USD display now shows "Investing power since yesterday" instead of a $0
+  currency effect.** Because the book is USD-booked, an EUR/USD move hands the
+  owner no extra dollars on assets already held — the portfolio FX effect in USD
+  is exactly $0. So in USD display the currency box reframes to what actually
+  changes for the owner in dollar terms: how many more (+) or fewer (−) dollars
+  their regular EUR investment (the euros they wire to the US to keep investing)
+  buys now versus yesterday's close. The amount is configurable in Settings →
+  Display (default €100) and the panel is rendered to **exactly match** the EUR
+  currency-effect visualisation (the same diverging market-hours/overnight split,
+  with no extra explanatory note) — only the basis differs. Because the swing
+  rides a single regular contribution rather than the whole book it is small, so
+  cents are kept whenever the effect amount is two digits or less (|net| < $100)
+  and dropped above that to read in whole dollars like the EUR panel
+  (`fxBuyingPowerSplit`/`fx_buying_power_split`,
+  `investing_power_service`, `web/src/investment-amount.ts`,
+  `web/src/ui.ts`, `src/investment_dashboard/ui/pages/overview.py`,
+  `src/investment_dashboard/ui/pages/settings.py`).
+
+### Fixed
+
+- **The currency box's market-status labels can no longer wrap onto two lines.**
+  In the web companion's diverging FX bar the "live"/"last" tag sat inline with
+  the status word, crowding the narrow label column so "Market holiday", "Market
+  hours" and "Overnight" could be pushed onto a second line. The tag now rides in
+  a dedicated value cell on the right, so the status label always stays on one
+  line (`web/src/ui.ts`, `web/src/styles.css`).
+
+## [4.10.0] — 2026-06-26
+
+### Changed
+
+- **The downloadable data-polling log was redesigned into a genuine debugging
+  trail.** It was a flat wall of identically-formatted lines: you couldn't tell
+  who kicked off a pull, what actually settled, what failed, where we deliberately
+  backed off, or how much free-tier budget was left when a round ended. The log is
+  now sliced into clearly demarcated **pulling rounds**, each bounded by a `┏━━`
+  start banner (naming the trigger — unlock, kickoff, manual tap, auto tick, or a
+  skipped no-pull tick — plus the time span and duration) and a `┗━━` verdict
+  footer. Every line carries a severity glyph in the gutter (`✓` settled · `↩`
+  backed off / deferred to save budget · `⚠` degraded · `✗` failed), failures in a
+  round are re-listed under it so they can't hide, and a macro overview at the top
+  counts the rounds, flags how many hit a failure, and shows the latest budget
+  left. The round-completion line now reports the full settle breakdown
+  (`N live, M cached, K deferred, J failed`) **and the budget remaining** (primary
+  per-minute/day plus the backup provider's hourly/daily usage). Log entries gained
+  an optional severity level, set explicitly at the key fetch/fallback/failure
+  sites and inferred from wording elsewhere (`web/src/polling-log.ts`,
+  `web/src/app.ts`).
+- **The desktop app's data-pulling log got the same one-readable-story-per-round
+  treatment.** Every price pull — the live tick, a manual click, the startup
+  backfill, the Settings buttons — now opens a single *pull round* that prints a
+  clear `===== PULL <id> START =====` banner naming **who triggered it** and the
+  **mode** (auto/TTL-due, manual full re-pull, startup backfill, manual
+  Tiingo-only), narrates each step under a stable, greppable `pull <id> | …`
+  prefix, and closes with a one-line `summary:` plus an `===== PULL <id> END =====`
+  banner. A round spells out, in order: the symbols/window **requested**, what
+  **settled** (fresh closes, naming the symbols), what **FAILED** (a hard provider
+  error), what came back **SUSPECT** (a non-positive close the feed forward-fills
+  into valuations), every **backoff** wait, any **Tiingo fallback** coverage with
+  the **budget remaining** afterwards (`7/10 this hour, 188/200 today`), and the
+  live EUR/USD spot. New module `services/pull_log.py`; wired through
+  `prices_service`, `auto_refresh`, `tiingo_fallback_wiring`, `adapters/_retry`
+  and `boot`. Two overlapping pulls keep independent round ids (a per-thread
+  `ContextVar`), so the startup backfill and a live tick never interleave into
+  noise.
+- **The web log now also flags SUSPECT prices** (a non-positive quote the feed
+  would forward-fill into valuations), mirroring the desktop log, so "what
+  generated wrong data?" is answerable on both surfaces (`web/src/app.ts`,
+  `web/src/compute.ts`).
+
 ## [4.9.3] — 2026-06-26
 
 ### Fixed
