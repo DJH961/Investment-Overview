@@ -283,6 +283,29 @@ export function recentTradingSessions(count: number, now: Date = new Date()): st
 }
 
 /**
+ * How many regular NYSE sessions have **settled** (closed) strictly after the
+ * `fromIso` date, up to and including the latest settled session as of `now` —
+ * the "best-available blob is N market days old" signal (Pillar 1, assumption 8).
+ *
+ * `fromIso` is any ISO-8601 instant or `YYYY-MM-DD`; only its date part is used.
+ * Returns `0` when the from-date is the latest settled session or later (the blob
+ * is current). The walk is bounded by `cap` so an ancient / unparseable date can
+ * never spin — it simply saturates at `cap` (treated as "heavily behind").
+ */
+export function settledSessionsSince(fromIso: string, now: Date = new Date(), cap = 10): number {
+  const fromDay = fromIso.slice(0, 10);
+  if (fromDay.length < 10) return cap;
+  let day = latestSettledSessionDate(now);
+  if (day <= fromDay) return 0;
+  let count = 0;
+  while (day > fromDay && count < cap) {
+    count += 1;
+    day = previousTradingSession(day);
+  }
+  return count;
+}
+
+/**
  * Minutes to add to a UTC instant to reach the exchange-local (New York) wall
  * clock — i.e. `ET = UTC + offset`. Negative (−240 EDT / −300 EST). Used to turn
  * an exchange wall-clock time on a given day into an absolute UTC instant.

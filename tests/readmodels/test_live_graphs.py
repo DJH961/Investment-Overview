@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -150,6 +151,164 @@ def test_mobile_export_includes_live_graphs_when_intraday_present(session: Sessi
     assert "live_graphs" in export
     assert export["meta"]["schema_version"] == 2
     assert export["live_graphs"]["day"]["session_date"] == "2024-06-03"
+
+
+def test_live_graphs_v3_backbone_market_series_is_fx_free_and_aligned(session: Session) -> None:
+    _seed_usd_holding_with_intraday(session)
+
+    out = live_graphs.build(session, context=build_context(session, as_of=_SESSION_DAY), now=_NOW)
+
+    assert out is not None
+    # Inner schema bumped to 3; the backbone + grid + window are present.
+    assert out["schema_version"] == 3
+    assert out["grid"] == "30m"
+    assert out["session_dates"][-1] == "2024-06-03"
+    series = out["market_series"]
+    times, native, fx = series["times"], series["value_native"], series["fx_eur_usd"]
+    # Columnar + aligned: one cell per instant across all three arrays.
+    assert len(times) == len(native) == len(fx) >= 2
+    assert all(t.endswith("Z") for t in times)
+    # value_native is the FX-free booked (USD) sleeve, recovered as EUR pivot ×
+    # that instant's own rate: 909.09 × 1.10 ≈ 1000 and 892.86 × 1.12 ≈ 1000.
+    assert native[0] is not None
+    assert abs(Decimal(native[0]) - Decimal("1000")) < Decimal("0.01")
+    assert native[1] is not None
+    assert abs(Decimal(native[1]) - Decimal("1000")) < Decimal("0.05")
+    # The per-instant rate is shipped alongside so either currency is recoverable.
+    assert [Decimal(f) for f in fx] == [Decimal("1.10"), Decimal("1.12")]
+
+
+def test_live_graphs_v3_daily_close_native_is_the_settled_sleeve_close(session: Session) -> None:
+    _seed_usd_holding_with_intraday(session)
+
+    out = live_graphs.build(session, context=build_context(session, as_of=_SESSION_DAY), now=_NOW)
+
+    assert out is not None
+    closes = out["daily_close_native"]
+    # The settled sleeve close for the session = its last sample's native value.
+    assert _is_decimal_string(closes["2024-06-03"])
+    assert abs(Decimal(closes["2024-06-03"]) - Decimal("1000")) < Decimal("0.05")
+
+
+def test_live_graphs_v3_nav_prices_present_for_nav_holdings(session: Session) -> None:
+    _seed_usd_holding_with_intraday(session)
+
+    out = live_graphs.build(session, context=build_context(session, as_of=_SESSION_DAY), now=_NOW)
+
+    assert out is not None
+    nav = out["nav_prices"]
+    # The non-intraday (NAV/cash) holding rides here, per-day; the intraday ETF
+    # never appears (it lives in the backbone instead).
+    assert "TG-CASH" in nav
+    assert "ACME" not in nav
+    assert nav["TG-CASH"] == [["2024-06-03", "500.000000"]]
+
+
+def test_live_graphs_v3_trail_is_downsampled_and_display_only(session: Session) -> None:
+    _seed_usd_holding_with_intraday(session)
+
+    out = live_graphs.build(session, context=build_context(session, as_of=_SESSION_DAY), now=_NOW)
+
+    assert out is not None
+    trail = out["trail"]
+    assert trail["display_only"] is True
+    assert 2 <= len(trail["points"]) <= live_graphs.MAX_DAY_POINTS
+    for p in trail["points"]:
+        assert _is_decimal_string(p["value_eur"])
+        assert _is_decimal_string(p["value_usd"])
+
+
+def test_live_graphs_v3_round_trip_reconstructs_sleeve_value(session: Session) -> None:
+    _seed_usd_holding_with_intraday(session)
+
+    out = live_graphs.build(session, context=build_context(session, as_of=_SESSION_DAY), now=_NOW)
+
+    assert out is not None
+    series = out["market_series"]
+    # Recover the EUR sleeve pivot from the shipped FX-free native value + the
+    # per-instant rate and assert it matches the desktop's stored EUR samples
+    # within the money precision target (1e-6).
+    expected_eur = [Decimal("909.09"), Decimal("892.86")]
+    for native, fx, want in zip(
+        series["value_native"], series["fx_eur_usd"], expected_eur, strict=True
+    ):
+        recovered_eur = Decimal(native) / Decimal(fx)
+        assert abs(recovered_eur - want) < Decimal("1e-6")
+
+
+def test_cap_backbone_coarsens_oldest_days_first() -> None:
+    # Three sessions of four 30-min samples each (12 cells); cap at 6 should
+    # collapse the two oldest days to a single close apiece and keep the newest
+    # day's full detail.
+    samples: list[tuple[datetime, Decimal, Decimal | None]] = []
+    for day in (date(2024, 5, 30), date(2024, 5, 31), date(2024, 6, 3)):
+        for hour in (14, 15, 16, 17):
+            samples.append(
+                (datetime(day.year, day.month, day.day, hour, 0), Decimal(hour), Decimal("1.1"))
+            )
+    capped = live_graphs._cap_backbone(samples, 6)
+    assert len(capped) <= 6
+    days = [live_graphs.intraday_snapshots_service.session_date_of(s[0]) for s in capped]
+    # Newest day keeps all four; older days collapse to one close each.
+    assert days.count(date(2024, 6, 3)) == 4
+    assert days.count(date(2024, 5, 31)) == 1
+    assert days.count(date(2024, 5, 30)) == 1
+    # The kept older-day cell is that day's *close* (last/largest instant).
+    kept_530 = next(s for s in capped if s[0].date() == date(2024, 5, 30))
+    assert kept_530[0].hour == 17
+
+
+def test_cap_backbone_passthrough_when_within_cap() -> None:
+    samples: list[tuple[datetime, Decimal, Decimal | None]] = [
+        (datetime(2024, 6, 3, 14, 0), Decimal("1"), None),
+        (datetime(2024, 6, 3, 15, 0), Decimal("2"), None),
+    ]
+    assert live_graphs._cap_backbone(samples, 80) == samples
+
+
+def test_resolve_grid_reads_config_and_defaults(session: Session) -> None:
+    from investment_dashboard.repositories import app_config_repo
+
+    assert live_graphs.resolve_grid(session) == "30m"
+    app_config_repo.set_value(session, "live_graphs_grid", "15m")
+    assert live_graphs.resolve_grid(session) == "15m"
+    # An unrecognised value falls back to the safe default.
+    app_config_repo.set_value(session, "live_graphs_grid", "1m")
+    assert live_graphs.resolve_grid(session) == "30m"
+
+
+def test_market_series_threads_grid_to_week_fetch(session: Session, monkeypatch) -> None:
+    _seed_usd_holding_with_intraday(session)
+    from investment_dashboard.repositories import app_config_repo
+
+    app_config_repo.set_value(session, "live_graphs_grid", "15m")
+    captured: dict[str, str] = {}
+
+    real = live_graphs.intraday_snapshots_service.week_series_with_fx
+
+    def spy(*args: Any, **kwargs: Any) -> list[tuple[datetime, Decimal, Decimal | None]]:
+        captured["interval"] = kwargs.get("interval", "")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(live_graphs.intraday_snapshots_service, "week_series_with_fx", spy)
+    out = live_graphs.build(session, context=build_context(session, as_of=_SESSION_DAY), now=_NOW)
+
+    assert out is not None
+    assert out["grid"] == "15m"
+    assert captured["interval"] == "15m"
+
+
+def test_live_graphs_v3_is_absent_tolerant_for_legacy_readers(session: Session) -> None:
+    # A reader that only knows v1/v2 reads `day`/`week` and ignores the rest; the
+    # v3 export must still carry those legacy curves unchanged.
+    _seed_usd_holding_with_intraday(session)
+
+    out = live_graphs.build(session, context=build_context(session, as_of=_SESSION_DAY), now=_NOW)
+
+    assert out is not None
+    assert out["day"]["session_date"] == "2024-06-03"
+    assert out["week"]["end_date"] == "2024-06-03"
+    assert len(out["day"]["points"]) >= 2
 
 
 def test_live_graphs_absent_without_intraday_history(session: Session) -> None:

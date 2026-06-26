@@ -18,7 +18,7 @@ timestamps are ISO-8601 strings.
 | `yearly` | object | Existing yearly read-model, shown as-of-export. |
 | `analytics` | object | Existing analytics read-model, shown as-of-export. |
 | `deposits` | object | Existing deposits read-model, shown as-of-export. |
-| `live_graphs` | object | Optional; the desktop's captured 1D/1W curves so mobile can springboard. Present only when the desktop had intraday/daily history to ship. |
+| `live_graphs` | object | Optional; the desktop's captured 1D/1W curves plus the schema-v3 market-sleeve backbone so mobile can springboard and merge a rich 1W graph. Present only when the desktop had intraday/daily history to ship. |
 | `transactions` | object | Optional; present only with `include_transactions=True`. |
 
 ## `meta`
@@ -204,6 +204,50 @@ the reader reapplies the FX-granularity rule without a rescale:
 
 The 1D session is down-sampled and capped (≤ ~80 points) so the blob stays small
 and the springboard curve is visually identical to a live one.
+
+### schema_version `3` — market-sleeve backbone
+
+`live_graphs` carries its own inner `schema_version` (currently `3`), independent
+of the top-level `meta.schema_version`. Version `3` adds a **homogeneous
+market-sleeve backbone** so the web can render a much richer 1W graph — every day
+at intraday resolution — and **merge** the blob with its own live data without
+base-change spikes (see `docs/centralized_data_export_plan.md`). The legacy `day`
+/ `week` whole-book curves are still emitted for backward compatibility, and the
+new sections are **optional and absent-tolerant**: a reader that knows only
+`v1`/`v2` ignores them and renders the legacy line exactly as before.
+
+- `schema_version`: integer, `3`. Absent on `v1`/`v2` exports.
+- `grid`: target bar cadence + comparison bucket for the backbone (`"30m"`
+  default, `"15m"` optional — a single export setting, `app_config` key
+  `live_graphs_grid`). It is **not** a snap: backbone marks land on clean slots,
+  but nothing is moved to render.
+- `session_dates`: `YYYY-MM-DD[]` — the New-York trading sessions the backbone
+  window spans (oldest first).
+- `market_series`: the aggregate **intraday-priced sleeve** value across the
+  whole window, in compact columnar form (cash + NAV excluded — the web reapplies
+  them). Only market symbols feed it; it is **not** hard-downsampled.
+  - `times[]`: UTC ISO-8601 instants (trailing `Z`), the true sample instants.
+  - `value_native[]`: string decimal (or `null` = gap) — the FX-free booked
+    (USD) sleeve value, recovered from the EUR pivot by the same per-instant rate
+    the desktop's own USD line uses (never a rescale of an EUR line).
+  - `fx_eur_usd[]`: string decimal (or `null`) — the EUR→USD rate in force at
+    each instant, aligned by index; `null` → the web falls back to today's rate.
+- `daily_close_native`: `{ "YYYY-MM-DD": value_native }` — the settled sleeve
+  close per session date (the authoritative anchor the web fits finer points to
+  and cross-checks against). Computed from the full, uncapped sample set.
+- `nav_prices`: `{ symbol: [[date, price_native], ...] }` — per-day published
+  NAV per NAV/cash holding over the window (token-free, from the settled closes
+  the daily pull already persisted), so the web reapplies the NAV base per day.
+- `trail`: the desktop's dense whole-book live samples, **display-only** — the
+  web rebases and splices them after its freshest real point but **never** merges
+  or cross-checks them.
+  - `display_only`: always `true`.
+  - `points[]`: whole-book points (`t`, `value_eur`, `value_usd`), down-sampled
+    to ≤ ~80 so the "fun extra richness" never bloats the blob.
+
+A hard cap (`MAX_BACKBONE_CELLS`) bounds the backbone for a pathologically long /
+dense window by coarsening the **oldest** days to their settled close first, so
+the newest days always keep full intraday detail.
 
 ## Precision targets
 

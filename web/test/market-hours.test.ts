@@ -9,6 +9,7 @@ import {
   recentTradingSessions,
   sessionCloseMs,
   sessionOpenMs,
+  settledSessionsSince,
   elapsedSessionMs,
   sessionIsWarmingUp,
   INTRADAY_BAR_INTERVAL_MS,
@@ -170,6 +171,34 @@ describe("sessionCloseMs / sessionOpenMs", () => {
     expect(new Date(sessionCloseMs("2026-01-12")).toISOString()).toBe("2026-01-12T21:00:00.000Z");
   });
 });
+
+describe("settledSessionsSince (best-available blob age — Pillar 1 assumption 8)", () => {
+  // As of 2026-06-23 14:00 UTC the latest *settled* session is 2026-06-22 (Monday;
+  // Tuesday's close hasn't struck yet at 10:00 ET).
+  const now = new Date("2026-06-23T14:00:00Z");
+
+  it("is 0 when the blob is the latest settled session or newer", () => {
+    expect(settledSessionsSince("2026-06-22T20:30:00Z", now)).toBe(0);
+    expect(settledSessionsSince("2026-06-23T00:00:00Z", now)).toBe(0);
+  });
+
+  it("counts settled sessions strictly after the from-date", () => {
+    // Fri 2026-06-19 is Juneteenth (holiday): 18 → 22 is one settled session.
+    expect(settledSessionsSince("2026-06-18T20:30:00Z", now)).toBe(1);
+    // Thu 2026-06-17 → {18, 22} = two settled sessions.
+    expect(settledSessionsSince("2026-06-17T20:30:00Z", now)).toBe(2);
+  });
+
+  it("accepts a bare YYYY-MM-DD and uses only the date part", () => {
+    expect(settledSessionsSince("2026-06-18", now)).toBe(1);
+  });
+
+  it("saturates at the cap for an ancient or unparseable date (never spins)", () => {
+    expect(settledSessionsSince("1990-01-01", now, 10)).toBe(10);
+    expect(settledSessionsSince("bad", now, 10)).toBe(10);
+  });
+});
+
 
 describe("recentTradingSessions", () => {
   it("returns the N most recent sessions ascending, ending on the current one", () => {
