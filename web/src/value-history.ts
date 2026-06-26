@@ -77,7 +77,7 @@ export interface DailyClose {
  */
 function dayStartMs(date: string): number {
   const [y, m, d] = date.split("-").map(Number);
-  return new Date(y, (m ?? 1) - 1, d ?? 1).getTime();
+  return new Date(y, m - 1, d).getTime();
 }
 
 /** The `YYYY-MM-DD` (local calendar) a stamped instant falls on. */
