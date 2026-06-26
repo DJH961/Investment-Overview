@@ -207,8 +207,10 @@ describe("runTiingoFallback", () => {
     expect(out.tiingoSymbols.sort()).toEqual(["FSKAX", "VFIAX"]);
     expect(out.quotes.get("FSKAX")?.valueDate).toBe(EXPECTED);
     expect(out.quotes.get("VFIAX")?.valueDate).toBe(EXPECTED);
-    // The recent fund spent no Tiingo credit (only the two laggards did).
-    expect(tiingoCreditsSpentToday(readTiingoCreditLog(NOW, undefined, storage), NOW)).toBe(2);
+    // Both laggards ride in a single batched IEX request, so the round costs one
+    // Tiingo API call (one credit) — not one per ticker. (The recent fund is left
+    // untouched and spends nothing regardless.)
+    expect(tiingoCreditsSpentToday(readTiingoCreditLog(NOW, undefined, storage), NOW)).toBe(1);
   });
 
   it("stops re-pulling a NAV fund the backup left no fresher (no-newer cooldown)", async () => {
@@ -382,9 +384,11 @@ describe("runTiingoFallback", () => {
       reserveCredits: 38,
     });
     expect(out.tiingoSymbols).toEqual(["AAA", "BBB"]);
-    expect(tiingoCreditsSpentToday(readTiingoCreditLog(NOW, undefined, storage), NOW)).toBe(2);
+    // The reserve still gates *symbol selection* to the two spendable slots, but
+    // the actual pull is one batched IEX request, so it bills a single credit.
+    expect(tiingoCreditsSpentToday(readTiingoCreditLog(NOW, undefined, storage), NOW)).toBe(1);
     // The reported budget still shows the true (unreserved) caps.
-    expect(out.budget).toEqual({ hourUsed: 2, hourLimit: 40, dayUsed: 2, dayLimit: 800 });
+    expect(out.budget).toEqual({ hourUsed: 1, hourLimit: 40, dayUsed: 1, dayLimit: 800 });
   });
 
   it("lets an actual fallback (no reserve) spend the final credits the quick-start holds back", async () => {
@@ -423,7 +427,9 @@ describe("runTiingoFallback", () => {
       // reserveCredits omitted ⇒ 0: an actual fallback may spend the final 5.
     });
     expect(fallback.tiingoSymbols).toEqual(symbols);
-    expect(tiingoCreditsSpentToday(readTiingoCreditLog(NOW, undefined, open), NOW)).toBe(40);
+    // 35 credits were pre-spent; the fallback's single batched IEX request for the
+    // remaining five symbols bills one more credit (per request, not per symbol).
+    expect(tiingoCreditsSpentToday(readTiingoCreditLog(NOW, undefined, open), NOW)).toBe(36);
   });
 });
 

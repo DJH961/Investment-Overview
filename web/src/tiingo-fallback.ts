@@ -197,7 +197,14 @@ async function fetchAndMerge(
   for (const symbol of batch) priorVdFor.set(symbol, opts.quotes.get(symbol)?.valueDate ?? null);
   // Reserve the budget up-front (same discipline as the Twelve Data path), so a
   // failed call still counts against the self-cap rather than allowing a retry storm.
-  recordTiingoCredits(batch.length, opts.now, opts.storage ?? undefined);
+  // Crucially this is **one** Tiingo API call no matter how many tickers ride in
+  // the batch: `fetchTiingoQuotes` comma-joins the whole `batch` into a single
+  // IEX request, and the `/price` Worker spends exactly one slot of its 40/hr
+  // reserve for it (see web/proxy/worker.js `reserveTiingoSlot`). Tiingo bills —
+  // and we self-cap — **per request**, not per symbol, so a 39-ticker fallback
+  // round costs 1 credit, not 39. (Billing `batch.length` here was the bug that
+  // vaulted the hourly meter to the 40 cap after a single batched pull.)
+  recordTiingoCredits(1, opts.now, opts.storage ?? undefined);
   const fetched = await fetchTiingoQuotes(batch, opts.proxyUrl, {
     fetchImpl: opts.fetchImpl,
     navSymbols: opts.navSymbols,
