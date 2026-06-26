@@ -228,3 +228,60 @@ export function quoteRefreshDue(
 ): boolean {
   return nowMs - lastQuoteMs >= ttlMs;
 }
+
+/**
+ * Per-row freshness tier for a single holding's displayed price — the three-way
+ * split the freshness-plan §2 calls for, mirroring `displayFxSource`'s
+ * cache→live promotion but with an explicit middle "recent" rung:
+ *
+ *   - `live`   — the market is open and the price was observed within one live
+ *                window (the user-set auto-refresh interval); a spot confirmed
+ *                moments ago is, to the user, as live as one re-pulled this round.
+ *   - `recent` — observed today but older than the live window, or observed
+ *                within the window while the market is **shut** (a confirmed value
+ *                that is current but not a live intraday mark).
+ *   - `aged`   — no live/cached observation (the price came from the export), or
+ *                the newest observation is from an earlier calendar day. The row
+ *                then shows its honest "as of <date/time>" instead of a status word.
+ *
+ * Pure and clock-injected so it is unit-testable in isolation.
+ */
+export type RowFreshness = "live" | "recent" | "aged";
+
+export interface RowFreshnessInput {
+  /** Epoch ms the displayed price was observed, or null when from the export. */
+  observedAtMs: number | null;
+  /** Decision instant, epoch ms. */
+  nowMs: number;
+  /** Whether the holding's market is open right now. */
+  marketOpen: boolean;
+  /** The live window (ms) — the user-set auto-refresh interval. */
+  liveWindowMs: number;
+}
+
+/** Whether two epoch-ms instants fall on the same local calendar day. */
+function sameLocalDay(aMs: number, bMs: number): boolean {
+  const a = new Date(aMs);
+  const b = new Date(bMs);
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+/** Classify a holding's displayed price into a {@link RowFreshness} tier. */
+export function holdingFreshness(input: RowFreshnessInput): RowFreshness {
+  const { observedAtMs, nowMs, marketOpen, liveWindowMs } = input;
+  if (observedAtMs === null) return "aged";
+  const window = liveWindowMs > 0 ? liveWindowMs : ONE_HOUR_MS;
+  const age = nowMs - observedAtMs;
+  // A future-stamped observation (clock skew) cannot read as live, mirroring the
+  // headline badge's `liveFeedAge >= 0` guard.
+  const withinWindow = age >= 0 && age <= window;
+  if (marketOpen && withinWindow) return "live";
+  // Confirmed today (or within the window while shut) but not a live intraday
+  // mark: "recent". An observation from an earlier day is genuinely "aged".
+  if (withinWindow || sameLocalDay(observedAtMs, nowMs)) return "recent";
+  return "aged";
+}
