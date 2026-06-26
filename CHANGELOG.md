@@ -14,10 +14,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.12.4] — 2026-06-26
+## [4.13.1] — 2026-06-26
 
 ### Fixed
 
+- **The Currency KPI no longer shows a wildly incorrect FX growth number from a
+  stale / garbled prior-close baseline (issue #192).** The EUR ↔ USD box, every
+  holding's FX-aware daily move, and "Currency effect since yesterday" all measure
+  today's move from one prior-session EUR/USD close. That baseline was trusted
+  blindly: a stale provider `previous_close` or a days-old cached one quietly
+  fabricated a huge one-session swing across the whole EUR view. The fix guards the
+  baseline at two layers — a magnitude backstop drops a baseline that implies an
+  implausibly large single-session move so the figure degrades to the honest
+  FX-neutral number and the KPI blanks rather than inventing a swing
+  (`web/src/compute.ts`, `web/src/session-fx.ts` `fxBaselineImpliesImplausibleMove`),
+  and a dated cross-validation corrects a provider `previous_close` that materially
+  disagrees with the trustworthy, dated close read from the on-device 1D FX bars
+  (`web/src/app.ts`, `web/src/session-fx.ts` `fxBaselinesDisagree`). This is the web
+  analog of the desktop daily-growth FX guard
+  (`services/metrics_service.py::_compute_daily_growth`).
 - **The Currency KPI recovers its "today" baseline from an empty / stale state.**
   The EUR ↔ USD box measures today's move from the prior session's settled
   EUR/USD close, but that baseline used to come *only* from the live provider's
@@ -31,6 +46,44 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`web/src/live-graph.ts` `sessionFxHistoryWindow`, `web/src/app.ts`
   `barsPrevSessionCloseFx`). The live 1D curve is unchanged — it still draws only
   the current session.
+
+## [4.13.0] — 2026-06-26
+
+### Added
+
+- **"Regenerate 1D graph" and "Regenerate 1W graph" buttons in the web Settings →
+  Maintenance section.** Each wipes just that one live curve's stored bars/tips and
+  re-pulls them from scratch, then repaints — scoped to a single graph, so use them
+  when only the 1D or 1W line looks wrong or stuck. Every other day and your price
+  caches are left untouched, and the hard free-tier per-minute/day budget still
+  binds (overflow simply defers) (`web/src/app.ts` `regenerateGraph`,
+  `TimeSeriesStore.deleteSession`).
+
+### Changed
+
+- **"Force-fetch every price now" is a quotes-only escape hatch.** The top
+  Maintenance button re-pulls *every* quote — ETFs/stocks **and** the mutual-fund
+  NAVs — ignoring the NAV close-await and market-closed skips, but it deliberately
+  leaves the 1D/1W graphs alone so a force-all never spends credits on graph bars.
+  The dedicated "Regenerate 1D graph" / "Regenerate 1W graph" buttons own the
+  curves; a from-scratch reset still re-primes every graph (`web/src/app.ts`
+  `graphPrimeDecision`, `forceFetchAllNow`).
+
+## [4.12.4] — 2026-06-26
+
+### Fixed
+
+- **The 1W graph no longer nosedives at market open (issue #169).** When the
+  exported blob's settled week was generated while no NAV/FX was available (for
+  example right after a "Reset cache & re-pull"), *every* settled day could land
+  with its mutual-fund / money-market sleeve collapsed to ~0, dropping the line
+  to roughly 60% of its true value while the live tip stayed full — and the
+  autoscale then crushed all detail out of the curve. Previous fixes only
+  repaired a *leading run* of collapsed days, which required a healthy settled
+  day to act as the donor; a fully-collapsed week had none. `repairWeekNavCollapse`
+  now accepts the live whole-book level (today's intraday opening point, else the
+  live tip) as a healthy anchor and lifts the entire settled week back onto it,
+  so EUR and USD lines recover their real scale.
 
 ## [4.12.3] — 2026-06-26
 

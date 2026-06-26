@@ -252,6 +252,31 @@ describe("springboardWeekCurve", () => {
     expect(oldest.valueUsd.toNumber()).toBe(990);
   });
 
+  it("heals a whole-week NAV collapse using the live tip as the anchor (issue #169)", () => {
+    // Every settled session lost its NAV sleeve (~60% of the book) — e.g. a blob
+    // exported right after a cache reset. No settled day is healthy, so only the
+    // live tip (the real headline total) can reveal and anchor the recovery; the
+    // bare leading-run repair would have painted the nosedive verbatim.
+    const collapsed = [
+      pt("2024-05-30T20:00:00Z", "600", "660"),
+      pt("2024-05-31T20:00:00Z", "605", "665"),
+      pt("2024-06-03T20:00:00Z", "610", "670"),
+      pt("2024-06-04T20:00:00Z", "615", "675"),
+    ];
+    const curve = springboardWeekCurve({
+      exported: weekExport(TODAY, collapsed),
+      now: MID_SESSION,
+      liveTip: tip, // 1100 / 1200
+    });
+    expect(curve).not.toBeNull();
+    // The last settled day rises to the live level (offset = 1100 − 615 = 485);
+    // every settled day lifts by the same constant, so the line no longer dives.
+    const lastSettled = curve!.find((p) => p.t === Date.parse("2024-06-04T20:00:00Z"))!;
+    expect(lastSettled.valueEur.toNumber()).toBe(1100);
+    const oldest = curve!.find((p) => p.t === Date.parse("2024-05-30T20:00:00Z"))!;
+    expect(oldest.valueEur.toNumber()).toBe(1085); // 600 + 485
+  });
+
   it("still springboards a 1-day-stale week export (ends the previous session)", () => {
     const curve = springboardWeekCurve({
       exported: weekExport(PREV, weekPoints),
