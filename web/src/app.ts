@@ -78,7 +78,7 @@ import {
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, sessionIsWarmingUp, sessionOpenMs, elapsedSessionMs, settledSessionsSince } from "./market-hours";
+import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, elapsedSessionMs, settledSessionsSince } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -437,6 +437,13 @@ export class App {
   private lastTiingoBudget: TiingoBudgetView | null = null;
   /** Symbols served via the Tiingo fallback on the latest network round. */
   private lastTiingoSymbols: string[] = [];
+  /**
+   * The subset of {@link lastTiingoSymbols} that were a *genuine* fallback this
+   * round — the primary tried and fell short (unavailable/outdated) so we pulled
+   * from the backup instead. Drives the "N prices via fallback" status note, so a
+   * symbol merely smart-routed to the backup for budget efficiency isn't flagged.
+   */
+  private lastFallbackSymbols: string[] = [];
   /**
    * The Tiingo backup's own error from the latest network round, if it was
    * needed but couldn't be reached (proxy down, Worker `/price` route missing,
@@ -2930,6 +2937,7 @@ export class App {
       });
       if (session !== this.sessionId) return quoteLoad.report;
       this.lastTiingoSymbols = fallback.tiingoSymbols;
+      this.lastFallbackSymbols = fallback.fallbackSymbols;
       this.lastTiingoBudget = fallback.budget;
       // Remember whether the backup itself failed this round (needed but
       // unreachable). Cleared to null on a clean round, so the banner/toast only
@@ -2984,6 +2992,7 @@ export class App {
       }
     } else if (this.lastTiingoBudget === null) {
       this.lastTiingoSymbols = [];
+      this.lastFallbackSymbols = [];
     }
 
     const unresolvedFailures = network ? this.unresolvedFailedSymbols(quoteLoad.report) : [];
@@ -3029,6 +3038,10 @@ export class App {
     if (network) this.persistFundNavBars(quoteLoad.quotes);
     // Refresh the live-coverage summary on a network pull; keep the last one on a
     // cache-only re-paint so a currency toggle / blob swap doesn't blank it.
+    // Promote a cache-served EUR/USD that is still extremely fresh to "live": a
+    // spot pulled moments ago and replayed from cache this round is, to the user,
+    // just as live as the market prices — only a genuinely aged cache reads "recent".
+    const fxDisplaySource = displayFxSource(eurUsdSource, eurUsdAt, Date.now());
     if (network) {
       const navStats = readNavPublishStats();
       this.lastCoverageFacts = buildCoverageFacts(
@@ -3040,7 +3053,7 @@ export class App {
           marketOpen: isUsMarketOpen(),
           publishHourFor: (symbol) => navPublishWindow(navStats.get(symbol)?.hours).publishHour,
           freshlyPulled: this.recentlyPulled(),
-          fx: eurUsdSource,
+          fx: fxDisplaySource,
         },
       );
       this.lastCoverage = summarizeCoverage(this.lastCoverageFacts);
@@ -3071,7 +3084,7 @@ export class App {
           marketOpen: isUsMarketOpen(),
           publishHourFor: (symbol) => navPublishWindow(navStats.get(symbol)?.hours).publishHour,
           freshlyPulled: this.recentlyPulled(),
-          fx: eurUsdSource,
+          fx: fxDisplaySource,
         },
       );
       this.lastCoverage = summarizeCoverage(this.lastCoverageFacts);
@@ -3094,8 +3107,8 @@ export class App {
       model.overview.tiingoDayUsed = liveTiingoBudget.dayUsed;
       model.overview.tiingoDayLimit = liveTiingoBudget.dayLimit;
     }
-    if (this.lastTiingoSymbols.length > 0) {
-      const note = `${this.lastTiingoSymbols.length} price${this.lastTiingoSymbols.length === 1 ? "" : "s"} via fallback`;
+    if (this.lastFallbackSymbols.length > 0) {
+      const note = `${this.lastFallbackSymbols.length} price${this.lastFallbackSymbols.length === 1 ? "" : "s"} via fallback`;
       model.overview.liveCoverage = model.overview.liveCoverage
         ? `${model.overview.liveCoverage} · ${note}`
         : note;
@@ -4523,6 +4536,24 @@ export interface CoverageFacts {
   fx: EurUsdSource;
 }
 
+/**
+ * Choose the FX source label to *display* on the coverage line. A spot served
+ * from cache (`"cache"`) but observed within {@link LIVE_PRICE_MAX_STALENESS_MS}
+ * is, to the user, just as live as the market prices it values — so promote it to
+ * `"live"` and let it read "FX live" rather than "FX recent". Every other source
+ * (and a genuinely aged cache) passes through unchanged.
+ */
+export function displayFxSource(
+  source: EurUsdSource,
+  observedAtMs: number | null,
+  nowMs: number,
+): EurUsdSource {
+  if (source === "cache" && observedAtMs != null && nowMs - observedAtMs <= LIVE_PRICE_MAX_STALENESS_MS) {
+    return "live";
+  }
+  return source;
+}
+
 /** Human FX-freshness clause for the coverage line (see {@link CoverageFacts.fx}). */
 function fxClause(fx: EurUsdSource): string {
   switch (fx) {
@@ -4542,14 +4573,6 @@ function fxClause(fx: EurUsdSource): string {
 /** Capitalise the first character of a status line (NAV/FX acronyms stay intact). */
 function capitalizeFirst(text: string): string {
   return text.length === 0 ? text : text[0].toUpperCase() + text.slice(1);
-}
-
-/** Local `YYYY-MM-DD` for `d` (matches the NAV value-date day boundary). */
-function localDateIso(d: Date): string {
-  const y = d.getFullYear();
-  const m = `${d.getMonth() + 1}`.padStart(2, "0");
-  const day = `${d.getDate()}`.padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }
 
 /**
@@ -4578,8 +4601,11 @@ export function buildCoverageFacts(
   const now = ctx.now ?? new Date();
   const publishHourFor = ctx.publishHourFor ?? (() => NAV_PUBLISH_HOUR);
   const fetched = new Set(report.fetched);
-  const todayIso = localDateIso(now);
   const settled = latestSettledSessionDate(now);
+  // The most recent NYSE session that has *started* (today once its open passes,
+  // else the prior session). A held NAV for an older session than this means
+  // today's session is still mid-flight, so its NAV is yet to strike tonight.
+  const startedSession = lastSessionDate(now);
   let marketTotal = 0;
   let marketHeld = 0;
   let marketFresh = 0;
@@ -4591,10 +4617,18 @@ export function buildCoverageFacts(
     if (navSymbols.has(symbol)) {
       navTotal += 1;
       const held = quotes.get(symbol)?.valueDate ?? null;
-      // Not yet holding today's NAV → it will publish later tonight.
-      if (!held || held < todayIso) navExpectedTonight += 1;
-      // Past its learned publish hour and still missing → genuinely overdue.
-      if (!held || held < latestExpectedNavDate(now, publishHourFor(symbol))) navAwaiting += 1;
+      // The latest NAV that *should* exist right now (its learned publish hour
+      // has passed). Anchored to the NY trading calendar, never the local day.
+      const due = latestExpectedNavDate(now, publishHourFor(symbol));
+      const haveDue = held !== null && held >= due;
+      if (!haveDue) {
+        // We don't yet hold the NAV that is genuinely due → still awaiting it.
+        navAwaiting += 1;
+      } else if (due < startedSession) {
+        // We hold the due NAV, but a newer session is already under way whose
+        // NAV will publish later tonight — "expected tonight", not missing.
+        navExpectedTonight += 1;
+      }
     } else {
       marketTotal += 1;
       const q = quotes.get(symbol);

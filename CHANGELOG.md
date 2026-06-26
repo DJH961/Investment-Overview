@@ -37,6 +37,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   blob immediately, regardless of the interval (`App.blobCheckDue` /
   `runScheduledRefresh` in `web/src/app.ts`).
 
+### Fixed
+
+- **The price coverage line above holdings now tells the truth on three fronts.**
+  (1) *FX freshness:* an EUR/USD spot replayed from cache but observed within the
+  live-staleness window (15 min) now reads **"FX live"** instead of "FX recent" —
+  to the user it is just as live as the market prices it values
+  (`displayFxSource` in `web/src/app.ts`). (2) *Genuine fallback only:* the
+  "N prices via fallback" note now counts **only** symbols the primary actually
+  attempted and couldn't price (unavailable / outdated) before the backup filled
+  them — symbols merely smart-routed to the backup for budget efficiency are no
+  longer flagged as a fallback (`fallbackSymbols` on `runTiingoFallback`,
+  `web/src/tiingo-fallback.ts`; `lastFallbackSymbols` in `web/src/app.ts`).
+  (3) *NAV honesty:* when the most recent trading day's NAV is genuinely missing
+  the line now reads "awaiting" rather than claiming everything is up to date.
+- **NAV coverage no longer falsely claims today's NAV is missing.** The
+  "expected tonight" count was anchored to the local calendar day, so in the
+  early hours of a trading day — after we already held the latest settled
+  session's NAV but before that session's open — it wrongly reported today's NAV
+  as outstanding. The NAV counters in `buildCoverageFacts` are now anchored to
+  the New-York trading calendar (`latestExpectedNavDate` vs `lastSessionDate`)
+  and are mutually exclusive: a fund is *awaiting* only when we don't hold its
+  due NAV, and *expected tonight* only when we hold the due NAV but a newer
+  session is already under way.
+
 ## [4.4.2] — 2026-06-26
 
 ### Fixed
