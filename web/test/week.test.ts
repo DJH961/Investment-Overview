@@ -19,7 +19,7 @@ import {
   wrapDailyNavFetcher,
 } from "../src/week";
 import type { Bar } from "../src/timeseries";
-import { memoryBackend, TimeSeriesStore } from "../src/timeseries-store";
+import { memoryBackend, TimeSeriesStore, type StoredCloseProbe } from "../src/timeseries-store";
 import { FX_PROBE_KEY } from "../src/close-completeness";
 
 const d = (v: string | number): Decimal => new Decimal(v);
@@ -1002,37 +1002,53 @@ describe("loadOrBuildWeekCurve — multi-provider close completeness (C5)", () =
     expect(log.every((l) => l.message.startsWith("1W graph · VTI"))).toBe(true);
   });
 
-  it("settled-by-agreement: two providers agree no newer daily close exists ⇒ settled, no re-fetch next build", async () => {
+  it("settled-by-agreement: two providers must agree 3× (hour-paced) before a daily close settles, no re-fetch after", async () => {
     const s = store();
     await seedBehind(s);
     const fetchDailyBars = vi.fn(async () => new Map<string, Bar[]>([["VTI", [bar(THU, "99")]]]));
     const fetchSecondaryDailyBars = vi.fn(async () => new Map<string, Bar[]>([["VTI", [bar(THU, "99")]]]));
     const log: { outcome: string; level: string; message: string }[] = [];
-    await loadOrBuildWeekCurve({
-      anchor: anchor(),
-      store: s,
-      fetchDailyBars,
-      fetchSecondaryDailyBars,
-      now: SAT_CLOSED,
-      onCloseResolve: (e) => log.push(e),
-    });
+    const build = (now: Date): Promise<unknown> =>
+      loadOrBuildWeekCurve({
+        anchor: anchor(),
+        store: s,
+        fetchDailyBars,
+        fetchSecondaryDailyBars,
+        now,
+        onCloseResolve: (e) => log.push(e),
+      });
+    const probeNow = async (): Promise<StoredCloseProbe> =>
+      (await s.loadSession(WEEK_STORE_KEY))!.closeProbe!.VTI;
+
+    // Agreement #1 at 16:00Z — provisional only.
+    await build(SAT_CLOSED);
     expect(fetchDailyBars).toHaveBeenCalledTimes(1);
     expect(fetchSecondaryDailyBars).toHaveBeenCalledTimes(1);
-    const probe = (await s.loadSession(WEEK_STORE_KEY))!.closeProbe!.VTI;
+    let probe = await probeNow();
+    expect(probe.settled).toBe(false);
+    expect(probe.sources).toBe(2);
+    expect(probe.agreements).toBe(1);
+
+    // Held flat until the next full hour (no fetch on a sub-hour redraw).
+    fetchDailyBars.mockClear();
+    fetchSecondaryDailyBars.mockClear();
+    await build(new Date(SAT_CLOSED.getTime() + 5 * 60_000)); // 16:05Z
+    expect(fetchDailyBars).not.toHaveBeenCalled();
+
+    // Agreements #2 (17:00Z) and #3 (18:00Z) ⇒ settled on the third.
+    await build(new Date(Date.parse("2026-03-14T17:00:00Z")));
+    expect((await probeNow()).agreements).toBe(2);
+    await build(new Date(Date.parse("2026-03-14T18:00:00Z")));
+    probe = await probeNow();
     expect(probe.settled).toBe(true);
     expect(probe.sources).toBe(2);
+    expect(probe.agreements).toBe(3);
     expect(log.some((l) => l.outcome === "settled-by-agreement" && l.level === "good")).toBe(true);
 
     // Next build: the symbol is settled ⇒ neither provider is asked again.
     fetchDailyBars.mockClear();
     fetchSecondaryDailyBars.mockClear();
-    await loadOrBuildWeekCurve({
-      anchor: anchor(),
-      store: s,
-      fetchDailyBars,
-      fetchSecondaryDailyBars,
-      now: SAT_CLOSED,
-    });
+    await build(new Date(Date.parse("2026-03-14T19:00:00Z")));
     expect(fetchDailyBars).not.toHaveBeenCalled();
     expect(fetchSecondaryDailyBars).not.toHaveBeenCalled();
   });

@@ -51,6 +51,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **A two-source close agreement now requires three hour-paced confirmations
+  before it is accepted.** A single coincidental match between the two providers
+  no longer settles a session: the first two agreements on the same pre-close bar
+  are recorded as *provisional* (`sources: 2, settled: false`) and only the third
+  accepts the day's close. Each re-confirmation is paced to the **start of the
+  next full hour** (e.g. a first check at 15:48 re-confirms at 16:00+, then at the
+  following hour), so the scarce Tiingo budget is spent at most once an hour while
+  the close is verified. A genuine progression or outage between agreements resets
+  the counter. Applies symmetrically to the 1D, 1W, and EUR/USD (FX) tracks.
 - **The data-polling log now narrates graph close-settlement.** Building on the
   round-by-round debugging trail, the close-completeness resolver emits clear,
   severity-tagged lines into the `graph` category — e.g.

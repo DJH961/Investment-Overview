@@ -64,6 +64,13 @@ export interface StoredCloseProbe {
   attempts: number;
   /** Distinct providers that returned this same tip (0 ⇒ outage). */
   sources: 0 | 1 | 2;
+  /**
+   * How many times both providers have independently agreed on the same pre-close
+   * tip (the two-step confirmation counter). Absent/0 until the first agreement;
+   * the close is accepted once it reaches `AGREEMENTS_TO_SETTLE`. A progression or
+   * outage between agreements drops the field, resetting the count.
+   */
+  agreements?: number;
   /** Terminal: the best-available close has been accepted — never re-fetch today. */
   settled: boolean;
   /** Wall-clock ms of the last probe (the C4 spacing gate reads this). */
@@ -217,6 +224,7 @@ function deserializeCloseProbe(
       sources,
       settled: v.settled,
       lastAttemptAt: v.lastAttemptAt,
+      ...(typeof v.agreements === "number" ? { agreements: v.agreements } : {}),
     };
   }
   return Object.keys(out).length > 0 ? out : undefined;

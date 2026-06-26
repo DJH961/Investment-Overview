@@ -19,7 +19,7 @@ import {
   type IntradayAnchor,
 } from "../src/intraday";
 import type { Bar, CurvePoint } from "../src/timeseries";
-import { memoryBackend, TimeSeriesStore, type Breadcrumb } from "../src/timeseries-store";
+import { memoryBackend, TimeSeriesStore, type Breadcrumb, type StoredCloseProbe } from "../src/timeseries-store";
 import { FX_PROBE_KEY } from "../src/close-completeness";
 
 const d = (v: string | number): Decimal => new Decimal(v);
@@ -984,26 +984,55 @@ describe("loadOrBuildSessionCurve — multi-provider close completeness (C2–C7
     expect(fetchBars).toHaveBeenCalledWith(["DAX"]);
   });
 
-  it("C3 illiquid: two providers agree on the same last bar ⇒ settled, ≤2 credits, then 0", async () => {
+  it("C3 illiquid: two providers must agree 3× (hour-paced) before the close settles, then 0", async () => {
     const store = new TimeSeriesStore(memoryBackend());
     await seedShort(store);
     const fetchBars = vi.fn(async () => new Map<string, Bar[]>([["DAX", [bar(T1400, "100")]]]));
     const fetchSecondaryBars = vi.fn(async () => new Map<string, Bar[]>([["DAX", [bar(T1400, "100")]]]));
     const log: { outcome: string; level: string; message: string }[] = [];
-    await loadOrBuildSessionCurve({
-      anchor: singleEtfAnchor(),
-      store,
-      fetchBars,
-      fetchSecondaryBars,
-      now: NOW_CLOSED,
-      formatInstant: (t) => (t === CLOSE_Z ? "16:00 ET" : new Date(t).toISOString()),
-      onCloseResolve: (e) => log.push(e),
-    });
+    const build = (now: Date): Promise<unknown> =>
+      loadOrBuildSessionCurve({
+        anchor: singleEtfAnchor(),
+        store,
+        fetchBars,
+        fetchSecondaryBars,
+        now,
+        formatInstant: (t) => (t === CLOSE_Z ? "16:00 ET" : new Date(t).toISOString()),
+        onCloseResolve: (e) => log.push(e),
+      });
+    const probeNow = async (): Promise<StoredCloseProbe> =>
+      (await store.loadSession("2026-06-23"))!.closeProbe!.DAX;
+
+    // Agreement #1 at 22:00Z — provisional only: both agree, but the close is not
+    // yet accepted (sources:2, settled:false).
+    await build(NOW_CLOSED);
     expect(fetchBars).toHaveBeenCalledTimes(1);
     expect(fetchSecondaryBars).toHaveBeenCalledTimes(1);
-    const probe = (await store.loadSession("2026-06-23"))!.closeProbe!.DAX;
+    let probe = await probeNow();
+    expect(probe.settled).toBe(false);
+    expect(probe.sources).toBe(2);
+    expect(probe.agreements).toBe(1);
+
+    // A redraw before the next full hour is held flat (hourly pacing, no credits).
+    fetchBars.mockClear();
+    fetchSecondaryBars.mockClear();
+    await build(new Date(NOW_CLOSED.getTime() + 5 * 60_000)); // 22:05Z < 23:00Z
+    expect(fetchBars).not.toHaveBeenCalled();
+    expect(fetchSecondaryBars).not.toHaveBeenCalled();
+
+    // Agreement #2 at the top of the next hour (23:00Z) — still provisional.
+    await build(new Date(Date.parse("2026-06-23T23:00:00Z")));
+    probe = await probeNow();
+    expect(probe.settled).toBe(false);
+    expect(probe.agreements).toBe(2);
+
+    // Agreement #3 at the following hour (00:00Z, still the 23 Jun ET session) ⇒
+    // settled for the day.
+    await build(new Date(Date.parse("2026-06-24T00:00:00Z")));
+    probe = await probeNow();
     expect(probe.settled).toBe(true);
     expect(probe.sources).toBe(2);
+    expect(probe.agreements).toBe(3);
     expect(log.some((l) => l.outcome === "settled-by-agreement" && l.level === "good")).toBe(true);
     // C6: the line is human-facing — it names the symbol, the 1D label, and uses
     // the injected instant formatter (no raw epoch ms leaks into the trail).
@@ -1014,13 +1043,7 @@ describe("loadOrBuildSessionCurve — multi-provider close completeness (C2–C7
     // Next build: settled ⇒ no further fetches.
     fetchBars.mockClear();
     fetchSecondaryBars.mockClear();
-    await loadOrBuildSessionCurve({
-      anchor: singleEtfAnchor(),
-      store,
-      fetchBars,
-      fetchSecondaryBars,
-      now: new Date(NOW_CLOSED.getTime() + 60 * 60_000),
-    });
+    await build(new Date(Date.parse("2026-06-24T01:00:00Z")));
     expect(fetchBars).not.toHaveBeenCalled();
     expect(fetchSecondaryBars).not.toHaveBeenCalled();
   });
@@ -1099,10 +1122,13 @@ describe("loadOrBuildSessionCurve — multi-provider close completeness (C2–C7
       fetchSecondaryBars,
       now: NOW_CLOSED,
     });
-    // It escalated (no false progress) and the two sources agreed ⇒ settled.
+    // It escalated (no false progress) and the two sources agreed ⇒ a provisional
+    // agreement is recorded (sources:2), pending the hour-paced re-confirmations.
     expect(fetchSecondaryBars).toHaveBeenCalledTimes(1);
     const probe = (await store.loadSession("2026-06-23"))!.closeProbe!.DAX;
-    expect(probe.settled).toBe(true);
+    expect(probe.sources).toBe(2);
+    expect(probe.settled).toBe(false);
+    expect(probe.agreements).toBe(1);
   });
 
   it("C4 spacing gate: repeated builds 1s apart probe at most once per window", async () => {
@@ -1233,37 +1259,50 @@ describe("loadOrBuildSessionCurve — multi-provider close completeness (C2–C7
     expect(fetchFx).not.toHaveBeenCalled();
   });
 
-  it("FX C5: two providers agreeing on the last FX bar settle the day's FX (sources=2)", async () => {
+  it("FX C5: two providers must agree 3× (hour-paced) before the day's FX settles (sources=2)", async () => {
     const store = new TimeSeriesStore(memoryBackend());
     await seedCompleteBarsIncompleteFx(store);
     const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
     const fetchFx = vi.fn(async () => [bar(T1400, "1.00")]); // no advance vs stored tip
     const fetchSecondaryFx = vi.fn(async () => [bar(T1400, "1.00")]); // agrees
-    await loadOrBuildSessionCurve({
-      anchor: singleEtfAnchor(),
-      store,
-      fetchBars,
-      fetchFx,
-      fetchSecondaryFx,
-      now: NOW_CLOSED,
-    });
+    const build = (now: Date): Promise<unknown> =>
+      loadOrBuildSessionCurve({
+        anchor: singleEtfAnchor(),
+        store,
+        fetchBars,
+        fetchFx,
+        fetchSecondaryFx,
+        now,
+      });
+    const fxProbe = async (): Promise<StoredCloseProbe> =>
+      (await store.loadSession("2026-06-23"))!.closeProbe![FX_PROBE_KEY];
+
+    // Agreement #1 at 22:00Z — provisional (sources:2, settled:false).
+    await build(NOW_CLOSED);
     expect(fetchFx).toHaveBeenCalledTimes(1);
     expect(fetchSecondaryFx).toHaveBeenCalledTimes(1);
-    const probe = (await store.loadSession("2026-06-23"))!.closeProbe![FX_PROBE_KEY];
+    expect((await fxProbe()).settled).toBe(false);
+    expect((await fxProbe()).agreements).toBe(1);
+
+    // A redraw before the next full hour is held flat (hourly pacing).
+    fetchFx.mockClear();
+    fetchSecondaryFx.mockClear();
+    await build(new Date(NOW_CLOSED.getTime() + 5 * 60_000)); // 22:05Z
+    expect(fetchFx).not.toHaveBeenCalled();
+
+    // Agreements #2 (23:00Z) and #3 (00:00Z) ⇒ settled on the third.
+    await build(new Date(Date.parse("2026-06-23T23:00:00Z")));
+    expect((await fxProbe()).agreements).toBe(2);
+    await build(new Date(Date.parse("2026-06-24T00:00:00Z")));
+    const probe = await fxProbe();
     expect(probe.settled).toBe(true);
     expect(probe.sources).toBe(2);
+    expect(probe.agreements).toBe(3);
 
     // Settled ⇒ neither FX provider is asked again on a redraw.
     fetchFx.mockClear();
     fetchSecondaryFx.mockClear();
-    await loadOrBuildSessionCurve({
-      anchor: singleEtfAnchor(),
-      store,
-      fetchBars,
-      fetchFx,
-      fetchSecondaryFx,
-      now: new Date(NOW_CLOSED.getTime() + 60 * 60_000),
-    });
+    await build(new Date(Date.parse("2026-06-24T01:00:00Z")));
     expect(fetchFx).not.toHaveBeenCalled();
     expect(fetchSecondaryFx).not.toHaveBeenCalled();
   });

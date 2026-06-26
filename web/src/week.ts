@@ -40,6 +40,7 @@ import {
 import {
   PROBE_MIN_MS,
   FX_PROBE_KEY,
+  closeProbeReady,
   resolveCloseCompleteness,
   resolveFxCompleteness,
   type CloseProbeBackoff,
@@ -376,9 +377,7 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
   );
   const fetchableBehind = behind.filter((s) => {
     if (closeBackoff?.suppressed(closeKey(s), nowMs)) return false;
-    const probe = closeProbeFor(s);
-    if (probe && nowMs - probe.lastAttemptAt < probeMinMs) return false;
-    return true;
+    return closeProbeReady(closeProbeFor(s), nowMs, probeMinMs);
   });
   // Freshness is judged on the *fetchable* (market) symbols only — NAV funds
   // never gate a network pull, so a fund still missing a NAV day cannot force a
@@ -491,7 +490,7 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
     const fxProbe = loaded.closeProbe?.[FX_PROBE_KEY];
     const fxComplete = loaded.fx.some((b) => b.t >= settledCutoff);
     const fxKey = closeKey(FX_PROBE_KEY);
-    const fxSpaced = fxProbe ? nowMs - fxProbe.lastAttemptAt < probeMinMs : false;
+    const fxSpaced = fxProbe ? !closeProbeReady(fxProbe, nowMs, probeMinMs) : false;
     const fxFetchable =
       !(fxProbe?.settled ?? false) &&
       !(closeBackoff?.suppressed(fxKey, nowMs) ?? false) &&
