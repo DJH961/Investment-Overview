@@ -46,7 +46,7 @@ import {
   type Quote,
 } from "./prices";
 import type { Decimal } from "./decimal-config";
-import { isUsMarketOpen, latestSettledSessionDate } from "./market-hours";
+import { isUsMarketOpen, latestSettledSessionDate, nextSessionCloseMs } from "./market-hours";
 import { fetchTiingoEurUsd } from "./tiingo";
 import { Budget, etMinutesOfDay, WEB_DAILY_CAP, WEB_HOURLY_CAP } from "./tiingo-gate";
 
@@ -90,12 +90,13 @@ export function twelveDataBudgetRemaining(
 }
 
 /**
- * Freshness window for NAV-priced holdings (mutual funds / money-market).
- * Their NAV publishes only ~once per business day, so a long window keeps the
- * latest available value on screen while barely touching the free-tier budget.
- * Set to 24h so that, outside the evening publish window, a NAV is never
- * re-fetched until its cached value is more than a day old — there is no new
- * price to chase in between, and polling for one only wastes credits.
+ * Fallback freshness window for NAV-priced holdings (mutual funds /
+ * money-market) when their cache timestamp is unknown. Their NAV publishes only
+ * ~once per business day, so the live "rest" window is normally market-day based
+ * — it lasts until the next session close (see {@link navCacheTtlMs}), where a
+ * fresh NAV becomes due — rather than a fixed span. This 24h value is only used
+ * as a backstop when the cached observation time is unavailable, so a NAV is
+ * never re-fetched until its cached value is more than a day old.
  */
 export const DEFAULT_NAV_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -121,7 +122,12 @@ export interface NavRefreshOptions {
   marketOpen?: boolean;
   /** TTL while behind a fresh NAV (poll cadence — same as a normal symbol). */
   shortTtlMs?: number;
-  /** TTL once the latest NAV is in hand, or before it is expected. */
+  /**
+   * Fallback "rest" window once the latest NAV is in hand, used only when the
+   * cached observation time is unknown. Normally the rest window is market-day
+   * based — it lasts until {@link nextSessionCloseMs} — so this fixed value is
+   * just a backstop.
+   */
   longTtlMs?: number;
 }
 
@@ -133,17 +139,29 @@ export interface NavRefreshOptions {
  *
  * The rule is deliberately simple — no attempt to predict *when* tonight's NAV
  * will land, just "poll after the close until it is here":
- *   - **market open**: rest on the long window. A NAV strikes only after the
- *     session closes, and we already hold the prior settled session's NAV, so
- *     there is nothing new to chase mid-session; and
+ *   - **market open**: rest. A NAV strikes only after the session closes, and we
+ *     already hold the prior settled session's NAV, so there is nothing new to
+ *     chase mid-session; and
  *   - **market closed**: if we already hold the latest *settled* session's NAV
  *     ({@link latestSettledSessionDate}) there is nothing newer until the next
- *     session closes, so rest on the long window; otherwise poll like a normal
- *     symbol (the short window) until that NAV lands — however late, even past
- *     midnight, with no upper "catch-up" cap.
+ *     session closes, so rest; otherwise poll like a normal symbol (the short
+ *     window) until that NAV lands — however late, even past midnight, with no
+ *     upper "catch-up" cap.
+ *
+ * The **rest window is market-day based**, not a fixed number of hours: it
+ * expires at the next session close ({@link nextSessionCloseMs}), the moment a
+ * fresh NAV becomes due — keyed to the market boundary rather than to how long
+ * we have held the value. The {@link loadQuotes} freshness check is
+ * `now - cached.at < ttl`, so returning `nextSessionCloseMs - cached.at` makes a
+ * held NAV stay current right up to that close and then become due for chasing.
+ * This is robust to a NAV that arrives unusually late (and is then refreshed
+ * early the next day): the cached value rests until the next close instead of
+ * for a flat 24h, so no credit is wasted re-fetching an unchanged NAV over a
+ * weekend or before the next session has even closed. When the cached
+ * observation time is unavailable it falls back to the fixed {@link longTtlMs}.
  */
 export function navCacheTtlMs(
-  cached: { valueDate?: string | null } | null | undefined,
+  cached: { valueDate?: string | null; at?: number | null } | null | undefined,
   options: NavRefreshOptions = {},
 ): number {
   const {
@@ -153,12 +171,23 @@ export function navCacheTtlMs(
     longTtlMs = DEFAULT_NAV_CACHE_TTL_MS,
   } = options;
 
+  // Rest until the next session close (when a fresh NAV becomes due) rather than
+  // a fixed span after the fetch. The cached.at term cancels in the loadQuotes
+  // `now - cached.at < ttl` check, so the entry expires exactly at that close.
+  // Without a cached observation time, fall back to the fixed long window.
+  const restWindow = (): number => {
+    const at = cached?.at ?? null;
+    if (at === null) return longTtlMs;
+    const window = nextSessionCloseMs(new Date(now)) - at;
+    return window > 0 ? window : longTtlMs;
+  };
+
   // Session open: the NAV cannot strike until after the close, and we already
   // hold the prior settled session's NAV — nothing to chase.
-  if (marketOpen) return longTtlMs;
+  if (marketOpen) return restWindow();
   // Closed: poll until the just-settled session's NAV is in hand, then rest.
   const have = cached?.valueDate ?? null;
-  if (have && have >= latestSettledSessionDate(new Date(now))) return longTtlMs;
+  if (have && have >= latestSettledSessionDate(new Date(now))) return restWindow();
   return shortTtlMs;
 }
 

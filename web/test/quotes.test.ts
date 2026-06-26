@@ -26,6 +26,7 @@ import {
   DEFAULT_CACHE_TTL_MS,
 } from "../src/quotes";
 import { PriceError, type FetchLike, type Quote } from "../src/prices";
+import { nextSessionCloseMs } from "../src/market-hours";
 import { WEB_DAILY_CAP } from "../src/tiingo-gate";
 import Decimal from "decimal.js";
 
@@ -545,6 +546,42 @@ describe("navCacheTtlMs — adaptive NAV refresh", () => {
     const opts = { now: wed(22, 30), shortTtlMs: 1234, longTtlMs: 5678 };
     expect(navCacheTtlMs({ valueDate: "2024-01-09" }, opts)).toBe(1234);
     expect(navCacheTtlMs({ valueDate: "2024-01-10" }, opts)).toBe(5678);
+  });
+
+  it("rests until the next session close when the cache timestamp is known", () => {
+    // 17:30 ET Wed — closed, Wednesday settled and held. With a known `at` the
+    // rest window is market-day based: it expires at the next session close
+    // (Thursday 16:00 ET), not a fixed 24h after the fetch.
+    const at = wed(22, 0);
+    const now = wed(22, 30);
+    const ttl = navCacheTtlMs({ valueDate: "2024-01-10", at }, { now });
+    expect(ttl).toBe(nextSessionCloseMs(new Date(now)) - at);
+  });
+
+  it("is smart about a late NAV refreshed early the next day", () => {
+    // Wednesday's NAV arrived super late — 01:00 ET Thursday (06:00 UTC) — and is
+    // fetched then. A fixed 24h window would keep it 'fresh' until 06:00 UTC
+    // Friday, past Thursday's close where a new NAV is due. Market-day based, it
+    // instead rests only until Thursday's 16:00 ET close, then becomes due.
+    const at = new Date(2024, 0, 11, 6, 0).getTime(); // 01:00 ET Thu
+    const earlyThu = new Date(2024, 0, 11, 13, 0).getTime(); // 08:00 ET Thu (pre-open)
+    const ttl = navCacheTtlMs({ valueDate: "2024-01-10", at }, { now: earlyThu });
+    const thuClose = nextSessionCloseMs(new Date(earlyThu));
+    expect(ttl).toBe(thuClose - at);
+    // The entry stays fresh up to Thursday's close and not a moment past it.
+    expect(earlyThu - at).toBeLessThan(ttl); // still fresh now
+    expect(thuClose - at).toBe(ttl); // expires exactly at the close
+  });
+
+  it("does not force a needless weekend re-fetch", () => {
+    // Friday's NAV held, fetched Friday evening; on Saturday the rest window
+    // still reaches forward to Monday's close — well over 24h — so no credit is
+    // wasted re-fetching an unchanged NAV over the weekend.
+    const friAt = new Date(2024, 0, 12, 22, 0).getTime(); // Fri 17:00 ET
+    const now = sat(22);
+    const ttl = navCacheTtlMs({ valueDate: "2024-01-12", at: friAt }, { now });
+    expect(ttl).toBe(nextSessionCloseMs(new Date(now)) - friAt);
+    expect(ttl).toBeGreaterThan(DEFAULT_NAV_CACHE_TTL_MS); // longer than a flat 24h
   });
 
   it("carries the fetched quote's value-date through to the cache", async () => {

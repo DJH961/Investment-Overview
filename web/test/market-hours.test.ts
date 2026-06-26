@@ -9,6 +9,7 @@ import {
   recentTradingSessions,
   sessionCloseMs,
   sessionOpenMs,
+  nextSessionCloseMs,
   settledSessionsSince,
   elapsedSessionMs,
   sessionIsWarmingUp,
@@ -169,6 +170,32 @@ describe("sessionCloseMs / sessionOpenMs", () => {
   it("resolves 16:00 ET to UTC during standard time (UTC-5)", () => {
     // 2026-01-12 is EST: 16:00 ET == 21:00 UTC.
     expect(new Date(sessionCloseMs("2026-01-12")).toISOString()).toBe("2026-01-12T21:00:00.000Z");
+  });
+});
+
+describe("nextSessionCloseMs", () => {
+  it("returns today's close when the session has not yet closed", () => {
+    // 2026-06-23 (Tue) 10:00 ET == 14:00 UTC, before the 16:00 ET close.
+    const now = new Date("2026-06-23T14:00:00.000Z");
+    expect(new Date(nextSessionCloseMs(now)).toISOString()).toBe("2026-06-23T20:00:00.000Z");
+  });
+
+  it("rolls to the next trading day once today's close has passed", () => {
+    // 2026-06-23 (Tue) 17:00 ET == 21:00 UTC, after the close → Wednesday's close.
+    const now = new Date("2026-06-23T21:00:00.000Z");
+    expect(new Date(nextSessionCloseMs(now)).toISOString()).toBe("2026-06-24T20:00:00.000Z");
+  });
+
+  it("skips the weekend from Friday evening to Monday's close", () => {
+    // 2026-06-26 is a Friday; after its close the next close is Monday 2026-06-29.
+    const now = new Date("2026-06-26T21:00:00.000Z");
+    expect(new Date(nextSessionCloseMs(now)).toISOString()).toBe("2026-06-29T20:00:00.000Z");
+  });
+
+  it("returns today's close before the open on a trading day", () => {
+    // 2026-06-23 (Tue) 07:00 ET == 11:00 UTC, pre-open → today's close.
+    const now = new Date("2026-06-23T11:00:00.000Z");
+    expect(new Date(nextSessionCloseMs(now)).toISOString()).toBe("2026-06-23T20:00:00.000Z");
   });
 });
 
