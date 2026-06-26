@@ -16,22 +16,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [4.5.3] — 2026-06-26
 
-### Fixed
+### Changed
 
-- **NAV coverage no longer reports "awaiting" all night for a NAV that does not
-  exist yet.** Mutual-fund and money-market NAVs publish only once a day and
-  routinely land a *trading day late*, so just after a settled session's publish
-  hour the provider often hasn't struck that session's NAV at all — the freshest
-  value that can exist is the prior session's. PR #152 anchored the coverage
-  line's "awaiting" judgement to the latest settled session's NAV, so a held,
-  one-session-late NAV was flagged as missing every night until it landed.
-  `buildCoverageFacts` (`web/src/app.ts`) now tolerates one trading day of
-  publish lag (`previousTradingSession` of the latest expected NAV date),
-  mirroring the desktop diagnostics' mutual-fund staleness grace, so holding the
-  latest *published* NAV reads "in" / "up to date" instead of a perpetual
-  "awaiting". A NAV is flagged "awaiting" only once it falls more than a trading
-  day behind (a genuine provider failure). The refresh-cadence logic keeps the
-  strict threshold so we still actively poll for the newest NAV.
+- **NAV freshness is now "poll after the close until tonight's NAV lands" —
+  no more trying to predict *when* a fund publishes.** Mutual-fund and
+  money-market NAVs publish only once a day, after the session closes. The web
+  companion previously tried to *learn* each fund's publish hour and only then
+  judge a NAV as due — which meant the post-close, pre-NAV window was reported as
+  "up to date" (and a freshly-struck NAV at ~2am was not actively fetched). The
+  whole prediction machinery (learned publish hours, catch-up windows, the
+  one-trading-day publish-lag grace) is removed in favour of a simple rule
+  anchored to the latest *settled* US session (`latestSettledSessionDate`):
+  - **market open** → rest on the long ~12h window; today's NAV strikes only
+    after the close and we already hold the prior settled session's NAV
+    ("expected tonight"); a fund behind even that prior NAV reads "awaiting";
+  - **market closed** → if we hold the latest settled session's NAV the book is
+    "up to date"; otherwise the fund is "awaiting" and is polled like an ordinary
+    symbol until the NAV lands, however late (even past midnight), with no upper
+    cap.
+  This means the after-close window now correctly reads "awaiting tonight's NAV",
+  the NAV is actively fetched the moment it publishes, and once it is in hand the
+  line relaxes back to "up to date". `navCacheTtlMs` (`web/src/quotes.ts`) and
+  `buildCoverageFacts` (`web/src/app.ts`) carry the new logic;
+  `cache.ts`/`tiingo-fallback.ts` no longer record learned publish times.
 
 ## [4.5.2] — 2026-06-26
 
