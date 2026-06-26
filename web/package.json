@@ -1,6 +1,6 @@
 {
   "name": "investment-overview-web",
-  "version": "4.9.0",
+  "version": "4.9.1",
   "private": true,
   "type": "module",
   "description": "v3.0 Live Web Companion — read-only GitHub Pages front-end that decrypts the published portfolio blob and renders live KPIs.",
