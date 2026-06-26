@@ -21,6 +21,7 @@ function holding(over: Partial<HoldingView> & { symbol: string }): HoldingView {
     priceIsLive: false,
     priceMarketOpen: null,
     priceAsOf: null,
+    pricePulledAt: null,
     priceFreshness: "aged",
     priceFallbackDate: "2024-01-01",
     valueIsStale: false,
