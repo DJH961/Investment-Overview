@@ -39,6 +39,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   split boundary — with the FX provider's settled `previousClose`
   (`fxRateEurUsdPrev`) as the dated baseline. Documented on
   `fxTodayDeviationPct` (`web/src/compute.ts`) and in `web/src/session-fx.ts`.
+- **The after-hours backfill of an incomplete 1D EUR→USD close bar now runs on
+  *every* pulling mechanic, not just the login warm-up.** When the session's
+  price bars are already in hand (so no 1D graph backfill fetches the FX track
+  alongside them) but the stored EUR→USD track stopped short of the 16:00 ET
+  close, the freeze anchor and currency-effect split would otherwise read a
+  mid-session rate as "the close". The FX-only backfill (`prefetchSessionFx`,
+  `sessionFxBarsComplete` in `web/src/session-fx.ts`) is now also wired into the
+  shared `primeStaleGraphPackages` chokepoint in `web/src/app.ts`, so the
+  routine auto, manual and reset refresh rounds all repair the close while the
+  market is shut. If the login warm-up ever fails before reaching its FX step,
+  the next refresh closes the gap instead of leaving it stranded until the next
+  session. Same gate as the start path (closed market, FX track short of the
+  close, no session bar pull this round) and routed through the same
+  reservation/429-breaker accounting.
 
 ### Changed
 
