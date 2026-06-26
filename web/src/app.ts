@@ -5991,6 +5991,8 @@ export function buildCoverageFacts(
       // user, just as live as one re-pulled this round, so it must not read as
       // "cached" (mirrors {@link displayFxSource}). Only promote while the session
       // is open, where "live" is a meaningful claim.
+      // `>= 0` rejects a future-stamped observation (clock skew) from reading as
+      // live, mirroring the headline badge's `liveFeedAge >= 0` guard in compute.ts.
       const observedAt = q?.at ?? null;
       const cacheStillLive =
         ctx.marketOpen &&
