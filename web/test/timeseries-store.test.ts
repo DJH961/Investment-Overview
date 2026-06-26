@@ -96,6 +96,27 @@ describe("TimeSeriesStore", () => {
     expect(await store.loadSession("2024-01-10")).toBeNull();
   });
 
+  it("deleteSession() drops only the named record, leaving the rest intact", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.saveSession(session("2024-01-08"));
+    await store.saveSession(session("2024-01-10"));
+    await store.saveSession({ ...session("2024-01-10"), day: "1W-daily" });
+    // Drop the namespaced 1W cache (the "Regenerate 1W graph" path) — dated days survive.
+    await store.deleteSession("1W-daily");
+    expect(await store.listDays()).toEqual(["2024-01-08", "2024-01-10"]);
+    expect(await store.loadSession("1W-daily")).toBeNull();
+    // Drop a single trading day (the "Regenerate 1D graph" path) — the other remains.
+    await store.deleteSession("2024-01-10");
+    expect(await store.listDays()).toEqual(["2024-01-08"]);
+  });
+
+  it("deleteSession() is a no-op for an absent key", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.saveSession(session("2024-01-10"));
+    await store.deleteSession("2099-12-31");
+    expect(await store.listDays()).toEqual(["2024-01-10"]);
+  });
+
   it("round-trips live-tip breadcrumbs preserving precision", async () => {
     const store = new TimeSeriesStore(memoryBackend());
     await store.saveSession({

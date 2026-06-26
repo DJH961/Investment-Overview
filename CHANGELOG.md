@@ -14,6 +14,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.13.0] — 2026-06-26
+
+### Added
+
+- **"Regenerate 1D graph" and "Regenerate 1W graph" buttons in the web Settings →
+  Maintenance section.** Each wipes just that one live curve's stored bars/tips and
+  re-pulls them from scratch, then repaints — scoped to a single graph, so use them
+  when only the 1D or 1W line looks wrong or stuck. Every other day and your price
+  caches are left untouched, and the hard free-tier per-minute/day budget still
+  binds (overflow simply defers) (`web/src/app.ts` `regenerateGraph`,
+  `TimeSeriesStore.deleteSession`).
+
+### Changed
+
+- **"Force-fetch every price now" is a quotes-only escape hatch.** The top
+  Maintenance button re-pulls *every* quote — ETFs/stocks **and** the mutual-fund
+  NAVs — ignoring the NAV close-await and market-closed skips, but it deliberately
+  leaves the 1D/1W graphs alone so a force-all never spends credits on graph bars.
+  The dedicated "Regenerate 1D graph" / "Regenerate 1W graph" buttons own the
+  curves; a from-scratch reset still re-primes every graph (`web/src/app.ts`
+  `graphPrimeDecision`, `forceFetchAllNow`).
+
 ## [4.12.4] — 2026-06-26
 
 ### Fixed
