@@ -35,12 +35,20 @@ import {
 } from "./market-hours";
 import { sessionBarsComplete } from "./session-fx";
 import {
+  PROBE_MIN_MS,
+  FX_PROBE_KEY,
+  resolveCloseCompleteness,
+  resolveFxCompleteness,
+  type CloseProbeBackoff,
+  type CloseResolveLog,
+} from "./close-completeness";
+import {
   reconstructSessionCurve,
   type Bar,
   type CurvePoint,
   type ReconHolding,
 } from "./timeseries";
-import { TimeSeriesStore, type Breadcrumb } from "./timeseries-store";
+import { TimeSeriesStore, type Breadcrumb, type StoredCloseProbe } from "./timeseries-store";
 
 /**
  * One intraday-priced holding (a stock/ETF) as the curve needs it. `closeNative`
@@ -303,8 +311,23 @@ export interface SessionCurveOptions {
   store: TimeSeriesStore;
   /** Fetch native price bars for the given tickers (browser-direct time_series). */
   fetchBars: BarFetcher;
+  /**
+   * The **secondary** provider leg (Tiingo) used for the single after-close
+   * escalation (plan C3): when the primary stops advancing on a short symbol, the
+   * second source is asked **once** whether a later bar exists. Two sources
+   * agreeing on the same last bar is the settle signal. Omit/null to disable the
+   * escalation (the symbol then relies on the spacing gate + back-off alone).
+   */
+  fetchSecondaryBars?: BarFetcher | null;
   /** Fetch EUR→USD bars for the session; omit/null to fall back to `baseFx`. */
   fetchFx?: (() => Promise<Bar[]>) | null;
+  /**
+   * The **secondary** EUR/USD leg for the after-close FX escalation. When the
+   * primary cannot advance the FX track to the settled close, the backup is asked
+   * once whether a later FX close exists; two sources agreeing settle the day's
+   * FX. Omit/null to resolve FX on the primary alone (reached-close still works).
+   */
+  fetchSecondaryFx?: (() => Promise<Bar[]>) | null;
   /** Reference instant (defaults to now). */
   now?: Date;
   /** Live headline totals to pin as the tip while the market is open. */
@@ -349,6 +372,25 @@ export interface SessionCurveOptions {
    * fetching enabled. Defaults to `false` (legacy fetch-then-reconstruct).
    */
   regenerateOnly?: boolean;
+  /**
+   * Outage back-off for the after-close resolution (plan C4). Symbols whose
+   * `${scope}:${symbol}` key is in an armed cooldown are skipped (no credit, no
+   * attempt); a deferred-outage strikes it, a settle/reached-close clears it.
+   * A `cacheSeriesBackoff()` instance satisfies this. Omit to disable.
+   */
+  closeBackoff?: CloseProbeBackoff | null;
+  /** Back-off key scope for the close resolution (default `"close:1D"`). */
+  closeBackoffScope?: string;
+  /**
+   * Minimum spacing between post-close probes of an unsettled short symbol
+   * (default {@link PROBE_MIN_MS}). Between probes the symbol is held flat — no
+   * fetch, no credit — which is what kills the per-render hammer (plan C4).
+   */
+  probeMinMs?: number;
+  /** One structured verdict event per resolved short symbol (plan C6). */
+  onCloseResolve?: (event: CloseResolveLog) => void;
+  /** Render a bar instant for the close-resolution log (defaults to raw ms). */
+  formatInstant?: (t: number) => string;
 }
 
 /**
@@ -420,21 +462,48 @@ export async function loadOrBuildSessionCurve(
   const closeMs = sessionCloseMs(day);
 
   let stored = await store.loadSession(day);
+  const nowMs = now.getTime();
+  const closeProbeFor = (s: string): StoredCloseProbe | undefined => stored?.closeProbe?.[s];
+  const closeBackoff = options.closeBackoff ?? null;
+  const closeScope = options.closeBackoffScope ?? "close:1D";
+  const closeKey = (s: string): string => `${closeScope}:${s}`;
+  const probeMinMs = options.probeMinMs ?? PROBE_MIN_MS;
   // A symbol needs (re)fetching when it has no stored bars at all, or — once the
   // session has shut — when its newest stored bar never reached the 16:00 ET
   // close. The latter is the after-close "stale partial-day fetch" (scenario F):
   // bars pulled mid-session (e.g. at 14:00) sit in the store looking present, so
   // a mere length check would treat them as complete and the 1D curve would end
-  // early. Treating them as missing re-pulls the tail so the curve runs to the
+  // early. Treating them as incomplete re-pulls the tail so the curve runs to the
   // close. While the market is open this never triggers — the session has not
   // closed yet, and the live-tip breadcrumb trail carries the curve forward.
+  //
+  // A symbol the resolution has marked **settled** (the best close two providers
+  // could give us) is *not* incomplete, even when its newest bar falls short of
+  // the clock — that is the whole point of the settle memory (plan C2). The
+  // wholly-missing branch below still forces a fresh fetch regardless of any
+  // probe, so a pruned/cleared symbol is never masked.
   const incompleteAfterClose = (symbol: string): boolean => {
     if (marketOpen) return false;
     const bars = stored?.bars[symbol];
     if (!bars?.length) return false; // wholly missing — already caught below
-    return !sessionBarsComplete(bars, closeMs, INTRADAY_BAR_INTERVAL_MS);
+    if (sessionBarsComplete(bars, closeMs, INTRADAY_BAR_INTERVAL_MS)) return false;
+    if (closeProbeFor(symbol)?.settled) return false; // C2: best close already accepted
+    return true;
   };
-  const missing = symbols.filter((s) => !(stored?.bars[s]?.length) || incompleteAfterClose(s));
+  const whollyMissing = symbols.filter((s) => !stored?.bars[s]?.length);
+  const incompletePresent = symbols.filter((s) => incompleteAfterClose(s));
+  // C4 spacing gate + back-off suppression: a present-but-short symbol is only
+  // fetchable once its last probe is older than the spacing window and it is not
+  // in an armed cooldown. Between probes it is simply held flat — no fetch, no
+  // credit — which is what collapses the per-render hammer the log caught on DAX.
+  // (The gate applies only to the incomplete-but-present branch; a wholly-missing
+  // symbol must still fetch immediately.)
+  const fetchableShort = incompletePresent.filter((s) => {
+    if (closeBackoff?.suppressed(closeKey(s), nowMs)) return false;
+    const probe = closeProbeFor(s);
+    if (probe && nowMs - probe.lastAttemptAt < probeMinMs) return false;
+    return true;
+  });
   // Breadcrumbs remove the need for a cadence re-fetch: once the session's bars
   // are on the device, the free live-tip trail below carries the curve forward on
   // every build (finer than the 5-min bars, at zero credits), so a long
@@ -448,28 +517,72 @@ export async function loadOrBuildSessionCurve(
   const needFetch =
     !(options.regenerateOnly ?? false) &&
     symbols.length > 0 &&
-    (missing.length > 0 || (marketOpen && !recentlyFetched));
+    (marketOpen
+      ? whollyMissing.length > 0 || !recentlyFetched
+      : whollyMissing.length > 0 || fetchableShort.length > 0);
 
   let fxAttempted = false;
   if (needFetch) {
-    // Closed: only backfill the gaps. Open: refresh every symbol so the curve
-    // grows to the freshest bar (still 1 credit each — bars are free).
-    const fetchSymbols = marketOpen ? symbols : missing;
-    const barsBySymbol = await fetchBars(fetchSymbols);
     const incomingBars: Record<string, Bar[]> = {};
-    for (const [symbol, bars] of barsBySymbol) {
-      // Clamp to the day before storing: Twelve Data's primary fetch over-reaches
-      // into prior sessions when today is barely traded, and `mergeSession` unions
-      // by timestamp, so unclamped bars would persist across the whole session.
-      const dayBars = clampBarsToDay(bars, openMs, closeMs);
-      if (dayBars.length > 0) incomingBars[symbol] = dayBars;
+    const fetchedAll = new Map<string, Bar[]>();
+    let incomingProbe: Record<string, StoredCloseProbe> | undefined;
+    let probeClear: string[] | undefined;
+    const addDayBars = (barsBySymbol: Map<string, Bar[]>): void => {
+      for (const [symbol, bars] of barsBySymbol) {
+        fetchedAll.set(symbol, bars);
+        // Clamp to the day before storing: Twelve Data's primary fetch over-reaches
+        // into prior sessions when today is barely traded, and `mergeSession` unions
+        // by timestamp, so unclamped bars would persist across the whole session.
+        const dayBars = clampBarsToDay(bars, openMs, closeMs);
+        if (dayBars.length > 0) incomingBars[symbol] = dayBars;
+      }
+    };
+    if (marketOpen) {
+      // Open: refresh every symbol so the curve grows to the freshest bar (still 1
+      // credit each — bars are free).
+      addDayBars(await fetchBars(symbols));
+    } else {
+      // Closed: backfill the wholly-missing gaps the normal way (the capacity
+      // split's emptiness spill already escalates a never-seen symbol to the
+      // secondary provider).
+      if (whollyMissing.length > 0) addDayBars(await fetchBars(whollyMissing));
+      // …and resolve the incomplete-but-present (short) symbols through the
+      // progress → escalate → settle algorithm (plan C3): one primary leg, one
+      // secondary escalation only for the symbols that did not advance, then a
+      // terminal settle / progress / deferred-outage classification.
+      if (fetchableShort.length > 0) {
+        const resolution = await resolveCloseCompleteness({
+          symbols: fetchableShort,
+          storedBars: stored?.bars ?? {},
+          probes: stored?.closeProbe,
+          closeMs,
+          tol: INTRADAY_BAR_INTERVAL_MS,
+          clampBars: (bars) => clampBarsToDay(bars, openMs, closeMs),
+          fetchPrimary: fetchBars,
+          fetchSecondary: options.fetchSecondaryBars ?? null,
+          now: nowMs,
+          backoff: closeBackoff,
+          backoffKey: closeKey,
+          log: options.onCloseResolve,
+          label: "1D",
+          formatInstant: options.formatInstant,
+        });
+        for (const [s, b] of resolution.fetched) fetchedAll.set(s, b);
+        for (const [s, b] of Object.entries(resolution.bars)) incomingBars[s] = b;
+        if (Object.keys(resolution.closeProbe).length > 0) incomingProbe = resolution.closeProbe;
+        if (resolution.closeProbeClear.length > 0) probeClear = resolution.closeProbeClear;
+      }
     }
     // Hand the freshly paid-for bars back to the holdings' quote cache: the
     // newest bar is a current native mark, so a holding row can skip its own
     // per-symbol quote request rather than re-buy the same price.
-    if (options.onFreshBars) options.onFreshBars(barsBySymbol);
+    if (options.onFreshBars) options.onFreshBars(fetchedAll);
     let incomingFx: Bar[] | undefined;
-    if (fetchFx) {
+    // While the market is **open** the FX track refreshes alongside the prices
+    // (the live tip uses the freshest rate). The **closed**-market FX track is
+    // owned by the dedicated completeness step below, so it is *not* fetched here
+    // — that is what stops a per-render after-close FX re-pull.
+    if (fetchFx && marketOpen) {
       fxAttempted = true;
       try {
         incomingFx = await fetchFx();
@@ -480,33 +593,68 @@ export async function loadOrBuildSessionCurve(
         incomingFx = undefined;
       }
     }
-    stored = await store.mergeSession(day, { bars: incomingBars, fx: incomingFx }, now.getTime());
+    stored = await store.mergeSession(
+      day,
+      { bars: incomingBars, fx: incomingFx, closeProbe: incomingProbe, closeProbeClear: probeClear },
+      now.getTime(),
+    );
   }
 
-  // Secondary-currency refill. A self-fetched curve only diverges EUR from USD
-  // when it has the day's FX track; without it `reconstructSessionCurve` falls
-  // back to the flat `baseFx` for every point and the rebased secondary line
-  // collapses onto the primary one. So when the price bars are already on the
-  // device (no `needFetch`, e.g. a prior backfill stored bars without FX) but
-  // the FX track is missing, pull it once. Gated on having bars to rebase and on
-  // not having just tried FX above, so a fully-loaded closed-market curve never
-  // re-fires once its FX is in hand.
+  // After-close **FX completeness** (currency parity with the price settle). The
+  // EUR/USD track suffers the same class of bug as a quiet symbol: fetched only
+  // when *wholly missing*, an incomplete-but-present FX track would be stuck on a
+  // stale intraday rate (so the rebased EUR line stops diverging at the right
+  // close), while a naive "always refill" would re-pull FX on every render. So
+  // once the session has shut, route FX through the very same progress → escalate
+  // → settle resolution: advance it to the settled close, remember that it is
+  // settled (no per-render re-pull), and only ever probe on the spaced, back-off-
+  // bounded cadence. Open-market FX is handled above; UI redraws stay network-free.
   const loaded = stored;
   if (
     !(options.regenerateOnly ?? false) &&
     fetchFx &&
     !fxAttempted &&
+    !marketOpen &&
     loaded !== null &&
-    loaded.fx.length === 0 &&
     symbols.some((s) => (loaded.bars[s]?.length ?? 0) > 0)
   ) {
-    try {
-      const incomingFx = clampBarsToDay(await fetchFx(), openMs, closeMs);
-      if (incomingFx.length > 0) {
-        stored = await store.mergeSession(day, { fx: incomingFx }, now.getTime());
+    const fxProbe = loaded.closeProbe?.[FX_PROBE_KEY];
+    const fxComplete =
+      loaded.fx.length > 0 && sessionBarsComplete(loaded.fx, closeMs, INTRADAY_BAR_INTERVAL_MS);
+    const fxKey = closeKey(FX_PROBE_KEY);
+    const fxSpaced = fxProbe ? nowMs - fxProbe.lastAttemptAt < probeMinMs : false;
+    const fxFetchable =
+      !(fxProbe?.settled ?? false) &&
+      !(closeBackoff?.suppressed(fxKey, nowMs) ?? false) &&
+      !fxSpaced &&
+      (loaded.fx.length === 0 || !fxComplete);
+    if (fxFetchable) {
+      const fxRes = await resolveFxCompleteness({
+        storedFx: loaded.fx,
+        probe: fxProbe,
+        closeMs,
+        tol: INTRADAY_BAR_INTERVAL_MS,
+        clampBars: (bars) => clampBarsToDay(bars, openMs, closeMs),
+        fetchPrimary: fetchFx,
+        fetchSecondary: options.fetchSecondaryFx ?? null,
+        now: nowMs,
+        backoff: closeBackoff,
+        backoffKey: fxKey,
+        log: options.onCloseResolve,
+        label: "1D",
+        formatInstant: options.formatInstant,
+      });
+      if (fxRes.fx !== undefined || fxRes.probe !== undefined || fxRes.probeClear) {
+        stored = await store.mergeSession(
+          day,
+          {
+            fx: fxRes.fx,
+            closeProbe: fxRes.probe ? { [FX_PROBE_KEY]: fxRes.probe } : undefined,
+            closeProbeClear: fxRes.probeClear ? [FX_PROBE_KEY] : undefined,
+          },
+          now.getTime(),
+        );
       }
-    } catch {
-      // Best-effort refinement; the curve still draws on `baseFx`.
     }
   }
 
