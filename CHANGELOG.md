@@ -14,7 +14,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.9.2] — 2026-06-26
+## [4.10.0] — 2026-06-26
+
+### Changed
+
+- **The downloadable data-polling log was redesigned into a genuine debugging
+  trail.** It was a flat wall of identically-formatted lines: you couldn't tell
+  who kicked off a pull, what actually settled, what failed, where we deliberately
+  backed off, or how much free-tier budget was left when a round ended. The log is
+  now sliced into clearly demarcated **pulling rounds**, each bounded by a `┏━━`
+  start banner (naming the trigger — unlock, kickoff, manual tap, auto tick, or a
+  skipped no-pull tick — plus the time span and duration) and a `┗━━` verdict
+  footer. Every line carries a severity glyph in the gutter (`✓` settled · `↩`
+  backed off / deferred to save budget · `⚠` degraded · `✗` failed), failures in a
+  round are re-listed under it so they can't hide, and a macro overview at the top
+  counts the rounds, flags how many hit a failure, and shows the latest budget
+  left. The round-completion line now reports the full settle breakdown
+  (`N live, M cached, K deferred, J failed`) **and the budget remaining** (primary
+  per-minute/day plus the backup provider's hourly/daily usage). Log entries gained
+  an optional severity level, set explicitly at the key fetch/fallback/failure
+  sites and inferred from wording elsewhere (`web/src/polling-log.ts`,
+  `web/src/app.ts`).
+
+
 
 ### Fixed
 
