@@ -105,6 +105,13 @@ import {
   type CalcInstrument,
   type SavedTarget,
 } from "./calculator";
+import {
+  HOLDING_UPDATED_FLASH_MS,
+  emptyHoldingStatusModel,
+  resolveHoldingStatus,
+  type HoldingStatusModel,
+  type HoldingStatusView,
+} from "./holding-status";
 
 type Attrs = Record<string, string>;
 
@@ -964,8 +971,119 @@ const PROJ_KEYS = {
   targetEur: "iv.web.proj.targetEur",
 } as const;
 
+/**
+ * The animated "thinking" dots shown while a holding is updating / queued — three
+ * staggered pips that light up in sequence (driven by CSS `holding-dot-pulse`).
+ */
+function statusDots(): HTMLElement {
+  return h("span", { class: "holding-status-dots", "aria-hidden": "true" }, [
+    h("span", { class: "holding-status-dot" }, []),
+    h("span", { class: "holding-status-dot" }, []),
+    h("span", { class: "holding-status-dot" }, []),
+  ]);
+}
+
+/**
+ * Paint a resolved {@link HoldingStatusView} into a status caption element,
+ * replacing whatever it held. Shared by the initial render and the App's live
+ * mid-round DOM updates so both routes produce identical markup.
+ */
+function renderStatusContent(span: HTMLElement, view: HoldingStatusView): void {
+  span.className = `holding-status holding-status--${view.kind}`;
+  span.title = view.title;
+  const children: Array<Node | string> = [];
+  if (view.check) {
+    children.push(h("span", { class: "holding-status-check", "aria-hidden": "true" }, ["✓"]));
+  }
+  const text = view.stamp ? `${view.label} ${view.stamp}` : view.label;
+  children.push(h("span", { class: "holding-status-text" }, [text]));
+  if (view.dots) children.push(statusDots());
+  span.replaceChildren(...children);
+}
+
+/**
+ * The faint per-holding update-status caption (bottom-right of the card). It
+ * narrates the price-pull cycle: a quiet "Updated <time>" stamp, an "Updating…"
+ * state with lit dots while a pull is live or queued, and a brief "Updated ✓"
+ * success flash that settles back to the time stamp once a fresh price lands.
+ */
+function renderHoldingStatus(
+  holding: HoldingView,
+  status: HoldingStatusModel,
+  now: Date,
+): HTMLElement {
+  const view = resolveHoldingStatus({
+    livePhase: status.phases.get(holding.symbol) ?? null,
+    asOf: holding.priceAsOf,
+    fallbackDate: holding.priceFallbackDate,
+    updatedAt: status.updatedAt.get(holding.symbol) ?? null,
+    nowMs: now.getTime(),
+    now,
+  });
+  const span = h("span", { class: "holding-status", "data-symbol": holding.symbol });
+  renderStatusContent(span, view);
+  // When a row mounts mid-flash, let the "Updated ✓" success state play out then
+  // settle back into the quiet "Updated <time>" stamp on its own — so the cycle
+  // completes even without a further re-render. The settle is a one-shot timer;
+  // a later full re-render simply re-resolves the state from scratch.
+  if (view.kind === "updated") {
+    const updatedAt = status.updatedAt.get(holding.symbol);
+    if (updatedAt !== undefined && typeof setTimeout === "function") {
+      const remaining = Math.max(0, HOLDING_UPDATED_FLASH_MS - (now.getTime() - updatedAt));
+      setTimeout(() => {
+        if (!span.isConnected) return;
+        const settled = resolveHoldingStatus({
+          asOf: holding.priceAsOf,
+          fallbackDate: holding.priceFallbackDate,
+          updatedAt: null,
+          nowMs: Date.now(),
+          now: new Date(),
+        });
+        renderStatusContent(span, settled);
+        span.classList.add("holding-status--settling");
+      }, remaining);
+    }
+  }
+  return h("div", { class: "holding-status-row" }, [span]);
+}
+
+/**
+ * Live (no full re-render) update of the on-screen holding status captions at the
+ * start of a refresh round: symbols being pulled flip to "Updating…" with lit
+ * dots, queued ones to the calmer queued state. Operates on the captions already
+ * in the DOM, keyed by their `data-symbol`, so the user sees motion the instant a
+ * round begins rather than only when it finishes.
+ */
+export function markHoldingsUpdating(
+  root: ParentNode,
+  updating: Iterable<string>,
+  queued: Iterable<string> = [],
+): void {
+  const updatingSet = new Set(updating);
+  const queuedSet = new Set(queued);
+  const spans = root.querySelectorAll<HTMLElement>(".holding-status[data-symbol]");
+  spans.forEach((span) => {
+    const symbol = span.dataset.symbol;
+    if (symbol === undefined) return;
+    const phase = updatingSet.has(symbol) ? "updating" : queuedSet.has(symbol) ? "queued" : null;
+    if (phase === null) return;
+    const view = resolveHoldingStatus({
+      livePhase: phase,
+      asOf: null,
+      fallbackDate: "",
+      nowMs: Date.now(),
+    });
+    renderStatusContent(span, view);
+  });
+}
+
 /** A single holding as a list row (mobile-first, no wide horizontal table). */
-function renderHoldingRow(holding: HoldingView, badge?: string, now: Date = new Date()): HTMLElement {
+function renderHoldingRow(
+  holding: HoldingView,
+  badge?: string,
+  now: Date = new Date(),
+  status: HoldingStatusModel = emptyHoldingStatusModel(),
+): HTMLElement {
   const symChildren: Array<Node | string> = [holding.symbol];
   if (holding.priceType === "nav") symChildren.push(h("span", { class: "pill" }, ["NAV"]));
   // A genuinely stale fallback (no price at all) is still flagged; the milder
@@ -1038,10 +1156,15 @@ function renderHoldingRow(holding: HoldingView, badge?: string, now: Date = new 
     chip(`XIRR ${formatPercent(holdingXirr)}`, signClass(holdingXirr)),
   ]);
 
-  return h("li", { class: "holding" }, [main, meta]);
+  return h("li", { class: "holding" }, [main, meta, renderHoldingStatus(holding, status, now)]);
 }
 
-function renderHoldings(holdings: HoldingView[], badges?: Map<string, string>, now: Date = new Date()): HTMLElement {
+function renderHoldings(
+  holdings: HoldingView[],
+  badges?: Map<string, string>,
+  now: Date = new Date(),
+  status: HoldingStatusModel = emptyHoldingStatusModel(),
+): HTMLElement {
   const sorted = [...holdings].sort((a, b) => {
     const av = a.valueEur?.toNumber() ?? -1;
     const bv = b.valueEur?.toNumber() ?? -1;
@@ -1051,7 +1174,7 @@ function renderHoldings(holdings: HoldingView[], badges?: Map<string, string>, n
   const list = h(
     "ul",
     { class: "holding-list" },
-    sorted.map((holding) => renderHoldingRow(holding, badges?.get(holding.symbol), now)),
+    sorted.map((holding) => renderHoldingRow(holding, badges?.get(holding.symbol), now, status)),
   );
   return collapsibleSection("Holdings", count, list, "holdings");
 }
@@ -1147,7 +1270,7 @@ export function renderDashboard(
   onSettings: () => void,
   lockLabel = "Lock",
   liveGraph?: LiveGraphHooks,
-  options: { initialTabId?: string } = {},
+  options: { initialTabId?: string; holdingStatus?: HoldingStatusModel } = {},
 ): HTMLElement {
   const refresh = h("button", { class: "icon-btn", type: "button", "data-action": "refresh" }, [
     h("span", { class: "icon-btn-glyph", "aria-hidden": "true" }, ["↻"]),
@@ -1181,7 +1304,7 @@ export function renderDashboard(
   // Each tab is a self-contained panel; the nav just toggles which is visible
   // (no re-render, so live figures and form state survive a tab switch).
   const tabs: TabDef[] = [
-    { id: "overview", label: "Overview", glyph: "◎", panel: renderOverviewPanel(model, liveGraph) },
+    { id: "overview", label: "Overview", glyph: "◎", panel: renderOverviewPanel(model, liveGraph, options.holdingStatus) },
     { id: "periods", label: "Periods", glyph: "▦", panel: renderPeriodsPanel(model.periods, model.deposits, model.plan) },
     { id: "analytics", label: "Risk", glyph: "📈", panel: renderAnalyticsPanel(model.analytics, model.overview, model.deposits) },
     { id: "plan", label: "Calculator", glyph: "🧮", panel: renderCalculatorPanel(model.calculator) },
@@ -1273,7 +1396,11 @@ function saveActiveTab(id: string | undefined): void {
 }
 
 /** The Phase 3 overview (hero, return horizons, KPIs, holdings, allocation). */
-function renderOverviewPanel(model: DashboardModel, liveGraph?: LiveGraphHooks): HTMLElement {
+function renderOverviewPanel(
+  model: DashboardModel,
+  liveGraph?: LiveGraphHooks,
+  holdingStatus: HoldingStatusModel = emptyHoldingStatusModel(),
+): HTMLElement {
   const content: Array<Node | string> = [
     renderHero(model.overview),
     renderReturns(model.overview),
@@ -1290,7 +1417,7 @@ function renderOverviewPanel(model: DashboardModel, liveGraph?: LiveGraphHooks):
   content.push(renderStats(model.overview));
   const movers = renderMovers(model.holdings);
   if (movers) content.push(movers);
-  content.push(renderHoldings(model.holdings, moverBadges(model.holdings)));
+  content.push(renderHoldings(model.holdings, moverBadges(model.holdings), new Date(), holdingStatus));
   const allocation = renderAllocation(model.allocation);
   if (allocation) content.push(allocation);
   content.push(

@@ -14,6 +14,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.12.3] — 2026-06-26
+
+### Added
+
+- **Each holding card now narrates its own update cycle.** A small, faint caption
+  at the bottom-right of every holding box shows when that position's price was
+  last pulled ("Updated 14:32") and animates through the refresh lifecycle: it
+  flips to "Updating…" with lit, pulsing dots the instant a pull begins (or the
+  calmer queued variant when a symbol is parked behind the free-tier budget), then
+  flashes "Updated ✓" when a fresh price lands before settling back to the quiet
+  "Updated <time>" stamp. So a glance across the list tells you which holdings are
+  moving and which have already landed — and when each last did
+  (`web/src/holding-status.ts`, `markHoldingsUpdating`).
+
 ## [4.12.2] — 2026-06-26
 
 ### Fixed
