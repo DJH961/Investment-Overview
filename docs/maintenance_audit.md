@@ -385,3 +385,68 @@ re-fetching prices that could not have changed:
   the tail of `dashboard.log` — surfaced as a "Download support bundle" button on
   the Data Health page so a slow/broken session can be reported with the actual
   logs attached.
+
+## 7. Live-web data correctness (added 2026-06-26)
+
+A focused pass over the `web/` live-data layer to fix recurring graph/valuation
+bugs at their source (provider parsing, currency, calendar). The cheap,
+high-confidence, well-bounded fixes are **done**; the deeper structural items are
+scoped below as a backlog rather than risked as half-finished refactors.
+
+### 7.1 Done -- boundary correctness & anti-regression
+
+- **7.1.1 Provider price parsing realigned with the desktop adapter** -- done.
+  Fixed the Tiingo `lastSaleTimeStamp` -> `lastSaleTimestamp` typo and dropped
+  `prevClose` from the *price* fallback chain (kept only as `previousClose`), so a
+  missing live mark no longer values a holding at yesterday's close. `tiingo.ts`
+  now mirrors `adapters/tiingo_client.py` (`tngoLast` -> `last`).
+- **7.1.2 Non-positive prices rejected at the parse boundary** -- done. New
+  shared `parsePositivePrice` (`prices.ts`) treats `<= 0`/junk as null, applied to
+  every quote/NAV/bar price parse site (Twelve Data + Tiingo) so a `0` never marks
+  a holding.
+- **7.1.3 One currency invariant helper** -- done. `valueInBothCurrencies`
+  (`compute.ts`) computes USD FX-free (native) and derives EUR -- never the
+  reverse. Removed the `valueUsd ?? valueEur` fallback, the per-holding EUR->USD
+  reverse conversion, the `intraday.ts` `?? valueEur` fabrication, and the
+  display-layer reverse conversions in `app.ts`/`ui.ts`.
+- **7.1.4 Symbol case normalised at the merge boundary** -- done.
+  `fetchTiingoQuotes` re-keys Tiingo's upper-cased tickers back to the caller's
+  requested (possibly lower-cased export) symbol, matching Twelve Data's echo-back.
+- **7.1.5 No look-ahead in the curve** -- done. `forwardFilled` (`timeseries.ts`)
+  returns null before the first bar (was leaking a future bar's value); `chart.ts`
+  `linePath` now breaks the SVG path at each `null` gap instead of bridging a flat
+  line across a real data gap.
+- **7.1.6 One clock for all bars** -- done. `fetchTimeSeries` now requests
+  `timezone=UTC` from Twelve Data intraday, so price bars, the EUR/USD track and
+  the market-hours session boundaries share one true-UTC clock (the basis
+  `parseBarTime` already assumed). Tiingo bars already carry an explicit offset and
+  resolve to true UTC. Daily bars remain exchange-local (date-only, unaffected).
+- **7.1.7 Adversarial-feed invariant guards** -- done.
+  `web/test/feed-invariants.test.ts` locks the invariants above (non-positive ->
+  null; USD never derived from EUR; an FX move never shifts the USD leg; no
+  pre-first-bar look-ahead) so a future symptom fix can't silently regress them.
+
+### 7.2 Backlog -- deeper structural fixes (scoped, not yet done)
+
+These were deliberately deferred: each is a cross-module behaviour change that is
+hard to validate without integration coverage, and the symptom-level fixes above
+already remove the acute breakage. Prefer the meta-fix (7.2.5) over piecemeal work.
+
+- **7.2.1 (plan item 5) Explicit "unknown" marker through the curve pipeline.**
+  Replace the `ratio = 1` / `bars[0]` substitutions in `timeseries.ts::ratioAt`
+  with a propagated null so a point where any sleeve member is unpriced is *omitted
+  or flagged*, never invented. Requires a nullable base-USD through reconstruction
+  and the sleeve aggregation, plus chart handling of the resulting gaps.
+- **7.2.2 (plan item 7) NAV-collapsed snapshot => sleeve unknown until NAV lands.**
+  Model the post-open snapshot as "unknown" at the source and retire the stack of
+  `repair*NavCollapse` band-aids once the invariant holds.
+- **7.2.3 (plan item 9) Unify day-bucketing on one timezone** (UTC or ET) across
+  `week.ts` and `value-history.ts`, so session-day boundaries agree everywhere.
+- **7.2.4 (plan item 10) Model half-day/early-close sessions** in `market-hours.ts`
+  and re-enable bounded interior-bar repair during market hours only.
+- **7.2.5 (meta) Shrink the web's parsing surface to zero.** The deepest fix:
+  have the desktop v3 export (`docs/centralized_data_export_plan.md`) parse once and
+  ship a normalised, fully-priced, single-timezone series so the web *renders*
+  rather than *re-derives* provider/currency/calendar logic. This removes whole
+  classes of the above bugs rather than playing whack-a-mole, and supersedes
+  7.2.1-7.2.4 for any symbol the export covers.

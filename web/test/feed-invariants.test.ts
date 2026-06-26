@@ -84,4 +84,3 @@ describe("invariant — no look-ahead: a holding before its first bar is unknown
     expect(forwardFilled(bars, 999)?.toString()).toBe("11"); // last known
   });
 });
-
