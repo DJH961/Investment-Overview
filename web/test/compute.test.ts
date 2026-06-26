@@ -119,7 +119,9 @@ describe("buildDashboard", () => {
     // Live/cached price carries its observation time; export fallback is null
     // but still advertises the export's valuation date for the UI to show.
     expect(vti.priceAsOf).toBe(at);
+    expect(vti.pricePulledAt).toBe(at);
     expect(fxaix.priceAsOf).toBeNull();
+    expect(fxaix.pricePulledAt).toBeNull();
     expect(fxaix.priceFallbackDate).toBe("2024-06-01");
   });
 
@@ -321,6 +323,8 @@ describe("buildDashboard", () => {
     expect(fxaix.priceIsLive).toBe(true);
     // The as-of reflects the price's real strike time, not the fetch time.
     expect(fxaix.priceAsOf).toBe(priceTime);
+    // The pull stamp, by contrast, is the fetch instant — when we pulled it.
+    expect(fxaix.pricePulledAt).toBe(Date.parse("2024-06-01T12:00:00Z"));
   });
 
   it("lets a fresh same-day live NAV override the exported (possibly stale) price", () => {

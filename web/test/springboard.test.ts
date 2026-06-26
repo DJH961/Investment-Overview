@@ -92,18 +92,22 @@ describe("springboardSessionCurve", () => {
   });
 
   it("still springboards a medium-stale (≈2h old) same-session export", () => {
-    // Points stop ~2h before now; the tip bridges the gap rather than re-fetching.
+    // A later mid-session "now" (Wed 14:00 ET = 18:00Z) so the session has run
+    // long enough for genuinely 2h-old data: the points stop ~2h before now (but
+    // still cover from the open), and the tip bridges the gap rather than
+    // re-fetching.
+    const lateNow = new Date("2024-06-05T18:00:00Z");
     const stale = [
-      pt("2024-06-05T11:35:00Z", "1000", "1100"),
-      pt("2024-06-05T11:50:00Z", "1005", "1105"),
+      pt("2024-06-05T13:35:00Z", "1000", "1100"),
+      pt("2024-06-05T16:00:00Z", "1005", "1105"),
     ];
     const curve = springboardSessionCurve({
       exported: dayExport(TODAY, stale),
-      now: MID_SESSION,
+      now: lateNow,
       liveTip: tip,
     });
     expect(curve).not.toBeNull();
-    expect(curve![curve!.length - 1].t).toBe(MID_SESSION.getTime());
+    expect(curve![curve!.length - 1].t).toBe(lateNow.getTime());
   });
 
   it("springboards yesterday's completed session pre-market and caps it at the close", () => {
@@ -151,6 +155,44 @@ describe("springboardSessionCurve", () => {
       exported: dayExport(TODAY, [
         pt("2024-06-05T13:40:00Z", "1002", "1102"),
         pt("2024-06-05T13:50:00Z", "1005", "1105"),
+      ]),
+      now: MID_SESSION,
+      liveTip: tip,
+    });
+    expect(curve).toBeNull();
+  });
+
+  it("drops prior-day points so a cold first paint never draws yesterday + today (#182)", () => {
+    // A blob over-reaching into Tuesday: its first two points predate today's
+    // 09:30 ET open (13:30Z). On a hard reset / first mid-session login the store
+    // is empty, so the curve is sprung straight off this blob — without the clamp
+    // it would draw yesterday's tail *and* today. The pre-open points must be
+    // trimmed, leaving a single-session curve that still bridges to the live tip.
+    const curve = springboardSessionCurve({
+      exported: dayExport(TODAY, [
+        pt("2024-06-04T19:55:00Z", "980", "1080"), // Tuesday close — must be dropped
+        pt("2024-06-05T12:00:00Z", "990", "1090"), // today pre-market — must be dropped
+        pt("2024-06-05T13:30:00Z", "1000", "1100"), // today's 09:30 ET open
+        pt("2024-06-05T13:50:00Z", "1005", "1105"),
+      ]),
+      now: MID_SESSION,
+      liveTip: tip,
+    });
+    expect(curve).not.toBeNull();
+    // No point predates today's open, and the tip still lands at now.
+    expect(curve!.every((p) => p.t >= Date.parse("2024-06-05T13:30:00Z"))).toBe(true);
+    expect(curve![0].t).toBe(Date.parse("2024-06-05T13:30:00Z"));
+    expect(curve![curve!.length - 1].t).toBe(MID_SESSION.getTime());
+  });
+
+  it("falls back (null) when every exported point predates today's open", () => {
+    // The whole blob is yesterday's tail (all before 13:30Z today): there is no
+    // in-session data to spring off, so the curve must rebuild live rather than
+    // paint a stale cross-day line.
+    const curve = springboardSessionCurve({
+      exported: dayExport(TODAY, [
+        pt("2024-06-04T19:50:00Z", "980", "1080"),
+        pt("2024-06-04T19:55:00Z", "985", "1085"),
       ]),
       now: MID_SESSION,
       liveTip: tip,
@@ -208,6 +250,31 @@ describe("springboardWeekCurve", () => {
     // Lifted by the boundary step (900 − 600 = 300) onto the healthy level.
     expect(oldest.valueEur.toNumber()).toBe(900);
     expect(oldest.valueUsd.toNumber()).toBe(990);
+  });
+
+  it("heals a whole-week NAV collapse using the live tip as the anchor (issue #169)", () => {
+    // Every settled session lost its NAV sleeve (~60% of the book) — e.g. a blob
+    // exported right after a cache reset. No settled day is healthy, so only the
+    // live tip (the real headline total) can reveal and anchor the recovery; the
+    // bare leading-run repair would have painted the nosedive verbatim.
+    const collapsed = [
+      pt("2024-05-30T20:00:00Z", "600", "660"),
+      pt("2024-05-31T20:00:00Z", "605", "665"),
+      pt("2024-06-03T20:00:00Z", "610", "670"),
+      pt("2024-06-04T20:00:00Z", "615", "675"),
+    ];
+    const curve = springboardWeekCurve({
+      exported: weekExport(TODAY, collapsed),
+      now: MID_SESSION,
+      liveTip: tip, // 1100 / 1200
+    });
+    expect(curve).not.toBeNull();
+    // The last settled day rises to the live level (offset = 1100 − 615 = 485);
+    // every settled day lifts by the same constant, so the line no longer dives.
+    const lastSettled = curve!.find((p) => p.t === Date.parse("2024-06-04T20:00:00Z"))!;
+    expect(lastSettled.valueEur.toNumber()).toBe(1100);
+    const oldest = curve!.find((p) => p.t === Date.parse("2024-05-30T20:00:00Z"))!;
+    expect(oldest.valueEur.toNumber()).toBe(1085); // 600 + 485
   });
 
   it("still springboards a 1-day-stale week export (ends the previous session)", () => {
