@@ -74,6 +74,7 @@ function overview(extra: Partial<OverviewView> = {}): OverviewView {
     dividendYieldPct: null,
     fxRateEurUsd: null,
     fxRateEurUsdSessionClose: null,
+    fxRateEurUsdSessionOpen: null,
     fxObservedAt: null,
     holdingsCount: 0,
     missingPriceSymbols: [],

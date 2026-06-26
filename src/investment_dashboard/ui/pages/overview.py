@@ -216,53 +216,190 @@ def _fx_signed_eur(value: Decimal) -> str:
     return f"{sign}{fmt_money(abs(value), 'EUR')}"
 
 
+def _fx_box_pct_value(pct: Decimal | None) -> str:
+    """A signed-percentage currency-box stat value (e.g. ``+0.12%``), or ``—``.
+
+    ``pct`` already follows the display-currency strength convention (it comes
+    from :func:`fx_move_pct`); ``None`` renders the muted em-dash placeholder so a
+    missing reference rate degrades gracefully rather than printing a fake zero.
+    """
+    if pct is None:
+        return '<span class="inv-fx-box-stat-value flat">—</span>'
+    sign = "+" if pct >= 0 else "\u2212"  # proper minus sign
+    return f'<span class="inv-fx-box-stat-value {_fx_sign_class(pct)}">{sign}{abs(pct):.2f}%</span>'
+
+
+@dataclass(frozen=True)
+class _FxBoxRegime:
+    """The currency box's market-state regime, derived purely from ``now``.
+
+    Mirrors the web companion's ``FxBoxRegime`` so the two clients tell exactly the
+    same story across the forex weekend boundary. The regimes, in precedence order:
+
+    * **forex_frozen** — the spot-FX weekend close (Fri ≥17:00 ET, all Saturday,
+      Sun <17:00 ET). The rate is frozen at Friday's close, so the box shows the
+      *whole Friday session view*, frozen exactly as it looked at 17:01 ET (the full
+      session move, the "Since close" stat, the two-leg split), badged "Market
+      closed". This is a ``session_view``.
+    * **market_open** — the live US session; the regular live view (a session_view).
+    * **weekend_overnight** — forex has reopened (Sun ≥17:00 ET) but no US session
+      has opened since: Sunday evening through Monday's 09:30 open. The only honest
+      move is the single overnight drift since Friday's close — no stale Friday
+      market-hours leg.
+    * **holiday** — a US market holiday that is *not* an FX holiday (e.g. 4th of
+      July): forex trades but the US session is shut, so likewise a single overnight
+      number, kept under its "Market holiday" wording.
+    * otherwise a **regular weekday post-close / pre-open** (a session_view).
+
+    ``single_overnight`` (holiday ∨ weekend_overnight, with forex open and US shut)
+    marks the two one-number, no-split regimes; ``session_view`` (its complement)
+    marks the three-stat, two-leg-split regimes.
+    """
+
+    market_open: bool
+    forex_open: bool
+    holiday: bool
+    forex_frozen: bool
+    weekend_overnight: bool
+    single_overnight: bool
+    session_view: bool
+
+
+def _fx_box_regime(now: datetime) -> _FxBoxRegime:
+    """Compute the :class:`_FxBoxRegime` for ``now`` (see its docstring)."""
+    market_open = is_us_market_open(now)
+    forex_open = market_hours.is_forex_market_open(now)
+    holiday = market_hours.is_us_market_holiday_at(now)
+    forex_frozen = not forex_open
+    last_session = intraday_snapshots_service.last_session_date(now)
+    weekend_overnight = (
+        forex_open
+        and not market_open
+        and not holiday
+        and market_hours.regular_session_open(last_session) < market_hours.last_forex_reopen(now)
+    )
+    single_overnight = forex_open and not market_open and (holiday or weekend_overnight)
+    session_view = not single_overnight
+    return _FxBoxRegime(
+        market_open=market_open,
+        forex_open=forex_open,
+        holiday=holiday,
+        forex_frozen=forex_frozen,
+        weekend_overnight=weekend_overnight,
+        single_overnight=single_overnight,
+        session_view=session_view,
+    )
+
+
+def _format_forex_reopen(reopen_at: datetime, now: datetime, *, tz: tzinfo | None = None) -> str:
+    """The "reopens …" caption for the frozen weekend rate.
+
+    Mirrors the web companion's ``formatForexReopen``: ``reopen_at`` is the Sunday
+    17:00 ET reopen instant, rendered on the viewer's own clock (``tz``) — "reopens
+    today HH:MM" when the reopen is later today, "reopens tomorrow HH:MM" the day
+    before, else weekday + clock time ("reopens Sun HH:MM").
+    """
+    when = reopen_at.astimezone(tz) if tz is not None else reopen_at
+    here = now.astimezone(tz) if tz is not None else now
+    clock = when.strftime("%H:%M")
+    day_diff = (when.date() - here.date()).days
+    if day_diff == 0:
+        return f"reopens today {clock}"
+    if day_diff == 1:
+        return f"reopens tomorrow {clock}"
+    return f"reopens {when.strftime('%a')} {clock}"
+
+
 def _fx_effect_html(
     session,  # type: ignore[no-untyped-def]
     metrics: PortfolioMetrics,
     *,
-    display_ccy: str,
     net_eur: Decimal,
     now: datetime,
 ) -> str:
-    """The "Currency effect today" panel inside the currency box.
+    """The "Currency effect since yesterday" panel inside the currency box.
 
-    The book is **USD-booked**, so today's EUR/USD move is only real money once it
-    is measured back in euros. Mirrors the web companion's ``renderFxEffect``:
+    The book is **USD-booked**, so the EUR/USD move since yesterday's close is only
+    real money once it is measured back in euros — so this panel always speaks
+    **EUR**, in both EUR and USD display (a rate move hands you no extra dollars;
+    the euro figure is the one that means something). Mirrors the web companion's
+    ``renderFxEffect``.
 
-    * In **EUR** display the swing is genuine euro P/L, so we show the net figure
-      and — once the US session is shut and a session-close rate is known — a
-      *diverging* bar splitting it into the market-hours slice and the overnight
-      slice. Each leg grows from a shared centre line (right for a gain, left for a
-      loss), so two legs pulling in opposite directions read clearly instead of
-      being crammed into one stacked bar.
-    * In **USD** display the effect on the dollar value is exactly zero (a rate
-      move hands you no extra dollars), so we say that plainly and surface the
-      EUR-repatriation figure instead of printing a meaningless dollar amount.
+    Below the net figure a *diverging* bar splits the move into its market-hours
+    and overnight slices, with the **currently-live** slice on top and the frozen
+    last slice below: while the market is open the live market-hours move leads and
+    last night's overnight slice survives beneath it; once shut the live overnight
+    drift leads and the last session's market-hours move sits below. Each leg grows
+    from a shared centre line (right for a gain, left for a loss), so two legs
+    pulling in opposite directions read clearly instead of being crammed into one
+    stacked bar.
+
+    In the two **single-overnight** regimes there is no fresh session to split, so
+    the market-hours leg is dropped and one full-width bar carries the whole swing:
+    a **US-only market holiday** (e.g. 4th of July, FX still trading) keeps the
+    "Market holiday" label, while the **weekend spill-over** (Sunday evening through
+    Monday's open, after the forex reopen) reads "Overnight". The frozen Friday
+    weekend itself is *not* one of these — it keeps the full two-leg split, frozen.
     """
     head = (
         '<div class="inv-fx-effect-head">'
-        '<span class="inv-fx-effect-title">Currency effect today</span>'
+        '<span class="inv-fx-effect-title">Currency effect since yesterday</span>'
         "{value}</div>"
     )
-    if display_ccy.upper() == "USD":
-        value = '<span class="inv-fx-effect-net flat">$0</span>'
-        note = (
-            "The rate moved, but your assets are priced in dollars — so it changed "
-            "your USD value by nothing. It only matters when you convert back to "
-            f"euros: {_fx_signed_eur(net_eur)} today if you did."
+    value = f'<span class="inv-fx-effect-net {_fx_sign_class(net_eur)}">{_fx_signed_eur(net_eur)}</span>'
+
+    # Market-hours vs overnight split. The live leg is measured straight from the
+    # relevant session anchor; the frozen leg is the remainder of today's move.
+    regime = _fx_box_regime(now)
+    market_open = regime.market_open
+    half_track_pct = 50
+
+    def _row(
+        label: str, value: Decimal, *, overnight_leg: bool, live: bool, max_mag: Decimal
+    ) -> str:
+        width = 0.0 if max_mag == 0 else float(abs(value) / max_mag * half_track_pct)
+        stripe = " inv-fx-diverge-overnight" if overnight_leg else ""
+        tag = "live" if live else "last"
+        fill = (
+            f'<span class="inv-fx-diverge-fill {_fx_sign_class(value)}{stripe}"'
+            f' style="width:{width:.4f}%"></span>'
         )
         return (
-            '<div class="inv-fx-effect" role="group" aria-label="Currency effect today">'
-            f"{head.format(value=value)}"
-            f'<p class="inv-fx-effect-note">{escape(note)}</p>'
+            '<div class="inv-fx-diverge-row">'
+            f'<span class="inv-fx-diverge-label">{label}'
+            f'<span class="inv-fx-diverge-tag">{tag}</span></span>'
+            f'<div class="inv-fx-diverge-track" aria-hidden="true">{fill}</div>'
+            f'<span class="inv-fx-diverge-value {_fx_sign_class(value)}">'
+            f"{_fx_signed_eur(value)}</span>"
             "</div>"
         )
 
-    value = f'<span class="inv-fx-effect-net {_fx_sign_class(net_eur)}">{_fx_signed_eur(net_eur)}</span>'
-    body = ""
-    # Market-hours vs overnight split — only once the session is shut and we hold a
-    # genuine session-close rate to measure the overnight slice from.
-    if not is_us_market_open(now):
+    if regime.single_overnight:
+        # No fresh session to split (US-only holiday, or the weekend spill-over): the
+        # whole swing is one overnight drift, so a market-hours leg would be a
+        # meaningless ~zero stub — drop it and show a single full-width bar instead.
+        # A genuine US holiday keeps the "Market holiday" wording; the weekend
+        # spill-over reads "Overnight".
+        label = "Market holiday" if regime.holiday else "Overnight"
+        row = _row(label, net_eur, overnight_leg=True, live=True, max_mag=abs(net_eur))
+        body = f'<div class="inv-fx-diverge">{row}</div>'
+        return (
+            '<div class="inv-fx-effect" role="group"'
+            ' aria-label="Currency effect since yesterday">'
+            f"{head.format(value=value)}{body}</div>"
+        )
+
+    if market_open:
+        open_fx = intraday_snapshots_service.session_open_fx(session, now=now)
+        split = fx_effect_split(
+            market_open=True,
+            total_value_usd=metrics.total_value_usd,
+            live_fx=metrics.daily_growth_fx_eur_usd,
+            session_close_fx=None,
+            session_open_fx=open_fx,
+            today_fx_move_eur=net_eur,
+        )
+    else:
         close_fx = intraday_snapshots_service.session_close_fx(session, now=now)
         split = fx_effect_split(
             market_open=False,
@@ -271,39 +408,24 @@ def _fx_effect_html(
             session_close_fx=close_fx,
             today_fx_move_eur=net_eur,
         )
-        market = split.market_hours_eur
-        overnight = split.overnight_eur
-        if market is not None and overnight is not None and not (market == 0 and overnight == 0):
-            max_mag = max(abs(market), abs(overnight))
-            # Each leg fills out from the centre line, so a full-magnitude leg
-            # spans half the track (the other half is reserved for the opposite
-            # direction).
-            half_track_pct = 50
-
-            def _row(label: str, value: Decimal, *, overnight_leg: bool) -> str:
-                width = 0.0 if max_mag == 0 else float(abs(value) / max_mag * half_track_pct)
-                stripe = " inv-fx-diverge-overnight" if overnight_leg else ""
-                fill = (
-                    f'<span class="inv-fx-diverge-fill {_fx_sign_class(value)}{stripe}"'
-                    f' style="width:{width:.4f}%"></span>'
-                )
-                return (
-                    '<div class="inv-fx-diverge-row">'
-                    f'<span class="inv-fx-diverge-label">{label}</span>'
-                    f'<div class="inv-fx-diverge-track" aria-hidden="true">{fill}</div>'
-                    f'<span class="inv-fx-diverge-value {_fx_sign_class(value)}">'
-                    f"{_fx_signed_eur(value)}</span>"
-                    "</div>"
-                )
-
-            body = (
-                '<div class="inv-fx-diverge">'
-                f"{_row('Market hours', market, overnight_leg=False)}"
-                f"{_row('Overnight', overnight, overnight_leg=True)}"
-                "</div>"
-            )
+    market = split.market_hours_eur
+    overnight = split.overnight_eur
+    body = ""
+    if market is not None and overnight is not None and not (market == 0 and overnight == 0):
+        max_mag = max(abs(market), abs(overnight))
+        # Current market mode on top: open ⇒ live market-hours leads; closed ⇒ live
+        # overnight leads, with the other (frozen) leg below.
+        if market_open:
+            rows = _row(
+                "Market hours", market, overnight_leg=False, live=True, max_mag=max_mag
+            ) + _row("Overnight", overnight, overnight_leg=True, live=False, max_mag=max_mag)
+        else:
+            rows = _row(
+                "Overnight", overnight, overnight_leg=True, live=True, max_mag=max_mag
+            ) + _row("Market hours", market, overnight_leg=False, live=False, max_mag=max_mag)
+        body = f'<div class="inv-fx-diverge">{rows}</div>'
     return (
-        '<div class="inv-fx-effect" role="group" aria-label="Currency effect today">'
+        '<div class="inv-fx-effect" role="group" aria-label="Currency effect since yesterday">'
         f"{head.format(value=value)}{body}</div>"
     )
 
@@ -314,6 +436,7 @@ def _currency_box_html(
     *,
     display_ccy: str,
     now: datetime | None = None,
+    tz: tzinfo | None = None,
 ) -> str | None:
     """The standalone **Currency · EUR ↔ USD** box, as HTML.
 
@@ -324,6 +447,12 @@ def _currency_box_html(
     :func:`_fx_effect_html`). USD display shows the stored EUR/USD spot directly;
     EUR display shows USD/EUR (its reciprocal). Returns ``None`` only when there is
     no usable rate at all.
+
+    The box is regime-aware (see :class:`_FxBoxRegime`): over the spot-FX weekend
+    close it freezes to the *whole Friday session view* badged "Market closed ·
+    reopens Sun …"; on the Sunday-evening-through-Monday-open spill-over and on a
+    US-only market holiday it shows a single honest overnight number (no second
+    stat, no two-leg split); otherwise it is the regular live / settled view.
     """
     now = now or datetime.now(UTC)
     live_fx = metrics.daily_growth_fx_eur_usd
@@ -331,31 +460,90 @@ def _currency_box_html(
         return None
     prev_fx = metrics.daily_growth_fx_eur_usd_prev
     in_usd = display_ccy.upper() == "USD"
+    regime = _fx_box_regime(now)
+    market_open = regime.market_open
 
     pair = "EUR/USD" if in_usd else "USD/EUR"
     rate = live_fx if in_usd else Decimal(1) / live_fx
+    # "Today" uses a regime-dependent baseline so it never just mirrors the "Since
+    # open/close" stat beside it. Live: the move since the *prior close* (overnight +
+    # intraday so far). Single-overnight: the lone drift since the last session close
+    # — Friday's FX close for the weekend spill-over (or the settled previous close as
+    # a holiday's overnight). Session view (settled weekday, or the frozen Friday
+    # weekend): the full move since this — or Friday's frozen — session open, so it
+    # stops collapsing onto "Since close" the moment the provider rolls previousClose.
     # ``fx_move_pct`` already follows the display-currency strength convention
     # (negated for the EUR-display reciprocal), matching the web box.
-    move = fx_move_pct(live_fx, prev_fx, display_ccy) if prev_fx is not None else None
-    if move is not None:
-        sign = "+" if move >= 0 else "\u2212"  # proper minus sign
-        move_value = f'<span class="inv-fx-box-stat-value {_fx_sign_class(move)}">{sign}{abs(move):.2f}%</span>'
+    if market_open:
+        today_anchor = prev_fx
+        today_sub = "since last close"
+    elif regime.single_overnight:
+        if regime.weekend_overnight:
+            close_fx = intraday_snapshots_service.session_close_fx(session, now=now)
+            today_anchor = close_fx if close_fx is not None else prev_fx
+        else:
+            today_anchor = prev_fx
+        today_sub = "overnight"
     else:
-        move_value = '<span class="inv-fx-box-stat-value flat">—</span>'
+        today_anchor = intraday_snapshots_service.session_open_fx(session, now=now)
+        today_sub = "since last open"
+    move = fx_move_pct(live_fx, today_anchor, display_ccy) if today_anchor is not None else None
+
+    # Third number: how far the rate has moved since the current session's
+    # reference point — since the **open** while the market is live, since the
+    # **close** once it has shut. Same strength convention as the "Today" move.
+    # Dropped in the single-overnight regimes (weekend spill-over, US-only holiday):
+    # there is only one honest move to show, so a second stat would just echo the
+    # overnight "Today" figure beside it. The frozen Friday weekend keeps it.
+    since_stat = ""
+    stats_class = "inv-fx-box-stats inv-fx-box-stats-pair"
+    if regime.session_view:
+        if market_open:
+            anchor_fx = intraday_snapshots_service.session_open_fx(session, now=now)
+            since_label = "Since open"
+        else:
+            anchor_fx = intraday_snapshots_service.session_close_fx(session, now=now)
+            since_label = "Since close"
+        since = fx_move_pct(live_fx, anchor_fx, display_ccy) if anchor_fx is not None else None
+        since_stat = (
+            '<div class="inv-fx-box-stat">'
+            f'<span class="inv-fx-box-stat-label">{since_label}</span>'
+            f"{_fx_box_pct_value(since)}"
+            '<span class="inv-fx-box-stat-sub">rate move</span>'
+            "</div>"
+        )
+        stats_class = "inv-fx-box-stats"
 
     stats = (
-        '<div class="inv-fx-box-stats">'
+        f'<div class="{stats_class}">'
         '<div class="inv-fx-box-stat">'
         f'<span class="inv-fx-box-stat-label">{pair}</span>'
         f'<span class="inv-fx-box-stat-value">{rate:,.4f}</span>'
         "</div>"
         '<div class="inv-fx-box-stat">'
         '<span class="inv-fx-box-stat-label">Today</span>'
-        f"{move_value}"
-        '<span class="inv-fx-box-stat-sub">rate move</span>'
+        f"{_fx_box_pct_value(move)}"
+        f'<span class="inv-fx-box-stat-sub">{today_sub}</span>'
         "</div>"
+        f"{since_stat}"
         "</div>"
     )
+
+    # Over the weekend forex close, badge the box plainly and stamp when it reopens,
+    # so the frozen Friday rate is never mistaken for a live one.
+    head_extra = ""
+    reopen_caption = ""
+    if regime.forex_frozen:
+        head_extra = (
+            '<span class="inv-fx-box-closed"'
+            ' title="Forex market closed for the weekend">Market closed</span>'
+        )
+        reopen = market_hours.forex_market_reopen(now)
+        reopen_caption = (
+            '<div class="inv-fx-box-reopen">'
+            f"Frozen at Friday's close · {escape(_format_forex_reopen(reopen, now, tz=tz))}"
+            "</div>"
+        )
 
     # The currency effect (net EUR P/L from today's move). Shown only when there is
     # a usable USD book value and prior mark to measure a non-zero swing.
@@ -364,16 +552,15 @@ def _currency_box_html(
     if usd is not None and prev_fx is not None and prev_fx > 0:
         net_eur = usd / live_fx - usd / prev_fx
         if net_eur != 0:
-            effect = _fx_effect_html(
-                session, metrics, display_ccy=display_ccy, net_eur=net_eur, now=now
-            )
+            effect = _fx_effect_html(session, metrics, net_eur=net_eur, now=now)
 
     return (
         '<section class="inv-fx-box" aria-label="Currency EUR to USD">'
         '<div class="inv-fx-box-head">'
         '<span class="inv-fx-box-title">Currency · EUR \u2194 USD</span>'
+        f"{head_extra}"
         "</div>"
-        f"{stats}{effect}</section>"
+        f"{stats}{reopen_caption}{effect}</section>"
     )
 
 
@@ -1463,7 +1650,7 @@ def register() -> None:  # noqa: PLR0915
                     # split) — built here while the DB session is still open, since
                     # the split needs the session-close rate.
                     currency_box_html = _currency_box_html(
-                        session, metrics, display_ccy=display_ccy
+                        session, metrics, display_ccy=display_ccy, tz=display_tz
                     )
                 # Hide fully-sold instruments from the holdings view — anything
                 # with a residual share count below 1e-7 (a tenth of a millionth

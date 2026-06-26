@@ -785,6 +785,38 @@ class TestSessionCloseFx:
         assert iss.session_close_fx(session, now=_NOW) is None
 
 
+class TestSessionOpenFx:
+    """The rate around the most recent session's open (anchor for the live market-hours slice)."""
+
+    def test_returns_earliest_non_null_session_rate(self, session: Session) -> None:
+        _seed_usd_holding(session)
+        intraday_repo.insert_sample(
+            session, datetime(2024, 6, 3, 13, 30), Decimal("1000.00"), fx_eur_usd=Decimal("1.00")
+        )
+        intraday_repo.insert_sample(
+            session, datetime(2024, 6, 3, 14, 0), Decimal("800.00"), fx_eur_usd=Decimal("1.25")
+        )
+        session.flush()
+        assert iss.session_open_fx(session, now=_NOW) == Decimal("1.00")
+
+    def test_skips_leading_null_rate(self, session: Session) -> None:
+        _seed_usd_holding(session)
+        # The earliest sample carries no rate (e.g. captured before the FX feed
+        # answered); the first *known* session rate is the open anchor.
+        intraday_repo.insert_sample(session, datetime(2024, 6, 3, 13, 30), Decimal("1000.00"))
+        intraday_repo.insert_sample(
+            session, datetime(2024, 6, 3, 14, 0), Decimal("1000.00"), fx_eur_usd=Decimal("1.10")
+        )
+        session.flush()
+        assert iss.session_open_fx(session, now=_NOW) == Decimal("1.10")
+
+    def test_none_when_no_session_sample_carries_a_rate(self, session: Session) -> None:
+        _seed_usd_holding(session)
+        intraday_repo.insert_sample(session, datetime(2024, 6, 3, 14, 0), Decimal("1000.00"))
+        session.flush()
+        assert iss.session_open_fx(session, now=_NOW) is None
+
+
 class TestAfterHoursFreeze:
     """Once the market shuts, the EUR live tip freezes to the session-close FX."""
 

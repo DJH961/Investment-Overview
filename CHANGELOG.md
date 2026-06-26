@@ -14,6 +14,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.8.1] — 2026-06-26
+
+### Fixed
+
+- **The Currency box's "Today" stat no longer mirrors the "Since open/close" stat
+  beside it.** "Today" now re-bases by market state: while the US session is live
+  it is the EUR/USD move since the **prior close** (overnight + intraday so far);
+  once a trading day has shut it re-bases to **this morning's open** (the full
+  session move), so it stops collapsing onto "Since close" the moment the FX
+  provider rolls its `previousClose` to today's settle. A sub-label
+  ("since last close" / "since last open" / "overnight") makes the active window
+  explicit.
+- **Non-market days (weekends/holidays) are handled honestly.** With no session at
+  all, "Today" is the pure overnight drift and the currency-effect split collapses
+  to a single bar relabelled **"Market holiday"** (the meaningless ~zero
+  market-hours leg is dropped). The redundant third "Since open/close" stat — whose
+  only anchor would collapse onto the overnight "Today" figure beside it — is
+  dropped too, leaving a clean two-stat row.
+- **Renamed the currency-effect panel to "Currency effect since yesterday"** (it
+  measures from the prior close, not strictly "today"). Mirrored across the desktop
+  app and the live web companion.
+
 ## [4.8.0] — 2026-06-26
 
 ### Changed
