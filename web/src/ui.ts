@@ -972,36 +972,6 @@ const PROJ_KEYS = {
 } as const;
 
 /**
- * The per-row freshness label (freshness-plan §2): a calm three-way split that
- * mirrors the FX line's `displayFxSource` promotion but with an explicit middle
- * rung, so an individual holding is neither dressed up as live nor falsely
- * flagged old.
- *   - `live`   → a small live dot + "live" (market open, observed this window);
- *   - `recent` → "recent" (confirmed not long ago, but not a live intraday mark);
- *   - `aged`   → the honest "as of <time/date>" stamp (export fallback or an
- *                earlier day's price).
- * The full "as of <time>" always rides along in the `title` so the exact moment
- * stays one hover/long-press away even when the chip shows a status word.
- */
-function holdingFreshnessChip(
-  holding: HoldingView,
-  now: Date,
-): { children: Array<Node | string>; cls: string; title: string } {
-  const asOf = `as of ${formatAsOf(holding.priceAsOf, holding.priceFallbackDate, now)}`;
-  if (holding.priceFreshness === "live") {
-    return {
-      children: [h("span", { class: "fresh-dot", "aria-hidden": "true" }, []), "live"],
-      cls: "fresh-live",
-      title: asOf,
-    };
-  }
-  if (holding.priceFreshness === "recent") {
-    return { children: ["recent"], cls: "fresh-recent", title: asOf };
-  }
-  return { children: [asOf], cls: "fresh-aged", title: asOf };
-}
-
-/**
  * The animated "thinking" dots shown while a holding is updating / queued — three
  * staggered pips that light up in sequence (driven by CSS `holding-dot-pulse`).
  */
@@ -1134,13 +1104,13 @@ function renderHoldingRow(
   // not today's — grey it so a live glance separates today's numbers from the
   // ones yet to refresh. Before the open nothing is stale, so nothing greys.
   const todayStaleCls = holding.todayMoveIsStale ? " holding-change-stale" : "";
-  // Per-row freshness chip (freshness-plan §2): a live / recent / "as of <time>"
-  // label driven by the price's observation age vs the live window, so an
-  // individual holding is neither dressed up as live nor falsely flagged old.
-  const freshness = holdingFreshnessChip(holding, now);
   // The same session word the hero/returns use, so a stale row's tooltip names
   // the session everyone else is on rather than a hard-coded "today".
   const moveWord = sessionMoveWord(now);
+  // The honest "as of <time/date>" stamp of when the price was last observed —
+  // always shown so each row states exactly when its mark is from, never dressed
+  // up as a vague "live"/"recent" status.
+  const asOf = `as of ${formatAsOf(holding.priceAsOf, holding.priceFallbackDate, now)}`;
   const main = h("div", { class: "holding-main" }, [
     h("div", { class: "holding-id" }, [
       // Top line: symbol (+ NAV/stale pills) on the left, and the price's
@@ -1149,7 +1119,7 @@ function renderHoldingRow(
       // 20 Jun") instead of being buried on a line under the name.
       h("div", { class: "holding-topline" }, [
         h("span", { class: "holding-sym" }, symChildren),
-        h("span", { class: `holding-asof ${freshness.cls}`, title: freshness.title }, freshness.children),
+        h("span", { class: "holding-asof", title: asOf }, [asOf]),
       ]),
       h("span", { class: "holding-name" }, [holding.name]),
     ]),

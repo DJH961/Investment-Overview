@@ -14,7 +14,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.12.2] — 2026-06-26
+## [4.12.3] — 2026-06-26
 
 ### Added
 
@@ -27,6 +27,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "Updated <time>" stamp. So a glance across the list tells you which holdings are
   moving and which have already landed — and when each last did
   (`web/src/holding-status.ts`, `markHoldingsUpdating`).
+
+## [4.12.2] — 2026-06-26
+
+### Fixed
+
+- **Per-holding price stamp is honest again.** Each holding row now always shows
+  the plain "as of <time/date>" stamp of when its price was last observed,
+  instead of the three-way `live` / `recent` / aged freshness chip introduced in
+  4.12.0. The status-word chip dressed individual rows up as "live"/"recent"
+  without naming the moment, which read as more confident than the underlying
+  mark warranted; the restored stamp states exactly when each row's price is
+  from. The `holdingFreshnessChip` helper and its supporting `.fresh-*` styles
+  are dropped (`web/src/ui.ts`, `web/src/styles.css`).
 
 ## [4.12.1] — 2026-06-26
 
