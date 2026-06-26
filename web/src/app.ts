@@ -118,6 +118,11 @@ import { planFanout, planTwelveDataSafetyNet, TIINGO_RESERVE_CREDITS } from "./p
 import { reconcileHandshake } from "./login-handshake";
 import { springboardSessionCurve, springboardWeekCurve, parseExportedPoints } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
+import {
+  graphAnchorFx,
+  readSessionCloseFx,
+  recordSessionCloseFx,
+} from "./session-fx";
 import { TimeSeriesStore, type Breadcrumb } from "./timeseries-store";
 import { WEEK_STORE_KEY, navBarsFromQuotes, weekStaleSymbols } from "./week";
 import { ONE_HOUR_MS } from "./freshness";
@@ -3025,6 +3030,24 @@ export class App {
       liveStalenessMs: this.state.config.updateMinutes * 60 * 1000,
     });
     model.overview.lastDataPullAt = this.lastDataPullAt;
+    // Capture the session-close EUR/USD rate so the live 1D/1W graphs can freeze
+    // their EUR view to it overnight (the market-day trajectory must not slide
+    // with after-hours FX), and so the Overview can isolate the overnight FX
+    // slice. While the regular session is open we keep recording the live spot as
+    // the running close for today; the last value written before 16:00 ET is the
+    // settled close. Once shut, we read it back (only when it belongs to the
+    // session being shown) and surface it; the longer history graphs and the
+    // headline keep valuing at the live spot, unchanged.
+    {
+      const now = new Date();
+      const marketOpen = isUsMarketOpen(now);
+      const liveFx = fx.rates.USD ?? model.overview.fxRateEurUsd;
+      const sessionDay = lastSessionDate(now);
+      if (marketOpen) recordSessionCloseFx(sessionDay, liveFx);
+      model.overview.fxRateEurUsdSessionClose = marketOpen
+        ? null
+        : readSessionCloseFx(sessionDay);
+    }
     // Remember each fund's freshly-settled NAV as a daily bar in the 1W store, so
     // the week curve re-marks NAV funds from their real per-day drift at zero
     // graph cost (item 7a.1). Best-effort: a store failure never sinks the paint.
@@ -4137,13 +4160,30 @@ export class App {
     // The settled cash sleeve in both currencies (USD derived from the day's FX).
     const cashEur = o.cashValueEur;
     const cashUsd = baseFx !== null ? cashEur.times(baseFx) : cashEur;
+    // Freeze the live 1D/1W graphs' EUR view to the session-close FX while the
+    // market is shut, so their market-day trajectory does not slide with
+    // overnight FX. While open, `frozenFx` is null and everything uses the live
+    // rate exactly as before. The longer history graphs are built elsewhere
+    // (renderValueChart) and deliberately keep the live after-hours rate.
+    const frozenFx = isUsMarketOpen()
+      ? null
+      : graphAnchorFx({
+          marketOpen: false,
+          liveFx: baseFx,
+          sessionCloseFx: o.fxRateEurUsdSessionClose,
+        });
+    // The live tip drawn at the session close once shut: its USD leg is FX-free,
+    // but its EUR leg is re-marked at the frozen close rate so the 1D/1W curve
+    // ends on the market-day value, not the overnight-drifted one.
     const liveTip =
       o.totalValueIsComplete
-        ? {
-            valueEur: o.totalValueEur,
-            valueUsd:
-              o.totalValueUsd ?? (baseFx !== null ? o.totalValueEur.times(baseFx) : o.totalValueEur),
-          }
+        ? ((): { valueEur: Decimal; valueUsd: Decimal } => {
+            const valueUsd =
+              o.totalValueUsd ?? (baseFx !== null ? o.totalValueEur.times(baseFx) : o.totalValueEur);
+            const valueEur =
+              frozenFx !== null && frozenFx.greaterThan(0) ? valueUsd.dividedBy(frozenFx) : o.totalValueEur;
+            return { valueEur, valueUsd };
+          })()
         : null;
     const reservation = ledgerReservation();
     const providers: LiveGraphProviders = {
@@ -4161,12 +4201,15 @@ export class App {
     const store = this.ensureTimeSeriesStore();
     const exported = this.state.data?.live_graphs ?? undefined;
     const anchor = (): ReturnType<typeof buildModelAnchor> =>
-      buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx);
+      buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx, { graphFx: frozenFx });
     // The 1W anchor folds NAV funds into the sleeve (re-marked from their daily
     // NAV bars) rather than the flat base, so the week's NAV drift shows on the
     // curve for a NAV-heavy book (docs/tiingo_polling_storm_cleanup_plan.md item 7).
     const weekAnchor = (): ReturnType<typeof buildModelAnchor> =>
-      buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx, { navInSleeve: true });
+      buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx, {
+        navInSleeve: true,
+        graphFx: frozenFx,
+      });
     // Feed a graph's freshly fetched bars back into the holdings' quote cache so
     // a big load primes the rows instead of each re-buying the same price.
     const onFreshBars = (bars: Map<string, Bar[]>): void =>
