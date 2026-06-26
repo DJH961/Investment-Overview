@@ -128,6 +128,14 @@ export interface SpringboardInput {
   now?: Date;
   /** The current headline totals to bridge the export to "now" (null ⇒ none). */
   liveTip?: LiveTip | null;
+  /**
+   * The dense **current-day** 1D session curve (the same data the 1D graph
+   * shows), used **only** by {@link springboardWeekCurve}. When supplied, today's
+   * slice of the sprung week is drawn from this dense curve instead of the coarse
+   * `week.points` tail — so "1D fills 1W" holds even on the springboard fast path.
+   * When absent, today is bridged with the single live tip (the legacy behaviour).
+   */
+  todayCurve?: CurvePoint[] | null;
 }
 
 /**
@@ -178,9 +186,14 @@ export function springboardSessionCurve(input: SpringboardInput): CurvePoint[] |
  * or more than one trading day stale (slid out of the current window).
  *
  * Exported points before the current window's first session are dropped (they
- * rolled out when the window advanced), then the curve is bridged to the live
- * tip — at `now` while open, or the last settled session's close once shut — so
- * a day-old export still ends on today's (or the latest) value.
+ * rolled out when the window advanced). The blob is then trusted only **through
+ * the last settled session**: today's portion of `week.points` (the coarse tail)
+ * is discarded so the current day is supplied by the dense live 1D session
+ * instead — the caller passes it as {@link SpringboardInput.todayCurve}, and that
+ * slice is spliced on (making "1D fills 1W" hold even on this fast path). When no
+ * `todayCurve` is supplied the curve falls back to bridging today with the single
+ * live tip — at `now` while open, or the last settled session's close once shut —
+ * so a caller that has no dense session still ends on today's (or the latest) value.
  */
 export function springboardWeekCurve(input: SpringboardInput): CurvePoint[] | null {
   const week = input.exported?.week;
@@ -199,21 +212,36 @@ export function springboardWeekCurve(input: SpringboardInput): CurvePoint[] | nu
   // rolled out when the window advanced is dropped.
   const window = recentTradingSessions(DEFAULT_WEEK_SESSIONS, now);
   const windowStartMs = dayStartMs(window[0] ?? last);
-  let points = allPoints.filter((p) => p.t >= windowStartMs);
-  if (points.length < 1) return null;
+  const windowPoints = allPoints.filter((p) => p.t >= windowStartMs);
+  if (windowPoints.length < 1) return null;
 
-  // Completeness gate: a fresh `end_date` is not enough — the blob must actually
-  // span nearly the whole week, not just the last session or two. We compare the
-  // distinct trading days the points cover against the sessions the window
-  // expects up to `end_date` (the live tip supplies the final missing session),
+  // The current day is never owned by the coarse week tail: trust the export only
+  // through the last *settled* session and drop today's `week.points`, leaving the
+  // dense live 1D session (spliced below) to supply today.
+  const todayStartMs = dayStartMs(last);
+  let points = windowPoints.filter((p) => p.t < todayStartMs);
+
+  // Completeness gate over the *settled* sessions only (today is supplied live): a
+  // fresh `end_date` is not enough — the blob must span nearly the whole settled
+  // week, not just the last session or two. Compare the distinct settled trading
+  // days the points cover against the window's pre-today sessions up to `end_date`,
   // and rebuild live when the export is too sparse to be a trustworthy week curve.
-  const expectedSessions = window.filter((d) => d <= endDate).length;
-  const requiredDays = Math.max(2, Math.ceil(expectedSessions * MIN_WEEK_DAY_COVERAGE));
+  const settledSessions = window.filter((d) => d < last && d <= endDate).length;
+  const requiredDays = Math.max(2, Math.ceil(settledSessions * MIN_WEEK_DAY_COVERAGE));
   if (distinctSessionDays(points) < requiredDays) return null;
 
-  const marketOpen = isUsMarketOpen(now);
-  const tipT = marketOpen ? now.getTime() : sessionCloseMs(last);
-  if (input.liveTip) points = appendLiveTip(points, tipT, input.liveTip);
+  // Splice today's dense 1D session (the same curve the 1D graph paints) onto the
+  // settled-days springboard, keeping only its current-day portion so it can never
+  // overwrite a settled point. Real today bars replace any week-tail value at the
+  // same instant. Falls back to the single live-tip bridge when none is supplied.
+  const today = (input.todayCurve ?? []).filter((p) => p.t >= todayStartMs);
+  if (today.length > 0) {
+    points = [...points, ...today].sort((a, b) => a.t - b.t);
+  } else {
+    const marketOpen = isUsMarketOpen(now);
+    const tipT = marketOpen ? now.getTime() : sessionCloseMs(last);
+    if (input.liveTip) points = appendLiveTip(points, tipT, input.liveTip);
+  }
 
   return points.length >= 2 ? points : null;
 }

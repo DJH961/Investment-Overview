@@ -18,6 +18,7 @@ import {
   springboardSessionCurve,
   springboardWeekCurve,
 } from "../src/springboard";
+import type { CurvePoint } from "../src/timeseries";
 import type { ExportLiveCurvePoint, ExportLiveGraphs } from "../src/types";
 
 const d = (v: string | number): Decimal => new Decimal(v);
@@ -247,5 +248,62 @@ describe("springboardWeekCurve", () => {
   it("returns null when there is no week export", () => {
     expect(springboardWeekCurve({ exported: undefined, now: MID_SESSION })).toBeNull();
     expect(springboardWeekCurve({ exported: { captured_at: "x" }, now: MID_SESSION })).toBeNull();
+  });
+
+  it("splices the dense 1D today slice instead of a single live-tip bridge", () => {
+    // The week blob is fresh (springboard succeeds) and carries a coarse today
+    // tail, but a dense current-day 1D session exists. The rendered today slice
+    // must match that dense curve's density/shape — not collapse to one tip.
+    const cp = (t: string, eur: string, usd: string): CurvePoint => ({
+      t: Date.parse(t),
+      valueEur: d(eur),
+      valueUsd: d(usd),
+    });
+    const todayCurve = [
+      cp("2024-06-05T13:30:00Z", "955", "1055"),
+      cp("2024-06-05T13:35:00Z", "956", "1056"),
+      cp("2024-06-05T13:45:00Z", "958", "1058"),
+      cp("2024-06-05T14:00:00Z", "960", "1060"),
+    ];
+    const curve = springboardWeekCurve({
+      exported: weekExport(TODAY, [...weekPoints, pt("2024-06-05T13:50:00Z", "900", "1000")]),
+      now: MID_SESSION,
+      liveTip: tip,
+      todayCurve,
+    });
+    expect(curve).not.toBeNull();
+    const todayStart = Date.parse("2024-06-05T00:00:00Z");
+    const todaySlice = curve!.filter((p) => p.t >= todayStart);
+    // The today slice is exactly the dense 1D curve — not the coarse week tail nor
+    // a lone tip.
+    expect(todaySlice.map((p) => p.t)).toEqual(todayCurve.map((p) => p.t));
+    expect(todaySlice.length).toBeGreaterThan(1);
+    // The coarse week-tail today point (900/1000 @ 13:50) is gone, replaced by the
+    // dense session's own values.
+    expect(todaySlice.some((p) => p.t === Date.parse("2024-06-05T13:50:00Z"))).toBe(false);
+    // The settled days still precede today untouched.
+    const settled = curve!.filter((p) => p.t < todayStart);
+    expect(settled.map((p) => p.valueEur.toString())).toEqual(["880", "890", "900", "950"]);
+  });
+
+  it("drops today's coarse week tail even without a dense slice (falls back to the tip)", () => {
+    // No `todayCurve`: today is bridged with the single live tip, and the coarse
+    // intraday today points from `week.points` are not drawn.
+    const curve = springboardWeekCurve({
+      exported: weekExport(TODAY, [
+        ...weekPoints,
+        pt("2024-06-05T13:50:00Z", "900", "1000"),
+        pt("2024-06-05T14:00:00Z", "905", "1005"),
+      ]),
+      now: MID_SESSION,
+      liveTip: tip,
+    });
+    expect(curve).not.toBeNull();
+    const todayStart = Date.parse("2024-06-05T00:00:00Z");
+    const todaySlice = curve!.filter((p) => p.t >= todayStart);
+    // Exactly one today point: the live tip at `now`.
+    expect(todaySlice).toHaveLength(1);
+    expect(todaySlice[0].t).toBe(MID_SESSION.getTime());
+    expect(todaySlice[0].valueEur.toString()).toBe(tip.valueEur.toString());
   });
 });
