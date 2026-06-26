@@ -81,7 +81,13 @@ import {
   type LoadQuotesOptions,
   type QuoteLoadReport,
 } from "./quotes";
-import { jumpstartDelayMs, nextRefreshDelayMs } from "./refresh-policy";
+import {
+  dailyBudgetSlowdown,
+  jumpstartDelayMs,
+  minuteBudgetReliefMs,
+  nextRefreshDelayMs,
+  MIN_BURST_RELIEF_MS,
+} from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
 import { isUsMarketOpen, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, recentTradingSessions, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
 import {
@@ -5005,6 +5011,22 @@ export class App {
       // pull cleanly pushes the auto schedule out by the configured interval.
       slowIntervalMs: this.state.config.updateMinutes * 60 * 1000,
     });
+    // Credit-aware burst: when symbols deferred purely because the per-minute
+    // window was full, don't wait a blind fresh minute. The soonest a slot frees
+    // is when the oldest in-window credit ages out — sooner than 60 s when some
+    // of those credits were spent by an earlier round (e.g. the startup pull moments
+    // before a force/reset), which is exactly the "always waits 60 s even though it
+    // should already have headroom" case. Only when the daily budget is healthy
+    // (slowdown ≈ 1): once it runs low we deliberately keep pacing out instead.
+    if (report.deferred.length > 0 && !promoted) {
+      const slowdown = dailyBudgetSlowdown(report.dayRemaining, FREE_TIER.creditsPerDay);
+      if (slowdown <= 1) {
+        const nowMs = Date.now();
+        const spends = readCreditLog(nowMs, 60 * 1000).map((e) => e.at);
+        const relief = minuteBudgetReliefMs(spends, nowMs, 60 * 1000, MIN_BURST_RELIEF_MS);
+        if (relief !== null) delayMs = Math.min(delayMs, relief);
+      }
+    }
     // A tap that took over an in-flight auto pull (promotion) must push the next
     // *automatic* refresh out by the full configured interval — never a ~1-minute
     // burst — so the manual refresh genuinely supersedes the auto schedule instead

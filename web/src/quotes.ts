@@ -427,7 +427,16 @@ export async function loadQuotes(
   const cache = readCachedQuotes(storage ?? undefined);
   const result = new Map<string, Quote>();
   const servedFresh: string[] = [];
-  const stale: string[] = [];
+  // Two stale buckets so a budget-limited round spends its credits in the right
+  // order. `forcedStale` holds symbols an explicit request opted in — a manual
+  // "refresh now", a "Force-fetch every price now", or a deferred-queue drain
+  // (`forceFetch` returns true) — i.e. exactly the symbols the user asked us to
+  // update *now*; `ordinaryStale` holds the rest (auto-refresh candidates whose
+  // cache window has merely lapsed). Forced symbols are fetched first (see the
+  // concatenation below), so under the per-minute cap a force pull's overflow
+  // jumps ahead of ordinary stale symbols instead of being bumped behind them.
+  const forcedStale: string[] = [];
+  const ordinaryStale: string[] = [];
 
   const t0 = now();
   const ttlFor = (symbol: string, cached?: CachedQuote): number => {
@@ -446,10 +455,16 @@ export async function loadQuotes(
     if (!forced && cached && t0 - cached.at < ttlFor(symbol, cached) && cached.quote.price !== null) {
       result.set(symbol, cached.quote);
       servedFresh.push(symbol);
+    } else if (forced) {
+      forcedStale.push(symbol);
     } else {
-      stale.push(symbol);
+      ordinaryStale.push(symbol);
     }
   }
+  // Forced symbols jump the budget queue. Each bucket keeps its incoming
+  // (size-priority) order, so within the forced set the largest holdings still
+  // land first — they just collectively precede the ordinary stale symbols.
+  const stale = [...forcedStale, ...ordinaryStale];
 
   const budget = () => {
     const t = now();
