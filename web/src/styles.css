@@ -385,9 +385,10 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .fx-box-stats {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 0.6rem 1rem;
 }
+.fx-box-stats-pair { grid-template-columns: repeat(2, 1fr); }
 .fx-box-stat { display: grid; gap: 0.1rem; align-content: start; }
 .fx-box-stat-label {
   font-size: 0.72rem;
@@ -423,8 +424,24 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
+.fx-box-closed {
+  color: var(--neg);
+  background: color-mix(in srgb, var(--neg) 14%, transparent);
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.fx-box-reopen {
+  font-size: 0.74rem;
+  color: var(--muted);
+  font-weight: 500;
+}
 
-/* --- Currency effect today (net + diverging market-hours/overnight split) -- */
+/* --- Currency effect since yesterday (net + diverging market-hours/overnight split) -- */
 .fx-effect {
   display: grid;
   gap: 0.55rem;
@@ -456,13 +473,21 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .fx-diverge { display: grid; gap: 0.4rem; }
 .fx-diverge-row {
   display: grid;
-  grid-template-columns: 5.5rem 1fr 5rem;
+  grid-template-columns: 6.75rem 1fr 5rem;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.78rem;
   font-weight: 600;
 }
-.fx-diverge-label { color: var(--muted); }
+.fx-diverge-label { color: var(--muted); display: flex; align-items: baseline; gap: 0.35rem; }
+.fx-diverge-tag {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  color: var(--muted);
+  opacity: 0.75;
+}
 .fx-diverge-track {
   position: relative;
   height: 0.5rem;

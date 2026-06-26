@@ -9,12 +9,17 @@ import pytest
 
 from investment_dashboard.domain.market_hours import (
     feed_is_fresh,
+    forex_market_reopen,
+    is_forex_market_open,
     is_trading_day,
     is_us_market_holiday,
+    is_us_market_holiday_at,
     is_us_market_open,
+    last_forex_reopen,
     latest_settled_session_date,
     previous_trading_day,
     regular_session_close,
+    regular_session_open,
 )
 
 NY = ZoneInfo("America/New_York")
@@ -231,3 +236,87 @@ class TestLatestSettledSessionDate:
 
     def test_default_now_returns_a_date(self) -> None:
         assert isinstance(latest_settled_session_date(), date)
+
+
+class TestForexMarketHours:
+    """The spot-FX (forex) week: open Sunday 17:00 ET through Friday 17:00 ET, dark
+    across the weekend. In June (EDT, UTC-4) 17:00 ET is 21:00 UTC."""
+
+    def test_open_midweek(self) -> None:
+        # Wednesday 2024-06-12 15:00 UTC = 11:00 ET.
+        assert is_forex_market_open(datetime(2024, 6, 12, 15, 0, tzinfo=UTC)) is True
+
+    def test_friday_before_close_is_open(self) -> None:
+        # Friday 2024-06-07 20:00 UTC = 16:00 ET (before the 17:00 ET close).
+        assert is_forex_market_open(datetime(2024, 6, 7, 20, 0, tzinfo=UTC)) is True
+
+    def test_friday_after_close_is_shut(self) -> None:
+        # Friday 2024-06-07 21:30 UTC = 17:30 ET.
+        assert is_forex_market_open(datetime(2024, 6, 7, 21, 30, tzinfo=UTC)) is False
+
+    def test_saturday_is_shut(self) -> None:
+        assert is_forex_market_open(datetime(2024, 6, 8, 15, 0, tzinfo=UTC)) is False
+
+    def test_sunday_before_reopen_is_shut(self) -> None:
+        # Sunday 2024-06-09 14:00 UTC = 10:00 ET (before the 17:00 ET reopen).
+        assert is_forex_market_open(datetime(2024, 6, 9, 14, 0, tzinfo=UTC)) is False
+
+    def test_sunday_after_reopen_is_open(self) -> None:
+        # Sunday 2024-06-09 22:00 UTC = 18:00 ET.
+        assert is_forex_market_open(datetime(2024, 6, 9, 22, 0, tzinfo=UTC)) is True
+
+    def test_naive_datetime_treated_as_exchange_local(self) -> None:
+        # Naive => already exchange time: Saturday 12:00 is shut.
+        assert is_forex_market_open(datetime(2024, 6, 8, 12, 0)) is False
+
+
+class TestForexReopen:
+    def test_reopen_from_saturday_is_next_sunday_17_et(self) -> None:
+        reopen = forex_market_reopen(datetime(2024, 6, 8, 15, 0, tzinfo=UTC))
+        assert reopen == datetime(2024, 6, 9, 17, 0, tzinfo=NY)
+
+    def test_reopen_from_friday_evening_is_the_coming_sunday(self) -> None:
+        reopen = forex_market_reopen(datetime(2024, 6, 7, 21, 30, tzinfo=UTC))
+        assert reopen == datetime(2024, 6, 9, 17, 0, tzinfo=NY)
+
+    def test_reopen_on_sunday_morning_is_today(self) -> None:
+        reopen = forex_market_reopen(datetime(2024, 6, 9, 14, 0, tzinfo=UTC))
+        assert reopen == datetime(2024, 6, 9, 17, 0, tzinfo=NY)
+
+    def test_reopen_converts_to_display_timezone(self) -> None:
+        reopen = forex_market_reopen(datetime(2024, 6, 8, 15, 0, tzinfo=UTC), tz=UTC)
+        assert reopen == datetime(2024, 6, 9, 21, 0, tzinfo=UTC)
+
+
+class TestLastForexReopen:
+    def test_sunday_evening_reopen_is_today(self) -> None:
+        last = last_forex_reopen(datetime(2024, 6, 9, 22, 0, tzinfo=UTC))
+        assert last == datetime(2024, 6, 9, 17, 0, tzinfo=NY)
+
+    def test_monday_reopen_is_the_prior_sunday(self) -> None:
+        last = last_forex_reopen(datetime(2024, 6, 10, 12, 0, tzinfo=UTC))
+        assert last == datetime(2024, 6, 9, 17, 0, tzinfo=NY)
+
+
+class TestRegularSessionOpen:
+    def test_open_is_09_30_exchange_time(self) -> None:
+        assert regular_session_open(date(2024, 6, 7)) == datetime(2024, 6, 7, 9, 30, tzinfo=NY)
+
+    def test_open_converts_to_display_timezone(self) -> None:
+        # 09:30 ET in June (EDT) is 13:30 UTC.
+        assert regular_session_open(date(2024, 6, 7), tz=UTC) == datetime(
+            2024, 6, 7, 13, 30, tzinfo=UTC
+        )
+
+
+class TestIsUsMarketHolidayAt:
+    def test_july_fourth_is_a_holiday(self) -> None:
+        # 2024-07-04 (Thursday) 15:00 UTC = 11:00 ET.
+        assert is_us_market_holiday_at(datetime(2024, 7, 4, 15, 0, tzinfo=UTC)) is True
+
+    def test_regular_weekday_is_not_a_holiday(self) -> None:
+        assert is_us_market_holiday_at(datetime(2024, 6, 12, 15, 0, tzinfo=UTC)) is False
+
+    def test_resolves_to_exchange_local_date(self) -> None:
+        # 2024-07-05 01:00 UTC is still 2024-07-04 21:00 ET ⇒ the holiday.
+        assert is_us_market_holiday_at(datetime(2024, 7, 5, 1, 0, tzinfo=UTC)) is True

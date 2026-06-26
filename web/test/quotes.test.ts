@@ -705,6 +705,28 @@ describe("loadEurUsd", () => {
     expect(res.at).toBe(0);
   });
 
+  it("freezes on the cached spot without spending a credit when the forex market is closed", async () => {
+    const storage = memStorage();
+    // A pre-today cached reading (stored t=1000ms, read +25h on a different UTC
+    // day) that would normally drop to the EOD rate. With the forex market shut,
+    // freeze on this last live spot instead — keeping its real prior close — and
+    // never hit the wire.
+    writeCachedEurUsd({ now: new Decimal("1.084"), previousClose: new Decimal("1.071") }, 1000, storage);
+    const fetchImpl = vi.fn<FetchLike>();
+    const res = await loadEurUsd("key", {
+      fetchImpl,
+      storage,
+      now: clock(90_000_000),
+      ttlMs: 0,
+      eodFallback: new Decimal("1.07"),
+      forexOpen: false,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(res.source).toBe("cache");
+    expect(res.now?.toString()).toBe("1.084");
+    expect(res.previousClose?.toString()).toBe("1.071");
+  });
+
   it("fetches a live pair (spot + prior close) and caches it", async () => {
     const storage = memStorage();
     const fetchImpl = vi.fn<FetchLike>(async () =>
