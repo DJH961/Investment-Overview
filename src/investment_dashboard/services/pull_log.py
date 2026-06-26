@@ -84,7 +84,7 @@ class PullRound:
 
     trigger: str
     mode: str
-    rid: str = field(default_factory=lambda: uuid.uuid4().hex[:4])
+    rid: str = field(default_factory=lambda: uuid.uuid4().hex[:6])
     _started_at: float = field(default_factory=_time.monotonic)
     _providers: dict[str, _ProviderTally] = field(default_factory=dict)
     _suspect: list[str] = field(default_factory=list)
@@ -112,6 +112,10 @@ class PullRound:
         elapsed = _time.monotonic() - self._started_at
         total_closes = sum(t.closes for t in self._providers.values())
         fresh_syms = {s for t in self._providers.values() for s in t.fresh}
+        # The fallback (Tiingo) only ever covers a *subset* of the same symbols
+        # the primary (yfinance) already asked for this round — never a disjoint
+        # set — so the "fresh / requested" denominator is the widest single
+        # provider request, not the sum (which would double-count the overlap).
         requested = max((t.requested for t in self._providers.values()), default=0)
         tiingo = self._providers.get("tiingo")
         tiingo_n = len(tiingo.fresh) if tiingo else 0

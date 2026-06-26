@@ -123,6 +123,9 @@ def tick_refresh(source: str = "Live price refresh", *, force: bool = False) -> 
         # The explicit record_error below gives this a friendly label, so skip
         # the logging handler's mirror to avoid a duplicate (uglier) entry.
         log.warning("%s tick failed", source, exc_info=True, extra={"runtime_status_skip": True})
+        # A failure *here* (outside the inner refresh, which catches its own
+        # provider errors) aborts the whole round; record it against the trigger
+        # label so the round summary flags the pull as failed.
         round_.provider_failed(source, f"{type(exc).__name__}: {exc}")
         from investment_dashboard.services import runtime_status  # noqa: PLC0415
 
