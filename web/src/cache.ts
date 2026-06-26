@@ -159,12 +159,21 @@ export function writeCachedQuotes(
  * symbol is skipped, since its value could not be denominated safely). `at` is
  * stamped at `now` because the bar was just fetched — honest fetch-freshness —
  * while `priceTime` records the bar's own strike instant.
+ *
+ * C5 — symbols listed in `navValueDateSymbols` are NAV funds whose bar tip is a
+ * **settled** daily close, not a live tick. For those the primed quote carries
+ * `valueDate` = the bar day and `marketOpen: false`, because {@link priceForHolding}
+ * only honours a NAV quote whose `valueDate` is a current business day — without
+ * it a bar-primed NAV is rejected as stale and the headline falls back to the
+ * exported value, defeating the bars-first pull. A market symbol (default) keeps
+ * the prior `valueDate`/`marketOpen`, so it is never mislabelled as a settled NAV.
  */
 export function primeQuotesFromBars(
   barsBySymbol: Map<string, Bar[]>,
   currencyBySymbol: Map<string, string | null>,
   now: number,
   storage: StorageLike | null = defaultStorage(),
+  navValueDateSymbols: ReadonlySet<string> = new Set(),
 ): string[] {
   if (barsBySymbol.size === 0) return [];
   const file = readJson<QuoteCacheFile>(storage, QUOTE_KEY) ?? {};
@@ -178,14 +187,17 @@ export function primeQuotesFromBars(
     if (knownInstant !== null && latest.t <= knownInstant) continue;
     const currency = existing?.currency ?? currencyBySymbol.get(symbol) ?? null;
     if (currency === null) continue; // cannot denominate a bare native price safely
+    const isNav = navValueDateSymbols.has(symbol);
     file[symbol] = {
       price: latest.value.toString(),
       previousClose: existing?.previousClose ?? null,
       currency,
       at: now,
       priceTime: latest.t,
-      valueDate: existing?.valueDate ?? null,
-      marketOpen: existing?.marketOpen ?? null,
+      // C5: a NAV bar tip is a settled close — stamp its value-date (the bar day)
+      // so it is accepted as the headline NAV, and mark it not-live.
+      valueDate: isNav ? new Date(latest.t).toISOString().slice(0, 10) : (existing?.valueDate ?? null),
+      marketOpen: isNav ? false : (existing?.marketOpen ?? null),
     };
     primed.push(symbol);
   }

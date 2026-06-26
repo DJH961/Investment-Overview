@@ -133,7 +133,13 @@ import {
   sessionFxBarsComplete,
 } from "./session-fx";
 import { TimeSeriesStore, type Breadcrumb } from "./timeseries-store";
-import { WEEK_STORE_KEY, navBarsFromQuotes, weekStaleSymbols } from "./week";
+import {
+  WEEK_STORE_KEY,
+  navBackfillStaleSymbols,
+  navBarsFromQuotes,
+  weekStaleSymbols,
+  wrapDailyNavFetcher,
+} from "./week";
 import { ONE_HOUR_MS } from "./freshness";
 import { planPull, describePlan, type PullKind, type PullFreshness, type PullPlan } from "./data-orchestrator";
 import {
@@ -880,7 +886,16 @@ export class App {
     if (!marketOpen && graphStale.fxIncomplete && prefetch.graphSessionSymbols.length === 0) {
       await this.prefetchSessionFx(config, now);
     }
-    const quoteWork = prefetch.symbols.length + prefetch.navSymbols.length;
+    // C5 — bars-first NAV. Before spending a NAV *quote* credit, pull the 1W
+    // daily-NAV bars for any moving fund whose week is not covered through the
+    // latest settled session: the last bar is that settled NAV, it fills the whole
+    // week line in one shot, and it is primed back as the (value-dated, settled)
+    // headline NAV. The funds it primes are dropped from the quote leg below, so
+    // the separate NAV quote is skipped — no duplicate spend, week correct in one.
+    const navBarsPrimed = await this.prefetchNavWeekBars(prefetch.navSymbols, config, now, planCurrency);
+    const navPrimedSet = new Set(navBarsPrimed);
+    const navQuoteSymbols = prefetch.navSymbols.filter((s) => !navPrimedSet.has(s));
+    const quoteWork = prefetch.symbols.length + navQuoteSymbols.length;
     if (quoteWork === 0) {
       this.pollLog(
         "primary",
@@ -890,7 +905,12 @@ export class App {
       this.finishPrefetch({ quoteFetched: 0, quoteTotal, hasPlan: true, fxLive, graphFetched: graphFetched.stored });
       // C3: even with no quote work, the graph backfill may have primed market
       // quotes — book those *actual* fills so the reconcile doesn't re-pull them.
-      this.prefetchBooked = { symbols: [...graphFetched.primed], predicted: plan.map((e) => e.symbol), fx: true };
+      // C5: bars-first NAV fills count as genuine fills too.
+      this.prefetchBooked = {
+        symbols: [...graphFetched.primed, ...navBarsPrimed],
+        predicted: plan.map((e) => e.symbol),
+        fx: true,
+      };
       return;
     }
     const options = this.buildQuoteOptions(navFetchSymbols, config);
@@ -905,7 +925,7 @@ export class App {
     const fanout = planFanout({
       kind: "start",
       symbols: prefetch.symbols,
-      navSymbols: prefetch.navSymbols,
+      navSymbols: navQuoteSymbols,
       twelveDataSpendable: twelveDataAvailable(fanoutNow),
       tiingoSpendable: tiingoAvailable(fanoutNow),
       tiingoAvailable: resolvePriceProxyUrl(config) !== null,
@@ -962,6 +982,7 @@ export class App {
       ...fanout.navTwelveData,
       ...fanout.navTiingo,
       ...graphFetched.primed,
+      ...navBarsPrimed,
     ]);
     this.prefetchBooked = {
       symbols: [...bookedSet].filter((s) => !deferredSet.has(s)),
@@ -1682,6 +1703,92 @@ export class App {
       outputsize: 8,
     });
     return { stored, primed: [...primedSet] };
+  }
+
+  /**
+   * C5 — **bars-first NAV** for the login warm-up. On a fresh device the 1W NAV
+   * history is missing the latest settled session, so instead of spending a NAV
+   * *quote* credit (whose value is then duplicated when the 1W curve later gap-
+   * fills the very same day) this pulls the **1W daily-NAV bars** up front: the
+   * last bar *is* the current settled NAV, it fills the whole week line in one
+   * shot, and {@link primeQuotesFromBars} stamps it back as the headline NAV
+   * (value-dated, settled — never "live"). The funds it primes are then dropped
+   * from the quote leg, so the separate NAV quote is skipped.
+   *
+   * Only the genuine, NAV-fetchable moving funds are eligible (money-market /
+   * pinned-$1 funds are not in `navSymbols`, stay flat, and are never fetched).
+   * Routed through the same reservation authority + 429 breaker as every other
+   * pull, and fully best-effort — a failure just leaves the NAV quote leg to run.
+   * Returns the funds whose headline NAV this primed (to drop from the quote leg).
+   */
+  private async prefetchNavWeekBars(
+    navSymbols: string[],
+    config: AppConfig,
+    now: Date,
+    currencyBySymbol: Map<string, string | null>,
+  ): Promise<string[]> {
+    if (navSymbols.length === 0) return [];
+    const proxyUrl = resolvePriceProxyUrl(config);
+    if (!proxyUrl) return []; // NAV daily bars only come cheaply via the Tiingo /price pipe
+    const store = this.ensureTimeSeriesStore();
+    const weekStored = await store.loadSession(WEEK_STORE_KEY).catch(() => null);
+    const stale = navBackfillStaleSymbols(weekStored, navSymbols, now);
+    if (stale.length === 0) return []; // week already covers every settled NAV → pull nothing
+    const reservation = ledgerReservation();
+    const spent = { credits: 0 };
+    const { tiingoMeter, twelveDataMeter } = instrumentedGraphRecorders({
+      range: "1W NAV warm-up",
+      bookTwelveData: () => undefined,
+      refundTwelveData: (n) => reservation.release("twelvedata", n, Date.now()),
+      bookTiingo: () => undefined,
+      refundTiingo: (n) => reservation.release("tiingo", n, Date.now()),
+      log: (message) => this.pollLog("graph", message),
+      spent,
+      onTwelveData429: () => recordTwelveData429(Date.now()),
+      onTwelveDataSuccess: () => recordTwelveDataSuccess(),
+      onTiingo429: () => recordTiingo429(Date.now()),
+    });
+    const window = weekFxWindow(now);
+    const fetchBars = makePriceBarFetcher({
+      apiKey: config.apiKey,
+      proxyUrl,
+      param: "daily",
+      startDate: window.startDate,
+      endDate: window.endDate,
+      tiingoMeter,
+      twelveDataMeter,
+      reservation,
+      backoff: { memo: cacheSeriesBackoff(), scope: "bars:nav", now: () => Date.now() },
+      interval: "1day",
+      outputsize: 8,
+    });
+    if (!fetchBars) return [];
+    // Collapse to one settling NAV per UTC day (day-start stamped) so the warmed
+    // history aligns with the bars the 1W curve accumulates for free from quotes.
+    const navBars = await wrapDailyNavFetcher(fetchBars)(stale).catch(() => null);
+    if (!navBars) {
+      this.pollLog("graph", "Login warm-up: NAV bar backfill failed; funds left to the quote leg.");
+      return [];
+    }
+    const incoming: Record<string, Bar[]> = {};
+    for (const [symbol, list] of navBars) if (list.length > 0) incoming[symbol] = list;
+    if (Object.keys(incoming).length === 0) return [];
+    await store.mergeSession(WEEK_STORE_KEY, { bars: incoming }, now.getTime());
+    // Prime each fund's headline NAV from its settled bar tip (value-dated, not
+    // live) so the quote leg can skip it. The NAV set drives the value-date stamp.
+    const primed = primeQuotesFromBars(
+      navBars,
+      currencyBySymbol,
+      Date.now(),
+      null,
+      new Set(stale),
+    );
+    this.pollLog(
+      "graph",
+      `Login warm-up: NAV bars-first stored ${Object.keys(incoming).length} fund week(s) and ` +
+        `primed ${primed.length} headline NAV(s) from the settled bar tip — quote leg skips them.`,
+    );
+    return primed;
   }
 
   /**
@@ -5315,15 +5422,24 @@ export class App {
    * re-requesting it. Native currency is sourced per symbol from the model so a
    * not-yet-cached symbol can still be denominated; {@link primeQuotesFromBars}
    * only ever extends freshness, never overwriting a newer genuine quote.
+   *
+   * C5 — NAV funds in the model are flagged so their bar tip is stamped as a
+   * **settled** daily close (value-date = bar day, not "live"); without that
+   * {@link priceForHolding} rejects a bar-primed NAV as stale and the headline
+   * falls back to the exported value, so the 1W gap-fill bars would never serve as
+   * the headline NAV. This is what makes NAV genuinely bars-first.
    */
   private primeQuotesFromGraphBars(barsBySymbol: Map<string, Bar[]>, model: DashboardModel): void {
     if (barsBySymbol.size === 0) return;
     const currencyBySymbol = new Map<string, string | null>();
+    const navSymbols = new Set<string>();
     for (const h of model.holdings) {
       const symbol = h.priceSymbol ?? h.symbol;
-      if (symbol) currencyBySymbol.set(symbol, h.nativeCurrency ?? null);
+      if (!symbol) continue;
+      currencyBySymbol.set(symbol, h.nativeCurrency ?? null);
+      if (h.priceType === "nav") navSymbols.add(symbol);
     }
-    primeQuotesFromBars(barsBySymbol, currencyBySymbol, Date.now());
+    primeQuotesFromBars(barsBySymbol, currencyBySymbol, Date.now(), null, navSymbols);
   }
 
   /**
