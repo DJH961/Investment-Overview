@@ -78,6 +78,101 @@ function utcDayOf(t: number): string {
   return new Date(t).toISOString().slice(0, 10);
 }
 
+/**
+ * Heal a NAV-collapse nosedive baked into a **single session's** curve (the dense
+ * 1D slice the 1D graph paints and the 1W graph splices on for *today*). This is
+ * the per-point analogue of {@link repairWeekNavCollapse}, for the case the
+ * whole-week repair structurally cannot reach: the collapse and its recovery sit
+ * inside *one* UTC day, so a day-grouped lift sees a single group whose close is
+ * already healthy (the live tip) and leaves the depressed body untouched.
+ *
+ * The defect (issue #169, the trailing/today case): a blob exported right after
+ * the US open carries an entire intraday session valued *without* its NAV-fund
+ * sleeve (~60 % of the book). {@link ../springboard.springboardSessionCurve}
+ * trusts those `day.points` verbatim and merely bridges the gap to the live tip,
+ * so the whole day nosedives to ~60 % and only the final live tip — the current
+ * headline total, which always carries the NAV sleeve — snaps back. On the 1W
+ * graph that lone late spike sits beside an otherwise-healthy settled week, and
+ * the autoscale crushes the line; on the 1D graph the whole session is depressed.
+ *
+ * The repair lifts a **leading run** of collapsed points up onto the session's
+ * own healthy level — the first point that recovers, else the live-tip
+ * `healthyHint` when *every* charted point collapsed and only the tip is sound —
+ * by the single constant NAV hole, preserving each point's intraday shape. It is
+ * the same conservative leading-run-that-stays-recovered shape and the same
+ * {@link MIN_COLLAPSE_DROP}/{@link MIN_RECOVERY_STEP} thresholds as the week
+ * repair, so a healthy session (flat, trending, or merely volatile) is returned
+ * untouched, and a genuine whole-book drop — where the live tip is itself low —
+ * is never masked.
+ *
+ * @param points Ascending whole-book points for a single session (the dense 1D
+ *   slice, normally ending on the live tip).
+ * @param healthyHint The current headline whole-book level (the live tip). Raises
+ *   the healthy benchmark and, when the charted body has *no* sound point of its
+ *   own, donates the lift. Omitted/null keeps the body-only behaviour.
+ */
+export function repairSessionNavCollapse(
+  points: CurvePoint[],
+  healthyHint?: RepairHealthyHint | null,
+): CurvePoint[] {
+  if (points.length < 2) return points;
+
+  // The session's own healthy level: the highest charted value, raised by the
+  // live tip when it is higher (the body may be uniformly collapsed with only a
+  // tiny healthy tip — or no healthy charted point at all).
+  let healthyEur = points[0].valueEur;
+  for (const p of points) if (p.valueEur.greaterThan(healthyEur)) healthyEur = p.valueEur;
+  const hint = healthyHint ?? null;
+  if (hint && hint.eur.greaterThan(healthyEur)) healthyEur = hint.eur;
+  if (!healthyEur.greaterThan(0)) return points;
+
+  const collapseFloor = healthyEur.times(1 - MIN_COLLAPSE_DROP);
+
+  // The first point that clears the floor ends a leading collapsed run.
+  let firstHealthy = 0;
+  while (firstHealthy < points.length && points[firstHealthy].valueEur.lessThan(collapseFloor)) {
+    firstHealthy += 1;
+  }
+  // No leading depression: the body opens healthy, so this is not the collapse
+  // signature (a genuine late-day drop is left alone — never invented away).
+  if (firstHealthy === 0) return points;
+
+  // The depression must recover *and stay* recovered: every charted point from
+  // the first healthy one onward must itself be healthy. Otherwise it is ordinary
+  // intraday volatility, not a flat NAV hole.
+  for (let i = firstHealthy; i < points.length; i += 1) {
+    if (points[i].valueEur.lessThan(collapseFloor)) return points;
+  }
+
+  // Donor recovery level: the first healthy charted point, else the live tip when
+  // the *entire* charted body collapsed (only the tip is sound).
+  let donorEur: Decimal;
+  let donorUsd: Decimal;
+  if (firstHealthy < points.length) {
+    donorEur = points[firstHealthy].valueEur;
+    donorUsd = points[firstHealthy].valueUsd;
+  } else if (hint) {
+    donorEur = hint.eur;
+    donorUsd = hint.usd;
+  } else {
+    return points;
+  }
+
+  const lastCollapsed = points[firstHealthy - 1];
+  const offsetEur = donorEur.minus(lastCollapsed.valueEur);
+  const offsetUsd = donorUsd.minus(lastCollapsed.valueUsd);
+
+  // Require a large positive recovery step; a small/negative one is not the
+  // collapse signature, so leave the curve alone.
+  if (offsetEur.lessThanOrEqualTo(healthyEur.times(MIN_RECOVERY_STEP))) return points;
+
+  return points.map((p, i) =>
+    i < firstHealthy
+      ? { t: p.t, valueEur: p.valueEur.plus(offsetEur), valueUsd: p.valueUsd.plus(offsetUsd) }
+      : p,
+  );
+}
+
 /** One session day's worth of curve points, with its first/last (settling) values. */
 interface DayGroup {
   day: string;
