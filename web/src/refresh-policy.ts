@@ -95,6 +95,46 @@ export function dailyBudgetSlowdown(dayRemaining?: number, dayLimit = DEFAULT_DA
  * daily credit budget runs low, so a long session paces itself instead of
  * blowing the whole free-tier allowance early.
  */
+/**
+ * Floor for the "jumpstart" cadence. After a fetch-less round we may bring the
+ * next automatic refresh forward to land exactly when the oldest *still-fresh*
+ * value reaches the auto-update window (see {@link jumpstartDelayMs}). This is
+ * the soonest such a jumpstart may ever schedule, so a value sitting right on
+ * the edge of its window can't collapse the delay toward ~0 and spin the
+ * refresh loop hot.
+ */
+export const MIN_JUMPSTART_DELAY_MS = MINUTE_MS;
+
+/**
+ * How long to wait for the "jumpstart" refresh — the next automatic pull after a
+ * round that fetched nothing because everything was still fresh — given the
+ * observation time of the **oldest still-fresh** value.
+ *
+ * Returns the ms until that value first reaches the auto-update window, floored
+ * by {@link MIN_JUMPSTART_DELAY_MS}; or `null` when the jumpstart can't be
+ * anchored and the normal cadence should be used instead. Crucially it returns
+ * `null` (not `0`) when the oldest value is **already at or past** the window:
+ * such a value is no longer "still fresh", so it can't anchor a *future*
+ * jumpstart. Returning `0` there would re-fire the refresh immediately, and when
+ * the round deliberately holds that value within its own (longer) freshness
+ * window — e.g. an FX rate older than a short auto-update interval — its age
+ * never advances, so the next round computes `0` again: a 0-millisecond runaway
+ * loop. Deferring to the normal scheduler instead keeps the cadence sane.
+ */
+export function jumpstartDelayMs(
+  oldestFreshAtMs: number | null,
+  intervalMs: number,
+  nowMs: number,
+): number | null {
+  if (oldestFreshAtMs === null) return null;
+  const remaining = oldestFreshAtMs + intervalMs - nowMs;
+  // Already at/past the window — not "still fresh", so don't anchor (and never
+  // collapse to 0). Let the normal scheduler decide the next pull.
+  if (remaining <= 0) return null;
+  // Never schedule the jumpstart sooner than the burst floor.
+  return Math.max(remaining, MIN_JUMPSTART_DELAY_MS);
+}
+
 export function nextRefreshDelayMs(signal: RefreshSignal, options: RefreshCadenceOptions = {}): number {
   const {
     slowIntervalMs = DEFAULT_SLOW_INTERVAL_MS,

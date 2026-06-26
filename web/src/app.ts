@@ -81,7 +81,7 @@ import {
   type LoadQuotesOptions,
   type QuoteLoadReport,
 } from "./quotes";
-import { nextRefreshDelayMs } from "./refresh-policy";
+import { jumpstartDelayMs, nextRefreshDelayMs } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
 import { isUsMarketOpen, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, recentTradingSessions, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
 import {
@@ -4675,8 +4675,10 @@ export class App {
    *
    * Only market-priced symbols and FX ride the minute-level interval, so NAV funds
    * (a market-day window) are excluded. Returns `null` when the cadence can't be
-   * anchored (no data, a missing quote, or stale FX) — those cases want the normal
-   * scheduler, which will pull rather than wait.
+   * anchored (no data, a missing quote, stale FX, or the oldest value is already
+   * past the window) — those cases want the normal scheduler, which will pull or
+   * relax to the steady cadence rather than re-firing immediately. Delegates the
+   * already-expired / floor decision to {@link jumpstartDelayMs}.
    */
   private msUntilOldestFreshExpires(now: Date): number | null {
     const data = this.state.data;
@@ -4696,7 +4698,7 @@ export class App {
     const fxCached = readCachedEurUsd();
     if (!fxCached || fxCached.now === null) return null;
     if (oldestAt === null || fxCached.at < oldestAt) oldestAt = fxCached.at;
-    return Math.max(0, oldestAt + intervalMs - nowMs);
+    return jumpstartDelayMs(oldestAt, intervalMs, nowMs);
   }
 
   /**

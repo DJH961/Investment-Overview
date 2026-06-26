@@ -10,7 +10,9 @@ import {
   DEFAULT_DAY_CREDIT_LIMIT,
   DEFAULT_SLOW_INTERVAL_MS,
   MAX_BUDGET_SLOWDOWN,
+  MIN_JUMPSTART_DELAY_MS,
   dailyBudgetSlowdown,
+  jumpstartDelayMs,
   nextRefreshDelayMs,
 } from "../src/refresh-policy";
 
@@ -48,6 +50,38 @@ describe("nextRefreshDelayMs", () => {
 
   it("ignores daily pacing when no budget is supplied (back-compat)", () => {
     expect(nextRefreshDelayMs({ deferred: [] }, { jitterMs: 0 })).toBe(DEFAULT_SLOW_INTERVAL_MS);
+  });
+});
+
+describe("jumpstartDelayMs", () => {
+  const interval = 15 * 60 * 1000; // 15-minute auto-update window.
+  const now = 1_700_000_000_000;
+
+  it("returns the ms until the oldest still-fresh value reaches the window", () => {
+    // Oldest value observed 12 min ago on a 15-min window ⇒ ~3 min remaining.
+    const oldestAt = now - 12 * 60 * 1000;
+    expect(jumpstartDelayMs(oldestAt, interval, now)).toBe(3 * 60 * 1000);
+  });
+
+  it("returns null (not 0) when the oldest value is already past the window", () => {
+    // Regression: a value older than the interval (e.g. held FX) must NOT
+    // collapse the delay to 0 and spin a 0ms runaway refresh loop.
+    const stale = now - 20 * 60 * 1000;
+    expect(jumpstartDelayMs(stale, interval, now)).toBeNull();
+  });
+
+  it("returns null exactly at the window boundary", () => {
+    expect(jumpstartDelayMs(now - interval, interval, now)).toBeNull();
+  });
+
+  it("floors a near-expiry anchor at the minimum jumpstart delay", () => {
+    // 30 s left would otherwise schedule a near-immediate re-fire; floor it.
+    const oldestAt = now - (interval - 30 * 1000);
+    expect(jumpstartDelayMs(oldestAt, interval, now)).toBe(MIN_JUMPSTART_DELAY_MS);
+  });
+
+  it("returns null when there is no anchor value", () => {
+    expect(jumpstartDelayMs(null, interval, now)).toBeNull();
   });
 });
 
