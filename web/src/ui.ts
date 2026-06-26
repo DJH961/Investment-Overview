@@ -315,8 +315,13 @@ function renderFxEffect(o: OverviewView, inUsd: boolean, now: Date = new Date())
     const overnight = split.overnightEur;
     if (market !== null && overnight !== null && !(market.isZero() && overnight.isZero())) {
       const maxMag = Decimal.max(market.abs(), overnight.abs());
+      // Each leg fills out from the centre line, so a full-magnitude leg spans
+      // half the track (the other half is reserved for the opposite direction).
+      const HALF_TRACK_PCT = 50;
       const divergeRow = (label: string, value: Decimal, overnightLeg: boolean): HTMLElement => {
-        const width = maxMag.isZero() ? 0 : value.abs().dividedBy(maxMag).times(50).toNumber();
+        const width = maxMag.isZero()
+          ? 0
+          : value.abs().dividedBy(maxMag).times(HALF_TRACK_PCT).toNumber();
         const fill = h(
           "span",
           {
