@@ -10,7 +10,9 @@ from __future__ import annotations
 from decimal import Decimal
 
 from investment_dashboard.domain.session_fx import (
+    FxBuyingPowerSplit,
     FxEffectSplit,
+    fx_buying_power_split,
     fx_effect_split,
     graph_anchor_fx,
 )
@@ -180,3 +182,109 @@ class TestFxEffectSplit:
             today_fx_move_eur=None,
         )
         assert isinstance(split, FxEffectSplit)
+
+
+class TestFxBuyingPowerSplit:
+    """The USD investing-power twin: how many more/fewer dollars a fixed EUR
+    notional buys now versus yesterday's close, split into market-hours and
+    overnight legs. Mirrors ``fxBuyingPowerSplit`` in the web companion."""
+
+    def test_net_buying_power_is_amount_times_rate_change(self) -> None:
+        # €100 at 1.30 vs 1.20 prior close ⇒ 100·(1.30−1.20) = +$10 to invest.
+        split = fx_buying_power_split(
+            market_open=True,
+            amount_eur=d(100),
+            live_fx=d("1.30"),
+            prev_fx=d("1.20"),
+            session_close_fx=None,
+            session_open_fx=d("1.25"),
+        )
+        assert split.total_usd == d("10.00")
+        # Live leg = market hours since the open: 100·(1.30−1.25) = +$5.
+        assert split.market_hours_usd == d("5.00")
+        # Frozen overnight = remainder so the two always sum to the total.
+        assert split.overnight_usd == d("5.00")
+
+    def test_overnight_leg_is_live_once_shut(self) -> None:
+        # Closed: live leg = overnight since the close 100·(1.30−1.25)=+$5;
+        # frozen market-hours = remainder.
+        split = fx_buying_power_split(
+            market_open=False,
+            amount_eur=d(100),
+            live_fx=d("1.30"),
+            prev_fx=d("1.20"),
+            session_close_fx=d("1.25"),
+        )
+        assert split.total_usd == d("10.00")
+        assert split.overnight_usd == d("5.00")
+        assert split.market_hours_usd == d("5.00")
+
+    def test_negative_when_euro_weakens(self) -> None:
+        # Euro weaker (1.10 < 1.20) ⇒ the same euros buy fewer dollars: −$10.
+        split = fx_buying_power_split(
+            market_open=True,
+            amount_eur=d(100),
+            live_fx=d("1.10"),
+            prev_fx=d("1.20"),
+            session_close_fx=None,
+            session_open_fx=d("1.15"),
+        )
+        assert split.total_usd == d("-10.00")
+        assert split.market_hours_usd == d("-5.00")
+        assert split.overnight_usd == d("-5.00")
+
+    def test_whole_move_in_live_leg_when_anchor_missing(self) -> None:
+        # No session open anchor ⇒ the whole move falls into the live leg and the
+        # frozen counterpart is None so the UI hides the split.
+        split = fx_buying_power_split(
+            market_open=True,
+            amount_eur=d(100),
+            live_fx=d("1.30"),
+            prev_fx=d("1.20"),
+            session_close_fx=None,
+            session_open_fx=None,
+        )
+        assert split.total_usd == d("10.00")
+        assert split.market_hours_usd == d("10.00")
+        assert split.overnight_usd is None
+
+    def test_nulls_when_amount_or_rate_pair_missing(self) -> None:
+        no_amount = fx_buying_power_split(
+            market_open=True,
+            amount_eur=None,
+            live_fx=d("1.30"),
+            prev_fx=d("1.20"),
+            session_close_fx=None,
+            session_open_fx=d("1.25"),
+        )
+        assert no_amount.total_usd is None
+        assert no_amount.market_hours_usd is None
+        no_prev = fx_buying_power_split(
+            market_open=False,
+            amount_eur=d(100),
+            live_fx=d("1.30"),
+            prev_fx=None,
+            session_close_fx=d("1.25"),
+        )
+        assert no_prev.total_usd is None
+
+    def test_non_positive_amount_degrades_to_null(self) -> None:
+        split = fx_buying_power_split(
+            market_open=True,
+            amount_eur=d(0),
+            live_fx=d("1.30"),
+            prev_fx=d("1.20"),
+            session_close_fx=None,
+            session_open_fx=d("1.25"),
+        )
+        assert split.total_usd is None
+
+    def test_returns_dataclass(self) -> None:
+        split = fx_buying_power_split(
+            market_open=True,
+            amount_eur=None,
+            live_fx=None,
+            prev_fx=None,
+            session_close_fx=None,
+        )
+        assert isinstance(split, FxBuyingPowerSplit)

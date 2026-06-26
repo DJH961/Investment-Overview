@@ -132,6 +132,25 @@ export function formatSignedMoneyEur(value: Decimal | null, fractionDigits = 0):
   return value.isNegative() ? `−${NBSP}${base}` : `+${NBSP}${base}`;
 }
 
+/**
+ * Format an amount that is intrinsically **USD** and must NOT be FX-rescaled —
+ * e.g. the investing-power panel's "how many dollars your regular euro amount
+ * buys" figures, which are dollars by construction. Always renders with the US
+ * dollar symbol regardless of the active display currency.
+ */
+export function formatMoneyUsd(value: Decimal | null, fractionDigits = 2): string {
+  if (value === null) return "—";
+  return formatMoneyValue(value, "USD", fractionDigits);
+}
+
+/** Signed companion of {@link formatMoneyUsd} (e.g. "+ $2.50", "− $2.50"). */
+export function formatSignedMoneyUsd(value: Decimal | null, fractionDigits = 2): string {
+  if (value === null) return "—";
+  const base = formatMoneyUsd(value.abs(), fractionDigits);
+  if (value.isZero()) return base;
+  return value.isNegative() ? `−${NBSP}${base}` : `+${NBSP}${base}`;
+}
+
 export function formatSignedCurrency(value: Decimal | null): string {
   if (value === null) return "—";
   const base = formatCurrency(value.abs());
