@@ -25,9 +25,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   changes for the owner in dollar terms: how many more (+) or fewer (−) dollars
   their regular EUR investment (the euros they wire to the US to keep investing)
   buys now versus yesterday's close. The amount is configurable in Settings →
-  Display (default €100) and the panel keeps the same diverging
-  market-hours/overnight split, with a note spelling out "€X now buys $Y — vs $Z
-  at yesterday's close" (`fxBuyingPowerSplit`/`fx_buying_power_split`,
+  Display (default €100) and the panel is rendered to **exactly match** the EUR
+  currency-effect visualisation (the same diverging market-hours/overnight split,
+  with no extra explanatory note) — only the basis differs. Because the swing
+  rides a single regular contribution rather than the whole book it is small, so
+  cents are kept whenever the effect amount is two digits or less (|net| < $100)
+  and dropped above that to read in whole dollars like the EUR panel
+  (`fxBuyingPowerSplit`/`fx_buying_power_split`,
   `investing_power_service`, `web/src/investment-amount.ts`,
   `web/src/ui.ts`, `src/investment_dashboard/ui/pages/overview.py`,
   `src/investment_dashboard/ui/pages/settings.py`).

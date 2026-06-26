@@ -217,10 +217,10 @@ def _fx_signed_eur(value: Decimal) -> str:
     return f"{sign}{fmt_money(abs(value), 'EUR')}"
 
 
-def _fx_signed_usd(value: Decimal) -> str:
+def _fx_signed_usd(value: Decimal, *, decimals: int = 2) -> str:
     """A signed USD money figure (e.g. ``+$123.45``) with a proper minus sign."""
     sign = "+" if value >= 0 else "\u2212"
-    return f"{sign}{fmt_money(abs(value), 'USD')}"
+    return f"{sign}{fmt_money(abs(value), 'USD', decimals=decimals)}"
 
 
 def _fx_box_pct_value(pct: Decimal | None) -> str:
@@ -458,23 +458,27 @@ def _investing_power_html(
 
     Like :func:`_fx_effect_html` it carries a *diverging* market-hours/overnight bar
     below the headline (and a single full-width bar in the single-overnight regimes),
-    with the currently-live leg on top.
+    with the currently-live leg on top. It is rendered to **exactly match** that EUR
+    currency-effect visualisation — only the basis differs — so it carries no extra
+    explanatory note. The lone formatting twist: the swing rides a single regular
+    contribution rather than the whole book, so it is tiny, and cents are kept
+    whenever the effect amount is two digits or less (``|net_usd| < 100``); above
+    that it renders in whole dollars like the EUR panel.
     """
     net_usd = amount_eur * (live_fx - prev_fx)
-    usd_now = amount_eur * live_fx
-    usd_prev = amount_eur * prev_fx
+
+    # Whole dollars to mirror the EUR panel, but keep cents while the swing is two
+    # digits or less so the (typically small) figure doesn't round away to "$0".
+    decimals = 2 if abs(net_usd) < 100 else 0
 
     head = (
         '<div class="inv-fx-effect-head">'
         '<span class="inv-fx-effect-title">Investing power since yesterday</span>'
         "{value}</div>"
     )
-    value = f'<span class="inv-fx-effect-net {_fx_sign_class(net_usd)}">{_fx_signed_usd(net_usd)}</span>'
-    note = (
-        '<p class="inv-fx-effect-note">'
-        f"{escape(fmt_money(amount_eur, 'EUR', decimals=0))} now buys "
-        f"{escape(fmt_money(usd_now, 'USD'))} \u2014 vs "
-        f"{escape(fmt_money(usd_prev, 'USD'))} at yesterday's close.</p>"
+    value = (
+        f'<span class="inv-fx-effect-net {_fx_sign_class(net_usd)}">'
+        f"{_fx_signed_usd(net_usd, decimals=decimals)}</span>"
     )
 
     regime = _fx_box_regime(now)
@@ -497,7 +501,7 @@ def _investing_power_html(
             f'<span class="inv-fx-diverge-tag">{tag}</span></span>'
             f'<div class="inv-fx-diverge-track" aria-hidden="true">{fill}</div>'
             f'<span class="inv-fx-diverge-value {_fx_sign_class(value)}">'
-            f"{_fx_signed_usd(value)}</span>"
+            f"{_fx_signed_usd(value, decimals=decimals)}</span>"
             "</div>"
         )
 
@@ -508,7 +512,7 @@ def _investing_power_html(
         return (
             '<div class="inv-fx-effect" role="group"'
             ' aria-label="Investing power since yesterday">'
-            f"{head.format(value=value)}{note}{body}</div>"
+            f"{head.format(value=value)}{body}</div>"
         )
 
     if market_open:
@@ -546,7 +550,7 @@ def _investing_power_html(
         body = f'<div class="inv-fx-diverge">{rows}</div>'
     return (
         '<div class="inv-fx-effect" role="group" aria-label="Investing power since yesterday">'
-        f"{head.format(value=value)}{note}{body}</div>"
+        f"{head.format(value=value)}{body}</div>"
     )
 
 

@@ -81,12 +81,13 @@ class TestCurrencyPanelByDisplay:
         # … and never the old misleading "$0".
         assert "$0" not in html
         assert "priced in dollars" not in html
-        # With the default €100 regular amount: 100·(1.30−1.20) = +$10.00, and a
-        # note spelling out the buying power at each rate.
+        # With the default €100 regular amount: 100·(1.30−1.20) = +$10.00. The panel
+        # mirrors the EUR currency-effect visualisation exactly (no explanatory
+        # note), and keeps cents because the swing is two digits or less.
         assert "inv-fx-effect-net" in html
         assert "+$10.00" in html
-        assert "\u20ac100 now buys $130.00" in html
-        assert "vs $120.00 at yesterday's close" in html
+        assert "inv-fx-effect-note" not in html
+        assert "now buys" not in html
 
     def test_eur_and_usd_panels_differ(self, session: Session) -> None:
         _seed_fx_samples(session)

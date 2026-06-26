@@ -464,7 +464,6 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .fx-effect-net.pos { color: var(--pos); }
 .fx-effect-net.neg { color: var(--neg); }
 .fx-effect-net.flat { color: var(--muted); }
-.fx-effect-note { margin: 0; font-size: 0.78rem; color: var(--muted); line-height: 1.45; }
 
 /* The diverging bar: each leg grows from a shared centre line — right for a gain,
    left for a loss — so two legs pulling in opposite directions read clearly

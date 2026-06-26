@@ -59,7 +59,6 @@ import {
   type DualCurrencyParts,
   formatFxRate,
   formatMoneyEur,
-  formatMoneyUsd,
   formatNativePrice,
   formatPercent,
   formatShares,
@@ -538,8 +537,14 @@ function renderEurFxEffect(o: OverviewView, now: Date): HTMLElement | null {
  * invest, do today's FX prices buy me more or fewer dollars than yesterday?*
  *
  * The figure is `amount · (liveFx − prevClose)` in USD, split into the same
- * market-hours/overnight legs as the EUR panel. Returns null when there is no
- * usable rate pair or no swing to show.
+ * market-hours/overnight legs as the EUR panel. It is rendered to *exactly
+ * match* the EUR currency-effect visualization (headline + diverging bar, no
+ * explanatory note) — only the basis differs. The one formatting twist: the
+ * EUR panel shows whole units, but the investing-power swing is tiny (it rides
+ * a regular contribution, not the whole book), so cents are restored whenever
+ * the effect amount is two digits or less (|net| < $100) — otherwise it would
+ * collapse to a meaningless "$0"/"$1". Returns null when there is no usable
+ * rate pair or no swing to show.
  */
 function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | null {
   const fxNow = o.fxRateEurUsd;
@@ -550,8 +555,11 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
   const amountEur = getInvestmentAmountEur();
   const net = amountEur.times(fxNow.minus(fxPrev));
   if (net.isZero()) return null;
-  const usdNow = amountEur.times(fxNow);
-  const usdPrev = amountEur.times(fxPrev);
+
+  // Whole dollars to mirror the EUR panel, but keep cents while the swing is two
+  // digits or less so the (typically small) figure doesn't round away to "$0".
+  const fractionDigits = net.abs().lessThan(100) ? 2 : 0;
+  const fmt = (v: Decimal): string => formatSignedMoneyUsd(v, fractionDigits);
 
   const wrap = (kids: HTMLElement[]): HTMLElement =>
     h(
@@ -562,10 +570,7 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
   const children: HTMLElement[] = [
     h("div", { class: "fx-effect-head" }, [
       h("span", { class: "fx-effect-title" }, ["Investing power since yesterday"]),
-      h("span", { class: `fx-effect-net ${signClass(net)}` }, [formatSignedMoneyUsd(net)]),
-    ]),
-    h("p", { class: "fx-effect-note" }, [
-      `${formatMoneyEur(amountEur)} now buys ${formatMoneyUsd(usdNow)} — vs ${formatMoneyUsd(usdPrev)} at yesterday's close.`,
+      h("span", { class: `fx-effect-net ${signClass(net)}` }, [fmt(net)]),
     ]),
   ];
 
@@ -576,7 +581,7 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
         fxDivergeRow({
           label: holiday ? "Market holiday" : "Overnight",
           value: net,
-          formatted: formatSignedMoneyUsd(net),
+          formatted: fmt(net),
           overnightLeg: true,
           live: true,
           widthPct: HALF_TRACK_PCT,
@@ -593,7 +598,7 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
     sessionCloseFx: o.fxRateEurUsdSessionClose,
     sessionOpenFx: o.fxRateEurUsdSessionOpen,
   });
-  const bar = fxDivergeBar(split.marketHoursUsd, split.overnightUsd, marketOpen, formatSignedMoneyUsd);
+  const bar = fxDivergeBar(split.marketHoursUsd, split.overnightUsd, marketOpen, fmt);
   if (bar) children.push(bar);
   return wrap(children);
 }
