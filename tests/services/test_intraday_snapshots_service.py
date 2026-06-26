@@ -753,6 +753,84 @@ class TestPerTimestampFx:
         assert all(fx == Decimal("1.00") for _, _, fx in series)
 
 
+class TestSessionCloseFx:
+    """The rate the most recent session settled at (anchor for the after-hours freeze)."""
+
+    def test_returns_latest_non_null_session_rate(self, session: Session) -> None:
+        _seed_usd_holding(session)
+        intraday_repo.insert_sample(
+            session, datetime(2024, 6, 3, 13, 30), Decimal("1000.00"), fx_eur_usd=Decimal("1.00")
+        )
+        intraday_repo.insert_sample(
+            session, datetime(2024, 6, 3, 14, 0), Decimal("800.00"), fx_eur_usd=Decimal("1.25")
+        )
+        session.flush()
+        assert iss.session_close_fx(session, now=_NOW) == Decimal("1.25")
+
+    def test_skips_trailing_null_rate(self, session: Session) -> None:
+        _seed_usd_holding(session)
+        intraday_repo.insert_sample(
+            session, datetime(2024, 6, 3, 13, 30), Decimal("1000.00"), fx_eur_usd=Decimal("1.10")
+        )
+        # A later sample with no rate (e.g. captured before the FX feed answered)
+        # must not mask the last known session rate.
+        intraday_repo.insert_sample(session, datetime(2024, 6, 3, 14, 0), Decimal("1000.00"))
+        session.flush()
+        assert iss.session_close_fx(session, now=_NOW) == Decimal("1.10")
+
+    def test_none_when_no_session_sample_carries_a_rate(self, session: Session) -> None:
+        _seed_usd_holding(session)
+        intraday_repo.insert_sample(session, datetime(2024, 6, 3, 14, 0), Decimal("1000.00"))
+        session.flush()
+        assert iss.session_close_fx(session, now=_NOW) is None
+
+
+class TestAfterHoursFreeze:
+    """Once the market shuts, the EUR live tip freezes to the session-close FX."""
+
+    def _reconstruct(self, session: Session) -> None:
+        # Settled (today/live) rate is 1.00, but the session traded out to 1.25:
+        # so the live tip lands at 1.00 while the session-close FX is 1.25.
+        iss.reconstruct_last_session(
+            session,
+            now=_NOW,
+            fetcher=_fake_fetcher(_PER_TS_STOCK_BARS),
+            fx_fetcher=_fake_fx_fetcher(_PER_TS_FX_BARS),
+        )
+        session.flush()
+
+    def test_eur_live_tip_is_re_marked_to_the_close_rate(self, session: Session) -> None:
+        _seed_usd_holding(session)  # $1,000 USD-booked, settled EUR/USD = 1.00
+        self._reconstruct(session)
+        frozen = build_intraday_value_series(
+            session, currency="EUR", now=_NOW, freeze_after_hours=True
+        )
+        live = build_intraday_value_series(session, currency="EUR", now=_NOW)
+        # The live (unfrozen) tip lands at today's spot 1.00 ⇒ €1,000; freezing it
+        # to the 1.25 session close re-marks it to €800 (1,000 × 1.00 / 1.25).
+        assert live[-1].value == Decimal("1000.00")
+        assert frozen[-1].value == Decimal("800.00")
+        # Only the synthetic tip moves — the historical samples are untouched.
+        assert [p.value for p in frozen[:-1]] == [p.value for p in live[:-1]]
+
+    def test_usd_line_is_never_frozen(self, session: Session) -> None:
+        _seed_usd_holding(session)
+        self._reconstruct(session)
+        frozen = build_intraday_value_series(
+            session, currency="USD", now=_NOW, freeze_after_hours=True
+        )
+        live = build_intraday_value_series(session, currency="USD", now=_NOW)
+        # USD is the booked, FX-free currency: the freeze is a no-op for it.
+        assert [p.value for p in frozen] == [p.value for p in live]
+
+    def test_freeze_is_opt_in(self, session: Session) -> None:
+        _seed_usd_holding(session)
+        self._reconstruct(session)
+        default = build_intraday_value_series(session, currency="EUR", now=_NOW)
+        # Without the flag the export path keeps the raw, after-hours-live tip.
+        assert default[-1].value == Decimal("1000.00")
+
+
 def _seed_eur_holding_for_week(session: Session) -> None:
     """An EUR holding bought before the week, with a close on every session day."""
     account = accounts_repo.create_account(

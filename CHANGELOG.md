@@ -14,6 +14,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.6.0] — 2026-06-26
+
+### Added
+
+- **After-hours FX handling across the desktop value graphs and a "Currency
+  effect today" breakdown on the Overview hero.** The portfolio is booked in USD
+  and the EUR view is derived through EUR/USD, so when the US market is closed
+  the EUR line kept drifting on raw after-hours FX even though every underlying
+  position had settled for the day. This is the desktop twin of the live web
+  companion's after-hours FX work, kept in lock-step. Two changes fix this:
+  - **The 1D and 1W value graphs now freeze their EUR view to the session-close
+    FX once the market is closed**, instead of letting the after-hours EUR/USD
+    spot keep sliding a curve whose USD body is flat. The close rate is read
+    straight from the stored per-minute intraday FX samples
+    (`intraday_snapshots_service.session_close_fx`), which is ground truth and
+    keeps the frozen tip continuous with the curve body; only the synthetic live
+    tip is re-marked, and only on the EUR line (USD is the FX-free booked
+    currency). Longer-range graphs and the headline total keep the live FX.
+  - **A "Currency effect today" split under the FX line on the Overview hero**
+    (`domain.session_fx.fx_effect_split`, rendered by `_fx_split_html`) divides
+    today's EUR/USD move into a market-hours slice and an overnight slice, shown
+    only once the market is closed, so the owner sees what shifted during the
+    trading day versus what changed "overnight".
+
+### Changed
+
+- **The desktop after-hours FX freeze is robust to a "not live at the close"
+  start.** When no intraday sample captured the session close (the app was not
+  running at 16:00 ET, a cold start, or over a weekend), the graph-freeze anchor
+  falls back through a defined chain — captured session close → prior settled
+  session close → live spot (`domain.session_fx.graph_anchor_fx`) — so the
+  frozen EUR view is sensible rather than drifting. The currency-effect split
+  deliberately stays hidden when no genuine captured close exists, so the
+  attribution is never faked.
+
 ## [4.5.3] — 2026-06-26
 
 ### Changed

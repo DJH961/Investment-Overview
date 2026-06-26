@@ -567,6 +567,28 @@ def day_series_with_fx(
     return [(r.captured_at, r.market_value_eur, r.fx_eur_usd) for r in rows]
 
 
+def session_close_fx(session: Session, *, now: datetime | None = None) -> Decimal | None:
+    """The EUR→USD rate (USD per 1 EUR) struck at the most recent session's close.
+
+    Intraday samples are captured *only while the US market is open*
+    (:func:`record_if_market_open`), each stamped with the live EUR/USD spot at
+    that instant. The newest sample of the current "Day" session therefore carries
+    the rate as the session settled — the **session-close FX** the live 1D/1W
+    curves freeze their EUR view to overnight so their market-day trajectory does
+    not slide with after-hours FX (see
+    :mod:`investment_dashboard.domain.session_fx`).
+
+    Returns the latest non-null rate among the session's samples, or ``None`` when
+    no session sample carries a rate yet (the freeze then degrades to the live
+    spot). Reads only the cached samples — no network.
+    """
+    samples = day_series_with_fx(session, now=now)
+    for _at, _market_eur, fx in reversed(samples):
+        if fx is not None and fx > 0:
+            return fx
+    return None
+
+
 def _market_component_pivot_eur(
     priced: list[Position],
     price_lookups: dict[str, Callable[[datetime], Decimal | None]],

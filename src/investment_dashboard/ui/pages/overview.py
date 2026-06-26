@@ -14,6 +14,7 @@ from investment_dashboard.db import session_scope
 from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.market_hours import is_us_market_open
 from investment_dashboard.domain.returns import years_between
+from investment_dashboard.domain.session_fx import fx_effect_split
 from investment_dashboard.services import (
     display_currency_service,
     intraday_snapshots_service,
@@ -114,6 +115,11 @@ class _OverviewData:
     value_series_secondary: list[ValueSeriesPoint] | None = None
     #: ISO code of that companion line (e.g. ``"USD"``), for axis + legend labels.
     secondary_ccy: str | None = None
+    #: Pre-rendered HTML for the market-hours-vs-overnight FX split shown under
+    #: the FX line once the market is shut. ``None`` while open or when there is
+    #: no meaningful FX move to break down. Built in ``_gather`` (it needs a DB
+    #: session for the session-close rate).
+    fx_split_html: str | None = None
 
 
 def _pct_card(
@@ -192,6 +198,111 @@ def _fmt_signed_money(amount: Decimal | None, ccy: str) -> str | None:
         return None
     sign = "+" if amount >= 0 else "\u2212"  # proper minus sign
     return f"{sign}{fmt_money(abs(amount), ccy)}"
+
+
+def _fx_split_html(
+    session,  # type: ignore[no-untyped-def]
+    metrics: PortfolioMetrics,
+    *,
+    now: datetime | None = None,
+) -> str | None:
+    """The market-hours-vs-overnight breakdown of today's FX revaluation, as HTML.
+
+    The transparency cue for "what shifted during the trading day, and what
+    changed overnight". The book is USD-booked, so once the US session has closed
+    the euro value keeps drifting on FX alone; this isolates that after-hours slice
+    from the in-session one so the owner sees both (see
+    :mod:`investment_dashboard.domain.session_fx`).
+
+    Shown only once the market is shut and the overnight slice is known (a
+    session-close rate to measure it from). While the session is open the whole
+    move is "in session" — already conveyed by the FX line's percentage — so the
+    split is omitted to keep the header uncluttered. Returns ``None`` when there is
+    nothing meaningful to draw. The figures are EUR (the euro owner's FX P/L).
+    """
+    now = now or datetime.now(UTC)
+    if is_us_market_open(now):
+        return None
+    live_fx = metrics.daily_growth_fx_eur_usd
+    prev_fx = metrics.daily_growth_fx_eur_usd_prev
+    usd = metrics.total_value_usd
+    today_fx_move_eur: Decimal | None = None
+    if (
+        usd is not None
+        and live_fx is not None
+        and prev_fx is not None
+        and live_fx > 0
+        and prev_fx > 0
+    ):
+        today_fx_move_eur = usd / live_fx - usd / prev_fx
+    close_fx = intraday_snapshots_service.session_close_fx(session, now=now)
+    split = fx_effect_split(
+        market_open=False,
+        total_value_usd=usd,
+        live_fx=live_fx,
+        session_close_fx=close_fx,
+        today_fx_move_eur=today_fx_move_eur,
+    )
+    market = split.market_hours_eur
+    overnight = split.overnight_eur
+    # Need both legs to draw a meaningful split; nothing to show otherwise.
+    if market is None or overnight is None:
+        return None
+    # Nothing moved on FX at all — no insight to surface.
+    if market == 0 and overnight == 0:
+        return None
+
+    total_mag = abs(market) + abs(overnight)
+
+    def _pct(part: Decimal) -> float:
+        return 0.0 if total_mag == 0 else float(abs(part) / total_mag * 100)
+
+    def _sign_class(value: Decimal) -> str:
+        if value > 0:
+            return "pos"
+        if value < 0:
+            return "neg"
+        return "flat"
+
+    def _signed_money(value: Decimal) -> str:
+        sign = "+" if value >= 0 else "\u2212"  # proper minus sign
+        return f"{sign}{fmt_money(abs(value), 'EUR')}"
+
+    bar = (
+        '<div class="inv-fx-split-bar" aria-hidden="true">'
+        f'<span class="inv-fx-split-seg inv-fx-split-session {_sign_class(market)}"'
+        f' style="width:{_pct(market):.4f}%"></span>'
+        f'<span class="inv-fx-split-seg inv-fx-split-overnight {_sign_class(overnight)}"'
+        f' style="width:{_pct(overnight):.4f}%"></span>'
+        "</div>"
+    )
+
+    def _leg(swatch: str, label: str, value: Decimal) -> str:
+        return (
+            '<div class="inv-fx-split-leg">'
+            f'<span class="inv-fx-split-swatch {swatch}" aria-hidden="true"></span>'
+            f'<span class="inv-fx-split-leg-label">{label}</span>'
+            f'<span class="inv-fx-split-leg-value {_sign_class(value)}">{_signed_money(value)}</span>'
+            "</div>"
+        )
+
+    legend = (
+        '<div class="inv-fx-split-legend">'
+        f"{_leg('inv-fx-split-session', 'Market hours', market)}"
+        f"{_leg('inv-fx-split-overnight', 'Overnight', overnight)}"
+        "</div>"
+    )
+    return (
+        '<div class="inv-fx-split" role="group" aria-label="Today\'s currency effect">'
+        '<div class="inv-fx-split-head">Currency effect today</div>'
+        f"{bar}{legend}</div>"
+    )
+
+
+def _render_fx_split(html: str | None) -> None:
+    """Render the "Currency effect today" split, or nothing when there is none."""
+    if html is not None:
+        ui.html(html)
 
 
 def _hero_total_value(
@@ -1113,10 +1224,14 @@ def _install_intraday_live_update(plot, *, display_ccy, tz, prev_close=None, sec
         state["last"] = snap.last_update_at
         try:
             with session_scope() as session:
-                series = build_intraday_value_series(session, currency=display_ccy, tz=tz)
+                series = build_intraday_value_series(
+                    session, currency=display_ccy, tz=tz, freeze_after_hours=True
+                )
                 secondary = None
                 if secondary_ccy:
-                    secondary = build_intraday_value_series(session, currency=secondary_ccy, tz=tz)
+                    secondary = build_intraday_value_series(
+                        session, currency=secondary_ccy, tz=tz, freeze_after_hours=True
+                    )
                     # Only keep the companion when it lines up point-for-point
                     # with the primary (so the shared-start scaling is valid).
                     if not secondary or len(secondary) != len(series):
@@ -1194,12 +1309,20 @@ def register() -> None:  # noqa: PLR0915
                         # curve. No-op after the first fetch of the session.
                         intraday_snapshots_service.reconstruct_last_session(session)
                         value_series = build_intraday_value_series(
-                            session, currency=display_ccy, tz=display_tz, positions=positions
+                            session,
+                            currency=display_ccy,
+                            tz=display_tz,
+                            positions=positions,
+                            freeze_after_hours=True,
                         )
                         # Built in both currencies (from the same intraday samples)
                         # so the right-axis comparison line shares the same start.
                         value_series_secondary = build_intraday_value_series(
-                            session, currency=secondary_ccy, tz=display_tz, positions=positions
+                            session,
+                            currency=secondary_ccy,
+                            tz=display_tz,
+                            positions=positions,
+                            freeze_after_hours=True,
                         )
                         # The reference line marking yesterday's settled close.
                         intraday_prev_close = previous_session_close_value(
@@ -1211,10 +1334,18 @@ def register() -> None:  # noqa: PLR0915
                         # in both currencies so the right-axis comparison line
                         # shares the same start.
                         value_series = build_week_value_series(
-                            session, currency=display_ccy, tz=display_tz, positions=positions
+                            session,
+                            currency=display_ccy,
+                            tz=display_tz,
+                            positions=positions,
+                            freeze_after_hours=True,
                         )
                         value_series_secondary = build_week_value_series(
-                            session, currency=secondary_ccy, tz=display_tz, positions=positions
+                            session,
+                            currency=secondary_ccy,
+                            tz=display_tz,
+                            positions=positions,
+                            freeze_after_hours=True,
                         )
                         # Fall back to the daily snapshot series if the feed served
                         # no intraday bars (offline / quiet week), so the range is
@@ -1249,6 +1380,10 @@ def register() -> None:  # noqa: PLR0915
                     # portfolio-level expense cost and the allocation treemap.
                     display_quote = display_ccy if display_ccy != "EUR" else "USD"
                     fx_rate = display_currency_service.current_rate(session, quote=display_quote)
+                    # The market-hours-vs-overnight FX split shown under the FX
+                    # line (needs the session for the session-close rate, so it is
+                    # built here while the DB session is still open).
+                    fx_split_html = _fx_split_html(session, metrics)
                 # Hide fully-sold instruments from the holdings view — anything
                 # with a residual share count below 1e-7 (a tenth of a millionth
                 # of a share) is effectively zero and just clutters the overview.
@@ -1295,6 +1430,7 @@ def register() -> None:  # noqa: PLR0915
                     intraday_prev_close=intraday_prev_close,
                     value_series_secondary=value_series_secondary,
                     secondary_ccy=secondary_ccy,
+                    fx_split_html=fx_split_html,
                 )
 
             def _render(data: _OverviewData) -> None:
@@ -1400,6 +1536,11 @@ def register() -> None:  # noqa: PLR0915
                     ui.label(f"{expense_text}  ·  {div_yield_text}").classes(
                         "text-caption opacity-70"
                     )
+                # Under the FX line: the market-hours-vs-overnight breakdown of
+                # today's FX revaluation, shown only once the market is shut (so
+                # the owner sees what shifted during the trading day versus what
+                # changed overnight on a USD-booked book).
+                _render_fx_split(data.fx_split_html)
 
                 # Movers are rendered under the value chart (below), not here, so
                 # the day's leaderboard sits as a distinct band just above the
