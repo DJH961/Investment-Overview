@@ -78,7 +78,7 @@ import {
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, elapsedSessionMs, settledSessionsSince } from "./market-hours";
+import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, previousTradingSession, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, elapsedSessionMs, settledSessionsSince } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -4582,6 +4582,12 @@ function capitalizeFirst(text: string): string {
  * its latest *due* value-date (is it overdue right now?). `publishHourFor` is the
  * fund's learned publish hour (see {@link navPublishWindow}); it defaults to the
  * bootstrap {@link NAV_PUBLISH_HOUR} when nothing has been learned yet.
+ *
+ * A NAV is only counted as "awaiting" once it is more than one trading day behind
+ * its latest expected value-date: mutual-fund / money-market NAVs routinely
+ * publish a trading day late, so demanding the latest settled session's NAV the
+ * instant its publish hour passes would flag a fund as overdue every night for a
+ * price that does not exist anywhere yet.
  */
 export function buildCoverageFacts(
   report: QuoteLoadReport,
@@ -4620,13 +4626,25 @@ export function buildCoverageFacts(
       // The latest NAV that *should* exist right now (its learned publish hour
       // has passed). Anchored to the NY trading calendar, never the local day.
       const due = latestExpectedNavDate(now, publishHourFor(symbol));
+      // Mutual-fund / money-market NAVs publish only once a day and routinely
+      // land a *trading day late*: the provider often hasn't struck the latest
+      // settled session's NAV yet even after the publish hour, so the freshest
+      // NAV that can genuinely exist is the prior session's. Tolerate that one
+      // session of publish lag — mirroring the desktop diagnostics' mutual-fund
+      // staleness grace (diagnostics_service._MUTUAL_FUND_STALE_GRACE) — before
+      // declaring a NAV "awaiting". Without it the line claims to be awaiting a
+      // NAV that does not exist anywhere yet, every night, until it lands.
+      const minAcceptable = previousTradingSession(due);
       const haveDue = held !== null && held >= due;
-      if (!haveDue) {
-        // We don't yet hold the NAV that is genuinely due → still awaiting it.
+      const withinPublishLag = held !== null && held >= minAcceptable;
+      if (!withinPublishLag) {
+        // We are more than a trading day behind the latest expected NAV → it is
+        // genuinely overdue (the provider is failing for this fund), so awaiting.
         navAwaiting += 1;
-      } else if (due < startedSession) {
-        // We hold the due NAV, but a newer session is already under way whose
-        // NAV will publish later tonight — "expected tonight", not missing.
+      } else if (!haveDue || due < startedSession) {
+        // We hold the freshest NAV that can reasonably exist, but a newer one is
+        // still pending: either the just-settled session's NAV that lands late,
+        // or tonight's once today's session is under way. "Expected", not missing.
         navExpectedTonight += 1;
       }
     } else {

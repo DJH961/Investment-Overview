@@ -60,6 +60,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and are mutually exclusive: a fund is *awaiting* only when we don't hold its
   due NAV, and *expected tonight* only when we hold the due NAV but a newer
   session is already under way.
+- **NAV coverage no longer reports "awaiting" all night for a NAV that does not
+  exist yet.** Mutual-fund and money-market NAVs publish only once a day and
+  routinely land a *trading day late*, so just after a settled session's publish
+  hour the provider often hasn't struck that session's NAV at all — the freshest
+  value that can exist is the prior session's. `buildCoverageFacts`
+  (`web/src/app.ts`) now tolerates one trading day of publish lag
+  (`previousTradingSession` of the latest expected NAV date), mirroring the
+  desktop diagnostics' mutual-fund staleness grace, so holding the latest
+  published NAV reads "in" / "up to date" instead of a perpetual "awaiting". A
+  NAV is flagged "awaiting" only once it falls more than a trading day behind.
 
 ## [4.4.2] — 2026-06-26
 

@@ -322,6 +322,39 @@ describe("buildCoverageFacts", () => {
     expect(f.navAwaiting).toBe(0);
     expect(f.navExpectedTonight).toBe(0);
   });
+
+  it("does not await a NAV that is only one trading day late (routine publish lag)", () => {
+    // 3am the morning after a trading day: the latest settled session is
+    // yesterday and its publish hour has passed, but mutual-fund / money-market
+    // NAVs routinely publish a trading day late — so the freshest NAV the
+    // provider has struck is the session *before*. Holding it is up to date as
+    // far as anything that exists, so the line must NOT read "awaiting".
+    const earlyMorning = new Date(2024, 4, 16, 3, 0, 0); // Thu 03:00 local
+    const f = buildCoverageFacts(
+      report({ servedFresh: ["VTSAX"] }),
+      new Map([["VTSAX", { valueDate: "2024-05-14" }]]), // Tue NAV; Wed's not struck yet
+      new Set(["VTSAX"]),
+      { now: earlyMorning, marketOpen: false, publishHourFor: () => 22, fx: "live" },
+    );
+    expect(f.navTotal).toBe(1);
+    expect(f.navAwaiting).toBe(0);
+    // Market is closed, so the coverage line collapses to a calm "up to date".
+    expect(summarizeCoverage(f)).toBe("Market closed, up to date · FX live");
+  });
+
+  it("still awaits a NAV that is more than one trading day behind", () => {
+    // A genuinely overdue NAV (the provider has failed for days) is more than the
+    // one-day publish lag behind, so it must still read "awaiting".
+    const earlyMorning = new Date(2024, 4, 16, 3, 0, 0); // Thu 03:00 local
+    const f = buildCoverageFacts(
+      report({ servedFresh: ["VTSAX"] }),
+      new Map([["VTSAX", { valueDate: "2024-05-10" }]]), // days-old NAV
+      new Set(["VTSAX"]),
+      { now: earlyMorning, marketOpen: false, publishHourFor: () => 22 },
+    );
+    expect(f.navTotal).toBe(1);
+    expect(f.navAwaiting).toBe(1);
+  });
 });
 
 describe("displayFxSource", () => {
