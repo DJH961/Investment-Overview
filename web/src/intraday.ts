@@ -81,8 +81,6 @@ export interface IntradayAnchor {
   baseFx: Decimal | null;
 }
 
-const ZERO = new Decimal(0);
-
 /** Shares below this are treated as a closed-out lot, not a real holding. */
 const MIN_SHARES = new Decimal("0.0000001");
 
@@ -503,6 +501,3 @@ async function pruneOldSessions(
   for (let i = 1; i < retainSessions; i += 1) floor = previousTradingSession(floor);
   await store.prune(floor);
 }
-
-/** Exposed for tests: the constant-base zero used when no cash sleeve is given. */
-export const NO_CASH = ZERO;

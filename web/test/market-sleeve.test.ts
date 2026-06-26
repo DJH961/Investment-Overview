@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Decimal } from "../src/decimal-config";
 import {
   DEFAULT_GRID_MS,
@@ -68,6 +68,16 @@ describe("bucketStart / gridMsFor", () => {
     expect(gridMsFor("30m")).toBe(30 * 60 * 1000);
     expect(gridMsFor("15m")).toBe(15 * 60 * 1000);
     expect(gridMsFor(undefined)).toBe(DEFAULT_GRID_MS);
+  });
+  it("warns and defaults to 30m for an unrecognised grid tag", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      // Cast: a runtime-only garbled/future tag the static type forbids.
+      expect(gridMsFor("5m" as unknown as Parameters<typeof gridMsFor>[0])).toBe(DEFAULT_GRID_MS);
+      expect(warn).toHaveBeenCalledOnce();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

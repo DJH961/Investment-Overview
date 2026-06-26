@@ -80,6 +80,20 @@ describe("planPull — bar clock-hour overlay (sole 1D-bar authority while open)
     expect(plan.legs.dayBars).toBe(true);
     expect(plan.reason).toContain("1D bar due");
   });
+
+  it("never strips bars when heavily-outdated and no clock hour is due (history still backfills)", () => {
+    // A heavily-outdated round (both device + blob >1 day behind) in a non-:00
+    // window: the clock-hour gate is the 1D authority only and must NOT hold the
+    // backfill — both the 1D and 1W history legs survive so a stale manual/auto
+    // round still repairs the book.
+    const open = Date.UTC(2026, 5, 25, 13, 30, 0);
+    const now = Date.UTC(2026, 5, 25, 18, 10, 0);
+    const veryStale = { dataAgeMs: 3 * 24 * ONE_HOUR_MS, deviceDaysMissing: 3, blobDaysOld: 3, quoteAgeMs: 3 * 24 * ONE_HOUR_MS, navHeldForToday: false };
+    const plan = planPull(ctx({ kind: "auto", nowMs: now, freshness: veryStale, barGate: { lastBarPullMs: now - 10 * MIN, sessionOpenMs: open } }));
+    expect(plan.tier).toBe("heavily-outdated");
+    expect(plan.legs.dayBars).toBe(true);
+    expect(plan.legs.weekBars).toBe(true);
+  });
 });
 
 describe("planPull — rolling quote TTL overlay", () => {

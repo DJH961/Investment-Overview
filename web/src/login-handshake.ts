@@ -25,6 +25,14 @@
 export interface PrefetchBooked {
   /** Market/NAV symbols Step 1 already fetched (or has in flight). */
   symbols: string[];
+  /**
+   * The symbols Step 1's *prediction* knew about (the last-known holdings it
+   * considered when warming). Used to label a Step-2 diff symbol as
+   * **newly-discovered** only when the prediction never knew it — not merely
+   * because it was stale. Optional: when omitted the prediction set defaults to
+   * the booked symbols.
+   */
+  predicted?: string[];
   /** Whether Step 1 already pulled EUR/USD FX. */
   fx: boolean;
 }
@@ -58,9 +66,10 @@ export interface HandshakeDiff {
 /**
  * Reconcile Step 2 against Step 1 through the freshness ledger: the diff is the
  * **stale** truth symbols that Step 1 did **not** already book, plus FX only if it
- * is both stale and unbooked. Symbols the prediction never knew about (newly
- * bought since the last session) are surfaced separately for the log — they are a
- * subset of the diff, since a never-seen symbol is always stale and unbooked.
+ * is both stale and unbooked. Symbols the *prediction* never knew about (newly
+ * bought since the last session) are surfaced separately for the log — a diff
+ * symbol counts as newly-discovered only when it is absent from Step 1's
+ * predicted set, not merely because it is stale.
  *
  * Deduping is by the symbol set Step 1 booked, so Step 2 can never re-fetch what
  * Step 1 already paid for. When nothing is stale-and-unbooked the diff is empty
@@ -71,6 +80,9 @@ export function reconcileHandshake(
   truth: PostDecryptTruth,
 ): HandshakeDiff {
   const bookedSet = new Set(booked.symbols);
+  // The prediction set Step 1 warmed against. Defaults to the booked symbols when
+  // the caller doesn't supply an explicit prediction.
+  const predictedSet = new Set(booked.predicted ?? booked.symbols);
   // The diff: stale truth symbols Step 1 didn't already book (dedup via the set).
   const seen = new Set<string>();
   const symbols: string[] = [];
@@ -79,9 +91,9 @@ export function reconcileHandshake(
     seen.add(s);
     symbols.push(s);
   }
-  // Newly-discovered = diff symbols the prediction never warmed (a strict subset
-  // here, but tracked explicitly so the log can call them out by name).
-  const newlyDiscovered = symbols.slice();
+  // Newly-discovered = diff symbols the prediction never knew about (so a stale
+  // but already-predicted symbol is *not* mislabelled "newly-bought").
+  const newlyDiscovered = symbols.filter((s) => !predictedSet.has(s));
   const fx = truth.fxStale && !booked.fx;
   const hasWork = symbols.length > 0 || fx;
 

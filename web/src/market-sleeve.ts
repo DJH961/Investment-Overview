@@ -83,7 +83,12 @@ export interface SleeveMerge {
 
 /** Resolve the bucketing grid (ms) from the export's `grid` tag. */
 export function gridMsFor(grid: ExportLiveGraphs["grid"] | undefined): number {
-  return grid === "15m" ? 15 * 60 * 1000 : DEFAULT_GRID_MS;
+  if (grid === undefined || grid === "30m") return DEFAULT_GRID_MS;
+  if (grid === "15m") return 15 * 60 * 1000;
+  // An unrecognised tag (e.g. a future/garbled export) silently falling back to
+  // 30m would mis-bucket the merge without a trace — surface it instead.
+  console.warn(`gridMsFor: unexpected grid tag ${JSON.stringify(grid)}; defaulting to 30m.`);
+  return DEFAULT_GRID_MS;
 }
 
 /** Floor an instant to its grid bucket start. */

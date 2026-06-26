@@ -68,4 +68,28 @@ describe("reconcileHandshake — two-step login dedup", () => {
     expect(diff.fx).toBe(false);
     expect(diff.hasWork).toBe(false);
   });
+
+  it("does not mislabel a predicted-but-stale symbol as newly-bought", () => {
+    // DDD was in Step 1's predicted universe but not booked (e.g. deferred over
+    // budget). It's a legit diff symbol, yet it is NOT newly-bought; only EEE,
+    // absent from the prediction, is.
+    const diff = reconcileHandshake(
+      { symbols: ["AAA"], predicted: ["AAA", "DDD"], fx: true },
+      { staleSymbols: ["DDD", "EEE"], fxStale: false },
+    );
+    expect(diff.symbols).toEqual(["DDD", "EEE"]);
+    expect(diff.newlyDiscovered).toEqual(["EEE"]);
+    expect(diff.reason).toContain("newly-bought: EEE");
+    expect(diff.reason).not.toContain("DDD");
+  });
+
+  it("defaults the prediction set to the booked symbols when none is given", () => {
+    // No explicit predicted set ⇒ a diff symbol the prefetch never booked counts
+    // as newly-discovered (legacy behaviour preserved).
+    const diff = reconcileHandshake(
+      { symbols: ["AAA"], fx: true },
+      { staleSymbols: ["NEW"], fxStale: false },
+    );
+    expect(diff.newlyDiscovered).toEqual(["NEW"]);
+  });
 });

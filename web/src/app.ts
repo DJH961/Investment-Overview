@@ -363,7 +363,7 @@ export class App {
    * the decrypted truth against it via {@link reconcileHandshake} and pull only the
    * deduped diff (Pillar 2 / WS5). Null until the first prefetch books a set.
    */
-  private prefetchBooked: { symbols: string[]; fx: boolean } | null = null;
+  private prefetchBooked: { symbols: string[]; predicted?: string[]; fx: boolean } | null = null;
   /**
    * Whether the login prefetch actually fetched *new* data (≥1 quote or a live
    * FX pull). Drives the one-off login spin of the Refresh glyph: it spins only
@@ -639,7 +639,7 @@ export class App {
           `${graphFetched} graph series, FX ${warmth.spotSource}. No extra quote credits spent.`,
       );
       this.finishPrefetch({ quoteFetched: 0, quoteTotal, hasPlan: true, fxLive, graphFetched });
-      this.prefetchBooked = { symbols: [], fx: true };
+      this.prefetchBooked = { symbols: [], predicted: plan.map((e) => e.symbol), fx: true };
       return;
     }
     const options = this.buildQuoteOptions(navFetchSymbols, config);
@@ -692,8 +692,12 @@ export class App {
     });
     // Record what Step 1 booked so the post-decrypt kickoff (Step 2) can reconcile
     // the decrypted truth against it and pull only the deduped diff (Pillar 2/WS5).
+    // `predicted` is the full last-known-holdings universe Step 1 reasoned about,
+    // so Step 2 can label a diff symbol "newly-bought" only when the prediction
+    // genuinely never knew it.
     this.prefetchBooked = {
       symbols: [...prefetch.symbols, ...prefetch.navSymbols],
+      predicted: plan.map((e) => e.symbol),
       fx: true,
     };
   }
@@ -966,7 +970,6 @@ export class App {
         deviceDaysMissing: 0,
         blobDaysOld: blobDaysOldMeta,
         quoteAgeMs: 0,
-        fxAgeMs: Number.POSITIVE_INFINITY,
         navHeldForToday: true,
       };
     }
@@ -2817,30 +2820,33 @@ export class App {
     if (network) {
       const proxyUrl = resolvePriceProxyUrl(config);
       const sizes = new Map(readSymbolPlan().map((e) => [e.symbol, e.sizeEur] as const));
-      // Pillar 5 (WS6) — wire the *provider fan-out* as the decision of record for a
-      // **manual reload** too (not just login): a manual tap of a big sleeve fans
-      // the market symbols across Twelve Data + Tiingo in parallel for an instant
-      // first paint, and — crucially — the planner is the authority for invariant 4
-      // (a *non-login* fan-out must leave the last {@link TIINGO_RESERVE_CREDITS}
-      // Tiingo credits untouched), so a big manual reload can't drain the hourly
-      // Tiingo floor the next auto round and other devices rely on. The existing
-      // TD-primary pass + this fallback execute the split; the planner owns the
-      // reserve. Scoped to the force/force-all manual tap (the "via backup" route is
-      // a deliberate drain and keeps its own reserve).
+      // Pillar 5 (WS6) — a **manual reload** of a big sleeve must respect the same
+      // provider-fan-out invariant 4 as login: a *non-login* fan-out has to leave
+      // the last {@link TIINGO_RESERVE_CREDITS} Tiingo credits untouched, so a big
+      // manual reload can't drain the hourly Tiingo floor the next auto round and
+      // other devices rely on. Here {@link planFanout} is consulted **only for that
+      // reserve decision** — the actual TD-primary → Tiingo split is executed by the
+      // sequential `loadQuotes` pass above plus the `runTiingoFallback` below, so the
+      // planner's `twelveData`/`tiingo` legs are not re-dispatched (no double fetch).
+      // Scoped to the force/force-all manual tap (the "via backup" route is a
+      // deliberate drain and keeps its own reserve).
       const isManualReload = ((opts.force ?? false) || forceAll) && !viaTiingo;
       let reserveCredits = opts.tiingoReserve ?? 0;
       if (isManualReload) {
         const marketSleeve = symbolsToFetch.filter((s) => !this.lastNavSymbols.has(s));
         const fanoutNow = Date.now();
-        const fanout = planFanout({
+        const reserve = planFanout({
           kind: "manual",
           symbols: marketSleeve,
           twelveDataSpendable: twelveDataAvailable(fanoutNow),
           tiingoSpendable: tiingoAvailable(fanoutNow),
           tiingoAvailable: proxyUrl !== null,
         });
-        this.pollLog("fallback", `Manual fan-out (${marketSleeve.length} mkt symbol(s)): ${fanout.reason}`);
-        if (fanout.fannedOut) reserveCredits = Math.max(reserveCredits, TIINGO_RESERVE_CREDITS);
+        this.pollLog(
+          "fallback",
+          `Manual fan-out reserve (${marketSleeve.length} mkt symbol(s)): ${reserve.reason}`,
+        );
+        if (reserve.fannedOut) reserveCredits = Math.max(reserveCredits, TIINGO_RESERVE_CREDITS);
       }
       const fallback = await runTiingoFallback({
         symbols: symbolsToFetch,

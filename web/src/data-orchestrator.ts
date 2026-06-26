@@ -133,10 +133,13 @@ export function planPull(ctx: PullContext): PullPlan {
   //   - a new clock hour is **due** ⇒ turn the 1D bar leg *on*, even when the
   //     freshness tier alone wouldn't have asked for it (e.g. quotes are fresh but
   //     a `:00` has passed) — the gate, not the tier, owns the bar during hours;
-  //   - **not** due ⇒ drop the bar legs; breadcrumbs carry the line to the next
+  //   - **not** due ⇒ drop the 1D bar leg; breadcrumbs carry the line to the next
   //     `:00`.
-  // Outside market hours the table governs bar pulls directly (a missing settled
-  // close still backfills, self-gated by the executor).
+  // The gate is the 1D authority *only*: it never touches `weekBars` (history
+  // backfill stays owned by the table). It also never strips when the tier is
+  // `heavily-outdated`, so a stale manual/auto round in a non-`:00` window still
+  // backfills missing history. Outside market hours the table governs bar pulls
+  // directly (a missing settled close still backfills, self-gated by the executor).
   if (ctx.market === "open") {
     const barsDue = barClockHourDue({
       nowMs: ctx.nowMs,
@@ -148,10 +151,9 @@ export function planPull(ctx: PullContext): PullPlan {
         legs.dayBars = true;
         notes.push("1D bar due (clock-hour gate)");
       }
-    } else if (legs.dayBars || legs.weekBars) {
+    } else if (legs.dayBars && graded.tier !== "heavily-outdated") {
       legs.dayBars = false;
-      legs.weekBars = false;
-      notes.push("bars held (clock-hour gate)");
+      notes.push("1D bar held (clock-hour gate)");
     }
   }
 
