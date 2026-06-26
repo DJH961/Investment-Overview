@@ -1296,9 +1296,13 @@ export class App {
       this.state.config.updateMinutes > 0
         ? this.state.config.updateMinutes * 60 * 1000
         : LIVE_PRICE_MAX_STALENESS_MS;
-    const { stillMissing, clearedBySatisfied, exhausted } = this.deferredQueue.drain((symbol) => {
+    const { stillMissing, clearedBySatisfied, exhausted } = this.deferredQueue.drain((symbol, deferredAt) => {
       const at = cached.get(symbol)?.quote?.at ?? null;
       if (at === null) return false;
+      // The observation must be NEWER than when the symbol was deferred — a
+      // pre-existing "fresh" cache entry from before the explicit pull cannot
+      // satisfy a deferral that was created TO be updated (reset base / force-all).
+      if (at <= deferredAt) return false;
       const age = nowMs - at;
       return age >= 0 && age <= liveWindowMs;
     });

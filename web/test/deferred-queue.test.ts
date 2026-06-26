@@ -77,4 +77,27 @@ describe("DeferredQueue — drain (C9)", () => {
     const result = q.drain(() => false);
     expect(result).toEqual({ stillMissing: [], clearedBySatisfied: [], exhausted: [] });
   });
+
+  it("passes deferredAt to the predicate so callers can require a newer observation", () => {
+    // Simulate: symbol was deferred at t=1000, cached observation is at t=900 (before
+    // the defer) — the predicate should NOT clear it. Only an observation AFTER
+    // the defer (t=1100) should satisfy.
+    let clockNow = 1000;
+    const q = new DeferredQueue(64, 4, () => clockNow);
+    q.enqueue(["AAA"], "force-all round over budget");
+    // Observation at t=900 (before deferral) should NOT satisfy:
+    const oldObservation = q.drain((_symbol, deferredAt) => {
+      const observedAt = 900;
+      return observedAt > deferredAt;
+    });
+    expect(oldObservation.stillMissing).toEqual(["AAA"]);
+    expect(oldObservation.clearedBySatisfied).toEqual([]);
+    // Observation at t=1100 (after deferral) SHOULD satisfy:
+    const newObservation = q.drain((_symbol, deferredAt) => {
+      const observedAt = 1100;
+      return observedAt > deferredAt;
+    });
+    expect(newObservation.clearedBySatisfied).toEqual(["AAA"]);
+    expect(newObservation.stillMissing).toEqual([]);
+  });
 });

@@ -30,6 +30,8 @@ export const DEFERRED_MAX_ATTEMPTS = 4;
 interface DeferredEntry {
   reason: string;
   attempts: number;
+  /** Epoch ms when this symbol was first enqueued (set once, never reset on re-defer). */
+  deferredAt: number;
 }
 
 /** The categorised outcome of a single {@link DeferredQueue.drain}. */
@@ -52,6 +54,7 @@ export class DeferredQueue {
   constructor(
     private readonly max: number = DEFERRED_QUEUE_MAX,
     private readonly maxAttempts: number = DEFERRED_MAX_ATTEMPTS,
+    private readonly clock: () => number = () => Date.now(),
   ) {}
 
   /** How many symbols are currently parked. */
@@ -66,11 +69,13 @@ export class DeferredQueue {
 
   /**
    * Park `symbols` with the given `reason`. Re-deferring an already-queued symbol
-   * updates its reason but does **not** reset its attempt count (so a perpetually
-   * deferred symbol still ages out). The queue is bounded: once it exceeds `max`,
-   * the oldest entries are evicted first.
+   * updates its reason but does **not** reset its attempt count or `deferredAt`
+   * (so a perpetually deferred symbol still ages out and its satisfaction check
+   * remains anchored to the original defer instant). The queue is bounded: once it
+   * exceeds `max`, the oldest entries are evicted first.
    */
   enqueue(symbols: Iterable<string>, reason: string): void {
+    const now = this.clock();
     for (const symbol of symbols) {
       if (!symbol) continue;
       const existing = this.queue.get(symbol);
@@ -78,7 +83,7 @@ export class DeferredQueue {
         existing.reason = reason;
         continue;
       }
-      this.queue.set(symbol, { reason, attempts: 0 });
+      this.queue.set(symbol, { reason, attempts: 0, deferredAt: now });
       while (this.queue.size > this.max) {
         const oldest = this.queue.keys().next().value;
         if (oldest === undefined) break;
@@ -88,18 +93,21 @@ export class DeferredQueue {
   }
 
   /**
-   * Drain the queue. `hasFreshQuote(symbol)` reports whether the caches/blob have
-   * since satisfied a symbol (so it is cleared, not re-fetched). Every other entry
-   * has its attempt count incremented; those over the retry cap are dropped, the
-   * rest are returned as still-missing. Cleared and dropped symbols are removed
-   * from the queue; still-missing symbols remain parked for the next drain.
+   * Drain the queue. `hasFreshQuote(symbol, deferredAt)` reports whether the
+   * caches/blob have since satisfied a symbol — the `deferredAt` epoch lets the
+   * caller require that the cached observation is *newer* than the defer instant,
+   * so a pre-existing "fresh enough" cache entry from before the explicit pull
+   * cannot clear a deferral that was created TO be updated. Every other entry has
+   * its attempt count incremented; those over the retry cap are dropped, the rest
+   * are returned as still-missing. Cleared and dropped symbols are removed from
+   * the queue; still-missing symbols remain parked for the next drain.
    */
-  drain(hasFreshQuote: (symbol: string) => boolean): DeferredDrainResult {
+  drain(hasFreshQuote: (symbol: string, deferredAt: number) => boolean): DeferredDrainResult {
     const stillMissing: string[] = [];
     const clearedBySatisfied: string[] = [];
     const exhausted: string[] = [];
     for (const [symbol, entry] of [...this.queue]) {
-      if (hasFreshQuote(symbol)) {
+      if (hasFreshQuote(symbol, entry.deferredAt)) {
         clearedBySatisfied.push(symbol);
         this.queue.delete(symbol);
         continue;
