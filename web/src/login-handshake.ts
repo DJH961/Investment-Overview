@@ -47,6 +47,16 @@ export interface PostDecryptTruth {
   staleSymbols: string[];
   /** Whether FX is still stale per the ledger after Step 1. */
   fxStale: boolean;
+  /**
+   * C6 — symbols whose decrypted `nativeCurrency` differs from the currency the
+   * pre-decrypt plan (C2) assumed when Step 1 primed/booked them. A primed quote
+   * denominated in the wrong currency must be re-pulled even if the ledger would
+   * otherwise call it fresh, so these are folded into the diff and flagged in the
+   * reason. Distinct from `newlyDiscovered` (a brand-new holding): a currency
+   * surprise is an *existing* symbol whose denomination changed. Optional; a
+   * steady-state USD-only book produces none.
+   */
+  currencyMismatches?: string[];
 }
 
 /** The Step-2 diff: only what Step 1 missed and the ledger still wants. */
@@ -55,6 +65,8 @@ export interface HandshakeDiff {
   symbols: string[];
   /** Symbols the blob revealed that Step 1's prediction never knew about. */
   newlyDiscovered: string[];
+  /** Symbols whose decrypted currency differed from the plan's assumption (C6). */
+  currencyMismatches: string[];
   /** Whether Step 2 must still pull FX (stale and not booked by Step 1). */
   fx: boolean;
   /** Whether Step 2 has anything to do at all (false ⇒ a true no-op re-login). */
@@ -91,9 +103,25 @@ export function reconcileHandshake(
     seen.add(s);
     symbols.push(s);
   }
+  // C6 — a currency mismatch forces a re-pull even when the ledger calls the
+  // symbol fresh: Step 1 may have primed it in the wrong denomination from the
+  // stale plan currency. Fold each mismatch into the diff (deduped), regardless of
+  // whether it was booked, so the wrongly-denominated quote is corrected.
+  const currencyMismatches: string[] = [];
+  for (const s of truth.currencyMismatches ?? []) {
+    if (seen.has(s)) {
+      currencyMismatches.push(s);
+      continue;
+    }
+    seen.add(s);
+    symbols.push(s);
+    currencyMismatches.push(s);
+  }
   // Newly-discovered = diff symbols the prediction never knew about (so a stale
-  // but already-predicted symbol is *not* mislabelled "newly-bought").
-  const newlyDiscovered = symbols.filter((s) => !predictedSet.has(s));
+  // but already-predicted symbol is *not* mislabelled "newly-bought"). A currency
+  // mismatch is an existing symbol, so it is excluded from this label.
+  const mismatchSet = new Set(currencyMismatches);
+  const newlyDiscovered = symbols.filter((s) => !predictedSet.has(s) && !mismatchSet.has(s));
   const fx = truth.fxStale && !booked.fx;
   const hasWork = symbols.length > 0 || fx;
 
@@ -103,14 +131,14 @@ export function reconcileHandshake(
   } else {
     const parts: string[] = [];
     if (symbols.length > 0) {
-      parts.push(
-        `${symbols.length} symbol(s) diff` +
-          (newlyDiscovered.length > 0 ? ` (incl. newly-bought: ${newlyDiscovered.join(", ")})` : ""),
-      );
+      const labels: string[] = [];
+      if (newlyDiscovered.length > 0) labels.push(`newly-bought: ${newlyDiscovered.join(", ")}`);
+      if (currencyMismatches.length > 0) labels.push(`currency-mismatch: ${currencyMismatches.join(", ")}`);
+      parts.push(`${symbols.length} symbol(s) diff` + (labels.length > 0 ? ` (incl. ${labels.join("; ")})` : ""));
     }
     if (fx) parts.push("FX");
     reason = `Login reconcile: pulling ${parts.join(" + ")} (deduped against the prefetch).`;
   }
 
-  return { symbols, newlyDiscovered, fx, hasWork, reason };
+  return { symbols, newlyDiscovered, currencyMismatches, fx, hasWork, reason };
 }

@@ -15,6 +15,7 @@ import {
   sessionBarsComplete,
   sessionCloseFxFromBars,
   sessionFxBarsComplete,
+  sessionOpenFxFromBars,
 } from "../src/session-fx";
 
 const d = (v: string | number): Decimal => new Decimal(v);
@@ -113,6 +114,36 @@ describe("sessionCloseFxFromBars", () => {
   });
 });
 
+describe("sessionOpenFxFromBars", () => {
+  const openMs = 1_000_000;
+  const bar = (t: number, value: string) => ({ t, value: d(value) });
+
+  it("returns the earliest bar at or after the session open", () => {
+    const bars = [bar(openMs, "1.0900"), bar(openMs + 3600_000, "1.0875"), bar(openMs + 7200_000, "1.085")];
+    expect(sessionOpenFxFromBars(bars, openMs)?.toString()).toBe("1.09");
+  });
+
+  it("ignores pre-market bars before the open", () => {
+    const bars = [bar(openMs - 3600_000, "1.10"), bar(openMs, "1.0900"), bar(openMs + 3600_000, "1.0875")];
+    expect(sessionOpenFxFromBars(bars, openMs)?.toString()).toBe("1.09");
+  });
+
+  it("tolerates unsorted bars", () => {
+    const bars = [bar(openMs + 7200_000, "1.085"), bar(openMs, "1.0900"), bar(openMs + 3600_000, "1.0875")];
+    expect(sessionOpenFxFromBars(bars, openMs)?.toString()).toBe("1.09");
+  });
+
+  it("skips non-positive bar values", () => {
+    const bars = [bar(openMs, "0"), bar(openMs + 3600_000, "1.0875")];
+    expect(sessionOpenFxFromBars(bars, openMs)?.toString()).toBe("1.0875");
+  });
+
+  it("returns null when no bar printed at/after the open (empty / all pre-market)", () => {
+    expect(sessionOpenFxFromBars([], openMs)).toBeNull();
+    expect(sessionOpenFxFromBars([bar(openMs - 60_000, "1.09")], openMs)).toBeNull();
+  });
+});
+
 describe("sessionFxBarsComplete", () => {
   const closeMs = 1_000_000;
   const bar = (t: number, value: string) => ({ t, value: d(value) });
@@ -172,7 +203,10 @@ describe("sessionBarsComplete (price tail)", () => {
 });
 
 describe("fxEffectSplit", () => {
-  it("attributes the whole move to market hours while open (no overnight slice)", () => {
+  it("falls the whole move into the live leg while open with no session-open anchor", () => {
+    // Without a session-open FX anchor the live market-hours leg cannot be carved,
+    // so the whole move lands in market hours and the frozen overnight leg is null
+    // (so the UI hides the split rather than inventing a zero counterpart).
     const split = fxEffectSplit({
       marketOpen: true,
       totalValueUsd: d("108000"),
@@ -181,8 +215,29 @@ describe("fxEffectSplit", () => {
       todayFxMoveEur: d("120"),
     });
     expect(split.totalEur?.toString()).toBe("120");
-    expect(split.overnightEur?.toString()).toBe("0");
+    expect(split.overnightEur).toBeNull();
     expect(split.marketHoursEur?.toString()).toBe("120");
+  });
+
+  it("carves the live market-hours leg from the open and keeps last night's overnight", () => {
+    // USD book $108,000. Opened at 1.09 → €99,082.57; live now 1.08 → €100,000.
+    // Live market-hours slice = €100,000 − €99,082.57 = +€917.43 (since the open).
+    // Overnight (last night, frozen) = whole move − market hours = remainder.
+    const split = fxEffectSplit({
+      marketOpen: true,
+      totalValueUsd: d("108000"),
+      liveFx: d("1.08"),
+      sessionCloseFx: null,
+      sessionOpenFx: d("1.09"),
+      todayFxMoveEur: d("1200"),
+    });
+    expect(split.totalEur?.toString()).toBe("1200");
+    expect(split.marketHoursEur).not.toBeNull();
+    expect(split.marketHoursEur!.toNumber()).toBeCloseTo(917.431, 2);
+    expect(split.overnightEur).not.toBeNull();
+    // Two legs sum to the whole move so last night's slice survives the open.
+    expect(split.marketHoursEur!.plus(split.overnightEur!).toNumber()).toBeCloseTo(1200, 6);
+    expect(split.overnightEur!.toNumber()).toBeCloseTo(282.569, 2);
   });
 
   it("isolates the overnight FX drift once the market is shut", () => {

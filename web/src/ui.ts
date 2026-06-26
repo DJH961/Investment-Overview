@@ -11,9 +11,17 @@
  */
 import { Decimal } from "./decimal-config";
 import type { AllocationSlice, DashboardModel, HoldingView, MoverEntry, OverviewView } from "./compute";
-import { buildMovers, fxTodayDeviationPct } from "./compute";
+import { buildMovers, fxSinceAnchorPct } from "./compute";
 import { fxEffectSplit } from "./session-fx";
-import { isUsMarketOpen } from "./market-hours";
+import {
+  isUsMarketOpen,
+  isUsMarketHoliday,
+  isForexMarketOpen,
+  forexMarketReopenMs,
+  lastForexReopenMs,
+  lastSessionDate,
+  sessionOpenMs,
+} from "./market-hours";
 import {
   type AnalyticsView,
   type DepositRowView,
@@ -57,6 +65,7 @@ import {
   formatSignedMoneyEur,
   formatSignedPercent,
   formatExportedAt,
+  formatForexReopen,
   signClass,
 } from "./format";
 import { computeCurrencyEffect } from "./currency-effect";
@@ -191,6 +200,65 @@ function valueBasisLabel(o: OverviewView, now: Date = new Date()): string {
 }
 
 /**
+ * The currency box's market-state regime, derived purely from `now` and the
+ * US-equity / spot-FX clocks. Extracted so the (DOM-free) decision can be unit
+ * tested in isolation and shared between {@link renderFxBox} and
+ * {@link renderFxEffect} without drift.
+ *
+ * The regimes, in precedence order:
+ *   - **forexFrozen** — the spot-FX weekend close (Fri ≥17:00 ET, all Saturday,
+ *     Sun <17:00 ET). The rate is frozen at Friday's close, so the box shows the
+ *     *whole Friday session view*, frozen exactly as it looked at 17:01 ET (Today
+ *     = the full session move, the "Since close" stat, the two-leg split), badged
+ *     "Market closed". This is a {@link sessionView}.
+ *   - **marketOpen** — the live US session; the regular live view (a sessionView).
+ *   - **weekendOvernight** — forex has reopened (Sun ≥17:00 ET) but no US session
+ *     has opened since: Sunday evening through Monday's 09:30 open (extending past a
+ *     Monday holiday to the next real open). The only honest move is the single
+ *     overnight drift since Friday's close — no stale Friday market-hours leg.
+ *   - **holiday** — a US market holiday that is *not* an FX holiday (e.g. 4th of
+ *     July): forex trades but the US session is shut, so likewise a single
+ *     overnight number, kept under its "Market holiday" wording.
+ *   - otherwise a **regular weekday post-close / pre-open** (a sessionView).
+ *
+ * `singleOvernight` (holiday ∨ weekendOvernight, with forex open and US shut) marks
+ * the two one-number, no-split regimes; `sessionView` (its complement) marks the
+ * three-stat, two-leg-split regimes.
+ */
+export interface FxBoxRegime {
+  marketOpen: boolean;
+  forexOpen: boolean;
+  holiday: boolean;
+  forexFrozen: boolean;
+  weekendOvernight: boolean;
+  singleOvernight: boolean;
+  sessionView: boolean;
+}
+
+export function fxBoxRegime(now: Date = new Date()): FxBoxRegime {
+  const marketOpen = isUsMarketOpen(now);
+  const forexOpen = isForexMarketOpen(now);
+  const holiday = isUsMarketHoliday(now);
+  const forexFrozen = !forexOpen;
+  const weekendOvernight =
+    forexOpen &&
+    !marketOpen &&
+    !holiday &&
+    sessionOpenMs(lastSessionDate(now)) < lastForexReopenMs(now);
+  const singleOvernight = forexOpen && !marketOpen && (holiday || weekendOvernight);
+  const sessionView = !singleOvernight;
+  return {
+    marketOpen,
+    forexOpen,
+    holiday,
+    forexFrozen,
+    weekendOvernight,
+    singleOvernight,
+    sessionView,
+  };
+}
+
+/**
  * The standalone **Currency · EUR ↔ USD** box that sits full-width beneath the
  * Today/Month/Year return horizons (it used to be crammed under the headline
  * total). It carries three things: the live EUR/USD rate (the "current value"),
@@ -203,14 +271,36 @@ function valueBasisLabel(o: OverviewView, now: Date = new Date()): string {
  * plainly and surface the EUR-repatriation figure instead of printing a
  * meaningless dollar amount. Returns null only when there is no rate at all.
  */
-function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElement | null {
+export function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElement | null {
   if (o.fxRateEurUsd === null) return null;
   const inUsd = getDisplayCurrency() === "USD";
 
   // The rate + today's move. USD display shows the stored EUR/USD spot directly;
   // EUR display shows USD/EUR (its reciprocal). The % still follows the currency
   // strength convention used here (negated for the reciprocal).
-  const devPct = fxTodayDeviationPct(o);
+  const { marketOpen, forexFrozen, weekendOvernight, singleOvernight, sessionView } =
+    fxBoxRegime(now);
+
+  // "Today" baseline. Live: since the *prior close* (overnight + intraday so far).
+  // Single-overnight: the lone drift since the last session close — Friday's FX
+  // close for the weekend spill-over (or the settled previous close as a holiday's
+  // overnight). Session view (open or shut): the full move since this — or Friday's
+  // frozen — session open, so it never just mirrors the "Since close" stat beside it.
+  let todayAnchor: Decimal | null;
+  let todaySub: string;
+  if (marketOpen) {
+    todayAnchor = o.fxRateEurUsdPrev;
+    todaySub = "since last close";
+  } else if (singleOvernight) {
+    todayAnchor = weekendOvernight
+      ? (o.fxRateEurUsdSessionClose ?? o.fxRateEurUsdPrev)
+      : o.fxRateEurUsdPrev;
+    todaySub = "overnight";
+  } else {
+    todayAnchor = o.fxRateEurUsdSessionOpen;
+    todaySub = "since last open";
+  }
+  const devPct = fxSinceAnchorPct(o, todayAnchor);
   const rate = inUsd ? o.fxRateEurUsd : new Decimal(1).dividedBy(o.fxRateEurUsd);
   const dev = devPct === null ? null : inUsd ? devPct : devPct.negated();
   const pair = inUsd ? "EUR/USD" : "USD/EUR";
@@ -244,109 +334,173 @@ function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElement | nul
     h("span", { class: `fx-box-stat-value ${signClass(dev)}` }, [
       dev !== null ? formatSignedPercent(dev) : "—",
     ]),
-    h("span", { class: "fx-box-stat-sub" }, ["rate move"]),
+    h("span", { class: "fx-box-stat-sub" }, [todaySub]),
   ]);
 
+  // Third number: how far the rate has moved since the current session's reference
+  // point — since the open while the market is live, since the close once shut.
+  // Same strength convention as the "Today" move (negated for the EUR reciprocal).
+  // Dropped in the single-overnight regimes (weekend spill-over, US-only holiday):
+  // there is only one honest move to show, so a second stat would just echo the
+  // overnight "Today" figure beside it.
+  const stats: HTMLElement[] = [rateStat, moveStat];
+  if (sessionView) {
+    const anchorFx = marketOpen ? o.fxRateEurUsdSessionOpen : o.fxRateEurUsdSessionClose;
+    const sincePctRaw = fxSinceAnchorPct(o, anchorFx);
+    const sincePct = sincePctRaw === null ? null : inUsd ? sincePctRaw : sincePctRaw.negated();
+    const sinceLabel = marketOpen ? "Since open" : "Since close";
+    stats.push(
+      h("div", { class: "fx-box-stat" }, [
+        h("span", { class: "fx-box-stat-label" }, [sinceLabel]),
+        h("span", { class: `fx-box-stat-value ${signClass(sincePct)}` }, [
+          sincePct !== null ? formatSignedPercent(sincePct) : "—",
+        ]),
+        h("span", { class: "fx-box-stat-sub" }, ["rate move"]),
+      ]),
+    );
+  }
+
+  const statsClass = stats.length === 2 ? "fx-box-stats fx-box-stats-pair" : "fx-box-stats";
+  // Over the weekend forex close, badge the box plainly and stamp when it reopens,
+  // so the frozen Friday rate is never mistaken for a live one.
+  const head: HTMLElement[] = [h("span", { class: "fx-box-title" }, ["Currency · EUR ↔ USD"])];
+  if (forexFrozen) {
+    head.push(h("span", { class: "fx-box-closed", title: "Forex market closed for the weekend" }, ["Market closed"]));
+  }
   const children: HTMLElement[] = [
-    h("div", { class: "fx-box-head" }, [h("span", { class: "fx-box-title" }, ["Currency · EUR ↔ USD"])]),
-    h("div", { class: "fx-box-stats" }, [rateStat, moveStat]),
+    h("div", { class: "fx-box-head" }, head),
+    h("div", { class: statsClass }, stats),
   ];
-  const effect = renderFxEffect(o, inUsd, now);
+  if (forexFrozen) {
+    children.push(
+      h("div", { class: "fx-box-reopen" }, [
+        `Frozen at Friday's close · ${formatForexReopen(forexMarketReopenMs(now), now)}`,
+      ]),
+    );
+  }
+  const effect = renderFxEffect(o, now);
   if (effect) children.push(effect);
   return h("section", { class: "fx-box", "aria-label": "Currency EUR to USD" }, children);
 }
 
 /**
- * The "currency effect today" panel inside {@link renderFxBox}.
+ * The "currency effect since yesterday" panel inside {@link renderFxBox}.
  *
- * In **EUR** display the FX swing is genuine euro P&L, so we show the net figure
- * and — once the US session is shut — a *diverging* bar splitting it into the
- * slice that moved during market hours and the slice that drifted overnight. The
- * diverging layout (each leg growing left for a loss or right for a gain from a
- * shared centre line) reads correctly even when the two legs pull in opposite
- * directions, which the old single stacked bar mangled into two crammed,
- * misleading segments.
+ * The book is **USD-booked**, so the EUR/USD move since yesterday's close is only
+ * real money once it is measured back in euros — so this panel always speaks
+ * **EUR**, in both EUR and USD display (a rate move hands you no extra dollars; the
+ * euro figure is the one that means something). Mirrors the Python ``_fx_effect_html``.
  *
- * In **USD** display the effect on the dollar value is exactly zero (the book is
- * USD-booked), so a market-hours/overnight dollar split would be nonsense. We say
- * the dollar value is unchanged and surface the EUR-repatriation figure instead.
+ * Below the net figure a *diverging* bar splits the move into its market-hours and
+ * overnight slices, with the **currently-live** slice on top and the frozen last
+ * slice below: while the market is open the live market-hours move leads and last
+ * night's overnight slice survives beneath it; once shut the live overnight drift
+ * leads and the last session's market-hours move sits below. Each leg grows from a
+ * shared centre line (right for a gain, left for a loss), so two legs pulling in
+ * opposite directions read clearly instead of being crammed into one stacked bar.
+ *
+ * In the two **single-overnight** regimes there is no fresh session to split, so
+ * the market-hours leg is dropped and one full-width bar carries the whole swing:
+ * a **US-only market holiday** (e.g. 4th of July, FX still trading) keeps the
+ * "Market holiday" label, while the **weekend spill-over** (Sunday evening through
+ * Monday's open, after the forex reopen) reads "Overnight". The frozen Friday
+ * weekend itself is *not* one of these — it keeps the full two-leg split, frozen.
  *
  * Returns null when there is no FX move to describe.
  */
-function renderFxEffect(o: OverviewView, inUsd: boolean, now: Date = new Date()): HTMLElement | null {
+function renderFxEffect(o: OverviewView, now: Date = new Date()): HTMLElement | null {
   const net = o.todayFxMoveEur;
   // No euro swing at all today ⇒ nothing worth a panel (the rate line still shows).
   if (net.isZero()) return null;
 
   const head = (valueEl: HTMLElement): HTMLElement =>
     h("div", { class: "fx-effect-head" }, [
-      h("span", { class: "fx-effect-title" }, ["Currency effect today"]),
+      h("span", { class: "fx-effect-title" }, ["Currency effect since yesterday"]),
       valueEl,
     ]);
-
-  if (inUsd) {
-    // The dollar value is untouched by FX; be honest about it and give the EUR
-    // repatriation figure as the genuinely meaningful number.
-    const children: HTMLElement[] = [
-      head(h("span", { class: "fx-effect-net flat" }, ["$0"])),
-      h("p", { class: "fx-effect-note" }, [
-        "The rate moved, but your assets are priced in dollars — so it changed your USD value by nothing. " +
-          `It only matters when you convert back to euros: ${formatSignedMoneyEur(net)} today if you did.`,
-      ]),
-    ];
-    return h("div", { class: "fx-effect", role: "group", "aria-label": "Currency effect today" }, children);
-  }
 
   const children: HTMLElement[] = [
     head(h("span", { class: `fx-effect-net ${signClass(net)}` }, [formatSignedMoneyEur(net)])),
   ];
 
-  // Market-hours vs overnight split — only once the session is shut and we hold a
-  // genuine session-close rate to measure the overnight slice from.
-  const marketOpen = isUsMarketOpen(now);
-  if (!marketOpen) {
-    const split = fxEffectSplit({
-      marketOpen,
-      totalValueUsd: o.totalValueUsd,
-      liveFx: o.fxRateEurUsd,
-      sessionCloseFx: o.fxRateEurUsdSessionClose,
-      todayFxMoveEur: o.todayFxMoveEur,
-    });
-    const market = split.marketHoursEur;
-    const overnight = split.overnightEur;
-    if (market !== null && overnight !== null && !(market.isZero() && overnight.isZero())) {
-      const maxMag = Decimal.max(market.abs(), overnight.abs());
-      // Each leg fills out from the centre line, so a full-magnitude leg spans
-      // half the track (the other half is reserved for the opposite direction).
-      const HALF_TRACK_PCT = 50;
-      const divergeRow = (label: string, value: Decimal, overnightLeg: boolean): HTMLElement => {
-        const width = maxMag.isZero()
-          ? 0
-          : value.abs().dividedBy(maxMag).times(HALF_TRACK_PCT).toNumber();
-        const fill = h(
-          "span",
-          {
-            class: `fx-diverge-fill ${signClass(value)}${overnightLeg ? " fx-diverge-overnight" : ""}`,
-          },
-          [],
-        );
-        fill.style.width = `${width}%`;
-        return h("div", { class: "fx-diverge-row" }, [
-          h("span", { class: "fx-diverge-label" }, [label]),
-          h("div", { class: "fx-diverge-track", "aria-hidden": "true" }, [fill]),
-          h("span", { class: `fx-diverge-value ${signClass(value)}` }, [formatSignedMoneyEur(value)]),
-        ]);
-      };
-      children.push(
-        h("div", { class: "fx-diverge" }, [
-          divergeRow("Market hours", market, false),
-          divergeRow("Overnight", overnight, true),
-        ]),
+  // Market-hours vs overnight split. The live leg is measured straight from the
+  // relevant session anchor; the frozen leg is the remainder of today's move.
+  const { marketOpen, holiday, singleOvernight } = fxBoxRegime(now);
+  const HALF_TRACK_PCT = 50;
+  if (singleOvernight) {
+    // No fresh session to split (US-only holiday, or the weekend spill-over): the
+    // whole swing is one overnight drift, so a market-hours leg would be a
+    // meaningless ~zero stub — drop it and show a single full-width bar instead.
+    const fill = h("span", { class: `fx-diverge-fill ${signClass(net)} fx-diverge-overnight` }, []);
+    fill.style.width = `${HALF_TRACK_PCT}%`;
+    const row = h("div", { class: "fx-diverge-row" }, [
+      h("span", { class: "fx-diverge-label" }, [
+        holiday ? "Market holiday" : "Overnight",
+        h("span", { class: "fx-diverge-tag" }, ["live"]),
+      ]),
+      h("div", { class: "fx-diverge-track", "aria-hidden": "true" }, [fill]),
+      h("span", { class: `fx-diverge-value ${signClass(net)}` }, [formatSignedMoneyEur(net)]),
+    ]);
+    children.push(h("div", { class: "fx-diverge" }, [row]));
+    return h(
+      "div",
+      { class: "fx-effect", role: "group", "aria-label": "Currency effect since yesterday" },
+      children,
+    );
+  }
+  const split = fxEffectSplit({
+    marketOpen,
+    totalValueUsd: o.totalValueUsd,
+    liveFx: o.fxRateEurUsd,
+    sessionCloseFx: o.fxRateEurUsdSessionClose,
+    sessionOpenFx: o.fxRateEurUsdSessionOpen,
+    todayFxMoveEur: o.todayFxMoveEur,
+  });
+  const market = split.marketHoursEur;
+  const overnight = split.overnightEur;
+  if (market !== null && overnight !== null && !(market.isZero() && overnight.isZero())) {
+    const maxMag = Decimal.max(market.abs(), overnight.abs());
+    // Each leg fills out from the centre line, so a full-magnitude leg spans
+    // half the track (the other half is reserved for the opposite direction).
+    const divergeRow = (
+      label: string,
+      value: Decimal,
+      overnightLeg: boolean,
+      live: boolean,
+    ): HTMLElement => {
+      const width = maxMag.isZero()
+        ? 0
+        : value.abs().dividedBy(maxMag).times(HALF_TRACK_PCT).toNumber();
+      const fill = h(
+        "span",
+        {
+          class: `fx-diverge-fill ${signClass(value)}${overnightLeg ? " fx-diverge-overnight" : ""}`,
+        },
+        [],
       );
-    }
+      fill.style.width = `${width}%`;
+      return h("div", { class: "fx-diverge-row" }, [
+        h("span", { class: "fx-diverge-label" }, [
+          label,
+          h("span", { class: "fx-diverge-tag" }, [live ? "live" : "last"]),
+        ]),
+        h("div", { class: "fx-diverge-track", "aria-hidden": "true" }, [fill]),
+        h("span", { class: `fx-diverge-value ${signClass(value)}` }, [formatSignedMoneyEur(value)]),
+      ]);
+    };
+    // Current market mode on top: open ⇒ live market-hours leads; closed ⇒ live
+    // overnight leads, with the other (frozen) leg below.
+    const rows = marketOpen
+      ? [divergeRow("Market hours", market, false, true), divergeRow("Overnight", overnight, true, false)]
+      : [divergeRow("Overnight", overnight, true, true), divergeRow("Market hours", market, false, false)];
+    children.push(h("div", { class: "fx-diverge" }, rows));
   }
 
-  return h("div", { class: "fx-effect", role: "group", "aria-label": "Currency effect today" }, children);
+  return h(
+    "div",
+    { class: "fx-effect", role: "group", "aria-label": "Currency effect since yesterday" },
+    children,
+  );
 }
 
 /** One return horizon (Today / This month / This year). */

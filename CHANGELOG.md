@@ -14,6 +14,79 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.9.0] — 2026-06-26
+
+### Changed
+
+- **Login warm-up and the post-decrypt pull now share one brain.** Previously the
+  pre-decrypt warm-up (`prefetchLiveData`) fetched live prices but failed to record
+  them honestly in the freshness ledger, so the post-decrypt kickoff treated the
+  whole portfolio as "heavily outdated" and re-pulled everything — burning the bulk
+  of a free-tier minute on data it already had. The two paths are now reconciled so
+  the second pull only fetches what the first genuinely missed
+  (`docs/single_brain_pull_plan.md`, changes C1–C9):
+  - **Honest priming (C2).** Warm-up priming carries each symbol's native currency
+    into the quote cache instead of dropping every symbol on a `null`-currency guard,
+    so primed quotes survive into the post-decrypt freshness check.
+  - **Honest booking (C3).** Prices actually fetched during warm-up are booked into
+    the freshness ledger, so they are not re-counted as missing.
+  - **Currency-known gate (C1).** A missing market quote only inflates an entry to
+    "heavily outdated" once the instrument's native currency is known, preventing a
+    pre-decrypt blind spot from forcing a full re-pull. The pull context now carries
+    decision-neutral `phase`/`currencyKnown` fields for downstream planners.
+  - **Blob-meta probe before the kickoff (C4).** The kickoff refreshes the shared
+    blob metadata (with a short timeout) before planning its round, so freshly
+    written prices are seen and not re-fetched.
+  - **Bars-first NAV (C5).** Week-stale moving NAV funds are primed from daily-NAV
+    bars stamped with a real settled `valueDate`, so the headline uses the bar value
+    instead of falling back to the export and the funds drop out of the NAV quote leg.
+  - **Currency-mismatch handshake (C6).** The login handshake reconciles currency
+    mismatches between cached and freshly observed quotes.
+  - **Truthful log lines (C7).** Two misleading log lines now report what actually
+    happened: the warm-up "primed those quotes" line reports the *real* primed count
+    instead of always claiming success, and the week-sleeve curve-source line
+    distinguishes blob-served vs stored-cache-reconstructed vs live-tip-only.
+  - **NAV provider routing (C8).** NAV symbols now ride the *same* unified sleeve as
+    stocks: Twelve Data first, spilling to Tiingo on a login/start pull or any
+    >16-symbol "instant" sleeve (and deferring otherwise), exactly like a stock. The
+    earlier NAV-only "Twelve Data only unless login" policy is gone; only NAV
+    graph-bars stay out (NAVs have no intraday series).
+  - **Accounted deferral queue (C9).** The deferred-symbol queue is extracted to a
+    pure `DeferredQueue` module that caps retries and bounds size so no deferred
+    entry ever vanishes unlogged.
+- **Polling-log clarity pass.** The downloadable polling log is the primary
+  debugging device, so its trail was tightened for the single-brain flow:
+  - The post-decrypt reconcile verdict is now recorded under the `orchestrator`
+    category (alongside the round decision it precedes) instead of `login`, so
+    every single-brain decision groups together rather than scattering one under
+    session lifecycle.
+  - The report column is padded to the widest category label (`orchestrator`),
+    so a long tag no longer knocks the message column out of alignment.
+  - The warm-up routing line now reads "Login warm-up route — …" instead of
+    "…started — …", since it is logged *after* the warm-up plan line; "plan" then
+    "route" reads as one ordered progression rather than two start markers.
+## [4.8.1] — 2026-06-26
+
+### Fixed
+
+- **The Currency box's "Today" stat no longer mirrors the "Since open/close" stat
+  beside it.** "Today" now re-bases by market state: while the US session is live
+  it is the EUR/USD move since the **prior close** (overnight + intraday so far);
+  once a trading day has shut it re-bases to **this morning's open** (the full
+  session move), so it stops collapsing onto "Since close" the moment the FX
+  provider rolls its `previousClose` to today's settle. A sub-label
+  ("since last close" / "since last open" / "overnight") makes the active window
+  explicit.
+- **Non-market days (weekends/holidays) are handled honestly.** With no session at
+  all, "Today" is the pure overnight drift and the currency-effect split collapses
+  to a single bar relabelled **"Market holiday"** (the meaningless ~zero
+  market-hours leg is dropped). The redundant third "Since open/close" stat — whose
+  only anchor would collapse onto the overnight "Today" figure beside it — is
+  dropped too, leaving a clean two-stat row.
+- **Renamed the currency-effect panel to "Currency effect since yesterday"** (it
+  measures from the prior close, not strictly "today"). Mirrored across the desktop
+  app and the live web companion.
+
 ## [4.8.0] — 2026-06-26
 
 ### Changed

@@ -10,6 +10,7 @@ import {
   formatCurrencyShortRaw,
   formatDailyGrowthAsOf,
   formatExportedAt,
+  formatForexReopen,
   formatLastPull,
   formatUpdatedAt,
 } from "../src/format";
@@ -145,6 +146,31 @@ describe("formatExportedAt", () => {
 
   it("returns the raw input when it can't be parsed", () => {
     expect(formatExportedAt("not-a-date", now)).toBe("not-a-date");
+  });
+});
+
+describe("formatForexReopen", () => {
+  const now = new Date("2024-06-01T15:30:00Z"); // a Saturday
+
+  it("says 'reopens today' with a clock time when the reopen is later today", () => {
+    const at = new Date("2024-06-01T21:00:00Z").getTime();
+    expect(formatForexReopen(at, now)).toMatch(/^reopens today \d{1,2}:\d{2}/);
+  });
+
+  it("says 'reopens tomorrow' with a clock time when the reopen is the next day", () => {
+    const at = new Date("2024-06-02T21:00:00Z").getTime();
+    expect(formatForexReopen(at, now)).toMatch(/^reopens tomorrow \d{1,2}:\d{2}/);
+  });
+
+  it("names the weekday for a reopen further out", () => {
+    const at = new Date("2024-06-04T21:00:00Z").getTime();
+    const out = formatForexReopen(at, now);
+    expect(out).not.toMatch(/^reopens (today|tomorrow)/);
+    expect(out).toMatch(/^reopens \w{3} \d{1,2}:\d{2}/);
+  });
+
+  it("degrades to 'reopens soon' when the instant can't be parsed", () => {
+    expect(formatForexReopen(Number.NaN, now)).toBe("reopens soon");
   });
 });
 

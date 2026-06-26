@@ -589,6 +589,29 @@ def session_close_fx(session: Session, *, now: datetime | None = None) -> Decima
     return None
 
 
+def session_open_fx(session: Session, *, now: datetime | None = None) -> Decimal | None:
+    """The EUR→USD rate (USD per 1 EUR) struck around the current session's **open**.
+
+    The mirror of :func:`session_close_fx`: intraday samples are captured *only
+    while the US market is open* (:func:`record_if_market_open`), each stamped with
+    the live EUR/USD spot at that instant, so the **oldest** sample of the current
+    "Day" session carries the rate roughly as the session opened. This is the
+    market-open FX anchor the Overview measures the live market-hours currency
+    slice from while the session is running (so last night's overnight slice can be
+    carved out as the remainder and survive the market start; see
+    :mod:`investment_dashboard.domain.session_fx`).
+
+    Returns the earliest non-null rate among the session's samples, or ``None``
+    when no session sample carries a rate yet. Reads only the cached samples — no
+    network.
+    """
+    samples = day_series_with_fx(session, now=now)
+    for _at, _market_eur, fx in samples:
+        if fx is not None and fx > 0:
+            return fx
+    return None
+
+
 def _market_component_pivot_eur(
     priced: list[Position],
     price_lookups: dict[str, Callable[[datetime], Decimal | None]],

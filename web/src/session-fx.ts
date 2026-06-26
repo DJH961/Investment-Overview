@@ -125,6 +125,28 @@ export function sessionCloseFxFromBars(fxBars: Bar[], sessionCloseMs: number): D
 }
 
 /**
+ * The session's EUR→USD rate **at the open**, read straight from the same 1D FX
+ * bars `sessionCloseFxFromBars` reads the close from — the live market-hours
+ * anchor the hero's currency-effect split measures from while the session is
+ * running (so last night's overnight slice can be carved out as the remainder and
+ * survive the market start; see {@link fxEffectSplit}).
+ *
+ * Picks the **earliest** positive bar at or after `sessionOpenMs` (09:30 ET);
+ * earlier pre-market bars are ignored. Returns `null` when no positive bar had
+ * printed by/after the open (e.g. a cold start before the session's first FX bar
+ * landed), leaving the caller to hide the split rather than fabricate a slice.
+ */
+export function sessionOpenFxFromBars(fxBars: Bar[], sessionOpenMs: number): Decimal | null {
+  let best: Bar | null = null;
+  for (const bar of fxBars) {
+    if (bar.t < sessionOpenMs) continue;
+    if (!bar.value.greaterThan(0)) continue;
+    if (best === null || bar.t < best.t) best = bar;
+  }
+  return best ? best.value : null;
+}
+
+/**
  * The single completeness primitive both the price and FX session tracks share:
  * does any positive bar land at or after `sessionCloseMs − toleranceMs`?
  *
@@ -206,25 +228,38 @@ export function sessionBarsComplete(
 export interface FxEffectSplit {
   /** The whole EUR P/L from today's EUR/USD move (prior close → now). */
   totalEur: Decimal | null;
-  /** The slice that moved while the market was open (prior close → session close). */
+  /**
+   * The slice that moved while the market was open. Live while open (session
+   * open → now); the frozen last-session move (prior close → session close) once
+   * shut.
+   */
   marketHoursEur: Decimal | null;
-  /** The slice that moved after the close (session close → now). Zero while open. */
+  /**
+   * The slice that moved after-hours. Live once shut (session close → now); the
+   * frozen last overnight (prior close → session open) while open.
+   */
   overnightEur: Decimal | null;
 }
 
 /**
- * Split today's FX revaluation into the part that moved **during the trading
- * day** and the part that moved **overnight** (after the session closed).
+ * Split today's FX revaluation into its **market-hours** and **overnight** parts,
+ * always carving out the *currently-live* slice directly from the relevant
+ * session anchor and leaving the other as the remainder so the two sum to the
+ * whole move (`todayFxMoveEur`, prior close → now):
  *
- * The after-hours slice is the EUR impact of the rate drifting from the
- * session-close rate to the live rate on the current USD book:
- * `valueUsd · (1/liveFx − 1/closeFx)` — i.e. the EUR total at the live spot minus
- * the EUR total at the frozen close spot. The in-session slice is then simply the
- * remainder of `todayFxMoveEur` (which spans the prior close to now). While the
- * market is open there is no overnight slice yet, so the whole move is in-session.
+ *   - **Market open** — the live leg is the **market-hours** drift since the
+ *     session opened: `valueUsd · (1/liveFx − 1/sessionOpenFx)`. The remainder is
+ *     *last* night's frozen overnight slice, so it **survives the market start**
+ *     instead of folding to zero. Needs `sessionOpenFx`.
+ *   - **Market closed** — the live leg is the **overnight** drift since the close:
+ *     `valueUsd · (1/liveFx − 1/sessionCloseFx)`. The remainder is the *last*
+ *     session's frozen market-hours move. Needs `sessionCloseFx`.
  *
  * Every field degrades to `null` when its inputs are missing (no USD exposure, no
  * rate pair, or no FX move) so the UI shows "—" rather than a misleading zero.
+ * When the live anchor is missing the whole move falls back into the live leg and
+ * the frozen leg is `null`, so the UI hides the split rather than inventing a zero
+ * counterpart.
  */
 export function fxEffectSplit(opts: {
   marketOpen: boolean;
@@ -232,27 +267,50 @@ export function fxEffectSplit(opts: {
   liveFx: Decimal | null;
   sessionCloseFx: Decimal | null;
   todayFxMoveEur: Decimal | null;
+  /** EUR→USD around the current session's open — the live market-hours anchor. */
+  sessionOpenFx?: Decimal | null;
 }): FxEffectSplit {
-  const { marketOpen, totalValueUsd, liveFx, sessionCloseFx, todayFxMoveEur } = opts;
+  const { marketOpen, totalValueUsd, liveFx, sessionCloseFx, todayFxMoveEur, sessionOpenFx } = opts;
   const totalEur = todayFxMoveEur;
 
-  let overnightEur: Decimal | null = marketOpen ? new Decimal(0) : null;
-  if (
-    !marketOpen &&
-    totalValueUsd !== null &&
-    liveFx !== null &&
-    sessionCloseFx !== null &&
-    liveFx.greaterThan(0) &&
-    sessionCloseFx.greaterThan(0)
-  ) {
-    const eurAtLive = totalValueUsd.dividedBy(liveFx);
-    const eurAtClose = totalValueUsd.dividedBy(sessionCloseFx);
-    overnightEur = eurAtLive.minus(eurAtClose);
-  }
+  // EUR impact of the rate drifting from `anchorFx` to the live spot on the book.
+  const legFromAnchor = (anchorFx: Decimal | null | undefined): Decimal | null => {
+    if (
+      totalValueUsd === null ||
+      liveFx === null ||
+      !liveFx.greaterThan(0) ||
+      anchorFx === null ||
+      anchorFx === undefined ||
+      !anchorFx.greaterThan(0)
+    ) {
+      return null;
+    }
+    return totalValueUsd.dividedBy(liveFx).minus(totalValueUsd.dividedBy(anchorFx));
+  };
 
-  let marketHoursEur: Decimal | null = null;
-  if (totalEur !== null) {
-    marketHoursEur = overnightEur === null ? totalEur : totalEur.minus(overnightEur);
+  let marketHoursEur: Decimal | null;
+  let overnightEur: Decimal | null;
+
+  if (marketOpen) {
+    // Live leg = market hours (session open → now); frozen leg = last overnight.
+    const liveLeg = legFromAnchor(sessionOpenFx);
+    if (liveLeg === null) {
+      marketHoursEur = totalEur;
+      overnightEur = null;
+    } else {
+      marketHoursEur = liveLeg;
+      overnightEur = totalEur === null ? null : totalEur.minus(liveLeg);
+    }
+  } else {
+    // Live leg = overnight (session close → now); frozen leg = last market hours.
+    const liveLeg = legFromAnchor(sessionCloseFx);
+    if (liveLeg === null) {
+      marketHoursEur = totalEur;
+      overnightEur = null;
+    } else {
+      overnightEur = liveLeg;
+      marketHoursEur = totalEur === null ? null : totalEur.minus(liveLeg);
+    }
   }
 
   return { totalEur, marketHoursEur, overnightEur };

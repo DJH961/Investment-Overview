@@ -229,6 +229,17 @@ export interface OverviewView {
    */
   fxRateEurUsdSessionClose: Decimal | null;
   /**
+   * EUR→USD around the current session's **open** (the rate captured shortly after
+   * 09:30 ET), or null when no open bar for the session has printed yet. While the
+   * session is running the hero's currency-effect split measures the live
+   * market-hours slice from this (so last night's overnight slice can be carved out
+   * as the remainder and survive the market start); once a trading day has shut it
+   * is the "since last market open" baseline the hero's "Today" stat re-bases to.
+   * Populated by the app shell (it reads the session's FX bars) on every session
+   * day — open or shut — so the compute layer defaults it to null.
+   */
+  fxRateEurUsdSessionOpen: Decimal | null;
+  /**
    * Epoch-ms the live/cached EUR→USD spot that valued the book was observed, so
    * the hero FX line can stamp when the rate is from (a clock time today, a date
    * once it is older). Null when only the keyless end-of-day rate was available
@@ -510,6 +521,13 @@ export interface FetchPlanEntry {
   assetClass: string;
   /** Aggregated last-known EUR size across holdings sharing this ticker. */
   sizeEur: number;
+  /**
+   * The holding's native (booked) currency, e.g. `USD`/`EUR`. Carried so the
+   * *pre-decrypt* login warm-up can denominate a primed quote from a bare native
+   * bar price (it is otherwise only available on the decrypted model). `null`
+   * when unknown or when holdings on one ticker disagree on currency.
+   */
+  nativeCurrency: string | null;
 }
 
 /**
@@ -540,17 +558,23 @@ export function buildFetchPlan(data: MobileExport, fetchableNavClasses: Set<stri
     const symbol = holding.price_symbol;
     if (!symbol) continue;
     const sizeEur = sizes.get(holding.symbol)?.toNumber() ?? 0;
+    const nativeCurrency = holding.native_currency || null;
     const existing = bySymbol.get(symbol);
     if (existing) {
       existing.sizeEur += sizeEur;
       // Market priority wins if any holding on this ticker is market-priced.
       if (isMarket) existing.priceType = "market";
+      // Carry the native currency only while every holding on this ticker agrees;
+      // a genuine disagreement collapses to `null` (the pre-decrypt warm-up then
+      // falls back to post-decrypt priming for that symbol rather than mispricing).
+      if (existing.nativeCurrency !== nativeCurrency) existing.nativeCurrency = null;
     } else {
       bySymbol.set(symbol, {
         symbol,
         priceType: holding.price_type,
         assetClass: holding.asset_class,
         sizeEur,
+        nativeCurrency,
       });
     }
   }
@@ -1342,6 +1366,7 @@ export function buildDashboard(
     dividendYieldPct,
     fxRateEurUsd,
     fxRateEurUsdSessionClose: null,
+    fxRateEurUsdSessionOpen: null,
     fxObservedAt: opts.fxObservedAt ?? null,
     holdingsCount: holdings.length,
     missingPriceSymbols: missingPrice,
@@ -1378,6 +1403,20 @@ export function fxTodayDeviationPct(o: OverviewView): Decimal | null {
   const prev = o.fxRateEurUsdPrev;
   if (now === null || prev === null || !prev.greaterThan(0)) return null;
   return now.minus(prev).dividedBy(prev);
+}
+
+/**
+ * The fractional EUR/USD move from an arbitrary session anchor (the open while the
+ * market is live, the close once it has shut) to the live spot — the raw input for
+ * the currency box's "Since open"/"Since close" stat. Same sign convention as
+ * {@link fxTodayDeviationPct} (positive = EUR/USD up); the caller negates it for
+ * the EUR-display reciprocal. Null when either rate is missing or the anchor is
+ * non-positive.
+ */
+export function fxSinceAnchorPct(o: OverviewView, anchor: Decimal | null): Decimal | null {
+  const now = o.fxRateEurUsd;
+  if (now === null || anchor === null || !anchor.greaterThan(0)) return null;
+  return now.minus(anchor).dividedBy(anchor);
 }
 
 /** Group holding values by asset class into descending allocation slices. */

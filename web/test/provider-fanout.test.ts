@@ -208,3 +208,82 @@ describe("planTwelveDataSafetyNet — reverse Tiingo → Twelve Data fallback", 
     expect(plan.twelveData).toEqual(["MSFT"]);
   });
 });
+
+describe("planFanout — NAV routing (unified with stocks)", () => {
+  it("routes NAVs to Twelve Data first when the TD minute has room", () => {
+    const plan = planFanout({
+      ...base,
+      kind: "auto",
+      symbols: syms(2),
+      navSymbols: ["FUNDA", "FUNDB"],
+      twelveDataSpendable: 8,
+    });
+    expect(plan.navTwelveData).toEqual(["FUNDA", "FUNDB"]);
+    expect(plan.navTiingo).toEqual([]);
+    expect(plan.deferred).toEqual([]);
+  });
+
+  it("spills NAVs to Tiingo on a login pull when the TD minute is spent", () => {
+    // The 1D graph backfill ate the whole TD minute (spendable 0), Tiingo is idle:
+    // a top-priority login pull must let the NAVs ride Tiingo, not starve.
+    const plan = planFanout({
+      ...base,
+      kind: "start",
+      symbols: [],
+      navSymbols: ["FUNDA", "FUNDB"],
+      twelveDataSpendable: 0,
+      tiingoSpendable: 40,
+    });
+    expect(plan.navTwelveData).toEqual([]);
+    expect(plan.navTiingo).toEqual(["FUNDA", "FUNDB"]);
+    expect(plan.deferred).toEqual([]);
+  });
+
+  it("defers a small NAV sleeve (≤ threshold) on a non-priority round, exactly like a small stock sleeve", () => {
+    // Unified policy: below the instant threshold a non-priority round never spills
+    // — whether the overflow is stocks or NAVs. With no TD budget these 2 NAVs wait
+    // a TD minute, the same as 2 leftover stocks would.
+    const plan = planFanout({
+      ...base,
+      kind: "auto",
+      symbols: [],
+      navSymbols: ["FUNDA", "FUNDB"],
+      twelveDataSpendable: 0,
+      tiingoSpendable: 40,
+    });
+    expect(plan.navTiingo).toEqual([]);
+    expect(plan.deferred).toEqual(["FUNDA", "FUNDB"]);
+  });
+
+  it("spills NAVs to Tiingo on a non-priority >16 sleeve, exactly like stocks (the unification)", () => {
+    // The C8 regression this fixes: a big auto round used to keep NAVs on "Twelve
+    // Data only" and defer them while the market overflow fanned out. Now a NAV is
+    // just another symbol in the >16 instant sleeve, so it spills to Tiingo too.
+    const plan = planFanout({
+      ...base,
+      kind: "auto",
+      symbols: syms(16),
+      navSymbols: ["FUNDA", "FUNDB"],
+      twelveDataSpendable: 8,
+      tiingoSpendable: 40,
+    });
+    // 18-symbol sleeve > 16 ⇒ fan-out: 8 on TD (all market), 10 spill to Tiingo —
+    // the last 8 market + both NAVs ride the parallel Tiingo leg.
+    expect(plan.fannedOut).toBe(true);
+    expect(plan.navTiingo).toEqual(["FUNDA", "FUNDB"]);
+    expect(plan.deferred).toEqual([]);
+  });
+
+  it("clamps the NAV Tiingo spill to the live Tiingo budget", () => {
+    const plan = planFanout({
+      ...base,
+      kind: "start",
+      symbols: [],
+      navSymbols: ["FUNDA", "FUNDB", "FUNDC"],
+      twelveDataSpendable: 0,
+      tiingoSpendable: 1,
+    });
+    expect(plan.navTiingo).toEqual(["FUNDA"]);
+    expect(plan.deferred).toEqual(["FUNDB", "FUNDC"]);
+  });
+});
