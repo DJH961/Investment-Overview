@@ -1445,6 +1445,12 @@ export interface LiveCurveChart {
   legend?: Array<{ className: string; label: string }>;
   /** Optional horizontal reference line (e.g. the 1D curve's previous close). */
   referenceLine?: { value: Decimal; label?: string };
+  /**
+   * Optional honesty caption shown under the chart — e.g. the 1D curve drawn from
+   * only part of the sleeve (scenario C), so a partly-flat line never masquerades
+   * as a complete day.
+   */
+  note?: string;
 }
 
 /**
@@ -1464,6 +1470,18 @@ export type LiveCurveBuilder = (
  * applied by the UI from the returned {@link CurvePoint}s, so the shell stays
  * currency-agnostic.
  */
+/** A built live 1D session curve plus how much of the sleeve shaped it. */
+export interface LiveSessionResult {
+  points: CurvePoint[];
+  /**
+   * Sleeve coverage of the 1D curve: `covered`/`total` distinct intraday-priced
+   * symbols the curve actually had bars for. `covered < total` means some
+   * holdings were carried flat for want of bars, so the line understates the
+   * day's true shape — surfaced as an honest caption (scenario C).
+   */
+  coverage?: { covered: number; total: number };
+}
+
 export interface LiveGraphHooks {
   /**
    * Build the live 1D (intraday) curve points, or null when unavailable. When
@@ -1471,7 +1489,7 @@ export interface LiveGraphHooks {
    * **zero network**) — every UI interaction (range toggle, graph click) passes
    * it so chart interaction never fetches; only the initial paint may pull.
    */
-  session: (opts?: { regenerateOnly?: boolean }) => Promise<CurvePoint[] | null>;
+  session: (opts?: { regenerateOnly?: boolean }) => Promise<LiveSessionResult | null>;
   /** Build the live 1W (daily-close) curve points, or null when unavailable. */
   week: (opts?: { regenerateOnly?: boolean }) => Promise<CurvePoint[] | null>;
 }
@@ -1602,8 +1620,12 @@ function chartWithTimeframe(
     // Re-draw the legend for the live series (e.g. the rebased other-currency
     // line) so a 1D/1W selection labels its own lines rather than inheriting the
     // exported-history legend. The wrapper owns the legend, so the caller no
-    // longer prints a second copy beneath the chart.
-    wrap.replaceChildren(...withLegend(chart as unknown as HTMLElement, built.legend));
+    // longer prints a second copy beneath the chart. A coverage caption (e.g. a
+    // 1D curve drawn from only part of the sleeve) is appended below the legend so
+    // a partly-flat line never reads as a complete day (scenario C).
+    const children = withLegend(chart as unknown as HTMLElement, built.legend);
+    if (built.note) children.push(liveStatus(built.note));
+    wrap.replaceChildren(...children);
   };
 
   // `userInitiated` distinguishes a tap on a range button (Pillar 6: interaction
@@ -1912,6 +1934,7 @@ function renderDrawdownChart(curve: AnalyticsView["curve"]): HTMLElement | null 
 export function liveCurveToChart(
   points: CurvePoint[],
   prevClose?: { eur: Decimal | null; usd: Decimal | null } | null,
+  coverage?: { covered: number; total: number } | null,
 ): LiveCurveChart | null {
   const cols = curveColumns(points);
   if (cols.dates.length < 2) return null;
@@ -1939,7 +1962,16 @@ export function liveCurveToChart(
     prevCloseValue !== null && prevCloseValue !== undefined
       ? { value: prevCloseValue, label: `Prev close ${formatMoneyRaw(prevCloseValue, code)}` }
       : undefined;
-  return { dates: cols.dates, series, yAxisLabel, legend, referenceLine };
+  // Honest coverage caption: when the curve was reconstructed from fewer than all
+  // of the sleeve's holdings, the rest were carried flat for want of bars, so the
+  // line understates the day's true shape. Say so rather than let a partly-flat
+  // curve read as a complete day (scenario C). Only meaningful when some — but not
+  // all — holdings have bars; full coverage (or a curve with no sleeve) stays quiet.
+  const note =
+    coverage && coverage.total > 0 && coverage.covered < coverage.total
+      ? `Intraday shape from ${coverage.covered} of ${coverage.total} holdings — the rest are held flat until their prices load.`
+      : undefined;
+  return { dates: cols.dates, series, yAxisLabel, legend, referenceLine, note };
 }
 
 /**
@@ -2025,10 +2057,14 @@ function renderValueChart(
   const liveBuilder: LiveCurveBuilder | undefined =
     liveGraph
       ? async (range, opts) => {
-          const built =
-            range === "1D" ? await liveGraph.session(opts) : await liveGraph.week(opts);
+          if (range === "1D") {
+            const built = await liveGraph.session(opts);
+            if (!built) return null;
+            return liveCurveToChart(built.points, prevClose, built.coverage);
+          }
+          const built = await liveGraph.week(opts);
           if (!built) return null;
-          return liveCurveToChart(built, range === "1D" ? prevClose : null);
+          return liveCurveToChart(built, null);
         }
       : undefined;
 

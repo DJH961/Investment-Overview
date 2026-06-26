@@ -73,7 +73,7 @@ import {
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince } from "./market-hours";
+import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -122,6 +122,7 @@ import {
   graphAnchorFx,
   readSessionCloseFx,
   recordSessionCloseFx,
+  sessionBarsComplete,
   sessionCloseFxFromBars,
   sessionFxBarsComplete,
 } from "./session-fx";
@@ -916,15 +917,28 @@ export class App {
     const store = this.ensureTimeSeriesStore();
     const day = lastSessionDate(now);
     const today = await store.loadSession(day).catch(() => null);
+    const marketClosed = !isUsMarketOpen(now);
+    const close = sessionCloseMs(day);
     // Expected-empty ≠ stale (market_open_token_burn_fix_plan.md WS1): a fresh,
     // just-opened session has no completed intraday bar yet, so the absence of
     // today's bars is *expected*. Queueing a 1D backfill for a window that has
     // not elapsed is the market-open burn — skip it and let the curve accrue
     // tick-by-tick from the live tip. Only once a full bar interval of trading
     // time has passed does a still-missing symbol read genuinely stale.
+    //
+    // A symbol with *partial* bars that never reached the 16:00 ET close is the
+    // after-close sibling of the missing case (scenario F): bars pulled
+    // mid-session sit in the store looking present, so a length check alone would
+    // leave the 1D curve ending early. Once the market is shut, treat such a stale
+    // partial-day track as stale too so the same backfill completes its tail (and
+    // grabs the FX track alongside — the FX-close repair below is then a no-op).
     const session = sessionIsWarmingUp(now)
       ? []
-      : marketSymbols.filter((s) => !(today?.bars[s]?.length));
+      : marketSymbols.filter((s) => {
+          const bars = today?.bars[s];
+          if (!bars?.length) return true;
+          return marketClosed && !sessionBarsComplete(bars, close, INTRADAY_BAR_INTERVAL_MS);
+        });
     const weekStored = await store.loadSession(WEEK_STORE_KEY).catch(() => null);
     // Match the 1W build's coverage test, not a looser presence check: a
     // stale-but-present store (only pre-settlement bars) must read *stale* here,
@@ -933,7 +947,7 @@ export class App {
     const week = weekStaleSymbols(weekStored, marketSymbols, now);
     // The 1D FX track reads incomplete when no bar has reached this session's
     // 16:00 ET close — the after-hours gap the FX-only backfill closes.
-    const fxIncomplete = !sessionFxBarsComplete(today?.fx ?? [], sessionCloseMs(day));
+    const fxIncomplete = !sessionFxBarsComplete(today?.fx ?? [], close);
     return { session, week, fxIncomplete };
   }
 
@@ -4380,7 +4394,9 @@ export class App {
           // still has dense current-day detail to splice — otherwise a 1D that
           // springboarded off the blob would leave the store empty for today.
           await this.persistSprungSessionDetail(exported, store).catch(() => undefined);
-          return sprung;
+          // The exported session is the desktop's settled whole-book curve, so it
+          // is complete by construction — no coverage caption.
+          return { points: sprung };
         }
         const spent = { credits: 0 };
         try {
@@ -4391,7 +4407,13 @@ export class App {
           if (spent.credits === 0) {
             this.pollLog("graph", "1D graph: reused stored session bars (no live pull, 0 credits).");
           }
-          return curve.points.length >= 2 ? curve.points : null;
+          if (curve.points.length < 2) return null;
+          // Only surface the coverage caption once the market has shut: a full day
+          // is expected by then, so a flat-for-want-of-bars holding is genuinely
+          // worth flagging (scenario C). While open — and especially warming up —
+          // partial coverage is normal and accrues tick-by-tick, so stay quiet.
+          const coverage = curve.marketOpen ? undefined : curve.coverage;
+          return { points: curve.points, coverage };
         } catch {
           this.pollLog("graph", "1D graph: live build failed — no curve drawn.");
           return null;
