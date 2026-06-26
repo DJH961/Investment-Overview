@@ -27,7 +27,9 @@ import type { StoredCloseProbe } from "./timeseries-store";
  * Minimum spacing between post-close probes of a still-unsettled short symbol
  * (10 minutes). Far longer than a render (so a per-second redraw never re-fetches)
  * yet far shorter than a session (so a genuinely-late close still resolves within
- * the evening). The C4 spacing gate that kills the per-render hammer.
+ * the evening). At 10 min this caps the probe to at most ~6 fetches/hour/symbol
+ * while the close settles — a negligible, bounded free-tier cost. The C4 spacing
+ * gate that kills the per-render hammer.
  */
 export const PROBE_MIN_MS = 10 * 60 * 1000;
 
