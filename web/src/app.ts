@@ -5605,7 +5605,13 @@ export class App {
     const day = exported?.day;
     const sessionDate = day?.session_date;
     if (!day || !sessionDate || sessionDate !== lastSessionDate(new Date())) return;
-    const points = parseExportedPoints(day.points);
+    // Clamp to the session window before persisting: a blob can over-reach into
+    // the prior trading day, and these breadcrumbs are spliced into a later live
+    // build (mergeBreadcrumbs) — on a cold store the reconstruction is empty, so
+    // an unclamped pre-open crumb would surface as yesterday's data on today's 1D
+    // curve. Mirrors the springboard's own left-edge clamp.
+    const openMs = sessionOpenMs(sessionDate);
+    const points = parseExportedPoints(day.points).filter((p) => p.t >= openMs);
     if (points.length < 1) return;
     const existing =
       (await store.loadSession(sessionDate)) ??
