@@ -113,8 +113,23 @@ export function graphAnchorFx(opts: {
  * settle); bars after that are after-hours FX drift, exactly what the freeze is
  * meant to exclude, so they are ignored. Returns `null` when no positive bar had
  * settled by the close, leaving the caller to fall back.
+ *
+ * **Completeness gate.** A track last fetched *during* the session (e.g. the app
+ * pulled FX at 14:00 ET) ends short of the close, so its "latest bar at or before
+ * close" is a stale mid-session rate, not the settle. Handing that real, positive,
+ * non-`null` value back would short-circuit the `sessionCloseFx ?? settledPrev ??
+ * liveFx` fallback in {@link graphAnchorFx} (and the equivalent anchor in
+ * {@link fxEffectSplit}), freezing the EUR view to the 14:00 rate. So unless a
+ * positive bar has actually reached the close ({@link sessionFxBarsComplete}, i.e.
+ * {@link sessionTrackReachedClose} with zero tolerance — after-hours FX always
+ * prints a bar at/after 16:00 ET once the session has settled), the read yields
+ * `null` and the caller degrades gracefully to the settled previous close / live
+ * spot rather than displaying a wrong, frozen mid-session value.
  */
 export function sessionCloseFxFromBars(fxBars: Bar[], sessionCloseMs: number): Decimal | null {
+  // Incomplete (mid-session-only) track ⇒ no genuine settle to read: yield null
+  // so the caller's settledPrev/liveFx fallback handles it (see doc above).
+  if (!sessionTrackReachedClose(fxBars, sessionCloseMs, 0)) return null;
   let best: Bar | null = null;
   for (const bar of fxBars) {
     if (bar.t > sessionCloseMs) continue;
