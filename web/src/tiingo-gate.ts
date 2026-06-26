@@ -14,11 +14,25 @@
  * never a live countdown, so a due probe fires the instant the app is reopened.
  */
 
+import { onProviderLimitsChange } from "./provider-limits";
+
 const MINUTE_MS = 60 * 1000;
 
 // --- Web budget (80 % of the shared Tiingo account) --------------------------
-export const WEB_HOURLY_CAP = 40;
-export const WEB_DAILY_CAP = 800;
+/**
+ * Default web-side Tiingo caps (40/hr · 800/day). The live exports below mirror
+ * the configurable {@link providerLimits} store, so lowering them in Settings
+ * (e.g. to share the account across more devices) flows through every budget
+ * check. They default to these documented ceilings.
+ */
+export const DEFAULT_WEB_HOURLY_CAP = 40;
+export const DEFAULT_WEB_DAILY_CAP = 800;
+export let WEB_HOURLY_CAP = DEFAULT_WEB_HOURLY_CAP;
+export let WEB_DAILY_CAP = DEFAULT_WEB_DAILY_CAP;
+onProviderLimitsChange((limits) => {
+  WEB_HOURLY_CAP = limits.tiingoPerHour;
+  WEB_DAILY_CAP = limits.tiingoPerDay;
+});
 
 // --- NAV-late: peer-confirmation + canary (Eastern minutes-since-midnight) ----
 /** No NAV realistically strikes before 17:30 ET, so a canary before it is waste. */

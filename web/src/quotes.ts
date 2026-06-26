@@ -49,8 +49,16 @@ import type { Decimal } from "./decimal-config";
 import { isUsMarketOpen, latestSettledSessionDate, nextSessionCloseMs } from "./market-hours";
 import { fetchTiingoEurUsd } from "./tiingo";
 import { Budget, etMinutesOfDay, WEB_DAILY_CAP, WEB_HOURLY_CAP } from "./tiingo-gate";
+import { onProviderLimitsChange } from "./provider-limits";
 
-/** Twelve Data free-tier limits — the design constraint for this whole module. */
+/**
+ * Twelve Data free-tier limits — the design constraint for this whole module.
+ * The per-minute / per-day caps are a live mirror of the configurable
+ * {@link providerLimits} store (the user can lower them in Settings); the
+ * per-symbol cost is intrinsic to the API and never changes. Kept as a mutable
+ * object so every existing `FREE_TIER.creditsPer…` reader picks up the
+ * configured value without threading it through.
+ */
 export const FREE_TIER = {
   /** Max API credits per rolling minute. */
   creditsPerMinute: 8,
@@ -58,7 +66,11 @@ export const FREE_TIER = {
   creditsPerDay: 800,
   /** Credits a batched `/quote` spends per symbol. */
   creditsPerSymbol: 1,
-} as const;
+};
+onProviderLimitsChange((limits) => {
+  FREE_TIER.creditsPerMinute = limits.twelveDataPerMinute;
+  FREE_TIER.creditsPerDay = limits.twelveDataPerDay;
+});
 
 const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;

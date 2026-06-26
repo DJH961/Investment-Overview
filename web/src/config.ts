@@ -20,6 +20,7 @@
  */
 
 import { createSecretBox, looksEncrypted } from "./secret-store";
+import { DEFAULT_PROVIDER_LIMITS, setProviderLimits } from "./provider-limits";
 
 const KEYS = {
   apiKey: "iv.web.twelvedata_api_key",
@@ -27,6 +28,10 @@ const KEYS = {
   priceProxyUrl: "iv.web.price_proxy_url",
   updateMinutes: "iv.web.update_minutes",
   autoLockMinutes: "iv.web.auto_lock_minutes",
+  twelveDataPerMinute: "iv.web.twelvedata_per_minute",
+  twelveDataPerDay: "iv.web.twelvedata_per_day",
+  tiingoPerHour: "iv.web.tiingo_per_hour",
+  tiingoPerDay: "iv.web.tiingo_per_day",
 } as const;
 
 /**
@@ -69,6 +74,18 @@ const MAX_UPDATE_MINUTES = 240;
 const DEFAULT_AUTO_LOCK_MINUTES = 5;
 /** Upper bound for the configurable idle auto-lock timeout, in minutes. */
 const MAX_AUTO_LOCK_MINUTES = 240;
+
+/**
+ * Recommended (and maximum) data-provider rate limits — the documented free-tier
+ * ceilings from {@link DEFAULT_PROVIDER_LIMITS}. Settings defaults to these and
+ * recommends going no higher (the providers reject anything above their free
+ * allowance); lower them to share one account across more devices. There is no
+ * second copy of these numbers anywhere — this is the single source of truth.
+ */
+const DEFAULT_TWELVE_DATA_PER_MINUTE = DEFAULT_PROVIDER_LIMITS.twelveDataPerMinute;
+const DEFAULT_TWELVE_DATA_PER_DAY = DEFAULT_PROVIDER_LIMITS.twelveDataPerDay;
+const DEFAULT_TIINGO_PER_HOUR = DEFAULT_PROVIDER_LIMITS.tiingoPerHour;
+const DEFAULT_TIINGO_PER_DAY = DEFAULT_PROVIDER_LIMITS.tiingoPerDay;
 
 /** Wraps/unwraps the API key with a non-extractable per-device key (IndexedDB). */
 const secrets = createSecretBox();
@@ -117,6 +134,21 @@ export interface AppConfig {
    * session locks itself; `0` disables auto-lock.
    */
   autoLockMinutes: number;
+  /**
+   * Twelve Data (primary) rate limits the live-quote budget self-clamps to.
+   * Default to the free-tier ceilings ({@link DEFAULT_TWELVE_DATA_PER_MINUTE} /
+   * {@link DEFAULT_TWELVE_DATA_PER_DAY}); lower them to share one key across
+   * more devices.
+   */
+  twelveDataPerMinute: number;
+  twelveDataPerDay: number;
+  /**
+   * Tiingo (fallback) rate limits the secondary-provider budget self-clamps to.
+   * Default to the web-side ceilings ({@link DEFAULT_TIINGO_PER_HOUR} /
+   * {@link DEFAULT_TIINGO_PER_DAY}); lower them to share the account further.
+   */
+  tiingoPerHour: number;
+  tiingoPerDay: number;
 }
 
 /**
@@ -143,6 +175,19 @@ export function parseAutoLockMinutes(raw: string): number {
   return Math.min(MAX_AUTO_LOCK_MINUTES, Math.round(n));
 }
 
+/**
+ * Clamp a parsed provider rate limit to `1`–`recommended`, falling back to the
+ * recommended free-tier ceiling for a blank or non-positive value. The upper
+ * bound is the recommended value itself: the providers reject anything above
+ * their free allowance, so Settings never lets a limit exceed it. Exported so
+ * the Settings UI clamps identically.
+ */
+export function parseProviderLimit(raw: string, recommended: number): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return recommended;
+  return Math.min(recommended, Math.max(1, Math.round(n)));
+}
+
 /** A blank, unconfigured config — used as the initial in-memory state. */
 export function defaultConfig(): AppConfig {
   return {
@@ -151,7 +196,26 @@ export function defaultConfig(): AppConfig {
     priceProxyUrl: "",
     updateMinutes: DEFAULT_UPDATE_MINUTES,
     autoLockMinutes: DEFAULT_AUTO_LOCK_MINUTES,
+    twelveDataPerMinute: DEFAULT_TWELVE_DATA_PER_MINUTE,
+    twelveDataPerDay: DEFAULT_TWELVE_DATA_PER_DAY,
+    tiingoPerHour: DEFAULT_TIINGO_PER_HOUR,
+    tiingoPerDay: DEFAULT_TIINGO_PER_DAY,
   };
+}
+
+/**
+ * Push the configured provider rate limits into the shared {@link
+ * providerLimits} store, so every live-data budget check (Twelve Data and
+ * Tiingo) clamps to the user's chosen values. Call after {@link loadConfig} and
+ * whenever Settings saves.
+ */
+export function applyProviderLimits(config: AppConfig): void {
+  setProviderLimits({
+    twelveDataPerMinute: config.twelveDataPerMinute,
+    twelveDataPerDay: config.twelveDataPerDay,
+    tiingoPerHour: config.tiingoPerHour,
+    tiingoPerDay: config.tiingoPerDay,
+  });
 }
 
 /**
@@ -217,6 +281,10 @@ export async function loadConfig(): Promise<AppConfig> {
     priceProxyUrl: read(KEYS.priceProxyUrl),
     updateMinutes: parseUpdateMinutes(read(KEYS.updateMinutes) || readLegacyUpdateMinutes()),
     autoLockMinutes: parseAutoLockMinutes(read(KEYS.autoLockMinutes)),
+    twelveDataPerMinute: parseProviderLimit(read(KEYS.twelveDataPerMinute), DEFAULT_TWELVE_DATA_PER_MINUTE),
+    twelveDataPerDay: parseProviderLimit(read(KEYS.twelveDataPerDay), DEFAULT_TWELVE_DATA_PER_DAY),
+    tiingoPerHour: parseProviderLimit(read(KEYS.tiingoPerHour), DEFAULT_TIINGO_PER_HOUR),
+    tiingoPerDay: parseProviderLimit(read(KEYS.tiingoPerDay), DEFAULT_TIINGO_PER_DAY),
   };
 }
 
@@ -226,6 +294,12 @@ export async function saveConfig(config: AppConfig): Promise<void> {
   write(KEYS.priceProxyUrl, config.priceProxyUrl.trim());
   write(KEYS.updateMinutes, String(config.updateMinutes));
   write(KEYS.autoLockMinutes, String(config.autoLockMinutes));
+  write(KEYS.twelveDataPerMinute, String(config.twelveDataPerMinute));
+  write(KEYS.twelveDataPerDay, String(config.twelveDataPerDay));
+  write(KEYS.tiingoPerHour, String(config.tiingoPerHour));
+  write(KEYS.tiingoPerDay, String(config.tiingoPerDay));
+  // Keep the shared runtime store in step so a save applies live, without a reload.
+  applyProviderLimits(config);
   // Retire the legacy keys now that their data lives in the simplified shape, so
   // the migration only fires once and old plumbing doesn't linger in storage.
   for (const legacyKey of Object.values(LEGACY_KEYS)) write(legacyKey, "");
@@ -319,6 +393,10 @@ export interface ConfigPacket {
   blobUrl: string;
   updateMinutes: number;
   autoLockMinutes: number;
+  twelveDataPerMinute: number;
+  twelveDataPerDay: number;
+  tiingoPerHour: number;
+  tiingoPerDay: number;
 }
 
 /** Serialize the portable parts of a config to a pretty JSON packet string. */
@@ -330,6 +408,10 @@ export function serializeConfig(config: AppConfig): string {
     blobUrl: config.blobUrl,
     updateMinutes: config.updateMinutes,
     autoLockMinutes: config.autoLockMinutes,
+    twelveDataPerMinute: config.twelveDataPerMinute,
+    twelveDataPerDay: config.twelveDataPerDay,
+    tiingoPerHour: config.tiingoPerHour,
+    tiingoPerDay: config.tiingoPerDay,
   };
   return JSON.stringify(packet, null, 2);
 }
@@ -337,7 +419,9 @@ export function serializeConfig(config: AppConfig): string {
 /**
  * Parse and validate an imported config packet into an {@link AppConfig}.
  * Throws a user-facing `Error` when the text isn't a recognisable packet.
- * Numeric fields are clamped through the same parsers as manual entry.
+ * Numeric fields are clamped through the same parsers as manual entry. The
+ * provider-limit fields are optional (older packets pre-date them) and fall back
+ * to the recommended free-tier defaults when absent.
  */
 export function parseConfigPacket(text: string): AppConfig {
   let raw: unknown;
@@ -364,6 +448,10 @@ export function parseConfigPacket(text: string): AppConfig {
     priceProxyUrl: "",
     updateMinutes: parseUpdateMinutes(String(obj.updateMinutes ?? "")),
     autoLockMinutes: parseAutoLockMinutes(String(obj.autoLockMinutes ?? "")),
+    twelveDataPerMinute: parseProviderLimit(String(obj.twelveDataPerMinute ?? ""), DEFAULT_TWELVE_DATA_PER_MINUTE),
+    twelveDataPerDay: parseProviderLimit(String(obj.twelveDataPerDay ?? ""), DEFAULT_TWELVE_DATA_PER_DAY),
+    tiingoPerHour: parseProviderLimit(String(obj.tiingoPerHour ?? ""), DEFAULT_TIINGO_PER_HOUR),
+    tiingoPerDay: parseProviderLimit(String(obj.tiingoPerDay ?? ""), DEFAULT_TIINGO_PER_DAY),
   };
 }
 
@@ -375,6 +463,10 @@ export {
   MAX_UPDATE_MINUTES,
   DEFAULT_AUTO_LOCK_MINUTES,
   MAX_AUTO_LOCK_MINUTES,
+  DEFAULT_TWELVE_DATA_PER_MINUTE,
+  DEFAULT_TWELVE_DATA_PER_DAY,
+  DEFAULT_TIINGO_PER_HOUR,
+  DEFAULT_TIINGO_PER_DAY,
   CONFIG_PACKET_TYPE,
   CONFIG_PACKET_VERSION,
 };

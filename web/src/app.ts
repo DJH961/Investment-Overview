@@ -22,7 +22,9 @@ import { startTour, DEMO_TOUR_STEPS } from "./tour";
 import {
   defaultConfig,
   loadConfig,
+  applyProviderLimits,
   parseAutoLockMinutes,
+  parseProviderLimit,
   parseUpdateMinutes,
   resolveBlobUrl,
   resolveMetaUrl,
@@ -34,6 +36,10 @@ import {
   MAX_UPDATE_MINUTES,
   DEFAULT_AUTO_LOCK_MINUTES,
   MAX_AUTO_LOCK_MINUTES,
+  DEFAULT_TWELVE_DATA_PER_MINUTE,
+  DEFAULT_TWELVE_DATA_PER_DAY,
+  DEFAULT_TIINGO_PER_HOUR,
+  DEFAULT_TIINGO_PER_DAY,
   type AppConfig,
 } from "./config";
 import { PriceError, type FxRates, type Quote } from "./prices";
@@ -211,8 +217,12 @@ const APP_VERSION_KEY = "iv.web.app_version";
  * Daily free-tier credits remaining at or below which the UI warns the user it
  * is close to the limit (and starts spacing refreshes out). Two per-minute
  * windows' worth of headroom — enough warning to be useful without nagging.
+ * Derived from the live (Settings-configurable) per-minute limit, so lowering
+ * the limit tightens the warning band in step.
  */
-const DAILY_BUDGET_WARN_CREDITS = 2 * FREE_TIER.creditsPerMinute;
+function dailyBudgetWarnCredits(): number {
+  return 2 * FREE_TIER.creditsPerMinute;
+}
 
 /**
  * How recently the app must have actually pulled fresh data from the network for
@@ -557,6 +567,7 @@ export class App {
   async start(): Promise<void> {
     this.logVersionUpdate();
     this.state.config = await loadConfig();
+    applyProviderLimits(this.state.config);
     const demoParams = this.demoParams();
     if (demoParams.requested) this.enterDemo(demoParams);
     else if (!this.isConfigured()) {
@@ -1519,6 +1530,24 @@ export class App {
       placeholder: String(DEFAULT_AUTO_LOCK_MINUTES),
       value: String(config.autoLockMinutes),
     });
+    // Data-provider rate limits (Settings only). Each defaults to — and is capped
+    // at — the provider's documented free-tier ceiling; lower them to share one
+    // account across more devices. The `max` mirrors the recommended default.
+    const providerLimitInput = (id: string, value: number, recommended: number): HTMLInputElement =>
+      h("input", {
+        type: "number",
+        id,
+        min: "1",
+        max: String(recommended),
+        step: "1",
+        autocomplete: "off",
+        placeholder: String(recommended),
+        value: String(value),
+      }) as HTMLInputElement;
+    const tdPerMinute = providerLimitInput("f-td-min", config.twelveDataPerMinute, DEFAULT_TWELVE_DATA_PER_MINUTE);
+    const tdPerDay = providerLimitInput("f-td-day", config.twelveDataPerDay, DEFAULT_TWELVE_DATA_PER_DAY);
+    const tiingoPerHour = providerLimitInput("f-ti-hour", config.tiingoPerHour, DEFAULT_TIINGO_PER_HOUR);
+    const tiingoPerDay = providerLimitInput("f-ti-day", config.tiingoPerDay, DEFAULT_TIINGO_PER_DAY);
 
     // Hidden file picker backing the "Import config" button: pick a previously
     // exported packet, repopulate the (still editable) fields, and let the user
@@ -1614,7 +1643,7 @@ export class App {
       field(
         "Update prices every (minutes)",
         updateMinutes,
-        `How often live prices refresh. Lower is fresher but spends more of the Twelve Data free tier (8/min, 800/day). Default is ${DEFAULT_UPDATE_MINUTES}.`,
+        `How often live prices refresh. Lower is fresher but spends more of the Twelve Data budget (${config.twelveDataPerMinute}/min, ${config.twelveDataPerDay}/day). Default is ${DEFAULT_UPDATE_MINUTES}.`,
       ),
     );
 
@@ -1628,6 +1657,40 @@ export class App {
           "Price proxy URL override",
           priceProxyUrl,
           "Advanced: the web/proxy Worker /price route for the price fallback. Leave blank to derive it from the data-source URL. The provider token stays in the Worker — never in the browser.",
+        ),
+      );
+    }
+
+    // Data providers (Settings only): editable per-provider rate caps. They
+    // default to each provider's free-tier ceiling; lower them to spread one
+    // account across several devices. Recommend not exceeding the defaults — the
+    // providers reject anything above their free allowance — so the fields are
+    // capped at the recommended values.
+    if (settingsMode) {
+      formChildren.push(
+        h("h2", { class: "settings-section" }, ["Data providers"]),
+        h("p", { class: "field-hint" }, [
+          "These cap how many API calls each price provider may spend. The defaults match each provider's free-tier limit — the recommended values. Lower them to share one account across more devices; setting them higher is not recommended (and not allowed), as the providers reject anything above their free allowance.",
+        ]),
+        field(
+          "Twelve Data — per minute",
+          tdPerMinute,
+          `Primary-provider credits allowed each minute. Recommended ${DEFAULT_TWELVE_DATA_PER_MINUTE} (the free-tier limit); go no higher.`,
+        ),
+        field(
+          "Twelve Data — per day",
+          tdPerDay,
+          `Primary-provider credits allowed each day. Recommended ${DEFAULT_TWELVE_DATA_PER_DAY} (the free-tier limit); go no higher.`,
+        ),
+        field(
+          "Tiingo — per hour",
+          tiingoPerHour,
+          `Backup-provider credits allowed each clock hour. Recommended ${DEFAULT_TIINGO_PER_HOUR} (the web share of the free tier); go no higher.`,
+        ),
+        field(
+          "Tiingo — per day",
+          tiingoPerDay,
+          `Backup-provider credits allowed each day. Recommended ${DEFAULT_TIINGO_PER_DAY} (the web share of the free tier); go no higher.`,
         ),
       );
     }
@@ -1772,6 +1835,10 @@ export class App {
         priceProxyUrl: (priceProxyUrl as HTMLInputElement).value.trim(),
         updateMinutes: parseUpdateMinutes((updateMinutes as HTMLInputElement).value),
         autoLockMinutes: parseAutoLockMinutes((autoLock as HTMLInputElement).value),
+        twelveDataPerMinute: parseProviderLimit(tdPerMinute.value, DEFAULT_TWELVE_DATA_PER_MINUTE),
+        twelveDataPerDay: parseProviderLimit(tdPerDay.value, DEFAULT_TWELVE_DATA_PER_DAY),
+        tiingoPerHour: parseProviderLimit(tiingoPerHour.value, DEFAULT_TIINGO_PER_HOUR),
+        tiingoPerDay: parseProviderLimit(tiingoPerDay.value, DEFAULT_TIINGO_PER_DAY),
       };
       if (!next.apiKey) return this.showSetup("Enter your price API key.", mode);
       if (!next.blobUrl) return this.showSetup("Enter your data-source URL.", mode);
@@ -2210,6 +2277,7 @@ export class App {
     this.leaveDemoChrome();
     void (async () => {
       this.state.config = await loadConfig();
+      applyProviderLimits(this.state.config);
       if (this.isConfigured()) this.showUnlock();
       else this.showSetup();
     })().catch(() => this.showSetup());
@@ -4041,7 +4109,7 @@ export class App {
       reasons.push(
         `Daily free-tier budget (${FREE_TIER.creditsPerDay}/day) used up; updates pause until it resets.`,
       );
-    } else if (quote.dayRemaining <= DAILY_BUDGET_WARN_CREDITS) {
+    } else if (quote.dayRemaining <= dailyBudgetWarnCredits()) {
       reasons.push(
         `Close to today's free-tier limit (${quote.dayRemaining} of ${FREE_TIER.creditsPerDay} left); ` +
           `updates are spacing out to last the day.`,
