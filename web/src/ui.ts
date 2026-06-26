@@ -22,6 +22,7 @@ import {
   lastSessionDate,
   sessionOpenMs,
 } from "./market-hours";
+import { windowGrowthPct, type GrowthMode, type WindowPoint } from "./window-growth";
 import {
   type AnalyticsView,
   type DepositRowView,
@@ -1605,6 +1606,15 @@ export interface LiveCurveChart {
    * as a complete day.
    */
   note?: string;
+  /**
+   * The curve's own growth over the plotted window (a fraction, e.g. `0.012` for
+   * +1.2%), measured on the *same* points and reference base the line draws — the
+   * 1D curve from its dashed previous-close line, the 1W curve from its first
+   * session. The headline beside the chart reads this so its percentage is
+   * identical to the line the eye follows, for both 1D and 1W (and in whichever
+   * currency the curve is denominated). `null` when it can't be measured.
+   */
+  growthPct?: Decimal | null;
 }
 
 /**
@@ -1703,6 +1713,8 @@ function chartWithTimeframe(
   persistKey?: string,
   live?: LiveCurveBuilder,
   baseLegend?: Array<{ className: string; label: string }>,
+  onRangeChange?: (option: RangeOption) => void,
+  onLiveGrowth?: (option: RangeOption, growthPct: Decimal | null) => void,
 ): HTMLElement | null {
   const full = buildLineChart({ dates, series, ...chartOpts });
   if (!full) return null;
@@ -1744,8 +1756,9 @@ function chartWithTimeframe(
     if (chart) wrap.replaceChildren(...withLegend(chart as unknown as HTMLElement, baseLegend));
   };
 
-  const applyLive = async (range: LiveRange, token: number, regenerateOnly: boolean): Promise<void> => {
+  const applyLive = async (option: RangeOption & { kind: "live" }, token: number, regenerateOnly: boolean): Promise<void> => {
     if (!live) return;
+    const range = option.range;
     wrap.replaceChildren(liveStatus("Loading live data…"));
     let built: LiveCurveChart | null = null;
     try {
@@ -1780,6 +1793,14 @@ function chartWithTimeframe(
     const children = withLegend(chart as unknown as HTMLElement, built.legend);
     if (built.note) children.push(liveStatus(built.note));
     wrap.replaceChildren(...children);
+    // Now that the live curve is drawn, refine the headline to the growth the
+    // line itself shows (1D from its previous-close reference, 1W from its first
+    // session) so the percentage is identical to the plotted line — superseding
+    // the synchronous approximation `onRangeChange` set from exported history.
+    // Only when the curve could measure it; otherwise the approximation stands.
+    if (onLiveGrowth && built.growthPct !== null && built.growthPct !== undefined) {
+      onLiveGrowth(option, built.growthPct);
+    }
   };
 
   // `userInitiated` distinguishes a tap on a range button (Pillar 6: interaction
@@ -1797,7 +1818,8 @@ function chartWithTimeframe(
     // Remember the chosen window (by label, stable across exports) so it survives
     // the full re-render a refresh or currency toggle triggers.
     if (persist && storageKey) saveStringPref(storageKey, option.label);
-    if (option.kind === "live") void applyLive(option.range, token, userInitiated);
+    if (onRangeChange) onRangeChange(option);
+    if (option.kind === "live") void applyLive(option, token, userInitiated);
     else applyHistory(option.days);
   };
 
@@ -2125,7 +2147,44 @@ export function liveCurveToChart(
     coverage && coverage.total > 0 && coverage.covered < coverage.total
       ? `Intraday shape from ${coverage.covered} of ${coverage.total} holdings — the rest are held flat until their prices load.`
       : undefined;
-  return { dates: cols.dates, series, yAxisLabel, legend, referenceLine, note };
+  // Growth the *line* actually draws, in the active currency, so the headline
+  // beside it reads the same rise/fall the eye follows — identical to the pixel,
+  // for both 1D and 1W. The 1D curve measures from its dashed previous-close
+  // reference (what "% today" is anchored to); the 1W curve, which has no
+  // reference line, measures from its first plotted point. The tip is the last
+  // plotted point either way.
+  const growthPct = curveGrowthPct(primary, prevCloseValue);
+  return { dates: cols.dates, series, yAxisLabel, legend, referenceLine, note, growthPct };
+}
+
+/**
+ * Growth of a plotted value series from its base to its tip, as a fraction
+ * (`(tip − base) / base`). The base is the supplied previous-close reference when
+ * known (the 1D curve, so the figure matches its dashed line), else the first
+ * plotted value (the 1W curve). Returns null when there is no positive base or no
+ * tip — so the headline simply keeps its prior value rather than showing a bogus
+ * percentage.
+ */
+export function curveGrowthPct(
+  values: Array<Decimal | null>,
+  base?: Decimal | null,
+): Decimal | null {
+  const tip = lastNonNull(values);
+  const start = base ?? firstNonNull(values);
+  if (tip === null || start === null || start.lessThanOrEqualTo(0)) return null;
+  return tip.minus(start).dividedBy(start);
+}
+
+/** The first non-null entry of a sparse series, or null when all are null. */
+function firstNonNull(values: Array<Decimal | null>): Decimal | null {
+  for (const v of values) if (v !== null) return v;
+  return null;
+}
+
+/** The last non-null entry of a sparse series, or null when all are null. */
+function lastNonNull(values: Array<Decimal | null>): Decimal | null {
+  for (let i = values.length - 1; i >= 0; i -= 1) if (values[i] !== null) return values[i];
+  return null;
 }
 
 /**
@@ -2148,6 +2207,11 @@ function renderValueChart(
   // not a rescale of the EUR pivot; EUR is the FX-derived view. See curveDisplay.
   const disp = curveDisplay(points);
   const values: Array<Decimal | null> = points.map(disp.portfolio);
+  // Cumulative contributions per point in the active display currency, kept
+  // index-aligned with `values` (including the live tip below) so the headline
+  // can read the same window the graph draws and compute a money-weighted
+  // (XIRR-scaled) growth over it. EUR is the FX-pivot; spot-convert for USD.
+  const contribDisplay: Array<Decimal | null> = points.map((p) => disp.convert(p.contributions));
   // The other currency's raw per-point series, kept index-aligned with `values`
   // (including the live tip below) so it can be rebased onto the same axis.
   const otherValues: Array<Decimal | null> = points.map((p) => otherCurrencyRaw(disp, p));
@@ -2172,6 +2236,9 @@ function renderValueChart(
       dates.push(o.asOf);
       values.push(liveTotal);
       otherValues.push(otherLiveTip);
+      // The live tip pays in no new contributions; carry the last cumulative
+      // figure forward so the window's net-flow stays correct.
+      contribDisplay.push(contribDisplay[contribDisplay.length - 1]);
     } else if (o.asOf === lastDate) {
       values[values.length - 1] = liveTotal;
       otherValues[otherValues.length - 1] = otherLiveTip;
@@ -2232,6 +2299,60 @@ function renderValueChart(
       ]
     : undefined;
 
+  const todayPct = pickByCurrency(o.todayMovePct, o.todayMovePctUsd);
+  const todayCls = signClass(pickByCurrency(o.todayMoveEur, o.todayMoveUsd));
+  // The headline beside the chart tracks the *selected* window so it matches the
+  // graph: 1D reuses today's close-to-now move (measured from the previous
+  // CLOSE, like the intraday graph's reference line); 1W a simple period growth;
+  // anything longer an XIRR-scaled (money-weighted) growth so weekly DCA deposits
+  // don't make the number look wild. Defaults to "today" until a range is chosen
+  // (and stays there when there is nothing to toggle).
+  const headlineSpan = h("span", { class: `muted ${todayCls}` }, [
+    todayPct !== null ? `${formatSignedPercent(todayPct)} today` : "today",
+  ]) as HTMLElement;
+  const lastWindowMs = Date.parse(dates[dates.length - 1]);
+  const sliceWindow = (days: number | null): WindowPoint[] => {
+    let start = 0;
+    if (days !== null) {
+      const cutoff = lastWindowMs - days * 86_400_000;
+      start = dates.findIndex((d) => Date.parse(d) >= cutoff);
+      if (start < 0) start = 0;
+      if (dates.length - start < 2) start = Math.max(0, dates.length - 2);
+    }
+    return dates.slice(start).map((d, i) => ({
+      date: d,
+      value: values[start + i],
+      contributions: contribDisplay[start + i],
+    }));
+  };
+  const headlineLabel = (option: RangeOption): string =>
+    option.kind === "live" && option.range === "1D" ? "today" : option.label;
+  const setHeadline = (pct: Decimal | null, label: string): void => {
+    headlineSpan.className = `muted ${signClass(pct)}`;
+    headlineSpan.textContent =
+      pct !== null ? `${formatSignedPercent(pct)} ${label}` : label;
+  };
+  const updateHeadline = (option: RangeOption): void => {
+    let pct: Decimal | null;
+    if (option.kind === "live" && option.range === "1D") {
+      pct = todayPct;
+    } else {
+      // 1W (live, ~7 day window) uses simple growth; every longer history slice
+      // uses XIRR-scaled growth.
+      const days = option.kind === "live" ? 7 : option.days;
+      const mode: GrowthMode = option.kind === "live" ? "simple" : "xirr";
+      pct = windowGrowthPct(sliceWindow(days), mode);
+    }
+    setHeadline(pct, headlineLabel(option));
+  };
+  // Once a live (1D/1W) curve has actually been drawn, snap the headline to the
+  // growth the *line* shows — measured on the same plotted points and currency —
+  // so the percentage is identical to the pixel for both ranges, rather than the
+  // exported-history approximation `updateHeadline` paints synchronously first.
+  const updateLiveHeadline = (option: RangeOption, growthPct: Decimal | null): void => {
+    setHeadline(growthPct, headlineLabel(option));
+  };
+
   const chart = chartWithTimeframe(
     dates,
     series,
@@ -2239,11 +2360,11 @@ function renderValueChart(
     "portfolio",
     liveBuilder,
     baseLegend,
+    updateHeadline,
+    updateLiveHeadline,
   );
   if (!chart) return null;
 
-  const todayPct = pickByCurrency(o.todayMovePct, o.todayMovePctUsd);
-  const cls = signClass(pickByCurrency(o.todayMoveEur, o.todayMoveUsd));
   // Only surface a note when there is something the user actually needs to know
   // about the curve's honesty — not a redundant date stamp on every render.
   let note: string | null = null;
@@ -2255,9 +2376,7 @@ function renderValueChart(
   const children: Array<Node | string> = [
     h("div", { class: "section-head" }, [
       h("h2", {}, ["Value over time"]),
-      h("span", { class: `muted ${cls}` }, [
-        todayPct !== null ? `${formatSignedPercent(todayPct)} today` : "today",
-      ]),
+      headlineSpan,
     ]),
     chart,
   ];

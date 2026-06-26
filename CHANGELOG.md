@@ -14,6 +14,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.9.1] — 2026-06-26
+
+### Fixed
+
+- **The value-over-time headline now reads the live curve's own growth.** The
+  1D/1W (and every other window's) headline growth figure is now derived directly
+  from the rendered chart's first/last plotted points instead of a separately
+  computed number, so the headline is pixel-exact with the curve it sits above and
+  stays currency-aware (EUR vs USD). This removes the discrepancy where the
+  headline percentage could disagree with the line the user was actually looking at
+  (`web/src/window-growth.ts`, `web/src/ui.ts`).
+
 ## [4.9.0] — 2026-06-26
 
 ### Changed
