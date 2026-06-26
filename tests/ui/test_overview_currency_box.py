@@ -88,6 +88,12 @@ class TestCurrencyPanelByDisplay:
         assert "+$10.00" in html
         assert "inv-fx-effect-note" not in html
         assert "now buys" not in html
+        # The configured regular amount (default €100) and the dollars it buys at
+        # today's live 1.30 rate (100·1.30 = $130.00) are both shown so the swing
+        # has a visible base.
+        assert "inv-fx-effect-amount" in html
+        assert "Regular \u20ac100" in html
+        assert "$130.00 today" in html
 
     def test_eur_and_usd_panels_differ(self, session: Session) -> None:
         _seed_fx_samples(session)

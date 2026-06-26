@@ -113,8 +113,23 @@ export function graphAnchorFx(opts: {
  * settle); bars after that are after-hours FX drift, exactly what the freeze is
  * meant to exclude, so they are ignored. Returns `null` when no positive bar had
  * settled by the close, leaving the caller to fall back.
+ *
+ * **Completeness gate.** A track last fetched *during* the session (e.g. the app
+ * pulled FX at 14:00 ET) ends short of the close, so its "latest bar at or before
+ * close" is a stale mid-session rate, not the settle. Handing that real, positive,
+ * non-`null` value back would short-circuit the `sessionCloseFx ?? settledPrev ??
+ * liveFx` fallback in {@link graphAnchorFx} (and the equivalent anchor in
+ * {@link fxEffectSplit}), freezing the EUR view to the 14:00 rate. So unless a
+ * positive bar has actually reached the close ({@link sessionFxBarsComplete}, i.e.
+ * {@link sessionTrackReachedClose} with zero tolerance — after-hours FX always
+ * prints a bar at/after 16:00 ET once the session has settled), the read yields
+ * `null` and the caller degrades gracefully to the settled previous close / live
+ * spot rather than displaying a wrong, frozen mid-session value.
  */
 export function sessionCloseFxFromBars(fxBars: Bar[], sessionCloseMs: number): Decimal | null {
+  // Incomplete (mid-session-only) track ⇒ no genuine settle to read: yield null
+  // so the caller's settledPrev/liveFx fallback handles it (see doc above).
+  if (!sessionTrackReachedClose(fxBars, sessionCloseMs, 0)) return null;
   let best: Bar | null = null;
   for (const bar of fxBars) {
     if (bar.t > sessionCloseMs) continue;
@@ -439,6 +454,51 @@ export function recordSessionCloseFx(day: string, rate: Decimal | null): void {
 export function readSessionCloseFx(day: string): Decimal | null {
   try {
     const raw = localStorage.getItem(SESSION_CLOSE_FX_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { day?: unknown; rate?: unknown };
+    if (parsed.day !== day || typeof parsed.rate !== "string") return null;
+    const rate = new Decimal(parsed.rate);
+    return rate.greaterThan(0) ? rate : null;
+  } catch {
+    return null;
+  }
+}
+
+/** localStorage key holding the *first* live EUR/USD spot seen this session. */
+const SESSION_OPEN_FX_KEY = "iv.web.sessionOpenFx";
+
+/**
+ * Remember the **first** live EUR/USD spot we observe for `day` while the market
+ * is open, as a stand-in session-open rate for the gap before the session's own
+ * FX bars have been fetched (the first FX bar can lag the 09:30 ET open by minutes
+ * on the free tier, and a cold start mid-session has none yet). Only the earliest
+ * value for the day is kept — later refreshes never overwrite it — so it stays a
+ * fixed open anchor rather than tracking the live spot. The authoritative
+ * bar-read open ({@link sessionOpenFxFromBars}) takes precedence once available,
+ * so this is a self-correcting fallback. A no-op (swallowed) when storage is
+ * unavailable.
+ */
+export function recordSessionOpenFx(day: string, rate: Decimal | null): void {
+  if (rate === null || !rate.greaterThan(0)) return;
+  try {
+    // Keep only the earliest capture for the day — it is the open proxy, not the
+    // running spot — so an already-stored same-day rate is left untouched.
+    if (readSessionOpenFx(day) !== null) return;
+    localStorage.setItem(SESSION_OPEN_FX_KEY, JSON.stringify({ day, rate: rate.toString() }));
+  } catch {
+    // Storage-less (private mode, disabled): the split simply waits for FX bars.
+  }
+}
+
+/**
+ * Read back the stored first-seen session-open EUR/USD rate, but only when it was
+ * captured for the session `day` we are displaying — a rate from an earlier
+ * session is not the open of *this* one, so it is ignored. Returns null when
+ * nothing usable is stored.
+ */
+export function readSessionOpenFx(day: string): Decimal | null {
+  try {
+    const raw = localStorage.getItem(SESSION_OPEN_FX_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { day?: unknown; rate?: unknown };
     if (parsed.day !== day || typeof parsed.rate !== "string") return null;

@@ -38,13 +38,22 @@ import {
   recentTradingSessions,
 } from "./market-hours";
 import {
+  PROBE_MIN_MS,
+  FX_PROBE_KEY,
+  closeProbeReady,
+  resolveCloseCompleteness,
+  resolveFxCompleteness,
+  type CloseProbeBackoff,
+  type CloseResolveLog,
+} from "./close-completeness";
+import {
   reconstructSessionCurve,
   type Bar,
   type CurvePoint,
   type ReconHolding,
 } from "./timeseries";
 import type { Decimal } from "./decimal-config";
-import { TimeSeriesStore } from "./timeseries-store";
+import { TimeSeriesStore, type StoredSession, type StoredCloseProbe } from "./timeseries-store";
 
 /**
  * The store key the weekly daily-close cache lives under. Deliberately **not** a
@@ -121,15 +130,6 @@ export function wrapDailyNavFetcher(fetch: BarFetcher): BarFetcher {
 /** Keep only bars at or after `fromMs` (drops days that have rolled out of the window). */
 function barsFrom(bars: Bar[], fromMs: number): Bar[] {
   return bars.filter((b) => b.t >= fromMs);
-}
-
-/** Whether `stored` carries a daily bar at or after `fromMs` for every needed symbol. */
-function coversThrough(
-  bars: Record<string, Bar[]>,
-  symbols: string[],
-  fromMs: number,
-): boolean {
-  return symbols.every((s) => (bars[s] ?? []).some((b) => b.t >= fromMs));
 }
 
 /**
@@ -247,6 +247,13 @@ export interface WeekCurveOptions {
   navBackfillSymbols?: string[];
   /** Fetch EUR→USD daily bars for the window; omit/null to fall back to `baseFx`. */
   fetchFx?: (() => Promise<Bar[]>) | null;
+  /**
+   * The **secondary** EUR/USD daily leg for the after-close FX escalation (plan
+   * C5 currency parity). Asked once when the primary cannot advance the FX track
+   * to the settled close; two sources agreeing settle the day's FX. Omit/null to
+   * resolve FX on the primary alone.
+   */
+  fetchSecondaryFx?: (() => Promise<Bar[]>) | null;
   /** Reference instant (defaults to now). */
   now?: Date;
   /** Live headline totals to pin as the tip while the market is open. */
@@ -277,6 +284,24 @@ export interface WeekCurveOptions {
    * enabled. Defaults to `false`. See {@link SessionCurveOptions.regenerateOnly}.
    */
   regenerateOnly?: boolean;
+  /**
+   * The **secondary** provider leg (Tiingo daily) for the after-close escalation
+   * (plan C5): when the primary stops advancing a behind market symbol toward the
+   * settled close, the second source is asked **once** whether a later daily close
+   * exists. Two sources agreeing settle the symbol for the day. Omit/null to
+   * disable the escalation.
+   */
+  fetchSecondaryDailyBars?: BarFetcher | null;
+  /** Outage back-off for the week close resolution (plan C5/C4). Omit to disable. */
+  closeBackoff?: CloseProbeBackoff | null;
+  /** Back-off key scope for the week close resolution (default `"close:1W"`). */
+  closeBackoffScope?: string;
+  /** Minimum spacing between probes of an unsettled behind symbol (default {@link PROBE_MIN_MS}). */
+  probeMinMs?: number;
+  /** One structured verdict event per resolved behind symbol (plan C6). */
+  onCloseResolve?: (event: CloseResolveLog) => void;
+  /** Render a bar instant for the close-resolution log (defaults to raw ms). */
+  formatInstant?: (t: number) => string;
 }
 
 /** A built 1W curve plus the window it covers. */
@@ -328,22 +353,81 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
   const windowStartMs = dayStartMs(startDay);
 
   let stored = await store.loadSession(key);
+  const nowMs = now.getTime();
+  const settledCutoff = dayStartMs(settledEnd);
+  // Half a day of slack for the daily advance/agreement comparison: daily closes
+  // are day-start stamped, so consecutive sessions sit 24h apart (a real advance)
+  // while two providers' same-day close differ by < 12h (an agreement). The
+  // *reached-close* test stays exact (covers the settled cutoff, `completeTol=0`).
+  const dailyTol = DAY_MS / 2;
+  const closeProbeFor = (s: string): StoredCloseProbe | undefined => stored?.closeProbe?.[s];
+  const closeBackoff = options.closeBackoff ?? null;
+  const closeScope = options.closeBackoffScope ?? "close:1W";
+  const closeKey = (s: string): string => `${closeScope}:${s}`;
+  const probeMinMs = options.probeMinMs ?? PROBE_MIN_MS;
+  const coversSymbol = (s: string): boolean =>
+    (stored?.bars[s] ?? []).some((b) => b.t >= settledCutoff);
+  // A fetchable market symbol is either wholly missing (no stored daily bars) or
+  // *behind* the settled cutoff. A behind symbol the resolution has **settled**
+  // (two providers agree no newer daily close exists) is excluded (plan C2/C5),
+  // and an unsettled behind symbol is held flat between probes (plan C4 spacing).
+  const whollyMissing = fetchSymbols.filter((s) => !stored?.bars[s]?.length);
+  const behind = fetchSymbols.filter(
+    (s) => (stored?.bars[s]?.length ?? 0) > 0 && !coversSymbol(s) && !closeProbeFor(s)?.settled,
+  );
+  const fetchableBehind = behind.filter((s) => {
+    if (closeBackoff?.suppressed(closeKey(s), nowMs)) return false;
+    return closeProbeReady(closeProbeFor(s), nowMs, probeMinMs);
+  });
   // Freshness is judged on the *fetchable* (market) symbols only — NAV funds
   // never gate a network pull, so a fund still missing a NAV day cannot force a
   // re-pull storm of the market closes (item 5b coverage, item 7 range-split).
   const fresh =
     (options.regenerateOnly ?? false) ||
     symbols.length === 0 ||
-    (stored !== null && coversThrough(stored.bars, fetchSymbols, dayStartMs(settledEnd)));
+    (whollyMissing.length === 0 && fetchableBehind.length === 0);
 
   let fxAttempted = false;
   if (!fresh) {
-    const barsBySymbol = await fetchDailyBars(fetchSymbols);
     const incomingBars: Record<string, Bar[]> = {};
-    for (const [symbol, bars] of barsBySymbol) {
-      if (bars.length > 0) incomingBars[symbol] = bars;
+    const fetchedAll = new Map<string, Bar[]>();
+    let incomingProbe: Record<string, StoredCloseProbe> | undefined;
+    let probeClear: string[] | undefined;
+    // Wholly-missing symbols backfill the normal way (the capacity split's
+    // emptiness spill already escalates a never-seen symbol to the secondary).
+    if (whollyMissing.length > 0) {
+      const barsBySymbol = await fetchDailyBars(whollyMissing);
+      for (const [symbol, bars] of barsBySymbol) {
+        fetchedAll.set(symbol, bars);
+        if (bars.length > 0) incomingBars[symbol] = bars;
+      }
     }
-    if (options.onFreshBars) options.onFreshBars(barsBySymbol);
+    // Behind-but-present symbols go through the progress → escalate → settle
+    // resolution at daily granularity (plan C5).
+    if (fetchableBehind.length > 0) {
+      const resolution = await resolveCloseCompleteness({
+        symbols: fetchableBehind,
+        storedBars: stored?.bars ?? {},
+        probes: stored?.closeProbe,
+        closeMs: settledCutoff,
+        tol: dailyTol,
+        completeTol: 0,
+        clampBars: (bars) => bars,
+        fetchPrimary: fetchDailyBars,
+        fetchSecondary: options.fetchSecondaryDailyBars ?? null,
+        now: nowMs,
+        backoff: closeBackoff,
+        backoffKey: closeKey,
+        log: options.onCloseResolve,
+        label: "1W",
+        formatInstant: options.formatInstant,
+      });
+      for (const [s, b] of resolution.fetched) fetchedAll.set(s, b);
+      for (const [s, b] of Object.entries(resolution.bars)) incomingBars[s] = b;
+      if (Object.keys(resolution.closeProbe).length > 0) incomingProbe = resolution.closeProbe;
+      if (resolution.closeProbeClear.length > 0) probeClear = resolution.closeProbeClear;
+    }
+    if (options.onFreshBars) options.onFreshBars(fetchedAll);
     let incomingFx: Bar[] | undefined;
     if (fetchFx) {
       fxAttempted = true;
@@ -355,7 +439,11 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
         incomingFx = undefined;
       }
     }
-    stored = await store.mergeSession(key, { bars: incomingBars, fx: incomingFx }, now.getTime());
+    stored = await store.mergeSession(
+      key,
+      { bars: incomingBars, fx: incomingFx, closeProbe: incomingProbe, closeProbeClear: probeClear },
+      now.getTime(),
+    );
   }
 
   // Item 7b — gap-fill the daily-NAV history of *moving* funds (mutual funds)
@@ -382,27 +470,64 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
     }
   }
 
-  // (so `fresh`) but the per-day FX track is missing, pull it once. Without it
-  // every point rebases on the flat `baseFx` and the secondary-currency line
-  // collapses onto the primary instead of diverging by the week's FX move. Gated
-  // on having bars to rebase and on not having just tried FX above, so a
-  // fully-loaded closed-market week never re-fires once its FX is in hand.
+  // After-close **FX completeness** for the 1W window (currency parity with the
+  // daily-close settle). The EUR/USD daily track has the same failure mode as a
+  // quiet symbol: pulled only when *wholly missing*, an FX track that is present
+  // but does not yet carry the settled session's close would leave the rebased
+  // EUR line stuck on a stale daily rate, while an unconditional refill would
+  // re-pull FX on every render. So route FX through the same progress → escalate
+  // → settle resolution at daily granularity: advance it to the settled close,
+  // remember a settle (no per-render re-pull), and only probe on the spaced,
+  // back-off-bounded cadence. `regenerateOnly` stays fully network-free.
   const loaded = stored;
   if (
     !(options.regenerateOnly ?? false) &&
     fetchFx &&
     !fxAttempted &&
     loaded !== null &&
-    loaded.fx.length === 0 &&
     symbols.some((s) => (loaded.bars[s]?.length ?? 0) > 0)
   ) {
-    try {
-      const incomingFx = await fetchFx();
-      if (incomingFx.length > 0) {
-        stored = await store.mergeSession(key, { fx: incomingFx }, now.getTime());
+    const fxProbe = loaded.closeProbe?.[FX_PROBE_KEY];
+    const fxComplete = loaded.fx.some((b) => b.t >= settledCutoff);
+    const fxKey = closeKey(FX_PROBE_KEY);
+    const fxSpaced = fxProbe ? !closeProbeReady(fxProbe, nowMs, probeMinMs) : false;
+    const fxFetchable =
+      !(fxProbe?.settled ?? false) &&
+      !(closeBackoff?.suppressed(fxKey, nowMs) ?? false) &&
+      !fxSpaced &&
+      (loaded.fx.length === 0 || !fxComplete);
+    if (fxFetchable) {
+      try {
+        const fxRes = await resolveFxCompleteness({
+          storedFx: loaded.fx,
+          probe: fxProbe,
+          closeMs: settledCutoff,
+          tol: dailyTol,
+          completeTol: 0,
+          clampBars: (bars) => bars,
+          fetchPrimary: fetchFx,
+          fetchSecondary: options.fetchSecondaryFx ?? null,
+          now: nowMs,
+          backoff: closeBackoff,
+          backoffKey: fxKey,
+          log: options.onCloseResolve,
+          label: "1W",
+          formatInstant: options.formatInstant,
+        });
+        if (fxRes.fx !== undefined || fxRes.probe !== undefined || fxRes.probeClear) {
+          stored = await store.mergeSession(
+            key,
+            {
+              fx: fxRes.fx,
+              closeProbe: fxRes.probe ? { [FX_PROBE_KEY]: fxRes.probe } : undefined,
+              closeProbeClear: fxRes.probeClear ? [FX_PROBE_KEY] : undefined,
+            },
+            now.getTime(),
+          );
+        }
+      } catch {
+        // Best-effort refinement; the curve still draws on `baseFx`.
       }
-    } catch {
-      // Best-effort refinement; the curve still draws on `baseFx`.
     }
   }
 
@@ -421,13 +546,16 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
   }
   const windowedFx = barsFrom(stored.fx, windowStartMs);
   if (trimmedDiffers(stored.bars, trimmed) || windowedFx.length !== stored.fx.length) {
-    await store.saveSession({
+    const trimmedSession: StoredSession = {
       day: key,
       bars: trimmed,
       fx: windowedFx,
       tips: stored.tips ?? [],
       updatedAt: now.getTime(),
-    });
+    };
+    // Preserve the week's close-probe memory across the window trim (plan C5).
+    if (stored.closeProbe) trimmedSession.closeProbe = stored.closeProbe;
+    await store.saveSession(trimmedSession);
   }
 
   // Enrich the coarse weekly closes with cached per-day 1D detail — for free,

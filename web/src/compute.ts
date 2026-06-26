@@ -31,6 +31,7 @@ import { buildCalculatorData, type CalcData } from "./calculator";
 import type { DailyClose } from "./value-history";
 import { isMoneyMarketHolding } from "./money-market";
 import { LIVE_PRICE_MAX_STALENESS_MS, isUsMarketOpen } from "./market-hours";
+import { holdingFreshness, type RowFreshness } from "./freshness";
 import { providerLimits } from "./provider-limits";
 
 const EUR = "EUR";
@@ -71,6 +72,14 @@ export interface HoldingView {
    * "as of" freshness indicator.
    */
   priceAsOf: number | null;
+  /**
+   * The per-row freshness tier ("live" / "recent" / "aged") for the displayed
+   * price, driven by `priceAsOf` vs the live window and the market state — the
+   * three-way split the UI renders as a freshness chip (freshness-plan §2). A
+   * lightweight default of `"aged"` lets test fixtures omit it; `buildDashboard`
+   * always classifies it from {@link holdingFreshness}.
+   */
+  priceFreshness: RowFreshness;
   /** Date the displayed price applies to when `priceAsOf` is null — a NAV's
    * value-date, or the export's valuation date (`meta.as_of`) for a fallback. */
   priceFallbackDate: string;
@@ -905,6 +914,8 @@ function buildHolding(
     priceIsLive: isLive,
     priceMarketOpen: isLive ? (quote?.marketOpen ?? null) : null,
     priceAsOf: at,
+    // Default tier; buildDashboard re-classifies from the live window + market state.
+    priceFreshness: "aged",
     priceFallbackDate: asOfDate,
     valueIsStale,
     valueEur,
@@ -1010,6 +1021,16 @@ export function buildDashboard(
   // price/FX can value it. Sourced from the analytics attribution end values.
   const fallbackValues = lastExportedValues(data);
 
+  // The live window tracks the user-set auto-refresh interval (so a faster cadence
+  // tightens "live" and a slower one widens it), falling back to the legacy
+  // 15-minute default. Used both for the per-row freshness tier below and the
+  // headline `pricesAreLive` badge further down.
+  const liveStalenessMs =
+    opts.liveStalenessMs !== undefined && opts.liveStalenessMs > 0
+      ? opts.liveStalenessMs
+      : LIVE_PRICE_MAX_STALENESS_MS;
+  const marketOpenNow = isUsMarketOpen(now);
+
   const holdingContexts: HoldingAggregationContext[] = data.holdings.map((h) => {
     const view = buildHolding(
       h,
@@ -1021,6 +1042,15 @@ export function buildDashboard(
       exportAsOf,
       fallbackValues.get(h.symbol) ?? null,
     );
+    // Per-row freshness (freshness-plan §2): classify the displayed price into
+    // live / recent / aged from its observation age vs the live window. A holding
+    // whose own exchange the provider flagged shut can never read "live".
+    view.priceFreshness = holdingFreshness({
+      observedAtMs: view.priceAsOf,
+      nowMs: now.getTime(),
+      marketOpen: marketOpenNow && view.priceMarketOpen !== false,
+      liveWindowMs: liveStalenessMs,
+    });
     // A holding with no value at all (no price, FX, or fallback) is dropped from
     // totals; one valued from the export fallback is counted but flagged stale.
     if (view.valueEur === null) missingPrice.push(h.symbol);
@@ -1316,19 +1346,15 @@ export function buildDashboard(
   //   4. no live quote's provider flag says its market is shut — Twelve Data's
   //      own `is_market_open=false` is ground truth for an unscheduled close or
   //      an early half-day close our modelled clock would miss.
-  // The "live" window tracks the user-set auto-refresh interval (so a faster
-  // cadence tightens "live" and a slower one widens it), falling back to the
-  // legacy 15-minute default when no positive interval was supplied.
-  const liveStalenessMs =
-    opts.liveStalenessMs !== undefined && opts.liveStalenessMs > 0
-      ? opts.liveStalenessMs
-      : LIVE_PRICE_MAX_STALENESS_MS;
+  // The "live" window (`liveStalenessMs`, computed above with the per-row tier)
+  // tracks the user-set auto-refresh interval, so a faster cadence tightens "live"
+  // and a slower one widens it.
   const liveFeedAge = liveAsOf !== null ? now.getTime() - liveAsOf : null;
   const liveFeedIsFresh =
     liveFeedAge !== null && liveFeedAge >= 0 && liveFeedAge <= liveStalenessMs;
   const providerSaysClosed = holdings.some((h) => h.priceIsLive && h.priceMarketOpen === false);
   const pricesAreLive =
-    isUsMarketOpen(now) &&
+    marketOpenNow &&
     liveAsOf !== null &&
     isSameLocalDay(liveAsOf, now) &&
     liveFeedIsFresh &&

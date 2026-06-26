@@ -60,6 +60,7 @@ import {
   type DualCurrencyParts,
   formatFxRate,
   formatMoneyEur,
+  formatMoneyUsd,
   formatNativePrice,
   formatPercent,
   formatShares,
@@ -602,6 +603,19 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
     ]),
   ];
 
+  // Anchor the swing to the figures it rides: the regular EUR amount set in
+  // Settings on the left, and the dollars it actually buys at today's live rate
+  // on the right (amount · liveFx). Without this the headline is a delta with no
+  // visible base; with it the owner sees both the euros they wire and the dollars
+  // they would get today. Cents on the euro side only when the configured amount
+  // isn't whole, so a clean "€100" doesn't read "€100.00".
+  const amountDecimals = amountEur.isInteger() ? 0 : 2;
+  const totalUsd = amountEur.times(fxNow);
+  const amountRow = h("div", { class: "fx-effect-amount" }, [
+    h("span", { class: "fx-effect-amount-label" }, [`Regular ${formatMoneyEur(amountEur, amountDecimals)}`]),
+    h("span", { class: "fx-effect-amount-value" }, [`${formatMoneyUsd(totalUsd, 2)} today`]),
+  ]);
+
   const { marketOpen, holiday, singleOvernight } = fxBoxRegime(now);
   if (singleOvernight) {
     children.push(
@@ -616,6 +630,7 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
         }),
       ]),
     );
+    children.push(amountRow);
     return wrap(children);
   }
   const split = fxBuyingPowerSplit({
@@ -628,6 +643,7 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
   });
   const bar = fxDivergeBar(split.marketHoursUsd, split.overnightUsd, marketOpen, fmt);
   if (bar) children.push(bar);
+  children.push(amountRow);
   return wrap(children);
 }
 
@@ -692,6 +708,33 @@ function renderStats(o: OverviewView): HTMLElement {
   return h("section", { class: "stats" }, [grid, ...renderNotes(o)]);
 }
 
+/**
+ * The freshness-legend affordance (freshness-plan §4.1): one small `?` that
+ * expands to explain every term the coverage line uses ("live", "updating…",
+ * "cached", "at last close", "awaiting", and the FX clauses). The status line is
+ * honest but dense, so this defuses the "why does it say cached?" confusion at
+ * the source. A native `<details>`/`<summary>` keeps it zero-JS, accessible and
+ * mobile-friendly (tap to expand, no hover required).
+ */
+function freshnessLegend(): HTMLElement {
+  const entry = (term: string, meaning: string): HTMLElement =>
+    h("li", { class: "legend-row" }, [
+      h("span", { class: "legend-term" }, [term]),
+      h("span", { class: "legend-meaning" }, [meaning]),
+    ]);
+  return h("details", { class: "freshness-legend" }, [
+    h("summary", { class: "freshness-legend-toggle", "aria-label": "What do these freshness terms mean?" }, ["?"]),
+    h("ul", { class: "freshness-legend-list" }, [
+      entry("live", "freshly confirmed within your refresh window while the market is open."),
+      entry("updating…", "held from cache and re-pulling now — waiting its turn under the free-tier per-minute cap."),
+      entry("cached", "a recent confirmed price, just not re-checked this round."),
+      entry("at last close", "the market is shut; this is the latest settled closing price."),
+      entry("awaiting", "no value yet — still being fetched (a price, or a fund's once-a-day NAV)."),
+      entry("FX live / recent / end of day", "how fresh the EUR/USD rate that values the book is."),
+    ]),
+  ]);
+}
+
 function renderNotes(o: OverviewView): HTMLElement[] {
   const notes: HTMLElement[] = [];
   // Lead with the live-coverage line: a calm, descriptive "how much is fresh"
@@ -699,7 +742,9 @@ function renderNotes(o: OverviewView): HTMLElement[] {
   const coverageParts: string[] = [];
   if (o.liveCoverage) coverageParts.push(o.liveCoverage);
   if (coverageParts.length > 0) {
-    notes.push(h("p", { class: "note coverage" }, [coverageParts.join(" · ")]));
+    notes.push(
+      h("p", { class: "note coverage" }, [coverageParts.join(" · "), freshnessLegend()]),
+    );
   }
   if (o.liveDegradedReason) {
     notes.push(h("p", { class: "note warn" }, [o.liveDegradedReason]));
@@ -919,6 +964,36 @@ const PROJ_KEYS = {
   targetEur: "iv.web.proj.targetEur",
 } as const;
 
+/**
+ * The per-row freshness label (freshness-plan §2): a calm three-way split that
+ * mirrors the FX line's `displayFxSource` promotion but with an explicit middle
+ * rung, so an individual holding is neither dressed up as live nor falsely
+ * flagged old.
+ *   - `live`   → a small live dot + "live" (market open, observed this window);
+ *   - `recent` → "recent" (confirmed not long ago, but not a live intraday mark);
+ *   - `aged`   → the honest "as of <time/date>" stamp (export fallback or an
+ *                earlier day's price).
+ * The full "as of <time>" always rides along in the `title` so the exact moment
+ * stays one hover/long-press away even when the chip shows a status word.
+ */
+function holdingFreshnessChip(
+  holding: HoldingView,
+  now: Date,
+): { children: Array<Node | string>; cls: string; title: string } {
+  const asOf = `as of ${formatAsOf(holding.priceAsOf, holding.priceFallbackDate, now)}`;
+  if (holding.priceFreshness === "live") {
+    return {
+      children: [h("span", { class: "fresh-dot", "aria-hidden": "true" }, []), "live"],
+      cls: "fresh-live",
+      title: asOf,
+    };
+  }
+  if (holding.priceFreshness === "recent") {
+    return { children: ["recent"], cls: "fresh-recent", title: asOf };
+  }
+  return { children: [asOf], cls: "fresh-aged", title: asOf };
+}
+
 /** A single holding as a list row (mobile-first, no wide horizontal table). */
 function renderHoldingRow(holding: HoldingView, badge?: string, now: Date = new Date()): HTMLElement {
   const symChildren: Array<Node | string> = [holding.symbol];
@@ -941,6 +1016,10 @@ function renderHoldingRow(holding: HoldingView, badge?: string, now: Date = new 
   // not today's — grey it so a live glance separates today's numbers from the
   // ones yet to refresh. Before the open nothing is stale, so nothing greys.
   const todayStaleCls = holding.todayMoveIsStale ? " holding-change-stale" : "";
+  // Per-row freshness chip (freshness-plan §2): a live / recent / "as of <time>"
+  // label driven by the price's observation age vs the live window, so an
+  // individual holding is neither dressed up as live nor falsely flagged old.
+  const freshness = holdingFreshnessChip(holding, now);
   // The same session word the hero/returns use, so a stale row's tooltip names
   // the session everyone else is on rather than a hard-coded "today".
   const moveWord = sessionMoveWord(now);
@@ -952,9 +1031,7 @@ function renderHoldingRow(holding: HoldingView, badge?: string, now: Date = new 
       // 20 Jun") instead of being buried on a line under the name.
       h("div", { class: "holding-topline" }, [
         h("span", { class: "holding-sym" }, symChildren),
-        h("span", { class: "holding-asof" }, [
-          `as of ${formatAsOf(holding.priceAsOf, holding.priceFallbackDate)}`,
-        ]),
+        h("span", { class: `holding-asof ${freshness.cls}`, title: freshness.title }, freshness.children),
       ]),
       h("span", { class: "holding-name" }, [holding.name]),
     ]),

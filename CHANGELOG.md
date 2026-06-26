@@ -14,25 +14,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.11.3] — 2026-06-26
-
-### Fixed
-
-- **The hard reset ("Update all data now") now forces a full, unconditional
-  re-download of the encrypted blob, no matter how new it is.** Previously the
-  reset cleared the local price caches and the IndexedDB graph store and dropped
-  the in-memory version stamp, but the follow-up blob fetch was still
-  *conditional* — it sent the cached `ETag`/`Last-Modified` validators, so an
-  unchanged remote blob came back as a bodyless `304 Not Modified` and the
-  (possibly stale or corrupt) cached copy was reused verbatim. That was the
-  mechanism behind "a hard reset did nothing" for the 1W nosedive. The reset now
-  **withholds the validators** so the server can never answer `304`, always
-  pulls the freshest published blob, and re-decrypts and re-renders it even when
-  it is byte-for-byte what we already held. Routine background blob checks are
-  unchanged: they stay conditional (and free) so they still cost no transfer
-  when nothing has changed.
-
-## [4.11.2] — 2026-06-26
+## [4.12.1] — 2026-06-26
 
 ### Fixed
 
@@ -59,6 +41,117 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Because the repair feeds both the painted curve **and** the close-harvester,
   previously-stored false closes are overwritten with healed values, so the
   long-range chart self-corrects too — no new export or data migration required.
+- **The hard reset ("Update all data now") now forces a full, unconditional
+  re-download of the encrypted blob, no matter how new it is.** Previously the
+  reset cleared the local price caches and the IndexedDB graph store and dropped
+  the in-memory version stamp, but the follow-up blob fetch was still
+  *conditional* — it sent the cached `ETag`/`Last-Modified` validators, so an
+  unchanged remote blob came back as a bodyless `304 Not Modified` and the
+  (possibly stale or corrupt) cached copy was reused verbatim. That was the
+  mechanism behind "a hard reset did nothing" for the 1W nosedive. The reset now
+  **withholds the validators** so the server can never answer `304`, always
+  pulls the freshest published blob, and re-decrypts and re-renders it even when
+  it is byte-for-byte what we already held. Routine background blob checks are
+  unchanged: they stay conditional (and free) so they still cost no transfer
+  when nothing has changed.
+
+## [4.12.0] — 2026-06-26
+
+### Added
+
+- **Per-row freshness chips and an honest "updating…" bucket** for the live web
+  companion, completing the deferred-symbols freshness plan
+  (`docs/deferred_symbols_freshness_plan.md`). Each holding row now carries a
+  three-way freshness tier — a live dot + "live" while its own price was
+  confirmed inside the refresh window during market hours, a quiet "recent", or
+  the honest "as of <time>" once genuinely aged — driven by the new
+  `holdingFreshness()` decision function (`web/src/freshness.ts`) and surfaced
+  through `HoldingView.priceFreshness` (`web/src/compute.ts`,
+  `web/src/ui.ts`). The coverage line no longer folds budget-deferred symbols
+  silently into "cached": symbols parked for the next free-tier minute now read
+  as their own "updating…" bucket (e.g. "8 live, 4 updating…"), backed by a new
+  `CoverageFacts.marketUpdating` count, so the burst cadence is visible rather
+  than looking like a stall. A small `?` freshness legend (`renderNotes`)
+  glosses every status term in one place.
+
+### Fixed
+
+- **Parked-but-stale quotes are now actively drained.** `drainDeferredQueue`
+  tests genuine freshness (cached observation within the live window) instead of
+  mere cache presence, and threads the still-stale set into the round's fetch
+  plan (`refreshPrices` → `quoteRequest` → `buildQuoteOptions` force set), so a
+  deferred symbol whose cache has aged out is explicitly re-pulled rather than
+  relying on the per-symbol TTL alone (`web/src/app.ts`).
+## [4.11.4] — 2026-06-26
+
+### Fixed
+
+- **The hero's currency-effect split now shows immediately at the opening bell.**
+  The "market-hours vs overnight" FX breakdown anchors its live in-session slice
+  to the session's EUR/USD rate **at the 09:30 ET open**, read from the day's FX
+  bars. But the first intraday FX bar can lag the open by minutes on the free
+  tier, and a cold start mid-session has none yet, so the split sat blank in that
+  gap and last night's overnight slice momentarily collapsed to zero. The app now
+  captures the **first** live EUR/USD spot it sees once the US session is open as
+  a stand-in open anchor (earliest-only, so it stays a fixed open rather than
+  tracking the spot); the authoritative bar-read open takes over the moment the
+  first FX bar lands, so the fallback is self-correcting. The closed-market 1D FX
+  close-read is also guarded so an incomplete (mid-session-only) FX track degrades
+  to the settled previous close / live spot instead of freezing the EUR view to a
+  stale mid-session rate (`web/src/session-fx.ts`, `web/src/app.ts`).
+
+## [4.11.3] — 2026-06-26
+
+### Fixed
+
+- **The USD-view "Investing power since yesterday" panel now shows its base
+  figures.** Until now the panel led with only the day's *swing* — a delta with
+  no visible anchor — so it wasn't obvious what amount that swing rode on. A new
+  quiet caption underneath now spells out both halves: the **regular investment
+  amount set in Settings** (e.g. "Regular €100") on the left, and the **dollars
+  that amount actually buys at today's live EUR/USD rate** (e.g. "$130.00 today")
+  on the right. Mirrored identically on the web companion (mobile-first) and the
+  Python desktop, baseline-aligned and muted so it reads as the footing the swing
+  rides rather than a competing headline.
+
+## [4.11.2] — 2026-06-26
+
+### Fixed
+
+- **The live graphs stopped burning free-tier credits re-fetching illiquid
+  symbols (e.g. DAX) after the closing bell.** The old "is this bar near the
+  closing bell?" heuristic could never confirm a close for a symbol whose final
+  print arrives late or thin, so every dashboard render re-requested the same
+  session — silently draining the daily Twelve Data budget. The 1D and 1W paths
+  now settle a session through a shared multi-provider *close-completeness*
+  resolver (`web/src/close-completeness.ts`): once the closing bar is reached, a
+  second provider agrees, or the market has long since settled, the series is
+  marked done and never re-pulled. A short, backed-off probe window covers the
+  genuine late-print case without looping.
+- **The EUR/USD (FX) track now settles on the same footing as price bars.**
+  Previously FX was only refilled when *wholly* missing, so an incomplete-but-
+  present FX series could leave the EUR line stale after close while the USD line
+  moved on. FX now flows through the same close-completeness resolver
+  (`resolveFxCompleteness`, modelled as the single `EUR/USD` probe), so both
+  currency tracks reach their settled close and then stop.
+
+### Changed
+
+- **A two-source close agreement now requires three hour-paced confirmations
+  before it is accepted.** A single coincidental match between the two providers
+  no longer settles a session: the first two agreements on the same pre-close bar
+  are recorded as *provisional* (`sources: 2, settled: false`) and only the third
+  accepts the day's close. Each re-confirmation is paced to the **start of the
+  next full hour** (e.g. a first check at 15:48 re-confirms at 16:00+, then at the
+  following hour), so the scarce Tiingo budget is spent at most once an hour while
+  the close is verified. A genuine progression or outage between agreements resets
+  the counter. Applies symmetrically to the 1D, 1W, and EUR/USD (FX) tracks.
+- **The data-polling log now narrates graph close-settlement.** Building on the
+  round-by-round debugging trail, the close-completeness resolver emits clear,
+  severity-tagged lines into the `graph` category — e.g.
+  `1D graph · DAX: reached the closing bar at 2026-06-26 20:00 — settled (1 source).`
+  — so you can see exactly when a session was declared complete, when a second
+  provider confirmed it, and when a pull was deliberately backed off (`↩`).
 
 ## [4.11.1] — 2026-06-26
 
