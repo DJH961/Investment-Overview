@@ -124,6 +124,30 @@ export function sessionCloseFxFromBars(fxBars: Bar[], sessionCloseMs: number): D
   return best ? best.value : null;
 }
 
+/**
+ * Whether the stored 1D EUR→USD bar track has actually reached the session close.
+ *
+ * The freeze anchor and the hero currency-effect split both read "the close"
+ * from these bars via {@link sessionCloseFxFromBars}, which takes the latest bar
+ * **at or before** `sessionCloseMs`. If the FX track was last fetched *during* the
+ * session (e.g. the app pulled bars at 15:00 ET) it ends short of the 16:00 close,
+ * so `sessionCloseFxFromBars` silently returns that earlier mid-session rate
+ * instead of the real settle — an "incomplete" 1D FX bar. Because EUR/USD trades
+ * after the equity close, a track that *was* fetched once the session shut always
+ * carries a bar at or after `sessionCloseMs`; the presence of one is therefore the
+ * exact signal that the close itself is captured.
+ *
+ * Returns `true` only when a positive bar lands at or after `sessionCloseMs`, so
+ * the after-hours start prefetch can detect a still-incomplete track and complete
+ * it (see `App.prefetchSessionFx`). An empty track is incomplete by definition.
+ */
+export function sessionFxBarsComplete(fxBars: Bar[], sessionCloseMs: number): boolean {
+  for (const bar of fxBars) {
+    if (bar.t >= sessionCloseMs && bar.value.greaterThan(0)) return true;
+  }
+  return false;
+}
+
 /** Today's FX revaluation split into its in-session and after-hours slices. */
 export interface FxEffectSplit {
   /** The whole EUR P/L from today's EUR/USD move (prior close → now). */

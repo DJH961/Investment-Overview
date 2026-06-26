@@ -123,6 +123,7 @@ import {
   readSessionCloseFx,
   recordSessionCloseFx,
   sessionCloseFxFromBars,
+  sessionFxBarsComplete,
 } from "./session-fx";
 import { TimeSeriesStore, type Breadcrumb } from "./timeseries-store";
 import { WEEK_STORE_KEY, navBarsFromQuotes, weekStaleSymbols } from "./week";
@@ -707,6 +708,16 @@ export class App {
       config,
       now,
     );
+    // After-hours FX close completion: when the session's price bars were already
+    // in hand (so no 1D backfill ran above to grab the FX track alongside them)
+    // but the stored EUR→USD track never reached the 16:00 ET close, pull the FX
+    // alone so the freeze anchor + currency-effect split read the true settle, not
+    // a mid-session rate. Gated to the closed market — during the session the
+    // close has simply not happened yet — and skipped when a session backfill just
+    // fetched the FX in the same pass. Routed through the same reservation/breaker.
+    if (!marketOpen && graphStale.fxIncomplete && prefetch.graphSessionSymbols.length === 0) {
+      await this.prefetchSessionFx(config, now);
+    }
     const quoteWork = prefetch.symbols.length + prefetch.navSymbols.length;
     if (quoteWork === 0) {
       this.pollLog(
@@ -888,13 +899,19 @@ export class App {
    * as the catch-up quotes. NAV funds are never included: the graphs never plot
    * them, so they never need (or get) bars. Returns empty sets when there are no
    * market symbols to plot.
+   *
+   * `fxIncomplete` is the after-hours signal the FX-only backfill keys on: the 1D
+   * EUR→USD track on the device has **not** reached the session close (it was last
+   * fetched mid-session, or never), so the freeze anchor / currency-effect split
+   * would otherwise read a mid-session rate as "the close" until the next session.
+   * See {@link sessionFxBarsComplete} and {@link prefetchSessionFx}.
    */
   private async prefetchGraphStaleness(
     marketSymbols: string[],
     now: Date,
-  ): Promise<{ session: string[]; week: string[] }> {
+  ): Promise<{ session: string[]; week: string[]; fxIncomplete: boolean }> {
     if (marketSymbols.length === 0) {
-      return { session: [], week: [] };
+      return { session: [], week: [], fxIncomplete: false };
     }
     const store = this.ensureTimeSeriesStore();
     const day = lastSessionDate(now);
@@ -914,7 +931,10 @@ export class App {
     // else priming is skipped and the dashboard build re-pulls it via Tiingo
     // moments later (docs/tiingo_polling_storm_cleanup_plan.md item 5b).
     const week = weekStaleSymbols(weekStored, marketSymbols, now);
-    return { session, week };
+    // The 1D FX track reads incomplete when no bar has reached this session's
+    // 16:00 ET close — the after-hours gap the FX-only backfill closes.
+    const fxIncomplete = !sessionFxBarsComplete(today?.fx ?? [], sessionCloseMs(day));
+    return { session, week, fxIncomplete };
   }
 
   /**
@@ -1296,6 +1316,64 @@ export class App {
       outputsize: 8,
     });
     return stored;
+  }
+
+  /**
+   * Backfill **only** the 1D EUR→USD bar track for the current session, used by
+   * the after-hours start prefetch when the price bars are already in hand (so the
+   * graph-bar backfill above never ran to grab the FX alongside them) yet the
+   * stored FX track stopped short of the 16:00 ET close — an *incomplete 1D FX
+   * bar*. Completing it means the freeze anchor ({@link graphAnchorFx}) and the
+   * hero currency-effect split read the genuine settle from the bars rather than a
+   * stale mid-session rate that would otherwise persist until the next session.
+   *
+   * It pulls nothing but the FX, and only through the Tiingo `/price` FX-history
+   * pipe (the same pipe the graph backfill uses for the FX track). The fetch is
+   * routed through the single {@link ledgerReservation} authority and the 429
+   * breaker exactly like every other pull, so it can never overshoot the shared
+   * EUR/USD budget, and a per-series backoff parks a dead/empty FX leg. Returns
+   * whether a fresh FX bar was stored.
+   */
+  private async prefetchSessionFx(config: AppConfig, now: Date): Promise<boolean> {
+    const proxyUrl = resolvePriceProxyUrl(config);
+    if (!proxyUrl) return false; // graph FX bars only come cheaply via the Tiingo /price pipe
+    const window = sessionFxWindow(now);
+    // Same reservation + observation-only meters + breaker wiring as the graph
+    // backfill's FX track, so this spend is governed identically.
+    const reservation = ledgerReservation();
+    const spent = { credits: 0 };
+    const { tiingoMeter, twelveDataMeter } = instrumentedGraphRecorders({
+      range: "1D FX close",
+      bookTwelveData: () => undefined,
+      refundTwelveData: (n) => reservation.release("twelvedata", n, Date.now()),
+      bookTiingo: () => undefined,
+      refundTiingo: (n) => reservation.release("tiingo", n, Date.now()),
+      log: (message) => this.pollLog("graph", message),
+      spent,
+      onTwelveData429: () => recordTwelveData429(Date.now()),
+      onTwelveDataSuccess: () => recordTwelveDataSuccess(),
+      onTiingo429: () => recordTiingo429(Date.now()),
+    });
+    const fetchFx = makeWindowFxFetcher(proxyUrl, window, "1hour", undefined, tiingoMeter, {
+      apiKey: config.apiKey,
+      twelveDataMeter,
+      backoff: cacheSeriesBackoff(),
+      backoffKey: "fx:1D:1hour",
+      reservation,
+    });
+    if (!fetchFx) return false;
+    const fx = await fetchFx().catch(() => undefined);
+    if (!fx || fx.length === 0) {
+      this.pollLog("graph", "Login warm-up: 1D FX close backfill found no new EUR/USD bars.");
+      return false;
+    }
+    await this.ensureTimeSeriesStore().mergeSession(lastSessionDate(now), { fx }, now.getTime());
+    this.pollLog(
+      "graph",
+      `Login warm-up: 1D FX close backfill stored ${fx.length} EUR/USD bar(s) to complete the session close ` +
+        `(price bars already in hand, FX track was short of the 16:00 ET settle).`,
+    );
+    return true;
   }
 
   /** Warm the chosen symbols on the Twelve Data primary; returns how many it fetched. */

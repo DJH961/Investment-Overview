@@ -13,6 +13,7 @@ import {
   readSessionCloseFx,
   recordSessionCloseFx,
   sessionCloseFxFromBars,
+  sessionFxBarsComplete,
 } from "../src/session-fx";
 
 const d = (v: string | number): Decimal => new Decimal(v);
@@ -108,6 +109,36 @@ describe("sessionCloseFxFromBars", () => {
   it("returns null when no bar settled by the close (empty / all after-hours)", () => {
     expect(sessionCloseFxFromBars([], closeMs)).toBeNull();
     expect(sessionCloseFxFromBars([bar(closeMs + 60_000, "1.09")], closeMs)).toBeNull();
+  });
+});
+
+describe("sessionFxBarsComplete", () => {
+  const closeMs = 1_000_000;
+  const bar = (t: number, value: string) => ({ t, value: d(value) });
+
+  it("is complete when a positive bar lands exactly on the close", () => {
+    const bars = [bar(closeMs - 3600_000, "1.0750"), bar(closeMs, "1.0775")];
+    expect(sessionFxBarsComplete(bars, closeMs)).toBe(true);
+  });
+
+  it("is complete when a positive after-hours bar exists past the close", () => {
+    // EUR/USD trades after the equity close, so a track fetched once the session
+    // shut always carries a bar at/after the close — the genuine-settle signal.
+    const bars = [bar(closeMs - 3600_000, "1.0750"), bar(closeMs + 3600_000, "1.09")];
+    expect(sessionFxBarsComplete(bars, closeMs)).toBe(true);
+  });
+
+  it("is incomplete when every bar stops short of the close (mid-session fetch)", () => {
+    const bars = [bar(closeMs - 7200_000, "1.07"), bar(closeMs - 3600_000, "1.0750")];
+    expect(sessionFxBarsComplete(bars, closeMs)).toBe(false);
+  });
+
+  it("is incomplete for an empty track", () => {
+    expect(sessionFxBarsComplete([], closeMs)).toBe(false);
+  });
+
+  it("ignores a non-positive bar at the close (still incomplete)", () => {
+    expect(sessionFxBarsComplete([bar(closeMs, "0")], closeMs)).toBe(false);
   });
 });
 
