@@ -14,6 +14,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.5.2] — 2026-06-26
+
+### Fixed
+
+- **Freshness indicators now track the auto-refresh rate set in Settings.** The
+  headline "Live" badge (`pricesAreLive`) and the FX coverage "FX live" / "FX
+  recent" label (`displayFxSource`) previously judged freshness against a
+  hardcoded 15-minute window, so they stayed disconnected from the user's
+  configured update interval — a faster cadence still waited 15 minutes before a
+  price read as no-longer-live, and a slower cadence flipped to "recent" while a
+  pull was not yet due. Both now key their staleness window on
+  `config.updateMinutes` (the same interval the data orchestrator's quote/FX
+  pull gates already use), so lowering the refresh rate tightens "Live" and
+  raising it widens it. `LIVE_PRICE_MAX_STALENESS_MS` remains the fallback
+  default when no interval is supplied.
+
 ## [4.5.1] — 2026-06-26
 
 ### Fixed
