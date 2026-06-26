@@ -76,11 +76,12 @@ const DEFAULT_AUTO_LOCK_MINUTES = 5;
 const MAX_AUTO_LOCK_MINUTES = 240;
 
 /**
- * Recommended (and maximum) data-provider rate limits — the documented free-tier
- * ceilings from {@link DEFAULT_PROVIDER_LIMITS}. Settings defaults to these and
- * recommends going no higher (the providers reject anything above their free
- * allowance); lower them to share one account across more devices. There is no
- * second copy of these numbers anywhere — this is the single source of truth.
+ * Recommended data-provider rate limits — the documented free-tier ceilings from
+ * {@link DEFAULT_PROVIDER_LIMITS}. Settings defaults to these and *recommends*
+ * them for the free tier, but does not force them: lower them to share one
+ * account across more devices, or raise them above the free tier on a paid plan.
+ * There is no second copy of these numbers anywhere — this is the single source
+ * of truth.
  */
 const DEFAULT_TWELVE_DATA_PER_MINUTE = DEFAULT_PROVIDER_LIMITS.twelveDataPerMinute;
 const DEFAULT_TWELVE_DATA_PER_DAY = DEFAULT_PROVIDER_LIMITS.twelveDataPerDay;
@@ -136,16 +137,17 @@ export interface AppConfig {
   autoLockMinutes: number;
   /**
    * Twelve Data (primary) rate limits the live-quote budget self-clamps to.
-   * Default to the free-tier ceilings ({@link DEFAULT_TWELVE_DATA_PER_MINUTE} /
-   * {@link DEFAULT_TWELVE_DATA_PER_DAY}); lower them to share one key across
-   * more devices.
+   * Default to the recommended free-tier values ({@link DEFAULT_TWELVE_DATA_PER_MINUTE} /
+   * {@link DEFAULT_TWELVE_DATA_PER_DAY}); lower them to share one key across more
+   * devices, or raise them above the free tier on a paid plan.
    */
   twelveDataPerMinute: number;
   twelveDataPerDay: number;
   /**
    * Tiingo (fallback) rate limits the secondary-provider budget self-clamps to.
-   * Default to the web-side ceilings ({@link DEFAULT_TIINGO_PER_HOUR} /
-   * {@link DEFAULT_TIINGO_PER_DAY}); lower them to share the account further.
+   * Default to the recommended web-side values ({@link DEFAULT_TIINGO_PER_HOUR} /
+   * {@link DEFAULT_TIINGO_PER_DAY}); lower them to share the account further, or
+   * raise them on a paid plan.
    */
   tiingoPerHour: number;
   tiingoPerDay: number;
@@ -176,16 +178,28 @@ export function parseAutoLockMinutes(raw: string): number {
 }
 
 /**
- * Clamp a parsed provider rate limit to `1`–`recommended`, falling back to the
- * recommended free-tier ceiling for a blank or non-positive value. The upper
- * bound is the recommended value itself: the providers reject anything above
- * their free allowance, so Settings never lets a limit exceed it. Exported so
- * the Settings UI clamps identically.
+ * Absolute sanity ceiling for a provider rate limit. The `recommended` free-tier
+ * value is only a *suggestion* now — a user on a paid plan may legitimately go
+ * far above it (that is the whole point of making these editable) — so the only
+ * upper bound enforced here is this generous guard against a pathological /
+ * fat-fingered entry (e.g. millions of credits/minute). It sits comfortably
+ * above every published paid tier.
+ */
+const MAX_PROVIDER_LIMIT = 100_000;
+
+/**
+ * Clamp a parsed provider rate limit to `1`–{@link MAX_PROVIDER_LIMIT}, falling
+ * back to the recommended free-tier value for a blank or non-positive entry.
+ *
+ * Crucially this **allows exceeding** `recommended`: the free-tier numbers are a
+ * recommendation, not a hard cap. A user on a paid plan can raise the limit so
+ * the app spends their larger allowance; only an absurd value is clamped (by the
+ * sanity ceiling). Exported so the Settings UI clamps identically.
  */
 export function parseProviderLimit(raw: string, recommended: number): number {
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return recommended;
-  return Math.min(recommended, Math.max(1, Math.round(n)));
+  return Math.min(MAX_PROVIDER_LIMIT, Math.max(1, Math.round(n)));
 }
 
 /** A blank, unconfigured config — used as the initial in-memory state. */

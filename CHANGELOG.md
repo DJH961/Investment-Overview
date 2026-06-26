@@ -14,7 +14,50 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.5.3] — 2026-06-26
+## [4.6.0] — 2026-06-26
+
+### Changed
+
+- **Live-data "magic numbers" are now derived from the two real knobs — the
+  provider per-minute limit and the auto-update interval — instead of standing
+  on their own.** Following the Settings change that made provider rate limits
+  editable, the remaining hard-coded constants in the web companion's live-data
+  layer are wired to those same sources so one setting genuinely moves everything
+  that depends on it:
+  - **Default cache TTLs no longer hard-code 15 min / 24 h.** The market-quote and
+    EUR/USD default TTLs (`DEFAULT_CACHE_TTL_MS`, `DEFAULT_EURUSD_TTL_MS`) now
+    derive from the auto-update interval (`DEFAULT_UPDATE_MINUTES`). NAV holdings
+    are anchored to **market time** (rest until the next session close) on every
+    path — the old 24 h `DEFAULT_NAV_CACHE_TTL_MS` is demoted to an unreachable
+    backstop only.
+  - **Tiingo "leave the backup alone" threshold tracks the Twelve Data per-minute
+    limit.** `planStartupRefresh`/`planPrefetch` now skip the scarce Tiingo budget
+    for any outdated set the primary can clear within a minute — a number that
+    grows automatically when the per-minute limit is raised on a paid plan.
+  - **Fan-out batch + instant threshold track the per-minute limit.** The Twelve
+    Data `time_series` leg is sized from the live `twelveDataPerMinute` limit, and
+    the parallel-spill "instant" trigger derives as 2× that batch.
+  - **The "up to date" window is tied to the auto-refresh interval** rather than a
+    fixed 60 s.
+- **Provider limits may now be raised *above* the free-tier ceilings.** The
+  Settings inputs no longer clamp to the free-tier maximum; the documented values
+  are presented as the *recommended* free-tier limits and can be exceeded on a
+  paid plan (still guarded against absurd entries).
+- **The NAV posting-time window (17:30–19:00 ET) is deprecated.** The canary
+  probe now uses a single flat cooldown regardless of the time of day; the
+  first-probe floor already gates the evening, so the in-/off-window split changed
+  no decision. The window constants remain exported (deprecated) for compatibility.
+
+### Added
+
+- **Auto-update "jumpstart" on login.** When a refresh round pulls nothing because
+  everything is still fresh, the next automatic refresh is now scheduled for when
+  the **oldest still-fresh** value first reaches the auto-update window — not a
+  full interval after login. Example: a 15-min interval with a 12-min-old book on
+  login jumps in ~3 min, then every 15 min thereafter. The anchor also accounts
+  for EUR/USD freshness, since FX shares the same auto-update window.
+
+
 
 ### Changed
 

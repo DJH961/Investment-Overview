@@ -13,8 +13,7 @@ import {
   marketSymbolEligible,
   navCooldownFor,
   selectWithinBudget,
-  NAV_COOLDOWN_IN_WINDOW_MS,
-  NAV_COOLDOWN_OFF_WINDOW_MS,
+  NAV_PROBE_COOLDOWN_MS,
   NAV_FIRST_PROBE_FLOOR_MIN,
   NAV_MAX_PROBES_PER_DAY,
   WEB_DAILY_CAP,
@@ -58,9 +57,10 @@ describe("marketSymbolEligible", () => {
 });
 
 describe("navCooldownFor / firstProbeMinutes", () => {
-  it("is tighter inside the active posting window", () => {
-    expect(navCooldownFor(18 * 60)).toBe(NAV_COOLDOWN_IN_WINDOW_MS); // 18:00 ET
-    expect(navCooldownFor(20 * 60)).toBe(NAV_COOLDOWN_OFF_WINDOW_MS); // 20:00 ET
+  it("is a single flat cooldown now the posting window is deprecated", () => {
+    // Inside or outside the old 17:30–19:00 window, the cooldown is identical.
+    expect(navCooldownFor(18 * 60)).toBe(NAV_PROBE_COOLDOWN_MS); // 18:00 ET
+    expect(navCooldownFor(20 * 60)).toBe(NAV_PROBE_COOLDOWN_MS); // 20:00 ET
   });
   it("first probe lands ~15 min past the floor with no learned habit", () => {
     expect(firstProbeMinutes(null)).toBe(NAV_FIRST_PROBE_FLOOR_MIN + 15);

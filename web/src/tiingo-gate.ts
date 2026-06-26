@@ -41,12 +41,24 @@ export const NAV_FIRST_PROBE_FLOOR_MIN = 17 * 60 + 30; // 17:30 ET
 export const NAV_PROBE_GRACE_MS = 15 * MINUTE_MS;
 /** After the first peer NAV is seen, wait this long for the trickle to finish. */
 export const NAV_PEER_GRACE_MS = 30 * MINUTE_MS;
-/** The active NAV-posting window (Eastern minutes); inside it we re-probe sooner. */
+/**
+ * @deprecated The NAV-posting "active window" is deprecated. NAV publish times
+ * drift and the first-probe floor (~17:45 ET) already gates the evening, so a
+ * separate 17:30–19:00 window no longer changes any decision. Retained only so
+ * existing imports keep resolving; {@link navCooldownFor} ignores it.
+ */
 export const NAV_WINDOW_START_MIN = 17 * 60 + 30; // 17:30 ET
+/** @deprecated See {@link NAV_WINDOW_START_MIN}. No longer consulted. */
 export const NAV_WINDOW_END_MIN = 19 * 60; // 19:00 ET
-/** Probe cooldowns — tighter inside the active window, looser deep in the evening. */
-export const NAV_COOLDOWN_IN_WINDOW_MS = 15 * MINUTE_MS;
-export const NAV_COOLDOWN_OFF_WINDOW_MS = 30 * MINUTE_MS;
+/**
+ * The single canary-probe cooldown. With the posting window deprecated there is
+ * no longer an in-/off-window split: every evening probe waits this long.
+ */
+export const NAV_PROBE_COOLDOWN_MS = 15 * MINUTE_MS;
+/** @deprecated Use {@link NAV_PROBE_COOLDOWN_MS}; the window split is gone. */
+export const NAV_COOLDOWN_IN_WINDOW_MS = NAV_PROBE_COOLDOWN_MS;
+/** @deprecated Use {@link NAV_PROBE_COOLDOWN_MS}; the window split is gone. */
+export const NAV_COOLDOWN_OFF_WINDOW_MS = NAV_PROBE_COOLDOWN_MS;
 /** Hard backstop on canary probes per ET day (an all-evening outage costs ≤ this). */
 export const NAV_MAX_PROBES_PER_DAY = 8;
 
@@ -120,10 +132,13 @@ export interface NavDecision {
   reason: string;
 }
 
-/** The probe cooldown (ms) that applies at an Eastern minutes-of-day time. */
-export function navCooldownFor(etMin: number): number {
-  const inWindow = etMin >= NAV_WINDOW_START_MIN && etMin <= NAV_WINDOW_END_MIN;
-  return inWindow ? NAV_COOLDOWN_IN_WINDOW_MS : NAV_COOLDOWN_OFF_WINDOW_MS;
+/**
+ * The probe cooldown (ms). The NAV-posting window is deprecated, so this is now a
+ * single flat cooldown ({@link NAV_PROBE_COOLDOWN_MS}) regardless of the time of
+ * day. The `etMin` parameter is retained for signature compatibility but ignored.
+ */
+export function navCooldownFor(_etMin: number): number {
+  return NAV_PROBE_COOLDOWN_MS;
 }
 
 /**

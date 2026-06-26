@@ -50,6 +50,7 @@ import { isUsMarketOpen, latestSettledSessionDate, nextSessionCloseMs } from "./
 import { fetchTiingoEurUsd } from "./tiingo";
 import { Budget, etMinutesOfDay, WEB_DAILY_CAP, WEB_HOURLY_CAP } from "./tiingo-gate";
 import { onProviderLimitsChange } from "./provider-limits";
+import { DEFAULT_UPDATE_MINUTES } from "./config";
 
 /**
  * Twelve Data free-tier limits — the design constraint for this whole module.
@@ -77,8 +78,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Random jitter added to each backoff wait, to de-synchronise retriers. */
 const BACKOFF_JITTER_MS = 250;
 
-/** Default freshness window before a cached quote is considered stale. */
-export const DEFAULT_CACHE_TTL_MS = 15 * MINUTE_MS;
+/**
+ * Default freshness window before a cached quote is considered stale. Tied to the
+ * **auto-update interval** ({@link DEFAULT_UPDATE_MINUTES}) rather than a separate
+ * magic number: a quote is "fresh" for exactly one refresh cycle. The live app
+ * passes `config.updateMinutes` through {@link LoadQuotesOptions.cacheTtlMs}, so a
+ * user who changes the cadence moves this in lock-step; this constant is just the
+ * default for direct callers/tests.
+ */
+export const DEFAULT_CACHE_TTL_MS = DEFAULT_UPDATE_MINUTES * MINUTE_MS;
 
 /**
  * The Twelve Data credits still affordable right now on the shared free-tier
@@ -102,13 +110,12 @@ export function twelveDataBudgetRemaining(
 }
 
 /**
- * Fallback freshness window for NAV-priced holdings (mutual funds /
- * money-market) when their cache timestamp is unknown. Their NAV publishes only
- * ~once per business day, so the live "rest" window is normally market-day based
- * — it lasts until the next session close (see {@link navCacheTtlMs}), where a
- * fresh NAV becomes due — rather than a fixed span. This 24h value is only used
- * as a backstop when the cached observation time is unavailable, so a NAV is
- * never re-fetched until its cached value is more than a day old.
+ * Defensive backstop window for NAV-priced holdings. The NAV rest window is now
+ * always **market-day based** — it lasts until the next session close (see
+ * {@link navCacheTtlMs}), anchored at the cached observation time when known and
+ * at `now` otherwise — so this fixed value is only an unreachable guard for the
+ * degenerate case of a non-positive computed window. It is no longer the "24h"
+ * rule that governed freshness; NAV freshness is tied to the market clock.
  */
 export const DEFAULT_NAV_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -184,13 +191,15 @@ export function navCacheTtlMs(
   } = options;
 
   // Rest until the next session close (when a fresh NAV becomes due) rather than
-  // a fixed span after the fetch. The cached.at term cancels in the loadQuotes
-  // `now - cached.at < ttl` check, so the entry expires exactly at that close.
-  // Without a cached observation time, fall back to the fixed long window.
+  // a fixed span. With a known observation time the cached.at term cancels in the
+  // loadQuotes `now - cached.at < ttl` check, so the entry expires exactly at that
+  // close. When the observation time is unknown we anchor at `now` instead — still
+  // market-day based (rest until the next close), never a flat 24h. The fixed
+  // longTtlMs survives only as an unreachable guard for a non-positive window.
   const restWindow = (): number => {
-    const at = cached?.at ?? null;
-    if (at === null) return longTtlMs;
-    const window = nextSessionCloseMs(new Date(now)) - at;
+    const close = nextSessionCloseMs(new Date(now));
+    const anchor = cached?.at ?? now;
+    const window = close - anchor;
     return window > 0 ? window : longTtlMs;
   };
 
@@ -603,11 +612,12 @@ export async function loadFxRates(
 }
 
 /**
- * Freshness window for the live EUR/USD spot. Short enough to track intraday FX
- * developments, long enough to barely touch the free-tier budget (one credit
- * per refresh at most).
+ * Freshness window for the live EUR/USD spot. Tied to the **auto-update interval**
+ * ({@link DEFAULT_UPDATE_MINUTES}) so FX tracks the same cadence as quotes — short
+ * enough to follow intraday FX, long enough to barely touch the budget (one credit
+ * per refresh at most). The live app overrides it with `config.updateMinutes`.
  */
-export const DEFAULT_EURUSD_TTL_MS = 15 * MINUTE_MS;
+export const DEFAULT_EURUSD_TTL_MS = DEFAULT_UPDATE_MINUTES * MINUTE_MS;
 
 /** Where a {@link loadEurUsd} reading came from. */
 export type EurUsdSource = "live" | "tiingo" | "eod" | "cache" | "none";

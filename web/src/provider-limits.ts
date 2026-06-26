@@ -13,8 +13,10 @@
  *    so the web side self-caps at 40/hr · 800/day.
  *
  * The {@link DEFAULT_PROVIDER_LIMITS} are the documented free-tier ceilings: the
- * recommended values, and the most the providers will actually honour. The
- * Settings UI defaults to them and recommends not exceeding them.
+ * recommended values for a free account. The Settings UI defaults to them and
+ * recommends them for the free tier, but does **not** force them — a user on a
+ * paid plan may raise a limit above its free-tier value so the app spends their
+ * larger allowance.
  *
  * The values are held in a small mutable store seeded from per-device config at
  * startup ({@link setProviderLimits}). Consumers that need them dynamically
@@ -36,9 +38,9 @@ export interface ProviderLimits {
 }
 
 /**
- * The documented free-tier ceilings — the recommended (and maximum sensible)
- * values. Settings defaults to these and recommends going no higher, since the
- * providers will reject anything above their free-tier allowance.
+ * The documented free-tier values — the recommended limits for a free account.
+ * Settings defaults to these and recommends them for the free tier, but allows
+ * going higher (a paid plan) or lower (sharing one account across more devices).
  */
 export const DEFAULT_PROVIDER_LIMITS: ProviderLimits = {
   twelveDataPerMinute: 8,

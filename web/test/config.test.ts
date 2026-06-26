@@ -122,11 +122,14 @@ describe("parseProviderLimit", () => {
     expect(parseProviderLimit("-5", 800)).toBe(800);
   });
 
-  it("rounds and clamps to 1..recommended (never above the free-tier ceiling)", () => {
+  it("rounds and clamps to 1..MAX, allowing values above the recommended free-tier", () => {
     expect(parseProviderLimit("4", 8)).toBe(4);
     expect(parseProviderLimit("4.6", 8)).toBe(5);
-    expect(parseProviderLimit("999", 8)).toBe(8);
+    // A paid-plan value above the recommended free-tier ceiling is allowed.
+    expect(parseProviderLimit("999", 8)).toBe(999);
     expect(parseProviderLimit("1", 8)).toBe(1);
+    // Only an absurd value is clamped, by the sanity ceiling.
+    expect(parseProviderLimit("100000000", 8)).toBe(100_000);
   });
 });
 
