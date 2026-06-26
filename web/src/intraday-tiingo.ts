@@ -25,22 +25,10 @@
  * no live API.
  */
 
-import { Decimal } from "./decimal-config";
-import { PriceError, type FetchLike } from "./prices";
+import { PriceError, parsePositivePrice, type FetchLike } from "./prices";
 import { sessionCloseMs, sessionOpenMs } from "./market-hours";
 import type { Bar } from "./timeseries";
 import type { BarFetcher } from "./intraday";
-
-/** Parse a JSON number/string into a finite Decimal, or null. */
-function parseDecimal(value: unknown): Decimal | null {
-  if (typeof value !== "string" && typeof value !== "number") return null;
-  try {
-    const d = new Decimal(value);
-    return d.isFinite() ? d : null;
-  } catch {
-    return null;
-  }
-}
 
 /** Parse a Tiingo IEX intraday `date` (ISO-8601) into epoch ms, or null. */
 function parseBarTime(value: unknown): number | null {
@@ -62,7 +50,7 @@ export function barsFromTiingoIntraday(body: unknown): Bar[] {
     if (!row || typeof row !== "object") continue;
     const node = row as Record<string, unknown>;
     const t = parseBarTime(node.date);
-    const close = parseDecimal(node.close);
+    const close = parsePositivePrice(node.close);
     if (t !== null && close !== null) bars.push({ t, value: close });
   }
   bars.sort((a, b) => a.t - b.t);
@@ -97,8 +85,8 @@ export function barsFromTiingoDaily(body: unknown): Bar[] {
     const node = row as Record<string, unknown>;
     const day = dayFromBarDate(node.date);
     if (day === null) continue;
-    const open = parseDecimal(node.open);
-    const close = parseDecimal(node.close);
+    const open = parsePositivePrice(node.open);
+    const close = parsePositivePrice(node.close);
     if (open !== null) bars.push({ t: sessionOpenMs(day), value: open });
     if (close !== null) bars.push({ t: sessionCloseMs(day), value: close });
   }

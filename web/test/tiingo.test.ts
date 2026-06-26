@@ -2,7 +2,6 @@
  * Tests for the Tiingo IEX client (`tiingo.ts`) that talks to the `/price`
  * Worker proxy. A stub fetch returns canned IEX payloads.
  */
-import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -64,11 +63,40 @@ describe("fetchTiingoQuotes", () => {
     expect(q?.priceTime).toBeNull(); // NAV → settled, not faux-live
   });
 
-  it("falls back to prevClose when no last price is present", async () => {
+  it("omits a row that has only a prevClose and no live mark (aligned with desktop)", async () => {
+    // `prevClose` is NOT part of the price fallback chain: a row carrying only
+    // yesterday's close (no `tngoLast`/`last`) is unusable as a live price, so
+    // the symbol comes back absent rather than valued at a stale number.
     const fetchImpl: FetchLike = async () =>
       jsonResponse([{ ticker: "VOO", prevClose: 500.0, timestamp: "2026-06-22T15:59:00-04:00" }]);
     const quotes = await fetchTiingoQuotes(["VOO"], PROXY, { fetchImpl });
-    expect(quotes.get("VOO")?.price).toEqual(new Decimal(500));
+    expect(quotes.has("VOO")).toBe(false);
+  });
+
+  it("rejects a non-positive provider price as missing", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse([{ ticker: "ZERO", tngoLast: 0, timestamp: "2026-06-22T15:59:00-04:00" }]);
+    const quotes = await fetchTiingoQuotes(["ZERO"], PROXY, { fetchImpl });
+    expect(quotes.has("ZERO")).toBe(false);
+  });
+
+  it("reads the live strike time from lastSaleTimestamp when timestamp is absent", async () => {
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse([{ ticker: "AAPL", tngoLast: 206.15, lastSaleTimestamp: "2026-06-22T15:59:00-04:00" }]);
+    const quotes = await fetchTiingoQuotes(["AAPL"], PROXY, { fetchImpl });
+    expect(quotes.get("AAPL")?.valueDate).toBe("2026-06-22");
+    expect(quotes.get("AAPL")?.priceTime).not.toBeNull();
+  });
+
+  it("resolves an upper-cased provider ticker back to a lower/mixed-case requested symbol", async () => {
+    // The export's price_symbol may be lower/mixed case; Tiingo always upper-cases
+    // its echo. The result must still be keyed by the requested symbol so the
+    // caller's `quotes.get(price_symbol)` fallback merge finds it.
+    const fetchImpl: FetchLike = async () =>
+      jsonResponse([{ ticker: "VOO", tngoLast: 500.0, timestamp: "2026-06-22T15:59:00-04:00" }]);
+    const quotes = await fetchTiingoQuotes(["voo"], PROXY, { fetchImpl });
+    expect(quotes.get("voo")?.price?.toString()).toBe("500");
+    expect(quotes.has("VOO")).toBe(false);
   });
 
   it("throws a PriceError when the proxy returns a non-array body (blob/error object)", async () => {

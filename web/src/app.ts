@@ -5545,19 +5545,19 @@ export class App {
       });
       return frozenFxMemo;
     };
-    // The live tip drawn at the session close once shut: its USD leg is FX-free,
-    // but its EUR leg is re-marked at the frozen close rate so the 1D/1W curve
-    // ends on the market-day value, not the overnight-drifted one.
-    const makeLiveTip = (frozenFx: Decimal | null): { valueEur: Decimal; valueUsd: Decimal } | null =>
-      o.totalValueIsComplete
-        ? ((): { valueEur: Decimal; valueUsd: Decimal } => {
-            const valueUsd =
-              o.totalValueUsd ?? (baseFx !== null ? o.totalValueEur.times(baseFx) : o.totalValueEur);
-            const valueEur =
-              frozenFx !== null && frozenFx.greaterThan(0) ? valueUsd.dividedBy(frozenFx) : o.totalValueEur;
-            return { valueEur, valueUsd };
-          })()
-        : null;
+    // The live tip drawn at the session close once shut: its USD leg is FX-free
+    // (booked native), and its EUR leg is derived from that USD at the frozen
+    // close rate so the 1D/1W curve ends on the market-day value, not the
+    // overnight-drifted one. The USD figure is never back-derived from EUR — when
+    // the book's USD total is unknown the tip is omitted (returns null) rather
+    // than faked by rescaling the EUR total.
+    const makeLiveTip = (frozenFx: Decimal | null): { valueEur: Decimal; valueUsd: Decimal } | null => {
+      if (!o.totalValueIsComplete || o.totalValueUsd === null) return null;
+      const valueUsd = o.totalValueUsd;
+      const valueEur =
+        frozenFx !== null && frozenFx.greaterThan(0) ? valueUsd.dividedBy(frozenFx) : o.totalValueEur;
+      return { valueEur, valueUsd };
+    };
     const reservation = ledgerReservation();
     const providers: LiveGraphProviders = {
       apiKey: config.apiKey,

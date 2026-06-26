@@ -160,6 +160,20 @@ function parseDecimal(value: unknown): Decimal | null {
 }
 
 /**
+ * Parse a provider price into a *strictly positive* finite Decimal, treating a
+ * non-positive (`<= 0`) reading as missing (null). A `0`/negative mark is never
+ * a real price — it is the provider's stand-in for "no data" — so rejecting it
+ * here, at the parse boundary, stops a phantom `0` from valuing a holding or
+ * collapsing a graph ratio downstream. Use this for every figure that is a
+ * price (last/close/previous-close/bar-close); plain {@link parseDecimal} stays
+ * for non-price numerics that may legitimately be zero or negative.
+ */
+export function parsePositivePrice(value: unknown): Decimal | null {
+  const d = parseDecimal(value);
+  return d !== null && d.greaterThan(0) ? d : null;
+}
+
+/**
  * Extract the `YYYY-MM-DD` date from a Twelve Data `datetime` field, which is
  * either a bare date (daily bars, e.g. NAV) or a `YYYY-MM-DD HH:MM:SS`
  * timestamp (intraday). Returns null for anything unparseable.
@@ -208,8 +222,8 @@ function quoteFromNode(symbol: string, node: Record<string, unknown>): Quote {
     (hasIntradayTime(node.datetime) ? parseEpochSeconds(node.timestamp) : null);
   return {
     symbol,
-    price: parseDecimal(node.close ?? node.price),
-    previousClose: parseDecimal(node.previous_close),
+    price: parsePositivePrice(node.close ?? node.price),
+    previousClose: parsePositivePrice(node.previous_close),
     currency: typeof node.currency === "string" ? node.currency : null,
     at: null,
     priceTime,
@@ -386,8 +400,8 @@ function navQuoteFromNode(symbol: string, node: Record<string, unknown>): Quote 
   }
   return {
     symbol,
-    price: parseDecimal(latest.close),
-    previousClose: values[1] ? parseDecimal(values[1].close) : null,
+    price: parsePositivePrice(latest.close),
+    previousClose: values[1] ? parsePositivePrice(values[1].close) : null,
     currency: typeof meta.currency === "string" ? meta.currency : null,
     at: null,
     // A daily NAV bar carries only a date (no intraday strike time), so the UI
@@ -400,9 +414,11 @@ function navQuoteFromNode(symbol: string, node: Record<string, unknown>): Quote 
 /**
  * Parse a Twelve Data `datetime` (`YYYY-MM-DD HH:MM:SS` intraday, or a bare
  * `YYYY-MM-DD` daily bar) into epoch milliseconds, treating the wall-clock as
- * UTC. The absolute zone offset is unimportant here: price bars and EUR/USD bars
- * come from the same provider with the same convention, so the curve's
- * forward-fill alignment is internally consistent. Returns null if unparseable.
+ * UTC. This is only correct because {@link fetchTimeSeries} explicitly requests
+ * `timezone=UTC`, so the provider's intraday datetimes are genuine UTC and align
+ * with the real session boundaries, the EUR/USD track and the live tip — one
+ * clock for the whole curve. Daily bars carry only a date. Returns null if
+ * unparseable.
  */
 function parseBarTime(value: unknown): number | null {
   if (typeof value !== "string") return null;
@@ -418,7 +434,7 @@ function barsFromValues(node: Record<string, unknown>): TimeSeriesBar[] {
   const bars: TimeSeriesBar[] = [];
   for (const v of values) {
     const t = parseBarTime(v.datetime);
-    const close = parseDecimal(v.close);
+    const close = parsePositivePrice(v.close);
     if (t !== null && close !== null) bars.push({ t, value: close });
   }
   bars.sort((a, b) => a.t - b.t);
@@ -456,6 +472,13 @@ export async function fetchTimeSeries(
   url.searchParams.set("interval", interval);
   url.searchParams.set("outputsize", String(outputsize));
   url.searchParams.set("order", "desc");
+  // Ask Twelve Data for UTC datetimes explicitly. By default it stamps intraday
+  // bars in the *exchange-local* zone (e.g. America/New_York), which `parseBarTime`
+  // would then mis-read as UTC and shift every instant by the ET offset — pushing
+  // price bars off the real session boundaries, the FX track, and the live tip.
+  // Requesting UTC puts price bars, FX bars and session boundaries on one clock
+  // (the basis the whole curve pipeline assumes). Daily bars stay date-only.
+  url.searchParams.set("timezone", "UTC");
   url.searchParams.set("apikey", apiKey);
 
   let resp: Response;

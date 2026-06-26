@@ -246,6 +246,9 @@ describe("fetchTimeSeries", () => {
       calls += 1;
       expect(url).toContain("/time_series");
       expect(url).toContain("interval=5min");
+      // Bars must be requested in UTC so `parseBarTime`'s UTC assumption holds
+      // and price/FX/session boundaries share one clock.
+      expect(url).toContain("timezone=UTC");
       return jsonResponse({
         meta: { symbol: "VTI" },
         values: [

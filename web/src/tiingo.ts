@@ -15,7 +15,7 @@
  */
 
 import { Decimal } from "./decimal-config";
-import { PriceError, type FetchLike, type Quote } from "./prices";
+import { PriceError, parsePositivePrice, type FetchLike, type Quote } from "./prices";
 import type { Bar } from "./timeseries";
 
 /** Parse a JSON number/string into a finite Decimal, or null. */
@@ -56,15 +56,20 @@ function parseTimestamp(raw: unknown): number | null {
 function quoteFromIexRow(row: Record<string, unknown>, navSymbols?: ReadonlySet<string>): Quote | null {
   const ticker = typeof row.ticker === "string" ? row.ticker.toUpperCase() : null;
   if (!ticker) return null;
-  const price = parseDecimal(row.tngoLast) ?? parseDecimal(row.last) ?? parseDecimal(row.prevClose);
+  // Mirror the proven desktop adapter: a price is the live mark (`tngoLast`) or
+  // the IEX `last`, never `prevClose` — folding the prior close into the *price*
+  // chain values a holding at yesterday's number whenever today's mark is absent
+  // (it stays available as `previousClose` for the day-change refline). Any
+  // non-positive reading is treated as missing so a `0` never values a holding.
+  const price = parsePositivePrice(row.tngoLast) ?? parsePositivePrice(row.last);
   if (price === null) return null;
   const isNav = navSymbols?.has(ticker) ?? false;
-  const ts = parseTimestamp(row.timestamp ?? row.lastSaleTimeStamp ?? row.quoteTimestamp);
+  const ts = parseTimestamp(row.timestamp ?? row.lastSaleTimestamp ?? row.quoteTimestamp);
   const valueDate = ts !== null ? etDate(ts) : null;
   return {
     symbol: ticker,
     price,
-    previousClose: parseDecimal(row.prevClose),
+    previousClose: parsePositivePrice(row.prevClose),
     // Tiingo IEX covers US tickers; their marks are USD.
     currency: "USD",
     at: null,
@@ -102,6 +107,15 @@ export async function fetchTiingoQuotes(
   const result = new Map<string, Quote>();
   const unique = [...new Set(symbols.map((s) => s.trim()).filter((s) => s.length > 0))];
   if (unique.length === 0 || !proxyUrl) return result;
+
+  // Tiingo upper-cases every ticker it echoes back, whereas the rest of the app
+  // keys quotes by the export's `price_symbol` *exactly as written* (Twelve Data
+  // echoes the requested case). Resolve the provider's upper-cased ticker back to
+  // the symbol the caller asked for here — the one boundary where the two casings
+  // meet — so a lower/mixed-case export symbol still finds its Tiingo fallback
+  // (`quotes.get(price_symbol)`) instead of silently missing it.
+  const requestedByUpper = new Map<string, string>();
+  for (const s of unique) requestedByUpper.set(s.toUpperCase(), s);
 
   const url = new URL(proxyUrl);
   url.searchParams.set("tickers", unique.join(","));
@@ -147,7 +161,11 @@ export async function fetchTiingoQuotes(
   for (const row of body) {
     if (!row || typeof row !== "object") continue;
     const quote = quoteFromIexRow(row as Record<string, unknown>, navSymbols);
-    if (quote) result.set(quote.symbol, quote);
+    if (!quote) continue;
+    // Key by the caller's requested symbol (matching Twelve Data's echo-back);
+    // fall back to the canonical upper-cased ticker for an unsolicited row.
+    const requested = requestedByUpper.get(quote.symbol) ?? quote.symbol;
+    result.set(requested, quote);
   }
   return result;
 }

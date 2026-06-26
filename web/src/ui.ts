@@ -2597,9 +2597,10 @@ function renderValueChart(
   const otherValues: Array<Decimal | null> = points.map((p) => otherCurrencyRaw(disp, p));
   const otherCode: DisplayCurrency = disp.code === "USD" ? "EUR" : "USD";
   // Today's live total in the chart currency: USD uses the native live total
-  // directly (no FX), EUR is spot-converted from it.
-  const liveTotal =
-    disp.code === "USD" ? o.totalValueUsd ?? disp.convert(o.totalValueEur) : o.totalValueEur;
+  // directly (no FX); EUR uses the native EUR pivot. The USD figure is never
+  // back-derived from EUR — when it is unknown the live tip is simply omitted
+  // (the `liveTotal !== null` guard below), not faked by rescaling EUR.
+  const liveTotal = disp.code === "USD" ? o.totalValueUsd : o.totalValueEur;
   // The same live tip expressed in the *other* currency, so its line runs to
   // "today" too (USD/EUR native total — the rebase only uses its shape).
   const otherLiveTip = otherCode === "USD" ? o.totalValueUsd : o.totalValueEur;

@@ -85,8 +85,14 @@ export interface ReconstructInput {
 const ZERO = new Decimal(0);
 
 /**
- * Latest bar value at or just before `at` (or the earliest bar, if all later).
- * Port of `_forward_filled`. Assumes `bars` is sorted ascending by `t`.
+ * Latest bar value at or just before `at`, or **null** when `at` precedes every
+ * bar (and when there are no bars). Assumes `bars` is sorted ascending by `t`.
+ *
+ * Returning null before the first bar — rather than borrowing `bars[0]` from the
+ * *future* — keeps the curve honest: a holding/FX track is "unknown" until its
+ * first real print, never back-filled with a value that had not happened yet
+ * (the look-ahead leak this deliberately closes). Callers decide what an unknown
+ * means for them (carry flat, fall back to a settled rate, or render a gap).
  */
 export function forwardFilled(bars: Bar[], at: number): Decimal | null {
   if (bars.length === 0) return null;
@@ -95,7 +101,7 @@ export function forwardFilled(bars: Bar[], at: number): Decimal | null {
     if (bar.t <= at) chosen = bar;
     else break;
   }
-  return chosen ? chosen.value : bars[0].value;
+  return chosen ? chosen.value : null;
 }
 
 /**

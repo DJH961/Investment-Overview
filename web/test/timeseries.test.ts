@@ -26,8 +26,12 @@ describe("forwardFilled", () => {
     expect(forwardFilled(bars, 30)?.toString()).toBe("3");
   });
 
-  it("returns the earliest bar when the instant precedes all bars", () => {
-    expect(forwardFilled(bars, 5)?.toString()).toBe("1");
+  it("returns null when the instant precedes all bars (no future back-fill)", () => {
+    // Before the first real print the track is unknown — it must NOT borrow the
+    // earliest (future) bar, which would leak a value that had not happened yet.
+    expect(forwardFilled(bars, 5)).toBeNull();
+    expect(forwardFilled(bars, 9)).toBeNull();
+    expect(forwardFilled(bars, 10)?.toString()).toBe("1"); // exactly the first bar is known
   });
 
   it("returns null for an empty series", () => {
