@@ -282,6 +282,8 @@ export function describeMerge(merge: SleeveMerge): string {
 /** A compact, log-ready description of a single reconciliation flag. */
 export function describeFlag(flag: ReconciliationFlag): string {
   const when = new Date(flag.bucketStartMs).toISOString().slice(0, 16).replace("T", " ");
-  const pct = (flag.deltaFraction * 100).toFixed(2);
-  return `${when}Z web ${flag.webValueUsd.toFixed(2)} vs blob ${flag.blobValueUsd.toFixed(2)} (Δ ${pct}%)`;
+  // A zero blob value makes deltaFraction non-finite (±Infinity); render it as
+  // "∞" rather than the bare "Infinity%" the default formatter would emit.
+  const pct = Number.isFinite(flag.deltaFraction) ? `${(flag.deltaFraction * 100).toFixed(2)}%` : "∞";
+  return `${when}Z web ${flag.webValueUsd.toFixed(2)} vs blob ${flag.blobValueUsd.toFixed(2)} (Δ ${pct})`;
 }

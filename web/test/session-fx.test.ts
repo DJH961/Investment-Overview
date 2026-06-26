@@ -316,9 +316,10 @@ describe("fxEffectSplit", () => {
       sessionCloseFx: d("1.05"),
       todayFxMoveEur: d("50"),
     });
-    expect(noUsd.overnightEur).toBeNull();
-    // marketHours falls back to the whole move when overnight is unknown.
-    expect(noUsd.marketHoursEur?.toString()).toBe("50");
+    // The live overnight leg carries the whole move when it can't be split; the
+    // frozen market-hours leg is null so the UI hides it (no invented zero).
+    expect(noUsd.marketHoursEur).toBeNull();
+    expect(noUsd.overnightEur?.toString()).toBe("50");
 
     const noClose = fxEffectSplit({
       marketOpen: false,
@@ -327,7 +328,8 @@ describe("fxEffectSplit", () => {
       sessionCloseFx: null,
       todayFxMoveEur: d("50"),
     });
-    expect(noClose.overnightEur).toBeNull();
+    expect(noClose.marketHoursEur).toBeNull();
+    expect(noClose.overnightEur?.toString()).toBe("50");
   });
 
   it("propagates a null FX move as a null total", () => {

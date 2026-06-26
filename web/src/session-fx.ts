@@ -320,8 +320,10 @@ export function fxEffectSplit(opts: {
     // Live leg = overnight (session close → now); frozen leg = last market hours.
     const liveLeg = legFromAnchor(sessionCloseFx);
     if (liveLeg === null) {
-      marketHoursEur = totalEur;
-      overnightEur = null;
+      // Whole move falls into the live (overnight) leg; the frozen market-hours
+      // leg is null — mirroring fxBuyingPowerSplit and the docstring contract.
+      overnightEur = totalEur;
+      marketHoursEur = null;
     } else {
       overnightEur = liveLeg;
       marketHoursEur = totalEur === null ? null : totalEur.minus(liveLeg);
