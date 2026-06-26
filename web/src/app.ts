@@ -107,6 +107,7 @@ import { setInvestmentAmountEur } from "./investment-amount";
 import { formatLastPull } from "./format";
 import { appendPollLog, clearPollLog, formatPollLog, readPollLog, type PollLogCategory, type PollLogLevel } from "./polling-log";
 import { APP_VERSION } from "./version";
+import type { CloseResolveLog } from "./close-completeness";
 import {
   buildLiveSessionCurve,
   buildLiveWeekCurve,
@@ -5327,6 +5328,18 @@ export class App {
       }),
     });
 
+    // The structured after-close resolution events (plan C6 + new-requirement FX
+    // parity) fold straight into the same round-structured polling log as every
+    // other pull: each verdict carries an explicit severity, so a settle shows a
+    // `✓`, a still-filling step a `·`, and a both-sources outage a `↩` back-off —
+    // and the symbol/instant read in plain language rather than raw epoch ms.
+    const onCloseResolve = (event: CloseResolveLog): void =>
+      this.pollLog("graph", event.message, event.level);
+    // Render a bar instant as a compact `YYYY-MM-DD HH:MM` UTC stamp so the close
+    // verdict names exactly which bar settled, without leaking a raw epoch.
+    const formatInstant = (t: number): string =>
+      new Date(t).toISOString().slice(0, 16).replace("T", " ");
+
     return {
       session: async (opts) => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
@@ -5349,7 +5362,7 @@ export class App {
         const spent = { credits: 0 };
         try {
           const curve = await buildLiveSessionCurve(
-            { anchor: anchor(frozenFx), store, liveTip, onFreshBars, regenerateOnly },
+            { anchor: anchor(frozenFx), store, liveTip, onFreshBars, regenerateOnly, onCloseResolve, formatInstant },
             loggingProviders("1D", spent),
           );
           if (spent.credits === 0) {
@@ -5414,6 +5427,8 @@ export class App {
                   "graph",
                   `1W graph: gap-filled NAV history for ${symbols.length} fund(s): ${symbols.join(", ")}.`,
                 ),
+              onCloseResolve,
+              formatInstant,
             },
             loggingProviders("1W", spent),
           );

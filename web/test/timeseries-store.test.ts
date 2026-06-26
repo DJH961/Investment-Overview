@@ -182,4 +182,87 @@ describe("TimeSeriesStore", () => {
     expect(loaded!.bars.VTI.at(-1)!.value.toString()).toBe("60");
     expect(loaded!.updatedAt).toBe(7000);
   });
+
+  it("round-trips a per-symbol closeProbe record (C1)", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.saveSession({
+      ...session("2024-01-10"),
+      closeProbe: {
+        DAX: { lastBarAt: 1234, attempts: 2, sources: 2, settled: true, lastAttemptAt: 5678 },
+      },
+    });
+    const loaded = await store.loadSession("2024-01-10");
+    expect(loaded!.closeProbe!.DAX).toEqual({
+      lastBarAt: 1234,
+      attempts: 2,
+      sources: 2,
+      settled: true,
+      lastAttemptAt: 5678,
+    });
+  });
+
+  it("deserialises a legacy payload without closeProbe to undefined (C1)", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.saveSession(session("2024-01-10")); // no closeProbe
+    const loaded = await store.loadSession("2024-01-10");
+    expect(loaded!.closeProbe).toBeUndefined();
+  });
+
+  it("a {bars}-only mergeSession preserves an existing settled:true probe (C1)", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.mergeSession("2024-01-10", {
+      closeProbe: {
+        DAX: { lastBarAt: 100, attempts: 1, sources: 2, settled: true, lastAttemptAt: 10 },
+      },
+    });
+    await store.mergeSession("2024-01-10", { bars: { DAX: [bar(300, "60")] } }, 7000);
+    const loaded = await store.loadSession("2024-01-10");
+    expect(loaded!.closeProbe!.DAX.settled).toBe(true);
+    expect(loaded!.bars.DAX.at(-1)!.value.toString()).toBe("60");
+  });
+
+  it("keeps settled sticky when a later probe carries settled:false (C1/P3)", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.mergeSession("2024-01-10", {
+      closeProbe: {
+        DAX: { lastBarAt: 100, attempts: 1, sources: 2, settled: true, lastAttemptAt: 10 },
+      },
+    });
+    await store.mergeSession("2024-01-10", {
+      closeProbe: {
+        DAX: { lastBarAt: 100, attempts: 2, sources: 1, settled: false, lastAttemptAt: 20 },
+      },
+    });
+    const loaded = await store.loadSession("2024-01-10");
+    expect(loaded!.closeProbe!.DAX.settled).toBe(true);
+    expect(loaded!.closeProbe!.DAX.attempts).toBe(2); // other fields take the new value
+  });
+
+  it("closeProbeClear drops a symbol's probe (reached-close) (C1)", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.mergeSession("2024-01-10", {
+      closeProbe: {
+        DAX: { lastBarAt: 100, attempts: 1, sources: 1, settled: false, lastAttemptAt: 10 },
+      },
+    });
+    await store.mergeSession("2024-01-10", { bars: { DAX: [bar(9, "1")] }, closeProbeClear: ["DAX"] });
+    const loaded = await store.loadSession("2024-01-10");
+    expect(loaded!.closeProbe).toBeUndefined();
+  });
+
+  it("appendTip preserves the closeProbe memory (C1)", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.mergeSession("2024-01-10", {
+      closeProbe: {
+        DAX: { lastBarAt: 100, attempts: 1, sources: 2, settled: true, lastAttemptAt: 10 },
+      },
+    });
+    await store.appendTip("2024-01-10", {
+      t: 500,
+      valueEur: new Decimal("1"),
+      valueUsd: new Decimal("1"),
+    });
+    const loaded = await store.loadSession("2024-01-10");
+    expect(loaded!.closeProbe!.DAX.settled).toBe(true);
+  });
 });
