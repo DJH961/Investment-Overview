@@ -4042,7 +4042,13 @@ export class App {
             loggingProviders("1D", { credits: 0 }),
           )
             .then((c) => (c.points.length >= 1 ? c.points : null))
-            .catch(() => null));
+            .catch(() => {
+              // A store-only reconstruction should never throw, but if it does the
+              // week still draws from its settled days + live tip — log so the
+              // missing today detail can be diagnosed rather than swallowed silently.
+              this.pollLog("graph", "1W graph: could not build today's 1D slice — using the live tip for today.");
+              return null;
+            }));
         const sprung = springboardWeekCurve({ exported, liveTip, todayCurve: todaySlice });
         if (sprung) {
           this.pollLog("graph", "1W graph: reused the exported week sleeve (no live pull, 0 credits).");
