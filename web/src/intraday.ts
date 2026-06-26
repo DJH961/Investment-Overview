@@ -30,6 +30,7 @@ import {
   lastSessionDate,
   previousTradingSession,
   sessionCloseMs,
+  sessionOpenMs,
 } from "./market-hours";
 import {
   reconstructSessionCurve,
@@ -218,6 +219,33 @@ export function capAtClose(points: CurvePoint[], closeMs: number): CurvePoint[] 
 }
 
 /**
+ * Clamp the curve to the regular-session open: drop any point before `openMs` so
+ * the line starts at 09:30 ET rather than reaching back into the prior trading
+ * day. Twelve Data's primary `time_series` fetch asks for a fixed bar count with
+ * no `start_date`, so on a barely-traded session (pre-market, early session,
+ * post-weekend/holiday) the tail of those bars spills into earlier days; this is
+ * the left-edge mirror of {@link capAtClose}. If clamping would remove every
+ * point the curve is returned untouched rather than blanked.
+ */
+export function clampFromOpen(points: CurvePoint[], openMs: number): CurvePoint[] {
+  const kept = points.filter((p) => p.t >= openMs);
+  return kept.length > 0 ? kept : points;
+}
+
+/**
+ * Filter freshly-fetched bars to a single trading day's regular session,
+ * `[sessionOpenMs(day), sessionCloseMs(day)]`. Twelve Data's primary fetch
+ * (`outputsize=78`, no `start_date`) reaches into prior days when today is not
+ * fully traded, so this is applied before {@link TimeSeriesStore.mergeSession}
+ * to stop the cache accumulating cross-day bars (mirrors the per-day splice
+ * clamp in `week.ts`). Tiingo's path already returns a single day's bars, so the
+ * filter is a harmless no-op there.
+ */
+function clampBarsToDay(bars: Bar[], openMs: number, closeMs: number): Bar[] {
+  return bars.filter((b) => b.t >= openMs && b.t <= closeMs);
+}
+
+/**
  * Splice persisted live-tip **breadcrumbs** onto the reconstructed curve so it
  * draws its own trail between the slow, credit-conscious bar re-fetches.
  *
@@ -368,6 +396,11 @@ export async function loadOrBuildSessionCurve(
   const day = lastSessionDate(now);
   const marketOpen = isUsMarketOpen(now);
   const symbols = intradaySymbols(anchor);
+  // The 1D window is exactly one regular session: [09:30 ET, 16:00 ET]. Both the
+  // store-side bar filter and the render-side defensive clamp use these bounds so
+  // a barely-traded session never reaches back into the prior trading day.
+  const openMs = sessionOpenMs(day);
+  const closeMs = sessionCloseMs(day);
 
   let stored = await store.loadSession(day);
   const missing = symbols.filter((s) => !(stored?.bars[s]?.length));
@@ -394,7 +427,11 @@ export async function loadOrBuildSessionCurve(
     const barsBySymbol = await fetchBars(fetchSymbols);
     const incomingBars: Record<string, Bar[]> = {};
     for (const [symbol, bars] of barsBySymbol) {
-      if (bars.length > 0) incomingBars[symbol] = bars;
+      // Clamp to the day before storing: Twelve Data's primary fetch over-reaches
+      // into prior sessions when today is barely traded, and `mergeSession` unions
+      // by timestamp, so unclamped bars would persist across the whole session.
+      const dayBars = clampBarsToDay(bars, openMs, closeMs);
+      if (dayBars.length > 0) incomingBars[symbol] = dayBars;
     }
     // Hand the freshly paid-for bars back to the holdings' quote cache: the
     // newest bar is a current native mark, so a holding row can skip its own
@@ -405,6 +442,7 @@ export async function loadOrBuildSessionCurve(
       fxAttempted = true;
       try {
         incomingFx = await fetchFx();
+        if (incomingFx) incomingFx = clampBarsToDay(incomingFx, openMs, closeMs);
       } catch {
         // FX bars are a refinement (each point falls back to `baseFx`); a failure
         // must never sink the price curve.
@@ -432,7 +470,7 @@ export async function loadOrBuildSessionCurve(
     symbols.some((s) => (loaded.bars[s]?.length ?? 0) > 0)
   ) {
     try {
-      const incomingFx = await fetchFx();
+      const incomingFx = clampBarsToDay(await fetchFx(), openMs, closeMs);
       if (incomingFx.length > 0) {
         stored = await store.mergeSession(day, { fx: incomingFx }, now.getTime());
       }
@@ -458,6 +496,10 @@ export async function loadOrBuildSessionCurve(
     baseEur: anchor.baseEur,
     baseUsd: anchor.baseUsd,
   });
+  // Defensive left-edge clamp: any cross-day bars already in the cache from a
+  // pre-fix build are trimmed back to the session open before the trail and tip
+  // are spliced on, mirroring the right-edge `capAtClose` below.
+  points = clampFromOpen(points, openMs);
 
   // While open, drop a breadcrumb at the live tip (free — a value already in
   // hand) and splice the gathered trail onto the curve so it self-thickens between
@@ -484,7 +526,7 @@ export async function loadOrBuildSessionCurve(
       points,
       rebaseBreadcrumbs(stored?.tips ?? [], anchor.baseEur, anchor.baseUsd),
     );
-    points = capAtClose(points, sessionCloseMs(day));
+    points = capAtClose(points, closeMs);
   }
 
   return { day, points, marketOpen };
