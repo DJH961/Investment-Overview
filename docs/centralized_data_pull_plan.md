@@ -94,14 +94,19 @@ async function pull(ctx: PullContext): Promise<PullReport>;
   …), each already routed through `reservation.ts`.
 - **`primeStaleGraphPackages` is dissolved** into `pull()` as a *decision*, not a
   standing pre-step. It can no longer fire unconditionally every round.
-- **Blob metadata is the prediction signal — not the on-device blob's age.** The
-  orchestrator reads the **blob metadata** it already fetches to decide whether to
-  download (timestamp + coverage) and feeds *that* into the freshness ledger. So
-  before spending a market token it asks *"will the **best available** blob satisfy
-  this need?"* — a fresh remote blob that covers the gap is downloaded (cheap, zero
-  per-symbol tokens) instead of pulling quotes/bars. Metadata doesn't guarantee
-  contents, so this always hands off to the Pillar-2 post-decrypt reconcile, which
-  re-engages the market pull for anything the blob turned out to lack.
+- **Blob metadata is the *pre-decrypt* prediction signal — not the on-device
+  blob's age, and never post-decrypt.** Before the blob is applied (the login
+  warm-up / prefetch), the orchestrator reads the **blob metadata** it already
+  fetches (timestamp + coverage) and feeds *that* into the freshness ledger, asking
+  *"will the **best available** blob satisfy this need?"* — a fresh remote blob that
+  covers the gap is downloaded (cheap, zero per-symbol tokens) instead of pulling
+  quotes/bars. Metadata doesn't guarantee contents, so this hands off to the
+  Pillar-2 post-decrypt reconcile, which re-engages the market pull for anything the
+  blob turned out to lack. **Once the blob is decrypted and applied, the metadata
+  age is irrelevant:** on-device freshness (`deviceDaysMissing`) is the *sole* tier
+  driver, because the device is now either fresher than, or on par with, the blob.
+  Every refresh round after login therefore keys its tier solely on on-device age
+  (`blobDaysOld` is set equal to `deviceDaysMissing` post-decrypt).
 - **Readability acceptance:** a developer can read `data-orchestrator.ts` top to
   bottom and state, for any (kind, market, freshness), exactly what will be
   fetched and from which provider — without opening another file.
@@ -229,7 +234,15 @@ entirely in Pillar 5.**
 | **Relatively fresh** — latest <1h old but older than last auto-update interval | open | market data |
 | ″ | closed, NAV prices for that day missing | **NAV quote + FX quote** only |
 | ″ | closed, NAV present | **FX value only** |
-| **Blob-trust re-engage** (overlay) | any | if a leg was skipped expecting blob data and the decrypted blob lacked it → **re-run the matching row, ignoring the blob** |
+
+> **Post-decrypt vs. pre-decrypt freshness.** The two `blobDaysOld` conditions
+> above are the **pre-decrypt** prediction (login warm-up / prefetch), where a
+> fresh remote blob can still cover the device gap. **Every refresh round after
+> login is post-decrypt:** the blob is already applied on-device, so the tiers key
+> *solely* on on-device age (`blobDaysOld` is set equal to `deviceDaysMissing`).
+> If the applied blob did not cover the gap, `deviceDaysMissing` already reflects
+> the remaining gap and the heavy tier re-engages on its own — no separate
+> blob-trust overlay is needed.
 
 **Two overlays that apply on every tier during market hours:**
 
@@ -403,13 +416,18 @@ The pure modules above are now the **runtime authorities**, not loggers:
   within the user interval; the NAV leg turns on only when today's price is
   missing. A developer can read `planPull` top-to-bottom and state exactly
   what every round pulls.
-- **`blobDaysOld` is runtime-active (assumption 8) + blob-trust re-engage.** It is
-  populated from the remote `portfolio.meta.json` `published_at` (best-available
-  recency), not the on-device blob age. Because a refresh round runs *after* the
-  blob is decrypted, the **blob-trust re-engage overlay** is applied there: the
-  metadata value can only *raise* the freshness floor, never mask the observed
-  on-device gap — so a blob whose metadata promised coverage but which lacked it
-  after decrypt re-engages the skipped row instead of trapping the book stale.
+- **`blobDaysOld` is the *pre-decrypt* prediction signal (assumption 8); unused
+  post-decrypt.** It is populated from the remote `portfolio.meta.json`
+  `published_at` (best-available recency), not the on-device blob age. It is
+  consulted **only** by the pre-decrypt warm-up (`buildPrefetchFreshness`), where
+  the blob has not yet been applied and its recency predicts whether downloading it
+  will save a per-symbol token. Because a refresh round runs *after* the blob is
+  decrypted and applied, `buildPullFreshness` sets `blobDaysOld` equal to
+  `deviceDaysMissing` — the metadata age is irrelevant once the device holds the
+  blob (the device is fresher than, or on par with, it). If the applied blob lacked
+  the coverage its metadata promised, `deviceDaysMissing` already reflects the
+  remaining on-device gap, so the heavy tier re-engages without any separate
+  blob-trust overlay.
 - **Provider fan-out covers login *and* manual (Pillar 5).** `planFanout` is the
   decision of record for the login split *and* for a manual reload's Tiingo budget:
   a non-login fan-out keeps the 10-credit Tiingo floor that auto rounds / other

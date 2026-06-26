@@ -14,6 +14,62 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.13.4] — 2026-06-26
+
+### Fixed
+
+- **Post-login refresh rounds now grade freshness on on-device age alone, never
+  the blob's publish metadata.** The graded-freshness truth-table keys two of its
+  tier boundaries on `blobDaysOld` (the best-available blob's age, from
+  `portfolio.meta.json` `published_at`). That metadata prediction is meaningful
+  only **before** the blob is applied — the login warm-up / prefetch, where a fresh
+  remote blob can still cover the device gap cheaply (zero per-symbol tokens). Once
+  the blob is decrypted and applied on-device, the device is always fresher than,
+  or on par with, the blob, so consulting its metadata age could mis-classify a
+  round: e.g. a device with fresh data but an old blob publish date evaluated
+  `everythingRecent = deviceDaysMissing ≤ 1 && blobDaysOld ≤ 1` as false and
+  skipped the correct tier. `buildPullFreshness` (the **post-decrypt** ledger) now
+  sets `blobDaysOld = deviceDaysMissing`, removing the metadata signal from every
+  post-login tier decision; `buildPrefetchFreshness` (the **pre-decrypt** ledger)
+  is unchanged and still consults real blob metadata. If an applied blob did not
+  cover the gap, `deviceDaysMissing` already reflects the remaining gap and the
+  heavy tier re-engages on its own — the former "blob-trust re-engage" overlay is
+  no longer needed.
+- **Auto-ticks no longer fire a full pull every cadence when a deferred NAV quote
+  is missing from cache.** `buildPullFreshness` reported `quoteAgeMs = Infinity`
+  whenever a budget-deferred NAV had no cached quote, classifying every tick as
+  "minorly-outdated" and re-pulling the whole round. Market-quote age and NAV-quote
+  age are now tracked separately; only a missing **market** quote inflates the age,
+  so the rolling-TTL suppression (Overlay 2) works as intended.
+- **A held price is no longer shown as "aged" after local midnight in non-US
+  timezones.** `holdingFreshness` used the local calendar day to decide whether an
+  observation was "today's", so after midnight local — while the US session's close
+  is still the latest settled mark — a current price flipped to "aged". It now
+  accepts `lastSettledCloseMs`: an observation at or after the latest session close
+  reads as "recent" regardless of the local calendar day.
+- **The 1D/1W graph no longer re-fetches its bars on every build after the close.**
+  `primeStaleGraphPackages` stored bars but no `closeProbe` for incomplete symbols,
+  so `loadOrBuildSessionCurve` saw `closeProbeReady(undefined) === true` and
+  re-fetched each build. A provisional `closeProbe` is now seeded after the warm-up
+  fetch, and concurrent session builds are serialized through a promise chain so two
+  rapid re-renders can't both miss the probe and race the same fetch.
+
+## [4.13.3] — 2026-06-26
+
+### Fixed
+
+- **An exhausted provider is never used as a fallback; the original source is
+  retried at the next quota reset instead.** When Tiingo's 429 circuit breaker is
+  tripped or its hourly/daily budget is spent, `runTiingoFallback` now selects no
+  symbols and surfaces a retryable `PriceError` whose `retryAfterMs` points at the
+  next clock-hour boundary (when the quota resets) — the new `msUntilNextHour`
+  helper. The 429 breaker and the hourly/daily caps are folded structurally into
+  `readBudget`, so `selectWithinBudget` returns 0 symbols when frozen or exhausted
+  and the central Twelve Data safety net catches the unfilled holes. `loadEurUsd`'s
+  FX fallback is likewise gated through the central reservation system, and a
+  fallback blocked by a hard limit now schedules the next refresh at the hour
+  boundary rather than spending against an over-limit provider.
+
 ## [4.13.2] — 2026-06-26
 
 ### Fixed
