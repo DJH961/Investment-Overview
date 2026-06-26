@@ -14,6 +14,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.10.0] — 2026-06-26
+
+### Added
+
+- **USD display now shows "Investing power since yesterday" instead of a $0
+  currency effect.** Because the book is USD-booked, an EUR/USD move hands the
+  owner no extra dollars on assets already held — the portfolio FX effect in USD
+  is exactly $0. So in USD display the currency box reframes to what actually
+  changes for the owner in dollar terms: how many more (+) or fewer (−) dollars
+  their regular EUR investment (the euros they wire to the US to keep investing)
+  buys now versus yesterday's close. The amount is configurable in Settings →
+  Display (default €100) and the panel keeps the same diverging
+  market-hours/overnight split, with a note spelling out "€X now buys $Y — vs $Z
+  at yesterday's close" (`fxBuyingPowerSplit`/`fx_buying_power_split`,
+  `investing_power_service`, `web/src/investment-amount.ts`,
+  `web/src/ui.ts`, `src/investment_dashboard/ui/pages/overview.py`,
+  `src/investment_dashboard/ui/pages/settings.py`).
+
+### Fixed
+
+- **The currency box's market-status labels can no longer wrap onto two lines.**
+  In the web companion's diverging FX bar the "live"/"last" tag sat inline with
+  the status word, crowding the narrow label column so "Market holiday", "Market
+  hours" and "Overnight" could be pushed onto a second line. The tag now rides in
+  a dedicated value cell on the right, so the status label always stays on one
+  line (`web/src/ui.ts`, `web/src/styles.css`).
+
 ## [4.9.1] — 2026-06-26
 
 ### Fixed

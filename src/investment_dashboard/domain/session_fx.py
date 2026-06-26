@@ -171,3 +171,92 @@ def fx_effect_split(
         market_hours_eur=market_hours_eur,
         overnight_eur=overnight_eur,
     )
+
+
+@dataclass(frozen=True)
+class FxBuyingPowerSplit:
+    """The investing-power twin of :class:`FxEffectSplit`, expressed in **USD**.
+
+    Where :class:`FxEffectSplit` measures the EUR revaluation of the whole book,
+    this measures how many more (+) or fewer (−) dollars the owner's regular EUR
+    investment amount — the euros they wire to the US to keep investing — buys now
+    versus yesterday's close, split into the same market-hours and overnight legs.
+
+    Every field is ``None`` when its inputs are missing so the UI hides the split
+    rather than inventing a misleading zero.
+    """
+
+    #: The whole USD buying-power change on the notional (prior close → now).
+    total_usd: Decimal | None
+    #: The slice earned/lost while the market was open. Live while open.
+    market_hours_usd: Decimal | None
+    #: The slice earned/lost after-hours. Live once shut.
+    overnight_usd: Decimal | None
+
+
+def fx_buying_power_split(
+    *,
+    market_open: bool,
+    amount_eur: Decimal | None,
+    live_fx: Decimal | None,
+    prev_fx: Decimal | None,
+    session_close_fx: Decimal | None,
+    session_open_fx: Decimal | None = None,
+) -> FxBuyingPowerSplit:
+    """Split the **buying-power** change on a fixed EUR notional into its legs.
+
+    Because the notional is a fixed number of euros, the dollars it buys are
+    simply ``amount_eur · fx``, so each leg is the *difference* in dollars bought
+    across the relevant rate move:
+
+    * whole move (prior close → now): ``amount_eur · (live_fx − prev_fx)``;
+    * **market open** — the live leg is market hours since the session opened:
+      ``amount_eur · (live_fx − open_fx)``; the remainder is last night's frozen
+      overnight leg, so it survives the market start. Needs ``session_open_fx``.
+    * **market closed** — the live leg is the overnight drift since the close:
+      ``amount_eur · (live_fx − close_fx)``; the remainder is the last session's
+      frozen market-hours leg. Needs ``session_close_fx``.
+
+    A positive figure means the euro strengthened, so the same euros buy *more*
+    dollars to invest. Every field degrades to ``None`` when its inputs are
+    missing so the UI hides the split. This is the Python desktop twin of
+    ``fxBuyingPowerSplit`` in ``web/src/session-fx.ts``, kept in lock-step.
+    """
+    usable_amount = amount_eur if amount_eur is not None and amount_eur > 0 else None
+    live = live_fx if live_fx is not None and live_fx > 0 else None
+
+    total_usd: Decimal | None
+    if usable_amount is None or live is None or prev_fx is None or prev_fx <= 0:
+        total_usd = None
+    else:
+        total_usd = usable_amount * (live - prev_fx)
+
+    def _leg_from_anchor(anchor_fx: Decimal | None) -> Decimal | None:
+        """USD bought now minus USD bought at ``anchor_fx`` on the fixed notional."""
+        if usable_amount is None or live is None or anchor_fx is None or anchor_fx <= 0:
+            return None
+        return usable_amount * (live - anchor_fx)
+
+    market_hours_usd: Decimal | None
+    overnight_usd: Decimal | None
+
+    if market_open:
+        live_leg = _leg_from_anchor(session_open_fx)
+        if live_leg is None:
+            market_hours_usd, overnight_usd = total_usd, None
+        else:
+            market_hours_usd = live_leg
+            overnight_usd = None if total_usd is None else total_usd - live_leg
+    else:
+        live_leg = _leg_from_anchor(session_close_fx)
+        if live_leg is None:
+            overnight_usd, market_hours_usd = total_usd, None
+        else:
+            overnight_usd = live_leg
+            market_hours_usd = None if total_usd is None else total_usd - live_leg
+
+    return FxBuyingPowerSplit(
+        total_usd=total_usd,
+        market_hours_usd=market_hours_usd,
+        overnight_usd=overnight_usd,
+    )
