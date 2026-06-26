@@ -58,7 +58,7 @@ import {
 } from "./market-hours";
 import type { CurvePoint } from "./timeseries";
 import type { ExportLiveCurvePoint, ExportLiveGraphSeries, ExportLiveGraphs } from "./types";
-import { repairWeekNavCollapse } from "./week-repair";
+import { repairWeekNavCollapse, type RepairHealthyHint } from "./week-repair";
 import { DEFAULT_WEEK_SESSIONS } from "./week";
 
 /**
@@ -226,7 +226,23 @@ export function springboardWeekCurve(input: SpringboardInput): CurvePoint[] | nu
   // cannot remove it (the blob re-paints on every render). The repair lifts a
   // collapsed leading run back onto the week's healthy level, the web analogue of
   // the desktop's nearest-complete-day NAV gap-fill. A no-op on a healthy week.
-  let points = repairWeekNavCollapse(windowPoints.filter((p) => p.t < todayStartMs));
+  //
+  // Today's live whole-book value — the dense 1D slice's opening point, else the
+  // headline live tip — is handed in as the healthy anchor so the repair can also
+  // lift an *all-settled* collapse (every settled day missing its NAV sleeve,
+  // e.g. a blob exported right after a cache reset), the case a settled-only
+  // donor cannot reach and that survived the earlier fix.
+  const todaySettled = (input.todayCurve ?? []).filter((p) => p.t >= todayStartMs);
+  const healthyHint: RepairHealthyHint | null =
+    todaySettled.length > 0
+      ? { eur: todaySettled[0].valueEur, usd: todaySettled[0].valueUsd }
+      : input.liveTip
+        ? { eur: input.liveTip.valueEur, usd: input.liveTip.valueUsd }
+        : null;
+  let points = repairWeekNavCollapse(
+    windowPoints.filter((p) => p.t < todayStartMs),
+    healthyHint,
+  );
 
   // Completeness gate over the *settled* sessions only (today is supplied live): a
   // fresh `end_date` is not enough — the blob must span nearly the whole settled

@@ -112,3 +112,63 @@ describe("repairWeekNavCollapse", () => {
     expect(repairWeekNavCollapse(sameDay)).toBe(sameDay);
   });
 });
+
+describe("repairWeekNavCollapse with a live healthy hint (whole-week collapse, issue #169)", () => {
+  it("lifts an *all*-settled collapse onto today's live whole-book level", () => {
+    // The entire settled week lost its NAV sleeve (≈60%): no healthy settled day
+    // exists, so only today's live value (1000/1100) can anchor the recovery.
+    const points = [
+      p("2024-06-03T20:00:00Z", 600, 660),
+      p("2024-06-04T20:00:00Z", 605, 665),
+      p("2024-06-05T20:00:00Z", 610, 670),
+    ];
+    // Without a hint the bare repair cannot act (the regression that survived).
+    expect(repairWeekNavCollapse(points)).toBe(points);
+    // With today's healthy level it lifts every settled day by the NAV hole
+    // (offset = 1000 − 610 = 390 EUR, 1100 − 670 = 430 USD), de-stepping the run.
+    const repaired = repairWeekNavCollapse(points, { eur: d(1000), usd: d(1100) });
+    expect(eur(repaired)).toEqual([990, 995, 1000]);
+    expect(usd(repaired)).toEqual([1090, 1095, 1100]);
+  });
+
+  it("preserves each collapsed day's intraday shape across an all-week lift", () => {
+    const points = [
+      p("2024-06-03T15:00:00Z", 600, 660),
+      p("2024-06-03T20:00:00Z", 620, 680),
+      p("2024-06-04T20:00:00Z", 610, 670),
+    ];
+    const repaired = repairWeekNavCollapse(points, { eur: d(1000), usd: d(1100) });
+    // Monday's 20-wide intraday rise survives the constant lift unchanged.
+    expect(repaired[1].valueEur.minus(repaired[0].valueEur).toNumber()).toBe(20);
+    // The last settled day rises to ≈ today's level (offset = 1000 − 610 = 390).
+    expect(repaired[2].valueEur.toNumber()).toBe(1000);
+  });
+
+  it("still lifts a single collapsed settled day when only the hint is healthy", () => {
+    const points = [
+      p("2024-06-04T15:00:00Z", 600, 660),
+      p("2024-06-04T20:00:00Z", 610, 670),
+    ];
+    const repaired = repairWeekNavCollapse(points, { eur: d(1000), usd: d(1100) });
+    expect(eur(repaired)).toEqual([990, 1000]);
+  });
+
+  it("leaves a healthy week untouched even when a hint is supplied", () => {
+    const points = [
+      p("2024-06-03T20:00:00Z", 1000, 1100),
+      p("2024-06-04T20:00:00Z", 1005, 1105),
+      p("2024-06-05T20:00:00Z", 1010, 1110),
+    ];
+    expect(repairWeekNavCollapse(points, { eur: d(1010), usd: d(1110) })).toBe(points);
+  });
+
+  it("does not lift when today's hint is itself collapsed (whole book degraded, not just settled)", () => {
+    // Today is as low as the settled days — there is no genuine healthy level to
+    // recover to, so nothing is invented (avoids masking a real whole-book drop).
+    const points = [
+      p("2024-06-03T20:00:00Z", 600, 660),
+      p("2024-06-04T20:00:00Z", 605, 665),
+    ];
+    expect(repairWeekNavCollapse(points, { eur: d(610), usd: d(670) })).toBe(points);
+  });
+});

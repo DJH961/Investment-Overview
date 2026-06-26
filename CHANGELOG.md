@@ -14,6 +14,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.12.4] — 2026-06-26
+
+### Fixed
+
+- **The 1W graph no longer nosedives at market open (issue #169).** When the
+  exported blob's settled week was generated while no NAV/FX was available (for
+  example right after a "Reset cache & re-pull"), *every* settled day could land
+  with its mutual-fund / money-market sleeve collapsed to ~0, dropping the line
+  to roughly 60% of its true value while the live tip stayed full — and the
+  autoscale then crushed all detail out of the curve. Previous fixes only
+  repaired a *leading run* of collapsed days, which required a healthy settled
+  day to act as the donor; a fully-collapsed week had none. `repairWeekNavCollapse`
+  now accepts the live whole-book level (today's intraday opening point, else the
+  live tip) as a healthy anchor and lifts the entire settled week back onto it,
+  so EUR and USD lines recover their real scale.
+
 ## [4.12.3] — 2026-06-26
 
 ### Added
