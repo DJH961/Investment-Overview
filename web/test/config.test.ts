@@ -36,6 +36,7 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     twelveDataPerDay: 800,
     tiingoPerHour: 40,
     tiingoPerDay: 800,
+    resumeOnRefresh: false,
     ...overrides,
   };
 }

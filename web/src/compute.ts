@@ -219,6 +219,15 @@ export interface OverviewView {
   /** EUR→USD reference rate carried in the export meta (for the FX line). */
   fxRateEurUsd: Decimal | null;
   /**
+   * EUR→USD as the most recent regular session *settled* (the rate captured
+   * around the 16:00 ET close), or null when unknown / the session is still open.
+   * The live 1D/1W graphs freeze their EUR view to this once the market is shut so
+   * their market-day trajectory does not slide with overnight FX, and it is the
+   * baseline the after-hours FX slice is measured from. Populated by the app shell
+   * (it owns the persisted capture), so the compute layer defaults it to null.
+   */
+  fxRateEurUsdSessionClose: Decimal | null;
+  /**
    * Epoch-ms the live/cached EUR→USD spot that valued the book was observed, so
    * the hero FX line can stamp when the rate is from (a clock time today, a date
    * once it is older). Null when only the keyless end-of-day rate was available
@@ -1323,6 +1332,7 @@ export function buildDashboard(
     totalDividendsEur,
     dividendYieldPct,
     fxRateEurUsd,
+    fxRateEurUsdSessionClose: null,
     fxObservedAt: opts.fxObservedAt ?? null,
     holdingsCount: holdings.length,
     missingPriceSymbols: missingPrice,
@@ -1348,6 +1358,11 @@ export function buildDashboard(
  * P/L slice — surfaced alongside it so the user sees both the money the FX swing
  * moved and the rate change behind it. Null when either rate is unknown or the
  * prior close is non-positive.
+ *
+ * Cutoff: "today" here resets at the prior **NYSE session close**, matching the
+ * price-side "today" move and the {@link fxEffectSplit} market-hours/overnight
+ * boundary. The baseline (`fxRateEurUsdPrev`) is the FX provider's settled
+ * `previousClose`, whose daily settle is the practical proxy for that close.
  */
 export function fxTodayDeviationPct(o: OverviewView): Decimal | null {
   const now = o.fxRateEurUsd;

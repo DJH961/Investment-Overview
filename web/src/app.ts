@@ -79,7 +79,7 @@ import {
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, elapsedSessionMs, settledSessionsSince } from "./market-hours";
+import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -124,6 +124,14 @@ import { planFanout, planTwelveDataSafetyNet, TIINGO_RESERVE_CREDITS } from "./p
 import { reconcileHandshake } from "./login-handshake";
 import { springboardSessionCurve, springboardWeekCurve, parseExportedPoints } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
+import {
+  graphAnchorFx,
+  readSessionCloseFx,
+  recordSessionCloseFx,
+  sessionBarsComplete,
+  sessionCloseFxFromBars,
+  sessionFxBarsComplete,
+} from "./session-fx";
 import { TimeSeriesStore, type Breadcrumb } from "./timeseries-store";
 import { WEEK_STORE_KEY, navBarsFromQuotes, weekStaleSymbols } from "./week";
 import { ONE_HOUR_MS } from "./freshness";
@@ -139,6 +147,15 @@ import {
 } from "./market-sleeve";
 import type { Bar, CurvePoint } from "./timeseries";
 import type { MobileExport } from "./types";
+import {
+  clearResumeToken,
+  isReloadNavigation,
+  isResumeTokenValid,
+  readResumeEnvelope,
+  saveResumeToken,
+  touchResumeActivity,
+  unwrapResumePassphrase,
+} from "./resume-session";
 import {
   h,
   renderDashboard,
@@ -158,6 +175,27 @@ const TOAST_DURATION_MS = 6000;
  * keep working underneath.
  */
 const WELCOME_BANNER_DURATION_MS = 3200;
+
+/**
+ * How long before the idle auto-lock fires to surface the dismissable "locking
+ * soon" warning, giving the user a chance to stay unlocked. Clamped to at most
+ * half the auto-lock window so a very short window still shows a sensible lead.
+ */
+const AUTO_LOCK_WARN_LEAD_MS = 15_000;
+
+/**
+ * Throttle for re-arming the idle auto-lock on high-frequency activity (pointer
+ * moves, wheel, …). Re-arming at most this often keeps the timers from thrashing
+ * while still measuring idle from the most recent second of activity. A visible
+ * warning always re-arms immediately, regardless of this throttle.
+ */
+const AUTO_LOCK_RESET_THROTTLE_MS = 1000;
+
+/**
+ * Throttle for re-stamping the resume token's last-activity time. Independent of
+ * the timer re-arm so storage writes stay infrequent under heavy interaction.
+ */
+const RESUME_TOUCH_THROTTLE_MS = 5000;
 
 /**
  * Minimum time the manual "Refreshing prices…" feedback stays on screen after
@@ -546,6 +584,20 @@ export class App {
   private manualFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
   /** Pending idle auto-lock timer, if any. */
   private autoLockTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Pending timer that surfaces the "locking soon" warning ahead of the lock. */
+  private autoLockWarnTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The live "locking soon" warning element, if currently shown. */
+  private autoLockWarnEl: HTMLElement | null = null;
+  /** Interval ticking the warning's countdown, if shown. */
+  private autoLockCountdownTimer: ReturnType<typeof setInterval> | null = null;
+  /** The configured idle-lock window in ms (0 = disabled). */
+  private autoLockTimeoutMs = 0;
+  /** Epoch-ms the idle-lock timers were last (re)armed, for the reset throttle. */
+  private autoLockArmedAt = 0;
+  /** Epoch-ms the resume token's activity stamp was last refreshed (throttle). */
+  private lastResumeTouchAt = 0;
+  /** True for the first paint after a page reload resumed the session. */
+  private resumedFromRefresh = false;
   /** Installed activity listeners that reset the idle auto-lock timer. */
   private activityHandler: (() => void) | null = null;
 
@@ -574,6 +626,11 @@ export class App {
     else if (!this.isConfigured()) {
       this.showSetup();
     } else {
+      // A page reload (F5) of this tab may resume the unlocked session directly —
+      // opt-in, passphrase-wrapped and idle/version/context-bound — so a refresh
+      // behaves like the manual refresh button rather than forcing a re-login.
+      // Falls through to the normal unlock screen when resume isn't applicable.
+      if (await this.tryResumeFromRefresh()) return;
       // Warm live quotes for the symbols we already know about *before* the user
       // finishes unlocking, so the first post-login paint is live rather than
       // starting the per-minute clock from zero. Honours the shared credit budget
@@ -586,6 +643,53 @@ export class App {
       // and no extra tap.
       this.showUnlock(undefined, { autoPrompt: true });
     }
+  }
+
+  /**
+   * Attempt to resume the unlocked session after a full-page reload (F5).
+   *
+   * Returns `true` only when it took over the boot flow (the resume path is now
+   * driving the unlock); `false` means "not applicable — carry on to the normal
+   * unlock screen". All of these must hold for a resume to even be tried:
+   *   - the user opted in ({@link AppConfig.resumeOnRefresh});
+   *   - this navigation is a reload / back-forward, not a cold open;
+   *   - the device is **not** biometric-enrolled — a fingerprint auto-prompt is
+   *     the stronger path, so we prefer it and never weaken it with a token;
+   *   - a stored token exists and is still valid (version + data-source match and
+   *     within the idle window — see {@link isResumeTokenValid}).
+   *
+   * On a valid token we unwrap the passphrase and drive the ordinary
+   * {@link unlock} flow, so a newer blob that arrived since the last load is
+   * re-downloaded and re-decrypted exactly as on a manual refresh.
+   */
+  private async tryResumeFromRefresh(): Promise<boolean> {
+    if (!this.state.config.resumeOnRefresh) return false;
+    if (!isReloadNavigation()) return false;
+    // Prefer biometric: a single fingerprint touch is stronger than a stored
+    // token, so an enrolled device keeps the one-tap auto-prompt instead.
+    if (hasBiometricEnrolment()) return false;
+    const env = readResumeEnvelope();
+    const ok = isResumeTokenValid(env, {
+      now: Date.now(),
+      appVersion: APP_VERSION,
+      blobUrl: resolveBlobUrl(this.state.config) ?? "",
+      autoLockMinutes: this.state.config.autoLockMinutes,
+    });
+    if (!env || !ok) {
+      // Stale / mismatched / idle-expired token: drop it and re-authenticate.
+      clearResumeToken();
+      return false;
+    }
+    let passphrase: string;
+    try {
+      passphrase = await unwrapResumePassphrase(env);
+    } catch {
+      clearResumeToken();
+      return false;
+    }
+    this.resumedFromRefresh = true;
+    await this.unlock(passphrase);
+    return true;
   }
 
   /**
@@ -713,6 +817,16 @@ export class App {
       config,
       now,
     );
+    // After-hours FX close completion: when the session's price bars were already
+    // in hand (so no 1D backfill ran above to grab the FX track alongside them)
+    // but the stored EUR→USD track never reached the 16:00 ET close, pull the FX
+    // alone so the freeze anchor + currency-effect split read the true settle, not
+    // a mid-session rate. Gated to the closed market — during the session the
+    // close has simply not happened yet — and skipped when a session backfill just
+    // fetched the FX in the same pass. Routed through the same reservation/breaker.
+    if (!marketOpen && graphStale.fxIncomplete && prefetch.graphSessionSymbols.length === 0) {
+      await this.prefetchSessionFx(config, now);
+    }
     const quoteWork = prefetch.symbols.length + prefetch.navSymbols.length;
     if (quoteWork === 0) {
       this.pollLog(
@@ -895,33 +1009,55 @@ export class App {
    * as the catch-up quotes. NAV funds are never included: the graphs never plot
    * them, so they never need (or get) bars. Returns empty sets when there are no
    * market symbols to plot.
+   *
+   * `fxIncomplete` is the after-hours signal the FX-only backfill keys on: the 1D
+   * EUR→USD track on the device has **not** reached the session close (it was last
+   * fetched mid-session, or never), so the freeze anchor / currency-effect split
+   * would otherwise read a mid-session rate as "the close" until the next session.
+   * See {@link sessionFxBarsComplete} and {@link prefetchSessionFx}.
    */
   private async prefetchGraphStaleness(
     marketSymbols: string[],
     now: Date,
-  ): Promise<{ session: string[]; week: string[] }> {
+  ): Promise<{ session: string[]; week: string[]; fxIncomplete: boolean }> {
     if (marketSymbols.length === 0) {
-      return { session: [], week: [] };
+      return { session: [], week: [], fxIncomplete: false };
     }
     const store = this.ensureTimeSeriesStore();
     const day = lastSessionDate(now);
     const today = await store.loadSession(day).catch(() => null);
+    const marketClosed = !isUsMarketOpen(now);
+    const close = sessionCloseMs(day);
     // Expected-empty ≠ stale (market_open_token_burn_fix_plan.md WS1): a fresh,
     // just-opened session has no completed intraday bar yet, so the absence of
     // today's bars is *expected*. Queueing a 1D backfill for a window that has
     // not elapsed is the market-open burn — skip it and let the curve accrue
     // tick-by-tick from the live tip. Only once a full bar interval of trading
     // time has passed does a still-missing symbol read genuinely stale.
+    //
+    // A symbol with *partial* bars that never reached the 16:00 ET close is the
+    // after-close sibling of the missing case (scenario F): bars pulled
+    // mid-session sit in the store looking present, so a length check alone would
+    // leave the 1D curve ending early. Once the market is shut, treat such a stale
+    // partial-day track as stale too so the same backfill completes its tail (and
+    // grabs the FX track alongside — the FX-close repair below is then a no-op).
     const session = sessionIsWarmingUp(now)
       ? []
-      : marketSymbols.filter((s) => !(today?.bars[s]?.length));
+      : marketSymbols.filter((s) => {
+          const bars = today?.bars[s];
+          if (!bars?.length) return true;
+          return marketClosed && !sessionBarsComplete(bars, close, INTRADAY_BAR_INTERVAL_MS);
+        });
     const weekStored = await store.loadSession(WEEK_STORE_KEY).catch(() => null);
     // Match the 1W build's coverage test, not a looser presence check: a
     // stale-but-present store (only pre-settlement bars) must read *stale* here,
     // else priming is skipped and the dashboard build re-pulls it via Tiingo
     // moments later (docs/tiingo_polling_storm_cleanup_plan.md item 5b).
     const week = weekStaleSymbols(weekStored, marketSymbols, now);
-    return { session, week };
+    // The 1D FX track reads incomplete when no bar has reached this session's
+    // 16:00 ET close — the after-hours gap the FX-only backfill closes.
+    const fxIncomplete = !sessionFxBarsComplete(today?.fx ?? [], close);
+    return { session, week, fxIncomplete };
   }
 
   /**
@@ -1162,6 +1298,14 @@ export class App {
    * Returns the number of symbol-series actually stored this prime (0 when the
    * graphs were already loaded), so the caller can stamp the clock-hour gate only
    * when a market-hours prime genuinely pulled bars.
+   *
+   * It is also the shared after-hours home of the incomplete-1D-FX-close backfill
+   * ({@link prefetchSessionFx}): wiring it here — not only in the login warm-up —
+   * means every auto/manual/reset round repairs a session FX track that never
+   * reached the 16:00 ET close, so a failed login warm-up can no longer strand the
+   * freeze anchor / currency-effect split on a mid-session rate. The FX-only pull
+   * runs only while the market is shut and only when no session bar pull this round
+   * would already grab the FX track; it never affects the returned bar count.
    */
   private async primeStaleGraphPackages(now: Date = new Date()): Promise<number> {
     const { config } = this.state;
@@ -1171,6 +1315,18 @@ export class App {
       .map((e) => e.symbol);
     if (marketSymbols.length === 0) return 0;
     const stale = await this.prefetchGraphStaleness(marketSymbols, now);
+    // After-hours FX close completion — mirror of the login warm-up (see
+    // {@link prefetchOnStart}) so the FX-only backfill is wired into **every**
+    // pulling mechanic, not just the start prefetch. If the login warm-up ever
+    // fails before it reaches its FX step, the routine auto/manual/reset rounds all
+    // flow through here while the market is shut, so they repair the incomplete 1D
+    // EUR→USD close instead of leaving the freeze anchor + currency-effect split
+    // reading a mid-session rate as "the close" until the next session. Same gate
+    // as the start path: closed market, FX track short of the close, and no session
+    // bar pull this round (a session backfill already grabs the FX track alongside).
+    if (!isUsMarketOpen(now) && stale.fxIncomplete && stale.session.length === 0) {
+      await this.prefetchSessionFx(config, now);
+    }
     if (stale.session.length === 0 && stale.week.length === 0) return 0;
     return this.prefetchGraphBars(stale.session, stale.week, config, now, this.primingCurrencyMap());
   }
@@ -1303,6 +1459,66 @@ export class App {
       outputsize: 8,
     });
     return stored;
+  }
+
+  /**
+   * Backfill **only** the 1D EUR→USD bar track for the current session, used by
+   * the after-hours pulls (the login warm-up's start prefetch **and** the routine
+   * auto/manual/reset rounds via {@link primeStaleGraphPackages}) when the price
+   * bars are already in hand (so the graph-bar backfill above never ran to grab
+   * the FX alongside them) yet the stored FX track stopped short of the 16:00 ET
+   * close — an *incomplete 1D FX bar*. Completing it means the freeze anchor
+   * ({@link graphAnchorFx}) and the hero currency-effect split read the genuine
+   * settle from the bars rather than a stale mid-session rate that would otherwise
+   * persist until the next session.
+   *
+   * It pulls nothing but the FX, and only through the Tiingo `/price` FX-history
+   * pipe (the same pipe the graph backfill uses for the FX track). The fetch is
+   * routed through the single {@link ledgerReservation} authority and the 429
+   * breaker exactly like every other pull, so it can never overshoot the shared
+   * EUR/USD budget, and a per-series backoff parks a dead/empty FX leg. Returns
+   * whether a fresh FX bar was stored.
+   */
+  private async prefetchSessionFx(config: AppConfig, now: Date): Promise<boolean> {
+    const proxyUrl = resolvePriceProxyUrl(config);
+    if (!proxyUrl) return false; // graph FX bars only come cheaply via the Tiingo /price pipe
+    const window = sessionFxWindow(now);
+    // Same reservation + observation-only meters + breaker wiring as the graph
+    // backfill's FX track, so this spend is governed identically.
+    const reservation = ledgerReservation();
+    const spent = { credits: 0 };
+    const { tiingoMeter, twelveDataMeter } = instrumentedGraphRecorders({
+      range: "1D FX close",
+      bookTwelveData: () => undefined,
+      refundTwelveData: (n) => reservation.release("twelvedata", n, Date.now()),
+      bookTiingo: () => undefined,
+      refundTiingo: (n) => reservation.release("tiingo", n, Date.now()),
+      log: (message) => this.pollLog("graph", message),
+      spent,
+      onTwelveData429: () => recordTwelveData429(Date.now()),
+      onTwelveDataSuccess: () => recordTwelveDataSuccess(),
+      onTiingo429: () => recordTiingo429(Date.now()),
+    });
+    const fetchFx = makeWindowFxFetcher(proxyUrl, window, "1hour", undefined, tiingoMeter, {
+      apiKey: config.apiKey,
+      twelveDataMeter,
+      backoff: cacheSeriesBackoff(),
+      backoffKey: "fx:1D:1hour",
+      reservation,
+    });
+    if (!fetchFx) return false;
+    const fx = await fetchFx().catch(() => undefined);
+    if (!fx || fx.length === 0) {
+      this.pollLog("graph", "After-hours FX close backfill found no new EUR/USD bars.");
+      return false;
+    }
+    await this.ensureTimeSeriesStore().mergeSession(lastSessionDate(now), { fx }, now.getTime());
+    this.pollLog(
+      "graph",
+      `After-hours FX close backfill stored ${fx.length} EUR/USD bar(s) to complete the session close ` +
+        `(price bars already in hand, FX track was short of the 16:00 ET settle).`,
+    );
+    return true;
   }
 
   /** Warm the chosen symbols on the Twelve Data primary; returns how many it fetched. */
@@ -1551,6 +1767,12 @@ export class App {
     const tdPerDay = providerLimitInput("f-td-day", config.twelveDataPerDay, DEFAULT_TWELVE_DATA_PER_DAY);
     const tiingoPerHour = providerLimitInput("f-ti-hour", config.tiingoPerHour, DEFAULT_TIINGO_PER_HOUR);
     const tiingoPerDay = providerLimitInput("f-ti-day", config.tiingoPerDay, DEFAULT_TIINGO_PER_DAY);
+    const resumeOnRefresh = h("select", { id: "f-resume", class: "select" }, [
+      h("option", { value: "0" }, ["Off — re-login on every page refresh"]),
+      h("option", { value: "1" }, ["On — stay unlocked across a refresh (this tab)"]),
+    ]) as HTMLSelectElement;
+    resumeOnRefresh.value = config.resumeOnRefresh ? "1" : "0";
+    resumeOnRefresh.setAttribute("aria-label", "Stay unlocked across a page refresh");
 
     // Hidden file picker backing the "Import config" button: pick a previously
     // exported packet, repopulate the (still editable) fields, and let the user
@@ -1708,7 +1930,12 @@ export class App {
       field(
         "Auto-lock (minutes)",
         autoLock,
-        `Lock the dashboard after this many minutes of inactivity. Set 0 to never auto-lock. Default is ${DEFAULT_AUTO_LOCK_MINUTES}.`,
+        `Lock the dashboard after this many minutes of inactivity. Set 0 to never auto-lock. Default is ${DEFAULT_AUTO_LOCK_MINUTES}. A dismissable warning appears ~15s before locking.`,
+      ),
+      field(
+        "Stay unlocked across a page refresh",
+        resumeOnRefresh,
+        "When on, reloading the whole page (F5) in this tab resumes your session instead of asking for the passphrase again — like the refresh button. Closing the tab, or being idle past the auto-lock window, still locks. The passphrase is never stored in the clear, only ever this tab. Off by default.",
       ),
     );
     // Fingerprint unlock toggle — only meaningful while unlocked (we need the
@@ -1841,10 +2068,16 @@ export class App {
         twelveDataPerDay: parseProviderLimit(tdPerDay.value, DEFAULT_TWELVE_DATA_PER_DAY),
         tiingoPerHour: parseProviderLimit(tiingoPerHour.value, DEFAULT_TIINGO_PER_HOUR),
         tiingoPerDay: parseProviderLimit(tiingoPerDay.value, DEFAULT_TIINGO_PER_DAY),
+        resumeOnRefresh: resumeOnRefresh.value === "1",
       };
       if (!next.apiKey) return this.showSetup("Enter your price API key.", mode);
       if (!next.blobUrl) return this.showSetup("Enter your data-source URL.", mode);
       this.state.config = next;
+      // A settings change can alter the resume identity (the data source) or turn
+      // resume off — drop any existing token so it can't apply to the new state;
+      // a still-enabled session re-mints a fresh, correctly-bound token via
+      // afterUnlock below.
+      clearResumeToken();
       // Persist (the API key is encrypted at rest) before advancing. In Settings
       // (already unlocked) re-run the load pipeline with the new config; otherwise
       // continue the first-run flow to the unlock screen.
@@ -1896,6 +2129,9 @@ export class App {
 
   private showUnlock(error?: string, options: { autoPrompt?: boolean } = {}): void {
     this.leaveDemoChrome();
+    // Back at the lock screen, a resume attempt (if any) is over — clear the flag
+    // so a later manual unlock doesn't mislabel itself as a refresh-resume.
+    this.resumedFromRefresh = false;
     const enrolled = hasBiometricEnrolment();
 
     const pass = h("input", {
@@ -2353,8 +2589,16 @@ export class App {
     // confirms the login was detected and that a price refresh is about to run.
     // It sits clear of the bottom refreshing pill / coverage toast so both show
     // at once — the user sees "welcome back" *and* the live update underneath.
-    this.welcomeBanner("Welcome back — checking prices…");
-    this.pollLog("login", "Unlock detected — painting cache, starting refresh.");
+    // After a page-reload resume, say so explicitly so the restore is never
+    // silent or confusing — the Lock control stays available in the topbar.
+    if (this.resumedFromRefresh) {
+      this.welcomeBanner("Resumed after refresh — checking prices…");
+      this.pollLog("login", "Session resumed after page reload — painting cache, starting refresh.");
+    } else {
+      this.welcomeBanner("Welcome back — checking prices…");
+      this.pollLog("login", "Unlock detected — painting cache, starting refresh.");
+    }
+    this.resumedFromRefresh = false;
 
     // Once the login prefetch settles, spin the Refresh glyph briefly *iff* it
     // actually fetched new data — the honest "the prefetch got you something
@@ -2427,6 +2671,34 @@ export class App {
     this.startupRefresh(session, quick, quickOpts);
     // 5. Arm the idle auto-lock so an unattended session locks itself.
     this.installAutoLock();
+    // 6. Mint/refresh the tab-scoped resume token (opt-in) so a later page reload
+    //    can pick this session back up without a re-login. A no-op (and a clear)
+    //    when the option is off.
+    void this.persistResumeToken();
+  }
+
+  /**
+   * Mint or refresh the opt-in resume token after a successful unlock, wrapping
+   * the in-memory passphrase with the per-device key. Bound to the current data
+   * source so a later reload only resumes against the same book. When the option
+   * is off (or there is somehow no passphrase) it instead clears any stale token.
+   * Best-effort: a storage/crypto failure never blocks the dashboard.
+   */
+  private async persistResumeToken(): Promise<void> {
+    if (!this.state.config.resumeOnRefresh || !this.state.passphrase) {
+      clearResumeToken();
+      return;
+    }
+    try {
+      await saveResumeToken({
+        passphrase: this.state.passphrase,
+        blobUrl: resolveBlobUrl(this.state.config) ?? "",
+        now: Date.now(),
+      });
+      this.lastResumeTouchAt = Date.now();
+    } catch {
+      /* resume is a convenience; never let a persist failure surface. */
+    }
   }
 
   /**
@@ -2476,29 +2748,132 @@ export class App {
 
   /**
    * Arm an inactivity timer that locks the session after
-   * {@link AppConfig.autoLockMinutes} minutes without interaction. Pointer, key,
-   * touch and scroll activity (plus tab re-focus) reset the countdown. A value of
-   * `0` disables the feature. Safe to call repeatedly — it tears down any prior
-   * wiring first, so a Settings change re-arms with the new timeout.
+   * {@link AppConfig.autoLockMinutes} minutes without interaction. Genuine
+   * interaction — pointer/touch presses *and movement*, wheel, scroll, key,
+   * typing, clicks and tab re-focus — resets the countdown, so the lock truly
+   * only bites when the user has actually been away. A value of `0` disables the
+   * feature. Safe to call repeatedly — it tears down any prior wiring first, so a
+   * Settings change re-arms with the new timeout.
+   *
+   * Ahead of the lock, a dismissable warning ({@link showAutoLockWarning}) gives
+   * the user a few seconds (and a one-tap "Stay unlocked") before it fires.
    */
   private installAutoLock(): void {
     this.removeAutoLock();
     const minutes = this.state.config.autoLockMinutes;
-    if (minutes <= 0) return;
-    const timeoutMs = minutes * 60_000;
+    if (minutes <= 0) {
+      this.autoLockTimeoutMs = 0;
+      return;
+    }
+    this.autoLockTimeoutMs = minutes * 60_000;
     const reset = (): void => {
-      if (this.autoLockTimer) clearTimeout(this.autoLockTimer);
       // Only keep counting while a session is actually unlocked.
       if (!this.state.passphrase) return;
-      this.autoLockTimer = setTimeout(() => {
-        if (this.state.passphrase) this.lock();
-      }, timeoutMs);
+      const now = Date.now();
+      // Keep the resume token's idle clock honest, throttled so heavy movement
+      // doesn't thrash storage.
+      this.touchResume(now);
+      const warningUp = this.autoLockWarnEl !== null;
+      // High-frequency events (pointer/mouse moves, wheel) re-arm at most once a
+      // second — but a *visible* warning is always cancelled immediately, so any
+      // flicker of activity reliably keeps the user logged in.
+      if (!warningUp && now - this.autoLockArmedAt < AUTO_LOCK_RESET_THROTTLE_MS) return;
+      this.dismissAutoLockWarning();
+      this.armAutoLockTimers();
     };
     this.activityHandler = reset;
     for (const event of AUTO_LOCK_ACTIVITY_EVENTS) {
       window.addEventListener(event, reset, { passive: true });
     }
-    reset();
+    this.armAutoLockTimers();
+  }
+
+  /**
+   * (Re)arm the warning + lock timers for the current {@link autoLockTimeoutMs}.
+   * The warning fires {@link AUTO_LOCK_WARN_LEAD_MS} before the lock (clamped to
+   * at most half the window so a short window still shows a sensible lead).
+   */
+  private armAutoLockTimers(): void {
+    if (this.autoLockTimer) clearTimeout(this.autoLockTimer);
+    if (this.autoLockWarnTimer) clearTimeout(this.autoLockWarnTimer);
+    const timeoutMs = this.autoLockTimeoutMs;
+    if (timeoutMs <= 0) return;
+    this.autoLockArmedAt = Date.now();
+    const lead = Math.min(AUTO_LOCK_WARN_LEAD_MS, Math.floor(timeoutMs / 2));
+    this.autoLockWarnTimer = setTimeout(() => this.showAutoLockWarning(lead), Math.max(0, timeoutMs - lead));
+    this.autoLockTimer = setTimeout(() => {
+      if (this.state.passphrase) this.lock();
+    }, timeoutMs);
+  }
+
+  /** Throttled re-stamp of the resume token's last-activity time. */
+  private touchResume(now: number): void {
+    if (!this.state.config.resumeOnRefresh) return;
+    if (now - this.lastResumeTouchAt < RESUME_TOUCH_THROTTLE_MS) return;
+    this.lastResumeTouchAt = now;
+    touchResumeActivity(now);
+  }
+
+  /**
+   * Surface the dismissable "locking soon" warning with a live countdown and a
+   * one-tap "Stay unlocked" that extends the session. The banner is also
+   * dismissable (and any genuine interaction cancels it via the activity reset).
+   */
+  private showAutoLockWarning(leadMs: number): void {
+    if (typeof document === "undefined") return;
+    if (!this.state.passphrase) return;
+    this.dismissAutoLockWarning();
+    let remaining = Math.max(1, Math.ceil(leadMs / 1000));
+    const message = (secs: number): string =>
+      `Locking in ${secs} second${secs === 1 ? "" : "s"} due to inactivity`;
+    const text = h(
+      "span",
+      { id: "auto-lock-warn-text", class: "auto-lock-warn-text", "aria-atomic": "true" },
+      [message(remaining)],
+    );
+    const stay = h("button", { class: "btn", type: "button" }, ["Stay unlocked"]);
+    const dismiss = h(
+      "button",
+      { class: "icon-btn ghost icon-only", type: "button", "aria-label": "Dismiss" },
+      ["×"],
+    );
+    const node = h(
+      "div",
+      {
+        id: "auto-lock-warning",
+        class: "app-toast is-autolock-warn",
+        role: "alertdialog",
+        "aria-label": "Auto-lock warning",
+        "aria-labelledby": "auto-lock-warn-text",
+        "aria-live": "assertive",
+      },
+      [text, h("div", { class: "row auto-lock-warn-actions" }, [stay, dismiss])],
+    );
+    stay.addEventListener("click", () => {
+      // Extend: cancel the warning and re-arm the full window from now.
+      this.dismissAutoLockWarning();
+      this.armAutoLockTimers();
+      this.touchResume(Date.now());
+    });
+    dismiss.addEventListener("click", () => this.dismissAutoLockWarning());
+    document.body.append(node);
+    this.autoLockWarnEl = node;
+    this.autoLockCountdownTimer = setInterval(() => {
+      remaining -= 1;
+      text.textContent = remaining > 0 ? message(remaining) : "Locking…";
+    }, 1000);
+  }
+
+  /** Remove the "locking soon" warning and stop its countdown, if shown. */
+  private dismissAutoLockWarning(): void {
+    if (this.autoLockCountdownTimer) {
+      clearInterval(this.autoLockCountdownTimer);
+      this.autoLockCountdownTimer = null;
+    }
+    if (this.autoLockWarnEl) {
+      this.autoLockWarnEl.remove();
+      this.autoLockWarnEl = null;
+    }
   }
 
   /** Tear down the idle auto-lock timer and its activity listeners. */
@@ -2507,6 +2882,11 @@ export class App {
       clearTimeout(this.autoLockTimer);
       this.autoLockTimer = null;
     }
+    if (this.autoLockWarnTimer) {
+      clearTimeout(this.autoLockWarnTimer);
+      this.autoLockWarnTimer = null;
+    }
+    this.dismissAutoLockWarning();
     if (this.activityHandler) {
       for (const event of AUTO_LOCK_ACTIVITY_EVENTS) {
         window.removeEventListener(event, this.activityHandler);
@@ -3096,6 +3476,30 @@ export class App {
       liveStalenessMs: this.state.config.updateMinutes * 60 * 1000,
     });
     model.overview.lastDataPullAt = this.lastDataPullAt;
+    // Capture the session-close EUR/USD rate so the live 1D/1W graphs can freeze
+    // their EUR view to it overnight (the market-day trajectory must not slide
+    // with after-hours FX), and so the Overview can isolate the overnight FX
+    // slice. While the regular session is open we keep recording the live spot as
+    // the running close for today; the last value written before 16:00 ET is the
+    // settled close. Once shut, we resolve the single authoritative session close
+    // and surface it; the longer history graphs and the headline keep valuing at
+    // the live spot, unchanged.
+    {
+      const now = new Date();
+      const marketOpen = isUsMarketOpen(now);
+      const liveFx = fx.rates.USD ?? model.overview.fxRateEurUsd;
+      const sessionDay = lastSessionDate(now);
+      if (marketOpen) recordSessionCloseFx(sessionDay, liveFx);
+      // Prefer the close read straight from the session's EUR→USD bars — the same
+      // authoritative source the 1D/1W graphs freeze to (so the hero's currency-
+      // effect split and the graph never disagree on what "the close" is), and the
+      // only one that exists on a cold start / weekend when the app was never live
+      // at 16:00 ET to capture a running close. Fall back to the live-captured
+      // running close when no bars are on the device yet.
+      model.overview.fxRateEurUsdSessionClose = marketOpen
+        ? null
+        : (await this.barsSessionCloseFx(sessionDay)) ?? readSessionCloseFx(sessionDay);
+    }
     // Remember each fund's freshly-settled NAV as a daily bar in the 1W store, so
     // the week curve re-marks NAV funds from their real per-day drift at zero
     // graph cost (item 7a.1). Best-effort: a store failure never sinks the paint.
@@ -4261,13 +4665,50 @@ export class App {
     // The settled cash sleeve in both currencies (USD derived from the day's FX).
     const cashEur = o.cashValueEur;
     const cashUsd = baseFx !== null ? cashEur.times(baseFx) : cashEur;
-    const liveTip =
+    // Freeze the live 1D/1W graphs' EUR view to the session-close FX while the
+    // market is shut, so their market-day trajectory does not slide with
+    // overnight FX. While open, `frozenFx` is null and everything uses the live
+    // rate exactly as before. The longer history graphs are built elsewhere
+    // (renderValueChart) and deliberately keep the live after-hours rate.
+    const marketClosed = !isUsMarketOpen();
+    const sessionDay = lastSessionDate(new Date());
+    const store = this.ensureTimeSeriesStore();
+    // One shared procedure for BOTH the 1D and 1W graphs: read the session's FX
+    // close straight from the EUR→USD bars the curves are reconstructed from, so
+    // both freeze to the *same* authoritative close — and still have one when the
+    // app was not live at 16:00 ET (the bars are backfilled regardless). Falls
+    // back to the live-captured close, then the settled previous close, then the
+    // live rate, so the curve always has a rate to anchor to. Memoised so the two
+    // hooks resolve it once per render.
+    let frozenFxMemo: Decimal | null | undefined;
+    const resolveFrozenFx = async (): Promise<Decimal | null> => {
+      if (!marketClosed) return null;
+      if (frozenFxMemo !== undefined) return frozenFxMemo;
+      const barsClose = await this.barsSessionCloseFx(sessionDay);
+      frozenFxMemo = graphAnchorFx({
+        marketOpen: false,
+        liveFx: baseFx,
+        // The FX bars are the ground truth the curve is drawn from; prefer them
+        // so the frozen tip is continuous with the curve body, then the live
+        // capture, then the settled previous close (a stable weekend/cold-start
+        // proxy), then the live rate as a last resort.
+        sessionCloseFx: barsClose ?? o.fxRateEurUsdSessionClose,
+        settledPrevFx: o.fxRateEurUsdPrev,
+      });
+      return frozenFxMemo;
+    };
+    // The live tip drawn at the session close once shut: its USD leg is FX-free,
+    // but its EUR leg is re-marked at the frozen close rate so the 1D/1W curve
+    // ends on the market-day value, not the overnight-drifted one.
+    const makeLiveTip = (frozenFx: Decimal | null): { valueEur: Decimal; valueUsd: Decimal } | null =>
       o.totalValueIsComplete
-        ? {
-            valueEur: o.totalValueEur,
-            valueUsd:
-              o.totalValueUsd ?? (baseFx !== null ? o.totalValueEur.times(baseFx) : o.totalValueEur),
-          }
+        ? ((): { valueEur: Decimal; valueUsd: Decimal } => {
+            const valueUsd =
+              o.totalValueUsd ?? (baseFx !== null ? o.totalValueEur.times(baseFx) : o.totalValueEur);
+            const valueEur =
+              frozenFx !== null && frozenFx.greaterThan(0) ? valueUsd.dividedBy(frozenFx) : o.totalValueEur;
+            return { valueEur, valueUsd };
+          })()
         : null;
     const reservation = ledgerReservation();
     const providers: LiveGraphProviders = {
@@ -4282,15 +4723,17 @@ export class App {
       // fires over a cap or while a provider is frozen.
       reservation,
     };
-    const store = this.ensureTimeSeriesStore();
     const exported = this.state.data?.live_graphs ?? undefined;
-    const anchor = (): ReturnType<typeof buildModelAnchor> =>
-      buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx);
+    const anchor = (frozenFx: Decimal | null): ReturnType<typeof buildModelAnchor> =>
+      buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx, { graphFx: frozenFx });
     // The 1W anchor folds NAV funds into the sleeve (re-marked from their daily
     // NAV bars) rather than the flat base, so the week's NAV drift shows on the
     // curve for a NAV-heavy book (docs/tiingo_polling_storm_cleanup_plan.md item 7).
-    const weekAnchor = (): ReturnType<typeof buildModelAnchor> =>
-      buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx, { navInSleeve: true });
+    const weekAnchor = (frozenFx: Decimal | null): ReturnType<typeof buildModelAnchor> =>
+      buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx, {
+        navInSleeve: true,
+        graphFx: frozenFx,
+      });
     // Feed a graph's freshly fetched bars back into the holdings' quote cache so
     // a big load primes the rows instead of each re-buying the same price.
     const onFreshBars = (bars: Map<string, Bar[]>): void =>
@@ -4323,6 +4766,8 @@ export class App {
     return {
       session: async (opts) => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
+        const frozenFx = await resolveFrozenFx();
+        const liveTip = makeLiveTip(frozenFx);
         // Springboard off the exported session first — instant paint, no fetch —
         // and only build live when the export is absent or too stale.
         const sprung = springboardSessionCurve({ exported, liveTip });
@@ -4333,18 +4778,26 @@ export class App {
           // still has dense current-day detail to splice — otherwise a 1D that
           // springboarded off the blob would leave the store empty for today.
           await this.persistSprungSessionDetail(exported, store).catch(() => undefined);
-          return sprung;
+          // The exported session is the desktop's settled whole-book curve, so it
+          // is complete by construction — no coverage caption.
+          return { points: sprung };
         }
         const spent = { credits: 0 };
         try {
           const curve = await buildLiveSessionCurve(
-            { anchor: anchor(), store, liveTip, onFreshBars, regenerateOnly },
+            { anchor: anchor(frozenFx), store, liveTip, onFreshBars, regenerateOnly },
             loggingProviders("1D", spent),
           );
           if (spent.credits === 0) {
             this.pollLog("graph", "1D graph: reused stored session bars (no live pull, 0 credits).");
           }
-          return curve.points.length >= 2 ? curve.points : null;
+          if (curve.points.length < 2) return null;
+          // Only surface the coverage caption once the market has shut: a full day
+          // is expected by then, so a flat-for-want-of-bars holding is genuinely
+          // worth flagging (scenario C). While open — and especially warming up —
+          // partial coverage is normal and accrues tick-by-tick, so stay quiet.
+          const coverage = curve.marketOpen ? undefined : curve.coverage;
+          return { points: curve.points, coverage };
         } catch {
           this.pollLog("graph", "1D graph: live build failed — no curve drawn.");
           return null;
@@ -4352,6 +4805,8 @@ export class App {
       },
       week: async (opts) => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
+        const frozenFx = await resolveFrozenFx();
+        const liveTip = makeLiveTip(frozenFx);
         // The current day's slice of the week must be the same dense 1D session the
         // 1D graph shows, not the coarse `week.points` tail. Build it once, network-
         // free (springboard off the blob, else reconstruct from stored bars), and
@@ -4361,7 +4816,7 @@ export class App {
         const todaySlice =
           springboardSessionCurve({ exported, liveTip }) ??
           (await buildLiveSessionCurve(
-            { anchor: anchor(), store, liveTip, regenerateOnly: true },
+            { anchor: anchor(frozenFx), store, liveTip, regenerateOnly: true },
             loggingProviders("1D", { credits: 0 }),
           )
             .then((c) => (c.points.length >= 1 ? c.points : null))
@@ -4381,7 +4836,7 @@ export class App {
         try {
           const curve = await buildLiveWeekCurve(
             {
-              anchor: weekAnchor(),
+              anchor: weekAnchor(frozenFx),
               store,
               liveTip,
               onFreshBars,
@@ -4556,6 +5011,26 @@ export class App {
   }
 
   /**
+   * The session's settled EUR→USD close read straight from the stored 1D FX bars
+   * for `sessionDay` — the authoritative source both the live graphs' freeze
+   * ({@link graphAnchorFx}) and the hero's currency-effect split share, so they
+   * never disagree on what "the close" is. Returns `null` when no FX bars are on
+   * the device yet (cold first paint) or on any store error, leaving the caller
+   * to fall back to the live-captured running close.
+   */
+  private async barsSessionCloseFx(sessionDay: string): Promise<Decimal | null> {
+    try {
+      const session = await this.ensureTimeSeriesStore().loadSession(sessionDay);
+      if (session && session.fx.length > 0) {
+        return sessionCloseFxFromBars(session.fx, sessionCloseMs(sessionDay));
+      }
+    } catch {
+      // Best-effort: a store failure simply falls back to the live capture.
+    }
+    return null;
+  }
+
+  /**
    * Prime the quote cache from a graph build's freshly fetched price bars so the
    * holding rows reuse the current price the graph already paid for, rather than
    * re-requesting it. Native currency is sourced per symbol from the model so a
@@ -4619,6 +5094,10 @@ export class App {
     this.clearRefreshTimer();
     this.removeVisibilityRefresh();
     this.removeAutoLock();
+    // An explicit lock (manual or idle) must not be resumable on the next reload:
+    // drop the tab-scoped resume token so a lock genuinely means "re-authenticate".
+    clearResumeToken();
+    this.resumedFromRefresh = false;
     this.clearManualFeedbackTimer();
     this.manualFeedbackUntil = 0;
     this.setUpdating(false);
@@ -5112,14 +5591,22 @@ export function describePrefetch(input: {
 
 /**
  * Interaction events that count as "activity" and reset the idle auto-lock
- * countdown. Kept passive and broad enough to cover touch, mouse and keyboard
- * use without interfering with the page's own handlers.
+ * countdown. Kept passive and broad enough that the lock only ever bites on a
+ * genuinely unattended session: presses *and movement* (pointer/mouse/touch),
+ * wheel and scroll, keyboard and typing, clicks, and tab re-focus. The
+ * high-frequency movement events are throttled where they are handled.
  */
 const AUTO_LOCK_ACTIVITY_EVENTS = [
   "pointerdown",
+  "pointermove",
+  "mousemove",
+  "wheel",
   "keydown",
   "scroll",
   "touchstart",
+  "touchmove",
+  "click",
+  "input",
   "focus",
 ] as const;
 

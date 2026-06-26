@@ -26,12 +26,14 @@
 
 import { Decimal } from "./decimal-config";
 import {
+  INTRADAY_BAR_INTERVAL_MS,
   isUsMarketOpen,
   lastSessionDate,
   previousTradingSession,
   sessionCloseMs,
   sessionOpenMs,
 } from "./market-hours";
+import { sessionBarsComplete } from "./session-fx";
 import {
   reconstructSessionCurve,
   type Bar,
@@ -361,6 +363,14 @@ export interface SessionCurveOptions {
  */
 export const DEFAULT_OPEN_REFETCH_MS = Number.POSITIVE_INFINITY;
 
+/** How much of the intraday-priced sleeve the built curve actually had bars for. */
+export interface SleeveCoverage {
+  /** Distinct sleeve symbols the reconstruction had at least one bar for. */
+  covered: number;
+  /** Distinct sleeve symbols in the anchor (the bars the full curve needs). */
+  total: number;
+}
+
 /** A built 1D session curve plus the day it covers. */
 export interface SessionCurve {
   /** Trading day the curve covers (`YYYY-MM-DD`, New-York calendar). */
@@ -369,6 +379,13 @@ export interface SessionCurve {
   points: CurvePoint[];
   /** Whether the regular session was open at `now`. */
   marketOpen: boolean;
+  /**
+   * How many of the intraday sleeve's symbols the curve was actually drawn from.
+   * Symbols with no bars are carried flat (ratio 1), so `covered < total` means
+   * the curve's *shape* reflects only part of the book — surfaced to the user as
+   * an honest 1D coverage caption rather than a silently-flat line (scenario C).
+   */
+  coverage: SleeveCoverage;
 }
 
 /**
@@ -403,7 +420,21 @@ export async function loadOrBuildSessionCurve(
   const closeMs = sessionCloseMs(day);
 
   let stored = await store.loadSession(day);
-  const missing = symbols.filter((s) => !(stored?.bars[s]?.length));
+  // A symbol needs (re)fetching when it has no stored bars at all, or — once the
+  // session has shut — when its newest stored bar never reached the 16:00 ET
+  // close. The latter is the after-close "stale partial-day fetch" (scenario F):
+  // bars pulled mid-session (e.g. at 14:00) sit in the store looking present, so
+  // a mere length check would treat them as complete and the 1D curve would end
+  // early. Treating them as missing re-pulls the tail so the curve runs to the
+  // close. While the market is open this never triggers — the session has not
+  // closed yet, and the live-tip breadcrumb trail carries the curve forward.
+  const incompleteAfterClose = (symbol: string): boolean => {
+    if (marketOpen) return false;
+    const bars = stored?.bars[symbol];
+    if (!bars?.length) return false; // wholly missing — already caught below
+    return !sessionBarsComplete(bars, closeMs, INTRADAY_BAR_INTERVAL_MS);
+  };
+  const missing = symbols.filter((s) => !(stored?.bars[s]?.length) || incompleteAfterClose(s));
   // Breadcrumbs remove the need for a cadence re-fetch: once the session's bars
   // are on the device, the free live-tip trail below carries the curve forward on
   // every build (finer than the 5-min bars, at zero credits), so a long
@@ -488,6 +519,12 @@ export async function loadOrBuildSessionCurve(
   // line, which for such a book is the flat NAV + cash base moving only as the base
   // itself is re-struck. (A `null` store simply means no bars yet — same effect.)
   const barsBySymbol = new Map<string, Bar[]>(Object.entries(stored?.bars ?? {}));
+  // Coverage: how many of the sleeve's distinct symbols the reconstruction had
+  // bars for. A symbol with no bars is carried flat (ratio 1), so it adds value
+  // but no shape — `covered < total` means the curve's trajectory reflects only
+  // part of the book, which the UI surfaces as an honest 1D caption (scenario C).
+  const covered = symbols.filter((s) => (barsBySymbol.get(s)?.length ?? 0) > 0).length;
+  const coverage: SleeveCoverage = { covered, total: symbols.length };
   let points = reconstructSessionCurve({
     holdings: toReconHoldings(anchor.holdings),
     barsBySymbol,
@@ -529,7 +566,7 @@ export async function loadOrBuildSessionCurve(
     points = capAtClose(points, closeMs);
   }
 
-  return { day, points, marketOpen };
+  return { day, points, marketOpen, coverage };
 }
 
 /** Drop stored sessions older than `retainSessions` trading days back from `day`. */

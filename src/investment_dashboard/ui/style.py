@@ -378,6 +378,163 @@ html, body {{
   margin-top: 0.5rem;
 }}
 
+/* --- Currency · EUR ↔ USD box -------------------------------------------- *
+ * A full-width box beneath the KPI grid (mirrors the web companion's currency
+ * box, moved out from a cramped caption line under the headline total): the live
+ * spot, today's rate move, and the currency effect on the USD-booked book. */
+.inv-fx-box {{
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  padding: 1rem 1.1rem 1.1rem;
+  background: var(--inv-surface);
+  border: 1px solid var(--inv-hairline);
+  border-radius: var(--inv-radius-lg);
+}}
+.inv-fx-box-head {{
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+}}
+.inv-fx-box-title {{
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--inv-muted);
+}}
+.inv-fx-box-stats {{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem 1rem;
+}}
+.inv-fx-box-stat {{ display: grid; gap: 0.1rem; align-content: start; }}
+.inv-fx-box-stat-label {{
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--inv-muted);
+  font-weight: 600;
+}}
+.inv-fx-box-stat-value {{
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}}
+.inv-fx-box-stat-value.pos {{ color: var(--inv-gain); }}
+.inv-fx-box-stat-value.neg {{ color: var(--inv-loss); }}
+.inv-fx-box-stat-value.flat {{ color: var(--inv-muted); }}
+.inv-fx-box-stat-sub {{
+  font-size: 0.75rem;
+  color: var(--inv-muted);
+  font-weight: 500;
+}}
+
+/* --- Currency effect today (net + diverging market-hours/overnight split) - *
+ * How much of today's EUR/USD revaluation is real euro P/L, and — once the US
+ * session is shut — how much landed *while the market was open* versus
+ * *overnight*, since the USD-booked book keeps drifting on FX alone after the
+ * close. In USD display the dollar value is untouched, so we say so and surface
+ * the EUR-repatriation figure instead. */
+.inv-fx-effect {{
+  display: grid;
+  gap: 0.55rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--inv-hairline);
+}}
+.inv-fx-effect-head {{
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+}}
+.inv-fx-effect-title {{
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--inv-muted);
+}}
+.inv-fx-effect-net {{
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}}
+.inv-fx-effect-net.pos {{ color: var(--inv-gain); }}
+.inv-fx-effect-net.neg {{ color: var(--inv-loss); }}
+.inv-fx-effect-net.flat {{ color: var(--inv-muted); }}
+.inv-fx-effect-note {{
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--inv-muted);
+  line-height: 1.45;
+}}
+/* The diverging bar: each leg grows from a shared centre line — right for a
+ * gain, left for a loss — so two legs pulling in opposite directions read
+ * clearly instead of being crammed into one stacked bar. The overnight leg is
+ * striped so it is told apart from the market-hours leg by shape, not colour
+ * alone (colourblind-safe, matching the Wong blue-gain / orange-loss). */
+.inv-fx-diverge {{ display: grid; gap: 0.4rem; }}
+.inv-fx-diverge-row {{
+  display: grid;
+  grid-template-columns: 5.5rem 1fr 5rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}}
+.inv-fx-diverge-label {{ color: var(--inv-muted); }}
+.inv-fx-diverge-track {{
+  position: relative;
+  height: 0.5rem;
+  border-radius: var(--inv-radius-pill);
+  background: var(--inv-surface-alt);
+}}
+.inv-fx-diverge-track::before {{
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -1px;
+  bottom: -1px;
+  width: 1px;
+  background: var(--inv-hairline);
+}}
+.inv-fx-diverge-fill {{
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+  transition: width 0.3s ease;
+}}
+.inv-fx-diverge-fill.pos {{ left: 50%; border-radius: 0 999px 999px 0; background: var(--inv-gain); }}
+.inv-fx-diverge-fill.neg {{ right: 50%; border-radius: 999px 0 0 999px; background: var(--inv-loss); }}
+.inv-fx-diverge-fill.flat {{ left: 50%; width: 0; }}
+.inv-fx-diverge-overnight.pos {{
+  background: repeating-linear-gradient(
+    45deg,
+    var(--inv-gain),
+    var(--inv-gain) 3px,
+    color-mix(in srgb, var(--inv-gain) 45%, transparent) 3px,
+    color-mix(in srgb, var(--inv-gain) 45%, transparent) 6px
+  );
+}}
+.inv-fx-diverge-overnight.neg {{
+  background: repeating-linear-gradient(
+    45deg,
+    var(--inv-loss),
+    var(--inv-loss) 3px,
+    color-mix(in srgb, var(--inv-loss) 45%, transparent) 3px,
+    color-mix(in srgb, var(--inv-loss) 45%, transparent) 6px
+  );
+}}
+.inv-fx-diverge-value {{ text-align: right; }}
+.inv-fx-diverge-value.pos {{ color: var(--inv-gain); }}
+.inv-fx-diverge-value.neg {{ color: var(--inv-loss); }}
+.inv-fx-diverge-value.flat {{ color: var(--inv-ink); }}
+
 .inv-section {{
   background: var(--inv-surface) !important;
   border: 1px solid var(--inv-hairline);

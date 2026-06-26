@@ -14,7 +14,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.6.0] — 2026-06-26
+## [4.8.0] — 2026-06-26
 
 ### Changed
 
@@ -58,6 +58,158 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   for EUR/USD freshness, since FX shares the same auto-update window.
 
 
+## [4.7.0] — 2026-06-26
+
+### Added
+
+- **Opt-in "stay unlocked across a page refresh" for the live web companion.** A
+  full-page reload (F5) — as opposed to the in-app refresh button — used to drop
+  the in-memory passphrase and force an immediate re-login. With the new
+  **Settings → Security → "Stay unlocked across a page refresh"** toggle (off by
+  default), a reload of the *current tab* now resumes the unlocked session and
+  behaves exactly like the manual refresh button: it re-decrypts from cache,
+  re-downloads the encrypted blob and refreshes prices. A short "Resumed after
+  refresh" banner makes the restore explicit, and the **Lock** control stays
+  available. Because the resume re-runs the normal unlock flow, a newer export
+  published since the last load is picked up automatically.
+
+  Safety is preserved by design (see `web/src/resume-session.ts`):
+  - the passphrase is **never** stored in the clear — only its AES-GCM
+    ciphertext, wrapped with the same non-extractable per-device key kept in
+    IndexedDB that protects the API key;
+  - the ciphertext lives in `sessionStorage`, so it is **wiped when the tab or
+    window closes** and is never shared with other tabs — closing the tab still
+    forces a fresh login;
+  - the resume path activates **only on an actual reload / back-forward**
+    navigation, never a cold open;
+  - it honours the **idle auto-lock window** — a session idle past the auto-lock
+    timeout (or a hard cap of a few hours when auto-lock is set to "never") still
+    re-authenticates;
+  - the token is **bound to the app version and the data-source URL**, so it
+    can't apply after an upgrade or a data-source change; an explicit lock,
+    sign-out or settings change drops it;
+  - **biometric devices are unaffected** — when a fingerprint is enrolled the app
+    keeps preferring the stronger one-tap unlock and never mints a token.
+
+### Changed
+
+- **Idle auto-lock now truly only bites when the session is unattended, and warns
+  first.** The activity detection was broadened beyond presses/scroll/focus to
+  also count pointer/mouse **movement**, wheel, touch-move, clicks and typing
+  (high-frequency events throttled), so simply using the dashboard reliably keeps
+  it unlocked. About 15 seconds before locking, a **dismissable "Locking in Ns due
+  to inactivity" warning** appears with a one-tap **"Stay unlocked"** extension.
+
+## [4.6.2] — 2026-06-26
+
+### Fixed
+
+- **The desktop overview now shows the same standalone "Currency · EUR ↔ USD"
+  box as the web companion, with the corrected currency-effect graphic.** The
+  EUR/USD spot and today's rate move were moved out of the cramped caption line
+  under the headline total into their own full-width box beneath the KPI grid,
+  and the old market-hours/overnight FX split — a single stacked bar that
+  mangled the two slices into crammed, misleading segments whenever they pulled
+  in opposite directions — was replaced by a *diverging* bar (each leg growing
+  from a shared centre line, right for a gain and left for a loss, with the
+  overnight leg striped so it is told apart by shape, not colour alone). The
+  effect is now currency-aware to match the web app: in EUR display it shows the
+  net euro figure and the diverging split once the US session has closed, while
+  in USD display it states the dollar value is unchanged (a rate move hands you
+  no extra dollars on a USD-booked book) and surfaces the EUR-repatriation figure
+  instead. The net figure is also shown while the market is still open, not only
+  after the close.
+
+## [4.6.1] — 2026-06-26
+
+### Fixed
+
+- **The live 1D graph no longer ends early or silently flattens when you open
+  the dashboard after the close with incomplete intraday bars.** Two after-hours
+  gaps in the 1D curve are closed, reusing the same "did the session track reach
+  the 16:00 ET close?" idea introduced for the after-hours FX backfill so price
+  and FX completeness are now decided by one shared primitive
+  (`sessionTrackReachedClose` in `web/src/session-fx.ts`, with
+  `sessionFxBarsComplete` / `sessionBarsComplete` as its FX and price faces):
+  - **Stale partial-day sessions now self-heal after the close.** If an earlier
+    session had fetched only part of the day's bars (e.g. a tab left open until
+    14:00 ET, then closed), those bars looked "present" and were never completed,
+    so the curve ended mid-afternoon instead of at 16:00 ET. The builder
+    (`loadOrBuildSessionCurve`) and the warm-up staleness pre-flight
+    (`App.prefetchGraphStaleness`) now treat a symbol whose newest bar never
+    reached the close — once the market is shut — exactly like a missing one and
+    re-pull it, completing the tail to the close. The same backfill grabs the FX
+    track alongside, so the existing FX-close repair stays a no-op when it runs.
+  - **A partial-coverage 1D curve now says so.** When the curve is reconstructed
+    from fewer than all of the intraday sleeve's holdings (the rest carried flat
+    for want of bars, understating the day's true shape), the chart shows an
+    honest caption — "Intraday shape from N of M holdings — the rest are held flat
+    until their prices load." — instead of presenting a silently-flat line as a
+    complete day. Full coverage (and the exported-springboard / 1W curves) stay
+    quiet. `SessionCurve` now carries a `coverage` count, threaded through the
+    live graph hooks to `liveCurveToChart`.
+
+## [4.6.0] — 2026-06-26
+
+### Added
+
+- **After-hours FX handling across the value graphs and a "Currency effect
+  today" breakdown — on both the desktop app and the live web companion, kept in
+  lock-step.** The portfolio is booked in USD and the EUR view is derived through
+  EUR/USD, so when the US market is closed the EUR line kept drifting on raw
+  after-hours FX even though every underlying position had settled for the day.
+  Two changes fix this on each surface:
+  - **The 1D and 1W value graphs now freeze their EUR view to the session-close
+    FX once the market is closed**, instead of letting the after-hours EUR/USD
+    spot keep sliding a curve whose USD body is flat. The close rate is derived
+    from the stored per-session/per-minute intraday FX bars — ground truth that
+    keeps the frozen tip continuous with the curve body — on desktop via
+    `intraday_snapshots_service.session_close_fx` (re-marking only the synthetic
+    live tip, and only on the EUR line since USD is the FX-free booked currency)
+    and on the web via `sessionCloseFxFromBars` (`buildLiveGraphHooks` →
+    `resolveFrozenFx` / `barsSessionCloseFx` in `web/src/app.ts`, the latest bar
+    at or before the session close). Longer-range graphs and the headline total
+    keep the live FX.
+  - **A "Currency effect today" split** — under the FX line on the desktop
+    Overview hero (`domain.session_fx.fx_effect_split`, rendered by
+    `_fx_split_html`) and as a web KPI (`renderFxEffectSplit` in
+    `web/src/ui.ts`) — divides today's EUR/USD move into a market-hours slice and
+    an overnight slice, shown only once the market is closed, so the owner sees
+    what shifted during the trading day versus what changed "overnight".
+- **The FX-growth "today" cutoff is the prior NYSE session close (16:00 ET)**
+  (web) — matching the price-side definition of "today" and the
+  market-hours/overnight split boundary — with the FX provider's settled
+  `previousClose` (`fxRateEurUsdPrev`) as the dated baseline. Documented on
+  `fxTodayDeviationPct` (`web/src/compute.ts`) and in `web/src/session-fx.ts`.
+- **The after-hours backfill of an incomplete 1D EUR→USD close bar now runs on
+  *every* web pulling mechanic, not just the login warm-up.** On the web's
+  free-tier feed the stored EUR→USD track can stop short of the 16:00 ET close
+  (the session's price bars were already in hand, so no 1D graph backfill fetched
+  the FX track alongside them), which would make the freeze anchor and
+  currency-effect split read a mid-session rate as "the close". The FX-only
+  backfill (`prefetchSessionFx`, `sessionFxBarsComplete` in
+  `web/src/session-fx.ts`) is now also wired into the shared
+  `primeStaleGraphPackages` chokepoint in `web/src/app.ts`, so the routine auto,
+  manual and reset refresh rounds all repair the close while the market is shut,
+  under the same gate (closed market, FX track short of the close, no session bar
+  pull this round) and reservation/429-breaker accounting as the start path. The
+  desktop app needs no equivalent: its yfinance pulling is unmetered, so every
+  refresh re-pulls the full session and the close bar is never left incomplete.
+
+### Changed
+
+- **The after-hours FX freeze is robust to an empty-state or "not live at the
+  close" start, on both surfaces.** When no intraday sample captured the session
+  close (the app was not running at 16:00 ET, a cold start, or over a weekend),
+  the graph-freeze anchor falls back through a defined chain — bars-derived /
+  captured session close → prior settled session close → live spot
+  (`domain.session_fx.graph_anchor_fx` on desktop, `graphAnchorFx` in
+  `web/src/session-fx.ts`) — so recreating everything from scratch still produces
+  a sensible frozen EUR view rather than drifting or breaking. The currency-effect
+  split deliberately stays hidden / `null` when no genuine captured close exists,
+  so the attribution is never faked.
+
+## [4.5.3] — 2026-06-26
 
 ### Changed
 
@@ -897,7 +1049,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [3.16.0] — 2026-06-23
 
-
 ### Added
 
 - **Tiingo is now the backup live FX provider (EUR→USD) on both platforms.**
@@ -1278,7 +1429,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   step where the two meet). Cache-tier `intraday_value` gains a renamed
   `market_value_eur` column (migration `0014`); the table is regenerable, so it
   is recreated rather than back-filled.
-
 
 ## [3.9.4] — 2026-06-23
 
@@ -1705,8 +1855,6 @@ time range, and a Data Health page that tells warnings apart from errors.
   page — instead of red errors. `BackgroundError` carries a `severity`, set from
   the log record's level and from a `WARNING`-line classifier on the stderr tee.
 
-
-
 Saved target allocations now remember how you built them.
 
 ### Added
@@ -2003,7 +2151,6 @@ to the web companion, and a smarter update button.
   prior price date's exchange rate is forward-filled from far in the past, the
   EUR daily-growth figure is neutralised to the USD figure instead of absorbing
   months of currency drift into a single day's move.
-
 
 ## [3.2.1] — 2026-06-22
 
@@ -2764,8 +2911,6 @@ instruments whose cached price feed is corrupt.
   instrument's ticker now also invalidates its cached splits
   (`models/price_split`, `repositories/splits_repo`, migration `0008`).
 
-
-
 Reconciles the developer audit export with the authoritative `Investments.xlsx`
 after it diverged on four distinct valuation defects, plus two UX/robustness
 improvements.
@@ -3414,8 +3559,6 @@ plan and root-cause analysis live in `docs/history/v2.8-cleanup-plan.md`.
   surfaced via cell tooltip (matches PR #18 on Transactions).
 - Overview KPI strip reorders: `Total Growth` (new) is leftmost and
   shows EUR + USD value with the compounded growth pct underneath.
-
-
 
 ### Removed
 - Dropped DKK from the display-currency picker, FX defaults

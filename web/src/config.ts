@@ -32,6 +32,7 @@ const KEYS = {
   twelveDataPerDay: "iv.web.twelvedata_per_day",
   tiingoPerHour: "iv.web.tiingo_per_hour",
   tiingoPerDay: "iv.web.tiingo_per_day",
+  resumeOnRefresh: "iv.web.resume_on_refresh",
 } as const;
 
 /**
@@ -74,6 +75,14 @@ const MAX_UPDATE_MINUTES = 240;
 const DEFAULT_AUTO_LOCK_MINUTES = 5;
 /** Upper bound for the configurable idle auto-lock timeout, in minutes. */
 const MAX_AUTO_LOCK_MINUTES = 240;
+/**
+ * Default for the opt-in "stay unlocked across a page refresh" behaviour. Off by
+ * default so the safe, login-on-every-reload behaviour is unchanged unless the
+ * user deliberately opts in. When on, a full-page reload (F5) of *this* tab
+ * resumes the unlocked session — like the manual refresh button — while a closed
+ * tab or an idle-expired session still re-authenticates (see `resume-session.ts`).
+ */
+const DEFAULT_RESUME_ON_REFRESH = false;
 
 /**
  * Recommended data-provider rate limits — the documented free-tier ceilings from
@@ -151,6 +160,12 @@ export interface AppConfig {
    */
   tiingoPerHour: number;
   tiingoPerDay: number;
+  /**
+   * Opt-in: when `true`, a full-page reload (F5) of the current tab resumes the
+   * unlocked session instead of forcing a re-login — while a closed tab or an
+   * idle-expired session still re-authenticates. Off by default.
+   */
+  resumeOnRefresh: boolean;
 }
 
 /**
@@ -214,6 +229,7 @@ export function defaultConfig(): AppConfig {
     twelveDataPerDay: DEFAULT_TWELVE_DATA_PER_DAY,
     tiingoPerHour: DEFAULT_TIINGO_PER_HOUR,
     tiingoPerDay: DEFAULT_TIINGO_PER_DAY,
+    resumeOnRefresh: DEFAULT_RESUME_ON_REFRESH,
   };
 }
 
@@ -299,6 +315,7 @@ export async function loadConfig(): Promise<AppConfig> {
     twelveDataPerDay: parseProviderLimit(read(KEYS.twelveDataPerDay), DEFAULT_TWELVE_DATA_PER_DAY),
     tiingoPerHour: parseProviderLimit(read(KEYS.tiingoPerHour), DEFAULT_TIINGO_PER_HOUR),
     tiingoPerDay: parseProviderLimit(read(KEYS.tiingoPerDay), DEFAULT_TIINGO_PER_DAY),
+    resumeOnRefresh: read(KEYS.resumeOnRefresh) === "1",
   };
 }
 
@@ -314,6 +331,7 @@ export async function saveConfig(config: AppConfig): Promise<void> {
   write(KEYS.tiingoPerDay, String(config.tiingoPerDay));
   // Keep the shared runtime store in step so a save applies live, without a reload.
   applyProviderLimits(config);
+  write(KEYS.resumeOnRefresh, config.resumeOnRefresh ? "1" : "");
   // Retire the legacy keys now that their data lives in the simplified shape, so
   // the migration only fires once and old plumbing doesn't linger in storage.
   for (const legacyKey of Object.values(LEGACY_KEYS)) write(legacyKey, "");
@@ -411,6 +429,7 @@ export interface ConfigPacket {
   twelveDataPerDay: number;
   tiingoPerHour: number;
   tiingoPerDay: number;
+  resumeOnRefresh: boolean;
 }
 
 /** Serialize the portable parts of a config to a pretty JSON packet string. */
@@ -426,6 +445,7 @@ export function serializeConfig(config: AppConfig): string {
     twelveDataPerDay: config.twelveDataPerDay,
     tiingoPerHour: config.tiingoPerHour,
     tiingoPerDay: config.tiingoPerDay,
+    resumeOnRefresh: config.resumeOnRefresh,
   };
   return JSON.stringify(packet, null, 2);
 }
@@ -466,6 +486,7 @@ export function parseConfigPacket(text: string): AppConfig {
     twelveDataPerDay: parseProviderLimit(String(obj.twelveDataPerDay ?? ""), DEFAULT_TWELVE_DATA_PER_DAY),
     tiingoPerHour: parseProviderLimit(String(obj.tiingoPerHour ?? ""), DEFAULT_TIINGO_PER_HOUR),
     tiingoPerDay: parseProviderLimit(String(obj.tiingoPerDay ?? ""), DEFAULT_TIINGO_PER_DAY),
+    resumeOnRefresh: obj.resumeOnRefresh === true,
   };
 }
 
@@ -481,6 +502,7 @@ export {
   DEFAULT_TWELVE_DATA_PER_DAY,
   DEFAULT_TIINGO_PER_HOUR,
   DEFAULT_TIINGO_PER_DAY,
+  DEFAULT_RESUME_ON_REFRESH,
   CONFIG_PACKET_TYPE,
   CONFIG_PACKET_VERSION,
 };

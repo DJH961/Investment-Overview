@@ -17,6 +17,7 @@ from investment_dashboard.domain.market_hours import (
     feed_is_fresh,
     is_trading_day,
     is_us_market_open,
+    latest_settled_session_date,
 )
 from investment_dashboard.domain.money_market import is_money_market
 from investment_dashboard.domain.returns import (
@@ -24,6 +25,7 @@ from investment_dashboard.domain.returns import (
     xirr,
     years_between,
 )
+from investment_dashboard.domain.session_fx import graph_anchor_fx
 from investment_dashboard.models import TransactionKind
 from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import (
@@ -243,6 +245,7 @@ def build_intraday_value_series(
     tz: tzinfo | None = None,
     now: datetime | None = None,
     positions: list[Position] | None = None,
+    freeze_after_hours: bool = False,
 ) -> list[ValueSeriesPoint]:
     """Within-day portfolio-value series for the Overview "Day" range.
 
@@ -281,6 +284,14 @@ def build_intraday_value_series(
 
     Returns ``[]`` when there is nothing to plot (no samples *and* no live value
     — e.g. an empty ledger), so the caller can fall back to the empty state.
+
+    ``freeze_after_hours`` freezes the EUR view's **live tip** to the
+    session-close FX once the US market has shut, so the 1D market-day trajectory
+    does not slide up and down with overnight FX (see
+    :mod:`investment_dashboard.domain.session_fx`). It is a no-op while the market
+    is open, for the FX-free USD line, or when no close rate is known; the longer
+    history ranges deliberately keep the live after-hours rate and so do not pass
+    it.
     """
     currency = currency.upper()
     now = now or datetime.now(UTC)
@@ -311,13 +322,18 @@ def build_intraday_value_series(
     # trailing a flat line out to the current time (overnight, or all weekend).
     session_close = intraday_snapshots_service.session_close_utc(now)
     live_at = min(live_at, session_close)
+    appended_tip = False
     if (not samples and total_now != 0) or (samples and samples[-1][0] < live_at):
         samples = [*samples, (live_at, market_now, rate)]
+        appended_tip = True
 
     if not samples:
         return []
 
-    return _compose_currency_points(samples, base=base, currency=currency, rate=rate, tz=tz)
+    points = _compose_currency_points(samples, base=base, currency=currency, rate=rate, tz=tz)
+    if freeze_after_hours and appended_tip:
+        points = _freeze_eur_live_tip(session, points, currency=currency, now=now)
+    return points
 
 
 def _compose_currency_points(
@@ -379,6 +395,56 @@ def _compose_currency_points(
     return points
 
 
+def _freeze_eur_live_tip(
+    session: Session,
+    points: list[ValueSeriesPoint],
+    *,
+    currency: str,
+    now: datetime,
+) -> list[ValueSeriesPoint]:
+    """Re-mark the live tip's EUR value to the session-close FX once the market shuts.
+
+    The 1D / 1W curves draw a *market-day trajectory*, so after the close their
+    EUR view must freeze to the rate the session settled at rather than slide with
+    after-hours FX (see :mod:`investment_dashboard.domain.session_fx`). Only the
+    synthetic **live tip** — the final point, appended at the live spot — needs
+    this: every historical sample already stored its own per-minute rate, and USD
+    is the booked, FX-free currency so only the EUR line moves on FX.
+
+    The frozen tip is the live tip rescaled by ``live_fx / anchor`` — exactly the
+    USD-booked value re-expressed at the freeze rate instead of the live one. The
+    freeze rate is the session-close FX (read from the intraday samples), else the
+    prior settled session's rate when no sample captured the close (app not live at
+    16:00 ET / cold start / weekend), else the live rate. A no-op (returns
+    ``points`` unchanged) for the USD line, while the market is open (the anchor
+    *is* the live rate), or when no usable freeze rate differs from the live one.
+    """
+    if currency.upper() != "EUR" or not points:
+        return points
+    live_fx = fx_service.get_rate_eur_to_quote(session, date.today(), quote="USD")
+    close_fx = intraday_snapshots_service.session_close_fx(session, now=now)
+    # When no intraday sample captured the close (app not open at 16:00 ET, a cold
+    # start, or over a weekend), freeze to the prior settled session's rate — a
+    # real, non-drifting anchor — rather than letting the curve slide with the
+    # live after-hours spot. Mirrors web's `settledPrevFx` fallback in graphAnchorFx.
+    settled_prev_fx: Decimal | None = None
+    if close_fx is None:
+        eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
+        settled_prev_fx = lookup_rate_with_forward_fill(
+            eur_to_usd, latest_settled_session_date(now)
+        )
+    anchor = graph_anchor_fx(
+        market_open=is_us_market_open(now),
+        live_fx=live_fx,
+        session_close_fx=close_fx,
+        settled_prev_fx=settled_prev_fx,
+    )
+    if live_fx is None or live_fx <= 0 or anchor is None or anchor <= 0 or anchor == live_fx:
+        return points
+    tip = points[-1]
+    return [*points[:-1], replace(tip, value=tip.value * live_fx / anchor)]
+
+
 def build_week_value_series(
     session: Session,
     *,
@@ -386,6 +452,7 @@ def build_week_value_series(
     tz: tzinfo | None = None,
     now: datetime | None = None,
     positions: list[Position] | None = None,
+    freeze_after_hours: bool = False,
 ) -> list[ValueSeriesPoint]:
     """Multi-day portfolio-value series for the Overview "Week" (1W) range.
 
@@ -408,6 +475,11 @@ def build_week_value_series(
 
     Returns ``[]`` when no intraday history could be sourced (e.g. offline, or an
     empty ledger), letting the caller fall back to the daily snapshot series.
+
+    ``freeze_after_hours`` freezes the EUR view's live tip to the session-close FX
+    once the US market has shut, exactly as the Day curve does, so the week's
+    market-day trajectory does not slide with overnight FX (see
+    :mod:`investment_dashboard.domain.session_fx`).
     """
     currency = currency.upper()
     now = now or datetime.now(UTC)
@@ -434,8 +506,10 @@ def build_week_value_series(
     # doesn't trail a flat line over a weekend). Mirrors the Day curve.
     live_at = now.astimezone(UTC).replace(tzinfo=None) if now.tzinfo is not None else now
     live_at = min(live_at, intraday_snapshots_service.session_close_utc(now))
+    appended_tip = False
     if samples and samples[-1][0] < live_at:
         samples = [*samples, (live_at, market_now, rate)]
+        appended_tip = True
 
     if not samples:
         return []
@@ -449,7 +523,7 @@ def build_week_value_series(
         for at_utc, _market, _fx in samples
     }
 
-    return _compose_currency_points(
+    points = _compose_currency_points(
         samples,
         base=flat_base,
         currency=currency,
@@ -457,6 +531,9 @@ def build_week_value_series(
         tz=tz,
         nav_components=nav_components,
     )
+    if freeze_after_hours and appended_tip:
+        points = _freeze_eur_live_tip(session, points, currency=currency, now=now)
+    return points
 
 
 def previous_session_close_value(

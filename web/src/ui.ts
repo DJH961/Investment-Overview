@@ -12,6 +12,8 @@
 import { Decimal } from "./decimal-config";
 import type { AllocationSlice, DashboardModel, HoldingView, MoverEntry, OverviewView } from "./compute";
 import { buildMovers, fxTodayDeviationPct } from "./compute";
+import { fxEffectSplit } from "./session-fx";
+import { isUsMarketOpen } from "./market-hours";
 import {
   type AnalyticsView,
   type DepositRowView,
@@ -138,8 +140,6 @@ function renderHero(o: OverviewView, now: Date = new Date()): HTMLElement {
     h("span", { class: "hero-value" }, [formatCurrency(o.totalValueEur)]),
     change,
   ];
-  const fxLine = renderHeroFx(o, now);
-  if (fxLine) children.push(fxLine);
   return h("section", { class: "hero" }, children);
 }
 
@@ -190,52 +190,162 @@ function valueBasisLabel(o: OverviewView, now: Date = new Date()): string {
 }
 
 /**
- * The live FX context under today's move: the current spot and how far it has
- * moved today (the % deviation), a stamp of *when* that rate is from (the clock
- * time today, the date once it is older), plus an honest "end-of-day FX" tag
- * when only the ECB daily rate was available. Returns null when there's no rate
- * to show.
+ * The standalone **Currency · EUR ↔ USD** box that sits full-width beneath the
+ * Today/Month/Year return horizons (it used to be crammed under the headline
+ * total). It carries three things: the live EUR/USD rate (the "current value"),
+ * how far that rate has moved today (the "growth rate"), and the FX effect on
+ * the book today.
+ *
+ * The book is **USD-booked**, so the FX move is only real money when measured
+ * back in EUR. In USD display the effect on the dollar value is exactly zero —
+ * the rate moving does not hand you a single extra dollar — so we say that
+ * plainly and surface the EUR-repatriation figure instead of printing a
+ * meaningless dollar amount. Returns null only when there is no rate at all.
  */
-function renderHeroFx(o: OverviewView, now: Date = new Date()): HTMLElement | null {
+function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElement | null {
+  if (o.fxRateEurUsd === null) return null;
   const inUsd = getDisplayCurrency() === "USD";
-  const parts: HTMLElement[] = [];
-  if (o.fxRateEurUsd !== null) {
-    const devPct = fxTodayDeviationPct(o);
-    // Roll back the PR 73 display swap: USD mode displays the stored EUR/USD
-    // spot directly; EUR mode displays USD/EUR by taking its reciprocal. The
-    // percentage still follows the currency strength convention used here.
-    const rate = inUsd ? o.fxRateEurUsd : new Decimal(1).dividedBy(o.fxRateEurUsd);
-    const dev = devPct === null ? null : inUsd ? devPct : devPct.negated();
-    const pair = inUsd ? "EUR/USD" : "USD/EUR";
-    const rateLabel =
-      dev !== null
-        ? `${pair} ${formatFxRate(rate)} (${formatSignedPercent(dev)} today)`
-        : `${pair} ${formatFxRate(rate)}`;
-    parts.push(h("span", { class: "hero-fx-rate" }, [rateLabel]));
-  }
-  // When the rate carries an intraday observation time, stamp when it is from so
-  // the EUR figure (holding prices × this live rate) is honest about its
-  // freshness: a clock time while it's today, the date it settled once older.
-  // The end-of-day ECB fallback carries no such timestamp (the tag below covers
-  // it instead).
+
+  // The rate + today's move. USD display shows the stored EUR/USD spot directly;
+  // EUR display shows USD/EUR (its reciprocal). The % still follows the currency
+  // strength convention used here (negated for the reciprocal).
+  const devPct = fxTodayDeviationPct(o);
+  const rate = inUsd ? o.fxRateEurUsd : new Decimal(1).dividedBy(o.fxRateEurUsd);
+  const dev = devPct === null ? null : inUsd ? devPct : devPct.negated();
+  const pair = inUsd ? "EUR/USD" : "USD/EUR";
+
+  // The "when is this rate from" stamps: an intraday clock/date when we have an
+  // observation time, and the honest "end-of-day FX" tag for the keyless ECB
+  // fallback that carries no intraday timestamp.
+  const stamps: HTMLElement[] = [];
   if (o.fxObservedAt !== null) {
     const when = new Date(o.fxObservedAt);
     const title = Number.isNaN(when.getTime())
       ? undefined
       : `EUR/USD rate observed ${when.toLocaleString()}`;
-    parts.push(
-      h(
-        "span",
-        title ? { class: "hero-fx-asof", title } : { class: "hero-fx-asof" },
-        [`FX ${formatAsOf(o.fxObservedAt, o.liveAsOfFallbackDate, now)}`],
-      ),
+    stamps.push(
+      h("span", title ? { class: "fx-box-asof", title } : { class: "fx-box-asof" }, [
+        `as of ${formatAsOf(o.fxObservedAt, o.liveAsOfFallbackDate, now)}`,
+      ]),
     );
   }
   if (o.eurUsdSource === "eod") {
-    parts.push(h("span", { class: "hero-fx-eod" }, ["end-of-day FX"]));
+    stamps.push(h("span", { class: "fx-box-eod" }, ["end-of-day FX"]));
   }
-  if (parts.length === 0) return null;
-  return h("div", { class: "hero-fx" }, parts);
+
+  const rateStat = h("div", { class: "fx-box-stat" }, [
+    h("span", { class: "fx-box-stat-label" }, [pair]),
+    h("span", { class: "fx-box-stat-value" }, [formatFxRate(rate)]),
+    ...(stamps.length > 0 ? [h("span", { class: "fx-box-stat-sub" }, stamps)] : []),
+  ]);
+  const moveStat = h("div", { class: "fx-box-stat" }, [
+    h("span", { class: "fx-box-stat-label" }, ["Today"]),
+    h("span", { class: `fx-box-stat-value ${signClass(dev)}` }, [
+      dev !== null ? formatSignedPercent(dev) : "—",
+    ]),
+    h("span", { class: "fx-box-stat-sub" }, ["rate move"]),
+  ]);
+
+  const children: HTMLElement[] = [
+    h("div", { class: "fx-box-head" }, [h("span", { class: "fx-box-title" }, ["Currency · EUR ↔ USD"])]),
+    h("div", { class: "fx-box-stats" }, [rateStat, moveStat]),
+  ];
+  const effect = renderFxEffect(o, inUsd, now);
+  if (effect) children.push(effect);
+  return h("section", { class: "fx-box", "aria-label": "Currency EUR to USD" }, children);
+}
+
+/**
+ * The "currency effect today" panel inside {@link renderFxBox}.
+ *
+ * In **EUR** display the FX swing is genuine euro P&L, so we show the net figure
+ * and — once the US session is shut — a *diverging* bar splitting it into the
+ * slice that moved during market hours and the slice that drifted overnight. The
+ * diverging layout (each leg growing left for a loss or right for a gain from a
+ * shared centre line) reads correctly even when the two legs pull in opposite
+ * directions, which the old single stacked bar mangled into two crammed,
+ * misleading segments.
+ *
+ * In **USD** display the effect on the dollar value is exactly zero (the book is
+ * USD-booked), so a market-hours/overnight dollar split would be nonsense. We say
+ * the dollar value is unchanged and surface the EUR-repatriation figure instead.
+ *
+ * Returns null when there is no FX move to describe.
+ */
+function renderFxEffect(o: OverviewView, inUsd: boolean, now: Date = new Date()): HTMLElement | null {
+  const net = o.todayFxMoveEur;
+  // No euro swing at all today ⇒ nothing worth a panel (the rate line still shows).
+  if (net.isZero()) return null;
+
+  const head = (valueEl: HTMLElement): HTMLElement =>
+    h("div", { class: "fx-effect-head" }, [
+      h("span", { class: "fx-effect-title" }, ["Currency effect today"]),
+      valueEl,
+    ]);
+
+  if (inUsd) {
+    // The dollar value is untouched by FX; be honest about it and give the EUR
+    // repatriation figure as the genuinely meaningful number.
+    const children: HTMLElement[] = [
+      head(h("span", { class: "fx-effect-net flat" }, ["$0"])),
+      h("p", { class: "fx-effect-note" }, [
+        "The rate moved, but your assets are priced in dollars — so it changed your USD value by nothing. " +
+          `It only matters when you convert back to euros: ${formatSignedMoneyEur(net)} today if you did.`,
+      ]),
+    ];
+    return h("div", { class: "fx-effect", role: "group", "aria-label": "Currency effect today" }, children);
+  }
+
+  const children: HTMLElement[] = [
+    head(h("span", { class: `fx-effect-net ${signClass(net)}` }, [formatSignedMoneyEur(net)])),
+  ];
+
+  // Market-hours vs overnight split — only once the session is shut and we hold a
+  // genuine session-close rate to measure the overnight slice from.
+  const marketOpen = isUsMarketOpen(now);
+  if (!marketOpen) {
+    const split = fxEffectSplit({
+      marketOpen,
+      totalValueUsd: o.totalValueUsd,
+      liveFx: o.fxRateEurUsd,
+      sessionCloseFx: o.fxRateEurUsdSessionClose,
+      todayFxMoveEur: o.todayFxMoveEur,
+    });
+    const market = split.marketHoursEur;
+    const overnight = split.overnightEur;
+    if (market !== null && overnight !== null && !(market.isZero() && overnight.isZero())) {
+      const maxMag = Decimal.max(market.abs(), overnight.abs());
+      // Each leg fills out from the centre line, so a full-magnitude leg spans
+      // half the track (the other half is reserved for the opposite direction).
+      const HALF_TRACK_PCT = 50;
+      const divergeRow = (label: string, value: Decimal, overnightLeg: boolean): HTMLElement => {
+        const width = maxMag.isZero()
+          ? 0
+          : value.abs().dividedBy(maxMag).times(HALF_TRACK_PCT).toNumber();
+        const fill = h(
+          "span",
+          {
+            class: `fx-diverge-fill ${signClass(value)}${overnightLeg ? " fx-diverge-overnight" : ""}`,
+          },
+          [],
+        );
+        fill.style.width = `${width}%`;
+        return h("div", { class: "fx-diverge-row" }, [
+          h("span", { class: "fx-diverge-label" }, [label]),
+          h("div", { class: "fx-diverge-track", "aria-hidden": "true" }, [fill]),
+          h("span", { class: `fx-diverge-value ${signClass(value)}` }, [formatSignedMoneyEur(value)]),
+        ]);
+      };
+      children.push(
+        h("div", { class: "fx-diverge" }, [
+          divergeRow("Market hours", market, false),
+          divergeRow("Overnight", overnight, true),
+        ]),
+      );
+    }
+  }
+
+  return h("div", { class: "fx-effect", role: "group", "aria-label": "Currency effect today" }, children);
 }
 
 /** One return horizon (Today / This month / This year). */
@@ -833,6 +943,8 @@ function renderOverviewPanel(model: DashboardModel, liveGraph?: LiveGraphHooks):
     renderHero(model.overview),
     renderReturns(model.overview),
   ];
+  const fxBox = renderFxBox(model.overview);
+  if (fxBox) content.push(fxBox);
   // Today's winners/losers sit as a distinct band below the value chart and the
   // stats block whose notes explain how fresh the data is ("data last pulled…",
   // live coverage, budget) — so the leaderboard reads right after the graph and
@@ -1333,6 +1445,12 @@ export interface LiveCurveChart {
   legend?: Array<{ className: string; label: string }>;
   /** Optional horizontal reference line (e.g. the 1D curve's previous close). */
   referenceLine?: { value: Decimal; label?: string };
+  /**
+   * Optional honesty caption shown under the chart — e.g. the 1D curve drawn from
+   * only part of the sleeve (scenario C), so a partly-flat line never masquerades
+   * as a complete day.
+   */
+  note?: string;
 }
 
 /**
@@ -1352,6 +1470,18 @@ export type LiveCurveBuilder = (
  * applied by the UI from the returned {@link CurvePoint}s, so the shell stays
  * currency-agnostic.
  */
+/** A built live 1D session curve plus how much of the sleeve shaped it. */
+export interface LiveSessionResult {
+  points: CurvePoint[];
+  /**
+   * Sleeve coverage of the 1D curve: `covered`/`total` distinct intraday-priced
+   * symbols the curve actually had bars for. `covered < total` means some
+   * holdings were carried flat for want of bars, so the line understates the
+   * day's true shape — surfaced as an honest caption (scenario C).
+   */
+  coverage?: { covered: number; total: number };
+}
+
 export interface LiveGraphHooks {
   /**
    * Build the live 1D (intraday) curve points, or null when unavailable. When
@@ -1359,7 +1489,7 @@ export interface LiveGraphHooks {
    * **zero network**) — every UI interaction (range toggle, graph click) passes
    * it so chart interaction never fetches; only the initial paint may pull.
    */
-  session: (opts?: { regenerateOnly?: boolean }) => Promise<CurvePoint[] | null>;
+  session: (opts?: { regenerateOnly?: boolean }) => Promise<LiveSessionResult | null>;
   /** Build the live 1W (daily-close) curve points, or null when unavailable. */
   week: (opts?: { regenerateOnly?: boolean }) => Promise<CurvePoint[] | null>;
 }
@@ -1490,8 +1620,12 @@ function chartWithTimeframe(
     // Re-draw the legend for the live series (e.g. the rebased other-currency
     // line) so a 1D/1W selection labels its own lines rather than inheriting the
     // exported-history legend. The wrapper owns the legend, so the caller no
-    // longer prints a second copy beneath the chart.
-    wrap.replaceChildren(...withLegend(chart as unknown as HTMLElement, built.legend));
+    // longer prints a second copy beneath the chart. A coverage caption (e.g. a
+    // 1D curve drawn from only part of the sleeve) is appended below the legend so
+    // a partly-flat line never reads as a complete day (scenario C).
+    const children = withLegend(chart as unknown as HTMLElement, built.legend);
+    if (built.note) children.push(liveStatus(built.note));
+    wrap.replaceChildren(...children);
   };
 
   // `userInitiated` distinguishes a tap on a range button (Pillar 6: interaction
@@ -1800,6 +1934,7 @@ function renderDrawdownChart(curve: AnalyticsView["curve"]): HTMLElement | null 
 export function liveCurveToChart(
   points: CurvePoint[],
   prevClose?: { eur: Decimal | null; usd: Decimal | null } | null,
+  coverage?: { covered: number; total: number } | null,
 ): LiveCurveChart | null {
   const cols = curveColumns(points);
   if (cols.dates.length < 2) return null;
@@ -1827,7 +1962,16 @@ export function liveCurveToChart(
     prevCloseValue !== null && prevCloseValue !== undefined
       ? { value: prevCloseValue, label: `Prev close ${formatMoneyRaw(prevCloseValue, code)}` }
       : undefined;
-  return { dates: cols.dates, series, yAxisLabel, legend, referenceLine };
+  // Honest coverage caption: when the curve was reconstructed from fewer than all
+  // of the sleeve's holdings, the rest were carried flat for want of bars, so the
+  // line understates the day's true shape. Say so rather than let a partly-flat
+  // curve read as a complete day (scenario C). Only meaningful when some — but not
+  // all — holdings have bars; full coverage (or a curve with no sleeve) stays quiet.
+  const note =
+    coverage && coverage.total > 0 && coverage.covered < coverage.total
+      ? `Intraday shape from ${coverage.covered} of ${coverage.total} holdings — the rest are held flat until their prices load.`
+      : undefined;
+  return { dates: cols.dates, series, yAxisLabel, legend, referenceLine, note };
 }
 
 /**
@@ -1913,10 +2057,14 @@ function renderValueChart(
   const liveBuilder: LiveCurveBuilder | undefined =
     liveGraph
       ? async (range, opts) => {
-          const built =
-            range === "1D" ? await liveGraph.session(opts) : await liveGraph.week(opts);
+          if (range === "1D") {
+            const built = await liveGraph.session(opts);
+            if (!built) return null;
+            return liveCurveToChart(built.points, prevClose, built.coverage);
+          }
+          const built = await liveGraph.week(opts);
           if (!built) return null;
-          return liveCurveToChart(built, range === "1D" ? prevClose : null);
+          return liveCurveToChart(built, null);
         }
       : undefined;
 
