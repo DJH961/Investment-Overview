@@ -71,6 +71,16 @@ export interface TiingoFallbackResult {
   quotes: Map<string, Quote>;
   /** Symbols whose price now comes from the Tiingo fallback this cycle. */
   tiingoSymbols: string[];
+  /**
+   * The subset of {@link tiingoSymbols} that ended up on the backup because of a
+   * *genuine fallback* — the primary actually tried to price them this round and
+   * fell short (the value was unavailable or outdated), so they were "pulled from
+   * one provider, then pulled from the other" (i.e. they were in {@link
+   * QuoteLoadReport.failed}). Symbols the primary merely *deferred* for budget
+   * (a smart-routing efficiency choice — never attempted on the primary) are
+   * **excluded**, so the UI only flags a fallback the user would consider one.
+   */
+  fallbackSymbols: string[];
   /** Tiingo budget used so far, for the hourly/daily usage overview. */
   budget: TiingoBudgetView;
   /** A transient Tiingo failure, if any (never fatal — the primary still stands). */
@@ -278,7 +288,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
   } = options;
 
   if (!proxyUrl) {
-    return { quotes, tiingoSymbols: [], budget: budgetView(now, storage), error: null };
+    return { quotes, tiingoSymbols: [], fallbackSymbols: [], budget: budgetView(now, storage), error: null };
   }
 
   const expected = latestSettledSessionDate(new Date(now));
@@ -287,6 +297,12 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
   // "primary fell short" so the backup still chases a fund the primary couldn't
   // price (the FSKAX case), now that `failed` is split out from `deferred`.
   const primaryFellShort = new Set([...report.deferred, ...report.failed]);
+  // The symbols the primary *attempted* this round but couldn't price (value
+  // unavailable or outdated). A backup fill for one of these is a genuine
+  // fallback — "pulled from one provider, then the other" — as opposed to a
+  // symbol the primary merely deferred for budget (a smart-routing efficiency
+  // reroute that was never attempted on the primary).
+  const primaryAttemptedButFailed = new Set(report.failed);
   const tiingoSymbols: string[] = [];
   let error: PriceError | null = null;
 
@@ -418,7 +434,12 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     error = err instanceof PriceError ? err : new PriceError((err as Error).message, { retryable: true });
   }
 
-  return { quotes, tiingoSymbols, budget: budgetView(now, storage), error };
+  // Genuine fallback = a backup fill for a symbol the primary actually attempted
+  // and failed to price this round (unavailable / outdated). Budget-deferred
+  // symbols the primary never tried are an efficiency reroute, not a fallback.
+  const fallbackSymbols = tiingoSymbols.filter((s) => primaryAttemptedButFailed.has(s));
+
+  return { quotes, tiingoSymbols, fallbackSymbols, budget: budgetView(now, storage), error };
 }
 
 /**

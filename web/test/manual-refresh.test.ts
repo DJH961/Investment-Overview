@@ -7,6 +7,7 @@ import {
   connectivityNotice,
   describePrefetch,
   describeTiingoError,
+  displayFxSource,
   isUserRefresh,
   liveRefreshProgress,
   manualRefreshDecision,
@@ -289,6 +290,59 @@ describe("buildCoverageFacts", () => {
     expect(f.marketTotal).toBe(2); // AAPL + FSKAX
     expect(f.marketHeld).toBe(1); // only AAPL has a cached price here
     expect(f.marketFresh).toBe(1);
+  });
+
+  it("flags the latest due NAV as awaiting when we don't hold it yet", () => {
+    // Market open, well past the 22:00 publish hour for the prior session: the
+    // due NAV (yesterday's settled session) is genuinely missing, so coverage
+    // must read "awaiting" and never claim everything is up to date.
+    const f = buildCoverageFacts(
+      report({ servedFresh: ["VTSAX"] }),
+      new Map([["VTSAX", { valueDate: "2024-05-10" }]]), // a stale, days-old NAV
+      new Set(["VTSAX"]),
+      { now, marketOpen: true, publishHourFor: () => 22 },
+    );
+    expect(f.navTotal).toBe(1);
+    expect(f.navAwaiting).toBe(1);
+    expect(f.navExpectedTonight).toBe(0);
+  });
+
+  it("does not claim today's NAV is missing pre-market when the latest session's NAV is in", () => {
+    // Early hours of a trading day, before the open: the most recent NAV we can
+    // possibly hold is the prior settled session's, and we have it. Nothing is
+    // awaiting and nothing is expected tonight yet (today's session hasn't begun).
+    const preMarket = new Date(2024, 4, 15, 11, 0, 0); // Wed 11:00 UTC — before 13:30 open
+    const f = buildCoverageFacts(
+      report({ servedFresh: ["VTSAX"] }),
+      new Map([["VTSAX", { valueDate: "2024-05-14" }]]), // prior session's NAV, in hand
+      new Set(["VTSAX"]),
+      { now: preMarket, marketOpen: false, publishHourFor: () => 22 },
+    );
+    expect(f.navTotal).toBe(1);
+    expect(f.navAwaiting).toBe(0);
+    expect(f.navExpectedTonight).toBe(0);
+  });
+});
+
+describe("displayFxSource", () => {
+  const t = Date.UTC(2024, 4, 15, 18, 0, 0);
+
+  it("promotes an extremely fresh cached spot to live", () => {
+    // Served from cache but observed seconds ago → to the user, just as live as
+    // the market prices it values.
+    expect(displayFxSource("cache", t - 30_000, t)).toBe("live");
+  });
+
+  it("keeps a genuinely aged cached spot as recent", () => {
+    // Older than the live-staleness window (15 min) → still "recent", not live.
+    expect(displayFxSource("cache", t - 30 * 60_000, t)).toBe("cache");
+  });
+
+  it("passes every other source through unchanged", () => {
+    expect(displayFxSource("live", t, t)).toBe("live");
+    expect(displayFxSource("eod", t - 60_000, t)).toBe("eod");
+    expect(displayFxSource("none", null, t)).toBe("none");
+    expect(displayFxSource("cache", null, t)).toBe("cache");
   });
 });
 

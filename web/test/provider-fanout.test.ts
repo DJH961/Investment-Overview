@@ -5,6 +5,7 @@ import {
   TWELVE_DATA_BATCH,
   isPriorityPull,
   planFanout,
+  planTwelveDataSafetyNet,
   type FanoutInputs,
 } from "../src/provider-fanout";
 
@@ -119,5 +120,59 @@ describe("planFanout — no overflow case", () => {
     expect(TWELVE_DATA_BATCH).toBe(8);
     expect(FANOUT_INSTANT_THRESHOLD).toBe(16);
     expect(TIINGO_RESERVE_CREDITS).toBe(10);
+  });
+});
+
+describe("planTwelveDataSafetyNet — reverse Tiingo → Twelve Data fallback", () => {
+  it("stays idle when Twelve Data was the primary (not the via-Tiingo route)", () => {
+    const plan = planTwelveDataSafetyNet({
+      viaTiingo: false,
+      unfilled: ["AAPL", "MSFT"],
+      tiingoFilled: [],
+    });
+    expect(plan.engaged).toBe(false);
+    expect(plan.twelveData).toHaveLength(0);
+    expect(plan.reason).toContain("Twelve Data was the primary");
+  });
+
+  it("stays idle when the Tiingo primary covered every requested symbol", () => {
+    const plan = planTwelveDataSafetyNet({
+      viaTiingo: true,
+      unfilled: ["AAPL", "MSFT"],
+      tiingoFilled: ["AAPL", "MSFT"],
+    });
+    expect(plan.engaged).toBe(false);
+    expect(plan.twelveData).toHaveLength(0);
+    expect(plan.reason).toContain("covered every requested symbol");
+  });
+
+  it("re-pulls exactly the symbols Tiingo left unfilled", () => {
+    const plan = planTwelveDataSafetyNet({
+      viaTiingo: true,
+      unfilled: ["AAPL", "MSFT", "GOOG"],
+      tiingoFilled: ["MSFT"],
+    });
+    expect(plan.engaged).toBe(true);
+    expect(plan.twelveData).toEqual(["AAPL", "GOOG"]);
+    expect(plan.reason).toContain("re-pulling on Twelve Data");
+  });
+
+  it("re-pulls the whole sleeve when Tiingo filled nothing (total outage)", () => {
+    const plan = planTwelveDataSafetyNet({
+      viaTiingo: true,
+      unfilled: ["AAPL", "MSFT"],
+      tiingoFilled: [],
+    });
+    expect(plan.engaged).toBe(true);
+    expect(plan.twelveData).toEqual(["AAPL", "MSFT"]);
+  });
+
+  it("never proposes a symbol Tiingo already filled (no double fetch)", () => {
+    const plan = planTwelveDataSafetyNet({
+      viaTiingo: true,
+      unfilled: ["AAPL", "MSFT", "GOOG", "TSLA"],
+      tiingoFilled: ["AAPL", "GOOG", "TSLA"],
+    });
+    expect(plan.twelveData).toEqual(["MSFT"]);
   });
 });

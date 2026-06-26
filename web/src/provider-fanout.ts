@@ -154,3 +154,74 @@ export function planFanout(input: FanoutInputs): FanoutPlan {
       `(${input.kind}; ${reservePart}).`,
   };
 }
+
+/** Inputs for the reverse (Tiingo-primary → Twelve Data) safety net. */
+export interface SafetyNetInputs {
+  /**
+   * Whether this pull routed through Tiingo as the **sole primary** (the "via
+   * backup" hard refresh, which skips the Twelve Data quote pass entirely). The
+   * safety net only engages for this route — on the normal route Twelve Data is
+   * the primary that already tried, so a still-missing symbol is genuinely stuck
+   * rather than untried.
+   */
+  viaTiingo: boolean;
+  /**
+   * Symbols the round wanted priced but the Tiingo primary could not fetch live
+   * (the primary pass was skipped, so these are the `report.deferred` holes) —
+   * still on a cached / last-known value.
+   */
+  unfilled: string[];
+  /** Symbols the Tiingo primary did fill this round (excluded from the re-pull). */
+  tiingoFilled: string[];
+}
+
+/** The reverse safety net's verdict: which symbols Twelve Data should catch. */
+export interface SafetyNetPlan {
+  /** Symbols to re-pull from Twelve Data to catch Tiingo's holes. */
+  twelveData: string[];
+  /** Whether a Twelve Data safety-net re-pull is warranted this round. */
+  engaged: boolean;
+  /** A one-line, log-ready explanation of the safety-net decision. */
+  reason: string;
+}
+
+/**
+ * Plan the **reverse safety net**. The forward path is Twelve Data (primary) →
+ * Tiingo (fallback). The smart-routing "via backup" hard refresh inverts that —
+ * it makes Tiingo the *sole* primary and skips Twelve Data — so a Tiingo failure
+ * (unreachable, over-quota, or nothing newer) would leave those symbols stuck on
+ * a cached / last-known price with **no** provider behind it. This planner names
+ * exactly the holes Tiingo left so the caller can re-pull them on Twelve Data,
+ * turning a Tiingo outage into a graceful degrade to the primary instead of to
+ * stale data.
+ *
+ * Pure: it only decides the symbol set. The caller dispatches it to the existing
+ * `loadQuotes` fetcher, which re-clamps against the live Twelve Data per-minute /
+ * per-day budget — so the safety net respects the same budget + scheduling as
+ * every other Twelve Data pull and can never overspend.
+ */
+export function planTwelveDataSafetyNet(input: SafetyNetInputs): SafetyNetPlan {
+  if (!input.viaTiingo) {
+    return {
+      twelveData: [],
+      engaged: false,
+      reason: "Safety net idle: Twelve Data was the primary (no Tiingo-only route to back up).",
+    };
+  }
+  const filled = new Set(input.tiingoFilled);
+  const twelveData = input.unfilled.filter((symbol) => !filled.has(symbol));
+  if (twelveData.length === 0) {
+    return {
+      twelveData,
+      engaged: false,
+      reason: "Safety net idle: Tiingo (primary) covered every requested symbol.",
+    };
+  }
+  return {
+    twelveData,
+    engaged: true,
+    reason:
+      `Safety net: Tiingo (primary) left ${twelveData.length} symbol(s) unpriced ` +
+      `[${twelveData.join(", ")}] — re-pulling on Twelve Data (budget-clamped).`,
+  };
+}
