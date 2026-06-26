@@ -24,8 +24,6 @@ import {
   readCachedFx,
   readCachedQuotes,
   readCreditLog,
-  recordCredits,
-  recordTiingoCredits,
   writeCachedEurUsd,
   writeCachedFx,
   writeCachedQuotes,
@@ -48,7 +46,7 @@ import { isUsMarketOpen, latestSettledSessionDate, nextSessionCloseMs } from "./
 import { fetchTiingoEurUsd } from "./tiingo";
 import { etMinutesOfDay } from "./tiingo-gate";
 import { onProviderLimitsChange } from "./provider-limits";
-import { tiingoAvailable } from "./reservation";
+import { ledgerReservation, type Reservation } from "./reservation";
 import { DEFAULT_UPDATE_MINUTES } from "./config";
 
 /**
@@ -363,6 +361,15 @@ export interface LoadQuotesOptions {
   /** Base backoff delay; doubles each attempt (with jitter), capped. */
   backoffBaseMs?: number;
   backoffCapMs?: number;
+  /**
+   * The single reservation authority (`reservation.ts`, audit Rec 4) every
+   * metered Twelve Data request books through. Defaults to the production
+   * {@link ledgerReservation} over this call's `storage`, so the quote pass can
+   * no longer get around the shared budget by reading-and-debiting the ledger
+   * itself: the grant is reserved atomically before the network fires. Tests
+   * inject a fake to assert grants without touching storage.
+   */
+  reservation?: Reservation;
 }
 
 /** What {@link loadQuotes} actually did, for an honest staleness banner. */
@@ -419,6 +426,7 @@ export async function loadQuotes(
     maxRetries = 3,
     backoffBaseMs = 1000,
     backoffCapMs = 8000,
+    reservation = ledgerReservation(storage ?? null),
   } = options;
 
   const unique = [...new Set(symbols.filter((s) => s.length > 0))];
@@ -468,25 +476,22 @@ export async function loadQuotes(
   const backoffDeps: BackoffDeps = { fetchImpl, sleep, maxRetries, backoffBaseMs, backoffCapMs };
 
   if (stale.length > 0 && apiKey.length > 0) {
-    const { minute, day } = budget();
-    // One credit per symbol. Fetch only what both the per-minute and per-day
-    // windows can afford right now; the rest is deferred rather than risking a
-    // 429. Because `minute` never exceeds the per-minute cap (≤ 8 on the free
-    // tier) this is always a single batched call.
-    const affordableCount = Math.min(stale.length, minute, day);
-    const toFetch = stale.slice(0, affordableCount);
+    // One credit per symbol. Reserve through the single reservation authority
+    // *before* the network call, not after it returns: the grant atomically
+    // reads-and-debits the shared free-tier ledger in one synchronous turn, so
+    // two overlapping loads (the login-time prefetch and the first scheduled
+    // refresh share the same caches) can't both see a full per-minute budget and
+    // fire a full batch — double-spending straight into an HTTP 429. Whichever
+    // load reserves first wins the minute and the other defers, staying inside
+    // the per-minute/day cap (≤ 8 on the free tier ⇒ always one batched call) by
+    // construction. The authority is the one place the quote pass books, so it
+    // can no longer get around the budget the graph/FX legs already respect.
+    const reservedAt = now();
+    const granted = reservation.reserve("twelvedata", stale.length, reservedAt);
+    const toFetch = stale.slice(0, granted);
     for (const symbol of toFetch) attempted.add(symbol);
 
     if (toFetch.length > 0) {
-      // Reserve the credits *before* the network call, not after it returns.
-      // Two live loads can overlap (the login-time prefetch and the first
-      // scheduled refresh share the same caches); if each only recorded its
-      // spend on completion, both would read a full per-minute budget and fire
-      // a full batch — double-spending straight into an HTTP 429. Recording the
-      // spend up-front means whichever load reserves first wins the minute and
-      // the other defers, so we stay inside the free-tier cap by construction.
-      const reservedAt = now();
-      recordCredits(toFetch.length, reservedAt, storage ?? undefined);
       try {
         // Market symbols come from `quote`; NAV funds from the daily
         // `time_series` (authoritative trading-day mark) — see fetchNavQuotes.
@@ -647,8 +652,6 @@ export interface LoadEurUsdOptions {
   storage?: StorageLike | null;
   now?: () => number;
   ttlMs?: number;
-  creditsPerMinute?: number;
-  creditsPerDay?: number;
   /**
    * The end-of-day ECB EUR→USD rate already loaded by {@link loadFxRates},
    * reused as the keyless fallback when the live pair can't be fetched (no
@@ -677,6 +680,16 @@ export interface LoadEurUsdOptions {
    * collapsing to the flat end-of-day rate.
    */
   forexOpen?: boolean;
+  /**
+   * The single reservation authority (`reservation.ts`, audit Rec 4) both FX
+   * legs book through — Twelve Data (primary) and the Tiingo backup. Defaults to
+   * the production {@link ledgerReservation} over this call's `storage`. Routing
+   * both legs through it means the FX path can no longer get around the shared
+   * budgets by reading-and-debiting the ledgers itself: each credit is reserved
+   * atomically (folding in the 429 breaker + per-minute/day and hourly/daily
+   * freezes) before the network fires. Tests inject a fake to assert grants.
+   */
+  reservation?: Reservation;
 }
 
 /**
@@ -720,12 +733,11 @@ export async function loadEurUsd(
     storage = undefined,
     now = () => Date.now(),
     ttlMs = DEFAULT_EURUSD_TTL_MS,
-    creditsPerMinute = FREE_TIER.creditsPerMinute,
-    creditsPerDay = FREE_TIER.creditsPerDay,
     eodFallback = null,
     tiingoProxyUrl = null,
     tiingoFetchImpl,
     forexOpen = true,
+    reservation = ledgerReservation(storage ?? null),
   } = options;
 
   const cached = readCachedEurUsd(storage ?? undefined);
@@ -735,14 +747,11 @@ export async function loadEurUsd(
 
   let liveError: PriceError | null = null;
   if (forexOpen && apiKey.length > 0) {
-    const t = now();
-    const log = readCreditLog(t, DAY_MS, storage ?? undefined);
-    const minute = Math.max(0, creditsPerMinute - creditsSpentWithin(log, t, MINUTE_MS));
-    const day = Math.max(0, creditsPerDay - creditsSpentToday(log, t));
-    if (minute >= FREE_TIER.creditsPerSymbol && day >= FREE_TIER.creditsPerSymbol) {
-      // Reserve the credit up-front (same rationale as loadQuotes) so two
-      // overlapping loads can't both fire and 429.
-      recordCredits(FREE_TIER.creditsPerSymbol, now(), storage ?? undefined);
+    // Reserve the credit up-front through the single reservation authority (same
+    // rationale as loadQuotes): the grant atomically reads-and-debits the shared
+    // ledger, so two overlapping loads can't both fire and 429, and the FX leg
+    // no longer reads-and-debits the budget itself.
+    if (reservation.reserve("twelvedata", FREE_TIER.creditsPerSymbol, now()) >= FREE_TIER.creditsPerSymbol) {
       try {
         const reading: EurUsdQuote = await fetchEurUsd(apiKey, fetchImpl);
         if (reading.now !== null) {
@@ -762,12 +771,11 @@ export async function loadEurUsd(
   // (40/hr · 800/day). Tiingo carries no prior close, so reuse today's cached
   // one for an FX-aware move when available. Best-effort: never throws here.
   //
-  // Budget enforcement via the central reservation system (reservation.ts):
-  // tiingoAvailable folds in the 429 breaker AND the hourly/daily caps, so
-  // a single check replaces both a separate frozen guard and a budget check.
-  if (tiingoProxyUrl && forexOpen && tiingoAvailable(now(), storage ?? null) > 0) {
-    const t = now();
-    recordTiingoCredits(1, t, storage ?? undefined);
+  // Budget enforcement via the central reservation authority (reservation.ts):
+  // a single `reserve("tiingo", 1)` atomically folds in the 429 breaker AND the
+  // hourly/daily caps and debits the grant, replacing both a separate frozen
+  // guard and a read-then-record budget check.
+  if (tiingoProxyUrl && forexOpen && reservation.reserve("tiingo", 1, now()) > 0) {
     try {
       const reading = await fetchTiingoEurUsd(tiingoProxyUrl, {
         fetchImpl: tiingoFetchImpl ?? fetchImpl,

@@ -19,7 +19,6 @@ import {
   readTiingoCreditLog,
   readTiingoState,
   readTiingoNoNewer,
-  recordTiingoCredits,
   recordTiingoNoNewer,
   clearTiingoNoNewer,
   creditsSpentThisHour,
@@ -44,6 +43,7 @@ import {
   WEB_HOURLY_CAP,
 } from "./tiingo-gate";
 import { tiingoFrozen } from "./provider-breaker";
+import { ledgerReservation, type Reservation } from "./reservation";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -130,6 +130,16 @@ export interface TiingoFallbackOptions {
   reserveCredits?: number;
   /** Last-known EUR size per symbol. Retained for callers; not used for routing. */
   sizeForSymbol?: (symbol: string) => number;
+  /**
+   * The single reservation authority (`reservation.ts`, audit Rec 4) every Tiingo
+   * spend in this run books through. Defaults to the production
+   * {@link ledgerReservation} over this call's `storage`. The eligibility/`reserve`
+   * gate above still selects which symbols are worth a call, but the actual debit
+   * now goes through the authority's atomic read-and-debit rather than a separate
+   * `recordTiingoCredits`, so the fallback can no longer get around the shared
+   * Tiingo budget (and its 429-breaker freeze) the graph/FX legs already respect.
+   */
+  reservation?: Reservation;
 }
 
 /**
@@ -214,6 +224,7 @@ async function fetchAndMerge(
     now: number;
     storage: StorageLike | null | undefined;
     fetchImpl?: FetchLike;
+    reservation: Reservation;
   },
 ): Promise<string[]> {
   if (batch.length === 0) return [];
@@ -221,9 +232,14 @@ async function fetchAndMerge(
   // tell afterwards whether the backup actually advanced it.
   const priorVdFor = new Map<string, string | null>();
   for (const symbol of batch) priorVdFor.set(symbol, opts.quotes.get(symbol)?.valueDate ?? null);
-  // Reserve the budget up-front (same discipline as the Twelve Data path), so a
-  // failed call still counts against the self-cap rather than allowing a retry storm.
-  recordTiingoCredits(batch.length, opts.now, opts.storage ?? undefined);
+  // Reserve the budget up-front through the single reservation authority (same
+  // discipline as the Twelve Data path): the grant atomically reads-and-debits
+  // the shared Tiingo ledger, so a failed call still counts against the self-cap
+  // rather than allowing a retry storm, and two overlapping runs can't both
+  // read a full budget and overshoot. The batch was already clamped to the
+  // budget (minus any soft reserve) by `selectWithinBudget`, so the grant covers
+  // the whole batch in the normal single-flight case.
+  opts.reservation.reserve("tiingo", batch.length, opts.now);
   const fetched = await fetchTiingoQuotes(batch, opts.proxyUrl, {
     fetchImpl: opts.fetchImpl,
     navSymbols: opts.navSymbols,
@@ -297,6 +313,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     fetchImpl,
     forceAll = false,
     reserveCredits = 0,
+    reservation = ledgerReservation(storage ?? null),
   } = options;
 
   if (!proxyUrl) {
@@ -340,7 +357,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
   const budgetNow = (): Budget => readBudget(now, storage, reserveCredits);
 
   const merge = (batch: string[]): Promise<string[]> =>
-    fetchAndMerge(batch, { proxyUrl, navSymbols, quotes, expected, marketOpen, now, storage, fetchImpl });
+    fetchAndMerge(batch, { proxyUrl, navSymbols, quotes, expected, marketOpen, now, storage, fetchImpl, reservation });
 
   // --- Unified fallback: NAVs are treated exactly like stocks ---------------
   // The moment a symbol needs a price the primary couldn't supply — it failed on
