@@ -1015,6 +1015,7 @@ function renderHoldingStatus(
   const view = resolveHoldingStatus({
     livePhase: status.phases.get(holding.symbol) ?? null,
     asOf: holding.priceAsOf,
+    pulledAt: holding.pricePulledAt,
     fallbackDate: holding.priceFallbackDate,
     updatedAt: status.updatedAt.get(holding.symbol) ?? null,
     nowMs: now.getTime(),
@@ -1034,6 +1035,7 @@ function renderHoldingStatus(
         if (!span.isConnected) return;
         const settled = resolveHoldingStatus({
           asOf: holding.priceAsOf,
+          pulledAt: holding.pricePulledAt,
           fallbackDate: holding.priceFallbackDate,
           updatedAt: null,
           nowMs: Date.now(),

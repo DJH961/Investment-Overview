@@ -10,6 +10,7 @@ import {
   emptyHoldingStatusModel,
   resolveHoldingStatus,
 } from "../src/holding-status";
+import { formatLastPull, formatUpdatedAt } from "../src/format";
 
 const NOW = new Date("2026-06-26T16:30:00Z");
 const NOW_MS = NOW.getTime();
@@ -105,6 +106,35 @@ describe("resolveHoldingStatus", () => {
       now: NOW,
     });
     expect(view.kind).toBe("idle");
+  });
+
+  it("stamps the idle caption with the pull time, not the price's strike time", () => {
+    // The price was struck an hour ago but only pulled five minutes ago — the
+    // caption must say when we pulled, so it reflects the recent refresh.
+    const struckAt = NOW_MS - 60 * 60 * 1000;
+    const pulledAt = NOW_MS - 5 * 60 * 1000;
+    const view = resolveHoldingStatus({
+      asOf: struckAt,
+      pulledAt,
+      fallbackDate: "2026-06-26",
+      nowMs: NOW_MS,
+      now: NOW,
+    });
+    expect(view.kind).toBe("idle");
+    expect(view.stamp).toBe(formatUpdatedAt(pulledAt, "2026-06-26", NOW));
+    expect(view.stamp).not.toBe(formatUpdatedAt(struckAt, "2026-06-26", NOW));
+    expect(view.title).toContain(formatLastPull(pulledAt, NOW));
+  });
+
+  it("falls back to the strike time when no pull time is known", () => {
+    const struckAt = NOW_MS - 60 * 60 * 1000;
+    const view = resolveHoldingStatus({
+      asOf: struckAt,
+      fallbackDate: "2026-06-26",
+      nowMs: NOW_MS,
+      now: NOW,
+    });
+    expect(view.stamp).toBe(formatUpdatedAt(struckAt, "2026-06-26", NOW));
   });
 
   it("falls back to the value-date stamp when no observation time exists", () => {

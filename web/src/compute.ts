@@ -73,6 +73,15 @@ export interface HoldingView {
    */
   priceAsOf: number | null;
   /**
+   * Epoch ms the displayed price was actually *pulled* from the network — its
+   * fetch / cache-store instant — as opposed to {@link priceAsOf}, which is when
+   * the price itself was struck. Null when the price came from the export's
+   * last-known value (no pull happened). Drives the per-holding "Updated <time>"
+   * status caption, which must state when the app last refreshed this holding,
+   * not the (often earlier) moment its price applies to.
+   */
+  pricePulledAt: number | null;
+  /**
    * The per-row freshness tier ("live" / "recent" / "aged") for the displayed
    * price, driven by `priceAsOf` vs the live window and the market state — the
    * three-way split the UI renders as a freshness chip (freshness-plan §2). A
@@ -637,6 +646,8 @@ function priceForHolding(
   price: Decimal | null;
   isLive: boolean;
   at: number | null;
+  /** Epoch ms the price was fetched/cached (the pull instant), or null. */
+  pulledAt: number | null;
   /** Date to show when `at` is null (a NAV's value-date, or the export date). */
   asOfDate: string;
 } {
@@ -672,14 +683,15 @@ function priceForHolding(
         price: quote.price,
         isLive: true,
         at: isNav ? (quote.priceTime ?? null) : (quote.priceTime ?? quote.at ?? null),
+        pulledAt: quote.at ?? null,
         asOfDate: quote.valueDate ?? fallbackDate,
       };
     }
   }
   if (holding.last_known_price_native !== null) {
-    return { price: new Decimal(holding.last_known_price_native), isLive: false, at: null, asOfDate: fallbackDate };
+    return { price: new Decimal(holding.last_known_price_native), isLive: false, at: null, pulledAt: null, asOfDate: fallbackDate };
   }
-  return { price: null, isLive: false, at: null, asOfDate: fallbackDate };
+  return { price: null, isLive: false, at: null, pulledAt: null, asOfDate: fallbackDate };
 }
 
 function buildHolding(
@@ -693,7 +705,7 @@ function buildHolding(
   fallbackValueEur: Decimal | null,
 ): HoldingView {
   const shares = new Decimal(holding.shares);
-  const { price, isLive, at, asOfDate } = priceForHolding(holding, quote, exportAsOf);
+  const { price, isLive, at, pulledAt, asOfDate } = priceForHolding(holding, quote, exportAsOf);
   const currency = holding.native_currency;
 
   let valueEur: Decimal | null = null;
@@ -914,6 +926,7 @@ function buildHolding(
     priceIsLive: isLive,
     priceMarketOpen: isLive ? (quote?.marketOpen ?? null) : null,
     priceAsOf: at,
+    pricePulledAt: pulledAt,
     // Default tier; buildDashboard re-classifies from the live window + market state.
     priceFreshness: "aged",
     priceFallbackDate: asOfDate,
