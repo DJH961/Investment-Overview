@@ -26,6 +26,7 @@ export const MAX_POLL_LOG_ENTRIES = 600;
 export type PollLogCategory =
   | "login" // unlock detected, session lifecycle
   | "refresh" // a refresh round started/finished (auto/manual/startup/kickoff)
+  | "orchestrator" // the single pull orchestrator's per-round leg decision (Pillar 1)
   | "cache" // served from cache / cache decisions
   | "primary" // Twelve Data primary fetch results + budget
   | "fallback" // Tiingo secondary provider activity

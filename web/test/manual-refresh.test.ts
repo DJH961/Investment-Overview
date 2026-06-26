@@ -7,6 +7,7 @@ import {
   connectivityNotice,
   describePrefetch,
   describeTiingoError,
+  isUserRefresh,
   liveRefreshProgress,
   manualRefreshDecision,
   manualRefreshSummary,
@@ -398,6 +399,28 @@ describe("refreshTickAction", () => {
     expect(
       refreshTickAction({ sessionMatches: true, kind: "manual", hidden: false, kickoff: false }),
     ).toBe("run");
+  });
+
+  it("runs the login warm-up (start) and reset re-pull even on a hidden tab", () => {
+    // Only the steady `auto` cadence defers when hidden; the user-/login-driven
+    // mechanisms always run so a freshly-unlocked or reset session paints prices.
+    for (const kind of ["start", "reset"] as const) {
+      expect(
+        refreshTickAction({ sessionMatches: true, kind, hidden: true, kickoff: false }),
+      ).toBe("run");
+    }
+  });
+});
+
+describe("isUserRefresh", () => {
+  it("is true only for the user-triggered mechanisms (manual, reset)", () => {
+    expect(isUserRefresh("manual")).toBe(true);
+    expect(isUserRefresh("reset")).toBe(true);
+  });
+
+  it("is false for the background mechanisms (start, auto)", () => {
+    expect(isUserRefresh("start")).toBe(false);
+    expect(isUserRefresh("auto")).toBe(false);
   });
 });
 
