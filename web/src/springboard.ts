@@ -58,7 +58,7 @@ import {
 } from "./market-hours";
 import type { CurvePoint } from "./timeseries";
 import type { ExportLiveCurvePoint, ExportLiveGraphSeries, ExportLiveGraphs } from "./types";
-import { repairWeekNavCollapse } from "./week-repair";
+import { repairWeekNavCollapse, repairSessionNavCollapse, type RepairHealthyHint } from "./week-repair";
 import { DEFAULT_WEEK_SESSIONS } from "./week";
 
 /**
@@ -162,11 +162,24 @@ export function springboardSessionCurve(input: SpringboardInput): CurvePoint[] |
 
   const marketOpen = isUsMarketOpen(now);
   const closeMs = sessionCloseMs(sessionDate);
+  const openMs = sessionOpenMs(sessionDate);
+  // The 1D curve is exactly one regular session: drop any exported point before
+  // the 09:30 ET open so the sprung curve never reaches back into the prior
+  // trading day. A blob can over-reach (a reconstructed remainder or a stray
+  // pre-open sample), and the springboard is the path taken on a *cold* first
+  // paint — a hard reset, or a first login mid-session — when the store is empty,
+  // so without this trim that exact case would draw yesterday *and* today (the
+  // reported bug). Mirrors the live build's left-edge `clampFromOpen`
+  // (intraday.ts); the right edge is bounded by `capAtClose` once the market has
+  // shut. If no in-session point survives there is no session to spring off, so
+  // fall back to a full live rebuild.
+  points = points.filter((p) => p.t >= openMs);
+  if (points.length < 1) return null;
+
   // Completeness gate: the export must cover the session from its open, not just
   // a late sliver — otherwise the curve would jump straight to the tip and hide
   // most of the day. The tip still bridges the open end, so we only require the
   // *earliest* point to land within the session's opening sliver (1 - 90%).
-  const openMs = sessionOpenMs(sessionDate);
   const elapsedEnd = marketOpen ? now.getTime() : closeMs;
   if (
     elapsedEnd > openMs &&
@@ -178,6 +191,19 @@ export function springboardSessionCurve(input: SpringboardInput): CurvePoint[] |
   const tipT = marketOpen ? now.getTime() : closeMs;
   if (input.liveTip) points = appendLiveTip(points, tipT, input.liveTip);
   if (!marketOpen) points = capAtClose(points, closeMs);
+
+  // Heal a NAV-collapse nosedive baked into a *stale* blob's `day.points` (issue
+  // #169, the today case): an export captured right after the US open can value
+  // the whole intraday session *without* its NAV-fund sleeve (~60 % of the book),
+  // so the day nosedives and only the live tip — which always carries the NAV
+  // sleeve — snaps back. The whole-week repair cannot reach this (the collapse and
+  // its recovery sit inside one UTC day), so lift the collapsed body onto the live
+  // tip here, fixing both the 1D graph and the 1W graph's spliced today slice. A
+  // no-op on a healthy session.
+  points = repairSessionNavCollapse(
+    points,
+    input.liveTip ? { eur: input.liveTip.valueEur, usd: input.liveTip.valueUsd } : null,
+  );
 
   return points.length >= 2 ? points : null;
 }
@@ -226,7 +252,23 @@ export function springboardWeekCurve(input: SpringboardInput): CurvePoint[] | nu
   // cannot remove it (the blob re-paints on every render). The repair lifts a
   // collapsed leading run back onto the week's healthy level, the web analogue of
   // the desktop's nearest-complete-day NAV gap-fill. A no-op on a healthy week.
-  let points = repairWeekNavCollapse(windowPoints.filter((p) => p.t < todayStartMs));
+  //
+  // Today's live whole-book value — the dense 1D slice's opening point, else the
+  // headline live tip — is handed in as the healthy anchor so the repair can also
+  // lift an *all-settled* collapse (every settled day missing its NAV sleeve,
+  // e.g. a blob exported right after a cache reset), the case a settled-only
+  // donor cannot reach and that survived the earlier fix.
+  const todaySettled = (input.todayCurve ?? []).filter((p) => p.t >= todayStartMs);
+  const healthyHint: RepairHealthyHint | null =
+    todaySettled.length > 0
+      ? { eur: todaySettled[0].valueEur, usd: todaySettled[0].valueUsd }
+      : input.liveTip
+        ? { eur: input.liveTip.valueEur, usd: input.liveTip.valueUsd }
+        : null;
+  let points = repairWeekNavCollapse(
+    windowPoints.filter((p) => p.t < todayStartMs),
+    healthyHint,
+  );
 
   // Completeness gate over the *settled* sessions only (today is supplied live): a
   // fresh `end_date` is not enough — the blob must span nearly the whole settled

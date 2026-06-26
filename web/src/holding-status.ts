@@ -52,6 +52,13 @@ export interface ResolveHoldingStatusInput {
   livePhase?: HoldingLivePhase | null;
   /** Epoch ms the displayed price was observed (null ⇒ use `fallbackDate`). */
   asOf: number | null;
+  /**
+   * Epoch ms the displayed price was actually *pulled* from the network (its
+   * fetch / cache-store instant). The quiet "Updated <time>" stamp reflects this
+   * pull moment — when the app last refreshed the holding — rather than `asOf`,
+   * which is when the price itself was struck. Falls back to `asOf` when absent.
+   */
+  pulledAt?: number | null;
   /** Value-date the price applies to when `asOf` is null (a NAV's strike day). */
   fallbackDate: string;
   /** Epoch ms this holding last had a *fresh* price pulled, for the success flash. */
@@ -84,8 +91,12 @@ export function resolveHoldingStatus(input: ResolveHoldingStatusInput): HoldingS
     };
   }
 
-  const stamp = formatUpdatedAt(input.asOf, input.fallbackDate, now);
-  const when = input.asOf ?? null;
+  // The quiet caption states *when this holding was last pulled*, not when its
+  // price applies to — so it reflects the network fetch instant (`pulledAt`) and
+  // falls back to the price's strike time only when no pull time is known.
+  const stampInstant = input.pulledAt ?? input.asOf;
+  const stamp = formatUpdatedAt(stampInstant, input.fallbackDate, now);
+  const when = stampInstant ?? null;
   const fullWhen = when !== null ? formatLastPull(when, now) : stamp;
 
   if (

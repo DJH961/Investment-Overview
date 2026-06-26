@@ -14,6 +14,61 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.13.1] — 2026-06-26
+
+### Fixed
+
+- **1W graph no longer nosedives on the current day after the US open (issue
+  #169).** A snapshot blob captured right after market open can value the whole
+  intraday session *without* its NAV-fund sleeve (~60 % of the book). The web
+  springboarded the 1D session — and the 1W graph's spliced "today" slice — from
+  those `day.points` verbatim, so the day plunged to ~60 % and only the live tip
+  snapped back, collapsing all detail under the autoscale. The earlier repairs
+  only healed the *settled* days of the week and structurally could not reach this
+  case (the collapse and its recovery sit inside one calendar day). A new
+  point-level `repairSessionNavCollapse` now lifts a NAV-collapsed session body
+  back onto the live tip — fixing both the 1D graph and the 1W graph's today slice
+  — and stays a no-op on a healthy session or a genuine drop (`web/src/week-repair.ts`
+  `repairSessionNavCollapse`, `web/src/springboard.ts` `springboardSessionCurve`).
+
+## [4.13.0] — 2026-06-26
+
+### Added
+
+- **"Regenerate 1D graph" and "Regenerate 1W graph" buttons in the web Settings →
+  Maintenance section.** Each wipes just that one live curve's stored bars/tips and
+  re-pulls them from scratch, then repaints — scoped to a single graph, so use them
+  when only the 1D or 1W line looks wrong or stuck. Every other day and your price
+  caches are left untouched, and the hard free-tier per-minute/day budget still
+  binds (overflow simply defers) (`web/src/app.ts` `regenerateGraph`,
+  `TimeSeriesStore.deleteSession`).
+
+### Changed
+
+- **"Force-fetch every price now" is a quotes-only escape hatch.** The top
+  Maintenance button re-pulls *every* quote — ETFs/stocks **and** the mutual-fund
+  NAVs — ignoring the NAV close-await and market-closed skips, but it deliberately
+  leaves the 1D/1W graphs alone so a force-all never spends credits on graph bars.
+  The dedicated "Regenerate 1D graph" / "Regenerate 1W graph" buttons own the
+  curves; a from-scratch reset still re-primes every graph (`web/src/app.ts`
+  `graphPrimeDecision`, `forceFetchAllNow`).
+
+## [4.12.4] — 2026-06-26
+
+### Fixed
+
+- **The 1W graph no longer nosedives at market open (issue #169).** When the
+  exported blob's settled week was generated while no NAV/FX was available (for
+  example right after a "Reset cache & re-pull"), *every* settled day could land
+  with its mutual-fund / money-market sleeve collapsed to ~0, dropping the line
+  to roughly 60% of its true value while the live tip stayed full — and the
+  autoscale then crushed all detail out of the curve. Previous fixes only
+  repaired a *leading run* of collapsed days, which required a healthy settled
+  day to act as the donor; a fully-collapsed week had none. `repairWeekNavCollapse`
+  now accepts the live whole-book level (today's intraday opening point, else the
+  live tip) as a healthy anchor and lifts the entire settled week back onto it,
+  so EUR and USD lines recover their real scale.
+
 ## [4.12.3] — 2026-06-26
 
 ### Added
