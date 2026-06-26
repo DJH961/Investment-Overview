@@ -4548,7 +4548,7 @@ export function displayFxSource(
   observedAtMs: number | null,
   nowMs: number,
 ): EurUsdSource {
-  if (source === "cache" && observedAtMs != null && nowMs - observedAtMs <= LIVE_PRICE_MAX_STALENESS_MS) {
+  if (source === "cache" && observedAtMs !== null && nowMs - observedAtMs <= LIVE_PRICE_MAX_STALENESS_MS) {
     return "live";
   }
   return source;
