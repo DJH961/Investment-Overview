@@ -22,6 +22,7 @@ import {
   type FreshnessTier,
   type MarketPhase,
   type PullLegs,
+  ONE_HOUR_MS,
   allLegs,
   barClockHourDue,
   gradedPull,
@@ -58,6 +59,31 @@ export interface PullFreshness {
   fxAgeMs?: number;
   /** Whether today's NAV prices are already held. */
   navHeldForToday: boolean;
+}
+
+/**
+ * The shared **device-days-missing** gate, keyed on the same evidence both passes
+ * see, so the pre-decrypt warm-up and the post-decrypt kickoff grade a market gap
+ * identically (Pillar 1 — one brain). The caller decides `anyMarketMissing` with
+ * the C1 currency-known gate already applied: a market quote that is simply absent
+ * counts as a missing day **only** when that symbol's native currency is known, so
+ * a genuine first-ever login (currency unknown, empty cache) is the unknown-start
+ * state — not a faked 10-day "heavily-outdated" gap that triggers a full re-pull.
+ *
+ *  - `anyMarketMissing` (a known-currency market symbol with no cached quote) ⇒ 10
+ *    (the heaviest market gap — restore today's full pass);
+ *  - else `marketStale` (a held close trails the latest settled session) ⇒ 1, or 2
+ *    once the freshest mark is itself more than a day (26h) old;
+ *  - else 0 (the book holds every settled close).
+ */
+export function deviceDaysMissing(args: {
+  anyMarketMissing: boolean;
+  marketStale: boolean;
+  dataAgeMs: number;
+}): number {
+  if (args.anyMarketMissing) return 10;
+  if (args.marketStale) return args.dataAgeMs > 26 * ONE_HOUR_MS ? 2 : 1;
+  return 0;
 }
 
 /** Per-symbol-independent bar-gate state for the clock-hour overlay. */

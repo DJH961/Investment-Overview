@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   describePlan,
+  deviceDaysMissing,
   planPull,
   planPullsAnything,
   type PullContext,
@@ -207,3 +208,26 @@ describe("planPull — C1 currency-known / phase context", () => {
     expect(implicit.tier).toBe(explicit.tier);
   });
 });
+
+describe("deviceDaysMissing — the shared market-gap gate (C1)", () => {
+  it("inflates a known-currency missing market quote to the heaviest gap", () => {
+    expect(deviceDaysMissing({ anyMarketMissing: true, marketStale: false, dataAgeMs: 0 })).toBe(10);
+  });
+
+  it("does NOT inflate when no market quote is known-missing (the currency-unknown start state)", () => {
+    // The caller (buildPrefetchFreshness) only sets anyMarketMissing when the
+    // currency is known, so a first-ever / legacy-plan login lands here: an empty
+    // quote cache is the unknown-start state, never a faked 10-day re-pull.
+    expect(deviceDaysMissing({ anyMarketMissing: false, marketStale: false, dataAgeMs: Number.POSITIVE_INFINITY })).toBe(0);
+  });
+
+  it("grades a stale settled close as 1 day, or 2 once the freshest mark is itself >26h old", () => {
+    expect(deviceDaysMissing({ anyMarketMissing: false, marketStale: true, dataAgeMs: 2 * ONE_HOUR_MS })).toBe(1);
+    expect(deviceDaysMissing({ anyMarketMissing: false, marketStale: true, dataAgeMs: 27 * ONE_HOUR_MS })).toBe(2);
+  });
+
+  it("reports a fully-current book as no days missing", () => {
+    expect(deviceDaysMissing({ anyMarketMissing: false, marketStale: false, dataAgeMs: 5 * 60 * 1000 })).toBe(0);
+  });
+});
+

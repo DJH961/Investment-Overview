@@ -141,8 +141,7 @@ import {
   weekStaleSymbols,
   wrapDailyNavFetcher,
 } from "./week";
-import { ONE_HOUR_MS } from "./freshness";
-import { planPull, describePlan, type PullKind, type PullFreshness, type PullPlan } from "./data-orchestrator";
+import { planPull, describePlan, deviceDaysMissing, type PullKind, type PullFreshness, type PullPlan } from "./data-orchestrator";
 import {
   describeFlag,
   describeMerge,
@@ -821,6 +820,21 @@ export class App {
       graphSessionStale: graphStale.session,
       graphWeekStale: graphStale.week,
     });
+    // C1 — route the warm-up's leg decision through the **single brain**. The
+    // planPrefetch above named *which* symbols/providers are worth a credit; this
+    // pre-decrypt {@link planPull} pass is the leg gate layered on top, so the
+    // warm-up obeys the very same freshness tiers + clock-hour bar gate + rolling
+    // quote / FX overlays as the post-decrypt kickoff and can never diverge from
+    // it. A suppressed leg drops its symbols here (they are picked up by the
+    // kickoff/auto round if still due), so no credit is spent the brain didn't
+    // approve. FX is gated by the warm-up's own interval-aware {@link warmPrefetchFx}
+    // (same user interval as Overlay 3), so it is not re-gated here.
+    const warmupPlan = this.planWarmupPull(plan, targets, now);
+    this.pollLog("orchestrator", `Login warm-up plan — ${describePlan(warmupPlan)}.`);
+    if (!warmupPlan.legs.quotes) prefetch.symbols = [];
+    if (!warmupPlan.legs.nav) prefetch.navSymbols = [];
+    if (!warmupPlan.legs.dayBars) prefetch.graphSessionSymbols = [];
+    if (!warmupPlan.legs.weekBars) prefetch.graphWeekSymbols = [];
     const quoteTotal =
       prefetch.symbols.length +
       prefetch.navSymbols.length +
@@ -1404,18 +1418,12 @@ export class App {
       const e = plan.find((p) => p.symbol === s);
       return e?.priceType === "market";
     });
-    const deviceDaysMissing = anyMarketMissing
-      ? 10
-      : marketStale
-        ? dataAgeMs > 26 * ONE_HOUR_MS
-          ? 2
-          : 1
-        : 0;
+    const deviceDaysMissing_ = deviceDaysMissing({ anyMarketMissing, marketStale, dataAgeMs });
     // Blob-trust re-engage overlay (post-decrypt): the metadata prediction can only
     // *raise* the floor, never mask the observed on-device gap. See the docstring.
-    const blobDaysOld = Math.max(blobDaysOldMeta, deviceDaysMissing);
+    const blobDaysOld = Math.max(blobDaysOldMeta, deviceDaysMissing_);
     const navHeldForToday = !this.navStale(now);
-    return { dataAgeMs, deviceDaysMissing, blobDaysOld, quoteAgeMs, fxAgeMs, navHeldForToday };
+    return { dataAgeMs, deviceDaysMissing: deviceDaysMissing_, blobDaysOld, quoteAgeMs, fxAgeMs, navHeldForToday };
   }
 
   /** Whether any NAV-priced fund is still behind its expected publish (closed-NAV row). */
@@ -1481,6 +1489,99 @@ export class App {
     return buildFetchPlan(data, FETCHABLE_NAV_CLASSES).every(
       (e) => e.priceType !== "market" || e.nativeCurrency !== null,
     );
+  }
+
+  /**
+   * C1 — the **pre-decrypt** twin of {@link currencyKnownForPlan}: whether every
+   * market symbol in the *unencrypted* plan carries a native currency (C2). A
+   * legacy plan (no currency) or a genuine first-ever login leaves this `false`,
+   * so the warm-up's freshness ledger does not inflate an empty quote cache into a
+   * faked "heavily-outdated" gap.
+   */
+  private currencyKnownForPrefetch(plan: PlannedSymbol[]): boolean {
+    return plan.every((e) => e.priceType !== "market" || e.nativeCurrency !== null);
+  }
+
+  /**
+   * C1 — the **pre-decrypt** freshness ledger, the twin of
+   * {@link buildPullFreshness} built from the *unencrypted* symbol plan + caches
+   * (no decrypted model). Feeding it to {@link planPull} is what makes the login
+   * warm-up the orchestrator's **Pass 1** rather than a second brain: the same
+   * `gradedPull` math + overlays now decide the warm-up's legs, so it can never
+   * diverge from the post-decrypt kickoff. Every age is the most-stale component
+   * (oldest still-cached quote, the live FX spot, any wholly-missing market symbol
+   * ⇒ `Infinity`), and the C1 currency-known gate guards the `deviceDaysMissing`
+   * inflation exactly as the post-decrypt builder does.
+   */
+  private buildPrefetchFreshness(
+    plan: PlannedSymbol[],
+    targets: { outdatedMarketSymbols: string[]; awaitingNavSymbols: string[] },
+    now: Date,
+  ): PullFreshness {
+    const nowMs = now.getTime();
+    const currencyKnown = this.currencyKnownForPrefetch(plan);
+    const cached = readCachedQuotes();
+    let oldestQuoteAt: number | null = null;
+    let anyQuoteMissing = false;
+    let anyMarketMissing = false;
+    for (const entry of plan) {
+      const at = cached.get(entry.symbol)?.quote?.at ?? null;
+      if (at === null) {
+        anyQuoteMissing = true;
+        // C1 gate: a missing market quote is only evidence of a gap when we know
+        // the symbol's currency (C2). A legacy / first-ever plan stays unknown.
+        if (entry.priceType === "market" && currencyKnown && entry.nativeCurrency !== null) {
+          anyMarketMissing = true;
+        }
+        continue;
+      }
+      if (oldestQuoteAt === null || at < oldestQuoteAt) oldestQuoteAt = at;
+    }
+    const fxCached = readCachedEurUsd();
+    const fxAgeMs = fxCached && fxCached.now !== null ? nowMs - fxCached.at : Number.POSITIVE_INFINITY;
+    const quoteAgeMs = anyQuoteMissing || oldestQuoteAt === null ? Number.POSITIVE_INFINITY : nowMs - oldestQuoteAt;
+    const dataAgeMs = Math.max(quoteAgeMs, fxAgeMs);
+    // A market symbol still missing its latest settled close ⇒ the device is at
+    // least a day behind on the market sleeve (mirrors the post-decrypt builder's
+    // `marketStale`). Currency-gated like the missing-quote case above.
+    const marketStale = currencyKnown && targets.outdatedMarketSymbols.length > 0;
+    const deviceDaysMissing_ = deviceDaysMissing({ anyMarketMissing, marketStale, dataAgeMs });
+    const blobDaysOld = Math.max(this.blobDaysOld(now), deviceDaysMissing_);
+    // NAV is "held for today" unless a fund is still awaiting its latest publish.
+    const navHeldForToday = targets.awaitingNavSymbols.length === 0;
+    return { dataAgeMs, deviceDaysMissing: deviceDaysMissing_, blobDaysOld, quoteAgeMs, fxAgeMs, navHeldForToday };
+  }
+
+  /**
+   * C1 — the single orchestrator's verdict for the **login warm-up** (Pass 1),
+   * the pre-decrypt twin of {@link planRoundPull}. It routes the warm-up's
+   * fetch decision through {@link planPull} (`kind: "start"`, `phase:
+   * "pre-decrypt"`) so the warm-up and the post-decrypt kickoff share **one** code
+   * path: the same freshness tiers, the same clock-hour bar gate, the same rolling
+   * quote-TTL and FX-interval overlays. The symbol-level routing (which provider,
+   * which graph) still comes from {@link planPrefetch}; this plan is the leg gate
+   * layered on top, so the warm-up only fires a leg the single brain approves.
+   */
+  private planWarmupPull(
+    plan: PlannedSymbol[],
+    targets: { outdatedMarketSymbols: string[]; awaitingNavSymbols: string[] },
+    now: Date,
+  ): PullPlan {
+    const marketOpen = isUsMarketOpen(now);
+    return planPull({
+      kind: "start",
+      nowMs: now.getTime(),
+      market: marketOpen ? "open" : "closed",
+      minutesSinceOpenMs: marketOpen ? elapsedSessionMs(now) : 0,
+      autoIntervalMs: this.state.config.updateMinutes * 60 * 1000,
+      freshness: this.buildPrefetchFreshness(plan, targets, now),
+      phase: "pre-decrypt",
+      currencyKnown: this.currencyKnownForPrefetch(plan),
+      barGate: {
+        lastBarPullMs: this.lastBarPrimeMs,
+        sessionOpenMs: sessionOpenMs(lastSessionDate(now)),
+      },
+    });
   }
 
   /**
