@@ -14,6 +14,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.13.2] — 2026-06-26
+
+### Fixed
+
+- **1W graph's USD line no longer nosedives ~40 % mid-week while the EUR line
+  stays flat (issue #169, the recurring case attempts 1–3 could not catch).**
+  The whole-book USD value is recovered from the EUR pivot by re-applying FX
+  (`usd = eur × fx`); when a single point's NAV-sleeve EUR value and the FX rate
+  it is paired with disagree, that point's USD leg collapses while EUR stays
+  correct. Every prior self-heal (`repairWeekNavCollapse` /
+  `repairSessionNavCollapse`) detected a collapse from `valueEur` **only** and
+  **only** as a *leading* run — so a USD-only, and/or trailing/interior, collapse
+  was invisible to them and never repaired, which is why the dip survived three
+  PRs and the Settings "regenerate" button (a stale blob re-paints the same bad
+  point). Two root-cause fixes:
+  - **Render-time invariant (heals existing blobs immediately).** A new
+    currency-symmetric sanitizer (`repairCurrencyDivergence`) runs at the single
+    chart choke point (`liveCurveToChart`, covering 1D + 1W and the
+    springboard/live/merge paths). Every whole-book point must share the same
+    prevailing USD/EUR ratio (the exchange rate, which moves only smoothly within
+    a narrow band); a point straying beyond 12 % has one corrupt leg, which is
+    rebuilt from the healthy leg at the prevailing rate. The rate is anchored on
+    the trustworthy live tip, so it stays robust even when a *majority* of points
+    collapsed. Genuine FX divergence and healthy curves are returned untouched.
+  - **Generator hardening (prevents fresh exports from carrying it).** The
+    desktop/blob NAV sleeve now pairs its EUR value with the effective rate
+    derived from the sleeve's *native* USD value (USD is the booked currency, so
+    its value is FX-free), instead of an independently-looked-up rate that could
+    disagree — guaranteeing `nav_eur × fx` recovers exactly the native USD.
+
 ## [4.13.1] — 2026-06-26
 
 ### Fixed

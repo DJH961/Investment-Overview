@@ -53,7 +53,7 @@
  * on every springboard render.
  */
 
-import type { Decimal } from "./decimal-config";
+import { Decimal } from "./decimal-config";
 import type { CurvePoint } from "./timeseries";
 
 /**
@@ -318,4 +318,146 @@ function liftLeading(
       ? { t: p.t, valueEur: p.valueEur.plus(offsetEur), valueUsd: p.valueUsd.plus(offsetUsd) }
       : p,
   );
+}
+
+/**
+ * How far a single point's whole-book USD/EUR ratio may stray from the curve's
+ * prevailing ratio before it is treated as an FX-inconsistency artefact rather
+ * than a genuine exchange-rate move. EUR/USD does not swing anywhere near this
+ * much across a 1D/1W window (a few percent at most, and the *blended* whole-book
+ * ratio moves even less), whereas the NAV-collapse defect knocks one leg out by
+ * ~40 %. 12 % cleanly separates the two while preserving all genuine divergence.
+ */
+export const MAX_FX_RATIO_DRIFT = 0.12;
+
+/** Median of a non-empty list of Decimals (sorted copy; mean of the middle two when even). */
+function medianDecimal(values: Decimal[]): Decimal {
+  const sorted = [...values].sort((a, b) => a.comparedTo(b));
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid] : sorted[mid - 1].plus(sorted[mid]).dividedBy(2);
+}
+
+/**
+ * Heal a **single-currency** whole-book collapse that the EUR-only NAV-collapse
+ * repairs above structurally cannot see (issue #169, attempts 1–3).
+ *
+ * ## Why the earlier repairs miss it
+ * {@link repairWeekNavCollapse} / {@link repairSessionNavCollapse} detect a
+ * collapse purely from `valueEur` and only when it forms a *leading* run. But the
+ * real-world defect is **USD-only**: the desktop recovers each whole-book point's
+ * USD value by re-applying FX to the EUR pivot (`usd = eur × fx`), and when the
+ * NAV sleeve's EUR value and the FX rate it is paired with disagree, the USD leg
+ * nosedives ~40 % while the EUR leg stays flat. Because EUR never moves, the
+ * EUR-based repairs never fire — and because the bad point is usually *today*
+ * (the trailing live slice), a leading-run repair could not reach it anyway. A
+ * stale published blob keeps the bad point, so even "regenerate" re-paints it.
+ *
+ * ## The repair (currency-symmetric, position-agnostic)
+ * Every whole-book point must satisfy the same physical invariant: its USD/EUR
+ * ratio is the prevailing EUR→USD exchange rate, which varies only smoothly and
+ * within a narrow band. These curves always end at the **live tip** — the
+ * headline whole-book total in both currencies, the single most trustworthy point
+ * (it carries the real, fully-loaded NAV sleeve at the live spot) — so we anchor
+ * the prevailing rate on it and take the median of only the ratios that agree
+ * with it. That stays robust even when a *majority* of points are collapsed (an
+ * entire today-slice that lost its NAV in USD, with only the snap-back tip sound).
+ * Any point whose ratio strays beyond {@link MAX_FX_RATIO_DRIFT} is then
+ * FX-inconsistent — one of its two legs is corrupt. We rebuild the corrupt leg
+ * from the healthy one at the prevailing rate, choosing the corrupt leg as the
+ * one that jumps relative to its nearest consistent neighbours (and, when that is
+ * ambiguous — e.g. a leading/whole run with no consistent neighbour — defaulting
+ * to the USD leg, since USD is the FX-recovered, fragile side). A point with one
+ * leg ≤ 0, or a curve whose ratio never strays, is returned untouched (the same
+ * array, so callers can cheaply detect a no-op).
+ *
+ * Pure and dependency-free; safe to run on every render as the final safety net
+ * after the springboard/live/merge paths, regardless of which currency the user
+ * is viewing.
+ */
+export function repairCurrencyDivergence(
+  points: CurvePoint[],
+  maxDrift: number = MAX_FX_RATIO_DRIFT,
+): CurvePoint[] {
+  if (points.length < 3) return points;
+
+  // Per-point whole-book USD/EUR ratio, defined only where both legs are positive.
+  const ratios: Array<Decimal | null> = points.map((p) =>
+    p.valueEur.greaterThan(0) && p.valueUsd.greaterThan(0) ? p.valueUsd.dividedBy(p.valueEur) : null,
+  );
+  const valid = ratios.filter((r): r is Decimal => r !== null);
+  // Need a few healthy points to establish the prevailing rate; too few and we
+  // cannot tell signal from corruption, so leave the curve alone.
+  if (valid.length < 3) return points;
+
+  // The prevailing EUR→USD ratio. These curves always end at the live tip — the
+  // headline whole-book total, in both currencies, which is the single most
+  // trustworthy point (it carries the real, fully-loaded NAV sleeve at the live
+  // spot). So we anchor on the last valid point and take the median of only the
+  // ratios that agree with it. This stays robust even when a *majority* of points
+  // are collapsed (e.g. an entire today-slice lost its NAV in USD while only the
+  // snap-back tip is sound) — the case a plain global median cannot survive.
+  let anchor: Decimal | null = null;
+  for (let i = points.length - 1; i >= 0; i -= 1) {
+    if (ratios[i] !== null) {
+      anchor = ratios[i];
+      break;
+    }
+  }
+  if (anchor === null || !anchor.greaterThan(0)) return points;
+  const anchorLo = anchor.times(1 - maxDrift);
+  const anchorHi = anchor.times(1 + maxDrift);
+  const agreeing = valid.filter((r) => !r.lessThan(anchorLo) && !r.greaterThan(anchorHi));
+  const med = agreeing.length > 0 ? medianDecimal(agreeing) : anchor;
+  if (!med.greaterThan(0)) return points;
+  const lo = med.times(1 - maxDrift);
+  const hi = med.times(1 + maxDrift);
+
+  // Points whose ratio sits within the band are the trustworthy ("consistent")
+  // anchors; the rest are FX-inconsistent and need one leg rebuilt.
+  const consistent = ratios.map((r) => r !== null && !r.lessThan(lo) && !r.greaterThan(hi));
+  if (consistent.every((ok, i) => ok || ratios[i] === null)) return points;
+
+  // Nearest consistent neighbour value (per leg) on a given side, for deciding
+  // which leg jumped. Returns null when there is no consistent point that way.
+  const neighbourValue = (
+    i: number,
+    step: 1 | -1,
+    leg: (p: CurvePoint) => Decimal,
+  ): Decimal | null => {
+    for (let j = i + step; j >= 0 && j < points.length; j += step) {
+      if (consistent[j]) return leg(points[j]);
+    }
+    return null;
+  };
+
+  return points.map((p, i) => {
+    if (consistent[i] || ratios[i] === null) return p;
+
+    // Relative jump of each leg away from its nearest consistent neighbours: the
+    // corrupt leg is the one that moved, while the sound leg tracks its
+    // neighbours. Averaging both sides (when available) tolerates a real trend.
+    const legJump = (leg: (q: CurvePoint) => Decimal): number => {
+      const here = leg(p);
+      const refs = [neighbourValue(i, -1, leg), neighbourValue(i, 1, leg)].filter(
+        (v): v is Decimal => v !== null && v.greaterThan(0),
+      );
+      if (refs.length === 0) return Number.NaN; // no anchor this leg — undecidable
+      const ref =
+        refs.length === 1 ? refs[0] : refs[0].plus(refs[1]).dividedBy(2);
+      return here.minus(ref).abs().dividedBy(ref).toNumber();
+    };
+
+    const eurJump = legJump((q) => q.valueEur);
+    const usdJump = legJump((q) => q.valueUsd);
+
+    // Decide the corrupt leg. When both jumps are known, the larger one is
+    // corrupt; otherwise (a leading/whole-run collapse with no consistent
+    // neighbour) default to rebuilding USD — the FX-recovered, fragile leg.
+    const fixEur =
+      Number.isFinite(eurJump) && Number.isFinite(usdJump) ? eurJump > usdJump : false;
+
+    return fixEur
+      ? { t: p.t, valueEur: p.valueUsd.dividedBy(med), valueUsd: p.valueUsd }
+      : { t: p.t, valueEur: p.valueEur, valueUsd: p.valueEur.times(med) };
+  });
 }
