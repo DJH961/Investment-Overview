@@ -389,8 +389,10 @@ describe("loadOrBuildSessionCurve", () => {
 
   it("does not re-fetch a day already on the device when the market is closed", async () => {
     const store = new TimeSeriesStore(memoryBackend());
+    // A bar reaching the session close (19:30Z == 15:30 ET, within a bar interval
+    // of the 16:00 ET close) — a genuinely complete day, so nothing to re-fetch.
     await store.mergeSession("2026-06-23", {
-      bars: { VTI: [bar(Date.parse("2026-06-23T15:00:00Z"), "100")] },
+      bars: { VTI: [bar(Date.parse("2026-06-23T19:30:00Z"), "100")] },
     });
     const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
     // After the close: Tue 2026-06-23 22:00 UTC == 18:00 ET.
@@ -404,6 +406,69 @@ describe("loadOrBuildSessionCurve", () => {
     expect(fetchBars).not.toHaveBeenCalled();
     expect(result.marketOpen).toBe(false);
     expect(result.points).toHaveLength(1);
+  });
+
+  it("re-fetches a stale partial-day session after the close to complete the tail (scenario F)", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    // A session whose stored bars stop at 14:00 ET (18:00Z) — an earlier
+    // mid-session fetch that was never completed. It *looks* present, but never
+    // reached the 16:00 ET close, so after the close it must be re-pulled.
+    await store.mergeSession("2026-06-23", {
+      bars: { VTI: [bar(Date.parse("2026-06-23T18:00:00Z"), "100")] },
+    });
+    // The completing fetch returns the full session, including the close tail.
+    const fetchBars = vi.fn(async () =>
+      new Map<string, Bar[]>([
+        [
+          "VTI",
+          [bar(Date.parse("2026-06-23T18:00:00Z"), "100"), bar(Date.parse("2026-06-23T19:55:00Z"), "110")],
+        ],
+      ]),
+    );
+    // After the close: Tue 2026-06-23 22:00 UTC == 18:00 ET.
+    const now = new Date("2026-06-23T22:00:00Z");
+    const result = await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      now,
+    });
+    expect(fetchBars).toHaveBeenCalledWith(["VTI"]);
+    // The tail bar is now part of the curve, so it runs to the close, not 14:00.
+    expect(result.points).toHaveLength(2);
+    expect(result.points[result.points.length - 1].t).toBe(Date.parse("2026-06-23T19:55:00Z"));
+  });
+
+  it("reports sleeve coverage — full when every symbol has bars, partial when some are flat", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    // A two-symbol sleeve where only VTI has bars; VXUS is carried flat.
+    const anchor: IntradayAnchor = {
+      holdings: [
+        { priceSymbol: "VTI", valueEur: d(900), valueUsd: d(1000), closeNative: d(100), isUsdNative: true, priceType: "market" },
+        { priceSymbol: "VXUS", valueEur: d(450), valueUsd: d(500), closeNative: d(50), isUsdNative: true, priceType: "market" },
+      ],
+      baseEur: d(100),
+      baseUsd: d(100),
+      baseFx: d("0.9"),
+    };
+    await store.mergeSession("2026-06-23", {
+      bars: { VTI: [bar(Date.parse("2026-06-23T19:55:00Z"), "100")] },
+    });
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>()); // feed returns nothing for VXUS
+    const now = new Date("2026-06-23T22:00:00Z");
+    const result = await loadOrBuildSessionCurve({ anchor, store, fetchBars, now });
+    expect(result.coverage).toEqual({ covered: 1, total: 2 });
+  });
+
+  it("reports full coverage when the single sleeve symbol has bars", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.mergeSession("2026-06-23", {
+      bars: { VTI: [bar(Date.parse("2026-06-23T19:55:00Z"), "100")] },
+    });
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    const now = new Date("2026-06-23T22:00:00Z");
+    const result = await loadOrBuildSessionCurve({ anchor: singleEtfAnchor(), store, fetchBars, now });
+    expect(result.coverage).toEqual({ covered: 1, total: 1 });
   });
 
   it("does not re-fetch open-market bars written within the throttle window", async () => {
@@ -676,9 +741,10 @@ describe("loadOrBuildSessionCurve", () => {
     const store = new TimeSeriesStore(memoryBackend());
     // Bars already on the device (price == close → ratio 1) but no FX track, the
     // exact self-fetched state where the rebased EUR line would otherwise collapse
-    // onto USD. Market closed: bars must NOT be re-fetched, only the cheap FX.
+    // onto USD. Market closed: bars must NOT be re-fetched, only the cheap FX. The
+    // bar reaches the session close (19:30Z == 15:30 ET) so it counts as complete.
     await store.mergeSession("2026-06-23", {
-      bars: { VTI: [bar(Date.parse("2026-06-23T15:00:00Z"), "100")] },
+      bars: { VTI: [bar(Date.parse("2026-06-23T19:30:00Z"), "100")] },
     });
     const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
     const fetchFx = vi.fn(async () => [bar(Date.parse("2026-06-23T15:00:00Z"), "1.0")]);
@@ -706,8 +772,8 @@ describe("loadOrBuildSessionCurve", () => {
   it("does not re-fire the FX refill when the track is already in hand (no autofire)", async () => {
     const store = new TimeSeriesStore(memoryBackend());
     await store.mergeSession("2026-06-23", {
-      bars: { VTI: [bar(Date.parse("2026-06-23T15:00:00Z"), "100")] },
-      fx: [bar(Date.parse("2026-06-23T15:00:00Z"), "1.0")],
+      bars: { VTI: [bar(Date.parse("2026-06-23T19:30:00Z"), "100")] },
+      fx: [bar(Date.parse("2026-06-23T19:30:00Z"), "1.0")],
     });
     const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
     const fetchFx = vi.fn(async () => [bar(Date.parse("2026-06-23T15:00:00Z"), "1.0")]);
