@@ -336,11 +336,30 @@ def week_nav_drift_with_fx(
             continue
         held_dates.append(session_date)
         nav_eur = sum((p.current_value_eur for p in drifting), start=Decimal(0))
-        fx = (
-            fx_service.get_rate_eur_to_quote(session, session_date, quote="USD")
-            if any(_is_usd_native(p) for p in drifting)
-            else None
-        )
+        usd_funds = [p for p in drifting if _is_usd_native(p)]
+        if usd_funds:
+            settled_fx = fx_service.get_rate_eur_to_quote(session, session_date, quote="USD")
+            # The sleeve's *native* USD value, FX-free for USD-booked funds (USD is
+            # the booked currency): each USD fund contributes its native USD value
+            # directly; any non-USD fund is converted at the day's settled rate.
+            # Pair ``nav_eur`` with the effective rate that recovers exactly this
+            # native USD (``nav_usd / nav_eur``), rather than an independently
+            # fetched rate that can disagree with the rate ``nav_eur`` was struck
+            # at. That disagreement is what collapsed the USD NAV term while the EUR
+            # term stayed flat — the USD-only "1 Week" nosedive of issue #169. With
+            # a consistent rate the USD line can never drift from the EUR line.
+            nav_usd = sum((p.current_value_native for p in usd_funds), start=Decimal(0))
+            if settled_fx is not None:
+                nav_usd += (
+                    sum(
+                        (p.current_value_eur for p in drifting if not _is_usd_native(p)),
+                        start=Decimal(0),
+                    )
+                    * settled_fx
+                )
+            fx = (nav_usd / nav_eur) if nav_eur > 0 else settled_fx
+        else:
+            fx = None
         # A day is "complete" only when every drifting fund could actually be
         # valued. ``value_warning`` is the single authoritative signal here: it is
         # set precisely when the holding has no price, a zero native value, or no
