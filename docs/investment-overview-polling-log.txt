@@ -1,0 +1,42 @@
+Investment Overview — data polling log
+App version: 4.6.0
+Generated: 2026-06-26 10:46:39
+Entries: 36
+Times are local to this device. Newest entries are at the bottom.
+
+2026-06-26 10:44:49  [NOTE    ]  App version 4.6.0 — first run recorded on this device.
+2026-06-26 10:44:50  [LOGIN   ]  Login warm-up started — market closed (plan of 17). no market quotes, 5 NAV fund(s) via Twelve Data. Graph backfill via Tiingo: 1D bars ×12, 1W bars ×12.
+2026-06-26 10:44:50  [FX      ]  Login warm-up: EUR/USD 1.13989 from live (freshly pulled).
+2026-06-26 10:44:51  [GRAPH   ]  1D warm-up graph: fetched bars VXUS, VT, VGK, VUG, VTV, VTI, SCHK via Twelve Data (Pipe A) — 7 credits.
+2026-06-26 10:44:52  [GRAPH   ]  1D warm-up graph: fetched bars MSFT, IAUM, DAX, VOO, VWO via Tiingo (Pipe B) — 5 Tiingo credits.
+2026-06-26 10:44:52  [GRAPH   ]  1D warm-up graph: fetched fx FX eurusd via Tiingo (Pipe B) — 1 Tiingo credit.
+2026-06-26 10:44:52  [GRAPH   ]  Login warm-up: 1D backfill stored 12 series (Tiingo intraday bars) and primed those quotes.
+2026-06-26 10:44:54  [GRAPH   ]  1W warm-up graph: fetched bars VXUS, VT, VGK, VUG, VTV, VTI, SCHK, MSFT, IAUM, DAX, VOO, VWO via Tiingo (Pipe B) — 12 Tiingo credits.
+2026-06-26 10:44:54  [GRAPH   ]  1W warm-up graph: fetched fx FX eurusd via Tiingo (Pipe B) — 1 Tiingo credit.
+2026-06-26 10:44:54  [GRAPH   ]  Login warm-up: 1W backfill stored 12 series (Tiingo daily bars) and primed those quotes.
+2026-06-26 10:44:54  [LOGIN   ]  Login fan-out (0 mkt symbol(s)): Twelve Data only: 0 symbol(s) ≤ one TD request.
+2026-06-26 10:44:54  [PRIMARY ]  Login warm-up (Twelve Data): fetched 0 [none], served 0 from cache, deferred 5 [FSKAX, FXAIX, FTIHX, FSPSX, FSELX]. Budget left: 0/min, 792/day.
+2026-06-26 10:45:28  [LOGIN   ]  Unlock detected — painting cache, starting refresh.
+2026-06-26 10:45:28  [LOGIN   ]  Login reconcile: pulling 12 symbol(s) diff (deduped against the prefetch).
+2026-06-26 10:45:28  [ORCHESTRATOR]  Round decision (start): start → heavily-outdated: pull 1W bars + 1D bars + quotes + NAV [FX held (within interval)]
+2026-06-26 10:45:28  [GRAPH   ]  Graph-prime decision (start): market closed → prime self-gates on staleness (orchestrator: start → heavily-outdated: pull 1W bars + 1D bars + quotes + NAV [FX held (within interval)])
+2026-06-26 10:45:28  [REFRESH ]  Refresh started: start (kickoff, startup-burst).
+2026-06-26 10:45:28  [FX      ]  EUR/USD source: cache.
+2026-06-26 10:45:28  [PRIMARY ]  Primary (Twelve Data): fetched 0 [none], served 12 from cache, deferred 5 [FSKAX, FXAIX, FTIHX, FSPSX, FSELX]. Budget left: 0/min, 792/day.
+2026-06-26 10:45:29  [FALLBACK]  Backup (Tiingo) filled 12 [VXUS, VT, VGK, VUG, VTV, VTI, SCHK, MSFT, IAUM, DAX, VOO, VWO]. Budget: 31/40 this hour, 31/800 today.
+2026-06-26 10:45:29  [NOTE    ]  Coverage: market 0 live / 12 cached / 12 at last close of 12; NAVs 0/5 in (5 awaiting); FX live; market closed → “Market closed, 12/12 at last close, awaiting 5/5 NAVs · FX live”.
+2026-06-26 10:45:29  [SCHEDULE]  Refresh finished (start). 5 still deferred. Next auto-refresh in ~60s (burst).
+2026-06-26 10:45:29  [BLOB    ]  New encrypted export downloaded (meta version 6f73ce6b44b675fb5b648aea915e4b1f69e1426e06d965a354f3192ae37d125e) — decrypting and re-rendering.
+2026-06-26 10:45:58  [GRAPH   ]  1D graph: reused stored session bars (no live pull, 0 credits).
+2026-06-26 10:46:10  [GRAPH   ]  1W graph: reused the exported week sleeve (no live pull, 0 credits).
+2026-06-26 10:46:12  [GRAPH   ]  1D graph: reused stored session bars (no live pull, 0 credits).
+2026-06-26 10:46:29  [ORCHESTRATOR]  Round decision (auto): auto → minorly-outdated: pull 1D bars + quotes [FX held (within interval)]
+2026-06-26 10:46:29  [GRAPH   ]  Graph-prime decision (auto): market closed → prime self-gates on staleness (orchestrator: auto → minorly-outdated: pull 1D bars + quotes [FX held (within interval)])
+2026-06-26 10:46:29  [REFRESH ]  Refresh started: auto.
+2026-06-26 10:46:29  [FX      ]  EUR/USD source: cache.
+2026-06-26 10:46:29  [PRIMARY ]  Primary (Twelve Data): fetched 0 [none], served 12 from cache, deferred 0 [none]. Budget left: 8/min, 792/day.
+2026-06-26 10:46:29  [FALLBACK]  Backup (Tiingo) not needed this round (primary covered the book or nothing newer to fetch).
+2026-06-26 10:46:29  [NOTE    ]  Coverage: market 0 live / 12 cached / 12 at last close of 12; NAVs 0/0 in (0 awaiting); FX live; market closed → “Market closed, up to date · FX live”.
+2026-06-26 10:46:29  [SCHEDULE]  Refresh finished (auto). 0 still deferred. Next auto-refresh in ~301s.
+2026-06-26 10:46:29  [GRAPH   ]  1D graph: reused stored session bars (no live pull, 0 credits).
+2026-06-26 10:46:29  [BLOB    ]  Data-file check: unchanged (meta version 6f73ce6b44b675fb5b648aea915e4b1f69e1426e06d965a354f3192ae37d125e).
