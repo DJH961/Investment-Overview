@@ -29,6 +29,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rather than re-deriving it from the curve, where a near-zero inception value made
   the seed collapse into a wildly inflated number
   (`web/src/format.ts`, `web/src/market-hours.ts`, `web/src/ui.ts`).
+- **The session-aware "today" wording is now consistent across the whole web
+  app**, not just the hero. The "Today" return-horizon KPI now reads "Yesterday"
+  or the older session's date (e.g. "20 Jun") in lock-step with the hero, and a
+  stale per-holding row's tooltip names the same session instead of hard-coding
+  "today". A single `sessionMoveWord` helper backs every surface so they can
+  never disagree (`web/src/ui.ts`).
 - **Calmer 1D/1W live chart toggling** (changelog entry for #166, which shipped
   without one). Toggling the live 1D/1W graphs flashed a collapsed "Loading…"
   placeholder on every click before the (usually cached) curve resolved. A 220 ms
