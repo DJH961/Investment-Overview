@@ -48,10 +48,8 @@ import {
   clearAllSeriesBackoff,
   creditsSpentToday,
   readLastPull,
-  readNavPublishStats,
   readSymbolPlan,
   type PlannedSymbol,
-  recordNavPublish,
   primeQuotesFromBars,
   readSessionStatus,
   writeSessionStatus,
@@ -63,15 +61,12 @@ import {
 import {
   DEFAULT_NAV_CACHE_TTL_MS,
   FREE_TIER,
-  NAV_PUBLISH_HOUR,
   holdsSettledClose,
-  latestExpectedNavDate,
   loadEurUsd,
   loadFxRates,
   loadQuotes,
   marketCacheTtlMs,
   navCacheTtlMs,
-  navPublishWindow,
   type EurUsdSource,
   type LoadQuotesOptions,
   type QuoteLoadReport,
@@ -847,7 +842,7 @@ export class App {
    * judged against what the caches already hold — so the market-aware warm-up
    * ({@link planPrefetch}) can skip a closed market that is already up to date.
    * Pure cache reads (no decrypted data): mirrors {@link outdatedFetchCount}'s
-   * per-symbol "behind" test against the latest settled close / expected NAV.
+   * per-symbol "behind" test against the latest settled close / settled NAV.
    */
   private prefetchTargets(
     plan: PlannedSymbol[],
@@ -859,8 +854,7 @@ export class App {
   } {
     const cached = readCachedQuotes();
     const settled = latestSettledSessionDate(now);
-    const navStats = readNavPublishStats();
-    const publishHourFor = (symbol: string): number => navPublishWindow(navStats.get(symbol)?.hours).publishHour;
+    const marketOpen = isUsMarketOpen(now);
     const marketSymbols: string[] = [];
     const outdatedMarketSymbols: string[] = [];
     const awaitingNavSymbols: string[] = [];
@@ -870,9 +864,12 @@ export class App {
         marketSymbols.push(entry.symbol);
         if (!holdsSettledClose(cq, settled)) outdatedMarketSymbols.push(entry.symbol);
       } else {
+        // A NAV fund is worth warming only while the market is *closed* and we do
+        // not yet hold the latest settled session's NAV — the after-close window
+        // in which tonight's NAV is awaited until it lands. While the session is
+        // open the NAV cannot have struck yet, so there is nothing to chase.
         const have = cq?.valueDate ?? null;
-        const expected = latestExpectedNavDate(now, publishHourFor(entry.symbol));
-        if (!have || have < expected) awaitingNavSymbols.push(entry.symbol);
+        if (!marketOpen && (!have || have < settled)) awaitingNavSymbols.push(entry.symbol);
       }
     }
     return { marketSymbols, outdatedMarketSymbols, awaitingNavSymbols };
@@ -1691,17 +1688,17 @@ export class App {
     // only make sense once unlocked with data loaded — the dashboard they refresh
     // has to exist.
     if (settingsMode && this.state.data) {
-      // (1) Force-fetch every price now: ignore the NAV publish schedules and the
+      // (1) Force-fetch every price now: ignore the NAV close-await skips and the
       // market-closed skips and re-pull *all* symbols as if each were expecting a
-      // brand-new price. Keeps the caches and learned publish windows intact.
+      // brand-new price. Keeps the caches intact.
       const forceAll = h(
         "button",
         { class: "btn ghost", type: "button", "data-action": "force-all" },
         ["Force-fetch every price now"],
       );
       forceAll.addEventListener("click", () => this.forceFetchAllNow());
-      // (2) Reset everything: clear every cached price, forget the learned NAV
-      // publish windows, re-check the data file, then re-pull from scratch.
+      // (2) Reset everything: clear every cached price, re-check the data file,
+      // then re-pull from scratch.
       const updateAll = h(
         "button",
         { class: "btn ghost", type: "button", "data-action": "update-all" },
@@ -1736,12 +1733,12 @@ export class App {
         field(
           "Force-fetch every price",
           forceAll,
-          "Re-pull every quote now, ignoring NAV publish schedules and market-closed skips — as if all prices were expected to update. Keeps your caches and learned NAV windows. Respects your daily free-tier budget.",
+          "Re-pull every quote now, ignoring NAV close-await skips and market-closed skips — as if all prices were expected to update. Keeps your caches. Respects your daily free-tier budget.",
         ),
         field(
           "Reset & re-pull everything",
           updateAll,
-          "Clear every cached price, forget the learned NAV publish windows, re-check the data file, and re-fetch all quotes and FX from scratch. Use this if a price ever looks stuck. Respects your daily free-tier budget.",
+          "Clear every cached price, re-check the data file, and re-fetch all quotes and FX from scratch. Use this if a price ever looks stuck. Respects your daily free-tier budget.",
         ),
         field(
           "Try the backup data provider",
@@ -2575,8 +2572,8 @@ export class App {
   /**
    * Whether every fetchable holding already holds its latest settled close — i.e.
    * there is nothing newer to fetch while the market is shut. Market symbols are
-   * judged against {@link latestSettledSessionDate}; NAV funds against their
-   * latest expected publish ({@link latestExpectedNavDate}, learned publish hour).
+   * judged against {@link latestSettledSessionDate}; NAV funds against that same
+   * latest settled session's NAV date.
    * Mirrors the per-symbol "behind" test used by the manual {@link forceFetch}
    * path so the startup quick-refresh agrees with a manual pull on what counts as
    * outdated. Returns true when there is no data yet (nothing to chase).
@@ -2588,8 +2585,8 @@ export class App {
   /**
    * How many fetchable holdings are outdated and worth re-pricing right now. With
    * the market **closed** this is the count behind the latest settled close (market
-   * symbols vs {@link latestSettledSessionDate}, NAV funds vs their latest expected
-   * publish) — the same per-symbol "behind" test {@link holdsLatestClose} uses. With
+   * symbols vs {@link latestSettledSessionDate}, NAV funds vs that same settled
+   * session's NAV) — the same per-symbol "behind" test {@link holdsLatestClose} uses. With
    * the market **open** intraday prices move continuously, so once the
    * startup quick-refresh fires (the whole book is >1h stale) every fetchable
    * holding counts. Drives the startup-refresh routing in {@link start}; returns 0
@@ -2605,7 +2602,7 @@ export class App {
    * post-decrypt reconcile ({@link reconcileHandshake}). While the market is open
    * every fetchable symbol is stale (an intraday mark is always chaseable); while
    * it is shut a market symbol is stale only until its latest *settled* close is in
-   * hand, and a NAV fund only until its expected publish date lands. Returns `[]`
+   * hand, and a NAV fund only until that settled session's NAV lands. Returns `[]`
    * when there is no data yet (nothing to chase).
    */
   private staleFetchSymbols(marketOpen: boolean, now: Date): string[] {
@@ -2616,9 +2613,6 @@ export class App {
     if (marketOpen) return plan.map((entry) => entry.symbol);
     const cached = readCachedQuotes();
     const settled = latestSettledSessionDate(now);
-    const navStats = readNavPublishStats();
-    const publishHourFor = (symbol: string): number =>
-      navPublishWindow(navStats.get(symbol)?.hours).publishHour;
     const stale: string[] = [];
     for (const entry of plan) {
       const cq = cached.get(entry.symbol)?.quote;
@@ -2628,9 +2622,10 @@ export class App {
         // captured once after the bell.
         if (!holdsSettledClose(cq, settled)) stale.push(entry.symbol);
       } else {
+        // NAV fund (market closed here): outdated until we hold the latest
+        // settled session's NAV. Polled until it lands, however late.
         const have = cq?.valueDate ?? null;
-        const expected = latestExpectedNavDate(now, publishHourFor(entry.symbol));
-        if (!have || have < expected) stale.push(entry.symbol);
+        if (!have || have < settled) stale.push(entry.symbol);
       }
     }
     return stale;
@@ -2650,15 +2645,15 @@ export class App {
   /**
    * Build the (NAV-aware) {@link loadQuotes} options for a set of symbols. Shared
    * by the live refresh and the login-time prefetch so both honour the same
-   * per-symbol cache windows and publish-time learning. `force` forces market
+   * per-symbol cache windows. `force` forces market
    * symbols to re-fetch (the "pull now" path behind a manual Refresh tap); NAV
    * symbols stay on their once-a-day adaptive window regardless.
    *
    * `forceAll` is the heavier "ignore every schedule" escape hatch (Settings →
    * "Force-fetch every price now"): it re-pulls *every* symbol unconditionally —
    * market symbols even while the exchange is shut and the close is in hand, and
-   * NAV funds even when they are not behind their expected publish — as if we
-   * expected all of them to have a brand-new price. The hard free-tier per-minute
+   * NAV funds even when they already hold the latest settled session's NAV — as if
+   * we expected all of them to have a brand-new price. The hard free-tier per-minute
    * /day budget in {@link loadQuotes} still applies, so overflow simply defers.
    */
   private buildQuoteOptions(
@@ -2668,12 +2663,6 @@ export class App {
     forceAll = false,
   ): LoadQuotesOptions {
     const cacheTtlMs = config.updateMinutes * 60 * 1000;
-    // Per-symbol learned publish windows: when each fund's NAV has historically
-    // landed, so we poll within that tight band instead of a fixed evening guess.
-    const navStats = readNavPublishStats();
-    // Learned publish hour for a NAV symbol (when its once-a-day NAV is expected).
-    const publishHourFor = (symbol: string): number =>
-      navPublishWindow(navStats.get(symbol)?.hours).publishHour;
     return {
       cacheTtlMs,
       navSymbols: navFetchSymbols,
@@ -2683,18 +2672,20 @@ export class App {
       // the close already in hand spends no credits.
       forceMarketFetch: false,
       cacheTtlMsForSymbol: (symbol, cached) => {
+        const now = new Date();
         if (navFetchSymbols.has(symbol)) {
-          // NAV fund: relax once today's NAV is in hand, else poll like a normal
-          // symbol until it lands (no upper catch-up cap — catches a late NAV).
+          // NAV fund: while the market is open it cannot strike, so rest; once it
+          // closes, poll like a normal symbol until the settled session's NAV is
+          // in hand (no upper catch-up cap — catches a late NAV, even past midnight).
           return navCacheTtlMs(cached?.quote, {
+            now: now.getTime(),
+            marketOpen: isUsMarketOpen(now),
             shortTtlMs: cacheTtlMs,
             longTtlMs: DEFAULT_NAV_CACHE_TTL_MS,
-            publishHour: publishHourFor(symbol),
           });
         }
         // Market symbol: while the exchange is shut and we already hold the latest
         // settled close there is nothing new to fetch — rest until it reopens.
-        const now = new Date();
         return marketCacheTtlMs(cached?.quote, {
           shortTtlMs: cacheTtlMs,
           marketOpen: isUsMarketOpen(now),
@@ -2708,31 +2699,31 @@ export class App {
       //     the latest settled close. While the market is shut and that close is
       //     in hand — true both after the closing bell *and* the next morning
       //     before the open — they stay quiet, mirroring the automatic skip.
-      //   - NAV funds: only when *behind* their latest expected value (we are
-      //     demonstrably missing a published NAV); otherwise they stay exempt so
-      //     a tap never chases an unchanged NAV.
+      //   - NAV funds: only when *behind* the latest settled session's NAV (we are
+      //     demonstrably missing it); otherwise they stay exempt so a tap never
+      //     chases an unchanged NAV. While the market is open they are never behind
+      //     (the NAV cannot have struck mid-session), so a tap leaves them quiet.
       // `forceAll` overrides all of that and re-pulls *every* symbol — the
       // explicit "ignore NAV schedules and market-closed skips" escape hatch.
       forceFetch: forceAll
         ? () => true
         : force
           ? (symbol, cached) => {
+              const at = new Date();
               if (!navFetchSymbols.has(symbol)) {
-                const at = new Date();
                 if (isUsMarketOpen(at)) return true;
                 // Closed: re-pull unless we hold the latest *settled* close. An
                 // intraday-only capture (value-date is today but taken before the
                 // bell) still warrants one pull to record the official close.
                 return !holdsSettledClose(cached?.quote, latestSettledSessionDate(at));
               }
+              // NAV: nothing new while the market is open; once closed, re-pull
+              // until the latest settled session's NAV is in hand.
+              if (isUsMarketOpen(at)) return false;
               const have = cached?.quote.valueDate ?? null;
-              return !(have && have >= latestExpectedNavDate(new Date(), publishHourFor(symbol)));
+              return !(have && have >= latestSettledSessionDate(at));
             }
           : undefined,
-      // Learn each fund's real publish time from when its value-date advances.
-      onValueDateAdvance: (symbol, valueDate, at) => {
-        if (navFetchSymbols.has(symbol)) recordNavPublish(symbol, valueDate, at);
-      },
     };
   }
 
@@ -3050,7 +3041,6 @@ export class App {
       this.state.config.updateMinutes * 60 * 1000,
     );
     if (network) {
-      const navStats = readNavPublishStats();
       this.lastCoverageFacts = buildCoverageFacts(
         quoteLoad.report,
         quoteLoad.quotes,
@@ -3058,7 +3048,6 @@ export class App {
         {
           now: new Date(),
           marketOpen: isUsMarketOpen(),
-          publishHourFor: (symbol) => navPublishWindow(navStats.get(symbol)?.hours).publishHour,
           freshlyPulled: this.recentlyPulled(),
           fx: fxDisplaySource,
         },
@@ -3081,7 +3070,6 @@ export class App {
       // never dressed up as a fresh live pull (freshlyPulled gates that). Only
       // fills the initial gap: a later cache re-paint (currency toggle, blob swap)
       // keeps the real network coverage rather than overwriting it from cache.
-      const navStats = readNavPublishStats();
       this.lastCoverageFacts = buildCoverageFacts(
         quoteLoad.report,
         quoteLoad.quotes,
@@ -3089,7 +3077,6 @@ export class App {
         {
           now: new Date(),
           marketOpen: isUsMarketOpen(),
-          publishHourFor: (symbol) => navPublishWindow(navStats.get(symbol)?.hours).publishHour,
           freshlyPulled: this.recentlyPulled(),
           fx: fxDisplaySource,
         },
@@ -3198,10 +3185,10 @@ export class App {
    * a fresh value (e.g. just after a known publish) and want to pull them all at
    * once rather than waiting for each symbol's window.
    *
-   * Unlike {@link updateAllFromScratch} this keeps the caches and the learned NAV
-   * publish windows intact — it only bypasses the freshness gates for this one
-   * pull (see {@link buildQuoteOptions} `forceAll`). The hard free-tier per-minute
-   * /day budget in {@link loadQuotes} still applies, so any overflow just defers.
+   * Unlike {@link updateAllFromScratch} this keeps the caches intact — it only
+   * bypasses the freshness gates for this one pull (see {@link buildQuoteOptions}
+   * `forceAll`). The hard free-tier per-minute/day budget in {@link loadQuotes}
+   * still applies, so any overflow just defers.
    */
   private forceFetchAllNow(): void {
     // Back to the dashboard, then force a pull of every symbol.
@@ -3334,13 +3321,13 @@ export class App {
   }
 
   /**
-   * Whether at least one NAV-priced fund is still missing a NAV that is
-   * genuinely *due* right now — i.e. we are demonstrably behind a published
-   * price. Judged exactly like the per-symbol manual skip in
-   * {@link buildQuoteOptions}: the cached value-date against the fund's latest
-   * expected NAV date (using its learned publish hour). Drives the market-phase
-   * classification so the refresh layer can tell the post-close "still awaiting
-   * tonight's NAVs" window apart from a fully settled book.
+   * Whether at least one NAV-priced fund is still missing the latest settled
+   * session's NAV — i.e. we are demonstrably behind. Judged exactly like the
+   * per-symbol manual skip in {@link buildQuoteOptions}: the cached value-date
+   * against {@link latestSettledSessionDate}. After the close that settled session
+   * is today's just-shut one (whose NAV has not struck yet), so this is true
+   * through the post-close "still awaiting tonight's NAVs" window; while the
+   * market is open it compares against the prior session, which we already hold.
    */
   private navOutstanding(now: Date = new Date()): boolean {
     const navSymbols = readSymbolPlan()
@@ -3348,11 +3335,10 @@ export class App {
       .map((e) => e.symbol);
     if (navSymbols.length === 0) return false;
     const cached = readCachedQuotes();
-    const navStats = readNavPublishStats();
+    const settled = latestSettledSessionDate(now);
     return navSymbols.some((symbol) => {
       const have = cached.get(symbol)?.quote.valueDate ?? null;
-      const publishHour = navPublishWindow(navStats.get(symbol)?.hours).publishHour;
-      return !(have && have >= latestExpectedNavDate(now, publishHour));
+      return !(have && have >= settled);
     });
   }
 
@@ -4587,14 +4573,16 @@ export interface CoverageFacts {
   /** NAV-priced funds requested this round. */
   navTotal: number;
   /**
-   * NAV funds that have not yet published *today's* NAV (they strike after the
-   * market closes) — the "expected tonight" count while the market is open.
+   * NAV funds that hold the latest settled session's NAV but whose *tonight's*
+   * NAV (for today's in-progress session) is still to strike — the "expected
+   * tonight" count while the market is open. Zero while the market is closed.
    */
   navExpectedTonight: number;
   /**
-   * NAV funds whose latest *due* NAV we don't yet hold (past their learned
-   * publish hour and still missing) — the "awaiting" count once due. Zero over a
-   * weekend/holiday, when the latest published NAV is genuinely the current one.
+   * NAV funds whose latest settled session's NAV we don't yet hold — the
+   * "awaiting" count. While the market is closed this is the after-close window
+   * until tonight's NAV lands; zero over a weekend/holiday once the latest
+   * published NAV is in hand.
    */
   navAwaiting: number;
   /** Whether fresh data actually landed recently (else: "showing recent prices"). */
@@ -4657,10 +4645,17 @@ function capitalizeFirst(text: string): string {
 /**
  * Classify this refresh round into {@link CoverageFacts}: split the requested
  * symbols into market vs NAV, count how many market holdings are live, and judge
- * each NAV fund against both *today's* date (will it still publish tonight?) and
- * its latest *due* value-date (is it overdue right now?). `publishHourFor` is the
- * fund's learned publish hour (see {@link navPublishWindow}); it defaults to the
- * bootstrap {@link NAV_PUBLISH_HOUR} when nothing has been learned yet.
+ * each NAV fund against the latest *settled* US trading session.
+ *
+ * The NAV rule is deliberately simple — no attempt to predict *when* a fund
+ * publishes, just "after the close, await it until it arrives":
+ *   - **market open**: today's session is still mid-flight, so its NAV strikes
+ *     tonight — count the fund as "expected tonight" (we hold the prior settled
+ *     session's NAV in the meantime). A fund that is behind even that prior
+ *     settled NAV is genuinely missing it, so it counts as "awaiting".
+ *   - **market closed**: we should hold the latest settled session's NAV. Until
+ *     it lands — the whole after-close, pre-NAV window — the fund is "awaiting";
+ *     once it is in hand the book is up to date.
  */
 export function buildCoverageFacts(
   report: QuoteLoadReport,
@@ -4672,18 +4667,18 @@ export function buildCoverageFacts(
   ctx: {
     now?: Date;
     marketOpen: boolean;
-    publishHourFor?: (symbol: string) => number;
     freshlyPulled?: boolean;
     fx?: EurUsdSource;
   },
 ): CoverageFacts {
   const now = ctx.now ?? new Date();
-  const publishHourFor = ctx.publishHourFor ?? (() => NAV_PUBLISH_HOUR);
   const fetched = new Set(report.fetched);
+  // The latest US session whose 16:00 close has happened. Its NAV is the freshest
+  // a fund should hold; after the close that is today's just-shut session.
   const settled = latestSettledSessionDate(now);
   // The most recent NYSE session that has *started* (today once its open passes,
-  // else the prior session). A held NAV for an older session than this means
-  // today's session is still mid-flight, so its NAV is yet to strike tonight.
+  // else the prior session). A held NAV older than this while the market is open
+  // means today's session is still mid-flight, so its NAV is yet to strike tonight.
   const startedSession = lastSessionDate(now);
   let marketTotal = 0;
   let marketHeld = 0;
@@ -4696,16 +4691,15 @@ export function buildCoverageFacts(
     if (navSymbols.has(symbol)) {
       navTotal += 1;
       const held = quotes.get(symbol)?.valueDate ?? null;
-      // The latest NAV that *should* exist right now (its learned publish hour
-      // has passed). Anchored to the NY trading calendar, never the local day.
-      const due = latestExpectedNavDate(now, publishHourFor(symbol));
-      const haveDue = held !== null && held >= due;
-      if (!haveDue) {
-        // We don't yet hold the NAV that is genuinely due → still awaiting it.
+      // Behind the latest settled session's NAV → genuinely missing it. After the
+      // close this is the normal "awaiting tonight's NAV" window; while open it
+      // only fires for a fund behind even the prior settled session (an outage).
+      const behindSettled = held === null || held < settled;
+      if (behindSettled) {
         navAwaiting += 1;
-      } else if (due < startedSession) {
-        // We hold the due NAV, but a newer session is already under way whose
-        // NAV will publish later tonight — "expected tonight", not missing.
+      } else if (ctx.marketOpen && held < startedSession) {
+        // Holding the latest settled NAV, but today's session is under way and its
+        // NAV strikes tonight. "Expected", not missing.
         navExpectedTonight += 1;
       }
     } else {

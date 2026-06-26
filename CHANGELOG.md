@@ -14,6 +14,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.5.3] — 2026-06-26
+
+### Changed
+
+- **NAV freshness is now "poll after the close until tonight's NAV lands" —
+  no more trying to predict *when* a fund publishes.** Mutual-fund and
+  money-market NAVs publish only once a day, after the session closes. The web
+  companion previously tried to *learn* each fund's publish hour and only then
+  judge a NAV as due — which meant the post-close, pre-NAV window was reported as
+  "up to date" (and a freshly-struck NAV at ~2am was not actively fetched). The
+  whole prediction machinery (learned publish hours, catch-up windows, the
+  one-trading-day publish-lag grace) is removed in favour of a simple rule
+  anchored to the latest *settled* US session (`latestSettledSessionDate`):
+  - **market open** → rest on the long ~12h window; today's NAV strikes only
+    after the close and we already hold the prior settled session's NAV
+    ("expected tonight"); a fund behind even that prior NAV reads "awaiting";
+  - **market closed** → if we hold the latest settled session's NAV the book is
+    "up to date"; otherwise the fund is "awaiting" and is polled like an ordinary
+    symbol until the NAV lands, however late (even past midnight), with no upper
+    cap.
+  This means the after-close window now correctly reads "awaiting tonight's NAV",
+  the NAV is actively fetched the moment it publishes, and once it is in hand the
+  line relaxes back to "up to date". `navCacheTtlMs` (`web/src/quotes.ts`) and
+  `buildCoverageFacts` (`web/src/app.ts`) carry the new logic;
+  `cache.ts`/`tiingo-fallback.ts` no longer record learned publish times.
+
 ## [4.5.2] — 2026-06-26
 
 ### Fixed

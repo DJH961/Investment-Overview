@@ -17,17 +17,16 @@ import {
   loadEurUsd,
   loadFxRates,
   loadQuotes,
-  latestExpectedNavDate,
   marketCacheTtlMs,
   holdsSettledClose,
   navCacheTtlMs,
-  navPublishWindow,
   twelveDataBudgetRemaining,
   DEFAULT_CLOSED_MARKET_TTL_MS,
   DEFAULT_NAV_CACHE_TTL_MS,
   DEFAULT_CACHE_TTL_MS,
 } from "../src/quotes";
 import { PriceError, type FetchLike, type Quote } from "../src/prices";
+import { nextSessionCloseMs } from "../src/market-hours";
 import { WEB_DAILY_CAP } from "../src/tiingo-gate";
 import Decimal from "decimal.js";
 
@@ -478,80 +477,111 @@ describe("loadFxRates", () => {
 });
 
 describe("navCacheTtlMs — adaptive NAV refresh", () => {
-  // Local-time constructors keep these assertions timezone-independent, matching
-  // the helper's use of local getters. 2024-01-10 is a Wednesday. The default
-  // publish hour is now 22:00 (European market close), so evening checks use 22+.
+  // Local-time constructors keep these assertions timezone-independent on the
+  // UTC CI runner (local == UTC), matching the helper's ET-anchored session
+  // math. 2024-01-10 is a Wednesday. There is no publish-time prediction any
+  // more: poll after the close until the settled session's NAV is in hand.
   const wed = (h: number, m = 0) => new Date(2024, 0, 10, h, m).getTime();
   const sat = (h: number) => new Date(2024, 0, 13, h).getTime();
 
-  it("relaxes to the long window once today's NAV is in hand", () => {
+  it("relaxes to the long window once the settled session's NAV is in hand", () => {
+    // 17:30 ET Wed — market closed, Wednesday has settled and we hold it.
     const ttl = navCacheTtlMs({ valueDate: "2024-01-10" }, { now: wed(22, 30) });
     expect(ttl).toBe(DEFAULT_NAV_CACHE_TTL_MS);
   });
 
-  it("polls like a normal fund while behind the expected NAV", () => {
+  it("polls like a normal fund while behind the settled NAV after the close", () => {
+    // 17:30 ET Wed — closed, Wednesday settled but we only hold Tuesday's NAV.
     const ttl = navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(22, 30) });
     expect(ttl).toBe(DEFAULT_CACHE_TTL_MS);
   });
 
   it("keeps chasing a late NAV past midnight (no catch-up cap)", () => {
-    // 00:30 Thursday. Before the 22:00 publish hour the latest expected NAV is
-    // the prior session — Wednesday (01-10) — but we only hold Tuesday's (01-09),
-    // so we keep polling rather than giving up until the next evening.
+    // 00:30 Thursday UTC → 19:30 ET Wednesday: still chasing Wednesday's NAV,
+    // which we don't hold (only Tuesday's). Poll on, however late.
     const thu0030 = new Date(2024, 0, 11, 0, 30).getTime();
     expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { now: thu0030 })).toBe(DEFAULT_CACHE_TTL_MS);
   });
 
-  it("chases an unknown (uncached) value-date", () => {
+  it("chases an unknown (uncached) value-date after the close", () => {
     expect(navCacheTtlMs(null, { now: wed(22, 30) })).toBe(DEFAULT_CACHE_TTL_MS);
     expect(navCacheTtlMs({ valueDate: null }, { now: wed(22, 30) })).toBe(DEFAULT_CACHE_TTL_MS);
   });
 
-  it("rests before the NAV is due, when the prior session is already in hand", () => {
-    // 12:00 is before the 22:00 publish hour; the latest expected NAV is the
-    // prior business day (Tue 01-09), which we already hold — nothing to chase.
+  it("rests before the close when the latest settled NAV is already in hand", () => {
+    // 07:00 ET Wed (pre-open): the latest settled session is Tuesday (01-09),
+    // which we already hold — nothing to chase.
     const ttl = navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(12) });
     expect(ttl).toBe(DEFAULT_NAV_CACHE_TTL_MS);
   });
 
-  it("polls when an earlier session's NAV is still missing", () => {
-    // Noon but we only hold Monday's NAV — Tuesday's (the prior session) is due
-    // and missing, so fetch it now rather than wait for the evening.
+  it("polls when an earlier settled session's NAV is still missing", () => {
+    // 07:00 ET Wed but we only hold Monday's NAV — Tuesday's (the latest settled
+    // session) is missing, so fetch it now.
     const ttl = navCacheTtlMs({ valueDate: "2024-01-08" }, { now: wed(12) });
     expect(ttl).toBe(DEFAULT_CACHE_TTL_MS);
   });
 
   it("rests on a weekend once Friday's NAV is in hand", () => {
-    // Saturday evening: latest expected is Friday's NAV, which we already hold.
+    // Saturday evening: latest settled session is Friday's NAV, which we hold.
     expect(navCacheTtlMs({ valueDate: "2024-01-12" }, { now: sat(22) })).toBe(DEFAULT_NAV_CACHE_TTL_MS);
   });
 
-  it("honours an explicit (learned) publish hour after the US close", () => {
-    // A fund taught to publish late (23:00 local), tested in the evening *after*
-    // the US session has settled so the cap doesn't mask the publish-hour gate:
-    // before 23:00 the prior session is the latest due (rest); after it, today's
-    // settled session NAV is due — poll until it lands.
-    const opts = { publishHour: 23 };
-    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { ...opts, now: wed(22) })).toBe(DEFAULT_NAV_CACHE_TTL_MS);
-    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { ...opts, now: wed(23) })).toBe(DEFAULT_CACHE_TTL_MS);
+  it("rests on the long window all session while the market is open", () => {
+    // 15:00 UTC Wed → 10:00 ET — session open. Even holding only Tuesday's NAV
+    // (tonight's has not struck yet) we wait on the long window; nothing to chase
+    // mid-session.
+    const wedOpen = new Date(2024, 0, 10, 15, 0).getTime();
+    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wedOpen })).toBe(DEFAULT_NAV_CACHE_TTL_MS);
   });
 
-  it("never expects a US NAV whose session has not yet closed", () => {
-    // A low learned publish hour (00:00) must not, in the small hours of the
-    // European morning, expect a NAV for a US session that is still open or only
-    // just closed. The cap anchors the answer to the latest *settled* US session
-    // so we never chase a value-date that cannot exist yet.
-    const opts = { publishHour: 0 };
-    // 01:00 local on Wednesday → 20:00 ET *Tuesday*: only Tuesday's session has
-    // settled, so holding Tuesday's NAV is up to date (rest), not "behind Wed".
-    const wedEarly = new Date(2024, 0, 10, 1, 0).getTime();
-    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { ...opts, now: wedEarly })).toBe(DEFAULT_NAV_CACHE_TTL_MS);
+  it("can be told the market is open explicitly", () => {
+    // Force-open overrides the session math: long window regardless of value-date.
+    expect(
+      navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(22, 30), marketOpen: true }),
+    ).toBe(DEFAULT_NAV_CACHE_TTL_MS);
   });
 
   it("honours custom short/long TTL overrides", () => {
     const opts = { now: wed(22, 30), shortTtlMs: 1234, longTtlMs: 5678 };
     expect(navCacheTtlMs({ valueDate: "2024-01-09" }, opts)).toBe(1234);
     expect(navCacheTtlMs({ valueDate: "2024-01-10" }, opts)).toBe(5678);
+  });
+
+  it("rests until the next session close when the cache timestamp is known", () => {
+    // 17:30 ET Wed — closed, Wednesday settled and held. With a known `at` the
+    // rest window is market-day based: it expires at the next session close
+    // (Thursday 16:00 ET), not a fixed 24h after the fetch.
+    const at = wed(22, 0);
+    const now = wed(22, 30);
+    const ttl = navCacheTtlMs({ valueDate: "2024-01-10", at }, { now });
+    expect(ttl).toBe(nextSessionCloseMs(new Date(now)) - at);
+  });
+
+  it("is smart about a late NAV refreshed early the next day", () => {
+    // Wednesday's NAV arrived super late — 01:00 ET Thursday (06:00 UTC) — and is
+    // fetched then. A fixed 24h window would keep it 'fresh' until 06:00 UTC
+    // Friday, past Thursday's close where a new NAV is due. Market-day based, it
+    // instead rests only until Thursday's 16:00 ET close, then becomes due.
+    const at = new Date(2024, 0, 11, 6, 0).getTime(); // 01:00 ET Thu
+    const earlyThu = new Date(2024, 0, 11, 13, 0).getTime(); // 08:00 ET Thu (pre-open)
+    const ttl = navCacheTtlMs({ valueDate: "2024-01-10", at }, { now: earlyThu });
+    const thuClose = nextSessionCloseMs(new Date(earlyThu));
+    expect(ttl).toBe(thuClose - at);
+    // The entry stays fresh up to Thursday's close and not a moment past it.
+    expect(earlyThu - at).toBeLessThan(ttl); // still fresh now
+    expect(thuClose - at).toBe(ttl); // expires exactly at the close
+  });
+
+  it("does not force a needless weekend re-fetch", () => {
+    // Friday's NAV held, fetched Friday evening; on Saturday the rest window
+    // still reaches forward to Monday's close — well over 24h — so no credit is
+    // wasted re-fetching an unchanged NAV over the weekend.
+    const friAt = new Date(2024, 0, 12, 22, 0).getTime(); // Fri 17:00 ET
+    const now = sat(22);
+    const ttl = navCacheTtlMs({ valueDate: "2024-01-12", at: friAt }, { now });
+    expect(ttl).toBe(nextSessionCloseMs(new Date(now)) - friAt);
+    expect(ttl).toBeGreaterThan(DEFAULT_NAV_CACHE_TTL_MS); // longer than a flat 24h
   });
 
   it("carries the fetched quote's value-date through to the cache", async () => {
@@ -564,40 +594,6 @@ describe("navCacheTtlMs — adaptive NAV refresh", () => {
       sleep: noSleep,
     });
     expect(quotes.get("VTI")?.valueDate).toBe("2024-01-10");
-  });
-});
-
-describe("latestExpectedNavDate — US-session anchored", () => {
-  it("returns the US session date, capped at the latest settled session", () => {
-    // 02:00 Tuesday in Europe (UTC runner) is still Monday evening in New York,
-    // so the latest expected NAV is Monday's — never the rolled-over Tuesday.
-    const tue0200 = new Date(2024, 0, 9, 2, 0); // Tue 2024-01-09 02:00
-    expect(latestExpectedNavDate(tue0200, 0)).toBe("2024-01-08");
-  });
-
-  it("advances to today's session only once it has settled in New York", () => {
-    // 22:30 UTC on a Wednesday is 17:30 ET — past the 16:00 close — so Wednesday
-    // is now the latest expected NAV.
-    const wed2230 = new Date(2024, 0, 10, 22, 30);
-    expect(latestExpectedNavDate(wed2230, 22)).toBe("2024-01-10");
-    // Mid-afternoon UTC the US session is still open, so the prior session stands.
-    const wed1200 = new Date(2024, 0, 10, 12, 0);
-    expect(latestExpectedNavDate(wed1200, 22)).toBe("2024-01-09");
-  });
-
-  it("does not expect the just-settled NAV until a late fund's publish moment passes", () => {
-    // Regression for funds that strike *after midnight*. Their learned publish
-    // hour is in the small hours (e.g. 01:00), so for a session that closes at
-    // 16:00 ET the NAV does not land until ~01:00 local the *next* day. In the
-    // evening right after the US close we must therefore still rest on the prior
-    // session's NAV — which we already hold — instead of reporting the
-    // not-yet-published session as "awaiting".
-    const wed2230 = new Date(2024, 0, 10, 22, 30); // 17:30 ET — Wednesday settled
-    // Late (post-midnight) publisher: Wednesday's NAV is not due yet this evening.
-    expect(latestExpectedNavDate(wed2230, 1)).toBe("2024-01-09");
-    // Past midnight, once 01:00 local has passed, Wednesday's NAV is finally due.
-    const thu0130 = new Date(2024, 0, 11, 1, 30); // 20:30 ET Wed — Wednesday settled
-    expect(latestExpectedNavDate(thu0130, 1)).toBe("2024-01-10");
   });
 });
 
@@ -677,41 +673,6 @@ describe("holdsSettledClose — settled-close detection", () => {
     );
     // No capture time ⇒ fall back to the conservative "intraday ⇒ not the close".
     expect(holdsSettledClose({ valueDate: "2024-01-10", marketOpen: true, priceTime: null }, settled)).toBe(false);
-  });
-});
-
-describe("navPublishWindow — learning the window from observed data", () => {
-  it("falls back to the bootstrap default with no observations", () => {
-    expect(navPublishWindow()).toEqual({ publishHour: 22, catchUpWindowHours: 2 });
-    expect(navPublishWindow([])).toEqual({ publishHour: 22, catchUpWindowHours: 2 });
-  });
-
-  it("brackets a tight observed band into a tight window", () => {
-    // Always seen at ~22:00 → opens 22:00, closes one hour past (lag) → 1h window.
-    expect(navPublishWindow([22, 22, 22])).toEqual({ publishHour: 22, catchUpWindowHours: 1 });
-  });
-
-  it("widens to span the observed spread plus trailing slack", () => {
-    // Seen between 21:54 and 22:18 → opens 21:00, ceil(22.3)+1 lag → closes 24:00.
-    expect(navPublishWindow([21.9, 22.3, 22.1])).toEqual({ publishHour: 21, catchUpWindowHours: 3 });
-  });
-
-  it("ignores out-of-range / non-finite samples", () => {
-    expect(navPublishWindow([Number.NaN, -3, 25, 22])).toEqual({ publishHour: 22, catchUpWindowHours: 1 });
-  });
-
-  it("reports an advancing value-date so callers can learn the publish time", async () => {
-    const storage = memStorage();
-    const seen: Array<[string, string, number]> = [];
-    const fetchImpl = vi.fn<FetchLike>(async (url) => quoteResponse(url));
-    await loadQuotes(["VTI"], "key", {
-      fetchImpl,
-      storage,
-      now: clock(0),
-      sleep: noSleep,
-      onValueDateAdvance: (symbol, valueDate, at) => seen.push([symbol, valueDate, at]),
-    });
-    expect(seen).toEqual([["VTI", "2024-01-10", 0]]);
   });
 });
 

@@ -358,6 +358,38 @@ export function sessionOpenMs(day: string): number {
 }
 
 /**
+ * Absolute UTC epoch-ms of the **next** regular NYSE session close strictly
+ * after `now`. If `now` falls on a trading day before its 16:00 ET close that is
+ * today's close; otherwise (after today's close, overnight, on a weekend, or a
+ * holiday) it is the next trading day's close, skipping weekends and full-day
+ * holidays.
+ *
+ * This marks the next instant a freshly-struck fund NAV becomes due. The NAV
+ * refresh layer uses it to expire a held NAV's "rest" window at that market
+ * boundary — rather than a fixed number of hours after the NAV was fetched — so
+ * a held NAV is treated as current until the next close (no needless re-fetch
+ * over a weekend, or after a NAV that happened to arrive unusually late), then
+ * becomes due for chasing the moment that close passes.
+ */
+export function nextSessionCloseMs(now: Date = new Date()): number {
+  const moment = exchangeMoment(now);
+  const nowMs = now.getTime();
+  // Today's close, when today is a trading day and it has not happened yet
+  // (covers both pre-open and mid-session).
+  if (isTradingDay(moment.year, moment.month, moment.day)) {
+    const todayClose = sessionCloseMs(ymd(moment.year, moment.month, moment.day));
+    if (todayClose > nowMs) return todayClose;
+  }
+  // Otherwise walk forward to the next trading day's close (UTC stepping keeps
+  // the calendar math timezone-independent; only the date components matter).
+  let date = new Date(Date.UTC(moment.year, moment.month - 1, moment.day));
+  do {
+    date = new Date(date.getTime() + 24 * 60 * 60 * 1000);
+  } while (!isTradingDay(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()));
+  return sessionCloseMs(ymd(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()));
+}
+
+/**
  * The intraday 1D curve is built from one-hour resampled bars (Tiingo IEX
  * `resampleFreq=1hour`, Twelve Data falls back to a coarser series), so no
  * completed intraday bar can exist until a full bar interval of trading time has
