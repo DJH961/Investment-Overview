@@ -3036,18 +3036,24 @@ export class App {
     // with after-hours FX), and so the Overview can isolate the overnight FX
     // slice. While the regular session is open we keep recording the live spot as
     // the running close for today; the last value written before 16:00 ET is the
-    // settled close. Once shut, we read it back (only when it belongs to the
-    // session being shown) and surface it; the longer history graphs and the
-    // headline keep valuing at the live spot, unchanged.
+    // settled close. Once shut, we resolve the single authoritative session close
+    // and surface it; the longer history graphs and the headline keep valuing at
+    // the live spot, unchanged.
     {
       const now = new Date();
       const marketOpen = isUsMarketOpen(now);
       const liveFx = fx.rates.USD ?? model.overview.fxRateEurUsd;
       const sessionDay = lastSessionDate(now);
       if (marketOpen) recordSessionCloseFx(sessionDay, liveFx);
+      // Prefer the close read straight from the session's EUR→USD bars — the same
+      // authoritative source the 1D/1W graphs freeze to (so the hero's currency-
+      // effect split and the graph never disagree on what "the close" is), and the
+      // only one that exists on a cold start / weekend when the app was never live
+      // at 16:00 ET to capture a running close. Fall back to the live-captured
+      // running close when no bars are on the device yet.
       model.overview.fxRateEurUsdSessionClose = marketOpen
         ? null
-        : readSessionCloseFx(sessionDay);
+        : (await this.barsSessionCloseFx(sessionDay)) ?? readSessionCloseFx(sessionDay);
     }
     // Remember each fund's freshly-settled NAV as a daily bar in the 1W store, so
     // the week curve re-marks NAV funds from their real per-day drift at zero
@@ -4180,15 +4186,7 @@ export class App {
     const resolveFrozenFx = async (): Promise<Decimal | null> => {
       if (!marketClosed) return null;
       if (frozenFxMemo !== undefined) return frozenFxMemo;
-      let barsClose: Decimal | null = null;
-      try {
-        const session = await store.loadSession(sessionDay);
-        if (session && session.fx.length > 0) {
-          barsClose = sessionCloseFxFromBars(session.fx, sessionCloseMs(sessionDay));
-        }
-      } catch {
-        barsClose = null;
-      }
+      const barsClose = await this.barsSessionCloseFx(sessionDay);
       frozenFxMemo = graphAnchorFx({
         marketOpen: false,
         liveFx: baseFx,
@@ -4504,6 +4502,26 @@ export class App {
   private ensureTimeSeriesStore(): TimeSeriesStore {
     if (this.timeSeriesStore === null) this.timeSeriesStore = new TimeSeriesStore();
     return this.timeSeriesStore;
+  }
+
+  /**
+   * The session's settled EUR→USD close read straight from the stored 1D FX bars
+   * for `sessionDay` — the authoritative source both the live graphs' freeze
+   * ({@link graphAnchorFx}) and the hero's currency-effect split share, so they
+   * never disagree on what "the close" is. Returns `null` when no FX bars are on
+   * the device yet (cold first paint) or on any store error, leaving the caller
+   * to fall back to the live-captured running close.
+   */
+  private async barsSessionCloseFx(sessionDay: string): Promise<Decimal | null> {
+    try {
+      const session = await this.ensureTimeSeriesStore().loadSession(sessionDay);
+      if (session && session.fx.length > 0) {
+        return sessionCloseFxFromBars(session.fx, sessionCloseMs(sessionDay));
+      }
+    } catch {
+      // Best-effort: a store failure simply falls back to the live capture.
+    }
+    return null;
   }
 
   /**

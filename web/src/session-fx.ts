@@ -50,9 +50,11 @@
  *     is precisely the not-live scenario, where the app was absent during the
  *     session so no capture exists.
  *   - The **attribution split** ({@link fxEffectSplit}) stays honest: it needs a
- *     genuine captured session close to draw the market-hours/overnight boundary,
- *     so without one it returns `null` (the UI shows nothing) rather than blaming
- *     the whole move on "overnight".
+ *     genuine session close to draw the market-hours/overnight boundary. The app
+ *     resolves that close from the session's own FX bars where possible (a real,
+ *     dated rate that exists even on a cold start), and only otherwise from the
+ *     live capture; with neither it returns `null` (the UI shows nothing) rather
+ *     than blaming the whole move on "overnight".
  *
  * All maths is pure {@link Decimal} (no DOM, no storage); the two tiny
  * localStorage helpers at the bottom are the only side-effecting part and are
