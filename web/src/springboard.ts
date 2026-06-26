@@ -58,6 +58,7 @@ import {
 } from "./market-hours";
 import type { CurvePoint } from "./timeseries";
 import type { ExportLiveCurvePoint, ExportLiveGraphSeries, ExportLiveGraphs } from "./types";
+import { repairWeekNavCollapse } from "./week-repair";
 import { DEFAULT_WEEK_SESSIONS } from "./week";
 
 /**
@@ -219,7 +220,13 @@ export function springboardWeekCurve(input: SpringboardInput): CurvePoint[] | nu
   // through the last *settled* session and drop today's `week.points`, leaving the
   // dense live 1D session (spliced below) to supply today.
   const todayStartMs = dayStartMs(last);
-  let points = windowPoints.filter((p) => p.t < todayStartMs);
+  // Retroactively self-heal a NAV-collapse nosedive baked into a *stale* blob's
+  // `week.points` (issue #169 / PR #171): the desktop generator is fixed, but an
+  // unchanged published blob still carries the pre-fix curve, and a cache reset
+  // cannot remove it (the blob re-paints on every render). The repair lifts a
+  // collapsed leading run back onto the week's healthy level, the web analogue of
+  // the desktop's nearest-complete-day NAV gap-fill. A no-op on a healthy week.
+  let points = repairWeekNavCollapse(windowPoints.filter((p) => p.t < todayStartMs));
 
   // Completeness gate over the *settled* sessions only (today is supplied live): a
   // fresh `end_date` is not enough — the blob must span nearly the whole settled
