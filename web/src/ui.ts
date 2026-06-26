@@ -391,10 +391,11 @@ export function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElemen
 const HALF_TRACK_PCT = 50;
 
 /**
- * One leg of the diverging FX bar. The **live/last tag is rendered in the value
- * cell on the right**, never inline with the status word — so "Market holiday",
- * "Market hours" and "Overnight" can't be pushed onto a second line by the tag
- * crowding the narrow label column.
+ * One leg of the diverging FX bar. The status label stands alone in its own
+ * (nowrap) column; the formatted value and the live/last tag are **stacked
+ * vertically in a value cell on the right**, so the tag never sits inline with
+ * the status word — and "Market holiday", "Market hours" and "Overnight" can't be
+ * pushed onto a second line by the tag crowding the narrow label column.
  */
 function fxDivergeRow(opts: {
   label: string;
