@@ -14,6 +14,7 @@ import type { AllocationSlice, DashboardModel, HoldingView, MoverEntry, Overview
 import { buildMovers, fxTodayDeviationPct } from "./compute";
 import { fxEffectSplit } from "./session-fx";
 import { isUsMarketOpen } from "./market-hours";
+import { windowGrowthPct, type GrowthMode, type WindowPoint } from "./window-growth";
 import {
   type AnalyticsView,
   type DepositRowView,
@@ -1549,6 +1550,7 @@ function chartWithTimeframe(
   persistKey?: string,
   live?: LiveCurveBuilder,
   baseLegend?: Array<{ className: string; label: string }>,
+  onRangeChange?: (option: RangeOption) => void,
 ): HTMLElement | null {
   const full = buildLineChart({ dates, series, ...chartOpts });
   if (!full) return null;
@@ -1643,6 +1645,7 @@ function chartWithTimeframe(
     // Remember the chosen window (by label, stable across exports) so it survives
     // the full re-render a refresh or currency toggle triggers.
     if (persist && storageKey) saveStringPref(storageKey, option.label);
+    if (onRangeChange) onRangeChange(option);
     if (option.kind === "live") void applyLive(option.range, token, userInitiated);
     else applyHistory(option.days);
   };
@@ -1994,6 +1997,11 @@ function renderValueChart(
   // not a rescale of the EUR pivot; EUR is the FX-derived view. See curveDisplay.
   const disp = curveDisplay(points);
   const values: Array<Decimal | null> = points.map(disp.portfolio);
+  // Cumulative contributions per point in the active display currency, kept
+  // index-aligned with `values` (including the live tip below) so the headline
+  // can read the same window the graph draws and compute a money-weighted
+  // (XIRR-scaled) growth over it. EUR is the FX-pivot; spot-convert for USD.
+  const contribDisplay: Array<Decimal | null> = points.map((p) => disp.convert(p.contributions));
   // The other currency's raw per-point series, kept index-aligned with `values`
   // (including the live tip below) so it can be rebased onto the same axis.
   const otherValues: Array<Decimal | null> = points.map((p) => otherCurrencyRaw(disp, p));
@@ -2018,6 +2026,9 @@ function renderValueChart(
       dates.push(o.asOf);
       values.push(liveTotal);
       otherValues.push(otherLiveTip);
+      // The live tip pays in no new contributions; carry the last cumulative
+      // figure forward so the window's net-flow stays correct.
+      contribDisplay.push(contribDisplay[contribDisplay.length - 1]);
     } else if (o.asOf === lastDate) {
       values[values.length - 1] = liveTotal;
       otherValues[otherValues.length - 1] = otherLiveTip;
@@ -2078,6 +2089,51 @@ function renderValueChart(
       ]
     : undefined;
 
+  const todayPct = pickByCurrency(o.todayMovePct, o.todayMovePctUsd);
+  const todayCls = signClass(pickByCurrency(o.todayMoveEur, o.todayMoveUsd));
+  // The headline beside the chart tracks the *selected* window so it matches the
+  // graph: 1D reuses today's close-to-now move (measured from the previous
+  // CLOSE, like the intraday graph's reference line); 1W a simple period growth;
+  // anything longer an XIRR-scaled (money-weighted) growth so weekly DCA deposits
+  // don't make the number look wild. Defaults to "today" until a range is chosen
+  // (and stays there when there is nothing to toggle).
+  const headlineSpan = h("span", { class: `muted ${todayCls}` }, [
+    todayPct !== null ? `${formatSignedPercent(todayPct)} today` : "today",
+  ]) as HTMLElement;
+  const lastWindowMs = Date.parse(dates[dates.length - 1]);
+  const sliceWindow = (days: number | null): WindowPoint[] => {
+    let start = 0;
+    if (days !== null) {
+      const cutoff = lastWindowMs - days * 86_400_000;
+      start = dates.findIndex((d) => Date.parse(d) >= cutoff);
+      if (start < 0) start = 0;
+      if (dates.length - start < 2) start = Math.max(0, dates.length - 2);
+    }
+    return dates.slice(start).map((d, i) => ({
+      date: d,
+      value: values[start + i],
+      contributions: contribDisplay[start + i],
+    }));
+  };
+  const updateHeadline = (option: RangeOption): void => {
+    let pct: Decimal | null;
+    let label: string;
+    if (option.kind === "live" && option.range === "1D") {
+      pct = todayPct;
+      label = "today";
+    } else {
+      // 1W (live, ~7 day window) uses simple growth; every longer history slice
+      // uses XIRR-scaled growth.
+      const days = option.kind === "live" ? 7 : option.days;
+      const mode: GrowthMode = option.kind === "live" ? "simple" : "xirr";
+      pct = windowGrowthPct(sliceWindow(days), mode);
+      label = option.label;
+    }
+    headlineSpan.className = `muted ${signClass(pct)}`;
+    headlineSpan.textContent =
+      pct !== null ? `${formatSignedPercent(pct)} ${label}` : label;
+  };
+
   const chart = chartWithTimeframe(
     dates,
     series,
@@ -2085,11 +2141,10 @@ function renderValueChart(
     "portfolio",
     liveBuilder,
     baseLegend,
+    updateHeadline,
   );
   if (!chart) return null;
 
-  const todayPct = pickByCurrency(o.todayMovePct, o.todayMovePctUsd);
-  const cls = signClass(pickByCurrency(o.todayMoveEur, o.todayMoveUsd));
   // Only surface a note when there is something the user actually needs to know
   // about the curve's honesty — not a redundant date stamp on every render.
   let note: string | null = null;
@@ -2101,9 +2156,7 @@ function renderValueChart(
   const children: Array<Node | string> = [
     h("div", { class: "section-head" }, [
       h("h2", {}, ["Value over time"]),
-      h("span", { class: `muted ${cls}` }, [
-        todayPct !== null ? `${formatSignedPercent(todayPct)} today` : "today",
-      ]),
+      headlineSpan,
     ]),
     chart,
   ];
