@@ -1159,7 +1159,8 @@ function renderHoldingRow(
     chip(`XIRR ${formatPercent(holdingXirr)}`, signClass(holdingXirr)),
   ]);
 
-  return h("li", { class: "holding" }, [main, meta, renderHoldingStatus(holding, status, now)]);
+  const statusRow = holding.isMoneyMarket ? null : renderHoldingStatus(holding, status, now);
+  return h("li", { class: "holding" }, [main, meta, ...(statusRow ? [statusRow] : [])]);
 }
 
 function renderHoldings(

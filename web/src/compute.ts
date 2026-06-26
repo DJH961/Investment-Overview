@@ -119,6 +119,9 @@ export interface HoldingView {
   /** Date the displayed price applies to when `priceAsOf` is null — a NAV's
    * value-date, or the export's valuation date (`meta.as_of`) for a fallback. */
   priceFallbackDate: string;
+  /** True when the holding is a money-market / settlement fund that never needs
+   * a live update row. */
+  isMoneyMarket?: boolean;
   /**
    * True when `valueEur` could not be computed from any price (no live quote,
    * no last-known price, or no FX leg) and instead falls back to the last value
@@ -700,9 +703,11 @@ function priceForHolding(
   // When we fall back to the exported price, show *when that price was actually
   // struck* (the holding's last cached close date) rather than the export date —
   // a fund's NAV exported on a Sunday still applies to the Friday it last
-  // published, never "today". Older exports omit `last_price_date`, so default
-  // to the export's as-of date.
-  const fallbackDate = holding.last_price_date ?? exportAsOf;
+  // published, never "today". Money-market funds are different: their displayed
+  // price is the export's own last-known par NAV, so the row should track the
+  // last blob export instead of an older market-date fallback. Older exports omit
+  // `last_price_date`, so default to the export's as-of date.
+  const fallbackDate = isMoneyMarketHolding(holding) ? exportAsOf : holding.last_price_date ?? exportAsOf;
   if (quote && quote.price) {
     // NAV-priced holdings (mutual funds / money-market) publish only ~once a
     // trading day. Their live mark comes from the daily `time_series` endpoint,
@@ -902,6 +907,7 @@ function buildHolding(
 
   const unrealisedPlEur =
     valueEur !== null && costBasisEur !== null ? valueEur.minus(costBasisEur) : null;
+  const isMoneyMarket = isMoneyMarketHolding(holding);
 
   // Simple total growth on cost (price-based, dividends excluded): the
   // holding's unrealised P/L as a fraction of what it cost. Kept only as a
@@ -977,6 +983,7 @@ function buildHolding(
     // Default tier; buildDashboard re-classifies from the live window + market state.
     priceFreshness: "aged",
     priceFallbackDate: asOfDate,
+    isMoneyMarket,
     valueIsStale,
     valueEur,
     costBasisEur,

@@ -246,6 +246,33 @@ describe("buildDashboard", () => {
     expect(vmfxx.todayMovePctUsd).toBeNull();
   });
 
+  it("uses the export as-of date for money-market fallback pricing instead of an older last_price_date", () => {
+    const exp = makeExport();
+    exp.holdings = [
+      {
+        symbol: "VMFXX",
+        name: "Vanguard Federal Money Market",
+        asset_class: "money_market",
+        broker: "Broker",
+        account: "Settlement",
+        native_currency: "USD",
+        shares: "1000",
+        cost_basis_native: "1000",
+        cumulative_dividends_cash_native: "0",
+        price_symbol: "VMFXX",
+        price_type: "nav",
+        last_known_price_native: "1",
+        last_price_date: "2024-05-31",
+        cashflows: [{ date: "2023-01-01", amount: "-1000" }],
+      },
+    ];
+    const m = buildDashboard(exp, new Map(), fx, new Date("2024-06-01T12:00:00Z"));
+    const vmfxx = m.holdings.find((h) => h.symbol === "VMFXX")!;
+    expect(vmfxx.isMoneyMarket).toBe(true);
+    expect(vmfxx.priceFallbackDate).toBe("2024-06-01");
+    expect(vmfxx.priceAsOf).toBeNull();
+  });
+
   it("produces a portfolio XIRR (sign change present)", () => {
     expect(model.overview.portfolioXirr).not.toBeNull();
   });
