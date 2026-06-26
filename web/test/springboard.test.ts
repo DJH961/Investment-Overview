@@ -188,6 +188,28 @@ describe("springboardWeekCurve", () => {
     expect(curve![curve!.length - 1].t).toBe(MID_SESSION.getTime());
   });
 
+  it("retroactively heals a NAV-collapse nosedive baked into a stale blob (issue #169)", () => {
+    // The oldest settled session collapsed to ~63% (its NAV sleeve was unvalued
+    // when the desktop exported), the rest of the week is healthy. The springboard
+    // must lift it back onto the week's level rather than paint the nosedive.
+    const collapsed = [
+      pt("2024-05-30T20:00:00Z", "600", "660"),
+      pt("2024-05-31T20:00:00Z", "900", "990"),
+      pt("2024-06-03T20:00:00Z", "905", "995"),
+      pt("2024-06-04T20:00:00Z", "950", "1050"),
+    ];
+    const curve = springboardWeekCurve({
+      exported: weekExport(TODAY, collapsed),
+      now: MID_SESSION,
+      liveTip: tip,
+    });
+    expect(curve).not.toBeNull();
+    const oldest = curve!.find((p) => p.t === Date.parse("2024-05-30T20:00:00Z"))!;
+    // Lifted by the boundary step (900 − 600 = 300) onto the healthy level.
+    expect(oldest.valueEur.toNumber()).toBe(900);
+    expect(oldest.valueUsd.toNumber()).toBe(990);
+  });
+
   it("still springboards a 1-day-stale week export (ends the previous session)", () => {
     const curve = springboardWeekCurve({
       exported: weekExport(PREV, weekPoints),

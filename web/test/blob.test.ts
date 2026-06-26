@@ -106,6 +106,22 @@ describe("fetchEnvelopeConditional", () => {
     }
   });
 
+  it("sends no conditional headers when validators are null (unconditional, cannot 304)", async () => {
+    let seen: Headers | undefined;
+    const fetchImpl = ((_url: string, init?: RequestInit) => {
+      seen = new Headers(init?.headers);
+      return Promise.resolve(
+        jsonResponse(VALID_ENVELOPE, { headers: { ETag: 'W/"v9"' } }),
+      );
+    }) as typeof fetch;
+    const result = await fetchEnvelopeConditional("https://example/blob.enc", null, fetchImpl);
+    // A hard reset withholds the validators so the server can never answer 304
+    // and serve back the cached copy — the full blob is always pulled afresh.
+    expect(seen?.has("If-None-Match")).toBe(false);
+    expect(seen?.has("If-Modified-Since")).toBe(false);
+    expect(result.status).toBe("modified");
+  });
+
   it("surfaces a CORS failure as a BlobError", async () => {
     const fetchImpl = (() => Promise.reject(new TypeError("Failed to fetch"))) as typeof fetch;
     const err = await fetchEnvelopeConditional("https://example/blob.enc", null, fetchImpl).catch((e) => e);
