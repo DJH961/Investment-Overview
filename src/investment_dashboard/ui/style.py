@@ -406,7 +406,7 @@ html, body {{
 }}
 .inv-fx-box-stats {{
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 0.6rem 1rem;
 }}
 .inv-fx-box-stat {{ display: grid; gap: 0.1rem; align-content: start; }}
@@ -479,14 +479,22 @@ html, body {{
 .inv-fx-diverge {{ display: grid; gap: 0.4rem; }}
 .inv-fx-diverge-row {{
   display: grid;
-  grid-template-columns: 5.5rem 1fr 5rem;
+  grid-template-columns: 6.75rem 1fr 5rem;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.78rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }}
-.inv-fx-diverge-label {{ color: var(--inv-muted); }}
+.inv-fx-diverge-label {{ color: var(--inv-muted); display: flex; align-items: baseline; gap: 0.35rem; }}
+.inv-fx-diverge-tag {{
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--inv-muted);
+  opacity: 0.75;
+}}
 .inv-fx-diverge-track {{
   position: relative;
   height: 0.5rem;
