@@ -15,7 +15,7 @@
  * session and dropped on "Lock". Decrypted figures never leave the browser.
  */
 import { fetchBlobMeta, fetchEnvelopeConditional } from "./blob";
-import { buildDashboard, buildFetchPlan, type DashboardModel } from "./compute";
+import { buildDashboard, buildFetchPlan, suspectQuoteSymbols, type DashboardModel } from "./compute";
 import { decryptEnvelopeToJson, type Envelope } from "./crypto";
 import { buildDemoModel, parseDemoParams, getPersona, DEMO_PERSONAS, type DemoParams } from "./demo";
 import { startTour, DEMO_TOUR_STEPS } from "./tour";
@@ -538,6 +538,8 @@ export class App {
    * current while a holding actually failed to price.
    */
   private lastUnresolvedFailures: string[] = [];
+  /** Symbols whose freshly-fetched price was non-positive (suspect/wrong data). */
+  private lastSuspectSymbols: string[] = [];
   /** Tiingo fallback budget used so far (hour/day), for the usage overview. */
   private lastTiingoBudget: TiingoBudgetView | null = null;
   /** Symbols served via the Tiingo fallback on the latest network round. */
@@ -3885,6 +3887,22 @@ export class App {
 
     const unresolvedFailures = network ? this.unresolvedFailedSymbols(quoteLoad.report) : [];
     if (network) this.lastUnresolvedFailures = unresolvedFailures;
+    // Suspect data — a freshly-fetched quote that came back with a non-positive
+    // price (zero/negative). It isn't a *failure* (we got a number) but it is
+    // *wrong data* the valuation would forward-fill, so it gets its own loud,
+    // greppable line and is folded into the round's verdict (stolen from the
+    // desktop pull-log's SUSPECT concept).
+    if (network) {
+      const suspect = suspectQuoteSymbols(quoteLoad.quotes, quoteLoad.report.fetched);
+      this.lastSuspectSymbols = suspect;
+      if (suspect.length > 0) {
+        this.pollLog(
+          "primary",
+          `SUSPECT data — non-positive price for ${suspect.join(", ")}; ignoring rather than booking it into the valuation.`,
+          "error",
+        );
+      }
+    }
     // Classify what this round actually achieved on the wire so the UI never
     // claims to be "updating" when nothing could be fetched. A network round
     // derives it from what landed vs. which providers errored; a cache-only
@@ -4727,11 +4745,16 @@ export class App {
       `${report.deferred.length} deferred`,
       `${report.failed.length} failed`,
     ];
+    // A round with suspect (non-positive) prices is as much "wrong data" as an
+    // outright failure, so call it out in the verdict and colour the line red.
+    const suspectCount = this.lastSuspectSymbols.length;
+    if (suspectCount > 0) settledParts.push(`${suspectCount} suspect`);
     const tiingoTail =
       tiingo.dayUsed > 0 || tiingo.hourUsed > 0
         ? `; backup ${tiingo.hourUsed}/${tiingo.hourLimit} this hour · ${tiingo.dayUsed}/${tiingo.dayLimit} today`
         : "";
-    const finishLevel: PollLogLevel = report.failed.length > 0 ? "error" : report.deferred.length > 0 ? "warn" : "good";
+    const finishLevel: PollLogLevel =
+      report.failed.length > 0 || suspectCount > 0 ? "error" : report.deferred.length > 0 ? "warn" : "good";
     this.pollLog(
       "schedule",
       `Round complete (${effectiveKind}${promoted ? ", promoted from auto" : ""}): ${settledParts.join(", ")}. ` +
