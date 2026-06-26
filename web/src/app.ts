@@ -79,7 +79,7 @@ import {
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { isUsMarketOpen, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
+import { isUsMarketOpen, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, recentTradingSessions, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -141,7 +141,15 @@ import {
   navBarsFromQuotes,
   weekStaleSymbols,
   wrapDailyNavFetcher,
+  DEFAULT_WEEK_SESSIONS,
 } from "./week";
+import {
+  recordDailyClose,
+  harvestDailyCloses,
+  pruneValueHistory,
+  loadValueHistory,
+  type DailyClose,
+} from "./value-history";
 import { planPull, describePlan, deviceDaysMissing, type PullKind, type PullFreshness, type PullPlan } from "./data-orchestrator";
 import {
   describeFlag,
@@ -296,6 +304,13 @@ const APP_VERSION_KEY = "iv.web.app_version";
  */
 function dailyBudgetWarnCredits(): number {
   return 2 * FREE_TIER.creditsPerMinute;
+}
+
+/** A `YYYY-MM-DD` date shifted by `n` whole UTC days (n may be negative). */
+function isoPlusDays(date: string, n: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
 }
 
 /**
@@ -4023,6 +4038,11 @@ export class App {
     }
     // Prefer the live EUR→USD rate; fall back to the export meta rate.
     setEurUsdRate(fx.rates.USD ?? model.overview.fxRateEurUsd);
+    // Record today's whole-book close, prune anything a fresh blob now covers,
+    // and preload the persisted daily history so the value chart can rebuild the
+    // gap a stale blob leaves between its last point and today. Best-effort: a
+    // store failure must never sink the paint, so it falls back to no backfill.
+    model.valueBackfill = await this.syncValueHistory(model).catch(() => []);
     this.renderDashboard(model);
     return quoteLoad.report;
   }
@@ -5301,7 +5321,7 @@ export class App {
         const sprung = springboardWeekCurve({ exported, liveTip, todayCurve: todaySlice });
         if (sprung) {
           this.pollLog("graph", "1W graph: reused the exported week sleeve (no live pull, 0 credits).");
-          return this.enrichWeekWithBlobSleeve(sprung, exported, baseFx);
+          return this.harvestWeekCloses(this.enrichWeekWithBlobSleeve(sprung, exported, baseFx));
         }
         const spent = { credits: 0 };
         try {
@@ -5328,7 +5348,7 @@ export class App {
             this.pollLog("graph", "1W graph: reused stored week bars (no live pull, 0 credits).");
           }
           if (curve.points.length < 2) return null;
-          return this.enrichWeekWithBlobSleeve(curve.points, exported, baseFx);
+          return this.harvestWeekCloses(this.enrichWeekWithBlobSleeve(curve.points, exported, baseFx));
         } catch {
           this.pollLog("graph", "1W graph: live build failed — no curve drawn.");
           return null;
@@ -5567,6 +5587,63 @@ export class App {
   private reRenderCurrentModel(): void {
     if (this.model) this.renderDashboard(this.model);
   }
+
+  /**
+   * Maintain the device's whole-book **daily-close history** and return it for the
+   * value chart's long-range backfill (`value-history.ts`).
+   *
+   * Three things happen, all best-effort:
+   *   1. **Record** today's whole-book close — but only when the live total is
+   *      complete (every holding priced + FX known); a partial total would store a
+   *      false dip. Re-recording the same day just refines it (instant-deduped).
+   *   2. **Prune** everything a fresh blob now covers: closes on/before the blob's
+   *      last exported day are redundant, so we drop them — yet always keep the
+   *      trailing week the 1W graph reconstructs from. The cutoff is therefore the
+   *      earlier of the week's start and the day after the blob's last export, so a
+   *      stale blob keeps the gap-filling days while an up-to-date one shrinks the
+   *      store to just the week.
+   *   3. **Load** the (now-updated) history so {@link renderValueChart} can splice
+   *      it into the gap between the blob's last point and today.
+   */
+  private async syncValueHistory(model: DashboardModel): Promise<DailyClose[]> {
+    const store = this.ensureTimeSeriesStore();
+    const o = model.overview;
+    const now = new Date();
+    if (o.totalValueIsComplete) {
+      await recordDailyClose(
+        store,
+        { date: o.asOf, valueEur: o.totalValueEur, valueUsd: o.totalValueUsd },
+        now.getTime(),
+      );
+    }
+    // Prune redundant pre-export closes once a blob is in hand, never touching the
+    // trailing week the 1W graph needs.
+    const exportedCurve = model.analytics?.curve ?? [];
+    const lastExport = exportedCurve.length > 0 ? exportedCurve[exportedCurve.length - 1].date : null;
+    const weekStart = recentTradingSessions(DEFAULT_WEEK_SESSIONS, now)[0] ?? o.asOf;
+    if (lastExport !== null) {
+      const afterExport = isoPlusDays(lastExport, 1);
+      const cutoff = afterExport < weekStart ? afterExport : weekStart;
+      await pruneValueHistory(store, cutoff);
+    }
+    return loadValueHistory(store);
+  }
+
+  /**
+   * Seed the whole-book daily-close history from a freshly built 1W curve, then
+   * return the curve unchanged so the caller can pass it straight on. The 1W curve
+   * carries each of the last few sessions' settled closes, so harvesting them
+   * back-fills the long-range graph's gap from the same data the week graph drew —
+   * the "backfill also from the 1W history" path. Fire-and-forget and fully
+   * best-effort: a store failure must never disturb the week curve it returns.
+   */
+  private harvestWeekCloses(points: CurvePoint[]): CurvePoint[] {
+    if (points.length > 0) {
+      void harvestDailyCloses(this.ensureTimeSeriesStore(), points, Date.now()).catch(() => undefined);
+    }
+    return points;
+  }
+
 
   private renderLoadError(message: string): void {
     const panel = h("div", { class: "panel status" }, [

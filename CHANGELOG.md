@@ -14,6 +14,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.9.2] — 2026-06-26
+
+### Fixed
+
+- **The persisted value-over-time history now buckets days on the same calendar
+  as the desktop blob.** The whole-book daily-close cache that back-fills the
+  long-range chart keyed each close at *UTC* midnight, but the Python export carries
+  bare calendar dates and derives "today" from `date.today()` — the desktop's
+  **local** calendar, with no time-of-day. For any viewer west of UTC an evening
+  live close therefore rolled onto the next UTC day, so the same day recorded from
+  `overview.asOf` (a local date) and harvested from the 1W curve could split across
+  two buckets and the chart's date-string splice could misalign. Day bucketing is
+  now local-midnight throughout, matching the blob (`web/src/value-history.ts`).
+- **Harvesting a day's close is now order- and garbage-resistant.** The 1W-curve
+  harvest resolves each day's close by the latest point *timestamp* rather than
+  trusting curve insertion order, and skips points with a non-finite instant
+  (`web/src/value-history.ts`).
+
+### Documentation
+
+- Expanded the in-code explanation of how the value-history **prune** keeps storage
+  small (cutoff = earlier of the day after the blob's last export and the trailing
+  1W-graph window, never starving the week) (`web/src/value-history.ts`).
+
 ## [4.9.1] — 2026-06-26
 
 ### Fixed
