@@ -42,9 +42,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     instead of falling back to the export and the funds drop out of the NAV quote leg.
   - **Currency-mismatch handshake (C6).** The login handshake reconciles currency
     mismatches between cached and freshly observed quotes.
-  - **NAV provider routing (C8).** NAV symbols are routed to Twelve Data first and
-    only spill to Tiingo on priority (login/start) rounds when budget remains;
-    non-priority rounds keep "NAV via Twelve Data only".
+  - **Truthful log lines (C7).** Two misleading log lines now report what actually
+    happened: the warm-up "primed those quotes" line reports the *real* primed count
+    instead of always claiming success, and the week-sleeve curve-source line
+    distinguishes blob-served vs stored-cache-reconstructed vs live-tip-only.
+  - **NAV provider routing (C8).** NAV symbols now ride the *same* unified sleeve as
+    stocks: Twelve Data first, spilling to Tiingo on a login/start pull or any
+    >16-symbol "instant" sleeve (and deferring otherwise), exactly like a stock. The
+    earlier NAV-only "Twelve Data only unless login" policy is gone; only NAV
+    graph-bars stay out (NAVs have no intraday series).
   - **Accounted deferral queue (C9).** The deferred-symbol queue is extracted to a
     pure `DeferredQueue` module that caps retries and bounds size so no deferred
     entry ever vanishes unlogged.
