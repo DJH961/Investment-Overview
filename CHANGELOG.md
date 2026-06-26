@@ -14,7 +14,44 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.5.3] — 2026-06-26
+## [4.6.0] — 2026-06-26
+
+### Added
+
+- **After-hours FX handling across the value graphs and a "Currency effect
+  today" KPI.** The portfolio is booked in USD and the EUR view is derived
+  through EUR/USD, so when the US market is closed the EUR line kept drifting on
+  raw FX even though the underlying positions had settled for the day. Two
+  changes fix this:
+  - **The 1D and 1W value graphs now freeze their EUR view to the session-close
+    FX once the market is closed**, instead of letting the after-hours EUR/USD
+    spot keep moving a curve whose USD body is flat. Both graphs use the *same*
+    procedure (`web/src/app.ts` `buildLiveGraphHooks` → `resolveFrozenFx`):
+    derive the close rate from the stored per-session FX bars
+    (`sessionCloseFxFromBars`, the latest bar at or before the session close),
+    which is ground truth and keeps the frozen tip continuous with the curve
+    body. Longer history and the headline figure continue to use live FX.
+  - **A "Currency effect today" KPI** (`renderFxEffectSplit` in `web/src/ui.ts`)
+    splits today's EUR/USD move into a market-hours slice and an overnight
+    slice so the FX contribution to today's EUR P/L is visible at a glance.
+- **The FX-growth "today" cutoff is the prior NYSE session close (16:00 ET)** —
+  matching the price-side definition of "today" and the market-hours/overnight
+  split boundary — with the FX provider's settled `previousClose`
+  (`fxRateEurUsdPrev`) as the dated baseline. Documented on
+  `fxTodayDeviationPct` (`web/src/compute.ts`) and in `web/src/session-fx.ts`.
+
+### Changed
+
+- **The after-hours FX path is robust to an empty-state or "not live at the
+  close" start.** If the app was not running when the session closed (so no
+  session-close FX was captured), the graph-freeze anchor falls back through a
+  defined chain — bars-derived close → captured close → settled `previousClose`
+  → live spot (`graphAnchorFx` in `web/src/session-fx.ts`) — so recreating
+  everything from scratch still produces a sensible frozen EUR view rather than
+  drifting or breaking. The currency-effect split deliberately stays `null`
+  when no genuine captured close exists, so the attribution is never faked.
+
+
 
 ### Changed
 

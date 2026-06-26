@@ -60,6 +60,7 @@
  */
 
 import { Decimal } from "./decimal-config";
+import type { Bar } from "./timeseries";
 
 /**
  * The EUR→USD rate the **live 1D/1W graphs** should anchor their EUR view to.
@@ -92,6 +93,33 @@ export function graphAnchorFx(opts: {
   const settledPrev =
     opts.settledPrevFx != null && opts.settledPrevFx.greaterThan(0) ? opts.settledPrevFx : null;
   return opts.sessionCloseFx ?? settledPrev ?? opts.liveFx;
+}
+
+/**
+ * The session's settled EUR→USD close read **straight from the FX bars the live
+ * curve is built from** — the authoritative source for {@link graphAnchorFx}'s
+ * `sessionCloseFx`.
+ *
+ * The live 1D/1W graphs already fetch / reconstruct a per-minute EUR→USD bar
+ * series for the session (stored alongside the price bars), so the rate as the
+ * session settled is sitting right there in the data — no separate live capture
+ * needed. Reading the close from the bars means the **same procedure works for
+ * both graphs** and, crucially, still yields a close when the app was never open
+ * at 16:00 ET (the bars are backfilled regardless of whether we were live).
+ *
+ * Picks the latest bar **at or before** `sessionCloseMs` (the session's 16:00 ET
+ * settle); bars after that are after-hours FX drift, exactly what the freeze is
+ * meant to exclude, so they are ignored. Returns `null` when no positive bar had
+ * settled by the close, leaving the caller to fall back.
+ */
+export function sessionCloseFxFromBars(fxBars: Bar[], sessionCloseMs: number): Decimal | null {
+  let best: Bar | null = null;
+  for (const bar of fxBars) {
+    if (bar.t > sessionCloseMs) continue;
+    if (!bar.value.greaterThan(0)) continue;
+    if (best === null || bar.t > best.t) best = bar;
+  }
+  return best ? best.value : null;
 }
 
 /** Today's FX revaluation split into its in-session and after-hours slices. */

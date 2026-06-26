@@ -73,7 +73,7 @@ import {
 } from "./quotes";
 import { nextRefreshDelayMs } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, elapsedSessionMs, settledSessionsSince } from "./market-hours";
+import { isUsMarketOpen, latestSettledSessionDate, lastSessionDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -122,6 +122,7 @@ import {
   graphAnchorFx,
   readSessionCloseFx,
   recordSessionCloseFx,
+  sessionCloseFxFromBars,
 } from "./session-fx";
 import { TimeSeriesStore, type Breadcrumb } from "./timeseries-store";
 import { WEEK_STORE_KEY, navBarsFromQuotes, weekStaleSymbols } from "./week";
@@ -4165,21 +4166,45 @@ export class App {
     // overnight FX. While open, `frozenFx` is null and everything uses the live
     // rate exactly as before. The longer history graphs are built elsewhere
     // (renderValueChart) and deliberately keep the live after-hours rate.
-    const frozenFx = isUsMarketOpen()
-      ? null
-      : graphAnchorFx({
-          marketOpen: false,
-          liveFx: baseFx,
-          sessionCloseFx: o.fxRateEurUsdSessionClose,
-          // No live close was captured (app shut at 16:00 ET / cold start): fall
-          // back to the settled previous close so the curve still freezes
-          // overnight instead of sliding with the live after-hours rate.
-          settledPrevFx: o.fxRateEurUsdPrev,
-        });
+    const marketClosed = !isUsMarketOpen();
+    const sessionDay = lastSessionDate(new Date());
+    const store = this.ensureTimeSeriesStore();
+    // One shared procedure for BOTH the 1D and 1W graphs: read the session's FX
+    // close straight from the EUR→USD bars the curves are reconstructed from, so
+    // both freeze to the *same* authoritative close — and still have one when the
+    // app was not live at 16:00 ET (the bars are backfilled regardless). Falls
+    // back to the live-captured close, then the settled previous close, then the
+    // live rate, so the curve always has a rate to anchor to. Memoised so the two
+    // hooks resolve it once per render.
+    let frozenFxMemo: Decimal | null | undefined;
+    const resolveFrozenFx = async (): Promise<Decimal | null> => {
+      if (!marketClosed) return null;
+      if (frozenFxMemo !== undefined) return frozenFxMemo;
+      let barsClose: Decimal | null = null;
+      try {
+        const session = await store.loadSession(sessionDay);
+        if (session && session.fx.length > 0) {
+          barsClose = sessionCloseFxFromBars(session.fx, sessionCloseMs(sessionDay));
+        }
+      } catch {
+        barsClose = null;
+      }
+      frozenFxMemo = graphAnchorFx({
+        marketOpen: false,
+        liveFx: baseFx,
+        // The FX bars are the ground truth the curve is drawn from; prefer them
+        // so the frozen tip is continuous with the curve body, then the live
+        // capture, then the settled previous close (a stable weekend/cold-start
+        // proxy), then the live rate as a last resort.
+        sessionCloseFx: barsClose ?? o.fxRateEurUsdSessionClose,
+        settledPrevFx: o.fxRateEurUsdPrev,
+      });
+      return frozenFxMemo;
+    };
     // The live tip drawn at the session close once shut: its USD leg is FX-free,
     // but its EUR leg is re-marked at the frozen close rate so the 1D/1W curve
     // ends on the market-day value, not the overnight-drifted one.
-    const liveTip =
+    const makeLiveTip = (frozenFx: Decimal | null): { valueEur: Decimal; valueUsd: Decimal } | null =>
       o.totalValueIsComplete
         ? ((): { valueEur: Decimal; valueUsd: Decimal } => {
             const valueUsd =
@@ -4202,14 +4227,13 @@ export class App {
       // fires over a cap or while a provider is frozen.
       reservation,
     };
-    const store = this.ensureTimeSeriesStore();
     const exported = this.state.data?.live_graphs ?? undefined;
-    const anchor = (): ReturnType<typeof buildModelAnchor> =>
+    const anchor = (frozenFx: Decimal | null): ReturnType<typeof buildModelAnchor> =>
       buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx, { graphFx: frozenFx });
     // The 1W anchor folds NAV funds into the sleeve (re-marked from their daily
     // NAV bars) rather than the flat base, so the week's NAV drift shows on the
     // curve for a NAV-heavy book (docs/tiingo_polling_storm_cleanup_plan.md item 7).
-    const weekAnchor = (): ReturnType<typeof buildModelAnchor> =>
+    const weekAnchor = (frozenFx: Decimal | null): ReturnType<typeof buildModelAnchor> =>
       buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx, {
         navInSleeve: true,
         graphFx: frozenFx,
@@ -4246,6 +4270,8 @@ export class App {
     return {
       session: async (opts) => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
+        const frozenFx = await resolveFrozenFx();
+        const liveTip = makeLiveTip(frozenFx);
         // Springboard off the exported session first — instant paint, no fetch —
         // and only build live when the export is absent or too stale.
         const sprung = springboardSessionCurve({ exported, liveTip });
@@ -4261,7 +4287,7 @@ export class App {
         const spent = { credits: 0 };
         try {
           const curve = await buildLiveSessionCurve(
-            { anchor: anchor(), store, liveTip, onFreshBars, regenerateOnly },
+            { anchor: anchor(frozenFx), store, liveTip, onFreshBars, regenerateOnly },
             loggingProviders("1D", spent),
           );
           if (spent.credits === 0) {
@@ -4275,6 +4301,8 @@ export class App {
       },
       week: async (opts) => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
+        const frozenFx = await resolveFrozenFx();
+        const liveTip = makeLiveTip(frozenFx);
         // The current day's slice of the week must be the same dense 1D session the
         // 1D graph shows, not the coarse `week.points` tail. Build it once, network-
         // free (springboard off the blob, else reconstruct from stored bars), and
@@ -4284,7 +4312,7 @@ export class App {
         const todaySlice =
           springboardSessionCurve({ exported, liveTip }) ??
           (await buildLiveSessionCurve(
-            { anchor: anchor(), store, liveTip, regenerateOnly: true },
+            { anchor: anchor(frozenFx), store, liveTip, regenerateOnly: true },
             loggingProviders("1D", { credits: 0 }),
           )
             .then((c) => (c.points.length >= 1 ? c.points : null))
@@ -4304,7 +4332,7 @@ export class App {
         try {
           const curve = await buildLiveWeekCurve(
             {
-              anchor: weekAnchor(),
+              anchor: weekAnchor(frozenFx),
               store,
               liveTip,
               onFreshBars,

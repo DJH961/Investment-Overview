@@ -12,6 +12,7 @@ import {
   graphAnchorFx,
   readSessionCloseFx,
   recordSessionCloseFx,
+  sessionCloseFxFromBars,
 } from "../src/session-fx";
 
 const d = (v: string | number): Decimal => new Decimal(v);
@@ -77,6 +78,36 @@ describe("graphAnchorFx", () => {
 
   it("returns null when neither rate is available", () => {
     expect(graphAnchorFx({ marketOpen: false, liveFx: null, sessionCloseFx: null })).toBeNull();
+  });
+});
+
+describe("sessionCloseFxFromBars", () => {
+  const closeMs = 1_000_000;
+  const bar = (t: number, value: string) => ({ t, value: d(value) });
+
+  it("returns the latest bar at or before the session close", () => {
+    const bars = [bar(closeMs - 7200_000, "1.07"), bar(closeMs - 3600_000, "1.0750"), bar(closeMs, "1.0775")];
+    expect(sessionCloseFxFromBars(bars, closeMs)?.toString()).toBe("1.0775");
+  });
+
+  it("ignores after-hours bars past the close (the drift the freeze excludes)", () => {
+    const bars = [bar(closeMs - 3600_000, "1.0750"), bar(closeMs, "1.0775"), bar(closeMs + 3600_000, "1.09")];
+    expect(sessionCloseFxFromBars(bars, closeMs)?.toString()).toBe("1.0775");
+  });
+
+  it("tolerates unsorted bars", () => {
+    const bars = [bar(closeMs, "1.0775"), bar(closeMs - 7200_000, "1.07"), bar(closeMs - 3600_000, "1.0750")];
+    expect(sessionCloseFxFromBars(bars, closeMs)?.toString()).toBe("1.0775");
+  });
+
+  it("skips non-positive bar values", () => {
+    const bars = [bar(closeMs - 3600_000, "1.0750"), bar(closeMs, "0")];
+    expect(sessionCloseFxFromBars(bars, closeMs)?.toString()).toBe("1.075");
+  });
+
+  it("returns null when no bar settled by the close (empty / all after-hours)", () => {
+    expect(sessionCloseFxFromBars([], closeMs)).toBeNull();
+    expect(sessionCloseFxFromBars([bar(closeMs + 60_000, "1.09")], closeMs)).toBeNull();
   });
 });
 
