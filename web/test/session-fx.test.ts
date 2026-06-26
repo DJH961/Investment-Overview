@@ -11,7 +11,9 @@ import {
   fxEffectSplit,
   graphAnchorFx,
   readSessionCloseFx,
+  readSessionOpenFx,
   recordSessionCloseFx,
+  recordSessionOpenFx,
   sessionBarsComplete,
   sessionCloseFxFromBars,
   sessionFxBarsComplete,
@@ -336,5 +338,52 @@ describe("session-close FX persistence", () => {
 
   it("returns null (not throw) when nothing is stored", () => {
     expect(readSessionCloseFx("2026-06-25")).toBeNull();
+  });
+});
+
+describe("session-open FX persistence", () => {
+  beforeEach(() => {
+    const store = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("round-trips the first-seen rate for the same session day", () => {
+    recordSessionOpenFx("2026-06-25", d("1.0834"));
+    expect(readSessionOpenFx("2026-06-25")?.toString()).toBe("1.0834");
+  });
+
+  it("keeps the earliest capture and never overwrites it with a later spot", () => {
+    recordSessionOpenFx("2026-06-25", d("1.0834"));
+    recordSessionOpenFx("2026-06-25", d("1.0900"));
+    expect(readSessionOpenFx("2026-06-25")?.toString()).toBe("1.0834");
+  });
+
+  it("ignores a rate captured for a different session", () => {
+    recordSessionOpenFx("2026-06-24", d("1.07"));
+    expect(readSessionOpenFx("2026-06-25")).toBeNull();
+  });
+
+  it("starts a fresh capture once the session day rolls over", () => {
+    recordSessionOpenFx("2026-06-24", d("1.07"));
+    recordSessionOpenFx("2026-06-25", d("1.0834"));
+    expect(readSessionOpenFx("2026-06-25")?.toString()).toBe("1.0834");
+  });
+
+  it("does not store a null or non-positive rate", () => {
+    recordSessionOpenFx("2026-06-25", null);
+    expect(readSessionOpenFx("2026-06-25")).toBeNull();
+    recordSessionOpenFx("2026-06-25", d("0"));
+    expect(readSessionOpenFx("2026-06-25")).toBeNull();
+  });
+
+  it("returns null (not throw) when nothing is stored", () => {
+    expect(readSessionOpenFx("2026-06-25")).toBeNull();
   });
 });

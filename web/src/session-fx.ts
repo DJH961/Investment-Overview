@@ -353,3 +353,48 @@ export function readSessionCloseFx(day: string): Decimal | null {
     return null;
   }
 }
+
+/** localStorage key holding the *first* live EUR/USD spot seen this session. */
+const SESSION_OPEN_FX_KEY = "iv.web.sessionOpenFx";
+
+/**
+ * Remember the **first** live EUR/USD spot we observe for `day` while the market
+ * is open, as a stand-in session-open rate for the gap before the session's own
+ * FX bars have been fetched (the first FX bar can lag the 09:30 ET open by minutes
+ * on the free tier, and a cold start mid-session has none yet). Only the earliest
+ * value for the day is kept — later refreshes never overwrite it — so it stays a
+ * fixed open anchor rather than tracking the live spot. The authoritative
+ * bar-read open ({@link sessionOpenFxFromBars}) takes precedence once available,
+ * so this is a self-correcting fallback. A no-op (swallowed) when storage is
+ * unavailable.
+ */
+export function recordSessionOpenFx(day: string, rate: Decimal | null): void {
+  if (rate === null || !rate.greaterThan(0)) return;
+  try {
+    // Keep only the earliest capture for the day — it is the open proxy, not the
+    // running spot — so an already-stored same-day rate is left untouched.
+    if (readSessionOpenFx(day) !== null) return;
+    localStorage.setItem(SESSION_OPEN_FX_KEY, JSON.stringify({ day, rate: rate.toString() }));
+  } catch {
+    // Storage-less (private mode, disabled): the split simply waits for FX bars.
+  }
+}
+
+/**
+ * Read back the stored first-seen session-open EUR/USD rate, but only when it was
+ * captured for the session `day` we are displaying — a rate from an earlier
+ * session is not the open of *this* one, so it is ignored. Returns null when
+ * nothing usable is stored.
+ */
+export function readSessionOpenFx(day: string): Decimal | null {
+  try {
+    const raw = localStorage.getItem(SESSION_OPEN_FX_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { day?: unknown; rate?: unknown };
+    if (parsed.day !== day || typeof parsed.rate !== "string") return null;
+    const rate = new Decimal(parsed.rate);
+    return rate.greaterThan(0) ? rate : null;
+  } catch {
+    return null;
+  }
+}
