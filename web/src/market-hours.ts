@@ -203,6 +203,21 @@ function isTradingDay(year: number, month: number, day: number): boolean {
   return !holidaysForYear(year).has(key(month, day));
 }
 
+/**
+ * Whether `now` (defaults to the current instant) falls on a regular NYSE trading
+ * day, evaluated against the exchange-local (New York) calendar date so it is
+ * correct regardless of the viewer's own timezone. `true` on any weekday that is
+ * not a full-day market holiday — at *any* time of day, so it stays `true`
+ * overnight and after-hours on a trading day, and only goes `false` on weekends
+ * and holidays. The hero uses this to tell a genuine *non-market day* (no session
+ * at all, so "today" is purely the overnight drift) apart from a trading day that
+ * merely happens to be shut right now.
+ */
+export function isUsTradingDay(now: Date = new Date()): boolean {
+  const moment = exchangeMoment(now);
+  return isTradingDay(moment.year, moment.month, moment.day);
+}
+
 function ymd(year: number, month: number, day: number): string {
   return `${year}-${`${month}`.padStart(2, "0")}-${`${day}`.padStart(2, "0")}`;
 }

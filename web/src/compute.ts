@@ -229,11 +229,13 @@ export interface OverviewView {
   fxRateEurUsdSessionClose: Decimal | null;
   /**
    * EUR→USD around the current session's **open** (the rate captured shortly after
-   * 09:30 ET), or null when the market is shut or no open bar has printed yet. The
-   * hero's currency-effect split measures the live market-hours slice from this
-   * while the session is running, so last night's overnight slice can be carved
-   * out as the remainder and survive the market start. Populated by the app shell
-   * (it reads the session's FX bars), so the compute layer defaults it to null.
+   * 09:30 ET), or null when no open bar for the session has printed yet. While the
+   * session is running the hero's currency-effect split measures the live
+   * market-hours slice from this (so last night's overnight slice can be carved out
+   * as the remainder and survive the market start); once a trading day has shut it
+   * is the "since last market open" baseline the hero's "Today" stat re-bases to.
+   * Populated by the app shell (it reads the session's FX bars) on every session
+   * day — open or shut — so the compute layer defaults it to null.
    */
   fxRateEurUsdSessionOpen: Decimal | null;
   /**

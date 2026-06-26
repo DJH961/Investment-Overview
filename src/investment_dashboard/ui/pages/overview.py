@@ -236,12 +236,13 @@ def _fx_effect_html(
     net_eur: Decimal,
     now: datetime,
 ) -> str:
-    """The "Currency effect today" panel inside the currency box.
+    """The "Currency effect since yesterday" panel inside the currency box.
 
-    The book is **USD-booked**, so today's EUR/USD move is only real money once it
-    is measured back in euros — so this panel always speaks **EUR**, in both EUR
-    and USD display (a rate move hands you no extra dollars; the euro figure is the
-    one that means something). Mirrors the web companion's ``renderFxEffect``.
+    The book is **USD-booked**, so the EUR/USD move since yesterday's close is only
+    real money once it is measured back in euros — so this panel always speaks
+    **EUR**, in both EUR and USD display (a rate move hands you no extra dollars;
+    the euro figure is the one that means something). Mirrors the web companion's
+    ``renderFxEffect``.
 
     Below the net figure a *diverging* bar splits the move into its market-hours
     and overnight slices, with the **currently-live** slice on top and the frozen
@@ -251,10 +252,14 @@ def _fx_effect_html(
     from a shared centre line (right for a gain, left for a loss), so two legs
     pulling in opposite directions read clearly instead of being crammed into one
     stacked bar.
+
+    On a genuine **non-market day** (weekend/holiday) there is no session at all, so
+    the whole swing is the overnight drift: the market-hours leg is dropped and the
+    remaining single bar is relabelled "Market holiday".
     """
     head = (
         '<div class="inv-fx-effect-head">'
-        '<span class="inv-fx-effect-title">Currency effect today</span>'
+        '<span class="inv-fx-effect-title">Currency effect since yesterday</span>'
         "{value}</div>"
     )
     value = f'<span class="inv-fx-effect-net {_fx_sign_class(net_eur)}">{_fx_signed_eur(net_eur)}</span>'
@@ -262,6 +267,41 @@ def _fx_effect_html(
     # Market-hours vs overnight split. The live leg is measured straight from the
     # relevant session anchor; the frozen leg is the remainder of today's move.
     market_open = is_us_market_open(now)
+    non_market_day = not market_hours.is_us_trading_day(now)
+    half_track_pct = 50
+
+    def _row(
+        label: str, value: Decimal, *, overnight_leg: bool, live: bool, max_mag: Decimal
+    ) -> str:
+        width = 0.0 if max_mag == 0 else float(abs(value) / max_mag * half_track_pct)
+        stripe = " inv-fx-diverge-overnight" if overnight_leg else ""
+        tag = "live" if live else "last"
+        fill = (
+            f'<span class="inv-fx-diverge-fill {_fx_sign_class(value)}{stripe}"'
+            f' style="width:{width:.4f}%"></span>'
+        )
+        return (
+            '<div class="inv-fx-diverge-row">'
+            f'<span class="inv-fx-diverge-label">{label}'
+            f'<span class="inv-fx-diverge-tag">{tag}</span></span>'
+            f'<div class="inv-fx-diverge-track" aria-hidden="true">{fill}</div>'
+            f'<span class="inv-fx-diverge-value {_fx_sign_class(value)}">'
+            f"{_fx_signed_eur(value)}</span>"
+            "</div>"
+        )
+
+    if non_market_day:
+        # No session today (weekend/holiday): the whole swing is the "overnight"
+        # holiday drift, so a market-hours leg would be a meaningless ~zero stub —
+        # drop it and show a single full-width "Market holiday" bar instead.
+        row = _row("Market holiday", net_eur, overnight_leg=True, live=True, max_mag=abs(net_eur))
+        body = f'<div class="inv-fx-diverge">{row}</div>'
+        return (
+            '<div class="inv-fx-effect" role="group"'
+            ' aria-label="Currency effect since yesterday">'
+            f"{head.format(value=value)}{body}</div>"
+        )
+
     if market_open:
         open_fx = intraday_snapshots_service.session_open_fx(session, now=now)
         split = fx_effect_split(
@@ -286,41 +326,19 @@ def _fx_effect_html(
     body = ""
     if market is not None and overnight is not None and not (market == 0 and overnight == 0):
         max_mag = max(abs(market), abs(overnight))
-        # Each leg fills out from the centre line, so a full-magnitude leg spans
-        # half the track (the other half is reserved for the opposite direction).
-        half_track_pct = 50
-
-        def _row(label: str, value: Decimal, *, overnight_leg: bool, live: bool) -> str:
-            width = 0.0 if max_mag == 0 else float(abs(value) / max_mag * half_track_pct)
-            stripe = " inv-fx-diverge-overnight" if overnight_leg else ""
-            tag = "live" if live else "last"
-            fill = (
-                f'<span class="inv-fx-diverge-fill {_fx_sign_class(value)}{stripe}"'
-                f' style="width:{width:.4f}%"></span>'
-            )
-            return (
-                '<div class="inv-fx-diverge-row">'
-                f'<span class="inv-fx-diverge-label">{label}'
-                f'<span class="inv-fx-diverge-tag">{tag}</span></span>'
-                f'<div class="inv-fx-diverge-track" aria-hidden="true">{fill}</div>'
-                f'<span class="inv-fx-diverge-value {_fx_sign_class(value)}">'
-                f"{_fx_signed_eur(value)}</span>"
-                "</div>"
-            )
-
         # Current market mode on top: open ⇒ live market-hours leads; closed ⇒ live
         # overnight leads, with the other (frozen) leg below.
         if market_open:
-            rows = _row("Market hours", market, overnight_leg=False, live=True) + _row(
-                "Overnight", overnight, overnight_leg=True, live=False
-            )
+            rows = _row(
+                "Market hours", market, overnight_leg=False, live=True, max_mag=max_mag
+            ) + _row("Overnight", overnight, overnight_leg=True, live=False, max_mag=max_mag)
         else:
-            rows = _row("Overnight", overnight, overnight_leg=True, live=True) + _row(
-                "Market hours", market, overnight_leg=False, live=False
-            )
+            rows = _row(
+                "Overnight", overnight, overnight_leg=True, live=True, max_mag=max_mag
+            ) + _row("Market hours", market, overnight_leg=False, live=False, max_mag=max_mag)
         body = f'<div class="inv-fx-diverge">{rows}</div>'
     return (
-        '<div class="inv-fx-effect" role="group" aria-label="Currency effect today">'
+        '<div class="inv-fx-effect" role="group" aria-label="Currency effect since yesterday">'
         f"{head.format(value=value)}{body}</div>"
     )
 
@@ -349,12 +367,26 @@ def _currency_box_html(
     prev_fx = metrics.daily_growth_fx_eur_usd_prev
     in_usd = display_ccy.upper() == "USD"
     market_open = is_us_market_open(now)
+    trading_day = market_hours.is_us_trading_day(now)
 
     pair = "EUR/USD" if in_usd else "USD/EUR"
     rate = live_fx if in_usd else Decimal(1) / live_fx
+    # "Today" uses a market-state-dependent baseline so it never just mirrors the
+    # "Since open/close" stat beside it: while the session is live it is the move
+    # since the *prior close* (overnight + intraday so far); once a trading day has
+    # shut it re-bases to *this morning's open* (the full session move) so it stops
+    # collapsing onto "Since close" the moment the provider rolls its previousClose
+    # to today's settle. On a genuine non-market day (weekend/holiday) there is no
+    # session, so it stays the pure overnight move since the prior close.
     # ``fx_move_pct`` already follows the display-currency strength convention
     # (negated for the EUR-display reciprocal), matching the web box.
-    move = fx_move_pct(live_fx, prev_fx, display_ccy) if prev_fx is not None else None
+    if not market_open and trading_day:
+        today_anchor = intraday_snapshots_service.session_open_fx(session, now=now)
+        today_sub = "since last open"
+    else:
+        today_anchor = prev_fx
+        today_sub = "since last close" if trading_day else "overnight"
+    move = fx_move_pct(live_fx, today_anchor, display_ccy) if today_anchor is not None else None
 
     # Third number: how far the rate has moved since the current session's
     # reference point — since the **open** while the market is live, since the
@@ -376,7 +408,7 @@ def _currency_box_html(
         '<div class="inv-fx-box-stat">'
         '<span class="inv-fx-box-stat-label">Today</span>'
         f"{_fx_box_pct_value(move)}"
-        '<span class="inv-fx-box-stat-sub">rate move</span>'
+        f'<span class="inv-fx-box-stat-sub">{today_sub}</span>'
         "</div>"
         '<div class="inv-fx-box-stat">'
         f'<span class="inv-fx-box-stat-label">{since_label}</span>'

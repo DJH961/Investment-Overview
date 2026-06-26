@@ -424,7 +424,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   letter-spacing: 0.03em;
 }
 
-/* --- Currency effect today (net + diverging market-hours/overnight split) -- */
+/* --- Currency effect since yesterday (net + diverging market-hours/overnight split) -- */
 .fx-effect {
   display: grid;
   gap: 0.55rem;

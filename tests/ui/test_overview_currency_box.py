@@ -2,13 +2,17 @@
 
 Exercises the three behaviours the box guarantees regardless of display currency:
 
-* the "Currency effect today" panel always speaks **EUR** (no USD "$0 + long
-  text" branch);
+* the "Currency effect since yesterday" panel always speaks **EUR** (no USD "$0 +
+  long text" branch);
+* the "Today" stat re-bases by market state (since the prior close while open,
+  since *this* session's open once a trading day has shut) so it never mirrors the
+  "Since open/close" stat;
 * a third stat shows the FX move **since the session open** while the market is
   live and **since the close** once it has shut;
 * the market-hours / overnight split is reordered so the *currently-live* leg is
   on top — market hours while open, overnight once shut — and the frozen "last"
-  leg survives below it.
+  leg survives below it;
+* on a non-market day the split collapses to a single "Market holiday" bar.
 """
 
 from __future__ import annotations
@@ -54,7 +58,7 @@ class TestCurrencyEffectAlwaysEur:
         _seed_fx_samples(session)
         html = _currency_box_html(session, _metrics(), display_ccy="USD", now=_CLOSED)
         assert html is not None
-        assert "Currency effect today" in html
+        assert "Currency effect since yesterday" in html
         # The old USD branch ("$0" + "priced in dollars …") must be gone.
         assert "$0" not in html
         assert "priced in dollars" not in html
@@ -115,3 +119,46 @@ class TestSplitOrdering:
         assert html.index("Market hours") < html.index("Overnight")
         assert ">live<" in html
         assert ">last<" in html
+
+
+# 2024-06-08 is a Saturday — a genuine non-market day (no NYSE session at all).
+_HOLIDAY = datetime(2024, 6, 8, 15, 0, tzinfo=UTC)
+
+
+class TestTodayStatRebases:
+    """The "Today" stat must not just mirror the "Since open/close" stat: it uses
+    a market-state-dependent baseline (prior close while open, *this* session's
+    open once a trading day has shut)."""
+
+    def test_open_market_today_is_since_last_close(self, session: Session) -> None:
+        _seed_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_OPEN)
+        assert html is not None
+        assert "since last close" in html
+        assert "since last open" not in html
+
+    def test_closed_trading_day_today_is_since_last_open(self, session: Session) -> None:
+        _seed_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_CLOSED)
+        assert html is not None
+        # Closed on a trading day re-bases "Today" to this morning's open …
+        assert "since last open" in html
+        assert "since last close" not in html
+        # … which is genuinely different from the "Since close" third stat, so the
+        # two percentage values are no longer identical.
+        assert "Since close" in html
+
+
+class TestNonMarketDay:
+    def test_holiday_collapses_split_to_single_market_holiday_bar(self, session: Session) -> None:
+        _seed_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_HOLIDAY)
+        assert html is not None
+        # The panel keeps its renamed title and shows a single "Market holiday" bar
+        # in place of the market-hours/overnight split.
+        assert "Currency effect since yesterday" in html
+        assert "Market holiday" in html
+        assert "Market hours" not in html
+        assert "Overnight" not in html
+        # "Today" is the pure overnight drift on a non-market day.
+        assert "overnight" in html

@@ -3500,13 +3500,14 @@ export class App {
       model.overview.fxRateEurUsdSessionClose = marketOpen
         ? null
         : (await this.barsSessionCloseFx(sessionDay)) ?? readSessionCloseFx(sessionDay);
-      // The mirror anchor for an open session: the rate at this morning's open,
-      // read from the same FX bars. Lets the currency-effect split carve out the
-      // live market-hours slice and keep last night's overnight as the remainder
-      // (so it survives the market start). Null while shut / before the first bar.
-      model.overview.fxRateEurUsdSessionOpen = marketOpen
-        ? await this.barsSessionOpenFx(sessionDay)
-        : null;
+      // The session's open rate, read from the same FX bars. While the session is
+      // running it lets the currency-effect split carve out the live market-hours
+      // slice and keep last night's overnight as the remainder (so it survives the
+      // market start); once the trading day has shut it is the "since last market
+      // open" anchor the hero's "Today" stat re-bases to (so that stat stops
+      // mirroring the now-settled "since close" move). Read on every session day —
+      // open or shut — and null only before the day's first FX bar has landed.
+      model.overview.fxRateEurUsdSessionOpen = await this.barsSessionOpenFx(sessionDay);
     }
     // Remember each fund's freshly-settled NAV as a daily bar in the 1W store, so
     // the week curve re-marks NAV funds from their real per-day drift at zero

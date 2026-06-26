@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   isUsMarketHoliday,
   isUsMarketOpen,
+  isUsTradingDay,
   lastSessionDate,
   latestSettledSessionDate,
   previousTradingSession,
@@ -59,6 +60,22 @@ describe("isUsMarketOpen", () => {
     expect(isUsMarketOpen(new Date("2025-12-25T15:00:00Z"))).toBe(false);
     // Thanksgiving, Thu 2025-11-27.
     expect(isUsMarketOpen(new Date("2025-11-27T16:00:00Z"))).toBe(false);
+  });
+});
+
+describe("isUsTradingDay", () => {
+  it("is true at any time of day on a regular weekday — including after-hours", () => {
+    // 2026-06-22 is a Monday: open, after the close, and overnight all read true.
+    expect(isUsTradingDay(new Date("2026-06-22T14:00:00Z"))).toBe(true); // mid-session
+    expect(isUsTradingDay(new Date("2026-06-22T21:00:00Z"))).toBe(true); // after close
+    expect(isUsTradingDay(new Date("2026-06-22T12:00:00Z"))).toBe(true); // pre-market (08:00 ET)
+  });
+
+  it("is false on weekends and full-day holidays", () => {
+    expect(isUsTradingDay(new Date("2026-06-20T14:00:00Z"))).toBe(false); // Saturday
+    expect(isUsTradingDay(new Date("2026-06-21T14:00:00Z"))).toBe(false); // Sunday
+    expect(isUsTradingDay(new Date("2026-01-01T15:00:00Z"))).toBe(false); // New Year's Day
+    expect(isUsTradingDay(new Date("2026-07-03T15:00:00Z"))).toBe(false); // Independence (observed)
   });
 });
 

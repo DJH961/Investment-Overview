@@ -169,6 +169,26 @@ def is_trading_day(day: date) -> bool:
     return day.weekday() < _SATURDAY and not is_us_market_holiday(day)
 
 
+def is_us_trading_day(now: datetime | None = None) -> bool:
+    """Return ``True`` when ``now`` falls on a regular NYSE trading day.
+
+    The instant-aware companion of :func:`is_trading_day`: it resolves ``now`` to
+    the exchange-local (New York) calendar date first, so it is correct regardless
+    of the caller's timezone and stays ``True`` overnight and after-hours on a
+    trading day — only weekends and full-day holidays read ``False``. The Overview
+    uses it to tell a genuine *non-market day* (no session at all, so "today" is
+    purely the overnight FX drift) apart from a trading day that merely happens to
+    be shut right now.
+
+    ``now`` defaults to the current instant (UTC). It may be naive (interpreted as
+    exchange time) or timezone-aware (converted to exchange time first).
+    """
+    if now is None:
+        now = datetime.now(UTC)
+    local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
+    return is_trading_day(local.date())
+
+
 def is_us_market_open(now: datetime | None = None) -> bool:
     """Return ``True`` when the NYSE regular session is open at ``now``.
 

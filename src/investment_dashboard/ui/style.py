@@ -432,7 +432,7 @@ html, body {{
   font-weight: 500;
 }}
 
-/* --- Currency effect today (net + diverging market-hours/overnight split) - *
+/* --- Currency effect since yesterday (net + diverging market-hours/overnight split) - *
  * How much of today's EUR/USD revaluation is real euro P/L, and — once the US
  * session is shut — how much landed *while the market was open* versus
  * *overnight*, since the USD-booked book keeps drifting on FX alone after the
