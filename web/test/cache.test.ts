@@ -198,6 +198,39 @@ describe("primeQuotesFromBars", () => {
     const got = readCachedQuotes(s).get("VTI")!;
     expect(got.quote.valueDate).toBeNull();
   });
+
+  it("persists a NAV value-date through the DEFAULT storage (no explicit storage arg)", () => {
+    // Guards the bars-first NAV prime path that omits the storage arg: the
+    // default must resolve to real localStorage and actually write, not be
+    // short-circuited by a null storage that silently drops the NAV.
+    const map = new Map<string, string>();
+    const previous = Reflect.get(globalThis, "localStorage") as Storage | undefined;
+    Reflect.set(globalThis, "localStorage", {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+      removeItem: (k: string) => void map.delete(k),
+    });
+    try {
+      const day = Date.parse("2026-06-19T00:00:00Z");
+      // Note: storage arg omitted so defaultStorage() is exercised end to end.
+      const primed = primeQuotesFromBars(
+        new Map([["FXAIX", [bar(day, "210.5")]]]),
+        new Map([["FXAIX", "USD"]]),
+        9_000_000,
+        undefined,
+        new Set(["FXAIX"]),
+      );
+      expect(primed).toEqual(["FXAIX"]);
+      // The NAV must be readable back from the same default storage.
+      const got = readCachedQuotes().get("FXAIX")!;
+      expect(got.quote.price?.toString()).toBe("210.5");
+      expect(got.quote.valueDate).toBe("2026-06-19");
+      expect(got.quote.marketOpen).toBe(false);
+    } finally {
+      if (previous === undefined) Reflect.deleteProperty(globalThis, "localStorage");
+      else Reflect.set(globalThis, "localStorage", previous);
+    }
+  });
 });
 
 describe("fx cache", () => {

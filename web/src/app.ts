@@ -1845,7 +1845,7 @@ export class App {
       navBars,
       currencyBySymbol,
       Date.now(),
-      null,
+      undefined,
       new Set(stale),
     );
     this.pollLog(
@@ -5508,7 +5508,7 @@ export class App {
       currencyBySymbol.set(symbol, h.nativeCurrency ?? null);
       if (h.priceType === "nav") navSymbols.add(symbol);
     }
-    primeQuotesFromBars(barsBySymbol, currencyBySymbol, Date.now(), null, navSymbols);
+    primeQuotesFromBars(barsBySymbol, currencyBySymbol, Date.now(), undefined, navSymbols);
   }
 
   /**
