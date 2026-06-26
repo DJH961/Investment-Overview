@@ -14,6 +14,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.13.0] — 2026-06-26
+
+### Added
+
+- **"Regenerate 1D graph" and "Regenerate 1W graph" buttons in the web Settings →
+  Maintenance section.** Each wipes just that one live curve's stored bars/tips and
+  re-pulls them from scratch, then repaints — scoped to a single graph, so use them
+  when only the 1D or 1W line looks wrong or stuck. Every other day and your price
+  caches are left untouched, and the hard free-tier per-minute/day budget still
+  binds (overflow simply defers) (`web/src/app.ts` `regenerateGraph`,
+  `TimeSeriesStore.deleteSession`).
+
+### Fixed
+
+- **"Force-fetch every price now" re-pulls the graphs again.** The top Maintenance
+  escape hatch is meant to overrule what the scheduler thinks is sensible to pull
+  and re-fetch *everything*; a regression left it forcing only the live quotes while
+  the 1D/1W graph bars stayed on their per-symbol staleness gate, so an
+  already-loaded curve was never re-pulled. A force-all (and a from-scratch reset)
+  round now bypasses that gate and re-pulls every market symbol's 1D *and* 1W bars
+  alongside the quotes (`web/src/app.ts` `primeStaleGraphPackages` force path).
+
 ## [4.12.3] — 2026-06-26
 
 ### Added

@@ -478,6 +478,18 @@ export class TimeSeriesStore {
   }
 
   /**
+   * Drop a **single** stored record by key — a dated session (`YYYY-MM-DD`) or a
+   * namespaced cache (e.g. the {@link WEEK_STORE_KEY} 1W daily-close sleeve). This
+   * is the scoped counterpart to {@link clear}: the Settings "Regenerate 1D / 1W
+   * graph" buttons wipe just that one curve's bars/tips so the forced re-pull
+   * rebuilds it from scratch, leaving every other day untouched. A no-op when the
+   * key is absent.
+   */
+  async deleteSession(key: string): Promise<void> {
+    await this.backend.delete(key);
+  }
+
+  /**
    * Drop every stored day **strictly before** `oldestDay` (`YYYY-MM-DD`). Days
    * compare correctly as plain strings, so a single lexical compare keeps the
    * rolling 1W window and discards the rest. Only genuine `YYYY-MM-DD` session
