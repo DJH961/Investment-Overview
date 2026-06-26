@@ -14,7 +14,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.10.1] — 2026-06-26
+## [4.11.2] — 2026-06-26
 
 ### Fixed
 
@@ -43,6 +43,59 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `1D graph · DAX: reached the closing bar at 2026-06-26 20:00 — settled (1 source).`
   — so you can see exactly when a session was declared complete, when a second
   provider confirmed it, and when a pull was deliberately backed off (`↩`).
+
+## [4.11.1] — 2026-06-26
+
+### Fixed
+
+- **The "1 Week" graph no longer nose-dives at market start.** Right after the
+  US market opened, the curve's start could drop to roughly 60 % of its real
+  value — almost exactly the value of the stocks *without* their NAV funds — and
+  the resulting scale crushed all detail out of the line. The cause was the
+  day-drifting NAV-fund sleeve collapsing to **zero** for the oldest session(s)
+  in the rolling week window whenever that day's published NAV or its EUR/USD
+  rate hadn't been cached yet (a transient right after the window rolls forward
+  at the open). The week curve now **carries the NAV flat** from the nearest
+  fully-valued day (or, as a last resort, today's live NAV) instead of zeroing
+  it, so the line keeps its shape. The fix is **smart and self-correcting**: it
+  never speculatively fetches and is re-derived from the cache on every render,
+  so the moment a later good price-bar or FX pull patches the missing NAV/rate,
+  the very next render shows the genuine per-day value and the graph corrects
+  itself in retrospect. Both the desktop Overview and the exported data the web
+  companion reads inherit the fix
+  (`src/investment_dashboard/services/intraday_snapshots_service.py`,
+  `src/investment_dashboard/ui/pages/_overview_query.py`).
+
+## [4.11.0] — 2026-06-26
+
+### Added
+
+- **USD display now shows "Investing power since yesterday" instead of a $0
+  currency effect.** Because the book is USD-booked, an EUR/USD move hands the
+  owner no extra dollars on assets already held — the portfolio FX effect in USD
+  is exactly $0. So in USD display the currency box reframes to what actually
+  changes for the owner in dollar terms: how many more (+) or fewer (−) dollars
+  their regular EUR investment (the euros they wire to the US to keep investing)
+  buys now versus yesterday's close. The amount is configurable in Settings →
+  Display (default €100) and the panel is rendered to **exactly match** the EUR
+  currency-effect visualisation (the same diverging market-hours/overnight split,
+  with no extra explanatory note) — only the basis differs. Because the swing
+  rides a single regular contribution rather than the whole book it is small, so
+  cents are kept whenever the effect amount is two digits or less (|net| < $100)
+  and dropped above that to read in whole dollars like the EUR panel
+  (`fxBuyingPowerSplit`/`fx_buying_power_split`,
+  `investing_power_service`, `web/src/investment-amount.ts`,
+  `web/src/ui.ts`, `src/investment_dashboard/ui/pages/overview.py`,
+  `src/investment_dashboard/ui/pages/settings.py`).
+
+### Fixed
+
+- **The currency box's market-status labels can no longer wrap onto two lines.**
+  In the web companion's diverging FX bar the "live"/"last" tag sat inline with
+  the status word, crowding the narrow label column so "Market holiday", "Market
+  hours" and "Overnight" could be pushed onto a second line. The tag now rides in
+  a dedicated value cell on the right, so the status label always stays on one
+  line (`web/src/ui.ts`, `web/src/styles.css`).
 
 ## [4.10.0] — 2026-06-26
 

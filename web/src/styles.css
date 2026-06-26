@@ -464,7 +464,6 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .fx-effect-net.pos { color: var(--pos); }
 .fx-effect-net.neg { color: var(--neg); }
 .fx-effect-net.flat { color: var(--muted); }
-.fx-effect-note { margin: 0; font-size: 0.78rem; color: var(--muted); line-height: 1.45; }
 
 /* The diverging bar: each leg grows from a shared centre line — right for a gain,
    left for a loss — so two legs pulling in opposite directions read clearly
@@ -479,7 +478,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   font-size: 0.78rem;
   font-weight: 600;
 }
-.fx-diverge-label { color: var(--muted); display: flex; align-items: baseline; gap: 0.35rem; }
+.fx-diverge-label { color: var(--muted); white-space: nowrap; }
 .fx-diverge-tag {
   font-size: 0.6rem;
   text-transform: uppercase;
@@ -487,6 +486,15 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   font-weight: 700;
   color: var(--muted);
   opacity: 0.75;
+}
+/* The live/last tag rides under the value on the right, never inline with the
+   status word — so "Market holiday" / "Market hours" / "Overnight" can't be
+   bumped onto a second line by the tag crowding the narrow label column. */
+.fx-diverge-valcell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.1;
 }
 .fx-diverge-track {
   position: relative;

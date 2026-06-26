@@ -1,9 +1,12 @@
 """Tests for the Overview standalone "Currency · EUR ↔ USD" box HTML.
 
-Exercises the three behaviours the box guarantees regardless of display currency:
+Exercises the behaviours the box guarantees:
 
-* the "Currency effect since yesterday" panel always speaks **EUR** (no USD "$0 +
-  long text" branch);
+* the currency panel reframes by display currency — **EUR** display shows the
+  book's "Currency effect since yesterday" (always in EUR), **USD** display shows
+  "Investing power since yesterday" (the dollars the owner's regular EUR
+  investment buys now vs yesterday's close), because the portfolio FX effect is
+  exactly $0 in dollars;
 * the "Today" stat re-bases by market state (since the prior close while open,
   since *this* session's open once a trading day has shut) so it never mirrors the
   "Since open/close" stat;
@@ -53,28 +56,48 @@ def _metrics() -> SimpleNamespace:
     )
 
 
-class TestCurrencyEffectAlwaysEur:
-    def test_usd_display_shows_eur_effect_not_dollar_zero(self, session: Session) -> None:
+class TestCurrencyPanelByDisplay:
+    """The currency panel reframes by display currency: EUR shows the book's EUR
+    currency effect; USD shows the *investing power* of the owner's regular EUR
+    investment (the dollars it buys now vs yesterday's close), because the
+    portfolio FX effect is exactly $0 in dollars."""
+
+    def test_eur_display_shows_eur_currency_effect(self, session: Session) -> None:
         _seed_fx_samples(session)
-        html = _currency_box_html(session, _metrics(), display_ccy="USD", now=_CLOSED)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_CLOSED)
         assert html is not None
         assert "Currency effect since yesterday" in html
-        # The old USD branch ("$0" + "priced in dollars …") must be gone.
-        assert "$0" not in html
-        assert "priced in dollars" not in html
-        # The genuine EUR P/L figure is shown instead.
+        assert "Investing power since yesterday" not in html
         assert "inv-fx-effect-net" in html
         assert "\u20ac" in html  # a euro figure is present
 
-    def test_eur_and_usd_display_show_the_same_effect_figure(self, session: Session) -> None:
+    def test_usd_display_shows_investing_power_not_zero(self, session: Session) -> None:
+        _seed_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="USD", now=_CLOSED)
+        assert html is not None
+        # USD reframes to investing power, not the EUR currency effect …
+        assert "Investing power since yesterday" in html
+        assert "Currency effect since yesterday" not in html
+        # … and never the old misleading "$0".
+        assert "$0" not in html
+        assert "priced in dollars" not in html
+        # With the default €100 regular amount: 100·(1.30−1.20) = +$10.00. The panel
+        # mirrors the EUR currency-effect visualisation exactly (no explanatory
+        # note), and keeps cents because the swing is two digits or less.
+        assert "inv-fx-effect-net" in html
+        assert "+$10.00" in html
+        assert "inv-fx-effect-note" not in html
+        assert "now buys" not in html
+
+    def test_eur_and_usd_panels_differ(self, session: Session) -> None:
         _seed_fx_samples(session)
         eur_html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_CLOSED)
         usd_html = _currency_box_html(session, _metrics(), display_ccy="USD", now=_CLOSED)
         assert eur_html is not None
         assert usd_html is not None
-        # Both carry the same euro net-effect span — the effect no longer depends
-        # on the display currency.
-        assert eur_html.count("inv-fx-effect-net") == usd_html.count("inv-fx-effect-net") == 1
+        # The panel now genuinely depends on the display currency.
+        assert "Currency effect since yesterday" in eur_html
+        assert "Investing power since yesterday" in usd_html
 
 
 class TestThirdStat:
@@ -264,3 +287,14 @@ class TestUsMarketHoliday:
         assert "Since close" not in html
         assert "Since open" not in html
         assert "inv-fx-box-stats-pair" in html
+
+    def test_july_fourth_investing_power_single_bar_in_usd(self, session: Session) -> None:
+        _seed_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="USD", now=_US_HOLIDAY)
+        assert html is not None
+        # USD reframes to investing power, still a single "Market holiday" bar (no
+        # fresh session to split) carrying the whole +$10.00 buying-power swing.
+        assert "Investing power since yesterday" in html
+        assert "Market holiday" in html
+        assert "Market hours" not in html
+        assert "+$10.00" in html

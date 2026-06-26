@@ -26,6 +26,7 @@ import {
   parseAutoLockMinutes,
   parseProviderLimit,
   parseUpdateMinutes,
+  parseInvestmentAmount,
   resolveBlobUrl,
   resolveMetaUrl,
   resolvePriceProxyUrl,
@@ -40,6 +41,8 @@ import {
   DEFAULT_TWELVE_DATA_PER_DAY,
   DEFAULT_TIINGO_PER_HOUR,
   DEFAULT_TIINGO_PER_DAY,
+  DEFAULT_INVESTMENT_AMOUNT_EUR,
+  MAX_INVESTMENT_AMOUNT_EUR,
   type AppConfig,
 } from "./config";
 import { PriceError, type FxRates, type Quote } from "./prices";
@@ -100,6 +103,7 @@ import {
   unlockWithBiometric,
 } from "./webauthn";
 import { setEurUsdRate } from "./currency";
+import { setInvestmentAmountEur } from "./investment-amount";
 import { formatLastPull } from "./format";
 import { appendPollLog, clearPollLog, formatPollLog, readPollLog, type PollLogCategory, type PollLogLevel } from "./polling-log";
 import { APP_VERSION } from "./version";
@@ -2164,6 +2168,16 @@ export class App {
       placeholder: String(DEFAULT_AUTO_LOCK_MINUTES),
       value: String(config.autoLockMinutes),
     });
+    const investmentAmount = h("input", {
+      type: "number",
+      id: "f-invest",
+      min: "1",
+      max: String(MAX_INVESTMENT_AMOUNT_EUR),
+      step: "1",
+      autocomplete: "off",
+      placeholder: String(DEFAULT_INVESTMENT_AMOUNT_EUR),
+      value: String(config.investmentAmountEur),
+    });
     // Data-provider rate limits (Settings only). Each defaults to the provider's
     // documented free-tier value, *recommended* for a free account but not forced:
     // lower them to share one account across more devices, or raise them above the
@@ -2342,6 +2356,11 @@ export class App {
       h("h2", { class: "settings-section" }, ["Appearance"]),
       field("Theme", renderThemeToggle(), "Switch between system, light and dark themes."),
       field("Clock format", renderTimeFormatToggle(), "Show times as 12-hour (AM/PM) or 24-hour. Auto follows your device locale."),
+      field(
+        "Regular investment amount (€)",
+        investmentAmount,
+        `The euros you wire over on a recurring basis to keep investing. In USD display the currency panel shows how many more or fewer dollars this buys as EUR/USD moves — your "bang for the buck". Default is €${DEFAULT_INVESTMENT_AMOUNT_EUR}.`,
+      ),
       h("h2", { class: "settings-section" }, ["Security"]),
       field(
         "Auto-lock (minutes)",
@@ -2485,6 +2504,7 @@ export class App {
         tiingoPerHour: parseProviderLimit(tiingoPerHour.value, DEFAULT_TIINGO_PER_HOUR),
         tiingoPerDay: parseProviderLimit(tiingoPerDay.value, DEFAULT_TIINGO_PER_DAY),
         resumeOnRefresh: resumeOnRefresh.value === "1",
+        investmentAmountEur: parseInvestmentAmount((investmentAmount as HTMLInputElement).value),
       };
       if (!next.apiKey) return this.showSetup("Enter your price API key.", mode);
       if (!next.blobUrl) return this.showSetup("Enter your data-source URL.", mode);
@@ -2763,6 +2783,7 @@ export class App {
     const model = buildDemoModel({ persona: this.demo.persona, tick: this.demo.tick });
     // Seed the EUR→USD rate from the sample export so the currency toggle works.
     setEurUsdRate(model.overview.fxRateEurUsd);
+    setInvestmentAmountEur(this.state.config.investmentAmountEur);
     this.model = model;
 
     const banner = this.renderDemoBanner();
@@ -5180,6 +5201,9 @@ export class App {
 
   private renderDashboard(model: DashboardModel): void {
     this.model = model;
+    // Mirror the configured regular investment amount into the render-layer store
+    // so the USD investing-power panel can read it without threading config through.
+    setInvestmentAmountEur(this.state.config.investmentAmountEur);
     this.mount(
       renderDashboard(
         model,

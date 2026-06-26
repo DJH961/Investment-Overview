@@ -33,6 +33,7 @@ const KEYS = {
   tiingoPerHour: "iv.web.tiingo_per_hour",
   tiingoPerDay: "iv.web.tiingo_per_day",
   resumeOnRefresh: "iv.web.resume_on_refresh",
+  investmentAmountEur: "iv.web.investment_amount_eur",
 } as const;
 
 /**
@@ -83,6 +84,16 @@ const MAX_AUTO_LOCK_MINUTES = 240;
  * tab or an idle-expired session still re-authenticates (see `resume-session.ts`).
  */
 const DEFAULT_RESUME_ON_REFRESH = false;
+/**
+ * Default **regular investment amount** (EUR): the euros the owner wires to the
+ * US on a recurring basis to keep investing. Drives the USD "investing power"
+ * panel — how many more/fewer dollars that amount buys as EUR/USD moves. A plain
+ * changeable euro figure (the cadence, e.g. per quarter, is deliberately not
+ * modelled).
+ */
+const DEFAULT_INVESTMENT_AMOUNT_EUR = 100;
+/** Upper sanity bound for the configurable regular investment amount (EUR). */
+const MAX_INVESTMENT_AMOUNT_EUR = 1_000_000;
 
 /**
  * Recommended data-provider rate limits — the documented free-tier ceilings from
@@ -166,6 +177,13 @@ export interface AppConfig {
    * idle-expired session still re-authenticates. Off by default.
    */
   resumeOnRefresh: boolean;
+  /**
+   * The owner's **regular investment amount** in EUR — the euros they wire to
+   * the US on a recurring basis to keep investing. Drives the USD-display
+   * "investing power" panel (how many more/fewer dollars that amount buys as the
+   * rate moves). Defaults to {@link DEFAULT_INVESTMENT_AMOUNT_EUR}.
+   */
+  investmentAmountEur: number;
 }
 
 /**
@@ -217,6 +235,19 @@ export function parseProviderLimit(raw: string, recommended: number): number {
   return Math.min(MAX_PROVIDER_LIMIT, Math.max(1, Math.round(n)));
 }
 
+/**
+ * Clamp a parsed regular-investment amount to `1`–{@link
+ * MAX_INVESTMENT_AMOUNT_EUR} EUR, falling back to {@link
+ * DEFAULT_INVESTMENT_AMOUNT_EUR} for a blank or non-positive entry. Decimals are
+ * allowed (rounded to cents). Exported so the Settings UI clamps identically.
+ */
+export function parseInvestmentAmount(raw: string): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_INVESTMENT_AMOUNT_EUR;
+  const clamped = Math.min(MAX_INVESTMENT_AMOUNT_EUR, Math.max(1, n));
+  return Math.round(clamped * 100) / 100;
+}
+
 /** A blank, unconfigured config — used as the initial in-memory state. */
 export function defaultConfig(): AppConfig {
   return {
@@ -230,6 +261,7 @@ export function defaultConfig(): AppConfig {
     tiingoPerHour: DEFAULT_TIINGO_PER_HOUR,
     tiingoPerDay: DEFAULT_TIINGO_PER_DAY,
     resumeOnRefresh: DEFAULT_RESUME_ON_REFRESH,
+    investmentAmountEur: DEFAULT_INVESTMENT_AMOUNT_EUR,
   };
 }
 
@@ -316,6 +348,7 @@ export async function loadConfig(): Promise<AppConfig> {
     tiingoPerHour: parseProviderLimit(read(KEYS.tiingoPerHour), DEFAULT_TIINGO_PER_HOUR),
     tiingoPerDay: parseProviderLimit(read(KEYS.tiingoPerDay), DEFAULT_TIINGO_PER_DAY),
     resumeOnRefresh: read(KEYS.resumeOnRefresh) === "1",
+    investmentAmountEur: parseInvestmentAmount(read(KEYS.investmentAmountEur)),
   };
 }
 
@@ -332,6 +365,7 @@ export async function saveConfig(config: AppConfig): Promise<void> {
   // Keep the shared runtime store in step so a save applies live, without a reload.
   applyProviderLimits(config);
   write(KEYS.resumeOnRefresh, config.resumeOnRefresh ? "1" : "");
+  write(KEYS.investmentAmountEur, String(config.investmentAmountEur));
   // Retire the legacy keys now that their data lives in the simplified shape, so
   // the migration only fires once and old plumbing doesn't linger in storage.
   for (const legacyKey of Object.values(LEGACY_KEYS)) write(legacyKey, "");
@@ -430,6 +464,7 @@ export interface ConfigPacket {
   tiingoPerHour: number;
   tiingoPerDay: number;
   resumeOnRefresh: boolean;
+  investmentAmountEur: number;
 }
 
 /** Serialize the portable parts of a config to a pretty JSON packet string. */
@@ -446,6 +481,7 @@ export function serializeConfig(config: AppConfig): string {
     tiingoPerHour: config.tiingoPerHour,
     tiingoPerDay: config.tiingoPerDay,
     resumeOnRefresh: config.resumeOnRefresh,
+    investmentAmountEur: config.investmentAmountEur,
   };
   return JSON.stringify(packet, null, 2);
 }
@@ -487,6 +523,7 @@ export function parseConfigPacket(text: string): AppConfig {
     tiingoPerHour: parseProviderLimit(String(obj.tiingoPerHour ?? ""), DEFAULT_TIINGO_PER_HOUR),
     tiingoPerDay: parseProviderLimit(String(obj.tiingoPerDay ?? ""), DEFAULT_TIINGO_PER_DAY),
     resumeOnRefresh: obj.resumeOnRefresh === true,
+    investmentAmountEur: parseInvestmentAmount(String(obj.investmentAmountEur ?? "")),
   };
 }
 
@@ -503,6 +540,8 @@ export {
   DEFAULT_TIINGO_PER_HOUR,
   DEFAULT_TIINGO_PER_DAY,
   DEFAULT_RESUME_ON_REFRESH,
+  DEFAULT_INVESTMENT_AMOUNT_EUR,
+  MAX_INVESTMENT_AMOUNT_EUR,
   CONFIG_PACKET_TYPE,
   CONFIG_PACKET_VERSION,
 };

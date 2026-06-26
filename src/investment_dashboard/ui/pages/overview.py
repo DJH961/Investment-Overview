@@ -14,10 +14,11 @@ from investment_dashboard.db import session_scope
 from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.market_hours import is_us_market_open
 from investment_dashboard.domain.returns import years_between
-from investment_dashboard.domain.session_fx import fx_effect_split
+from investment_dashboard.domain.session_fx import fx_buying_power_split, fx_effect_split
 from investment_dashboard.services import (
     display_currency_service,
     intraday_snapshots_service,
+    investing_power_service,
     prices_service,
     refresh_status,
     timezone_service,
@@ -214,6 +215,12 @@ def _fx_signed_eur(value: Decimal) -> str:
     """A signed EUR money figure (e.g. ``+€123.45``) with a proper minus sign."""
     sign = "+" if value >= 0 else "\u2212"
     return f"{sign}{fmt_money(abs(value), 'EUR')}"
+
+
+def _fx_signed_usd(value: Decimal, *, decimals: int = 2) -> str:
+    """A signed USD money figure (e.g. ``+$123.45``) with a proper minus sign."""
+    sign = "+" if value >= 0 else "\u2212"
+    return f"{sign}{fmt_money(abs(value), 'USD', decimals=decimals)}"
 
 
 def _fx_box_pct_value(pct: Decimal | None) -> str:
@@ -430,6 +437,123 @@ def _fx_effect_html(
     )
 
 
+def _investing_power_html(
+    session,  # type: ignore[no-untyped-def]
+    metrics: PortfolioMetrics,
+    *,
+    amount_eur: Decimal,
+    live_fx: Decimal,
+    prev_fx: Decimal,
+    now: datetime,
+) -> str:
+    """The "Investing power since yesterday" panel — the **USD-display** twin.
+
+    In USD a EUR/USD move hands the owner no extra dollars on assets already held
+    (the portfolio FX effect is exactly ``$0``), so instead of that zero this panel
+    answers a question the owner actually cares about in dollars: *with the euros I
+    regularly wire over to invest, do today's FX prices buy me more or fewer dollars
+    than yesterday's close?* The figure is ``amount_eur · (live_fx − prev_fx)`` in
+    USD; a positive number means the euro strengthened, so the same euros buy *more*
+    dollars to invest. Mirrors the web companion's ``renderInvestingPowerEffect``.
+
+    Like :func:`_fx_effect_html` it carries a *diverging* market-hours/overnight bar
+    below the headline (and a single full-width bar in the single-overnight regimes),
+    with the currently-live leg on top. It is rendered to **exactly match** that EUR
+    currency-effect visualisation — only the basis differs — so it carries no extra
+    explanatory note. The lone formatting twist: the swing rides a single regular
+    contribution rather than the whole book, so it is tiny, and cents are kept
+    whenever the effect amount is two digits or less (``|net_usd| < 100``); above
+    that it renders in whole dollars like the EUR panel.
+    """
+    net_usd = amount_eur * (live_fx - prev_fx)
+
+    # Whole dollars to mirror the EUR panel, but keep cents while the swing is two
+    # digits or less so the (typically small) figure doesn't round away to "$0".
+    decimals = 2 if abs(net_usd) < 100 else 0
+
+    head = (
+        '<div class="inv-fx-effect-head">'
+        '<span class="inv-fx-effect-title">Investing power since yesterday</span>'
+        "{value}</div>"
+    )
+    value = (
+        f'<span class="inv-fx-effect-net {_fx_sign_class(net_usd)}">'
+        f"{_fx_signed_usd(net_usd, decimals=decimals)}</span>"
+    )
+
+    regime = _fx_box_regime(now)
+    market_open = regime.market_open
+    half_track_pct = 50
+
+    def _row(
+        label: str, value: Decimal, *, overnight_leg: bool, live: bool, max_mag: Decimal
+    ) -> str:
+        width = 0.0 if max_mag == 0 else float(abs(value) / max_mag * half_track_pct)
+        stripe = " inv-fx-diverge-overnight" if overnight_leg else ""
+        tag = "live" if live else "last"
+        fill = (
+            f'<span class="inv-fx-diverge-fill {_fx_sign_class(value)}{stripe}"'
+            f' style="width:{width:.4f}%"></span>'
+        )
+        return (
+            '<div class="inv-fx-diverge-row">'
+            f'<span class="inv-fx-diverge-label">{label}'
+            f'<span class="inv-fx-diverge-tag">{tag}</span></span>'
+            f'<div class="inv-fx-diverge-track" aria-hidden="true">{fill}</div>'
+            f'<span class="inv-fx-diverge-value {_fx_sign_class(value)}">'
+            f"{_fx_signed_usd(value, decimals=decimals)}</span>"
+            "</div>"
+        )
+
+    if regime.single_overnight:
+        label = "Market holiday" if regime.holiday else "Overnight"
+        row = _row(label, net_usd, overnight_leg=True, live=True, max_mag=abs(net_usd))
+        body = f'<div class="inv-fx-diverge">{row}</div>'
+        return (
+            '<div class="inv-fx-effect" role="group"'
+            ' aria-label="Investing power since yesterday">'
+            f"{head.format(value=value)}{body}</div>"
+        )
+
+    if market_open:
+        open_fx = intraday_snapshots_service.session_open_fx(session, now=now)
+        split = fx_buying_power_split(
+            market_open=True,
+            amount_eur=amount_eur,
+            live_fx=live_fx,
+            prev_fx=prev_fx,
+            session_close_fx=None,
+            session_open_fx=open_fx,
+        )
+    else:
+        close_fx = intraday_snapshots_service.session_close_fx(session, now=now)
+        split = fx_buying_power_split(
+            market_open=False,
+            amount_eur=amount_eur,
+            live_fx=live_fx,
+            prev_fx=prev_fx,
+            session_close_fx=close_fx,
+        )
+    market = split.market_hours_usd
+    overnight = split.overnight_usd
+    body = ""
+    if market is not None and overnight is not None and not (market == 0 and overnight == 0):
+        max_mag = max(abs(market), abs(overnight))
+        if market_open:
+            rows = _row(
+                "Market hours", market, overnight_leg=False, live=True, max_mag=max_mag
+            ) + _row("Overnight", overnight, overnight_leg=True, live=False, max_mag=max_mag)
+        else:
+            rows = _row(
+                "Overnight", overnight, overnight_leg=True, live=True, max_mag=max_mag
+            ) + _row("Market hours", market, overnight_leg=False, live=False, max_mag=max_mag)
+        body = f'<div class="inv-fx-diverge">{rows}</div>'
+    return (
+        '<div class="inv-fx-effect" role="group" aria-label="Investing power since yesterday">'
+        f"{head.format(value=value)}{body}</div>"
+    )
+
+
 def _currency_box_html(
     session,  # type: ignore[no-untyped-def]
     metrics: PortfolioMetrics,
@@ -545,14 +669,12 @@ def _currency_box_html(
             "</div>"
         )
 
-    # The currency effect (net EUR P/L from today's move). Shown only when there is
-    # a usable USD book value and prior mark to measure a non-zero swing.
-    effect = ""
-    usd = metrics.total_value_usd
-    if usd is not None and prev_fx is not None and prev_fx > 0:
-        net_eur = usd / live_fx - usd / prev_fx
-        if net_eur != 0:
-            effect = _fx_effect_html(session, metrics, net_eur=net_eur, now=now)
+    # The currency panel — its meaning depends on the display currency (see
+    # :func:`_currency_effect_html`). Shown only when there is a usable USD book
+    # value and prior mark to measure a non-zero swing.
+    effect = _currency_effect_html(
+        session, metrics, in_usd=in_usd, live_fx=live_fx, prev_fx=prev_fx, now=now
+    )
 
     return (
         '<section class="inv-fx-box" aria-label="Currency EUR to USD">'
@@ -562,6 +684,49 @@ def _currency_box_html(
         "</div>"
         f"{stats}{reopen_caption}{effect}</section>"
     )
+
+
+def _currency_effect_html(
+    session,  # type: ignore[no-untyped-def]
+    metrics: PortfolioMetrics,
+    *,
+    in_usd: bool,
+    live_fx: Decimal,
+    prev_fx: Decimal | None,
+    now: datetime,
+) -> str:
+    """The currency panel inside the box, dispatched by display currency.
+
+    * **EUR display** — the net EUR P/L from today's EUR/USD move on the
+      USD-booked book (:func:`_fx_effect_html`); a rate move is only real money
+      once measured back in euros.
+    * **USD display** — the *investing power* swing (:func:`_investing_power_html`):
+      how many more/fewer dollars the owner's regular EUR investment buys now
+      versus yesterday's close. The portfolio FX effect is exactly ``$0`` in
+      dollars, so that reframing is the one that means something in USD.
+
+    Returns ``""`` when there is no usable USD book value / prior mark, or no
+    non-zero swing to show.
+    """
+    usd = metrics.total_value_usd
+    if usd is None or prev_fx is None or prev_fx <= 0:
+        return ""
+    if in_usd:
+        amount_eur = investing_power_service.get_amount_eur(session)
+        if amount_eur > 0 and live_fx != prev_fx:
+            return _investing_power_html(
+                session,
+                metrics,
+                amount_eur=amount_eur,
+                live_fx=live_fx,
+                prev_fx=prev_fx,
+                now=now,
+            )
+        return ""
+    net_eur = usd / live_fx - usd / prev_fx
+    if net_eur != 0:
+        return _fx_effect_html(session, metrics, net_eur=net_eur, now=now)
+    return ""
 
 
 def _render_currency_box(html: str | None) -> None:

@@ -517,7 +517,14 @@ def build_week_value_series(
     # Per-session NAV-fund track, mapped onto each sample by its exchange date —
     # so every point gets the fund sleeve's value *as published that day* rather
     # than today's. The map reads only the price cache (no extra network fetch).
-    nav_by_date = intraday_snapshots_service.week_nav_drift_with_fx(session, now=now)
+    # ``live_fallback`` is today's live NAV value + spot EUR/USD: a smart, last-
+    # resort stand-in for a window day whose NAV/FX hasn't been cached yet, so the
+    # sleeve never nose-dives to zero. It is re-derived every render, so once a
+    # later good close/FX pull patches the gap the genuine per-day NAV is used.
+    nav_fx_today = fx_service.get_rate_eur_to_quote(session, date.today(), quote="USD")
+    nav_by_date = intraday_snapshots_service.week_nav_drift_with_fx(
+        session, now=now, live_fallback=(nav_now, nav_fx_today)
+    )
     nav_components = {
         at_utc: nav_by_date.get(intraday_snapshots_service.session_date_of(at_utc), (ZERO, None))
         for at_utc, _market, _fx in samples
