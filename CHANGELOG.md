@@ -14,6 +14,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.6.2] — 2026-06-26
+
+### Fixed
+
+- **The desktop overview now shows the same standalone "Currency · EUR ↔ USD"
+  box as the web companion, with the corrected currency-effect graphic.** The
+  EUR/USD spot and today's rate move were moved out of the cramped caption line
+  under the headline total into their own full-width box beneath the KPI grid,
+  and the old market-hours/overnight FX split — a single stacked bar that
+  mangled the two slices into crammed, misleading segments whenever they pulled
+  in opposite directions — was replaced by a *diverging* bar (each leg growing
+  from a shared centre line, right for a gain and left for a loss, with the
+  overnight leg striped so it is told apart by shape, not colour alone). The
+  effect is now currency-aware to match the web app: in EUR display it shows the
+  net euro figure and the diverging split once the US session has closed, while
+  in USD display it states the dollar value is unchanged (a rate move hands you
+  no extra dollars on a USD-booked book) and surfaces the EUR-repatriation figure
+  instead. The net figure is also shown while the market is still open, not only
+  after the close.
+
 ## [4.6.1] — 2026-06-26
 
 ### Fixed

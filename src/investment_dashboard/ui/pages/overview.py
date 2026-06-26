@@ -115,11 +115,12 @@ class _OverviewData:
     value_series_secondary: list[ValueSeriesPoint] | None = None
     #: ISO code of that companion line (e.g. ``"USD"``), for axis + legend labels.
     secondary_ccy: str | None = None
-    #: Pre-rendered HTML for the market-hours-vs-overnight FX split shown under
-    #: the FX line once the market is shut. ``None`` while open or when there is
-    #: no meaningful FX move to break down. Built in ``_gather`` (it needs a DB
-    #: session for the session-close rate).
-    fx_split_html: str | None = None
+    #: Pre-rendered HTML for the standalone "Currency · EUR ↔ USD" box shown
+    #: beneath the KPI grid: the live EUR/USD spot, today's rate move, and the
+    #: currency effect on the USD-booked book. ``None`` when there is no usable
+    #: rate. Built in ``_gather`` (it needs a DB session for the session-close
+    #: rate behind the market-hours/overnight split).
+    currency_box_html: str | None = None
 
 
 def _pct_card(
@@ -200,107 +201,184 @@ def _fmt_signed_money(amount: Decimal | None, ccy: str) -> str | None:
     return f"{sign}{fmt_money(abs(amount), ccy)}"
 
 
-def _fx_split_html(
+def _fx_sign_class(value: Decimal) -> str:
+    """``pos``/``neg``/``flat`` CSS suffix for a signed FX figure."""
+    if value > 0:
+        return "pos"
+    if value < 0:
+        return "neg"
+    return "flat"
+
+
+def _fx_signed_eur(value: Decimal) -> str:
+    """A signed EUR money figure (e.g. ``+€123.45``) with a proper minus sign."""
+    sign = "+" if value >= 0 else "\u2212"
+    return f"{sign}{fmt_money(abs(value), 'EUR')}"
+
+
+def _fx_effect_html(
     session,  # type: ignore[no-untyped-def]
     metrics: PortfolioMetrics,
     *,
-    now: datetime | None = None,
-) -> str | None:
-    """The market-hours-vs-overnight breakdown of today's FX revaluation, as HTML.
+    display_ccy: str,
+    net_eur: Decimal,
+    now: datetime,
+) -> str:
+    """The "Currency effect today" panel inside the currency box.
 
-    The transparency cue for "what shifted during the trading day, and what
-    changed overnight". The book is USD-booked, so once the US session has closed
-    the euro value keeps drifting on FX alone; this isolates that after-hours slice
-    from the in-session one so the owner sees both (see
-    :mod:`investment_dashboard.domain.session_fx`).
+    The book is **USD-booked**, so today's EUR/USD move is only real money once it
+    is measured back in euros. Mirrors the web companion's ``renderFxEffect``:
 
-    Shown only once the market is shut and the overnight slice is known (a
-    session-close rate to measure it from). While the session is open the whole
-    move is "in session" — already conveyed by the FX line's percentage — so the
-    split is omitted to keep the header uncluttered. Returns ``None`` when there is
-    nothing meaningful to draw. The figures are EUR (the euro owner's FX P/L).
+    * In **EUR** display the swing is genuine euro P/L, so we show the net figure
+      and — once the US session is shut and a session-close rate is known — a
+      *diverging* bar splitting it into the market-hours slice and the overnight
+      slice. Each leg grows from a shared centre line (right for a gain, left for a
+      loss), so two legs pulling in opposite directions read clearly instead of
+      being crammed into one stacked bar.
+    * In **USD** display the effect on the dollar value is exactly zero (a rate
+      move hands you no extra dollars), so we say that plainly and surface the
+      EUR-repatriation figure instead of printing a meaningless dollar amount.
     """
-    now = now or datetime.now(UTC)
-    if is_us_market_open(now):
-        return None
-    live_fx = metrics.daily_growth_fx_eur_usd
-    prev_fx = metrics.daily_growth_fx_eur_usd_prev
-    usd = metrics.total_value_usd
-    today_fx_move_eur: Decimal | None = None
-    if (
-        usd is not None
-        and live_fx is not None
-        and prev_fx is not None
-        and live_fx > 0
-        and prev_fx > 0
-    ):
-        today_fx_move_eur = usd / live_fx - usd / prev_fx
-    close_fx = intraday_snapshots_service.session_close_fx(session, now=now)
-    split = fx_effect_split(
-        market_open=False,
-        total_value_usd=usd,
-        live_fx=live_fx,
-        session_close_fx=close_fx,
-        today_fx_move_eur=today_fx_move_eur,
+    head = (
+        '<div class="inv-fx-effect-head">'
+        '<span class="inv-fx-effect-title">Currency effect today</span>'
+        "{value}</div>"
     )
-    market = split.market_hours_eur
-    overnight = split.overnight_eur
-    # Need both legs to draw a meaningful split; nothing to show otherwise.
-    if market is None or overnight is None:
-        return None
-    # Nothing moved on FX at all — no insight to surface.
-    if market == 0 and overnight == 0:
-        return None
-
-    total_mag = abs(market) + abs(overnight)
-
-    def _pct(part: Decimal) -> float:
-        return 0.0 if total_mag == 0 else float(abs(part) / total_mag * 100)
-
-    def _sign_class(value: Decimal) -> str:
-        if value > 0:
-            return "pos"
-        if value < 0:
-            return "neg"
-        return "flat"
-
-    def _signed_money(value: Decimal) -> str:
-        sign = "+" if value >= 0 else "\u2212"  # proper minus sign
-        return f"{sign}{fmt_money(abs(value), 'EUR')}"
-
-    bar = (
-        '<div class="inv-fx-split-bar" aria-hidden="true">'
-        f'<span class="inv-fx-split-seg inv-fx-split-session {_sign_class(market)}"'
-        f' style="width:{_pct(market):.4f}%"></span>'
-        f'<span class="inv-fx-split-seg inv-fx-split-overnight {_sign_class(overnight)}"'
-        f' style="width:{_pct(overnight):.4f}%"></span>'
-        "</div>"
-    )
-
-    def _leg(swatch: str, label: str, value: Decimal) -> str:
+    if display_ccy.upper() == "USD":
+        value = '<span class="inv-fx-effect-net flat">$0</span>'
+        note = (
+            "The rate moved, but your assets are priced in dollars — so it changed "
+            "your USD value by nothing. It only matters when you convert back to "
+            f"euros: {_fx_signed_eur(net_eur)} today if you did."
+        )
         return (
-            '<div class="inv-fx-split-leg">'
-            f'<span class="inv-fx-split-swatch {swatch}" aria-hidden="true"></span>'
-            f'<span class="inv-fx-split-leg-label">{label}</span>'
-            f'<span class="inv-fx-split-leg-value {_sign_class(value)}">{_signed_money(value)}</span>'
+            '<div class="inv-fx-effect" role="group" aria-label="Currency effect today">'
+            f"{head.format(value=value)}"
+            f'<p class="inv-fx-effect-note">{escape(note)}</p>'
             "</div>"
         )
 
-    legend = (
-        '<div class="inv-fx-split-legend">'
-        f"{_leg('inv-fx-split-session', 'Market hours', market)}"
-        f"{_leg('inv-fx-split-overnight', 'Overnight', overnight)}"
+    value = f'<span class="inv-fx-effect-net {_fx_sign_class(net_eur)}">{_fx_signed_eur(net_eur)}</span>'
+    body = ""
+    # Market-hours vs overnight split — only once the session is shut and we hold a
+    # genuine session-close rate to measure the overnight slice from.
+    if not is_us_market_open(now):
+        close_fx = intraday_snapshots_service.session_close_fx(session, now=now)
+        split = fx_effect_split(
+            market_open=False,
+            total_value_usd=metrics.total_value_usd,
+            live_fx=metrics.daily_growth_fx_eur_usd,
+            session_close_fx=close_fx,
+            today_fx_move_eur=net_eur,
+        )
+        market = split.market_hours_eur
+        overnight = split.overnight_eur
+        if market is not None and overnight is not None and not (market == 0 and overnight == 0):
+            max_mag = max(abs(market), abs(overnight))
+            # Each leg fills out from the centre line, so a full-magnitude leg
+            # spans half the track (the other half is reserved for the opposite
+            # direction).
+            half_track_pct = 50
+
+            def _row(label: str, value: Decimal, *, overnight_leg: bool) -> str:
+                width = 0.0 if max_mag == 0 else float(abs(value) / max_mag * half_track_pct)
+                stripe = " inv-fx-diverge-overnight" if overnight_leg else ""
+                fill = (
+                    f'<span class="inv-fx-diverge-fill {_fx_sign_class(value)}{stripe}"'
+                    f' style="width:{width:.4f}%"></span>'
+                )
+                return (
+                    '<div class="inv-fx-diverge-row">'
+                    f'<span class="inv-fx-diverge-label">{label}</span>'
+                    f'<div class="inv-fx-diverge-track" aria-hidden="true">{fill}</div>'
+                    f'<span class="inv-fx-diverge-value {_fx_sign_class(value)}">'
+                    f"{_fx_signed_eur(value)}</span>"
+                    "</div>"
+                )
+
+            body = (
+                '<div class="inv-fx-diverge">'
+                f"{_row('Market hours', market, overnight_leg=False)}"
+                f"{_row('Overnight', overnight, overnight_leg=True)}"
+                "</div>"
+            )
+    return (
+        '<div class="inv-fx-effect" role="group" aria-label="Currency effect today">'
+        f"{head.format(value=value)}{body}</div>"
+    )
+
+
+def _currency_box_html(
+    session,  # type: ignore[no-untyped-def]
+    metrics: PortfolioMetrics,
+    *,
+    display_ccy: str,
+    now: datetime | None = None,
+) -> str | None:
+    """The standalone **Currency · EUR ↔ USD** box, as HTML.
+
+    Mirrors the web companion's ``renderFxBox``: a full-width box (it used to be a
+    cramped caption line under the headline FX text) carrying three things — the
+    live EUR/USD spot (the "current value"), how far that rate has moved today (the
+    "rate move"), and the currency effect on the book today (see
+    :func:`_fx_effect_html`). USD display shows the stored EUR/USD spot directly;
+    EUR display shows USD/EUR (its reciprocal). Returns ``None`` only when there is
+    no usable rate at all.
+    """
+    now = now or datetime.now(UTC)
+    live_fx = metrics.daily_growth_fx_eur_usd
+    if live_fx is None or live_fx <= 0:
+        return None
+    prev_fx = metrics.daily_growth_fx_eur_usd_prev
+    in_usd = display_ccy.upper() == "USD"
+
+    pair = "EUR/USD" if in_usd else "USD/EUR"
+    rate = live_fx if in_usd else Decimal(1) / live_fx
+    # ``fx_move_pct`` already follows the display-currency strength convention
+    # (negated for the EUR-display reciprocal), matching the web box.
+    move = fx_move_pct(live_fx, prev_fx, display_ccy) if prev_fx is not None else None
+    if move is not None:
+        sign = "+" if move >= 0 else "\u2212"  # proper minus sign
+        move_value = f'<span class="inv-fx-box-stat-value {_fx_sign_class(move)}">{sign}{abs(move):.2f}%</span>'
+    else:
+        move_value = '<span class="inv-fx-box-stat-value flat">—</span>'
+
+    stats = (
+        '<div class="inv-fx-box-stats">'
+        '<div class="inv-fx-box-stat">'
+        f'<span class="inv-fx-box-stat-label">{pair}</span>'
+        f'<span class="inv-fx-box-stat-value">{rate:,.4f}</span>'
+        "</div>"
+        '<div class="inv-fx-box-stat">'
+        '<span class="inv-fx-box-stat-label">Today</span>'
+        f"{move_value}"
+        '<span class="inv-fx-box-stat-sub">rate move</span>'
+        "</div>"
         "</div>"
     )
+
+    # The currency effect (net EUR P/L from today's move). Shown only when there is
+    # a usable USD book value and prior mark to measure a non-zero swing.
+    effect = ""
+    usd = metrics.total_value_usd
+    if usd is not None and prev_fx is not None and prev_fx > 0:
+        net_eur = usd / live_fx - usd / prev_fx
+        if net_eur != 0:
+            effect = _fx_effect_html(
+                session, metrics, display_ccy=display_ccy, net_eur=net_eur, now=now
+            )
+
     return (
-        '<div class="inv-fx-split" role="group" aria-label="Today\'s currency effect">'
-        '<div class="inv-fx-split-head">Currency effect today</div>'
-        f"{bar}{legend}</div>"
+        '<section class="inv-fx-box" aria-label="Currency EUR to USD">'
+        '<div class="inv-fx-box-head">'
+        '<span class="inv-fx-box-title">Currency · EUR \u2194 USD</span>'
+        "</div>"
+        f"{stats}{effect}</section>"
     )
 
 
-def _render_fx_split(html: str | None) -> None:
-    """Render the "Currency effect today" split, or nothing when there is none."""
+def _render_currency_box(html: str | None) -> None:
+    """Render the standalone currency box, or nothing when there is no rate."""
     if html is not None:
         ui.html(html)
 
@@ -1380,10 +1458,13 @@ def register() -> None:  # noqa: PLR0915
                     # portfolio-level expense cost and the allocation treemap.
                     display_quote = display_ccy if display_ccy != "EUR" else "USD"
                     fx_rate = display_currency_service.current_rate(session, quote=display_quote)
-                    # The market-hours-vs-overnight FX split shown under the FX
-                    # line (needs the session for the session-close rate, so it is
-                    # built here while the DB session is still open).
-                    fx_split_html = _fx_split_html(session, metrics)
+                    # The standalone Currency · EUR ↔ USD box (rate, today's move,
+                    # and the currency effect with its market-hours/overnight
+                    # split) — built here while the DB session is still open, since
+                    # the split needs the session-close rate.
+                    currency_box_html = _currency_box_html(
+                        session, metrics, display_ccy=display_ccy
+                    )
                 # Hide fully-sold instruments from the holdings view — anything
                 # with a residual share count below 1e-7 (a tenth of a millionth
                 # of a share) is effectively zero and just clutters the overview.
@@ -1430,7 +1511,7 @@ def register() -> None:  # noqa: PLR0915
                     intraday_prev_close=intraday_prev_close,
                     value_series_secondary=value_series_secondary,
                     secondary_ccy=secondary_ccy,
-                    fx_split_html=fx_split_html,
+                    currency_box_html=currency_box_html,
                 )
 
             def _render(data: _OverviewData) -> None:
@@ -1440,7 +1521,6 @@ def register() -> None:  # noqa: PLR0915
                 display_tz = data.display_tz
                 value_series = data.value_series
                 fx_rate = data.fx_rate
-                display_quote = data.display_quote
                 verdict = data.verdict
                 cards = data.cards
                 treemap_data = data.treemap_data
@@ -1495,8 +1575,13 @@ def register() -> None:  # noqa: PLR0915
                     display_ccy=display_ccy,
                     today_sub=_caption.combined(),
                 )
+                # The standalone Currency · EUR ↔ USD box sits directly beneath the
+                # KPI grid (mirroring the web companion, which moved it out from a
+                # cramped line under the headline total): the live spot, today's
+                # rate move, and the currency effect on the USD-booked book.
+                _render_currency_box(data.currency_box_html)
                 # Expense ratio moved out of the KPI grid (kept the grid a clean
-                # 4×2) and surfaced as text alongside the FX line below.
+                # 4×2) and surfaced as a caption alongside the dividend figures.
                 expense_text = (
                     f"Weighted expense ratio: {fmt_pct(metrics.weighted_expense_ratio)}  "
                     f"(≈ {fmt_money(_convert(metrics.annual_expense_cost_eur, display_ccy, fx_rate), display_ccy)} / yr)"
@@ -1513,34 +1598,7 @@ def register() -> None:  # noqa: PLR0915
                     f"Dividend yield: {fmt_pct(metrics.dividend_yield_ttm_pct)} "
                     f"(last 12 mo {fmt_money(div_ttm, display_ccy)})"
                 )
-                if fx_rate is not None:
-                    # The FX line now carries the day's FX move (%) — the detail
-                    # that used to sit in the "Today" square — next to the spot.
-                    fx_pct = (
-                        fx_move_pct(
-                            metrics.daily_growth_fx_eur_usd,
-                            metrics.daily_growth_fx_eur_usd_prev,
-                            display_ccy,
-                        )
-                        if metrics.daily_growth_fx_eur_usd is not None
-                        else None
-                    )
-                    fx_text = f"FX EUR→{display_quote} {fx_rate:,.4f}"
-                    if fx_pct is not None:
-                        sign = "+" if fx_pct >= 0 else "\u2212"  # proper minus sign
-                        fx_text += f" ({sign}{abs(fx_pct):.2f}%)"
-                    ui.label(
-                        f"{fx_text}  ·  {expense_text}  ·  {div_yield_text}",
-                    ).classes("text-caption opacity-70")
-                else:
-                    ui.label(f"{expense_text}  ·  {div_yield_text}").classes(
-                        "text-caption opacity-70"
-                    )
-                # Under the FX line: the market-hours-vs-overnight breakdown of
-                # today's FX revaluation, shown only once the market is shut (so
-                # the owner sees what shifted during the trading day versus what
-                # changed overnight on a USD-booked book).
-                _render_fx_split(data.fx_split_html)
+                ui.label(f"{expense_text}  ·  {div_yield_text}").classes("text-caption opacity-70")
 
                 # Movers are rendered under the value chart (below), not here, so
                 # the day's leaderboard sits as a distinct band just above the
