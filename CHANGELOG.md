@@ -14,6 +14,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.11.4] — 2026-06-26
+
+### Fixed
+
+- **The hero's currency-effect split now shows immediately at the opening bell.**
+  The "market-hours vs overnight" FX breakdown anchors its live in-session slice
+  to the session's EUR/USD rate **at the 09:30 ET open**, read from the day's FX
+  bars. But the first intraday FX bar can lag the open by minutes on the free
+  tier, and a cold start mid-session has none yet, so the split sat blank in that
+  gap and last night's overnight slice momentarily collapsed to zero. The app now
+  captures the **first** live EUR/USD spot it sees once the US session is open as
+  a stand-in open anchor (earliest-only, so it stays a fixed open rather than
+  tracking the spot); the authoritative bar-read open takes over the moment the
+  first FX bar lands, so the fallback is self-correcting. The closed-market 1D FX
+  close-read is also guarded so an incomplete (mid-session-only) FX track degrades
+  to the settled previous close / live spot instead of freezing the EUR view to a
+  stale mid-session rate (`web/src/session-fx.ts`, `web/src/app.ts`).
+
 ## [4.11.1] — 2026-06-26
 
 ### Fixed
