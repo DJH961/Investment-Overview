@@ -9,6 +9,7 @@ import {
   describeTiingoError,
   isUserRefresh,
   liveRefreshProgress,
+  manualRefreshDecision,
   manualRefreshSummary,
   refreshTickAction,
   summarizeCoverage,
@@ -306,6 +307,59 @@ describe("manualRefreshSummary", () => {
 });
 
 
+
+describe("manualRefreshDecision", () => {
+  const idle = { refreshing: false, inFlightKind: null, lastManualAt: 0, now: 1_000_000 } as const;
+
+  it("runs a tap when nothing is in flight and the cooldown has lapsed", () => {
+    expect(manualRefreshDecision(idle)).toBe("run");
+  });
+
+  it("swallows an accidental double-tap inside the cooldown window", () => {
+    // A second tap a few hundred ms after an accepted one must not fire a second
+    // forced pull — it is treated as a double-click.
+    expect(
+      manualRefreshDecision({ ...idle, lastManualAt: idle.now - 400 }),
+    ).toBe("cooldown");
+  });
+
+  it("still allows a deliberate re-check once the (tiny) cooldown has passed", () => {
+    expect(
+      manualRefreshDecision({ ...idle, lastManualAt: idle.now - 3500 }),
+    ).toBe("run");
+  });
+
+  it("honours a custom cooldown window", () => {
+    expect(
+      manualRefreshDecision({ ...idle, lastManualAt: idle.now - 5000, cooldownMs: 10_000 }),
+    ).toBe("cooldown");
+  });
+
+  it("promotes an in-flight automatic pull so the manual tap takes priority", () => {
+    expect(
+      manualRefreshDecision({ ...idle, refreshing: true, inFlightKind: "auto" }),
+    ).toBe("promote");
+  });
+
+  it("treats a tap during an in-flight manual pull as a double-tap (no second pull)", () => {
+    expect(
+      manualRefreshDecision({ ...idle, refreshing: true, inFlightKind: "manual" }),
+    ).toBe("cooldown");
+  });
+
+  it("cooldown wins over promotion when a tap double-fires during an auto pull", () => {
+    // The first tap promoted the auto round and stamped lastManualAt; an immediate
+    // second tap (still mid-pull) must be swallowed rather than re-promoting.
+    expect(
+      manualRefreshDecision({
+        refreshing: true,
+        inFlightKind: "auto",
+        lastManualAt: idle.now - 200,
+        now: idle.now,
+      }),
+    ).toBe("cooldown");
+  });
+});
 
 describe("refreshTickAction", () => {
   it("stops a superseded session outright (no re-arm, no run)", () => {

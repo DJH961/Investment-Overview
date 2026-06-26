@@ -14,6 +14,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.4.2] — 2026-06-26
+
+### Fixed
+
+- **Manual Refresh taps are debounced and can take over an in-flight automatic
+  pull.** An accidental double-tap of the Refresh control no longer fires a
+  second redundant network round: `manualRefreshDecision` swallows a repeat tap
+  inside a short cooldown window (`cooldown`), with a toast that distinguishes an
+  *in-flight* pull from one that *just finished*. A deliberate tap while an
+  automatic round is already running now **promotes** that round to a manual
+  refresh (`promote`) so the user's tap takes priority and is surfaced with the
+  manual coverage summary, and the next automatic refresh is pushed out by the
+  full configured interval instead of resuming seconds later. The cooldown wins
+  over promotion when a tap double-fires during an auto pull, so a single
+  promotion can never be re-promoted by an immediate second tap.
+
 ## [4.4.1] — 2026-06-26
 
 ### Fixed
