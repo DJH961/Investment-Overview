@@ -3,15 +3,16 @@
  * Twelve Data (primary) pass in a refresh and decides, per the shared gate in
  * `tiingo-gate.ts`, whether to spend any Tiingo calls to fill what the primary
  * missed. It owns the I/O the pure gate deliberately avoids: reading/writing the
- * ET-reset Tiingo budget + canary state, fetching via the `/price` Worker proxy,
- * and merging results back into the quote map.
+ * ET-reset Tiingo budget + quick-refresh state, fetching via the `/price` Worker
+ * proxy, and merging results back into the quote map.
  *
  * It engages for two situations (see `docs/tiingo_fallback_plan.md` §Web design):
  *   (a) symbols Twelve Data left **missing/stale** (including the FSKAX-style
  *       upstream gap where the primary serves a too-old bar), and
  *   (b) the **over-quota / 429** case where the free-tier budget is spent.
- * NAV funds take the **peer-confirmation + canary** path so a late NAV cycle
- * costs at most one canary probe before fetching confirmed laggards.
+ * NAV funds are treated **exactly like stocks** here: the instant one needs a
+ * price the primary couldn't supply, it joins the same eligibility + budget pass,
+ * and bounded re-probing comes from the shared "nothing newer" cooldown.
  */
 
 import {
@@ -34,13 +35,11 @@ import { type QuoteLoadReport, FREE_TIER } from "./quotes";
 import { fetchTiingoQuotes } from "./tiingo";
 import {
   Budget,
-  decideNav,
   etMinutesOfDay,
   firstProbeMinutes,
   marketSymbolEligible,
   navCooldownFor,
   selectWithinBudget,
-  NAV_MAX_PROBES_PER_DAY,
   WEB_DAILY_CAP,
   WEB_HOURLY_CAP,
 } from "./tiingo-gate";
@@ -98,18 +97,17 @@ export interface TiingoFallbackOptions {
   storage?: StorageLike | null;
   fetchImpl?: FetchLike;
   /**
-   * A manual "Refresh via Tiingo now": bypasses the canary first-probe-time and
-   * cooldown *timing* gates (so a user tap can probe immediately), but still
-   * enforces the smart gates (newer data must exist) and the hard budget caps.
+   * A manual "Refresh via Tiingo now" tap. Used by the startup quick-refresh
+   * throttle (`quickRefreshDue`) to let a user tap bypass the once-per-hour gate;
+   * the unified fallback itself treats every symbol the same regardless.
    */
   manual?: boolean;
   /**
    * A manual "route everything through the backup provider" pull (Settings →
    * "Try the backup data provider now"): fetch *every* still-behind holding from
-   * Tiingo directly, skipping the NAV canary/peer *timing* gates so missing funds
-   * are pulled at once rather than one canary probe at a time. The "unless the
-   * data is recent" rule and the hard budget caps still apply — symbols whose
-   * held value already covers the latest settled session are left untouched.
+   * Tiingo directly. The "unless the data is recent" rule and the hard budget caps
+   * still apply — symbols whose held value already covers the latest settled
+   * session are left untouched.
    */
   forceAll?: boolean;
   /**
@@ -119,7 +117,7 @@ export interface TiingoFallbackOptions {
    * full self-capped budget.
    */
   reserveCredits?: number;
-  /** Last-known EUR size per symbol, used only to pick the largest as canary. */
+  /** Last-known EUR size per symbol. Retained for callers; not used for routing. */
   sizeForSymbol?: (symbol: string) => number;
 }
 
@@ -167,18 +165,6 @@ export function tiingoBudgetView(now: number, storage?: StorageLike | null): Tii
 function budgetView(now: number, storage: StorageLike | null | undefined): TiingoBudgetView {
   const b = readBudget(now, storage);
   return { hourUsed: b.hourUsed, hourLimit: b.hourlyCap, dayUsed: b.dayUsed, dayLimit: b.dailyCap };
-}
-
-/** The ET calendar day (`YYYY-MM-DD`) for the canary counter's reset key. */
-function etDay(now: number): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date(now));
-  const get = (t: string): string => parts.find((p) => p.type === t)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
 /**
@@ -276,10 +262,8 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     now = Date.now(),
     storage,
     fetchImpl,
-    manual = false,
     forceAll = false,
     reserveCredits = 0,
-    sizeForSymbol,
   } = options;
 
   if (!proxyUrl) {
@@ -322,107 +306,28 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
   const merge = (batch: string[]): Promise<string[]> =>
     fetchAndMerge(batch, { proxyUrl, navSymbols, quotes, expected, marketOpen, now, storage, fetchImpl });
 
-  // --- NAV funds: peer-confirmation + canary --------------------------------
-  const navMissing: string[] = [];
-  let peerPublished = false;
-  let peerPublishedAt: number | null = null;
-  for (const symbol of symbols) {
-    if (!navSymbols.has(symbol)) continue;
-    const q = quotes.get(symbol);
-    const held = q?.valueDate ?? null;
-    if (held === null || q?.price == null || held < expected) {
-      if (!suppressedByNoNewer(symbol)) navMissing.push(symbol);
-    } else if (held >= expected) {
-      // A fresh target-date NAV from the *primary* for some other fund is free
-      // evidence the cycle is flowing (Tier 1).
-      peerPublished = true;
-      const at = q?.at ?? null;
-      if (at !== null && (peerPublishedAt === null || at < peerPublishedAt)) peerPublishedAt = at;
-    }
-  }
-
+  // --- Unified fallback: NAVs are treated exactly like stocks ---------------
+  // The moment a symbol needs a price the primary couldn't supply — it failed on
+  // the primary, or what we hold is older than the latest settled session — it is
+  // eligible for one budget-clamped Tiingo fill, whether it is a stock/ETF or a
+  // NAV fund. The old NAV-only peer-confirmation/canary timing path is gone:
+  // bounded re-probing now comes from the very same `suppressedByNoNewer` cooldown
+  // that already governs a closed-market stock (a fund Tiingo has nothing fresher
+  // for is stamped and left alone until the cooldown lapses or a newer settled
+  // session appears), so a NAV and a stock are filled by one identical path.
   try {
-    if (navMissing.length > 0) {
-      if (forceAll) {
-        // "Route everything through the backup provider": fetch every still-behind
-        // NAV fund right now (budget-gated), bypassing the canary/peer timing
-        // gates. The navMissing set is already "not recent" (behind the latest
-        // settled session), so the "unless recent" rule is preserved.
-        const room = selectWithinBudget(navMissing, budgetNow());
-        tiingoSymbols.push(...(await merge(room)));
-      } else {
-        const state = readTiingoState(storage ?? undefined);
-        const today = etDay(now);
-        const canaryCountToday = state.canaryDay === today ? state.canaryCount : 0;
-        // Canary pick: the largest still-missing holding (cold-start proxy for
-        // "most likely to have published"); ties broken by symbol order.
-        const canaryPick =
-          [...navMissing].sort((a, b) => (sizeForSymbol?.(b) ?? 0) - (sizeForSymbol?.(a) ?? 0))[0] ?? null;
-
-        const decision = decideNav({
-          missingFunds: navMissing,
-          peerPublished,
-          peerPublishedAt,
-          canaryPick,
-          earliestHabitMin: null,
-          lastCanaryAt: state.lastCanaryAt,
-          canaryCountToday,
-          now,
-          budget: budgetNow(),
-        });
-
-        // A manual tap may probe immediately even if the timing gates would WAIT,
-        // provided there is no peer evidence, a candidate exists, the daily cap is
-        // not yet hit, and budget remains.
-        const manualCanary =
-          manual &&
-          !peerPublished &&
-          decision.action === "wait" &&
-          canaryPick !== null &&
-          canaryCountToday < NAV_MAX_PROBES_PER_DAY &&
-          budgetNow().hasRoom();
-
-        if (decision.action === "fetch_laggards") {
-          tiingoSymbols.push(...(await merge(decision.symbols)));
-        } else if (decision.action === "canary" || manualCanary) {
-          const pick = decision.action === "canary" ? decision.symbols[0] : (canaryPick as string);
-          // Persist the probe stamp + counter (ET-day-scoped) before fetching.
-          const nextState: TiingoState = {
-            canaryDay: today,
-            canaryCount: canaryCountToday + 1,
-            lastCanaryAt: now,
-            lastQuickRefreshAt: state.lastQuickRefreshAt,
-          };
-          writeTiingoState(nextState, storage ?? undefined);
-          const got = await merge([pick]);
-          tiingoSymbols.push(...got);
-          // Canary fresh ⇒ the cycle has published and the primary missed it:
-          // promote every still-missing fund to a laggard fetch (budget-gated).
-          const probed = quotes.get(pick);
-          const fresh = !!got.length && (probed?.valueDate ?? "") >= expected;
-          if (fresh) {
-            const laggards = navMissing.filter((s) => s !== pick);
-            const room = selectWithinBudget(laggards, budgetNow());
-            tiingoSymbols.push(...(await merge(room)));
-          }
-        }
-      }
-    }
-
-    // --- Market (stock/ETF) symbols the primary fell short on ----------------
-    const marketCandidates: string[] = [];
+    const candidates: string[] = [];
     for (const symbol of symbols) {
-      if (navSymbols.has(symbol)) continue;
+      if (suppressedByNoNewer(symbol)) continue;
       const q = quotes.get(symbol);
       const held = q?.valueDate ?? null;
       const primaryFailed = primaryFellShort.has(symbol) || !q || q.price === null;
-      if (suppressedByNoNewer(symbol)) continue;
       if (marketSymbolEligible({ heldDate: held, expectedDate: expected, primaryFailed })) {
-        marketCandidates.push(symbol);
+        candidates.push(symbol);
       }
     }
-    if (marketCandidates.length > 0) {
-      const room = selectWithinBudget(marketCandidates, budgetNow());
+    if (candidates.length > 0) {
+      const room = selectWithinBudget(candidates, budgetNow());
       tiingoSymbols.push(...(await merge(room)));
     }
   } catch (err) {

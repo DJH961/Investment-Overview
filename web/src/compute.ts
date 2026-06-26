@@ -512,6 +512,13 @@ export interface FetchPlanEntry {
   assetClass: string;
   /** Aggregated last-known EUR size across holdings sharing this ticker. */
   sizeEur: number;
+  /**
+   * The holding's native (booked) currency, e.g. `USD`/`EUR`. Carried so the
+   * *pre-decrypt* login warm-up can denominate a primed quote from a bare native
+   * bar price (it is otherwise only available on the decrypted model). `null`
+   * when unknown or when holdings on one ticker disagree on currency.
+   */
+  nativeCurrency: string | null;
 }
 
 /**
@@ -542,17 +549,23 @@ export function buildFetchPlan(data: MobileExport, fetchableNavClasses: Set<stri
     const symbol = holding.price_symbol;
     if (!symbol) continue;
     const sizeEur = sizes.get(holding.symbol)?.toNumber() ?? 0;
+    const nativeCurrency = holding.native_currency || null;
     const existing = bySymbol.get(symbol);
     if (existing) {
       existing.sizeEur += sizeEur;
       // Market priority wins if any holding on this ticker is market-priced.
       if (isMarket) existing.priceType = "market";
+      // Carry the native currency only while every holding on this ticker agrees;
+      // a genuine disagreement collapses to `null` (the pre-decrypt warm-up then
+      // falls back to post-decrypt priming for that symbol rather than mispricing).
+      if (existing.nativeCurrency !== nativeCurrency) existing.nativeCurrency = null;
     } else {
       bySymbol.set(symbol, {
         symbol,
         priceType: holding.price_type,
         assetClass: holding.asset_class,
         sizeEur,
+        nativeCurrency,
       });
     }
   }

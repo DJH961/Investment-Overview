@@ -153,8 +153,11 @@ export function formatPollLog(
   if (entries.length === 0) {
     return `${header}\n(no polling activity recorded yet)\n`;
   }
+  // Pad to the widest category label ("orchestrator" = 12) so every line's
+  // message starts in the same column — the longest tag must not knock the
+  // trail out of alignment.
   const body = entries
-    .map((e) => `${stamp(e.at)}  [${e.category.toUpperCase().padEnd(8)}]  ${e.message}`)
+    .map((e) => `${stamp(e.at)}  [${e.category.toUpperCase().padEnd(12)}]  ${e.message}`)
     .join("\n");
   return `${header}\n${body}\n`;
 }

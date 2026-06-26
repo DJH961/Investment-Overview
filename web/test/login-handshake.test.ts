@@ -93,3 +93,48 @@ describe("reconcileHandshake — two-step login dedup", () => {
     expect(diff.newlyDiscovered).toEqual(["NEW"]);
   });
 });
+
+describe("reconcileHandshake — currency-mismatch (C6)", () => {
+  it("re-pulls a symbol whose decrypted currency differs from the plan's assumption", () => {
+    // Step 1 primed AAA as USD; the blob reveals it is actually EUR. Even though
+    // the ledger would call it fresh (not in staleSymbols), the wrong-denomination
+    // quote must be corrected, so it appears in the diff and the mismatch list.
+    const diff = reconcileHandshake(
+      { symbols: ["AAA"], predicted: ["AAA"], fx: true },
+      { staleSymbols: [], fxStale: false, currencyMismatches: ["AAA"] },
+    );
+    expect(diff.symbols).toEqual(["AAA"]);
+    expect(diff.currencyMismatches).toEqual(["AAA"]);
+    expect(diff.hasWork).toBe(true);
+    expect(diff.reason).toContain("currency-mismatch: AAA");
+  });
+
+  it("does not label a currency-mismatch symbol as newly-bought", () => {
+    // AAA is an existing (predicted) holding whose currency changed — a distinct
+    // reason from a brand-new holding, so it must not show up under newly-bought.
+    const diff = reconcileHandshake(
+      { symbols: ["AAA"], predicted: ["AAA"], fx: true },
+      { staleSymbols: [], fxStale: false, currencyMismatches: ["AAA"] },
+    );
+    expect(diff.newlyDiscovered).toEqual([]);
+    expect(diff.reason).not.toContain("newly-bought");
+  });
+
+  it("produces zero mismatches for a steady-state USD-only book", () => {
+    const diff = reconcileHandshake(
+      { symbols: ["AAA", "BBB"], fx: true },
+      { staleSymbols: [], fxStale: false, currencyMismatches: [] },
+    );
+    expect(diff.currencyMismatches).toEqual([]);
+    expect(diff.hasWork).toBe(false);
+  });
+
+  it("does not double-list a symbol that is both stale and currency-mismatched", () => {
+    const diff = reconcileHandshake(
+      { symbols: [], predicted: ["AAA"], fx: true },
+      { staleSymbols: ["AAA"], fxStale: false, currencyMismatches: ["AAA"] },
+    );
+    expect(diff.symbols).toEqual(["AAA"]);
+    expect(diff.currencyMismatches).toEqual(["AAA"]);
+  });
+});

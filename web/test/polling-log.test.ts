@@ -60,8 +60,8 @@ describe("polling-log", () => {
     const text = formatPollLog(entries, { version: "9.9.9", generatedAt: Date.parse("2026-06-23T10:00:02") });
     expect(text).toContain("Investment Overview — data polling log");
     expect(text).toContain("App version: 9.9.9");
-    expect(text).toContain("[REFRESH ]");
-    expect(text).toContain("[PRIMARY ]");
+    expect(text).toContain("[REFRESH     ]");
+    expect(text).toContain("[PRIMARY     ]");
     expect(text).toContain("Refresh started: auto.");
     expect(text).toContain("fetched 3, deferred 0.");
   });
