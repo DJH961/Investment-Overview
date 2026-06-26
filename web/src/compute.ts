@@ -1370,6 +1370,11 @@ export function buildDashboard(
  * P/L slice — surfaced alongside it so the user sees both the money the FX swing
  * moved and the rate change behind it. Null when either rate is unknown or the
  * prior close is non-positive.
+ *
+ * Cutoff: "today" here resets at the prior **NYSE session close**, matching the
+ * price-side "today" move and the {@link fxEffectSplit} market-hours/overnight
+ * boundary. The baseline (`fxRateEurUsdPrev`) is the FX provider's settled
+ * `previousClose`, whose daily settle is the practical proxy for that close.
  */
 export function fxTodayDeviationPct(o: OverviewView): Decimal | null {
   const now = o.fxRateEurUsd;

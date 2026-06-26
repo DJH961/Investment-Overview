@@ -32,6 +32,49 @@ describe("graphAnchorFx", () => {
     expect(fx?.toString()).toBe("1.08");
   });
 
+  it("freezes to the settled previous close when no live close was captured", () => {
+    // App was not live at 16:00 ET / cold start: no captured session close, but
+    // the settled previousClose is a stable rate the curve can freeze to instead
+    // of sliding with the live after-hours spot.
+    const fx = graphAnchorFx({
+      marketOpen: false,
+      liveFx: d("1.08"),
+      sessionCloseFx: null,
+      settledPrevFx: d("1.0725"),
+    });
+    expect(fx?.toString()).toBe("1.0725");
+  });
+
+  it("prefers the live-captured close over the settled previous close", () => {
+    const fx = graphAnchorFx({
+      marketOpen: false,
+      liveFx: d("1.08"),
+      sessionCloseFx: d("1.0775"),
+      settledPrevFx: d("1.0725"),
+    });
+    expect(fx?.toString()).toBe("1.0775");
+  });
+
+  it("ignores a non-positive settled previous close and uses the live rate", () => {
+    const fx = graphAnchorFx({
+      marketOpen: false,
+      liveFx: d("1.08"),
+      sessionCloseFx: null,
+      settledPrevFx: d("0"),
+    });
+    expect(fx?.toString()).toBe("1.08");
+  });
+
+  it("keeps using the live rate while open even if a settled prev is supplied", () => {
+    const fx = graphAnchorFx({
+      marketOpen: true,
+      liveFx: d("1.08"),
+      sessionCloseFx: d("1.05"),
+      settledPrevFx: d("1.0725"),
+    });
+    expect(fx?.toString()).toBe("1.08");
+  });
+
   it("returns null when neither rate is available", () => {
     expect(graphAnchorFx({ marketOpen: false, liveFx: null, sessionCloseFx: null })).toBeNull();
   });

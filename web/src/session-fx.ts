@@ -24,6 +24,36 @@
  * {@link fxEffectSplit} isolates from the in-session FX move so the user can see
  * what shifted during the trading day versus what changed overnight.
  *
+ * ## The "today" cutoff
+ *
+ * Every "today" signal on the hero — the price move badge, the FX `% today`
+ * ({@link fxTodayDeviationPct}) and this market-hours/overnight split — resets at
+ * the **prior NYSE session close (16:00 ET)**, the same clock the rest of the
+ * dashboard already calls "today". So the market-hours slice spans *prior close →
+ * this session's close* and the overnight slice spans *this session's close →
+ * live spot*; the moment the next session opens the overnight slice folds back
+ * into a single live "today" move. The settled FX baseline we measure that move
+ * from is the provider's `previousClose` (its daily settle is the practical proxy
+ * for the prior session close — the only always-available dated FX anchor).
+ *
+ * ## Surviving a market-closed / empty / not-live-at-close start
+ *
+ * The running session-close rate is captured live (see {@link recordSessionCloseFx}),
+ * but the app may simply **not be open at 16:00 ET** — over a weekend, or on a
+ * cold start from wiped storage. The two consumers degrade differently so that a
+ * missing capture is *protected*, never fabricated:
+ *
+ *   - The **1D/1W graph freeze** ({@link graphAnchorFx}) must still hold the EUR
+ *     curve still overnight, so when no live close was captured it falls back to
+ *     the settled `previousClose` — a real, stable, non-drifting rate (on a
+ *     weekend it *is* the session's close) — and only then to the live rate. This
+ *     is precisely the not-live scenario, where the app was absent during the
+ *     session so no capture exists.
+ *   - The **attribution split** ({@link fxEffectSplit}) stays honest: it needs a
+ *     genuine captured session close to draw the market-hours/overnight boundary,
+ *     so without one it returns `null` (the UI shows nothing) rather than blaming
+ *     the whole move on "overnight".
+ *
  * All maths is pure {@link Decimal} (no DOM, no storage); the two tiny
  * localStorage helpers at the bottom are the only side-effecting part and are
  * guarded so they never throw in a private-mode / storage-less context.
@@ -35,19 +65,33 @@ import { Decimal } from "./decimal-config";
  * The EUR→USD rate the **live 1D/1W graphs** should anchor their EUR view to.
  *
  * While the regular session is open the live spot *is* the session's rate, so it
- * is used directly. Once the market has closed the curves freeze to the
- * `sessionCloseFx` (the rate as the session settled) so the market-day
- * trajectory does not slide around with overnight FX; if that close rate is not
- * known (the app was first opened after the close), it degrades gracefully to
- * the live rate — the same behaviour as before this freezing existed.
+ * is used directly. Once the market has closed the curves freeze so the
+ * market-day trajectory does not slide with overnight FX:
+ *
+ *   1. the live-captured `sessionCloseFx` (the rate as the session settled) when
+ *      we held the app open through the close;
+ *   2. else the settled `settledPrevFx` (the provider's `previousClose`) — a
+ *      real, non-drifting rate that, on a weekend / cold start, *is* the session
+ *      close, so the freeze still works when the app was **not live** at 16:00 ET
+ *      or is rebuilding from empty storage;
+ *   3. else, as a last resort, the live rate — the same behaviour as before this
+ *      freezing existed.
+ *
+ * Anchoring to a settled rate (1 or 2) over the live one matters only for the
+ * curve's *stability*; the honest market-hours/overnight attribution in
+ * {@link fxEffectSplit} deliberately still requires the genuine `sessionCloseFx`.
  */
 export function graphAnchorFx(opts: {
   marketOpen: boolean;
   liveFx: Decimal | null;
   sessionCloseFx: Decimal | null;
+  /** The provider's settled previous close, used as a stable freeze fallback. */
+  settledPrevFx?: Decimal | null;
 }): Decimal | null {
   if (opts.marketOpen) return opts.liveFx;
-  return opts.sessionCloseFx ?? opts.liveFx;
+  const settledPrev =
+    opts.settledPrevFx != null && opts.settledPrevFx.greaterThan(0) ? opts.settledPrevFx : null;
+  return opts.sessionCloseFx ?? settledPrev ?? opts.liveFx;
 }
 
 /** Today's FX revaluation split into its in-session and after-hours slices. */

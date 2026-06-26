@@ -4171,6 +4171,10 @@ export class App {
           marketOpen: false,
           liveFx: baseFx,
           sessionCloseFx: o.fxRateEurUsdSessionClose,
+          // No live close was captured (app shut at 16:00 ET / cold start): fall
+          // back to the settled previous close so the curve still freezes
+          // overnight instead of sliding with the live after-hours rate.
+          settledPrevFx: o.fxRateEurUsdPrev,
         });
     // The live tip drawn at the session close once shut: its USD leg is FX-free,
     // but its EUR leg is re-marked at the frozen close rate so the 1D/1W curve
