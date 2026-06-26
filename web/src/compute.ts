@@ -37,6 +37,33 @@ import { providerLimits } from "./provider-limits";
 const EUR = "EUR";
 const USD = "USD";
 
+/**
+ * Value a native amount in **both** display currencies while enforcing the one
+ * currency invariant the whole app must obey: **USD is the booked native
+ * currency (computed FX-free) and EUR is the derived leg** — never the reverse.
+ *
+ * For the overwhelmingly common USD-native holding, `convert(…, USD)` is a no-op
+ * (FX-free) so the USD figure is exactly `shares × price` and never drifts when
+ * the live EUR/USD rate moves between logins; only the EUR leg picks up FX. A
+ * EUR-native holding is the mirror image. Crucially neither leg is *ever*
+ * back-derived from the other, so a USD figure can never silently inherit an FX
+ * rescale of EUR (the recurring "USD derived from EUR" bug).
+ *
+ * A null `valueNative` (unpriced) yields `{ null, null }`; a missing FX leg
+ * yields a null on that side alone — both honestly "unknown" rather than faked.
+ */
+export function valueInBothCurrencies(
+  valueNative: Decimal | null,
+  currency: string,
+  fx: FxRates,
+): { valueEur: Decimal | null; valueUsd: Decimal | null } {
+  if (valueNative === null) return { valueEur: null, valueUsd: null };
+  return {
+    valueEur: convert(valueNative, currency, EUR, fx),
+    valueUsd: convert(valueNative, currency, USD, fx),
+  };
+}
+
 export interface HoldingView {
   symbol: string;
   /**
@@ -527,6 +554,25 @@ function lastExportedValues(data: MobileExport): Map<string, Decimal> {
 }
 
 /**
+ * The most recent value (USD) exported per holding symbol — the USD twin of
+ * {@link lastExportedValues}, sourced from the per-holding start-of-month/year
+ * *USD* opening. Used so a holding that can't be live-valued still falls back to
+ * a genuine exported USD figure rather than back-deriving USD from the EUR
+ * fallback (which would violate the USD-native/EUR-derived invariant). The
+ * attribution block carries no USD end value, so only the openings feed this.
+ */
+function lastExportedValuesUsd(data: MobileExport): Map<string, Decimal> {
+  const values = new Map<string, Decimal>();
+  for (const [symbol, opening] of Object.entries(data.period_openings?.holdings ?? {})) {
+    const candidate = opening.month_start_value_usd ?? opening.year_start_value_usd;
+    if (candidate !== undefined && candidate !== null && candidate !== "") {
+      values.set(symbol, new Decimal(candidate));
+    }
+  }
+  return values;
+}
+
+/**
  * One symbol the live layer will request, with the context needed to order the
  * fetch *before* any live quote arrives.
  */
@@ -703,24 +749,35 @@ function buildHolding(
   fxMissing: Set<string>,
   exportAsOf: string,
   fallbackValueEur: Decimal | null,
+  fallbackValueUsd: Decimal | null,
 ): HoldingView {
   const shares = new Decimal(holding.shares);
   const { price, isLive, at, pulledAt, asOfDate } = priceForHolding(holding, quote, exportAsOf);
   const currency = holding.native_currency;
 
-  let valueEur: Decimal | null = null;
+  // Value the holding in both currencies from its native price through the one
+  // shared invariant helper: USD booked native (FX-free), EUR derived via FX —
+  // never the reverse (see valueInBothCurrencies).
   let valueNative: Decimal | null = null;
+  let valueEur: Decimal | null = null;
+  let valueUsd: Decimal | null = null;
   if (price !== null) {
     valueNative = shares.times(price);
-    valueEur = convert(valueNative, currency, EUR, fx);
+    ({ valueEur, valueUsd } = valueInBothCurrencies(valueNative, currency, fx));
   }
 
   // When no price/FX could value the holding, fall back to the last value
   // exported for it so it still counts toward the total (with a stale flag),
-  // rather than silently dropping out and dragging the headline/chart down.
+  // rather than silently dropping out and dragging the headline/chart down. Each
+  // currency falls back to *its own* exported figure — the USD leg never derives
+  // from the EUR one, preserving the invariant even for a stale row.
   let valueIsStale = false;
   if (valueEur === null && fallbackValueEur !== null) {
     valueEur = fallbackValueEur;
+    valueIsStale = true;
+  }
+  if (valueUsd === null && fallbackValueUsd !== null) {
+    valueUsd = fallbackValueUsd;
     valueIsStale = true;
   }
 
@@ -876,19 +933,9 @@ function buildHolding(
   const totalGrowthPct = totalGrowthPctCompounded(xirrRate, heldYears) ?? simpleGrowthPct;
 
   // --- USD companions (currency-correct growth when USD is selected) --------
-  // Current marks use today's spot (matching the desktop's terminal-value
-  // treatment); the cost basis uses the export's per-trade-date USD figure.
-  // The USD value is taken **natively** from the holding's own price — for a
-  // USD-priced holding `convert` is a no-op (FX-free), so the figure is exactly
-  // `shares × price` and never drifts when the live EUR/USD rate moves between
-  // logins. EUR is the one derived via FX. Only a holding valued purely from the
-  // EUR export fallback (no live native price) derives its USD back from EUR.
-  const valueUsd =
-    valueNative !== null
-      ? convert(valueNative, currency, USD, fx)
-      : valueEur !== null
-        ? convert(valueEur, EUR, USD, fx)
-        : null;
+  // `valueUsd` was already valued natively above (FX-free for a USD holding)
+  // through the shared invariant helper — USD is never back-derived from EUR.
+  // The cost basis uses the export's per-trade-date USD figure.
   const costBasisUsd =
     holding.cost_basis_usd !== null && holding.cost_basis_usd !== undefined
       ? new Decimal(holding.cost_basis_usd)
@@ -1030,9 +1077,11 @@ export function buildDashboard(
       ? { base: fx.base, rates: { ...fx.rates, USD: fxPrevEurUsd } }
       : fx;
 
-  // Last value exported per holding (EUR), used as a fallback when no live
-  // price/FX can value it. Sourced from the analytics attribution end values.
+  // Last value exported per holding, used as a fallback when no live price/FX can
+  // value it. EUR prefers the analytics attribution end value; USD comes from the
+  // per-holding opening (so the USD leg is never back-derived from the EUR one).
   const fallbackValues = lastExportedValues(data);
+  const fallbackValuesUsd = lastExportedValuesUsd(data);
 
   // The live window tracks the user-set auto-refresh interval (so a faster cadence
   // tightens "live" and a slower one widens it), falling back to the legacy
@@ -1054,6 +1103,7 @@ export function buildDashboard(
       fxMissing,
       exportAsOf,
       fallbackValues.get(h.symbol) ?? null,
+      fallbackValuesUsd.get(h.symbol) ?? null,
     );
     // Per-row freshness (freshness-plan §2): classify the displayed price into
     // live / recent / aged from its observation age vs the live window. A holding

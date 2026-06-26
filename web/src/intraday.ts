@@ -117,9 +117,10 @@ export interface AnchorHoldingInput {
  * A holding joins the intraday sleeve only when it is market-priced, carries a
  * real share count, and has both a native price (the ratio denominator) and a
  * live EUR value; everything else — NAV funds, the unvalued, and the supplied
- * cash totals — folds into the flat base, exactly like the desktop. USD values
- * fall back to the EUR figure when no USD twin exists so the base never drops a
- * sleeve.
+ * cash totals — folds into the flat base, exactly like the desktop. A holding
+ * is valued on the curve only when **both** currency legs are known: a USD
+ * figure is never substituted from EUR (that would distort the USD curve by the
+ * whole FX rate), so a row missing either leg is excluded outright.
  *
  * When `navInSleeve` is set (the **1W** path), NAV funds that carry a real
  * price + share count *also* join the sleeve (tagged `priceType: "nav"`) so the
@@ -141,8 +142,12 @@ export function buildIntradayAnchor(
   let baseUsd = cashValueUsd;
   for (const h of holdings) {
     const valueEur = h.valueEur;
-    if (valueEur === null) continue; // unvaluable — excluded from the curve entirely
-    const valueUsd = h.valueUsd ?? valueEur;
+    const valueUsd = h.valueUsd;
+    // Both legs must be known to place the holding on the curve: the EUR (the
+    // line's denominator) and the natively-booked USD. We never fabricate one
+    // from the other — a USD value faked from EUR would shift the whole USD
+    // curve by the FX rate. A row missing either leg is unvaluable here.
+    if (valueEur === null || valueUsd === null) continue;
     const pricedLot =
       h.priceNative !== null &&
       !h.priceNative.isZero() &&

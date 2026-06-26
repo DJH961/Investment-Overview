@@ -160,6 +160,20 @@ function parseDecimal(value: unknown): Decimal | null {
 }
 
 /**
+ * Parse a provider price into a *strictly positive* finite Decimal, treating a
+ * non-positive (`<= 0`) reading as missing (null). A `0`/negative mark is never
+ * a real price — it is the provider's stand-in for "no data" — so rejecting it
+ * here, at the parse boundary, stops a phantom `0` from valuing a holding or
+ * collapsing a graph ratio downstream. Use this for every figure that is a
+ * price (last/close/previous-close/bar-close); plain {@link parseDecimal} stays
+ * for non-price numerics that may legitimately be zero or negative.
+ */
+export function parsePositivePrice(value: unknown): Decimal | null {
+  const d = parseDecimal(value);
+  return d !== null && d.greaterThan(0) ? d : null;
+}
+
+/**
  * Extract the `YYYY-MM-DD` date from a Twelve Data `datetime` field, which is
  * either a bare date (daily bars, e.g. NAV) or a `YYYY-MM-DD HH:MM:SS`
  * timestamp (intraday). Returns null for anything unparseable.
@@ -208,8 +222,8 @@ function quoteFromNode(symbol: string, node: Record<string, unknown>): Quote {
     (hasIntradayTime(node.datetime) ? parseEpochSeconds(node.timestamp) : null);
   return {
     symbol,
-    price: parseDecimal(node.close ?? node.price),
-    previousClose: parseDecimal(node.previous_close),
+    price: parsePositivePrice(node.close ?? node.price),
+    previousClose: parsePositivePrice(node.previous_close),
     currency: typeof node.currency === "string" ? node.currency : null,
     at: null,
     priceTime,
@@ -386,8 +400,8 @@ function navQuoteFromNode(symbol: string, node: Record<string, unknown>): Quote 
   }
   return {
     symbol,
-    price: parseDecimal(latest.close),
-    previousClose: values[1] ? parseDecimal(values[1].close) : null,
+    price: parsePositivePrice(latest.close),
+    previousClose: values[1] ? parsePositivePrice(values[1].close) : null,
     currency: typeof meta.currency === "string" ? meta.currency : null,
     at: null,
     // A daily NAV bar carries only a date (no intraday strike time), so the UI
@@ -418,7 +432,7 @@ function barsFromValues(node: Record<string, unknown>): TimeSeriesBar[] {
   const bars: TimeSeriesBar[] = [];
   for (const v of values) {
     const t = parseBarTime(v.datetime);
-    const close = parseDecimal(v.close);
+    const close = parsePositivePrice(v.close);
     if (t !== null && close !== null) bars.push({ t, value: close });
   }
   bars.sort((a, b) => a.t - b.t);
