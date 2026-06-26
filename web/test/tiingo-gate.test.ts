@@ -34,6 +34,14 @@ describe("Budget", () => {
     expect(new Budget(100, 0).remaining()).toBe(0);
     expect(new Budget(5, 0).hasRoom()).toBe(true);
   });
+
+  it("clamps a negative used count so an over-refund can't exceed the cap", () => {
+    // A negative net spend (more refunded than taken in the window) must not make
+    // `cap - used` exceed the cap and hand out phantom headroom.
+    expect(new Budget(-5, 0).remaining()).toBe(WEB_HOURLY_CAP);
+    expect(new Budget(0, -10).remaining()).toBe(WEB_HOURLY_CAP);
+    expect(new Budget(-5, -10).remaining()).toBe(WEB_HOURLY_CAP);
+  });
 });
 
 describe("selectWithinBudget", () => {

@@ -337,6 +337,31 @@ describe("credit log", () => {
     expect(startOfUtcDay(5 * DAY + 1)).toBe(5 * DAY); // 1ms past midnight
     expect(startOfUtcDay(6 * DAY - 1)).toBe(5 * DAY); // 1ms before next midnight
   });
+
+  it("never refunds more credits than were taken (no phantom negative ledger)", () => {
+    const s = memStorage();
+    const NOW = 1_700_000_000_000;
+    recordCredits(3, NOW, s);
+    // A buggy double-release tries to hand back 5 against a 3-credit charge.
+    releaseCredits(5, NOW, s);
+    // The ledger nets to 0, never negative — so a later read can't see *more*
+    // than the full budget (which would let a caller overshoot the cap).
+    const log = readCreditLog(NOW, 24 * 60 * 60 * 1000, s);
+    expect(log.reduce((a, e) => a + e.n, 0)).toBe(0);
+    // A refund against an empty ledger is a no-op, not a negative balance.
+    releaseCredits(4, NOW, s);
+    const log2 = readCreditLog(NOW, 24 * 60 * 60 * 1000, s);
+    expect(log2.reduce((a, e) => a + e.n, 0)).toBe(0);
+  });
+
+  it("Tiingo refunds are likewise clamped to credits outstanding", () => {
+    const s = memStorage();
+    const NOW = 1_700_000_000_000;
+    recordTiingoCredits(2, NOW, s);
+    releaseTiingoCredits(10, NOW, s);
+    const log = readTiingoCreditLog(NOW, 24 * 60 * 60 * 1000, s);
+    expect(log.reduce((a, e) => a + e.n, 0)).toBe(0);
+  });
 });
 
 describe("encrypted-blob cache", () => {

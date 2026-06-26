@@ -11,7 +11,7 @@ import {
   tiingoAvailable,
   twelveDataAvailable,
 } from "../src/reservation";
-import { recordCredits, recordTiingoCredits, type StorageLike } from "../src/cache";
+import { recordCredits, recordTiingoCredits, startOfHour, type StorageLike } from "../src/cache";
 import { recordTiingo429, recordTwelveData429 } from "../src/provider-breaker";
 import { WEB_HOURLY_CAP } from "../src/tiingo-gate";
 import { FREE_TIER } from "../src/quotes";
@@ -105,5 +105,40 @@ describe("reservation — atomic reserve / release", () => {
     expect(res.reserve("tiingo", -2, NOW)).toBe(0);
     res.release("tiingo", 0, NOW);
     expect(tiingoAvailable(NOW, store)).toBe(WEB_HOURLY_CAP);
+  });
+
+  it("never grants more than the cap after an over-release (no phantom headroom)", () => {
+    const res = ledgerReservation(store);
+    expect(res.reserve("tiingo", 5, NOW)).toBe(5);
+    // A buggy caller releases more than it reserved; the refund is clamped so the
+    // budget recovers to — but never beyond — the full cap.
+    res.release("tiingo", 50, NOW);
+    expect(tiingoAvailable(NOW, store)).toBe(WEB_HOURLY_CAP);
+    expect(res.reserve("tiingo", 1000, NOW)).toBe(WEB_HOURLY_CAP);
+  });
+
+  it("resets the Tiingo hourly budget on the clock hour, not a trailing window", () => {
+    const HOUR_MS = 60 * 60 * 1000;
+    // Spend late in one clock hour, then read just past the top of the next hour.
+    const lateInHour = startOfHour(NOW) + 55 * 60 * 1000;
+    const earlyNextHour = startOfHour(NOW) + HOUR_MS + 60 * 1000;
+    recordTiingoCredits(WEB_HOURLY_CAP, lateInHour, store);
+    expect(tiingoAvailable(lateInHour, store)).toBe(0);
+    // A trailing-60-min window would still suppress the new hour; the clock-hour
+    // reset gives a fresh allowance at the top of the hour.
+    expect(tiingoAvailable(earlyNextHour, store)).toBe(WEB_HOURLY_CAP);
+  });
+
+  it("handles a refund straddling the clock-hour boundary without inflating the cap", () => {
+    const HOUR_MS = 60 * 60 * 1000;
+    const lateInHour = startOfHour(NOW) + 58 * 60 * 1000;
+    const earlyNextHour = startOfHour(NOW) + HOUR_MS + 60 * 1000;
+    const res = ledgerReservation(store);
+    // Charge in one hour; the request throws and is refunded in the next hour.
+    recordTiingoCredits(5, lateInHour, store);
+    res.release("tiingo", 5, earlyNextHour);
+    // The lone refund lands in the fresh hour as a negative spend, but the budget
+    // is clamped so the new hour still reads exactly the full cap — never more.
+    expect(tiingoAvailable(earlyNextHour, store)).toBe(WEB_HOURLY_CAP);
   });
 });

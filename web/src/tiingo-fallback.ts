@@ -164,7 +164,14 @@ export function tiingoBudgetView(now: number, storage?: StorageLike | null): Tii
 
 function budgetView(now: number, storage: StorageLike | null | undefined): TiingoBudgetView {
   const b = readBudget(now, storage);
-  return { hourUsed: b.hourUsed, hourLimit: b.hourlyCap, dayUsed: b.dayUsed, dayLimit: b.dailyCap };
+  // Floor the used counts at 0 so a refunded charge straddling the clock-hour /
+  // ET-day boundary never surfaces a nonsensical negative "X/40 this hour".
+  return {
+    hourUsed: Math.max(0, b.hourUsed),
+    hourLimit: b.hourlyCap,
+    dayUsed: Math.max(0, b.dayUsed),
+    dayLimit: b.dailyCap,
+  };
 }
 
 /**
