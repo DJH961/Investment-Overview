@@ -388,6 +388,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   grid-template-columns: repeat(3, 1fr);
   gap: 0.6rem 1rem;
 }
+.fx-box-stats-pair { grid-template-columns: repeat(2, 1fr); }
 .fx-box-stat { display: grid; gap: 0.1rem; align-content: start; }
 .fx-box-stat-label {
   font-size: 0.72rem;

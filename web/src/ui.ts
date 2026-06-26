@@ -260,21 +260,30 @@ function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElement | nul
   // Third number: how far the rate has moved since the current session's reference
   // point — since the open while the market is live, since the close once shut.
   // Same strength convention as the "Today" move (negated for the EUR reciprocal).
-  const anchorFx = marketOpen ? o.fxRateEurUsdSessionOpen : o.fxRateEurUsdSessionClose;
-  const sincePctRaw = fxSinceAnchorPct(o, anchorFx);
-  const sincePct = sincePctRaw === null ? null : inUsd ? sincePctRaw : sincePctRaw.negated();
-  const sinceLabel = marketOpen ? "Since open" : "Since close";
-  const sinceStat = h("div", { class: "fx-box-stat" }, [
-    h("span", { class: "fx-box-stat-label" }, [sinceLabel]),
-    h("span", { class: `fx-box-stat-value ${signClass(sincePct)}` }, [
-      sincePct !== null ? formatSignedPercent(sincePct) : "—",
-    ]),
-    h("span", { class: "fx-box-stat-sub" }, ["rate move"]),
-  ]);
+  // On a non-market day there is no session today, so this stat is dropped: its only
+  // possible anchor (the last session close) collapses onto the overnight "Today"
+  // figure beside it, and the FX market itself is shut, so it would read a stale "—".
+  const stats: HTMLElement[] = [rateStat, moveStat];
+  if (tradingDay) {
+    const anchorFx = marketOpen ? o.fxRateEurUsdSessionOpen : o.fxRateEurUsdSessionClose;
+    const sincePctRaw = fxSinceAnchorPct(o, anchorFx);
+    const sincePct = sincePctRaw === null ? null : inUsd ? sincePctRaw : sincePctRaw.negated();
+    const sinceLabel = marketOpen ? "Since open" : "Since close";
+    stats.push(
+      h("div", { class: "fx-box-stat" }, [
+        h("span", { class: "fx-box-stat-label" }, [sinceLabel]),
+        h("span", { class: `fx-box-stat-value ${signClass(sincePct)}` }, [
+          sincePct !== null ? formatSignedPercent(sincePct) : "—",
+        ]),
+        h("span", { class: "fx-box-stat-sub" }, ["rate move"]),
+      ]),
+    );
+  }
 
+  const statsClass = stats.length === 2 ? "fx-box-stats fx-box-stats-pair" : "fx-box-stats";
   const children: HTMLElement[] = [
     h("div", { class: "fx-box-head" }, [h("span", { class: "fx-box-title" }, ["Currency · EUR ↔ USD"])]),
-    h("div", { class: "fx-box-stats" }, [rateStat, moveStat, sinceStat]),
+    h("div", { class: statsClass }, stats),
   ];
   const effect = renderFxEffect(o, now);
   if (effect) children.push(effect);

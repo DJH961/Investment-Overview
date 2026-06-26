@@ -162,3 +162,9 @@ class TestNonMarketDay:
         assert "Overnight" not in html
         # "Today" is the pure overnight drift on a non-market day.
         assert "overnight" in html
+        # The third "Since open/close" stat is dropped on a non-market day (its only
+        # anchor would collapse onto the overnight "Today" figure beside it), leaving
+        # a clean two-stat row.
+        assert "Since close" not in html
+        assert "Since open" not in html
+        assert "inv-fx-box-stats-pair" in html

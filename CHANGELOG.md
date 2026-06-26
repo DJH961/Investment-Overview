@@ -29,12 +29,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Non-market days (weekends/holidays) are handled honestly.** With no session at
   all, "Today" is the pure overnight drift and the currency-effect split collapses
   to a single bar relabelled **"Market holiday"** (the meaningless ~zero
-  market-hours leg is dropped).
+  market-hours leg is dropped). The redundant third "Since open/close" stat — whose
+  only anchor would collapse onto the overnight "Today" figure beside it — is
+  dropped too, leaving a clean two-stat row.
 - **Renamed the currency-effect panel to "Currency effect since yesterday"** (it
   measures from the prior close, not strictly "today"). Mirrored across the desktop
   app and the live web companion.
 
-
+## [4.8.0] — 2026-06-26
 
 ### Changed
 

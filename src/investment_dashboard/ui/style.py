@@ -409,6 +409,7 @@ html, body {{
   grid-template-columns: repeat(3, 1fr);
   gap: 0.6rem 1rem;
 }}
+.inv-fx-box-stats-pair {{ grid-template-columns: repeat(2, 1fr); }}
 .inv-fx-box-stat {{ display: grid; gap: 0.1rem; align-content: start; }}
 .inv-fx-box-stat-label {{
   font-size: 0.6875rem;

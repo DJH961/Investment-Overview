@@ -391,16 +391,30 @@ def _currency_box_html(
     # Third number: how far the rate has moved since the current session's
     # reference point — since the **open** while the market is live, since the
     # **close** once it has shut. Same strength convention as the "Today" move.
-    if market_open:
-        anchor_fx = intraday_snapshots_service.session_open_fx(session, now=now)
-        since_label = "Since open"
-    else:
-        anchor_fx = intraday_snapshots_service.session_close_fx(session, now=now)
-        since_label = "Since close"
-    since = fx_move_pct(live_fx, anchor_fx, display_ccy) if anchor_fx is not None else None
+    # On a non-market day there is no session today, so this stat is dropped: its
+    # only anchor (the last session close) collapses onto the overnight "Today"
+    # figure beside it, and the FX market itself is shut, so it would read a stale "—".
+    since_stat = ""
+    stats_class = "inv-fx-box-stats inv-fx-box-stats-pair"
+    if trading_day:
+        if market_open:
+            anchor_fx = intraday_snapshots_service.session_open_fx(session, now=now)
+            since_label = "Since open"
+        else:
+            anchor_fx = intraday_snapshots_service.session_close_fx(session, now=now)
+            since_label = "Since close"
+        since = fx_move_pct(live_fx, anchor_fx, display_ccy) if anchor_fx is not None else None
+        since_stat = (
+            '<div class="inv-fx-box-stat">'
+            f'<span class="inv-fx-box-stat-label">{since_label}</span>'
+            f"{_fx_box_pct_value(since)}"
+            '<span class="inv-fx-box-stat-sub">rate move</span>'
+            "</div>"
+        )
+        stats_class = "inv-fx-box-stats"
 
     stats = (
-        '<div class="inv-fx-box-stats">'
+        f'<div class="{stats_class}">'
         '<div class="inv-fx-box-stat">'
         f'<span class="inv-fx-box-stat-label">{pair}</span>'
         f'<span class="inv-fx-box-stat-value">{rate:,.4f}</span>'
@@ -410,11 +424,7 @@ def _currency_box_html(
         f"{_fx_box_pct_value(move)}"
         f'<span class="inv-fx-box-stat-sub">{today_sub}</span>'
         "</div>"
-        '<div class="inv-fx-box-stat">'
-        f'<span class="inv-fx-box-stat-label">{since_label}</span>'
-        f"{_fx_box_pct_value(since)}"
-        '<span class="inv-fx-box-stat-sub">rate move</span>'
-        "</div>"
+        f"{since_stat}"
         "</div>"
     )
 
