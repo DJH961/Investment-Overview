@@ -58,8 +58,8 @@ export interface ResumeTokenEnvelope {
   ctx: string;
   /** Last genuine in-app activity, epoch ms. */
   at: number;
-  /** Wrapped (encrypted) passphrase — never the plaintext. */
-  secret: string;
+  /** Wrapped (encrypted) passphrase ciphertext — never the plaintext. */
+  wrapped: string;
 }
 
 /** Minimal storage seam so tests need no real `sessionStorage`. */
@@ -148,7 +148,7 @@ export function readResumeEnvelope(storage: ResumeStorage = sessionResumeStorage
       typeof parsed.v !== "string" ||
       typeof parsed.ctx !== "string" ||
       typeof parsed.at !== "number" ||
-      typeof parsed.secret !== "string"
+      typeof parsed.wrapped !== "string"
     ) {
       return null;
     }
@@ -171,7 +171,7 @@ export function isResumeTokenValid(
   if (env.t !== RESUME_TOKEN_VERSION) return false;
   if (env.v !== args.appVersion) return false;
   if (env.ctx !== args.blobUrl) return false;
-  if (!env.secret) return false;
+  if (!env.wrapped) return false;
   if (env.at > args.now + RESUME_CLOCK_SKEW_MS) return false;
   return args.now - env.at <= resumeIdleLimitMs(args.autoLockMinutes);
 }
@@ -189,21 +189,21 @@ export async function saveResumeToken(args: {
   storage?: ResumeStorage;
 }): Promise<void> {
   const box = args.box ?? defaultBox();
-  const secret = await box.encrypt(args.passphrase);
+  const wrapped = await box.encrypt(args.passphrase);
   const env: ResumeTokenEnvelope = {
     t: RESUME_TOKEN_VERSION,
     v: APP_VERSION,
     ctx: args.blobUrl,
     at: args.now,
-    secret,
+    wrapped,
   };
   (args.storage ?? sessionResumeStorage()).set(JSON.stringify(env));
 }
 
 /**
  * Re-stamp the stored token's last-activity time in place (cheap — the wrapped
- * secret is untouched). A no-op when no token exists. Callers throttle how often
- * this fires so it doesn't thrash storage on high-frequency activity events.
+ * ciphertext is untouched). A no-op when no token exists. Callers throttle how
+ * often this fires so it doesn't thrash storage on high-frequency activity.
  */
 export function touchResumeActivity(now: number, storage: ResumeStorage = sessionResumeStorage()): void {
   const env = readResumeEnvelope(storage);
@@ -214,7 +214,7 @@ export function touchResumeActivity(now: number, storage: ResumeStorage = sessio
 
 /** Decrypt the wrapped passphrase back out of a (validated) envelope. */
 export async function unwrapResumePassphrase(env: ResumeTokenEnvelope, box: SecretBox = defaultBox()): Promise<string> {
-  return box.decrypt(env.secret);
+  return box.decrypt(env.wrapped);
 }
 
 /** Drop the resume token entirely (explicit lock, identity change, sign-out). */

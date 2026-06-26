@@ -2741,7 +2741,11 @@ export class App {
     this.dismissAutoLockWarning();
     let remaining = Math.max(1, Math.ceil(leadMs / 1000));
     const message = (secs: number): string => `Locking in ${secs}s due to inactivity`;
-    const text = h("span", { class: "auto-lock-warn-text" }, [message(remaining)]);
+    const text = h(
+      "span",
+      { id: "auto-lock-warn-text", class: "auto-lock-warn-text", "aria-atomic": "true" },
+      [message(remaining)],
+    );
     const stay = h("button", { class: "btn", type: "button" }, ["Stay unlocked"]);
     const dismiss = h(
       "button",
@@ -2750,7 +2754,14 @@ export class App {
     );
     const node = h(
       "div",
-      { id: "auto-lock-warning", class: "app-toast is-autolock-warn", role: "alertdialog", "aria-live": "assertive" },
+      {
+        id: "auto-lock-warning",
+        class: "app-toast is-autolock-warn",
+        role: "alertdialog",
+        "aria-label": "Auto-lock warning",
+        "aria-labelledby": "auto-lock-warn-text",
+        "aria-live": "assertive",
+      },
       [text, h("div", { class: "row auto-lock-warn-actions" }, [stay, dismiss])],
     );
     stay.addEventListener("click", () => {

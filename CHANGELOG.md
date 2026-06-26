@@ -14,6 +14,48 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.7.0] — 2026-06-26
+
+### Added
+
+- **Opt-in "stay unlocked across a page refresh" for the live web companion.** A
+  full-page reload (F5) — as opposed to the in-app refresh button — used to drop
+  the in-memory passphrase and force an immediate re-login. With the new
+  **Settings → Security → "Stay unlocked across a page refresh"** toggle (off by
+  default), a reload of the *current tab* now resumes the unlocked session and
+  behaves exactly like the manual refresh button: it re-decrypts from cache,
+  re-downloads the encrypted blob and refreshes prices. A short "Resumed after
+  refresh" banner makes the restore explicit, and the **Lock** control stays
+  available. Because the resume re-runs the normal unlock flow, a newer export
+  published since the last load is picked up automatically.
+
+  Safety is preserved by design (see `web/src/resume-session.ts`):
+  - the passphrase is **never** stored in the clear — only its AES-GCM
+    ciphertext, wrapped with the same non-extractable per-device key kept in
+    IndexedDB that protects the API key;
+  - the ciphertext lives in `sessionStorage`, so it is **wiped when the tab or
+    window closes** and is never shared with other tabs — closing the tab still
+    forces a fresh login;
+  - the resume path activates **only on an actual reload / back-forward**
+    navigation, never a cold open;
+  - it honours the **idle auto-lock window** — a session idle past the auto-lock
+    timeout (or a hard cap of a few hours when auto-lock is set to "never") still
+    re-authenticates;
+  - the token is **bound to the app version and the data-source URL**, so it
+    can't apply after an upgrade or a data-source change; an explicit lock,
+    sign-out or settings change drops it;
+  - **biometric devices are unaffected** — when a fingerprint is enrolled the app
+    keeps preferring the stronger one-tap unlock and never mints a token.
+
+### Changed
+
+- **Idle auto-lock now truly only bites when the session is unattended, and warns
+  first.** The activity detection was broadened beyond presses/scroll/focus to
+  also count pointer/mouse **movement**, wheel, touch-move, clicks and typing
+  (high-frequency events throttled), so simply using the dashboard reliably keeps
+  it unlocked. About 15 seconds before locking, a **dismissable "Locking in Ns due
+  to inactivity" warning** appears with a one-tap **"Stay unlocked"** extension.
+
 ## [4.6.0] — 2026-06-26
 
 ### Added

@@ -97,7 +97,7 @@ describe("resume-session token", () => {
   });
 
   it("rejects a token minted under a different app version", async () => {
-    const env: ResumeTokenEnvelope = { t: 1, v: "0.0.0-old", ctx: BLOB, at: 100, secret: "v1.aa.bb" };
+    const env: ResumeTokenEnvelope = { t: 1, v: "0.0.0-old", ctx: BLOB, at: 100, wrapped: "v1.aa.bb" };
     expect(
       isResumeTokenValid(env, { now: 200, appVersion: APP_VERSION, blobUrl: BLOB, autoLockMinutes: 5 }),
     ).toBe(false);
@@ -133,7 +133,7 @@ describe("resume-session token", () => {
     expect(resumeIdleLimitMs(0)).toBe(RESUME_NEVER_LOCK_HARD_CAP_MS);
     expect(resumeIdleLimitMs(5)).toBe(5 * 60_000);
 
-    const env: ResumeTokenEnvelope = { t: 1, v: APP_VERSION, ctx: BLOB, at: 0, secret: "v1.aa.bb" };
+    const env: ResumeTokenEnvelope = { t: 1, v: APP_VERSION, ctx: BLOB, at: 0, wrapped: "v1.aa.bb" };
     // Just inside the cap is fine…
     expect(
       isResumeTokenValid(env, {
@@ -163,7 +163,7 @@ describe("resume-session token", () => {
     touchResumeActivity(9999, storage);
     const after = readResumeEnvelope(storage) as ResumeTokenEnvelope;
     expect(after.at).toBe(9999);
-    expect(after.secret).toBe(before.secret); // ciphertext untouched
+    expect(after.wrapped).toBe(before.wrapped); // ciphertext untouched
     expect(await unwrapResumePassphrase(after, box)).toBe("p");
   });
 
