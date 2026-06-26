@@ -46,7 +46,7 @@ import {
   type Quote,
 } from "./prices";
 import type { Decimal } from "./decimal-config";
-import { latestSettledSessionDate, previousTradingSession, sessionCloseMs } from "./market-hours";
+import { isUsMarketOpen, latestSettledSessionDate } from "./market-hours";
 import { fetchTiingoEurUsd } from "./tiingo";
 import { Budget, etMinutesOfDay, WEB_DAILY_CAP, WEB_HOURLY_CAP } from "./tiingo-gate";
 
@@ -100,26 +100,6 @@ export function twelveDataBudgetRemaining(
 export const DEFAULT_NAV_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Local hour (0–23) by which a fund's once-a-day NAV is expected to be
- * published, used only as the *bootstrap* default before we've learned the
- * fund's real habit (see {@link navPublishWindow}). It defaults to the European
- * market close (~22:00): for a EUR-listed fund the NAV can't strike until the
- * underlying market shuts, so an earlier guess just burns credits polling for a
- * price that cannot exist yet.
- */
-export const NAV_PUBLISH_HOUR = 22;
-
-/**
- * Bootstrap span (hours past {@link NAV_PUBLISH_HOUR}) used to seed a fund's
- * learned publish window before we've observed its real habit (see
- * {@link navPublishWindow}, which returns it as `catchUpWindowHours`). It feeds
- * only the *width* of the initial learned window; how long a *missing* NAV is
- * chased is no longer capped — {@link navCacheTtlMs} polls a behind fund like a
- * normal symbol until its new NAV lands.
- */
-export const NAV_CATCHUP_WINDOW_HOURS = 2;
-
-/**
  * Freshness window for a **market** (stock/ETF) symbol whose exchange is closed
  * and whose latest settled close we already hold. The session reopen is detected
  * directly from the market clock on the next refresh, so this only needs to span
@@ -129,78 +109,20 @@ export const NAV_CATCHUP_WINDOW_HOURS = 2;
  */
 export const DEFAULT_CLOSED_MARKET_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-/**
- * Trailing slack (hours) added past the latest *observed* publish time when
- * deriving a learned window, so an occasional late NAV is still caught.
- */
-export const NAV_PUBLISH_LAG_HOURS = 1;
-
 /** Tunables for {@link navCacheTtlMs} (all optional; sensible defaults apply). */
 export interface NavRefreshOptions {
   /** Wall-clock epoch ms; defaults to {@link Date.now}. Injected in tests. */
   now?: number;
-  /** Local hour the NAV is expected to publish; see {@link NAV_PUBLISH_HOUR}. */
-  publishHour?: number;
+  /**
+   * Whether the US regular session is open right now. Defaults to deriving it
+   * from `now`; injected in tests. While open a NAV cannot strike (it lands only
+   * after the close), so there is nothing to chase regardless of what we hold.
+   */
+  marketOpen?: boolean;
   /** TTL while behind a fresh NAV (poll cadence — same as a normal symbol). */
   shortTtlMs?: number;
   /** TTL once the latest NAV is in hand, or before it is expected. */
   longTtlMs?: number;
-}
-
-/**
- * The most recent business day (`YYYY-MM-DD`) whose NAV should already be
- * published as of `now`.
- *
- * A NAV is value-dated by its **US trading session** (the daily bar's date that
- * {@link Quote.valueDate} carries), so the answer must be anchored to that US
- * session calendar — never the viewer's own local date. The two diverge by
- * several hours, and around local midnight a European viewer's calendar day
- * rolls forward while the US session it belongs to has not: a NAV that lands at,
- * say, 02:00 in Europe still belongs to the *prior* US trading day. Anchoring to
- * the US session keeps such a late NAV matched to the right date instead of
- * being chased forever as a "tomorrow" that cannot exist yet.
- *
- * `publishHour` is a local-time hint for *when* a fund habitually publishes
- * (learned per fund; see {@link navPublishWindow}). The answer is anchored to the
- * latest US session whose 16:00 ET close has actually happened
- * ({@link latestSettledSessionDate}) — never a rolled-over local date — but that
- * session's NAV is only treated as *due* once its publish moment has elapsed.
- *
- * The publish moment is computed from the session's actual close instant, not the
- * raw local hour-of-day: a fund's NAV strikes *after* the US close, so the
- * relevant `publishHour` is the first local-clock occurrence of that hour
- * **at or after** the close. This is what stops a fund that publishes after
- * midnight from being reported as "awaiting" all evening between the US close and
- * its real (post-midnight) publish — until then we still rest on the prior
- * session's NAV, which we already hold.
- */
-export function latestExpectedNavDate(now: Date, publishHour = NAV_PUBLISH_HOUR): string {
-  const settled = latestSettledSessionDate(now);
-  // The settled session's NAV publishes after its close. Until that publish
-  // moment has passed, the latest NAV that can exist is the *prior* session's.
-  if (now.getTime() < navPublishMomentMs(settled, publishHour)) {
-    return previousTradingSession(settled);
-  }
-  return settled;
-}
-
-/**
- * Absolute epoch-ms at which the NAV for US session `settledDay` is expected to
- * publish: the first local-clock occurrence of `publishHour` (on the minute)
- * **at or after** that session's 16:00 ET close. Anchoring to the close instant
- * (rather than the bare local hour-of-day) makes a post-midnight publish hour —
- * e.g. a fund that strikes around 01:00 local — resolve to the small hours of the
- * day *after* the close, instead of being mistaken for that same hour earlier on
- * the close day.
- */
-function navPublishMomentMs(settledDay: string, publishHour: number): number {
-  const closeMs = sessionCloseMs(settledDay);
-  const publishAt = new Date(closeMs);
-  publishAt.setHours(publishHour, 0, 0, 0);
-  if (publishAt.getTime() < closeMs) {
-    publishAt.setDate(publishAt.getDate() + 1);
-  }
-  return publishAt.getTime();
 }
 
 /**
@@ -209,16 +131,16 @@ function navPublishMomentMs(settledDay: string, publishHour: number): number {
  * wastes the free-tier budget while a fixed long interval can leave today's
  * fresh NAV unseen for hours.
  *
- * Two states only, keyed off whether we already hold the latest *expected* NAV
- * (judged by the cached quote's value-date against {@link latestExpectedNavDate}):
- *   - **have it** (or it isn't due yet): relax to the long window — there is no
- *     new price to chase, so refreshes barely touch the credit budget; and
- *   - **behind it**: poll like a normal symbol (the short window) until the new
- *     NAV actually lands. There is no upper "catch-up window" cap, so a NAV that
- *     publishes late — even past midnight — is still picked up the same night
- *     rather than waiting a whole day. Before the expected publish hour we are by
- *     definition not behind (the latest expected date is the prior session, which
- *     we hold), so this never polls a fund before its NAV could exist.
+ * The rule is deliberately simple — no attempt to predict *when* tonight's NAV
+ * will land, just "poll after the close until it is here":
+ *   - **market open**: rest on the long window. A NAV strikes only after the
+ *     session closes, and we already hold the prior settled session's NAV, so
+ *     there is nothing new to chase mid-session; and
+ *   - **market closed**: if we already hold the latest *settled* session's NAV
+ *     ({@link latestSettledSessionDate}) there is nothing newer until the next
+ *     session closes, so rest on the long window; otherwise poll like a normal
+ *     symbol (the short window) until that NAV lands — however late, even past
+ *     midnight, with no upper "catch-up" cap.
  */
 export function navCacheTtlMs(
   cached: { valueDate?: string | null } | null | undefined,
@@ -226,15 +148,17 @@ export function navCacheTtlMs(
 ): number {
   const {
     now = Date.now(),
-    publishHour = NAV_PUBLISH_HOUR,
+    marketOpen = isUsMarketOpen(new Date(now)),
     shortTtlMs = DEFAULT_CACHE_TTL_MS,
     longTtlMs = DEFAULT_NAV_CACHE_TTL_MS,
   } = options;
 
+  // Session open: the NAV cannot strike until after the close, and we already
+  // hold the prior settled session's NAV — nothing to chase.
+  if (marketOpen) return longTtlMs;
+  // Closed: poll until the just-settled session's NAV is in hand, then rest.
   const have = cached?.valueDate ?? null;
-  // Already holding the latest expected NAV (or it isn't due yet): nothing to chase.
-  if (have && have >= latestExpectedNavDate(new Date(now), publishHour)) return longTtlMs;
-  // Behind the expected NAV: poll like a normal fund until it lands.
+  if (have && have >= latestSettledSessionDate(new Date(now))) return longTtlMs;
   return shortTtlMs;
 }
 
@@ -343,36 +267,6 @@ export function marketCacheTtlMs(
   return shortTtlMs;
 }
 
-/** A NAV polling window: when to start, and for how many hours to keep at it. */
-export interface NavWindow {
-  /** Local hour the catch-up polling window opens (also the "expected by" gate). */
-  publishHour: number;
-  /** Hours the window stays open past {@link publishHour}. */
-  catchUpWindowHours: number;
-}
-
-/**
- * Derive a fund's NAV polling window from the local hours at which its NAV
- * value-date was actually observed to advance (see {@link recordNavPublish}).
- *
- * Rather than a fixed evening guess, the window brackets the observed publish
- * times: it opens at the start of the earliest hour a new NAV has landed and
- * stays open until just past the latest, plus a little slack
- * ({@link NAV_PUBLISH_LAG_HOURS}) for the odd late day. With no observations yet
- * it falls back to the {@link NAV_PUBLISH_HOUR}/{@link NAV_CATCHUP_WINDOW_HOURS}
- * bootstrap defaults. The result is a tighter, fund-specific window that wastes
- * fewer credits polling for a price that cannot exist yet.
- */
-export function navPublishWindow(observedHours?: readonly number[] | null): NavWindow {
-  const hours = (observedHours ?? []).filter((h) => Number.isFinite(h) && h >= 0 && h <= 24);
-  if (hours.length === 0) {
-    return { publishHour: NAV_PUBLISH_HOUR, catchUpWindowHours: NAV_CATCHUP_WINDOW_HOURS };
-  }
-  const start = Math.min(23, Math.max(0, Math.floor(Math.min(...hours))));
-  const end = Math.min(24, Math.ceil(Math.max(...hours)) + NAV_PUBLISH_LAG_HOURS);
-  return { publishHour: start, catchUpWindowHours: Math.max(1, end - start) };
-}
-
 /** Tunables + injectable seams (tests supply deterministic clock/sleep/storage). */
 export interface LoadQuotesOptions {
   fetchImpl?: FetchLike;
@@ -407,13 +301,6 @@ export interface LoadQuotesOptions {
    * NAV. Evaluated for every symbol; defaults to never forcing.
    */
   forceFetch?: (symbol: string, cached?: CachedQuote) => boolean;
-  /**
-   * Called when a freshly-fetched symbol reports a value-date later than the one
-   * already cached (or has none cached yet). Lets callers learn *when* a fund's
-   * once-a-day NAV actually lands; see {@link navPublishWindow}. `at` is the
-   * fetch time, suitable for {@link recordNavPublish}.
-   */
-  onValueDateAdvance?: (symbol: string, valueDate: string, at: number) => void;
   /**
    * Symbols that are NAV-priced funds (mutual / money-market). These are fetched
    * from Twelve Data's daily `time_series` endpoint (authoritative trading-day
@@ -477,7 +364,6 @@ export async function loadQuotes(
     cacheTtlMsForSymbol,
     forceMarketFetch = false,
     forceFetch,
-    onValueDateAdvance,
     navSymbols,
     creditsPerMinute = FREE_TIER.creditsPerMinute,
     creditsPerDay = FREE_TIER.creditsPerDay,
@@ -587,12 +473,6 @@ export async function loadQuotes(
             // Stamp the observation time so the UI can show how fresh it is.
             result.set(symbol, { ...q, at });
             fetched.push(symbol);
-            // Notify when this symbol's NAV value-date has moved on, so callers
-            // can learn the fund's real publish window.
-            if (onValueDateAdvance && q.valueDate) {
-              const prev = cache.get(symbol)?.quote.valueDate ?? null;
-              if (!prev || q.valueDate > prev) onValueDateAdvance(symbol, q.valueDate, at);
-            }
           }
         }
       } catch (err) {

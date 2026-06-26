@@ -18,7 +18,6 @@ import {
   readTiingoCreditLog,
   readTiingoState,
   readTiingoNoNewer,
-  recordNavPublish,
   recordTiingoCredits,
   recordTiingoNoNewer,
   clearTiingoNoNewer,
@@ -235,10 +234,6 @@ async function fetchAndMerge(
     priced.set(symbol, stamped);
     opts.quotes.set(symbol, stamped);
     gained.push(symbol);
-    if (opts.navSymbols.has(symbol) && q.valueDate) {
-      const prior = prevVd;
-      if (!prior || q.valueDate > prior) recordNavPublish(symbol, q.valueDate, opts.now, opts.storage ?? undefined);
-    }
   }
   if (priced.size > 0) writeCachedQuotes(priced, opts.now, opts.storage ?? undefined);
   // Record/clear the per-symbol "nothing newer" stamps for the whole batch (not

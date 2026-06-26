@@ -251,29 +251,30 @@ describe("buildCoverageFacts", () => {
       report({ servedFresh: ["VTSAX"] }),
       quotes,
       new Set(["VTSAX"]),
-      { now, marketOpen: true, publishHourFor: () => 22 },
+      { now, marketOpen: true },
     );
     expect(f.navTotal).toBe(1);
     expect(f.navExpectedTonight).toBe(1);
-    // 18:00 is before the 22:00 publish hour, so nothing is overdue yet.
+    // We already hold the latest settled session's NAV, so nothing is overdue.
     expect(f.navAwaiting).toBe(0);
   });
 
-  it("does not flag an after-midnight fund as awaiting before its real publish time", () => {
-    // Mutual funds that strike after midnight: the US session has just closed but
-    // tonight's NAV won't land for hours, so the latest NAV we can hold is the
-    // prior session's. The coverage "main status" must agree with the per-row
-    // chip and report it as in-hand, not "awaiting", until its publish moment.
+  it("flags a fund behind the latest settled session's NAV as awaiting once closed", () => {
+    // Mutual funds strike after the close: the US session has just settled but
+    // tonight's NAV hasn't landed yet, so the fund is behind the settled session.
+    // The whole after-close, pre-NAV window now reads "awaiting" — exactly the
+    // "we are awaiting tonight's NAV" state the user expects — with no attempt to
+    // predict when it will publish.
     const evening = new Date(2024, 0, 10, 22, 30); // Wed 17:30 ET — session settled
     const quotes = new Map([["VTSAX", { valueDate: "2024-01-09" }]]); // prior session NAV
     const f = buildCoverageFacts(
       report({ servedFresh: ["VTSAX"] }),
       quotes,
       new Set(["VTSAX"]),
-      { now: evening, marketOpen: false, publishHourFor: () => 1 },
+      { now: evening, marketOpen: false },
     );
     expect(f.navTotal).toBe(1);
-    expect(f.navAwaiting).toBe(0);
+    expect(f.navAwaiting).toBe(1);
   });
 
   it("counts a failed market symbol toward the total (held only if it has a cached price)", () => {
@@ -293,14 +294,14 @@ describe("buildCoverageFacts", () => {
   });
 
   it("flags the latest due NAV as awaiting when we don't hold it yet", () => {
-    // Market open, well past the 22:00 publish hour for the prior session: the
-    // due NAV (yesterday's settled session) is genuinely missing, so coverage
+    // Market open, but the fund is behind even the prior settled session's NAV
+    // (a genuine provider outage, not just tonight's not-yet-struck NAV): coverage
     // must read "awaiting" and never claim everything is up to date.
     const f = buildCoverageFacts(
       report({ servedFresh: ["VTSAX"] }),
       new Map([["VTSAX", { valueDate: "2024-05-10" }]]), // a stale, days-old NAV
       new Set(["VTSAX"]),
-      { now, marketOpen: true, publishHourFor: () => 22 },
+      { now, marketOpen: true },
     );
     expect(f.navTotal).toBe(1);
     expect(f.navAwaiting).toBe(1);
@@ -316,41 +317,40 @@ describe("buildCoverageFacts", () => {
       report({ servedFresh: ["VTSAX"] }),
       new Map([["VTSAX", { valueDate: "2024-05-14" }]]), // prior session's NAV, in hand
       new Set(["VTSAX"]),
-      { now: preMarket, marketOpen: false, publishHourFor: () => 22 },
+      { now: preMarket, marketOpen: false },
     );
     expect(f.navTotal).toBe(1);
     expect(f.navAwaiting).toBe(0);
     expect(f.navExpectedTonight).toBe(0);
   });
 
-  it("does not await a NAV that is only one trading day late (routine publish lag)", () => {
-    // 3am the morning after a trading day: the latest settled session is
-    // yesterday and its publish hour has passed, but mutual-fund / money-market
-    // NAVs routinely publish a trading day late — so the freshest NAV the
-    // provider has struck is the session *before*. Holding it is up to date as
-    // far as anything that exists, so the line must NOT read "awaiting".
-    const earlyMorning = new Date(2024, 4, 16, 3, 0, 0); // Thu 03:00 local
+  it("awaits the just-settled session's NAV until it lands, however late", () => {
+    // Late evening after a trading day: the session has settled (we should hold
+    // tonight's NAV) but we still only have the prior session's. There is no
+    // publish-lag grace any more — we await it until it arrives, however late, so
+    // the line reads "awaiting" rather than prematurely "up to date".
+    const lateEvening = new Date(2024, 4, 16, 3, 0, 0); // Thu 03:00 UTC → Wed 23:00 ET
     const f = buildCoverageFacts(
       report({ servedFresh: ["VTSAX"] }),
-      new Map([["VTSAX", { valueDate: "2024-05-14" }]]), // Tue NAV; Wed's not struck yet
+      new Map([["VTSAX", { valueDate: "2024-05-14" }]]), // Tue NAV; Wed's settled but not held
       new Set(["VTSAX"]),
-      { now: earlyMorning, marketOpen: false, publishHourFor: () => 22, fx: "live" },
+      { now: lateEvening, marketOpen: false, fx: "live" },
     );
     expect(f.navTotal).toBe(1);
-    expect(f.navAwaiting).toBe(0);
-    // Market is closed, so the coverage line collapses to a calm "up to date".
-    expect(summarizeCoverage(f)).toBe("Market closed, up to date · FX live");
+    expect(f.navAwaiting).toBe(1);
+    // Market is closed and we are behind the settled session, so the line awaits.
+    expect(summarizeCoverage(f)).toBe("Market closed, awaiting 1/1 NAV · FX live");
   });
 
   it("still awaits a NAV that is more than one trading day behind", () => {
-    // A genuinely overdue NAV (the provider has failed for days) is more than the
-    // one-day publish lag behind, so it must still read "awaiting".
-    const earlyMorning = new Date(2024, 4, 16, 3, 0, 0); // Thu 03:00 local
+    // A genuinely overdue NAV (the provider has failed for days) is still behind
+    // the settled session, so it must read "awaiting".
+    const lateEvening = new Date(2024, 4, 16, 3, 0, 0); // Thu 03:00 UTC → Wed 23:00 ET
     const f = buildCoverageFacts(
       report({ servedFresh: ["VTSAX"] }),
       new Map([["VTSAX", { valueDate: "2024-05-10" }]]), // days-old NAV
       new Set(["VTSAX"]),
-      { now: earlyMorning, marketOpen: false, publishHourFor: () => 22 },
+      { now: lateEvening, marketOpen: false },
     );
     expect(f.navTotal).toBe(1);
     expect(f.navAwaiting).toBe(1);
