@@ -1,9 +1,9 @@
 /**
  * Orchestration tests for `runTiingoFallback`: the wiring that runs after the
  * Twelve Data pass and decides whether to spend Tiingo calls on the gaps. These
- * exercise the I/O paths (budget reservation, quote merge, NAV peer evidence)
- * against an in-memory storage + a stubbed `/price` fetch; the pure decision
- * logic itself is covered by `tiingo-gate.test.ts`.
+ * exercise the I/O paths (budget reservation, quote merge, unified NAV/stock
+ * eligibility) against an in-memory storage + a stubbed `/price` fetch; the pure
+ * decision logic itself is covered by `tiingo-gate.test.ts`.
  */
 import { describe, expect, it, vi } from "vitest";
 
@@ -142,7 +142,7 @@ describe("runTiingoFallback", () => {
     expect(out.quotes.get("AAPL")?.price?.toString()).toBe("199");
   });
 
-  it("fetches NAV laggards when a peer fund already published the target date", async () => {
+  it("fetches a behind NAV fund directly, exactly like a behind stock", async () => {
     const storage = memStorage();
     const fetchImpl = stubFetch([iexRow("FSKAX", 100, `${EXPECTED}T21:00:00Z`)]);
     const peer: Quote = {
@@ -166,6 +166,8 @@ describe("runTiingoFallback", () => {
       storage,
       fetchImpl,
     });
+    // FSKAX is behind the latest settled session → eligible and fetched; VTSAX
+    // already holds the target date → left untouched. No canary/peer timing.
     expect(out.tiingoSymbols).toEqual(["FSKAX"]);
     expect(out.quotes.get("FSKAX")?.valueDate).toBe(EXPECTED);
     // NAV fund: no faux intraday strike time.
@@ -179,8 +181,7 @@ describe("runTiingoFallback", () => {
       iexRow("VFIAX", 200, `${EXPECTED}T21:00:00Z`),
     ]);
     // VTSAX is already on the latest settled session (recent) → left untouched;
-    // FSKAX and VFIAX are behind with no peer/canary timing satisfied, yet
-    // forceAll pulls them both at once.
+    // FSKAX and VFIAX are behind, and forceAll pulls them both at once.
     const recent: Quote = {
       symbol: "VTSAX",
       price: new Decimal(120),

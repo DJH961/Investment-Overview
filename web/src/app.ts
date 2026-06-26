@@ -3754,8 +3754,8 @@ export class App {
     // --- Tiingo secondary-provider fallback ---------------------------------
     // After the Twelve Data (primary) pass, fill what it left missing/stale (and
     // the over-quota case) from Tiingo for US tickers, within Tiingo's own
-    // ET-reset budget. NAV funds take the peer-confirmation + canary path. This
-    // mutates quoteLoad.quotes in place and never throws for a transient failure.
+    // ET-reset budget. NAV funds run the same eligibility + budget pass as stocks.
+    // This mutates quoteLoad.quotes in place and never throws for a transient failure.
     if (network) {
       const proxyUrl = resolvePriceProxyUrl(config);
       const sizes = new Map(readSymbolPlan().map((e) => [e.symbol, e.sizeEur] as const));
@@ -4109,10 +4109,10 @@ export class App {
    * whole book through the secondary provider (Tiingo) for one pull. It skips the
    * Twelve Data primary fetch entirely and asks Tiingo for every holding whose
    * cached value is *not* already recent (behind the latest settled session / its
-   * expected NAV), bypassing the usual canary/peer timing so all laggards are
-   * pulled at once. Use it when the primary looks wrong or stuck and you want a
-   * second opinion. Tiingo's own hourly/daily budget still applies, so any
-   * overflow simply defers; symbols already on a fresh value are left untouched.
+   * expected NAV), bypassing the per-symbol "nothing newer" cooldown so all
+   * laggards are pulled at once. Use it when the primary looks wrong or stuck and
+   * you want a second opinion. Tiingo's own hourly/daily budget still applies, so
+   * any overflow simply defers; symbols already on a fresh value are left untouched.
    */
   private refreshViaBackupProvider(): void {
     this.exitSettings();

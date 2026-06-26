@@ -426,19 +426,37 @@ notes the symbols touched and any honest divergence from the plan as written. Li
 numbers in the plan above are v4.8.0 anchors and have since drifted — re-grep the named
 symbol.
 
-- **C1 — currency-known gate.** `buildPullFreshness` (`web/src/app.ts`) no longer
-  inflates an entry to the 10-day "heavily outdated" bucket on a missing market quote
-  unless that entry's `nativeCurrency` is known, so a pre-decrypt blind spot can't
-  force a full re-pull. A `currencyKnownForPlan()` helper plus decision-neutral
-  `phase` / `currencyKnown` fields on `PullContext` (`web/src/data-orchestrator.ts`)
+- **C1 — currency-known gate, routed through `planPull`.** The login warm-up now
+  literally runs its leg decisions through the shared `planPull` planner, so it can
+  never again diverge from the kickoff/auto pulls. `buildPrefetchFreshness` +
+  `planWarmupPull` (`web/src/app.ts`) build a `PullContext` for the warm-up and gate
+  the quotes / NAV / day-bar / week-bar legs on the same `planPull` verdict the other
+  pulls use; a missing leg is emptied to `[]` before `planPrefetch` routing. The pure
+  `deviceDaysMissing` helper (`web/src/data-orchestrator.ts`) is the single
+  market-gap-to-device-age mapping shared by `buildPullFreshness` and
+  `buildPrefetchFreshness`, so both pulls grade staleness identically. A
+  `currencyKnownForPrefetch()` gate keeps a pre-decrypt empty cache from faking a
+  10-day gap (an unknown-currency entry can't inflate to the "heavily outdated"
+  bucket), and the decision-neutral `phase` / `currencyKnown` fields on `PullContext`
   thread the warm-up phase to downstream planners.
-  - **Divergence (faithfulness note):** the plan's ideal was to literally route the
-    warm-up *through* `planPull` so the two pulls share one code path. A full planner
-    merge was judged too risky for one change, so the *observable invariant* — the
-    second pull only fetches what the first genuinely missed — is delivered by the
-    honest-ledger pair (C2 priming + C3 booking) plus this gate. The new `PullContext`
-    fields are intentionally decision-neutral (the gate lives upstream in `app.ts`),
-    and the data-orchestrator test asserts they do not by themselves alter routing.
+  - **Faithfulness:** this resolves the earlier divergence where the warm-up only
+    *approximated* the planner via the honest-ledger pair (C2 priming + C3 booking).
+    The warm-up still keeps `planPrefetch` for symbol/provider routing; `planPull` is
+    layered on top as the leg-gate authority, so the observable invariant — the second
+    pull only fetches what the first genuinely missed — is now enforced by the same
+    code path rather than a parallel one. FX is not re-gated because the warm-up's FX
+    pull is already interval-gated on the same cadence as `planPull`'s overlay.
+- **C1b — NAVs pull exactly like stocks.** The moment a NAV needs a price the primary
+  couldn't supply, it takes the identical routing, fallback, login fast-track and
+  ">16 queued" path as a stock. `planFanout` (`web/src/provider-fanout.ts`) merges
+  NAVs into one unified sleeve (the old NAV-only `allocateNav` split is gone; NAV
+  buckets are now descriptive partitions of the same TD-first / Tiingo-spill
+  decision), so a non-priority sleeve over the 16-symbol instant threshold spills
+  NAVs to Tiingo just like stocks. `runTiingoFallback` (`web/src/tiingo-fallback.ts`)
+  replaced the NAV-only peer-confirmation/canary timing path with one candidate loop
+  over all symbols gated by `marketSymbolEligible` + `selectWithinBudget`; bounded
+  re-probing for a fund Tiingo has nothing fresher for now comes from the same
+  per-symbol "nothing newer" cooldown that already governs a closed-market stock.
 - **C2 — honest priming.** Warm-up priming carries each symbol's `nativeCurrency` into
   the quote cache (`primeQuotesFromBars` / `PlannedSymbol.nativeCurrency` in
   `web/src/cache.ts`) instead of dropping every symbol on the old `currency === null`
@@ -462,10 +480,13 @@ symbol.
   freshly observed quotes.
 - **C7 — truthful log lines.** The two misleading log lines now report what actually
   happened.
-- **C8 — NAV provider routing.** `allocateNav` (`web/src/provider-fanout.ts`) routes
-  NAV symbols to Twelve Data first (up to remaining TD budget) and only spills to
-  Tiingo on a `priority` (login/start) round when Tiingo is available and budget
-  remains; otherwise defers. Non-priority rounds keep "NAV via Twelve Data only".
+- **C8 — NAV provider routing (now unified, see C1b).** `planFanout`
+  (`web/src/provider-fanout.ts`) routes NAV symbols through the *same* sleeve as
+  stocks: Twelve Data first (up to remaining TD budget), spilling to Tiingo whenever a
+  priority round or a >16-symbol non-priority sleeve would spill a stock, otherwise
+  deferring. The earlier NAV-only `allocateNav` split was removed in C1b; the
+  `navTwelveData` / `navTiingo` buckets are now descriptive partitions of the one
+  unified decision.
 - **C9 — accounted deferral queue.** The deferred-symbol logic is extracted to a pure
   `DeferredQueue` module (`web/src/deferred-queue.ts`, `DEFERRED_QUEUE_MAX = 64`,
   `DEFERRED_MAX_ATTEMPTS = 4`) so it is unit-testable and so no deferred entry vanishes
@@ -475,6 +496,7 @@ symbol.
   uncached symbols; the queue exists for honest accounting, not re-fetching.
 
 **Tests added:** C1 (`data-orchestrator.test.ts`), C5 (`cache.test.ts`,
-`compute.test.ts`), C6 (`login-handshake.test.ts`), C8 (`provider-fanout.test.ts`),
-C9 (`deferred-queue.test.ts`). Full web suite green (typecheck + 1084 vitest tests +
-build); Python suite unaffected (web-only change).
+`compute.test.ts`), C6 (`login-handshake.test.ts`), C8/C1b
+(`provider-fanout.test.ts`, `tiingo-fallback.test.ts`), C9 (`deferred-queue.test.ts`).
+Full web suite green (typecheck + 1089 vitest tests + build); Python suite unaffected
+(web-only change).

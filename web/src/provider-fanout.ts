@@ -29,6 +29,13 @@
  *    reserve.
  * 5. **No path is exempt from the hard provider caps** — every leg is clamped to
  *    the caller-supplied spendable budgets.
+ *
+ * **NAVs ride the same sleeve.** The moment a NAV fund needs a price this round it
+ * is folded into the one sleeve and obeys every invariant above identically to a
+ * stock — same TD lead, same >16 instant spill, same login fast-track, same
+ * reserve, same deferral. (Earlier the NAV slice had a separate "Twelve Data only
+ * unless login" policy; that divergence is gone.) Only NAV *graph-bars* stay out —
+ * NAVs have no intraday series — so this module routes purely their EOD price.
  */
 
 /**
@@ -62,12 +69,12 @@ export interface FanoutInputs {
   /** Symbols needing a fresh quote/bar this round (priority-ordered, largest first). */
   symbols: string[];
   /**
-   * NAV-fund symbols needing a fresh price this round (C8). NAVs prefer the cheap
-   * Twelve Data primary, but on a **login/start** pull they may spill to Tiingo
-   * when Twelve Data's minute is already spent (e.g. eaten by the 1D graph
-   * backfill) and Tiingo is idle — instead of starving and deferring. Optional;
-   * defaults to none. NAV *graph-bar* backfill is never routed here (NAVs have no
-   * intraday series) — this is purely the NAV EOD price/quote.
+   * NAV-fund symbols needing a fresh price this round. They are folded into the
+   * one unified sleeve and routed **exactly like stocks** — TD lead, Tiingo spill
+   * on a login/start pull or a >16-symbol sleeve, the reserve, and deferral all
+   * apply identically. Optional; defaults to none. NAV *graph-bar* backfill is
+   * never routed here (NAVs have no intraday series) — this is purely the NAV EOD
+   * price/quote.
    */
   navSymbols?: string[];
   /** Twelve Data credits spendable right now (per-minute budget, post-reservation). */
@@ -94,9 +101,9 @@ export interface FanoutPlan {
   twelveData: string[];
   /** Symbols spilled to Tiingo for an instant parallel result. */
   tiingo: string[];
-  /** NAV symbols routed to the Twelve Data primary (the cheap default). */
+  /** NAV symbols that rode the Twelve Data leg of the unified sleeve. */
   navTwelveData: string[];
-  /** NAV symbols spilled to Tiingo (login/start only, when TD is spent). */
+  /** NAV symbols that spilled to the Tiingo leg of the unified sleeve. */
   navTiingo: string[];
   /** Symbols that fit no budget this round — deferred to the next tick. */
   deferred: string[];
@@ -124,123 +131,122 @@ export function isPriorityPull(kind: FanoutKind): boolean {
  * - **Strictly above the threshold** (>16), or any **login/start** pull: spill the
  *   overflow to Tiingo in parallel, clamped to the Tiingo budget. A non-login spill
  *   must leave the last {@link TIINGO_RESERVE_CREDITS} untouched; login/start may use them.
+ *
+ * NAV funds needing a price (`navSymbols`) are appended to the same sleeve and
+ * obey the identical rules — they are no longer a separately-routed slice.
  */
 export function planFanout(input: FanoutInputs): FanoutPlan {
   const tdBatch = Math.max(1, Math.floor(input.twelveDataBatch ?? TWELVE_DATA_BATCH));
   const instantThreshold = input.instantThreshold ?? tdBatch * 2;
   const reserve = input.tiingoReserve ?? TIINGO_RESERVE_CREDITS;
   const priority = isPriorityPull(input.kind);
-  const navSymbols = input.navSymbols ?? [];
+  const navList = input.navSymbols ?? [];
+  const navSet = new Set(navList);
+
+  // **NAVs are treated exactly like stocks the moment a pull of them is needed**:
+  // one sleeve, one routing path. The market symbols lead (priority-ordered,
+  // largest first) and the NAV funds that need a price this round follow, but from
+  // here on both share the *identical* policy — the same Twelve Data lead (one
+  // request of ≤ the batch size), the same Tiingo spill (only on a login/start
+  // pull or a >16-symbol "instant" sleeve), the same reserve discipline, and the
+  // same deferral of whatever fits no budget. NAV *graph-bars* are never routed
+  // here (NAVs have no intraday series) — this is purely the NAV EOD price/quote.
+  const sleeve = [...input.symbols, ...navList];
 
   // Hard cap #5 / #1: the TD leg is one request of ≤ the batch size, clamped to
   // the live budget.
   const tdSpendable = Math.max(0, Math.floor(input.twelveDataSpendable));
   const tdCapacity = Math.min(tdBatch, tdSpendable);
-  const twelveData = input.symbols.slice(0, tdCapacity);
-  let rest = input.symbols.slice(tdCapacity);
+  const twelveDataAll = sleeve.slice(0, tdCapacity);
+  let rest = sleeve.slice(tdCapacity);
   const tiingoBudget = Math.max(0, Math.floor(input.tiingoSpendable));
 
-  // Running budget trackers, consumed by the market split first, then NAV (C8).
-  let tdLeft = Math.max(0, tdSpendable - twelveData.length);
-  let tiingoLeft = tiingoBudget;
-  let tiingo: string[] = [];
-
-  if (rest.length === 0) {
-    // Market sleeve fit one TD request; NAVs still need routing (C8).
-    const nav = allocateNav(navSymbols, priority, input.tiingoAvailable, tdLeft, tiingoLeft);
-    return {
-      twelveData,
-      tiingo: [],
-      navTwelveData: nav.navTwelveData,
-      navTiingo: nav.navTiingo,
-      deferred: nav.deferred,
-      fannedOut: nav.navTiingo.length > 0,
-      reason:
-        `Twelve Data only: ${twelveData.length} symbol(s) ≤ one TD request` +
-        describeNav(nav) +
-        ".",
-    };
-  }
-
-  // Invariant #2/#3: spill to Tiingo only when it is the instant case (>16) or a
-  // top-priority login/start pull. Otherwise the overflow waits a TD minute.
+  // Invariant #2/#3: spill to Tiingo only when it is the instant case (>16, the
+  // **whole** sleeve counted — NAVs included) or a top-priority login/start pull.
+  // Otherwise the overflow waits a TD minute. Invariant #4: a non-login spill must
+  // leave the last `reserve` Tiingo credits; login/start may consume even the
+  // reserve. Invariant #5: clamp to the live budget.
   const wantsFanout =
-    input.tiingoAvailable && (priority || input.symbols.length > instantThreshold);
-  if (!wantsFanout) {
-    const nav = allocateNav(navSymbols, priority, input.tiingoAvailable, tdLeft, tiingoLeft);
-    return {
-      twelveData,
-      tiingo: [],
-      navTwelveData: nav.navTwelveData,
-      navTiingo: nav.navTiingo,
-      deferred: [...rest, ...nav.deferred],
-      fannedOut: nav.navTiingo.length > 0,
-      reason:
-        `Twelve Data lead (${twelveData.length}), ${rest.length} deferred to next TD minute ` +
-        `(${input.symbols.length} ≤ ${instantThreshold} instant threshold; no Tiingo spill)` +
-        describeNav(nav) +
-        ".",
-    };
+    input.tiingoAvailable && rest.length > 0 && (priority || sleeve.length > instantThreshold);
+  let tiingoAll: string[] = [];
+  if (wantsFanout) {
+    const tiingoUsable = priority ? tiingoBudget : Math.max(0, tiingoBudget - reserve);
+    tiingoAll = rest.slice(0, tiingoUsable);
+    rest = rest.slice(tiingoAll.length);
   }
+  const deferred = rest;
 
-  // Invariant #4: a non-login spill must leave the last `reserve` Tiingo credits;
-  // login/start may consume even the reserve. Invariant #5: clamp to the budget.
-  const tiingoUsable = priority ? tiingoLeft : Math.max(0, tiingoLeft - reserve);
-  tiingo = rest.slice(0, tiingoUsable);
-  rest = rest.slice(tiingoUsable);
-  tiingoLeft = Math.max(0, tiingoLeft - tiingo.length);
+  // Partition each provider leg back into its market + NAV buckets for the report
+  // and the reconcile booking (the dispatch concatenates them again, so the split
+  // is purely descriptive — the routing decision above made no distinction).
+  const marketOf = (xs: string[]): string[] => xs.filter((s) => !navSet.has(s));
+  const navOf = (xs: string[]): string[] => xs.filter((s) => navSet.has(s));
+  const twelveData = marketOf(twelveDataAll);
+  const navTwelveData = navOf(twelveDataAll);
+  const tiingo = marketOf(tiingoAll);
+  const navTiingo = navOf(tiingoAll);
+  const nav: NavSplit = { navTwelveData, navTiingo, deferred: navOf(deferred) };
 
-  const nav = allocateNav(navSymbols, priority, input.tiingoAvailable, tdLeft, tiingoLeft);
-  const reservePart = priority
-    ? "login may use the Tiingo reserve"
-    : `last ${reserve} Tiingo credits reserved`;
   return {
     twelveData,
     tiingo,
-    navTwelveData: nav.navTwelveData,
-    navTiingo: nav.navTiingo,
-    deferred: [...rest, ...nav.deferred],
-    fannedOut: tiingo.length > 0 || nav.navTiingo.length > 0,
-    reason:
-      `Fan-out: ${twelveData.length} via Twelve Data + ${tiingo.length} via Tiingo in parallel` +
-      `${rest.length > 0 ? `, ${rest.length} deferred` : ""} ` +
-      `(${input.kind}; ${reservePart})` +
-      describeNav(nav) +
-      ".",
+    navTwelveData,
+    navTiingo,
+    deferred,
+    fannedOut: tiingoAll.length > 0,
+    reason: describeFanout({
+      twelveData,
+      tiingo,
+      marketDeferred: marketOf(deferred),
+      sleeveLength: sleeve.length,
+      instantThreshold,
+      wantsFanout,
+      priority,
+      reserve,
+      kind: input.kind,
+      nav,
+    }),
   };
 }
 
-/** The NAV slice of a fan-out: TD-first, Tiingo-overflow only on login/start. */
+/** Build the one-line, log-ready reason for a (now unified) fan-out decision. */
+function describeFanout(args: {
+  twelveData: string[];
+  tiingo: string[];
+  marketDeferred: string[];
+  sleeveLength: number;
+  instantThreshold: number;
+  wantsFanout: boolean;
+  priority: boolean;
+  reserve: number;
+  kind: FanoutKind;
+  nav: NavSplit;
+}): string {
+  const navClause = describeNav(args.nav);
+  if (args.tiingo.length === 0 && args.marketDeferred.length === 0) {
+    return `Twelve Data only: ${args.twelveData.length} symbol(s) ≤ one TD request${navClause}.`;
+  }
+  if (!args.wantsFanout) {
+    return (
+      `Twelve Data lead (${args.twelveData.length}), ${args.marketDeferred.length} deferred to next TD minute ` +
+      `(${args.sleeveLength} ≤ ${args.instantThreshold} instant threshold; no Tiingo spill)${navClause}.`
+    );
+  }
+  const reservePart = args.priority
+    ? "login may use the Tiingo reserve"
+    : `last ${args.reserve} Tiingo credits reserved`;
+  return (
+    `Fan-out: ${args.twelveData.length} via Twelve Data + ${args.tiingo.length} via Tiingo in parallel` +
+    `${args.marketDeferred.length > 0 ? `, ${args.marketDeferred.length} deferred` : ""} ` +
+    `(${args.kind}; ${reservePart})${navClause}.`
+  );
+}
+
+/** The NAV slice of a fan-out: which provider each NAV took, or was deferred. */
 interface NavSplit {
   navTwelveData: string[];
   navTiingo: string[];
   deferred: string[];
-}
-
-/**
- * Route the NAV EOD-price symbols (C8). NAVs always *prefer* the cheap Twelve
- * Data primary; the genuine fix is that on a **login/start** (priority) pull a
- * NAV that no longer fits the spent TD minute spills to idle Tiingo instead of
- * starving. Non-priority pulls keep NAV on TD only (Tiingo stays reserved for the
- * market sleeve that needs bars); whatever fits no budget is deferred. The NAV
- * spill is budget-clamped, so it can never overspend Tiingo.
- */
-function allocateNav(
-  navSymbols: string[],
-  priority: boolean,
-  tiingoAvailable: boolean,
-  tdLeft: number,
-  tiingoLeft: number,
-): NavSplit {
-  if (navSymbols.length === 0) return { navTwelveData: [], navTiingo: [], deferred: [] };
-  const navTwelveData = navSymbols.slice(0, Math.max(0, tdLeft));
-  let navRest = navSymbols.slice(navTwelveData.length);
-  let navTiingo: string[] = [];
-  if (navRest.length > 0 && priority && tiingoAvailable && tiingoLeft > 0) {
-    navTiingo = navRest.slice(0, tiingoLeft);
-    navRest = navRest.slice(navTiingo.length);
-  }
-  return { navTwelveData, navTiingo, deferred: navRest };
 }
 
 /** Append a short NAV-routing clause to a fan-out reason, or nothing when idle. */
