@@ -47,6 +47,29 @@ export interface Breadcrumb extends CurvePoint {
   baseUsd?: Decimal;
 }
 
+/**
+ * A per-symbol, per-day **close-completeness probe** — the decision layer's
+ * memory of how far an after-close price track has progressed and whether it has
+ * been **settled** (the best close anyone can give us, terminal for the day).
+ *
+ * Plain numbers/booleans only, so it (de)serialises straight through a
+ * structured-clone round-trip with no Decimal handling. Keyed by symbol inside
+ * {@link StoredSession.closeProbe}; the per-day session key naturally resets it
+ * next trading session (docs/session_close_completeness_plan.md C1/P3).
+ */
+export interface StoredCloseProbe {
+  /** Session-relative ms of the newest bar we have seen for this symbol. */
+  lastBarAt: number;
+  /** Post-close fetch attempts this day. */
+  attempts: number;
+  /** Distinct providers that returned this same tip (0 ⇒ outage). */
+  sources: 0 | 1 | 2;
+  /** Terminal: the best-available close has been accepted — never re-fetch today. */
+  settled: boolean;
+  /** Wall-clock ms of the last probe (the C4 spacing gate reads this). */
+  lastAttemptAt: number;
+}
+
 /** A session's worth of bars, persisted under its trading-day key. */
 export interface StoredSession {
   /** Trading day this session covers, `YYYY-MM-DD` (the primary key). */
@@ -67,6 +90,13 @@ export interface StoredSession {
    * struck against ({@link Breadcrumb}) so the trail can be rebased on render.
    */
   tips?: Breadcrumb[];
+  /**
+   * Per-symbol close-completeness probes (the after-close settle memory). Absent
+   * on records written before probes existed (treated as "no probe yet"); the
+   * per-day session key resets it next session. See {@link StoredCloseProbe} and
+   * docs/session_close_completeness_plan.md (C1).
+   */
+  closeProbe?: Record<string, StoredCloseProbe>;
   /** Epoch ms the session's *bars* were last fetched — for the refetch throttle. */
   updatedAt: number;
 }
@@ -77,6 +107,8 @@ interface SerializedSession {
   bars: Record<string, StoredBar[]>;
   fx: StoredBar[];
   tips?: StoredTip[];
+  /** Plain-number probe map (no Decimals); round-trips as-is. */
+  closeProbe?: Record<string, StoredCloseProbe>;
   updatedAt: number;
 }
 
@@ -143,13 +175,51 @@ function serialize(session: StoredSession): SerializedSession {
   for (const [symbol, list] of Object.entries(session.bars)) {
     bars[symbol] = serializeBars(list);
   }
-  return {
+  const record: SerializedSession = {
     day: session.day,
     bars,
     fx: serializeBars(session.fx),
     tips: serializeTips(session.tips ?? []),
     updatedAt: session.updatedAt,
   };
+  if (session.closeProbe && Object.keys(session.closeProbe).length > 0) {
+    record.closeProbe = session.closeProbe;
+  }
+  return record;
+}
+
+/**
+ * Validate one stored close-probe entry, tolerating legacy/garbage shapes — a
+ * malformed entry is dropped rather than throwing, so a partial or pre-probe
+ * payload still deserialises (schema back-compat, plan C1 failure modes).
+ */
+function deserializeCloseProbe(
+  raw: Record<string, unknown> | undefined,
+): Record<string, StoredCloseProbe> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: Record<string, StoredCloseProbe> = {};
+  for (const [symbol, value] of Object.entries(raw)) {
+    if (!value || typeof value !== "object") continue;
+    const v = value as Record<string, unknown>;
+    if (
+      typeof v.lastBarAt !== "number" ||
+      typeof v.attempts !== "number" ||
+      typeof v.sources !== "number" ||
+      typeof v.settled !== "boolean" ||
+      typeof v.lastAttemptAt !== "number"
+    ) {
+      continue;
+    }
+    const sources = v.sources === 2 ? 2 : v.sources === 1 ? 1 : 0;
+    out[symbol] = {
+      lastBarAt: v.lastBarAt,
+      attempts: v.attempts,
+      sources,
+      settled: v.settled,
+      lastAttemptAt: v.lastAttemptAt,
+    };
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 function deserialize(record: SerializedSession): StoredSession {
@@ -162,6 +232,9 @@ function deserialize(record: SerializedSession): StoredSession {
     bars,
     fx: deserializeBars(record.fx),
     tips: deserializeTips(record.tips),
+    closeProbe: deserializeCloseProbe(
+      record.closeProbe as Record<string, unknown> | undefined,
+    ),
     updatedAt: typeof record.updatedAt === "number" ? record.updatedAt : 0,
   };
 }
@@ -308,7 +381,14 @@ export class TimeSeriesStore {
    */
   async mergeSession(
     day: string,
-    incoming: { bars?: Record<string, Bar[]>; fx?: Bar[] },
+    incoming: {
+      bars?: Record<string, Bar[]>;
+      fx?: Bar[];
+      /** New/updated per-symbol close probes (merged field-by-field; settled sticky). */
+      closeProbe?: Record<string, StoredCloseProbe>;
+      /** Symbols whose probe should be dropped (e.g. a symbol that reached the close). */
+      closeProbeClear?: string[];
+    },
     now: number = Date.now(),
   ): Promise<StoredSession> {
     const existing =
@@ -318,9 +398,20 @@ export class TimeSeriesStore {
       bars[symbol] = mergeBars(existing.bars[symbol] ?? [], list);
     }
     const fx = incoming.fx ? mergeBars(existing.fx, incoming.fx) : existing.fx;
+    // Merge the close probes per symbol: a new record wins field-by-field, but a
+    // `settled:true` is **sticky** for the day (it survives a later same-bar
+    // probe). A `{bars}`/`{fx}`-only merge carries no probe and must therefore
+    // **preserve** the existing trail exactly like `tips` — so this starts from a
+    // copy of what is already stored (plan C1).
+    const closeProbe = mergeCloseProbes(
+      existing.closeProbe,
+      incoming.closeProbe,
+      incoming.closeProbeClear,
+    );
     // Preserve any breadcrumbs already recorded for the day — a bar fetch must
     // never wipe the live-tip trail.
     const merged: StoredSession = { day, bars, fx, tips: existing.tips ?? [], updatedAt: now };
+    if (closeProbe) merged.closeProbe = closeProbe;
     await this.saveSession(merged);
     return merged;
   }
@@ -367,6 +458,8 @@ export class TimeSeriesStore {
       // Leave `updatedAt` untouched: breadcrumbs are not a bar fetch.
       updatedAt: existing.updatedAt,
     };
+    // A breadcrumb write must never wipe the close-probe memory either.
+    if (existing.closeProbe) merged.closeProbe = existing.closeProbe;
     await this.saveSession(merged);
     return bounded;
   }
@@ -415,4 +508,27 @@ function mergeBars(existing: Bar[], incoming: Bar[]): Bar[] {
   for (const bar of existing) byTime.set(bar.t, bar.value);
   for (const bar of incoming) byTime.set(bar.t, bar.value);
   return [...byTime.entries()].sort((a, b) => a[0] - b[0]).map(([t, value]) => ({ t, value }));
+}
+
+/**
+ * Merge two per-symbol close-probe maps. The `incoming` record wins field by
+ * field, except `settled` is **sticky** — once a symbol is settled for the day it
+ * stays settled even if a later same-bar probe carries `settled:false` (plan
+ * C1/P3). `clear` drops a symbol's probe entirely (e.g. it reached the close).
+ * Returns `undefined` when the merged map is empty so an absent probe field
+ * round-trips as `undefined` rather than an empty object.
+ */
+function mergeCloseProbes(
+  existing: Record<string, StoredCloseProbe> | undefined,
+  incoming: Record<string, StoredCloseProbe> | undefined,
+  clear: string[] | undefined,
+): Record<string, StoredCloseProbe> | undefined {
+  if (!existing && !incoming && (!clear || clear.length === 0)) return undefined;
+  const out: Record<string, StoredCloseProbe> = { ...(existing ?? {}) };
+  for (const [symbol, next] of Object.entries(incoming ?? {})) {
+    const prev = out[symbol];
+    out[symbol] = { ...next, settled: (prev?.settled ?? false) || next.settled };
+  }
+  for (const symbol of clear ?? []) delete out[symbol];
+  return Object.keys(out).length > 0 ? out : undefined;
 }

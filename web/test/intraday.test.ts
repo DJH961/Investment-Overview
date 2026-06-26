@@ -20,6 +20,7 @@ import {
 } from "../src/intraday";
 import type { Bar, CurvePoint } from "../src/timeseries";
 import { memoryBackend, TimeSeriesStore, type Breadcrumb } from "../src/timeseries-store";
+import { FX_PROBE_KEY } from "../src/close-completeness";
 
 const d = (v: string | number): Decimal => new Decimal(v);
 const bar = (t: number, value: string): Bar => ({ t, value: new Decimal(value) });
@@ -918,5 +919,392 @@ describe("loadOrBuildSessionCurve — regenerateOnly seam (Pillar 6)", () => {
     });
     expect(fetchBars).not.toHaveBeenCalled();
     expect(result.points.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("loadOrBuildSessionCurve — multi-provider close completeness (C2–C7)", () => {
+  // The 2026-06-23 regular session closes at 16:00 ET == 20:00Z. INTRADAY_BAR_
+  // INTERVAL_MS is one hour, so a bar at/after 19:00Z reads "reached close".
+  const CLOSE_Z = Date.parse("2026-06-23T20:00:00Z");
+  const T1400 = Date.parse("2026-06-23T18:00:00Z"); // 14:00 ET — short of close
+  const T1530 = Date.parse("2026-06-23T19:30:00Z"); // 15:30 ET — reaches close
+  const NOW_CLOSED = new Date("2026-06-23T22:00:00Z"); // 18:00 ET, after close
+
+  function singleEtfAnchor(): IntradayAnchor {
+    return {
+      holdings: [
+        { priceSymbol: "DAX", valueEur: d(900), valueUsd: d(1000), closeNative: d(100), isUsdNative: true, priceType: "market" },
+      ],
+      baseEur: d(100),
+      baseUsd: d(100),
+      baseFx: d("0.9"),
+    };
+  }
+
+  async function seedShort(store: TimeSeriesStore): Promise<void> {
+    // A present-but-short stored session: last bar at 14:00 ET, never reached close.
+    await store.mergeSession("2026-06-23", { bars: { DAX: [bar(T1400, "100")] } });
+  }
+
+  function fakeBackoff() {
+    const fails = new Map<string, number>();
+    const armed = new Set<string>();
+    return {
+      fails,
+      armed,
+      suppressed: (k: string): boolean => armed.has(k),
+      fail: (k: string): void => {
+        fails.set(k, (fails.get(k) ?? 0) + 1);
+      },
+      succeed: (k: string): void => {
+        fails.delete(k);
+        armed.delete(k);
+      },
+    };
+  }
+
+  it("C2: a settled symbol is excluded from the missing set (zero fetches)", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await seedShort(store);
+    await store.mergeSession("2026-06-23", {
+      closeProbe: {
+        DAX: { lastBarAt: T1400, attempts: 1, sources: 2, settled: true, lastAttemptAt: 1 },
+      },
+    });
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    await loadOrBuildSessionCurve({ anchor: singleEtfAnchor(), store, fetchBars, now: NOW_CLOSED });
+    expect(fetchBars).not.toHaveBeenCalled();
+  });
+
+  it("C2: an unsettled short symbol is still fetched", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await seedShort(store);
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>([["DAX", [bar(T1400, "100")]]]));
+    await loadOrBuildSessionCurve({ anchor: singleEtfAnchor(), store, fetchBars, now: NOW_CLOSED });
+    expect(fetchBars).toHaveBeenCalledWith(["DAX"]);
+  });
+
+  it("C3 illiquid: two providers agree on the same last bar ⇒ settled, ≤2 credits, then 0", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await seedShort(store);
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>([["DAX", [bar(T1400, "100")]]]));
+    const fetchSecondaryBars = vi.fn(async () => new Map<string, Bar[]>([["DAX", [bar(T1400, "100")]]]));
+    const log: { outcome: string; level: string; message: string }[] = [];
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      fetchSecondaryBars,
+      now: NOW_CLOSED,
+      formatInstant: (t) => (t === CLOSE_Z ? "16:00 ET" : new Date(t).toISOString()),
+      onCloseResolve: (e) => log.push(e),
+    });
+    expect(fetchBars).toHaveBeenCalledTimes(1);
+    expect(fetchSecondaryBars).toHaveBeenCalledTimes(1);
+    const probe = (await store.loadSession("2026-06-23"))!.closeProbe!.DAX;
+    expect(probe.settled).toBe(true);
+    expect(probe.sources).toBe(2);
+    expect(log.some((l) => l.outcome === "settled-by-agreement" && l.level === "good")).toBe(true);
+    // C6: the line is human-facing — it names the symbol, the 1D label, and uses
+    // the injected instant formatter (no raw epoch ms leaks into the trail).
+    const settledLine = log.find((l) => l.outcome === "settled-by-agreement")!;
+    expect(settledLine.message).toContain("1D graph · DAX");
+    expect(settledLine.message).not.toMatch(/\d{10,}/);
+
+    // Next build: settled ⇒ no further fetches.
+    fetchBars.mockClear();
+    fetchSecondaryBars.mockClear();
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      fetchSecondaryBars,
+      now: new Date(NOW_CLOSED.getTime() + 60 * 60_000),
+    });
+    expect(fetchBars).not.toHaveBeenCalled();
+    expect(fetchSecondaryBars).not.toHaveBeenCalled();
+  });
+
+  it("C3 logged-off-early: the primary now reaches the close ⇒ reached-close, no escalation", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await seedShort(store);
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>([["DAX", [bar(T1400, "100"), bar(T1530, "110")]]]));
+    const fetchSecondaryBars = vi.fn(async () => new Map<string, Bar[]>());
+    const log: { outcome: string; level: string; message: string }[] = [];
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      fetchSecondaryBars,
+      now: NOW_CLOSED,
+      onCloseResolve: (e) => log.push(e),
+    });
+    expect(fetchSecondaryBars).not.toHaveBeenCalled();
+    const session = (await store.loadSession("2026-06-23"))!;
+    expect(session.closeProbe).toBeUndefined(); // cleared
+    expect(session.bars.DAX.some((b) => b.t === T1530)).toBe(true);
+    expect(log.some((l) => l.outcome === "reached-close" && l.level === "good")).toBe(true);
+  });
+
+  it("C3 weak-on-primary: the secondary supplies the close ⇒ reached-close via secondary", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await seedShort(store);
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>([["DAX", [bar(T1400, "100")]]]));
+    const fetchSecondaryBars = vi.fn(async () => new Map<string, Bar[]>([["DAX", [bar(T1530, "110")]]]));
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      fetchSecondaryBars,
+      now: NOW_CLOSED,
+    });
+    expect(fetchSecondaryBars).toHaveBeenCalledTimes(1);
+    const session = (await store.loadSession("2026-06-23"))!;
+    expect(session.bars.DAX.some((b) => b.t === T1530)).toBe(true);
+    expect(session.closeProbe).toBeUndefined(); // reached-close clears the probe
+  });
+
+  it("C3 outage: both providers empty ⇒ not settled, back-off struck", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await seedShort(store);
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    const fetchSecondaryBars = vi.fn(async () => new Map<string, Bar[]>());
+    const backoff = fakeBackoff();
+    const log: { outcome: string; level: string; message: string }[] = [];
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      fetchSecondaryBars,
+      closeBackoff: backoff,
+      now: NOW_CLOSED,
+      onCloseResolve: (e) => log.push(e),
+    });
+    const probe = (await store.loadSession("2026-06-23"))!.closeProbe!.DAX;
+    expect(probe.settled).toBe(false);
+    expect(backoff.fails.get("close:1D:DAX")).toBe(1);
+    expect(log.some((l) => l.outcome === "deferred-outage" && l.level === "warn")).toBe(true);
+  });
+
+  it("C3 tolerance (P5): a bar that only moves seconds reads as no-advance ⇒ escalates", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await seedShort(store);
+    // Primary returns a bar 40s later than the stored tip — noise, not progress.
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>([["DAX", [bar(T1400 + 40_000, "100")]]]));
+    const fetchSecondaryBars = vi.fn(async () => new Map<string, Bar[]>([["DAX", [bar(T1400 + 40_000, "100")]]]));
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      fetchSecondaryBars,
+      now: NOW_CLOSED,
+    });
+    // It escalated (no false progress) and the two sources agreed ⇒ settled.
+    expect(fetchSecondaryBars).toHaveBeenCalledTimes(1);
+    const probe = (await store.loadSession("2026-06-23"))!.closeProbe!.DAX;
+    expect(probe.settled).toBe(true);
+  });
+
+  it("C4 spacing gate: repeated builds 1s apart probe at most once per window", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await seedShort(store);
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>([["DAX", [bar(T1400, "100")]]]));
+    // No secondary ⇒ the short symbol never settles, but the spacing gate must
+    // still stop the per-render hammer.
+    await loadOrBuildSessionCurve({ anchor: singleEtfAnchor(), store, fetchBars, now: NOW_CLOSED });
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      now: new Date(NOW_CLOSED.getTime() + 1000),
+    });
+    expect(fetchBars).toHaveBeenCalledTimes(1); // second build held flat by the gate
+  });
+
+  it("C4 spacing gate: a build past the spacing window probes again", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await seedShort(store);
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>([["DAX", [bar(T1400, "100")]]]));
+    await loadOrBuildSessionCurve({ anchor: singleEtfAnchor(), store, fetchBars, now: NOW_CLOSED });
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      now: new Date(NOW_CLOSED.getTime() + 11 * 60_000),
+    });
+    expect(fetchBars).toHaveBeenCalledTimes(2);
+  });
+
+  it("C4: a suppressed (armed cooldown) short symbol is not probed", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await seedShort(store);
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>([["DAX", [bar(T1400, "100")]]]));
+    const backoff = fakeBackoff();
+    backoff.armed.add("close:1D:DAX");
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      closeBackoff: backoff,
+      now: NOW_CLOSED,
+    });
+    expect(fetchBars).not.toHaveBeenCalled();
+  });
+
+  it("C3: a settled probe survives an app restart (persisted in the store)", async () => {
+    const backend = memoryBackend();
+    const store = new TimeSeriesStore(backend);
+    await seedShort(store);
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>([["DAX", [bar(T1400, "100")]]]));
+    const fetchSecondaryBars = vi.fn(async () => new Map<string, Bar[]>([["DAX", [bar(T1400, "100")]]]));
+    await loadOrBuildSessionCurve({ anchor: singleEtfAnchor(), store, fetchBars, fetchSecondaryBars, now: NOW_CLOSED });
+    // A "restart": a brand-new store over the same backend.
+    const store2 = new TimeSeriesStore(backend);
+    fetchBars.mockClear();
+    fetchSecondaryBars.mockClear();
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store: store2,
+      fetchBars,
+      fetchSecondaryBars,
+      now: new Date(NOW_CLOSED.getTime() + 30 * 60_000),
+    });
+    expect(fetchBars).not.toHaveBeenCalled();
+    expect(fetchSecondaryBars).not.toHaveBeenCalled();
+  });
+
+  it("C7 liquid: a symbol with a closing bar settles with 0 escalations", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await seedShort(store);
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>([["DAX", [bar(T1530, "110")]]]));
+    const fetchSecondaryBars = vi.fn(async () => new Map<string, Bar[]>());
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      fetchSecondaryBars,
+      now: NOW_CLOSED,
+    });
+    expect(fetchBars).toHaveBeenCalledTimes(1);
+    expect(fetchSecondaryBars).not.toHaveBeenCalled();
+  });
+
+  // ── FX-track parity (new requirement): the EUR/USD track settles to its best
+  // close exactly like a price symbol, and a per-render redraw never re-pulls it.
+  async function seedCompleteBarsIncompleteFx(store: TimeSeriesStore): Promise<void> {
+    // The price bars already reach the close (so prices never gate the FX work),
+    // but the FX track stops at 14:00 ET — short of the 15:00 ET reached-close floor.
+    await store.mergeSession("2026-06-23", {
+      bars: { DAX: [bar(T1530, "110")] },
+      fx: [bar(T1400, "1.00")],
+    });
+  }
+
+  it("FX C5: an incomplete-but-present FX track is advanced to its settled close, then not re-pulled", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await seedCompleteBarsIncompleteFx(store);
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    const fetchFx = vi.fn(async () => [bar(T1530, "1.10")]); // reaches the close
+    const log: { symbol: string; outcome: string; level: string }[] = [];
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      fetchFx,
+      now: NOW_CLOSED,
+      onCloseResolve: (e) => log.push(e),
+    });
+    expect(fetchBars).not.toHaveBeenCalled(); // prices already complete
+    expect(fetchFx).toHaveBeenCalledTimes(1);
+    const session = (await store.loadSession("2026-06-23"))!;
+    expect(session.fx.some((b) => b.t === T1530)).toBe(true);
+    expect(session.closeProbe?.[FX_PROBE_KEY]).toBeUndefined(); // reached-close clears it
+    expect(log.some((l) => l.symbol === FX_PROBE_KEY && l.outcome === "reached-close")).toBe(true);
+
+    // A second build: the FX track now reaches the close ⇒ no further FX pull.
+    fetchFx.mockClear();
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      fetchFx,
+      now: new Date(NOW_CLOSED.getTime() + 60 * 60_000),
+    });
+    expect(fetchFx).not.toHaveBeenCalled();
+  });
+
+  it("FX C5: two providers agreeing on the last FX bar settle the day's FX (sources=2)", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await seedCompleteBarsIncompleteFx(store);
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    const fetchFx = vi.fn(async () => [bar(T1400, "1.00")]); // no advance vs stored tip
+    const fetchSecondaryFx = vi.fn(async () => [bar(T1400, "1.00")]); // agrees
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      fetchFx,
+      fetchSecondaryFx,
+      now: NOW_CLOSED,
+    });
+    expect(fetchFx).toHaveBeenCalledTimes(1);
+    expect(fetchSecondaryFx).toHaveBeenCalledTimes(1);
+    const probe = (await store.loadSession("2026-06-23"))!.closeProbe![FX_PROBE_KEY];
+    expect(probe.settled).toBe(true);
+    expect(probe.sources).toBe(2);
+
+    // Settled ⇒ neither FX provider is asked again on a redraw.
+    fetchFx.mockClear();
+    fetchSecondaryFx.mockClear();
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      fetchFx,
+      fetchSecondaryFx,
+      now: new Date(NOW_CLOSED.getTime() + 60 * 60_000),
+    });
+    expect(fetchFx).not.toHaveBeenCalled();
+    expect(fetchSecondaryFx).not.toHaveBeenCalled();
+  });
+
+  it("FX C5: an FX outage strikes the back-off under the FX key, never settling", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await seedCompleteBarsIncompleteFx(store);
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    const fetchFx = vi.fn(async () => [] as Bar[]);
+    const fetchSecondaryFx = vi.fn(async () => [] as Bar[]);
+    const backoff = fakeBackoff();
+    const log: { symbol: string; outcome: string; level: string }[] = [];
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      fetchFx,
+      fetchSecondaryFx,
+      closeBackoff: backoff,
+      now: NOW_CLOSED,
+      onCloseResolve: (e) => log.push(e),
+    });
+    const probe = (await store.loadSession("2026-06-23"))!.closeProbe![FX_PROBE_KEY];
+    expect(probe.settled).toBe(false);
+    expect(backoff.fails.get(`close:1D:${FX_PROBE_KEY}`)).toBe(1);
+    expect(log.some((l) => l.symbol === FX_PROBE_KEY && l.outcome === "deferred-outage")).toBe(true);
+  });
+
+  it("FX C5: regenerate-only never pulls the FX track even when it is incomplete", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await seedCompleteBarsIncompleteFx(store);
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    const fetchFx = vi.fn(async () => [bar(T1530, "1.10")]);
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      fetchFx,
+      regenerateOnly: true,
+      now: NOW_CLOSED,
+    });
+    expect(fetchFx).not.toHaveBeenCalled();
   });
 });
