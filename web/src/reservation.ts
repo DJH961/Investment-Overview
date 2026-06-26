@@ -33,6 +33,7 @@ import {
   releaseCredits,
   creditsSpentWithin,
   creditsSpentToday,
+  creditsSpentThisHour,
   readTiingoCreditLog,
   recordTiingoCredits,
   releaseTiingoCredits,
@@ -69,10 +70,14 @@ export function twelveDataAvailable(
 }
 
 /**
- * Live remaining Tiingo credits at `now` — the scarce 40/hr · 800/day web budget
- * (trailing-hour + ET-day windows), **0 while Tiingo is frozen** to the next
- * `:00`. This is the gate the graph overflow/spill and FX legs never had before
- * (audit Flags 1, 2, 5).
+ * Live remaining Tiingo credits at `now` — the scarce 40/hr · 800/day web budget,
+ * **0 while Tiingo is frozen** to the next `:00`. The hourly window resets on the
+ * clock hour (matching `tiingo-fallback.ts` and the 429 breaker freeze) rather
+ * than a trailing 60-min window, so a burst at :55 doesn't suppress the fresh
+ * allowance the user expects at the top of the next hour. The used counts are
+ * clamped at 0 so an over-refund can't inflate the budget past the cap. This is
+ * the gate the graph overflow/spill and FX legs never had before (audit Flags 1,
+ * 2, 5).
  */
 export function tiingoAvailable(
   now: number,
@@ -82,8 +87,8 @@ export function tiingoAvailable(
   if (tiingoFrozen(now, s)) return 0;
   const log = readTiingoCreditLog(now, DAY_MS, s);
   const budget = new Budget(
-    creditsSpentWithin(log, now, HOUR_MS),
-    tiingoCreditsSpentToday(log, now),
+    Math.max(0, creditsSpentThisHour(log, now)),
+    Math.max(0, tiingoCreditsSpentToday(log, now)),
     WEB_HOURLY_CAP,
     WEB_DAILY_CAP,
   );
