@@ -147,7 +147,7 @@ function readBudget(
   // freezes Tiingo until the next clock hour. Rather than a separate early-return
   // guard, fold the frozen state directly into the budget — when frozen, report
   // 0 remaining so selectWithinBudget naturally returns no symbols and the
-  // bi-directional safety net (planTwelveDataSafetyNet) catches the holes.
+  // central safety net (planTwelveDataSafetyNet) catches the holes.
   if (tiingoFrozen(now, storage ?? null)) {
     return new Budget(WEB_HOURLY_CAP, WEB_DAILY_CAP, WEB_HOURLY_CAP, WEB_DAILY_CAP);
   }

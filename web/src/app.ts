@@ -4994,13 +4994,13 @@ export class App {
     // (when quotas reset) so the *original* source is retried instead of the
     // exhausted fallback. This is the alternative to using an over-limit provider.
     if (this.lastTiingoError?.retryAfterMs) {
-      const retryAt = this.lastTiingoError.retryAfterMs;
+      const retryDelayMs = this.lastTiingoError.retryAfterMs;
       // Use the longer of normal cadence or the hour-boundary delay, so we don't
       // wake up only to find limits still exhausted.
-      delayMs = Math.max(delayMs, retryAt);
+      delayMs = Math.max(delayMs, retryDelayMs);
       this.pollLog(
         "fallback",
-        `Fallback blocked by hard limit — scheduling retry in ${Math.round(retryAt / 60000)}min (next hour boundary).`,
+        `Fallback blocked by hard limit — scheduling retry in ${Math.round(retryDelayMs / 60000)}min (next hour boundary).`,
         "info",
       );
     }
