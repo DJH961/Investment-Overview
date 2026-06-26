@@ -946,6 +946,24 @@ describe("buildFetchPlan", () => {
     expect(plan.map((e) => e.symbol)).not.toContain("MMF");
   });
 
+  it("carries each ticker's native currency (C2), and null when holdings disagree", () => {
+    const data = planExport();
+    // Two holdings on one ticker that disagree on currency → collapses to null.
+    data.holdings.push({
+      ...data.holdings[0],
+      symbol: "BIG_ETF_EUR_LEG",
+      price_symbol: "BIG_ETF",
+      asset_class: "etf",
+      price_type: "market",
+      native_currency: "EUR",
+    });
+    const plan = buildFetchPlan(data, new Set(["mutual_fund"]));
+    const small = plan.find((e) => e.symbol === "SMALL_ETF");
+    const big = plan.find((e) => e.symbol === "BIG_ETF");
+    expect(small?.nativeCurrency).toBe("USD");
+    expect(big?.nativeCurrency).toBeNull();
+  });
+
   it("excludes money-market funds even when they carry the mutual_fund class (VMFXX)", () => {
     // The desktop keeps settlement funds in the broad mutual_fund class, so the
     // asset_class alone won't exclude them; they must be caught by ticker/flag.
@@ -1342,5 +1360,85 @@ describe("fxObservedAt", () => {
   it("defaults to null when no FX observation time is provided", () => {
     const m = buildDashboard(makeExport(), quotes, fx, new Date("2024-06-01T12:00:00Z"));
     expect(m.overview.fxObservedAt).toBeNull();
+  });
+});
+
+describe("C5 — bars-first NAV headline (bar-tip equals the quote-derived total)", () => {
+  // A NAV primed from a settled daily bar (primeQuotesFromBars with the NAV
+  // value-date stamp) looks exactly like this: value-dated, marketOpen:false,
+  // priceTime at the bar's day-start. The headline must adopt it, matching what a
+  // conventional NAV *quote* of the same value would have produced.
+  const barDay = Date.parse("2024-06-03T00:00:00Z");
+  const exp = (() => {
+    const e = makeExport();
+    e.meta.as_of = "2024-05-31"; // export older than the settled bar day
+    return e;
+  })();
+
+  it("adopts a value-dated NAV bar tip as the headline NAV (not the export fallback)", () => {
+    const navFromBar = new Map<string, Quote>([
+      ["VTI", { symbol: "VTI", price: new Decimal("100"), previousClose: new Decimal("95"), currency: "USD" }],
+      [
+        "FXAIX",
+        {
+          symbol: "FXAIX",
+          price: new Decimal("103"),
+          previousClose: null,
+          currency: "USD",
+          at: Date.parse("2024-06-03T12:00:00Z"),
+          priceTime: barDay,
+          valueDate: "2024-06-03",
+          marketOpen: false,
+        },
+      ],
+    ]);
+    const m = buildDashboard(exp, navFromBar, fx, new Date("2024-06-03T18:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.priceIsLive).toBe(true);
+    approx(fxaix.priceNative, 103);
+
+    // The same value supplied as a conventional NAV quote yields the same total —
+    // i.e. bars-first costs nothing in correctness, it only saves a quote credit.
+    const navFromQuote = new Map<string, Quote>([
+      ["VTI", { symbol: "VTI", price: new Decimal("100"), previousClose: new Decimal("95"), currency: "USD" }],
+      [
+        "FXAIX",
+        {
+          symbol: "FXAIX",
+          price: new Decimal("103"),
+          previousClose: null,
+          currency: "USD",
+          at: Date.parse("2024-06-03T20:00:00Z"),
+          priceTime: null,
+          valueDate: "2024-06-03",
+        },
+      ],
+    ]);
+    const m2 = buildDashboard(exp, navFromQuote, fx, new Date("2024-06-03T18:00:00Z"));
+    approx(m.overview.totalValueEur, (m2.overview.totalValueEur as Decimal).toNumber(), 1e-6);
+  });
+
+  it("rejects a NAV bar tip with no value-date (falls back to the exported price)", () => {
+    // Without the C5 value-date stamp a bar-primed NAV is treated as stale and the
+    // headline keeps the exported last-known price — proving the stamp is required.
+    const navNoDate = new Map<string, Quote>([
+      ["VTI", { symbol: "VTI", price: new Decimal("100"), previousClose: new Decimal("95"), currency: "USD" }],
+      [
+        "FXAIX",
+        {
+          symbol: "FXAIX",
+          price: new Decimal("103"),
+          previousClose: null,
+          currency: "USD",
+          at: Date.parse("2024-06-03T12:00:00Z"),
+          priceTime: barDay,
+          valueDate: null,
+        },
+      ],
+    ]);
+    const m = buildDashboard(exp, navNoDate, fx, new Date("2024-06-03T18:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.priceIsLive).toBe(false);
+    approx(fxaix.priceNative, 100); // exported last-known, not the dateless bar
   });
 });

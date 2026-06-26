@@ -171,6 +171,66 @@ describe("primeQuotesFromBars", () => {
     primeQuotesFromBars(new Map([["VTI", []]]), new Map([["VTI", "USD"]]), 5000, s);
     expect(readCachedQuotes(s).size).toBe(0);
   });
+
+  it("C5: stamps a NAV bar tip as a settled, value-dated close (not live)", () => {
+    const s = memStorage();
+    // 2026-06-19 UTC midnight — the settled NAV bar day.
+    const day = Date.parse("2026-06-19T00:00:00Z");
+    primeQuotesFromBars(
+      new Map([["FXAIX", [bar(day, "210.5")]]]),
+      new Map([["FXAIX", "USD"]]),
+      9_000_000,
+      s,
+      new Set(["FXAIX"]),
+    );
+    const got = readCachedQuotes(s).get("FXAIX")!;
+    expect(got.quote.price?.toString()).toBe("210.5");
+    // The value-date is the bar day so priceForHolding accepts it as the headline.
+    expect(got.quote.valueDate).toBe("2026-06-19");
+    // A NAV tip is settled, never a live tick.
+    expect(got.quote.marketOpen).toBe(false);
+  });
+
+  it("C5: a non-NAV symbol keeps a null value-date (never mislabelled settled NAV)", () => {
+    const s = memStorage();
+    const day = Date.parse("2026-06-19T00:00:00Z");
+    primeQuotesFromBars(new Map([["VTI", [bar(day, "300")]]]), new Map([["VTI", "USD"]]), 9_000_000, s);
+    const got = readCachedQuotes(s).get("VTI")!;
+    expect(got.quote.valueDate).toBeNull();
+  });
+
+  it("persists a NAV value-date through the DEFAULT storage (no explicit storage arg)", () => {
+    // Guards the bars-first NAV prime path that omits the storage arg: the
+    // default must resolve to real localStorage and actually write, not be
+    // short-circuited by a null storage that silently drops the NAV.
+    const map = new Map<string, string>();
+    const previous = Reflect.get(globalThis, "localStorage") as Storage | undefined;
+    Reflect.set(globalThis, "localStorage", {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+      removeItem: (k: string) => void map.delete(k),
+    });
+    try {
+      const day = Date.parse("2026-06-19T00:00:00Z");
+      // Note: storage arg omitted so defaultStorage() is exercised end to end.
+      const primed = primeQuotesFromBars(
+        new Map([["FXAIX", [bar(day, "210.5")]]]),
+        new Map([["FXAIX", "USD"]]),
+        9_000_000,
+        undefined,
+        new Set(["FXAIX"]),
+      );
+      expect(primed).toEqual(["FXAIX"]);
+      // The NAV must be readable back from the same default storage.
+      const got = readCachedQuotes().get("FXAIX")!;
+      expect(got.quote.price?.toString()).toBe("210.5");
+      expect(got.quote.valueDate).toBe("2026-06-19");
+      expect(got.quote.marketOpen).toBe(false);
+    } finally {
+      if (previous === undefined) Reflect.deleteProperty(globalThis, "localStorage");
+      else Reflect.set(globalThis, "localStorage", previous);
+    }
+  });
 });
 
 describe("fx cache", () => {
@@ -330,11 +390,22 @@ describe("symbol plan cache", () => {
   it("round-trips a priority plan", () => {
     const s = memStorage();
     const plan = [
-      { symbol: "BIG_ETF", priceType: "market", assetClass: "etf", sizeEur: 9000 },
-      { symbol: "FUND", priceType: "nav", assetClass: "mutual_fund", sizeEur: 500 },
+      { symbol: "BIG_ETF", priceType: "market", assetClass: "etf", sizeEur: 9000, nativeCurrency: "USD" },
+      { symbol: "FUND", priceType: "nav", assetClass: "mutual_fund", sizeEur: 500, nativeCurrency: "EUR" },
     ];
     writeSymbolPlan(plan, s);
     expect(readSymbolPlan(s)).toEqual(plan);
+  });
+
+  it("defaults a legacy plan with no nativeCurrency to null (C2 back-compat)", () => {
+    const s = memStorage();
+    s.setItem(
+      "iv.web.symbol_plan",
+      JSON.stringify([{ symbol: "OLD", priceType: "market", assetClass: "etf", sizeEur: 7 }]),
+    );
+    expect(readSymbolPlan(s)).toEqual([
+      { symbol: "OLD", priceType: "market", assetClass: "etf", sizeEur: 7, nativeCurrency: null },
+    ]);
   });
 
   it("returns an empty array for missing/corrupt storage", () => {
@@ -358,8 +429,8 @@ describe("symbol plan cache", () => {
       ]),
     );
     expect(readSymbolPlan(s)).toEqual([
-      { symbol: "OK", priceType: "market", assetClass: "", sizeEur: 0 },
-      { symbol: "TYPED", priceType: "nav", assetClass: "mutual_fund", sizeEur: 12 },
+      { symbol: "OK", priceType: "market", assetClass: "", sizeEur: 0, nativeCurrency: null },
+      { symbol: "TYPED", priceType: "nav", assetClass: "mutual_fund", sizeEur: 12, nativeCurrency: null },
     ]);
   });
 });
