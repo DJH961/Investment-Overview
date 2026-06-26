@@ -2754,7 +2754,8 @@ export class App {
     if (!this.state.passphrase) return;
     this.dismissAutoLockWarning();
     let remaining = Math.max(1, Math.ceil(leadMs / 1000));
-    const message = (secs: number): string => `Locking in ${secs}s due to inactivity`;
+    const message = (secs: number): string =>
+      `Locking in ${secs} second${secs === 1 ? "" : "s"} due to inactivity`;
     const text = h(
       "span",
       { id: "auto-lock-warn-text", class: "auto-lock-warn-text", "aria-atomic": "true" },
