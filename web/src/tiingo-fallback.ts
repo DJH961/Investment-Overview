@@ -43,7 +43,7 @@ import {
   WEB_HOURLY_CAP,
 } from "./tiingo-gate";
 import { tiingoFrozen } from "./provider-breaker";
-import { efficiencySpillEligible } from "./provider-fanout";
+import { efficiencySpillEligible, TIINGO_RESERVE_CREDITS } from "./provider-fanout";
 import { ledgerReservation, type Reservation } from "./reservation";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -398,6 +398,15 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     // whether the round was manual or automatic.
     const requestedCount = symbols.length;
     const deferredSet = new Set(report.deferred);
+    // The live Tiingo credits spendable right now (raw hour/day budget, with the
+    // 429-breaker freeze folded in as 0). The efficiency spill is gated on this so
+    // it only earmarks overflow for Tiingo when fanning out is actually possible —
+    // i.e. there are credits free *beyond* the fan-out reserve. When Tiingo is
+    // spent (or frozen) the overflow stays on Twelve Data's deferred queue instead
+    // of being routed to a backup leg that can never run, so a big closed-market
+    // hard refresh can't strand on "Updating…" waiting for a Tiingo fill that the
+    // budget will never grant.
+    const tiingoCreditsAvailable = readBudget(now, storage).remaining();
     for (const symbol of symbols) {
       if (suppressedByNoNewer(symbol)) continue;
       const q = quotes.get(symbol);
@@ -408,6 +417,8 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
         symbol,
         requestedCount,
         deferred: deferredSet,
+        tiingoCreditsAvailable,
+        tiingoReserve: TIINGO_RESERVE_CREDITS,
       });
       if (eligible || efficiencyEligible) {
         candidates.push(symbol);

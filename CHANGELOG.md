@@ -14,6 +14,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.14.4] — 2026-06-27
+
+### Fixed
+
+- **A big closed-market hard refresh no longer hangs on "Updating…" forever when
+  the Tiingo backup is out of credits.** When a refresh was large enough to fan
+  its Twelve Data overflow out to Tiingo for efficiency (the >16-symbol "instant"
+  rule) but Tiingo had no credits left, the spill still earmarked that overflow
+  for a Tiingo leg that could never run: the round ended with a "Tiingo budget
+  exhausted" error that rerouted the retry to the next clock hour, and on the
+  normal (non-"via backup") route the central safety net never re-pulled those
+  symbols on Twelve Data — so a manual cache-distrust re-pull on a settled market
+  could spin indefinitely. The efficiency spill is now gated on whether fanning
+  out is actually possible: `efficiencySpillEligible` takes the live Tiingo
+  credits and only spills when there is at least one credit free **beyond** the
+  fan-out reserve (the last `TIINGO_RESERVE_CREDITS` kept for genuine fallbacks
+  and login efficiency). When Tiingo is spent or its 429 breaker is frozen the
+  overflow keeps its explicit-force status on Twelve Data's deferred queue and
+  clears over the next per-minute windows instead of being routed to a backup
+  with nothing left to give (`web/src/provider-fanout.ts`,
+  `web/src/tiingo-fallback.ts`).
+
 ## [4.14.3] — 2026-06-27
 
 ### Fixed
