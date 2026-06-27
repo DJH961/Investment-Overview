@@ -233,7 +233,7 @@ export function quoteRefreshDue(
 
 /**
  * Per-row freshness tier for a single holding's displayed price — the three-way
- * split the freshness-plan §2 calls for, mirroring `displayFxSource`'s
+ * split the freshness-plan §2 calls for, mirroring the FX rate's cache→live
  * cache→live promotion but with an explicit middle "recent" rung:
  *
  *   - `live`   — the market is open and the price was observed within one live

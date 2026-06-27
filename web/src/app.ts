@@ -89,6 +89,7 @@ import {
   MIN_BURST_RELIEF_MS,
 } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
+import { fxFreshness, type FxFreshness } from "./freshness";
 import { isUsMarketOpen, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, recentTradingSessions, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
 import {
   runTiingoFallback,
@@ -4241,10 +4242,10 @@ export class App {
     // Promote a cache-served EUR/USD that is still extremely fresh to "live": a
     // spot pulled moments ago and replayed from cache this round is, to the user,
     // just as live as the market prices — only a genuinely aged cache reads "recent".
-    const fxDisplaySource = displayFxSource(
+    const fxDisplayFreshness = displayFxFreshness(
       eurUsdSource,
       eurUsdAt,
-      Date.now(),
+      new Date(),
       this.state.config.updateMinutes * 60 * 1000,
     );
     if (network) {
@@ -4256,7 +4257,7 @@ export class App {
           now: new Date(),
           marketOpen: isUsMarketOpen(),
           freshlyPulled: this.recentlyPulled(),
-          fx: fxDisplaySource,
+          fx: fxDisplayFreshness,
           fxMarketClosed: !isForexMarketOpen(),
           liveStalenessMs: this.state.config.updateMinutes * 60 * 1000,
         },
@@ -4288,7 +4289,7 @@ export class App {
           now: new Date(),
           marketOpen: isUsMarketOpen(),
           freshlyPulled: this.recentlyPulled(),
-          fx: fxDisplaySource,
+          fx: fxDisplayFreshness,
           fxMarketClosed: !isForexMarketOpen(),
           liveStalenessMs: this.state.config.updateMinutes * 60 * 1000,
         },
@@ -6328,14 +6329,17 @@ export interface CoverageFacts {
   /** A hard fetch error occurred this round (on last-known values). */
   error: boolean;
   /**
-   * Where the EUR→USD spot that values the whole book came from this round, so
-   * the coverage line can report FX freshness alongside the price coverage:
-   *   - `live`  — a fresh live spot was pulled;
-   *   - `eod`   — the forex market is shut; on the last end-of-day close;
-   *   - `cache` — served from a recent cached spot (no fresh pull this round);
-   *   - `none`  — no rate at all (awaiting FX; book values may be incomplete).
+   * How *fresh* the EUR→USD spot that values the whole book is this round, so the
+   * coverage line reports FX the same way every other holding is reported — by
+   * freshness, never by *where* the rate came from (the source/provider stays an
+   * internal detail). Graded by {@link fxFreshness}:
+   *   - `live`   — observed within the live window while the forex market is open;
+   *   - `recent` — observed today, or within the window while the market is shut;
+   *   - `aged`   — the newest observation is from an earlier day;
+   *   - `eod`    — a keyless end-of-day rate (no observation instant);
+   *   - `none`   — no rate at all (awaiting FX; book values may be incomplete).
    */
-  fx: EurUsdSource;
+  fx: FxFreshness;
   /**
    * Whether the spot-FX (forex) market is *shut* right now (the weekend close,
    * see {@link isForexMarketOpen}). When true the EUR/USD rate is frozen at
@@ -6346,40 +6350,43 @@ export interface CoverageFacts {
 }
 
 /**
- * Choose the FX source label to *display* on the coverage line. A spot served
- * from cache (`"cache"`) but observed within `maxStalenessMs` (the user-set
- * auto-refresh interval, falling back to {@link LIVE_PRICE_MAX_STALENESS_MS}) is,
- * to the user, just as live as the market prices it values — so promote it to
- * `"live"` and let it read "FX live" rather than "FX recent". Every other source
- * (and a genuinely aged cache) passes through unchanged.
+ * Choose the FX *freshness* tier to report on the coverage line. The displayed
+ * EUR/USD rate is graded exactly like a holding row — by how recently it was
+ * observed against the live window — so FX is reported the same way as every
+ * other value and never advertises *where* it came from (live API, backup
+ * provider, ECB fallback). A cache observed within the window while the forex
+ * market is open is honestly "live"; an older-but-today read is "recent"; an
+ * earlier-day read is "aged"; a keyless end-of-day rate is "eod"; no rate is
+ * "none". Delegates to {@link fxFreshness} (clock-injected, so unit-testable).
  */
-export function displayFxSource(
+export function displayFxFreshness(
   source: EurUsdSource,
   observedAtMs: number | null,
-  nowMs: number,
+  now: Date,
   maxStalenessMs: number = LIVE_PRICE_MAX_STALENESS_MS,
-): EurUsdSource {
-  const window = maxStalenessMs > 0 ? maxStalenessMs : LIVE_PRICE_MAX_STALENESS_MS;
-  if (source === "cache" && observedAtMs !== null && nowMs - observedAtMs <= window) {
-    return "live";
-  }
-  return source;
+): FxFreshness {
+  return fxFreshness({
+    hasRate: source !== "none",
+    fxObservedAt: observedAtMs,
+    now,
+    intervalMs: maxStalenessMs > 0 ? maxStalenessMs : LIVE_PRICE_MAX_STALENESS_MS,
+  });
 }
 
 /** Human FX-freshness clause for the coverage line (see {@link CoverageFacts.fx}). */
-function fxClause(fx: EurUsdSource, fxMarketClosed = false): string {
+function fxClause(fx: FxFreshness, fxMarketClosed = false): string {
   // Weekend forex close: the rate is frozen at Friday's close, so say so plainly
   // rather than implying a live/recent pull of an auto-dated quote.
   if (fxMarketClosed) return "FX market closed";
   switch (fx) {
     case "live":
       return "FX live";
-    case "tiingo":
-      return "FX live (backup)";
+    case "recent":
+      return "FX recent";
+    case "aged":
+      return "FX aged";
     case "eod":
       return "FX end of day";
-    case "cache":
-      return "FX recent";
     default:
       return "awaiting FX";
   }
@@ -6416,13 +6423,13 @@ export function buildCoverageFacts(
     now?: Date;
     marketOpen: boolean;
     freshlyPulled?: boolean;
-    fx?: EurUsdSource;
+    fx?: FxFreshness;
     fxMarketClosed?: boolean;
     /**
      * The live-freshness window (ms, the user-set auto-refresh interval). A market
      * holding served from cache but *observed* within this window is, to the user,
      * just as live as one freshly pulled this round — so it is counted as "live",
-     * not "cached", mirroring {@link displayFxSource}. Falls back to
+     * not "cached", mirroring {@link fxFreshness}. Falls back to
      * {@link LIVE_PRICE_MAX_STALENESS_MS}.
      */
     liveStalenessMs?: number;
@@ -6477,7 +6484,7 @@ export function buildCoverageFacts(
       // "Live" is a freshly-pulled quote *or* a cached one whose observation is
       // still within the live window — a spot confirmed two minutes ago is, to the
       // user, just as live as one re-pulled this round, so it must not read as
-      // "cached" (mirrors {@link displayFxSource}). Only promote while the session
+      // "cached" (mirrors {@link fxFreshness}). Only promote while the session
       // is open, where "live" is a meaningful claim.
       // `>= 0` rejects a future-stamped observation (clock skew) from reading as
       // live, mirroring the headline badge's `liveFeedAge >= 0` guard in compute.ts.
