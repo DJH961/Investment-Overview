@@ -1,32 +1,31 @@
 /**
  * Live-graph orchestration — ties the Phase 2–4 curve builders together with the
- * **batched** price and FX backfills (docs/v3.0_live_web_companion_proposal.md
- * §10.8).
+ * **batched** price backfill (docs/v3.0_live_web_companion_proposal.md §10.8).
  *
  * The 1D ({@link loadOrBuildSessionCurve}) and 1W ({@link loadOrBuildWeekCurve})
  * builders each take an injected `fetchBars`/`fetchDailyBars` (native price bars)
- * and an optional `fetchFx` (EUR→USD bars). This module assembles those
- * injectables from the app's two providers:
+ * and an optional `fetchFx` (EUR→USD bars). Both are assembled from a **single**
+ * provider pipe:
  *
- *   - **Prices** — the dual pipe: Tiingo via the unified Worker `/price` route
- *     (`?intraday=` for the 1D curve, `?daily=` for the 1W curve — one request
- *     per ticker, off Tiingo's own budget) with an automatic fall-back to Twelve
- *     Data's browser-direct `time_series` (1 credit/symbol) when Tiingo is
- *     unavailable. Tiingo is preferred because its bulk history fetch is fast and
- *     free of the per-minute Twelve Data cap, so the graph paints promptly even
- *     in a short (2–3 min) session.
- *   - **FX** — the *same batched style*: one Tiingo `/price?fxHistory=eurusd`
- *     request over the curve's exact date window pulls the per-bar EUR→USD track
- *     ({@link makeTiingoFxBarFetcher}), so a back-dated graph re-marks each point
- *     at its **own settled FX rate** (finest available granularity) instead of a
- *     single uniform rescale. The Tiingo FX integration shipped with the backup
- *     live FX provider, so the history endpoint is already proxied.
+ *   - **Prices & FX — one pipe** ({@link makePriceBarFetcher}). With the shared
+ *     reservation authority it fills **Twelve Data first** (browser-direct
+ *     `time_series`, 1 credit/symbol, the plentiful 8/min pool) and spills the
+ *     overflow to **Tiingo** via the unified Worker `/price` route (`?intraday=`
+ *     for 1D, `?daily=` for 1W — off Tiingo's scarce hourly budget); without a
+ *     reservation it keeps the legacy Tiingo-first dual pipe. The EUR→USD FX track
+ *     is simply the `EUR/USD` symbol on that **same** pipe (see
+ *     {@link makeFxFetcher}): Tiingo serves it from `?fxHistory=eurusd` while the
+ *     rest of the pipe — capacity split, reservation gating, dual-pipe fallback
+ *     and per-symbol backoff — applies unchanged, so a back-dated graph re-marks
+ *     each point at its **own settled FX rate** (finest available granularity)
+ *     instead of a single uniform rescale. There is no separate FX subsystem to
+ *     keep in step: any change to the price pipe changes FX automatically.
  *
  * Everything that touches the network (`fetchImpl`, the API key) or persistence
  * (the {@link TimeSeriesStore}) is injected, so the whole orchestration is
  * unit-testable with no DOM, IndexedDB, or live API. When a proxy/key is absent
- * the corresponding pipe simply drops out (prices fall back to Twelve Data; FX
- * falls back to the day's settled `baseFx`), and the graph still draws.
+ * the corresponding leg simply drops out (prices fall back to the other provider;
+ * FX falls back to the day's settled `baseFx`), and the graph still draws.
  */
 
 import { fetchTimeSeries, EUR_USD_SYMBOL, PriceError, type FetchLike } from "./prices";
@@ -54,8 +53,7 @@ import {
   type SessionCurveOptions,
 } from "./intraday";
 import { makeTiingoBarFetcher, makeDualPipeBarFetcher } from "./intraday-tiingo";
-import { makeTiingoFxBarFetcher } from "./tiingo";
-import { type Reservation, type Provider } from "./reservation";
+import { type Reservation } from "./reservation";
 import type { Bar } from "./timeseries";
 import {
   loadOrBuildWeekCurve,
@@ -90,18 +88,18 @@ export function weekFxWindow(
 export type SpendRecorder = (n: number) => void;
 
 /** Which backfill leg produced a spend — for the data-polling log's leg tag. */
-export type SpendLeg = "bars" | "fx" | "quote";
+export type SpendLeg = "bars" | "quote";
 
 /** A single backfill request the {@link BackfillMeter} accounts for. */
 export interface SpendRequest {
-  /** The leg tag (`bars`/`fx`/`quote`) for the log line. */
+  /** The leg tag (`bars`/`quote`) for the log line. */
   leg: SpendLeg;
   /**
-   * The symbols requested (deduped). For the FX leg this is the pair, e.g.
-   * `["eurusd"]`, rendered as `FX eurusd` in the log.
+   * The symbols requested (deduped). The EUR→USD FX track rides the `bars` leg as
+   * the ordinary `EUR/USD` symbol — there is no separate FX leg.
    */
   symbols: string[];
-  /** Worst-case credit cost of the request (1 per symbol; 1 for the FX batch). */
+  /** Worst-case credit cost of the request (1 per symbol). */
   n: number;
 }
 
@@ -171,31 +169,6 @@ export function recordingBarFetcher(
       return bars;
     } catch (err) {
       meter.refund({ leg, symbols: uniq, n, reason: describeError(err), status: errorStatus(err) });
-      throw err;
-    }
-  };
-}
-
-/**
- * Wrap an FX-history fetcher (a single batched request) in the two-phase meter:
- * reserve one Tiingo credit, **settle** it when the pull returns (the meter was
- * reached — even an empty window), or **refund** it when the pipe throws. This is
- * the precise fix for the polling-storm phantom charge: a dead `fxHistory` route
- * returns a Worker `400` (now a throw) → the reservation is refunded, not booked.
- */
-export function recordingFxFetcher(
-  inner: () => Promise<Bar[]>,
-  meter: BackfillMeter,
-): () => Promise<Bar[]> {
-  const req: SpendRequest = { leg: "fx", symbols: ["eurusd"], n: 1 };
-  return async () => {
-    meter.reserve(req);
-    try {
-      const bars = await inner();
-      meter.settle({ ...req, bars: bars.length });
-      return bars;
-    } catch (err) {
-      meter.refund({ ...req, reason: describeError(err), status: errorStatus(err) });
       throw err;
     }
   };
@@ -393,61 +366,20 @@ export function makeCapacitySplitBarFetcher(
   };
 }
 
-/** Map a Tiingo FX `resampleFreq` to the nearest Twelve Data `time_series` interval. */
-function twelveDataFxInterval(resampleFreq: string): string {
-  const map: Record<string, string> = {
-    "1min": "1min",
-    "5min": "5min",
-    "15min": "15min",
-    "30min": "30min",
-    "1hour": "1h",
-    "2hour": "2h",
-    "4hour": "4h",
-    "1day": "1day",
-    "1week": "1week",
-  };
-  return map[resampleFreq] ?? "1h";
-}
-
 /**
- * Build the Twelve Data **forex** FX-history fetcher: the `EUR/USD`
- * `time_series` (1 credit, browser-direct) re-shaped as the curve's EUR→USD bar
- * track. This is the FX analogue of Pipe A — the fallback the Tiingo FX leg
- * degrades to when the Worker FX route is empty or unavailable
- * (`docs/tiingo_polling_storm_cleanup_plan.md` item 4). Returns `null` with no key.
+ * Adapt the unified price-bar pipe ({@link makePriceBarFetcher}) into the curve's
+ * no-arg `fetchFx`: request the EUR/USD symbol through `fetchBars` so the FX track
+ * rides the **exact same** subsystem as every equity symbol — the Twelve-Data-first
+ * capacity split, reservation gating, per-symbol backoff and dual-pipe fallback all
+ * apply automatically, with no parallel FX pipe to keep in step. Returns just the
+ * EUR/USD bars (empty when the pipe yielded none → the curve falls back to the
+ * day's settled `baseFx`). `null` when no pipe is configured.
  */
-export function makeTwelveDataFxFetcher(
-  apiKey: string,
-  options: { interval?: string; outputsize?: number; fetchImpl?: FetchLike } = {},
+export function makeFxFetcher(
+  fetchBars: BarFetcher | null,
 ): (() => Promise<Bar[]>) | null {
-  const key = apiKey.trim();
-  if (!key) return null;
-  return async () => {
-    const map = await fetchTimeSeries([EUR_USD_SYMBOL], key, options);
-    return map.get(EUR_USD_SYMBOL) ?? [];
-  };
-}
-
-/**
- * Compose two FX fetchers into a dual pipe mirroring {@link makeDualPipeBarFetcher}:
- * try `primary` (Tiingo FX), and fall back to `fallback` (Twelve Data forex) when
- * the primary **throws** (a Worker reject) *or* returns **no bars** (an empty
- * window that would otherwise pin every point to the flat `baseFx`).
- */
-export function makeDualFxFetcher(
-  primary: () => Promise<Bar[]>,
-  fallback: () => Promise<Bar[]>,
-): () => Promise<Bar[]> {
-  return async () => {
-    try {
-      const bars = await primary();
-      if (bars.length > 0) return bars;
-      return await fallback();
-    } catch (err) {
-      if (err instanceof PriceError) return fallback();
-      throw err;
-    }
-  };
+  if (!fetchBars) return null;
+  return async () => (await fetchBars([EUR_USD_SYMBOL])).get(EUR_USD_SYMBOL) ?? [];
 }
 
 /**
@@ -511,36 +443,6 @@ export function cacheSeriesBackoff(
 }
 
 /**
- * Wrap the single-batch FX fetcher with the {@link SeriesBackoff}: skip the
- * network (return `[]`, no credit) while `key` is in an armed cooldown, count an
- * empty window or a thrown reject as a failure, and clear the memo on a non-empty
- * pull. FX is just another time series, so it shares the bars' 3-strike model.
- */
-export function withFxBackoff(
-  inner: () => Promise<Bar[]>,
-  backoff: SeriesBackoff,
-  key: string,
-  options: { now?: () => number } = {},
-): () => Promise<Bar[]> {
-  const now = options.now ?? ((): number => Date.now());
-  return async () => {
-    const t = now();
-    if (backoff.suppressed(key, t)) return []; // suppressed: no fetch, no charge
-    try {
-      const bars = await inner();
-      if (bars.length > 0) backoff.succeed(key);
-      else backoff.fail(key, t);
-      return bars;
-    } catch (err) {
-      // A reject is a strike too (so rebuilds don't hammer it) but still
-      // propagates once so the recorder boundary logs the failure.
-      backoff.fail(key, t);
-      throw err;
-    }
-  };
-}
-
-/**
  * Wrap a multi-symbol {@link BarFetcher} with a **per-symbol** time-series
  * backoff. Symbols whose `keyFor(symbol)` is in an armed cooldown are dropped
  * before the network call (no credit, no attempt) and are simply absent from the
@@ -574,111 +476,6 @@ export function withBarBackoff(
       throw err;
     }
   };
-}
-
-/** Tunables for the FX fallback/backoff added to {@link makeWindowFxFetcher}. */
-export interface WindowFxOptions {
-  /** Twelve Data key for the forex fallback (`EUR/USD` time_series). Empty ⇒ Tiingo-only. */
-  apiKey?: string;
-  /** Meter the Twelve Data forex spend (Pipe A) in two phases. */
-  twelveDataMeter?: BackfillMeter;
-  /** Shared time-series backoff; omit to disable the cooldown. */
-  backoff?: SeriesBackoff | null;
-  /** Backoff key for this FX leg (e.g. `"fx:1W:1day"`). Required with `backoff`. */
-  backoffKey?: string;
-  /** Override `Date.now` for the backoff (tests). */
-  now?: () => number;
-  /**
-   * The single reservation authority (audit Rec 4). When supplied, each FX leg
-   * first {@link Reservation.reserve}s its 1 credit against the provider's live
-   * budget — Tiingo against its scarce hourly/daily budget (audit Flag 2), Twelve
-   * Data against its per-minute/day budget and 429 freeze (audit Flag 3) — and
-   * only fires when a credit is granted; a `0` grant skips the call so the curve
-   * degrades to the day's settled `baseFx` rather than firing over the cap.
-   */
-  reservation?: Reservation;
-}
-
-/**
- * Gate one FX leg through the reservation authority: reserve its single credit
- * up-front and only fire when granted, so no FX pull ever fires over the
- * provider's budget (or while it is frozen). The wrapped `leg` is the
- * meter-recorded fetcher, so on a billed result the reservation stands and on a
- * thrown (not-billed) result the meter's refund releases the reserved credit.
- */
-function gateFxLeg(
-  leg: () => Promise<Bar[]>,
-  provider: Provider,
-  reservation: Reservation | undefined,
-  now: () => number,
-): () => Promise<Bar[]> {
-  if (!reservation) return leg;
-  return async () => {
-    if (reservation.reserve(provider, 1, now()) <= 0) return [];
-    return leg();
-  };
-}
-
-/**
- * Bind the batched FX-history fetcher to a window + cadence. Prefers the Tiingo
- * `/price?fxHistory=` route (Pipe B) and — when a Twelve Data key is supplied —
- * **falls back to the Twelve Data forex `EUR/USD` series** the moment Tiingo FX
- * is empty or unavailable, mirroring the price dual pipe. A negative-result
- * backoff suppresses re-attempts after an empty/failed window. Returns `null`
- * only when *neither* an FX pipe is configured (no proxy and no key) — the curve
- * then falls back to the day's settled `baseFx` for every point.
- */
-export function makeWindowFxFetcher(
-  priceProxyUrl: string | null,
-  window: DateWindow,
-  resampleFreq: string,
-  fetchImpl?: FetchLike,
-  tiingoMeter?: BackfillMeter,
-  options: WindowFxOptions = {},
-): (() => Promise<Bar[]>) | null {
-  const fxNow = options.now ?? (() => Date.now());
-  const tiingoFxRaw = priceProxyUrl
-    ? makeTiingoFxBarFetcher(priceProxyUrl, {
-        resampleFreq,
-        startDate: window.startDate,
-        endDate: window.endDate,
-        fetchImpl,
-      })
-    : null;
-  const tiingoFx = tiingoFxRaw
-    ? gateFxLeg(
-        tiingoMeter ? recordingFxFetcher(tiingoFxRaw, tiingoMeter) : tiingoFxRaw,
-        "tiingo",
-        options.reservation,
-        fxNow,
-      )
-    : null;
-
-  const twelveRaw = makeTwelveDataFxFetcher(options.apiKey ?? "", {
-    interval: twelveDataFxInterval(resampleFreq),
-    outputsize: 60,
-    fetchImpl,
-  });
-  const twelveFx = twelveRaw
-    ? gateFxLeg(
-        options.twelveDataMeter ? recordingFxFetcher(twelveRaw, options.twelveDataMeter) : twelveRaw,
-        "twelvedata",
-        options.reservation,
-        fxNow,
-      )
-    : null;
-
-  let composite: (() => Promise<Bar[]>) | null;
-  if (tiingoFx && twelveFx) composite = makeDualFxFetcher(tiingoFx, twelveFx);
-  else composite = tiingoFx ?? twelveFx;
-  if (!composite) return null;
-
-  if (options.backoff && options.backoffKey) {
-    composite = withFxBackoff(composite, options.backoff, options.backoffKey, {
-      now: options.now,
-    });
-  }
-  return composite;
 }
 
 /** Shared network/persistence wiring for the live-graph builders. */
@@ -776,9 +573,8 @@ export interface GraphRecorderOptions {
   onTiingo429?: () => void;
 }
 
-/** Render a request's subject for the log: the symbol list, or `FX <pair>`. */
+/** Render a request's subject for the log: the deduped symbol list. */
 function spendSubject(req: SpendRequest): string {
-  if (req.leg === "fx") return `FX ${req.symbols.join(",")}`;
   return req.symbols.join(", ");
 }
 
@@ -787,12 +583,13 @@ function spendSubject(req: SpendRequest): string {
  * every live 1D/1W backfill pull is, in one step: (1) reserved against its
  * provider's budget log up-front, (2) on a billed result, tallied into a shared
  * `spent` counter (so the caller can tell a real pull from a fully-reused render)
- * and reported in plain language to `log` — naming the **leg** (`bars`/`fx`) and
- * the **symbols** (or `FX eurusd`) so the data-polling log shows exactly what
+ * and reported in plain language to `log` — naming the **leg** (`bars`/`quote`)
+ * and the **symbols** (the EUR/USD FX track rides the `bars` leg as the ordinary
+ * `EUR/USD` symbol) so the data-polling log shows exactly what
  * each graph pulled — and (3) on a not-billed result, refunded *and* logged as a
  * labelled failure, so a Worker reject/empty never leaves a phantom charge or a
- * silent gap. A bar fetch bills one credit per symbol; an FX-history pull bills
- * one Tiingo credit for the whole window.
+ * silent gap. A bar fetch bills one credit per symbol; the EUR/USD FX pull bills
+ * one credit like any other symbol.
  */
 export function instrumentedGraphRecorders(
   opts: GraphRecorderOptions,
@@ -844,21 +641,20 @@ export function instrumentedGraphRecorders(
   };
 }
 
-/** Per-bar cadence the 1D price feed (and matching FX track) requests. */
+/** Per-bar cadence the 1D price feed (and the EUR/USD FX symbol on it) requests. */
 export interface SessionGraphTuning {
   /** Twelve Data `time_series` interval for Pipe A (default `5min`). */
   interval?: string;
   /** Twelve Data `outputsize` for Pipe A (default 78 ≈ a 5-min session). */
   outputsize?: number;
-  /** Tiingo FX-history resample for the day's FX track (default `1hour`). */
-  fxResampleFreq?: string;
 }
 
 /**
- * Build the live **1 Day** curve with both backfills wired in: the dual-pipe
- * price fetcher and the batched Tiingo FX-history fetcher over the session day.
- * `anchor`, `store`, `now`, `liveTip` and `retainSessions` are passed straight
- * through to {@link loadOrBuildSessionCurve}.
+ * Build the live **1 Day** curve with both backfills wired in: the unified
+ * price-bar pipe (`fetchBars`) and the EUR/USD FX track riding that same pipe
+ * (`fetchFx`, via {@link makeFxFetcher}) over the session day. `anchor`, `store`,
+ * `now`, `liveTip` and `retainSessions` are passed straight through to
+ * {@link loadOrBuildSessionCurve}.
  */
 export function buildLiveSessionCurve(
   base: Omit<SessionCurveOptions, "fetchBars" | "fetchFx">,
@@ -869,48 +665,37 @@ export function buildLiveSessionCurve(
   const window = sessionFxWindow(now);
   const { tiingoMeter, twelveDataMeter } = spendMeters(providers);
   const backoff = providers.backoff ?? cacheSeriesBackoff();
-  const fetchBars =
-    makePriceBarFetcher({
-      apiKey: providers.apiKey,
-      proxyUrl: providers.priceProxyUrl,
-      param: "intraday",
-      interval: tuning.interval,
-      outputsize: tuning.outputsize,
-      startDate: window.startDate,
-      endDate: window.endDate,
-      fetchImpl: providers.fetchImpl,
-      tiingoMeter,
-      twelveDataMeter,
-      reservation: providers.reservation,
-      now: providers.now,
-      backoff: { memo: backoff, scope: "1D" },
-    }) ?? emptyBarFetcher;
-  const fetchFx = makeWindowFxFetcher(
-    providers.priceProxyUrl,
-    window,
-    tuning.fxResampleFreq ?? "1hour",
-    providers.fetchImpl,
+  const priceFetcher = makePriceBarFetcher({
+    apiKey: providers.apiKey,
+    proxyUrl: providers.priceProxyUrl,
+    param: "intraday",
+    interval: tuning.interval,
+    outputsize: tuning.outputsize,
+    startDate: window.startDate,
+    endDate: window.endDate,
+    fetchImpl: providers.fetchImpl,
     tiingoMeter,
-    {
-      apiKey: providers.apiKey,
-      twelveDataMeter,
-      backoff,
-      backoffKey: `fx:1D:${tuning.fxResampleFreq ?? "1hour"}`,
-      reservation: providers.reservation,
-      now: providers.now,
-    },
-  );
+    twelveDataMeter,
+    reservation: providers.reservation,
+    now: providers.now,
+    backoff: { memo: backoff, scope: "1D" },
+  });
+  const fetchBars = priceFetcher ?? emptyBarFetcher;
+  // FX is just the EUR/USD symbol on the very same pipe (see {@link makeFxFetcher}),
+  // so it inherits the price split, reservation, fallback and backoff with no
+  // parallel FX subsystem to maintain.
+  const fetchFx = makeFxFetcher(priceFetcher);
   // The after-close escalation legs (plan C3 / FX parity): a genuinely *second*
   // provider used only for the symbols the primary could not advance to the
   // close. Built only when both providers are configured (the primary capacity
-  // split prefers Twelve Data for prices and Tiingo for FX), so the secondary is
-  // the *other* source — two independent sources agreeing is what settles a quiet
-  // symbol / the FX track for the day. Null when only one provider exists (the
-  // resolution then settles on reached-close alone).
+  // split prefers Twelve Data), so the secondary is the *other* source — Tiingo —
+  // and two independent sources agreeing is what settles a quiet symbol / the FX
+  // track. Null when only one provider exists (the resolution then settles on
+  // reached-close alone).
   const hasBothProviders = Boolean(providers.apiKey.trim()) && Boolean(providers.priceProxyUrl);
-  const fetchSecondaryBars = hasBothProviders
+  const secondaryPriceFetcher = hasBothProviders
     ? makePriceBarFetcher({
-        apiKey: "", // Tiingo-only: the independent second price source
+        apiKey: "", // Tiingo-only: the independent second source (prices + FX)
         proxyUrl: providers.priceProxyUrl,
         param: "intraday",
         interval: tuning.interval,
@@ -923,21 +708,8 @@ export function buildLiveSessionCurve(
         now: providers.now,
       })
     : null;
-  const fetchSecondaryFx = hasBothProviders
-    ? makeWindowFxFetcher(
-        null, // Twelve-Data-only forex: the independent second FX source
-        window,
-        tuning.fxResampleFreq ?? "1hour",
-        providers.fetchImpl,
-        undefined,
-        {
-          apiKey: providers.apiKey,
-          twelveDataMeter,
-          reservation: providers.reservation,
-          now: providers.now,
-        },
-      )
-    : null;
+  const fetchSecondaryBars = secondaryPriceFetcher;
+  const fetchSecondaryFx = makeFxFetcher(secondaryPriceFetcher);
   return loadOrBuildSessionCurve({
     ...base,
     fetchBars,
@@ -964,50 +736,36 @@ export function buildLiveWeekCurve(
   const window = weekFxWindow(now, sessions);
   const { tiingoMeter, twelveDataMeter } = spendMeters(providers);
   const backoff = providers.backoff ?? cacheSeriesBackoff();
-  // The 1W curve is built from one daily close per session. Tiingo's `/price`
-  // route serves those via `?daily=<ticker>` (a single batched window per
-  // symbol, off Tiingo's own budget), so it is preferred for a prompt paint; the
-  // browser-direct Twelve Data `interval=1day` Pipe A is the fallback. The FX
-  // track is pulled in the same batched style from Tiingo's FX-history route at a
-  // daily cadence.
-  const fetchDailyBars =
-    makePriceBarFetcher({
-      apiKey: providers.apiKey,
-      proxyUrl: providers.priceProxyUrl,
-      param: "daily",
-      interval: "1day",
-      outputsize: Math.max(sessions + 2, 8),
-      startDate: window.startDate,
-      endDate: window.endDate,
-      fetchImpl: providers.fetchImpl,
-      tiingoMeter,
-      twelveDataMeter,
-      reservation: providers.reservation,
-      now: providers.now,
-      backoff: { memo: backoff, scope: "1W" },
-    }) ?? emptyBarFetcher;
-  const fetchFx = makeWindowFxFetcher(
-    providers.priceProxyUrl,
-    window,
-    "1day",
-    providers.fetchImpl,
+  // The 1W curve is built from one daily close per session. With a reservation,
+  // Twelve Data's `interval=1day` Pipe A fills first up to its budget and the
+  // overflow spills to Tiingo's `?daily=<ticker>` route (off Tiingo's own
+  // budget); without one it keeps the legacy Tiingo-first dual pipe. The FX track
+  // is simply the EUR/USD symbol on that same pipe (see {@link makeFxFetcher}), so
+  // it follows whatever the price pipe does — there is no separate FX subsystem.
+  const priceFetcher = makePriceBarFetcher({
+    apiKey: providers.apiKey,
+    proxyUrl: providers.priceProxyUrl,
+    param: "daily",
+    interval: "1day",
+    outputsize: Math.max(sessions + 2, 8),
+    startDate: window.startDate,
+    endDate: window.endDate,
+    fetchImpl: providers.fetchImpl,
     tiingoMeter,
-    {
-      apiKey: providers.apiKey,
-      twelveDataMeter,
-      backoff,
-      backoffKey: "fx:1W:1day",
-      reservation: providers.reservation,
-      now: providers.now,
-    },
-  );
+    twelveDataMeter,
+    reservation: providers.reservation,
+    now: providers.now,
+    backoff: { memo: backoff, scope: "1W" },
+  });
+  const fetchDailyBars = priceFetcher ?? emptyBarFetcher;
+  const fetchFx = makeFxFetcher(priceFetcher);
   // The after-close escalation legs (plan C5 / FX parity): a second, independent
   // provider used only for the daily closes / FX the primary could not advance to
   // the settled close. Built only when both providers exist (see the 1D builder).
   const hasBothProviders = Boolean(providers.apiKey.trim()) && Boolean(providers.priceProxyUrl);
-  const fetchSecondaryDailyBars = hasBothProviders
+  const secondaryPriceFetcher = hasBothProviders
     ? makePriceBarFetcher({
-        apiKey: "", // Tiingo-only: the independent second daily-close source
+        apiKey: "", // Tiingo-only: the independent second source (daily closes + FX)
         proxyUrl: providers.priceProxyUrl,
         param: "daily",
         interval: "1day",
@@ -1020,21 +778,8 @@ export function buildLiveWeekCurve(
         now: providers.now,
       })
     : null;
-  const fetchSecondaryFx = hasBothProviders
-    ? makeWindowFxFetcher(
-        null, // Twelve-Data-only forex: the independent second FX source
-        window,
-        "1day",
-        providers.fetchImpl,
-        undefined,
-        {
-          apiKey: providers.apiKey,
-          twelveDataMeter,
-          reservation: providers.reservation,
-          now: providers.now,
-        },
-      )
-    : null;
+  const fetchSecondaryDailyBars = secondaryPriceFetcher;
+  const fetchSecondaryFx = makeFxFetcher(secondaryPriceFetcher);
   // Item 7b: gap-fill moving-fund NAV history through the *same* capacity-split
   // daily fetcher (Twelve Data up to budget, Tiingo overflow), re-stamped onto
   // the NAV day-start cadence so it aligns with the free-accumulated NAV bars.

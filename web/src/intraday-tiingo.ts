@@ -26,9 +26,26 @@
  */
 
 import { PriceError, parsePositivePrice, type FetchLike } from "./prices";
+import { fetchTiingoFxBars } from "./tiingo";
 import { sessionCloseMs, sessionOpenMs } from "./market-hours";
 import type { Bar } from "./timeseries";
 import type { BarFetcher } from "./intraday";
+
+/**
+ * A forex pair symbol (e.g. `"EUR/USD"`) carries a slash; equity tickers never
+ * do. The EUR→USD FX track rides the very same {@link BarFetcher} pipe as every
+ * equity symbol (so it inherits the capacity split, reservation gating, dual-pipe
+ * fallback and per-symbol backoff for free), but Tiingo serves forex from its
+ * separate FX-history route — so the slash is how this leg knows to route there.
+ */
+export function isForexSymbol(symbol: string): boolean {
+  return symbol.includes("/");
+}
+
+/** Map a forex symbol (`"EUR/USD"`) to Tiingo's pair token (`"eurusd"`). */
+function tiingoFxPair(symbol: string): string {
+  return symbol.replace("/", "").toLowerCase();
+}
 
 /** Parse a Tiingo IEX intraday `date` (ISO-8601) into epoch ms, or null. */
 function parseBarTime(value: unknown): number | null {
@@ -136,6 +153,25 @@ export async function fetchTiingoIntradayBars(
   if (unique.length === 0 || !proxyUrl) return result;
 
   for (const symbol of unique) {
+    if (isForexSymbol(symbol)) {
+      // FX rides the same pipe as equities, but Tiingo serves forex from its
+      // FX-history route, so this one symbol goes there — one batched window at
+      // the curve's cadence (1D → 1hour, 1W → 1day, derived from `param`). The
+      // budget, dual-pipe fallback and per-symbol backoff stay identical: a
+      // pipe-level failure throws (so the caller falls back to Twelve Data) and a
+      // quiet window comes back empty, exactly like the equity branch.
+      result.set(
+        symbol,
+        await fetchTiingoFxBars(proxyUrl, {
+          fetchImpl,
+          pair: tiingoFxPair(symbol),
+          resampleFreq: param === "daily" ? "1day" : "1hour",
+          startDate,
+          endDate,
+        }),
+      );
+      continue;
+    }
     const url = new URL(proxyUrl);
     url.searchParams.set(param, symbol);
     if (startDate) url.searchParams.set("startDate", startDate);
