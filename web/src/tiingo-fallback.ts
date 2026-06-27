@@ -203,6 +203,30 @@ function budgetView(now: number, storage: StorageLike | null | undefined): Tiing
   };
 }
 
+/** The *true* Tiingo credits this device's own ledger has booked (hour/day). */
+export interface TiingoLedgerView {
+  hourUsed: number;
+  dayUsed: number;
+}
+
+/**
+ * The Tiingo credits **this device's local ledger** has actually recorded so far
+ * (this clock hour / ET day), read straight from the persisted credit log with
+ * **no** 429-freeze substitution. {@link tiingoBudgetView} reports the cap
+ * (`40/40`) while the breaker is frozen — because the *shared* quota is spent —
+ * but that can diverge from what this device itself counted (another device/tab
+ * on the same key spent the rest). This is the number that makes the difference
+ * reconcilable in the log: it answers "how many did *we* actually spend?" so a
+ * jump to `40/40` is never unexplained.
+ */
+export function tiingoLedgerView(now: number, storage?: StorageLike | null): TiingoLedgerView {
+  const log = readTiingoCreditLog(now, undefined, storage ?? undefined);
+  return {
+    hourUsed: Math.max(0, creditsSpentThisHour(log, now)),
+    dayUsed: Math.max(0, tiingoCreditsSpentToday(log, now)),
+  };
+}
+
 /**
  * Fetch `batch` via Tiingo, merge priced results into `quotes` + the cache, note
  * NAV value-date advances, and record the budget spend. Returns the symbols that

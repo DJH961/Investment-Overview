@@ -10,6 +10,8 @@ import {
   recordTwelveDataSuccess,
   tiingoFrozen,
   twelveDataFrozen,
+  tiingoFreezeUntil,
+  twelveDataFreezeUntil,
 } from "../src/provider-breaker";
 import type { StorageLike } from "../src/cache";
 
@@ -105,5 +107,60 @@ describe("provider-breaker — persistence and reset", () => {
     expect(twelveDataFrozen(now, store)).toBe(true);
     clearProviderBreaker(store);
     expect(twelveDataFrozen(now, store)).toBe(false);
+  });
+});
+
+describe("provider-breaker — 429 results report the freeze so the log can explain it", () => {
+  let store: StorageLike;
+  beforeEach(() => {
+    store = memoryStorage();
+  });
+
+  it("Tiingo 429 returns the reset time and whether a freeze was already armed", () => {
+    const now = Date.parse("2026-06-24T14:31:05Z");
+    const nextHour = Date.parse("2026-06-24T15:00:00Z");
+    const first = recordTiingo429(now, store);
+    expect(first).toEqual({ frozenUntil: nextHour, alreadyFrozen: false, escalated: false });
+    // A second 429 inside the same freeze reports it was already frozen, so the
+    // caller can avoid logging the same freeze twice.
+    const second = recordTiingo429(now + 60_000, store);
+    expect(second.alreadyFrozen).toBe(true);
+    expect(second.frozenUntil).toBe(nextHour);
+  });
+
+  it("Twelve Data 429 reports escalation on the second consecutive strike", () => {
+    const now = 9_000_000;
+    const first = recordTwelveData429(now, store);
+    expect(first.escalated).toBe(false);
+    expect(first.alreadyFrozen).toBe(false);
+    expect(first.frozenUntil).toBe(now + TD_FREEZE_MS);
+    const second = recordTwelveData429(now, store);
+    expect(second.escalated).toBe(true);
+    expect(second.alreadyFrozen).toBe(true);
+    expect(second.frozenUntil).toBe(now + TD_ESCALATED_FREEZE_MS);
+  });
+});
+
+describe("provider-breaker — freeze-until helpers", () => {
+  let store: StorageLike;
+  beforeEach(() => {
+    store = memoryStorage();
+  });
+
+  it("tiingoFreezeUntil returns the :00 reset while frozen, null otherwise", () => {
+    const now = Date.parse("2026-06-24T14:31:05Z");
+    const nextHour = Date.parse("2026-06-24T15:00:00Z");
+    expect(tiingoFreezeUntil(now, store)).toBeNull();
+    recordTiingo429(now, store);
+    expect(tiingoFreezeUntil(now, store)).toBe(nextHour);
+    expect(tiingoFreezeUntil(nextHour, store)).toBeNull();
+  });
+
+  it("twelveDataFreezeUntil returns the lift time while frozen, null otherwise", () => {
+    const now = 7_000_000;
+    expect(twelveDataFreezeUntil(now, store)).toBeNull();
+    recordTwelveData429(now, store);
+    expect(twelveDataFreezeUntil(now, store)).toBe(now + TD_FREEZE_MS);
+    expect(twelveDataFreezeUntil(now + TD_FREEZE_MS, store)).toBeNull();
   });
 });

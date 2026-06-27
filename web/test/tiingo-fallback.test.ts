@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Decimal } from "../src/decimal-config";
 import { PriceError, type Quote } from "../src/prices";
 import { latestSettledSessionDate } from "../src/market-hours";
-import { runTiingoFallback, shouldQuickRefresh, planStartupRefresh, planPrefetch, tiingoBudgetView, msUntilNextHour } from "../src/tiingo-fallback";
+import { runTiingoFallback, shouldQuickRefresh, planStartupRefresh, planPrefetch, tiingoBudgetView, tiingoLedgerView, msUntilNextHour } from "../src/tiingo-fallback";
 import { WEB_DAILY_CAP, WEB_HOURLY_CAP } from "../src/tiingo-gate";
 import { DEFAULT_PROVIDER_LIMITS, setProviderLimits, resetProviderLimits } from "../src/provider-limits";
 import { tiingoCreditsSpentToday, readTiingoCreditLog, readTiingoNoNewer, recordTiingoCredits, type StorageLike } from "../src/cache";
@@ -507,6 +507,27 @@ describe("tiingoBudgetView", () => {
     const view = tiingoBudgetView(NOW, memStorage());
     expect(view.hourUsed).toBe(0);
     expect(view.dayUsed).toBe(0);
+  });
+});
+
+describe("tiingoLedgerView — the *true* local count, even while the 429 breaker is frozen", () => {
+  it("reports the raw ledger counts unchanged by a freeze (budgetView reads the cap)", () => {
+    const storage = memStorage();
+    recordTiingoCredits(12, NOW, storage);
+    // Freeze Tiingo: budgetView now reports the cap (40/40), but the ledger view
+    // must still report what *this* device actually spent (12) — this is the
+    // number that makes a "jumped to 40/40" line reconcilable in the log.
+    recordTiingo429(NOW, storage);
+    expect(tiingoBudgetView(NOW, storage).hourUsed).toBe(WEB_HOURLY_CAP);
+    const ledger = tiingoLedgerView(NOW, storage);
+    expect(ledger.hourUsed).toBe(12);
+    expect(ledger.dayUsed).toBe(12);
+  });
+
+  it("matches the budget view when not frozen", () => {
+    const storage = memStorage();
+    recordTiingoCredits(5, NOW, storage);
+    expect(tiingoLedgerView(NOW, storage)).toEqual({ hourUsed: 5, dayUsed: 5 });
   });
 });
 
