@@ -14,6 +14,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.13.6] — 2026-06-27
+
+### Fixed
+
+- **"Regenerate 1D graph" / "Regenerate 1W graph" no longer makes the overview
+  read "No live-priced holdings".** A regenerate primes every market quote from
+  the freshly-pulled graph bars, so the very next auto-refresh round finds the
+  whole book already fresh and the data orchestrator legitimately suppresses the
+  quote / NAV / FX legs (`pull nothing`). The live-coverage summary was built
+  only from the symbols that round actually *touched* (`QuoteLoadReport`), so a
+  no-op round left every list empty and `summarizeCoverage` fell through to its
+  `total === 0` case — wrongly announcing the book held nothing. Coverage now
+  describes the whole *held book*: a new `bookCoverageReport` folds every
+  fetchable holding the orchestrator gated off back into the report's
+  `servedFresh` (their cached values are already preserved by
+  `preserveCachedQuotesForGatedLegs`), so a fully-fresh round honestly reads
+  "Market closed, up to date" / the live counts instead of "No live-priced
+  holdings". This also fixes the latent undercount when only *one* leg was gated
+  (e.g. a market-only round dropping the NAV "expected tonight" clause)
+  (`web/src/app.ts` `bookCoverageReport`, `refreshPrices` coverage build).
+
 ## [4.13.5] — 2026-06-26
 
 ### Fixed

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   allPricesLive,
+  bookCoverageReport,
   buildCoverageFacts,
   classifyConnectivity,
   connectivityNotice,
@@ -455,6 +456,44 @@ describe("buildCoverageFacts", () => {
       { now, marketOpen: false, liveStalenessMs: 15 * 60 * 1000 },
     );
     expect(f.marketFresh).toBe(0);
+  });
+});
+
+describe("bookCoverageReport", () => {
+  const now = new Date(2024, 4, 15, 22, 30, 0); // Wed 17:30 ET — US session settled
+
+  it("folds an all-fresh round's held book into servedFresh so coverage isn't blank", () => {
+    // The regenerate symptom: the orchestrator suppressed every quote/NAV leg
+    // because the whole book is fresh, so the round's report is empty. Widening
+    // it to the held book must surface the holdings (here: all at last close)
+    // instead of summarising "no live-priced holdings".
+    const book = ["AAPL", "MSFT", "VTSAX"];
+    const wide = bookCoverageReport(book, report());
+    expect(new Set(wide.servedFresh)).toEqual(new Set(book));
+    const quotes = new Map<string, { valueDate?: string | null; price?: unknown }>([
+      ["AAPL", { price: 1, valueDate: "2024-05-15" }],
+      ["MSFT", { price: 1, valueDate: "2024-05-15" }],
+      ["VTSAX", { valueDate: "2024-05-15" }],
+    ]);
+    const f = buildCoverageFacts(wide, quotes, new Set(["VTSAX"]), { now, marketOpen: false });
+    expect(f.marketTotal).toBe(2);
+    expect(f.marketAtClose).toBe(2);
+    expect(f.navTotal).toBe(1);
+    expect(summarizeCoverage(f)).toBe("Market closed, up to date · awaiting FX");
+  });
+
+  it("keeps a symbol's stronger classification when it was touched this round", () => {
+    // A fetched/deferred/failed symbol must not be downgraded to servedFresh.
+    const wide = bookCoverageReport(["AAPL", "MSFT", "TSLA"], report({ fetched: ["AAPL"], deferred: ["MSFT"] }));
+    expect(wide.fetched).toEqual(["AAPL"]);
+    expect(wide.deferred).toEqual(["MSFT"]);
+    expect(wide.servedFresh).toEqual(["TSLA"]); // only the untouched holding is folded in
+  });
+
+  it("does not duplicate a symbol already in servedFresh", () => {
+    const wide = bookCoverageReport(["AAPL", "MSFT"], report({ servedFresh: ["AAPL"] }));
+    expect(wide.servedFresh.filter((s) => s === "AAPL")).toHaveLength(1);
+    expect(new Set(wide.servedFresh)).toEqual(new Set(["AAPL", "MSFT"]));
   });
 });
 
