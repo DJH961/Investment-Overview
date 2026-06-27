@@ -24,6 +24,7 @@ import {
   readSymbolPlan,
   recordCredits,
   primeQuotesFromBars,
+  primeEurUsdFromFxBars,
   writeCachedEnvelope,
   writeCachedEurUsd,
   writeCachedFx,
@@ -230,6 +231,47 @@ describe("primeQuotesFromBars", () => {
       if (previous === undefined) Reflect.deleteProperty(globalThis, "localStorage");
       else Reflect.set(globalThis, "localStorage", previous);
     }
+  });
+});
+
+describe("primeEurUsdFromFxBars", () => {
+  const bar = (t: number, value: string): Bar => ({ t, value: new Decimal(value) });
+
+  it("primes the spot from the newest EUR/USD bar when none is cached", () => {
+    const s = memStorage();
+    expect(primeEurUsdFromFxBars([bar(1000, "1.07"), bar(2000, "1.085")], s)).toBe(true);
+    const got = readCachedEurUsd(s)!;
+    expect(got.now?.toString()).toBe("1.085"); // the latest bar
+    expect(got.at).toBe(2000); // stamped at the bar's strike instant
+    expect(got.previousClose).toBeNull(); // bars carry no prior close
+  });
+
+  it("only extends freshness — never clobbers a newer live spot", () => {
+    const s = memStorage();
+    writeCachedEurUsd({ now: new Decimal("1.09"), previousClose: new Decimal("1.08") }, 3000, s);
+    // A bar older than the cached spot must not overwrite the fresher live reading.
+    expect(primeEurUsdFromFxBars([bar(2000, "1.070")], s)).toBe(false);
+    const got = readCachedEurUsd(s)!;
+    expect(got.now?.toString()).toBe("1.09");
+    expect(got.at).toBe(3000);
+  });
+
+  it("advances a stale cached spot when the bar is newer, preserving the prior close", () => {
+    const s = memStorage();
+    writeCachedEurUsd({ now: new Decimal("1.080"), previousClose: new Decimal("1.0725") }, 1000, s);
+    expect(primeEurUsdFromFxBars([bar(4000, "1.0915")], s)).toBe(true);
+    const got = readCachedEurUsd(s)!;
+    expect(got.now?.toString()).toBe("1.0915");
+    expect(got.at).toBe(4000);
+    // Bars carry no prior close — the KPI's "yesterday" baseline is preserved.
+    expect(got.previousClose?.toString()).toBe("1.0725");
+  });
+
+  it("ignores an empty or non-positive bar list (no write)", () => {
+    const s = memStorage();
+    expect(primeEurUsdFromFxBars([], s)).toBe(false);
+    expect(primeEurUsdFromFxBars([bar(2000, "0")], s)).toBe(false);
+    expect(readCachedEurUsd(s)).toBeNull();
   });
 });
 
