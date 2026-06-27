@@ -55,21 +55,28 @@ export interface PullLegs {
   nav: boolean;
   /** EUR/USD FX rate. */
   fx: boolean;
+  /**
+   * The session EUR→USD **open/close bar track** that anchors the hero currency
+   * KPI's market-hours/overnight split. A cheap one-shot pull (Tiingo `/price`
+   * fxHistory) the orchestrator owns as a first-class leg rather than an ad-hoc
+   * after-hours side pipeline — see {@link ../session-fx.sessionFxAnchorMissing}.
+   */
+  fxBars: boolean;
 }
 
 /** No-op leg set — the "nothing to pull" answer. */
 export function noLegs(): PullLegs {
-  return { weekBars: false, dayBars: false, quotes: false, nav: false, fx: false };
+  return { weekBars: false, dayBars: false, quotes: false, nav: false, fx: false, fxBars: false };
 }
 
 /** Every leg on — the heavily-outdated / reset answer. */
 export function allLegs(): PullLegs {
-  return { weekBars: true, dayBars: true, quotes: true, nav: true, fx: true };
+  return { weekBars: true, dayBars: true, quotes: true, nav: true, fx: true, fxBars: true };
 }
 
 /** Whether a leg set asks for any network at all. */
 export function hasAnyLeg(legs: PullLegs): boolean {
-  return legs.weekBars || legs.dayBars || legs.quotes || legs.nav || legs.fx;
+  return legs.weekBars || legs.dayBars || legs.quotes || legs.nav || legs.fx || legs.fxBars;
 }
 
 /** Inputs to {@link gradedPull}. All ages are in ms; all clocks injected. */
