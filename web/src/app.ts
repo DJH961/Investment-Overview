@@ -5095,18 +5095,24 @@ export class App {
         if (relief !== null) delayMs = Math.min(delayMs, relief);
       }
     }
-    // Hard-limit retry routing: when a fallback was blocked because the target
-    // provider's limits are exhausted, schedule a retry at the next hour boundary
-    // (when quotas reset) so the *original* source is retried instead of the
-    // exhausted fallback. This is the alternative to using an over-limit provider.
+    // Hard-limit retry routing: when the Tiingo *overflow/fallback* ran out of
+    // tokens this round, the holes it couldn't fill must flow back to the Twelve
+    // Data primary promptly — never sit and wait out Tiingo's hourly bucket.
+    //
+    // The old code pushed the next refresh out to Tiingo's hourly reset
+    // (`retryAfterMs` = ms to the next clock `:00`), i.e. up to *several* auto-refresh
+    // cycles away, starving the book while the Twelve Data primary (its per-minute
+    // budget resets every ~60 s) could have served those symbols within a single
+    // cycle. We drop that extension entirely: `delayMs` already holds the normal
+    // cadence — a ~1-minute burst when symbols are deferred, otherwise one
+    // auto-refresh cycle (itself stretched by {@link dailyBudgetSlowdown} only when
+    // TD's *daily* budget is genuinely low, which we must not undercut). So the
+    // exhausted fallback simply hands the next round back to Twelve Data within one
+    // cycle instead of waiting out Tiingo's reset.
     if (this.lastTiingoError?.retryAfterMs) {
-      const retryDelayMs = this.lastTiingoError.retryAfterMs;
-      // Use the longer of normal cadence or the hour-boundary delay, so we don't
-      // wake up only to find limits still exhausted.
-      delayMs = Math.max(delayMs, retryDelayMs);
       this.pollLog(
         "fallback",
-        `Fallback blocked by hard limit — scheduling retry in ${Math.round(retryDelayMs / 60000)}min (next hour boundary).`,
+        `Backup (Tiingo) out of tokens — retrying within one auto-refresh cycle (~${Math.round(delayMs / 1000)}s) so the holes flow back to Twelve Data, rather than waiting out Tiingo's hourly reset.`,
         "info",
       );
     }
