@@ -222,10 +222,22 @@ export function planPull(ctx: PullContext): PullPlan {
   }
 
   // Overlay 3 — FX freshness gate, keyed on the same user-set interval.
-  // A manual tap always re-pulls FX; auto / start suppress it when the live spot
-  // was pulled within the interval, so the login warm-up pull isn't wasted by the
-  // immediately-following kickoff round (the 45-second reuse window this replaces).
-  if (legs.fx && ctx.kind !== "manual") {
+  // A manual tap always re-pulls FX — the exact "distrust the cache, re-pull even
+  // though it is in hand" rule the holdings' quote leg follows above — so the live
+  // EUR→USD spot that values the whole book is verified from scratch on every tap,
+  // never served from a within-interval cache. This *forces* the leg on, not merely
+  // skips the suppression: when the graded tier alone left FX off (a within-interval
+  // "fresh" book), a tap still re-pulls it, so the currency view is supplied its
+  // spot exactly as the holdings are supplied theirs. Auto / start instead suppress
+  // the leg when the spot was pulled within the interval, so the login warm-up pull
+  // isn't wasted by the immediately-following kickoff round (the 45-second reuse
+  // window this replaces).
+  if (ctx.kind === "manual") {
+    if (!legs.fx) {
+      legs.fx = true;
+      notes.push("FX re-pulled (manual: distrust cache)");
+    }
+  } else if (legs.fx) {
     const fxAge = ctx.freshness.fxAgeMs ?? Number.POSITIVE_INFINITY;
     if (fxAge < ctx.autoIntervalMs) {
       legs.fx = false;
@@ -248,6 +260,19 @@ export function planPull(ctx: PullContext): PullPlan {
   if (ctx.freshness.fxBarsAnchorMissing && !legs.fxBars) {
     legs.fxBars = true;
     notes.push("FX-bar anchor due (currency KPI)");
+  }
+  // A manual tap distrusts the cached FX **bars** too, the bar sibling of the spot
+  // re-pull above and the holdings' quote re-pull: re-request the session EUR→USD
+  // bar track the currency KPI / FX view draws on even when the anchor is already
+  // in hand, so a tap supplies the FX view ALL the data its 1D/1W slices need
+  // rather than trusting a possibly-stale cached track. The dispatch site de-dups
+  // this against a session-bar prime that already grabs the FX track alongside the
+  // price bars (it alone knows whether session symbols are pulled this round), and
+  // the fetcher is per-series backoff-bounded, so a tap never double-buys the FX
+  // bar within a round ("don't duplicate FX quotes and bars unless necessary").
+  if (ctx.kind === "manual" && !legs.fxBars) {
+    legs.fxBars = true;
+    notes.push("FX bars re-pulled (manual: distrust cache)");
   }
 
   const reason = describeLegs(graded.tier, legs, notes);

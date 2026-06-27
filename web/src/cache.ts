@@ -293,6 +293,41 @@ export function writeCachedEurUsd(
   });
 }
 
+/**
+ * Prime the live EUR→USD spot cache from a freshly fetched EUR/USD bar track.
+ *
+ * The FX sibling of {@link primeQuotesFromBars}: when a 1D/1W graph (or the
+ * standalone currency-KPI anchor backfill) pays to pull the EUR/USD bar track,
+ * the newest bar is the latest available EUR→USD rate — the very figure the live
+ * spot leg would otherwise spend its own request on. Folding it back into the
+ * spot cache lets the currency KPI / book valuation reuse it instead of
+ * re-requesting it: when the market is closed {@link loadEurUsd} freezes on this
+ * cache (it never spends to re-confirm a settled rate), so the bar we already
+ * bought *becomes* the spot — "don't request a quote when the bar already has the
+ * price". When the market is open the next live spot is fresher and simply
+ * overrides this seed.
+ *
+ * Like {@link primeQuotesFromBars} it only ever **extends** freshness, never
+ * rewrites history: the spot is primed only when the newest bar is strictly newer
+ * than the cached reading's instant (`at`), so a genuinely fresher live spot is
+ * never clobbered by an older (e.g. hourly) bar. Bars carry no prior close, so the
+ * cached `previousClose` (the KPI's "yesterday" baseline) is preserved untouched.
+ * The reading is stamped at the bar's own strike instant. Returns whether a fresh
+ * spot was written.
+ */
+export function primeEurUsdFromFxBars(
+  fxBars: Bar[],
+  storage: StorageLike | null = defaultStorage(),
+): boolean {
+  const latest = latestBar(fxBars);
+  if (latest === null || !latest.value.greaterThan(0)) return false;
+  const cached = readCachedEurUsd(storage);
+  // Only ever move freshness forward — never overwrite a newer genuine spot.
+  if (cached && cached.now !== null && latest.t <= cached.at) return false;
+  writeCachedEurUsd({ now: latest.value, previousClose: cached?.previousClose ?? null }, latest.t, storage);
+  return true;
+}
+
 // --- Encrypted-blob cache ---------------------------------------------------
 
 /**

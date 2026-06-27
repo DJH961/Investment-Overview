@@ -61,6 +61,7 @@ import {
   readSymbolPlan,
   type PlannedSymbol,
   primeQuotesFromBars,
+  primeEurUsdFromFxBars,
   readSessionStatus,
   writeSessionStatus,
   type SessionStatus,
@@ -1959,6 +1960,12 @@ export class App {
       const fetchFx = makeFxFetcher(fetchBars);
       let fx: Bar[] | undefined;
       if (fetchFx) fx = await fetchFx().catch(() => undefined);
+      // The EUR/USD bars double as the live spot, exactly as the price bars double
+      // as quotes above ({@link primeQuotesFromBars}): fold the newest FX bar back
+      // into the spot cache so the currency KPI / book valuation reuses the rate we
+      // just bought instead of spending a separate spot request — when the market
+      // is shut loadEurUsd freezes on this cache, so the bar *is* the settled spot.
+      if (fx && fx.length > 0) primeEurUsdFromFxBars(fx);
       // Seed close-probes for 1D session bars that are incomplete after close.
       // Without this, the first graph build after a reset sees "no probe + bars
       // short of close" → closeProbeReady(undefined) = true → immediate re-fetch,
@@ -2170,6 +2177,10 @@ export class App {
       return false;
     }
     await this.ensureTimeSeriesStore().mergeSession(lastSessionDate(now), { fx }, now.getTime());
+    // The freshly settled EUR/USD bar doubles as the live spot: fold it into the
+    // spot cache so the currency KPI reads this genuine settle rather than spending
+    // a separate spot request for the rate we just pulled (the bar is the price).
+    primeEurUsdFromFxBars(fx);
     this.pollLog(
       "graph",
       `After-hours FX close backfill stored ${fx.length} EUR/USD bar(s) to complete the session close ` +
