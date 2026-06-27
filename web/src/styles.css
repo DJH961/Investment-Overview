@@ -946,14 +946,21 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   padding: 0.2rem 0 0.15rem;
 }
 .mover-block {
+  /* Mobile-first: keep each block short by sitting the symbol/name on the left
+   * and the figures (total + growth) on the right, instead of stacking them. */
   display: grid;
-  gap: 0.3rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.7rem;
+  row-gap: 0.3rem;
   background: var(--card-2);
   border: 1px solid var(--border);
   border-left: 3px solid var(--border);
   border-radius: 0.7rem;
   padding: 0.6rem 0.7rem;
 }
+/* The header (WINNER · BIGGEST MOVE) spans the full width above the two columns. */
+.mover-head { grid-column: 1 / -1; }
 .mover-block.pos { border-left-color: var(--pos); background: color-mix(in srgb, var(--pos) 6%, var(--card-2)); }
 .mover-block.neg { border-left-color: var(--neg); background: color-mix(in srgb, var(--neg) 6%, var(--card-2)); }
 .mover-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.4rem; }
@@ -969,7 +976,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   color: var(--muted); font-size: 0.72rem;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.mover-figures { display: grid; gap: 0.02rem; }
+.mover-figures { display: grid; gap: 0.02rem; justify-items: end; text-align: right; }
 /* The stat the block was ranked on leads — large, on top. */
 .mover-primary { font-weight: 800; font-size: 1.15rem; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .mover-secondary { color: var(--muted); font-size: 0.76rem; font-variant-numeric: tabular-nums; }
@@ -990,9 +997,12 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .mover-badge.pos { color: var(--pos); background: var(--pos-soft); }
 .mover-badge.neg { color: var(--neg); background: var(--neg-soft); }
 
-/* Wider screens: lay the (up to four) blocks out across in one row. */
+/* Wider screens: lay the (up to four) blocks out across in one row. Each block
+ * is now narrow, so restore the stacked layout (figures beneath the symbol). */
 @media (min-width: 48rem) {
   .mover-grid { grid-template-columns: repeat(2, 1fr); }
+  .mover-block { grid-template-columns: 1fr; align-items: stretch; gap: 0.3rem; }
+  .mover-figures { justify-items: start; text-align: left; }
 }
 @media (min-width: 64rem) {
   .mover-grid { grid-template-columns: repeat(4, 1fr); }
