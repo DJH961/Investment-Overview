@@ -2140,6 +2140,9 @@ export class App {
       this.pollLog("primary", "Login warm-up: quote fetch failed; caches left as-is.", "warn");
       return 0;
     }
+    // A 429 on the warm-up's Twelve Data pass arms the breaker so the
+    // reconciliation log accounts for the throttle on this path too.
+    if (report.error?.status === 429) this.armTwelveData429();
     const list = (xs: string[]): string => (xs.length ? xs.join(", ") : "none");
     this.pollLog(
       "primary",
@@ -2183,6 +2186,8 @@ export class App {
       reserveCredits: STARTUP_TIINGO_RESERVE,
       sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
     });
+    // Arm the breaker when the warm-up's Tiingo rapid-fire is throttled.
+    if (fallback.error?.status === 429) this.armTiingo429();
     const b = fallback.budget;
     this.pollLog(
       "fallback",
@@ -4152,6 +4157,10 @@ export class App {
 
     if (network) {
       const r = quoteLoad.report;
+      // The main quote pass is the most common place to hit the per-minute cap,
+      // so arm the breaker here too — this is where "why did I burn 40/40?" is
+      // usually answered, and it keeps the reconciliation log honest.
+      if (r.error?.status === 429) this.armTwelveData429();
       const list = (xs: string[]): string => (xs.length ? xs.join(", ") : "none");
       this.pollLog(
         "fx",
@@ -4226,6 +4235,8 @@ export class App {
         sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
       });
       if (session !== this.sessionId) return quoteLoad.report;
+      // Arm the breaker when the Tiingo fallback itself is rate-limited.
+      if (fallback.error?.status === 429) this.armTiingo429();
       this.lastTiingoSymbols = fallback.tiingoSymbols;
       this.lastFallbackSymbols = fallback.fallbackSymbols;
       this.lastTiingoBudget = fallback.budget;
@@ -4277,6 +4288,8 @@ export class App {
           forceMarketFetch: true,
         });
         if (session !== this.sessionId) return quoteLoad.report;
+        // Arm the breaker when the reverse TD safety net is throttled.
+        if (tdNet.report.error?.status === 429) this.armTwelveData429();
         const filledNow = this.absorbSafetyNet(quoteLoad, tdNet);
         const list = (xs: readonly string[]): string => (xs.length ? xs.join(", ") : "none");
         this.pollLog(
