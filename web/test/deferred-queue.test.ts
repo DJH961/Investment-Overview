@@ -127,4 +127,18 @@ describe("DeferredQueue — force flag & clear (freshness-plan)", () => {
     q.enqueue(["AAA"], "force round over budget", true);
     expect(q.drain(() => true).stillMissing).toEqual(["AAA"]);
   });
+
+  it("hasForced() reflects whether any parked entry is an explicit force deferral", () => {
+    const q = new DeferredQueue();
+    expect(q.hasForced()).toBe(false);
+    // An ordinary (auto) deferral does not count.
+    q.enqueue(["AAA"], "auto round over budget");
+    expect(q.hasForced()).toBe(false);
+    // A force deferral does.
+    q.enqueue(["BBB"], "force round over budget", true);
+    expect(q.hasForced()).toBe(true);
+    // Clearing the forced entry (it was re-fetched) drops the flag again.
+    q.clear(["BBB"]);
+    expect(q.hasForced()).toBe(false);
+  });
 });

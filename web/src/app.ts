@@ -313,16 +313,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 
 /**
- * Heartbeat cadence for the auto-refresh scheduler while the market is **settled**
- * (closed, with every settled close and today's NAV already in hand). No prices
- * are fetched in this state — see {@link App.runScheduledRefresh} — but the timer
- * keeps ticking on this slow interval so the app promptly notices the next
- * session open or NAV publish (and runs the near-free new-data probe when due)
- * instead of going silent until the user reopens it.
- */
-const SETTLED_HEARTBEAT_MS = 5 * 60 * 1000;
-
-/**
  * localStorage key holding the app version this device last booted, so the next
  * boot can spot a version change and note it in the polling log (item 6).
  */
@@ -1349,8 +1339,9 @@ export class App {
     if (exhausted.length > 0) {
       this.pollLog(
         "orchestrator",
-        `Deferred queue: ${exhausted.length} dropped after ${DEFERRED_MAX_ATTEMPTS} attempts ` +
-          `[${exhausted.join(", ")}].`,
+        `Deferred queue: ${exhausted.length} dropped after ${DEFERRED_MAX_ATTEMPTS} attempts — giving up on the work-queue ` +
+          `re-pull; each falls back to its own cache TTL [${exhausted.join(", ")}].`,
+        "warn",
       );
     }
     if (stillMissing.length > 0) {
@@ -3402,7 +3393,7 @@ export class App {
       } else {
         this.toast(`Prices up to date · last pulled ${formatLastPull(this.lastDataPullAt)}`);
       }
-      this.scheduleNext(session, SETTLED_HEARTBEAT_MS);
+      this.scheduleNext(session, this.settledHeartbeatMs());
       return;
     }
     // The post-unlock kickoff: always run this first live refresh, even if the
@@ -4218,6 +4209,12 @@ export class App {
         now: Date.now(),
         manual: (opts.force ?? false) || viaTiingo,
         forceAll: viaTiingo,
+        // A standard manual Refresh tap that escalated to a full force-fetch (the
+        // closed-market cache-distrust re-pull) lets the efficiency spill fire even
+        // while the exchange is shut and bypasses the "nothing newer" cooldown, so
+        // a big manual round's Twelve Data overflow is filled via Tiingo in
+        // parallel instead of trickling through the per-minute cap over minutes.
+        manualForce: isManualReload,
         reserveCredits,
         sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
       });
@@ -4880,6 +4877,25 @@ export class App {
   }
 
   /**
+   * Heartbeat cadence for the auto-refresh scheduler while the market is
+   * **settled** (closed, with every settled close and today's NAV already in
+   * hand). No prices are fetched in this state — see {@link App.runScheduledRefresh}
+   * — but the timer keeps ticking on this interval so the app promptly notices the
+   * next session open or NAV publish (and runs the near-free new-data probe when
+   * due) instead of going silent until the user reopens it.
+   *
+   * Deliberately **not** a hard-coded magic number: it is the user's own
+   * configured auto-update interval (`config.updateMinutes`), the same cadence
+   * the live steady-state slow refresh uses (see {@link App.runScheduledRefresh}'s
+   * `nextRefreshDelayMs` call) and {@link upToDateWindowMs}. A settled book has
+   * nothing to fetch, so re-checking on exactly the user's chosen refresh rhythm
+   * — rather than a separate invented constant — is the honest cadence.
+   */
+  private settledHeartbeatMs(): number {
+    return this.state.config.updateMinutes * 60 * 1000;
+  }
+
+  /**
    * Whether the app actually pulled fresh data from the network recently enough
    * to honestly claim holdings are "up to date" (see {@link App.upToDateWindowMs}).
    * Gating the coverage summary on this means a refresh fully served from cache
@@ -4990,14 +5006,39 @@ export class App {
     // *only* when the data is genuinely current: a closed market whose cached
     // close is stale (offline across the close) still refreshes here. A manual
     // tap is never skipped — it forces a full verification re-pull.
-    if ((kind === "auto" || kind === "start") && this.fullyUpToDate()) {
+    //
+    // It must also *not* skip while the deferred work-queue still holds an
+    // **explicit** force deferral — the overflow a user-driven "update everything"
+    // / cache-distrust Refresh parked across rounds. Those symbols hold their
+    // settled close (so {@link fullyUpToDate} reads true), but the user asked to
+    // re-pull them, so the burst round must run and {@link drainDeferredQueue}
+    // re-fetch them rather than leaving them "Updating…" behind the freshness skip.
+    if (
+      (kind === "auto" || kind === "start") &&
+      this.fullyUpToDate() &&
+      !this.deferredQueue.hasForced()
+    ) {
       if (this.blobCheckDue()) void this.maybeRefreshBlob(session);
-      this.scheduleNext(session, SETTLED_HEARTBEAT_MS);
+      this.scheduleNext(session, this.settledHeartbeatMs());
       this.pollLog(
         "refresh",
         "Auto tick skipped — book fully up to date (market closed, all closes + NAVs held). Heartbeat only.",
         "warn",
       );
+      // Edge case: ordinary (non-force) deferrals parked from an earlier
+      // budget overflow are intentionally *not* drained here — the book is
+      // settled, so every one of them already holds its valid settled close and
+      // there is nothing newer to fetch. Log that they are being held undrained
+      // (rather than silently stranded) so the trail explains why a parked symbol
+      // shows no fresh pull this round; the next non-settled round drains them.
+      if (this.deferredQueue.size > 0) {
+        const parked = this.deferredQueue.size;
+        this.pollLog(
+          "orchestrator",
+          `Deferred queue: ${parked} ordinary deferral(s) held undrained — book settled, each already holds its settled close (nothing newer to fetch). Will drain on the next non-settled round.`,
+          "warn",
+        );
+      }
       return;
     }
     // No network link at all: don't pretend to "update". Skipping the network

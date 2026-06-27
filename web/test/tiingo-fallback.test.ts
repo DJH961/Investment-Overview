@@ -214,6 +214,82 @@ describe("runTiingoFallback", () => {
     expect(out.fallbackSymbols).toEqual([]);
   });
 
+  it("efficiency spill: a big *manual* closed-market round fills its deferred overflow (cache-distrust re-pull)", async () => {
+    const storage = memStorage();
+    // 17 market symbols, market shut (weekend), every one already holding the
+    // settled close. The standard Refresh tap escalated to a full force-fetch:
+    // Twelve Data cleared 8, deferred the other 9. A plain closed-market round
+    // would leave those 9 to the per-minute burst (no spill), but the manual
+    // cache-distrust pull must fill them via Tiingo in parallel right now.
+    const nowClosed = Date.UTC(2026, 5, 27, 18, 0, 0); // Saturday — market closed
+    const expectedClosed = latestSettledSessionDate(new Date(nowClosed));
+    const all = Array.from({ length: 17 }, (_, i) => `SYM${i}`);
+    const deferred = all.slice(8);
+    const quotes = new Map<string, Quote>();
+    for (const symbol of all) {
+      quotes.set(symbol, {
+        symbol,
+        price: new Decimal(100),
+        previousClose: null,
+        currency: "USD",
+        at: nowClosed,
+        priceTime: nowClosed,
+        valueDate: expectedClosed, // holds the settled close → not "behind"
+        marketOpen: null,
+      });
+    }
+    const fetchImpl = stubFetch(deferred.map((s) => iexRow(s, 250, `${expectedClosed}T20:00:00Z`)));
+    const out = await runTiingoFallback({
+      symbols: all,
+      navSymbols: new Set(),
+      quotes,
+      report: emptyReport(deferred),
+      proxyUrl: PROXY,
+      now: nowClosed,
+      storage,
+      fetchImpl,
+      manualForce: true,
+    });
+    expect(out.tiingoSymbols.sort()).toEqual([...deferred].sort());
+  });
+
+  it("efficiency spill: a big *automatic* closed-market round also fills its deferred overflow (size alone qualifies)", async () => {
+    const storage = memStorage();
+    // Same 17-symbol closed-market overflow on an ordinary auto round (no
+    // manualForce). A big sleeve (>16) spills to the backup regardless of market
+    // state or trigger, so the 9 deferred symbols are still cleared in parallel
+    // rather than left to trickle through the per-minute cap over several minutes.
+    const nowClosed = Date.UTC(2026, 5, 27, 18, 0, 0); // Saturday — market closed
+    const expectedClosed = latestSettledSessionDate(new Date(nowClosed));
+    const all = Array.from({ length: 17 }, (_, i) => `SYM${i}`);
+    const deferred = all.slice(8);
+    const quotes = new Map<string, Quote>();
+    for (const symbol of all) {
+      quotes.set(symbol, {
+        symbol,
+        price: new Decimal(100),
+        previousClose: null,
+        currency: "USD",
+        at: nowClosed,
+        priceTime: nowClosed,
+        valueDate: expectedClosed,
+        marketOpen: null,
+      });
+    }
+    const fetchImpl = stubFetch(deferred.map((s) => iexRow(s, 250, `${expectedClosed}T20:00:00Z`)));
+    const out = await runTiingoFallback({
+      symbols: all,
+      navSymbols: new Set(),
+      quotes,
+      report: emptyReport(deferred),
+      proxyUrl: PROXY,
+      now: nowClosed,
+      storage,
+      fetchImpl,
+    });
+    expect(out.tiingoSymbols.sort()).toEqual([...deferred].sort());
+  });
+
   it("efficiency spill stays off for a small market-open round (Twelve Data clears it within a minute)", async () => {
     const storage = memStorage();
     // Only 3 symbols requested — well under the spill threshold. Each already holds
@@ -402,6 +478,49 @@ describe("runTiingoFallback", () => {
       forceAll: true,
     });
     // The explicit "route everything through the backup" button ignores the stamp.
+    expect(again.tiingoSymbols).toEqual(["FSKAX"]);
+    expect((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2);
+  });
+
+  it("manualForce bypasses the no-newer cooldown so a repeated manual Refresh re-verifies", async () => {
+    const storage = memStorage();
+    const STALE = "2026-06-18";
+    const fetchImpl = stubFetch([iexRow("FSKAX", 100, `${STALE}T21:00:00Z`)]);
+    const behind = (): Quote => ({
+      symbol: "FSKAX",
+      price: new Decimal(100),
+      previousClose: null,
+      currency: "USD",
+      at: NOW,
+      priceTime: null,
+      valueDate: STALE,
+      marketOpen: null,
+    });
+    // First manual pass records a no-newer stamp (the backup had nothing fresher).
+    await runTiingoFallback({
+      symbols: ["FSKAX"],
+      navSymbols: new Set(["FSKAX"]),
+      quotes: new Map<string, Quote>([["FSKAX", behind()]]),
+      report: emptyReport(),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl,
+      manualForce: true,
+    });
+    // A second manual Refresh distrusts the cache and re-pulls despite the stamp,
+    // rather than silently telling the user "already checked, nothing newer".
+    const again = await runTiingoFallback({
+      symbols: ["FSKAX"],
+      navSymbols: new Set(["FSKAX"]),
+      quotes: new Map<string, Quote>([["FSKAX", behind()]]),
+      report: emptyReport(),
+      proxyUrl: PROXY,
+      now: NOW + 5 * 60_000,
+      storage,
+      fetchImpl,
+      manualForce: true,
+    });
     expect(again.tiingoSymbols).toEqual(["FSKAX"]);
     expect((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2);
   });
