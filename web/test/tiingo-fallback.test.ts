@@ -120,6 +120,55 @@ describe("runTiingoFallback", () => {
     expect(out.budget.dayUsed).toBe(0);
   });
 
+  it("holdBudgetReroute waits out the primary's budget deferrals but still backs up genuine failures", async () => {
+    const storage = memStorage();
+    const fetchImpl = stubFetch([
+      iexRow("AAPL", 200, `${EXPECTED}T20:00:00Z`),
+      iexRow("MSFT", 300, `${EXPECTED}T20:00:00Z`),
+    ]);
+    const quotes = new Map<string, Quote>();
+    const out = await runTiingoFallback({
+      symbols: ["AAPL", "MSFT"],
+      navSymbols: new Set(),
+      quotes,
+      // AAPL: budget-deferred (the primary is over its daily cap, never tried it).
+      // MSFT: attempted on the primary and genuinely failed.
+      report: { ...emptyReport(["AAPL"]), failed: ["MSFT"] },
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl,
+      // The primary's daily cap resets imminently ⇒ hold its deferred book here.
+      holdBudgetReroute: true,
+    });
+    // The budget-deferred AAPL is held back (wait for the primary's reset), while
+    // the genuinely-failed MSFT is still rescued from the backup.
+    expect(out.tiingoSymbols).toEqual(["MSFT"]);
+    expect(out.quotes.has("AAPL")).toBe(false);
+    expect(out.fallbackSymbols).toEqual(["MSFT"]);
+    // Only one Tiingo credit spent (MSFT), not two — the backup wasn't drained.
+    expect(out.budget.dayUsed).toBe(1);
+  });
+
+  it("holdBudgetReroute still spills the deferred book by default (no near reset)", async () => {
+    const storage = memStorage();
+    const fetchImpl = stubFetch([iexRow("AAPL", 200, `${EXPECTED}T20:00:00Z`)]);
+    const quotes = new Map<string, Quote>();
+    const out = await runTiingoFallback({
+      symbols: ["AAPL"],
+      navSymbols: new Set(),
+      quotes,
+      report: emptyReport(["AAPL"]),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl,
+      holdBudgetReroute: false,
+    });
+    // Default behaviour is unchanged: the deferred symbol reroutes to Tiingo.
+    expect(out.tiingoSymbols).toEqual(["AAPL"]);
+  });
+
   it("flags a genuine fallback only for symbols the primary attempted and failed", async () => {
     const storage = memStorage();
     const fetchImpl = stubFetch([

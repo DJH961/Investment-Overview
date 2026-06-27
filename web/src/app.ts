@@ -57,6 +57,7 @@ import {
   clearPriceCaches,
   clearAllSeriesBackoff,
   creditsSpentToday,
+  startOfUtcDay,
   readLastPull,
   readSymbolPlan,
   type PlannedSymbol,
@@ -137,7 +138,7 @@ import {
 } from "./provider-breaker";
 import { ledgerReservation, tiingoAvailable, twelveDataAvailable } from "./reservation";
 import { DEFERRED_MAX_ATTEMPTS, DeferredQueue } from "./deferred-queue";
-import { planFanout, planTwelveDataSafetyNet, TIINGO_RESERVE_CREDITS } from "./provider-fanout";
+import { planFanout, planTwelveDataSafetyNet, shouldWaitForReset, TIINGO_RESERVE_CREDITS } from "./provider-fanout";
 import { reconcileHandshake } from "./login-handshake";
 import { springboardSessionCurve, springboardWeekCurve, parseExportedPoints } from "./springboard";
 import { buildModelAnchor } from "./value-graph";
@@ -4049,6 +4050,26 @@ export class App {
         );
         if (reserve.fannedOut) reserveCredits = Math.max(reserveCredits, TIINGO_RESERVE_CREDITS);
       }
+      // Reroute-vs-wait guard: when Twelve Data is over its *daily* hard cap and
+      // that cap resets within double the auto-refresh interval, don't spill the
+      // primary's budget-deferred book onto the scarcer Tiingo backup for the sake
+      // of one or two early rounds — wait for the daily reset and let Twelve Data
+      // serve it. A manual/"via backup" pull is the user explicitly asking for the
+      // backup now, so it is exempt. The per-minute window is untouched: it is held
+      // back by burst-relief deferral with a cool-down, never this guard.
+      const holdBudgetReroute =
+        !viaTiingo &&
+        !(opts.force ?? false) &&
+        !forceAll &&
+        this.waitingForTwelveDataDailyReset(quoteLoad.report, Date.now());
+      if (holdBudgetReroute) {
+        this.pollLog(
+          "fallback",
+          `Twelve Data daily cap reached and resets within 2× the refresh interval — holding the ` +
+            `budget-deferred book on the primary (no Tiingo spill) and waiting for the daily reset.`,
+          "info",
+        );
+      }
       const fallback = await runTiingoFallback({
         symbols: symbolsToFetch,
         navSymbols: this.lastNavSymbols,
@@ -4059,6 +4080,7 @@ export class App {
         manual: (opts.force ?? false) || viaTiingo,
         forceAll: viaTiingo,
         reserveCredits,
+        holdBudgetReroute,
         sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
       });
       if (session !== this.sessionId) return quoteLoad.report;
@@ -5110,7 +5132,23 @@ export class App {
         "info",
       );
     }
-    // A tap that took over an in-flight auto pull (promotion) must push the next
+    // Reroute-vs-wait guard (Twelve Data daily cap): when the primary's daily
+    // budget is spent and its midnight-UTC reset is within double the refresh
+    // interval, this round held the budget-deferred book on the primary rather
+    // than spilling it onto Tiingo. Land the next pull right after the reset so the
+    // primary serves the held book the moment its allowance returns — never sooner
+    // (it would only re-defer) and never a stale interval later.
+    if (this.waitingForTwelveDataDailyReset(report, Date.now())) {
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      const untilResetMs = Math.max(0, startOfUtcDay(Date.now()) + DAY_MS - Date.now()) + MIN_BURST_RELIEF_MS;
+      delayMs = Math.max(delayMs, untilResetMs);
+      this.pollLog(
+        "fallback",
+        `Twelve Data daily cap reached — waiting ~${Math.round(untilResetMs / 60000)}min for its reset rather than ` +
+          `rerouting the deferred book to Tiingo.`,
+        "info",
+      );
+    }
     // *automatic* refresh out by the full configured interval — never a ~1-minute
     // burst — so the manual refresh genuinely supersedes the auto schedule instead
     // of letting it resume seconds later.
@@ -5443,6 +5481,25 @@ export class App {
     if (until === null) return "";
     const secs = Math.max(1, Math.round((until - now) / 1000));
     return ` (Twelve Data frozen by a 429 — reads 0/min until the breaker lifts in ~${secs}s)`;
+  }
+
+  /**
+   * The reroute-vs-wait decision for the Twelve Data **daily** hard cap: true when
+   * the day's budget is spent *and* the cap resets (midnight UTC) within double
+   * the configured auto-refresh interval. When true the round holds the budget-
+   * deferred book on the primary instead of spilling it onto the scarcer Tiingo
+   * backup, and the scheduler wakes the next pull right after the reset. The
+   * per-minute window deliberately never reaches here — it is paced by burst-relief
+   * deferral, not a provider reroute (see {@link shouldWaitForReset}).
+   */
+  private waitingForTwelveDataDailyReset(report: QuoteLoadReport, now: number): boolean {
+    if (report.dayRemaining > 0) return false;
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    return shouldWaitForReset({
+      resetAtMs: startOfUtcDay(now) + DAY_MS,
+      nowMs: now,
+      autoIntervalMs: this.state.config.updateMinutes * 60 * 1000,
+    });
   }
 
   /**

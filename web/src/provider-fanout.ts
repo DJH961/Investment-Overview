@@ -119,6 +119,37 @@ export function isPriorityPull(kind: FanoutKind): boolean {
 }
 
 /**
+ * The **reroute-vs-wait guard** (`docs/centralized_data_pull_plan.md` §"Pillar 5 —
+ * Provider spilling").
+ *
+ * When a provider is over a **hard** limit (Twelve Data's daily 800-credit cap,
+ * or Tiingo's hourly / daily cap), the round normally reroutes the still-behind
+ * book to the *other* provider in full. But when that limit resets very soon —
+ * within **double the auto-refresh interval** — spilling onto the scarcer other
+ * provider buys at most one or two early rounds while needlessly spending its
+ * credits (and risking *its* 429); it is cheaper and safer to simply wait for the
+ * reset and let the original provider serve the next round. Returns `true` when
+ * the round should **wait** (hold the cross-provider spill) rather than reroute.
+ *
+ * Pure over an injected clock. The Twelve Data **per-minute** window is
+ * deliberately *not* a caller of this: that overflow is held back by burst-relief
+ * deferral with a cool-down (`refresh-policy.ts`), never a provider reroute, so it
+ * must not be conflated with a hard-limit outage.
+ */
+export function shouldWaitForReset(args: {
+  /** Epoch-ms the down provider's hard limit resets (its next clean boundary). */
+  resetAtMs: number;
+  nowMs: number;
+  /** The configured user-editable auto-update interval, ms. */
+  autoIntervalMs: number;
+}): boolean {
+  const untilReset = args.resetAtMs - args.nowMs;
+  // Already past the boundary ⇒ capacity is back, so there is nothing to wait for.
+  if (untilReset <= 0) return false;
+  return untilReset < 2 * Math.max(0, args.autoIntervalMs);
+}
+
+/**
  * Decide the provider split for a pull. Pure; the caller dispatches each leg to
  * the existing fetchers (which re-clamp against the live reservation + breaker, so
  * this can only ever propose *fewer* credits than are truly available).

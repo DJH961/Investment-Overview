@@ -136,6 +136,16 @@ export interface TiingoFallbackOptions {
    * full self-capped budget.
    */
   reserveCredits?: number;
+  /**
+   * **Reroute-vs-wait guard** (see {@link ../provider-fanout.shouldWaitForReset}).
+   * When the primary (Twelve Data) is over a *hard* limit whose reset is imminent
+   * — within double the auto-refresh interval — the caller sets this so the round
+   * does **not** spill the primary's budget-deferred book onto the scarcer Tiingo
+   * backup; it waits for the primary's reset instead. Only the symbols the primary
+   * *deferred for budget* (`report.deferred`, never `report.failed`) are held back,
+   * so a genuine per-symbol primary failure is still backed up. Defaults to false.
+   */
+  holdBudgetReroute?: boolean;
   /** Last-known EUR size per symbol. Retained for callers; not used for routing. */
   sizeForSymbol?: (symbol: string) => number;
   /**
@@ -357,6 +367,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     fetchImpl,
     forceAll = false,
     reserveCredits = 0,
+    holdBudgetReroute = false,
     reservation = ledgerReservation(storage ?? null),
   } = options;
 
@@ -376,6 +387,14 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
   // symbol the primary merely deferred for budget (a smart-routing efficiency
   // reroute that was never attempted on the primary).
   const primaryAttemptedButFailed = new Set(report.failed);
+  // Reroute-vs-wait guard: when the primary is over a hard limit whose reset is
+  // imminent, the caller holds back the *budget-deferred* book (it will be served
+  // by the primary in a round or two) rather than spend the scarcer Tiingo backup
+  // on it. A symbol the primary genuinely *attempted and failed* is never held —
+  // that is a real fallback, not a deferral we can wait out.
+  const heldForPrimaryReset = holdBudgetReroute
+    ? new Set(report.deferred.filter((s) => !primaryAttemptedButFailed.has(s)))
+    : new Set<string>();
   const tiingoSymbols: string[] = [];
   let error: PriceError | null = null;
   // Exact accounting of the backup's spend this round (the user's "be a good
@@ -421,6 +440,10 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     const candidates: string[] = [];
     for (const symbol of symbols) {
       if (suppressedByNoNewer(symbol)) continue;
+      // Hold back the primary's budget-deferred symbols when its hard limit is
+      // about to reset (the reroute-vs-wait guard): wait for the primary rather
+      // than spill onto the scarcer backup for the sake of one or two rounds.
+      if (heldForPrimaryReset.has(symbol)) continue;
       const q = quotes.get(symbol);
       const held = q?.valueDate ?? null;
       const primaryFailed = primaryFellShort.has(symbol) || !q || q.price === null;

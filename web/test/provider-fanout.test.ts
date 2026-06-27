@@ -6,6 +6,7 @@ import {
   isPriorityPull,
   planFanout,
   planTwelveDataSafetyNet,
+  shouldWaitForReset,
   type FanoutInputs,
 } from "../src/provider-fanout";
 
@@ -298,5 +299,46 @@ describe("planFanout — NAV routing (unified with stocks)", () => {
     });
     expect(plan.navTiingo).toEqual(["FUNDA"]);
     expect(plan.deferred).toEqual(["FUNDB", "FUNDC"]);
+  });
+});
+
+describe("shouldWaitForReset (reroute-vs-wait guard)", () => {
+  const autoIntervalMs = 5 * 60 * 1000; // 5-minute auto refresh
+
+  it("waits when the limit resets within double the auto interval", () => {
+    const nowMs = 0;
+    // Reset 9 minutes away, 2× interval = 10 minutes ⇒ wait.
+    expect(
+      shouldWaitForReset({ resetAtMs: 9 * 60 * 1000, nowMs, autoIntervalMs }),
+    ).toBe(true);
+  });
+
+  it("reroutes (does not wait) when the reset is further than double the interval", () => {
+    const nowMs = 0;
+    // Reset 11 minutes away, 2× interval = 10 minutes ⇒ reroute in full.
+    expect(
+      shouldWaitForReset({ resetAtMs: 11 * 60 * 1000, nowMs, autoIntervalMs }),
+    ).toBe(false);
+  });
+
+  it("does not wait once the reset boundary has already passed", () => {
+    expect(
+      shouldWaitForReset({ resetAtMs: -1, nowMs: 0, autoIntervalMs }),
+    ).toBe(false);
+    expect(
+      shouldWaitForReset({ resetAtMs: 0, nowMs: 0, autoIntervalMs }),
+    ).toBe(false);
+  });
+
+  it("treats exactly double the interval as far enough to reroute (strict <)", () => {
+    expect(
+      shouldWaitForReset({ resetAtMs: 2 * autoIntervalMs, nowMs: 0, autoIntervalMs }),
+    ).toBe(false);
+  });
+
+  it("never waits when the interval is non-positive (no sensible window)", () => {
+    expect(
+      shouldWaitForReset({ resetAtMs: 60 * 1000, nowMs: 0, autoIntervalMs: 0 }),
+    ).toBe(false);
   });
 });
