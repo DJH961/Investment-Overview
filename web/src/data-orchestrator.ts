@@ -59,6 +59,14 @@ export interface PullFreshness {
   fxAgeMs?: number;
   /** Whether today's NAV prices are already held. */
   navHeldForToday: boolean;
+  /**
+   * Whether the session EUR→USD **open/close bar anchor** the hero currency KPI
+   * needs for the current market phase is absent on the device (see
+   * {@link ../session-fx.sessionFxAnchorMissing}). Drives the `fxBars` leg so the
+   * KPI's market-hours/overnight split is fed in every phase. Omitting it (or
+   * `undefined`) is treated as `false` — no anchor pull is forced.
+   */
+  fxBarsAnchorMissing?: boolean;
 }
 
 /**
@@ -225,6 +233,23 @@ export function planPull(ctx: PullContext): PullPlan {
     }
   }
 
+  // Overlay 4 — currency-KPI FX-bar anchor. The hero currency effect's
+  // market-hours/overnight split is anchored to the session's EUR→USD open/close,
+  // read from the stored 1D FX bar track. That track is a cheap one-shot pull the
+  // orchestrator now owns as a first-class leg rather than an ad-hoc after-hours
+  // side pipeline: whenever the anchor THIS market phase needs is absent
+  // (`fxBarsAnchorMissing`) the leg is due on EVERY mechanism (start / auto /
+  // manual / reset), so the KPI never has to fight a suppressed FX-spot leg for the
+  // data its different phases need. It self-clears once the bar lands and the
+  // fetcher is per-series backoff-bounded, so turning it on whenever missing is safe
+  // and bounded. The mechanical de-dup against a session bar pull that already grabs
+  // the FX track alongside the price bars lives at the dispatch site (it alone knows
+  // whether session symbols are actually pulled this round).
+  if (ctx.freshness.fxBarsAnchorMissing && !legs.fxBars) {
+    legs.fxBars = true;
+    notes.push("FX-bar anchor due (currency KPI)");
+  }
+
   const reason = describeLegs(graded.tier, legs, notes);
   return { kind: ctx.kind, tier: graded.tier, legs, reason };
 }
@@ -237,6 +262,7 @@ function activeLegNames(legs: PullLegs): string[] {
   if (legs.quotes) names.push("quotes");
   if (legs.nav) names.push("NAV");
   if (legs.fx) names.push("FX");
+  if (legs.fxBars) names.push("FX bars");
   return names;
 }
 

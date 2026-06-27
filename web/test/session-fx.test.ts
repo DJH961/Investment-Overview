@@ -11,12 +11,15 @@ import {
   fxEffectSplit,
   fxBuyingPowerSplit,
   graphAnchorFx,
+  readPrevSessionCloseFx,
   readSessionCloseFx,
   readSessionOpenFx,
+  recordPrevSessionCloseFx,
   recordSessionCloseFx,
   recordSessionOpenFx,
   sessionBarsComplete,
   sessionCloseFxFromBars,
+  sessionFxAnchorMissing,
   sessionFxBarsComplete,
   sessionOpenFxFromBars,
 } from "../src/session-fx";
@@ -507,5 +510,73 @@ describe("session-open FX persistence", () => {
 
   it("returns null (not throw) when nothing is stored", () => {
     expect(readSessionOpenFx("2026-06-25")).toBeNull();
+  });
+});
+
+describe("sessionFxAnchorMissing", () => {
+  const bar = (t: number, value: string) => ({ t, value: d(value) });
+  const openMs = Date.UTC(2026, 5, 25, 13, 30); // 09:30 ET
+  const closeMs = Date.UTC(2026, 5, 25, 20, 0); // 16:00 ET
+
+  it("closed market: missing until the track reaches the close", () => {
+    const incomplete = [bar(closeMs - 3600_000, "1.0750")];
+    expect(
+      sessionFxAnchorMissing({ fxBars: incomplete, marketClosed: true, warmingUp: false, sessionOpenMs: openMs, sessionCloseMs: closeMs }),
+    ).toBe(true);
+    const complete = [bar(closeMs - 3600_000, "1.0750"), bar(closeMs, "1.0775")];
+    expect(
+      sessionFxAnchorMissing({ fxBars: complete, marketClosed: true, warmingUp: false, sessionOpenMs: openMs, sessionCloseMs: closeMs }),
+    ).toBe(false);
+  });
+
+  it("open & warming up: never missing (the captured live spot stands in)", () => {
+    expect(
+      sessionFxAnchorMissing({ fxBars: [], marketClosed: false, warmingUp: true, sessionOpenMs: openMs, sessionCloseMs: closeMs }),
+    ).toBe(false);
+  });
+
+  it("open & past warm-up: missing until an open bar prints", () => {
+    expect(
+      sessionFxAnchorMissing({ fxBars: [], marketClosed: false, warmingUp: false, sessionOpenMs: openMs, sessionCloseMs: closeMs }),
+    ).toBe(true);
+    const withOpen = [bar(openMs, "1.0900")];
+    expect(
+      sessionFxAnchorMissing({ fxBars: withOpen, marketClosed: false, warmingUp: false, sessionOpenMs: openMs, sessionCloseMs: closeMs }),
+    ).toBe(false);
+  });
+});
+
+describe("prior-session-close FX persistence", () => {
+  beforeEach(() => {
+    const store = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("round-trips the rate for the same session day", () => {
+    recordPrevSessionCloseFx("2026-06-25", d("1.0834"));
+    expect(readPrevSessionCloseFx("2026-06-25")?.toString()).toBe("1.0834");
+  });
+
+  it("ignores a rate captured for a different session", () => {
+    recordPrevSessionCloseFx("2026-06-24", d("1.07"));
+    expect(readPrevSessionCloseFx("2026-06-25")).toBeNull();
+  });
+
+  it("does not store a null or non-positive rate", () => {
+    recordPrevSessionCloseFx("2026-06-25", null);
+    expect(readPrevSessionCloseFx("2026-06-25")).toBeNull();
+    recordPrevSessionCloseFx("2026-06-25", d("0"));
+    expect(readPrevSessionCloseFx("2026-06-25")).toBeNull();
+  });
+
+  it("returns null (not throw) when nothing is stored", () => {
+    expect(readPrevSessionCloseFx("2026-06-25")).toBeNull();
   });
 });
