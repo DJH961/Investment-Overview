@@ -114,6 +114,7 @@ import { setEurUsdRate } from "./currency";
 import { setInvestmentAmountEur } from "./investment-amount";
 import { formatLastPull } from "./format";
 import { appendPollLog, clearPollLog, formatPollLog, readPollLog, type PollLogCategory, type PollLogLevel } from "./polling-log";
+import { clearConsumptionLog, formatConsumptionLog, readConsumptionLog, recordConsumption } from "./consumption-log";
 import { APP_VERSION } from "./version";
 import type { CloseResolveLog } from "./close-completeness";
 import {
@@ -2612,6 +2613,22 @@ export class App {
         ["Clear log"],
       );
       clearLog.addEventListener("click", () => this.clearPollLogNow());
+      // (5) Download the data-loading (consumption) log: a summarised trail of
+      // what the overview's holdings, graph and currency KPIs actually read from
+      // the available data, flagging where they fell back to alternative data
+      // because the perfect data was missing. Paired with a clear button.
+      const downloadConsumption = h(
+        "button",
+        { class: "btn ghost", type: "button", "data-action": "download-consumption-log" },
+        ["Download data loading log"],
+      );
+      downloadConsumption.addEventListener("click", () => this.downloadConsumptionLog());
+      const clearConsumption = h(
+        "button",
+        { class: "btn ghost", type: "button", "data-action": "clear-consumption-log" },
+        ["Clear log"],
+      );
+      clearConsumption.addEventListener("click", () => this.clearConsumptionLogNow());
       formChildren.push(
         h("h2", { class: "settings-section" }, ["Maintenance"]),
         field(
@@ -2638,6 +2655,11 @@ export class App {
           "Data polling log",
           h("div", { class: "row import-row" }, [downloadLog, clearLog]),
           "Download a detailed, timestamped trail of exactly what each refresh did: which holdings were served from cache, fetched live, or filled from the backup provider (and why), the free-tier budgets at each step, and the data-file checks. Useful for debugging when prices look wrong or stuck. The log stays on this device.",
+        ),
+        field(
+          "Data loading log",
+          h("div", { class: "row import-row" }, [downloadConsumption, clearConsumption]),
+          "Download a summarised trail of what the main overview actually read from the available data — the holdings, the value graph and the currency KPIs — flagging the moments where a view had to fall back to alternative data because the perfect data was missing (a holding dropped from totals, a USD KPI shown in EUR, a chart tip it couldn't draw). Use it to see what data the views would have needed to be perfect. The log stays on this device.",
         ),
       );
     }
@@ -5511,6 +5533,34 @@ export class App {
     this.toast("Polling log cleared.");
   }
 
+  /**
+   * Export the recorded data-loading (consumption) log to a downloadable text
+   * file: a summarised trail of what the overview's holdings, graph and currency
+   * KPIs read from the available data, flagging where they fell back to
+   * alternative data because the ideal data was missing.
+   */
+  private downloadConsumptionLog(): void {
+    try {
+      const text = formatConsumptionLog(readConsumptionLog(), { version: APP_VERSION });
+      const blob = new Blob([text], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = h("a", { href: url, download: "investment-overview-data-loading-log.txt" }) as HTMLAnchorElement;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      this.toast("Data loading log downloaded.");
+    } catch {
+      this.toast("Couldn't export the data loading log on this device.");
+    }
+  }
+
+  /** Clear the recorded data-loading log (Settings → "Clear data loading log"). */
+  private clearConsumptionLogNow(): void {
+    clearConsumptionLog();
+    this.toast("Data loading log cleared.");
+  }
+
   /** A brief, auto-dismissing status message (e.g. biometric enrolment result). */
   private toast(message: string): void {
     if (typeof document === "undefined") return;
@@ -5707,6 +5757,15 @@ export class App {
 
   private renderDashboard(model: DashboardModel): void {
     this.model = model;
+    // Record what the overview's views consumed from the available data (and
+    // where they fell back to alternative data) — the read counterpart to the
+    // polling log. De-duplicated downstream, so an unchanging picture collapses
+    // to one row and a new row only marks a genuine change. Best-effort.
+    try {
+      recordConsumption(model);
+    } catch {
+      /* consumption logging is best-effort and must never break a render */
+    }
     // Mirror the configured regular investment amount into the render-layer store
     // so the USD investing-power panel can read it without threading config through.
     setInvestmentAmountEur(this.state.config.investmentAmountEur);
