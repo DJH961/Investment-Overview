@@ -4,6 +4,8 @@
 mislabel fix (§1.1) landed first, and the remaining backlog and original ideas
 (§2 per-row freshness chip, §3 deferred-queue freshness + threading, §4.1
 freshness legend, §4.2 explicit "updating…" bucket) have now all shipped.
+§5 closed the closed-market deferral-drain stall; §6 ties the settled heartbeat
+to the user's update interval and fully logs the deferred edge cases.
 See the per-section **Implemented** notes below.
 **Issue:** "deferred symbols never update / the status never changes" plus
 "things keep being labelled *cached* even when the value is two minutes old", and
@@ -203,3 +205,28 @@ gates), `web/test/tiingo-fallback.test.ts` (big manual *and* big automatic
 closed-market rounds both fill their overflow via Tiingo; a small round stays
 off; a manual repeat bypasses the no-newer cooldown) and
 `web/test/deferred-queue.test.ts` (`hasForced()`).
+
+## 6. Settled-heartbeat cadence + deferred edge-case logging (follow-up)
+
+**Cadence — no invented magic number.** The settled-market heartbeat (the slow
+tick that keeps the scheduler alive once the book is fully up to date so it
+notices the next session open / NAV publish) was a hard-coded `5 * 60 * 1000`
+constant tied to nothing. It is now `App.settledHeartbeatMs()`, returning the
+user's own configured auto-update interval (`config.updateMinutes`) — the same
+cadence the live steady-state slow refresh (`nextRefreshDelayMs`'s
+`slowIntervalMs`) and `upToDateWindowMs()` already use. A settled book has
+nothing to fetch, so re-checking on exactly the user's chosen rhythm is the
+honest cadence and there is no separate constant to drift.
+
+**Deferred edge cases are now fully in the polling log.**
+- **Aged out (retry cap).** `drainDeferredQueue`'s "dropped after N attempts"
+  line is now an explicit `warn` (was inferred `info`) and spells out that the
+  work-queue re-pull is being abandoned and each symbol falls back to its own
+  cache TTL — a permanently-given-up symbol can no longer hide in the trail.
+- **Held undrained because the book is settled.** When the auto/​start tick
+  short-circuits on `fullyUpToDate()` (no forced deferrals), any ordinary
+  deferrals still parked are *intentionally* not drained — the settled book
+  already holds each one's settled close. That state now emits its own
+  `orchestrator`/`warn` line ("N ordinary deferral(s) held undrained — … will
+  drain on the next non-settled round") so a parked symbol showing no fresh pull
+  is explained rather than silently stranded.
