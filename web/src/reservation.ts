@@ -95,6 +95,60 @@ export function tiingoAvailable(
   return budget.remaining();
 }
 
+/**
+ * Live Twelve Data headroom split into its two windows at `now`: the per-minute
+ * pool (the plentiful 8/min that replenishes on a rolling 60s window) and the
+ * per-day pool (the scarce 800/day). Both are floored at 0 and **0 for the
+ * minute while the 429 breaker is frozen**, mirroring {@link twelveDataAvailable}
+ * (whose grant is the lesser of the two). Used to print an honest
+ * `N/min · M/day` budget read-out outside a refresh round (e.g. the Settings
+ * regenerate summary), where there is no {@link QuoteLoadReport} to read.
+ */
+export function twelveDataBudgetView(
+  now: number,
+  storage: StorageLike | null = null,
+): { minuteRemaining: number; dayRemaining: number } {
+  const s = storage ?? undefined;
+  const log = readCreditLog(now, DAY_MS, s);
+  const day = Math.max(0, FREE_TIER.creditsPerDay - Math.max(0, creditsSpentToday(log, now)));
+  if (twelveDataFrozen(now, s)) return { minuteRemaining: 0, dayRemaining: day };
+  const minute = Math.max(0, FREE_TIER.creditsPerMinute - Math.max(0, creditsSpentWithin(log, now, MINUTE_MS)));
+  return { minuteRemaining: minute, dayRemaining: day };
+}
+
+/**
+ * Milliseconds until the Twelve Data **per-minute** pool is fully replenished —
+ * i.e. the next instant at which the whole 8/min cap is spendable again because
+ * every spend has aged out of the rolling 60s window. Returns `0` when the
+ * minute is already clear (or the day pool is the only thing capping us). Capped
+ * at {@link MINUTE_MS} since a rolling-minute window can never need longer.
+ *
+ * This is what lets a Settings-triggered refresh **wait for the next fully
+ * available Twelve Data window** rather than spilling onto the scarce Tiingo
+ * budget when an auto-refresh has just drained the minute pool. The 429 freeze is
+ * deliberately *not* folded in here: a freeze runs to the next clock `:00`, far
+ * longer than the ≤60s minute wait this models, so a frozen provider simply
+ * starts now and lets the normal deferral handle the overflow.
+ */
+export function twelveDataMinuteReadyDelayMs(
+  now: number,
+  storage: StorageLike | null = null,
+): number {
+  const s = storage ?? undefined;
+  const log = readCreditLog(now, MINUTE_MS, s);
+  if (creditsSpentWithin(log, now, MINUTE_MS) <= 0) return 0;
+  // Each spend leaves the rolling window at `at + MINUTE_MS`; the window is clear
+  // at the first such boundary where the net spend within it drops to ≤ 0.
+  const boundaries = log
+    .map((e) => e.at + MINUTE_MS)
+    .filter((t) => t > now)
+    .sort((a, b) => a - b);
+  for (const t of boundaries) {
+    if (creditsSpentWithin(log, t, MINUTE_MS) <= 0) return Math.min(MINUTE_MS, Math.max(0, t - now));
+  }
+  return 0;
+}
+
 /** Live remaining credits for either provider at `now`. */
 export function available(
   provider: Provider,
