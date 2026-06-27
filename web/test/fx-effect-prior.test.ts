@@ -125,6 +125,35 @@ describe("fxAnchorWarning", () => {
     expect(warn).not.toBeNull();
   });
 
+  it("stays silent on a frozen weekend when the session close backs a missing settled prev", () => {
+    // The reported bug: over a frozen weekend the FX orchestration stops pulling, so
+    // the provider's settled previous close stays null and no refresh can clear it.
+    // But the displayed rate *is* the session close and the panel anchors to that same
+    // close — a real settled baseline, not an estimate — so the glyph must stay silent
+    // rather than nag all weekend.
+    const warn = fxAnchorWarning(
+      overview({
+        fxRateEurUsdPrev: null,
+        fxRateEurUsdSessionClose: new Decimal("1.1342"),
+      }),
+      frozenWeekend,
+    );
+    expect(warn).toBeNull();
+  });
+
+  it("still flags a missing settled prev while forex is open even with a session close", () => {
+    // When forex is genuinely trading the missing provider close is a real gap that a
+    // successful pull will resolve, so it is still surfaced (no frozen-weekend silence).
+    const warn = fxAnchorWarning(
+      overview({
+        fxRateEurUsdPrev: null,
+        fxRateEurUsdSessionClose: new Decimal("1.1342"),
+      }),
+      openNow,
+    );
+    expect(warn).not.toBeNull();
+  });
+
   it("stays silent on a closed market once the session close is in hand", () => {
     const warn = fxAnchorWarning(
       overview({
