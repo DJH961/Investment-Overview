@@ -91,8 +91,9 @@ The companion already points at this Worker (Settings → *Blob URL override*, w
 the `/price` URL auto‑derived). Once the Worker is redeployed, the next live
 refresh will use Tiingo for EUR/USD automatically **whenever Twelve Data can't
 deliver a fresh rate** (no key, budget spent, a transient failure, or the weekend
-FX close). You'll see the FX freshness label read **“FX live (backup)”** on those
-rounds. You can force a check with **Settings → “Try the backup data provider
+FX close). The coverage line reports FX purely by **freshness** — a fresh
+backup‑sourced rate reads **“FX live”** just like a primary one, never naming the
+provider. You can force a check with **Settings → “Try the backup data provider
 now.”**
 
 ## What the Worker now accepts on `…/price`

@@ -15,6 +15,8 @@
  * truth-table".
  */
 
+import { isForexMarketOpen, lastForexReopenMs } from "./market-hours";
+
 /** One clock hour, in ms — the Twelve Data / Tiingo hourly reset cadence. */
 export const ONE_HOUR_MS = 60 * 60 * 1000;
 
@@ -231,7 +233,7 @@ export function quoteRefreshDue(
 
 /**
  * Per-row freshness tier for a single holding's displayed price — the three-way
- * split the freshness-plan §2 calls for, mirroring `displayFxSource`'s
+ * split the freshness-plan §2 calls for, mirroring the FX rate's cache→live
  * cache→live promotion but with an explicit middle "recent" rung:
  *
  *   - `live`   — the market is open and the price was observed within one live
@@ -297,6 +299,57 @@ export function holdingFreshness(input: RowFreshnessInput): RowFreshness {
     : sameLocalDay(observedAtMs, nowMs);
   if (withinWindow || isToday) return "recent";
   return "aged";
+}
+
+/**
+ * Layer-6 FX freshness tier for the displayed EUR/USD rate. A superset of
+ * {@link RowFreshness} with two FX-only rungs:
+ *
+ *   - `none` — no rate held at all (book values may be incomplete).
+ *   - `eod`  — a *keyless* end-of-day rate: a rate is held but carries no
+ *              observation instant (e.g. a static EOD source), so it is honestly
+ *              "end of day" and can never grade as a live/recent intraday mark.
+ *   - `live` / `recent` / `aged` — graded exactly like a holding via
+ *              {@link holdingFreshness}, but against the **forex** market clock
+ *              (nearly 24×5, see {@link isForexMarketOpen}) and the most recent
+ *              forex weekly reopen as the settled boundary.
+ */
+export type FxFreshness = "live" | "recent" | "aged" | "eod" | "none";
+
+/** Inputs to {@link fxFreshness}. */
+export interface FxFreshnessInput {
+  /** Whether any EUR/USD rate is held at all (false ⇒ `"none"`). */
+  hasRate: boolean;
+  /**
+   * Epoch ms the held rate was observed, or `null` for a *keyless* end-of-day
+   * rate (a rate with no observation instant ⇒ `"eod"`).
+   */
+  fxObservedAt: number | null;
+  /** Decision instant. */
+  now: Date;
+  /** The live window (ms) — the user-set auto-refresh interval. */
+  intervalMs: number;
+}
+
+/**
+ * Classify the displayed EUR/USD rate into an {@link FxFreshness} tier. Wraps
+ * {@link holdingFreshness} so the three graded rungs mirror a holding row's
+ * exactly, then adds the FX-only `"none"` and `"eod"` answers. Pure and
+ * clock-injected (the forex market state is derived from `now`), so it is
+ * unit-testable in isolation.
+ */
+export function fxFreshness(input: FxFreshnessInput): FxFreshness {
+  if (!input.hasRate) return "none";
+  // A keyless end-of-day rate carries no observation instant, so it cannot be
+  // graded live/recent — it is honestly "end of day".
+  if (input.fxObservedAt === null) return "eod";
+  return holdingFreshness({
+    observedAtMs: input.fxObservedAt,
+    nowMs: input.now.getTime(),
+    marketOpen: isForexMarketOpen(input.now),
+    liveWindowMs: input.intervalMs,
+    lastSettledCloseMs: lastForexReopenMs(input.now),
+  });
 }
 
 /**
