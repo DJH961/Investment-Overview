@@ -31,6 +31,8 @@
 
 import type { StorageLike } from "./cache";
 import type { DashboardModel, HoldingView, OverviewView } from "./compute";
+import { isForexMarketOpen, forexMarketReopenMs } from "./market-hours";
+import { formatForexReopen } from "./format";
 
 const LOG_KEY = "iv.web.consumption_log";
 
@@ -129,6 +131,29 @@ function joinCapped(items: string[], cap = 8): string {
 // Summarising a model into a consumption picture (pure, fully testable).
 // ---------------------------------------------------------------------------
 
+/**
+ * The market-clock context a read happened in. The spot-FX market is shut all
+ * weekend (Fri 17:00 ET → Sun 17:00 ET), so over that window a *live* EUR/USD
+ * spot simply cannot exist — the keyless end-of-day rate is the best obtainable
+ * data, not a degradation. The summariser uses this to reframe the weekend FX
+ * fallback as expected (an `info` note that says plainly *why* it is impossible)
+ * rather than flagging it as missing-perfect data and asking for the impossible.
+ */
+interface FxMarketContext {
+  /** True when the spot-FX market is shut (the weekend), so no live spot exists. */
+  fxClosed: boolean;
+  /** A reader-local "reopens …" caption for the weekend close (empty when open). */
+  reopen: string;
+}
+
+function fxMarketContext(now: Date): FxMarketContext {
+  const fxClosed = !isForexMarketOpen(now);
+  return {
+    fxClosed,
+    reopen: fxClosed ? formatForexReopen(forexMarketReopenMs(now), now) : "",
+  };
+}
+
 /** What the holdings cards/totals read, and where they fell back. */
 function summariseHoldings(model: DashboardModel, needed: string[]): DomainConsumption {
   const o = model.overview;
@@ -203,7 +228,7 @@ function missingUsdKpis(o: OverviewView): string[] {
 }
 
 /** What the currency KPIs read for FX, and where the USD/EUR figures fell back. */
-function summariseCurrency(model: DashboardModel, needed: string[]): DomainConsumption {
+function summariseCurrency(model: DashboardModel, needed: string[], fx: FxMarketContext): DomainConsumption {
   const o = model.overview;
   const flags: ConsumptionFlag[] = [];
 
@@ -216,12 +241,24 @@ function summariseCurrency(model: DashboardModel, needed: string[]): DomainConsu
   };
   const sourceLabel = SOURCE_LABEL[o.eurUsdSource] ?? String(o.eurUsdSource);
 
+  // Over the weekend the spot-FX market is shut, so a live EUR/USD cannot exist:
+  // reading the keyless end-of-day rate is then the best obtainable data, not a
+  // fault. Note it (still flagged so the reader knows the rate is frozen) but at
+  // `info`, with an explicit passage of *why* it is impossible, and do not ask for
+  // a live spot we could never get until the market reopens.
+  const eodFrozenForWeekend = o.eurUsdSource === "eod" && fx.fxClosed;
+
   if (o.eurUsdSource === "none") {
     flags.push({
       level: "error",
       message: "No EUR/USD rate was available, so USD figures could not be derived and USD-native holdings could not be converted to EUR.",
     });
     needed.push("an EUR/USD spot rate");
+  } else if (eodFrozenForWeekend) {
+    flags.push({
+      level: "info",
+      message: `EUR/USD is the last keyless end-of-day rate, held frozen because the spot-FX market is shut for the weekend (${fx.reopen}) — no live intraday rate can exist until it reopens, so currency KPIs and the graph's EUR/USD split correctly carry this settled weekend rate rather than waiting for a live spot.`,
+    });
   } else if (o.eurUsdSource === "eod") {
     flags.push({
       level: "warn",
@@ -265,11 +302,17 @@ function summariseCurrency(model: DashboardModel, needed: string[]): DomainConsu
     });
   }
 
-  const summary = `EUR/USD read from ${sourceLabel}; ${
+  const summary = `EUR/USD read from ${sourceLabel}${
+    eodFrozenForWeekend ? " (frozen for the weekend)" : ""
+  }; ${
     usdGaps.length === 0 && o.eurUsdSource !== "none" ? "USD companions complete" : `${usdGaps.length} USD KPI(s) on the EUR fallback`
   }.`;
+  // The weekend end-of-day rate is the best obtainable FX (a live spot cannot
+  // exist while the market is shut), so — like a holding on a settled close — it
+  // counts as a perfect read rather than blocking on the impossible.
+  const fxAcceptable = o.eurUsdSource === "live" || o.eurUsdSource === "cache" || eodFrozenForWeekend;
   const perfect =
-    (o.eurUsdSource === "live" || o.eurUsdSource === "cache") &&
+    fxAcceptable &&
     o.fxMissingCurrencies.length === 0 &&
     usdGaps.length === 0;
   return { summary, perfect, flags };
@@ -282,7 +325,7 @@ function summariseCurrency(model: DashboardModel, needed: string[]): DomainConsu
  * 1D/1W EUR line is drawn from — so a data gap on those short windows is surfaced
  * explicitly rather than hidden behind the long-history chart's summary.
  */
-function summariseGraph(model: DashboardModel, needed: string[]): DomainConsumption {
+function summariseGraph(model: DashboardModel, needed: string[], fx: FxMarketContext): DomainConsumption {
   const o = model.overview;
   const flags: ConsumptionFlag[] = [];
 
@@ -322,7 +365,7 @@ function summariseGraph(model: DashboardModel, needed: string[]): DomainConsumpt
   // so report explicitly what each had available, since a gap there is felt only
   // on those short-window curves and is easy to miss otherwise.
   const navIssue = summariseGraphNav(model, flags, needed);
-  const fxIssue = summariseGraphFx(model, flags, needed);
+  const fxIssue = summariseGraphFx(model, flags, needed, fx);
 
   let summary: string;
   if (tipDrawable) {
@@ -398,7 +441,7 @@ function summariseGraphNav(model: DashboardModel, flags: ConsumptionFlag[], need
  * or read a coarse end-of-day rate — the gaps the user suspects on these curves.
  * Skipped for a EUR-only book, where the graphs need no FX.
  */
-function summariseGraphFx(model: DashboardModel, flags: ConsumptionFlag[], needed: string[]): boolean {
+function summariseGraphFx(model: DashboardModel, flags: ConsumptionFlag[], needed: string[], fx: FxMarketContext): boolean {
   const o = model.overview;
   const hasNonEur = model.holdings.some((h) => (h.nativeCurrency ?? "EUR").toUpperCase() !== "EUR");
   if (!hasNonEur) return false;
@@ -424,6 +467,16 @@ function summariseGraphFx(model: DashboardModel, flags: ConsumptionFlag[], neede
   }
 
   if (o.eurUsdSource === "eod") {
+    // Over the weekend the spot-FX market is shut, so the EUR line *cannot* read a
+    // live intraday rate: holding the last end-of-day rate is correct, not coarse.
+    // Note it as expected (info) rather than flagging an approximate shape.
+    if (fx.fxClosed) {
+      flags.push({
+        level: "info",
+        message: `1D/1W graph FX: the EUR line holds the last keyless end-of-day EUR/USD because the spot-FX market is shut for the weekend (${fx.reopen}) — no intraday rate can exist until it reopens, so the EUR line stays flat at this settled rate by design rather than being approximated.`,
+      });
+      return false;
+    }
     flags.push({
       level: "warn",
       message: "1D/1W graph FX: the EUR line reads the coarse keyless end-of-day rate (no intraday timestamp), so its market-day shape is approximate.",
@@ -447,14 +500,18 @@ function summariseGraphFx(model: DashboardModel, flags: ConsumptionFlag[], neede
 /**
  * Distil a built {@link DashboardModel} into a single, summarised consumption
  * picture across holdings, the value graph and the currency KPIs. Pure: takes no
- * storage and has no side effects, so it is fully unit-testable.
+ * storage and has no side effects, so it is fully unit-testable. `now` (the read
+ * instant) lets the summariser tell whether the spot-FX market is open: over the
+ * weekend a live EUR/USD cannot exist, so the end-of-day rate is reframed as the
+ * expected best-obtainable data instead of a missing-perfect fault.
  */
-export function summariseConsumption(model: DashboardModel): ConsumptionSummary {
+export function summariseConsumption(model: DashboardModel, now: Date = new Date()): ConsumptionSummary {
   const needed: string[] = [];
+  const fx = fxMarketContext(now);
   const holdings = summariseHoldings(model, needed);
   // Currency before graph so a missing FX rate is the first "needed" item.
-  const currency = summariseCurrency(model, needed);
-  const graph = summariseGraph(model, needed);
+  const currency = summariseCurrency(model, needed, fx);
+  const graph = summariseGraph(model, needed, fx);
   const perfect = holdings.perfect && currency.perfect && graph.perfect;
   // De-dupe the "needed" list while preserving order.
   const neededUnique = [...new Set(needed)];
@@ -541,7 +598,8 @@ export function appendConsumptionSnapshot(summary: ConsumptionSummary, opts: App
 
 /** Convenience: summarise a model and append it in one call. */
 export function recordConsumption(model: DashboardModel, opts: AppendConsumptionOptions = {}): void {
-  appendConsumptionSnapshot(summariseConsumption(model), opts);
+  const now = opts.at !== undefined ? new Date(opts.at) : new Date();
+  appendConsumptionSnapshot(summariseConsumption(model, now), opts);
 }
 
 /** Read the full persisted consumption log (oldest first), falling back to memory. */
