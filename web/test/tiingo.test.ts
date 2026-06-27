@@ -8,8 +8,8 @@ import {
   fetchTiingoEurUsd,
   fetchTiingoFxBars,
   fetchTiingoQuotes,
-  makeTiingoFxBarFetcher,
 } from "../src/tiingo";
+import { makeTiingoBarFetcher } from "../src/intraday-tiingo";
 import { PriceError, type FetchLike } from "../src/prices";
 
 const PROXY = "https://worker.example.dev/price";
@@ -180,7 +180,7 @@ describe("fetchTiingoEurUsd", () => {
   });
 });
 
-describe("fetchTiingoFxBars / makeTiingoFxBarFetcher", () => {
+describe("fetchTiingoFxBars / EUR/USD on the unified Tiingo bar pipe", () => {
   it("requests fxHistory with the cadence + window and parses ascending EUR→USD bars", async () => {
     let calledUrl = "";
     const fetchImpl: FetchLike = async (url) => {
@@ -261,15 +261,23 @@ describe("fetchTiingoFxBars / makeTiingoFxBarFetcher", () => {
     expect(called).toBe(false);
   });
 
-  it("makeTiingoFxBarFetcher binds the proxy + window into a no-arg fetchFx", async () => {
+  it("routes the EUR/USD symbol through makeTiingoBarFetcher to the fxHistory route", async () => {
     let calledUrl = "";
     const fetchImpl: FetchLike = async (url) => {
       calledUrl = String(url);
       return jsonResponse([{ date: "2026-06-23T00:00:00.000Z", close: 1.14 }]);
     };
-    const fetchFx = makeTiingoFxBarFetcher(PROXY, { fetchImpl, resampleFreq: "1day" });
-    const bars = await fetchFx();
+    const fetcher = makeTiingoBarFetcher(PROXY, {
+      param: "daily",
+      startDate: "2026-06-19",
+      endDate: "2026-06-23",
+      fetchImpl,
+    });
+    const bars = await fetcher(["EUR/USD"]);
+    // EUR/USD never hits the equity price route; it is served by fxHistory.
     expect(calledUrl).toContain("fxHistory=eurusd");
-    expect(bars[0].value.toString()).toBe("1.14");
+    expect(calledUrl).toContain("resampleFreq=1day");
+    expect(calledUrl).not.toContain("daily=EUR");
+    expect(bars.get("EUR/USD")![0].value.toString()).toBe("1.14");
   });
 });

@@ -43,7 +43,7 @@ import {
   WEB_HOURLY_CAP,
 } from "./tiingo-gate";
 import { tiingoFrozen } from "./provider-breaker";
-import { efficiencySpillEligible } from "./provider-fanout";
+import { efficiencySpillEligible, TIINGO_RESERVE_CREDITS } from "./provider-fanout";
 import { ledgerReservation, type Reservation } from "./reservation";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -122,6 +122,21 @@ export interface TiingoFallbackOptions {
    * session are left untouched.
    */
   forceAll?: boolean;
+  /**
+   * A user-driven cache-distrust re-pull — the **standard manual Refresh tap**,
+   * which in a closed/settled market escalates to a full force-fetch of every
+   * price (`buildQuoteOptions` `forceAll`). Unlike {@link forceAll} (the separate
+   * "route everything through Tiingo" button) the Twelve Data primary still leads;
+   * this flag only changes the backup's behaviour for the overflow Twelve Data
+   * deferred. It (a) lets the market-hours **efficiency spill** fire even while the
+   * exchange is shut — so a big manual round's deferred overflow is filled via
+   * Tiingo in parallel rather than trickling through the per-minute cap over
+   * minutes — and (b) bypasses the per-symbol "nothing newer" cooldown, so a user
+   * who taps Refresh again genuinely re-verifies the book rather than being told
+   * "already checked". Size/deferred gates still apply, so a small manual round is
+   * unaffected (its overflow drains through the normal per-minute burst).
+   */
+  manualForce?: boolean;
   /**
    * Hold back this many Tiingo credits from every budget check in this run (the
    * startup quick-refresh sets it so a true gap-fill fallback later in the
@@ -313,6 +328,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     storage,
     fetchImpl,
     forceAll = false,
+    manualForce = false,
     reserveCredits = 0,
     reservation = ledgerReservation(storage ?? null),
   } = options;
@@ -340,8 +356,9 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
   // holds nothing fresher than what we already have for `expected`, stop
   // re-pulling that symbol on every refresh until the cooldown lapses or a newer
   // target appears. The explicit "route everything through the backup" button
-  // (`forceAll`) bypasses this entirely.
-  const noNewer = forceAll ? {} : readTiingoNoNewer(storage ?? undefined);
+  // (`forceAll`) and a user-driven cache-distrust Refresh (`manualForce`) bypass
+  // this entirely — both mean the user explicitly asked to re-verify the book.
+  const noNewer = forceAll || manualForce ? {} : readTiingoNoNewer(storage ?? undefined);
   const suppressedByNoNewer = (symbol: string): boolean => {
     const stamp = noNewer[symbol];
     if (!stamp) return false;
@@ -371,15 +388,25 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
   // session appears), so a NAV and a stock are filled by one identical path.
   try {
     const candidates: string[] = [];
-    // Market-hours efficiency spill — the whole policy is owned by Pillar 5's
+    // Size-based efficiency spill — the whole policy is owned by Pillar 5's
     // provider-spilling authority (`efficiencySpillEligible` in
     // `provider-fanout.ts`), so it can be tuned in one place alongside the
     // login/manual `planFanout` spill. In short: when the round *originally* asked
     // for a big sleeve (`symbols` is the whole requested set, e.g. all 17), its
     // Twelve Data deferred overflow is spilled to Tiingo in parallel rather than
-    // left to trickle through the per-minute cap.
+    // left to trickle through the per-minute cap — regardless of market hours or
+    // whether the round was manual or automatic.
     const requestedCount = symbols.length;
     const deferredSet = new Set(report.deferred);
+    // The live Tiingo credits spendable right now (raw hour/day budget, with the
+    // 429-breaker freeze folded in as 0). The efficiency spill is gated on this so
+    // it only earmarks overflow for Tiingo when fanning out is actually possible —
+    // i.e. there are credits free *beyond* the fan-out reserve. When Tiingo is
+    // spent (or frozen) the overflow stays on Twelve Data's deferred queue instead
+    // of being routed to a backup leg that can never run, so a big closed-market
+    // hard refresh can't strand on "Updating…" waiting for a Tiingo fill that the
+    // budget will never grant.
+    const tiingoCreditsAvailable = readBudget(now, storage).remaining();
     for (const symbol of symbols) {
       if (suppressedByNoNewer(symbol)) continue;
       const q = quotes.get(symbol);
@@ -388,9 +415,10 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
       const eligible = marketSymbolEligible({ heldDate: held, expectedDate: expected, primaryFailed });
       const efficiencyEligible = efficiencySpillEligible({
         symbol,
-        marketOpen,
         requestedCount,
         deferred: deferredSet,
+        tiingoCreditsAvailable,
+        tiingoReserve: TIINGO_RESERVE_CREDITS,
       });
       if (eligible || efficiencyEligible) {
         candidates.push(symbol);

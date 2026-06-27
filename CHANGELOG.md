@@ -14,6 +14,75 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.14.4] — 2026-06-27
+
+### Fixed
+
+- **A big closed-market hard refresh no longer hangs on "Updating…" forever when
+  the Tiingo backup is out of credits.** When a refresh was large enough to fan
+  its Twelve Data overflow out to Tiingo for efficiency (the >16-symbol "instant"
+  rule) but Tiingo had no credits left, the spill still earmarked that overflow
+  for a Tiingo leg that could never run: the round ended with a "Tiingo budget
+  exhausted" error that rerouted the retry to the next clock hour, and on the
+  normal (non-"via backup") route the central safety net never re-pulled those
+  symbols on Twelve Data — so a manual cache-distrust re-pull on a settled market
+  could spin indefinitely. The efficiency spill is now gated on whether fanning
+  out is actually possible: `efficiencySpillEligible` takes the live Tiingo
+  credits and only spills when there is at least one credit free **beyond** the
+  fan-out reserve (the last `TIINGO_RESERVE_CREDITS` kept for genuine fallbacks
+  and login efficiency). When Tiingo is spent or its 429 breaker is frozen the
+  overflow keeps its explicit-force status on Twelve Data's deferred queue and
+  clears over the next per-minute windows instead of being routed to a backup
+  with nothing left to give (`web/src/provider-fanout.ts`,
+  `web/src/tiingo-fallback.ts`).
+
+## [4.14.3] — 2026-06-27
+
+### Fixed
+
+- **Large manual / closed-market refreshes no longer trickle their Twelve Data
+  overflow through the per-minute cap — the Tiingo efficiency spill now fires
+  regardless of market hours or trigger.** The spill that drains a big sleeve's
+  deferred overflow onto the backup in parallel was gated on the market being
+  open, so a >16-symbol refresh outside US trading hours (a login, a scheduled
+  round, or a user tapping Refresh on a settled/closed market) saw its overflow
+  left to dribble through Twelve Data's per-minute budget over several minutes
+  instead of being filled at once. `efficiencySpillEligible` now keys purely off
+  sleeve size and the deferred set — mirroring `planFanout`, whose login/manual
+  spill never depended on market hours — so a large book clears on the backup in
+  one fan-out whenever Twelve Data alone would need multiple windows
+  (`web/src/provider-fanout.ts`, `web/src/tiingo-fallback.ts`).
+- **A standard manual Refresh on a closed market now genuinely re-verifies the
+  book instead of being told "already checked".** A new `manualForce` flag on the
+  Tiingo fallback lets a user-driven cache-distrust pull both fire the efficiency
+  spill while the exchange is shut and bypass the per-symbol "nothing newer"
+  cooldown, so repeated Refresh taps actually re-pull rather than being
+  suppressed; size/deferred gates still apply, so small rounds are unaffected
+  (`web/src/tiingo-fallback.ts`, `web/src/app.ts`).
+- **Explicit force-deferred symbols no longer sit "Updating…" indefinitely behind
+  the scheduler's freshness short-circuit.** `DeferredQueue.hasForced()` lets the
+  automatic scheduler detect user-driven force deferrals that overflowed the
+  budget and still run the round to surface and re-pull them, rather than skipping
+  on a "book already up to date" judgement that does not know the user asked for
+  them (`web/src/deferred-queue.ts`).
+
+## [4.14.2] — 2026-06-27
+
+### Changed
+
+- **Live-graph EUR/USD FX history now rides the same price-bar pipe as every
+  other symbol**, so it is fetched **Twelve Data first, then Tiingo** with the
+  identical capacity split, reservation gating, dual-pipe fallback and per-symbol
+  backoff — instead of through a parallel, Tiingo-first FX subsystem. The EUR/USD
+  pair is now just another symbol on `makePriceBarFetcher`: the Twelve Data leg
+  pulls it browser-direct via `time_series` and the Tiingo leg routes it to the
+  Worker `fxHistory` route. Any future change to the price pipe automatically
+  applies to FX, with no separate FX fetcher, backoff or metering leg to keep in
+  step. As a side benefit the 1D FX track is now sampled at the price feed's
+  intraday `interval` (finer than the previous fixed 1-hour cadence)
+  (`web/src/live-graph.ts` `makeFxFetcher`, `web/src/intraday-tiingo.ts`
+  FX-aware bar routing, `web/src/app.ts`).
+
 ## [4.14.1] — 2026-06-27
 
 ### Fixed

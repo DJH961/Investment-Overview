@@ -305,17 +305,19 @@ describe("planFanout — NAV routing (unified with stocks)", () => {
 describe("efficiencySpillEligible", () => {
   const base = {
     symbol: "AAA",
-    marketOpen: true,
     requestedCount: FANOUT_INSTANT_THRESHOLD + 1,
     deferred: new Set(["AAA"]),
   };
 
-  it("spills a deferred symbol from a big, market-open round", () => {
+  it("spills a deferred symbol from a big round", () => {
     expect(efficiencySpillEligible(base)).toBe(true);
   });
 
-  it("never spills while the market is closed", () => {
-    expect(efficiencySpillEligible({ ...base, marketOpen: false })).toBe(false);
+  it("spills a big round regardless of market state or trigger", () => {
+    // Size (>threshold) + deferred-this-round are the only gates: a big sleeve
+    // spills to the backup whether the market is open or shut and whether the
+    // round is manual or automatic — there is no market-hours/trigger condition.
+    expect(efficiencySpillEligible(base)).toBe(true);
   });
 
   it("never spills a round at or below the instant threshold", () => {
@@ -339,5 +341,38 @@ describe("efficiencySpillEligible", () => {
     expect(
       efficiencySpillEligible({ ...base, requestedCount: 4, instantThreshold: 4 }),
     ).toBe(false);
+  });
+
+  it("does not spill when Tiingo has no credits beyond the reserve", () => {
+    // Fanning out must leave the fan-out reserve for genuine fallbacks/login. With
+    // the live credits at or below the reserve there is no room to spill, so the
+    // overflow stays on Twelve Data rather than being earmarked for a Tiingo leg
+    // that can never run (the endless-"Updating…" case).
+    expect(
+      efficiencySpillEligible({ ...base, tiingoCreditsAvailable: 0 }),
+    ).toBe(false);
+    expect(
+      efficiencySpillEligible({ ...base, tiingoCreditsAvailable: TIINGO_RESERVE_CREDITS }),
+    ).toBe(false);
+  });
+
+  it("spills once there is at least one credit beyond the reserve", () => {
+    expect(
+      efficiencySpillEligible({ ...base, tiingoCreditsAvailable: TIINGO_RESERVE_CREDITS + 1 }),
+    ).toBe(true);
+  });
+
+  it("honours an overridden reserve for the credit gate", () => {
+    expect(
+      efficiencySpillEligible({ ...base, tiingoCreditsAvailable: 3, tiingoReserve: 3 }),
+    ).toBe(false);
+    expect(
+      efficiencySpillEligible({ ...base, tiingoCreditsAvailable: 4, tiingoReserve: 3 }),
+    ).toBe(true);
+  });
+
+  it("skips the credit gate when no live credits are supplied", () => {
+    // Omitting tiingoCreditsAvailable keeps the pure size/deferred policy.
+    expect(efficiencySpillEligible(base)).toBe(true);
   });
 });

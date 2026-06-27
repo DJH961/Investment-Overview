@@ -12,6 +12,7 @@ import { PriceError, type Quote } from "../src/prices";
 import { latestSettledSessionDate } from "../src/market-hours";
 import { runTiingoFallback, shouldQuickRefresh, planStartupRefresh, planPrefetch, tiingoBudgetView, msUntilNextHour } from "../src/tiingo-fallback";
 import { WEB_DAILY_CAP, WEB_HOURLY_CAP } from "../src/tiingo-gate";
+import { TIINGO_RESERVE_CREDITS } from "../src/provider-fanout";
 import { DEFAULT_PROVIDER_LIMITS, setProviderLimits, resetProviderLimits } from "../src/provider-limits";
 import { tiingoCreditsSpentToday, readTiingoCreditLog, readTiingoNoNewer, recordTiingoCredits, type StorageLike } from "../src/cache";
 import { recordTiingo429 } from "../src/provider-breaker";
@@ -214,6 +215,170 @@ describe("runTiingoFallback", () => {
     expect(out.fallbackSymbols).toEqual([]);
   });
 
+  it("efficiency spill: a big *manual* closed-market round fills its deferred overflow (cache-distrust re-pull)", async () => {
+    const storage = memStorage();
+    // 17 market symbols, market shut (weekend), every one already holding the
+    // settled close. The standard Refresh tap escalated to a full force-fetch:
+    // Twelve Data cleared 8, deferred the other 9. A plain closed-market round
+    // would leave those 9 to the per-minute burst (no spill), but the manual
+    // cache-distrust pull must fill them via Tiingo in parallel right now.
+    const nowClosed = Date.UTC(2026, 5, 27, 18, 0, 0); // Saturday — market closed
+    const expectedClosed = latestSettledSessionDate(new Date(nowClosed));
+    const all = Array.from({ length: 17 }, (_, i) => `SYM${i}`);
+    const deferred = all.slice(8);
+    const quotes = new Map<string, Quote>();
+    for (const symbol of all) {
+      quotes.set(symbol, {
+        symbol,
+        price: new Decimal(100),
+        previousClose: null,
+        currency: "USD",
+        at: nowClosed,
+        priceTime: nowClosed,
+        valueDate: expectedClosed, // holds the settled close → not "behind"
+        marketOpen: null,
+      });
+    }
+    const fetchImpl = stubFetch(deferred.map((s) => iexRow(s, 250, `${expectedClosed}T20:00:00Z`)));
+    const out = await runTiingoFallback({
+      symbols: all,
+      navSymbols: new Set(),
+      quotes,
+      report: emptyReport(deferred),
+      proxyUrl: PROXY,
+      now: nowClosed,
+      storage,
+      fetchImpl,
+      manualForce: true,
+    });
+    expect(out.tiingoSymbols.sort()).toEqual([...deferred].sort());
+  });
+
+  it("efficiency spill: a big *automatic* closed-market round also fills its deferred overflow (size alone qualifies)", async () => {
+    const storage = memStorage();
+    // Same 17-symbol closed-market overflow on an ordinary auto round (no
+    // manualForce). A big sleeve (>16) spills to the backup regardless of market
+    // state or trigger, so the 9 deferred symbols are still cleared in parallel
+    // rather than left to trickle through the per-minute cap over several minutes.
+    const nowClosed = Date.UTC(2026, 5, 27, 18, 0, 0); // Saturday — market closed
+    const expectedClosed = latestSettledSessionDate(new Date(nowClosed));
+    const all = Array.from({ length: 17 }, (_, i) => `SYM${i}`);
+    const deferred = all.slice(8);
+    const quotes = new Map<string, Quote>();
+    for (const symbol of all) {
+      quotes.set(symbol, {
+        symbol,
+        price: new Decimal(100),
+        previousClose: null,
+        currency: "USD",
+        at: nowClosed,
+        priceTime: nowClosed,
+        valueDate: expectedClosed,
+        marketOpen: null,
+      });
+    }
+    const fetchImpl = stubFetch(deferred.map((s) => iexRow(s, 250, `${expectedClosed}T20:00:00Z`)));
+    const out = await runTiingoFallback({
+      symbols: all,
+      navSymbols: new Set(),
+      quotes,
+      report: emptyReport(deferred),
+      proxyUrl: PROXY,
+      now: nowClosed,
+      storage,
+      fetchImpl,
+    });
+    expect(out.tiingoSymbols.sort()).toEqual([...deferred].sort());
+  });
+
+  it("efficiency spill stands down when Tiingo has no credits beyond the reserve (no fan-out possible)", async () => {
+    const storage = memStorage();
+    // A big closed-market hard refresh whose overflow already holds the settled
+    // close, so every deferred symbol is an *efficiency-only* spill candidate
+    // (none genuinely failed on the primary). Tiingo's hourly budget is spent down
+    // to the fan-out reserve, so fanning out is not possible. The spill must stand
+    // down — no Tiingo fetch, and crucially NO "budget exhausted" error (which
+    // would reroute the retry to the next hour) — leaving the overflow on Twelve
+    // Data's deferred queue to clear over the next per-minute windows.
+    const nowClosed = Date.UTC(2026, 5, 27, 18, 0, 0); // Saturday — market closed
+    recordTiingoCredits(WEB_HOURLY_CAP - TIINGO_RESERVE_CREDITS, nowClosed, storage);
+    const expectedClosed = latestSettledSessionDate(new Date(nowClosed));
+    const all = Array.from({ length: 17 }, (_, i) => `SYM${i}`);
+    const deferred = all.slice(8);
+    const quotes = new Map<string, Quote>();
+    for (const symbol of all) {
+      quotes.set(symbol, {
+        symbol,
+        price: new Decimal(100),
+        previousClose: null,
+        currency: "USD",
+        at: nowClosed,
+        priceTime: nowClosed,
+        valueDate: expectedClosed, // holds the settled close → not a genuine fail
+        marketOpen: null,
+      });
+    }
+    const fetchImpl = vi.fn();
+    const out = await runTiingoFallback({
+      symbols: all,
+      navSymbols: new Set(),
+      quotes,
+      report: emptyReport(deferred),
+      proxyUrl: PROXY,
+      now: nowClosed,
+      storage,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      manualForce: true,
+    });
+    expect(out.tiingoSymbols).toEqual([]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    // No candidates ⇒ no over-budget error ⇒ no hour-boundary retry reroute.
+    expect(out.error).toBeNull();
+  });
+
+  it("efficiency spill resumes once one credit frees up beyond the reserve", async () => {
+    const storage = memStorage();
+    // One credit short of the previous test: now there is exactly one spendable
+    // credit beyond the reserve, so fanning out is possible again and the overflow
+    // is cleared via Tiingo (budget-clamped).
+    const nowClosed = Date.UTC(2026, 5, 27, 18, 0, 0); // Saturday — market closed
+    recordTiingoCredits(WEB_HOURLY_CAP - TIINGO_RESERVE_CREDITS - 1, nowClosed, storage);
+    const expectedClosed = latestSettledSessionDate(new Date(nowClosed));
+    const all = Array.from({ length: 17 }, (_, i) => `SYM${i}`);
+    const deferred = all.slice(8);
+    const quotes = new Map<string, Quote>();
+    for (const symbol of all) {
+      quotes.set(symbol, {
+        symbol,
+        price: new Decimal(100),
+        previousClose: null,
+        currency: "USD",
+        at: nowClosed,
+        priceTime: nowClosed,
+        valueDate: expectedClosed,
+        marketOpen: null,
+      });
+    }
+    const fetchImpl = stubFetch(deferred.map((s) => iexRow(s, 250, `${expectedClosed}T20:00:00Z`)));
+    const out = await runTiingoFallback({
+      symbols: all,
+      navSymbols: new Set(),
+      quotes,
+      report: emptyReport(deferred),
+      proxyUrl: PROXY,
+      now: nowClosed,
+      storage,
+      fetchImpl,
+      manualForce: true,
+      // Mirror the real manual-reload flow, which reserves the fan-out floor on
+      // spend too (app.ts bumps reserveCredits to the reserve once planFanout
+      // says a fan-out is on), so only the one credit beyond the reserve is spent.
+      reserveCredits: TIINGO_RESERVE_CREDITS,
+    });
+    // Only the single spendable credit beyond the reserve is used (budget-clamped).
+    expect(out.tiingoSymbols.length).toBe(1);
+  });
+
   it("efficiency spill stays off for a small market-open round (Twelve Data clears it within a minute)", async () => {
     const storage = memStorage();
     // Only 3 symbols requested — well under the spill threshold. Each already holds
@@ -402,6 +567,49 @@ describe("runTiingoFallback", () => {
       forceAll: true,
     });
     // The explicit "route everything through the backup" button ignores the stamp.
+    expect(again.tiingoSymbols).toEqual(["FSKAX"]);
+    expect((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2);
+  });
+
+  it("manualForce bypasses the no-newer cooldown so a repeated manual Refresh re-verifies", async () => {
+    const storage = memStorage();
+    const STALE = "2026-06-18";
+    const fetchImpl = stubFetch([iexRow("FSKAX", 100, `${STALE}T21:00:00Z`)]);
+    const behind = (): Quote => ({
+      symbol: "FSKAX",
+      price: new Decimal(100),
+      previousClose: null,
+      currency: "USD",
+      at: NOW,
+      priceTime: null,
+      valueDate: STALE,
+      marketOpen: null,
+    });
+    // First manual pass records a no-newer stamp (the backup had nothing fresher).
+    await runTiingoFallback({
+      symbols: ["FSKAX"],
+      navSymbols: new Set(["FSKAX"]),
+      quotes: new Map<string, Quote>([["FSKAX", behind()]]),
+      report: emptyReport(),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl,
+      manualForce: true,
+    });
+    // A second manual Refresh distrusts the cache and re-pulls despite the stamp,
+    // rather than silently telling the user "already checked, nothing newer".
+    const again = await runTiingoFallback({
+      symbols: ["FSKAX"],
+      navSymbols: new Set(["FSKAX"]),
+      quotes: new Map<string, Quote>([["FSKAX", behind()]]),
+      report: emptyReport(),
+      proxyUrl: PROXY,
+      now: NOW + 5 * 60_000,
+      storage,
+      fetchImpl,
+      manualForce: true,
+    });
     expect(again.tiingoSymbols).toEqual(["FSKAX"]);
     expect((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2);
   });
