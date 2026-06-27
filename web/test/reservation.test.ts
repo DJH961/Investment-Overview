@@ -51,8 +51,8 @@ describe("reservation — live availability", () => {
   it("reads 0 for a provider while its 429 breaker is frozen", () => {
     recordTwelveData429(NOW, store);
     expect(twelveDataAvailable(NOW, store)).toBe(0);
-    // Tiingo is untouched by a Twelve Data freeze.
-    expect(tiingoAvailable(NOW, store)).toBe(WEB_HOURLY_CAP);
+    // A 429 trips EVERYTHING: a Twelve Data 429 freezes Tiingo too (global freeze).
+    expect(tiingoAvailable(NOW, store)).toBe(0);
 
     recordTiingo429(NOW, store);
     expect(tiingoAvailable(NOW, store)).toBe(0);

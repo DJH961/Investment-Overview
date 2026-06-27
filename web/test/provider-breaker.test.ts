@@ -92,10 +92,25 @@ describe("provider-breaker — Tiingo 429 freeze to the next :00 (WS4/WS5)", () 
     expect(tiingoFrozen(nextHour, store)).toBe(false);
   });
 
-  it("is independent of the Twelve Data breaker", () => {
+  it("a Tiingo 429 trips EVERYTHING — Twelve Data is frozen too (global freeze)", () => {
     const now = Date.parse("2026-06-24T14:31:05Z");
+    const nextHour = Date.parse("2026-06-24T15:00:00Z");
     recordTiingo429(now, store);
-    expect(twelveDataFrozen(now, store)).toBe(false);
+    // The whole app is stood down until Tiingo's :00 reset — Twelve Data included.
+    expect(twelveDataFrozen(now, store)).toBe(true);
+    expect(twelveDataFrozen(nextHour - 1, store)).toBe(true);
+    expect(twelveDataFreezeUntil(now, store)).toBe(nextHour);
+    expect(twelveDataFrozen(nextHour, store)).toBe(false);
+  });
+
+  it("a Twelve Data 429 trips EVERYTHING — Tiingo is frozen too (global freeze)", () => {
+    const now = 8_500_000;
+    recordTwelveData429(now, store);
+    expect(tiingoFrozen(now, store)).toBe(true);
+    expect(tiingoFrozen(now + TD_FREEZE_MS - 1, store)).toBe(true);
+    expect(tiingoFreezeUntil(now, store)).toBe(now + TD_FREEZE_MS);
+    // Once the short TD freeze lifts, the global freeze it raised lifts with it.
+    expect(tiingoFrozen(now + TD_FREEZE_MS, store)).toBe(false);
   });
 });
 

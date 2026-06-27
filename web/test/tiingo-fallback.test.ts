@@ -30,7 +30,7 @@ const NOW = Date.UTC(2026, 5, 23, 18, 0, 0); // weekday afternoon ET
 const EXPECTED = latestSettledSessionDate(new Date(NOW));
 
 function emptyReport(deferred: string[] = []) {
-  return { fetched: [], servedFresh: [], deferred, failed: [], error: null, minuteRemaining: 0, dayRemaining: 0 };
+  return { fetched: [], servedFresh: [], deferred, failed: [], error: null, minuteRemaining: 0, dayRemaining: 0, apiCalls: 0, creditsSpent: 0 };
 }
 
 /** A stub `/price` fetch returning the given IEX rows as JSON. */
@@ -88,6 +88,36 @@ describe("runTiingoFallback", () => {
     // AAPL was merely *deferred* by the primary (an efficiency reroute that was
     // never attempted there), so it is not a genuine fallback.
     expect(out.fallbackSymbols).toEqual([]);
+  });
+
+  it("refunds the reserved credit when a Tiingo call 429s (no phantom over-count)", async () => {
+    const storage = memStorage();
+    // A 429 from the /price proxy: the call is rejected, delivering nothing.
+    const fetchImpl = vi.fn(async () => ({
+      ok: false,
+      status: 429,
+      json: async () => ({}),
+    })) as unknown as typeof fetch;
+    const quotes = new Map<string, Quote>();
+    const out = await runTiingoFallback({
+      symbols: ["AAPL"],
+      navSymbols: new Set(),
+      quotes,
+      report: emptyReport(["AAPL"]),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl,
+    });
+    expect(out.error).toBeInstanceOf(PriceError);
+    expect(out.error?.status).toBe(429);
+    // The rejected call counts as one attempt but bills nothing: its reserved
+    // credit is refunded so the hourly cap is not silently inflated (the user's
+    // "calls left server-side, yet the app counted 40" over-count).
+    expect(out.apiCalls).toBe(1);
+    expect(out.creditsSpent).toBe(0);
+    expect(tiingoCreditsSpentToday(readTiingoCreditLog(NOW, undefined, storage), NOW)).toBe(0);
+    expect(out.budget.dayUsed).toBe(0);
   });
 
   it("flags a genuine fallback only for symbols the primary attempted and failed", async () => {

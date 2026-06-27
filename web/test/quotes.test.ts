@@ -458,6 +458,12 @@ describe("loadQuotes — retry/backoff", () => {
     // reported as failed rather than merely deferred for budget.
     expect(report.failed).toEqual(["VTI"]);
     expect(report.deferred).toEqual([]);
+    // The call delivered nothing, so its reserved credit is refunded — the
+    // accounting stays truthful (never "spent" a credit the provider didn't take),
+    // and the full minute budget is available again for the next round.
+    expect(report.apiCalls).toBe(1);
+    expect(report.creditsSpent).toBe(0);
+    expect(twelveDataBudgetRemaining(0, { storage }).minute).toBe(8);
   });
 
   it("surfaces a non-retryable error with an empty result for the caller to act on", async () => {

@@ -394,6 +394,17 @@ export interface QuoteLoadReport {
   /** Credits remaining in the current minute/day windows after this call. */
   minuteRemaining: number;
   dayRemaining: number;
+  /**
+   * **Exact accounting of what this call actually spent**, so the polling log can
+   * state — at the moment of the pull — precisely how many live requests went out
+   * and how many credits they cost, never an inflated guess. `apiCalls` is the
+   * number of HTTP requests that left the device (a batched quote pass is one
+   * call for up to 8 symbols); `creditsSpent` is the credits that *stood* against
+   * the shared ledger after refunding any reserved-but-unbilled credits (a failed
+   * / over-quota call refunds in full, so it never silently counts toward the cap).
+   */
+  apiCalls: number;
+  creditsSpent: number;
 }
 
 const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -483,6 +494,13 @@ export async function loadQuotes(
 
   const fetched: string[] = [];
   let error: PriceError | null = null;
+  // Exact accounting of this call's live spend (the user's "be a good accountant"):
+  // `apiCalls` counts the HTTP requests that actually left the device this round,
+  // and `creditsSpent` the credits that *stand* against the shared ledger after a
+  // failed/over-quota call has refunded its reserved-but-unbilled grant — so the
+  // log never reports a credit the provider didn't actually take.
+  let apiCalls = 0;
+  let creditsSpent = 0;
   // Symbols we actually attempted a live fetch for this call (the budget-affordable
   // slice). Anything in here that doesn't end up freshly priced *failed* — as
   // opposed to a stale symbol we never attempted, which is merely deferred.
@@ -514,15 +532,20 @@ export async function loadQuotes(
         const marketBatch = navSymbols ? toFetch.filter((s) => !navSymbols.has(s)) : toFetch;
         const quotes = new Map<string, Quote>();
         if (marketBatch.length > 0) {
+          apiCalls += 1;
           for (const [s, q] of await fetchWithBackoff(marketBatch, apiKey, backoffDeps, fetchQuotes)) {
             quotes.set(s, q);
           }
         }
         if (navBatch.length > 0) {
+          apiCalls += 1;
           for (const [s, q] of await fetchWithBackoff(navBatch, apiKey, backoffDeps, fetchNavQuotes)) {
             quotes.set(s, q);
           }
         }
+        // The batched call(s) went out and were accepted: the granted credits are
+        // genuinely spent (Twelve Data bills one per requested symbol).
+        creditsSpent = granted;
         const at = now();
         // A per-symbol fetch can come back with a null price — a Twelve Data
         // error/empty node for that one ticker while its batch peers succeed
@@ -546,12 +569,30 @@ export async function loadQuotes(
         }
       } catch (err) {
         const pe = err instanceof PriceError ? err : new PriceError((err as Error).message);
+        // The call was rejected (over-quota 429, a 5xx, or a transport throw): it
+        // delivered nothing, so **refund the reserved grant** rather than letting
+        // it count against the shared cap. This is the over-count the user hit —
+        // a failed call leaving phantom credits booked so the app "counted 40"
+        // while the provider still had calls left. The 429 breaker (armed by the
+        // caller) is what stops further attempts; the ledger must stay truthful.
+        reservation.release("twelvedata", granted, now());
+        creditsSpent = 0;
         if (pe.fatal) {
           // A configuration-level rejection (bad/over-quota key): surface it so
           // the caller can prompt for Settings rather than silently degrading.
           return {
             quotes: new Map(),
-            report: { fetched: [], servedFresh: [], deferred: [], failed: [], error: pe, minuteRemaining: 0, dayRemaining: 0 },
+            report: {
+              fetched: [],
+              servedFresh: [],
+              deferred: [],
+              failed: [],
+              error: pe,
+              minuteRemaining: 0,
+              dayRemaining: 0,
+              apiCalls,
+              creditsSpent: 0,
+            },
           };
         }
         error = pe; // transient/non-fatal — keep what we have, fall back for the rest.
@@ -586,6 +627,8 @@ export async function loadQuotes(
       error,
       minuteRemaining: remaining.minute,
       dayRemaining: remaining.day,
+      apiCalls,
+      creditsSpent,
     },
   };
 }

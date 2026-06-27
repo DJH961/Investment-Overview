@@ -20,6 +20,14 @@
  *    until its hourly bucket resets, so the freeze auto-clears at `:00` like the
  *    normal counter — no separate timer.
  *
+ * **A 429 trips EVERYTHING.** Because the local credit ledger is only an
+ * optimistic guess on a shared key, a single provider's `429` is the one hard,
+ * authoritative "stop" we get — so it does not merely freeze the provider that
+ * said no, it raises a **global freeze** ({@link BreakerState.global}) that holds
+ * *every* metered provider until the longest freeze any 429 has armed lifts. One
+ * provider's "out of credits" therefore stands the whole app down rather than
+ * letting it keep hammering the other on a count that may already be stale.
+ *
  * The freeze is consulted at the bar-fetch chokepoint: it zeroes Twelve Data's
  * live per-minute budget (so the capacity split routes nothing to it) and gates
  * the Tiingo overflow leg. State is persisted (survives reload) and pure over an
@@ -50,6 +58,16 @@ interface TiingoBreaker {
 interface BreakerState {
   td?: TwelveDataBreaker;
   tiingo?: TiingoBreaker;
+  /**
+   * **The "trip EVERYTHING" freeze.** A `429` from *any* provider is the
+   * authoritative, cross-device "you are out" signal — so it does not just freeze
+   * the provider that returned it, it freezes *every* metered provider until this
+   * timestamp. It is raised to the longest freeze any single 429 has armed (a TD
+   * minute-freeze or a Tiingo hour-freeze), so one provider's "no" stops the whole
+   * app from hammering the other on an optimistic local count that may already be
+   * stale. Both {@link twelveDataFrozen} and {@link tiingoFrozen} consult it.
+   */
+  global?: number;
 }
 
 function defaultStorage(): StorageLike | null {
@@ -119,6 +137,8 @@ export function recordTwelveData429(
   } else {
     state.td = { frozenUntil: now + TD_FREEZE_MS, streak: newStreak };
   }
+  // A 429 trips EVERYTHING: raise the global freeze so Tiingo is held too.
+  state.global = Math.max(state.global ?? 0, state.td.frozenUntil);
   writeState(storage, state);
   return { frozenUntil: state.td.frozenUntil, alreadyFrozen, escalated };
 }
@@ -133,23 +153,29 @@ export function recordTwelveDataSuccess(
   writeState(storage, state);
 }
 
-/** Whether Twelve Data is in an armed freeze at `now`. */
+/** Whether Twelve Data is in an armed freeze at `now` (its own *or* the global
+ * "a 429 trips everything" freeze). */
 export function twelveDataFrozen(
   now: number,
   storage: StorageLike | null = defaultStorage(),
 ): boolean {
-  return (readState(storage).td?.frozenUntil ?? 0) > now;
+  const state = readState(storage);
+  return (state.td?.frozenUntil ?? 0) > now || (state.global ?? 0) > now;
 }
 
 /**
  * Epoch-ms a Twelve Data freeze lifts, or `null` when it is not frozen at `now`.
- * Lets a caller log *how long* the breaker will keep the provider at 0/min.
+ * Lets a caller log *how long* the breaker will keep the provider at 0/min. The
+ * effective lift is the later of Twelve Data's own freeze and the global
+ * "a 429 trips everything" freeze (so a Tiingo 429 that froze the whole app is
+ * reflected here too).
  */
 export function twelveDataFreezeUntil(
   now: number,
   storage: StorageLike | null = defaultStorage(),
 ): number | null {
-  const until = readState(storage).td?.frozenUntil ?? 0;
+  const state = readState(storage);
+  const until = Math.max(state.td?.frozenUntil ?? 0, state.global ?? 0);
   return until > now ? until : null;
 }
 
@@ -167,27 +193,33 @@ export function recordTiingo429(
   const alreadyFrozen = (state.tiingo?.frozenUntil ?? 0) > now;
   const HOUR_MS = 60 * 60 * 1000;
   state.tiingo = { frozenUntil: startOfHour(now) + HOUR_MS };
+  // A 429 trips EVERYTHING: raise the global freeze so Twelve Data is held too.
+  state.global = Math.max(state.global ?? 0, state.tiingo.frozenUntil);
   writeState(storage, state);
   return { frozenUntil: state.tiingo.frozenUntil, alreadyFrozen, escalated: false };
 }
 
-/** Whether Tiingo is frozen at `now` (until the next clock `:00`). */
+/** Whether Tiingo is frozen at `now` (its own freeze until the next clock `:00`,
+ * *or* the global "a 429 trips everything" freeze armed by any provider). */
 export function tiingoFrozen(
   now: number,
   storage: StorageLike | null = defaultStorage(),
 ): boolean {
-  return (readState(storage).tiingo?.frozenUntil ?? 0) > now;
+  const state = readState(storage);
+  return (state.tiingo?.frozenUntil ?? 0) > now || (state.global ?? 0) > now;
 }
 
 /**
- * Epoch-ms a Tiingo freeze lifts (the next `:00`), or `null` when not frozen at
- * `now`. Lets a caller log the exact reset time alongside a "reads as full" line.
+ * Epoch-ms a Tiingo freeze lifts (the later of its own `:00` reset and the global
+ * "a 429 trips everything" freeze), or `null` when not frozen at `now`. Lets a
+ * caller log the exact reset time alongside a "reads as full" line.
  */
 export function tiingoFreezeUntil(
   now: number,
   storage: StorageLike | null = defaultStorage(),
 ): number | null {
-  const until = readState(storage).tiingo?.frozenUntil ?? 0;
+  const state = readState(storage);
+  const until = Math.max(state.tiingo?.frozenUntil ?? 0, state.global ?? 0);
   return until > now ? until : null;
 }
 

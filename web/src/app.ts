@@ -2087,9 +2087,11 @@ export class App {
       return 0;
     }
     const list = (xs: string[]): string => (xs.length ? xs.join(", ") : "none");
+    if (report.error?.status === 429) this.armTwelveData429();
     this.pollLog(
       "primary",
-      `Login warm-up (Twelve Data): fetched ${report.fetched.length} [${list(report.fetched)}], ` +
+      `Login warm-up (Twelve Data): made ${report.apiCalls} API call(s) costing ${report.creditsSpent} credit(s) — ` +
+        `fetched ${report.fetched.length} [${list(report.fetched)}], ` +
         `served ${report.servedFresh.length} from cache, deferred ${report.deferred.length} [${list(report.deferred)}]. ` +
         `Budget left: ${report.minuteRemaining}/min, ${report.dayRemaining}/day.${this.twelveDataFreezeSuffix()}` +
         (report.error ? ` Non-fatal error: ${report.error.message}.` : ""),
@@ -2129,9 +2131,11 @@ export class App {
       sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
     });
     const b = fallback.budget;
+    if (fallback.error?.status === 429) this.armTiingo429();
     this.pollLog(
       "fallback",
-      `Login warm-up (Tiingo rapid-fire): filled ${fallback.tiingoSymbols.length} ` +
+      `Login warm-up (Tiingo rapid-fire): made ${fallback.apiCalls} API call(s) costing ${fallback.creditsSpent} credit(s) — ` +
+        `filled ${fallback.tiingoSymbols.length} ` +
         `[${fallback.tiingoSymbols.length ? fallback.tiingoSymbols.join(", ") : "none"}] of ${symbols.length} outdated. ` +
         `Budget: ${b.hourUsed}/${b.hourLimit} this hour, ${b.dayUsed}/${b.dayLimit} today.${this.tiingoBudgetSuffix()}` +
         (fallback.error ? ` Error: ${fallback.error.message}.` : ""),
@@ -3985,6 +3989,11 @@ export class App {
 
     if (network) {
       const r = quoteLoad.report;
+      // A 429 on the primary quote pass is the authoritative "out of credits"
+      // signal — trip the breaker so it freezes EVERYTHING (Twelve Data *and*
+      // Tiingo), not just the leg that 429'd. Previously the main quote path never
+      // armed the breaker, so a quote 429 kept the app hammering the other paths.
+      if (r.error?.status === 429) this.armTwelveData429();
       const list = (xs: string[]): string => (xs.length ? xs.join(", ") : "none");
       this.pollLog(
         "fx",
@@ -3994,7 +4003,8 @@ export class App {
         "primary",
         viaTiingo
           ? "Primary (Twelve Data) skipped — routing this pull through the backup provider; quotes served from cache."
-          : `Primary (Twelve Data): fetched ${r.fetched.length} [${list(r.fetched)}], ` +
+          : `Primary (Twelve Data): made ${r.apiCalls} API call(s) costing ${r.creditsSpent} credit(s) — ` +
+              `fetched ${r.fetched.length} [${list(r.fetched)}], ` +
               `served ${r.servedFresh.length} from cache, deferred ${r.deferred.length} [${list(r.deferred)}]. ` +
               `Budget left: ${r.minuteRemaining}/min, ${r.dayRemaining}/day.${this.twelveDataFreezeSuffix()}` +
               (r.error ? ` Non-fatal error: ${r.error.message}.` : ""),
@@ -4059,11 +4069,15 @@ export class App {
       // unreachable). Cleared to null on a clean round, so the banner/toast only
       // shout while the backup is genuinely down.
       this.lastTiingoError = fallback.error;
+      // A Tiingo 429 likewise trips EVERYTHING — freeze both providers until its
+      // hourly bucket resets, rather than letting the app keep spending elsewhere.
+      if (fallback.error?.status === 429) this.armTiingo429();
       const b = fallback.budget;
       this.pollLog(
         "fallback",
         fallback.tiingoSymbols.length > 0
-          ? `Backup (Tiingo) filled ${fallback.tiingoSymbols.length} [${fallback.tiingoSymbols.join(", ")}]. ` +
+          ? `Backup (Tiingo) made ${fallback.apiCalls} API call(s) costing ${fallback.creditsSpent} credit(s) — ` +
+              `filled ${fallback.tiingoSymbols.length} [${fallback.tiingoSymbols.join(", ")}]. ` +
               `Budget: ${b.hourUsed}/${b.hourLimit} this hour, ${b.dayUsed}/${b.dayLimit} today.${this.tiingoBudgetSuffix()}` +
               (fallback.error ? ` Error: ${fallback.error.message}.` : "")
           : fallback.error
@@ -4096,11 +4110,13 @@ export class App {
         });
         if (session !== this.sessionId) return quoteLoad.report;
         const filledNow = this.absorbSafetyNet(quoteLoad, tdNet);
+        if (tdNet.report.error?.status === 429) this.armTwelveData429();
         const list = (xs: readonly string[]): string => (xs.length ? xs.join(", ") : "none");
         this.pollLog(
           "primary",
           `Tiingo→Twelve Data safety net: ${safetyNet.reason} ` +
-            `Filled ${filledNow.length} [${list(filledNow)}]. ` +
+            `Made ${tdNet.report.apiCalls} API call(s) costing ${tdNet.report.creditsSpent} credit(s); ` +
+            `filled ${filledNow.length} [${list(filledNow)}]. ` +
             `Budget left: ${tdNet.report.minuteRemaining}/min, ${tdNet.report.dayRemaining}/day.${this.twelveDataFreezeSuffix()}` +
             (tdNet.report.error ? ` Non-fatal error: ${tdNet.report.error.message}.` : ""),
         );
@@ -5368,10 +5384,10 @@ export class App {
     this.pollLog(
       "budget",
       `Tiingo 429 — its shared hourly quota is spent. Circuit breaker frozen until ` +
-        `${App.clockHM(info.frozenUntil)}; no further Tiingo calls until then, so its hourly budget now ` +
-        `reads as full (${caps.hourLimit}/${caps.hourLimit}). This device's own ledger had only counted ` +
-        `${ledger.hourUsed}/${caps.hourLimit} this hour (${ledger.dayUsed}/${caps.dayLimit} today) — ` +
-        `the rest of the shared quota was spent by another device/tab on the same key.`,
+        `${App.clockHM(info.frozenUntil)}; this trips EVERYTHING — no further Tiingo *or* Twelve Data calls ` +
+        `until then. Its hourly budget now reads as full (${caps.hourLimit}/${caps.hourLimit}). This device's ` +
+        `own ledger had only counted ${ledger.hourUsed}/${caps.hourLimit} this hour (${ledger.dayUsed}/${caps.dayLimit} ` +
+        `today) — the rest of the shared quota was spent by another device/tab on the same key.`,
       "warn",
     );
   }
@@ -5389,7 +5405,7 @@ export class App {
     this.pollLog(
       "budget",
       `Twelve Data 429 — over its per-minute/day quota${info.escalated ? " (second consecutive strike — extended freeze)" : ""}. ` +
-        `Circuit breaker frozen for ~${secs}s; Twelve Data reads 0/min until it lifts.`,
+        `Circuit breaker frozen for ~${secs}s; this trips EVERYTHING — both Twelve Data (0/min) and Tiingo are held until it lifts.`,
       "warn",
     );
   }
