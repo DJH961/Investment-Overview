@@ -1400,8 +1400,12 @@ export function renderDashboard(
     h("div", { class: "topbar-inner" }, [
       h("div", { class: "brand" }, [
         h("span", { class: "brand-mark", "aria-hidden": "true" }, []),
-        h("span", { class: "brand-name" }, ["Investment Overview"]),
-        h("span", { class: "brand-version", title: `Web app version ${APP_VERSION}` }, [`v${APP_VERSION}`]),
+        // The wordmark adapts to width: phones (which have always clipped
+        // "Investment Overview") get the compact "Investments", desktop gets the
+        // full name. CSS toggles which is shown. The version moved out of here to
+        // the page footer / login / settings so the bar stays uncluttered.
+        h("span", { class: "brand-name brand-name-full" }, ["Investment Overview"]),
+        h("span", { class: "brand-name brand-name-short" }, ["Investments"]),
       ]),
       h("div", { class: "topbar-actions" }, [currency, refresh, settings, lock]),
     ]),
@@ -1417,7 +1421,19 @@ export function renderDashboard(
   ];
 
   const { nav, content } = renderTabs(tabs, options.initialTabId);
-  return h("main", { class: "app" }, [topbar, nav, content]);
+  return h("main", { class: "app" }, [topbar, nav, content, appVersionFooter()]);
+}
+
+/**
+ * The small build-version line that lives at the very bottom of the main page
+ * (and is reused on the login and settings screens). The version was moved out
+ * of the top overview bar so the bar stays uncluttered and the wordmark never
+ * gets clipped on mobile.
+ */
+export function appVersionFooter(): HTMLElement {
+  return h("footer", { class: "app-version" }, [
+    h("span", { title: `Web app version ${APP_VERSION}` }, [`Investment Overview · v${APP_VERSION}`]),
+  ]);
 }
 
 interface TabDef {

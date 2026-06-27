@@ -229,17 +229,28 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.brand-version {
-  flex: none;
-  font-size: 0.7rem;
+/* Wordmark toggle: phones get the compact "Investments" (the full name has
+   always clipped on narrow screens); desktop reveals the full "Investment
+   Overview". Mobile-first, so the short name is the base and a min-width query
+   swaps in the full one. */
+.brand-name-short { display: inline; }
+.brand-name-full { display: none; }
+@media (min-width: 30rem) {
+  .brand-name-short { display: none; }
+  .brand-name-full { display: inline; }
+}
+
+/* Build-version line at the very bottom of the main page, and reused centred on
+   the login and settings screens (it used to sit in the top overview bar). */
+.app-version {
+  margin-top: auto;
+  padding: 1rem 1.1rem 1.4rem;
+  text-align: center;
+  font-size: 0.72rem;
   font-weight: 600;
+  letter-spacing: 0.01em;
   color: var(--muted);
-  background: var(--card-2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.05rem 0.4rem;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 .topbar-actions { display: flex; align-items: center; gap: 0.6rem; flex: none; }
 .icon-btn {
