@@ -175,6 +175,111 @@ describe("runTiingoFallback", () => {
     expect(out.quotes.get("FSKAX")?.priceTime).toBeNull();
   });
 
+  it("efficiency spill: a big market-open round fills its deferred overflow even when those symbols already hold the settled close", async () => {
+    const storage = memStorage();
+    // 17 market symbols requested originally (> two Twelve Data minutes). Twelve
+    // Data cleared the first 8; the remaining 9 are deferred this round but each
+    // still holds the prior settled close (heldDate === EXPECTED), so the normal
+    // "behind the settled session" gate would skip them. The efficiency spill must
+    // still chase their live intraday marks via Tiingo.
+    const all = Array.from({ length: 17 }, (_, i) => `SYM${i}`);
+    const deferred = all.slice(8); // the 9 the primary couldn't fit this minute
+    const quotes = new Map<string, Quote>();
+    for (const symbol of all) {
+      quotes.set(symbol, {
+        symbol,
+        price: new Decimal(100),
+        previousClose: null,
+        currency: "USD",
+        at: NOW,
+        priceTime: NOW,
+        valueDate: EXPECTED, // holds the settled close → not "behind"
+        marketOpen: null,
+      });
+    }
+    const fetchImpl = stubFetch(deferred.map((s) => iexRow(s, 250, `${EXPECTED}T20:00:00Z`)));
+    const out = await runTiingoFallback({
+      symbols: all,
+      navSymbols: new Set(),
+      quotes,
+      report: emptyReport(deferred),
+      proxyUrl: PROXY,
+      now: NOW, // weekday 14:00 ET — market open
+      storage,
+      fetchImpl,
+    });
+    expect(out.tiingoSymbols.sort()).toEqual([...deferred].sort());
+    // Filled from the deferred overflow, not a genuine fallback (never attempted
+    // on the primary).
+    expect(out.fallbackSymbols).toEqual([]);
+  });
+
+  it("efficiency spill stays off for a small market-open round (Twelve Data clears it within a minute)", async () => {
+    const storage = memStorage();
+    // Only 3 symbols requested — well under the spill threshold. Each already holds
+    // the settled close, so a deferred one has nothing newer worth a Tiingo credit.
+    const quotes = new Map<string, Quote>();
+    for (const symbol of ["AAPL", "MSFT", "GOOG"]) {
+      quotes.set(symbol, {
+        symbol,
+        price: new Decimal(100),
+        previousClose: null,
+        currency: "USD",
+        at: NOW,
+        priceTime: NOW,
+        valueDate: EXPECTED,
+        marketOpen: null,
+      });
+    }
+    const fetchImpl = stubFetch([]);
+    const out = await runTiingoFallback({
+      symbols: ["AAPL", "MSFT", "GOOG"],
+      navSymbols: new Set(),
+      quotes,
+      report: emptyReport(["AAPL"]),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl,
+    });
+    expect(out.tiingoSymbols).toEqual([]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("efficiency spill: a deferred NAV in a big market-open round is spilled too (NAVs ride the same sleeve)", async () => {
+    const storage = memStorage();
+    const all = Array.from({ length: 17 }, (_, i) => `SYM${i}`);
+    const nav = "BIGNAV";
+    const symbols = [...all, nav];
+    const quotes = new Map<string, Quote>();
+    for (const symbol of symbols) {
+      quotes.set(symbol, {
+        symbol,
+        price: new Decimal(100),
+        previousClose: null,
+        currency: "USD",
+        at: NOW,
+        priceTime: NOW,
+        valueDate: EXPECTED,
+        marketOpen: null,
+      });
+    }
+    // The NAV is deferred — it only lands in the queue when it genuinely needs
+    // today's price, so the efficiency spill clears it in parallel like a stock.
+    const fetchImpl = stubFetch([...all.slice(8), nav].map((s) => iexRow(s, 250, `${EXPECTED}T20:00:00Z`)));
+    const out = await runTiingoFallback({
+      symbols,
+      navSymbols: new Set([nav]),
+      quotes,
+      report: emptyReport([...all.slice(8), nav]),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl,
+    });
+    expect(out.tiingoSymbols).toContain(nav);
+  });
+
   it("fetches every behind NAV fund directly under forceAll, skipping recent ones", async () => {
     const storage = memStorage();
     const fetchImpl = stubFetch([

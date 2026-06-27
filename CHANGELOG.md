@@ -14,6 +14,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.13.7] — 2026-06-27
+
+### Fixed
+
+- **A big market-open round (e.g. all 17 symbols) now reaches its live marks at
+  once instead of trickling 8/min through Twelve Data.** When Twelve Data prices
+  the first 8 and defers the remaining 9, those 9 used to sit out the per-minute
+  cap because `marketSymbolEligible` only treats a symbol *behind the settled
+  session* as chaseable — a budget-deferred symbol that already holds the prior
+  settled close looked "up to date" and so never tripped the Tiingo backup. The
+  fallback now applies a **market-hours efficiency spill**: when the round
+  *originally* asked for more than two Twelve Data minutes of work (keyed off the
+  whole requested sleeve, not the post-Twelve-Data remainder, so the trigger does
+  not lapse as Twelve Data whittles the remainder down), its deferred overflow is
+  spilled to Tiingo in parallel. The whole policy lives in one place — Pillar 5's
+  provider-spilling authority (`efficiencySpillEligible` in
+  `web/src/provider-fanout.ts`, alongside the login/manual `planFanout` spill and
+  its shared `FANOUT_INSTANT_THRESHOLD`) — so it can be tuned centrally. NAV funds
+  ride the same sleeve: a fund only lands in the deferred queue when it genuinely
+  needs today's price, so it is spilled to the backup identically to a stock.
+- **Deferred holdings no longer show "Updating…" for minutes on end after the
+  backup already priced them.** The forward Tiingo fallback merged its fills into
+  the quote map but never reconciled the round's `QuoteLoadReport`, so the burst
+  scheduler, the deferred work-queue and the "all prices live" check all kept
+  treating a backup-filled holding as still deferred — endlessly re-bursting for a
+  price that had already arrived. A new `absorbTiingoFallback` folds every
+  backup-filled symbol out of `deferred` / `failed` and into `fetched`, mirroring
+  `absorbSafetyNet` for the reverse net (`web/src/app.ts`).
+
 ## [4.13.6] — 2026-06-27
 
 ### Fixed
