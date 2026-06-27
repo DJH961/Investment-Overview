@@ -90,7 +90,7 @@ import {
 } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
 import { fxFreshness, type FxFreshness } from "./freshness";
-import { isUsMarketOpen, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, previousTradingSession, recentTradingSessions, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
+import { isUsMarketOpen, isUsTradingDay, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, previousTradingSession, recentTradingSessions, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -6404,7 +6404,12 @@ export class App {
     const store = this.ensureTimeSeriesStore();
     const o = model.overview;
     const now = new Date();
-    if (o.totalValueIsComplete) {
+    // Only persist a close on a genuine trading day. On a weekend / NYSE holiday
+    // the live total is just the last session's settled close carried forward, so
+    // recording it under a non-trading date would later splice a flat non-trading
+    // point into the long-range graph (see spliceDailyBackfill / renderValueChart).
+    const asOfIsTradingDay = isUsTradingDay(new Date(`${o.asOf}T12:00:00Z`));
+    if (o.totalValueIsComplete && asOfIsTradingDay) {
       await recordDailyClose(
         store,
         { date: o.asOf, valueEur: o.totalValueEur, valueUsd: o.totalValueUsd },

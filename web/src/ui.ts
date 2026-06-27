@@ -17,6 +17,7 @@ import { getInvestmentAmountEur } from "./investment-amount";
 import {
   isUsMarketOpen,
   isUsMarketHoliday,
+  isUsTradingDay,
   isForexMarketOpen,
   forexMarketReopenMs,
   lastForexReopenMs,
@@ -2638,13 +2639,28 @@ function lastNonNull(values: Array<Decimal | null>): Decimal | null {
 }
 
 /**
+ * Whether a bare `YYYY-MM-DD` calendar date falls on a regular NYSE trading day
+ * (not a weekend or full-day market holiday). Evaluated at noon UTC so the
+ * exchange-local calendar lands on the same date the string names, regardless of
+ * the viewer's timezone. Used to keep non-trading days off the long-range value
+ * graph — on those days the value is only the prior session's close carried
+ * forward, so the line's own smoothing bridges the gap far more cleanly.
+ */
+function isTradingDateIso(date: string): boolean {
+  const t = Date.parse(`${date}T12:00:00Z`);
+  return Number.isFinite(t) && isUsTradingDay(new Date(t));
+}
+
+/**
  * Splice the device's persisted whole-book daily closes into the gap between the
  * last exported point and today. When the export blob is stale (weeks old) but the
  * app is opened daily, those days were recorded live (and harvested from the 1W
  * curve), so the long-range chart draws a real per-day line across the gap instead
  * of a single straight diagonal. Only closes strictly *after* the last exported
- * day and strictly *before* `asOf` (today's live tip owns `asOf`) are added; an
- * up-to-date blob already covers the range, so nothing is spliced.
+ * day and strictly *before* `asOf` (today's live tip owns `asOf`) are added, and
+ * only genuine trading days — a weekend/holiday close is just the prior session's
+ * value carried forward, so it would add a flat step rather than real movement.
+ * An up-to-date blob already covers the range, so nothing is spliced.
  */
 export function spliceDailyBackfill(
   points: EquityPoint[],
@@ -2654,7 +2670,7 @@ export function spliceDailyBackfill(
   if (backfill.length === 0) return points;
   const lastDate = points[points.length - 1].date;
   const extra: EquityPoint[] = backfill
-    .filter((c) => c.date > lastDate && c.date < asOf)
+    .filter((c) => c.date > lastDate && c.date < asOf && isTradingDateIso(c.date))
     .map((c) => ({
       date: c.date,
       portfolioValue: c.valueEur,
@@ -2713,8 +2729,16 @@ function renderValueChart(
   // price or no FX rate) they fall out of the sum, so the tip would under-count
   // the portfolio and draw a false dip; in that case stop at the last
   // fully-valued exported point.
+  //
+  // Only do this on a genuine trading day. When today is a weekend or NYSE
+  // holiday the live total is just the last session's settled close carried
+  // forward, so tacking it onto a non-trading "today" would add a flat step (or
+  // a non-trading day) to the long-range graph. Instead the curve simply ends a
+  // day or two early at the last real session — whose exported/back-filled close
+  // is the correct final price from the last market day (mirrors the desktop
+  // `build_value_series`).
   const lastDate = dates[dates.length - 1];
-  if (o.totalValueIsComplete && liveTotal !== null) {
+  if (isTradingDateIso(o.asOf) && o.totalValueIsComplete && liveTotal !== null) {
     if (o.asOf > lastDate) {
       dates.push(o.asOf);
       values.push(liveTotal);

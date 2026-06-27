@@ -29,14 +29,25 @@ describe("spliceDailyBackfill", () => {
   it("fills the gap between a stale blob's last point and today", () => {
     const points = [exported("2024-03-01", "1000")];
     const backfill = [
-      close("2024-03-10", "1010", "1090"),
+      close("2024-03-11", "1010", "1090"),
       close("2024-03-15", "1020", "1100"),
     ];
     // Today (asOf) is owned by the live tip, so only the in-gap days are spliced.
     const result = spliceDailyBackfill(points, backfill, "2024-03-20");
-    expect(result.map((p) => p.date)).toEqual(["2024-03-01", "2024-03-10", "2024-03-15"]);
+    expect(result.map((p) => p.date)).toEqual(["2024-03-01", "2024-03-11", "2024-03-15"]);
     expect(result[1].portfolioValue!.toString()).toBe("1010");
     expect(result[2].portfolioValueUsd!.toString()).toBe("1100");
+  });
+
+  it("drops a non-trading-day close (weekend) — only the prior session's value", () => {
+    const points = [exported("2024-03-01", "1000")];
+    const backfill = [
+      close("2024-03-09", "1015", "1095"), // Saturday — carried-forward, dropped
+      close("2024-03-10", "1015", "1095"), // Sunday — carried-forward, dropped
+      close("2024-03-11", "1020", "1100"), // Monday — a real session, kept
+    ];
+    const result = spliceDailyBackfill(points, backfill, "2024-03-20");
+    expect(result.map((p) => p.date)).toEqual(["2024-03-01", "2024-03-11"]);
   });
 
   it("ignores closes on or before the last exported day (the blob covers them)", () => {
@@ -72,7 +83,7 @@ describe("spliceDailyBackfill", () => {
 
   it("preserves a null USD leg on a spliced close", () => {
     const points = [exported("2024-03-01", "1000")];
-    const result = spliceDailyBackfill(points, [close("2024-03-10", "1010", null)], "2024-03-20");
+    const result = spliceDailyBackfill(points, [close("2024-03-11", "1010", null)], "2024-03-20");
     expect(result[1].portfolioValueUsd).toBeNull();
     expect(result[1].portfolioValue!.toString()).toBe("1010");
   });
