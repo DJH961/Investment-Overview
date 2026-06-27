@@ -3,6 +3,7 @@ import {
   FANOUT_INSTANT_THRESHOLD,
   TIINGO_RESERVE_CREDITS,
   TWELVE_DATA_BATCH,
+  efficiencySpillEligible,
   isPriorityPull,
   planFanout,
   planTwelveDataSafetyNet,
@@ -298,5 +299,45 @@ describe("planFanout — NAV routing (unified with stocks)", () => {
     });
     expect(plan.navTiingo).toEqual(["FUNDA"]);
     expect(plan.deferred).toEqual(["FUNDB", "FUNDC"]);
+  });
+});
+
+describe("efficiencySpillEligible", () => {
+  const base = {
+    symbol: "AAA",
+    marketOpen: true,
+    requestedCount: FANOUT_INSTANT_THRESHOLD + 1,
+    deferred: new Set(["AAA"]),
+  };
+
+  it("spills a deferred symbol from a big, market-open round", () => {
+    expect(efficiencySpillEligible(base)).toBe(true);
+  });
+
+  it("never spills while the market is closed", () => {
+    expect(efficiencySpillEligible({ ...base, marketOpen: false })).toBe(false);
+  });
+
+  it("never spills a round at or below the instant threshold", () => {
+    expect(efficiencySpillEligible({ ...base, requestedCount: FANOUT_INSTANT_THRESHOLD })).toBe(false);
+  });
+
+  it("never spills a symbol the round did not defer", () => {
+    expect(efficiencySpillEligible({ ...base, deferred: new Set(["BBB"]) })).toBe(false);
+  });
+
+  it("spills a deferred NAV fund too (NAVs ride the same sleeve)", () => {
+    // A NAV only lands in the deferred set when it genuinely needs today's price,
+    // so it qualifies for the parallel backup spill identically to a stock.
+    expect(efficiencySpillEligible(base)).toBe(true);
+  });
+
+  it("honours an overridden instant threshold", () => {
+    expect(
+      efficiencySpillEligible({ ...base, requestedCount: 5, instantThreshold: 4 }),
+    ).toBe(true);
+    expect(
+      efficiencySpillEligible({ ...base, requestedCount: 4, instantThreshold: 4 }),
+    ).toBe(false);
   });
 });

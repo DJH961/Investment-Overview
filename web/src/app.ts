@@ -4166,6 +4166,13 @@ export class App {
       // unreachable). Cleared to null on a clean round, so the banner/toast only
       // shout while the backup is genuinely down.
       this.lastTiingoError = fallback.error;
+      // Airtightness: a symbol the backup just priced is genuinely live this round,
+      // so move it out of the primary's `deferred`/`failed` buckets into `fetched`.
+      // Without this the burst scheduler, the C9 deferred work-queue and the "all
+      // prices live" check all keep treating a backup-filled holding as still
+      // deferred — endlessly re-bursting (and showing "Updating…") for a price the
+      // backup already returned. Mirrors {@link absorbSafetyNet} for the reverse net.
+      this.absorbTiingoFallback(quoteLoad.report, fallback.tiingoSymbols);
       const b = fallback.budget;
       this.pollLog(
         "fallback",
@@ -5589,6 +5596,30 @@ export class App {
     if (report.failed.length === 0) return [];
     const filled = new Set(this.lastTiingoSymbols);
     return report.failed.filter((symbol) => !filled.has(symbol));
+  }
+
+  /**
+   * Fold the **forward** Tiingo fallback's fills back into the round's primary
+   * report. A symbol the backup priced this round is genuinely live, so it moves
+   * out of `deferred` / `failed` and into `fetched` — keeping the report an honest
+   * record of what is still outstanding. This is what stops the burst scheduler,
+   * the C9 deferred work-queue and the "all prices live" check from endlessly
+   * re-pulling (and showing "Updating…") a holding the backup already filled.
+   * Mutates `report`. Idempotent and order-independent (a symbol already counted
+   * as fetched is not double-added).
+   */
+  private absorbTiingoFallback(report: QuoteLoadReport, tiingoFilled: readonly string[]): void {
+    if (tiingoFilled.length === 0) return;
+    const filled = new Set(tiingoFilled);
+    report.deferred = report.deferred.filter((symbol) => !filled.has(symbol));
+    report.failed = report.failed.filter((symbol) => !filled.has(symbol));
+    const alreadyFetched = new Set(report.fetched);
+    for (const symbol of tiingoFilled) {
+      if (!alreadyFetched.has(symbol)) {
+        report.fetched.push(symbol);
+        alreadyFetched.add(symbol);
+      }
+    }
   }
 
   /**

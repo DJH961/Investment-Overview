@@ -119,6 +119,45 @@ export function isPriorityPull(kind: FanoutKind): boolean {
 }
 
 /**
+ * **Single source of truth** for the steady-state counterpart of
+ * {@link planFanout}'s instant spill. {@link planFanout} decides the provider
+ * split *before* a login / manual round runs; this gates the *after-the-fact*
+ * backup reroute the **scheduled / auto** path performs once Twelve Data has
+ * reported its deferred set (`tiingo-fallback.ts`). Both spill decisions live here,
+ * in the one provider-spilling authority (Pillar 5), so the rule is tuned in a
+ * single place rather than duplicated across the fetch layer.
+ *
+ * A symbol qualifies for the spill when **all** hold:
+ * - the market is open (only intraday is a deferred symbol's live mark genuinely
+ *   newer than the prior settled close it already holds — the one time chasing it
+ *   buys anything);
+ * - the round *originally* asked for more than the instant threshold
+ *   ({@link FANOUT_INSTANT_THRESHOLD} = >2 Twelve Data minutes of work), keyed off
+ *   the **whole** requested sleeve (e.g. all 17, not the post-Twelve-Data
+ *   remainder) so the trigger does not lapse as Twelve Data whittles the remainder
+ *   back under the threshold;
+ * - the symbol is one Twelve Data deferred this round (genuinely waiting on the
+ *   per-minute cap, not already served).
+ *
+ * **NAVs ride the same sleeve** — identically to {@link planFanout}. A NAV fund
+ * only lands in the deferred set when it genuinely needs today's price (its TTL
+ * lapsed and the budget deferred it), so the backup should clear it in parallel
+ * just like a stock; it is *not* special-cased out.
+ */
+export function efficiencySpillEligible(params: {
+  symbol: string;
+  marketOpen: boolean;
+  requestedCount: number;
+  deferred: ReadonlySet<string>;
+  instantThreshold?: number;
+}): boolean {
+  if (!params.marketOpen) return false;
+  const threshold = params.instantThreshold ?? FANOUT_INSTANT_THRESHOLD;
+  if (params.requestedCount <= threshold) return false;
+  return params.deferred.has(params.symbol);
+}
+
+/**
  * Decide the provider split for a pull. Pure; the caller dispatches each leg to
  * the existing fetchers (which re-clamp against the live reservation + breaker, so
  * this can only ever propose *fewer* credits than are truly available).
