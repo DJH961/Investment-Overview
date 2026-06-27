@@ -1080,6 +1080,11 @@ export function markHoldingsUpdating(
   });
 }
 
+export function holdingPriceLabel(holding: Pick<HoldingView, "priceType" | "isMoneyMarket">): string | null {
+  if (holding.priceType !== "nav") return null;
+  return holding.isMoneyMarket ? "CASH" : "NAV";
+}
+
 /** A single holding as a list row (mobile-first, no wide horizontal table). */
 function renderHoldingRow(
   holding: HoldingView,
@@ -1088,7 +1093,8 @@ function renderHoldingRow(
   status: HoldingStatusModel = emptyHoldingStatusModel(),
 ): HTMLElement {
   const symChildren: Array<Node | string> = [holding.symbol];
-  if (holding.priceType === "nav") symChildren.push(h("span", { class: "pill" }, ["NAV"]));
+  const priceLabel = holdingPriceLabel(holding);
+  if (priceLabel !== null) symChildren.push(h("span", { class: "pill" }, [priceLabel]));
   // A genuinely stale fallback (no price at all) is still flagged; the milder
   // "price came from the export" case is conveyed by the "as of" date/time below
   // rather than a vague "last known" bubble.

@@ -4235,9 +4235,18 @@ export class App {
       Date.now(),
       this.state.config.updateMinutes * 60 * 1000,
     );
+    // Coverage describes the whole held book, not just the symbols this round
+    // happened to fetch. When the orchestrator suppresses the quote / NAV legs
+    // because those holdings are already fresh — e.g. right after a graph
+    // regenerate primes every quote — they are absent from `quoteLoad.report`,
+    // so without widening it the summary would wrongly read "no live-priced
+    // holdings". `quoteLoad.quotes` already carries each gated-off holding's
+    // cached value (see {@link preserveCachedQuotesForGatedLegs}), so folding the
+    // full fetchable book back into the report classifies them honestly.
+    const coverageReport = bookCoverageReport(symbols, quoteLoad.report);
     if (network) {
       this.lastCoverageFacts = buildCoverageFacts(
-        quoteLoad.report,
+        coverageReport,
         quoteLoad.quotes,
         this.lastNavSymbols,
         {
@@ -4269,7 +4278,7 @@ export class App {
       // fills the initial gap: a later cache re-paint (currency toggle, blob swap)
       // keeps the real network coverage rather than overwriting it from cache.
       this.lastCoverageFacts = buildCoverageFacts(
-        quoteLoad.report,
+        coverageReport,
         quoteLoad.quotes,
         this.lastNavSymbols,
         {
@@ -6236,6 +6245,32 @@ export function preserveCachedQuotesForGatedLegs(
     const entry = cached.get(symbol);
     if (entry && entry.quote.price !== null) painted.set(symbol, entry.quote);
   }
+}
+
+/**
+ * Widen a round's {@link QuoteLoadReport} to describe the **whole held book**,
+ * not just the symbols this round happened to touch. {@link buildCoverageFacts}
+ * classifies only the symbols present in the report's lists, but the orchestrator
+ * routinely suppresses a quote / NAV leg when those holdings are already fresh —
+ * so on such a round (e.g. right after a graph regenerate primes every quote)
+ * none of the held symbols appear in the report and the coverage line would
+ * wrongly read "no live-priced holdings". Folding the untouched book symbols into
+ * `servedFresh` (they are held from cache, sourced from the merged quotes map)
+ * makes the summary describe the real book. Symbols already fetched / deferred /
+ * failed this round keep their stronger classification; a no-op fully-fresh round
+ * therefore reports the held book ("market closed, up to date", live counts, …)
+ * instead of an empty one.
+ */
+export function bookCoverageReport(
+  bookSymbols: Iterable<string>,
+  report: QuoteLoadReport,
+): QuoteLoadReport {
+  const touched = new Set([...report.fetched, ...report.deferred, ...report.failed]);
+  const servedFresh = new Set(report.servedFresh);
+  for (const symbol of bookSymbols) {
+    if (symbol && !touched.has(symbol)) servedFresh.add(symbol);
+  }
+  return { ...report, servedFresh: [...servedFresh] };
 }
 
 export function liveRefreshProgress(report: QuoteLoadReport): { live: number; total: number } {
