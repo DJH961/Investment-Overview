@@ -14,6 +14,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.14.2] — 2026-06-27
+
+### Changed
+
+- **Live-graph EUR/USD FX history now rides the same price-bar pipe as every
+  other symbol**, so it is fetched **Twelve Data first, then Tiingo** with the
+  identical capacity split, reservation gating, dual-pipe fallback and per-symbol
+  backoff — instead of through a parallel, Tiingo-first FX subsystem. The EUR/USD
+  pair is now just another symbol on `makePriceBarFetcher`: the Twelve Data leg
+  pulls it browser-direct via `time_series` and the Tiingo leg routes it to the
+  Worker `fxHistory` route. Any future change to the price pipe automatically
+  applies to FX, with no separate FX fetcher, backoff or metering leg to keep in
+  step. As a side benefit the 1D FX track is now sampled at the price feed's
+  intraday `interval` (finer than the previous fixed 1-hour cadence)
+  (`web/src/live-graph.ts` `makeFxFetcher`, `web/src/intraday-tiingo.ts`
+  FX-aware bar routing, `web/src/app.ts`).
+
 ## [4.14.1] — 2026-06-27
 
 ### Fixed
