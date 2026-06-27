@@ -75,10 +75,18 @@ Concretely, that means:
 - **Idle auto-lock.** After a configurable period of inactivity (default **5
   min**; Settings → Security → *Auto-lock (minutes)*, set `0` to disable) the
   session clears the in-memory passphrase and returns to the unlock screen, so an
-  unattended phone doesn't sit on an open dashboard. Activity detection counts
-  pointer/touch **movement**, wheel, scroll, keys, typing, clicks and tab focus,
-  so simply using the dashboard keeps it unlocked, and a **dismissable warning
-  with a one-tap "Stay unlocked"** appears ~15 s before locking.
+  unattended phone doesn't sit on an open dashboard. Activity detection is
+  deliberately strict — it counts only **deliberate interactions with a control**
+  (clicking/tapping a tab, the currency toggle, a graph timeframe, expanding an
+  overview, or typing), and **ignores stray taps, swipes, scrolling and passive
+  pointer/touch movement** so an absent-minded swipe or a phone merely being held
+  can't keep the session alive. A **dismissable warning with a one-tap "Stay
+  unlocked"** appears
+  ~15 s before locking — that one-tap extension is the intended way to stay in
+  past the window. The lock is anchored to a **wall-clock timestamp** of the last
+  interaction — not just a timer — so a
+  backgrounded tab or a sleeping device can't outlive the window: reopening the
+  app after the window has elapsed locks **immediately**.
 - **Stay unlocked across a page refresh (opt-in, off by default).** Settings →
   Security → *Stay unlocked across a page refresh* lets a full-page reload (F5) of
   the current tab resume the session instead of forcing a re-login — like the

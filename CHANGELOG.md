@@ -14,6 +14,84 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.14.0] — 2026-06-27
+
+### Added
+
+- **Data-loading (consumption) log for the web overview.** A new, downloadable
+  plain-text log — the *read* counterpart to the existing data-polling log —
+  records what the main overview's views actually **consumed** from the available
+  data, and where they had to fall back to **alternative data because the perfect
+  data was missing**. Rather than a line per consumer, each entry is one
+  summarised snapshot across the three families the user cares about — `holdings`,
+  `graph` and `currency` KPIs — with plain-language flags for the
+  weird/uncommon moments (a holding dropped from totals, a USD KPI that fell back
+  to its EUR figure, a chart tip that could not draw, a device backfill bridging a
+  stale data file) and a per-snapshot "needed to be perfect" verdict. Consecutive
+  identical states collapse to a single row with a repeat count, so a new row
+  appears only when the consumed picture genuinely changes. Download/clear it from
+  **Settings**. This is a `web/` companion change only.
+- **Graph log now reports the 1W NAV sleeve and the 1D/1W FX anchor explicitly.**
+  The `graph` family additionally surfaces the two inputs unique to the live
+  1D/1W curves, where data gaps are otherwise easy to miss: the **NAV portion of
+  the 1W graph** (which NAV funds re-marked from their daily-NAV bars versus which
+  were pinned flat in the base for want of a usable price/share count, plus stale
+  NAV values), and the **FX portion of the 1D/1W graphs** (which EUR/USD the EUR
+  line is anchored to — live, cached, end-of-day, or the backup provider — and
+  whether a settled session-close rate exists to freeze the EUR view to once the
+  market shuts). This is a `web/` companion change only.
+
+## [4.13.8] — 2026-06-27
+
+### Fixed
+
+- **A big market-open round (e.g. all 17 symbols) now reaches its live marks at
+  once instead of trickling 8/min through Twelve Data.** When Twelve Data prices
+  the first 8 and defers the remaining 9, those 9 used to sit out the per-minute
+  cap because `marketSymbolEligible` only treats a symbol *behind the settled
+  session* as chaseable — a budget-deferred symbol that already holds the prior
+  settled close looked "up to date" and so never tripped the Tiingo backup. The
+  fallback now applies a **market-hours efficiency spill**: when the round
+  *originally* asked for more than two Twelve Data minutes of work (keyed off the
+  whole requested sleeve, not the post-Twelve-Data remainder, so the trigger does
+  not lapse as Twelve Data whittles the remainder down), its deferred overflow is
+  spilled to Tiingo in parallel. The whole policy lives in one place — Pillar 5's
+  provider-spilling authority (`efficiencySpillEligible` in
+  `web/src/provider-fanout.ts`, alongside the login/manual `planFanout` spill and
+  its shared `FANOUT_INSTANT_THRESHOLD`) — so it can be tuned centrally. NAV funds
+  ride the same sleeve: a fund only lands in the deferred queue when it genuinely
+  needs today's price, so it is spilled to the backup identically to a stock.
+- **Deferred holdings no longer show "Updating…" for minutes on end after the
+  backup already priced them.** The forward Tiingo fallback merged its fills into
+  the quote map but never reconciled the round's `QuoteLoadReport`, so the burst
+  scheduler, the deferred work-queue and the "all prices live" check all kept
+  treating a backup-filled holding as still deferred — endlessly re-bursting for a
+  price that had already arrived. A new `absorbTiingoFallback` folds every
+  backup-filled symbol out of `deferred` / `failed` and into `fetched`, mirroring
+  `absorbSafetyNet` for the reverse net (`web/src/app.ts`).
+
+## [4.13.7] — 2026-06-27
+
+### Changed
+
+- **Idle auto-lock now ignores passive pointer/touch movement.** Activity
+  detection no longer counts `pointermove` / `mousemove` / `touchmove`, so a
+  resting or twitching hand on a mouse — or a phone simply being held while its
+  owner dozes off — can no longer silently extend the session past the auto-lock
+  window. To stay in past the window, use the one-tap **"Stay unlocked"**
+  extension on the locking-soon warning. This is a `web/` companion change only.
+- **Idle auto-lock now extends only on deliberate control interactions.**
+  Tightening the previous change: scrolling, the mouse wheel, raw
+  `pointerdown` / `touchstart` and stray taps on blank chrome no longer re-arm
+  the window — so an absent-minded swipe over the screen can no longer keep the
+  session unlocked. The countdown is now reset only by a genuine action: a
+  click/tap that lands on an actual control (a tab/page, the currency toggle, a
+  graph timeframe, expanding an overview, buttons/links/form controls), a
+  form-control change, or keyboard input. The strictness is captured in a pure,
+  unit-tested `isDeliberateActivity` helper. To stay in past the window, use the
+  one-tap **"Stay unlocked"** extension on the locking-soon warning. This is a
+  `web/` companion change only.
+
 ## [4.13.6] — 2026-06-27
 
 ### Fixed
