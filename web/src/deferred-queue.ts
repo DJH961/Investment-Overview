@@ -77,6 +77,24 @@ export class DeferredQueue {
   }
 
   /**
+   * Whether any currently-parked symbol is an **explicit** force deferral (a
+   * user-driven "update everything" pull — Reset base / Force-fetch every price /
+   * a closed-market cache-distrust Refresh — that overflowed the budget). These
+   * were created *to* be re-pulled, so a caller that would otherwise skip a round
+   * (e.g. the automatic scheduler's "book fully up to date" short-circuit, which
+   * judges a closed-market settled close already in hand as nothing-to-fetch) must
+   * still run so {@link drain} can surface and re-pull them — otherwise they sit
+   * "Updating…" indefinitely behind a freshness skip that does not know the user
+   * asked for them.
+   */
+  hasForced(): boolean {
+    for (const entry of this.queue.values()) {
+      if (entry.force) return true;
+    }
+    return false;
+  }
+
+  /**
    * Park `symbols` with the given `reason`. Re-deferring an already-queued symbol
    * updates its reason but does **not** reset its attempt count (so a perpetually
    * deferred symbol still ages out). The queue is bounded: once it exceeds `max`,

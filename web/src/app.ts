@@ -4133,6 +4133,12 @@ export class App {
         now: Date.now(),
         manual: (opts.force ?? false) || viaTiingo,
         forceAll: viaTiingo,
+        // A standard manual Refresh tap that escalated to a full force-fetch (the
+        // closed-market cache-distrust re-pull) lets the efficiency spill fire even
+        // while the exchange is shut and bypasses the "nothing newer" cooldown, so
+        // a big manual round's Twelve Data overflow is filled via Tiingo in
+        // parallel instead of trickling through the per-minute cap over minutes.
+        manualForce: isManualReload,
         reserveCredits,
         sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
       });
@@ -4905,7 +4911,18 @@ export class App {
     // *only* when the data is genuinely current: a closed market whose cached
     // close is stale (offline across the close) still refreshes here. A manual
     // tap is never skipped — it forces a full verification re-pull.
-    if ((kind === "auto" || kind === "start") && this.fullyUpToDate()) {
+    //
+    // It must also *not* skip while the deferred work-queue still holds an
+    // **explicit** force deferral — the overflow a user-driven "update everything"
+    // / cache-distrust Refresh parked across rounds. Those symbols hold their
+    // settled close (so {@link fullyUpToDate} reads true), but the user asked to
+    // re-pull them, so the burst round must run and {@link drainDeferredQueue}
+    // re-fetch them rather than leaving them "Updating…" behind the freshness skip.
+    if (
+      (kind === "auto" || kind === "start") &&
+      this.fullyUpToDate() &&
+      !this.deferredQueue.hasForced()
+    ) {
       if (this.blobCheckDue()) void this.maybeRefreshBlob(session);
       this.scheduleNext(session, SETTLED_HEARTBEAT_MS);
       this.pollLog(
