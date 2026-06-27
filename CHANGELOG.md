@@ -14,6 +14,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.14.3] — 2026-06-27
+
+### Fixed
+
+- **Large manual / closed-market refreshes no longer trickle their Twelve Data
+  overflow through the per-minute cap — the Tiingo efficiency spill now fires
+  regardless of market hours or trigger.** The spill that drains a big sleeve's
+  deferred overflow onto the backup in parallel was gated on the market being
+  open, so a >16-symbol refresh outside US trading hours (a login, a scheduled
+  round, or a user tapping Refresh on a settled/closed market) saw its overflow
+  left to dribble through Twelve Data's per-minute budget over several minutes
+  instead of being filled at once. `efficiencySpillEligible` now keys purely off
+  sleeve size and the deferred set — mirroring `planFanout`, whose login/manual
+  spill never depended on market hours — so a large book clears on the backup in
+  one fan-out whenever Twelve Data alone would need multiple windows
+  (`web/src/provider-fanout.ts`, `web/src/tiingo-fallback.ts`).
+- **A standard manual Refresh on a closed market now genuinely re-verifies the
+  book instead of being told "already checked".** A new `manualForce` flag on the
+  Tiingo fallback lets a user-driven cache-distrust pull both fire the efficiency
+  spill while the exchange is shut and bypass the per-symbol "nothing newer"
+  cooldown, so repeated Refresh taps actually re-pull rather than being
+  suppressed; size/deferred gates still apply, so small rounds are unaffected
+  (`web/src/tiingo-fallback.ts`, `web/src/app.ts`).
+- **Explicit force-deferred symbols no longer sit "Updating…" indefinitely behind
+  the scheduler's freshness short-circuit.** `DeferredQueue.hasForced()` lets the
+  automatic scheduler detect user-driven force deferrals that overflowed the
+  budget and still run the round to surface and re-pull them, rather than skipping
+  on a "book already up to date" judgement that does not know the user asked for
+  them (`web/src/deferred-queue.ts`).
+
 ## [4.14.2] — 2026-06-27
 
 ### Changed

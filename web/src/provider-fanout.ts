@@ -127,10 +127,7 @@ export function isPriorityPull(kind: FanoutKind): boolean {
  * in the one provider-spilling authority (Pillar 5), so the rule is tuned in a
  * single place rather than duplicated across the fetch layer.
  *
- * A symbol qualifies for the spill when **all** hold:
- * - the market is open (only intraday is a deferred symbol's live mark genuinely
- *   newer than the prior settled close it already holds — the one time chasing it
- *   buys anything);
+ * A symbol qualifies for the spill when **both** hold:
  * - the round *originally* asked for more than the instant threshold
  *   ({@link FANOUT_INSTANT_THRESHOLD} = >2 Twelve Data minutes of work), keyed off
  *   the **whole** requested sleeve (e.g. all 17, not the post-Twelve-Data
@@ -139,6 +136,15 @@ export function isPriorityPull(kind: FanoutKind): boolean {
  * - the symbol is one Twelve Data deferred this round (genuinely waiting on the
  *   per-minute cap, not already served).
  *
+ * **Market state and trigger are deliberately irrelevant.** A big sleeve (>16) is
+ * spilled to Tiingo in parallel no matter the time of day, whether the exchange is
+ * open or shut, and whether the round is a login, a scheduled auto round, or a
+ * user-driven manual Refresh. Once a portfolio is large enough that Twelve Data
+ * alone needs several per-minute windows to clear it, draining the overflow on the
+ * backup in one fan-out is always the faster, more responsive choice — so the gate
+ * keys purely off size and the deferred set, mirroring {@link planFanout}, whose
+ * login/manual spill has never depended on market hours either.
+ *
  * **NAVs ride the same sleeve** — identically to {@link planFanout}. A NAV fund
  * only lands in the deferred set when it genuinely needs today's price (its TTL
  * lapsed and the budget deferred it), so the backup should clear it in parallel
@@ -146,15 +152,16 @@ export function isPriorityPull(kind: FanoutKind): boolean {
  */
 export function efficiencySpillEligible(params: {
   symbol: string;
-  marketOpen: boolean;
   requestedCount: number;
   deferred: ReadonlySet<string>;
   instantThreshold?: number;
 }): boolean {
-  if (!params.marketOpen) return false;
   const threshold = params.instantThreshold ?? FANOUT_INSTANT_THRESHOLD;
   if (params.requestedCount <= threshold) return false;
-  return params.deferred.has(params.symbol);
+  if (!params.deferred.has(params.symbol)) return false;
+  // Size + deferred-this-round are the *only* gates: a big sleeve spills on the
+  // backup regardless of market hours or whether the round was manual or auto.
+  return true;
 }
 
 /**

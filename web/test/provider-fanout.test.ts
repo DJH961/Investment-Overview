@@ -305,17 +305,19 @@ describe("planFanout — NAV routing (unified with stocks)", () => {
 describe("efficiencySpillEligible", () => {
   const base = {
     symbol: "AAA",
-    marketOpen: true,
     requestedCount: FANOUT_INSTANT_THRESHOLD + 1,
     deferred: new Set(["AAA"]),
   };
 
-  it("spills a deferred symbol from a big, market-open round", () => {
+  it("spills a deferred symbol from a big round", () => {
     expect(efficiencySpillEligible(base)).toBe(true);
   });
 
-  it("never spills while the market is closed", () => {
-    expect(efficiencySpillEligible({ ...base, marketOpen: false })).toBe(false);
+  it("spills a big round regardless of market state or trigger", () => {
+    // Size (>threshold) + deferred-this-round are the only gates: a big sleeve
+    // spills to the backup whether the market is open or shut and whether the
+    // round is manual or automatic — there is no market-hours/trigger condition.
+    expect(efficiencySpillEligible(base)).toBe(true);
   });
 
   it("never spills a round at or below the instant threshold", () => {
