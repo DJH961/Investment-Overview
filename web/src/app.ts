@@ -225,8 +225,8 @@ const WELCOME_BANNER_DURATION_MS = 3200;
 const AUTO_LOCK_WARN_LEAD_MS = 15_000;
 
 /**
- * Throttle for re-arming the idle auto-lock on high-frequency activity (pointer
- * moves, wheel, …). Re-arming at most this often keeps the timers from thrashing
+ * Throttle for re-arming the idle auto-lock on high-frequency activity (wheel,
+ * scroll, …). Re-arming at most this often keeps the timers from thrashing
  * while still measuring idle from the most recent second of activity. A visible
  * warning always re-arms immediately, regardless of this throttle.
  */
@@ -3377,9 +3377,9 @@ export class App {
       // doesn't thrash storage.
       this.touchResume(now);
       const warningUp = this.autoLockWarnEl !== null;
-      // High-frequency events (pointer/mouse moves, wheel) re-arm at most once a
-      // second — but a *visible* warning is always cancelled immediately, so any
-      // flicker of activity reliably keeps the user logged in.
+      // High-frequency events (wheel, scroll) re-arm at most once a second — but a
+      // *visible* warning is always cancelled immediately, so a deliberate
+      // interaction reliably keeps the user logged in.
       if (!warningUp && now - this.autoLockArmedAt < AUTO_LOCK_RESET_THROTTLE_MS) return;
       this.dismissAutoLockWarning();
       this.armAutoLockTimers();
@@ -6900,20 +6900,21 @@ export function describePrefetch(input: {
 
 /**
  * Interaction events that count as "activity" and reset the idle auto-lock
- * countdown. Kept passive and broad enough that the lock only ever bites on a
- * genuinely unattended session: presses *and movement* (pointer/mouse/touch),
- * wheel and scroll, keyboard and typing, clicks, and tab re-focus. The
- * high-frequency movement events are throttled where they are handled.
+ * countdown. Deliberately narrow so the lock bites on a genuinely unattended
+ * session: only *intentional* interactions keep it alive — presses and taps
+ * (pointer/touch), deliberate scrolling/wheel, keyboard and typing, and clicks.
+ *
+ * Passive pointer/mouse/touch *movement* is intentionally excluded: a resting or
+ * twitching hand on a mouse, or a phone simply being held, must NOT keep the
+ * session unlocked. If the user wants to stay in past the window, that is what
+ * the "Stay unlocked" extension on the locking-soon warning is for.
  */
 const AUTO_LOCK_ACTIVITY_EVENTS = [
   "pointerdown",
-  "pointermove",
-  "mousemove",
   "wheel",
   "keydown",
   "scroll",
   "touchstart",
-  "touchmove",
   "click",
   "input",
 ] as const;

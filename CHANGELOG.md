@@ -14,6 +14,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.13.7] — 2026-06-27
+
+### Changed
+
+- **Idle auto-lock now ignores passive pointer/touch movement.** Activity
+  detection no longer counts `pointermove` / `mousemove` / `touchmove`, so a
+  resting or twitching hand on a mouse — or a phone simply being held while its
+  owner dozes off — can no longer silently extend the session past the auto-lock
+  window. Only intentional interactions (taps/clicks, deliberate scroll/wheel,
+  keys and typing) keep the dashboard unlocked; to stay in past the window, use
+  the one-tap **"Stay unlocked"** extension on the locking-soon warning. This is
+  a `web/` companion change only.
+
 ## [4.13.6] — 2026-06-27
 
 ### Fixed
