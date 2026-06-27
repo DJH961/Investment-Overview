@@ -23,6 +23,7 @@ import {
 import type { Bar } from "../src/timeseries";
 import { memoryBackend, TimeSeriesStore, type StoredCloseProbe } from "../src/timeseries-store";
 import { FX_PROBE_KEY } from "../src/close-completeness";
+import { sessionOpenMs } from "../src/market-hours";
 
 const d = (v: string | number): Decimal => new Decimal(v);
 const bar = (t: number, value: string): Bar => ({ t, value: new Decimal(value) });
@@ -587,6 +588,56 @@ describe("1W curve NAV funds (item 7)", () => {
     expect(at0312).toBeDefined();
     // VTI: 1000·98/100 = 980 ; FXAIX: 1000·190/200 = 950 → 1930 USD.
     expect(at0312!.valueUsd.toString()).toBe("1930");
+  });
+
+  it("snaps a NAV fund's midnight close to the session open on an intraday-detailed day", async () => {
+    const s = store();
+    // Week cache: market + fund daily closes, both stamped at UTC midnight.
+    await s.mergeSession(
+      WEEK_STORE_KEY,
+      {
+        bars: {
+          VTI: [bar(dayMs("2026-03-11"), "100"), bar(dayMs("2026-03-12"), "100")],
+          FXAIX: [bar(dayMs("2026-03-11"), "200"), bar(dayMs("2026-03-12"), "200")],
+        },
+      },
+      dayMs("2026-03-12"),
+    );
+    // Today (Thu) gained fine 1D detail for the market sleeve only — the NAV fund
+    // strikes once a day, so it has no intraday bars.
+    await s.saveSession({
+      day: "2026-03-12",
+      bars: {
+        VTI: [
+          bar(Date.parse("2026-03-12T14:00:00Z"), "100"),
+          bar(Date.parse("2026-03-12T17:00:00Z"), "110"),
+        ],
+      },
+      fx: [],
+      updatedAt: 0,
+    });
+    const anchor = buildIntradayAnchor(mixedBook(), d(0), d(0), d("0.9"), { navInSleeve: true });
+    const curve = await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => new Map<string, Bar[]>(),
+      now: THU_OPEN,
+    });
+    const open = sessionOpenMs("2026-03-12");
+    const dayStart = dayMs("2026-03-12");
+    // The fund's UTC-midnight close must NOT leave a pre-open point on Thursday;
+    // it is snapped up to the 09:30 ET open so the band shows only market hours.
+    const preOpen = curve.points.filter((p) => p.t >= dayStart && p.t < open);
+    expect(preOpen).toEqual([]);
+    // The snapped fund close still re-marks the book at the session open (FXAIX
+    // carried flat at 200/200·1000 = 1000, VTI flat at 1000 → 2000 USD).
+    const atOpen = curve.points.find((p) => p.t === open);
+    expect(atOpen).toBeDefined();
+    expect(atOpen!.valueUsd.toString()).toBe("2000");
+    // The fine intraday prints still lift the curve through the session
+    // (VTI: 1000·110/100 = 1100 ; FXAIX flat at 1000 → 2100 USD).
+    const lifted = curve.points.find((p) => p.t === Date.parse("2026-03-12T17:00:00Z"));
+    expect(lifted!.valueUsd.toString()).toBe("2100");
   });
 
   it("does not re-pull market closes just because a fund NAV day is missing", async () => {
