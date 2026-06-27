@@ -6,6 +6,7 @@ import {
   ceilToClockHour,
   gradedPull,
   hasAnyLeg,
+  holdingCoversLatestClose,
   holdingFreshness,
   noLegs,
   quoteRefreshDue,
@@ -233,3 +234,62 @@ describe("fxFreshness (Layer-6 FX tier)", () => {
   });
 });
 
+describe("holdingCoversLatestClose — absolute up-to-date driver", () => {
+  const SETTLED = "2026-06-26";
+
+  it("is current when the price value-date is the latest settled session", () => {
+    expect(
+      holdingCoversLatestClose({ priceDateIso: SETTLED, latestSettledSessionIso: SETTLED }),
+    ).toBe(true);
+  });
+
+  it("is current when the price value-date is newer than the settled session", () => {
+    expect(
+      holdingCoversLatestClose({ priceDateIso: "2026-06-29", latestSettledSessionIso: SETTLED }),
+    ).toBe(true);
+  });
+
+  it("is behind when the price value-date trails the latest settled session", () => {
+    expect(
+      holdingCoversLatestClose({ priceDateIso: "2026-06-25", latestSettledSessionIso: SETTLED }),
+    ).toBe(false);
+  });
+
+  it("treats a once-a-day NAV still on the prior session as behind (not yet published)", () => {
+    // A mutual fund whose newest bar is the prior trading day reads behind until
+    // its new NAV publishes and is pulled — the morning "this fund hasn't updated"
+    // signal.
+    expect(
+      holdingCoversLatestClose({ priceDateIso: "2026-06-25", latestSettledSessionIso: SETTLED }),
+    ).toBe(false);
+  });
+
+  it("always reports money-market funds as current (par NAV, never fetched)", () => {
+    expect(
+      holdingCoversLatestClose({
+        priceDateIso: "2020-01-01",
+        latestSettledSessionIso: SETTLED,
+        isMoneyMarket: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("is never current when the holding has no value (no price/FX/fallback)", () => {
+    expect(
+      holdingCoversLatestClose({
+        priceDateIso: SETTLED,
+        latestSettledSessionIso: SETTLED,
+        hasValue: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("is not current when either date is missing", () => {
+    expect(
+      holdingCoversLatestClose({ priceDateIso: "", latestSettledSessionIso: SETTLED }),
+    ).toBe(false);
+    expect(
+      holdingCoversLatestClose({ priceDateIso: SETTLED, latestSettledSessionIso: "" }),
+    ).toBe(false);
+  });
+});

@@ -809,6 +809,16 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   white-space: nowrap;
   flex: none;
 }
+/* Subtle up-to-date check beside the "as of" stamp: shown only when the market is
+   shut and the holding already carries the latest settled close, so the stale
+   after-close / pre-open window can be read at a glance. Uses the colourblind-safe
+   blue gain token (never red/green) and stays small so it adds no visual noise;
+   behind holdings simply show no check. */
+.holding-asof-check {
+  color: var(--pos);
+  font-weight: 700;
+  margin-left: 0.2rem;
+}
 .holding-figures { text-align: right; display: grid; gap: 0.1rem; flex: none; }
 .holding-value { font-weight: 700; font-variant-numeric: tabular-nums; }
 .holding-change { font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums; }

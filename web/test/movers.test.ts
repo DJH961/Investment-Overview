@@ -38,6 +38,7 @@ function holding(over: Over): HoldingView {
     priceAsOf: null,
     pricePulledAt: null,
     priceFreshness: "aged",
+    priceIsCurrent: false,
     priceFallbackDate: over.priceFallbackDate ?? "2024-06-03",
     valueIsStale: false,
     valueEur: num(over.valueEur) ?? new Decimal(1000),

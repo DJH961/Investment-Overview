@@ -351,3 +351,54 @@ export function fxFreshness(input: FxFreshnessInput): FxFreshness {
     lastSettledCloseMs: lastForexReopenMs(input.now),
   });
 }
+
+/**
+ * The **absolute** "is this holding up to date?" driver behind the subtle
+ * up-to-date check mark on each holding card (suggestion #1 + #4).
+ *
+ * Where {@link holdingFreshness} grades *how recently* a price was observed, this
+ * answers the orthogonal, calendar-anchored question the after-close / pre-open
+ * "stale market" window actually poses: **does this holding already carry the
+ * latest settled session's close that it ought to?** It compares the price's own
+ * value-date against the most recent settled NYSE session — so it is true the
+ * moment a holding has repriced onto that session and false while it still trails
+ * behind, regardless of the wall-clock age of the observation.
+ *
+ * It deliberately works off the displayed price's **value-date** (an ISO
+ * `YYYY-MM-DD`, lexicographically comparable), which both market quotes and
+ * once-a-day NAV bars carry, so it accounts for the two price kinds uniformly:
+ *   - **market symbols** (stocks / ETFs): the latest session's close lands at the
+ *     bell; a row carrying it (value-date ≥ the settled session) reads current.
+ *   - **NAV funds** (mutual funds): a fund publishes ~once a day, often hours
+ *     after the close, so right after the bell its newest bar is still the prior
+ *     session and it honestly reads *behind* until the new NAV is pulled — exactly
+ *     the "this fund hasn't updated yet" signal the morning view wants.
+ *
+ * Par-$1 money-market funds never move and are never fetched, so they are always
+ * considered current. A holding with no value at all (no price/FX/fallback) is
+ * never current — there is nothing to be up to date about.
+ *
+ * Pure and free of the DOM / clock so it is unit-testable in isolation; the
+ * market-state gate that decides *whether to paint* the check lives in the view.
+ */
+export interface CoversLatestCloseInput {
+  /** ISO `YYYY-MM-DD` value-date the displayed price applies to. */
+  priceDateIso: string;
+  /** ISO `YYYY-MM-DD` of the most recent settled session the book should carry. */
+  latestSettledSessionIso: string;
+  /** Whether this holding is a par-$1 money-market fund (never moves). */
+  isMoneyMarket?: boolean;
+  /** Whether a value could be computed at all (false ⇒ nothing to be current about). */
+  hasValue?: boolean;
+}
+
+/** Whether a holding's displayed price already covers the latest settled close. */
+export function holdingCoversLatestClose(input: CoversLatestCloseInput): boolean {
+  if (input.hasValue === false) return false;
+  // Par-$1 money-market funds hold a constant NAV and are never fetched, so they
+  // can never be "behind" a session — always current.
+  if (input.isMoneyMarket) return true;
+  if (!input.priceDateIso || !input.latestSettledSessionIso) return false;
+  // ISO dates sort lexicographically, so a string compare is a date compare.
+  return input.priceDateIso >= input.latestSettledSessionIso;
+}
