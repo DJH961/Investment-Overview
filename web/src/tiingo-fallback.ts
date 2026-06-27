@@ -93,6 +93,14 @@ export interface TiingoFallbackResult {
   fallbackSymbols: string[];
   /** Tiingo budget used so far, for the hourly/daily usage overview. */
   budget: TiingoBudgetView;
+  /**
+   * **Exact accounting of this round's backup spend.** `apiCalls` is the number
+   * of Tiingo requests that left the device, `creditsSpent` the credits that
+   * *stand* against the hourly cap after a failed/over-quota call refunds its
+   * grant — so the log states what the backup really cost, never an inflated count.
+   */
+  apiCalls: number;
+  creditsSpent: number;
   /** A transient Tiingo failure, if any (never fatal — the primary still stands). */
   error: PriceError | null;
 }
@@ -219,6 +227,30 @@ function budgetView(now: number, storage: StorageLike | null | undefined): Tiing
   };
 }
 
+/** The *true* Tiingo credits this device's own ledger has booked (hour/day). */
+export interface TiingoLedgerView {
+  hourUsed: number;
+  dayUsed: number;
+}
+
+/**
+ * The Tiingo credits **this device's local ledger** has actually recorded so far
+ * (this clock hour / ET day), read straight from the persisted credit log with
+ * **no** 429-freeze substitution. {@link tiingoBudgetView} reports the cap
+ * (`40/40`) while the breaker is frozen — because the *shared* quota is spent —
+ * but that can diverge from what this device itself counted (another device/tab
+ * on the same key spent the rest). This is the number that makes the difference
+ * reconcilable in the log: it answers "how many did *we* actually spend?" so a
+ * jump to `40/40` is never unexplained.
+ */
+export function tiingoLedgerView(now: number, storage?: StorageLike | null): TiingoLedgerView {
+  const log = readTiingoCreditLog(now, undefined, storage ?? undefined);
+  return {
+    hourUsed: Math.max(0, creditsSpentThisHour(log, now)),
+    dayUsed: Math.max(0, tiingoCreditsSpentToday(log, now)),
+  };
+}
+
 /**
  * Fetch `batch` via Tiingo, merge priced results into `quotes` + the cache, note
  * NAV value-date advances, and record the budget spend. Returns the symbols that
@@ -256,10 +288,22 @@ async function fetchAndMerge(
   // budget (minus any soft reserve) by `selectWithinBudget`, so the grant covers
   // the whole batch in the normal single-flight case.
   opts.reservation.reserve("tiingo", batch.length, opts.now);
-  const fetched = await fetchTiingoQuotes(batch, opts.proxyUrl, {
-    fetchImpl: opts.fetchImpl,
-    navSymbols: opts.navSymbols,
-  });
+  let fetched: Map<string, Quote>;
+  try {
+    fetched = await fetchTiingoQuotes(batch, opts.proxyUrl, {
+      fetchImpl: opts.fetchImpl,
+      navSymbols: opts.navSymbols,
+    });
+  } catch (err) {
+    // The call delivered nothing (over-quota 429, a 5xx, or a transport throw):
+    // **refund the reserved grant** so a failed Tiingo call never silently counts
+    // toward the scarce hourly cap. This is exactly the over-count the user hit —
+    // calls still left server-side, yet the app "counted 40" because a rejected
+    // call left its reservation booked. The 429 breaker (armed by the caller) is
+    // what stops further attempts; the ledger must stay truthful.
+    opts.reservation.release("tiingo", batch.length, opts.now);
+    throw err;
+  }
   const priced = new Map<string, Quote>();
   const gained: string[] = [];
   for (const symbol of batch) {
@@ -334,7 +378,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
   } = options;
 
   if (!proxyUrl) {
-    return { quotes, tiingoSymbols: [], fallbackSymbols: [], budget: budgetView(now, storage), error: null };
+    return { quotes, tiingoSymbols: [], fallbackSymbols: [], budget: budgetView(now, storage), apiCalls: 0, creditsSpent: 0, error: null };
   }
 
   const expected = latestSettledSessionDate(new Date(now));
@@ -351,6 +395,11 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
   const primaryAttemptedButFailed = new Set(report.failed);
   const tiingoSymbols: string[] = [];
   let error: PriceError | null = null;
+  // Exact accounting of the backup's spend this round (the user's "be a good
+  // accountant"): the requests that left the device and the credits that actually
+  // stand against the hourly cap (a refunded failed call counts for neither).
+  let apiCalls = 0;
+  let creditsSpent = 0;
 
   // Per-symbol "backup had nothing newer" suppression. Once Tiingo confirms it
   // holds nothing fresher than what we already have for `expected`, stop
@@ -427,7 +476,12 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     if (candidates.length > 0) {
       const room = selectWithinBudget(candidates, budgetNow());
       if (room.length > 0) {
+        // One batched Tiingo request for the whole room, billing one credit per
+        // symbol. Count the call up-front so a throw still records the attempt;
+        // the credits only stand once the call returns (a throw refunds them).
+        apiCalls += 1;
         tiingoSymbols.push(...(await merge(room)));
+        creditsSpent += room.length;
       } else {
         // Budget blocked: candidates existed but the budget (or 429 breaker)
         // prevented any spend. Surface this clearly so fallback pulls never fall
@@ -452,7 +506,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
   // symbols the primary never tried are an efficiency reroute, not a fallback.
   const fallbackSymbols = tiingoSymbols.filter((s) => primaryAttemptedButFailed.has(s));
 
-  return { quotes, tiingoSymbols, fallbackSymbols, budget: budgetView(now, storage), error };
+  return { quotes, tiingoSymbols, fallbackSymbols, budget: budgetView(now, storage), apiCalls, creditsSpent, error };
 }
 
 /**

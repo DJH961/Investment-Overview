@@ -14,6 +14,40 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.15.2] — 2026-06-27
+
+### Fixed
+
+- **A rejected (over-quota / failed) live pull no longer leaves phantom credits
+  booked against the shared cap.** The local credit ledger is only an optimistic
+  guess on a key shared with the desktop app, so `loadQuotes` *reserved* a grant
+  up-front; when a call was rejected (a `429`, a `5xx`, or a transport throw) it
+  delivered nothing yet the reserved credits stayed booked — so the app could
+  "count 40" while the provider still had calls left. A failed call now **refunds
+  its reserved-but-unbilled grant in full** (`reservation.release`), keeping the
+  ledger truthful, and the Tiingo backup leg refunds the same way
+  (`web/src/quotes.ts`, `web/src/tiingo-fallback.ts`).
+
+### Changed
+
+- **A `429` freezes only the provider that said no — per provider, never
+  global.** A provider's own `429` is the one hard, authoritative "out of
+  credits" signal we get for *that* provider, so the circuit breaker freezes
+  *every* call to that provider (whichever caller issued it) until the freeze
+  lifts, while leaving the other provider untouched. A call to an over-quota
+  provider is therefore rerouted to the other pipe rather than silently lost, and
+  only waits when both are frozen — Twelve Data's `429` never stands Tiingo down,
+  and vice versa (`web/src/provider-breaker.ts`, `web/src/app.ts`).
+- **The data-polling log now states exactly why a provider's budget jumped to
+  "full", with the precise spend per call.** Each live pull now reports the exact
+  number of HTTP requests that left the device and the credits they actually
+  cost (`apiCalls` / `creditsSpent` on the load reports), and a recorded `429`
+  returns its resulting freeze (lift time, whether it was already armed, and the
+  Twelve Data second-strike escalation) so the log can reconcile *why* the
+  credits reached their cap instead of leaving the jump unexplained
+  (`web/src/quotes.ts`, `web/src/tiingo-fallback.ts`, `web/src/provider-breaker.ts`,
+  `web/src/polling-log.ts`, `web/src/app.ts`).
+
 ## [4.15.1] — 2026-06-27
 
 ### Fixed

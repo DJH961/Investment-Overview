@@ -100,6 +100,7 @@ import {
   planPrefetch,
   tiingoRemainingCredits,
   tiingoBudgetView,
+  tiingoLedgerView,
   STARTUP_TIINGO_RESERVE,
   type TiingoBudgetView,
 } from "./tiingo-fallback";
@@ -134,6 +135,8 @@ import {
   recordTwelveDataSuccess,
   recordTiingo429,
   twelveDataFrozen,
+  twelveDataFreezeUntil,
+  tiingoFreezeUntil,
 } from "./provider-breaker";
 import { ledgerReservation, tiingoAvailable, twelveDataAvailable, twelveDataBudgetView, twelveDataMinuteReadyDelayMs } from "./reservation";
 import { DEFERRED_MAX_ATTEMPTS, DeferredQueue } from "./deferred-queue";
@@ -1911,9 +1914,9 @@ export class App {
         spent,
         // Two-tier braking, tier 2 (WS4/WS5): a provider 429 is the authoritative
         // cross-device "out of credits" signal, so trip its circuit breaker here.
-        onTwelveData429: () => recordTwelveData429(Date.now()),
+        onTwelveData429: () => this.armTwelveData429(),
         onTwelveDataSuccess: () => recordTwelveDataSuccess(),
-        onTiingo429: () => recordTiingo429(Date.now()),
+        onTiingo429: () => this.armTiingo429(),
       });
       const fetchBars = makePriceBarFetcher({
         apiKey: config.apiKey,
@@ -2062,9 +2065,9 @@ export class App {
       refundTiingo: (n) => reservation.release("tiingo", n, Date.now()),
       log: (message) => this.pollLog("graph", message),
       spent,
-      onTwelveData429: () => recordTwelveData429(Date.now()),
+      onTwelveData429: () => this.armTwelveData429(),
       onTwelveDataSuccess: () => recordTwelveDataSuccess(),
-      onTiingo429: () => recordTiingo429(Date.now()),
+      onTiingo429: () => this.armTiingo429(),
     });
     const window = weekFxWindow(now);
     const fetchBars = makePriceBarFetcher({
@@ -2152,9 +2155,9 @@ export class App {
       refundTiingo: (n) => reservation.release("tiingo", n, Date.now()),
       log: (message) => this.pollLog("graph", message),
       spent,
-      onTwelveData429: () => recordTwelveData429(Date.now()),
+      onTwelveData429: () => this.armTwelveData429(),
       onTwelveDataSuccess: () => recordTwelveDataSuccess(),
-      onTiingo429: () => recordTiingo429(Date.now()),
+      onTiingo429: () => this.armTiingo429(),
     });
     const fetchBars = makePriceBarFetcher({
       apiKey: config.apiKey,
@@ -2201,12 +2204,16 @@ export class App {
       this.pollLog("primary", "Login warm-up: quote fetch failed; caches left as-is.", "warn");
       return 0;
     }
+    // A 429 on the warm-up's Twelve Data pass arms the breaker so the
+    // reconciliation log accounts for the throttle on this path too.
+    if (report.error?.status === 429) this.armTwelveData429();
     const list = (xs: string[]): string => (xs.length ? xs.join(", ") : "none");
     this.pollLog(
       "primary",
-      `Login warm-up (Twelve Data): fetched ${report.fetched.length} [${list(report.fetched)}], ` +
+      `Login warm-up (Twelve Data): made ${report.apiCalls} API call(s) costing ${report.creditsSpent} credit(s) — ` +
+        `fetched ${report.fetched.length} [${list(report.fetched)}], ` +
         `served ${report.servedFresh.length} from cache, deferred ${report.deferred.length} [${list(report.deferred)}]. ` +
-        `Budget left: ${report.minuteRemaining}/min, ${report.dayRemaining}/day.` +
+        `Budget left: ${report.minuteRemaining}/min, ${report.dayRemaining}/day.${this.twelveDataFreezeSuffix()}` +
         (report.error ? ` Non-fatal error: ${report.error.message}.` : ""),
     );
     return report.fetched.length;
@@ -2243,12 +2250,15 @@ export class App {
       reserveCredits: STARTUP_TIINGO_RESERVE,
       sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
     });
+    // Arm the breaker when the warm-up's Tiingo rapid-fire is throttled.
+    if (fallback.error?.status === 429) this.armTiingo429();
     const b = fallback.budget;
     this.pollLog(
       "fallback",
-      `Login warm-up (Tiingo rapid-fire): filled ${fallback.tiingoSymbols.length} ` +
+      `Login warm-up (Tiingo rapid-fire): made ${fallback.apiCalls} API call(s) costing ${fallback.creditsSpent} credit(s) — ` +
+        `filled ${fallback.tiingoSymbols.length} ` +
         `[${fallback.tiingoSymbols.length ? fallback.tiingoSymbols.join(", ") : "none"}] of ${symbols.length} outdated. ` +
-        `Budget: ${b.hourUsed}/${b.hourLimit} this hour, ${b.dayUsed}/${b.dayLimit} today.` +
+        `Budget: ${b.hourUsed}/${b.hourLimit} this hour, ${b.dayUsed}/${b.dayLimit} today.${this.tiingoBudgetSuffix()}` +
         (fallback.error ? ` Error: ${fallback.error.message}.` : ""),
     );
     return fallback.tiingoSymbols.length;
@@ -4301,6 +4311,10 @@ export class App {
 
     if (network) {
       const r = quoteLoad.report;
+      // The main quote pass is the most common place to hit the per-minute cap,
+      // so arm the breaker here too — this is where "why did I burn 40/40?" is
+      // usually answered, and it keeps the reconciliation log honest.
+      if (r.error?.status === 429) this.armTwelveData429();
       const list = (xs: string[]): string => (xs.length ? xs.join(", ") : "none");
       this.pollLog(
         "fx",
@@ -4310,9 +4324,10 @@ export class App {
         "primary",
         viaTiingo
           ? "Primary (Twelve Data) skipped — routing this pull through the backup provider; quotes served from cache."
-          : `Primary (Twelve Data): fetched ${r.fetched.length} [${list(r.fetched)}], ` +
+          : `Primary (Twelve Data): made ${r.apiCalls} API call(s) costing ${r.creditsSpent} credit(s) — ` +
+              `fetched ${r.fetched.length} [${list(r.fetched)}], ` +
               `served ${r.servedFresh.length} from cache, deferred ${r.deferred.length} [${list(r.deferred)}]. ` +
-              `Budget left: ${r.minuteRemaining}/min, ${r.dayRemaining}/day.` +
+              `Budget left: ${r.minuteRemaining}/min, ${r.dayRemaining}/day.${this.twelveDataFreezeSuffix()}` +
               (r.error ? ` Non-fatal error: ${r.error.message}.` : ""),
         viaTiingo ? "info" : r.error ? "warn" : "good",
       );
@@ -4374,6 +4389,8 @@ export class App {
         sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
       });
       if (session !== this.sessionId) return quoteLoad.report;
+      // Arm the breaker when the Tiingo fallback itself is rate-limited.
+      if (fallback.error?.status === 429) this.armTiingo429();
       this.lastTiingoSymbols = fallback.tiingoSymbols;
       this.lastFallbackSymbols = fallback.fallbackSymbols;
       this.lastTiingoBudget = fallback.budget;
@@ -4392,8 +4409,9 @@ export class App {
       this.pollLog(
         "fallback",
         fallback.tiingoSymbols.length > 0
-          ? `Backup (Tiingo) filled ${fallback.tiingoSymbols.length} [${fallback.tiingoSymbols.join(", ")}]. ` +
-              `Budget: ${b.hourUsed}/${b.hourLimit} this hour, ${b.dayUsed}/${b.dayLimit} today.` +
+          ? `Backup (Tiingo) made ${fallback.apiCalls} API call(s) costing ${fallback.creditsSpent} credit(s) — ` +
+              `filled ${fallback.tiingoSymbols.length} [${fallback.tiingoSymbols.join(", ")}]. ` +
+              `Budget: ${b.hourUsed}/${b.hourLimit} this hour, ${b.dayUsed}/${b.dayLimit} today.${this.tiingoBudgetSuffix()}` +
               (fallback.error ? ` Error: ${fallback.error.message}.` : "")
           : fallback.error
             ? `Backup (Tiingo) needed but unreachable: ${fallback.error.message}.`
@@ -4424,13 +4442,16 @@ export class App {
           forceMarketFetch: true,
         });
         if (session !== this.sessionId) return quoteLoad.report;
+        // Arm the breaker when the reverse TD safety net is throttled.
+        if (tdNet.report.error?.status === 429) this.armTwelveData429();
         const filledNow = this.absorbSafetyNet(quoteLoad, tdNet);
         const list = (xs: readonly string[]): string => (xs.length ? xs.join(", ") : "none");
         this.pollLog(
           "primary",
           `Tiingo→Twelve Data safety net: ${safetyNet.reason} ` +
-            `Filled ${filledNow.length} [${list(filledNow)}]. ` +
-            `Budget left: ${tdNet.report.minuteRemaining}/min, ${tdNet.report.dayRemaining}/day.` +
+            `Made ${tdNet.report.apiCalls} API call(s) costing ${tdNet.report.creditsSpent} credit(s); ` +
+            `filled ${filledNow.length} [${list(filledNow)}]. ` +
+            `Budget left: ${tdNet.report.minuteRemaining}/min, ${tdNet.report.dayRemaining}/day.${this.twelveDataFreezeSuffix()}` +
             (tdNet.report.error ? ` Non-fatal error: ${tdNet.report.error.message}.` : ""),
         );
       } else if (viaTiingo) {
@@ -5605,14 +5626,14 @@ export class App {
     if (suspectCount > 0) settledParts.push(`${suspectCount} suspect`);
     const tiingoTail =
       tiingo.dayUsed > 0 || tiingo.hourUsed > 0
-        ? `; backup ${tiingo.hourUsed}/${tiingo.hourLimit} this hour · ${tiingo.dayUsed}/${tiingo.dayLimit} today`
+        ? `; backup ${tiingo.hourUsed}/${tiingo.hourLimit} this hour · ${tiingo.dayUsed}/${tiingo.dayLimit} today${this.tiingoBudgetSuffix()}`
         : "";
     const finishLevel: PollLogLevel =
       report.failed.length > 0 || suspectCount > 0 ? "error" : report.deferred.length > 0 ? "warn" : "good";
     this.pollLog(
       "schedule",
       `Round complete (${effectiveKind}${promoted ? ", promoted from auto" : ""}): ${settledParts.join(", ")}. ` +
-        `Budget left ${report.minuteRemaining}/min · ${report.dayRemaining}/day${tiingoTail}. ` +
+        `Budget left ${report.minuteRemaining}/min · ${report.dayRemaining}/day${this.twelveDataFreezeSuffix()}${tiingoTail}. ` +
         `Next auto-refresh in ~${Math.round(delayMs / 1000)}s` +
         `${report.deferred.length > 0 && !promoted ? " (burst to catch up)" : ""}.`,
       finishLevel,
@@ -5805,6 +5826,91 @@ export class App {
     } catch {
       /* logging is best-effort */
     }
+  }
+
+  /** A short local `HH:MM` stamp for a freeze-reset time in a log line. */
+  private static clockHM(at: number): string {
+    const d = new Date(at);
+    const p = (n: number): string => `${n}`.padStart(2, "0");
+    return `${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  /**
+   * Record a Tiingo `429` **and** log the reconciliation, so the user can always
+   * see in the log *why* the Tiingo hourly budget jumps to full (the user's "it
+   * can never happen that I cannot see why credits add up to 40"). The shared
+   * quota being spent is invisible to this device's local ledger — only the
+   * provider's own `429` reveals it — so the line spells out both numbers: what
+   * *this* device counted versus the cap it now reads as.
+   */
+  private armTiingo429(): void {
+    const now = Date.now();
+    const ledger = tiingoLedgerView(now);
+    const caps = tiingoBudgetView(now);
+    const info = recordTiingo429(now);
+    if (info.alreadyFrozen) return; // already logged when the freeze first armed
+    this.pollLog(
+      "budget",
+      `Tiingo 429 — its shared hourly quota is spent. Circuit breaker frozen until ` +
+        `${App.clockHM(info.frozenUntil)}; this freezes all Tiingo calls until then — Twelve Data is ` +
+        `unaffected, so calls reroute there. Its hourly budget now reads as full (${caps.hourLimit}/${caps.hourLimit}). This device's ` +
+        `own ledger had only counted ${ledger.hourUsed}/${caps.hourLimit} this hour (${ledger.dayUsed}/${caps.dayLimit} ` +
+        `today) — the rest of the shared quota was spent by another device/tab on the same key.`,
+      "warn",
+    );
+  }
+
+  /**
+   * Record a Twelve Data `429` **and** log why its per-minute budget reads 0 —
+   * the same transparency the user asked for on the TD side. The freeze is short
+   * (60s, 2 min on a second consecutive strike), so the line names the wait.
+   */
+  private armTwelveData429(): void {
+    const now = Date.now();
+    const info = recordTwelveData429(now);
+    if (info.alreadyFrozen) return; // already logged when the freeze first armed
+    const secs = Math.max(1, Math.round((info.frozenUntil - now) / 1000));
+    this.pollLog(
+      "budget",
+      `Twelve Data 429 — over its per-minute/day quota${info.escalated ? " (second consecutive strike — extended freeze)" : ""}. ` +
+        `Circuit breaker frozen for ~${secs}s; this freezes all Twelve Data calls (0/min) until it lifts — Tiingo is unaffected, so calls reroute there.`,
+      "warn",
+    );
+  }
+
+  /**
+   * A suffix that makes a printed Tiingo budget line self-explanatory: it states
+   * *why* the count is at (or near) the cap — a 429 freeze, the hourly cap, or
+   * the daily cap — so a reader never sees "40/40" without the reason on the same
+   * line. Empty when there is nothing notable to add.
+   */
+  private tiingoBudgetSuffix(now = Date.now()): string {
+    const until = tiingoFreezeUntil(now);
+    const caps = tiingoBudgetView(now);
+    if (until !== null) {
+      const ledger = tiingoLedgerView(now);
+      return (
+        ` (Tiingo frozen by a 429 until ${App.clockHM(until)} — its shared hourly quota is spent, so it reads as ` +
+        `full; this device's own ledger counted ${ledger.hourUsed}/${caps.hourLimit} this hour · ` +
+        `${ledger.dayUsed}/${caps.dayLimit} today, the rest went to another device/tab on the shared key)`
+      );
+    }
+    const ledger = tiingoLedgerView(now);
+    if (ledger.hourUsed >= caps.hourLimit) {
+      return ` (this device's hourly Tiingo cap of ${caps.hourLimit} is reached — resets at the top of the hour)`;
+    }
+    if (ledger.dayUsed >= caps.dayLimit) {
+      return ` (this device's daily Tiingo cap of ${caps.dayLimit} is reached — resets at ET midnight)`;
+    }
+    return "";
+  }
+
+  /** Like {@link tiingoBudgetSuffix}, but for the Twelve Data per-minute freeze. */
+  private twelveDataFreezeSuffix(now = Date.now()): string {
+    const until = twelveDataFreezeUntil(now);
+    if (until === null) return "";
+    const secs = Math.max(1, Math.round((until - now) / 1000));
+    return ` (Twelve Data frozen by a 429 — reads 0/min until the breaker lifts in ~${secs}s)`;
   }
 
   /**
@@ -6274,9 +6380,9 @@ export class App {
         log: (message) => this.pollLog("graph", message),
         spent,
         // Trip/clear the per-provider 429 circuit breaker at the meter (WS4/WS5).
-        onTwelveData429: () => recordTwelveData429(Date.now()),
+        onTwelveData429: () => this.armTwelveData429(),
         onTwelveDataSuccess: () => recordTwelveDataSuccess(),
-        onTiingo429: () => recordTiingo429(Date.now()),
+        onTiingo429: () => this.armTiingo429(),
       }),
     });
 

@@ -350,7 +350,17 @@ To stay comfortably inside that budget the app (`src/cache.ts`, `src/quotes.ts`)
    last night's pulls never eat into this morning's allowance
    (`creditsSpentToday` / `startOfUtcDay` in `src/cache.ts`).
 3. **Retries a 429/5xx/network blip** with capped exponential backoff (honouring
-   any `Retry-After` header) before giving up.
+   any `Retry-After` header) before giving up. On a confirmed **`429` the
+   circuit breaker freezes only that provider** — because the local credit ledger
+   is only an optimistic guess on a shared key, the provider's own authoritative
+   "out of credits" freezes *every* call to *that* provider (Twelve Data **or**
+   Tiingo, whichever said no) until the freeze lifts, while the other provider is
+   left free so a call to an over-quota provider is rerouted there rather than
+   silently lost (it waits only when both are frozen).
+   A rejected call also **refunds its reserved credits**, so a failed/over-quota
+   pull never silently counts toward the cap — and the polling log records each
+   call with the exact credits it cost (`provider-breaker.ts`, the per-call
+   "made N API call(s) costing M credit(s)" lines).
 4. **Degrades, never dead-ends**: whatever can't be fetched falls back to cached
    / exported values. The ordinary "still filling in over a few burst rounds"
    case is shown as the live update indicator's progress count rather than a
