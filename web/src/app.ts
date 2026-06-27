@@ -4069,8 +4069,8 @@ export class App {
       // unreachable). Cleared to null on a clean round, so the banner/toast only
       // shout while the backup is genuinely down.
       this.lastTiingoError = fallback.error;
-      // A Tiingo 429 likewise trips EVERYTHING — freeze both providers until its
-      // hourly bucket resets, rather than letting the app keep spending elsewhere.
+      // A Tiingo 429 freezes only Tiingo — until its hourly bucket resets — so
+      // the app keeps using Twelve Data rather than losing those calls.
       if (fallback.error?.status === 429) this.armTiingo429();
       const b = fallback.budget;
       this.pollLog(
@@ -5384,8 +5384,8 @@ export class App {
     this.pollLog(
       "budget",
       `Tiingo 429 — its shared hourly quota is spent. Circuit breaker frozen until ` +
-        `${App.clockHM(info.frozenUntil)}; this trips EVERYTHING — no further Tiingo *or* Twelve Data calls ` +
-        `until then. Its hourly budget now reads as full (${caps.hourLimit}/${caps.hourLimit}). This device's ` +
+        `${App.clockHM(info.frozenUntil)}; this freezes all Tiingo calls until then — Twelve Data is ` +
+        `unaffected, so calls reroute there. Its hourly budget now reads as full (${caps.hourLimit}/${caps.hourLimit}). This device's ` +
         `own ledger had only counted ${ledger.hourUsed}/${caps.hourLimit} this hour (${ledger.dayUsed}/${caps.dayLimit} ` +
         `today) — the rest of the shared quota was spent by another device/tab on the same key.`,
       "warn",
@@ -5405,7 +5405,7 @@ export class App {
     this.pollLog(
       "budget",
       `Twelve Data 429 — over its per-minute/day quota${info.escalated ? " (second consecutive strike — extended freeze)" : ""}. ` +
-        `Circuit breaker frozen for ~${secs}s; this trips EVERYTHING — both Twelve Data (0/min) and Tiingo are held until it lifts.`,
+        `Circuit breaker frozen for ~${secs}s; this freezes all Twelve Data calls (0/min) until it lifts — Tiingo is unaffected, so calls reroute there.`,
       "warn",
     );
   }
