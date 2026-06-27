@@ -473,6 +473,8 @@ describe("runTiingoFallback — budget enforcement via central readBudget", () =
     expect(out.error!.message).toContain("budget exhausted");
     expect(out.error!.message).toContain("Central safety net");
     expect(out.error!.retryAfterMs).toBeGreaterThan(0);
+    // Tagged 429 so describeTiingoError reports "credits used up", not "unreachable".
+    expect(out.error!.status).toBe(429);
   });
 });
 

@@ -388,10 +388,13 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
         // prevented any spend. Surface this clearly so fallback pulls never fall
         // under the radar — the caller logs it and the central safety net
         // (planTwelveDataSafetyNet) catches the unfilled holes on Twelve Data.
+        // Tagged HTTP 429 because this *is* the over-quota case (the hourly/daily
+        // credit cap is spent), so `describeTiingoError` reports "credits look
+        // used up" rather than the misleading "unreachable; check the Worker".
         error = new PriceError(
           `Tiingo budget exhausted — ${candidates.length} symbol(s) needed but blocked by limits. ` +
             "Central safety net will catch remaining holes on Twelve Data.",
-          { retryable: true, retryAfterMs: msUntilNextHour(now) },
+          { status: 429, retryable: true, retryAfterMs: msUntilNextHour(now) },
         );
       }
     }
