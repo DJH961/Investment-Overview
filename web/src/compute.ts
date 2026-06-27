@@ -30,7 +30,7 @@ import type { ExportCashflow, ExportHolding, MobileExport } from "./types";
 import { buildCalculatorData, type CalcData } from "./calculator";
 import type { DailyClose } from "./value-history";
 import { isMoneyMarketHolding } from "./money-market";
-import { LIVE_PRICE_MAX_STALENESS_MS, isUsMarketOpen } from "./market-hours";
+import { LIVE_PRICE_MAX_STALENESS_MS, isUsMarketOpen, latestSettledSessionDate, sessionCloseMs } from "./market-hours";
 import { holdingFreshness, type RowFreshness } from "./freshness";
 import { providerLimits } from "./provider-limits";
 
@@ -1099,6 +1099,10 @@ export function buildDashboard(
       ? opts.liveStalenessMs
       : LIVE_PRICE_MAX_STALENESS_MS;
   const marketOpenNow = isUsMarketOpen(now);
+  // The epoch-ms of the latest settled session close — an observation at or after
+  // this timestamp represents "today's price" regardless of the user's local
+  // calendar day (fixes false "aged" after midnight for non-US timezones).
+  const settledCloseMs = sessionCloseMs(latestSettledSessionDate(now));
 
   const holdingContexts: HoldingAggregationContext[] = data.holdings.map((h) => {
     const view = buildHolding(
@@ -1120,6 +1124,7 @@ export function buildDashboard(
       nowMs: now.getTime(),
       marketOpen: marketOpenNow && view.priceMarketOpen !== false,
       liveWindowMs: liveStalenessMs,
+      lastSettledCloseMs: settledCloseMs,
     });
     // A holding with no value at all (no price, FX, or fallback) is dropped from
     // totals; one valued from the export fallback is counted but flagged stale.
