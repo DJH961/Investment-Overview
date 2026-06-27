@@ -625,16 +625,18 @@ describe("planStartupRefresh", () => {
     });
   });
 
-  it("routes the whole book via Tiingo when the spare budget covers it", () => {
-    // 12 outdated, 40 remaining, reserve 5 ⇒ usable 35 ≥ 12 ⇒ all Tiingo.
+  it("leads with Twelve Data and spills only the overflow to Tiingo", () => {
+    // 12 outdated, 40 remaining, reserve 5 ⇒ usable 35; Twelve leads the first 8,
+    // so Tiingo covers only the 4-symbol overflow — never the whole book.
     expect(planStartupRefresh({ outdatedCount: 12, tiingoRemaining: 40, tiingoAvailable: true })).toEqual({
-      route: "tiingo",
-      tiingoBudget: 12,
+      route: "split",
+      tiingoBudget: 4,
     });
   });
 
-  it("splits across Twelve + Tiingo when the set exceeds the spare budget", () => {
-    // 20 outdated, 12 remaining, reserve 5 ⇒ usable 7 < 20 ⇒ split, Tiingo gets 7.
+  it("caps the Tiingo overflow at the usable spare budget", () => {
+    // 20 outdated, 12 remaining, reserve 5 ⇒ usable 7; overflow 12 but only 7
+    // usable ⇒ split, Tiingo gets 7 (Twelve Data leads the rest).
     expect(planStartupRefresh({ outdatedCount: 20, tiingoRemaining: 12, tiingoAvailable: true })).toEqual({
       route: "split",
       tiingoBudget: 7,
@@ -670,10 +672,11 @@ describe("planStartupRefresh", () => {
         route: "twelve",
         tiingoBudget: 0,
       });
-      // 40 outdated > 30/min ⇒ worth spending Tiingo again (reserve 5 ⇒ usable 35).
+      // 40 outdated > 30/min ⇒ Tiingo covers the 10-symbol overflow (reserve 5 ⇒
+      // usable 35, so the whole overflow fits); Twelve Data leads the first 30.
       expect(planStartupRefresh({ outdatedCount: 40, tiingoRemaining: 40, tiingoAvailable: true })).toEqual({
         route: "split",
-        tiingoBudget: 35,
+        tiingoBudget: 10,
       });
     } finally {
       resetProviderLimits();

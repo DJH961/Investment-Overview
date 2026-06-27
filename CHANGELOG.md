@@ -14,6 +14,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.14.3] — 2026-06-27
+
+### Fixed
+
+- **The startup quick-refresh no longer routes the *whole* outdated book through
+  the single Tiingo pipe.** On a badly-stale re-open with a valid Twelve Data key
+  configured, `planStartupRefresh` used to return a Tiingo-only route whenever the
+  spare Tiingo budget covered the entire outdated set (any set larger than the
+  Twelve Data per-minute lead, e.g. 9–~35 symbols). That set `viaTiingo: true`,
+  which blanked the Twelve Data key for the round and sent every symbol — quotes
+  **and** the EUR/USD FX bar that now rides the same pipe (see 4.14.2) — down the
+  scarce, hourly-capped Tiingo backup, while a perfectly good free Twelve Data
+  minute sat idle. This is the *only* non-button place (other than a genuinely
+  missing Twelve Data key or the explicit "Try the backup provider" button) that
+  silently collapsed to the single provider. The startup refresh now **always
+  leads with the Twelve Data primary and spills only the genuine overflow to
+  Tiingo** (the existing `split` route), matching the dual-pipe orchestration the
+  data pipeline is built around — instant paint is preserved (a stale book's
+  deferred symbols are fallback-eligible in the same round) while the first ~8
+  symbols' worth of Tiingo credits are saved every re-open. The dead Tiingo-only
+  startup route and its `viaTiingo` dispatch branch were removed.
+
+### Note
+
+- The three Settings → Maintenance actions (**hard refresh**, **clear cache &
+  refresh**, **regenerate 1D/1W**) were verified to already use the correct
+  dual-pipe orchestration (Twelve Data first, Tiingo overflow) and were *not* the
+  source of the single-pipe behaviour; the culprit was the concurrent startup
+  quick-refresh fixed above.
+
 ## [4.14.2] — 2026-06-27
 
 ### Changed

@@ -3289,16 +3289,17 @@ export class App {
     void this.maybeRefreshBlob(session);
     this.installVisibilityRefresh(session);
     // Startup quick-refresh: when prices are badly outdated, repopulate the book
-    // fast. Tiingo answers a whole batch in a single request with no per-minute
-    // cap — far faster than the Twelve Data primary, which trickles ~8 symbols/min
-    // — so a big outdated set routes through Tiingo. But that scarcer budget is
-    // protected by two rules (see {@link planStartupRefresh}): it never spends the
-    // last few Tiingo credits, and it never fires for a small (≤8) outdated set the
-    // primary can clear within a minute. A set too large for the spare budget is
-    // split across both providers; a spent (or unconfigured) Tiingo budget forces
-    // the Twelve Data primary instead. Throttled to ~once/hour via the persisted
-    // stamp (set only when Tiingo is actually used) so it doesn't burn the budget
-    // on every re-open. The subsequent scheduled refreshes (armed via
+    // fast. The Twelve Data primary always leads (it clears its full per-minute
+    // set quickly and for free); Tiingo — which answers a whole batch in a single
+    // request with no per-minute cap — only fills the overflow beyond that lead,
+    // never the whole book through one pipe. That scarcer budget is protected by
+    // two rules (see {@link planStartupRefresh}): it never spends the last few
+    // Tiingo credits, and it never fires for a small (≤8) outdated set the primary
+    // can clear within a minute. A set too large for the spare budget is split
+    // across both providers; a spent (or unconfigured) Tiingo budget forces the
+    // Twelve Data primary alone. Throttled to ~once/hour via the persisted stamp
+    // (set only when Tiingo is actually used) so it doesn't burn the budget on
+    // every re-open. The subsequent scheduled refreshes (armed via
     // {@link scheduleNext}) carry no options, so they return to the normal
     // Twelve-Data-first cadence.
     const tiingoState = readTiingoState();
@@ -3323,12 +3324,11 @@ export class App {
         tiingoRemaining: tiingoRemainingCredits(Date.now()),
         tiingoAvailable,
       });
-      if (plan.route === "tiingo") {
-        quickOpts = { viaTiingo: true, tiingoReserve: STARTUP_TIINGO_RESERVE };
-        noteQuickRefresh(Date.now());
-      } else if (plan.route === "split") {
+      if (plan.route === "split") {
         // Force the Twelve Data primary (it clears the largest ~8 holdings), then
-        // let the reserved Tiingo fallback fill the rest within its spare budget.
+        // let the reserved Tiingo fallback fill the overflow within its spare
+        // budget. The whole book never rides the single Tiingo pipe — Twelve Data
+        // always leads, Tiingo only spills (see {@link planStartupRefresh}).
         quickOpts = { force: true, tiingoReserve: STARTUP_TIINGO_RESERVE };
         noteQuickRefresh(Date.now());
       } else {

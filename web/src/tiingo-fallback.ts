@@ -482,7 +482,7 @@ export function noteQuickRefresh(now: number, storage?: StorageLike | null): voi
  */
 export const STARTUP_TIINGO_RESERVE = 5;
 
-export type StartupRefreshRoute = "twelve" | "tiingo" | "split";
+export type StartupRefreshRoute = "twelve" | "split";
 
 export interface StartupRefreshPlan {
   /** Which provider(s) the startup quick-refresh should use this round. */
@@ -503,11 +503,16 @@ export interface StartupRefreshPlan {
  *    threshold therefore tracks the configured `twelveDataPerMinute` limit
  *    ({@link FREE_TIER}.creditsPerMinute) rather than a hard-coded number.
  *
- * Given those it routes everything via **Tiingo** when the usable budget covers
- * the whole outdated set, a **split** (Tiingo for as many as the usable budget
- * allows, Twelve Data for the rest) when the set is larger but some budget
- * remains, and everything via **Twelve Data** when no usable budget is left (a
- * split is impossible) or Tiingo isn't configured.
+ * Given those, the quick-refresh **always leads with the Twelve Data primary**
+ * (it clears its full per-minute set fast and for free) and only ever asks
+ * Tiingo to cover the genuine **overflow** beyond that lead — a **split**. It
+ * never wires the *whole* book through the scarce, hourly-capped Tiingo pipe
+ * while a perfectly good Twelve Data minute sits idle (that single-provider
+ * detour quietly burned Tiingo credits a free Twelve Data lead would have
+ * covered, and is the orchestration the dual-pipe data pipeline is built to
+ * avoid). It falls back to **Twelve Data** alone when there is no usable Tiingo
+ * budget (a split is impossible), the outdated set is small, or Tiingo isn't
+ * configured.
  */
 export function planStartupRefresh(args: {
   outdatedCount: number;
@@ -525,10 +530,10 @@ export function planStartupRefresh(args: {
   const usable = Math.max(0, args.tiingoRemaining - reserve);
   // No usable Tiingo budget ⇒ a split is impossible ⇒ wire everything to Twelve.
   if (usable <= 0) return allTwelve;
-  // The whole outdated set fits within the usable budget ⇒ one capped Tiingo pull.
-  if (usable >= args.outdatedCount) return { route: "tiingo", tiingoBudget: args.outdatedCount };
-  // Otherwise split: Tiingo takes what the budget allows, Twelve Data the rest.
-  return { route: "split", tiingoBudget: usable };
+  // Twelve Data leads its free per-minute set; Tiingo takes only the overflow
+  // beyond that lead, in parallel — never the whole book through one pipe.
+  const overflow = Math.max(0, args.outdatedCount - minOutdated);
+  return { route: "split", tiingoBudget: Math.min(usable, overflow) };
 }
 
 /** Which provider the login warm-up routes its quote pull through. */
