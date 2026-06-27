@@ -3347,10 +3347,12 @@ export class App {
 
   /**
    * Arm an inactivity timer that locks the session after
-   * {@link AppConfig.autoLockMinutes} minutes without interaction. Genuine
-   * interaction — pointer/touch presses *and movement*, wheel, scroll, key,
-   * typing and clicks — resets the countdown, so the lock truly only bites when
-   * the user has actually been away. A value of `0` disables the feature. Safe to
+   * {@link AppConfig.autoLockMinutes} minutes without interaction. Only
+   * deliberate control interactions — a click/tap landing on an actual control,
+   * a form-control change, or keyboard input (see {@link isDeliberateActivity}) —
+   * reset the countdown; passive movement, wheel, scroll and stray taps on blank
+   * chrome do not, so the lock truly only bites when the user has actually been
+   * away. A value of `0` disables the feature. Safe to
    * call repeatedly — it tears down any prior wiring first, so a Settings change
    * re-arms with the new timeout.
    *
