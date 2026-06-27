@@ -360,7 +360,7 @@ export function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElemen
     );
   }
   if (o.eurUsdSource === "eod") {
-    stamps.push(h("span", { class: "fx-box-eod" }, ["end-of-day FX"]));
+    stamps.push(h("span", { class: "fx-box-eod" }, ["EOD FX"]));
   }
 
   const rateStat = h("div", { class: "fx-box-stat" }, [
