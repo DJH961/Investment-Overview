@@ -43,6 +43,7 @@ import {
   WEB_HOURLY_CAP,
 } from "./tiingo-gate";
 import { tiingoFrozen } from "./provider-breaker";
+import { efficiencySpillEligible } from "./provider-fanout";
 import { ledgerReservation, type Reservation } from "./reservation";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -370,12 +371,28 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
   // session appears), so a NAV and a stock are filled by one identical path.
   try {
     const candidates: string[] = [];
+    // Market-hours efficiency spill — the whole policy is owned by Pillar 5's
+    // provider-spilling authority (`efficiencySpillEligible` in
+    // `provider-fanout.ts`), so it can be tuned in one place alongside the
+    // login/manual `planFanout` spill. In short: when the round *originally* asked
+    // for a big sleeve (`symbols` is the whole requested set, e.g. all 17), its
+    // Twelve Data deferred overflow is spilled to Tiingo in parallel rather than
+    // left to trickle through the per-minute cap.
+    const requestedCount = symbols.length;
+    const deferredSet = new Set(report.deferred);
     for (const symbol of symbols) {
       if (suppressedByNoNewer(symbol)) continue;
       const q = quotes.get(symbol);
       const held = q?.valueDate ?? null;
       const primaryFailed = primaryFellShort.has(symbol) || !q || q.price === null;
-      if (marketSymbolEligible({ heldDate: held, expectedDate: expected, primaryFailed })) {
+      const eligible = marketSymbolEligible({ heldDate: held, expectedDate: expected, primaryFailed });
+      const efficiencyEligible = efficiencySpillEligible({
+        symbol,
+        marketOpen,
+        requestedCount,
+        deferred: deferredSet,
+      });
+      if (eligible || efficiencyEligible) {
         candidates.push(symbol);
       }
     }
