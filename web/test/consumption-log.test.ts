@@ -116,6 +116,72 @@ describe("consumption-log summariser", () => {
     expect(s.graph.flags.some((f) => f.level === "info" && f.message.includes("2 day(s)"))).toBe(true);
     expect(s.graph.perfect).toBe(false);
   });
+
+  it("reports the 1W graph NAV sleeve and 1D/1W FX anchor for a NAV + USD book", () => {
+    const s = summariseConsumption(
+      model({ fxRateEurUsd: new Decimal("1.1"), fxRateEurUsdSessionClose: new Decimal("1.1") }, [
+        holding("VMFXX", {
+          priceType: "nav",
+          priceSymbol: "VMFXX",
+          nativeCurrency: "USD",
+          priceNative: new Decimal("1"),
+          shares: new Decimal("100"),
+          valueEur: new Decimal("90"),
+          valueUsd: new Decimal("100"),
+        }),
+      ]),
+    );
+    expect(s.graph.flags.some((f) => f.level === "info" && /1W graph NAV sleeve: all 1/.test(f.message))).toBe(true);
+    expect(s.graph.flags.some((f) => f.level === "info" && /1D\/1W graph FX/.test(f.message))).toBe(true);
+    expect(s.graph.perfect).toBe(true);
+  });
+
+  it("warns when a NAV fund is pinned flat in the 1W graph for want of a price", () => {
+    const s = summariseConsumption(
+      model({ fxRateEurUsd: new Decimal("1.1"), fxRateEurUsdSessionClose: new Decimal("1.1") }, [
+        holding("BADNAV", {
+          priceType: "nav",
+          priceSymbol: "BADNAV",
+          nativeCurrency: "USD",
+          priceNative: null,
+          shares: new Decimal("100"),
+          valueEur: new Decimal("90"),
+          valueUsd: new Decimal("100"),
+        }),
+      ]),
+    );
+    expect(s.graph.flags.some((f) => f.level === "warn" && /1W graph NAV sleeve.*pinned them flat/.test(f.message))).toBe(true);
+    expect(s.graph.perfect).toBe(false);
+    expect(s.needed.some((n) => n.includes("1W graph") && n.includes("BADNAV"))).toBe(true);
+  });
+
+  it("errors when the 1D/1W graph EUR line has no FX rate for a USD book", () => {
+    const s = summariseConsumption(
+      model({ eurUsdSource: "none", totalValueUsd: null, fxRateEurUsd: null }, [
+        holding("AAPL", { nativeCurrency: "USD" }),
+      ]),
+    );
+    expect(s.graph.flags.some((f) => f.level === "error" && /1D\/1W graph FX: no EUR\/USD rate/.test(f.message))).toBe(true);
+    expect(s.needed).toContain("an EUR/USD rate for the 1D/1W graph EUR line");
+    expect(s.graph.perfect).toBe(false);
+  });
+
+  it("notes a missing settled session-close rate for the 1D/1W graph freeze", () => {
+    const s = summariseConsumption(
+      model({ fxRateEurUsd: new Decimal("1.1"), fxRateEurUsdSessionClose: null }, [
+        holding("AAPL", { nativeCurrency: "USD" }),
+      ]),
+    );
+    expect(s.graph.flags.some((f) => f.level === "info" && /no settled session-close EUR\/USD/.test(f.message))).toBe(true);
+    // A null session-close while the session is open is normal, not a fault.
+    expect(s.graph.perfect).toBe(true);
+  });
+
+  it("leaves the graph FX/NAV reports off for a EUR-only book with no NAV funds", () => {
+    const s = summariseConsumption(model({}, [holding("ASML"), holding("SAP")]));
+    expect(s.graph.flags).toEqual([]);
+    expect(s.graph.perfect).toBe(true);
+  });
 });
 
 describe("consumption-log persistence", () => {

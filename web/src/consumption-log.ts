@@ -275,7 +275,13 @@ function summariseCurrency(model: DashboardModel, needed: string[]): DomainConsu
   return { summary, perfect, flags };
 }
 
-/** What the overview value chart could read, and where it bridged/stopped. */
+/**
+ * What the overview value chart could read, and where it bridged/stopped. Also
+ * reports the two inputs unique to the live 1D/1W curves — the **NAV sleeve** the
+ * 1W graph re-marks from daily-NAV bars, and the **EUR/USD freeze anchor** the
+ * 1D/1W EUR line is drawn from — so a data gap on those short windows is surfaced
+ * explicitly rather than hidden behind the long-history chart's summary.
+ */
 function summariseGraph(model: DashboardModel, needed: string[]): DomainConsumption {
   const o = model.overview;
   const flags: ConsumptionFlag[] = [];
@@ -311,6 +317,13 @@ function summariseGraph(model: DashboardModel, needed: string[]): DomainConsumpt
     });
   }
 
+  // The live 1D/1W graphs read two extra inputs the long-history value chart does
+  // not — the **NAV sleeve** (1W) and the **EUR/USD freeze anchor** (1D + 1W) —
+  // so report explicitly what each had available, since a gap there is felt only
+  // on those short-window curves and is easy to miss otherwise.
+  const navIssue = summariseGraphNav(model, flags, needed);
+  const fxIssue = summariseGraphFx(model, flags, needed);
+
   let summary: string;
   if (tipDrawable) {
     summary = backfillDays > 0
@@ -319,8 +332,116 @@ function summariseGraph(model: DashboardModel, needed: string[]): DomainConsumpt
   } else {
     summary = "Value chart: incomplete book — no live tip, chart stops at the last export.";
   }
-  const perfect = tipDrawable && backfillDays === 0 && !o.liveDegradedReason && staleCount === 0;
+  const perfect =
+    tipDrawable && backfillDays === 0 && !o.liveDegradedReason && staleCount === 0 && !navIssue && !fxIssue;
   return { summary, perfect, flags };
+}
+
+/**
+ * Whether a NAV fund carries the inputs the 1W graph needs to re-mark it from its
+ * daily-NAV bars (a real price, a positive share count, a price symbol and both
+ * currency legs). A fund failing this is pinned flat in the week's base instead,
+ * so its NAV drift never reaches the curve — mirrors `buildIntradayAnchor`'s
+ * `pricedLot && priceType === "nav"` sleeve test. Returns true when the fund can
+ * be re-marked from its daily-NAV bars.
+ */
+function isNavRemarkable(h: HoldingView): boolean {
+  return (
+    h.priceNative !== null &&
+    !h.priceNative.isZero() &&
+    h.valueEur !== null &&
+    h.valueUsd !== null &&
+    (h.priceSymbol ?? "").length > 0
+  );
+}
+
+/**
+ * Report the **NAV portion of the 1W graph**: which NAV funds re-marked from their
+ * daily-NAV bars versus which had to be pinned flat (so the week shows no NAV
+ * drift for them). Returns true when a fund was pinned flat — a genuine gap that
+ * keeps the graph read from being perfect. The 1D graph leaves NAV funds flat by
+ * design (NAV strikes once a day), so this is a 1W-only concern.
+ */
+function summariseGraphNav(model: DashboardModel, flags: ConsumptionFlag[], needed: string[]): boolean {
+  const navFunds = model.holdings.filter((h) => h.priceType === "nav");
+  if (navFunds.length === 0) return false;
+
+  const flatNav = navFunds.filter((h) => !isNavRemarkable(h));
+  const staleNav = navFunds.filter((h) => isNavRemarkable(h) && h.valueIsStale);
+
+  if (flatNav.length > 0) {
+    flags.push({
+      level: "warn",
+      message: `1W graph NAV sleeve: ${flatNav.length} of ${navFunds.length} NAV fund(s) had no usable price/share count, so the week re-mark pinned them flat in the base and drew no NAV drift for them: ${joinCapped(flatNav.map((h) => h.symbol))}.`,
+    });
+    needed.push(`a NAV price for the 1W graph (${joinCapped(flatNav.map((h) => h.symbol), 4)})`);
+  } else {
+    flags.push({
+      level: "info",
+      message: `1W graph NAV sleeve: all ${navFunds.length} NAV fund(s) re-marked from their daily-NAV bars.`,
+    });
+  }
+  if (staleNav.length > 0) {
+    flags.push({
+      level: "info",
+      message: `1W graph NAV sleeve: ${staleNav.length} NAV fund(s) carry a stale (last-exported) value, so their week tip is carried, not freshly struck: ${joinCapped(staleNav.map((h) => h.symbol))}.`,
+    });
+  }
+  return flatNav.length > 0;
+}
+
+/**
+ * Report the **FX portion of the 1D/1W graphs**: what EUR/USD the EUR line is
+ * drawn from (the USD line is FX-free, since USD is the booked currency), and
+ * whether a settled session-close rate exists to freeze the EUR view to once the
+ * market shuts. Returns true when the EUR line could not be drawn at all (no rate)
+ * or read a coarse end-of-day rate — the gaps the user suspects on these curves.
+ * Skipped for a EUR-only book, where the graphs need no FX.
+ */
+function summariseGraphFx(model: DashboardModel, flags: ConsumptionFlag[], needed: string[]): boolean {
+  const o = model.overview;
+  const hasNonEur = model.holdings.some((h) => (h.nativeCurrency ?? "EUR").toUpperCase() !== "EUR");
+  if (!hasNonEur) return false;
+
+  if (o.eurUsdSource === "none" || o.fxRateEurUsd === null) {
+    flags.push({
+      level: "error",
+      message: "1D/1W graph FX: no EUR/USD rate, so the graphs' EUR line cannot be drawn (the FX-free USD line still draws).",
+    });
+    needed.push("an EUR/USD rate for the 1D/1W graph EUR line");
+    return true;
+  }
+
+  // A settled session-close rate is what the graphs freeze the EUR view to once
+  // the market is shut; without it the EUR line falls back (live capture → prior
+  // close → live rate) and can slide with overnight FX. Null while the session is
+  // still open is normal, so this is a note, not a fault.
+  if (o.fxRateEurUsdSessionClose === null) {
+    flags.push({
+      level: "info",
+      message: "1D/1W graph FX: no settled session-close EUR/USD captured, so once the market shuts the graphs' EUR view falls back (live capture → prior close → live rate) rather than freezing to the authoritative close.",
+    });
+  }
+
+  if (o.eurUsdSource === "eod") {
+    flags.push({
+      level: "warn",
+      message: "1D/1W graph FX: the EUR line reads the coarse keyless end-of-day rate (no intraday timestamp), so its market-day shape is approximate.",
+    });
+    return true;
+  }
+  if (o.eurUsdSource === "tiingo") {
+    flags.push({
+      level: "info",
+      message: "1D/1W graph FX: the EUR line reads the backup provider's rate (Tiingo), not the primary live spot.",
+    });
+    return false;
+  }
+  flags.push({
+    level: "info",
+    message: `1D/1W graph FX: the EUR line is anchored to the ${o.eurUsdSource === "cache" ? "cached" : "live"} EUR/USD spot.`,
+  });
+  return false;
 }
 
 /**
