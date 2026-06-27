@@ -15,14 +15,11 @@ import {
   buildLiveWeekCurve,
   instrumentedGraphRecorders,
   makeCapacitySplitBarFetcher,
-  makeDualFxFetcher,
+  makeFxFetcher,
   makePriceBarFetcher,
-  makeWindowFxFetcher,
   recordingBarFetcher,
-  recordingFxFetcher,
   sessionFxWindow,
   weekFxWindow,
-  withFxBackoff,
   withBarBackoff,
   cacheSeriesBackoff,
   type BackfillMeter,
@@ -154,16 +151,24 @@ describe("FX windows", () => {
   });
 });
 
-describe("makeWindowFxFetcher", () => {
-  it("pulls the FX track in one batched fxHistory request over the window", async () => {
-    const { calls, fetchImpl } = recordingFetch([
-      { date: "2026-06-23T00:00:00.000Z", close: 1.14 },
-    ]);
-    const fetchFx = makeWindowFxFetcher(
-      PRICE_PROXY,
-      { startDate: "2026-06-19", endDate: "2026-06-23" },
-      "1day",
-      fetchImpl,
+describe("makeFxFetcher (EUR/USD rides the unified price pipe)", () => {
+  it("is null when no pipe is configured", () => {
+    expect(makeFxFetcher(null)).toBeNull();
+    // A price fetcher with neither key nor proxy is null → FX is null too.
+    expect(makeFxFetcher(makePriceBarFetcher({ apiKey: "", proxyUrl: null }))).toBeNull();
+  });
+
+  it("routes EUR/USD to Tiingo's fxHistory route (1day cadence) on a Tiingo-only pipe", async () => {
+    const { calls, fetchImpl } = recordingFetch([{ date: "2026-06-23T00:00:00.000Z", close: 1.14 }]);
+    const fetchFx = makeFxFetcher(
+      makePriceBarFetcher({
+        apiKey: "", // Tiingo-only
+        proxyUrl: PRICE_PROXY,
+        param: "daily",
+        startDate: "2026-06-19",
+        endDate: "2026-06-23",
+        fetchImpl,
+      }),
     );
     const bars = await fetchFx!();
     expect(calls).toHaveLength(1);
@@ -174,168 +179,91 @@ describe("makeWindowFxFetcher", () => {
     expect(bars[0].value.toString()).toBe("1.14");
   });
 
-  it("is null (baseFx-only FX) when no price proxy is configured", () => {
-    expect(makeWindowFxFetcher(null, { startDate: "a", endDate: "b" }, "1day")).toBeNull();
+  it("routes EUR/USD to fxHistory at a 1hour cadence for the intraday (1D) pipe", async () => {
+    const { calls, fetchImpl } = recordingFetch([{ date: "2026-06-23T13:00:00.000Z", close: 1.1 }]);
+    const fetchFx = makeFxFetcher(
+      makePriceBarFetcher({
+        apiKey: "",
+        proxyUrl: PRICE_PROXY,
+        param: "intraday",
+        startDate: "2026-06-23",
+        endDate: "2026-06-23",
+        fetchImpl,
+      }),
+    );
+    await fetchFx!();
+    expect(calls[0]).toContain("fxHistory=eurusd");
+    expect(calls[0]).toContain("resampleFreq=1hour");
   });
 
-  it("falls back to Twelve Data forex when there is no proxy but a key is held", async () => {
+  it("pulls EUR/USD browser-direct from Twelve Data when there is no proxy but a key is held", async () => {
     const { calls, fetchImpl } = recordingFetch({ values: [{ datetime: "2026-06-23", close: "1.1" }] });
-    const fetchFx = makeWindowFxFetcher(null, { startDate: "2026-06-19", endDate: "2026-06-23" }, "1day", fetchImpl, undefined, {
-      apiKey: "KEY",
-    });
+    const fetchFx = makeFxFetcher(
+      makePriceBarFetcher({ apiKey: "KEY", proxyUrl: null, param: "daily", fetchImpl }),
+    );
     const bars = await fetchFx!();
-    // The EUR/USD forex series is pulled browser-direct (no Worker fxHistory).
     expect(calls.some((u) => u.includes("symbol=EUR%2FUSD") || u.includes("symbol=EUR/USD"))).toBe(true);
     expect(bars[0].value.toString()).toBe("1.1");
   });
 });
 
-describe("makeWindowFxFetcher — reservation gating (audit Flags 2, 3)", () => {
-  it("does not fire the Tiingo FX leg when its budget is spent/frozen; falls back to Twelve Data", async () => {
+describe("makeFxFetcher — Twelve-Data-first via the shared capacity split", () => {
+  it("serves EUR/USD from Twelve Data first when it has budget (no Tiingo fxHistory)", async () => {
     const { calls, fetchImpl } = recordingFetch({ values: [{ datetime: "2026-06-23", close: "1.1" }] });
-    // Tiingo budget 0 (frozen), Twelve Data has room.
-    const fetchFx = makeWindowFxFetcher(
-      PRICE_PROXY,
-      { startDate: "2026-06-19", endDate: "2026-06-23" },
-      "1day",
-      fetchImpl,
-      undefined,
-      { apiKey: "KEY", reservation: fakeReservation(8, 0).reservation },
+    // Twelve Data has room, Tiingo budget 0 (frozen).
+    const fetchFx = makeFxFetcher(
+      makePriceBarFetcher({
+        apiKey: "KEY",
+        proxyUrl: PRICE_PROXY,
+        param: "daily",
+        startDate: "2026-06-19",
+        endDate: "2026-06-23",
+        fetchImpl,
+        reservation: fakeReservation(8, 0).reservation,
+      }),
     );
     const bars = await fetchFx!();
-    // No Tiingo fxHistory pull was attempted; the Twelve Data forex leg served it.
+    // Twelve Data forex served it; no Tiingo fxHistory pull was attempted.
     expect(calls.some((u) => u.includes("fxHistory"))).toBe(false);
     expect(calls.some((u) => u.includes("symbol=EUR%2FUSD") || u.includes("symbol=EUR/USD"))).toBe(true);
     expect(bars[0].value.toString()).toBe("1.1");
   });
 
-  it("does not fire the Twelve Data FX fallback when its budget is spent/frozen", async () => {
-    // Tiingo answers empty (would normally fall back to Twelve Data), but Twelve
-    // Data's budget is 0 (frozen / inside the 60s lockout) so it must NOT fire.
-    const { calls, fetchImpl } = recordingFetch([]); // empty fxHistory + empty time_series
-    const fetchFx = makeWindowFxFetcher(
-      PRICE_PROXY,
-      { startDate: "2026-06-19", endDate: "2026-06-23" },
-      "1day",
-      fetchImpl,
-      undefined,
-      { apiKey: "KEY", reservation: fakeReservation(0, 8).reservation },
+  it("spills EUR/USD to Tiingo's fxHistory route when the Twelve Data budget is spent", async () => {
+    const { calls, fetchImpl } = recordingFetch([{ date: "2026-06-23T00:00:00.000Z", close: 1.12 }]);
+    const fetchFx = makeFxFetcher(
+      makePriceBarFetcher({
+        apiKey: "KEY",
+        proxyUrl: PRICE_PROXY,
+        param: "daily",
+        startDate: "2026-06-19",
+        endDate: "2026-06-23",
+        fetchImpl,
+        reservation: fakeReservation(0, 8).reservation,
+      }),
     );
     const bars = await fetchFx!();
-    expect(bars).toEqual([]); // degrades to the day's settled baseFx
+    // No Twelve Data forex pull (budget 0); Tiingo fxHistory served the track.
     expect(calls.some((u) => u.includes("symbol=EUR%2FUSD") || u.includes("symbol=EUR/USD"))).toBe(false);
+    expect(calls.some((u) => u.includes("fxHistory"))).toBe(true);
+    expect(bars[0].value.toString()).toBe("1.12");
   });
 
-  it("fires nothing when both FX budgets are exhausted", async () => {
+  it("fires nothing when both budgets are exhausted (degrades to baseFx)", async () => {
     const { calls, fetchImpl } = recordingFetch([]);
-    const fetchFx = makeWindowFxFetcher(
-      PRICE_PROXY,
-      { startDate: "2026-06-19", endDate: "2026-06-23" },
-      "1day",
-      fetchImpl,
-      undefined,
-      { apiKey: "KEY", reservation: fakeReservation(0, 0).reservation },
+    const fetchFx = makeFxFetcher(
+      makePriceBarFetcher({
+        apiKey: "KEY",
+        proxyUrl: PRICE_PROXY,
+        param: "daily",
+        startDate: "2026-06-19",
+        endDate: "2026-06-23",
+        fetchImpl,
+        reservation: fakeReservation(0, 0).reservation,
+      }),
     );
     expect(await fetchFx!()).toEqual([]);
     expect(calls).toHaveLength(0);
-  });
-});
-
-describe("FX dual pipe + backoff (item 4)", () => {
-  const bar = (v: number): Bar => ({ t: 1, value: d(v) });
-
-  it("makeDualFxFetcher falls back to Twelve Data on an empty Tiingo result", async () => {
-    let fellBack = false;
-    const fx = makeDualFxFetcher(
-      async () => [],
-      async () => {
-        fellBack = true;
-        return [bar(1.1)];
-      },
-    );
-    expect(await fx()).toEqual([bar(1.1)]);
-    expect(fellBack).toBe(true);
-  });
-
-  it("makeDualFxFetcher falls back when the Tiingo pipe throws a PriceError", async () => {
-    const fx = makeDualFxFetcher(
-      async () => {
-        throw new PriceError("Tiingo FX history proxy returned HTTP 400");
-      },
-      async () => [bar(1.2)],
-    );
-    expect(await fx()).toEqual([bar(1.2)]);
-  });
-
-  it("makeDualFxFetcher keeps a non-empty Tiingo result (no fallback)", async () => {
-    let fellBack = false;
-    const fx = makeDualFxFetcher(
-      async () => [bar(1.3)],
-      async () => {
-        fellBack = true;
-        return [bar(9)];
-      },
-    );
-    expect(await fx()).toEqual([bar(1.3)]);
-    expect(fellBack).toBe(false);
-  });
-
-  it("withFxBackoff suppresses re-attempts only after the 3rd failure, then clears on success", async () => {
-    const memory = mapStorage();
-    const backoff = cacheSeriesBackoff({ attempts: 3, cooldownMs: 10_000, storage: memory });
-    let calls = 0;
-    let result: Bar[] = [];
-    let t = 1000;
-    const fx = withFxBackoff(
-      async () => {
-        calls += 1;
-        return result;
-      },
-      backoff,
-      "fx:1W:1day",
-      { now: () => t },
-    );
-    // Three empty pulls are still attempted (it tries hard in a short session)…
-    expect(await fx()).toEqual([]);
-    expect(await fx()).toEqual([]);
-    expect(await fx()).toEqual([]);
-    expect(calls).toBe(3);
-    // …only now is the cooldown armed: a 4th rebuild short-circuits to [].
-    expect(await fx()).toEqual([]);
-    expect(calls).toBe(3);
-    // Past the cooldown it tries again; a non-empty pull clears the memo.
-    t = 20_000;
-    result = [bar(1.1)];
-    expect(await fx()).toEqual([bar(1.1)]);
-    expect(calls).toBe(4);
-    // Cleared: a later empty result starts a fresh 3-strike count.
-    t = 40_000;
-    result = [];
-    expect(await fx()).toEqual([]);
-    expect(calls).toBe(5);
-    expect(backoff.suppressed("fx:1W:1day", t)).toBe(false);
-  });
-
-  it("withFxBackoff counts a throw as a strike and re-raises it, arming after 3", async () => {
-    const memory = mapStorage();
-    const backoff = cacheSeriesBackoff({ attempts: 3, cooldownMs: 10_000, storage: memory });
-    let calls = 0;
-    const fx = withFxBackoff(
-      async () => {
-        calls += 1;
-        throw new PriceError("boom");
-      },
-      backoff,
-      "fx:1D:1hour",
-      { now: () => 1000 },
-    );
-    await expect(fx()).rejects.toThrow("boom");
-    await expect(fx()).rejects.toThrow("boom");
-    await expect(fx()).rejects.toThrow("boom");
-    expect(calls).toBe(3);
-    // Armed after the 3rd throw: the next rebuild is suppressed (no network hit).
-    expect(await fx()).toEqual([]);
-    expect(calls).toBe(3);
   });
 });
 
@@ -791,24 +719,6 @@ describe("two-phase credit accounting (reserve up-front, settle on result)", () 
     expect(net()).toBe(0);
   });
 
-  it("recordingFxFetcher settles a returned FX pull (reached the meter, even when empty)", async () => {
-    const { meter, events, net } = recordingMeter();
-    await recordingFxFetcher(async () => [], meter)();
-    expect(events.map((e) => e.phase)).toEqual(["reserve", "settle"]);
-    expect(events[0].req).toMatchObject({ n: 1, leg: "fx", symbols: ["eurusd"] });
-    expect(net()).toBe(1);
-  });
-
-  it("recordingFxFetcher refunds a thrown FX pull (the Worker-400 phantom-charge fix)", async () => {
-    const { meter, net } = recordingMeter();
-    await expect(
-      recordingFxFetcher(async () => {
-        throw new PriceError("Tiingo FX history proxy returned HTTP 400");
-      }, meter)(),
-    ).rejects.toThrow();
-    expect(net()).toBe(0);
-  });
-
   it("books a Tiingo 200+[] and a 404 (reached the meter) but refunds Worker rejects", async () => {
     // A Tiingo-only price pipe (no Twelve Data fallback) so the per-status billing
     // outcome is visible directly on the meter.
@@ -909,18 +819,18 @@ describe("instrumentedGraphRecorders", () => {
 
     twelveDataMeter.reserve({ leg: "bars", symbols: ["SCHK", "MSFT", "VOO"], n: 3 });
     twelveDataMeter.settle({ leg: "bars", symbols: ["SCHK", "MSFT", "VOO"], n: 3, bars: 30 });
-    tiingoMeter.reserve({ leg: "fx", symbols: ["eurusd"], n: 1 });
-    tiingoMeter.settle({ leg: "fx", symbols: ["eurusd"], n: 1, bars: 5 });
+    tiingoMeter.reserve({ leg: "bars", symbols: ["EUR/USD"], n: 1 });
+    tiingoMeter.settle({ leg: "bars", symbols: ["EUR/USD"], n: 1, bars: 5 });
 
     // Credits are booked against the matching provider budget on reserve…
     expect(twelveBooked).toEqual([3]);
     expect(tiingoBooked).toEqual([1]);
     // …the shared counter tallies only billed (settled) pulls…
     expect(spent.credits).toBe(4);
-    // …and each billed pull names the leg + symbols (or `FX <pair>`).
+    // …and each billed pull names the leg + symbols (FX rides the bars leg).
     expect(messages).toEqual([
       "1D graph: fetched bars SCHK, MSFT, VOO via Twelve Data (Pipe A) — 3 credits.",
-      "1D graph: fetched fx FX eurusd via Tiingo (Pipe B) — 1 Tiingo credit.",
+      "1D graph: fetched bars EUR/USD via Tiingo (Pipe B) — 1 Tiingo credit.",
     ]);
   });
 
@@ -939,15 +849,15 @@ describe("instrumentedGraphRecorders", () => {
       spent,
     });
 
-    tiingoMeter.reserve({ leg: "fx", symbols: ["eurusd"], n: 1 });
-    tiingoMeter.refund({ leg: "fx", symbols: ["eurusd"], n: 1, reason: "Tiingo FX history proxy returned HTTP 400" });
+    tiingoMeter.reserve({ leg: "bars", symbols: ["EUR/USD"], n: 1 });
+    tiingoMeter.refund({ leg: "bars", symbols: ["EUR/USD"], n: 1, reason: "Tiingo FX history proxy returned HTTP 400" });
 
     expect(tiingoBooked).toEqual([1]);
     expect(tiingoRefunded).toEqual([1]);
     // A refunded (not-billed) pull never counts toward the build's real spend.
     expect(spent.credits).toBe(0);
     expect(messages).toEqual([
-      "1D graph: fx FX eurusd via Tiingo (Pipe B) not billed (1 Tiingo credit refunded) — Tiingo FX history proxy returned HTTP 400.",
+      "1D graph: bars EUR/USD via Tiingo (Pipe B) not billed (1 Tiingo credit refunded) — Tiingo FX history proxy returned HTTP 400.",
     ]);
   });
 

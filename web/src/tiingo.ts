@@ -372,16 +372,3 @@ export async function fetchTiingoFxBars(
   }
   return fxBarsFromTiingoHistory(body);
 }
-
-/**
- * Wrap {@link fetchTiingoFxBars} as the no-arg `fetchFx` the curve builders
- * (`loadOrBuildSessionCurve`, `loadOrBuildWeekCurve`) consume — bound to a proxy
- * URL and window, ready to hand alongside the price {@link makeTiingoBarFetcher}
- * so the FX track is backfilled in the **same batched style** as the prices.
- */
-export function makeTiingoFxBarFetcher(
-  proxyUrl: string,
-  options: TiingoFxHistoryOptions = {},
-): () => Promise<Bar[]> {
-  return () => fetchTiingoFxBars(proxyUrl, options);
-}

@@ -123,7 +123,7 @@ import {
   cacheSeriesBackoff,
   instrumentedGraphRecorders,
   makePriceBarFetcher,
-  makeWindowFxFetcher,
+  makeFxFetcher,
   sessionFxWindow,
   weekFxWindow,
   type LiveGraphProviders,
@@ -1848,7 +1848,6 @@ export class App {
       symbols: string[],
       param: "intraday" | "daily",
       window: { startDate: string; endDate: string },
-      fxResample: string,
       storeKey: string,
       label: string,
       extra: { interval?: string; outputsize?: number } = {},
@@ -1915,15 +1914,11 @@ export class App {
       // (the empty-map default) primeQuotesFromBars reuses each symbol's existing
       // cached currency and skips any it cannot resolve.
       primeQuotesFromBars(bars, currencyBySymbol, Date.now()).forEach((s) => primedSet.add(s));
-      // Grab the matching FX track in the same pass so the curve re-marks each
-      // point at its own settled rate (finest granularity) for one more credit.
-      const fetchFx = makeWindowFxFetcher(proxyUrl, window, fxResample, undefined, tiingoMeter, {
-        apiKey: config.apiKey,
-        twelveDataMeter,
-        backoff: cacheSeriesBackoff(),
-        backoffKey: `fx:${label}:${fxResample}`,
-        reservation,
-      });
+      // Grab the matching FX track on the *same* pipe (EUR/USD is just another
+      // symbol via makeFxFetcher), so it shares the bars' split, reservation and
+      // backoff — one more credit for the curve to re-mark each point at its own
+      // settled rate (finest granularity).
+      const fetchFx = makeFxFetcher(fetchBars);
       let fx: Bar[] | undefined;
       if (fetchFx) fx = await fetchFx().catch(() => undefined);
       // Seed close-probes for 1D session bars that are incomplete after close.
@@ -1962,8 +1957,8 @@ export class App {
       );
     };
 
-    await pull(sessionSymbols, "intraday", sessionFxWindow(now), "1hour", lastSessionDate(now), "1D");
-    await pull(weekSymbols, "daily", weekFxWindow(now), "1day", WEEK_STORE_KEY, "1W", {
+    await pull(sessionSymbols, "intraday", sessionFxWindow(now), lastSessionDate(now), "1D");
+    await pull(weekSymbols, "daily", weekFxWindow(now), WEEK_STORE_KEY, "1W", {
       interval: "1day",
       outputsize: 8,
     });
@@ -2109,13 +2104,20 @@ export class App {
       onTwelveDataSuccess: () => recordTwelveDataSuccess(),
       onTiingo429: () => recordTiingo429(Date.now()),
     });
-    const fetchFx = makeWindowFxFetcher(proxyUrl, window, "1hour", undefined, tiingoMeter, {
+    const fetchBars = makePriceBarFetcher({
       apiKey: config.apiKey,
+      proxyUrl,
+      param: "intraday",
+      startDate: window.startDate,
+      endDate: window.endDate,
+      tiingoMeter,
       twelveDataMeter,
-      backoff: cacheSeriesBackoff(),
-      backoffKey: "fx:1D:1hour",
       reservation,
+      backoff: { memo: cacheSeriesBackoff(), scope: "fx:1D", now: () => Date.now() },
     });
+    // EUR/USD rides the same price pipe (makeFxFetcher), so this close backfill is
+    // governed by the identical split, reservation and backoff as every bar pull.
+    const fetchFx = makeFxFetcher(fetchBars);
     if (!fetchFx) return false;
     const fx = await fetchFx().catch(() => undefined);
     if (!fx || fx.length === 0) {
