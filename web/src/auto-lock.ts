@@ -43,3 +43,47 @@ export function autoLockReturnDecision(args: {
   if (elapsed >= args.timeoutMs) return { lock: true, remainingMs: 0 };
   return { lock: false, remainingMs: args.timeoutMs - elapsed };
 }
+
+/**
+ * DOM events that *can* signal a deliberate interaction with the dashboard.
+ *
+ * Deliberately narrow: passive pointer/touch *movement* (`pointermove`,
+ * `touchstart`, `touchmove`), `scroll` and `wheel` are intentionally absent.
+ * An absent-minded swipe or scroll over the screen must NOT keep the session
+ * unlocked — only a genuine action (a click/tap that lands on a control, a
+ * form-control change, or keyboard input) does. See {@link isDeliberateActivity}
+ * for how `click`/`change` are further filtered to interactive targets.
+ */
+export const AUTO_LOCK_ACTIVITY_EVENTS = ["click", "change", "keydown"] as const;
+
+/**
+ * CSS selector matching the interactive controls whose use counts as a genuine,
+ * deliberate interaction for the idle auto-lock: links, buttons, form controls,
+ * `<summary>` (expanding an overview), and anything explicitly made actionable
+ * (`role`/`data-action`/focusable `tabindex`). Switching tabs/pages, toggling
+ * the currency, picking a graph timeframe and expanding a section all land on
+ * one of these; a stray tap on empty chrome does not.
+ */
+export const DELIBERATE_ACTIVITY_SELECTOR =
+  'a[href], button, input, select, textarea, summary, label, [role="button"], [role="tab"], [role="switch"], [role="menuitem"], [data-action], [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Whether a DOM event should count as *deliberate* activity that extends the
+ * idle auto-lock window.
+ *
+ * - `keydown` is always deliberate (you don't type by accident).
+ * - `click`/`change` only count when they land on (or inside) an interactive
+ *   control per {@link DELIBERATE_ACTIVITY_SELECTOR} — so an accidental tap or
+ *   swipe on blank space is ignored and the session keeps counting down.
+ *
+ * Anything else is treated as non-deliberate.
+ */
+export function isDeliberateActivity(event: { type: string; target: EventTarget | null }): boolean {
+  if (event.type === "keydown") return true;
+  if (event.type !== "click" && event.type !== "change") return false;
+  const target = event.target;
+  if (target && typeof (target as Partial<Element>).closest === "function") {
+    return (target as Element).closest(DELIBERATE_ACTIVITY_SELECTOR) !== null;
+  }
+  return false;
+}

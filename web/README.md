@@ -76,10 +76,12 @@ Concretely, that means:
   min**; Settings → Security → *Auto-lock (minutes)*, set `0` to disable) the
   session clears the in-memory passphrase and returns to the unlock screen, so an
   unattended phone doesn't sit on an open dashboard. Activity detection is
-  deliberately strict — it counts only **intentional** interactions (taps/clicks,
-  deliberate scrolling/wheel, keys and typing), and **ignores passive pointer or
-  touch movement** so a resting hand or a phone merely being held can't keep the
-  session alive. A **dismissable warning with a one-tap "Stay unlocked"** appears
+  deliberately strict — it counts only **deliberate interactions with a control**
+  (clicking/tapping a tab, the currency toggle, a graph timeframe, expanding an
+  overview, or typing), and **ignores stray taps, swipes, scrolling and passive
+  pointer/touch movement** so an absent-minded swipe or a phone merely being held
+  can't keep the session alive. A **dismissable warning with a one-tap "Stay
+  unlocked"** appears
   ~15 s before locking — that one-tap extension is the intended way to stay in
   past the window. The lock is anchored to a **wall-clock timestamp** of the last
   interaction — not just a timer — so a

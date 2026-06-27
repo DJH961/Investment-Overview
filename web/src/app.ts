@@ -189,7 +189,11 @@ import {
   touchResumeActivity,
   unwrapResumePassphrase,
 } from "./resume-session";
-import { autoLockReturnDecision } from "./auto-lock";
+import {
+  AUTO_LOCK_ACTIVITY_EVENTS,
+  autoLockReturnDecision,
+  isDeliberateActivity,
+} from "./auto-lock";
 import {
   h,
   markHoldingsUpdating,
@@ -700,7 +704,7 @@ export class App {
   /** True for the first paint after a page reload resumed the session. */
   private resumedFromRefresh = false;
   /** Installed activity listeners that reset the idle auto-lock timer. */
-  private activityHandler: (() => void) | null = null;
+  private activityHandler: ((event: Event) => void) | null = null;
   /**
    * Installed "app shown again" listener (visibility/pageshow/focus) that
    * re-evaluates the idle auto-lock from a wall-clock timestamp. A backgrounded
@@ -3369,17 +3373,20 @@ export class App {
       return;
     }
     this.autoLockTimeoutMs = minutes * 60_000;
-    const reset = (): void => {
+    const reset = (event?: Event): void => {
       // Only keep counting while a session is actually unlocked.
       if (!this.state.passphrase) return;
+      // Ignore anything that isn't a deliberate interaction with a control: a
+      // stray tap/swipe on empty chrome must NOT extend the session.
+      if (event && !isDeliberateActivity(event)) return;
       const now = Date.now();
       // Keep the resume token's idle clock honest, throttled so heavy movement
       // doesn't thrash storage.
       this.touchResume(now);
       const warningUp = this.autoLockWarnEl !== null;
-      // High-frequency events (wheel, scroll) re-arm at most once a second — but a
-      // *visible* warning is always cancelled immediately, so a deliberate
-      // interaction reliably keeps the user logged in.
+      // Rapid repeat interactions re-arm at most once a second — but a *visible*
+      // warning is always cancelled immediately, so a deliberate interaction
+      // reliably keeps the user logged in.
       if (!warningUp && now - this.autoLockArmedAt < AUTO_LOCK_RESET_THROTTLE_MS) return;
       this.dismissAutoLockWarning();
       this.armAutoLockTimers();
@@ -6897,27 +6904,6 @@ export function describePrefetch(input: {
   if (pulled) parts.push(pulled);
   return parts.join(" · ");
 }
-
-/**
- * Interaction events that count as "activity" and reset the idle auto-lock
- * countdown. Deliberately narrow so the lock bites on a genuinely unattended
- * session: only *intentional* interactions keep it alive — presses and taps
- * (pointer/touch), deliberate scrolling/wheel, keyboard and typing, and clicks.
- *
- * Passive pointer/mouse/touch *movement* is intentionally excluded: a resting or
- * twitching hand on a mouse, or a phone simply being held, must NOT keep the
- * session unlocked. If the user wants to stay in past the window, that is what
- * the "Stay unlocked" extension on the locking-soon warning is for.
- */
-const AUTO_LOCK_ACTIVITY_EVENTS = [
-  "pointerdown",
-  "wheel",
-  "keydown",
-  "scroll",
-  "touchstart",
-  "click",
-  "input",
-] as const;
 
 function field(label: string, input: HTMLElement, hint?: string): HTMLElement {
   const children: Array<Node | string> = [h("span", { class: "field-label" }, [label]), input];

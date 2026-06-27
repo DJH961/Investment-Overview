@@ -6,7 +6,11 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { autoLockReturnDecision } from "../src/auto-lock";
+import {
+  AUTO_LOCK_ACTIVITY_EVENTS,
+  autoLockReturnDecision,
+  isDeliberateActivity,
+} from "../src/auto-lock";
 
 describe("autoLockReturnDecision", () => {
   const timeoutMs = 5 * 60_000; // 5-minute window
@@ -51,5 +55,41 @@ describe("autoLockReturnDecision", () => {
     const decision = autoLockReturnDecision({ now, lastActivityAt: now + 30_000, timeoutMs });
     expect(decision.lock).toBe(false);
     expect(decision.remainingMs).toBe(timeoutMs);
+  });
+});
+
+describe("isDeliberateActivity", () => {
+  // A stand-in DOM target whose `closest` reports whether it sits inside an
+  // interactive control, mirroring Element.closest without needing jsdom.
+  const target = (hit: boolean): { closest: (sel: string) => unknown } => ({
+    closest: () => (hit ? {} : null),
+  });
+
+  it("only lists deliberate event types (no passive movement/scroll/touch)", () => {
+    expect([...AUTO_LOCK_ACTIVITY_EVENTS]).toEqual(["click", "change", "keydown"]);
+    for (const passive of ["pointerdown", "pointermove", "touchstart", "touchmove", "scroll", "wheel"]) {
+      expect(AUTO_LOCK_ACTIVITY_EVENTS).not.toContain(passive);
+    }
+  });
+
+  it("always counts keyboard input as deliberate", () => {
+    expect(isDeliberateActivity({ type: "keydown", target: null })).toBe(true);
+  });
+
+  it("counts a click/change only when it lands on an interactive control", () => {
+    expect(isDeliberateActivity({ type: "click", target: target(true) as unknown as EventTarget })).toBe(true);
+    expect(isDeliberateActivity({ type: "change", target: target(true) as unknown as EventTarget })).toBe(true);
+  });
+
+  it("ignores a click/tap that lands on blank, non-interactive chrome", () => {
+    // e.g. an absent-minded tap/swipe that doesn't hit a button, tab, etc.
+    expect(isDeliberateActivity({ type: "click", target: target(false) as unknown as EventTarget })).toBe(false);
+    expect(isDeliberateActivity({ type: "click", target: null })).toBe(false);
+  });
+
+  it("ignores passive movement/scroll events entirely", () => {
+    for (const type of ["scroll", "wheel", "touchstart", "pointerdown", "pointermove"]) {
+      expect(isDeliberateActivity({ type, target: target(true) as unknown as EventTarget })).toBe(false);
+    }
   });
 });
