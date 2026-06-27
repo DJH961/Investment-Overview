@@ -670,6 +670,24 @@ function isBusinessDayIso(iso: string): boolean {
 }
 
 /**
+ * The ET (`America/New_York`) calendar date (`YYYY-MM-DD`) of an epoch-ms instant
+ * — the same exchange-clock calendar a quote's {@link Quote.valueDate} is read on
+ * (Twelve Data stamps its `datetime` in the exchange's local zone). Dating a
+ * market quote's strike instant this way keeps it comparable to the export's
+ * `last_price_date` without a timezone-skew off-by-one.
+ */
+function etIsoDate(epochMs: number): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(epochMs));
+  const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+/**
  * Identify **suspect** quotes among the symbols freshly fetched this round: a
  * quote that *has* a price but whose price is non-positive (≤ 0). A null price
  * is simply "no data" (already tracked as failed/deferred), but a zero or
@@ -685,6 +703,33 @@ export function suspectQuoteSymbols(quotes: Map<string, Quote>, fetched: Iterabl
     if (quote && quote.price !== null && !quote.price.greaterThan(0)) suspect.push(symbol);
   }
   return suspect.sort();
+}
+
+/**
+ * Identify **undatable** market quotes among the symbols this round serves: a
+ * non-NAV (market-priced) quote that *has* a price but carries neither a strike
+ * time (`priceTime`) nor a pull instant (`at`), so {@link priceForHolding}'s
+ * Layer-1 market guard cannot date it against the export. We deliberately keep
+ * such a quote (a datable export would otherwise win every undatable round), but
+ * the choice is logged so a price that "looks live with no provable date" is
+ * never silent in the polling log. NAV symbols are excluded — their once-a-day
+ * staleness is governed by the separate `valueDate` guard. Returns the symbols,
+ * sorted.
+ */
+export function undatableQuoteSymbols(
+  quotes: Map<string, Quote>,
+  fetched: Iterable<string>,
+  navSymbols: ReadonlySet<string>,
+): string[] {
+  const undatable: string[] = [];
+  for (const symbol of fetched) {
+    if (navSymbols.has(symbol)) continue;
+    const quote = quotes.get(symbol);
+    if (quote && quote.price !== null && quote.price.greaterThan(0) && (quote.priceTime ?? quote.at ?? null) === null) {
+      undatable.push(symbol);
+    }
+  }
+  return undatable.sort();
 }
 
 function priceForHolding(
@@ -723,7 +768,23 @@ function priceForHolding(
       holding.price_type === "nav" &&
       holding.last_known_price_native !== null &&
       !(quote.valueDate != null && quote.valueDate >= fallbackDate && isBusinessDayIso(quote.valueDate));
-    if (!navStale) {
+    // Layer-1 market guard — the market-priced sibling of `navStale`. A market
+    // quote can itself be *older* than the export: a carried-forward cached close
+    // (its strike/pull instant predates the export's own `last_price_date`) would
+    // otherwise swap the displayed value backward onto a staler basis. We date the
+    // quote's strike instant (`priceTime`, else the pull instant `at`) on the same
+    // ET exchange calendar `valueDate` uses, and only keep the export when that
+    // date is *strictly* older than the export's fallback date. An undatable quote
+    // (no `priceTime` and no `at`) cannot be proven stale, so we deliberately keep
+    // it rather than block a genuinely-live mark behind the export — that choice is
+    // surfaced in the polling log via `undatableQuoteSymbols`.
+    const strikeMs = quote.priceTime ?? quote.at ?? null;
+    const marketStale =
+      holding.price_type !== "nav" &&
+      holding.last_known_price_native !== null &&
+      strikeMs !== null &&
+      etIsoDate(strikeMs) < fallbackDate;
+    if (!navStale && !marketStale) {
       // "as of" should reflect when the price actually applies, not when we
       // fetched it. Market quotes carry an intraday strike time (`priceTime`), so
       // a same-day price reads as a clock time; a daily NAV bar has only a date,

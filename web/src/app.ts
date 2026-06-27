@@ -15,7 +15,7 @@
  * session and dropped on "Lock". Decrypted figures never leave the browser.
  */
 import { fetchBlobMeta, fetchEnvelopeConditional } from "./blob";
-import { buildDashboard, buildFetchPlan, suspectQuoteSymbols, type DashboardModel } from "./compute";
+import { buildDashboard, buildFetchPlan, suspectQuoteSymbols, undatableQuoteSymbols, type DashboardModel } from "./compute";
 import { decryptEnvelopeToJson, type Envelope } from "./crypto";
 import { buildDemoModel, parseDemoParams, getPersona, DEMO_PERSONAS, type DemoParams } from "./demo";
 import { startTour, DEMO_TOUR_STEPS } from "./tour";
@@ -4124,6 +4124,18 @@ export class App {
           "primary",
           `SUSPECT data — non-positive price for ${suspect.join(", ")}; ignoring rather than booking it into the valuation.`,
           "error",
+        );
+      }
+      // Undatable market quotes — a price the Layer-1 market guard had to keep
+      // without a provable strike date (no priceTime and no pull instant). It is
+      // deliberately preferred over the export, so note which symbols took that
+      // path rather than letting an undated "live" mark be silent.
+      const undatable = undatableQuoteSymbols(quoteLoad.quotes, quoteLoad.report.fetched, this.lastNavSymbols);
+      if (undatable.length > 0) {
+        this.pollLog(
+          "primary",
+          `Undatable market quote(s) for ${undatable.join(", ")} (no strike/pull date); kept the live mark over the export by design.`,
+          "info",
         );
       }
     }

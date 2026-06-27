@@ -5,7 +5,7 @@
 import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 
-import { buildDashboard, buildFetchPlan, buildMovers, fxTodayDeviationPct, suspectQuoteSymbols } from "../src/compute";
+import { buildDashboard, buildFetchPlan, buildMovers, fxTodayDeviationPct, suspectQuoteSymbols, undatableQuoteSymbols } from "../src/compute";
 import type { OverviewView } from "../src/compute";
 import type { FxRates, Quote } from "../src/prices";
 import type { MobileExport } from "../src/types";
@@ -490,6 +490,103 @@ describe("buildDashboard", () => {
     expect(fxaix.priceIsLive).toBe(false);
     expect(fxaix.todayMoveEur).toBeNull();
     expect(fxaix.todayMovePct).toBeNull();
+  });
+
+  it("keeps the exported price when a market quote's strike date is older than the export (Layer-1 market guard)", () => {
+    // VTI is market-priced (last_known_price_native 90). A carried-forward cached
+    // quote whose pull date precedes the export's as-of date is stale: adopting it
+    // would swap the value backward onto an older basis, so the export wins.
+    const exp = makeExport();
+    exp.meta.as_of = "2024-06-03"; // exported price dated Monday
+    const staleQuotes = new Map<string, Quote>([
+      [
+        "VTI",
+        {
+          symbol: "VTI",
+          price: new Decimal("100"),
+          previousClose: new Decimal("95"),
+          currency: "USD",
+          at: Date.parse("2024-06-02T16:00:00Z"), // pulled Sunday — strictly older
+          priceTime: null,
+          valueDate: null,
+        },
+      ],
+    ]);
+    const m = buildDashboard(exp, staleQuotes, fx, new Date("2024-06-03T12:00:00Z"));
+    const vti = m.holdings.find((h) => h.symbol === "VTI")!;
+    expect(vti.priceIsLive).toBe(false);
+    approx(vti.priceNative, 90);
+  });
+
+  it("adopts a market quote whose strike date equals the export date", () => {
+    const exp = makeExport();
+    exp.meta.as_of = "2024-06-03";
+    const sameDayQuotes = new Map<string, Quote>([
+      [
+        "VTI",
+        {
+          symbol: "VTI",
+          price: new Decimal("100"),
+          previousClose: new Decimal("95"),
+          currency: "USD",
+          at: Date.parse("2024-06-03T16:00:00Z"), // 12:00 ET on the export date
+          priceTime: null,
+          valueDate: null,
+        },
+      ],
+    ]);
+    const m = buildDashboard(exp, sameDayQuotes, fx, new Date("2024-06-03T18:00:00Z"));
+    const vti = m.holdings.find((h) => h.symbol === "VTI")!;
+    expect(vti.priceIsLive).toBe(true);
+    approx(vti.priceNative, 100);
+  });
+
+  it("adopts a market quote with an intraday strike time on the export date", () => {
+    const exp = makeExport();
+    exp.meta.as_of = "2024-06-03";
+    const intradayQuotes = new Map<string, Quote>([
+      [
+        "VTI",
+        {
+          symbol: "VTI",
+          price: new Decimal("100"),
+          previousClose: new Decimal("95"),
+          currency: "USD",
+          at: Date.parse("2024-06-03T19:30:00Z"),
+          priceTime: Date.parse("2024-06-03T19:25:00Z"), // intraday strike, same ET day
+          valueDate: null,
+        },
+      ],
+    ]);
+    const m = buildDashboard(exp, intradayQuotes, fx, new Date("2024-06-03T19:30:00Z"));
+    const vti = m.holdings.find((h) => h.symbol === "VTI")!;
+    expect(vti.priceIsLive).toBe(true);
+    approx(vti.priceNative, 100);
+  });
+
+  it("keeps an undatable market quote rather than blocking it behind the export", () => {
+    // No priceTime and no pull instant ⇒ the quote cannot be proven stale, so it
+    // is deliberately preferred over the export (surfaced in the polling log).
+    const exp = makeExport();
+    exp.meta.as_of = "2024-06-03";
+    const undatableQuotes = new Map<string, Quote>([
+      [
+        "VTI",
+        {
+          symbol: "VTI",
+          price: new Decimal("100"),
+          previousClose: new Decimal("95"),
+          currency: "USD",
+          at: null,
+          priceTime: null,
+          valueDate: null,
+        },
+      ],
+    ]);
+    const m = buildDashboard(exp, undatableQuotes, fx, new Date("2024-06-03T12:00:00Z"));
+    const vti = m.holdings.find((h) => h.symbol === "VTI")!;
+    expect(vti.priceIsLive).toBe(true);
+    approx(vti.priceNative, 100);
   });
 
   it("aggregates the overview move on one global price date instead of summing a lagged NAV session", () => {
@@ -1499,3 +1596,32 @@ describe("suspectQuoteSymbols", () => {
     expect(suspectQuoteSymbols(quotes, ["NULL"])).toEqual([]);
   });
 });
+
+describe("undatableQuoteSymbols", () => {
+  const q = (symbol: string, over: Partial<Quote> = {}): Quote => ({
+    symbol,
+    price: new Decimal(100),
+    previousClose: null,
+    currency: "USD",
+    at: null,
+    priceTime: null,
+    valueDate: null,
+    ...over,
+  });
+
+  it("flags only non-NAV quotes with a price but no strike/pull date", () => {
+    const quotes = new Map<string, Quote>([
+      ["VTI", q("VTI")], // undatable market quote
+      ["AAPL", q("AAPL", { at: Date.parse("2024-06-03T12:00:00Z") })], // datable via `at`
+      ["MSFT", q("MSFT", { priceTime: Date.parse("2024-06-03T18:00:00Z") })], // datable via priceTime
+      ["FXAIX", q("FXAIX")], // NAV — excluded
+      ["ZERO", q("ZERO", { price: new Decimal(0) })], // non-positive — excluded
+      ["NULLP", q("NULLP", { price: null })], // no data — excluded
+    ]);
+    const navSymbols = new Set(["FXAIX"]);
+    expect(
+      undatableQuoteSymbols(quotes, ["VTI", "AAPL", "MSFT", "FXAIX", "ZERO", "NULLP"], navSymbols),
+    ).toEqual(["VTI"]);
+  });
+});
+
