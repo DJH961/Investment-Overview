@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { FakeProvider } from "../src/devkit/fake-provider";
 import { MemoryStorage, runScenario, formatResult, type Scenario } from "../src/devkit/harness";
 import { SCENARIOS, findScenario } from "../src/devkit/scenarios";
+import { nextRefreshDelayMs } from "../src/refresh-policy";
 
 const NOW = Date.parse("2024-01-10T15:00:00Z");
 
@@ -100,6 +101,30 @@ describe("runScenario", () => {
     const result = await runScenario(findScenario("near-budget")!);
     expect(result.quotes?.filter((q) => q.source === "deferred")).toHaveLength(2);
     expect(result.creditsImplied).toBe(1);
+  });
+
+  it("force-pulls a fresh cache in a closed market: 8 fetch now, 6 defer, none skipped", async () => {
+    const result = await runScenario(findScenario("forced-closed-defer")!);
+    const r = result.quoteReport!;
+    // The per-minute cap (8) fetches the first 8 and defers the overflow…
+    expect(r.fetched).toHaveLength(8);
+    expect(r.deferred).toHaveLength(6);
+    // …in deterministic incoming (size-priority) order: the first 8 land, the
+    // last 6 wait — so the overflow is the tail of the list, never a fresh skip.
+    const run = result.scenario.run;
+    const all = run?.kind === "quotes" ? run.symbols : [];
+    expect(r.fetched).toEqual(all.slice(0, 8));
+    expect(r.deferred).toEqual(all.slice(8));
+    // …and crucially nothing is served from cache: a force-pull never skips a
+    // symbol just because its cached close is still fresh.
+    expect(r.servedFresh).toHaveLength(0);
+    expect(result.creditsImplied).toBe(8);
+    expect(r.minuteRemaining).toBe(0);
+
+    // The next auto-refresh fires after exactly one minute (the per-minute credit
+    // window) so the 6 deferred symbols are picked up promptly — no slower.
+    const burstMs = nextRefreshDelayMs({ deferred: r.deferred, dayRemaining: r.dayRemaining }, { jitterMs: 0 });
+    expect(burstMs).toBe(60_000);
   });
 
   it("falls back to cache and reports the error on a 429", async () => {

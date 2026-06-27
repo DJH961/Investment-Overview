@@ -22,6 +22,13 @@ const MINUTE_MS = 60 * 1000;
 /** A fixed reference clock so every example is deterministic. */
 const NOW = Date.parse("2024-01-10T15:00:00Z");
 
+/**
+ * A clearly-**closed** US market clock (Saturday) for scenarios that probe the
+ * "tap Refresh while the exchange is shut" path: the cache already holds the
+ * latest settled close, so nothing is stale.
+ */
+const NOW_CLOSED = Date.parse("2024-01-13T20:00:00Z");
+
 /** A dummy AES-256-GCM envelope (opaque ciphertext; safe, decrypts to nothing). */
 const SAMPLE_ENVELOPE: Envelope = {
   v: 1,
@@ -50,6 +57,13 @@ function seedQuotes(storage: MemoryStorage, nowMs: number, quotes: Quote[], ageM
   const map = new Map<string, Quote>(quotes.map((q) => [q.symbol, q]));
   writeCachedQuotes(map, nowMs - ageMs, storage);
 }
+
+/**
+ * 14 symbols — more than the free tier's 8 credits/minute — for the
+ * `forced-closed-defer` scenario: a force-pull splits them 8 fetched / 6
+ * deferred under the per-minute cap.
+ */
+const FORCED_CLOSED_SYMBOLS: readonly string[] = Array.from({ length: 14 }, (_, i) => `SYM${i + 1}`);
 
 /** A full pull-decision context with sane defaults, overridable per scenario. */
 function context(overrides: Partial<PullContext> = {}): PullContext {
@@ -134,6 +148,33 @@ export const SCENARIOS: Scenario[] = [
     },
     provider: { twelveData: { error: { code: 429, message: "API credits exhausted" } } },
     run: { kind: "quotes", symbols: ["AAPL"], options: { forceMarketFetch: true, maxRetries: 0 } },
+  },
+  {
+    name: "forced-closed-defer",
+    description:
+      "Market shut, 14 fresh-cached symbols, user distrusts the cache and force-pulls every price: 8 fetch now, 6 defer to the next minute — none skipped for being fresh.",
+    nowMs: NOW_CLOSED,
+    seedCache: (storage, nowMs) => {
+      // Every symbol already holds a fresh, settled close (1 minute old, well
+      // inside the rolling TTL). Without forcing, all 14 would be served from
+      // cache and nothing fetched — so this proves the force is what fetches.
+      seedQuotes(storage, nowMs, FORCED_CLOSED_SYMBOLS.map((s) => quote(s, "100")), MINUTE_MS);
+    },
+    provider: {
+      twelveData: {
+        quotes: Object.fromEntries(
+          FORCED_CLOSED_SYMBOLS.map((s) => [
+            s,
+            { close: "101", previous_close: "100", currency: "USD", datetime: "2024-01-12" },
+          ]),
+        ),
+      },
+    },
+    // `forceFetch: () => true` mirrors the app's "Force-fetch every price now"
+    // (distrust-the-cache) escape hatch: every symbol is opted in regardless of
+    // how fresh its cache is. The free-tier per-minute cap (8) then fetches the
+    // first 8 and defers the rest — exactly the clean deferral pathway.
+    run: { kind: "quotes", symbols: [...FORCED_CLOSED_SYMBOLS], options: { forceFetch: () => true } },
   },
   {
     name: "blob-304",
