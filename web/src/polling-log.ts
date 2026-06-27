@@ -259,6 +259,13 @@ function roundTrigger(entry: PollLogEntry): string | null {
     if (m.startsWith("Session resumed")) return "page reload — session resumed";
     if (m.startsWith("Unlock detected")) return "unlock — session start";
   }
+  // A Settings "Regenerate 1D/1W graph" is a self-contained pull, not part of the
+  // previous refresh round: open its own block so its bar fetch + budget summary
+  // are not absorbed into (and hidden behind) the prior round's footer.
+  if (entry.category === "note") {
+    const regen = m.match(/^Regenerate (1D|1W) graph/);
+    if (regen) return `regenerate ${regen[1]} graph (manual)`;
+  }
   return null;
 }
 

@@ -134,7 +134,7 @@ import {
   recordTiingo429,
   twelveDataFrozen,
 } from "./provider-breaker";
-import { ledgerReservation, tiingoAvailable, twelveDataAvailable } from "./reservation";
+import { ledgerReservation, tiingoAvailable, twelveDataAvailable, twelveDataBudgetView, twelveDataMinuteReadyDelayMs } from "./reservation";
 import { DEFERRED_MAX_ATTEMPTS, DeferredQueue } from "./deferred-queue";
 import { planFanout, planTwelveDataSafetyNet, TIINGO_RESERVE_CREDITS } from "./provider-fanout";
 import { reconcileHandshake } from "./login-handshake";
@@ -374,6 +374,36 @@ export type RefreshKind = "start" | "auto" | "manual" | "reset";
  */
 export function isUserRefresh(kind: RefreshKind): boolean {
   return kind === "manual" || kind === "reset";
+}
+
+/**
+ * The closing verdict line for a Settings "Regenerate 1D/1W graph". Deliberately
+ * shaped like a round's `Round complete (…)` footer — same `Budget left N/min ·
+ * M/day` read-out and optional `backup …` tail — so the polling-log renderer
+ * lifts it into the regenerate block's footer banner and its macro budget parser
+ * keys off it. It answers, at a glance, the user's question: *did the regenerate
+ * actually spend credits, and how much budget is left now?* A fully-reused render
+ * (everything served from the just-stored bars) reads as "no live pull".
+ */
+export function regenerateSummary(
+  label: string,
+  stored: number,
+  spent: number,
+  budget: { minuteRemaining: number; dayRemaining: number },
+  tiingo: { hourUsed: number; hourLimit: number; dayUsed: number; dayLimit: number },
+): string {
+  const body =
+    spent > 0
+      ? `${spent} credit${spent === 1 ? "" : "s"} spent, ${stored} series stored`
+      : "no live pull (reused stored bars, 0 credits)";
+  const tiingoTail =
+    tiingo.dayUsed > 0 || tiingo.hourUsed > 0
+      ? `; backup ${tiingo.hourUsed}/${tiingo.hourLimit} this hour · ${tiingo.dayUsed}/${tiingo.dayLimit} today`
+      : "";
+  return (
+    `Round complete (regenerate ${label}): ${body}. ` +
+    `Budget left ${budget.minuteRemaining}/min · ${budget.dayRemaining}/day${tiingoTail}.`
+  );
 }
 
 /** What a scheduled refresh tick should do — see {@link refreshTickAction}. */
@@ -689,6 +719,12 @@ export class App {
   private autoLockWarnEl: HTMLElement | null = null;
   /** Interval ticking the warning's countdown, if shown. */
   private autoLockCountdownTimer: ReturnType<typeof setInterval> | null = null;
+  /** Pending timer that fires a Settings refresh once the Twelve Data window opens. */
+  private twelveDataWindowTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Interval ticking the "waiting for a Twelve Data window" countdown, if shown. */
+  private twelveDataWindowCountdownTimer: ReturnType<typeof setInterval> | null = null;
+  /** The live "waiting for a Twelve Data window" pop-up element, if shown. */
+  private twelveDataWindowEl: HTMLElement | null = null;
   /** The configured idle-lock window in ms (0 = disabled). */
   private autoLockTimeoutMs = 0;
   /** Epoch-ms the idle-lock timers were last (re)armed, for the reset throttle. */
@@ -1824,12 +1860,22 @@ export class App {
     config: AppConfig,
     now: Date,
     currencyBySymbol: Map<string, string | null> = new Map(),
-  ): Promise<{ stored: number; primed: string[] }> {
-    if (sessionSymbols.length === 0 && weekSymbols.length === 0) return { stored: 0, primed: [] };
+    logKind: "warmup" | "regenerate" = "warmup",
+  ): Promise<{ stored: number; primed: string[]; spent: number }> {
+    if (sessionSymbols.length === 0 && weekSymbols.length === 0) return { stored: 0, primed: [], spent: 0 };
     const proxyUrl = resolvePriceProxyUrl(config);
-    if (!proxyUrl) return { stored: 0, primed: [] }; // graph bars only come cheaply via the Tiingo /price pipe
+    if (!proxyUrl) return { stored: 0, primed: [], spent: 0 }; // graph bars only come cheaply via the Tiingo /price pipe
     const store = this.ensureTimeSeriesStore();
     let stored = 0;
+    // The plain-language log voice depends on what triggered the backfill: the
+    // login/round warm-up speaks as "Login warm-up", while a user-triggered
+    // Settings regenerate speaks as "Regenerate" with a `1D regenerate` range so
+    // it never masquerades as a login warm-up in the trail.
+    const logPrefix = logKind === "regenerate" ? "Regenerate" : "Login warm-up";
+    const rangeSuffix = logKind === "regenerate" ? "regenerate" : "warm-up";
+    // Total credits this backfill actually billed across both legs, so a caller
+    // (the regenerate summary) can report the real spend rather than guess.
+    const totalSpent = { credits: 0 };
     // C3/C7: track the symbols whose quote cache this backfill genuinely primed,
     // so (a) the post-decrypt reconcile books the *true* filled set (not intent),
     // and (b) the log reports the real primed count, not a blind "primed those
@@ -1855,7 +1901,7 @@ export class App {
       const reservation = ledgerReservation();
       const spent = { credits: 0 };
       const { tiingoMeter, twelveDataMeter } = instrumentedGraphRecorders({
-        range: `${label} warm-up`,
+        range: `${label} ${rangeSuffix}`,
         bookTwelveData: () => undefined,
         refundTwelveData: (n) => reservation.release("twelvedata", n, Date.now()),
         bookTiingo: () => undefined,
@@ -1893,7 +1939,7 @@ export class App {
       if (!fetchBars) return;
       const bars = await fetchBars(symbols).catch(() => null);
       if (!bars) {
-        this.pollLog("graph", `Login warm-up: ${label} bar backfill failed; graph left for on-demand build.`, "warn");
+        this.pollLog("graph", `${logPrefix}: ${label} bar backfill failed; graph left for on-demand build.`, "warn");
         return;
       }
       const incoming: Record<string, Bar[]> = {};
@@ -1938,14 +1984,21 @@ export class App {
       await store.mergeSession(storeKey, { bars: incoming, fx, closeProbe }, now.getTime());
       const count = Object.keys(incoming).length;
       stored += count;
+      totalSpent.credits += spent.credits;
       // C7: report the *real* primed count for this leg, not a blind claim. The
       // primed total may be < stored when a bar was older than an existing quote
-      // or its currency could not be resolved pre-decrypt.
+      // or its currency could not be resolved pre-decrypt. When nothing primed
+      // *because the quotes are already fresher*, say so plainly rather than a
+      // bare "primed 0" that reads like a failure.
       const primedHere = Object.keys(incoming).filter((s) => primedSet.has(s)).length;
+      const primedClause =
+        primedHere === 0
+          ? "quotes already fresher — nothing to prime"
+          : `primed ${primedHere} quote(s)`;
       this.pollLog(
         "graph",
-        `Login warm-up: ${label} backfill stored ${count} series (Tiingo ${param} bars) ` +
-          `and primed ${primedHere} quote(s).`,
+        `${logPrefix}: ${label} backfill stored ${count} series (Tiingo ${param} bars) ` +
+          `and ${primedClause}.`,
       );
     };
 
@@ -1954,7 +2007,7 @@ export class App {
       interval: "1day",
       outputsize: 8,
     });
-    return { stored, primed: [...primedSet] };
+    return { stored, primed: [...primedSet], spent: totalSpent.credits };
   }
 
   /**
@@ -2674,17 +2727,17 @@ export class App {
         field(
           "Force-fetch every price",
           forceAll,
-          "Re-pull every quote now, ignoring NAV close-await skips and market-closed skips — as if all prices were expected to update. Includes the mutual-fund NAVs. Leaves the 1D/1W graphs alone (use the Regenerate buttons for those). Keeps your caches. Respects your daily free-tier budget.",
+          "Re-pull every quote now, ignoring NAV close-await skips and market-closed skips — as if all prices were expected to update. Includes the mutual-fund NAVs. Leaves the 1D/1W graphs alone (use the Regenerate buttons for those). Keeps your caches. Waits for the next fully-available primary (Twelve Data) minute window before pulling, so it spends the plentiful primary budget instead of the scarce backup. Respects your daily free-tier budget.",
         ),
         field(
           "Regenerate the live graphs",
           h("div", { class: "row import-row" }, [regenDay, regenWeek]),
-          "Wipe and re-pull a single live curve from scratch: use \"Regenerate 1D graph\" or \"Regenerate 1W graph\" when only that line looks wrong or stuck. Leaves every other day and your price caches untouched. Respects your daily free-tier budget.",
+          "Wipe and re-pull a single live curve from scratch: use \"Regenerate 1D graph\" or \"Regenerate 1W graph\" when only that line looks wrong or stuck. Leaves every other day and your price caches untouched. Waits for the next fully-available primary (Twelve Data) minute window before pulling, so the bars come from the plentiful primary budget instead of the scarce backup. Respects your daily free-tier budget.",
         ),
         field(
           "Reset & re-pull everything",
           updateAll,
-          "Clear every cached price, re-check the data file, and re-fetch all quotes and FX from scratch. Use this if a price ever looks stuck. Respects your daily free-tier budget.",
+          "Clear every cached price, re-check the data file, and re-fetch all quotes and FX from scratch. Use this if a price ever looks stuck. Waits for the next fully-available primary (Twelve Data) minute window before pulling, so it spends the plentiful primary budget instead of the scarce backup. Respects your daily free-tier budget.",
         ),
         field(
           "Try the backup data provider",
@@ -3599,6 +3652,96 @@ export class App {
     if (this.autoLockWarnEl) {
       this.autoLockWarnEl.remove();
       this.autoLockWarnEl = null;
+    }
+  }
+
+  /**
+   * Defer a Settings-triggered refresh into the **next fully-available Twelve Data
+   * minute window** — the moment the whole 8/min primary pool is spendable again
+   * because every recent spend has aged out of the rolling 60s window. This stops
+   * a manual refresh fired right after an auto-refresh from spilling onto the
+   * scarce Tiingo backup: it instead waits ≤60s for the plentiful primary to
+   * refill. A countdown pop-up tells the user exactly how long the wait is.
+   *
+   * Returns `true` when it scheduled a deferred run (the caller should bail and
+   * let the timer re-invoke), `false` when the window is already open and the
+   * caller should proceed now. `immediate` — the deferred re-entry the timer
+   * fires — always returns `false` so the work runs without re-deferring. The
+   * backup-provider refresh deliberately does **not** call this (it skips the
+   * primary entirely, so it has no reason to wait the minute out).
+   */
+  private deferSettingsRefreshIntoWindow(subject: string, rerun: () => void, immediate: boolean): boolean {
+    if (immediate) return false;
+    const delay = twelveDataMinuteReadyDelayMs(Date.now());
+    if (delay <= 0) return false;
+    // Leave the settings screen so the countdown pop-up sits over the dashboard.
+    this.exitSettings();
+    this.showTwelveDataWindowCountdown(delay, subject, rerun);
+    return true;
+  }
+
+  /**
+   * The "waiting for a fresh Twelve Data window" pop-up: a dismissable banner with
+   * a live per-second countdown that runs `run` when it elapses. Models the
+   * auto-lock warning (same chrome) so it reads consistently on mobile. Cancelling
+   * aborts the scheduled refresh outright.
+   */
+  private showTwelveDataWindowCountdown(delayMs: number, subject: string, run: () => void): void {
+    if (typeof document === "undefined") {
+      run();
+      return;
+    }
+    this.dismissTwelveDataWindowCountdown();
+    let remaining = Math.max(1, Math.ceil(delayMs / 1000));
+    const message = (secs: number): string =>
+      `Waiting for a fresh Twelve Data window — starting ${subject} in ${secs} second${secs === 1 ? "" : "s"}…`;
+    const text = h(
+      "span",
+      { id: "td-window-text", class: "auto-lock-warn-text", "aria-atomic": "true" },
+      [message(remaining)],
+    );
+    const cancel = h("button", { class: "btn ghost", type: "button" }, ["Cancel"]);
+    const node = h(
+      "div",
+      {
+        id: "td-window-wait",
+        class: "app-toast is-autolock-warn",
+        role: "alertdialog",
+        "aria-label": "Refresh scheduled",
+        "aria-labelledby": "td-window-text",
+        "aria-live": "polite",
+      },
+      [text, h("div", { class: "row auto-lock-warn-actions" }, [cancel])],
+    );
+    cancel.addEventListener("click", () => {
+      this.dismissTwelveDataWindowCountdown();
+      this.toast("Refresh cancelled.");
+    });
+    document.body.append(node);
+    this.twelveDataWindowEl = node;
+    this.twelveDataWindowCountdownTimer = setInterval(() => {
+      remaining -= 1;
+      text.textContent = remaining > 0 ? message(remaining) : "Starting…";
+    }, 1000);
+    this.twelveDataWindowTimer = setTimeout(() => {
+      this.dismissTwelveDataWindowCountdown();
+      run();
+    }, delayMs);
+  }
+
+  /** Remove the "waiting for a Twelve Data window" pop-up and stop its timers. */
+  private dismissTwelveDataWindowCountdown(): void {
+    if (this.twelveDataWindowTimer) {
+      clearTimeout(this.twelveDataWindowTimer);
+      this.twelveDataWindowTimer = null;
+    }
+    if (this.twelveDataWindowCountdownTimer) {
+      clearInterval(this.twelveDataWindowCountdownTimer);
+      this.twelveDataWindowCountdownTimer = null;
+    }
+    if (this.twelveDataWindowEl) {
+      this.twelveDataWindowEl.remove();
+      this.twelveDataWindowEl = null;
     }
   }
 
@@ -4547,7 +4690,14 @@ export class App {
    * from-scratch pull can never blow the daily allowance (any overflow simply
    * defers and back-fills on later ticks).
    */
-  private updateAllFromScratch(): void {
+  private updateAllFromScratch(immediate = false): void {
+    // Settings refreshes wait for the next fully-available Twelve Data minute
+    // window so they spend the plentiful primary budget instead of spilling onto
+    // the scarce Tiingo backup. Defer *before* clearing any cache so the user is
+    // never left with wiped prices during the wait.
+    if (this.deferSettingsRefreshIntoWindow("the cache reset & re-pull", () => this.updateAllFromScratch(true), immediate)) {
+      return;
+    }
     // Forget every cached price so nothing is served from a stale window.
     clearPriceCaches();
     // A from-scratch reset must also drop any armed time-series backoff so every
@@ -4611,7 +4761,12 @@ export class App {
    * graph" buttons own the curves. The hard free-tier per-minute/day budget in
    * {@link loadQuotes} still applies, so any overflow just defers.
    */
-  private forceFetchAllNow(): void {
+  private forceFetchAllNow(immediate = false): void {
+    // Wait for the next fully-available Twelve Data minute window so the forced
+    // pull spends the plentiful primary budget rather than the scarce backup.
+    if (this.deferSettingsRefreshIntoWindow("the full price re-pull", () => this.forceFetchAllNow(true), immediate)) {
+      return;
+    }
     // Back to the dashboard, then force a pull of every symbol.
     this.exitSettings();
     this.toast("Pulling every live price now…");
@@ -4639,9 +4794,14 @@ export class App {
    * The hard free-tier per-minute/day budget in {@link prefetchGraphBars} still
    * binds, so any overflow simply defers to later ticks.
    */
-  private regenerateGraph(range: "day" | "week"): void {
-    this.exitSettings();
+  private regenerateGraph(range: "day" | "week", immediate = false): void {
     const label = range === "day" ? "1D" : "1W";
+    // Wait for the next fully-available Twelve Data minute window so the curve's
+    // bar re-pull fills from the plentiful primary budget instead of spilling
+    // onto the scarce Tiingo backup (the capacity split fills Twelve Data first).
+    if (this.deferSettingsRefreshIntoWindow(`the ${label} graph regenerate`, () => this.regenerateGraph(range, true), immediate)) {
+      return;
+    }
     this.toast(`Regenerating the ${label} graph…`);
     // Drop any armed time-series backoff so a previously-parked (dead/empty) series
     // is re-attempted immediately rather than left on a stale cooldown.
@@ -4655,11 +4815,15 @@ export class App {
 
   /**
    * Wipe the one curve's stored bars, force a fresh re-pull of just that curve's
-   * bars, then repaint. Best-effort throughout: a store or network failure must
-   * not strand the dashboard — it simply rebuilds from whatever bars remain.
+   * bars, then return to the dashboard (which repaints network-free off the fresh
+   * bars). The settings screen is held until the wipe+re-pull completes so the
+   * dashboard never renders — and triggers a *competing* on-demand fetch — against
+   * the about-to-be-wiped bars (the old double-pull). Best-effort throughout: a
+   * store or network failure must not strand the dashboard.
    */
   private async regenerateGraphNow(range: "day" | "week"): Promise<void> {
     const now = new Date();
+    const label = range === "day" ? "1D" : "1W";
     const { config } = this.state;
     const store = this.ensureTimeSeriesStore();
     const storeKey = range === "day" ? lastSessionDate(now) : WEEK_STORE_KEY;
@@ -4671,17 +4835,37 @@ export class App {
     const marketSymbols = readSymbolPlan()
       .filter((e) => e.priceType === "market")
       .map((e) => e.symbol);
+    let result: { stored: number; primed: string[]; spent: number } = { stored: 0, primed: [], spent: 0 };
     if (marketSymbols.length > 0 && config.apiKey && resolvePriceProxyUrl(config) !== null) {
       const sessionSymbols = range === "day" ? marketSymbols : [];
       const weekSymbols = range === "week" ? marketSymbols : [];
-      await this.prefetchGraphBars(sessionSymbols, weekSymbols, config, now, this.primingCurrencyMap()).catch(
-        () => undefined,
-      );
+      result = await this.prefetchGraphBars(
+        sessionSymbols,
+        weekSymbols,
+        config,
+        now,
+        this.primingCurrencyMap(),
+        "regenerate",
+      ).catch(() => result);
     }
+    // Closing verdict in the same shape as a round's "Round complete" footer, so
+    // the regenerate's own block (opened by the note above) closes with an honest
+    // budget read-out — answering "did it actually spend credits?" explicitly.
+    this.pollLog(
+      "schedule",
+      regenerateSummary(
+        label,
+        result.stored,
+        result.spent,
+        twelveDataBudgetView(Date.now()),
+        tiingoBudgetView(Date.now()),
+      ),
+      result.spent > 0 ? "good" : "info",
+    );
     // Repaint so the (just re-pulled) curve rebuilds network-free from the fresh
-    // bars. The chart restores the user's selected range, so a regenerated 1D/1W
-    // draws straight from its rebuilt store.
-    if (this.model) this.renderDashboard(this.model);
+    // bars. exitSettings returns to the dashboard; its render reuses the rebuilt
+    // store (no second live pull) instead of fetching an overlapping set.
+    this.exitSettings();
   }
 
   /**

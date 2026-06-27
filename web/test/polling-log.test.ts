@@ -164,5 +164,34 @@ describe("polling-log", () => {
       expect(text).toContain("auto tick — skipped");
       expect(text).toContain("Pulling rounds: 1");
     });
+
+    it("opens a regenerate's own round so it is not absorbed into the prior refresh", () => {
+      const base = Date.parse("2026-06-23T10:00:00");
+      const entries: PollLogEntry[] = [
+        // A completed manual refresh round...
+        { at: base, category: "refresh", message: "Refresh started: manual." },
+        {
+          at: base + 1_000,
+          category: "schedule",
+          message: "Round complete (manual): 5 live, 0 cached, 0 deferred, 0 failed. Budget left 3/min · 600/day. Next auto-refresh in ~300s.",
+          level: "good",
+        },
+        // ...then a Settings regenerate fired afterwards must start a NEW block.
+        { at: base + 5_000, category: "note", message: "Regenerate 1D graph (Settings) — wiping the stored 1D bars and re-pulling them from scratch." },
+        { at: base + 6_000, category: "graph", message: "1D regenerate graph: fetched bars MSFT via Tiingo (Pipe B) — 1 Tiingo credit.", level: "good" },
+        {
+          at: base + 7_000,
+          category: "schedule",
+          message: "Round complete (regenerate 1D): 1 credit spent, 1 series stored. Budget left 8/min · 599/day; backup 1/40 this hour · 1/800 today.",
+          level: "good",
+        },
+      ];
+      const text = formatPollLog(entries, { generatedAt: 0 });
+      expect(text).toContain("┏━━ ROUND 2 · regenerate 1D graph (manual)");
+      // Its own footer verdict carries the post-regenerate budget.
+      expect(text).toContain("Round complete (regenerate 1D): 1 credit spent, 1 series stored");
+      // The macro overview reads the latest budget off the regenerate footer.
+      expect(text).toContain("Latest budget left: 8/min · 599/day");
+    });
   });
 });
