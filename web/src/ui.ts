@@ -530,6 +530,43 @@ export function fxEffectPriorFx(o: OverviewView): Decimal | null {
 }
 
 /**
+ * A subtle data-quality signal for the "since yesterday" currency panels: when the
+ * KPI is running on a *degraded* anchor rather than a fresh one, return a short
+ * reason; otherwise null. Surfaced as an unobtrusive ⚠️ glyph (see the renderers),
+ * never a blocking error — the panel still shows its best estimate. Degraded when:
+ *   • the settled prior close is missing (the panel is leaning on the session-close
+ *     fallback, a persisted/cold-start baseline rather than a freshly settled one); or
+ *   • the market is shut but the session close anchor never landed (the overnight
+ *     split is estimated off the live tip, not the true 16:00 ET settle).
+ */
+export function fxAnchorWarning(o: OverviewView, now: Date = new Date()): string | null {
+  const settledPrevMissing = o.fxRateEurUsdPrev === null || !o.fxRateEurUsdPrev.greaterThan(0);
+  if (settledPrevMissing) {
+    return "Yesterday's settled EUR/USD close is unavailable — showing the best baseline on hand.";
+  }
+  const { marketOpen } = fxBoxRegime(now);
+  const closeMissing =
+    o.fxRateEurUsdSessionClose === null || !o.fxRateEurUsdSessionClose.greaterThan(0);
+  if (!marketOpen && closeMissing) {
+    return "The session's closing EUR/USD anchor hasn't been pulled yet — the overnight split is estimated.";
+  }
+  return null;
+}
+
+/**
+ * The subtle ⚠️ glyph appended to a currency-panel head when {@link fxAnchorWarning}
+ * flags a degraded anchor. Muted and help-cursored (CSS `.fx-effect-warn`), with the
+ * reason on hover/`aria-label`, so it informs without ever shouting.
+ */
+function fxAnchorWarnBadge(reason: string): HTMLElement {
+  return h(
+    "span",
+    { class: "fx-effect-warn", title: reason, role: "img", "aria-label": `Data note: ${reason}` },
+    ["\u26A0\uFE0F"],
+  );
+}
+
+/**
  * EUR display: the "Currency effect since yesterday" panel — the net EUR P/L
  * from today's EUR/USD move on the USD-booked book, with the diverging
  * market-hours/overnight split below.
@@ -572,6 +609,8 @@ function renderEurFxEffect(o: OverviewView, now: Date): HTMLElement | null {
       h("span", { class: `fx-effect-net ${signClass(net)}` }, [formatSignedMoneyEur(net)]),
     ]),
   ];
+  const eurWarn = fxAnchorWarning(o, now);
+  if (eurWarn !== null) children[0].querySelector(".fx-effect-title")?.appendChild(fxAnchorWarnBadge(eurWarn));
 
   const { marketOpen, holiday, singleOvernight } = fxBoxRegime(now);
   if (singleOvernight) {
@@ -649,6 +688,8 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
       h("span", { class: `fx-effect-net ${signClass(net)}` }, [fmt(net)]),
     ]),
   ];
+  const powerWarn = fxAnchorWarning(o, now);
+  if (powerWarn !== null) children[0].querySelector(".fx-effect-title")?.appendChild(fxAnchorWarnBadge(powerWarn));
 
   // Anchor the swing to the figures it rides: the regular EUR amount set in
   // Settings on the left, and the dollars it actually buys at today's live rate
