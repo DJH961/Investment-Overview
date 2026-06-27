@@ -31,7 +31,7 @@ import { buildCalculatorData, type CalcData } from "./calculator";
 import type { DailyClose } from "./value-history";
 import { isMoneyMarketHolding } from "./money-market";
 import { LIVE_PRICE_MAX_STALENESS_MS, isUsMarketOpen, latestSettledSessionDate, sessionCloseMs } from "./market-hours";
-import { holdingFreshness, type RowFreshness } from "./freshness";
+import { holdingCoversLatestClose, holdingFreshness, type RowFreshness } from "./freshness";
 import { providerLimits } from "./provider-limits";
 
 const EUR = "EUR";
@@ -116,6 +116,17 @@ export interface HoldingView {
    * always classifies it from {@link holdingFreshness}.
    */
   priceFreshness: RowFreshness;
+  /**
+   * Absolute "is this holding up to date?" flag (suggestion #1): true when the
+   * displayed price already covers the latest **settled** NYSE session it ought
+   * to. Unlike {@link priceFreshness} (which grades observation *recency*), this
+   * is calendar-anchored — it answers the after-close / pre-open question "have I
+   * got the latest close for this holding yet?" and accounts for both market
+   * symbols (close lands at the bell) and once-a-day NAV funds (still behind until
+   * their new NAV publishes and is pulled). Drives the subtle up-to-date check
+   * mark beside the row's "as of" stamp. See {@link holdingCoversLatestClose}.
+   */
+  priceIsCurrent: boolean;
   /** Date the displayed price applies to when `priceAsOf` is null — a NAV's
    * value-date, or the export's valuation date (`meta.as_of`) for a fallback. */
   priceFallbackDate: string;
@@ -982,6 +993,8 @@ function buildHolding(
     pricePulledAt: pulledAt,
     // Default tier; buildDashboard re-classifies from the live window + market state.
     priceFreshness: "aged",
+    // Default; buildDashboard resolves against the latest settled session.
+    priceIsCurrent: false,
     priceFallbackDate: asOfDate,
     isMoneyMarket,
     valueIsStale,
@@ -1102,7 +1115,8 @@ export function buildDashboard(
   // The epoch-ms of the latest settled session close — an observation at or after
   // this timestamp represents "today's price" regardless of the user's local
   // calendar day (fixes false "aged" after midnight for non-US timezones).
-  const settledCloseMs = sessionCloseMs(latestSettledSessionDate(now));
+  const latestSettledSessionIso = latestSettledSessionDate(now);
+  const settledCloseMs = sessionCloseMs(latestSettledSessionIso);
 
   const holdingContexts: HoldingAggregationContext[] = data.holdings.map((h) => {
     const view = buildHolding(
@@ -1125,6 +1139,15 @@ export function buildDashboard(
       marketOpen: marketOpenNow && view.priceMarketOpen !== false,
       liveWindowMs: liveStalenessMs,
       lastSettledCloseMs: settledCloseMs,
+    });
+    // Absolute up-to-date driver (suggestion #1): does this holding already carry
+    // the latest settled session's close? Anchored on the price's value-date so it
+    // accounts for both market symbols and once-a-day NAV funds uniformly.
+    view.priceIsCurrent = holdingCoversLatestClose({
+      priceDateIso: view.priceFallbackDate,
+      latestSettledSessionIso,
+      isMoneyMarket: view.isMoneyMarket === true,
+      hasValue: view.valueEur !== null,
     });
     // A holding with no value at all (no price, FX, or fallback) is dropped from
     // totals; one valued from the export fallback is counted but flagged stale.
