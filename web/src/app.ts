@@ -199,6 +199,7 @@ import {
 } from "./auto-lock";
 import {
   h,
+  appVersionFooter,
   markHoldingsUpdating,
   renderDashboard,
   renderExtendedGraphsToggle,
@@ -2747,7 +2748,7 @@ export class App {
       return undefined;
     });
 
-    this.mount(h("div", { class: "screen" }, [form]));
+    this.mount(h("div", { class: "screen" }, [form, appVersionFooter()]));
   }
 
   /** Open the editable settings while logged in (reachable from the topbar). */
@@ -2885,7 +2886,7 @@ export class App {
       return undefined;
     });
 
-    this.mount(h("div", { class: "screen" }, [form]));
+    this.mount(h("div", { class: "screen" }, [form, appVersionFooter()]));
 
     if (enrolled) {
       (form.querySelector(".bio-primary") as HTMLElement | null)?.focus();
