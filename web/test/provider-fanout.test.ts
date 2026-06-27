@@ -342,4 +342,37 @@ describe("efficiencySpillEligible", () => {
       efficiencySpillEligible({ ...base, requestedCount: 4, instantThreshold: 4 }),
     ).toBe(false);
   });
+
+  it("does not spill when Tiingo has no credits beyond the reserve", () => {
+    // Fanning out must leave the fan-out reserve for genuine fallbacks/login. With
+    // the live credits at or below the reserve there is no room to spill, so the
+    // overflow stays on Twelve Data rather than being earmarked for a Tiingo leg
+    // that can never run (the endless-"Updating…" case).
+    expect(
+      efficiencySpillEligible({ ...base, tiingoCreditsAvailable: 0 }),
+    ).toBe(false);
+    expect(
+      efficiencySpillEligible({ ...base, tiingoCreditsAvailable: TIINGO_RESERVE_CREDITS }),
+    ).toBe(false);
+  });
+
+  it("spills once there is at least one credit beyond the reserve", () => {
+    expect(
+      efficiencySpillEligible({ ...base, tiingoCreditsAvailable: TIINGO_RESERVE_CREDITS + 1 }),
+    ).toBe(true);
+  });
+
+  it("honours an overridden reserve for the credit gate", () => {
+    expect(
+      efficiencySpillEligible({ ...base, tiingoCreditsAvailable: 3, tiingoReserve: 3 }),
+    ).toBe(false);
+    expect(
+      efficiencySpillEligible({ ...base, tiingoCreditsAvailable: 4, tiingoReserve: 3 }),
+    ).toBe(true);
+  });
+
+  it("skips the credit gate when no live credits are supplied", () => {
+    // Omitting tiingoCreditsAvailable keeps the pure size/deferred policy.
+    expect(efficiencySpillEligible(base)).toBe(true);
+  });
 });
