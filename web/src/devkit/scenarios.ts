@@ -152,7 +152,7 @@ export const SCENARIOS: Scenario[] = [
   {
     name: "forced-closed-defer",
     description:
-      "Market shut, 14 fresh-cached symbols, user distrusts the cache and force-pulls every price: 8 fetch now, 6 defer to the next minute — none skipped for being fresh.",
+      "STANDARD manual Refresh tap, market shut, all 14 symbols fresh-cached: the settled-phase tap distrusts the cache and re-pulls every price — 8 fetch now, 6 defer to the next minute, none skipped for being fresh.",
     nowMs: NOW_CLOSED,
     seedCache: (storage, nowMs) => {
       // Every symbol already holds a fresh, settled close (1 minute old, well
@@ -170,10 +170,15 @@ export const SCENARIOS: Scenario[] = [
         ),
       },
     },
-    // `forceFetch: () => true` mirrors the app's "Force-fetch every price now"
-    // (distrust-the-cache) escape hatch: every symbol is opted in regardless of
-    // how fresh its cache is. The free-tier per-minute cap (8) then fetches the
-    // first 8 and defers the rest — exactly the clean deferral pathway.
+    // `forceFetch: () => true` is *exactly* what `App.buildQuoteOptions` builds
+    // for `forceAll`, and the STANDARD manual Refresh tap escalates to `forceAll`
+    // whenever the phase is `settled` (market shut + every NAV in hand) — see
+    // `App.manualRefresh` (`forceAll = currentRefreshPhase() === "settled"`) and
+    // `manualFetchScope("settled")`. So this models the ordinary Refresh button in
+    // a closed, fully-cached market, *not* the separate "Force-fetch every price
+    // now" escape hatch: both produce the same cache-distrust re-pull. Every
+    // symbol is opted in regardless of how fresh its cached close is; the free-tier
+    // per-minute cap (8) then fetches the first 8 and defers the rest.
     run: { kind: "quotes", symbols: [...FORCED_CLOSED_SYMBOLS], options: { forceFetch: () => true } },
   },
   {

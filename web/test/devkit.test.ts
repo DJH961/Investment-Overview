@@ -103,7 +103,12 @@ describe("runScenario", () => {
     expect(result.creditsImplied).toBe(1);
   });
 
-  it("force-pulls a fresh cache in a closed market: 8 fetch now, 6 defer, none skipped", async () => {
+  it("standard manual Refresh in a closed, fully-cached market distrusts the cache: 8 fetch now, 6 defer, none skipped", async () => {
+    // This is the STANDARD Refresh button (not the "Force-fetch every price now"
+    // escape hatch). In the `settled` phase (market shut + every NAV in hand) the
+    // manual tap escalates to `forceAll`, which `App.buildQuoteOptions` turns into
+    // `forceFetch: () => true` — the very option this scenario runs. So a manual
+    // push in a closed market re-pulls the whole book rather than trusting cache.
     const result = await runScenario(findScenario("forced-closed-defer")!);
     const r = result.quoteReport!;
     // The per-minute cap (8) fetches the first 8 and defers the overflow…
@@ -115,8 +120,8 @@ describe("runScenario", () => {
     const all = run?.kind === "quotes" ? run.symbols : [];
     expect(r.fetched).toEqual(all.slice(0, 8));
     expect(r.deferred).toEqual(all.slice(8));
-    // …and crucially nothing is served from cache: a force-pull never skips a
-    // symbol just because its cached close is still fresh.
+    // …and crucially nothing is served from cache: a manual distrust pull never
+    // skips a symbol just because its cached close is still fresh.
     expect(r.servedFresh).toHaveLength(0);
     expect(result.creditsImplied).toBe(8);
     expect(r.minuteRemaining).toBe(0);
