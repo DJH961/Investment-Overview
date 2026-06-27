@@ -1114,6 +1114,21 @@ function renderHoldingRow(
   // always shown so each row states exactly when its mark is from, never dressed
   // up as a vague "live"/"recent" status.
   const asOf = `as of ${formatAsOf(holding.priceAsOf, holding.priceFallbackDate, now)}`;
+  // A subtle, colourblind-safe up-to-date check beside the "as of" stamp
+  // (suggestions #1 + #4): in the after-close / pre-open "stale market" window a
+  // glance can't otherwise tell which holdings already carry the latest settled
+  // close. We paint a small ✓ only when the market is shut and this holding is
+  // genuinely current (driver: `priceIsCurrent`); the laggards simply show no
+  // check, so behind reads as the quiet absence of a mark — no extra noise. During
+  // live hours the check is suppressed entirely (the live greying does that job).
+  const showCurrentCheck = !isUsMarketOpen(now) && holding.priceIsCurrent;
+  const asOfChildren: Array<Node | string> = [asOf];
+  if (showCurrentCheck) {
+    asOfChildren.push(
+      h("span", { class: "holding-asof-check", "aria-hidden": "true" }, ["✓"]),
+    );
+  }
+  const asOfTitle = showCurrentCheck ? `${asOf} — up to date with the latest close` : asOf;
   const main = h("div", { class: "holding-main" }, [
     h("div", { class: "holding-id" }, [
       // Top line: symbol (+ NAV/stale pills) on the left, and the price's
@@ -1122,7 +1137,7 @@ function renderHoldingRow(
       // 20 Jun") instead of being buried on a line under the name.
       h("div", { class: "holding-topline" }, [
         h("span", { class: "holding-sym" }, symChildren),
-        h("span", { class: "holding-asof", title: asOf }, [asOf]),
+        h("span", { class: "holding-asof", title: asOfTitle }, asOfChildren),
       ]),
       h("span", { class: "holding-name" }, [holding.name]),
     ]),

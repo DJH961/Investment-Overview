@@ -23,6 +23,7 @@ function holding(over: Partial<HoldingView> & { symbol: string }): HoldingView {
     priceAsOf: null,
     pricePulledAt: null,
     priceFreshness: "aged",
+    priceIsCurrent: false,
     priceFallbackDate: "2024-01-01",
     valueIsStale: false,
     valueEur: over.valueEur ?? null,
