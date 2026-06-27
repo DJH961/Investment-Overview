@@ -53,9 +53,15 @@ describe("planPull — currency-KPI fxBars anchor overlay (Overlay 4)", () => {
     expect(planPullsAnything(due)).toBe(true);
   });
 
-  it("leaves fxBars off when the anchor is present", () => {
-    const plan = planPull(ctx({ kind: "manual", freshness: { dataAgeMs: 0, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 0, navHeldForToday: true, fxBarsAnchorMissing: false } }));
+  it("leaves fxBars off on an auto tick when the anchor is present", () => {
+    const plan = planPull(ctx({ kind: "auto", freshness: { dataAgeMs: 0, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 0, navHeldForToday: true, fxBarsAnchorMissing: false } }));
     expect(plan.legs.fxBars).toBe(false);
+  });
+
+  it("a manual tap re-requests the FX bars even when the anchor is already in hand (distrust the cache)", () => {
+    const plan = planPull(ctx({ kind: "manual", freshness: { dataAgeMs: 0, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 0, navHeldForToday: true, fxBarsAnchorMissing: false } }));
+    expect(plan.legs.fxBars).toBe(true);
+    expect(plan.reason).toContain("FX bars re-pulled");
   });
 });
 
@@ -186,6 +192,18 @@ describe("planPull — FX freshness overlay (Overlay 3)", () => {
     const freshness = { ...staleQuotes, fxAgeMs: 30 * 1000 }; // 30 seconds old
     const plan = planPull(ctx({ kind: "manual", freshness }));
     expect(plan.legs.fx).toBe(true);
+  });
+
+  it("manual forces the FX spot on even when the graded tier left it off (fully-fresh book)", () => {
+    // A within-interval "fresh" book: the graded tier alone would pull nothing, so
+    // the FX leg starts off. A manual tap distrusts the cache and re-pulls it
+    // anyway — the spot sibling of the holdings' quote re-pull.
+    const fresh = { dataAgeMs: 0, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 0, navHeldForToday: true, fxAgeMs: 30 * 1000 };
+    const auto = planPull(ctx({ kind: "auto", freshness: fresh }));
+    expect(auto.legs.fx).toBe(false);
+    const manual = planPull(ctx({ kind: "manual", freshness: fresh }));
+    expect(manual.legs.fx).toBe(true);
+    expect(manual.reason).toContain("FX re-pulled");
   });
 
   it("auto pulls FX once the interval has elapsed", () => {
