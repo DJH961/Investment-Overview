@@ -189,6 +189,7 @@ import {
   touchResumeActivity,
   unwrapResumePassphrase,
 } from "./resume-session";
+import { autoLockReturnDecision } from "./auto-lock";
 import {
   h,
   markHoldingsUpdating,
@@ -700,6 +701,13 @@ export class App {
   private resumedFromRefresh = false;
   /** Installed activity listeners that reset the idle auto-lock timer. */
   private activityHandler: (() => void) | null = null;
+  /**
+   * Installed "app shown again" listener (visibility/pageshow/focus) that
+   * re-evaluates the idle auto-lock from a wall-clock timestamp. A backgrounded
+   * tab has its `setTimeout` frozen, so this is what guarantees a long absence
+   * locks the session the instant the app is reopened.
+   */
+  private autoLockReturnHandler: (() => void) | null = null;
 
   /**
    * Demo / preview state, present only while a sample dashboard is on screen.
@@ -3337,10 +3345,18 @@ export class App {
    * Arm an inactivity timer that locks the session after
    * {@link AppConfig.autoLockMinutes} minutes without interaction. Genuine
    * interaction — pointer/touch presses *and movement*, wheel, scroll, key,
-   * typing, clicks and tab re-focus — resets the countdown, so the lock truly
-   * only bites when the user has actually been away. A value of `0` disables the
-   * feature. Safe to call repeatedly — it tears down any prior wiring first, so a
-   * Settings change re-arms with the new timeout.
+   * typing and clicks — resets the countdown, so the lock truly only bites when
+   * the user has actually been away. A value of `0` disables the feature. Safe to
+   * call repeatedly — it tears down any prior wiring first, so a Settings change
+   * re-arms with the new timeout.
+   *
+   * Crucially, the lock is anchored to a wall-clock timestamp of the last genuine
+   * activity ({@link autoLockArmedAt}), not just a `setTimeout`. A backgrounded
+   * tab (or a sleeping device) has its timers frozen, so a long absence would
+   * otherwise leave the session unlocked. {@link checkAutoLockOnReturn}, wired to
+   * the "app shown again" events, recomputes from that timestamp and locks the
+   * instant the app is reopened past the window — and merely re-focusing the tab
+   * no longer counts as "activity" that would reset the countdown.
    *
    * Ahead of the lock, a dismissable warning ({@link showAutoLockWarning}) gives
    * the user a few seconds (and a one-tap "Stay unlocked") before it fires.
@@ -3372,25 +3388,77 @@ export class App {
     for (const event of AUTO_LOCK_ACTIVITY_EVENTS) {
       window.addEventListener(event, reset, { passive: true });
     }
+    // Re-evaluate the timestamp-based lock whenever the app is shown again. These
+    // fire on reopening a backgrounded tab / waking the device — exactly when a
+    // frozen `setTimeout` may not have fired — so the lock engages immediately if
+    // the idle window elapsed while away.
+    const onReturn = (): void => this.checkAutoLockOnReturn();
+    this.autoLockReturnHandler = onReturn;
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onReturn);
+    }
+    if (typeof window !== "undefined") {
+      window.addEventListener("pageshow", onReturn);
+      window.addEventListener("focus", onReturn);
+    }
     this.armAutoLockTimers();
   }
 
   /**
-   * (Re)arm the warning + lock timers for the current {@link autoLockTimeoutMs}.
-   * The warning fires {@link AUTO_LOCK_WARN_LEAD_MS} before the lock (clamped to
-   * at most half the window so a short window still shows a sensible lead).
+   * (Re)arm the warning + lock timers, treating "now" as fresh activity: stamps
+   * {@link autoLockArmedAt} and schedules for the full {@link autoLockTimeoutMs}.
    */
   private armAutoLockTimers(): void {
+    this.autoLockArmedAt = Date.now();
+    this.scheduleAutoLockTimers(this.autoLockTimeoutMs);
+  }
+
+  /**
+   * Schedule the warning + lock timers to fire after `remainingMs`, *without*
+   * touching the {@link autoLockArmedAt} activity anchor. Used to re-arm for the
+   * genuine remaining window after the app returns from the background (where the
+   * previous timers may have been frozen), so the lock stays anchored to the last
+   * real interaction rather than restarting the full window on every re-focus.
+   * The warning fires {@link AUTO_LOCK_WARN_LEAD_MS} before the lock (clamped to
+   * at most half the window, and never later than the lock itself).
+   */
+  private scheduleAutoLockTimers(remainingMs: number): void {
     if (this.autoLockTimer) clearTimeout(this.autoLockTimer);
     if (this.autoLockWarnTimer) clearTimeout(this.autoLockWarnTimer);
-    const timeoutMs = this.autoLockTimeoutMs;
-    if (timeoutMs <= 0) return;
-    this.autoLockArmedAt = Date.now();
-    const lead = Math.min(AUTO_LOCK_WARN_LEAD_MS, Math.floor(timeoutMs / 2));
-    this.autoLockWarnTimer = setTimeout(() => this.showAutoLockWarning(lead), Math.max(0, timeoutMs - lead));
+    if (this.autoLockTimeoutMs <= 0) return;
+    const remaining = Math.max(0, remainingMs);
+    const lead = Math.min(AUTO_LOCK_WARN_LEAD_MS, Math.floor(this.autoLockTimeoutMs / 2), remaining);
+    this.autoLockWarnTimer = setTimeout(() => this.showAutoLockWarning(lead), Math.max(0, remaining - lead));
     this.autoLockTimer = setTimeout(() => {
       if (this.state.passphrase) this.lock();
-    }, timeoutMs);
+    }, remaining);
+  }
+
+  /**
+   * Re-evaluate the idle auto-lock from wall-clock time the moment the app is
+   * shown again. Locks immediately when the configured window has fully elapsed
+   * since the last genuine activity (the case a frozen background timer misses);
+   * otherwise re-arms the timers for the genuine remaining window.
+   */
+  private checkAutoLockOnReturn(): void {
+    if (!this.state.passphrase) return;
+    if (this.autoLockTimeoutMs <= 0) return;
+    // Only act when the app is actually visible (a `visibilitychange` to hidden
+    // shouldn't pre-empt anything; locking happens on the *return*).
+    if (typeof document !== "undefined" && document.hidden) return;
+    const decision = autoLockReturnDecision({
+      now: Date.now(),
+      lastActivityAt: this.autoLockArmedAt,
+      timeoutMs: this.autoLockTimeoutMs,
+    });
+    if (decision.lock) {
+      this.lock();
+      return;
+    }
+    // Within the window but the background timers may have been frozen/throttled:
+    // re-arm for the real remaining time so the lock still fires on schedule.
+    this.dismissAutoLockWarning();
+    this.scheduleAutoLockTimers(decision.remainingMs);
   }
 
   /** Throttled re-stamp of the resume token's last-activity time. */
@@ -3479,6 +3547,16 @@ export class App {
         window.removeEventListener(event, this.activityHandler);
       }
       this.activityHandler = null;
+    }
+    if (this.autoLockReturnHandler) {
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", this.autoLockReturnHandler);
+      }
+      if (typeof window !== "undefined") {
+        window.removeEventListener("pageshow", this.autoLockReturnHandler);
+        window.removeEventListener("focus", this.autoLockReturnHandler);
+      }
+      this.autoLockReturnHandler = null;
     }
   }
 
@@ -6838,7 +6916,6 @@ const AUTO_LOCK_ACTIVITY_EVENTS = [
   "touchmove",
   "click",
   "input",
-  "focus",
 ] as const;
 
 function field(label: string, input: HTMLElement, hint?: string): HTMLElement {
