@@ -4,6 +4,8 @@
 mislabel fix (§1.1) landed first, and the remaining backlog and original ideas
 (§2 per-row freshness chip, §3 deferred-queue freshness + threading, §4.1
 freshness legend, §4.2 explicit "updating…" bucket) have now all shipped.
+§5 closed the closed-market deferral-drain stall; §6 ties the settled heartbeat
+to the user's update interval and fully logs the deferred edge cases.
 See the per-section **Implemented** notes below.
 **Issue:** "deferred symbols never update / the status never changes" plus
 "things keep being labelled *cached* even when the value is two minutes old", and
@@ -152,3 +154,79 @@ login-prefetch path passes no force set, so its behaviour is unchanged.
   yet live. `summarizeCoverage` carves these out of "cached" into their own
   "updating…" bucket between "live" and "cached" (e.g. "8 live, 4 updating…"),
   and the coverage poll log mirrors the count.
+
+## 5. Manual Refresh on a closed, fully-cached market (this PR)
+
+**Problem.** A manual Refresh on a closed market (everything already cached at
+the settled close) was slow to verify holdings against the backup provider:
+
+- **>16 holdings (efficiency-eligible).** The parallel "efficiency spill" gate
+  (`efficiencySpillEligible` in `web/src/provider-fanout.ts`) bailed out at its
+  very first check with `if (!params.marketOpen) return false;`, so a closed
+  market never spilled the Twelve-Data overflow to Tiingo in one fan-out
+  (and even an *open*-market automatic round was the only case that did). The
+  ~9 symbols the free-tier per-minute budget could not reach trickled through
+  the burst queue one minute at a time instead of being re-verified at once. A
+  big sleeve should spill on the backup no matter the time, market state, or
+  whether the round was manual or automatic.
+- **≤16 holdings (not efficiency-eligible).** The deferred overflow was enqueued
+  as **force** entries, but the next `kind:"auto"` burst round hit the
+  `fullyUpToDate()` "heartbeat only" early-return *before* `drainDeferredQueue`.
+  On a closed, fully-cached market `fullyUpToDate()` is `true` (the parked
+  symbols still hold their settled close), so the burst was skipped and the
+  forced entries were stranded "updating…" until the slow ~5-min cadence — the
+  reported "2 min, if not more".
+
+**Fix.**
+- §5.1 — `efficiencySpillEligible` now keys **purely off size and the deferred
+  set**: a round that *originally* asked for more than the instant threshold
+  (>16) spills its Twelve-Data overflow to Tiingo in parallel **no matter the
+  time of day, whether the market is open or shut, or whether the round is a
+  login, a scheduled auto round, or a manual Refresh**. The earlier market-open /
+  manual condition is gone — once a book is large enough that Twelve Data needs
+  several per-minute windows to clear it, draining the overflow on the backup in
+  one fan-out is always the faster, more responsive choice (this mirrors
+  `planFanout`, whose login/manual spill never depended on market hours either).
+  `runTiingoFallback` still threads a `manualForce` option, but only to bypass
+  the per-symbol no-newer cooldown so a *repeated* manual tap re-pulls rather
+  than answering "already checked".
+- §5.2 — `DeferredQueue` gains `hasForced()`, and the scheduler's
+  `fullyUpToDate()` skip becomes
+  `if ((kind === "auto" || kind === "start") && this.fullyUpToDate() && !this.deferredQueue.hasForced())`.
+  A burst round that still owes **forced** deferrals now proceeds to
+  `drainDeferredQueue` and re-pulls them, so a ≤16-holding manual round drains
+  within the next ~60 s burst instead of stalling. The queue's existing
+  per-symbol retry cap still bounds the bursts, so a genuinely unreachable
+  symbol ages out rather than looping forever.
+
+**✅ Implemented.** Covered by `web/test/provider-fanout.test.ts` (a big round
+spills regardless of market state or trigger; size/deferred remain the only
+gates), `web/test/tiingo-fallback.test.ts` (big manual *and* big automatic
+closed-market rounds both fill their overflow via Tiingo; a small round stays
+off; a manual repeat bypasses the no-newer cooldown) and
+`web/test/deferred-queue.test.ts` (`hasForced()`).
+
+## 6. Settled-heartbeat cadence + deferred edge-case logging (follow-up)
+
+**Cadence — no invented magic number.** The settled-market heartbeat (the slow
+tick that keeps the scheduler alive once the book is fully up to date so it
+notices the next session open / NAV publish) was a hard-coded `5 * 60 * 1000`
+constant tied to nothing. It is now `App.settledHeartbeatMs()`, returning the
+user's own configured auto-update interval (`config.updateMinutes`) — the same
+cadence the live steady-state slow refresh (`nextRefreshDelayMs`'s
+`slowIntervalMs`) and `upToDateWindowMs()` already use. A settled book has
+nothing to fetch, so re-checking on exactly the user's chosen rhythm is the
+honest cadence and there is no separate constant to drift.
+
+**Deferred edge cases are now fully in the polling log.**
+- **Aged out (retry cap).** `drainDeferredQueue`'s "dropped after N attempts"
+  line is now an explicit `warn` (was inferred `info`) and spells out that the
+  work-queue re-pull is being abandoned and each symbol falls back to its own
+  cache TTL — a permanently-given-up symbol can no longer hide in the trail.
+- **Held undrained because the book is settled.** When the auto/​start tick
+  short-circuits on `fullyUpToDate()` (no forced deferrals), any ordinary
+  deferrals still parked are *intentionally* not drained — the settled book
+  already holds each one's settled close. That state now emits its own
+  `orchestrator`/`warn` line ("N ordinary deferral(s) held undrained — … will
+  drain on the next non-settled round") so a parked symbol showing no fresh pull
+  is explained rather than silently stranded.

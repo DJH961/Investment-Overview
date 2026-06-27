@@ -17,6 +17,7 @@ import { getInvestmentAmountEur } from "./investment-amount";
 import {
   isUsMarketOpen,
   isUsMarketHoliday,
+  isUsTradingDay,
   isForexMarketOpen,
   forexMarketReopenMs,
   lastForexReopenMs,
@@ -360,7 +361,7 @@ export function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElemen
     );
   }
   if (o.eurUsdSource === "eod") {
-    stamps.push(h("span", { class: "fx-box-eod" }, ["end-of-day FX"]));
+    stamps.push(h("span", { class: "fx-box-eod" }, ["EOD FX"]));
   }
 
   const rateStat = h("div", { class: "fx-box-stat" }, [
@@ -509,6 +510,80 @@ function renderFxEffect(o: OverviewView, now: Date = new Date()): HTMLElement | 
 }
 
 /**
+ * The prior-session EUR/USD anchor for the "since yesterday" currency-effect
+ * panels. Prefer the FX provider's settled previous close; when that is missing
+ * — a closed-market / frozen-FX / end-of-day-rate round, where the compute layer
+ * leaves `fxRateEurUsdPrev` null and so `todayFxMoveEur` collapses to zero — fall
+ * back to the session close, the same prior-close anchor the FX card's "Since
+ * close" stat already reads. Without this both the EUR currency-effect and the
+ * USD investing-power ("bang for buck") panels vanish in exactly those states
+ * even though the card still shows a real rate move. Null only when neither
+ * anchor is known.
+ */
+export function fxEffectPriorFx(o: OverviewView): Decimal | null {
+  if (o.fxRateEurUsdPrev !== null && o.fxRateEurUsdPrev.greaterThan(0)) {
+    return o.fxRateEurUsdPrev;
+  }
+  if (o.fxRateEurUsdSessionClose !== null && o.fxRateEurUsdSessionClose.greaterThan(0)) {
+    return o.fxRateEurUsdSessionClose;
+  }
+  return null;
+}
+
+/**
+ * A subtle data-quality signal for the "since yesterday" currency panels: when the
+ * KPI is running on a *degraded* anchor rather than a fresh one, return a short
+ * reason; otherwise null. Surfaced as an unobtrusive ⚠️ glyph (see the renderers),
+ * never a blocking error — the panel still shows its best estimate. Degraded when:
+ *   • the settled prior close is missing (the panel is leaning on the session-close
+ *     fallback, a persisted/cold-start baseline rather than a freshly settled one); or
+ *   • forex is *live* but market-shut and the session close anchor never landed (the
+ *     overnight split is estimated off the drifting live tip, not the true 16:00 ET
+ *     settle).
+ *
+ * Crucially this is a *data-quality* signal, not a "market is closed" signal: a
+ * normal frozen weekend (Fri ≥17:00 ET through Sun <17:00 ET, `forexOpen=false`)
+ * is **not** flagged on the close-anchor branch. While forex is frozen the
+ * displayed rate simply *is* Friday's close — nothing is being estimated off a
+ * moving tip — so the glyph stays silent unless real data is missing (an absent
+ * settled baseline). This keeps the warning from sitting on the KPI all weekend
+ * just because the market happens to be shut.
+ */
+export function fxAnchorWarning(o: OverviewView, now: Date = new Date()): string | null {
+  const settledPrevMissing = o.fxRateEurUsdPrev === null || !o.fxRateEurUsdPrev.greaterThan(0);
+  if (settledPrevMissing) {
+    return "Yesterday's settled EUR/USD close is unavailable — showing the best baseline on hand.";
+  }
+  const { marketOpen, forexOpen } = fxBoxRegime(now);
+  const closeMissing =
+    o.fxRateEurUsdSessionClose === null || !o.fxRateEurUsdSessionClose.greaterThan(0);
+  // Only an inaccuracy while forex is genuinely trading (the live tip is drifting
+  // away from a close that never landed). On a frozen weekend the rate equals
+  // Friday's close, so a missing session-close anchor changes nothing — no warning.
+  if (forexOpen && !marketOpen && closeMissing) {
+    return "The session's closing EUR/USD anchor hasn't been pulled yet — the overnight split is estimated.";
+  }
+  return null;
+}
+
+/**
+ * The subtle ⚠️ glyph appended to a currency-panel head when {@link fxAnchorWarning}
+ * flags a degraded anchor. It is a real tooltip trigger (not a bare `title`): the
+ * reason is hidden by default — keeping the overview uncluttered — and revealed on
+ * hover/focus, or pinned by a tap on touch devices so the explanation is reachable
+ * on mobile too. Muted and help-cursored (CSS `.fx-effect-warn`), so it informs
+ * without ever shouting.
+ */
+function fxAnchorWarnBadge(reason: string): HTMLElement {
+  return buildTooltipTrigger(
+    [h("span", { class: "fx-effect-warn-glyph", "aria-hidden": "true" }, ["\u26A0\uFE0F"])],
+    reason,
+    "fx-effect-warn",
+    `Data note: ${reason}`,
+  );
+}
+
+/**
  * EUR display: the "Currency effect since yesterday" panel — the net EUR P/L
  * from today's EUR/USD move on the USD-booked book, with the diverging
  * market-hours/overnight split below.
@@ -520,7 +595,22 @@ function renderFxEffect(o: OverviewView, now: Date = new Date()): HTMLElement | 
  * "Overnight". The frozen Friday weekend keeps the full two-leg split, frozen.
  */
 function renderEurFxEffect(o: OverviewView, now: Date): HTMLElement | null {
-  const net = o.todayFxMoveEur;
+  // The euro currency effect since the prior close. Normally `todayFxMoveEur`
+  // (anchored to the settled previous close). When that close is unknown the
+  // compute layer leaves the move at zero, so fall back to the session-close
+  // anchor and derive the book's EUR FX swing directly — the same overnight
+  // story the card's "Since close" stat reports — rather than dropping the panel.
+  let net = o.todayFxMoveEur;
+  if (
+    net.isZero() &&
+    (o.fxRateEurUsdPrev === null || !o.fxRateEurUsdPrev.greaterThan(0))
+  ) {
+    const priorFx = fxEffectPriorFx(o);
+    const fxNow = o.fxRateEurUsd;
+    if (priorFx !== null && fxNow !== null && fxNow.greaterThan(0) && o.totalValueUsd !== null) {
+      net = o.totalValueUsd.dividedBy(fxNow).minus(o.totalValueUsd.dividedBy(priorFx));
+    }
+  }
   // No euro swing at all today ⇒ nothing worth a panel (the rate line still shows).
   if (net.isZero()) return null;
 
@@ -536,6 +626,8 @@ function renderEurFxEffect(o: OverviewView, now: Date): HTMLElement | null {
       h("span", { class: `fx-effect-net ${signClass(net)}` }, [formatSignedMoneyEur(net)]),
     ]),
   ];
+  const eurWarn = fxAnchorWarning(o, now);
+  if (eurWarn !== null) children[0].querySelector(".fx-effect-title")?.appendChild(fxAnchorWarnBadge(eurWarn));
 
   const { marketOpen, holiday, singleOvernight } = fxBoxRegime(now);
   if (singleOvernight) {
@@ -559,7 +651,7 @@ function renderEurFxEffect(o: OverviewView, now: Date): HTMLElement | null {
     liveFx: o.fxRateEurUsd,
     sessionCloseFx: o.fxRateEurUsdSessionClose,
     sessionOpenFx: o.fxRateEurUsdSessionOpen,
-    todayFxMoveEur: o.todayFxMoveEur,
+    todayFxMoveEur: net,
   });
   const bar = fxDivergeBar(split.marketHoursEur, split.overnightEur, marketOpen, formatSignedMoneyEur);
   if (bar) children.push(bar);
@@ -585,7 +677,10 @@ function renderEurFxEffect(o: OverviewView, now: Date): HTMLElement | null {
  */
 function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | null {
   const fxNow = o.fxRateEurUsd;
-  const fxPrev = o.fxRateEurUsdPrev;
+  // Prior-close anchor: the settled previous close, else the session close so the
+  // panel survives a closed-market / frozen-FX round the same way the EUR effect
+  // panel does — rather than disappearing while the card still shows a rate move.
+  const fxPrev = fxEffectPriorFx(o);
   if (fxNow === null || fxPrev === null || !fxNow.greaterThan(0) || !fxPrev.greaterThan(0)) {
     return null;
   }
@@ -610,6 +705,8 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
       h("span", { class: `fx-effect-net ${signClass(net)}` }, [fmt(net)]),
     ]),
   ];
+  const powerWarn = fxAnchorWarning(o, now);
+  if (powerWarn !== null) children[0].querySelector(".fx-effect-title")?.appendChild(fxAnchorWarnBadge(powerWarn));
 
   // Anchor the swing to the figures it rides: the regular EUR amount set in
   // Settings on the left, and the dollars it actually buys at today's live rate
@@ -1120,6 +1217,21 @@ function renderHoldingRow(
   // always shown so each row states exactly when its mark is from, never dressed
   // up as a vague "live"/"recent" status.
   const asOf = `as of ${formatAsOf(holding.priceAsOf, holding.priceFallbackDate, now)}`;
+  // A subtle, colourblind-safe up-to-date check beside the "as of" stamp
+  // (suggestions #1 + #4): in the after-close / pre-open "stale market" window a
+  // glance can't otherwise tell which holdings already carry the latest settled
+  // close. We paint a small ✓ only when the market is shut and this holding is
+  // genuinely current (driver: `priceIsCurrent`); the laggards simply show no
+  // check, so behind reads as the quiet absence of a mark — no extra noise. During
+  // live hours the check is suppressed entirely (the live greying does that job).
+  const showCurrentCheck = !isUsMarketOpen(now) && holding.priceIsCurrent;
+  const asOfChildren: Array<Node | string> = [asOf];
+  if (showCurrentCheck) {
+    asOfChildren.push(
+      h("span", { class: "holding-asof-check", "aria-hidden": "true" }, ["✓"]),
+    );
+  }
+  const asOfTitle = showCurrentCheck ? `${asOf} — up to date with the latest close` : asOf;
   const main = h("div", { class: "holding-main" }, [
     h("div", { class: "holding-id" }, [
       // Top line: symbol (+ NAV/stale pills) on the left, and the price's
@@ -1128,7 +1240,7 @@ function renderHoldingRow(
       // 20 Jun") instead of being buried on a line under the name.
       h("div", { class: "holding-topline" }, [
         h("span", { class: "holding-sym" }, symChildren),
-        h("span", { class: "holding-asof", title: asOf }, [asOf]),
+        h("span", { class: "holding-asof", title: asOfTitle }, asOfChildren),
       ]),
       h("span", { class: "holding-name" }, [holding.name]),
     ]),
@@ -1304,8 +1416,12 @@ export function renderDashboard(
     h("div", { class: "topbar-inner" }, [
       h("div", { class: "brand" }, [
         h("span", { class: "brand-mark", "aria-hidden": "true" }, []),
-        h("span", { class: "brand-name" }, ["Investment Overview"]),
-        h("span", { class: "brand-version", title: `Web app version ${APP_VERSION}` }, [`v${APP_VERSION}`]),
+        // The wordmark adapts to width: phones (which have always clipped
+        // "Investment Overview") get the compact "Investments", desktop gets the
+        // full name. CSS toggles which is shown. The version moved out of here to
+        // the page footer / login / settings so the bar stays uncluttered.
+        h("span", { class: "brand-name brand-name-full" }, ["Investment Overview"]),
+        h("span", { class: "brand-name brand-name-short" }, ["Investments"]),
       ]),
       h("div", { class: "topbar-actions" }, [currency, refresh, settings, lock]),
     ]),
@@ -1321,7 +1437,19 @@ export function renderDashboard(
   ];
 
   const { nav, content } = renderTabs(tabs, options.initialTabId);
-  return h("main", { class: "app" }, [topbar, nav, content]);
+  return h("main", { class: "app" }, [topbar, nav, content, appVersionFooter()]);
+}
+
+/**
+ * The small build-version line that lives at the very bottom of the main page
+ * (and is reused on the login and settings screens). The version was moved out
+ * of the top overview bar so the bar stays uncluttered and the wordmark never
+ * gets clipped on mobile.
+ */
+export function appVersionFooter(): HTMLElement {
+  return h("footer", { class: "app-version" }, [
+    h("span", { title: `Web app version ${APP_VERSION}` }, [`Investment Overview · v${APP_VERSION}`]),
+  ]);
 }
 
 interface TabDef {
@@ -1826,11 +1954,33 @@ function positionInfoTip(tip: HTMLElement): void {
 
 /** A small tappable "i" that reveals a definition (hover/focus and tap). */
 function infoDot(text: string): HTMLElement {
+  return buildTooltipTrigger(
+    [h("span", { "aria-hidden": "true" }, ["i"])],
+    text,
+    "info-dot",
+    `What is this? ${text}`,
+  );
+}
+
+/**
+ * Shared wiring for the tap/hover/focus tooltip triggers ({@link infoDot} and the
+ * currency-KPI {@link fxAnchorWarnBadge}). A `<button>` carries the visible glyph
+ * plus a hidden `.info-tip` popover that the CSS reveals on hover/focus, and that
+ * a tap pins open on touch (no-hover) devices — so the explanation is reachable on
+ * mobile, where a bare `title` tooltip never appears, while staying invisible (no
+ * clutter) until asked for.
+ */
+function buildTooltipTrigger(
+  triggerChildren: Array<Node | string>,
+  text: string,
+  buttonClass: string,
+  ariaLabel: string,
+): HTMLButtonElement {
   const tip = h("span", { class: "info-tip", role: "tooltip" }, [text]);
   const button = h(
     "button",
-    { class: "info-dot", type: "button", "aria-label": `What is this? ${text}` },
-    [h("span", { "aria-hidden": "true" }, ["i"]), tip],
+    { class: buttonClass, type: "button", "aria-label": ariaLabel },
+    [...triggerChildren, tip],
   ) as HTMLButtonElement;
   ensureInfoDotDismiss();
   // Hover-capable devices rely on CSS :hover, so the tip tracks the pointer and
@@ -2543,13 +2693,28 @@ function lastNonNull(values: Array<Decimal | null>): Decimal | null {
 }
 
 /**
+ * Whether a bare `YYYY-MM-DD` calendar date falls on a regular NYSE trading day
+ * (not a weekend or full-day market holiday). Evaluated at noon UTC so the
+ * exchange-local calendar lands on the same date the string names, regardless of
+ * the viewer's timezone. Used to keep non-trading days off the long-range value
+ * graph — on those days the value is only the prior session's close carried
+ * forward, so the line's own smoothing bridges the gap far more cleanly.
+ */
+function isTradingDateIso(date: string): boolean {
+  const t = Date.parse(`${date}T12:00:00Z`);
+  return Number.isFinite(t) && isUsTradingDay(new Date(t));
+}
+
+/**
  * Splice the device's persisted whole-book daily closes into the gap between the
  * last exported point and today. When the export blob is stale (weeks old) but the
  * app is opened daily, those days were recorded live (and harvested from the 1W
  * curve), so the long-range chart draws a real per-day line across the gap instead
  * of a single straight diagonal. Only closes strictly *after* the last exported
- * day and strictly *before* `asOf` (today's live tip owns `asOf`) are added; an
- * up-to-date blob already covers the range, so nothing is spliced.
+ * day and strictly *before* `asOf` (today's live tip owns `asOf`) are added, and
+ * only genuine trading days — a weekend/holiday close is just the prior session's
+ * value carried forward, so it would add a flat step rather than real movement.
+ * An up-to-date blob already covers the range, so nothing is spliced.
  */
 export function spliceDailyBackfill(
   points: EquityPoint[],
@@ -2559,7 +2724,7 @@ export function spliceDailyBackfill(
   if (backfill.length === 0) return points;
   const lastDate = points[points.length - 1].date;
   const extra: EquityPoint[] = backfill
-    .filter((c) => c.date > lastDate && c.date < asOf)
+    .filter((c) => c.date > lastDate && c.date < asOf && isTradingDateIso(c.date))
     .map((c) => ({
       date: c.date,
       portfolioValue: c.valueEur,
@@ -2618,8 +2783,16 @@ function renderValueChart(
   // price or no FX rate) they fall out of the sum, so the tip would under-count
   // the portfolio and draw a false dip; in that case stop at the last
   // fully-valued exported point.
+  //
+  // Only do this on a genuine trading day. When today is a weekend or NYSE
+  // holiday the live total is just the last session's settled close carried
+  // forward, so tacking it onto a non-trading "today" would add a flat step (or
+  // a non-trading day) to the long-range graph. Instead the curve simply ends a
+  // day or two early at the last real session — whose exported/back-filled close
+  // is the correct final price from the last market day (mirrors the desktop
+  // `build_value_series`).
   const lastDate = dates[dates.length - 1];
-  if (o.totalValueIsComplete && liveTotal !== null) {
+  if (isTradingDateIso(o.asOf) && o.totalValueIsComplete && liveTotal !== null) {
     if (o.asOf > lastDate) {
       dates.push(o.asOf);
       values.push(liveTotal);

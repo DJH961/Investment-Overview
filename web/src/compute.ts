@@ -31,7 +31,7 @@ import { buildCalculatorData, type CalcData } from "./calculator";
 import type { DailyClose } from "./value-history";
 import { isMoneyMarketHolding } from "./money-market";
 import { LIVE_PRICE_MAX_STALENESS_MS, isUsMarketOpen, latestSettledSessionDate, sessionCloseMs } from "./market-hours";
-import { holdingFreshness, type RowFreshness } from "./freshness";
+import { holdingCoversLatestClose, holdingFreshness, type RowFreshness } from "./freshness";
 import { providerLimits } from "./provider-limits";
 
 const EUR = "EUR";
@@ -116,6 +116,17 @@ export interface HoldingView {
    * always classifies it from {@link holdingFreshness}.
    */
   priceFreshness: RowFreshness;
+  /**
+   * Absolute "is this holding up to date?" flag (suggestion #1): true when the
+   * displayed price already covers the latest **settled** NYSE session it ought
+   * to. Unlike {@link priceFreshness} (which grades observation *recency*), this
+   * is calendar-anchored — it answers the after-close / pre-open question "have I
+   * got the latest close for this holding yet?" and accounts for both market
+   * symbols (close lands at the bell) and once-a-day NAV funds (still behind until
+   * their new NAV publishes and is pulled). Drives the subtle up-to-date check
+   * mark beside the row's "as of" stamp. See {@link holdingCoversLatestClose}.
+   */
+  priceIsCurrent: boolean;
   /** Date the displayed price applies to when `priceAsOf` is null — a NAV's
    * value-date, or the export's valuation date (`meta.as_of`) for a fallback. */
   priceFallbackDate: string;
@@ -670,6 +681,24 @@ function isBusinessDayIso(iso: string): boolean {
 }
 
 /**
+ * The ET (`America/New_York`) calendar date (`YYYY-MM-DD`) of an epoch-ms instant
+ * — the same exchange-clock calendar a quote's {@link Quote.valueDate} is read on
+ * (Twelve Data stamps its `datetime` in the exchange's local zone). Dating a
+ * market quote's strike instant this way keeps it comparable to the export's
+ * `last_price_date` without a timezone-skew off-by-one.
+ */
+function etIsoDate(epochMs: number): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(epochMs));
+  const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+/**
  * Identify **suspect** quotes among the symbols freshly fetched this round: a
  * quote that *has* a price but whose price is non-positive (≤ 0). A null price
  * is simply "no data" (already tracked as failed/deferred), but a zero or
@@ -685,6 +714,33 @@ export function suspectQuoteSymbols(quotes: Map<string, Quote>, fetched: Iterabl
     if (quote && quote.price !== null && !quote.price.greaterThan(0)) suspect.push(symbol);
   }
   return suspect.sort();
+}
+
+/**
+ * Identify **undatable** market quotes among the symbols this round serves: a
+ * non-NAV (market-priced) quote that *has* a price but carries neither a strike
+ * time (`priceTime`) nor a pull instant (`at`), so {@link priceForHolding}'s
+ * Layer-1 market guard cannot date it against the export. We deliberately keep
+ * such a quote (a datable export would otherwise win every undatable round), but
+ * the choice is logged so a price that "looks live with no provable date" is
+ * never silent in the polling log. NAV symbols are excluded — their once-a-day
+ * staleness is governed by the separate `valueDate` guard. Returns the symbols,
+ * sorted.
+ */
+export function undatableQuoteSymbols(
+  quotes: Map<string, Quote>,
+  fetched: Iterable<string>,
+  navSymbols: ReadonlySet<string>,
+): string[] {
+  const undatable: string[] = [];
+  for (const symbol of fetched) {
+    if (navSymbols.has(symbol)) continue;
+    const quote = quotes.get(symbol);
+    if (quote && quote.price !== null && quote.price.greaterThan(0) && (quote.priceTime ?? quote.at ?? null) === null) {
+      undatable.push(symbol);
+    }
+  }
+  return undatable.sort();
 }
 
 function priceForHolding(
@@ -723,7 +779,23 @@ function priceForHolding(
       holding.price_type === "nav" &&
       holding.last_known_price_native !== null &&
       !(quote.valueDate != null && quote.valueDate >= fallbackDate && isBusinessDayIso(quote.valueDate));
-    if (!navStale) {
+    // Layer-1 market guard — the market-priced sibling of `navStale`. A market
+    // quote can itself be *older* than the export: a carried-forward cached close
+    // (its strike/pull instant predates the export's own `last_price_date`) would
+    // otherwise swap the displayed value backward onto a staler basis. We date the
+    // quote's strike instant (`priceTime`, else the pull instant `at`) on the same
+    // ET exchange calendar `valueDate` uses, and only keep the export when that
+    // date is *strictly* older than the export's fallback date. An undatable quote
+    // (no `priceTime` and no `at`) cannot be proven stale, so we deliberately keep
+    // it rather than block a genuinely-live mark behind the export — that choice is
+    // surfaced in the polling log via `undatableQuoteSymbols`.
+    const strikeMs = quote.priceTime ?? quote.at ?? null;
+    const marketStale =
+      holding.price_type !== "nav" &&
+      holding.last_known_price_native !== null &&
+      strikeMs !== null &&
+      etIsoDate(strikeMs) < fallbackDate;
+    if (!navStale && !marketStale) {
       // "as of" should reflect when the price actually applies, not when we
       // fetched it. Market quotes carry an intraday strike time (`priceTime`), so
       // a same-day price reads as a clock time; a daily NAV bar has only a date,
@@ -982,6 +1054,8 @@ function buildHolding(
     pricePulledAt: pulledAt,
     // Default tier; buildDashboard re-classifies from the live window + market state.
     priceFreshness: "aged",
+    // Default; buildDashboard resolves against the latest settled session.
+    priceIsCurrent: false,
     priceFallbackDate: asOfDate,
     isMoneyMarket,
     valueIsStale,
@@ -1102,7 +1176,8 @@ export function buildDashboard(
   // The epoch-ms of the latest settled session close — an observation at or after
   // this timestamp represents "today's price" regardless of the user's local
   // calendar day (fixes false "aged" after midnight for non-US timezones).
-  const settledCloseMs = sessionCloseMs(latestSettledSessionDate(now));
+  const latestSettledSessionIso = latestSettledSessionDate(now);
+  const settledCloseMs = sessionCloseMs(latestSettledSessionIso);
 
   const holdingContexts: HoldingAggregationContext[] = data.holdings.map((h) => {
     const view = buildHolding(
@@ -1125,6 +1200,15 @@ export function buildDashboard(
       marketOpen: marketOpenNow && view.priceMarketOpen !== false,
       liveWindowMs: liveStalenessMs,
       lastSettledCloseMs: settledCloseMs,
+    });
+    // Absolute up-to-date driver (suggestion #1): does this holding already carry
+    // the latest settled session's close? Anchored on the price's value-date so it
+    // accounts for both market symbols and once-a-day NAV funds uniformly.
+    view.priceIsCurrent = holdingCoversLatestClose({
+      priceDateIso: view.priceFallbackDate,
+      latestSettledSessionIso,
+      isMoneyMarket: view.isMoneyMarket === true,
+      hasValue: view.valueEur !== null,
     });
     // A holding with no value at all (no price, FX, or fallback) is dropped from
     // totals; one valued from the export fallback is counted but flagged stale.

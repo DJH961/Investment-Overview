@@ -43,6 +43,7 @@ import {
   WEB_HOURLY_CAP,
 } from "./tiingo-gate";
 import { tiingoFrozen } from "./provider-breaker";
+import { efficiencySpillEligible, TIINGO_RESERVE_CREDITS } from "./provider-fanout";
 import { ledgerReservation, type Reservation } from "./reservation";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -129,6 +130,21 @@ export interface TiingoFallbackOptions {
    * session are left untouched.
    */
   forceAll?: boolean;
+  /**
+   * A user-driven cache-distrust re-pull — the **standard manual Refresh tap**,
+   * which in a closed/settled market escalates to a full force-fetch of every
+   * price (`buildQuoteOptions` `forceAll`). Unlike {@link forceAll} (the separate
+   * "route everything through Tiingo" button) the Twelve Data primary still leads;
+   * this flag only changes the backup's behaviour for the overflow Twelve Data
+   * deferred. It (a) lets the market-hours **efficiency spill** fire even while the
+   * exchange is shut — so a big manual round's deferred overflow is filled via
+   * Tiingo in parallel rather than trickling through the per-minute cap over
+   * minutes — and (b) bypasses the per-symbol "nothing newer" cooldown, so a user
+   * who taps Refresh again genuinely re-verifies the book rather than being told
+   * "already checked". Size/deferred gates still apply, so a small manual round is
+   * unaffected (its overflow drains through the normal per-minute burst).
+   */
+  manualForce?: boolean;
   /**
    * Hold back this many Tiingo credits from every budget check in this run (the
    * startup quick-refresh sets it so a true gap-fill fallback later in the
@@ -356,6 +372,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     storage,
     fetchImpl,
     forceAll = false,
+    manualForce = false,
     reserveCredits = 0,
     reservation = ledgerReservation(storage ?? null),
   } = options;
@@ -388,8 +405,9 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
   // holds nothing fresher than what we already have for `expected`, stop
   // re-pulling that symbol on every refresh until the cooldown lapses or a newer
   // target appears. The explicit "route everything through the backup" button
-  // (`forceAll`) bypasses this entirely.
-  const noNewer = forceAll ? {} : readTiingoNoNewer(storage ?? undefined);
+  // (`forceAll`) and a user-driven cache-distrust Refresh (`manualForce`) bypass
+  // this entirely — both mean the user explicitly asked to re-verify the book.
+  const noNewer = forceAll || manualForce ? {} : readTiingoNoNewer(storage ?? undefined);
   const suppressedByNoNewer = (symbol: string): boolean => {
     const stamp = noNewer[symbol];
     if (!stamp) return false;
@@ -419,12 +437,39 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
   // session appears), so a NAV and a stock are filled by one identical path.
   try {
     const candidates: string[] = [];
+    // Size-based efficiency spill — the whole policy is owned by Pillar 5's
+    // provider-spilling authority (`efficiencySpillEligible` in
+    // `provider-fanout.ts`), so it can be tuned in one place alongside the
+    // login/manual `planFanout` spill. In short: when the round *originally* asked
+    // for a big sleeve (`symbols` is the whole requested set, e.g. all 17), its
+    // Twelve Data deferred overflow is spilled to Tiingo in parallel rather than
+    // left to trickle through the per-minute cap — regardless of market hours or
+    // whether the round was manual or automatic.
+    const requestedCount = symbols.length;
+    const deferredSet = new Set(report.deferred);
+    // The live Tiingo credits spendable right now (raw hour/day budget, with the
+    // 429-breaker freeze folded in as 0). The efficiency spill is gated on this so
+    // it only earmarks overflow for Tiingo when fanning out is actually possible —
+    // i.e. there are credits free *beyond* the fan-out reserve. When Tiingo is
+    // spent (or frozen) the overflow stays on Twelve Data's deferred queue instead
+    // of being routed to a backup leg that can never run, so a big closed-market
+    // hard refresh can't strand on "Updating…" waiting for a Tiingo fill that the
+    // budget will never grant.
+    const tiingoCreditsAvailable = readBudget(now, storage).remaining();
     for (const symbol of symbols) {
       if (suppressedByNoNewer(symbol)) continue;
       const q = quotes.get(symbol);
       const held = q?.valueDate ?? null;
       const primaryFailed = primaryFellShort.has(symbol) || !q || q.price === null;
-      if (marketSymbolEligible({ heldDate: held, expectedDate: expected, primaryFailed })) {
+      const eligible = marketSymbolEligible({ heldDate: held, expectedDate: expected, primaryFailed });
+      const efficiencyEligible = efficiencySpillEligible({
+        symbol,
+        requestedCount,
+        deferred: deferredSet,
+        tiingoCreditsAvailable,
+        tiingoReserve: TIINGO_RESERVE_CREDITS,
+      });
+      if (eligible || efficiencyEligible) {
         candidates.push(symbol);
       }
     }
@@ -442,10 +487,13 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
         // prevented any spend. Surface this clearly so fallback pulls never fall
         // under the radar — the caller logs it and the central safety net
         // (planTwelveDataSafetyNet) catches the unfilled holes on Twelve Data.
+        // Tagged HTTP 429 because this *is* the over-quota case (the hourly/daily
+        // credit cap is spent), so `describeTiingoError` reports "credits look
+        // used up" rather than the misleading "unreachable; check the Worker".
         error = new PriceError(
           `Tiingo budget exhausted — ${candidates.length} symbol(s) needed but blocked by limits. ` +
             "Central safety net will catch remaining holes on Twelve Data.",
-          { retryable: true, retryAfterMs: msUntilNextHour(now) },
+          { status: 429, retryable: true, retryAfterMs: msUntilNextHour(now) },
         );
       }
     }
@@ -516,7 +564,7 @@ export function noteQuickRefresh(now: number, storage?: StorageLike | null): voi
  */
 export const STARTUP_TIINGO_RESERVE = 5;
 
-export type StartupRefreshRoute = "twelve" | "tiingo" | "split";
+export type StartupRefreshRoute = "twelve" | "split";
 
 export interface StartupRefreshPlan {
   /** Which provider(s) the startup quick-refresh should use this round. */
@@ -537,11 +585,16 @@ export interface StartupRefreshPlan {
  *    threshold therefore tracks the configured `twelveDataPerMinute` limit
  *    ({@link FREE_TIER}.creditsPerMinute) rather than a hard-coded number.
  *
- * Given those it routes everything via **Tiingo** when the usable budget covers
- * the whole outdated set, a **split** (Tiingo for as many as the usable budget
- * allows, Twelve Data for the rest) when the set is larger but some budget
- * remains, and everything via **Twelve Data** when no usable budget is left (a
- * split is impossible) or Tiingo isn't configured.
+ * Given those, the quick-refresh **always leads with the Twelve Data primary**
+ * (it clears its full per-minute set fast and for free) and only ever asks
+ * Tiingo to cover the genuine **overflow** beyond that lead — a **split**. It
+ * never wires the *whole* book through the scarce, hourly-capped Tiingo pipe
+ * while a perfectly good Twelve Data minute sits idle (that single-provider
+ * detour quietly burned Tiingo credits a free Twelve Data lead would have
+ * covered, and is the orchestration the dual-pipe data pipeline is built to
+ * avoid). It falls back to **Twelve Data** alone when there is no usable Tiingo
+ * budget (a split is impossible), the outdated set is small, or Tiingo isn't
+ * configured.
  */
 export function planStartupRefresh(args: {
   outdatedCount: number;
@@ -559,10 +612,10 @@ export function planStartupRefresh(args: {
   const usable = Math.max(0, args.tiingoRemaining - reserve);
   // No usable Tiingo budget ⇒ a split is impossible ⇒ wire everything to Twelve.
   if (usable <= 0) return allTwelve;
-  // The whole outdated set fits within the usable budget ⇒ one capped Tiingo pull.
-  if (usable >= args.outdatedCount) return { route: "tiingo", tiingoBudget: args.outdatedCount };
-  // Otherwise split: Tiingo takes what the budget allows, Twelve Data the rest.
-  return { route: "split", tiingoBudget: usable };
+  // Twelve Data leads its free per-minute set; Tiingo takes only the overflow
+  // beyond that lead, in parallel — never the whole book through one pipe.
+  const overflow = Math.max(0, args.outdatedCount - minOutdated);
+  return { route: "split", tiingoBudget: Math.min(usable, overflow) };
 }
 
 /** Which provider the login warm-up routes its quote pull through. */

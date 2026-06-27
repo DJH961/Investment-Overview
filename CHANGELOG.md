@@ -14,6 +14,265 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.14.6] — 2026-06-27
+
+### Fixed
+
+- **The startup quick-refresh no longer routes the *whole* outdated book through
+  the single Tiingo pipe.** On a badly-stale re-open with a valid Twelve Data key
+  configured, `planStartupRefresh` used to return a Tiingo-only route whenever the
+  spare Tiingo budget covered the entire outdated set (any set larger than the
+  Twelve Data per-minute lead, e.g. 9–~35 symbols). That set `viaTiingo: true`,
+  which blanked the Twelve Data key for the round and sent every symbol — quotes
+  **and** the EUR/USD FX bar that now rides the same pipe (see 4.14.2) — down the
+  scarce, hourly-capped Tiingo backup, while a perfectly good free Twelve Data
+  minute sat idle. This is the *only* non-button place (other than a genuinely
+  missing Twelve Data key or the explicit "Try the backup provider" button) that
+  silently collapsed to the single provider. The startup refresh now **always
+  leads with the Twelve Data primary and spills only the genuine overflow to
+  Tiingo** (the existing `split` route), matching the dual-pipe orchestration the
+  data pipeline is built around — instant paint is preserved (a stale book's
+  deferred symbols are fallback-eligible in the same round) while the first ~8
+  symbols' worth of Tiingo credits are saved every re-open. The dead Tiingo-only
+  startup route and its `viaTiingo` dispatch branch were removed.
+
+### Note
+
+- The three Settings → Maintenance actions (**hard refresh**, **clear cache &
+  refresh**, **regenerate 1D/1W**) were verified to already use the correct
+  dual-pipe orchestration (Twelve Data first, Tiingo overflow) and were *not* the
+  source of the single-pipe behaviour; the culprit was the concurrent startup
+  quick-refresh fixed above.
+
+## [4.14.5] — 2026-06-27
+
+### Fixed
+
+- **The data-loading (consumption) log no longer flags the weekend's frozen
+  EUR/USD rate as missing-perfect data.** The spot-FX market is shut all weekend
+  (Fri 17:00 ET → Sun 17:00 ET), so a *live* intraday EUR/USD cannot exist; the
+  keyless end-of-day rate is then the best obtainable data, not a degradation.
+  The summariser now takes the read instant, and when the FX market is closed it
+  reframes the held end-of-day rate as expected — an `info` note that states
+  plainly *why* a live spot is impossible and when the market reopens — instead
+  of a `warn`/missing-perfect fault that asked for a rate that could never
+  arrive. The weekend rate now counts as a perfect read for both the currency
+  KPIs and the 1D/1W graph's EUR/USD split (`web/src/consumption-log.ts`).
+- **Non-trading days no longer add flat carried-forward steps to the value
+  graph.** On a weekend or NYSE holiday the live total is just the last session's
+  settled close carried forward, so tacking it onto a non-trading "today" — or
+  splicing a non-trading day into the long-range backfill — drew a flat step
+  rather than real movement. The curves now end a day or two early at the last
+  real session (whose settled close is the correct final price), the device's
+  daily-close store skips non-trading dates, and the desktop `build_value_series`
+  drops the carried-forward "today" tip to match. The chart simply ends at the
+  last market day instead of repeating it (`web/src/ui.ts` `renderValueChart` /
+  `spliceDailyBackfill`, `web/src/app.ts`,
+  `src/investment_dashboard/ui/pages/_overview_query.py`).
+
+## [4.14.4] — 2026-06-27
+
+### Fixed
+
+- **A big closed-market hard refresh no longer hangs on "Updating…" forever when
+  the Tiingo backup is out of credits.** When a refresh was large enough to fan
+  its Twelve Data overflow out to Tiingo for efficiency (the >16-symbol "instant"
+  rule) but Tiingo had no credits left, the spill still earmarked that overflow
+  for a Tiingo leg that could never run: the round ended with a "Tiingo budget
+  exhausted" error that rerouted the retry to the next clock hour, and on the
+  normal (non-"via backup") route the central safety net never re-pulled those
+  symbols on Twelve Data — so a manual cache-distrust re-pull on a settled market
+  could spin indefinitely. The efficiency spill is now gated on whether fanning
+  out is actually possible: `efficiencySpillEligible` takes the live Tiingo
+  credits and only spills when there is at least one credit free **beyond** the
+  fan-out reserve (the last `TIINGO_RESERVE_CREDITS` kept for genuine fallbacks
+  and login efficiency). When Tiingo is spent or its 429 breaker is frozen the
+  overflow keeps its explicit-force status on Twelve Data's deferred queue and
+  clears over the next per-minute windows instead of being routed to a backup
+  with nothing left to give (`web/src/provider-fanout.ts`,
+  `web/src/tiingo-fallback.ts`).
+
+## [4.14.3] — 2026-06-27
+
+### Fixed
+
+- **Large manual / closed-market refreshes no longer trickle their Twelve Data
+  overflow through the per-minute cap — the Tiingo efficiency spill now fires
+  regardless of market hours or trigger.** The spill that drains a big sleeve's
+  deferred overflow onto the backup in parallel was gated on the market being
+  open, so a >16-symbol refresh outside US trading hours (a login, a scheduled
+  round, or a user tapping Refresh on a settled/closed market) saw its overflow
+  left to dribble through Twelve Data's per-minute budget over several minutes
+  instead of being filled at once. `efficiencySpillEligible` now keys purely off
+  sleeve size and the deferred set — mirroring `planFanout`, whose login/manual
+  spill never depended on market hours — so a large book clears on the backup in
+  one fan-out whenever Twelve Data alone would need multiple windows
+  (`web/src/provider-fanout.ts`, `web/src/tiingo-fallback.ts`).
+- **A standard manual Refresh on a closed market now genuinely re-verifies the
+  book instead of being told "already checked".** A new `manualForce` flag on the
+  Tiingo fallback lets a user-driven cache-distrust pull both fire the efficiency
+  spill while the exchange is shut and bypass the per-symbol "nothing newer"
+  cooldown, so repeated Refresh taps actually re-pull rather than being
+  suppressed; size/deferred gates still apply, so small rounds are unaffected
+  (`web/src/tiingo-fallback.ts`, `web/src/app.ts`).
+- **Explicit force-deferred symbols no longer sit "Updating…" indefinitely behind
+  the scheduler's freshness short-circuit.** `DeferredQueue.hasForced()` lets the
+  automatic scheduler detect user-driven force deferrals that overflowed the
+  budget and still run the round to surface and re-pull them, rather than skipping
+  on a "book already up to date" judgement that does not know the user asked for
+  them (`web/src/deferred-queue.ts`).
+
+## [4.14.2] — 2026-06-27
+
+### Changed
+
+- **Live-graph EUR/USD FX history now rides the same price-bar pipe as every
+  other symbol**, so it is fetched **Twelve Data first, then Tiingo** with the
+  identical capacity split, reservation gating, dual-pipe fallback and per-symbol
+  backoff — instead of through a parallel, Tiingo-first FX subsystem. The EUR/USD
+  pair is now just another symbol on `makePriceBarFetcher`: the Twelve Data leg
+  pulls it browser-direct via `time_series` and the Tiingo leg routes it to the
+  Worker `fxHistory` route. Any future change to the price pipe automatically
+  applies to FX, with no separate FX fetcher, backoff or metering leg to keep in
+  step. As a side benefit the 1D FX track is now sampled at the price feed's
+  intraday `interval` (finer than the previous fixed 1-hour cadence)
+  (`web/src/live-graph.ts` `makeFxFetcher`, `web/src/intraday-tiingo.ts`
+  FX-aware bar routing, `web/src/app.ts`).
+
+## [4.14.1] — 2026-06-27
+
+### Fixed
+
+- **The "Currency effect since yesterday" and USD "bang for buck" / investing-power
+  panels no longer vanish on a closed-market / frozen-FX round** even while the FX
+  card still shows a real EUR/USD rate move. Both panels were anchored to the
+  settled previous close (`fxRateEurUsdPrev`); on rounds where the compute layer
+  leaves that null — market closed, FX frozen, or an end-of-day-rate pull —
+  `todayFxMoveEur` collapses to zero and the panels dropped out entirely. They now
+  fall back to the **session-close** anchor (`fxEffectPriorFx`, the same prior-close
+  rate the FX card's "Since close" stat already reads), deriving the book's EUR FX
+  swing directly so the panel survives the gap instead of disappearing
+  (`web/src/ui.ts` `renderEurFxEffect`, `renderInvestingPowerEffect`).
+- **The live 1D / 1W value graphs no longer slide up and down overnight with
+  after-hours EUR/USD ticks.** The 1D/1W curves draw a market-day trajectory, but
+  the USD-booked book's euro line re-marked at every after-hours FX tick because FX
+  trades ~24h while the US session is only 09:30–16:00 ET. The curves are now
+  anchored to the **session-close FX** while the market is shut (`graphAnchorFx`),
+  frozen for the night, falling back to the settled `previousClose` (a real,
+  non-drifting rate that on a weekend / cold start *is* the session close) and only
+  then to the live rate — so a not-live-at-close or empty-storage start is protected,
+  never fabricated (`web/src/session-fx.ts`, `web/src/app.ts`, `web/src/data-orchestrator.ts`).
+- **The market-hours versus overnight FX P/L attribution stays honest.** A new
+  `fxEffectSplit` isolates the in-session EUR/USD move (prior close → this session's
+  close) from the overnight move (session close → live spot), resolving the session
+  close from the session's own dated FX bars where possible and only otherwise from
+  the live capture; with neither it returns nothing rather than blaming the whole
+  swing on "overnight" (`web/src/session-fx.ts`, `web/src/freshness.ts`).
+- **A degraded FX anchor is now surfaced unobtrusively.** When a currency panel is
+  running on a fallback baseline (settled prior close missing, or a closed market
+  whose session-close anchor never landed) it appends a muted ⚠️ glyph with the
+  reason on hover / `aria-label` (`fxAnchorWarning`, `.fx-effect-warn`) — informing
+  without ever blocking the best-estimate figure (`web/src/ui.ts`, `web/src/styles.css`).
+
+## [4.14.0] — 2026-06-27
+
+### Added
+
+- **Data-loading (consumption) log for the web overview.** A new, downloadable
+  plain-text log — the *read* counterpart to the existing data-polling log —
+  records what the main overview's views actually **consumed** from the available
+  data, and where they had to fall back to **alternative data because the perfect
+  data was missing**. Rather than a line per consumer, each entry is one
+  summarised snapshot across the three families the user cares about — `holdings`,
+  `graph` and `currency` KPIs — with plain-language flags for the
+  weird/uncommon moments (a holding dropped from totals, a USD KPI that fell back
+  to its EUR figure, a chart tip that could not draw, a device backfill bridging a
+  stale data file) and a per-snapshot "needed to be perfect" verdict. Consecutive
+  identical states collapse to a single row with a repeat count, so a new row
+  appears only when the consumed picture genuinely changes. Download/clear it from
+  **Settings**. This is a `web/` companion change only.
+- **Graph log now reports the 1W NAV sleeve and the 1D/1W FX anchor explicitly.**
+  The `graph` family additionally surfaces the two inputs unique to the live
+  1D/1W curves, where data gaps are otherwise easy to miss: the **NAV portion of
+  the 1W graph** (which NAV funds re-marked from their daily-NAV bars versus which
+  were pinned flat in the base for want of a usable price/share count, plus stale
+  NAV values), and the **FX portion of the 1D/1W graphs** (which EUR/USD the EUR
+  line is anchored to — live, cached, end-of-day, or the backup provider — and
+  whether a settled session-close rate exists to freeze the EUR view to once the
+  market shuts). This is a `web/` companion change only.
+
+## [4.13.8] — 2026-06-27
+
+### Fixed
+
+- **A big market-open round (e.g. all 17 symbols) now reaches its live marks at
+  once instead of trickling 8/min through Twelve Data.** When Twelve Data prices
+  the first 8 and defers the remaining 9, those 9 used to sit out the per-minute
+  cap because `marketSymbolEligible` only treats a symbol *behind the settled
+  session* as chaseable — a budget-deferred symbol that already holds the prior
+  settled close looked "up to date" and so never tripped the Tiingo backup. The
+  fallback now applies a **market-hours efficiency spill**: when the round
+  *originally* asked for more than two Twelve Data minutes of work (keyed off the
+  whole requested sleeve, not the post-Twelve-Data remainder, so the trigger does
+  not lapse as Twelve Data whittles the remainder down), its deferred overflow is
+  spilled to Tiingo in parallel. The whole policy lives in one place — Pillar 5's
+  provider-spilling authority (`efficiencySpillEligible` in
+  `web/src/provider-fanout.ts`, alongside the login/manual `planFanout` spill and
+  its shared `FANOUT_INSTANT_THRESHOLD`) — so it can be tuned centrally. NAV funds
+  ride the same sleeve: a fund only lands in the deferred queue when it genuinely
+  needs today's price, so it is spilled to the backup identically to a stock.
+- **Deferred holdings no longer show "Updating…" for minutes on end after the
+  backup already priced them.** The forward Tiingo fallback merged its fills into
+  the quote map but never reconciled the round's `QuoteLoadReport`, so the burst
+  scheduler, the deferred work-queue and the "all prices live" check all kept
+  treating a backup-filled holding as still deferred — endlessly re-bursting for a
+  price that had already arrived. A new `absorbTiingoFallback` folds every
+  backup-filled symbol out of `deferred` / `failed` and into `fetched`, mirroring
+  `absorbSafetyNet` for the reverse net (`web/src/app.ts`).
+
+## [4.13.7] — 2026-06-27
+
+### Changed
+
+- **Idle auto-lock now ignores passive pointer/touch movement.** Activity
+  detection no longer counts `pointermove` / `mousemove` / `touchmove`, so a
+  resting or twitching hand on a mouse — or a phone simply being held while its
+  owner dozes off — can no longer silently extend the session past the auto-lock
+  window. To stay in past the window, use the one-tap **"Stay unlocked"**
+  extension on the locking-soon warning. This is a `web/` companion change only.
+- **Idle auto-lock now extends only on deliberate control interactions.**
+  Tightening the previous change: scrolling, the mouse wheel, raw
+  `pointerdown` / `touchstart` and stray taps on blank chrome no longer re-arm
+  the window — so an absent-minded swipe over the screen can no longer keep the
+  session unlocked. The countdown is now reset only by a genuine action: a
+  click/tap that lands on an actual control (a tab/page, the currency toggle, a
+  graph timeframe, expanding an overview, buttons/links/form controls), a
+  form-control change, or keyboard input. The strictness is captured in a pure,
+  unit-tested `isDeliberateActivity` helper. To stay in past the window, use the
+  one-tap **"Stay unlocked"** extension on the locking-soon warning. This is a
+  `web/` companion change only.
+
+## [4.13.6] — 2026-06-27
+
+### Fixed
+
+- **"Regenerate 1D graph" / "Regenerate 1W graph" no longer makes the overview
+  read "No live-priced holdings".** A regenerate primes every market quote from
+  the freshly-pulled graph bars, so the very next auto-refresh round finds the
+  whole book already fresh and the data orchestrator legitimately suppresses the
+  quote / NAV / FX legs (`pull nothing`). The live-coverage summary was built
+  only from the symbols that round actually *touched* (`QuoteLoadReport`), so a
+  no-op round left every list empty and `summarizeCoverage` fell through to its
+  `total === 0` case — wrongly announcing the book held nothing. Coverage now
+  describes the whole *held book*: a new `bookCoverageReport` folds every
+  fetchable holding the orchestrator gated off back into the report's
+  `servedFresh` (their cached values are already preserved by
+  `preserveCachedQuotesForGatedLegs`), so a fully-fresh round honestly reads
+  "Market closed, up to date" / the live counts instead of "No live-priced
+  holdings". This also fixes the latent undercount when only *one* leg was gated
+  (e.g. a market-only round dropping the NAV "expected tonight" clause)
+  (`web/src/app.ts` `bookCoverageReport`, `refreshPrices` coverage build).
+
 ## [4.13.5] — 2026-06-26
 
 ### Fixed

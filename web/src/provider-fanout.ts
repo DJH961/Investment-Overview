@@ -119,6 +119,85 @@ export function isPriorityPull(kind: FanoutKind): boolean {
 }
 
 /**
+ * **Single source of truth** for the steady-state counterpart of
+ * {@link planFanout}'s instant spill. {@link planFanout} decides the provider
+ * split *before* a login / manual round runs; this gates the *after-the-fact*
+ * backup reroute the **scheduled / auto** path performs once Twelve Data has
+ * reported its deferred set (`tiingo-fallback.ts`). Both spill decisions live here,
+ * in the one provider-spilling authority (Pillar 5), so the rule is tuned in a
+ * single place rather than duplicated across the fetch layer.
+ *
+ * A symbol qualifies for the spill when **both** hold:
+ * - the round *originally* asked for more than the instant threshold
+ *   ({@link FANOUT_INSTANT_THRESHOLD} = >2 Twelve Data minutes of work), keyed off
+ *   the **whole** requested sleeve (e.g. all 17, not the post-Twelve-Data
+ *   remainder) so the trigger does not lapse as Twelve Data whittles the remainder
+ *   back under the threshold;
+ * - the symbol is one Twelve Data deferred this round (genuinely waiting on the
+ *   per-minute cap, not already served).
+ *
+ * **Market state and trigger are deliberately irrelevant.** A big sleeve (>16) is
+ * spilled to Tiingo in parallel no matter the time of day, whether the exchange is
+ * open or shut, and whether the round is a login, a scheduled auto round, or a
+ * user-driven manual Refresh. Once a portfolio is large enough that Twelve Data
+ * alone needs several per-minute windows to clear it, draining the overflow on the
+ * backup in one fan-out is always the faster, more responsive choice — so the gate
+ * keys purely off size and the deferred set, mirroring {@link planFanout}, whose
+ * login/manual spill has never depended on market hours either.
+ *
+ * **NAVs ride the same sleeve** — identically to {@link planFanout}. A NAV fund
+ * only lands in the deferred set when it genuinely needs today's price (its TTL
+ * lapsed and the budget deferred it), so the backup should clear it in parallel
+ * just like a stock; it is *not* special-cased out.
+ *
+ * **The spill only fires when fanning out is actually possible.** Invariant 4
+ * keeps the last {@link TIINGO_RESERVE_CREDITS} Tiingo credits for genuine
+ * fallbacks and login efficiency, so a *non-login* efficiency spill is only
+ * worthwhile when Tiingo has spendable credits **beyond** that reserve. When the
+ * caller passes the live {@link efficiencySpillEligible.tiingoCreditsAvailable}
+ * and there is no room past the reserve (e.g. Tiingo's hourly/daily budget is
+ * spent or its 429 breaker is frozen), the symbol is **not** earmarked for a
+ * Tiingo leg that can never run — it stays on Twelve Data's deferred queue, which
+ * clears it over the next per-minute windows. This is what stops a big
+ * closed-market hard refresh from stranding on "Updating…" once Tiingo's credits
+ * are gone: the overflow keeps its explicit-force status on the primary instead
+ * of being rerouted to a backup with nothing left to give.
+ */
+export function efficiencySpillEligible(params: {
+  symbol: string;
+  requestedCount: number;
+  deferred: ReadonlySet<string>;
+  instantThreshold?: number;
+  /**
+   * Live Tiingo credits spendable right now (the raw hour/day budget, before any
+   * reserve). When supplied, the spill is gated on fanning out being *possible* —
+   * i.e. there is at least one credit free beyond {@link tiingoReserve}. Omit it
+   * to skip the credit gate entirely (pure size/deferred policy, as before).
+   */
+  tiingoCreditsAvailable?: number;
+  /** The fan-out reserve to leave untouched; defaults to {@link TIINGO_RESERVE_CREDITS}. */
+  tiingoReserve?: number;
+}): boolean {
+  const threshold = params.instantThreshold ?? FANOUT_INSTANT_THRESHOLD;
+  if (params.requestedCount <= threshold) return false;
+  if (!params.deferred.has(params.symbol)) return false;
+  // A non-login efficiency spill must leave the fan-out reserve untouched
+  // (invariant 4). If the caller tells us how many credits are live, only spill
+  // when fanning out is genuinely possible — at least one credit free beyond the
+  // reserve. Otherwise the overflow is left on Twelve Data (which clears it over
+  // the next per-minute windows) rather than earmarked for a Tiingo leg that
+  // cannot run, the case that used to strand a big round on "Updating…".
+  if (params.tiingoCreditsAvailable !== undefined) {
+    const reserve = params.tiingoReserve ?? TIINGO_RESERVE_CREDITS;
+    if (params.tiingoCreditsAvailable - reserve < 1) return false;
+  }
+  // Size + deferred-this-round (and, when given, spendable Tiingo headroom) are
+  // the *only* gates: a big sleeve spills on the backup regardless of market
+  // hours or whether the round was manual or auto.
+  return true;
+}
+
+/**
  * Decide the provider split for a pull. Pure; the caller dispatches each leg to
  * the existing fetchers (which re-clamp against the live reservation + breaker, so
  * this can only ever propose *fewer* credits than are truly available).

@@ -15,7 +15,7 @@
  * session and dropped on "Lock". Decrypted figures never leave the browser.
  */
 import { fetchBlobMeta, fetchEnvelopeConditional } from "./blob";
-import { buildDashboard, buildFetchPlan, suspectQuoteSymbols, type DashboardModel } from "./compute";
+import { buildDashboard, buildFetchPlan, suspectQuoteSymbols, undatableQuoteSymbols, type DashboardModel } from "./compute";
 import { decryptEnvelopeToJson, type Envelope } from "./crypto";
 import { buildDemoModel, parseDemoParams, getPersona, DEMO_PERSONAS, type DemoParams } from "./demo";
 import { startTour, DEMO_TOUR_STEPS } from "./tour";
@@ -89,7 +89,8 @@ import {
   MIN_BURST_RELIEF_MS,
 } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { isUsMarketOpen, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, recentTradingSessions, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
+import { fxFreshness, type FxFreshness } from "./freshness";
+import { isUsMarketOpen, isUsTradingDay, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, previousTradingSession, recentTradingSessions, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -114,6 +115,7 @@ import { setEurUsdRate } from "./currency";
 import { setInvestmentAmountEur } from "./investment-amount";
 import { formatLastPull } from "./format";
 import { appendPollLog, clearPollLog, formatPollLog, readPollLog, type PollLogCategory, type PollLogLevel } from "./polling-log";
+import { clearConsumptionLog, formatConsumptionLog, readConsumptionLog, recordConsumption } from "./consumption-log";
 import { APP_VERSION } from "./version";
 import type { CloseResolveLog } from "./close-completeness";
 import {
@@ -122,7 +124,7 @@ import {
   cacheSeriesBackoff,
   instrumentedGraphRecorders,
   makePriceBarFetcher,
-  makeWindowFxFetcher,
+  makeFxFetcher,
   sessionFxWindow,
   weekFxWindow,
   type LiveGraphProviders,
@@ -145,11 +147,13 @@ import {
   graphAnchorFx,
   readSessionCloseFx,
   readSessionOpenFx,
+  readPrevSessionCloseFx,
   recordSessionCloseFx,
   recordSessionOpenFx,
+  recordPrevSessionCloseFx,
   sessionBarsComplete,
   sessionCloseFxFromBars,
-  sessionFxBarsComplete,
+  sessionFxAnchorMissing,
   sessionOpenFxFromBars,
 } from "./session-fx";
 import { TimeSeriesStore, type Breadcrumb, type StoredCloseProbe } from "./timeseries-store";
@@ -192,7 +196,13 @@ import {
   unwrapResumePassphrase,
 } from "./resume-session";
 import {
+  AUTO_LOCK_ACTIVITY_EVENTS,
+  autoLockReturnDecision,
+  isDeliberateActivity,
+} from "./auto-lock";
+import {
   h,
+  appVersionFooter,
   markHoldingsUpdating,
   renderDashboard,
   renderExtendedGraphsToggle,
@@ -226,8 +236,8 @@ const WELCOME_BANNER_DURATION_MS = 3200;
 const AUTO_LOCK_WARN_LEAD_MS = 15_000;
 
 /**
- * Throttle for re-arming the idle auto-lock on high-frequency activity (pointer
- * moves, wheel, …). Re-arming at most this often keeps the timers from thrashing
+ * Throttle for re-arming the idle auto-lock on high-frequency activity (wheel,
+ * scroll, …). Re-arming at most this often keeps the timers from thrashing
  * while still measuring idle from the most recent second of activity. A visible
  * warning always re-arms immediately, regardless of this throttle.
  */
@@ -305,16 +315,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-
-/**
- * Heartbeat cadence for the auto-refresh scheduler while the market is **settled**
- * (closed, with every settled close and today's NAV already in hand). No prices
- * are fetched in this state — see {@link App.runScheduledRefresh} — but the timer
- * keeps ticking on this slow interval so the app promptly notices the next
- * session open or NAV publish (and runs the near-free new-data probe when due)
- * instead of going silent until the user reopens it.
- */
-const SETTLED_HEARTBEAT_MS = 5 * 60 * 1000;
 
 /**
  * localStorage key holding the app version this device last booted, so the next
@@ -701,7 +701,14 @@ export class App {
   /** True for the first paint after a page reload resumed the session. */
   private resumedFromRefresh = false;
   /** Installed activity listeners that reset the idle auto-lock timer. */
-  private activityHandler: (() => void) | null = null;
+  private activityHandler: ((event: Event) => void) | null = null;
+  /**
+   * Installed "app shown again" listener (visibility/pageshow/focus) that
+   * re-evaluates the idle auto-lock from a wall-clock timestamp. A backgrounded
+   * tab has its `setTimeout` frozen, so this is what guarantees a long absence
+   * locks the session the instant the app is reopened.
+   */
+  private autoLockReturnHandler: (() => void) | null = null;
 
   /**
    * Demo / preview state, present only while a sample dashboard is on screen.
@@ -886,7 +893,7 @@ export class App {
     // kickoff/auto round if still due), so no credit is spent the brain didn't
     // approve. FX is gated by the warm-up's own interval-aware {@link warmPrefetchFx}
     // (same user interval as Overlay 3), so it is not re-gated here.
-    const warmupPlan = this.planWarmupPull(plan, targets, now);
+    const warmupPlan = this.planWarmupPull(plan, targets, now, graphStale.fxBarsAnchorMissing);
     this.pollLog("orchestrator", `Login warm-up plan — ${describePlan(warmupPlan)}.`);
     if (!warmupPlan.legs.quotes) prefetch.symbols = [];
     if (!warmupPlan.legs.nav) prefetch.navSymbols = [];
@@ -940,14 +947,15 @@ export class App {
       now,
       planCurrency,
     );
-    // After-hours FX close completion: when the session's price bars were already
-    // in hand (so no 1D backfill ran above to grab the FX track alongside them)
-    // but the stored EUR→USD track never reached the 16:00 ET close, pull the FX
-    // alone so the freeze anchor + currency-effect split read the true settle, not
-    // a mid-session rate. Gated to the closed market — during the session the
-    // close has simply not happened yet — and skipped when a session backfill just
-    // fetched the FX in the same pass. Routed through the same reservation/breaker.
-    if (!marketOpen && graphStale.fxIncomplete && prefetch.graphSessionSymbols.length === 0) {
+    // Currency-KPI FX-bar anchor (orchestrator `fxBars` leg, Overlay 4). When the
+    // single brain marks the session EUR→USD open/close anchor as due — the close
+    // while the market is shut, the open while it runs once past warm-up — pull the
+    // FX bar track on its own so the hero currency KPI's market-hours/overnight
+    // split is fed in every phase. Skipped when a session backfill above already
+    // grabbed the FX track alongside the price bars (the mechanical de-dup that
+    // alone knows the real session-symbol pull). Routed through the same
+    // reservation/breaker as every other pull.
+    if (warmupPlan.legs.fxBars && prefetch.graphSessionSymbols.length === 0) {
       await this.prefetchSessionFx(config, now);
     }
     // C5 — bars-first NAV. Before spending a NAV *quote* credit, pull the 1W
@@ -1171,18 +1179,19 @@ export class App {
    * them, so they never need (or get) bars. Returns empty sets when there are no
    * market symbols to plot.
    *
-   * `fxIncomplete` is the after-hours signal the FX-only backfill keys on: the 1D
-   * EUR→USD track on the device has **not** reached the session close (it was last
-   * fetched mid-session, or never), so the freeze anchor / currency-effect split
-   * would otherwise read a mid-session rate as "the close" until the next session.
-   * See {@link sessionFxBarsComplete} and {@link prefetchSessionFx}.
+   * `fxBarsAnchorMissing` is the phase-aware signal the orchestrator's `fxBars`
+   * leg keys on: the session open/close EUR→USD the hero currency KPI's split needs
+   * is absent from this device's 1D track (close while shut, open while running once
+   * past warm-up), so the freeze anchor / currency-effect split would otherwise read
+   * a stale or mid-session rate. See {@link sessionFxAnchorMissing} and
+   * {@link prefetchSessionFx}.
    */
   private async prefetchGraphStaleness(
     marketSymbols: string[],
     now: Date,
-  ): Promise<{ session: string[]; week: string[]; fxIncomplete: boolean }> {
+  ): Promise<{ session: string[]; week: string[]; fxBarsAnchorMissing: boolean }> {
     if (marketSymbols.length === 0) {
-      return { session: [], week: [], fxIncomplete: false };
+      return { session: [], week: [], fxBarsAnchorMissing: false };
     }
     const store = this.ensureTimeSeriesStore();
     const day = lastSessionDate(now);
@@ -1215,10 +1224,17 @@ export class App {
     // else priming is skipped and the dashboard build re-pulls it via Tiingo
     // moments later (docs/tiingo_polling_storm_cleanup_plan.md item 5b).
     const week = weekStaleSymbols(weekStored, marketSymbols, now);
-    // The 1D FX track reads incomplete when no bar has reached this session's
-    // 16:00 ET close — the after-hours gap the FX-only backfill closes.
-    const fxIncomplete = !sessionFxBarsComplete(today?.fx ?? [], close);
-    return { session, week, fxIncomplete };
+    // The phase-aware anchor signal the orchestrator's `fxBars` leg keys on: the
+    // session open/close EUR→USD the hero currency KPI's split needs (close while
+    // shut, open while running once past warm-up).
+    const fxBarsAnchorMissing = sessionFxAnchorMissing({
+      fxBars: today?.fx ?? [],
+      marketClosed,
+      warmingUp: sessionIsWarmingUp(now),
+      sessionOpenMs: sessionOpenMs(day),
+      sessionCloseMs: close,
+    });
+    return { session, week, fxBarsAnchorMissing };
   }
 
   /**
@@ -1327,8 +1343,9 @@ export class App {
     if (exhausted.length > 0) {
       this.pollLog(
         "orchestrator",
-        `Deferred queue: ${exhausted.length} dropped after ${DEFERRED_MAX_ATTEMPTS} attempts ` +
-          `[${exhausted.join(", ")}].`,
+        `Deferred queue: ${exhausted.length} dropped after ${DEFERRED_MAX_ATTEMPTS} attempts — giving up on the work-queue ` +
+          `re-pull; each falls back to its own cache TTL [${exhausted.join(", ")}].`,
+        "warn",
       );
     }
     if (stillMissing.length > 0) {
@@ -1465,7 +1482,7 @@ export class App {
    * {@link buildPrefetchFreshness}), where it answers "will downloading the blob
    * save a per-symbol token?".
    */
-  private buildPullFreshness(now: Date): PullFreshness {
+  private buildPullFreshness(now: Date, fxBarsAnchorMissing = false): PullFreshness {
     const data = this.state.data;
     if (!data) {
       return {
@@ -1532,7 +1549,33 @@ export class App {
     // heavily-outdated / minorly-outdated boundaries key only on the device state.
     const blobDaysOld = deviceDaysMissing_;
     const navHeldForToday = !this.navStale(now);
-    return { dataAgeMs, deviceDaysMissing: deviceDaysMissing_, blobDaysOld, quoteAgeMs, fxAgeMs, navHeldForToday };
+    return { dataAgeMs, deviceDaysMissing: deviceDaysMissing_, blobDaysOld, quoteAgeMs, fxAgeMs, navHeldForToday, fxBarsAnchorMissing };
+  }
+
+  /**
+   * The async twin of the warm-up's {@link prefetchGraphStaleness} `fxBarsAnchorMissing`
+   * for the routine (auto/manual/reset/start-kickoff) rounds: reads this device's
+   * stored 1D EUR→USD bar track and asks {@link sessionFxAnchorMissing} whether the
+   * session open/close anchor the hero currency KPI's split needs for the current
+   * market phase is absent. Feeding it into {@link planRoundPull} is what routes the
+   * KPI's FX-bar pull through the single orchestrator (`fxBars` leg) instead of an
+   * ad-hoc side decision. Best-effort: a store error reads "not missing" so a
+   * transient failure never forces a needless pull.
+   */
+  private async sessionFxBarsAnchorMissing(now: Date): Promise<boolean> {
+    try {
+      const day = lastSessionDate(now);
+      const session = await this.ensureTimeSeriesStore().loadSession(day).catch(() => null);
+      return sessionFxAnchorMissing({
+        fxBars: session?.fx ?? [],
+        marketClosed: !isUsMarketOpen(now),
+        warmingUp: sessionIsWarmingUp(now),
+        sessionOpenMs: sessionOpenMs(day),
+        sessionCloseMs: sessionCloseMs(day),
+      });
+    } catch {
+      return false;
+    }
   }
 
   /** Whether any NAV-priced fund is still behind its expected publish (closed-NAV row). */
@@ -1560,6 +1603,7 @@ export class App {
     kind: RefreshKind,
     opts: { force?: boolean; forceAll?: boolean },
     now: Date,
+    fxBarsAnchorMissing = false,
   ): PullPlan {
     const pullKind: PullKind =
       kind === "reset" || (opts.forceAll ?? false)
@@ -1576,7 +1620,7 @@ export class App {
       market: marketOpen ? "open" : "closed",
       minutesSinceOpenMs: marketOpen ? elapsedSessionMs(now) : 0,
       autoIntervalMs: this.state.config.updateMinutes * 60 * 1000,
-      freshness: this.buildPullFreshness(now),
+      freshness: this.buildPullFreshness(now, fxBarsAnchorMissing),
       phase: "post-decrypt",
       currencyKnown: this.currencyKnownForPlan(),
       barGate: {
@@ -1626,6 +1670,7 @@ export class App {
     plan: PlannedSymbol[],
     targets: { outdatedMarketSymbols: string[]; awaitingNavSymbols: string[] },
     now: Date,
+    fxBarsAnchorMissing = false,
   ): PullFreshness {
     const nowMs = now.getTime();
     const currencyKnown = this.currencyKnownForPrefetch(plan);
@@ -1658,7 +1703,7 @@ export class App {
     const blobDaysOld = Math.max(this.blobDaysOld(now), deviceDaysMissing_);
     // NAV is "held for today" unless a fund is still awaiting its latest publish.
     const navHeldForToday = targets.awaitingNavSymbols.length === 0;
-    return { dataAgeMs, deviceDaysMissing: deviceDaysMissing_, blobDaysOld, quoteAgeMs, fxAgeMs, navHeldForToday };
+    return { dataAgeMs, deviceDaysMissing: deviceDaysMissing_, blobDaysOld, quoteAgeMs, fxAgeMs, navHeldForToday, fxBarsAnchorMissing };
   }
 
   /**
@@ -1675,6 +1720,7 @@ export class App {
     plan: PlannedSymbol[],
     targets: { outdatedMarketSymbols: string[]; awaitingNavSymbols: string[] },
     now: Date,
+    fxBarsAnchorMissing = false,
   ): PullPlan {
     const marketOpen = isUsMarketOpen(now);
     return planPull({
@@ -1683,7 +1729,7 @@ export class App {
       market: marketOpen ? "open" : "closed",
       minutesSinceOpenMs: marketOpen ? elapsedSessionMs(now) : 0,
       autoIntervalMs: this.state.config.updateMinutes * 60 * 1000,
-      freshness: this.buildPrefetchFreshness(plan, targets, now),
+      freshness: this.buildPrefetchFreshness(plan, targets, now, fxBarsAnchorMissing),
       phase: "pre-decrypt",
       currencyKnown: this.currencyKnownForPrefetch(plan),
       barGate: {
@@ -1723,7 +1769,7 @@ export class App {
    * funds included) but leaves the curves to the Regenerate buttons. The hard
    * free-tier budget still binds, so overflow simply defers.
    */
-  private async primeStaleGraphPackages(now: Date = new Date(), force = false): Promise<number> {
+  private async primeStaleGraphPackages(now: Date = new Date(), force = false, fxBarsLeg = false): Promise<number> {
     const { config } = this.state;
     if (!config.apiKey || resolvePriceProxyUrl(config) === null) return 0;
     const marketSymbols = readSymbolPlan()
@@ -1744,7 +1790,13 @@ export class App {
     // reading a mid-session rate as "the close" until the next session. Same gate
     // as the start path: closed market, FX track short of the close, and no session
     // bar pull this round (a session backfill already grabs the FX track alongside).
-    if (!isUsMarketOpen(now) && stale.fxIncomplete && sessionSymbols.length === 0) {
+    // Currency-KPI FX-bar anchor (orchestrator `fxBars` leg) — the phase-aware
+    // superset of the old closed-market `fxIncomplete` close-only gate, so the hero
+    // currency KPI's market-hours/overnight split is fed in every phase (close while
+    // the market is shut, open once past warm-up), not only after the close. The
+    // leg is decided once in {@link planRoundPull} and passed in; this site only
+    // de-dups against an in-round session bar pull (which grabs the FX alongside).
+    if (fxBarsLeg && sessionSymbols.length === 0) {
       await this.prefetchSessionFx(config, now);
     }
     if (sessionSymbols.length === 0 && weekSymbols.length === 0) return 0;
@@ -1791,7 +1843,6 @@ export class App {
       symbols: string[],
       param: "intraday" | "daily",
       window: { startDate: string; endDate: string },
-      fxResample: string,
       storeKey: string,
       label: string,
       extra: { interval?: string; outputsize?: number } = {},
@@ -1858,15 +1909,11 @@ export class App {
       // (the empty-map default) primeQuotesFromBars reuses each symbol's existing
       // cached currency and skips any it cannot resolve.
       primeQuotesFromBars(bars, currencyBySymbol, Date.now()).forEach((s) => primedSet.add(s));
-      // Grab the matching FX track in the same pass so the curve re-marks each
-      // point at its own settled rate (finest granularity) for one more credit.
-      const fetchFx = makeWindowFxFetcher(proxyUrl, window, fxResample, undefined, tiingoMeter, {
-        apiKey: config.apiKey,
-        twelveDataMeter,
-        backoff: cacheSeriesBackoff(),
-        backoffKey: `fx:${label}:${fxResample}`,
-        reservation,
-      });
+      // Grab the matching FX track on the *same* pipe (EUR/USD is just another
+      // symbol via makeFxFetcher), so it shares the bars' split, reservation and
+      // backoff — one more credit for the curve to re-mark each point at its own
+      // settled rate (finest granularity).
+      const fetchFx = makeFxFetcher(fetchBars);
       let fx: Bar[] | undefined;
       if (fetchFx) fx = await fetchFx().catch(() => undefined);
       // Seed close-probes for 1D session bars that are incomplete after close.
@@ -1905,8 +1952,8 @@ export class App {
       );
     };
 
-    await pull(sessionSymbols, "intraday", sessionFxWindow(now), "1hour", lastSessionDate(now), "1D");
-    await pull(weekSymbols, "daily", weekFxWindow(now), "1day", WEEK_STORE_KEY, "1W", {
+    await pull(sessionSymbols, "intraday", sessionFxWindow(now), lastSessionDate(now), "1D");
+    await pull(weekSymbols, "daily", weekFxWindow(now), WEEK_STORE_KEY, "1W", {
       interval: "1day",
       outputsize: 8,
     });
@@ -2052,13 +2099,20 @@ export class App {
       onTwelveDataSuccess: () => recordTwelveDataSuccess(),
       onTiingo429: () => this.armTiingo429(),
     });
-    const fetchFx = makeWindowFxFetcher(proxyUrl, window, "1hour", undefined, tiingoMeter, {
+    const fetchBars = makePriceBarFetcher({
       apiKey: config.apiKey,
+      proxyUrl,
+      param: "intraday",
+      startDate: window.startDate,
+      endDate: window.endDate,
+      tiingoMeter,
       twelveDataMeter,
-      backoff: cacheSeriesBackoff(),
-      backoffKey: "fx:1D:1hour",
       reservation,
+      backoff: { memo: cacheSeriesBackoff(), scope: "fx:1D", now: () => Date.now() },
     });
+    // EUR/USD rides the same price pipe (makeFxFetcher), so this close backfill is
+    // governed by the identical split, reservation and backoff as every bar pull.
+    const fetchFx = makeFxFetcher(fetchBars);
     if (!fetchFx) return false;
     const fx = await fetchFx().catch(() => undefined);
     if (!fx || fx.length === 0) {
@@ -2087,7 +2141,6 @@ export class App {
       return 0;
     }
     const list = (xs: string[]): string => (xs.length ? xs.join(", ") : "none");
-    if (report.error?.status === 429) this.armTwelveData429();
     this.pollLog(
       "primary",
       `Login warm-up (Twelve Data): made ${report.apiCalls} API call(s) costing ${report.creditsSpent} credit(s) — ` +
@@ -2131,7 +2184,6 @@ export class App {
       sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
     });
     const b = fallback.budget;
-    if (fallback.error?.status === 429) this.armTiingo429();
     this.pollLog(
       "fallback",
       `Login warm-up (Tiingo rapid-fire): made ${fallback.apiCalls} API call(s) costing ${fallback.creditsSpent} credit(s) — ` +
@@ -2606,6 +2658,22 @@ export class App {
         ["Clear log"],
       );
       clearLog.addEventListener("click", () => this.clearPollLogNow());
+      // (5) Download the data-loading (consumption) log: a summarised trail of
+      // what the overview's holdings, graph and currency KPIs actually read from
+      // the available data, flagging where they fell back to alternative data
+      // because the perfect data was missing. Paired with a clear button.
+      const downloadConsumption = h(
+        "button",
+        { class: "btn ghost", type: "button", "data-action": "download-consumption-log" },
+        ["Download data loading log"],
+      );
+      downloadConsumption.addEventListener("click", () => this.downloadConsumptionLog());
+      const clearConsumption = h(
+        "button",
+        { class: "btn ghost", type: "button", "data-action": "clear-consumption-log" },
+        ["Clear log"],
+      );
+      clearConsumption.addEventListener("click", () => this.clearConsumptionLogNow());
       formChildren.push(
         h("h2", { class: "settings-section" }, ["Maintenance"]),
         field(
@@ -2632,6 +2700,11 @@ export class App {
           "Data polling log",
           h("div", { class: "row import-row" }, [downloadLog, clearLog]),
           "Download a detailed, timestamped trail of exactly what each refresh did: which holdings were served from cache, fetched live, or filled from the backup provider (and why), the free-tier budgets at each step, and the data-file checks. Useful for debugging when prices look wrong or stuck. The log stays on this device.",
+        ),
+        field(
+          "Data loading log",
+          h("div", { class: "row import-row" }, [downloadConsumption, clearConsumption]),
+          "Download a summarised trail of what the main overview actually read from the available data — the holdings, the value graph and the currency KPIs — flagging the moments where a view had to fall back to alternative data because the perfect data was missing (a holding dropped from totals, a USD KPI shown in EUR, a chart tip it couldn't draw). Use it to see what data the views would have needed to be perfect. The log stays on this device.",
         ),
       );
     }
@@ -2680,7 +2753,7 @@ export class App {
       return undefined;
     });
 
-    this.mount(h("div", { class: "screen" }, [form]));
+    this.mount(h("div", { class: "screen" }, [form, appVersionFooter()]));
   }
 
   /** Open the editable settings while logged in (reachable from the topbar). */
@@ -2818,7 +2891,7 @@ export class App {
       return undefined;
     });
 
-    this.mount(h("div", { class: "screen" }, [form]));
+    this.mount(h("div", { class: "screen" }, [form, appVersionFooter()]));
 
     if (enrolled) {
       (form.querySelector(".bio-primary") as HTMLElement | null)?.focus();
@@ -3213,16 +3286,17 @@ export class App {
     void this.maybeRefreshBlob(session);
     this.installVisibilityRefresh(session);
     // Startup quick-refresh: when prices are badly outdated, repopulate the book
-    // fast. Tiingo answers a whole batch in a single request with no per-minute
-    // cap — far faster than the Twelve Data primary, which trickles ~8 symbols/min
-    // — so a big outdated set routes through Tiingo. But that scarcer budget is
-    // protected by two rules (see {@link planStartupRefresh}): it never spends the
-    // last few Tiingo credits, and it never fires for a small (≤8) outdated set the
-    // primary can clear within a minute. A set too large for the spare budget is
-    // split across both providers; a spent (or unconfigured) Tiingo budget forces
-    // the Twelve Data primary instead. Throttled to ~once/hour via the persisted
-    // stamp (set only when Tiingo is actually used) so it doesn't burn the budget
-    // on every re-open. The subsequent scheduled refreshes (armed via
+    // fast. The Twelve Data primary always leads (it clears its full per-minute
+    // set quickly and for free); Tiingo — which answers a whole batch in a single
+    // request with no per-minute cap — only fills the overflow beyond that lead,
+    // never the whole book through one pipe. That scarcer budget is protected by
+    // two rules (see {@link planStartupRefresh}): it never spends the last few
+    // Tiingo credits, and it never fires for a small (≤8) outdated set the primary
+    // can clear within a minute. A set too large for the spare budget is split
+    // across both providers; a spent (or unconfigured) Tiingo budget forces the
+    // Twelve Data primary alone. Throttled to ~once/hour via the persisted stamp
+    // (set only when Tiingo is actually used) so it doesn't burn the budget on
+    // every re-open. The subsequent scheduled refreshes (armed via
     // {@link scheduleNext}) carry no options, so they return to the normal
     // Twelve-Data-first cadence.
     const tiingoState = readTiingoState();
@@ -3247,12 +3321,11 @@ export class App {
         tiingoRemaining: tiingoRemainingCredits(Date.now()),
         tiingoAvailable,
       });
-      if (plan.route === "tiingo") {
-        quickOpts = { viaTiingo: true, tiingoReserve: STARTUP_TIINGO_RESERVE };
-        noteQuickRefresh(Date.now());
-      } else if (plan.route === "split") {
+      if (plan.route === "split") {
         // Force the Twelve Data primary (it clears the largest ~8 holdings), then
-        // let the reserved Tiingo fallback fill the rest within its spare budget.
+        // let the reserved Tiingo fallback fill the overflow within its spare
+        // budget. The whole book never rides the single Tiingo pipe — Twelve Data
+        // always leads, Tiingo only spills (see {@link planStartupRefresh}).
         quickOpts = { force: true, tiingoReserve: STARTUP_TIINGO_RESERVE };
         noteQuickRefresh(Date.now());
       } else {
@@ -3326,7 +3399,7 @@ export class App {
       } else {
         this.toast(`Prices up to date · last pulled ${formatLastPull(this.lastDataPullAt)}`);
       }
-      this.scheduleNext(session, SETTLED_HEARTBEAT_MS);
+      this.scheduleNext(session, this.settledHeartbeatMs());
       return;
     }
     // The post-unlock kickoff: always run this first live refresh, even if the
@@ -3341,12 +3414,22 @@ export class App {
 
   /**
    * Arm an inactivity timer that locks the session after
-   * {@link AppConfig.autoLockMinutes} minutes without interaction. Genuine
-   * interaction — pointer/touch presses *and movement*, wheel, scroll, key,
-   * typing, clicks and tab re-focus — resets the countdown, so the lock truly
-   * only bites when the user has actually been away. A value of `0` disables the
-   * feature. Safe to call repeatedly — it tears down any prior wiring first, so a
-   * Settings change re-arms with the new timeout.
+   * {@link AppConfig.autoLockMinutes} minutes without interaction. Only
+   * deliberate control interactions — a click/tap landing on an actual control,
+   * a form-control change, or keyboard input (see {@link isDeliberateActivity}) —
+   * reset the countdown; passive movement, wheel, scroll and stray taps on blank
+   * chrome do not, so the lock truly only bites when the user has actually been
+   * away. A value of `0` disables the feature. Safe to
+   * call repeatedly — it tears down any prior wiring first, so a Settings change
+   * re-arms with the new timeout.
+   *
+   * Crucially, the lock is anchored to a wall-clock timestamp of the last genuine
+   * activity ({@link autoLockArmedAt}), not just a `setTimeout`. A backgrounded
+   * tab (or a sleeping device) has its timers frozen, so a long absence would
+   * otherwise leave the session unlocked. {@link checkAutoLockOnReturn}, wired to
+   * the "app shown again" events, recomputes from that timestamp and locks the
+   * instant the app is reopened past the window — and merely re-focusing the tab
+   * no longer counts as "activity" that would reset the countdown.
    *
    * Ahead of the lock, a dismissable warning ({@link showAutoLockWarning}) gives
    * the user a few seconds (and a one-tap "Stay unlocked") before it fires.
@@ -3359,17 +3442,20 @@ export class App {
       return;
     }
     this.autoLockTimeoutMs = minutes * 60_000;
-    const reset = (): void => {
+    const reset = (event?: Event): void => {
       // Only keep counting while a session is actually unlocked.
       if (!this.state.passphrase) return;
+      // Ignore anything that isn't a deliberate interaction with a control: a
+      // stray tap/swipe on empty chrome must NOT extend the session.
+      if (event && !isDeliberateActivity(event)) return;
       const now = Date.now();
       // Keep the resume token's idle clock honest, throttled so heavy movement
       // doesn't thrash storage.
       this.touchResume(now);
       const warningUp = this.autoLockWarnEl !== null;
-      // High-frequency events (pointer/mouse moves, wheel) re-arm at most once a
-      // second — but a *visible* warning is always cancelled immediately, so any
-      // flicker of activity reliably keeps the user logged in.
+      // Rapid repeat interactions re-arm at most once a second — but a *visible*
+      // warning is always cancelled immediately, so a deliberate interaction
+      // reliably keeps the user logged in.
       if (!warningUp && now - this.autoLockArmedAt < AUTO_LOCK_RESET_THROTTLE_MS) return;
       this.dismissAutoLockWarning();
       this.armAutoLockTimers();
@@ -3378,25 +3464,77 @@ export class App {
     for (const event of AUTO_LOCK_ACTIVITY_EVENTS) {
       window.addEventListener(event, reset, { passive: true });
     }
+    // Re-evaluate the timestamp-based lock whenever the app is shown again. These
+    // fire on reopening a backgrounded tab / waking the device — exactly when a
+    // frozen `setTimeout` may not have fired — so the lock engages immediately if
+    // the idle window elapsed while away.
+    const onReturn = (): void => this.checkAutoLockOnReturn();
+    this.autoLockReturnHandler = onReturn;
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onReturn);
+    }
+    if (typeof window !== "undefined") {
+      window.addEventListener("pageshow", onReturn);
+      window.addEventListener("focus", onReturn);
+    }
     this.armAutoLockTimers();
   }
 
   /**
-   * (Re)arm the warning + lock timers for the current {@link autoLockTimeoutMs}.
-   * The warning fires {@link AUTO_LOCK_WARN_LEAD_MS} before the lock (clamped to
-   * at most half the window so a short window still shows a sensible lead).
+   * (Re)arm the warning + lock timers, treating "now" as fresh activity: stamps
+   * {@link autoLockArmedAt} and schedules for the full {@link autoLockTimeoutMs}.
    */
   private armAutoLockTimers(): void {
+    this.autoLockArmedAt = Date.now();
+    this.scheduleAutoLockTimers(this.autoLockTimeoutMs);
+  }
+
+  /**
+   * Schedule the warning + lock timers to fire after `remainingMs`, *without*
+   * touching the {@link autoLockArmedAt} activity anchor. Used to re-arm for the
+   * genuine remaining window after the app returns from the background (where the
+   * previous timers may have been frozen), so the lock stays anchored to the last
+   * real interaction rather than restarting the full window on every re-focus.
+   * The warning fires {@link AUTO_LOCK_WARN_LEAD_MS} before the lock (clamped to
+   * at most half the window, and never later than the lock itself).
+   */
+  private scheduleAutoLockTimers(remainingMs: number): void {
     if (this.autoLockTimer) clearTimeout(this.autoLockTimer);
     if (this.autoLockWarnTimer) clearTimeout(this.autoLockWarnTimer);
-    const timeoutMs = this.autoLockTimeoutMs;
-    if (timeoutMs <= 0) return;
-    this.autoLockArmedAt = Date.now();
-    const lead = Math.min(AUTO_LOCK_WARN_LEAD_MS, Math.floor(timeoutMs / 2));
-    this.autoLockWarnTimer = setTimeout(() => this.showAutoLockWarning(lead), Math.max(0, timeoutMs - lead));
+    if (this.autoLockTimeoutMs <= 0) return;
+    const remaining = Math.max(0, remainingMs);
+    const lead = Math.min(AUTO_LOCK_WARN_LEAD_MS, Math.floor(this.autoLockTimeoutMs / 2), remaining);
+    this.autoLockWarnTimer = setTimeout(() => this.showAutoLockWarning(lead), Math.max(0, remaining - lead));
     this.autoLockTimer = setTimeout(() => {
       if (this.state.passphrase) this.lock();
-    }, timeoutMs);
+    }, remaining);
+  }
+
+  /**
+   * Re-evaluate the idle auto-lock from wall-clock time the moment the app is
+   * shown again. Locks immediately when the configured window has fully elapsed
+   * since the last genuine activity (the case a frozen background timer misses);
+   * otherwise re-arms the timers for the genuine remaining window.
+   */
+  private checkAutoLockOnReturn(): void {
+    if (!this.state.passphrase) return;
+    if (this.autoLockTimeoutMs <= 0) return;
+    // Only act when the app is actually visible (a `visibilitychange` to hidden
+    // shouldn't pre-empt anything; locking happens on the *return*).
+    if (typeof document !== "undefined" && document.hidden) return;
+    const decision = autoLockReturnDecision({
+      now: Date.now(),
+      lastActivityAt: this.autoLockArmedAt,
+      timeoutMs: this.autoLockTimeoutMs,
+    });
+    if (decision.lock) {
+      this.lock();
+      return;
+    }
+    // Within the window but the background timers may have been frozen/throttled:
+    // re-arm for the real remaining time so the lock still fires on schedule.
+    this.dismissAutoLockWarning();
+    this.scheduleAutoLockTimers(decision.remainingMs);
   }
 
   /** Throttled re-stamp of the resume token's last-activity time. */
@@ -3485,6 +3623,16 @@ export class App {
         window.removeEventListener(event, this.activityHandler);
       }
       this.activityHandler = null;
+    }
+    if (this.autoLockReturnHandler) {
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", this.autoLockReturnHandler);
+      }
+      if (typeof window !== "undefined") {
+        window.removeEventListener("pageshow", this.autoLockReturnHandler);
+        window.removeEventListener("focus", this.autoLockReturnHandler);
+      }
+      this.autoLockReturnHandler = null;
     }
   }
 
@@ -3963,8 +4111,23 @@ export class App {
         eurUsdAt = cachedEurUsd.at;
       }
     }
-    // Prefer the live EUR/USD spot (more current than the ECB daily rate) for
-    // all current marks, so value and today's move share one consistent rate.
+    // Persist / restore the prior-session EUR→USD close — the hero currency KPI's
+    // "yesterday" baseline (`fxRateEurUsdPrev`). On a weekend/holiday cold start
+    // loadEurUsd freezes (forexOpen=false) and previousClose can come back null,
+    // which would otherwise strand the KPI with no baseline to diverge from. So
+    // whenever we hold a real prior close, stamp it keyed by the session whose close
+    // it is; when we don't, read that persisted close back as the fallback. Keyed by
+    // previousTradingSession(lastSessionDate) so Saturday reads back Thursday's close
+    // (the close that is genuinely "yesterday" relative to Friday's last session).
+    {
+      const prevSessionDay = previousTradingSession(lastSessionDate(new Date()));
+      if (eurUsdPrev !== null && eurUsdPrev.greaterThan(0)) {
+        recordPrevSessionCloseFx(prevSessionDay, eurUsdPrev);
+      } else {
+        const persisted = readPrevSessionCloseFx(prevSessionDay);
+        if (persisted !== null) eurUsdPrev = persisted;
+      }
+    }
     if (eurUsdNow !== null && eurUsdNow.greaterThan(0)) {
       fx = { base: fx.base, rates: { ...fx.rates, USD: eurUsdNow } };
     }
@@ -3989,11 +4152,6 @@ export class App {
 
     if (network) {
       const r = quoteLoad.report;
-      // A 429 on the primary quote pass is the authoritative "out of credits"
-      // signal — trip the breaker so it freezes EVERYTHING (Twelve Data *and*
-      // Tiingo), not just the leg that 429'd. Previously the main quote path never
-      // armed the breaker, so a quote 429 kept the app hammering the other paths.
-      if (r.error?.status === 429) this.armTwelveData429();
       const list = (xs: string[]): string => (xs.length ? xs.join(", ") : "none");
       this.pollLog(
         "fx",
@@ -4058,6 +4216,12 @@ export class App {
         now: Date.now(),
         manual: (opts.force ?? false) || viaTiingo,
         forceAll: viaTiingo,
+        // A standard manual Refresh tap that escalated to a full force-fetch (the
+        // closed-market cache-distrust re-pull) lets the efficiency spill fire even
+        // while the exchange is shut and bypasses the "nothing newer" cooldown, so
+        // a big manual round's Twelve Data overflow is filled via Tiingo in
+        // parallel instead of trickling through the per-minute cap over minutes.
+        manualForce: isManualReload,
         reserveCredits,
         sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
       });
@@ -4069,9 +4233,13 @@ export class App {
       // unreachable). Cleared to null on a clean round, so the banner/toast only
       // shout while the backup is genuinely down.
       this.lastTiingoError = fallback.error;
-      // A Tiingo 429 freezes only Tiingo — until its hourly bucket resets — so
-      // the app keeps using Twelve Data rather than losing those calls.
-      if (fallback.error?.status === 429) this.armTiingo429();
+      // Airtightness: a symbol the backup just priced is genuinely live this round,
+      // so move it out of the primary's `deferred`/`failed` buckets into `fetched`.
+      // Without this the burst scheduler, the C9 deferred work-queue and the "all
+      // prices live" check all keep treating a backup-filled holding as still
+      // deferred — endlessly re-bursting (and showing "Updating…") for a price the
+      // backup already returned. Mirrors {@link absorbSafetyNet} for the reverse net.
+      this.absorbTiingoFallback(quoteLoad.report, fallback.tiingoSymbols);
       const b = fallback.budget;
       this.pollLog(
         "fallback",
@@ -4110,7 +4278,6 @@ export class App {
         });
         if (session !== this.sessionId) return quoteLoad.report;
         const filledNow = this.absorbSafetyNet(quoteLoad, tdNet);
-        if (tdNet.report.error?.status === 429) this.armTwelveData429();
         const list = (xs: readonly string[]): string => (xs.length ? xs.join(", ") : "none");
         this.pollLog(
           "primary",
@@ -4143,6 +4310,18 @@ export class App {
           "primary",
           `SUSPECT data — non-positive price for ${suspect.join(", ")}; ignoring rather than booking it into the valuation.`,
           "error",
+        );
+      }
+      // Undatable market quotes — a price the Layer-1 market guard had to keep
+      // without a provable strike date (no priceTime and no pull instant). It is
+      // deliberately preferred over the export, so note which symbols took that
+      // path rather than letting an undated "live" mark be silent.
+      const undatable = undatableQuoteSymbols(quoteLoad.quotes, quoteLoad.report.fetched, this.lastNavSymbols);
+      if (undatable.length > 0) {
+        this.pollLog(
+          "primary",
+          `Undatable market quote(s) for ${undatable.join(", ")} (no strike/pull date); kept the live mark over the export by design.`,
+          "info",
         );
       }
     }
@@ -4248,22 +4427,31 @@ export class App {
     // Promote a cache-served EUR/USD that is still extremely fresh to "live": a
     // spot pulled moments ago and replayed from cache this round is, to the user,
     // just as live as the market prices — only a genuinely aged cache reads "recent".
-    const fxDisplaySource = displayFxSource(
+    const fxDisplayFreshness = displayFxFreshness(
       eurUsdSource,
       eurUsdAt,
-      Date.now(),
+      new Date(),
       this.state.config.updateMinutes * 60 * 1000,
     );
+    // Coverage describes the whole held book, not just the symbols this round
+    // happened to fetch. When the orchestrator suppresses the quote / NAV legs
+    // because those holdings are already fresh — e.g. right after a graph
+    // regenerate primes every quote — they are absent from `quoteLoad.report`,
+    // so without widening it the summary would wrongly read "no live-priced
+    // holdings". `quoteLoad.quotes` already carries each gated-off holding's
+    // cached value (see {@link preserveCachedQuotesForGatedLegs}), so folding the
+    // full fetchable book back into the report classifies them honestly.
+    const coverageReport = bookCoverageReport(symbols, quoteLoad.report);
     if (network) {
       this.lastCoverageFacts = buildCoverageFacts(
-        quoteLoad.report,
+        coverageReport,
         quoteLoad.quotes,
         this.lastNavSymbols,
         {
           now: new Date(),
           marketOpen: isUsMarketOpen(),
           freshlyPulled: this.recentlyPulled(),
-          fx: fxDisplaySource,
+          fx: fxDisplayFreshness,
           fxMarketClosed: !isForexMarketOpen(),
           liveStalenessMs: this.state.config.updateMinutes * 60 * 1000,
         },
@@ -4288,14 +4476,14 @@ export class App {
       // fills the initial gap: a later cache re-paint (currency toggle, blob swap)
       // keeps the real network coverage rather than overwriting it from cache.
       this.lastCoverageFacts = buildCoverageFacts(
-        quoteLoad.report,
+        coverageReport,
         quoteLoad.quotes,
         this.lastNavSymbols,
         {
           now: new Date(),
           marketOpen: isUsMarketOpen(),
           freshlyPulled: this.recentlyPulled(),
-          fx: fxDisplaySource,
+          fx: fxDisplayFreshness,
           fxMarketClosed: !isForexMarketOpen(),
           liveStalenessMs: this.state.config.updateMinutes * 60 * 1000,
         },
@@ -4698,6 +4886,25 @@ export class App {
   }
 
   /**
+   * Heartbeat cadence for the auto-refresh scheduler while the market is
+   * **settled** (closed, with every settled close and today's NAV already in
+   * hand). No prices are fetched in this state — see {@link App.runScheduledRefresh}
+   * — but the timer keeps ticking on this interval so the app promptly notices the
+   * next session open or NAV publish (and runs the near-free new-data probe when
+   * due) instead of going silent until the user reopens it.
+   *
+   * Deliberately **not** a hard-coded magic number: it is the user's own
+   * configured auto-update interval (`config.updateMinutes`), the same cadence
+   * the live steady-state slow refresh uses (see {@link App.runScheduledRefresh}'s
+   * `nextRefreshDelayMs` call) and {@link upToDateWindowMs}. A settled book has
+   * nothing to fetch, so re-checking on exactly the user's chosen refresh rhythm
+   * — rather than a separate invented constant — is the honest cadence.
+   */
+  private settledHeartbeatMs(): number {
+    return this.state.config.updateMinutes * 60 * 1000;
+  }
+
+  /**
    * Whether the app actually pulled fresh data from the network recently enough
    * to honestly claim holdings are "up to date" (see {@link App.upToDateWindowMs}).
    * Gating the coverage summary on this means a refresh fully served from cache
@@ -4808,14 +5015,39 @@ export class App {
     // *only* when the data is genuinely current: a closed market whose cached
     // close is stale (offline across the close) still refreshes here. A manual
     // tap is never skipped — it forces a full verification re-pull.
-    if ((kind === "auto" || kind === "start") && this.fullyUpToDate()) {
+    //
+    // It must also *not* skip while the deferred work-queue still holds an
+    // **explicit** force deferral — the overflow a user-driven "update everything"
+    // / cache-distrust Refresh parked across rounds. Those symbols hold their
+    // settled close (so {@link fullyUpToDate} reads true), but the user asked to
+    // re-pull them, so the burst round must run and {@link drainDeferredQueue}
+    // re-fetch them rather than leaving them "Updating…" behind the freshness skip.
+    if (
+      (kind === "auto" || kind === "start") &&
+      this.fullyUpToDate() &&
+      !this.deferredQueue.hasForced()
+    ) {
       if (this.blobCheckDue()) void this.maybeRefreshBlob(session);
-      this.scheduleNext(session, SETTLED_HEARTBEAT_MS);
+      this.scheduleNext(session, this.settledHeartbeatMs());
       this.pollLog(
         "refresh",
         "Auto tick skipped — book fully up to date (market closed, all closes + NAVs held). Heartbeat only.",
         "warn",
       );
+      // Edge case: ordinary (non-force) deferrals parked from an earlier
+      // budget overflow are intentionally *not* drained here — the book is
+      // settled, so every one of them already holds its valid settled close and
+      // there is nothing newer to fetch. Log that they are being held undrained
+      // (rather than silently stranded) so the trail explains why a parked symbol
+      // shows no fresh pull this round; the next non-settled round drains them.
+      if (this.deferredQueue.size > 0) {
+        const parked = this.deferredQueue.size;
+        this.pollLog(
+          "orchestrator",
+          `Deferred queue: ${parked} ordinary deferral(s) held undrained — book settled, each already holds its settled close (nothing newer to fetch). Will drain on the next non-settled round.`,
+          "warn",
+        );
+      }
       return;
     }
     // No network link at all: don't pretend to "update". Skipping the network
@@ -4916,7 +5148,16 @@ export class App {
       }
     }
     const now = new Date();
-    const roundPlan = this.planRoundPull(kind, opts, now);
+    // The currency-KPI FX-bar anchor signal (Overlay 4) is a device-store read, so
+    // resolve it once here and feed it into the single orchestrator plan — the KPI's
+    // FX-bar pull is then a first-class `fxBars` leg, not an ad-hoc side decision.
+    const fxBarsAnchorMissing = await this.sessionFxBarsAnchorMissing(now);
+    if (session !== this.sessionId) {
+      this.refreshing = false;
+      this.refreshingKind = null;
+      return;
+    }
+    const roundPlan = this.planRoundPull(kind, opts, now, fxBarsAnchorMissing);
     this.pollLog("orchestrator", `Round decision (${kind}): ${describePlan(roundPlan)}`);
     // During market hours the clock-hour bar gate ({@link graphPrimeDecision},
     // reading this same plan) is the sole 1D-bar authority, so the prime runs at
@@ -4926,13 +5167,22 @@ export class App {
     {
       const decision = this.graphPrimeDecision(kind, opts, roundPlan, now);
       this.pollLog("graph", `Graph-prime decision (${kind}): ${decision.reason}`);
+      // Whether the `fxBars` leg (the currency-KPI session open/close anchor) was
+      // already serviced by a session-bar prime this round, which grabs the FX
+      // track alongside the price bars. When the prime is skipped (force-all, or a
+      // not-due market-open tick) the standalone dispatch below feeds the KPI so it
+      // is supplied by EVERY mechanism, not only the ones that prime graphs.
+      let fxBarsHandled = false;
       if (decision.due) {
         // A from-scratch reset overrules the per-symbol staleness gate so the
         // graphs are re-pulled too. Force-all never reaches here (it returns
         // not-due above): "Force-fetch every price now" is a quotes-only pull and
         // leaves the 1D/1W curves to the dedicated Regenerate buttons.
         const forceGraphs = kind === "reset";
-        const stored = await this.primeStaleGraphPackages(now, forceGraphs).catch(() => undefined);
+        const stored = await this.primeStaleGraphPackages(now, forceGraphs, roundPlan.legs.fxBars).catch(
+          () => undefined,
+        );
+        fxBarsHandled = true;
         if (session !== this.sessionId) {
           this.refreshing = false;
           this.refreshingKind = null;
@@ -4943,6 +5193,16 @@ export class App {
         if (decision.market === "open" && typeof stored === "number" && stored > 0) {
           this.lastBarPrimeMs = Date.now();
           this.pollLog("graph", `Graph-prime pulled ${stored} series; next 1D bar held until the next clock hour.`);
+        }
+      }
+      // Standalone currency-KPI FX-bar anchor pull for the mechanisms that did not
+      // run a graph prime this round (no session-bar pull to grab the FX alongside).
+      if (roundPlan.legs.fxBars && !fxBarsHandled) {
+        await this.prefetchSessionFx(this.state.config, now).catch(() => undefined);
+        if (session !== this.sessionId) {
+          this.refreshing = false;
+          this.refreshingKind = null;
+          return;
         }
       }
     }
@@ -5095,24 +5355,18 @@ export class App {
         if (relief !== null) delayMs = Math.min(delayMs, relief);
       }
     }
-    // Hard-limit retry routing: when the Tiingo *overflow/fallback* ran out of
-    // tokens this round, the holes it couldn't fill must flow back to the Twelve
-    // Data primary promptly — never sit and wait out Tiingo's hourly bucket.
-    //
-    // The old code pushed the next refresh out to Tiingo's hourly reset
-    // (`retryAfterMs` = ms to the next clock `:00`), i.e. up to *several* auto-refresh
-    // cycles away, starving the book while the Twelve Data primary (its per-minute
-    // budget resets every ~60 s) could have served those symbols within a single
-    // cycle. We drop that extension entirely: `delayMs` already holds the normal
-    // cadence — a ~1-minute burst when symbols are deferred, otherwise one
-    // auto-refresh cycle (itself stretched by {@link dailyBudgetSlowdown} only when
-    // TD's *daily* budget is genuinely low, which we must not undercut). So the
-    // exhausted fallback simply hands the next round back to Twelve Data within one
-    // cycle instead of waiting out Tiingo's reset.
+    // Hard-limit retry routing: when a fallback was blocked because the target
+    // provider's limits are exhausted, schedule a retry at the next hour boundary
+    // (when quotas reset) so the *original* source is retried instead of the
+    // exhausted fallback. This is the alternative to using an over-limit provider.
     if (this.lastTiingoError?.retryAfterMs) {
+      const retryDelayMs = this.lastTiingoError.retryAfterMs;
+      // Use the longer of normal cadence or the hour-boundary delay, so we don't
+      // wake up only to find limits still exhausted.
+      delayMs = Math.max(delayMs, retryDelayMs);
       this.pollLog(
         "fallback",
-        `Backup (Tiingo) out of tokens — retrying within one auto-refresh cycle (~${Math.round(delayMs / 1000)}s) so the holes flow back to Twelve Data, rather than waiting out Tiingo's hourly reset.`,
+        `Fallback blocked by hard limit — scheduling retry in ${Math.round(retryDelayMs / 60000)}min (next hour boundary).`,
         "info",
       );
     }
@@ -5505,6 +5759,34 @@ export class App {
     this.toast("Polling log cleared.");
   }
 
+  /**
+   * Export the recorded data-loading (consumption) log to a downloadable text
+   * file: a summarised trail of what the overview's holdings, graph and currency
+   * KPIs read from the available data, flagging where they fell back to
+   * alternative data because the ideal data was missing.
+   */
+  private downloadConsumptionLog(): void {
+    try {
+      const text = formatConsumptionLog(readConsumptionLog(), { version: APP_VERSION });
+      const blob = new Blob([text], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = h("a", { href: url, download: "investment-overview-data-loading-log.txt" }) as HTMLAnchorElement;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      this.toast("Data loading log downloaded.");
+    } catch {
+      this.toast("Couldn't export the data loading log on this device.");
+    }
+  }
+
+  /** Clear the recorded data-loading log (Settings → "Clear data loading log"). */
+  private clearConsumptionLogNow(): void {
+    clearConsumptionLog();
+    this.toast("Data loading log cleared.");
+  }
+
   /** A brief, auto-dismissing status message (e.g. biometric enrolment result). */
   private toast(message: string): void {
     if (typeof document === "undefined") return;
@@ -5540,6 +5822,30 @@ export class App {
     if (report.failed.length === 0) return [];
     const filled = new Set(this.lastTiingoSymbols);
     return report.failed.filter((symbol) => !filled.has(symbol));
+  }
+
+  /**
+   * Fold the **forward** Tiingo fallback's fills back into the round's primary
+   * report. A symbol the backup priced this round is genuinely live, so it moves
+   * out of `deferred` / `failed` and into `fetched` — keeping the report an honest
+   * record of what is still outstanding. This is what stops the burst scheduler,
+   * the C9 deferred work-queue and the "all prices live" check from endlessly
+   * re-pulling (and showing "Updating…") a holding the backup already filled.
+   * Mutates `report`. Idempotent and order-independent (a symbol already counted
+   * as fetched is not double-added).
+   */
+  private absorbTiingoFallback(report: QuoteLoadReport, tiingoFilled: readonly string[]): void {
+    if (tiingoFilled.length === 0) return;
+    const filled = new Set(tiingoFilled);
+    report.deferred = report.deferred.filter((symbol) => !filled.has(symbol));
+    report.failed = report.failed.filter((symbol) => !filled.has(symbol));
+    const alreadyFetched = new Set(report.fetched);
+    for (const symbol of tiingoFilled) {
+      if (!alreadyFetched.has(symbol)) {
+        report.fetched.push(symbol);
+        alreadyFetched.add(symbol);
+      }
+    }
   }
 
   /**
@@ -5677,6 +5983,15 @@ export class App {
 
   private renderDashboard(model: DashboardModel): void {
     this.model = model;
+    // Record what the overview's views consumed from the available data (and
+    // where they fell back to alternative data) — the read counterpart to the
+    // polling log. De-duplicated downstream, so an unchanging picture collapses
+    // to one row and a new row only marks a genuine change. Best-effort.
+    try {
+      recordConsumption(model);
+    } catch {
+      /* consumption logging is best-effort and must never break a render */
+    }
     // Mirror the configured regular investment amount into the render-layer store
     // so the USD investing-power panel can read it without threading config through.
     setInvestmentAmountEur(this.state.config.investmentAmountEur);
@@ -6226,7 +6541,12 @@ export class App {
     const store = this.ensureTimeSeriesStore();
     const o = model.overview;
     const now = new Date();
-    if (o.totalValueIsComplete) {
+    // Only persist a close on a genuine trading day. On a weekend / NYSE holiday
+    // the live total is just the last session's settled close carried forward, so
+    // recording it under a non-trading date would later splice a flat non-trading
+    // point into the long-range graph (see spliceDailyBackfill / renderValueChart).
+    const asOfIsTradingDay = isUsTradingDay(new Date(`${o.asOf}T12:00:00Z`));
+    if (o.totalValueIsComplete && asOfIsTradingDay) {
       await recordDailyClose(
         store,
         { date: o.asOf, valueEur: o.totalValueEur, valueUsd: o.totalValueUsd },
@@ -6348,6 +6668,32 @@ export function preserveCachedQuotesForGatedLegs(
   }
 }
 
+/**
+ * Widen a round's {@link QuoteLoadReport} to describe the **whole held book**,
+ * not just the symbols this round happened to touch. {@link buildCoverageFacts}
+ * classifies only the symbols present in the report's lists, but the orchestrator
+ * routinely suppresses a quote / NAV leg when those holdings are already fresh —
+ * so on such a round (e.g. right after a graph regenerate primes every quote)
+ * none of the held symbols appear in the report and the coverage line would
+ * wrongly read "no live-priced holdings". Folding the untouched book symbols into
+ * `servedFresh` (they are held from cache, sourced from the merged quotes map)
+ * makes the summary describe the real book. Symbols already fetched / deferred /
+ * failed this round keep their stronger classification; a no-op fully-fresh round
+ * therefore reports the held book ("market closed, up to date", live counts, …)
+ * instead of an empty one.
+ */
+export function bookCoverageReport(
+  bookSymbols: Iterable<string>,
+  report: QuoteLoadReport,
+): QuoteLoadReport {
+  const touched = new Set([...report.fetched, ...report.deferred, ...report.failed]);
+  const servedFresh = new Set(report.servedFresh);
+  for (const symbol of bookSymbols) {
+    if (symbol && !touched.has(symbol)) servedFresh.add(symbol);
+  }
+  return { ...report, servedFresh: [...servedFresh] };
+}
+
 export function liveRefreshProgress(report: QuoteLoadReport): { live: number; total: number } {
   // Both deferred (skipped for budget) and failed (attempted, couldn't price)
   // symbols count toward the total but are *not* live — so a failed holding keeps
@@ -6426,14 +6772,17 @@ export interface CoverageFacts {
   /** A hard fetch error occurred this round (on last-known values). */
   error: boolean;
   /**
-   * Where the EUR→USD spot that values the whole book came from this round, so
-   * the coverage line can report FX freshness alongside the price coverage:
-   *   - `live`  — a fresh live spot was pulled;
-   *   - `eod`   — the forex market is shut; on the last end-of-day close;
-   *   - `cache` — served from a recent cached spot (no fresh pull this round);
-   *   - `none`  — no rate at all (awaiting FX; book values may be incomplete).
+   * How *fresh* the EUR→USD spot that values the whole book is this round, so the
+   * coverage line reports FX the same way every other holding is reported — by
+   * freshness, never by *where* the rate came from (the source/provider stays an
+   * internal detail). Graded by {@link fxFreshness}:
+   *   - `live`   — observed within the live window while the forex market is open;
+   *   - `recent` — observed today, or within the window while the market is shut;
+   *   - `aged`   — the newest observation is from an earlier day;
+   *   - `eod`    — a keyless end-of-day rate (no observation instant);
+   *   - `none`   — no rate at all (awaiting FX; book values may be incomplete).
    */
-  fx: EurUsdSource;
+  fx: FxFreshness;
   /**
    * Whether the spot-FX (forex) market is *shut* right now (the weekend close,
    * see {@link isForexMarketOpen}). When true the EUR/USD rate is frozen at
@@ -6444,40 +6793,43 @@ export interface CoverageFacts {
 }
 
 /**
- * Choose the FX source label to *display* on the coverage line. A spot served
- * from cache (`"cache"`) but observed within `maxStalenessMs` (the user-set
- * auto-refresh interval, falling back to {@link LIVE_PRICE_MAX_STALENESS_MS}) is,
- * to the user, just as live as the market prices it values — so promote it to
- * `"live"` and let it read "FX live" rather than "FX recent". Every other source
- * (and a genuinely aged cache) passes through unchanged.
+ * Choose the FX *freshness* tier to report on the coverage line. The displayed
+ * EUR/USD rate is graded exactly like a holding row — by how recently it was
+ * observed against the live window — so FX is reported the same way as every
+ * other value and never advertises *where* it came from (live API, backup
+ * provider, ECB fallback). A cache observed within the window while the forex
+ * market is open is honestly "live"; an older-but-today read is "recent"; an
+ * earlier-day read is "aged"; a keyless end-of-day rate is "eod"; no rate is
+ * "none". Delegates to {@link fxFreshness} (clock-injected, so unit-testable).
  */
-export function displayFxSource(
+export function displayFxFreshness(
   source: EurUsdSource,
   observedAtMs: number | null,
-  nowMs: number,
+  now: Date,
   maxStalenessMs: number = LIVE_PRICE_MAX_STALENESS_MS,
-): EurUsdSource {
-  const window = maxStalenessMs > 0 ? maxStalenessMs : LIVE_PRICE_MAX_STALENESS_MS;
-  if (source === "cache" && observedAtMs !== null && nowMs - observedAtMs <= window) {
-    return "live";
-  }
-  return source;
+): FxFreshness {
+  return fxFreshness({
+    hasRate: source !== "none",
+    fxObservedAt: observedAtMs,
+    now,
+    intervalMs: maxStalenessMs > 0 ? maxStalenessMs : LIVE_PRICE_MAX_STALENESS_MS,
+  });
 }
 
 /** Human FX-freshness clause for the coverage line (see {@link CoverageFacts.fx}). */
-function fxClause(fx: EurUsdSource, fxMarketClosed = false): string {
+function fxClause(fx: FxFreshness, fxMarketClosed = false): string {
   // Weekend forex close: the rate is frozen at Friday's close, so say so plainly
   // rather than implying a live/recent pull of an auto-dated quote.
   if (fxMarketClosed) return "FX market closed";
   switch (fx) {
     case "live":
       return "FX live";
-    case "tiingo":
-      return "FX live (backup)";
+    case "recent":
+      return "FX recent";
+    case "aged":
+      return "FX aged";
     case "eod":
       return "FX end of day";
-    case "cache":
-      return "FX recent";
     default:
       return "awaiting FX";
   }
@@ -6514,13 +6866,13 @@ export function buildCoverageFacts(
     now?: Date;
     marketOpen: boolean;
     freshlyPulled?: boolean;
-    fx?: EurUsdSource;
+    fx?: FxFreshness;
     fxMarketClosed?: boolean;
     /**
      * The live-freshness window (ms, the user-set auto-refresh interval). A market
      * holding served from cache but *observed* within this window is, to the user,
      * just as live as one freshly pulled this round — so it is counted as "live",
-     * not "cached", mirroring {@link displayFxSource}. Falls back to
+     * not "cached", mirroring {@link fxFreshness}. Falls back to
      * {@link LIVE_PRICE_MAX_STALENESS_MS}.
      */
     liveStalenessMs?: number;
@@ -6575,7 +6927,7 @@ export function buildCoverageFacts(
       // "Live" is a freshly-pulled quote *or* a cached one whose observation is
       // still within the live window — a spot confirmed two minutes ago is, to the
       // user, just as live as one re-pulled this round, so it must not read as
-      // "cached" (mirrors {@link displayFxSource}). Only promote while the session
+      // "cached" (mirrors {@link fxFreshness}). Only promote while the session
       // is open, where "live" is a meaningful claim.
       // `>= 0` rejects a future-stamped observation (clock skew) from reading as
       // live, mirroring the headline badge's `liveFeedAge >= 0` guard in compute.ts.
@@ -6875,27 +7227,6 @@ export function describePrefetch(input: {
   if (pulled) parts.push(pulled);
   return parts.join(" · ");
 }
-
-/**
- * Interaction events that count as "activity" and reset the idle auto-lock
- * countdown. Kept passive and broad enough that the lock only ever bites on a
- * genuinely unattended session: presses *and movement* (pointer/mouse/touch),
- * wheel and scroll, keyboard and typing, clicks, and tab re-focus. The
- * high-frequency movement events are throttled where they are handled.
- */
-const AUTO_LOCK_ACTIVITY_EVENTS = [
-  "pointerdown",
-  "pointermove",
-  "mousemove",
-  "wheel",
-  "keydown",
-  "scroll",
-  "touchstart",
-  "touchmove",
-  "click",
-  "input",
-  "focus",
-] as const;
 
 function field(label: string, input: HTMLElement, hint?: string): HTMLElement {
   const children: Array<Node | string> = [h("span", { class: "field-label" }, [label]), input];

@@ -15,6 +15,8 @@
  * truth-table".
  */
 
+import { isForexMarketOpen, lastForexReopenMs } from "./market-hours";
+
 /** One clock hour, in ms — the Twelve Data / Tiingo hourly reset cadence. */
 export const ONE_HOUR_MS = 60 * 60 * 1000;
 
@@ -53,21 +55,28 @@ export interface PullLegs {
   nav: boolean;
   /** EUR/USD FX rate. */
   fx: boolean;
+  /**
+   * The session EUR→USD **open/close bar track** that anchors the hero currency
+   * KPI's market-hours/overnight split. A cheap one-shot pull (Tiingo `/price`
+   * fxHistory) the orchestrator owns as a first-class leg rather than an ad-hoc
+   * after-hours side pipeline — see {@link ../session-fx.sessionFxAnchorMissing}.
+   */
+  fxBars: boolean;
 }
 
 /** No-op leg set — the "nothing to pull" answer. */
 export function noLegs(): PullLegs {
-  return { weekBars: false, dayBars: false, quotes: false, nav: false, fx: false };
+  return { weekBars: false, dayBars: false, quotes: false, nav: false, fx: false, fxBars: false };
 }
 
 /** Every leg on — the heavily-outdated / reset answer. */
 export function allLegs(): PullLegs {
-  return { weekBars: true, dayBars: true, quotes: true, nav: true, fx: true };
+  return { weekBars: true, dayBars: true, quotes: true, nav: true, fx: true, fxBars: true };
 }
 
 /** Whether a leg set asks for any network at all. */
 export function hasAnyLeg(legs: PullLegs): boolean {
-  return legs.weekBars || legs.dayBars || legs.quotes || legs.nav || legs.fx;
+  return legs.weekBars || legs.dayBars || legs.quotes || legs.nav || legs.fx || legs.fxBars;
 }
 
 /** Inputs to {@link gradedPull}. All ages are in ms; all clocks injected. */
@@ -231,7 +240,7 @@ export function quoteRefreshDue(
 
 /**
  * Per-row freshness tier for a single holding's displayed price — the three-way
- * split the freshness-plan §2 calls for, mirroring `displayFxSource`'s
+ * split the freshness-plan §2 calls for, mirroring the FX rate's cache→live
  * cache→live promotion but with an explicit middle "recent" rung:
  *
  *   - `live`   — the market is open and the price was observed within one live
@@ -297,4 +306,106 @@ export function holdingFreshness(input: RowFreshnessInput): RowFreshness {
     : sameLocalDay(observedAtMs, nowMs);
   if (withinWindow || isToday) return "recent";
   return "aged";
+}
+
+/**
+ * Layer-6 FX freshness tier for the displayed EUR/USD rate. A superset of
+ * {@link RowFreshness} with two FX-only rungs:
+ *
+ *   - `none` — no rate held at all (book values may be incomplete).
+ *   - `eod`  — a *keyless* end-of-day rate: a rate is held but carries no
+ *              observation instant (e.g. a static EOD source), so it is honestly
+ *              "end of day" and can never grade as a live/recent intraday mark.
+ *   - `live` / `recent` / `aged` — graded exactly like a holding via
+ *              {@link holdingFreshness}, but against the **forex** market clock
+ *              (nearly 24×5, see {@link isForexMarketOpen}) and the most recent
+ *              forex weekly reopen as the settled boundary.
+ */
+export type FxFreshness = "live" | "recent" | "aged" | "eod" | "none";
+
+/** Inputs to {@link fxFreshness}. */
+export interface FxFreshnessInput {
+  /** Whether any EUR/USD rate is held at all (false ⇒ `"none"`). */
+  hasRate: boolean;
+  /**
+   * Epoch ms the held rate was observed, or `null` for a *keyless* end-of-day
+   * rate (a rate with no observation instant ⇒ `"eod"`).
+   */
+  fxObservedAt: number | null;
+  /** Decision instant. */
+  now: Date;
+  /** The live window (ms) — the user-set auto-refresh interval. */
+  intervalMs: number;
+}
+
+/**
+ * Classify the displayed EUR/USD rate into an {@link FxFreshness} tier. Wraps
+ * {@link holdingFreshness} so the three graded rungs mirror a holding row's
+ * exactly, then adds the FX-only `"none"` and `"eod"` answers. Pure and
+ * clock-injected (the forex market state is derived from `now`), so it is
+ * unit-testable in isolation.
+ */
+export function fxFreshness(input: FxFreshnessInput): FxFreshness {
+  if (!input.hasRate) return "none";
+  // A keyless end-of-day rate carries no observation instant, so it cannot be
+  // graded live/recent — it is honestly "end of day".
+  if (input.fxObservedAt === null) return "eod";
+  return holdingFreshness({
+    observedAtMs: input.fxObservedAt,
+    nowMs: input.now.getTime(),
+    marketOpen: isForexMarketOpen(input.now),
+    liveWindowMs: input.intervalMs,
+    lastSettledCloseMs: lastForexReopenMs(input.now),
+  });
+}
+
+/**
+ * The **absolute** "is this holding up to date?" driver behind the subtle
+ * up-to-date check mark on each holding card (suggestion #1 + #4).
+ *
+ * Where {@link holdingFreshness} grades *how recently* a price was observed, this
+ * answers the orthogonal, calendar-anchored question the after-close / pre-open
+ * "stale market" window actually poses: **does this holding already carry the
+ * latest settled session's close that it ought to?** It compares the price's own
+ * value-date against the most recent settled NYSE session — so it is true the
+ * moment a holding has repriced onto that session and false while it still trails
+ * behind, regardless of the wall-clock age of the observation.
+ *
+ * It deliberately works off the displayed price's **value-date** (an ISO
+ * `YYYY-MM-DD`, lexicographically comparable), which both market quotes and
+ * once-a-day NAV bars carry, so it accounts for the two price kinds uniformly:
+ *   - **market symbols** (stocks / ETFs): the latest session's close lands at the
+ *     bell; a row carrying it (value-date ≥ the settled session) reads current.
+ *   - **NAV funds** (mutual funds): a fund publishes ~once a day, often hours
+ *     after the close, so right after the bell its newest bar is still the prior
+ *     session and it honestly reads *behind* until the new NAV is pulled — exactly
+ *     the "this fund hasn't updated yet" signal the morning view wants.
+ *
+ * Par-$1 money-market funds never move and are never fetched, so they are always
+ * considered current. A holding with no value at all (no price/FX/fallback) is
+ * never current — there is nothing to be up to date about.
+ *
+ * Pure and free of the DOM / clock so it is unit-testable in isolation; the
+ * market-state gate that decides *whether to paint* the check lives in the view.
+ */
+export interface CoversLatestCloseInput {
+  /** ISO `YYYY-MM-DD` value-date the displayed price applies to. */
+  priceDateIso: string;
+  /** ISO `YYYY-MM-DD` of the most recent settled session the book should carry. */
+  latestSettledSessionIso: string;
+  /** Whether this holding is a par-$1 money-market fund (never moves). */
+  isMoneyMarket?: boolean;
+  /** Whether a value could be computed at all (false ⇒ nothing to be current about). */
+  hasValue?: boolean;
+}
+
+/** Whether a holding's displayed price already covers the latest settled close. */
+export function holdingCoversLatestClose(input: CoversLatestCloseInput): boolean {
+  if (input.hasValue === false) return false;
+  // Par-$1 money-market funds hold a constant NAV and are never fetched, so they
+  // can never be "behind" a session — always current.
+  if (input.isMoneyMarket) return true;
+  if (!input.priceDateIso || !input.latestSettledSessionIso) return false;
+  // ISO dates sort lexicographically, so a string compare is a date compare.
+  return input.priceDateIso >= input.latestSettledSessionIso;
 }

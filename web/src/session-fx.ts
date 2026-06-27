@@ -221,6 +221,41 @@ export function sessionFxBarsComplete(fxBars: Bar[], sessionCloseMs: number): bo
 }
 
 /**
+ * Whether the stored 1D EUR→USD bar track is **missing the anchor the hero
+ * currency KPI needs for the current market phase** — the single freshness signal
+ * the data orchestrator's `fxBars` leg keys on so the KPI is fed its session
+ * open/close rate in every phase (no longer via an ad-hoc after-hours side pipe).
+ *
+ * The two faces of the currency KPI ("Currency effect" in EUR, "Investing power"
+ * in USD) and their market-hours/overnight split read the session's open and close
+ * EUR→USD straight from this bar track ({@link sessionOpenFxFromBars} /
+ * {@link sessionCloseFxFromBars}). The bar is the authoritative anchor the live
+ * 1D/1W graphs also freeze to, so completing it keeps the KPI and the graphs in
+ * lock-step. The anchor a phase needs differs:
+ *
+ *   - **closed** — the day's **close** must be captured: the track has not reached
+ *     16:00 ET ⇒ missing. (Mirrors the old `fxIncomplete` after-hours signal.)
+ *   - **open** — the session **open** anchors the live market-hours slice. Missing
+ *     once enough of the session has elapsed for an open bar to exist
+ *     (`warmingUp === false`) and no positive bar has printed since 09:30 ET. While
+ *     the session is still warming up the captured live spot stands in, so no pull
+ *     is forced (it would chase a bar the provider has not printed yet).
+ *
+ * Pure and clock-injected, so the leg decision is unit-testable in isolation.
+ */
+export function sessionFxAnchorMissing(opts: {
+  fxBars: Bar[];
+  marketClosed: boolean;
+  warmingUp: boolean;
+  sessionOpenMs: number;
+  sessionCloseMs: number;
+}): boolean {
+  if (opts.marketClosed) return !sessionFxBarsComplete(opts.fxBars, opts.sessionCloseMs);
+  if (opts.warmingUp) return false;
+  return sessionOpenFxFromBars(opts.fxBars, opts.sessionOpenMs) === null;
+}
+
+/**
  * Whether the stored 1D **price** bars for a symbol have reached the session
  * close — the equity-feed sibling of {@link sessionFxBarsComplete}.
  *
@@ -501,6 +536,52 @@ export function recordSessionOpenFx(day: string, rate: Decimal | null): void {
 export function readSessionOpenFx(day: string): Decimal | null {
   try {
     const raw = localStorage.getItem(SESSION_OPEN_FX_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { day?: unknown; rate?: unknown };
+    if (parsed.day !== day || typeof parsed.rate !== "string") return null;
+    const rate = new Decimal(parsed.rate);
+    return rate.greaterThan(0) ? rate : null;
+  } catch {
+    return null;
+  }
+}
+
+/** localStorage key holding the last known *prior-session* EUR/USD close. */
+const PREV_SESSION_CLOSE_FX_KEY = "iv.web.prevSessionCloseFx";
+
+/**
+ * Remember the settled **prior-session** EUR/USD close (the "yesterday" baseline
+ * the hero currency KPI measures its "since yesterday" move from), keyed by the
+ * trading session `day` it closes. Called whenever the live FX provider returns a
+ * genuine previous close, so the value is the authoritative settled rate.
+ *
+ * This is the persistence half of the KPI's weekend / cold-start safety net: over
+ * a forex-closed weekend (and on a cold start before the provider can re-confirm
+ * it) the live `previousClose` comes back `null`, which would otherwise collapse
+ * the KPI's "since yesterday" anchor to zero and force the panel onto its
+ * session-close fallback. Persisting the last good close lets {@link readPrevSessionCloseFx}
+ * restore the real baseline so the EUR and USD faces both keep a true "yesterday".
+ * A no-op (swallowed) when storage is unavailable.
+ */
+export function recordPrevSessionCloseFx(day: string, rate: Decimal | null): void {
+  if (rate === null || !rate.greaterThan(0)) return;
+  try {
+    localStorage.setItem(PREV_SESSION_CLOSE_FX_KEY, JSON.stringify({ day, rate: rate.toString() }));
+  } catch {
+    // Storage-less (private mode, disabled): the KPI simply falls back as before.
+  }
+}
+
+/**
+ * Read back the persisted prior-session EUR/USD close, but only when it was
+ * captured for the session `day` the caller is now treating as "yesterday" — a
+ * close from an older session is not the baseline for *this* one, so it is ignored
+ * (the caller then degrades exactly as it did before). Returns null when nothing
+ * usable is stored.
+ */
+export function readPrevSessionCloseFx(day: string): Decimal | null {
+  try {
+    const raw = localStorage.getItem(PREV_SESSION_CLOSE_FX_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { day?: unknown; rate?: unknown };
     if (parsed.day !== day || typeof parsed.rate !== "string") return null;

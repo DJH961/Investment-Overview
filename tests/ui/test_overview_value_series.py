@@ -102,7 +102,7 @@ class TestRangeStartDate:
 class TestBuildValueSeries:
     def test_day_range_has_two_points(self, session: Session) -> None:
         _seed(session)
-        end = date(2024, 6, 1)
+        end = date(2024, 6, 4)  # Tuesday — both window days are trading days
         points = build_value_series(session, currency="EUR", range_label="Day", as_of=end)
         assert [p.date for p in points] == [end - timedelta(days=1), end]
         # EUR holding valued at the as-of close (forward-filled) ⇒ 10 * 100.
@@ -141,13 +141,17 @@ class TestBuildValueSeries:
         assert date(2024, 6, 7) in plotted
         assert date(2024, 6, 10) in plotted
 
-    def test_live_tip_kept_even_on_a_non_trading_day(self, session: Session) -> None:
+    def test_non_trading_final_day_ends_at_last_session(self, session: Session) -> None:
         _seed(session)
-        # 2024-06-15 is a Saturday: the headline "today" tip must still close the
-        # curve so it ends at the current value, even though it is non-trading.
+        # 2024-06-15 is a Saturday: the curve must NOT tack a carried-forward
+        # "today" tip onto a non-trading day. It ends a day early at the last
+        # real session — Friday 2024-06-14 — whose settled close is the correct
+        # final price from the last market day.
         end = date(2024, 6, 15)
         points = build_value_series(session, currency="EUR", range_label="Week", as_of=end)
-        assert points[-1].date == end
+        assert points[-1].date == date(2024, 6, 14)
+        plotted = {p.date for p in points}
+        assert end not in plotted
 
 
 class TestBuildWeekValueSeries:

@@ -38,7 +38,24 @@ describe("planPull — reset", () => {
     const plan = planPull(ctx({ kind: "reset", freshness: { dataAgeMs: 0, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 0, navHeldForToday: true } }));
     expect(plan.tier).toBe("heavily-outdated");
     expect(plan.legs.weekBars && plan.legs.dayBars && plan.legs.quotes && plan.legs.nav && plan.legs.fx).toBe(true);
+    expect(plan.legs.fxBars).toBe(true);
     expect(planPullsAnything(plan)).toBe(true);
+  });
+});
+
+describe("planPull — currency-KPI fxBars anchor overlay (Overlay 4)", () => {
+  it("raises the fxBars leg when the KPI session anchor is missing on an otherwise-quiet tick", () => {
+    const fresh = { dataAgeMs: 0, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 0, navHeldForToday: true };
+    const quiet = planPull(ctx({ kind: "auto", freshness: { ...fresh, fxBarsAnchorMissing: false } }));
+    expect(quiet.legs.fxBars).toBe(false);
+    const due = planPull(ctx({ kind: "auto", freshness: { ...fresh, fxBarsAnchorMissing: true } }));
+    expect(due.legs.fxBars).toBe(true);
+    expect(planPullsAnything(due)).toBe(true);
+  });
+
+  it("leaves fxBars off when the anchor is present", () => {
+    const plan = planPull(ctx({ kind: "manual", freshness: { dataAgeMs: 0, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 0, navHeldForToday: true, fxBarsAnchorMissing: false } }));
+    expect(plan.legs.fxBars).toBe(false);
   });
 });
 

@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   allPricesLive,
+  bookCoverageReport,
   buildCoverageFacts,
   classifyConnectivity,
   connectivityNotice,
   describePrefetch,
   describeTiingoError,
-  displayFxSource,
+  displayFxFreshness,
   isUserRefresh,
   liveRefreshProgress,
   manualRefreshDecision,
@@ -228,8 +229,11 @@ describe("summarizeCoverage", () => {
     expect(summarizeCoverage(facts({ ...base, fx: "eod" }))).toBe(
       "Market closed, up to date · FX end of day",
     );
-    expect(summarizeCoverage(facts({ ...base, fx: "cache" }))).toBe(
+    expect(summarizeCoverage(facts({ ...base, fx: "recent" }))).toBe(
       "Market closed, up to date · FX recent",
+    );
+    expect(summarizeCoverage(facts({ ...base, fx: "aged" }))).toBe(
+      "Market closed, up to date · FX aged",
     );
     expect(summarizeCoverage(facts({ ...base, fx: "none" }))).toBe(
       "Market closed, up to date · awaiting FX",
@@ -238,9 +242,9 @@ describe("summarizeCoverage", () => {
 
   it("reports the forex weekend close as 'FX market closed', overriding the freshness label", () => {
     const base = { marketOpen: false, marketTotal: 2, marketHeld: 2, marketAtClose: 2 } as const;
-    // Whatever the source label, a shut forex market freezes the rate at Friday's
+    // Whatever the freshness tier, a shut forex market freezes the rate at Friday's
     // close, so the clause says so plainly rather than implying a live/recent pull.
-    expect(summarizeCoverage(facts({ ...base, fx: "cache", fxMarketClosed: true }))).toBe(
+    expect(summarizeCoverage(facts({ ...base, fx: "recent", fxMarketClosed: true }))).toBe(
       "Market closed, up to date · FX market closed",
     );
     expect(summarizeCoverage(facts({ ...base, fx: "live", fxMarketClosed: true }))).toBe(
@@ -460,34 +464,77 @@ describe("buildCoverageFacts", () => {
   });
 });
 
-describe("displayFxSource", () => {
-  const t = Date.UTC(2024, 4, 15, 18, 0, 0);
+describe("bookCoverageReport", () => {
+  const now = new Date(2024, 4, 15, 22, 30, 0); // Wed 17:30 ET — US session settled
 
-  it("promotes an extremely fresh cached spot to live", () => {
-    // Served from cache but observed seconds ago → to the user, just as live as
-    // the market prices it values.
-    expect(displayFxSource("cache", t - 30_000, t)).toBe("live");
+  it("folds an all-fresh round's held book into servedFresh so coverage isn't blank", () => {
+    // The regenerate symptom: the orchestrator suppressed every quote/NAV leg
+    // because the whole book is fresh, so the round's report is empty. Widening
+    // it to the held book must surface the holdings (here: all at last close)
+    // instead of summarising "no live-priced holdings".
+    const book = ["AAPL", "MSFT", "VTSAX"];
+    const wide = bookCoverageReport(book, report());
+    expect(new Set(wide.servedFresh)).toEqual(new Set(book));
+    const quotes = new Map<string, { valueDate?: string | null; price?: unknown }>([
+      ["AAPL", { price: 1, valueDate: "2024-05-15" }],
+      ["MSFT", { price: 1, valueDate: "2024-05-15" }],
+      ["VTSAX", { valueDate: "2024-05-15" }],
+    ]);
+    const f = buildCoverageFacts(wide, quotes, new Set(["VTSAX"]), { now, marketOpen: false });
+    expect(f.marketTotal).toBe(2);
+    expect(f.marketAtClose).toBe(2);
+    expect(f.navTotal).toBe(1);
+    expect(summarizeCoverage(f)).toBe("Market closed, up to date · awaiting FX");
   });
 
-  it("keeps a genuinely aged cached spot as recent", () => {
-    // Older than the live-staleness window (15 min) → still "recent", not live.
-    expect(displayFxSource("cache", t - 30 * 60_000, t)).toBe("cache");
+  it("keeps a symbol's stronger classification when it was touched this round", () => {
+    // A fetched/deferred/failed symbol must not be downgraded to servedFresh.
+    const wide = bookCoverageReport(["AAPL", "MSFT", "TSLA"], report({ fetched: ["AAPL"], deferred: ["MSFT"] }));
+    expect(wide.fetched).toEqual(["AAPL"]);
+    expect(wide.deferred).toEqual(["MSFT"]);
+    expect(wide.servedFresh).toEqual(["TSLA"]); // only the untouched holding is folded in
   });
 
-  it("passes every other source through unchanged", () => {
-    expect(displayFxSource("live", t, t)).toBe("live");
-    expect(displayFxSource("eod", t - 60_000, t)).toBe("eod");
-    expect(displayFxSource("none", null, t)).toBe("none");
-    expect(displayFxSource("cache", null, t)).toBe("cache");
+  it("does not duplicate a symbol already in servedFresh", () => {
+    const wide = bookCoverageReport(["AAPL", "MSFT"], report({ servedFresh: ["AAPL"] }));
+    expect(wide.servedFresh.filter((s) => s === "AAPL")).toHaveLength(1);
+    expect(new Set(wide.servedFresh)).toEqual(new Set(["AAPL", "MSFT"]));
+  });
+});
+
+describe("displayFxFreshness", () => {
+  const wed = new Date(Date.UTC(2024, 4, 15, 18, 0, 0)); // Wednesday — forex open
+  const t = wed.getTime();
+
+  it("grades an extremely fresh cached spot as live", () => {
+    // Served from cache but observed seconds ago while forex is open → to the
+    // user, just as live as the prices it values. Never names the source.
+    expect(displayFxFreshness("cache", t - 30_000, wed)).toBe("live");
+  });
+
+  it("grades a spot observed earlier today (past the window) as recent", () => {
+    // Older than the live-staleness window (15 min) but still today → "recent".
+    expect(displayFxFreshness("cache", t - 30 * 60_000, wed)).toBe("recent");
+  });
+
+  it("grades a keyless end-of-day rate as eod and an absent rate as none", () => {
+    expect(displayFxFreshness("eod", null, wed)).toBe("eod");
+    expect(displayFxFreshness("none", null, wed)).toBe("none");
+  });
+
+  it("grades by freshness alone, never by where the rate came from", () => {
+    // A backup-provider ("tiingo") fill reads purely by freshness — no "(backup)".
+    expect(displayFxFreshness("tiingo", t - 60_000, wed)).toBe("live");
+    expect(displayFxFreshness("live", t, wed)).toBe("live");
   });
 
   it("ties the FX live window to the configured refresh interval", () => {
     // A spot observed 5 min ago is "live" under the default 15-min window, but a
-    // 2-min refresh interval narrows it to "cache"; a 30-min interval widens a
+    // 2-min refresh interval narrows it to "recent"; a 30-min interval widens a
     // 20-min-old spot back to "live".
-    expect(displayFxSource("cache", t - 5 * 60_000, t, 2 * 60_000)).toBe("cache");
-    expect(displayFxSource("cache", t - 5 * 60_000, t, 30 * 60_000)).toBe("live");
-    expect(displayFxSource("cache", t - 20 * 60_000, t, 30 * 60_000)).toBe("live");
+    expect(displayFxFreshness("cache", t - 5 * 60_000, wed, 2 * 60_000)).toBe("recent");
+    expect(displayFxFreshness("cache", t - 5 * 60_000, wed, 30 * 60_000)).toBe("live");
+    expect(displayFxFreshness("cache", t - 20 * 60_000, wed, 30 * 60_000)).toBe("live");
   });
 });
 

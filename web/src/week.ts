@@ -36,6 +36,7 @@ import {
   isUsMarketOpen,
   lastSessionDate,
   recentTradingSessions,
+  sessionOpenMs,
 } from "./market-hours";
 import {
   PROBE_MIN_MS,
@@ -640,14 +641,44 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
     if (!session) continue;
     const dayStart = dayStartMs(day);
     const dayEnd = dayStart + DAY_MS;
+    let dayGainedDetail = false;
     for (const symbol of symbols) {
       const fine = session.bars[symbol];
       if (!fine || fine.length === 0) continue;
+      dayGainedDetail = true;
       // Drop this day's coarse close, keep every other day's, splice the fine bars in.
       const coarse = (reconBars.get(symbol) ?? []).filter(
         (b) => b.t < dayStart || b.t >= dayEnd,
       );
       reconBars.set(symbol, [...coarse, ...fine]);
+    }
+    // Once a day carries intraday detail its band spans only open market hours.
+    // A symbol with no fine bars that day (e.g. a NAV fund) still contributes its
+    // lone daily close stamped at UTC midnight ({@link dayStartMs}) — well before
+    // the 09:30 ET open. Left there it injects a pre-open whole-book point that
+    // stretches the day's band so the real intraday trail only begins past the
+    // session open (it looked like the 1D detail was added "after half the day").
+    // Snap any such pre-open same-day close up to the session open so every one of
+    // the day's points lands inside open market hours and the trail fills the band
+    // from its start. (This is a wall-clock/zone artifact, not a price change — the
+    // NAV value is carried flat across the whole session by forward-fill either way.)
+    if (dayGainedDetail) {
+      const openMs = sessionOpenMs(day);
+      for (const symbol of symbols) {
+        const fine = session.bars[symbol];
+        if (fine && fine.length > 0) continue;
+        const bars = reconBars.get(symbol);
+        if (!bars || bars.length === 0) continue;
+        let snapped = false;
+        const aligned = bars.map((b) => {
+          if (b.t >= dayStart && b.t < openMs) {
+            snapped = true;
+            return { t: openMs, value: b.value };
+          }
+          return b;
+        });
+        if (snapped) reconBars.set(symbol, aligned);
+      }
     }
     if (session.fx.length > 0) {
       reconFx = [...reconFx.filter((b) => b.t < dayStart || b.t >= dayEnd), ...session.fx];
