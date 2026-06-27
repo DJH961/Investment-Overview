@@ -14,6 +14,7 @@ import {
   manualRefreshDecision,
   manualRefreshSummary,
   refreshTickAction,
+  regenerateSummary,
   summarizeCoverage,
   type CoverageFacts,
 } from "../src/app";
@@ -866,5 +867,30 @@ describe("describePrefetch", () => {
       now,
     });
     expect(s).toMatch(/^Prefetched 3\/10 live · 4 graph · FX live · last pulled/);
+  });
+});
+
+describe("regenerateSummary", () => {
+  const budget = { minuteRemaining: 8, dayRemaining: 599 };
+  const tiingoIdle = { hourUsed: 0, hourLimit: 40, dayUsed: 0, dayLimit: 800 };
+  const tiingoUsed = { hourUsed: 1, hourLimit: 40, dayUsed: 1, dayLimit: 800 };
+
+  it("shaped like a Round complete footer so the log lifts it into the verdict", () => {
+    const line = regenerateSummary("1D", 8, 8, budget, tiingoUsed);
+    expect(line).toMatch(/^Round complete \(regenerate 1D\):/);
+    expect(line).toContain("8 credits spent, 8 series stored");
+    expect(line).toContain("Budget left 8/min · 599/day");
+    expect(line).toContain("backup 1/40 this hour · 1/800 today");
+  });
+
+  it("singularises a one-credit spend", () => {
+    expect(regenerateSummary("1W", 1, 1, budget, tiingoUsed)).toContain("1 credit spent, 1 series stored");
+  });
+
+  it("reports a fully-reused render as no live pull and omits an idle backup tail", () => {
+    const line = regenerateSummary("1D", 0, 0, budget, tiingoIdle);
+    expect(line).toContain("no live pull (reused stored bars, 0 credits)");
+    expect(line).not.toContain("backup");
+    expect(line).toContain("Budget left 8/min · 599/day");
   });
 });

@@ -14,6 +14,49 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.15.0] — 2026-06-27
+
+### Added
+
+- **Settings refreshes now wait for the next fully-available Twelve Data minute
+  window.** The four primary-spending Settings escape hatches — "Force-fetch
+  every price now", "Regenerate 1D graph", "Regenerate 1W graph" and "Reset cache
+  & re-pull everything" — used to fire instantly, so a tap right after an
+  auto-refresh (which had just drained the plentiful 8/min Twelve Data pool)
+  spilled the whole pull onto the scarce, hourly-capped Tiingo backup. Each now
+  defers into the next moment the primary minute pool is fully replenished (≤60s)
+  via the new `twelveDataMinuteReadyDelayMs`, and shows a dismissable countdown
+  pop-up ("starting … in N seconds") so the wait is explicit. "Try the backup
+  data provider now" is deliberately exempt — it skips the primary entirely, so it
+  has no reason to wait the minute out.
+
+### Fixed
+
+- **The Settings "Regenerate 1D/1W graph" no longer double-pulls the curve.**
+  `regenerateGraph` returned to the dashboard (`exitSettings` → `renderDashboard`)
+  *before* `regenerateGraphNow` wiped and re-pulled the bars, so the on-demand
+  render fetched the curve once and the regenerate then wiped and fetched it
+  again — paying for the same overlapping symbols twice (the log's `8 Tiingo
+  credits` render plus the `12 Tiingo credits` "warm-up"). The wipe + re-pull now
+  complete first; the dashboard render afterwards reuses the freshly-stored bars
+  (`0 credits`).
+- **A regenerate is its own polling-log round with a budget footer.** The
+  `Regenerate 1D/1W graph (Settings)…` note now opens a dedicated round in the
+  data-polling log (instead of being absorbed into the previous refresh's block,
+  where its spend hid behind a pre-regenerate footer), and the flow emits a
+  `Round complete (regenerate 1D/1W): …` verdict with the live `N/min · M/day`
+  primary budget and `backup …` Tiingo tail — so "did it actually spend credits?"
+  is answered explicitly.
+
+### Changed
+
+- **Manual regenerate log lines no longer masquerade as a login warm-up.** A
+  user-triggered regenerate now logs as `1D/1W regenerate` (range label) and
+  `Regenerate: …` (backfill prefix) rather than the misleading `1D warm-up graph`
+  / `Login warm-up: …`. When a backfill primes no quotes because the cached quotes
+  are already fresher, the log now reads "quotes already fresher — nothing to
+  prime" instead of the alarming bare "primed 0 quote(s)".
+
 ## [4.14.6] — 2026-06-27
 
 ### Fixed

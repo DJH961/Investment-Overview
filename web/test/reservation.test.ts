@@ -10,6 +10,8 @@ import {
   ledgerReservation,
   tiingoAvailable,
   twelveDataAvailable,
+  twelveDataBudgetView,
+  twelveDataMinuteReadyDelayMs,
 } from "../src/reservation";
 import { recordCredits, recordTiingoCredits, startOfHour, type StorageLike } from "../src/cache";
 import { recordTiingo429, recordTwelveData429 } from "../src/provider-breaker";
@@ -140,5 +142,77 @@ describe("reservation — atomic reserve / release", () => {
     // The lone refund lands in the fresh hour as a negative spend, but the budget
     // is clamped so the new hour still reads exactly the full cap — never more.
     expect(tiingoAvailable(earlyNextHour, store)).toBe(WEB_HOURLY_CAP);
+  });
+});
+
+describe("twelveDataBudgetView — minute/day split", () => {
+  let store: StorageLike;
+  beforeEach(() => {
+    store = memoryStorage();
+  });
+
+  it("reads the full minute and day caps on an empty ledger", () => {
+    expect(twelveDataBudgetView(NOW, store)).toEqual({
+      minuteRemaining: FREE_TIER.creditsPerMinute,
+      dayRemaining: FREE_TIER.creditsPerDay,
+    });
+  });
+
+  it("reflects spend on both windows", () => {
+    recordCredits(3, NOW, store);
+    expect(twelveDataBudgetView(NOW, store)).toEqual({
+      minuteRemaining: FREE_TIER.creditsPerMinute - 3,
+      dayRemaining: FREE_TIER.creditsPerDay - 3,
+    });
+  });
+
+  it("zeroes the minute while frozen but keeps the day count", () => {
+    recordCredits(2, NOW, store);
+    recordTwelveData429(NOW, store);
+    const view = twelveDataBudgetView(NOW, store);
+    expect(view.minuteRemaining).toBe(0);
+    expect(view.dayRemaining).toBe(FREE_TIER.creditsPerDay - 2);
+  });
+});
+
+describe("twelveDataMinuteReadyDelayMs — wait for a fresh minute window", () => {
+  const MINUTE_MS = 60 * 1000;
+  let store: StorageLike;
+  beforeEach(() => {
+    store = memoryStorage();
+  });
+
+  it("is 0 when the minute pool is already clear", () => {
+    expect(twelveDataMinuteReadyDelayMs(NOW, store)).toBe(0);
+  });
+
+  it("waits until the last spend ages out of the rolling 60s window", () => {
+    recordCredits(8, NOW, store);
+    // Right after spending the whole minute, must wait a full minute.
+    expect(twelveDataMinuteReadyDelayMs(NOW, store)).toBe(MINUTE_MS);
+    // Halfway through, only the remainder is left to wait.
+    expect(twelveDataMinuteReadyDelayMs(NOW + 20_000, store)).toBe(MINUTE_MS - 20_000);
+    // Once a full minute has elapsed, the window is clear again.
+    expect(twelveDataMinuteReadyDelayMs(NOW + MINUTE_MS, store)).toBe(0);
+  });
+
+  it("waits for the most recent spend when several are in the window", () => {
+    recordCredits(2, NOW, store);
+    recordCredits(2, NOW + 10_000, store);
+    // The window clears a full minute after the *latest* spend.
+    expect(twelveDataMinuteReadyDelayMs(NOW + 10_000, store)).toBe(MINUTE_MS);
+    expect(twelveDataMinuteReadyDelayMs(NOW + 40_000, store)).toBe(MINUTE_MS - 30_000);
+  });
+
+  it("is 0 when a spend has been fully refunded (net zero in the window)", () => {
+    const res = ledgerReservation(store);
+    recordCredits(4, NOW, store);
+    res.release("twelvedata", 4, NOW + 1_000);
+    expect(twelveDataMinuteReadyDelayMs(NOW + 1_000, store)).toBe(0);
+  });
+
+  it("never exceeds a single minute", () => {
+    recordCredits(8, NOW, store);
+    expect(twelveDataMinuteReadyDelayMs(NOW, store)).toBeLessThanOrEqual(MINUTE_MS);
   });
 });
