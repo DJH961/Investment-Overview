@@ -14,6 +14,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.14.0] — 2026-06-27
+
+### Added
+
+- **Data-loading (consumption) log for the web overview.** A new, downloadable
+  plain-text log — the *read* counterpart to the existing data-polling log —
+  records what the main overview's views actually **consumed** from the available
+  data, and where they had to fall back to **alternative data because the perfect
+  data was missing**. Rather than a line per consumer, each entry is one
+  summarised snapshot across the three families the user cares about — `holdings`,
+  `graph` and `currency` KPIs — with plain-language flags for the
+  weird/uncommon moments (a holding dropped from totals, a USD KPI that fell back
+  to its EUR figure, a chart tip that could not draw, a device backfill bridging a
+  stale data file) and a per-snapshot "needed to be perfect" verdict. Consecutive
+  identical states collapse to a single row with a repeat count, so a new row
+  appears only when the consumed picture genuinely changes. Download/clear it from
+  **Settings**. This is a `web/` companion change only.
+- **Graph log now reports the 1W NAV sleeve and the 1D/1W FX anchor explicitly.**
+  The `graph` family additionally surfaces the two inputs unique to the live
+  1D/1W curves, where data gaps are otherwise easy to miss: the **NAV portion of
+  the 1W graph** (which NAV funds re-marked from their daily-NAV bars versus which
+  were pinned flat in the base for want of a usable price/share count, plus stale
+  NAV values), and the **FX portion of the 1D/1W graphs** (which EUR/USD the EUR
+  line is anchored to — live, cached, end-of-day, or the backup provider — and
+  whether a settled session-close rate exists to freeze the EUR view to once the
+  market shuts). This is a `web/` companion change only.
+
 ## [4.13.8] — 2026-06-27
 
 ### Fixed
