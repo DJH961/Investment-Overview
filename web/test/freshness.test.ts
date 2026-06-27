@@ -10,7 +10,9 @@ import {
   holdingFreshness,
   noLegs,
   quoteRefreshDue,
+  fxFreshness,
   type FreshnessInputs,
+  type FxFreshnessInput,
 } from "../src/freshness";
 
 const MIN = 60 * 1000;
@@ -189,6 +191,48 @@ describe("holdingFreshness (per-row tier)", () => {
   });
 });
 
+describe("fxFreshness (Layer-6 FX tier)", () => {
+  const WINDOW = 15 * MIN;
+  // 2026-06-24 16:00 UTC = Wed 12:00 ET (EDT) — forex market open.
+  const wedNow = new Date(Date.UTC(2026, 5, 24, 16, 0, 0));
+  // 2026-06-27 16:00 UTC = Sat — forex market shut (weekend close).
+  const satNow = new Date(Date.UTC(2026, 5, 27, 16, 0, 0));
+
+  function fx(over: Partial<FxFreshnessInput> = {}): FxFreshnessInput {
+    return { hasRate: true, fxObservedAt: wedNow.getTime() - 2 * MIN, now: wedNow, intervalMs: WINDOW, ...over };
+  }
+
+  it("is 'none' when no rate is held at all", () => {
+    expect(fxFreshness(fx({ hasRate: false }))).toBe("none");
+    // 'none' wins even if an observation instant happens to be present.
+    expect(fxFreshness(fx({ hasRate: false, fxObservedAt: wedNow.getTime() }))).toBe("none");
+  });
+
+  it("is 'eod' for a keyless rate (present but no observation instant)", () => {
+    expect(fxFreshness(fx({ fxObservedAt: null }))).toBe("eod");
+  });
+
+  it("is 'live' when forex is open and observed within the window", () => {
+    expect(fxFreshness(fx({ fxObservedAt: wedNow.getTime() - 2 * MIN }))).toBe("live");
+  });
+
+  it("is 'recent' (not 'live') when the forex market is shut, even within the window", () => {
+    expect(
+      fxFreshness(fx({ now: satNow, fxObservedAt: satNow.getTime() - 2 * MIN })),
+    ).toBe("recent");
+  });
+
+  it("is 'recent' when observed this week but older than the live window", () => {
+    expect(fxFreshness(fx({ fxObservedAt: wedNow.getTime() - 90 * MIN }))).toBe("recent");
+  });
+
+  it("is 'aged' when the rate predates the most recent forex reopen", () => {
+    // Observed the prior Friday — before Sunday 17:00 ET reopen — and far outside
+    // the live window: genuinely aged.
+    const priorFriday = new Date(Date.UTC(2026, 5, 19, 16, 0, 0)).getTime();
+    expect(fxFreshness(fx({ fxObservedAt: priorFriday }))).toBe("aged");
+  });
+});
 
 describe("holdingCoversLatestClose — absolute up-to-date driver", () => {
   const SETTLED = "2026-06-26";
