@@ -92,10 +92,43 @@ describe("consumption-log summariser", () => {
     expect(s.needed).toContain("an EUR/USD spot rate");
   });
 
-  it("flags the keyless end-of-day FX rate as a warn", () => {
-    const s = summariseConsumption(model({ eurUsdSource: "eod" }, [holding("AAPL")]));
+  it("flags the keyless end-of-day FX rate as a warn on a trading day", () => {
+    // A weekday when the spot-FX market is open: an end-of-day rate then really is
+    // a coarse fallback (a live spot was obtainable), so warn and ask for it.
+    const weekday = new Date("2026-06-25T12:00:00Z"); // Thursday, FX open
+    const s = summariseConsumption(model({ eurUsdSource: "eod" }, [holding("AAPL")]), weekday);
     expect(s.currency.flags.some((f) => f.level === "warn" && /end-of-day/.test(f.message))).toBe(true);
+    expect(s.needed).toContain("a live EUR/USD spot rate");
     expect(s.currency.perfect).toBe(false);
+  });
+
+  it("reframes the weekend end-of-day FX rate as expected, not a fault", () => {
+    // Over the weekend the spot-FX market is shut, so a live EUR/USD cannot exist:
+    // the end-of-day rate is the best obtainable data. It is still noted (so the
+    // reader knows the rate is frozen) but at info, with a passage explaining why
+    // it is impossible, and it is not asked for as "needed to be perfect".
+    const weekend = new Date("2026-06-27T12:00:00Z"); // Saturday, FX shut
+    const s = summariseConsumption(model({ eurUsdSource: "eod" }, [holding("AAPL")]), weekend);
+    const fxFlag = s.currency.flags.find((f) => /end-of-day/.test(f.message));
+    expect(fxFlag?.level).toBe("info");
+    expect(fxFlag?.message).toMatch(/weekend/);
+    expect(fxFlag?.message).toMatch(/reopen/);
+    expect(s.currency.flags.some((f) => f.level === "warn")).toBe(false);
+    expect(s.needed).not.toContain("a live EUR/USD spot rate");
+    expect(s.currency.perfect).toBe(true);
+  });
+
+  it("reframes the weekend end-of-day FX on the 1D/1W graph as expected", () => {
+    const weekend = new Date("2026-06-27T12:00:00Z"); // Saturday, FX shut
+    const s = summariseConsumption(
+      model({ eurUsdSource: "eod" }, [holding("AAPL", { nativeCurrency: "USD" })]),
+      weekend,
+    );
+    const graphFx = s.graph.flags.find((f) => /1D\/1W graph FX/.test(f.message) && /end-of-day/.test(f.message));
+    expect(graphFx?.level).toBe("info");
+    expect(graphFx?.message).toMatch(/weekend/);
+    expect(s.graph.flags.some((f) => f.level === "warn" && /approximate/.test(f.message))).toBe(false);
+    expect(s.needed).not.toContain("a live EUR/USD spot rate");
   });
 
   it("flags a missing USD KPI companion as an EUR fallback", () => {
