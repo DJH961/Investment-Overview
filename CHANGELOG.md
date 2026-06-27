@@ -14,6 +14,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.15.1] — 2026-06-27
+
+### Fixed
+
+- **The Currency KPI no longer nags "settled EUR/USD close unavailable" all
+  weekend.** On a frozen weekend the FX orchestration deliberately stops pulling
+  (`forexOpen=false` skips every live/Tiingo leg), so the provider's settled
+  previous close stays `null` and no refresh can repopulate it — yet the
+  displayed rate genuinely *is* the settled session close, which the currency
+  panels already anchor to via `fxEffectPriorFx`. `fxAnchorWarning` fired its
+  "best baseline on hand" warning unconditionally on a null previous close,
+  contradicting its own documented intent not to nag on a normal frozen weekend.
+  It is now suppressed when forex is frozen and a valid session-close anchor is
+  in hand, while still flagging genuinely missing data and the forex-open case
+  (`web/src/ui.ts`).
+
+### Changed
+
+- **A manual refresh now distrusts the cached FX bars the same way it distrusts
+  the spot and the holdings' quotes.** A manual tap re-pulls the session EUR→USD
+  bar track the currency KPI / FX view draw on even when the anchor is already in
+  hand, so the FX view is supplied with all the data its 1D/1W slices need rather
+  than trusting a possibly-stale cached track. The dispatch site still de-dups
+  this against an in-round session-bar prime that already grabs the FX track, so
+  a tap never double-buys the FX bar (`web/src/data-orchestrator.ts`).
+
+- **EUR/USD bars now double as the live spot, so a redundant FX quote is skipped
+  when the bar already carries the rate.** When a 1D/1W EUR/USD bar is re-pulled,
+  its newest point already carries the latest available rate. The securities path
+  already folds bar tips back into the quote cache (`primeQuotesFromBars`) so
+  holdings skip a separate quote; the FX side did not, so the currency KPI still
+  requested a separate spot quote. A new `primeEurUsdFromFxBars` (the FX sibling)
+  is called at the two sites that freshly fetch the EUR/USD bar track
+  (`prefetchGraphBars` FX track, `prefetchSessionFx`): it folds the newest FX bar
+  into the live spot cache, moving freshness forward only and preserving the
+  cached prior close. When the market is shut `loadEurUsd` freezes on this cache,
+  so the bar already bought *becomes* the settled spot; an open-market live spot
+  still overrides it (`web/src/app.ts`, `web/src/cache.ts`).
+
 ## [4.15.0] — 2026-06-27
 
 ### Added
