@@ -90,7 +90,7 @@ import {
 } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
 import { fxFreshness, type FxFreshness } from "./freshness";
-import { isUsMarketOpen, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, recentTradingSessions, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
+import { isUsMarketOpen, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, previousTradingSession, recentTradingSessions, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -114,6 +114,7 @@ import { setEurUsdRate } from "./currency";
 import { setInvestmentAmountEur } from "./investment-amount";
 import { formatLastPull } from "./format";
 import { appendPollLog, clearPollLog, formatPollLog, readPollLog, type PollLogCategory, type PollLogLevel } from "./polling-log";
+import { clearConsumptionLog, formatConsumptionLog, readConsumptionLog, recordConsumption } from "./consumption-log";
 import { APP_VERSION } from "./version";
 import type { CloseResolveLog } from "./close-completeness";
 import {
@@ -143,11 +144,13 @@ import {
   graphAnchorFx,
   readSessionCloseFx,
   readSessionOpenFx,
+  readPrevSessionCloseFx,
   recordSessionCloseFx,
   recordSessionOpenFx,
+  recordPrevSessionCloseFx,
   sessionBarsComplete,
   sessionCloseFxFromBars,
-  sessionFxBarsComplete,
+  sessionFxAnchorMissing,
   sessionOpenFxFromBars,
 } from "./session-fx";
 import { TimeSeriesStore, type Breadcrumb, type StoredCloseProbe } from "./timeseries-store";
@@ -896,7 +899,7 @@ export class App {
     // kickoff/auto round if still due), so no credit is spent the brain didn't
     // approve. FX is gated by the warm-up's own interval-aware {@link warmPrefetchFx}
     // (same user interval as Overlay 3), so it is not re-gated here.
-    const warmupPlan = this.planWarmupPull(plan, targets, now);
+    const warmupPlan = this.planWarmupPull(plan, targets, now, graphStale.fxBarsAnchorMissing);
     this.pollLog("orchestrator", `Login warm-up plan — ${describePlan(warmupPlan)}.`);
     if (!warmupPlan.legs.quotes) prefetch.symbols = [];
     if (!warmupPlan.legs.nav) prefetch.navSymbols = [];
@@ -950,14 +953,15 @@ export class App {
       now,
       planCurrency,
     );
-    // After-hours FX close completion: when the session's price bars were already
-    // in hand (so no 1D backfill ran above to grab the FX track alongside them)
-    // but the stored EUR→USD track never reached the 16:00 ET close, pull the FX
-    // alone so the freeze anchor + currency-effect split read the true settle, not
-    // a mid-session rate. Gated to the closed market — during the session the
-    // close has simply not happened yet — and skipped when a session backfill just
-    // fetched the FX in the same pass. Routed through the same reservation/breaker.
-    if (!marketOpen && graphStale.fxIncomplete && prefetch.graphSessionSymbols.length === 0) {
+    // Currency-KPI FX-bar anchor (orchestrator `fxBars` leg, Overlay 4). When the
+    // single brain marks the session EUR→USD open/close anchor as due — the close
+    // while the market is shut, the open while it runs once past warm-up — pull the
+    // FX bar track on its own so the hero currency KPI's market-hours/overnight
+    // split is fed in every phase. Skipped when a session backfill above already
+    // grabbed the FX track alongside the price bars (the mechanical de-dup that
+    // alone knows the real session-symbol pull). Routed through the same
+    // reservation/breaker as every other pull.
+    if (warmupPlan.legs.fxBars && prefetch.graphSessionSymbols.length === 0) {
       await this.prefetchSessionFx(config, now);
     }
     // C5 — bars-first NAV. Before spending a NAV *quote* credit, pull the 1W
@@ -1181,18 +1185,19 @@ export class App {
    * them, so they never need (or get) bars. Returns empty sets when there are no
    * market symbols to plot.
    *
-   * `fxIncomplete` is the after-hours signal the FX-only backfill keys on: the 1D
-   * EUR→USD track on the device has **not** reached the session close (it was last
-   * fetched mid-session, or never), so the freeze anchor / currency-effect split
-   * would otherwise read a mid-session rate as "the close" until the next session.
-   * See {@link sessionFxBarsComplete} and {@link prefetchSessionFx}.
+   * `fxBarsAnchorMissing` is the phase-aware signal the orchestrator's `fxBars`
+   * leg keys on: the session open/close EUR→USD the hero currency KPI's split needs
+   * is absent from this device's 1D track (close while shut, open while running once
+   * past warm-up), so the freeze anchor / currency-effect split would otherwise read
+   * a stale or mid-session rate. See {@link sessionFxAnchorMissing} and
+   * {@link prefetchSessionFx}.
    */
   private async prefetchGraphStaleness(
     marketSymbols: string[],
     now: Date,
-  ): Promise<{ session: string[]; week: string[]; fxIncomplete: boolean }> {
+  ): Promise<{ session: string[]; week: string[]; fxBarsAnchorMissing: boolean }> {
     if (marketSymbols.length === 0) {
-      return { session: [], week: [], fxIncomplete: false };
+      return { session: [], week: [], fxBarsAnchorMissing: false };
     }
     const store = this.ensureTimeSeriesStore();
     const day = lastSessionDate(now);
@@ -1225,10 +1230,17 @@ export class App {
     // else priming is skipped and the dashboard build re-pulls it via Tiingo
     // moments later (docs/tiingo_polling_storm_cleanup_plan.md item 5b).
     const week = weekStaleSymbols(weekStored, marketSymbols, now);
-    // The 1D FX track reads incomplete when no bar has reached this session's
-    // 16:00 ET close — the after-hours gap the FX-only backfill closes.
-    const fxIncomplete = !sessionFxBarsComplete(today?.fx ?? [], close);
-    return { session, week, fxIncomplete };
+    // The phase-aware anchor signal the orchestrator's `fxBars` leg keys on: the
+    // session open/close EUR→USD the hero currency KPI's split needs (close while
+    // shut, open while running once past warm-up).
+    const fxBarsAnchorMissing = sessionFxAnchorMissing({
+      fxBars: today?.fx ?? [],
+      marketClosed,
+      warmingUp: sessionIsWarmingUp(now),
+      sessionOpenMs: sessionOpenMs(day),
+      sessionCloseMs: close,
+    });
+    return { session, week, fxBarsAnchorMissing };
   }
 
   /**
@@ -1475,7 +1487,7 @@ export class App {
    * {@link buildPrefetchFreshness}), where it answers "will downloading the blob
    * save a per-symbol token?".
    */
-  private buildPullFreshness(now: Date): PullFreshness {
+  private buildPullFreshness(now: Date, fxBarsAnchorMissing = false): PullFreshness {
     const data = this.state.data;
     if (!data) {
       return {
@@ -1542,7 +1554,33 @@ export class App {
     // heavily-outdated / minorly-outdated boundaries key only on the device state.
     const blobDaysOld = deviceDaysMissing_;
     const navHeldForToday = !this.navStale(now);
-    return { dataAgeMs, deviceDaysMissing: deviceDaysMissing_, blobDaysOld, quoteAgeMs, fxAgeMs, navHeldForToday };
+    return { dataAgeMs, deviceDaysMissing: deviceDaysMissing_, blobDaysOld, quoteAgeMs, fxAgeMs, navHeldForToday, fxBarsAnchorMissing };
+  }
+
+  /**
+   * The async twin of the warm-up's {@link prefetchGraphStaleness} `fxBarsAnchorMissing`
+   * for the routine (auto/manual/reset/start-kickoff) rounds: reads this device's
+   * stored 1D EUR→USD bar track and asks {@link sessionFxAnchorMissing} whether the
+   * session open/close anchor the hero currency KPI's split needs for the current
+   * market phase is absent. Feeding it into {@link planRoundPull} is what routes the
+   * KPI's FX-bar pull through the single orchestrator (`fxBars` leg) instead of an
+   * ad-hoc side decision. Best-effort: a store error reads "not missing" so a
+   * transient failure never forces a needless pull.
+   */
+  private async sessionFxBarsAnchorMissing(now: Date): Promise<boolean> {
+    try {
+      const day = lastSessionDate(now);
+      const session = await this.ensureTimeSeriesStore().loadSession(day).catch(() => null);
+      return sessionFxAnchorMissing({
+        fxBars: session?.fx ?? [],
+        marketClosed: !isUsMarketOpen(now),
+        warmingUp: sessionIsWarmingUp(now),
+        sessionOpenMs: sessionOpenMs(day),
+        sessionCloseMs: sessionCloseMs(day),
+      });
+    } catch {
+      return false;
+    }
   }
 
   /** Whether any NAV-priced fund is still behind its expected publish (closed-NAV row). */
@@ -1570,6 +1608,7 @@ export class App {
     kind: RefreshKind,
     opts: { force?: boolean; forceAll?: boolean },
     now: Date,
+    fxBarsAnchorMissing = false,
   ): PullPlan {
     const pullKind: PullKind =
       kind === "reset" || (opts.forceAll ?? false)
@@ -1586,7 +1625,7 @@ export class App {
       market: marketOpen ? "open" : "closed",
       minutesSinceOpenMs: marketOpen ? elapsedSessionMs(now) : 0,
       autoIntervalMs: this.state.config.updateMinutes * 60 * 1000,
-      freshness: this.buildPullFreshness(now),
+      freshness: this.buildPullFreshness(now, fxBarsAnchorMissing),
       phase: "post-decrypt",
       currencyKnown: this.currencyKnownForPlan(),
       barGate: {
@@ -1636,6 +1675,7 @@ export class App {
     plan: PlannedSymbol[],
     targets: { outdatedMarketSymbols: string[]; awaitingNavSymbols: string[] },
     now: Date,
+    fxBarsAnchorMissing = false,
   ): PullFreshness {
     const nowMs = now.getTime();
     const currencyKnown = this.currencyKnownForPrefetch(plan);
@@ -1668,7 +1708,7 @@ export class App {
     const blobDaysOld = Math.max(this.blobDaysOld(now), deviceDaysMissing_);
     // NAV is "held for today" unless a fund is still awaiting its latest publish.
     const navHeldForToday = targets.awaitingNavSymbols.length === 0;
-    return { dataAgeMs, deviceDaysMissing: deviceDaysMissing_, blobDaysOld, quoteAgeMs, fxAgeMs, navHeldForToday };
+    return { dataAgeMs, deviceDaysMissing: deviceDaysMissing_, blobDaysOld, quoteAgeMs, fxAgeMs, navHeldForToday, fxBarsAnchorMissing };
   }
 
   /**
@@ -1685,6 +1725,7 @@ export class App {
     plan: PlannedSymbol[],
     targets: { outdatedMarketSymbols: string[]; awaitingNavSymbols: string[] },
     now: Date,
+    fxBarsAnchorMissing = false,
   ): PullPlan {
     const marketOpen = isUsMarketOpen(now);
     return planPull({
@@ -1693,7 +1734,7 @@ export class App {
       market: marketOpen ? "open" : "closed",
       minutesSinceOpenMs: marketOpen ? elapsedSessionMs(now) : 0,
       autoIntervalMs: this.state.config.updateMinutes * 60 * 1000,
-      freshness: this.buildPrefetchFreshness(plan, targets, now),
+      freshness: this.buildPrefetchFreshness(plan, targets, now, fxBarsAnchorMissing),
       phase: "pre-decrypt",
       currencyKnown: this.currencyKnownForPrefetch(plan),
       barGate: {
@@ -1733,7 +1774,7 @@ export class App {
    * funds included) but leaves the curves to the Regenerate buttons. The hard
    * free-tier budget still binds, so overflow simply defers.
    */
-  private async primeStaleGraphPackages(now: Date = new Date(), force = false): Promise<number> {
+  private async primeStaleGraphPackages(now: Date = new Date(), force = false, fxBarsLeg = false): Promise<number> {
     const { config } = this.state;
     if (!config.apiKey || resolvePriceProxyUrl(config) === null) return 0;
     const marketSymbols = readSymbolPlan()
@@ -1754,7 +1795,13 @@ export class App {
     // reading a mid-session rate as "the close" until the next session. Same gate
     // as the start path: closed market, FX track short of the close, and no session
     // bar pull this round (a session backfill already grabs the FX track alongside).
-    if (!isUsMarketOpen(now) && stale.fxIncomplete && sessionSymbols.length === 0) {
+    // Currency-KPI FX-bar anchor (orchestrator `fxBars` leg) — the phase-aware
+    // superset of the old closed-market `fxIncomplete` close-only gate, so the hero
+    // currency KPI's market-hours/overnight split is fed in every phase (close while
+    // the market is shut, open once past warm-up), not only after the close. The
+    // leg is decided once in {@link planRoundPull} and passed in; this site only
+    // de-dups against an in-round session bar pull (which grabs the FX alongside).
+    if (fxBarsLeg && sessionSymbols.length === 0) {
       await this.prefetchSessionFx(config, now);
     }
     if (sessionSymbols.length === 0 && weekSymbols.length === 0) return 0;
@@ -2612,6 +2659,22 @@ export class App {
         ["Clear log"],
       );
       clearLog.addEventListener("click", () => this.clearPollLogNow());
+      // (5) Download the data-loading (consumption) log: a summarised trail of
+      // what the overview's holdings, graph and currency KPIs actually read from
+      // the available data, flagging where they fell back to alternative data
+      // because the perfect data was missing. Paired with a clear button.
+      const downloadConsumption = h(
+        "button",
+        { class: "btn ghost", type: "button", "data-action": "download-consumption-log" },
+        ["Download data loading log"],
+      );
+      downloadConsumption.addEventListener("click", () => this.downloadConsumptionLog());
+      const clearConsumption = h(
+        "button",
+        { class: "btn ghost", type: "button", "data-action": "clear-consumption-log" },
+        ["Clear log"],
+      );
+      clearConsumption.addEventListener("click", () => this.clearConsumptionLogNow());
       formChildren.push(
         h("h2", { class: "settings-section" }, ["Maintenance"]),
         field(
@@ -2638,6 +2701,11 @@ export class App {
           "Data polling log",
           h("div", { class: "row import-row" }, [downloadLog, clearLog]),
           "Download a detailed, timestamped trail of exactly what each refresh did: which holdings were served from cache, fetched live, or filled from the backup provider (and why), the free-tier budgets at each step, and the data-file checks. Useful for debugging when prices look wrong or stuck. The log stays on this device.",
+        ),
+        field(
+          "Data loading log",
+          h("div", { class: "row import-row" }, [downloadConsumption, clearConsumption]),
+          "Download a summarised trail of what the main overview actually read from the available data — the holdings, the value graph and the currency KPIs — flagging the moments where a view had to fall back to alternative data because the perfect data was missing (a holding dropped from totals, a USD KPI shown in EUR, a chart tip it couldn't draw). Use it to see what data the views would have needed to be perfect. The log stays on this device.",
         ),
       );
     }
@@ -4044,8 +4112,23 @@ export class App {
         eurUsdAt = cachedEurUsd.at;
       }
     }
-    // Prefer the live EUR/USD spot (more current than the ECB daily rate) for
-    // all current marks, so value and today's move share one consistent rate.
+    // Persist / restore the prior-session EUR→USD close — the hero currency KPI's
+    // "yesterday" baseline (`fxRateEurUsdPrev`). On a weekend/holiday cold start
+    // loadEurUsd freezes (forexOpen=false) and previousClose can come back null,
+    // which would otherwise strand the KPI with no baseline to diverge from. So
+    // whenever we hold a real prior close, stamp it keyed by the session whose close
+    // it is; when we don't, read that persisted close back as the fallback. Keyed by
+    // previousTradingSession(lastSessionDate) so Saturday reads back Thursday's close
+    // (the close that is genuinely "yesterday" relative to Friday's last session).
+    {
+      const prevSessionDay = previousTradingSession(lastSessionDate(new Date()));
+      if (eurUsdPrev !== null && eurUsdPrev.greaterThan(0)) {
+        recordPrevSessionCloseFx(prevSessionDay, eurUsdPrev);
+      } else {
+        const persisted = readPrevSessionCloseFx(prevSessionDay);
+        if (persisted !== null) eurUsdPrev = persisted;
+      }
+    }
     if (eurUsdNow !== null && eurUsdNow.greaterThan(0)) {
       fx = { base: fx.base, rates: { ...fx.rates, USD: eurUsdNow } };
     }
@@ -5030,7 +5113,16 @@ export class App {
       }
     }
     const now = new Date();
-    const roundPlan = this.planRoundPull(kind, opts, now);
+    // The currency-KPI FX-bar anchor signal (Overlay 4) is a device-store read, so
+    // resolve it once here and feed it into the single orchestrator plan — the KPI's
+    // FX-bar pull is then a first-class `fxBars` leg, not an ad-hoc side decision.
+    const fxBarsAnchorMissing = await this.sessionFxBarsAnchorMissing(now);
+    if (session !== this.sessionId) {
+      this.refreshing = false;
+      this.refreshingKind = null;
+      return;
+    }
+    const roundPlan = this.planRoundPull(kind, opts, now, fxBarsAnchorMissing);
     this.pollLog("orchestrator", `Round decision (${kind}): ${describePlan(roundPlan)}`);
     // During market hours the clock-hour bar gate ({@link graphPrimeDecision},
     // reading this same plan) is the sole 1D-bar authority, so the prime runs at
@@ -5040,13 +5132,22 @@ export class App {
     {
       const decision = this.graphPrimeDecision(kind, opts, roundPlan, now);
       this.pollLog("graph", `Graph-prime decision (${kind}): ${decision.reason}`);
+      // Whether the `fxBars` leg (the currency-KPI session open/close anchor) was
+      // already serviced by a session-bar prime this round, which grabs the FX
+      // track alongside the price bars. When the prime is skipped (force-all, or a
+      // not-due market-open tick) the standalone dispatch below feeds the KPI so it
+      // is supplied by EVERY mechanism, not only the ones that prime graphs.
+      let fxBarsHandled = false;
       if (decision.due) {
         // A from-scratch reset overrules the per-symbol staleness gate so the
         // graphs are re-pulled too. Force-all never reaches here (it returns
         // not-due above): "Force-fetch every price now" is a quotes-only pull and
         // leaves the 1D/1W curves to the dedicated Regenerate buttons.
         const forceGraphs = kind === "reset";
-        const stored = await this.primeStaleGraphPackages(now, forceGraphs).catch(() => undefined);
+        const stored = await this.primeStaleGraphPackages(now, forceGraphs, roundPlan.legs.fxBars).catch(
+          () => undefined,
+        );
+        fxBarsHandled = true;
         if (session !== this.sessionId) {
           this.refreshing = false;
           this.refreshingKind = null;
@@ -5057,6 +5158,16 @@ export class App {
         if (decision.market === "open" && typeof stored === "number" && stored > 0) {
           this.lastBarPrimeMs = Date.now();
           this.pollLog("graph", `Graph-prime pulled ${stored} series; next 1D bar held until the next clock hour.`);
+        }
+      }
+      // Standalone currency-KPI FX-bar anchor pull for the mechanisms that did not
+      // run a graph prime this round (no session-bar pull to grab the FX alongside).
+      if (roundPlan.legs.fxBars && !fxBarsHandled) {
+        await this.prefetchSessionFx(this.state.config, now).catch(() => undefined);
+        if (session !== this.sessionId) {
+          this.refreshing = false;
+          this.refreshingKind = null;
+          return;
         }
       }
     }
@@ -5528,6 +5639,34 @@ export class App {
     this.toast("Polling log cleared.");
   }
 
+  /**
+   * Export the recorded data-loading (consumption) log to a downloadable text
+   * file: a summarised trail of what the overview's holdings, graph and currency
+   * KPIs read from the available data, flagging where they fell back to
+   * alternative data because the ideal data was missing.
+   */
+  private downloadConsumptionLog(): void {
+    try {
+      const text = formatConsumptionLog(readConsumptionLog(), { version: APP_VERSION });
+      const blob = new Blob([text], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = h("a", { href: url, download: "investment-overview-data-loading-log.txt" }) as HTMLAnchorElement;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      this.toast("Data loading log downloaded.");
+    } catch {
+      this.toast("Couldn't export the data loading log on this device.");
+    }
+  }
+
+  /** Clear the recorded data-loading log (Settings → "Clear data loading log"). */
+  private clearConsumptionLogNow(): void {
+    clearConsumptionLog();
+    this.toast("Data loading log cleared.");
+  }
+
   /** A brief, auto-dismissing status message (e.g. biometric enrolment result). */
   private toast(message: string): void {
     if (typeof document === "undefined") return;
@@ -5724,6 +5863,15 @@ export class App {
 
   private renderDashboard(model: DashboardModel): void {
     this.model = model;
+    // Record what the overview's views consumed from the available data (and
+    // where they fell back to alternative data) — the read counterpart to the
+    // polling log. De-duplicated downstream, so an unchanging picture collapses
+    // to one row and a new row only marks a genuine change. Best-effort.
+    try {
+      recordConsumption(model);
+    } catch {
+      /* consumption logging is best-effort and must never break a render */
+    }
     // Mirror the configured regular investment amount into the render-layer store
     // so the USD investing-power panel can read it without threading config through.
     setInvestmentAmountEur(this.state.config.investmentAmountEur);

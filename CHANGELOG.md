@@ -14,6 +14,68 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.14.1] — 2026-06-27
+
+### Fixed
+
+- **The "Currency effect since yesterday" and USD "bang for buck" / investing-power
+  panels no longer vanish on a closed-market / frozen-FX round** even while the FX
+  card still shows a real EUR/USD rate move. Both panels were anchored to the
+  settled previous close (`fxRateEurUsdPrev`); on rounds where the compute layer
+  leaves that null — market closed, FX frozen, or an end-of-day-rate pull —
+  `todayFxMoveEur` collapses to zero and the panels dropped out entirely. They now
+  fall back to the **session-close** anchor (`fxEffectPriorFx`, the same prior-close
+  rate the FX card's "Since close" stat already reads), deriving the book's EUR FX
+  swing directly so the panel survives the gap instead of disappearing
+  (`web/src/ui.ts` `renderEurFxEffect`, `renderInvestingPowerEffect`).
+- **The live 1D / 1W value graphs no longer slide up and down overnight with
+  after-hours EUR/USD ticks.** The 1D/1W curves draw a market-day trajectory, but
+  the USD-booked book's euro line re-marked at every after-hours FX tick because FX
+  trades ~24h while the US session is only 09:30–16:00 ET. The curves are now
+  anchored to the **session-close FX** while the market is shut (`graphAnchorFx`),
+  frozen for the night, falling back to the settled `previousClose` (a real,
+  non-drifting rate that on a weekend / cold start *is* the session close) and only
+  then to the live rate — so a not-live-at-close or empty-storage start is protected,
+  never fabricated (`web/src/session-fx.ts`, `web/src/app.ts`, `web/src/data-orchestrator.ts`).
+- **The market-hours versus overnight FX P/L attribution stays honest.** A new
+  `fxEffectSplit` isolates the in-session EUR/USD move (prior close → this session's
+  close) from the overnight move (session close → live spot), resolving the session
+  close from the session's own dated FX bars where possible and only otherwise from
+  the live capture; with neither it returns nothing rather than blaming the whole
+  swing on "overnight" (`web/src/session-fx.ts`, `web/src/freshness.ts`).
+- **A degraded FX anchor is now surfaced unobtrusively.** When a currency panel is
+  running on a fallback baseline (settled prior close missing, or a closed market
+  whose session-close anchor never landed) it appends a muted ⚠️ glyph with the
+  reason on hover / `aria-label` (`fxAnchorWarning`, `.fx-effect-warn`) — informing
+  without ever blocking the best-estimate figure (`web/src/ui.ts`, `web/src/styles.css`).
+
+## [4.14.0] — 2026-06-27
+
+### Added
+
+- **Data-loading (consumption) log for the web overview.** A new, downloadable
+  plain-text log — the *read* counterpart to the existing data-polling log —
+  records what the main overview's views actually **consumed** from the available
+  data, and where they had to fall back to **alternative data because the perfect
+  data was missing**. Rather than a line per consumer, each entry is one
+  summarised snapshot across the three families the user cares about — `holdings`,
+  `graph` and `currency` KPIs — with plain-language flags for the
+  weird/uncommon moments (a holding dropped from totals, a USD KPI that fell back
+  to its EUR figure, a chart tip that could not draw, a device backfill bridging a
+  stale data file) and a per-snapshot "needed to be perfect" verdict. Consecutive
+  identical states collapse to a single row with a repeat count, so a new row
+  appears only when the consumed picture genuinely changes. Download/clear it from
+  **Settings**. This is a `web/` companion change only.
+- **Graph log now reports the 1W NAV sleeve and the 1D/1W FX anchor explicitly.**
+  The `graph` family additionally surfaces the two inputs unique to the live
+  1D/1W curves, where data gaps are otherwise easy to miss: the **NAV portion of
+  the 1W graph** (which NAV funds re-marked from their daily-NAV bars versus which
+  were pinned flat in the base for want of a usable price/share count, plus stale
+  NAV values), and the **FX portion of the 1D/1W graphs** (which EUR/USD the EUR
+  line is anchored to — live, cached, end-of-day, or the backup provider — and
+  whether a settled session-close rate exists to freeze the EUR view to once the
+  market shuts). This is a `web/` companion change only.
+
 ## [4.13.8] — 2026-06-27
 
 ### Fixed
