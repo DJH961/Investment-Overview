@@ -192,6 +192,10 @@ describe("polling-log", () => {
       expect(text).toContain("Round complete (regenerate 1D): 1 credit spent, 1 series stored");
       // The macro overview reads the latest budget off the regenerate footer.
       expect(text).toContain("Latest budget left: 8/min · 599/day");
+      // …and surfaces the scarce Tiingo backup total too, so a Tiingo-funded 1D
+      // regeneration is counted into the macro budget read-out (not just the
+      // primary `N/min · M/day`, which a Tiingo-only spend never moves).
+      expect(text).toContain("Latest backup (Tiingo) budget: 1/40 this hour · 1/800 today");
     });
   });
 });

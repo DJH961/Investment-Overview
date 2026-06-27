@@ -309,6 +309,16 @@ function budgetFromFinish(message: string): string | null {
   return m ? m[1].trim() : null;
 }
 
+/** Pull the secondary `backup X/H this hour · Y/D today` Tiingo budget out of a
+ * finish line, for the macro overview header. The 1D/1W graph regeneration spends
+ * the scarce Tiingo budget (which never touches the primary `N/min · M/day`
+ * read-out), so without surfacing this here the macro total silently undercounts
+ * a Tiingo-only regenerate. Best-effort: null when the line carries no backup. */
+function tiingoFromFinish(message: string): string | null {
+  const m = message.match(/backup\s+([0-9]+\/[0-9]+ this hour[^.;]*?\/[0-9]+ today)/i);
+  return m ? m[1].trim() : null;
+}
+
 /** Render one round as a clearly bounded block: a header banner naming the
  * trigger and time span, the gutter-marked event lines, and a closing footer
  * summarising the outcome (what settled / failed / backed off / budget left). */
@@ -390,9 +400,12 @@ export function formatPollLog(
   const pullingRounds = rounds.filter((r) => r.trigger !== null);
   const failedRounds = rounds.filter((r) => r.entries.some((e) => inferLevel(e) === "error")).length;
   let lastBudget: string | null = null;
-  for (let i = rounds.length - 1; i >= 0 && lastBudget === null; i--) {
+  let lastTiingoBudget: string | null = null;
+  for (let i = rounds.length - 1; i >= 0 && (lastBudget === null || lastTiingoBudget === null); i--) {
     const f = finishEntry(rounds[i]);
-    if (f) lastBudget = budgetFromFinish(f.message);
+    if (!f) continue;
+    if (lastBudget === null) lastBudget = budgetFromFinish(f.message);
+    if (lastTiingoBudget === null) lastTiingoBudget = tiingoFromFinish(f.message);
   }
   const header = [
     "Investment Overview — data polling log",
@@ -400,6 +413,7 @@ export function formatPollLog(
     `Generated: ${stamp(generatedAt)}`,
     `Entries: ${entries.length}  ·  Pulling rounds: ${pullingRounds.length}  ·  Rounds with failures: ${failedRounds}`,
     lastBudget ? `Latest budget left: ${lastBudget}` : null,
+    lastTiingoBudget ? `Latest backup (Tiingo) budget: ${lastTiingoBudget}` : null,
     "Times are local to this device. Newest rounds are at the bottom.",
     "",
     "Legend:  ✓ settled/ok   ↩ backed off (deferred/skipped to save budget)   ⚠ degraded   ✗ failed   · step",

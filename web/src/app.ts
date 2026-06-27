@@ -6072,8 +6072,46 @@ export class App {
     return reasons.length === 0 ? null : reasons.join(" ");
   }
 
+  /**
+   * Re-read the live credit ledgers and refresh the overview's budget read-outs
+   * in place, so **every** repaint — not just a full price refresh — counts the
+   * latest spend. A Settings "Regenerate 1D/1W graph" books its Twelve Data /
+   * Tiingo credits straight onto the shared ledgers and then repaints from the
+   * cached model (no `refreshPrices`), so without this the "Live budget today" /
+   * "Fallback budget" lines kept the stale figures from the previous refresh and
+   * silently undercounted the regeneration's credits. Mirrors the guards in
+   * {@link refreshPrices}: the Twelve Data line is only kept current once it has
+   * a value to update, and the Tiingo line surfaces the moment any backup credit
+   * has been spent (so a Tiingo-only regenerate makes it appear).
+   */
+  private syncLiveBudget(model: DashboardModel): void {
+    try {
+      const now = Date.now();
+      const o = model.overview;
+      if (o.dailyCreditsUsed !== null) {
+        const limit = o.dailyCreditLimit;
+        const used = creditsSpentToday(readCreditLog(now, 24 * 60 * 60 * 1000), now);
+        const dayRemaining = Math.max(0, limit - Math.max(0, used));
+        o.dailyCreditsUsed = Math.max(0, limit - dayRemaining);
+      }
+      const tiingo = tiingoBudgetView(now);
+      if (o.tiingoDayUsed !== null || tiingo.dayUsed > 0 || tiingo.hourUsed > 0) {
+        o.tiingoHourUsed = tiingo.hourUsed;
+        o.tiingoHourLimit = tiingo.hourLimit;
+        o.tiingoDayUsed = tiingo.dayUsed;
+        o.tiingoDayLimit = tiingo.dayLimit;
+      }
+    } catch {
+      /* budget read-out is best-effort and must never break a render */
+    }
+  }
+
   private renderDashboard(model: DashboardModel): void {
     this.model = model;
+    // Keep the overview's data-budget read-outs current on every paint (a
+    // regenerate repaints from cache without a price refresh), so a 1D/1W
+    // regeneration's freshly-billed credits are counted in immediately.
+    this.syncLiveBudget(model);
     // Record what the overview's views consumed from the available data (and
     // where they fell back to alternative data) — the read counterpart to the
     // polling log. De-duplicated downstream, so an unchanging picture collapses
