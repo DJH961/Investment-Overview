@@ -173,6 +173,29 @@ export function minuteBudgetReliefMs(
   return Math.max(oldestInWindow + windowMs - nowMs, floorMs);
 }
 
+/**
+ * Credit-aware burst relief, made to **cooperate with the 429 circuit breaker**.
+ *
+ * Thin wrapper over {@link minuteBudgetReliefMs} that additionally honours the
+ * provider's 429 freeze: when `frozen` is true (the Twelve Data breaker has
+ * tripped — see `provider-breaker.ts`), it returns `null` so the caller keeps its
+ * normal, also-breaker-gated cadence instead of bringing the burst forward. A
+ * freeze forces the per-minute budget to 0, so an early relief wake-up could not
+ * fetch anything — it would only wake, re-defer, and (until the local credit
+ * ledger ages out) potentially reschedule, burning wake-ups against a provider
+ * that has already said "no". Suppressing relief while frozen is what makes the
+ * two mechanisms cooperate: the next pull lands no sooner than it could actually
+ * succeed. When not frozen, behaviour is identical to {@link minuteBudgetReliefMs}.
+ */
+export function burstReliefMs(
+  spendTimesMs: readonly number[],
+  nowMs: number,
+  opts: { frozen?: boolean; windowMs?: number; floorMs?: number } = {},
+): number | null {
+  if (opts.frozen) return null;
+  return minuteBudgetReliefMs(spendTimesMs, nowMs, opts.windowMs ?? MINUTE_MS, opts.floorMs ?? 0);
+}
+
 export function nextRefreshDelayMs(signal: RefreshSignal, options: RefreshCadenceOptions = {}): number {
   const {
     slowIntervalMs = DEFAULT_SLOW_INTERVAL_MS,

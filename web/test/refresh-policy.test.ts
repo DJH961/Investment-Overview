@@ -12,6 +12,7 @@ import {
   MAX_BUDGET_SLOWDOWN,
   MIN_BURST_RELIEF_MS,
   MIN_JUMPSTART_DELAY_MS,
+  burstReliefMs,
   dailyBudgetSlowdown,
   jumpstartDelayMs,
   minuteBudgetReliefMs,
@@ -88,6 +89,33 @@ describe("minuteBudgetReliefMs", () => {
     const now = 100_000;
     // A spend at exactly now frees a full minute out — the worst case, == a blind burst.
     expect(minuteBudgetReliefMs([now], now, MIN)).toBe(MIN);
+  });
+});
+
+describe("burstReliefMs (429-breaker cooperation)", () => {
+  const MIN = 60 * 1000;
+
+  it("matches minuteBudgetReliefMs when the provider is not frozen", () => {
+    const now = 100_000;
+    expect(burstReliefMs([now - 40_000], now)).toBe(20_000);
+    expect(burstReliefMs([now - 40_000], now, { frozen: false })).toBe(20_000);
+  });
+
+  it("honours the window/floor options like minuteBudgetReliefMs", () => {
+    const now = 100_000;
+    // 59.9 s ago would free in 100 ms; floored to MIN_BURST_RELIEF_MS.
+    expect(burstReliefMs([now - (MIN - 100)], now, { windowMs: MIN, floorMs: MIN_BURST_RELIEF_MS })).toBe(
+      MIN_BURST_RELIEF_MS,
+    );
+  });
+
+  it("returns null while frozen, so no early burst is scheduled against a 429-frozen provider", () => {
+    const now = 100_000;
+    // Without the freeze this would bring the burst forward to 20 s; the freeze
+    // suppresses it so the caller keeps its normal (also breaker-gated) cadence.
+    expect(burstReliefMs([now - 40_000], now, { frozen: true })).toBeNull();
+    // Even a credit on the verge of ageing out yields no relief while frozen.
+    expect(burstReliefMs([now - 1_000], now, { frozen: true, floorMs: MIN_BURST_RELIEF_MS })).toBeNull();
   });
 });
 

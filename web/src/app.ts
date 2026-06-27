@@ -82,9 +82,9 @@ import {
   type QuoteLoadReport,
 } from "./quotes";
 import {
+  burstReliefMs,
   dailyBudgetSlowdown,
   jumpstartDelayMs,
-  minuteBudgetReliefMs,
   nextRefreshDelayMs,
   MIN_BURST_RELIEF_MS,
 } from "./refresh-policy";
@@ -130,6 +130,7 @@ import {
   recordTwelveData429,
   recordTwelveDataSuccess,
   recordTiingo429,
+  twelveDataFrozen,
 } from "./provider-breaker";
 import { ledgerReservation, tiingoAvailable, twelveDataAvailable } from "./reservation";
 import { DEFERRED_MAX_ATTEMPTS, DeferredQueue } from "./deferred-queue";
@@ -148,7 +149,7 @@ import {
   sessionFxBarsComplete,
   sessionOpenFxFromBars,
 } from "./session-fx";
-import { TimeSeriesStore, type Breadcrumb } from "./timeseries-store";
+import { TimeSeriesStore, type Breadcrumb, type StoredCloseProbe } from "./timeseries-store";
 import {
   WEEK_STORE_KEY,
   navBackfillStaleSymbols,
@@ -1424,11 +1425,12 @@ export class App {
    * genuine market-data gap.
    *
    * This is the **metadata prediction** only ("will a fresh blob save a token?").
-   * Its suppressive power is honoured solely while the blob is still *pending* — a
-   * live refresh round runs *after* the blob is decrypted and applied, so
-   * {@link buildPullFreshness} layers the **Pillar-4 blob-trust re-engage overlay**
-   * on top of this value (see there) and never lets a recent metadata timestamp
-   * mask a gap the applied blob turned out not to cover.
+   * It is used **exclusively** by the pre-decrypt path
+   * ({@link buildPrefetchFreshness}), where the blob has not yet been applied and
+   * its recency predicts whether downloading it will cover the device gap (cheap,
+   * zero per-symbol tokens). The post-decrypt path ({@link buildPullFreshness})
+   * does NOT consult this value — after decrypt, the blob is on-device and only
+   * `deviceDaysMissing` drives the freshness tier.
    */
   private blobDaysOld(now: Date): number {
     if (this.blobPublishedAt) return settledSessionsSince(this.blobPublishedAt, now);
@@ -1449,33 +1451,32 @@ export class App {
    * aggressive than the per-symbol cache TTLs the executors already enforce: it can
    * skip a leg only when the executor would itself have fetched nothing.
    *
-   * **Pillar-4 blob-trust re-engage overlay.** The metadata `blobDaysOld` predicts
-   * "a fresh blob will cover the gap, so don't spend a market token". That
-   * prediction is only safe *before* the blob is decrypted. A refresh round runs
-   * *after* decrypt (the dashboard is already built from the blob), so here we lift
-   * `blobDaysOld` to at least the observed on-device gap (`deviceDaysMissing`): if
-   * the applied blob actually covered the gap the device is fresh and this is a
-   * no-op, but if it *lacked* the coverage its metadata can no longer mask the gap —
-   * the heavily-outdated row re-engages and the skipped leg is pulled for real
-   * (`docs/centralized_data_pull_plan.md`, "Blob-trust re-engage" overlay).
+   * **Post-decrypt: on-device age is the sole tier driver.** This method runs
+   * *after* the blob is decrypted and applied to on-device storage; the blob's data
+   * is already reflected in the cached quotes/bars. Therefore `blobDaysOld` is set
+   * to exactly `deviceDaysMissing` — eliminating the blob-metadata prediction signal
+   * from the tier decision. If the blob covered the gap, the device is fresh and
+   * tiers land correctly; if it didn't, `deviceDaysMissing` already reflects the
+   * remaining gap and the tier re-engages accordingly. The blob-metadata prediction
+   * (`blobDaysOld` from {@link blobDaysOld}) is relevant only **pre-decrypt** (in
+   * {@link buildPrefetchFreshness}), where it answers "will downloading the blob
+   * save a per-symbol token?".
    */
   private buildPullFreshness(now: Date): PullFreshness {
     const data = this.state.data;
-    const nowMs = now.getTime();
-    const blobDaysOldMeta = this.blobDaysOld(now);
     if (!data) {
       return {
         dataAgeMs: 0,
         deviceDaysMissing: 0,
-        blobDaysOld: blobDaysOldMeta,
+        blobDaysOld: 0,
         quoteAgeMs: 0,
         navHeldForToday: true,
       };
     }
+    const nowMs = now.getTime();
     const plan = buildFetchPlan(data, FETCHABLE_NAV_CLASSES);
     const cached = readCachedQuotes();
     let oldestQuoteAt: number | null = null;
-    let anyQuoteMissing = false;
     let anyMarketMissing = false;
     // C1 — currency-known gate. An empty quote cache is only *evidence* of a
     // missing market day when we actually know the holding's currency: a genuine
@@ -1484,23 +1485,33 @@ export class App {
     // `deviceDaysMissing` to 10 off that unknown cache is exactly the bug that
     // faked "heavily-outdated" and triggered the full re-pull, so a missing market
     // quote only counts when its native currency is known.
+    let oldestMarketAt: number | null = null;
     for (const entry of plan) {
       const at = cached.get(entry.symbol)?.quote?.at ?? null;
       if (at === null) {
-        anyQuoteMissing = true;
         if (entry.priceType === "market" && entry.nativeCurrency !== null) {
           anyMarketMissing = true;
         }
         continue;
       }
       if (oldestQuoteAt === null || at < oldestQuoteAt) oldestQuoteAt = at;
+      if (entry.priceType === "market") {
+        if (oldestMarketAt === null || at < oldestMarketAt) oldestMarketAt = at;
+      }
     }
     // FX age: tracked separately so the orchestrator's Overlay 3 can suppress the
     // FX leg individually (e.g. after the login warm-up just pulled a fresh spot)
     // without that freshness masking a stale quote leg in dataAgeMs.
     const fxCached = readCachedEurUsd();
     const fxAgeMs = fxCached && fxCached.now !== null ? nowMs - fxCached.at : Number.POSITIVE_INFINITY;
-    const quoteAgeMs = anyQuoteMissing || oldestQuoteAt === null ? Number.POSITIVE_INFINITY : nowMs - oldestQuoteAt;
+    // Quote age: only market quotes drive the freshness tier. Deferred NAVs
+    // (budget-limited, long TTL) must NOT inflate quoteAgeMs to Infinity — that
+    // would classify every auto-tick as "minorly-outdated" and defeat the
+    // orchestrator's rolling-TTL suppression (Overlay 2). Fall back to the oldest
+    // market quote when NAVs are the only missing entries.
+    const quoteAgeMs = anyMarketMissing || oldestMarketAt === null
+      ? (oldestQuoteAt === null ? Number.POSITIVE_INFINITY : nowMs - oldestQuoteAt)
+      : nowMs - oldestMarketAt;
     const dataAgeMs = Math.max(quoteAgeMs, fxAgeMs);
     // Market-side device gap, biased *up* when uncertain so the heavily-outdated
     // tier (which simply restores today's full pass) can never under-pull.
@@ -1510,9 +1521,13 @@ export class App {
       return e?.priceType === "market";
     });
     const deviceDaysMissing_ = deviceDaysMissing({ anyMarketMissing, marketStale, dataAgeMs });
-    // Blob-trust re-engage overlay (post-decrypt): the metadata prediction can only
-    // *raise* the floor, never mask the observed on-device gap. See the docstring.
-    const blobDaysOld = Math.max(blobDaysOldMeta, deviceDaysMissing_);
+    // Post-decrypt: the blob is already applied to on-device storage, so on-device
+    // freshness (deviceDaysMissing) is the sole truth — the blob metadata age is
+    // irrelevant. If the blob covered the gap the device is fresh; if it didn't,
+    // deviceDaysMissing already reflects that. Passing blobDaysOld = deviceDaysMissing
+    // removes the blob-metadata signal from the tier decision entirely, so the
+    // heavily-outdated / minorly-outdated boundaries key only on the device state.
+    const blobDaysOld = deviceDaysMissing_;
     const navHeldForToday = !this.navStale(now);
     return { dataAgeMs, deviceDaysMissing: deviceDaysMissing_, blobDaysOld, quoteAgeMs, fxAgeMs, navHeldForToday };
   }
@@ -1851,7 +1866,29 @@ export class App {
       });
       let fx: Bar[] | undefined;
       if (fetchFx) fx = await fetchFx().catch(() => undefined);
-      await store.mergeSession(storeKey, { bars: incoming, fx }, now.getTime());
+      // Seed close-probes for 1D session bars that are incomplete after close.
+      // Without this, the first graph build after a reset sees "no probe + bars
+      // short of close" → closeProbeReady(undefined) = true → immediate re-fetch,
+      // repeated on every concurrent build until one stores a probe. Seeding the
+      // probe here gates subsequent builds to the 10-min spacing window.
+      let closeProbe: Record<string, StoredCloseProbe> | undefined;
+      if (label === "1D" && !isUsMarketOpen(now)) {
+        const closeMs = sessionCloseMs(storeKey); // storeKey IS the session date for 1D
+        for (const symbol of Object.keys(incoming)) {
+          const bars = incoming[symbol];
+          if (bars.length > 0 && !sessionBarsComplete(bars, closeMs, INTRADAY_BAR_INTERVAL_MS)) {
+            if (!closeProbe) closeProbe = {};
+            closeProbe[symbol] = {
+              lastBarAt: bars[bars.length - 1].t,
+              attempts: 1,
+              sources: 1,
+              settled: false,
+              lastAttemptAt: now.getTime(),
+            };
+          }
+        }
+      }
+      await store.mergeSession(storeKey, { bars: incoming, fx, closeProbe }, now.getTime());
       const count = Object.keys(incoming).length;
       stored += count;
       // C7: report the *real* primed count for this leg, not a blind claim. The
@@ -3509,9 +3546,10 @@ export class App {
       const metaUrl = resolveMetaUrl(config);
       const meta = metaUrl ? await fetchBlobMeta(metaUrl) : null;
       if (session !== this.sessionId) return;
-      // Remember the best-available blob's publish time so the orchestrator's
-      // `blobDaysOld` freshness keys on the *remote* recency (Pillar 1 assumption
-      // 8), not the on-device download age.
+      // Remember the best-available blob's publish time so the pre-decrypt
+      // orchestrator path ({@link buildPrefetchFreshness}) can key its
+      // `blobDaysOld` freshness on the *remote* recency — post-decrypt this value
+      // is unused (only on-device freshness drives the tier).
       if (meta?.publishedAt) this.blobPublishedAt = meta.publishedAt;
       if (!force && meta && this.metaVersion !== null && meta.version === this.metaVersion) {
         this.pollLog("blob", `Data-file check: unchanged (meta version ${meta.version}).`);
@@ -4839,16 +4877,17 @@ export class App {
     // Pillar 1/4 (WS-part-2): this is **no longer a standing pre-step that fires
     // every round** — it is dissolved into the orchestrator's freshness decision.
     // Pillar 1 — compute the **one** orchestrator plan for this whole round, keyed
-    // on the real freshness ledger (incl. the runtime-active best-available
-    // `blobDaysOld` from blob metadata + the post-decrypt re-engage overlay). The
+    // on the real freshness ledger (keyed solely on on-device freshness
+    // post-decrypt — `blobDaysOld` equals `deviceDaysMissing`). The
     // single plan governs *both* the 1D/1W bar gate (below) and the quote / NAV / FX
     // legs (in {@link refreshPrices}), so bars are never decided — or pulled — twice
     // and the two gates can never disagree.
-    // C4 — on the login kickoff, await the cheap blob-meta probe so the round's
-    // `blobDaysOld` reflects the *remote* recency before the heavy spend decision.
-    // A fresh remote blob that already covers the gap then stops the kickoff
-    // re-pulling market credits. Time-boxed, render-free, kickoff-only (ordinary
-    // ticks must not pay a probe latency every cadence).
+    // C4 — on the login kickoff, await the cheap blob-meta probe so we have the
+    // latest publish time for the blob-download version check (maybeRefreshBlob).
+    // Post-decrypt freshness tiers no longer use blob metadata (only on-device age),
+    // but the probe is still needed to know if a newer blob export is available.
+    // Time-boxed, render-free, kickoff-only (ordinary ticks must not pay a probe
+    // latency every cadence).
     if (opts.kickoff ?? false) {
       await this.refreshBlobMeta(session);
       if (session !== this.sessionId) {
@@ -5023,9 +5062,34 @@ export class App {
       if (slowdown <= 1) {
         const nowMs = Date.now();
         const spends = readCreditLog(nowMs, 60 * 1000).map((e) => e.at);
-        const relief = minuteBudgetReliefMs(spends, nowMs, 60 * 1000, MIN_BURST_RELIEF_MS);
+        // …but never *while the Twelve Data 429 circuit breaker is frozen*. A
+        // freeze forces TD's per-minute budget to 0 (applyTwelveDataFreeze), so an
+        // early relief wake-up could not fetch anything — it would just wake,
+        // re-defer, and (until the local ledger ages out) potentially reschedule,
+        // burning wake-ups against a provider that has already said "no". Passing
+        // the freeze in makes the relief return null then, so the next pull lands
+        // no sooner than the normal (also breaker-gated) cadence allows.
+        const relief = burstReliefMs(spends, nowMs, {
+          frozen: twelveDataFrozen(nowMs),
+          floorMs: MIN_BURST_RELIEF_MS,
+        });
         if (relief !== null) delayMs = Math.min(delayMs, relief);
       }
+    }
+    // Hard-limit retry routing: when a fallback was blocked because the target
+    // provider's limits are exhausted, schedule a retry at the next hour boundary
+    // (when quotas reset) so the *original* source is retried instead of the
+    // exhausted fallback. This is the alternative to using an over-limit provider.
+    if (this.lastTiingoError?.retryAfterMs) {
+      const retryDelayMs = this.lastTiingoError.retryAfterMs;
+      // Use the longer of normal cadence or the hour-boundary delay, so we don't
+      // wake up only to find limits still exhausted.
+      delayMs = Math.max(delayMs, retryDelayMs);
+      this.pollLog(
+        "fallback",
+        `Fallback blocked by hard limit — scheduling retry in ${Math.round(retryDelayMs / 60000)}min (next hour boundary).`,
+        "info",
+      );
     }
     // A tap that took over an in-flight auto pull (promotion) must push the next
     // *automatic* refresh out by the full configured interval — never a ~1-minute
@@ -5663,8 +5727,14 @@ export class App {
     const formatInstant = (t: number): string =>
       new Date(t).toISOString().slice(0, 16).replace("T", " ");
 
+    // Serialize concurrent session builds so two rapid re-renders don't both see
+    // "no probe" and race to fetch the same bars. The first build stores the probe;
+    // the second awaits the first and reads the updated store.
+    let sessionBuildLock: Promise<unknown> = Promise.resolve();
+
     return {
       session: async (opts) => {
+        const doSession = async () => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
         const frozenFx = await resolveFrozenFx();
         const liveTip = makeLiveTip(frozenFx);
@@ -5702,6 +5772,12 @@ export class App {
           this.pollLog("graph", "1D graph: live build failed — no curve drawn.", "warn");
           return null;
         }
+        };
+        // Serialize: chain on the previous build so concurrent calls don't race
+        // past the close-probe gate simultaneously.
+        const result = sessionBuildLock.then(doSession, doSession);
+        sessionBuildLock = result.catch(() => undefined);
+        return result;
       },
       week: async (opts) => {
         const regenerateOnly = opts?.regenerateOnly ?? false;

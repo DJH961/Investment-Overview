@@ -257,6 +257,13 @@ export interface RowFreshnessInput {
   marketOpen: boolean;
   /** The live window (ms) — the user-set auto-refresh interval. */
   liveWindowMs: number;
+  /**
+   * Epoch ms of the latest settled session's close (e.g. NYSE 16:00 ET).
+   * An observation at or after this time is considered "today's price" regardless
+   * of the local calendar day — prevents false "aged" after midnight local when
+   * the observation IS the latest market close. Optional for backward compat.
+   */
+  lastSettledCloseMs?: number;
 }
 
 /** Whether two epoch-ms instants fall on the same local calendar day. */
@@ -272,7 +279,7 @@ function sameLocalDay(aMs: number, bMs: number): boolean {
 
 /** Classify a holding's displayed price into a {@link RowFreshness} tier. */
 export function holdingFreshness(input: RowFreshnessInput): RowFreshness {
-  const { observedAtMs, nowMs, marketOpen, liveWindowMs } = input;
+  const { observedAtMs, nowMs, marketOpen, liveWindowMs, lastSettledCloseMs } = input;
   if (observedAtMs === null) return "aged";
   const window = liveWindowMs > 0 ? liveWindowMs : ONE_HOUR_MS;
   const age = nowMs - observedAtMs;
@@ -282,6 +289,12 @@ export function holdingFreshness(input: RowFreshnessInput): RowFreshness {
   if (marketOpen && withinWindow) return "live";
   // Confirmed today (or within the window while shut) but not a live intraday
   // mark: "recent". An observation from an earlier day is genuinely "aged".
-  if (withinWindow || sameLocalDay(observedAtMs, nowMs)) return "recent";
+  // Use the settled-close boundary when supplied — a price at or after the latest
+  // session close is "today's price" regardless of the local calendar day (fixes
+  // the midnight-local false-aged bug for non-US timezones).
+  const isToday = lastSettledCloseMs !== undefined
+    ? observedAtMs >= lastSettledCloseMs
+    : sameLocalDay(observedAtMs, nowMs);
+  if (withinWindow || isToday) return "recent";
   return "aged";
 }
