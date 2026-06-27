@@ -537,18 +537,30 @@ export function fxEffectPriorFx(o: OverviewView): Decimal | null {
  * never a blocking error — the panel still shows its best estimate. Degraded when:
  *   • the settled prior close is missing (the panel is leaning on the session-close
  *     fallback, a persisted/cold-start baseline rather than a freshly settled one); or
- *   • the market is shut but the session close anchor never landed (the overnight
- *     split is estimated off the live tip, not the true 16:00 ET settle).
+ *   • forex is *live* but market-shut and the session close anchor never landed (the
+ *     overnight split is estimated off the drifting live tip, not the true 16:00 ET
+ *     settle).
+ *
+ * Crucially this is a *data-quality* signal, not a "market is closed" signal: a
+ * normal frozen weekend (Fri ≥17:00 ET through Sun <17:00 ET, `forexOpen=false`)
+ * is **not** flagged on the close-anchor branch. While forex is frozen the
+ * displayed rate simply *is* Friday's close — nothing is being estimated off a
+ * moving tip — so the glyph stays silent unless real data is missing (an absent
+ * settled baseline). This keeps the warning from sitting on the KPI all weekend
+ * just because the market happens to be shut.
  */
 export function fxAnchorWarning(o: OverviewView, now: Date = new Date()): string | null {
   const settledPrevMissing = o.fxRateEurUsdPrev === null || !o.fxRateEurUsdPrev.greaterThan(0);
   if (settledPrevMissing) {
     return "Yesterday's settled EUR/USD close is unavailable — showing the best baseline on hand.";
   }
-  const { marketOpen } = fxBoxRegime(now);
+  const { marketOpen, forexOpen } = fxBoxRegime(now);
   const closeMissing =
     o.fxRateEurUsdSessionClose === null || !o.fxRateEurUsdSessionClose.greaterThan(0);
-  if (!marketOpen && closeMissing) {
+  // Only an inaccuracy while forex is genuinely trading (the live tip is drifting
+  // away from a close that never landed). On a frozen weekend the rate equals
+  // Friday's close, so a missing session-close anchor changes nothing — no warning.
+  if (forexOpen && !marketOpen && closeMissing) {
     return "The session's closing EUR/USD anchor hasn't been pulled yet — the overnight split is estimated.";
   }
   return null;
@@ -556,14 +568,18 @@ export function fxAnchorWarning(o: OverviewView, now: Date = new Date()): string
 
 /**
  * The subtle ⚠️ glyph appended to a currency-panel head when {@link fxAnchorWarning}
- * flags a degraded anchor. Muted and help-cursored (CSS `.fx-effect-warn`), with the
- * reason on hover/`aria-label`, so it informs without ever shouting.
+ * flags a degraded anchor. It is a real tooltip trigger (not a bare `title`): the
+ * reason is hidden by default — keeping the overview uncluttered — and revealed on
+ * hover/focus, or pinned by a tap on touch devices so the explanation is reachable
+ * on mobile too. Muted and help-cursored (CSS `.fx-effect-warn`), so it informs
+ * without ever shouting.
  */
 function fxAnchorWarnBadge(reason: string): HTMLElement {
-  return h(
-    "span",
-    { class: "fx-effect-warn", title: reason, role: "img", "aria-label": `Data note: ${reason}` },
-    ["\u26A0\uFE0F"],
+  return buildTooltipTrigger(
+    [h("span", { class: "fx-effect-warn-glyph", "aria-hidden": "true" }, ["\u26A0\uFE0F"])],
+    reason,
+    "fx-effect-warn",
+    `Data note: ${reason}`,
   );
 }
 
@@ -1922,11 +1938,33 @@ function positionInfoTip(tip: HTMLElement): void {
 
 /** A small tappable "i" that reveals a definition (hover/focus and tap). */
 function infoDot(text: string): HTMLElement {
+  return buildTooltipTrigger(
+    [h("span", { "aria-hidden": "true" }, ["i"])],
+    text,
+    "info-dot",
+    `What is this? ${text}`,
+  );
+}
+
+/**
+ * Shared wiring for the tap/hover/focus tooltip triggers ({@link infoDot} and the
+ * currency-KPI {@link fxAnchorWarnBadge}). A `<button>` carries the visible glyph
+ * plus a hidden `.info-tip` popover that the CSS reveals on hover/focus, and that
+ * a tap pins open on touch (no-hover) devices — so the explanation is reachable on
+ * mobile, where a bare `title` tooltip never appears, while staying invisible (no
+ * clutter) until asked for.
+ */
+function buildTooltipTrigger(
+  triggerChildren: Array<Node | string>,
+  text: string,
+  buttonClass: string,
+  ariaLabel: string,
+): HTMLButtonElement {
   const tip = h("span", { class: "info-tip", role: "tooltip" }, [text]);
   const button = h(
     "button",
-    { class: "info-dot", type: "button", "aria-label": `What is this? ${text}` },
-    [h("span", { "aria-hidden": "true" }, ["i"]), tip],
+    { class: buttonClass, type: "button", "aria-label": ariaLabel },
+    [...triggerChildren, tip],
   ) as HTMLButtonElement;
   ensureInfoDotDismiss();
   // Hover-capable devices rely on CSS :hover, so the tip tracks the pointer and
