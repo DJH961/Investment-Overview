@@ -535,32 +535,45 @@ export function fxEffectPriorFx(o: OverviewView): Decimal | null {
  * KPI is running on a *degraded* anchor rather than a fresh one, return a short
  * reason; otherwise null. Surfaced as an unobtrusive ⚠️ glyph (see the renderers),
  * never a blocking error — the panel still shows its best estimate. Degraded when:
- *   • the settled prior close is missing (the panel is leaning on the session-close
- *     fallback, a persisted/cold-start baseline rather than a freshly settled one); or
+ *   • the settled prior close is missing *and* no good session-close anchor backs the
+ *     panel either — there is genuinely no settled "yesterday" to lean on; or
  *   • forex is *live* but market-shut and the session close anchor never landed (the
  *     overnight split is estimated off the drifting live tip, not the true 16:00 ET
  *     settle).
  *
  * Crucially this is a *data-quality* signal, not a "market is closed" signal: a
  * normal frozen weekend (Fri ≥17:00 ET through Sun <17:00 ET, `forexOpen=false`)
- * is **not** flagged on the close-anchor branch. While forex is frozen the
- * displayed rate simply *is* Friday's close — nothing is being estimated off a
- * moving tip — so the glyph stays silent unless real data is missing (an absent
- * settled baseline). This keeps the warning from sitting on the KPI all weekend
- * just because the market happens to be shut.
+ * is **not** flagged whenever a settled session close is in hand. While forex is
+ * frozen the orchestration deliberately stops pulling FX, so the provider's settled
+ * previous close stays null and *no refresh can clear it* — but the displayed rate
+ * simply *is* the session close and the panels anchor to that same close (see
+ * {@link fxEffectPriorFx}), so nothing is being estimated. The glyph therefore stays
+ * silent unless the data is genuinely absent (no settled anchor at all), keeping the
+ * warning from sitting on the KPI all weekend just because the market is shut.
  */
 export function fxAnchorWarning(o: OverviewView, now: Date = new Date()): string | null {
+  const { marketOpen, forexOpen, forexFrozen } = fxBoxRegime(now);
   const settledPrevMissing = o.fxRateEurUsdPrev === null || !o.fxRateEurUsdPrev.greaterThan(0);
+  const closeAvailable =
+    o.fxRateEurUsdSessionClose !== null && o.fxRateEurUsdSessionClose.greaterThan(0);
   if (settledPrevMissing) {
+    // A frozen weekend (Fri ≥17:00 ET → Sun <17:00 ET) deliberately freezes the FX
+    // orchestration: `forexOpen=false` skips every live/Tiingo pull, so the provider's
+    // settled previous close never refreshes and stays null no matter how many times the
+    // user hits refresh. But that is not a degradation here — while forex is frozen the
+    // displayed rate *is* the settled session close, and the currency panels anchor to
+    // that very close (see {@link fxEffectPriorFx}), a real settled baseline rather than an
+    // estimate. So when a good session-close anchor is in hand, stay silent rather than sit
+    // on the glyph all weekend; only flag genuine missing data — no settled anchor at all.
+    if (forexFrozen && closeAvailable) {
+      return null;
+    }
     return "Yesterday's settled EUR/USD close is unavailable — showing the best baseline on hand.";
   }
-  const { marketOpen, forexOpen } = fxBoxRegime(now);
-  const closeMissing =
-    o.fxRateEurUsdSessionClose === null || !o.fxRateEurUsdSessionClose.greaterThan(0);
   // Only an inaccuracy while forex is genuinely trading (the live tip is drifting
   // away from a close that never landed). On a frozen weekend the rate equals
   // Friday's close, so a missing session-close anchor changes nothing — no warning.
-  if (forexOpen && !marketOpen && closeMissing) {
+  if (forexOpen && !marketOpen && !closeAvailable) {
     return "The session's closing EUR/USD anchor hasn't been pulled yet — the overnight split is estimated.";
   }
   return null;
