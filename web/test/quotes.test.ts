@@ -277,6 +277,33 @@ describe("loadQuotes — free-tier budget", () => {
     expect(report.minuteRemaining).toBe(0);
   });
 
+  it("fetches forced symbols first when the per-minute budget can't cover them all", async () => {
+    // 12 stale symbols, only 8 credits/min. The last two (S10, S11) are opted in
+    // by forceFetch — a deferred-queue drain / manual force. They sit at the back
+    // of the incoming order, yet must jump the budget queue and be fetched, while
+    // two *ordinary* stale symbols defer instead.
+    const storage = memStorage();
+    const symbols = Array.from({ length: 12 }, (_, i) => `S${i}`);
+    const forced = new Set(["S10", "S11"]);
+    const fetchImpl = vi.fn<FetchLike>(async (url) => quoteResponse(url));
+    const { report } = await loadQuotes(symbols, "key", {
+      fetchImpl,
+      storage,
+      now: clock(0),
+      sleep: noSleep,
+      creditsPerMinute: 8,
+      forceFetch: (s) => forced.has(s),
+    });
+    expect(report.fetched.length).toBe(8);
+    // Both forced symbols were fetched despite trailing the incoming order…
+    expect(report.fetched).toContain("S10");
+    expect(report.fetched).toContain("S11");
+    // …and the deferred remainder is purely ordinary stale symbols.
+    expect(report.deferred).not.toContain("S10");
+    expect(report.deferred).not.toContain("S11");
+    expect(report.deferred.length).toBe(4);
+  });
+
   it("reports an attempted-but-unpriced symbol as failed, not deferred", async () => {
     // The provider returns a node for VTI but a null/empty one for FAIL (the
     // FSKAX case): both were attempted, VTI prices, FAIL doesn't. FAIL must be

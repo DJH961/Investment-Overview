@@ -77,4 +77,54 @@ describe("DeferredQueue — drain (C9)", () => {
     const result = q.drain(() => false);
     expect(result).toEqual({ stillMissing: [], clearedBySatisfied: [], exhausted: [] });
   });
+
+  it("keeps an explicit force deferral even when a fresh cached value would satisfy it", () => {
+    const q = new DeferredQueue();
+    // AAA is a normal deferral, BBB an explicit (Reset base / Force-fetch) one.
+    q.enqueue(["AAA"], "auto round over budget");
+    q.enqueue(["BBB"], "force round over budget", true);
+    // Both look "fresh" — the freshness optimisation must clear AAA but not BBB.
+    const result = q.drain(() => true);
+    expect(result.clearedBySatisfied).toEqual(["AAA"]);
+    expect(result.stillMissing).toEqual(["BBB"]);
+    expect(q.has("AAA")).toBe(false);
+    expect(q.has("BBB")).toBe(true);
+  });
+
+  it("ages out an explicit force deferral via the retry cap so it can't burst forever", () => {
+    const q = new DeferredQueue();
+    q.enqueue(["AAA"], "force round over budget", true);
+    for (let i = 0; i < DEFERRED_MAX_ATTEMPTS; i += 1) {
+      // Always "fresh", yet kept because it is a force deferral.
+      expect(q.drain(() => true).stillMissing).toEqual(["AAA"]);
+    }
+    expect(q.drain(() => true).exhausted).toEqual(["AAA"]);
+    expect(q.has("AAA")).toBe(false);
+  });
+});
+
+describe("DeferredQueue — force flag & clear (freshness-plan)", () => {
+  it("clear() forgets fetched symbols and reports which were parked", () => {
+    const q = new DeferredQueue();
+    q.enqueue(["AAA", "BBB"], "over budget");
+    expect(q.clear(["AAA", "CCC"])).toEqual(["AAA"]); // CCC was never parked
+    expect(q.has("AAA")).toBe(false);
+    expect(q.has("BBB")).toBe(true);
+  });
+
+  it("the force flag is sticky — an ordinary re-defer cannot downgrade it", () => {
+    const q = new DeferredQueue();
+    q.enqueue(["AAA"], "force round over budget", true);
+    // A later ordinary round re-defers AAA without the force flag.
+    q.enqueue(["AAA"], "auto round over budget");
+    // It must still survive the freshness clear.
+    expect(q.drain(() => true).stillMissing).toEqual(["AAA"]);
+  });
+
+  it("upgrades an existing ordinary deferral to force when re-deferred explicitly", () => {
+    const q = new DeferredQueue();
+    q.enqueue(["AAA"], "auto round over budget");
+    q.enqueue(["AAA"], "force round over budget", true);
+    expect(q.drain(() => true).stillMissing).toEqual(["AAA"]);
+  });
 });

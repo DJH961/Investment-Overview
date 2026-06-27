@@ -30,6 +30,18 @@ export const DEFERRED_MAX_ATTEMPTS = 4;
 interface DeferredEntry {
   reason: string;
   attempts: number;
+  /**
+   * An **explicit** deferral born of a user-driven "update everything" request —
+   * a "Reset base" or "Force-fetch every price now" pull that overflowed the
+   * free-tier budget and had to be spread across rounds. These were created *to*
+   * be re-pulled, so {@link DeferredQueue.drain} must **not** clear them on the
+   * strength of a still-fresh cached value the way it does an ordinary
+   * (auto-refresh) deferral: they stay queued — and are surfaced as still-missing
+   * — until they are genuinely re-fetched ({@link DeferredQueue.clear}) or age out
+   * via the retry cap. Sticky: once a symbol is parked as a force deferral it
+   * stays one even if a later ordinary round re-defers it.
+   */
+  force: boolean;
 }
 
 /** The categorised outcome of a single {@link DeferredQueue.drain}. */
@@ -69,16 +81,23 @@ export class DeferredQueue {
    * updates its reason but does **not** reset its attempt count (so a perpetually
    * deferred symbol still ages out). The queue is bounded: once it exceeds `max`,
    * the oldest entries are evicted first.
+   *
+   * `force` marks the deferral as an explicit user-driven "update everything" pull
+   * (Reset base / Force-fetch every price now) that must survive the freshness
+   * clear in {@link drain}. The flag is **sticky**: once a symbol is parked as a
+   * force deferral, re-deferring it (even by an ordinary round) keeps it a force
+   * deferral.
    */
-  enqueue(symbols: Iterable<string>, reason: string): void {
+  enqueue(symbols: Iterable<string>, reason: string, force = false): void {
     for (const symbol of symbols) {
       if (!symbol) continue;
       const existing = this.queue.get(symbol);
       if (existing) {
         existing.reason = reason;
+        if (force) existing.force = true;
         continue;
       }
-      this.queue.set(symbol, { reason, attempts: 0 });
+      this.queue.set(symbol, { reason, attempts: 0, force });
       while (this.queue.size > this.max) {
         const oldest = this.queue.keys().next().value;
         if (oldest === undefined) break;
@@ -88,18 +107,39 @@ export class DeferredQueue {
   }
 
   /**
+   * Forget `symbols` outright — used once a parked symbol has genuinely been
+   * re-fetched this round, so its deferral promise is fulfilled and it should not
+   * linger (which matters most for {@link DeferredEntry.force} entries, since they
+   * bypass the freshness clear and would otherwise keep re-pulling until the retry
+   * cap). Returns the symbols that were actually parked (for logging).
+   */
+  clear(symbols: Iterable<string>): string[] {
+    const cleared: string[] = [];
+    for (const symbol of symbols) {
+      if (this.queue.delete(symbol)) cleared.push(symbol);
+    }
+    return cleared;
+  }
+
+  /**
    * Drain the queue. `hasFreshQuote(symbol)` reports whether the caches/blob have
-   * since satisfied a symbol (so it is cleared, not re-fetched). Every other entry
-   * has its attempt count incremented; those over the retry cap are dropped, the
-   * rest are returned as still-missing. Cleared and dropped symbols are removed
-   * from the queue; still-missing symbols remain parked for the next drain.
+   * since satisfied a symbol (so it is cleared, not re-fetched) — **except** for
+   * {@link DeferredEntry.force} entries, which were explicitly created to be
+   * re-pulled and therefore ignore the freshness clear entirely (they stay
+   * still-missing until genuinely re-fetched via {@link clear} or aged out). Every
+   * other entry has its attempt count incremented; those over the retry cap are
+   * dropped, the rest are returned as still-missing. Cleared and dropped symbols
+   * are removed from the queue; still-missing symbols remain parked for the next
+   * drain.
    */
   drain(hasFreshQuote: (symbol: string) => boolean): DeferredDrainResult {
     const stillMissing: string[] = [];
     const clearedBySatisfied: string[] = [];
     const exhausted: string[] = [];
     for (const [symbol, entry] of [...this.queue]) {
-      if (hasFreshQuote(symbol)) {
+      // An explicit force deferral was created *to* be re-pulled: never let a
+      // still-fresh cached value optimise it away (the bug this guards against).
+      if (!entry.force && hasFreshQuote(symbol)) {
         clearedBySatisfied.push(symbol);
         this.queue.delete(symbol);
         continue;

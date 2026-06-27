@@ -15,6 +15,13 @@
 /** A minute, in ms — the Twelve Data per-minute credit window. */
 const MINUTE_MS = 60 * 1000;
 
+/**
+ * Floor for the {@link minuteBudgetReliefMs credit-aware burst}. A credit on the
+ * verge of ageing out could otherwise schedule the next burst within a few ms of
+ * `now`; this keeps a small gap so the refresh loop can't spin hot.
+ */
+export const MIN_BURST_RELIEF_MS = 2_000;
+
 /** Small jitter so multiple tabs/devices don't all wake on the same instant. */
 const JITTER_MS = 1500;
 
@@ -133,6 +140,60 @@ export function jumpstartDelayMs(
   if (remaining <= 0) return null;
   // Never schedule the jumpstart sooner than the burst floor.
   return Math.max(remaining, MIN_JUMPSTART_DELAY_MS);
+}
+
+/**
+ * Credit-aware burst relief — how long until the Twelve Data per-minute window
+ * frees its **next** credit, given the timestamps (epoch-ms) of the credits
+ * spent so far.
+ *
+ * The per-minute budget is a *trailing* 60-second window: a credit spent at `T`
+ * stops counting against the cap at `T + windowMs`. When a round defers symbols
+ * purely because that window is full, the soonest another symbol can be fetched
+ * is when the **oldest** in-window spend ages out — which, if some of those
+ * credits were spent by an *earlier* round (e.g. the startup pull moments before
+ * a force/reset), is sooner than a blind fresh minute. Returns that ms (floored
+ * by `floorMs` so a just-expiring credit can't collapse the burst toward 0 and
+ * spin hot), or `null` when nothing is in the window (no per-minute relief is
+ * owed, so the caller keeps its normal cadence).
+ */
+export function minuteBudgetReliefMs(
+  spendTimesMs: readonly number[],
+  nowMs: number,
+  windowMs = MINUTE_MS,
+  floorMs = 0,
+): number | null {
+  let oldestInWindow: number | null = null;
+  for (const t of spendTimesMs) {
+    if (nowMs - t < windowMs && (oldestInWindow === null || t < oldestInWindow)) {
+      oldestInWindow = t;
+    }
+  }
+  if (oldestInWindow === null) return null;
+  return Math.max(oldestInWindow + windowMs - nowMs, floorMs);
+}
+
+/**
+ * Credit-aware burst relief, made to **cooperate with the 429 circuit breaker**.
+ *
+ * Thin wrapper over {@link minuteBudgetReliefMs} that additionally honours the
+ * provider's 429 freeze: when `frozen` is true (the Twelve Data breaker has
+ * tripped — see `provider-breaker.ts`), it returns `null` so the caller keeps its
+ * normal, also-breaker-gated cadence instead of bringing the burst forward. A
+ * freeze forces the per-minute budget to 0, so an early relief wake-up could not
+ * fetch anything — it would only wake, re-defer, and (until the local credit
+ * ledger ages out) potentially reschedule, burning wake-ups against a provider
+ * that has already said "no". Suppressing relief while frozen is what makes the
+ * two mechanisms cooperate: the next pull lands no sooner than it could actually
+ * succeed. When not frozen, behaviour is identical to {@link minuteBudgetReliefMs}.
+ */
+export function burstReliefMs(
+  spendTimesMs: readonly number[],
+  nowMs: number,
+  opts: { frozen?: boolean; windowMs?: number; floorMs?: number } = {},
+): number | null {
+  if (opts.frozen) return null;
+  return minuteBudgetReliefMs(spendTimesMs, nowMs, opts.windowMs ?? MINUTE_MS, opts.floorMs ?? 0);
 }
 
 export function nextRefreshDelayMs(signal: RefreshSignal, options: RefreshCadenceOptions = {}): number {

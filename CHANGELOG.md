@@ -14,6 +14,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.13.5] — 2026-06-26
+
+### Fixed
+
+- **Credit-aware burst relief no longer schedules early wake-ups while the Twelve
+  Data 429 circuit breaker is frozen.** The startup-burst optimisation brings the
+  next auto-refresh forward to the instant the rolling per-minute window frees its
+  next credit (`minuteBudgetReliefMs`), derived from the *local* credit ledger.
+  But when a provider 429 trips the breaker, Twelve Data's per-minute budget is
+  forced to 0 (`applyTwelveDataFreeze`) — so an early relief wake-up could not
+  fetch anything; it would only wake, re-defer, and (until the local ledger ages
+  out) potentially reschedule, burning wake-ups against a provider that has
+  already said "no". The relief now consults the breaker via a new
+  breaker-aware wrapper (`burstReliefMs`, which returns `null` while frozen), so
+  the next pull lands no sooner than the normal — also breaker-gated — cadence
+  allows. This makes the two free-tier safeguards explicitly cooperate; the
+  per-minute cap, daily-budget pacing, and 429 breaker are all unaffected when no
+  freeze is active (behaviour is identical to before).
+
 ## [4.13.4] — 2026-06-26
 
 ### Fixed

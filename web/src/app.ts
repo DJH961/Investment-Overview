@@ -81,7 +81,13 @@ import {
   type LoadQuotesOptions,
   type QuoteLoadReport,
 } from "./quotes";
-import { jumpstartDelayMs, nextRefreshDelayMs } from "./refresh-policy";
+import {
+  burstReliefMs,
+  dailyBudgetSlowdown,
+  jumpstartDelayMs,
+  nextRefreshDelayMs,
+  MIN_BURST_RELIEF_MS,
+} from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
 import { isUsMarketOpen, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, recentTradingSessions, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
 import {
@@ -124,6 +130,7 @@ import {
   recordTwelveData429,
   recordTwelveDataSuccess,
   recordTiingo429,
+  twelveDataFrozen,
 } from "./provider-breaker";
 import { ledgerReservation, tiingoAvailable, twelveDataAvailable } from "./reservation";
 import { DEFERRED_MAX_ATTEMPTS, DeferredQueue } from "./deferred-queue";
@@ -1268,9 +1275,14 @@ export class App {
    * C9 — record budget-deferred symbols on the work-queue, delegating the bounded
    * bookkeeping to {@link DeferredQueue}. Each entry carries the reason it was
    * parked; re-deferring a still-queued symbol does not reset its attempt count.
+   *
+   * `force` marks the deferral as an explicit user-driven "update everything" pull
+   * (Reset base / Force-fetch every price now) that overflowed the free-tier
+   * budget: such entries were created *to* be re-pulled, so the drain must keep
+   * them queued rather than clearing them on a still-fresh cached value.
    */
-  private enqueueDeferred(symbols: Iterable<string>, reason: string): void {
-    this.deferredQueue.enqueue(symbols, reason);
+  private enqueueDeferred(symbols: Iterable<string>, reason: string, force = false): void {
+    this.deferredQueue.enqueue(symbols, reason, force);
   }
 
   /**
@@ -1319,7 +1331,7 @@ export class App {
     if (stillMissing.length > 0) {
       this.pollLog(
         "orchestrator",
-        `Deferred queue: ${stillMissing.length} still missing (stale cache), forcing a re-pull this round [${stillMissing.join(", ")}].`,
+        `Deferred queue: ${stillMissing.length} still missing (stale cache or explicit force pull), forcing a re-pull this round [${stillMissing.join(", ")}].`,
       );
     }
     return stillMissing;
@@ -5015,7 +5027,18 @@ export class App {
     // C9 — track this round's budget-deferred symbols on the work-queue so the
     // next round explicitly drains them (or clears them once the blob/cache covers
     // them), rather than silently relying on each symbol's cache TTL to re-pull.
-    if (report.deferred.length > 0) this.enqueueDeferred(report.deferred, `${effectiveKind} round over budget`);
+    // A symbol genuinely re-fetched this round has fulfilled its deferral promise,
+    // so forget it first — this is what stops an explicit force deferral (below)
+    // from re-pulling every round until the retry cap once it has actually landed.
+    if (report.fetched.length > 0) this.deferredQueue.clear(report.fetched);
+    // A Reset base / "Force-fetch every price now" round that overflows the budget
+    // parks its overflow as an **explicit** (force) deferral: those symbols were
+    // created *to* be updated, so the drain must keep re-pulling them across rounds
+    // instead of clearing them on a still-fresh cached value the way an ordinary
+    // auto-refresh deferral is optimised away.
+    const explicitRound = (opts.force ?? false) || (opts.forceAll ?? false);
+    if (report.deferred.length > 0)
+      this.enqueueDeferred(report.deferred, `${effectiveKind} round over budget`, explicitRound);
     let delayMs = nextRefreshDelayMs({
       deferred: report.deferred,
       // Pace auto-refresh out as the rolling daily free-tier budget runs low.
@@ -5027,6 +5050,32 @@ export class App {
       // pull cleanly pushes the auto schedule out by the configured interval.
       slowIntervalMs: this.state.config.updateMinutes * 60 * 1000,
     });
+    // Credit-aware burst: when symbols deferred purely because the per-minute
+    // window was full, don't wait a blind fresh minute. The soonest a slot frees
+    // is when the oldest in-window credit ages out — sooner than 60 s when some
+    // of those credits were spent by an earlier round (e.g. the startup pull moments
+    // before a force/reset), which is exactly the "always waits 60 s even though it
+    // should already have headroom" case. Only when the daily budget is healthy
+    // (slowdown ≈ 1): once it runs low we deliberately keep pacing out instead.
+    if (report.deferred.length > 0 && !promoted) {
+      const slowdown = dailyBudgetSlowdown(report.dayRemaining, FREE_TIER.creditsPerDay);
+      if (slowdown <= 1) {
+        const nowMs = Date.now();
+        const spends = readCreditLog(nowMs, 60 * 1000).map((e) => e.at);
+        // …but never *while the Twelve Data 429 circuit breaker is frozen*. A
+        // freeze forces TD's per-minute budget to 0 (applyTwelveDataFreeze), so an
+        // early relief wake-up could not fetch anything — it would just wake,
+        // re-defer, and (until the local ledger ages out) potentially reschedule,
+        // burning wake-ups against a provider that has already said "no". Passing
+        // the freeze in makes the relief return null then, so the next pull lands
+        // no sooner than the normal (also breaker-gated) cadence allows.
+        const relief = burstReliefMs(spends, nowMs, {
+          frozen: twelveDataFrozen(nowMs),
+          floorMs: MIN_BURST_RELIEF_MS,
+        });
+        if (relief !== null) delayMs = Math.min(delayMs, relief);
+      }
+    }
     // Hard-limit retry routing: when a fallback was blocked because the target
     // provider's limits are exhausted, schedule a retry at the next hour boundary
     // (when quotas reset) so the *original* source is retried instead of the

@@ -10,9 +10,12 @@ import {
   DEFAULT_DAY_CREDIT_LIMIT,
   DEFAULT_SLOW_INTERVAL_MS,
   MAX_BUDGET_SLOWDOWN,
+  MIN_BURST_RELIEF_MS,
   MIN_JUMPSTART_DELAY_MS,
+  burstReliefMs,
   dailyBudgetSlowdown,
   jumpstartDelayMs,
+  minuteBudgetReliefMs,
   nextRefreshDelayMs,
 } from "../src/refresh-policy";
 
@@ -50,6 +53,69 @@ describe("nextRefreshDelayMs", () => {
 
   it("ignores daily pacing when no budget is supplied (back-compat)", () => {
     expect(nextRefreshDelayMs({ deferred: [] }, { jitterMs: 0 })).toBe(DEFAULT_SLOW_INTERVAL_MS);
+  });
+});
+
+describe("minuteBudgetReliefMs", () => {
+  const MIN = 60 * 1000;
+
+  it("returns null when no credits sit in the trailing window", () => {
+    // The only spend is older than a minute → already aged out, no relief owed.
+    expect(minuteBudgetReliefMs([1000], 1000 + MIN + 5, MIN)).toBeNull();
+    expect(minuteBudgetReliefMs([], 5000, MIN)).toBeNull();
+  });
+
+  it("counts down to when the oldest in-window credit ages out", () => {
+    // A credit spent 40 s ago frees 20 s from now (60 s window).
+    const now = 100_000;
+    const relief = minuteBudgetReliefMs([now - 40_000], now, MIN);
+    expect(relief).toBe(20_000);
+  });
+
+  it("anchors on the OLDEST in-window spend, ignoring fresher ones", () => {
+    const now = 100_000;
+    // Spends 50 s and 10 s ago: the older frees first (in 10 s), so that wins.
+    expect(minuteBudgetReliefMs([now - 50_000, now - 10_000], now, MIN)).toBe(10_000);
+  });
+
+  it("floors a just-expiring credit so the burst can't spin hot", () => {
+    const now = 100_000;
+    // Spend 59.9 s ago would free in 100 ms; floored to MIN_BURST_RELIEF_MS.
+    const relief = minuteBudgetReliefMs([now - (MIN - 100)], now, MIN, MIN_BURST_RELIEF_MS);
+    expect(relief).toBe(MIN_BURST_RELIEF_MS);
+  });
+
+  it("is never longer than a full window (so it only ever brings the burst forward)", () => {
+    const now = 100_000;
+    // A spend at exactly now frees a full minute out — the worst case, == a blind burst.
+    expect(minuteBudgetReliefMs([now], now, MIN)).toBe(MIN);
+  });
+});
+
+describe("burstReliefMs (429-breaker cooperation)", () => {
+  const MIN = 60 * 1000;
+
+  it("matches minuteBudgetReliefMs when the provider is not frozen", () => {
+    const now = 100_000;
+    expect(burstReliefMs([now - 40_000], now)).toBe(20_000);
+    expect(burstReliefMs([now - 40_000], now, { frozen: false })).toBe(20_000);
+  });
+
+  it("honours the window/floor options like minuteBudgetReliefMs", () => {
+    const now = 100_000;
+    // 59.9 s ago would free in 100 ms; floored to MIN_BURST_RELIEF_MS.
+    expect(burstReliefMs([now - (MIN - 100)], now, { windowMs: MIN, floorMs: MIN_BURST_RELIEF_MS })).toBe(
+      MIN_BURST_RELIEF_MS,
+    );
+  });
+
+  it("returns null while frozen, so no early burst is scheduled against a 429-frozen provider", () => {
+    const now = 100_000;
+    // Without the freeze this would bring the burst forward to 20 s; the freeze
+    // suppresses it so the caller keeps its normal (also breaker-gated) cadence.
+    expect(burstReliefMs([now - 40_000], now, { frozen: true })).toBeNull();
+    // Even a credit on the verge of ageing out yields no relief while frozen.
+    expect(burstReliefMs([now - 1_000], now, { frozen: true, floorMs: MIN_BURST_RELIEF_MS })).toBeNull();
   });
 });
 
