@@ -227,15 +227,17 @@ def build_value_series(
     # Drop non-trading days (weekends / NYSE holidays). On those days the value
     # is just the prior session's settled close carried forward, so plotting
     # them only adds flat steps that repeat the day before; the line's own
-    # smoothing bridges the gap far more cleanly. The final point — the live
-    # "today" tip whose value matches the headline figure — is always kept so
-    # the curve still ends at the current value even when today is itself a
-    # non-trading day (e.g. the app is opened over a weekend).
-    last = points[-1]
+    # smoothing bridges the gap far more cleanly. When *today* is itself a
+    # non-trading day (e.g. the app is opened over a weekend) we deliberately do
+    # NOT tack the carried-forward value onto a non-trading "today": the curve
+    # simply ends a day or two early at the last real session, whose settled
+    # close is the correct final price from the last market day.
     trading = [p for p in points if is_trading_day(p.date)]
-    if not trading or trading[-1].date != last.date:
-        trading.append(last)
-    return trading
+    if trading:
+        return trading
+    # Degenerate window with no trading day at all (e.g. a brand-new book first
+    # opened over a weekend) — keep the points so the chart is never empty.
+    return points
 
 
 def build_intraday_value_series(

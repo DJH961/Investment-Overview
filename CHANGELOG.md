@@ -14,6 +14,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.14.5] — 2026-06-27
+
+### Fixed
+
+- **The data-loading (consumption) log no longer flags the weekend's frozen
+  EUR/USD rate as missing-perfect data.** The spot-FX market is shut all weekend
+  (Fri 17:00 ET → Sun 17:00 ET), so a *live* intraday EUR/USD cannot exist; the
+  keyless end-of-day rate is then the best obtainable data, not a degradation.
+  The summariser now takes the read instant, and when the FX market is closed it
+  reframes the held end-of-day rate as expected — an `info` note that states
+  plainly *why* a live spot is impossible and when the market reopens — instead
+  of a `warn`/missing-perfect fault that asked for a rate that could never
+  arrive. The weekend rate now counts as a perfect read for both the currency
+  KPIs and the 1D/1W graph's EUR/USD split (`web/src/consumption-log.ts`).
+- **Non-trading days no longer add flat carried-forward steps to the value
+  graph.** On a weekend or NYSE holiday the live total is just the last session's
+  settled close carried forward, so tacking it onto a non-trading "today" — or
+  splicing a non-trading day into the long-range backfill — drew a flat step
+  rather than real movement. The curves now end a day or two early at the last
+  real session (whose settled close is the correct final price), the device's
+  daily-close store skips non-trading dates, and the desktop `build_value_series`
+  drops the carried-forward "today" tip to match. The chart simply ends at the
+  last market day instead of repeating it (`web/src/ui.ts` `renderValueChart` /
+  `spliceDailyBackfill`, `web/src/app.ts`,
+  `src/investment_dashboard/ui/pages/_overview_query.py`).
+
 ## [4.14.4] — 2026-06-27
 
 ### Fixed
