@@ -619,6 +619,37 @@ describe("fxAnchorCompleteness (unified phase-aware predicate, item 6)", () => {
     });
     expect(r.anyMissing).toBe(false);
   });
+
+  it("weekend overnight: widens to two sessions when a pull is due so Friday's close baseline rides along", () => {
+    // Spot FX reopened Sunday evening, US still shut: the live "since Friday"
+    // baseline is Friday's settled close, one session back from the current
+    // anchors. With the open anchor missing the window must reach Friday.
+    const r = fxAnchorCompleteness({
+      fxBars: [],
+      marketClosed: true,
+      warmingUp: false,
+      sessionOpenMs: openMs,
+      sessionCloseMs: closeMs,
+      prevAnchorAvailable: true, // baseline on hand, so `prev` alone wouldn't widen
+      weekendGap: true,
+    });
+    expect(r.anyMissing).toBe(true);
+    expect(r.sessionsBack).toBe(2);
+  });
+
+  it("weekend overnight: stays single-session when nothing is missing (no needless wider pull)", () => {
+    const r = fxAnchorCompleteness({
+      fxBars: complete,
+      marketClosed: true,
+      warmingUp: false,
+      sessionOpenMs: openMs,
+      sessionCloseMs: closeMs,
+      prevAnchorAvailable: true,
+      weekendGap: true,
+    });
+    expect(r.anyMissing).toBe(false);
+    expect(r.sessionsBack).toBe(1);
+  });
 });
 
 describe("prior-session-close FX persistence", () => {

@@ -492,6 +492,21 @@ export function lastForexReopenMs(now: Date = new Date()): number {
 }
 
 /**
+ * Whether `now` sits in the **weekend / long-weekend overnight** — spot FX has
+ * reopened (Sun ≥17:00 ET) but no US session has opened since Friday's close:
+ * Sunday evening through Monday's 09:30 open, extended across a Monday holiday to
+ * the next real open. The lone FX drift then traces back to Friday's settled
+ * close, so the currency KPI shows a single "since Friday" overnight (no stale
+ * Friday market-hours leg) and the FX backfill reaches back to co-fetch that
+ * baseline. Mirrors the `weekendOvernight` branch of the UI's `fxBoxRegime`, but
+ * lives here so the data layer can read it without importing presentation code.
+ */
+export function isWeekendOvernight(now: Date = new Date()): boolean {
+  if (isUsMarketOpen(now) || !isForexMarketOpen(now)) return false;
+  return sessionOpenMs(lastSessionDate(now)) < lastForexReopenMs(now);
+}
+
+/**
  * The intraday 1D curve is built from one-hour resampled bars (Tiingo IEX
  * `resampleFreq=1hour`, Twelve Data falls back to a coarser series), so no
  * completed intraday bar can exist until a full bar interval of trading time has

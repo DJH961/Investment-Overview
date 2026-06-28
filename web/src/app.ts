@@ -91,7 +91,7 @@ import {
 } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
 import { fxFreshness, targetedWeekBackfill, type FxFreshness } from "./freshness";
-import { isUsMarketOpen, isUsTradingDay, isUsMarketHoliday, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, previousTradingSession, recentTradingSessions, exchangeDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
+import { isUsMarketOpen, isUsTradingDay, isUsMarketHoliday, isForexMarketOpen, isWeekendOvernight, latestSettledSessionDate, lastSessionDate, previousTradingSession, recentTradingSessions, exchangeDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -1319,6 +1319,7 @@ export class App {
       sessionOpenMs: sessionOpenMs(day),
       sessionCloseMs: close,
       prevAnchorAvailable,
+      weekendGap: isWeekendOvernight(now),
     }).anyMissing;
     return { session, week, fxBarsAnchorMissing };
   }
@@ -6888,6 +6889,7 @@ export class App {
       sessionOpenMs: sessionOpenMs(day),
       sessionCloseMs: sessionCloseMs(day),
       prevAnchorAvailable: await this.prevFxAnchorAvailable(now),
+      weekendGap: isWeekendOvernight(now),
     });
   }
 

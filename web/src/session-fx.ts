@@ -328,6 +328,18 @@ export function fxAnchorCompleteness(opts: {
    * `prev` anchor never forces a (wider, +1-credit) pull.
    */
   prevAnchorAvailable: boolean;
+  /**
+   * Whether a **weekend / long-weekend overnight** separates the last settled
+   * session from now — spot FX has reopened (or is frozen) but no US session has
+   * run since Friday's close. In that phase the live "since Friday" baseline is
+   * Friday's *settled close*, which lives one trading session back from the
+   * current-session anchors, so whenever a pull is already due the window must
+   * reach back two sessions (Thursday→Friday over a normal weekend; the same
+   * skip-aware reach handles a Monday-holiday long weekend) to co-fetch it in one
+   * request rather than ending at Friday and missing the baseline. Defaults to
+   * `false`, leaving the regular single-session reach untouched.
+   */
+  weekendGap?: boolean;
 }): FxAnchorCompleteness {
   const close = opts.marketClosed && !sessionFxBarsComplete(opts.fxBars, opts.sessionCloseMs);
   const open =
@@ -338,8 +350,11 @@ export function fxAnchorCompleteness(opts: {
   const needs: FxAnchorNeeds = { open, close, prev };
   const anyMissing = open || close || prev;
   // Recovering the prior-session close needs a two-session window (Thursday→Friday);
-  // every other anchor lives in the current session, so one session suffices.
-  const sessionsBack = prev ? 2 : 1;
+  // every other anchor lives in the current session, so one session suffices. A
+  // weekend / long-weekend overnight likewise reaches back two sessions whenever a
+  // pull is already due, so the "since Friday" close baseline rides the same
+  // request instead of being stranded a session away.
+  const sessionsBack = prev || (anyMissing && (opts.weekendGap ?? false)) ? 2 : 1;
   return { needs, anyMissing, sessionsBack };
 }
 
