@@ -14,6 +14,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.16.4] — 2026-06-28
+
+### Fixed
+
+- **The Overview's "Today" KPI card no longer sprawls or wraps awkwardly — the
+  Vs Market verdict, the card layout, and the movers badges are all tightened
+  into a compact, single-screen block.** The "Beating/Trailing the market"
+  verdict headline could wrap onto two lines and the day's movers badges spilled
+  into the card flow, pushing content around and wasting vertical space. The fix
+  keeps the verdict on a single line via a compact word-headline variant
+  (`.inv-kpi-verdict`: clamped font size, `white-space: nowrap`), tightens the
+  "Today" KPI card layout, and lifts the mover badges out of the card flow while
+  making the **Today's movers** list collapsible so it no longer crowds the
+  Overview (`src/investment_dashboard/ui/pages/overview.py`,
+  `src/investment_dashboard/ui/components/kpi_card.py`,
+  `src/investment_dashboard/ui/style.py`,
+  `src/investment_dashboard/services/daily_growth_view.py`). The all-time
+  (Yearly) growth chart now also plots **both EUR and USD** lines so the two
+  currencies genuinely diverge instead of showing a single rescaled curve
+  (`src/investment_dashboard/ui/pages/yearly.py`).
+
 ## [4.16.3] — 2026-06-28
 
 ### Fixed
