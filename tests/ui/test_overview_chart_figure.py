@@ -155,3 +155,43 @@ class TestWeekSessionAxis:
         assert not fig.layout.xaxis.rangebreaks
         assert None not in list(fig.data[0].y)
         assert not [s for s in fig.layout.shapes if s.type == "line"]
+
+
+class TestHoverTimestamp:
+    def test_week_hover_header_includes_time(self) -> None:
+        # The "x unified" tooltip header is formatted by ``hoverformat`` (not the
+        # per-trace template), so the 1W read-out must carry the timestamp.
+        fig = _value_curve_figure(_week_session_pts(), currency="EUR", week=True)
+        assert fig.layout.xaxis.hoverformat == "%a %d %b %H:%M"
+
+    def test_intraday_hover_header_is_time_of_day(self) -> None:
+        pts = [
+            ValueSeriesPoint(date=datetime(2024, 6, 3, 14, 0), value=Decimal("100")),
+            ValueSeriesPoint(date=datetime(2024, 6, 3, 18, 0), value=Decimal("105")),
+        ]
+        fig = _value_curve_figure(pts, currency="EUR", intraday=True)
+        assert fig.layout.xaxis.hoverformat == "%H:%M"
+
+
+class TestIntradayDayLabel:
+    def test_title_names_the_day_when_not_today(self) -> None:
+        # A frozen weekend session (3 June 2024) is not "today": the title must
+        # name the real day instead of misleadingly reading "today".
+        pts = [
+            ValueSeriesPoint(date=datetime(2024, 6, 3, 14, 0), value=Decimal("100")),
+            ValueSeriesPoint(date=datetime(2024, 6, 3, 18, 0), value=Decimal("105")),
+        ]
+        fig = _value_curve_figure(pts, currency="EUR", intraday=True)
+        assert "today" not in fig.layout.title.text
+        assert "Mon 03 Jun" in fig.layout.title.text
+
+    def test_title_says_today_for_todays_session(self) -> None:
+        # Anchor to today's calendar date at midday so the assertion stays
+        # deterministic (never straddles a midnight boundary mid-run).
+        today_noon = datetime.combine(date.today(), datetime.min.time()).replace(hour=12)
+        pts = [
+            ValueSeriesPoint(date=today_noon.replace(hour=10), value=Decimal("100")),
+            ValueSeriesPoint(date=today_noon.replace(hour=11), value=Decimal("105")),
+        ]
+        fig = _value_curve_figure(pts, currency="EUR", intraday=True)
+        assert "today" in fig.layout.title.text

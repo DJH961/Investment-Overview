@@ -551,7 +551,7 @@ html, body {{
 .inv-fx-diverge {{ display: grid; gap: 0.4rem; }}
 .inv-fx-diverge-row {{
   display: grid;
-  grid-template-columns: 6.75rem 1fr 5rem;
+  grid-template-columns: 6.75rem 1fr auto;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.78rem;
@@ -559,14 +559,17 @@ html, body {{
   font-variant-numeric: tabular-nums;
 }}
 .inv-fx-diverge-label {{ color: var(--inv-muted); white-space: nowrap; }}
-/* The live/last/paused tag rides under the value on the right, never inline with
- * the status word — so "Market holiday" / "Market hours" / "Overnight" can't be
- * bumped onto a second line by the tag crowding the narrow label column. */
+/* v3.7 — the live/last/paused tag now sits *horizontally* beside the value (not
+ * stacked beneath it), so the row stays short and uses width rather than height.
+ * The value+tag share one nowrap cell on the right; the fixed label column keeps
+ * "Market hours" / "Overnight" on a single line regardless. */
 .inv-fx-diverge-valcell {{
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  line-height: 1.1;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  white-space: nowrap;
 }}
 .inv-fx-diverge-tag {{
   font-size: 0.6rem;
@@ -776,9 +779,11 @@ html, body {{
   border: 1px solid var(--inv-hairline);
   border-radius: var(--inv-radius-lg);
   box-shadow: var(--inv-shadow-soft);
-  padding: 1rem 1.125rem;
+  /* v3.7 — a touch less vertical breathing room (was 1rem / 7.5rem) so the
+     tidy 4-by-2 KPI block reads tighter without crowding its contents. */
+  padding: 0.7rem 1.125rem;
   min-width: 0;
-  min-height: 7.5rem;
+  min-height: 6rem;
   height: 100%;
   flex: 1 1 13rem;
   display: flex;
