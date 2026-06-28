@@ -770,6 +770,63 @@ class TestPerTimestampFx:
         # The stored rate falls back to the settled spot (1.00), never NULL here.
         assert all(fx == Decimal("1.00") for _, _, fx in series)
 
+    def test_tiingo_secondary_fills_per_minute_fx_when_yfinance_empty(
+        self, session: Session
+    ) -> None:
+        # yfinance serves no intraday FX, so the budget-gated Tiingo secondary
+        # steps in with the *historical* per-minute rates — yfinance is still
+        # tried first, and the recovered EUR pivot tracks the moving rate just as
+        # if yfinance had supplied it.
+        captured: dict[str, object] = {}
+
+        def fx_fallback(start_day, end_day, *, interval):  # type: ignore[no-untyped-def]
+            captured["range"] = (start_day, end_day)
+            captured["interval"] = interval
+            return dict(self._FX_BARS)
+
+        _seed_usd_holding(session)
+        iss.reconstruct_last_session(
+            session,
+            now=_NOW,
+            fetcher=_fake_fetcher(self._STOCK_BARS),
+            fx_fetcher=_fake_fx_fetcher({}),  # primary serves nothing
+            fx_fallback_fetcher=fx_fallback,
+        )
+        session.flush()
+        # The Tiingo secondary was asked for the last session only, at the 1D grid.
+        assert captured["range"] == (date(2024, 6, 3), date(2024, 6, 3))
+        assert captured["interval"] == iss.RECONSTRUCT_INTERVAL
+        series = iss.day_series_with_fx(session, now=_NOW)
+        by_time = {at: (eur, fx) for at, eur, fx in series}
+        # 13:30 @ 1.00 ⇒ €1,000; 14:00 @ 1.25 ⇒ €800 — the secondary's rates land.
+        assert by_time[datetime(2024, 6, 3, 13, 30)] == (Decimal("1000.00"), Decimal("1.00"))
+        assert by_time[datetime(2024, 6, 3, 14, 0)] == (Decimal("800.00"), Decimal("1.25"))
+
+    def test_tiingo_secondary_not_consulted_when_yfinance_has_fx(self, session: Session) -> None:
+        # The primary (yfinance) succeeds, so the Tiingo secondary is never
+        # consulted — yfinance-first, no wasted budget call.
+        called = False
+
+        def fx_fallback(start_day, end_day, *, interval):  # type: ignore[no-untyped-def]
+            nonlocal called
+            called = True
+            return {datetime(2024, 6, 3, 13, 30): Decimal("9.99")}
+
+        _seed_usd_holding(session)
+        iss.reconstruct_last_session(
+            session,
+            now=_NOW,
+            fetcher=_fake_fetcher(self._STOCK_BARS),
+            fx_fetcher=_fake_fx_fetcher(self._FX_BARS),  # primary delivers
+            fx_fallback_fetcher=fx_fallback,
+        )
+        session.flush()
+        assert called is False
+        series = iss.day_series_with_fx(session, now=_NOW)
+        by_time = {at: fx for at, _eur, fx in series}
+        # The primary's rates stand (never the secondary's sentinel 9.99).
+        assert by_time[datetime(2024, 6, 3, 14, 0)] == Decimal("1.25")
+
 
 class TestSessionCloseFx:
     """The rate the most recent session settled at (anchor for the after-hours freeze)."""

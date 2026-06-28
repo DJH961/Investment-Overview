@@ -290,6 +290,86 @@ def _refresh_live_spot_via_tiingo(
     return reading.rate
 
 
+def intraday_fx_bars_via_tiingo(
+    start_day: date,
+    end_day: date,
+    *,
+    interval: str = "15m",
+    base: str = "EUR",
+    quote: str = "USD",
+    fetcher: object | None = None,
+    token: str | None = None,
+    charge_budget: object | None = None,
+) -> dict[datetime, Decimal]:
+    """Budget-gated Tiingo intraday EUR→``quote`` bars for ``[start_day, end_day]``.
+
+    The **secondary** source for the 1D / 1W graphs' per-minute EUR/USD overlay,
+    consulted only *after* the keyless yfinance intraday feed yields nothing — so
+    yfinance is always tried first. Returns ``{bar_time_utc: rate}`` (the same
+    shape the yfinance intraday FX fetchers return), or ``{}`` to leave the day's
+    settled ECB rate in place.
+
+    Crucially this is **not** a live call: it pulls *settled* historical bars for
+    a completed/last session over an explicit date window, so — unlike the live
+    spot — it is sourced even while the spot-FX market is shut over the weekend
+    (the 1D graph still shows Friday's intraday FX shape). The live-spot path
+    stays the one that must never poll a closed market.
+
+    One budget-gated call. Returns ``{}`` when no Tiingo token is configured (a
+    vanilla install never touches it), the desktop budget is exhausted, or the
+    fetch fails / comes back empty. ``fetcher`` / ``token`` / ``charge_budget``
+    are injectable for tests.
+    """
+    if quote.upper() != "USD":
+        return {}
+    if token is None:
+        from investment_dashboard.services.prices_service import (  # noqa: PLC0415
+            _resolve_tiingo_token,
+        )
+
+        token = _resolve_tiingo_token()
+    if not token:
+        return {}  # No Tiingo configured — vanilla install, no backup.
+
+    gate = charge_budget if charge_budget is not None else _charge_desktop_tiingo_budget
+    if not gate():  # type: ignore[operator]
+        log.info("Tiingo intraday FX backup skipped: desktop Tiingo budget exhausted")
+        return {}
+
+    if fetcher is None:
+        from investment_dashboard.adapters.tiingo_client import (  # noqa: PLC0415
+            fetch_fx_intraday,
+        )
+
+        resolved_token = token
+
+        def fetcher() -> dict[datetime, Decimal]:
+            return fetch_fx_intraday(
+                start_day,
+                end_day,
+                base=base,
+                quote=quote,
+                interval=interval,
+                token=resolved_token,
+            )
+
+    try:
+        bars = fetcher()  # type: ignore[operator]
+    except Exception as exc:  # pragma: no cover - network churn
+        _note_tiingo_rate_limit(exc)
+        log.warning("Tiingo intraday FX backup fetch failed (%s); keeping settled rate", exc)
+        return {}
+    if not bars:
+        return {}
+    log.info(
+        "Intraday EUR/USD overlay sourced from Tiingo backup (%d bar(s), %s..%s)",
+        len(bars),
+        start_day,
+        end_day,
+    )
+    return dict(bars)
+
+
 def _note_tiingo_rate_limit(exc: BaseException) -> None:
     """If ``exc`` is a Tiingo 429, pin the shared budget as spent until next :00.
 
