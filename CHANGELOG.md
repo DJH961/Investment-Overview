@@ -14,7 +14,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.16.2] — 2026-06-28
+## [4.16.1] — 2026-06-28
 
 ### Fixed
 
@@ -52,39 +52,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   their "since yesterday" title to just **"yesterday"** or **"on Friday"** by time
   distance, so a Sunday view stops mislabelling Friday's frozen figures as today's
   (`web/src/format.ts` `frozenDayLabel`/`frozenSincePhrase`, `web/src/ui.ts`).
-## [4.16.1] — 2026-06-28
-
-### Fixed
-
-- **The hero currency KPI now regenerates its "since yesterday" baseline at the
-  worst possible time — a wiped device on a forex-frozen weekend.** The four
-  EUR→USD anchors the KPI runs on (live spot, prior-session close, session open,
-  session close) all rebuild from on-device FX bars except the prior-session close
-  (`prevFx`), which on a cleared device with the live `previousClose` coming back
-  `null` had no source — so `todayFxMoveEur` collapsed to zero and the whole panel
-  (headline + frozen two-leg split) was dropped. `prevFx` is now derived from the
-  **1W FX track** (which already spans the prior session, at zero extra credits)
-  and, as a guaranteed belt-and-suspenders path, recovered by a **one-request
-  widened FX backfill** that reaches back to the prior trading session
-  (Thursday→Friday over a weekend, +1 credit) whenever the baseline is genuinely
-  absent — independent of which warm-up legs ran. Whatever is recovered is
-  persisted so the next cold start reads it back instantly (the joint FX-KPI plan's
-  step 5b; `web/src/app.ts` `prefetchSessionFx` / `barsPrevSessionCloseFx` / the
-  `eurUsdPrev` resolution block, `web/src/live-graph.ts` `sessionFxWindow`).
-
-### Changed
-
-- **The currency KPI's scattered per-phase FX-anchor gates are unified behind one
-  phase-aware completeness predicate.** `fxAnchorCompleteness` (the joint FX-KPI
-  plan's step 6) is now the single choke point that decides, for the current market
-  phase, which of the four EUR→USD anchors the device is missing — the session
-  open/close *and* the prior-session close baseline — and how far back the one
-  consolidated FX backfill must reach (1 session, or 2 to recover `prevFx`). It
-  replaces the open/close-only `sessionFxAnchorMissing` (kept as a thin back-compat
-  wrapper) plus the separately-handled baseline, so the leg gates can no longer
-  drift apart on what "fresh" means in a given phase. The orchestrator's `fxBars`
-  leg gate and the backfill window now read from this one decision
-  (`web/src/session-fx.ts`, `web/src/app.ts`).
 
 ## [4.16.0] — 2026-06-28
 
@@ -132,6 +99,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the precise settled-stale 1W set even when the blanket `weekBars` leg is off, so
   a freshly added holding or a one-session gap is filled promptly while the
   reservation budget still bounds the spend (`web/src/app.ts`).
+
+## [4.15.3] — 2026-06-28
+
+### Fixed
+
+- **The hero currency KPI now regenerates its "since yesterday" baseline at the
+  worst possible time — a wiped device on a forex-frozen weekend.** The four
+  EUR→USD anchors the KPI runs on (live spot, prior-session close, session open,
+  session close) all rebuild from on-device FX bars except the prior-session close
+  (`prevFx`), which on a cleared device with the live `previousClose` coming back
+  `null` had no source — so `todayFxMoveEur` collapsed to zero and the whole panel
+  (headline + frozen two-leg split) was dropped. `prevFx` is now derived from the
+  **1W FX track** (which already spans the prior session, at zero extra credits)
+  and, as a guaranteed belt-and-suspenders path, recovered by a **one-request
+  widened FX backfill** that reaches back to the prior trading session
+  (Thursday→Friday over a weekend, +1 credit) whenever the baseline is genuinely
+  absent — independent of which warm-up legs ran. Whatever is recovered is
+  persisted so the next cold start reads it back instantly (the joint FX-KPI plan's
+  step 5b; `web/src/app.ts` `prefetchSessionFx` / `barsPrevSessionCloseFx` / the
+  `eurUsdPrev` resolution block, `web/src/live-graph.ts` `sessionFxWindow`).
+
+### Changed
+
+- **The currency KPI's scattered per-phase FX-anchor gates are unified behind one
+  phase-aware completeness predicate.** `fxAnchorCompleteness` (the joint FX-KPI
+  plan's step 6) is now the single choke point that decides, for the current market
+  phase, which of the four EUR→USD anchors the device is missing — the session
+  open/close *and* the prior-session close baseline — and how far back the one
+  consolidated FX backfill must reach (1 session, or 2 to recover `prevFx`). It
+  replaces the open/close-only `sessionFxAnchorMissing` (kept as a thin back-compat
+  wrapper) plus the separately-handled baseline, so the leg gates can no longer
+  drift apart on what "fresh" means in a given phase. The orchestrator's `fxBars`
+  leg gate and the backfill window now read from this one decision
+  (`web/src/session-fx.ts`, `web/src/app.ts`).
+
 ## [4.15.2] — 2026-06-27
 
 ### Fixed
