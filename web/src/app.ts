@@ -154,7 +154,8 @@ import {
   recordPrevSessionCloseFx,
   sessionBarsComplete,
   sessionCloseFxFromBars,
-  sessionFxAnchorMissing,
+  fxAnchorCompleteness,
+  type FxAnchorCompleteness,
   sessionOpenFxFromBars,
 } from "./session-fx";
 import { TimeSeriesStore, type Breadcrumb, type StoredCloseProbe } from "./timeseries-store";
@@ -1259,7 +1260,7 @@ export class App {
    * leg keys on: the session open/close EUR→USD the hero currency KPI's split needs
    * is absent from this device's 1D track (close while shut, open while running once
    * past warm-up), so the freeze anchor / currency-effect split would otherwise read
-   * a stale or mid-session rate. See {@link sessionFxAnchorMissing} and
+   * a stale or mid-session rate. See {@link fxAnchorCompleteness} and
    * {@link prefetchSessionFx}.
    */
   private async prefetchGraphStaleness(
@@ -1300,16 +1301,25 @@ export class App {
     // else priming is skipped and the dashboard build re-pulls it via Tiingo
     // moments later (docs/tiingo_polling_storm_cleanup_plan.md item 5b).
     const week = weekStaleSymbols(weekStored, marketSymbols, now);
-    // The phase-aware anchor signal the orchestrator's `fxBars` leg keys on: the
-    // session open/close EUR→USD the hero currency KPI's split needs (close while
-    // shut, open while running once past warm-up).
-    const fxBarsAnchorMissing = sessionFxAnchorMissing({
+    // The single phase-aware completeness predicate the orchestrator's `fxBars`
+    // leg keys on (item 6): the session open/close EUR→USD the hero currency KPI's
+    // split needs (close while shut, open while running once past warm-up) *and*
+    // the prior-session close baseline (prevFx) on a frozen cold start. The week
+    // store is already in hand, so resolve `prevAnchorAvailable` from it (or the
+    // persisted close) without a second load.
+    const prevSessionDay = previousTradingSession(day);
+    const prevAnchorAvailable =
+      readPrevSessionCloseFx(prevSessionDay) !== null ||
+      ((weekStored?.fx?.length ?? 0) > 0 &&
+        sessionCloseFxFromBars(weekStored!.fx, sessionCloseMs(prevSessionDay)) !== null);
+    const fxBarsAnchorMissing = fxAnchorCompleteness({
       fxBars: today?.fx ?? [],
       marketClosed,
       warmingUp: sessionIsWarmingUp(now),
       sessionOpenMs: sessionOpenMs(day),
       sessionCloseMs: close,
-    });
+      prevAnchorAvailable,
+    }).anyMissing;
     return { session, week, fxBarsAnchorMissing };
   }
 
@@ -1631,7 +1641,7 @@ export class App {
   /**
    * The async twin of the warm-up's {@link prefetchGraphStaleness} `fxBarsAnchorMissing`
    * for the routine (auto/manual/reset/start-kickoff) rounds: reads this device's
-   * stored 1D EUR→USD bar track and asks {@link sessionFxAnchorMissing} whether the
+   * stored 1D EUR→USD bar track and asks {@link fxAnchorCompleteness} whether the
    * session open/close anchor the hero currency KPI's split needs for the current
    * market phase is absent. Feeding it into {@link planRoundPull} is what routes the
    * KPI's FX-bar pull through the single orchestrator (`fxBars` leg) instead of an
@@ -1640,15 +1650,7 @@ export class App {
    */
   private async sessionFxBarsAnchorMissing(now: Date): Promise<boolean> {
     try {
-      const day = lastSessionDate(now);
-      const session = await this.ensureTimeSeriesStore().loadSession(day).catch(() => null);
-      return sessionFxAnchorMissing({
-        fxBars: session?.fx ?? [],
-        marketClosed: !isUsMarketOpen(now),
-        warmingUp: sessionIsWarmingUp(now),
-        sessionOpenMs: sessionOpenMs(day),
-        sessionCloseMs: sessionCloseMs(day),
-      });
+      return (await this.fxAnchorCompletenessNow(now)).anyMissing;
     } catch {
       return false;
     }
@@ -2181,7 +2183,13 @@ export class App {
   private async prefetchSessionFx(config: AppConfig, now: Date): Promise<boolean> {
     const proxyUrl = resolvePriceProxyUrl(config);
     if (!proxyUrl) return false; // graph FX bars only come cheaply via the Tiingo /price pipe
-    const window = sessionFxWindow(now);
+    // Item 5b: when the prior-session close baseline (prevFx) is the gap, widen the
+    // window to the prior trading session so one request (Thursday→Friday, +1
+    // credit) guarantees the "since yesterday" anchor even if the 1W FX leg never
+    // ran. Otherwise the single-session window covers the open/close anchors.
+    const completeness = await this.fxAnchorCompletenessNow(now).catch(() => null);
+    const sessionsBack = completeness?.sessionsBack ?? 1;
+    const window = sessionFxWindow(now, sessionsBack);
     // Same reservation + observation-only meters + breaker wiring as the graph
     // backfill's FX track, so this spend is governed identically.
     const reservation = ledgerReservation();
@@ -2218,11 +2226,37 @@ export class App {
       this.pollLog("graph", "After-hours FX close backfill found no new EUR/USD bars.");
       return false;
     }
-    await this.ensureTimeSeriesStore().mergeSession(lastSessionDate(now), { fx }, now.getTime());
-    // The freshly settled EUR/USD bar doubles as the live spot: fold it into the
-    // spot cache so the currency KPI reads this genuine settle rather than spending
-    // a separate spot request for the rate we just pulled (the bar is the price).
-    primeEurUsdFromFxBars(fx);
+    const today = lastSessionDate(now);
+    // When the window was widened to recover the prior-session close, keep only the
+    // current session's bars in the 1D store (so the 1D curve / open / close reads
+    // never see a prior day's bars), and stash the full multi-day track in the 1W
+    // store, whose FX track legitimately spans several sessions.
+    const todayFx =
+      sessionsBack > 1 ? fx.filter((bar) => bar.t >= sessionOpenMs(today)) : fx;
+    const store = this.ensureTimeSeriesStore();
+    if (todayFx.length > 0) {
+      await store.mergeSession(today, { fx: todayFx }, now.getTime());
+      // The freshly settled EUR/USD bar doubles as the live spot: fold it into the
+      // spot cache so the currency KPI reads this genuine settle rather than spending
+      // a separate spot request for the rate we just pulled (the bar is the price).
+      primeEurUsdFromFxBars(todayFx);
+    }
+    if (sessionsBack > 1) {
+      // Item 5b: recover & persist the prior-session close (the KPI's "yesterday"
+      // baseline) from the widened track, and keep the full track in the 1W store so
+      // barsPrevSessionCloseFx finds it on the next paint without re-fetching.
+      await store.mergeSession(WEEK_STORE_KEY, { fx }, now.getTime());
+      const prevDay = previousTradingSession(today);
+      const prevClose = sessionCloseFxFromBars(fx, sessionCloseMs(prevDay));
+      if (prevClose !== null) recordPrevSessionCloseFx(prevDay, prevClose);
+      this.pollLog(
+        "graph",
+        `Cold-start FX backfill stored ${fx.length} EUR/USD bar(s) over ${window.startDate}…${window.endDate} ` +
+          `to recover the prior-session close baseline (prevFx)` +
+          (prevClose !== null ? "." : "; prior close not yet settled in the pulled bars."),
+      );
+      return true;
+    }
     this.pollLog(
       "graph",
       `After-hours FX close backfill stored ${fx.length} EUR/USD bar(s) to complete the session close ` +
@@ -4331,8 +4365,20 @@ export class App {
       if (eurUsdPrev !== null && eurUsdPrev.greaterThan(0)) {
         recordPrevSessionCloseFx(prevSessionDay, eurUsdPrev);
       } else {
-        const persisted = readPrevSessionCloseFx(prevSessionDay);
-        if (persisted !== null) eurUsdPrev = persisted;
+        // Cold-start / frozen-weekend recovery, cheapest source first: the
+        // persisted close, then the prior session's close read straight from the
+        // 1W FX track already on the device (zero extra credits — Plan B §1/§2).
+        // The guaranteed widened fetch (item 5b, prefetchSessionFx) lands the 1W
+        // close earlier in the round when neither is present, so by here one of
+        // these usually resolves. Persist whatever we recover so the next cold
+        // start reads the baseline back instantly without re-deriving it.
+        const recovered =
+          readPrevSessionCloseFx(prevSessionDay) ??
+          (await this.barsPrevSessionCloseFx(prevSessionDay));
+        if (recovered !== null) {
+          eurUsdPrev = recovered;
+          recordPrevSessionCloseFx(prevSessionDay, recovered);
+        }
       }
     }
     if (eurUsdNow !== null && eurUsdNow.greaterThan(0)) {
@@ -6781,6 +6827,61 @@ export class App {
     const blobSleeveEur = fx && fx.gt(0) ? best.blob.valueNativeUsd.div(fx) : best.blob.valueNativeUsd;
     const baseEur = best.web.valueEur.minus(blobSleeveEur);
     return { baseUsd, baseEur };
+  }
+
+  /**
+   * The **prior-session** settled EUR→USD close — the hero currency KPI's
+   * "since yesterday" baseline (`fxRateEurUsdPrev`/prevFx) — read straight from the
+   * stored **1W** FX track (`weekFxWindow` already spans the prior session at zero
+   * extra credits). Returns `null` when the 1W track is absent (e.g. a cold start
+   * where only the 1D leg ran) or no positive bar had settled by that session's
+   * 16:00 ET close, leaving the caller to fall back to the persisted close or the
+   * guaranteed widened fetch (item 5b).
+   */
+  private async barsPrevSessionCloseFx(prevSessionDay: string): Promise<Decimal | null> {
+    try {
+      const week = await this.ensureTimeSeriesStore().loadSession(WEEK_STORE_KEY);
+      if (week && week.fx.length > 0) {
+        return sessionCloseFxFromBars(week.fx, sessionCloseMs(prevSessionDay));
+      }
+    } catch {
+      // Best-effort: a store failure simply falls back to the persisted close.
+    }
+    return null;
+  }
+
+  /**
+   * Whether the prior-session EUR→USD close baseline (prevFx) is already on the
+   * device — either persisted ({@link readPrevSessionCloseFx}) or recoverable from
+   * the 1W FX track ({@link barsPrevSessionCloseFx}). Feeds
+   * {@link fxAnchorCompleteness}'s `prevAnchorAvailable` so the consolidated FX
+   * backfill only widens (the +1-credit Thursday→Friday pull) when the baseline is
+   * genuinely absent.
+   */
+  private async prevFxAnchorAvailable(now: Date): Promise<boolean> {
+    const prevSessionDay = previousTradingSession(lastSessionDate(now));
+    if (readPrevSessionCloseFx(prevSessionDay) !== null) return true;
+    return (await this.barsPrevSessionCloseFx(prevSessionDay)) !== null;
+  }
+
+  /**
+   * Evaluate the single phase-aware {@link fxAnchorCompleteness} predicate against
+   * this device's current state: the stored 1D FX track, the market phase, and
+   * whether the prior-session close baseline is on hand. The one decision the
+   * routine rounds' `fxBars` leg gate and the consolidated {@link prefetchSessionFx}
+   * backfill window both read from, so they can never drift apart.
+   */
+  private async fxAnchorCompletenessNow(now: Date): Promise<FxAnchorCompleteness> {
+    const day = lastSessionDate(now);
+    const session = await this.ensureTimeSeriesStore().loadSession(day).catch(() => null);
+    return fxAnchorCompleteness({
+      fxBars: session?.fx ?? [],
+      marketClosed: !isUsMarketOpen(now),
+      warmingUp: sessionIsWarmingUp(now),
+      sessionOpenMs: sessionOpenMs(day),
+      sessionCloseMs: sessionCloseMs(day),
+      prevAnchorAvailable: await this.prevFxAnchorAvailable(now),
+    });
   }
 
   /** Lazily create (once) the IndexedDB-backed live-graph bar store. */

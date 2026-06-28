@@ -244,7 +244,11 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    the login and settings screens (it used to sit in the top overview bar). */
 .app-version {
   margin-top: auto;
-  padding: 1rem 1.1rem 1.4rem;
+  /* The fixed bottom tab bar (and, on the login/setup screens, the phone's own
+     bottom browser chrome) otherwise covers this line, so reserve clearance for
+     the bar plus the safe-area inset. The desktop media query — where the tab bar
+     reflows to the top — trims this back. */
+  padding: 1rem 1.1rem calc(4.5rem + env(safe-area-inset-bottom, 0px));
   text-align: center;
   font-size: 0.72rem;
   font-weight: 600;
@@ -1812,6 +1816,10 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .topbar-inner,
   .content { max-width: 78rem; }
   .content { padding-bottom: 3.5rem; order: 2; }
+
+  /* The tab bar is no longer a fixed bottom overlay here, so the build-version
+     line needs no bottom clearance for it. */
+  .app-version { padding-bottom: 1.4rem; }
 
   /* Reflow the nav from a fixed bottom bar to a top tab strip. */
   .tabbar {

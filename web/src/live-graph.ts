@@ -69,10 +69,19 @@ export interface DateWindow {
   endDate: string;
 }
 
-/** The single-session window the live 1D curve (and its FX track) covers. */
-export function sessionFxWindow(now: Date = new Date()): DateWindow {
+/**
+ * The window the live 1D curve (and its FX track) covers — the last single
+ * session by default. Widen it with `sessionsBack` to reach back over earlier
+ * sessions in one request: `sessionFxWindow(now, 2)` spans the prior trading
+ * session through the last one (Thursday→Friday over a weekend), the guaranteed
+ * path the currency KPI uses to recover the missing prior-session close baseline
+ * (`prevFx`) on a wiped, forex-frozen cold start (item 5b).
+ */
+export function sessionFxWindow(now: Date = new Date(), sessionsBack = 1): DateWindow {
   const day = lastSessionDate(now);
-  return { startDate: day, endDate: day };
+  if (sessionsBack <= 1) return { startDate: day, endDate: day };
+  const window = recentTradingSessions(Math.max(1, sessionsBack), now);
+  return { startDate: window[0], endDate: window[window.length - 1] };
 }
 
 /** The trailing trading-session window the live 1W curve (and FX) covers. */
