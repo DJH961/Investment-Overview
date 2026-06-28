@@ -14,7 +14,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.15.4] — 2026-06-28
+## [4.16.2] — 2026-06-28
 
 ### Fixed
 
@@ -52,8 +52,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   their "since yesterday" title to just **"yesterday"** or **"on Friday"** by time
   distance, so a Sunday view stops mislabelling Friday's frozen figures as today's
   (`web/src/format.ts` `frozenDayLabel`/`frozenSincePhrase`, `web/src/ui.ts`).
-
-## [4.15.3] — 2026-06-28
+## [4.16.1] — 2026-06-28
 
 ### Fixed
 
@@ -87,6 +86,52 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   leg gate and the backfill window now read from this one decision
   (`web/src/session-fx.ts`, `web/src/app.ts`).
 
+## [4.16.0] — 2026-06-28
+
+### Added
+
+- **The long-range (1M–1Y) value-history graph is now reloadable from scratch —
+  on an empty device, after a cache wipe, or behind a weeks-stale blob.**
+  Previously the long-range line could only fill the gap a stale export left by
+  recording each day's whole-book close as the app was opened day after day, so a
+  device that had not been opened on the in-between days drew a single straight
+  diagonal across the missing span. A new reconstruction path
+  (`web/src/long-range.ts`) instead fetches multi-month **daily-close** bars for
+  every market holding (plus the matching daily EUR/USD FX) and rebuilds the
+  whole-book daily closes with the existing pure reconstruction maths, so the
+  chart draws genuine per-day points. It is wired into the Hard-reset path, a new
+  **"Regenerate long-range history"** settings button (sibling to Regenerate
+  1D/1W), and an opportunistic once-per-session rebuild after the blob applies.
+  The blob remains the single source of truth: the reconstruction is built from
+  the decrypted blob's holdings and only ever **fills the gap after the blob's
+  last export** — it never deletes or overwrites blob-covered history (only the
+  blob carries reinvestments and share/holding changes). Every metered request
+  flows through the existing reservation budget and per-series back-off (no new
+  bypass), and a daily bar bills the same one credit per symbol whatever the
+  range, so a worst-case year-long catch-up costs the same as a week.
+- **A core-vs-bonus data registry and a data-coverage self-check make the
+  "every core value is reloadable" guarantee structural and observable.** A new
+  registry (`web/src/data-registry.ts`) declares every device store as `core`
+  (prices, FX, 1D, 1W, long-range history — must be reloadable) or `bonus`
+  (breadcrumbs/tips — may be lost), and `TimeSeriesStore.clear()` consults it so
+  the intent is explicit and any future store must declare its bucket. A pure
+  self-check (`web/src/coverage-check.ts`) asserts, for the current
+  `(market condition, device freshness, blob presence)`, that each core value
+  still has at least one load path (an orchestrator leg, the blob, or a
+  reconstruction) and surfaces the verdict in the polling log, so a missing path
+  is discoverable rather than silent. It is backed by a test matrix over the
+  cross-product of market conditions × freshness tiers (including empty-device and
+  first-login-currency-unknown).
+
+### Changed
+
+- **A specific symbol's missing settled weekly (1W) bar can now be back-filled
+  during the lighter market-open tiers at login, instead of waiting for a heavy
+  reset.** A new targeted overlay (`targetedWeekBackfill` in
+  `web/src/freshness.ts`) lets the login warm-up prime a small, capped slice of
+  the precise settled-stale 1W set even when the blanket `weekBars` leg is off, so
+  a freshly added holding or a one-session gap is filled promptly while the
+  reservation budget still bounds the spend (`web/src/app.ts`).
 ## [4.15.2] — 2026-06-27
 
 ### Fixed
