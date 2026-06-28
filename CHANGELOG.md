@@ -13,9 +13,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.20.0] — 2026-06-28
+## [4.19.1] — 2026-06-28
 
-### Changed
+### Fixed
 
 - **The currency panel now treats the spot-FX weekend close as a *pause*, so
   Friday's session stays the previous session when forex reopens Sunday evening.**
