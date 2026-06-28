@@ -16,6 +16,7 @@ import {
   formatUpdatedAt,
   frozenDayLabel,
   frozenSincePhrase,
+  weekdaySincePhrase,
 } from "../src/format";
 
 describe("formatDailyGrowthAsOf", () => {
@@ -225,6 +226,20 @@ describe("frozenSincePhrase", () => {
 
   it("degrades to 'since yesterday' on a malformed session date", () => {
     expect(frozenSincePhrase("nope", new Date("2024-06-09T10:00:00"))).toBe("since yesterday");
+  });
+});
+
+describe("weekdaySincePhrase", () => {
+  it("names the real settled weekday — 'since Friday' over a normal weekend reopen", () => {
+    expect(weekdaySincePhrase("2026-06-26")).toBe("since Friday");
+  });
+
+  it("names Thursday when Friday was a holiday and Thursday was the last settled session", () => {
+    expect(weekdaySincePhrase("2026-07-02")).toBe("since Thursday");
+  });
+
+  it("degrades to 'since yesterday' on a malformed session date", () => {
+    expect(weekdaySincePhrase("nope")).toBe("since yesterday");
   });
 });
 

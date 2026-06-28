@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fxBoxRegime } from "../src/ui";
+import { fxBoxRegime, effectSincePhrase } from "../src/ui";
 
 // EDT (UTC-4) reference week around Fri 2026-06-26 → Mon 2026-06-29. Forex closes
 // Fri 17:00 ET (21:00 UTC) and reopens Sun 17:00 ET (21:00 UTC); the NYSE session
@@ -73,5 +73,24 @@ describe("fxBoxRegime", () => {
     expect(r.forexFrozen).toBe(false);
     expect(r.singleOvernight).toBe(true);
     expect(r.weekendOvernight).toBe(false);
+  });
+});
+
+describe("effectSincePhrase (regime-aware currency-effect 'since …' wording)", () => {
+  it("names the settled weekday over the frozen weekend ('on Friday')", () => {
+    // Sun morning (pre-reopen) — forex frozen at Friday's close, two days removed.
+    expect(effectSincePhrase(new Date("2026-06-28T14:00:00Z"))).toBe("on Friday");
+  });
+
+  it("reads 'since Friday' once forex reopens Sunday evening (weekend spill-over)", () => {
+    expect(effectSincePhrase(new Date("2026-06-28T22:00:00Z"))).toBe("since Friday");
+  });
+
+  it("reads 'since Friday' on Monday pre-open (still one overnight since Friday)", () => {
+    expect(effectSincePhrase(new Date("2026-06-29T12:00:00Z"))).toBe("since Friday");
+  });
+
+  it("falls back to the regular 'since yesterday' midweek", () => {
+    expect(effectSincePhrase(new Date("2026-06-30T12:00:00Z"))).toBe("since yesterday");
   });
 });

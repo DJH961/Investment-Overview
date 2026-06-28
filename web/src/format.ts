@@ -339,6 +339,22 @@ export function frozenSincePhrase(sessionDate: string, now: Date = new Date()): 
 }
 
 /**
+ * The "since <weekday>" phrase for the currency-effect panel once the spot-FX
+ * market has **reopened** but no US session has yet — the weekend spill-over
+ * (Sunday evening → Monday's open, extending across a Monday holiday). The lone
+ * overnight drift then traces back to the **last session's close** (Friday's, or
+ * Thursday's when Friday was a holiday), so the title names that real settled day
+ * — **"since Friday"** — rather than an always-"yesterday" placeholder that would
+ * hide the long weekend the rate actually drifted over. `sessionDate` is that last
+ * settled session (`YYYY-MM-DD`); a malformed date degrades to "since yesterday".
+ */
+export function weekdaySincePhrase(sessionDate: string): string {
+  const parsed = parseLocalIsoDate(sessionDate);
+  if (parsed === null) return "since yesterday";
+  return `since ${parsed.toLocaleDateString(undefined, { weekday: "long" })}`;
+}
+
+/**
  * The market-situation-aware "as of" caption for the hero's total value and
  * today's move — the browser mirror of the desktop's Daily Growth caption
  * (`services/daily_growth_view.build_daily_growth_caption`).
