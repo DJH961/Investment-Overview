@@ -13,6 +13,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.19.1] — 2026-06-28
+
+### Fixed
+
+- **The desktop no longer sources a "live" EUR/USD spot while the spot-FX
+  (forex) market is closed — a weekend quote is an indicative *projection*, not a
+  live traded price, so it never overlays as "today's" live rate.** Previously
+  the live-spot refresh polled yfinance's `EURUSD=X` (and the Tiingo FX backup) on
+  every tick regardless of the forex clock; over the weekend close (Friday 17:00 →
+  Sunday 17:00 ET) any reading a feed still returned could slide the EUR view on a
+  rate that never actually printed. `fx_service.refresh_live_spot` now short-
+  circuits while `market_hours.is_forex_market_open` is `False`: no provider is
+  polled and the last genuine in-session spot is left in place as the frozen
+  Friday close (it stops overlaying as *today's* mark on its own once the calendar
+  rolls past its observation day). As a result the **1M and longer** value graphs
+  — which legitimately re-mark at the live after-hours spot — only ever see an
+  open-market rate, and the **1D / 1W** live tip continues to stop at the session
+  close and freeze to that session's settled FX (unchanged `freeze_after_hours`
+  behaviour). Mirrors the web companion's forex-hours gating.
+
 ## [4.19.0] — 2026-06-28
 
 ### Changed
