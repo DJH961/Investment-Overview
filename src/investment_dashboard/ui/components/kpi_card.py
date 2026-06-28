@@ -30,6 +30,7 @@ def kpi_card(
     color: str | None = None,
     arrow: str | None = None,
     sparkline: Sequence[float] | None = None,
+    value_class: str | None = None,
 ) -> None:
     """Render a single KPI card.
 
@@ -42,7 +43,10 @@ def kpi_card(
         arrow: optional ↑/↓ directional indicator (colorblind redundancy).
         sparkline: optional small sequence of numbers; when provided a tiny
             inline trend chart is drawn at the bottom of the card.
+        value_class: optional extra CSS class on the primary value span (e.g.
+            a compact, single-line variant for word headlines).
     """
+    value_classes = "inv-kpi-value" + (f" {value_class}" if value_class else "")
     with ui.element("div").classes("inv-kpi"):
         if tooltip_key:
             label_with_tooltip(label, tooltip_key, classes="inv-kpi-label")
@@ -55,7 +59,7 @@ def kpi_card(
                     f"{arrow}</span>"
                 )
             ui.html(
-                f'<span class="inv-kpi-value" style="color: {color or "inherit"}">{value}</span>'
+                f'<span class="{value_classes}" style="color: {color or "inherit"}">{value}</span>'
             )
         if sub:
             ui.html(f'<div class="inv-kpi-sub">{sub}</div>')

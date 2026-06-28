@@ -185,6 +185,7 @@ def _verdict_card(verdict: MarketVerdict) -> None:
         tooltip_key="market_verdict",
         color=color,
         arrow=arrow,
+        value_class="inv-kpi-verdict",
     )
 
 
