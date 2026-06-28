@@ -353,6 +353,54 @@ def _check_providers() -> HealthItem:
     )
 
 
+def _check_intraday_graph(session: Session) -> HealthItem:
+    """The live "1 Day" / "1 Week" graphs that the backfill couldn't fill.
+
+    The background auto-update tops up the intraday graphs to their coverage
+    target on every refresh (see
+    :func:`investment_dashboard.services.intraday_snapshots_service.backfill_graphs`).
+    This probe reports the *finished* sessions that are still below target — days
+    the price feed never served enough intraday bars for — so a persistently
+    gappy graph is surfaced rather than silently drawn short. In-progress
+    sessions (still filling) and days with nothing intraday held are ignored.
+    Read-only: it re-derives coverage from the cache and makes no network calls.
+    """
+    from investment_dashboard.services import intraday_snapshots_service  # noqa: PLC0415
+
+    coverage = intraday_snapshots_service.assess_graph_coverage(session)
+    if not coverage.has_gaps:
+        return HealthItem(
+            key="intraday_graph",
+            title="Intraday graph coverage",
+            severity="ok",
+            count=0,
+            detail="The 1 Day and 1 Week graphs are filled to their coverage target.",
+        )
+
+    graphs: list[str] = []
+    if coverage.day_below_target:
+        graphs.append("1 Day")
+    examples = [d.isoformat() for d in coverage.week_days_below_target]
+    if examples:
+        graphs.append("1 Week")
+    count = (1 if coverage.day_below_target else 0) + len(coverage.week_days_below_target)
+    return HealthItem(
+        key="intraday_graph",
+        title="Intraday graph coverage",
+        severity="warning",
+        count=count,
+        detail=(
+            f"The {' and '.join(graphs)} graph could not be filled to its "
+            "coverage target: the price feed returned too few intraday bars for "
+            "one or more finished sessions. The background auto-update keeps "
+            "retrying on each refresh; a session that stays short usually means "
+            "the provider has no intraday history for that day. The graph is "
+            "still drawn from the points that are available."
+        ),
+        examples=_examples(examples),
+    )
+
+
 def check_health(session: Session) -> HealthReport:
     """Run every read-only data-health probe and return one aggregate report.
 
@@ -364,6 +412,7 @@ def check_health(session: Session) -> HealthReport:
         _check_fx_legs(session),
         *_check_prices(session),
         _check_positions(session),
+        _check_intraday_graph(session),
         _check_providers(),
     ]
     return HealthReport(items=tuple(items))

@@ -188,3 +188,86 @@ class TestProviderProbe:
             assert providers.severity == "warning"
         finally:
             provider_status.reset()
+
+
+class TestIntradayGraphProbe:
+    """The Data Health flag for live graphs the backfill could not fill.
+
+    The probe delegates the (date-sensitive, cache-reading) coverage assessment
+    to ``intraday_snapshots_service.assess_graph_coverage``; these tests stub that
+    out so they assert the probe's *reporting* — severity, count, and examples —
+    deterministically.
+    """
+
+    def test_full_coverage_is_ok(self, session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+        from investment_dashboard.services import intraday_snapshots_service
+
+        monkeypatch.setattr(
+            intraday_snapshots_service,
+            "assess_graph_coverage",
+            lambda *a, **k: intraday_snapshots_service.GraphCoverage(
+                day_below_target=False, week_days_below_target=()
+            ),
+        )
+        report = diagnostics_service.check_health(session)
+        item = next(i for i in report.items if i.key == "intraday_graph")
+        assert item.severity == "ok"
+        assert item.count == 0
+        assert not report.has_problems
+
+    def test_uncovered_sessions_are_flagged_with_examples(
+        self, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from investment_dashboard.services import intraday_snapshots_service
+
+        monkeypatch.setattr(
+            intraday_snapshots_service,
+            "assess_graph_coverage",
+            lambda *a, **k: intraday_snapshots_service.GraphCoverage(
+                day_below_target=True,
+                week_days_below_target=(date(2024, 6, 3), date(2024, 6, 4)),
+            ),
+        )
+        report = diagnostics_service.check_health(session)
+        item = next(i for i in report.items if i.key == "intraday_graph")
+        assert item.severity == "warning"
+        # One "1 Day" gap plus two "1 Week" sessions.
+        assert item.count == 3
+        assert "1 Day" in item.detail
+        assert "1 Week" in item.detail
+        assert "2024-06-03" in item.examples
+        assert "2024-06-04" in item.examples
+        assert report.has_problems
+
+    def test_day_only_gap_omits_week_label(
+        self, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from investment_dashboard.services import intraday_snapshots_service
+
+        monkeypatch.setattr(
+            intraday_snapshots_service,
+            "assess_graph_coverage",
+            lambda *a, **k: intraday_snapshots_service.GraphCoverage(
+                day_below_target=True, week_days_below_target=()
+            ),
+        )
+        report = diagnostics_service.check_health(session)
+        item = next(i for i in report.items if i.key == "intraday_graph")
+        assert item.severity == "warning"
+        assert item.count == 1
+        assert "1 Day" in item.detail
+        assert "1 Week" not in item.detail
+
+    def test_probe_is_skipped_in_quick_status(
+        self, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # quick_status drives the cheap header badge and must not run the
+        # per-day positions walk the graph probe needs.
+        from investment_dashboard.services import intraday_snapshots_service
+
+        def _boom(*a: object, **k: object) -> object:
+            raise AssertionError("assess_graph_coverage must not run in quick_status")
+
+        monkeypatch.setattr(intraday_snapshots_service, "assess_graph_coverage", _boom)
+        severity, _count = diagnostics_service.quick_status(session)
+        assert severity in {"ok", "warning", "error"}
