@@ -13,6 +13,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.19.2] — 2026-06-28
+
+### Fixed
+
+- **A freshly-fetched money-market NAV no longer strands every equity's daily
+  move as "stale" and wipes the Top-movers band on the web companion.** A
+  par-NAV money-market fund (e.g. VMFXX) re-marks to its own "today" whenever it
+  is re-fetched — it does not care whether the *stock* market is open — so a quote
+  pulled after-hours, over a weekend, or on a holiday carried a value-date newer
+  than every equity's genuine last-session move. That row defined the freshness
+  basis (`latestPriceDate` in `web/src/compute.ts`), which then flagged the real
+  equity moves `todayMoveIsStale` and collapsed the prev-value/move math, leaving
+  the Top-movers band empty. The freshness basis now ignores money-market
+  holdings — which never carry a today's move and so have no business dating it —
+  guarding the symptom at its source rather than only in `buildMovers`
+  (`web/src/compute.ts`).
+
 ## [4.19.1] — 2026-06-28
 
 ### Fixed
