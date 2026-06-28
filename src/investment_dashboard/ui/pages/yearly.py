@@ -32,6 +32,8 @@ class _YearlyData:
     rows: list[PeriodRow]
     value_series: list[ValueSeriesPoint]
     fx_rate: Decimal | None
+    value_series_secondary: list[ValueSeriesPoint] | None = None
+    secondary_ccy: str | None = None
 
 
 def _money_columns(label: str, field: str, primary: str) -> list[dict[str, object]]:
@@ -39,7 +41,7 @@ def _money_columns(label: str, field: str, primary: str) -> list[dict[str, objec
     return [money_column(label, field, primary)]
 
 
-def _figure(points, *, currency: str):  # type: ignore[no-untyped-def]
+def _figure(points, *, currency: str, secondary=None, secondary_currency: str | None = None):  # type: ignore[no-untyped-def]
     """Daily portfolio value as a line over the whole history, in display currency.
 
     The user asked to replace the per-year growth *bars* with a line chart "to
@@ -49,6 +51,14 @@ def _figure(points, *, currency: str):  # type: ignore[no-untyped-def]
     histories are thinned for rendering speed but keep their shape. The y-axis
     is fitted to the data (not anchored to zero) and uses compact SI ticks so
     the price flow is legible even for large balances.
+
+    ``secondary`` (with ``secondary_currency``) adds a comparison line for the
+    *other* currency on a right-hand axis, scaled so both lines share the same
+    starting point — matching the Overview value-over-time chart — so the all-time
+    graph shows EUR and USD together. The right axis range is the left range
+    scaled by ``secondary[0] / primary[0]``, pinning the two opening values to the
+    same pixel (and the same zero) so any later gap is purely how the portfolio
+    fared in one currency versus the other across the window.
     """
     import plotly.graph_objects as go  # noqa: PLC0415
 
@@ -56,6 +66,7 @@ def _figure(points, *, currency: str):  # type: ignore[no-untyped-def]
 
     symbol = currency_symbol(currency)
     fig = go.Figure()
+    has_secondary = False
     if points:
         points = downsample(points)
         dates = [p.date for p in points]
@@ -64,24 +75,96 @@ def _figure(points, *, currency: str):  # type: ignore[no-untyped-def]
             x=dates,
             y=values,
             mode="lines",
-            name=f"Portfolio value ({currency})",
+            name=f"In {currency}",
             line={"width": 2.5, "color": "#0072B2"},
             fill="tozeroy",
             fillcolor="rgba(0,114,178,0.08)",
             hovertemplate=(f"%{{x|%d %b %Y}}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"),
         )
-        yrange = padded_range(values)
+        # Prepare the optional companion line *before* fitting the value scale so
+        # its data can widen that scale and neither line is ever clipped. The two
+        # currency lines are linked by a single ``scale`` (right axis = left axis
+        # × scale) that pins their two opening values to the same pixel; the left
+        # range is fitted to the union of the primary values **and** the companion
+        # values mapped back into primary units (companion ÷ scale).
+        secondary_plot: tuple[list[object], list[float], float] | None = None
+        if secondary and secondary_currency and values and values[0]:
+            sec_points = downsample(secondary)
+            if len(sec_points) == len(dates):
+                sec_dates = [p.date for p in sec_points]
+                sec_values = [float(p.value) for p in sec_points]
+                if sec_values and sec_values[0] > 0:
+                    secondary_plot = (sec_dates, sec_values, sec_values[0] / values[0])
+        range_values = [*values]
+        if secondary_plot is not None:
+            _, sec_values, scale = secondary_plot
+            range_values = [*range_values, *(sv / scale for sv in sec_values)]
+        yrange = padded_range(range_values)
         fig.update_yaxes(
             title=f"Value ({currency})",
             tickprefix=symbol,
             tickformat=".3s",
             range=list(yrange) if yrange is not None else None,
         )
+        # Companion line for the *other* currency on a right-hand axis, scaled so
+        # both lines share the same starting point (and the same zero): the right
+        # range is the left range times secondary[0]/primary[0]. The left range was
+        # already widened above to enclose this line (mapped into primary units),
+        # so multiplying it by ``scale`` here keeps *both* lines fully on-screen.
+        if secondary_plot is not None and secondary_currency and yrange is not None:
+            sec_dates, sec_values, scale = secondary_plot
+            sec_symbol = currency_symbol(secondary_currency)
+            sec_color = "#CC79A7"  # Wong reddish-purple (colourblind-safe)
+            fig.add_scatter(
+                x=sec_dates,
+                y=sec_values,
+                mode="lines",
+                name=f"In {secondary_currency}",
+                yaxis="y2",
+                line={"width": 2, "color": sec_color, "dash": "dot"},
+                hovertemplate=(
+                    f"<b>{sec_symbol}%{{y:,.2f}}</b> ({secondary_currency})<extra></extra>"
+                ),
+            )
+            fig.update_layout(
+                yaxis2={
+                    "overlaying": "y",
+                    "side": "right",
+                    "tickprefix": sec_symbol,
+                    "tickformat": ".3s",
+                    "separatethousands": True,
+                    "showgrid": False,
+                    "automargin": True,
+                    "range": [yrange[0] * scale, yrange[1] * scale],
+                    "tickfont": {"color": sec_color},
+                    "title": {
+                        "text": secondary_currency,
+                        "font": {"color": sec_color},
+                    },
+                }
+            )
+            has_secondary = True
     fig.update_layout(
-        title=f"Portfolio value over time ({currency})",
+        title=(
+            f"Portfolio value over time — {currency} vs {secondary_currency}"
+            if has_secondary
+            else f"Portfolio value over time ({currency})"
+        ),
         template="colorblind_modern",
-        margin={"l": 60, "r": 20, "t": 40, "b": 50},
+        margin={"l": 60, "r": 44 if has_secondary else 20, "t": 40, "b": 50},
         xaxis={"title": "Date"},
+        showlegend=has_secondary,
+        legend=(
+            {
+                "orientation": "h",
+                "yanchor": "bottom",
+                "y": 1.02,
+                "xanchor": "right",
+                "x": 1,
+            }
+            if has_secondary
+            else None
+        ),
     )
     return fig
 
@@ -110,10 +193,29 @@ def _gather() -> _YearlyData:  # pragma: no cover - heavy DB work, run off-loop
             # loop (and tripping the reconnect/"crash") when the cache is cold.
             recompute_tail_days=7,
         )
+        # Companion line for the *other* currency, so the all-time graph shows
+        # EUR and USD side by side like the Overview value-over-time chart. Built
+        # from the same range so it lines up point-for-point with the primary;
+        # dropped below if it does not (then the chart stays single-currency).
+        secondary_ccy: str | None = "USD" if display_ccy.upper() == "EUR" else "EUR"
+        value_series_secondary: list[ValueSeriesPoint] | None = build_value_series(
+            session,
+            currency=secondary_ccy,
+            range_label="All",
+            recompute_tail_days=7,
+        )
+        if not value_series_secondary or len(value_series_secondary) != len(value_series):
+            value_series_secondary = None
+            secondary_ccy = None
         display_quote = display_ccy if display_ccy != "EUR" else "USD"
         fx_rate = display_currency_service.current_rate(session, quote=display_quote)
     return _YearlyData(
-        display_ccy=display_ccy, rows=rows, value_series=value_series, fx_rate=fx_rate
+        display_ccy=display_ccy,
+        rows=rows,
+        value_series=value_series,
+        fx_rate=fx_rate,
+        value_series_secondary=value_series_secondary,
+        secondary_ccy=secondary_ccy,
     )
 
 
@@ -124,7 +226,14 @@ def _build_body(data: _YearlyData) -> None:  # pragma: no cover - heavy render, 
     fx_rate = data.fx_rate
     sym = currency_symbol(display_ccy)
     with section("Growth over time"):
-        ui.plotly(_figure(value_series, currency=display_ccy)).classes(
+        ui.plotly(
+            _figure(
+                value_series,
+                currency=display_ccy,
+                secondary=data.value_series_secondary,
+                secondary_currency=data.secondary_ccy,
+            )
+        ).classes(
             "w-full h-[40vh]",
         )
     with section("Aggregation table"):
