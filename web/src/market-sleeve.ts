@@ -260,6 +260,31 @@ export function rebaseSleeveToWholeBook(
   });
 }
 
+/**
+ * Pin a merged 1W curve's **trailing edge** to the trusted web curve's live tip,
+ * so a blob sleeve sample can never become the rightmost rendered point.
+ *
+ * The web curve already ends at the authoritative "now" value — the very same
+ * point the 1D curve ends on (a live tip while the market is open, or the capped
+ * 16:00 close once it has shut). The blob's market-sleeve backbone is a *denser
+ * historical* second source, but its trailing samples are captured on the
+ * desktop's own cadence: the last one can land a minute or two *after* the web's
+ * tip (a capture-instant skew) or dive away from it (a partial / stale sleeve
+ * reconstruction). Rendered as the final point, that draws the near-vertical
+ * "final-minute" nosedive on 1W that 1D — anchored to the same live tip — never
+ * shows, breaking the "1D fills 1W" invariant.
+ *
+ * This is the "live tip stays sane" guard the merge promises: drop every merged
+ * point at or after the web tip's instant and append the web tip itself, so the
+ * densified body is kept while the right edge is the trusted value. A no-op when
+ * the merged curve already ends exactly at the web tip.
+ */
+export function pinMergedTipToWebTip(merged: CurvePoint[], webTip: CurvePoint): CurvePoint[] {
+  const kept = merged.filter((p) => p.t < webTip.t);
+  kept.push(webTip);
+  return kept;
+}
+
 /** Whether an export carries a usable v3 market-sleeve backbone (else: degrade). */
 export function hasMarketSleeve(exported: ExportLiveGraphs | undefined): boolean {
   return parseMarketSeries(exported?.market_series).length >= 2;
