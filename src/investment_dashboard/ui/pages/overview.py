@@ -1626,7 +1626,7 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
         dates = [p.date for p in points]
         values = [float(p.value) for p in points]
         if intraday and dates and isinstance(dates[-1], datetime):
-            today = (datetime.now(tz) if tz is not None else datetime.now()).date()
+            today = datetime.now(tz).date()
             session_date = dates[-1].date()
             if session_date != today:
                 intraday_day_label = f"\u00b7 {session_date:%a %d %b}"
@@ -2228,6 +2228,9 @@ def register() -> None:  # noqa: PLR0915
                 # The badge names the day the move lands on — "today" for today's
                 # move, else the real settled day ("yesterday" / "Fri 26 Jun"),
                 # sharing the Daily Growth caption's title so the two never disagree.
+                # Only the relative words "Today"/"Yesterday" are lowercased to match
+                # the badge's quiet style; an absolute date ("Fri 26 Jun") keeps its
+                # natural capitalisation.
                 _caption_title = _caption.title
                 _hero_day_label = (
                     _caption_title.lower()

@@ -186,10 +186,12 @@ class TestIntradayDayLabel:
         assert "Mon 03 Jun" in fig.layout.title.text
 
     def test_title_says_today_for_todays_session(self) -> None:
-        now = datetime.now()
+        # Anchor to today's calendar date at midday so the assertion stays
+        # deterministic (never straddles a midnight boundary mid-run).
+        today_noon = datetime.combine(date.today(), datetime.min.time()).replace(hour=12)
         pts = [
-            ValueSeriesPoint(date=now.replace(hour=10, minute=0), value=Decimal("100")),
-            ValueSeriesPoint(date=now.replace(hour=11, minute=0), value=Decimal("105")),
+            ValueSeriesPoint(date=today_noon.replace(hour=10), value=Decimal("100")),
+            ValueSeriesPoint(date=today_noon.replace(hour=11), value=Decimal("105")),
         ]
         fig = _value_curve_figure(pts, currency="EUR", intraday=True)
         assert "today" in fig.layout.title.text
