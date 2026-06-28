@@ -13,6 +13,82 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.19.2] — 2026-06-28
+
+### Fixed
+
+- **A freshly-fetched money-market NAV no longer strands every equity's daily
+  move as "stale" and wipes the Top-movers band on the web companion.** A
+  par-NAV money-market fund (e.g. VMFXX) re-marks to its own "today" whenever it
+  is re-fetched — it does not care whether the *stock* market is open — so a quote
+  pulled after-hours, over a weekend, or on a holiday carried a value-date newer
+  than every equity's genuine last-session move. That row defined the freshness
+  basis (`latestPriceDate` in `web/src/compute.ts`), which then flagged the real
+  equity moves `todayMoveIsStale` and collapsed the prev-value/move math, leaving
+  the Top-movers band empty. The freshness basis now ignores money-market
+  holdings — which never carry a today's move and so have no business dating it —
+  guarding the symptom at its source rather than only in `buildMovers`
+  (`web/src/compute.ts`).
+
+## [4.19.1] — 2026-06-28
+
+### Fixed
+
+- **The desktop no longer sources a "live" EUR/USD spot while the spot-FX
+  (forex) market is closed — a weekend quote is an indicative *projection*, not a
+  live traded price, so it never overlays as "today's" live rate.** Previously
+  the live-spot refresh polled yfinance's `EURUSD=X` (and the Tiingo FX backup) on
+  every tick regardless of the forex clock; over the weekend close (Friday 17:00 →
+  Sunday 17:00 ET) any reading a feed still returned could slide the EUR view on a
+  rate that never actually printed. `fx_service.refresh_live_spot` now short-
+  circuits while `market_hours.is_forex_market_open` is `False`: no provider is
+  polled and the last genuine in-session spot is left in place as the frozen
+  Friday close (it stops overlaying as *today's* mark on its own once the calendar
+  rolls past its observation day). As a result the **1M and longer** value graphs
+  — which legitimately re-mark at the live after-hours spot — only ever see an
+  open-market rate, and the **1D / 1W** live tip continues to stop at the session
+  close and freeze to that session's settled FX (unchanged `freeze_after_hours`
+  behaviour). Mirrors the web companion's forex-hours gating.
+
+## [4.19.0] — 2026-06-28
+
+### Changed
+
+- **Desktop Tiingo is now a strict, budgeted, and visible last resort instead of
+  a fallback in name only.** Its caps are no longer hardcoded with a misleading
+  rolling-hour window, its usage is no longer invisible, FX is no longer routed
+  to it while the market is closed, and a `429` now actually stops further calls:
+  - **Configurable caps with correct reset windows.** The hourly and daily caps
+    are persisted config (`tiingo_hourly_cap` / `tiingo_daily_cap` in
+    `app_config`; defaults 10/hr · 200/day) and are bound onto the budget on load
+    so every gate honours them. The hourly bucket now resets on the **wall-clock
+    hour (`:00`)** rather than a rolling 60-minute window, matching how Tiingo
+    itself resets; the daily bucket still resets at midnight ET.
+  - **Settings visibility.** A new budget panel shows live `hour_used/cap` and
+    `day_used/cap`, "limit reached" badges, reset-timing captions, an editable
+    caps form, and a timestamped `429` notice.
+  - **FX no longer falsely routed.** `fx_service.refresh_live_spot` only escalates
+    to the Tiingo live-FX backup when the forex market is actually open; while it
+    is closed there is no live quote to fetch, so the settled ECB rate stands and
+    no call is spent. yfinance remains the primary source throughout.
+  - **`429` backstop.** An HTTP `429` from Tiingo pins `hour_used` to the cap and
+    stamps `rate_limited_at`, so the quota is treated as spent (regardless of the
+    local counter) until the next `:00` — wired into both the price path and the
+    FX paths.
+
+## [4.18.1] — 2026-06-28
+
+### Changed
+
+- **The Overview "Top movers" band is tidier and uses the full width.** The
+  basis date (e.g. "last close · 26 Jun") now rides on the headline row itself,
+  right-aligned beside the title at the same height, instead of sitting on a
+  separate line below it. The band's headline was renamed from "Today's movers"
+  to **"Top movers"** (it reflects the freshest settled session, which is not
+  always *today*), and the winners/losers blocks now line up side to side as a
+  single full-width row on a wider range of desktop widths (the four-up layout
+  kicks in from 768px rather than 1024px), using the whole band.
+
 ## [4.18.0] — 2026-06-28
 
 ### Added

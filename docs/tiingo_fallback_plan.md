@@ -78,12 +78,17 @@ tickers; non‑US symbols simply have no Tiingo fallback (graceful).
 
 | Stack | Primary | Fallback | Tiingo reached via | Tiingo self‑cap |
 |---|---|---|---|---|
-| Desktop (Python) | yfinance | Tiingo | direct HTTPS | **10/hr · 200/day** |
+| Desktop (Python) | yfinance | Tiingo | direct HTTPS | **10/hr · 200/day** (default; configurable in Settings) |
 | Web (PWA) | Twelve Data | Tiingo | existing Cloudflare Worker, new `/price` route | **40/hr · 800/day** |
 
 One shared Tiingo account → static **20 % desktop / 80 % mobile** split, each side
-self‑capping locally (they can't see each other's live usage). Limits reset at
-**midnight US/Eastern**.
+self‑capping locally (they can't see each other's live usage). The **daily** limit
+resets at **midnight US/Eastern**; the **hourly** limit resets on the **full clock
+hour (`:00`)** — both mirroring how Tiingo itself resets, so our local counters
+free up at the same instant the real quota does. The desktop hourly/daily caps are
+**user‑configurable** under *Settings → Tiingo fallback*, where current usage is
+also shown live; an HTTP 429 from Tiingo pins the hourly bucket to its cap (the
+quota is spent no matter what our own counter said) until the next `:00`.
 
 ## The smart gate — when do we spend a Tiingo call?
 
