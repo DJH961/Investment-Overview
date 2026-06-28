@@ -66,6 +66,8 @@ import {
   clearPriceCaches,
   clearAllSeriesBackoff,
   creditsSpentToday,
+  readDeferredQueue,
+  writeDeferredQueue,
   recordCredits,
   recordTiingoCredits,
   readLastPull,
@@ -152,6 +154,11 @@ import {
 } from "./provider-breaker";
 import { ledgerReservation, tiingoAvailable, twelveDataAvailable, twelveDataBudgetView, twelveDataMinuteReadyDelayMs } from "./reservation";
 import { DEFERRED_MAX_ATTEMPTS, DeferredQueue } from "./deferred-queue";
+import {
+  DEFAULT_UNREACHABLE_BASE_MS,
+  describeUnreachable,
+  unreachableBackoffMs,
+} from "./unreachable";
 import { planFanout, planTwelveDataSafetyNet, TIINGO_RESERVE_CREDITS } from "./provider-fanout";
 import { reconcileHandshake } from "./login-handshake";
 import { springboardSessionCurve, springboardWeekCurve, parseExportedPoints } from "./springboard";
@@ -688,6 +695,16 @@ export class App {
    * updating when nothing could actually be fetched.
    */
   private lastConnectivity: ConnectivityState = "online";
+  /**
+   * How many **consecutive** automatic rounds have ended `"unreachable"` (no
+   * price service answered). Drives {@link unreachableBackoffMs}: instead of
+   * re-bursting every ~60 s against a provider that has already said "no", the
+   * next automatic pull backs off exponentially (capped) — stopping the non-stop
+   * "Updating…" loop while still recovering promptly via the `online`/visibility
+   * listeners the instant a link genuinely returns. Reset to 0 the moment any
+   * service answers again.
+   */
+  private consecutiveUnreachableRounds = 0;
   /** Guards against overlapping price refreshes. */
   private refreshing = false;
   /**
@@ -816,6 +833,10 @@ export class App {
     this.logVersionUpdate();
     this.state.config = await loadConfig();
     applyProviderLimits(this.state.config);
+    // Restore the long-term deferred work-queue: symbols left outstanding when the
+    // app was last closed (e.g. parked through a price-service outage) are
+    // re-attempted this session instead of being silently forgotten.
+    this.restoreDeferredQueue();
     const demoParams = this.demoParams();
     if (demoParams.requested) this.enterDemo(demoParams);
     else if (!this.isConfigured()) {
@@ -1407,6 +1428,48 @@ export class App {
    */
   private enqueueDeferred(symbols: Iterable<string>, reason: string, force = false): void {
     this.deferredQueue.enqueue(symbols, reason, force);
+    this.persistDeferredQueue();
+  }
+
+  /**
+   * Persist the deferred work-queue to localStorage so the "remember what still
+   * needs updating" promise survives a reload — the **long-term** queue. A symbol
+   * parked because no price service could be reached is then re-attempted on the
+   * next session too (drained → re-pulled, including via the Tiingo fallback when
+   * capacity reopens), rather than being silently forgotten when the tab closes.
+   * Best-effort: a storage failure never breaks a refresh.
+   */
+  private persistDeferredQueue(): void {
+    try {
+      writeDeferredQueue(this.deferredQueue.snapshot());
+    } catch {
+      /* persistence is best-effort */
+    }
+  }
+
+  /**
+   * Restore the persisted deferred work-queue at startup, so symbols left
+   * outstanding when the app was last closed (e.g. parked through a price-service
+   * outage) are re-attempted this session. A no-op once anything is already
+   * queued, so it can never clash with live deferrals. Logged when it actually
+   * restores work, so the trail explains why a symbol is being re-pulled at login.
+   */
+  private restoreDeferredQueue(): void {
+    try {
+      const stored = readDeferredQueue();
+      if (stored.length === 0) return;
+      this.deferredQueue.restore(stored);
+      if (this.deferredQueue.size > 0) {
+        this.pollLog(
+          "orchestrator",
+          `Deferred queue: restored ${this.deferredQueue.size} outstanding symbol(s) from the last session — ` +
+            "will re-attempt them (including via the backup when capacity reopens).",
+          "info",
+        );
+      }
+    } catch {
+      /* restore is best-effort */
+    }
   }
 
   /**
@@ -1459,6 +1522,9 @@ export class App {
         `Deferred queue: ${stillMissing.length} still missing (stale cache or explicit force pull), forcing a re-pull this round [${stillMissing.join(", ")}].`,
       );
     }
+    // The drain mutated the queue (cleared/exhausted entries) — persist so the
+    // long-term queue on disk reflects what genuinely still needs updating.
+    this.persistDeferredQueue();
     return stillMissing;
   }
 
@@ -2806,7 +2872,7 @@ export class App {
         field(
           "Test one symbol",
           h("div", { class: "row import-row" }, [probeSymbol, probePrimary, probeBackup]),
-          "Fire a single live quote for this symbol at one provider and show the full raw result — the HTTP status, the verbatim response, the price it parsed, and a plain verdict (wrong API key, rate-limited, backup proxy misconfigured, unreachable, …). Costs nothing against your budgets and doesn't touch the running dashboard. Use it to find out exactly why prices won't load.",
+          "Fire a single live quote for this symbol at one provider and show the full raw result — the HTTP status, the verbatim response, the price it parsed, and a plain verdict (wrong API key, rate-limited, backup proxy misconfigured, unreachable, …). Counts as one call against that provider's budget (like a refresh) but doesn't touch the running dashboard. Use it to find out exactly why prices won't load.",
         ),
         probeResult,
       );
@@ -4675,6 +4741,23 @@ export class App {
         quoteError: quoteLoad.report.error,
         tiingoError: this.lastTiingoError,
       });
+      // Track consecutive unreachable rounds (for the back-off cadence) and, the
+      // moment a round reaches nothing, log a loud, greppable line saying *why*
+      // and *what each provider reported* — the HTTP status, classification and
+      // verbatim message — so the polling log explains an outage instead of just
+      // noting it. Any answering round resets the streak.
+      if (this.lastConnectivity === "unreachable") {
+        this.consecutiveUnreachableRounds += 1;
+        const why = describeUnreachable(quoteLoad.report.error, this.lastTiingoError);
+        this.pollLog(
+          "primary",
+          (why ?? "No price service reachable this round.") +
+            ` (consecutive unreachable round ${this.consecutiveUnreachableRounds}; backing the auto-retry off so it stops bursting.)`,
+          "error",
+        );
+      } else {
+        this.consecutiveUnreachableRounds = 0;
+      }
     } else if (opts.connectivity !== undefined) {
       this.lastConnectivity = opts.connectivity;
     }
@@ -5318,7 +5401,7 @@ export class App {
     let remaining = Math.max(1, Math.ceil(delayMs / 1000));
     const render = (secs: number): string =>
       `Waiting for a clear Twelve Data minute window — probing ${symbol} automatically in ${secs}s…\n` +
-      "Tip: tap the button again to probe now anyway (spends a credit over the limit).";
+      "Tip: tap the button again to skip the wait and probe now (counts a call, exceeding the rate limit).";
     resultEl.textContent = render(remaining);
     this.probeWaitingProvider = provider;
     this.probeCountdownTimer = setInterval(() => {
@@ -5981,6 +6064,10 @@ export class App {
     const explicitRound = (opts.force ?? false) || (opts.forceAll ?? false);
     if (report.deferred.length > 0)
       this.enqueueDeferred(report.deferred, `${effectiveKind} round over budget`, explicitRound);
+    else if (report.fetched.length > 0)
+      // The clear above mutated the queue but didn't enqueue — persist so disk
+      // reflects the now-fulfilled deferrals (enqueueDeferred persists its own).
+      this.persistDeferredQueue();
     let delayMs = nextRefreshDelayMs({
       deferred: report.deferred,
       // Pace auto-refresh out as the rolling daily free-tier budget runs low.
@@ -6017,6 +6104,31 @@ export class App {
         });
         if (relief !== null) delayMs = Math.min(delayMs, relief);
       }
+    }
+    // Unreachable back-off — the fix for the non-stop "Updating…" loop. When the
+    // round reached **no** price service, its symbols still land in `deferred`,
+    // which the burst logic above would otherwise treat as "fill me in next
+    // minute" and re-burst every ~60 s forever (flashing the spinner, burning
+    // wake-ups against a provider that has already said "no"). A deferral born of
+    // an *outage* is different from one born of the per-minute budget: retrying in
+    // a minute just repeats the failure. So once a round is unreachable we
+    // override the cadence with an exponential back-off (capped) keyed on the
+    // consecutive-unreachable streak — a one-off blip still retries in ~a minute,
+    // a sustained outage settles to the ceiling. The `online`/visibility listeners
+    // still pull immediately when the link or tab genuinely returns, so recovery
+    // is never gated behind this longer delay; it only bounds the idle poll.
+    if (!promoted && this.lastConnectivity === "unreachable") {
+      const backoff = unreachableBackoffMs(this.consecutiveUnreachableRounds, {
+        baseMs: Math.max(DEFAULT_UNREACHABLE_BASE_MS, this.state.config.updateMinutes * 60 * 1000),
+      });
+      delayMs = Math.max(delayMs, backoff);
+      this.pollLog(
+        "schedule",
+        `Unreachable back-off: no service answered (${this.consecutiveUnreachableRounds} in a row) — ` +
+          `next auto-retry in ~${Math.round(backoff / 60000)}min instead of a 1-min burst. ` +
+          "Will pull immediately if the link returns.",
+        "warn",
+      );
     }
     // Hard-limit retry routing: when a fallback was blocked because the target
     // provider's limits are exhausted, schedule a retry at the next hour boundary

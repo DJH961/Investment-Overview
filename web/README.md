@@ -257,6 +257,23 @@ game**. Everything slow happens *after* you're already looking at your numbers:
   paces itself instead of exhausting the free tier early; the footer shows how
   much of the daily budget is used, and a banner warns when you're close to — or
   over — the limit.
+- **No more non-stop "Updating…" loop when a feed is down.** A deferral caused by
+  an *outage* (no price service could be reached) is treated differently from one
+  caused by the per-minute budget: instead of re-bursting every ~60 s against a
+  provider that has already said "no", the auto-retry **backs off exponentially**
+  (`src/unreachable.ts` `unreachableBackoffMs`, capped at ~15 min) the longer the
+  outage lasts. The `online`/visibility listeners still pull **immediately** when
+  the link or tab genuinely returns, so recovery is prompt — only the idle poll is
+  slowed. The polling log says exactly **why** it was unreachable and **what each
+  provider reported** (`describeUnreachable`: HTTP status, classification and the
+  verbatim message), so an outage is explained rather than just noted.
+- **Long-term deferred work-queue (survives a reload).** Symbols left outstanding
+  when the app closes — e.g. parked through a price-service outage — are now
+  **persisted** (`src/cache.ts` `read/writeDeferredQueue`) and **restored on the
+  next session** (`DeferredQueue.snapshot`/`restore`), so what still needs updating
+  is remembered without holding everything live in memory. Once rate-limit capacity
+  reopens they are drained and re-pulled — **including via the Tiingo backup** —
+  rather than being silently forgotten.
 - **Live, rotating update animation.** Every refresh (manual *or* automatic)
   visibly **spins the Refresh glyph** while data loads — not just a silent
   pop-up. For a portfolio larger than the per-minute cap, which can only be

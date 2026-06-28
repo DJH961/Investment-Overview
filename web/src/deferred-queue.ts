@@ -44,6 +44,20 @@ interface DeferredEntry {
   force: boolean;
 }
 
+/**
+ * A serialisable snapshot of one parked symbol — what {@link DeferredQueue.snapshot}
+ * emits and {@link DeferredQueue.restore} ingests, so the queue's "remember what
+ * still needs updating" promise survives a reload (the **long-term** queue): a
+ * symbol parked because no service could be reached is re-attempted on the next
+ * session too, not silently forgotten when the tab is closed.
+ */
+export interface DeferredSnapshotEntry {
+  symbol: string;
+  reason: string;
+  attempts: number;
+  force: boolean;
+}
+
 /** The categorised outcome of a single {@link DeferredQueue.drain}. */
 export interface DeferredDrainResult {
   /** Symbols that still need a pull this round (returned to the caller). */
@@ -69,6 +83,46 @@ export class DeferredQueue {
   /** How many symbols are currently parked. */
   get size(): number {
     return this.queue.size;
+  }
+
+  /**
+   * Emit the queue's contents (insertion order preserved) as plain objects, so a
+   * caller can persist the **long-term** queue across reloads. Pure: it neither
+   * stores nor mutates anything.
+   */
+  snapshot(): DeferredSnapshotEntry[] {
+    const out: DeferredSnapshotEntry[] = [];
+    for (const [symbol, entry] of this.queue) {
+      out.push({ symbol, reason: entry.reason, attempts: entry.attempts, force: entry.force });
+    }
+    return out;
+  }
+
+  /**
+   * Repopulate an **empty** queue from a {@link snapshot}, preserving each
+   * symbol's reason, attempt count and force flag (so a restored entry still
+   * ages out via the retry cap rather than retrying forever). Malformed or
+   * empty-symbol entries are skipped; the queue stays bounded (oldest evicted
+   * first). A no-op once anything is already queued, so restoring can never clash
+   * with live deferrals from the current session.
+   */
+  restore(entries: Iterable<DeferredSnapshotEntry>): void {
+    if (this.queue.size > 0) return;
+    for (const entry of entries) {
+      const symbol = entry?.symbol;
+      if (!symbol || this.queue.has(symbol)) continue;
+      const attempts = Number.isFinite(entry.attempts) ? Math.max(0, Math.trunc(entry.attempts)) : 0;
+      this.queue.set(symbol, {
+        reason: typeof entry.reason === "string" ? entry.reason : "restored",
+        attempts,
+        force: entry.force === true,
+      });
+      while (this.queue.size > this.max) {
+        const oldest = this.queue.keys().next().value;
+        if (oldest === undefined) break;
+        this.queue.delete(oldest);
+      }
+    }
   }
 
   /** Whether `symbol` is currently parked. */
