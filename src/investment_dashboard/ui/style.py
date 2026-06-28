@@ -917,7 +917,7 @@ html, body {{
 }}
 .inv-holding-figures {{
   display: flex; align-items: baseline; justify-content: space-between;
-  gap: 0.5rem; margin-top: 0.15rem;
+  gap: 0.5rem; margin-top: 0.15rem; position: relative;
 }}
 .inv-holding-value {{
   font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em;
@@ -993,6 +993,20 @@ html, body {{
   margin-right: 0.4rem;
   color: var(--inv-accent);
 }}
+/* When the movers band is rendered as a collapsible section it carries the
+   ``.inv-collapse`` base (whose surface background is set with ``!important``),
+   so re-assert the accent band gradient/border with matching weight and tint
+   the leading star icon with the accent colour. */
+.inv-collapse.inv-movers-band {{
+  border-color: color-mix(in srgb, var(--inv-accent) 35%, var(--inv-hairline));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--inv-accent) 7%, var(--inv-surface)),
+      var(--inv-surface)) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--inv-accent) 10%, transparent);
+}}
+.inv-collapse.inv-movers-band :deep(.q-item__section--avatar .q-icon) {{
+  color: var(--inv-accent);
+}}
 .inv-mover-sub {{
   font-size: 0.75rem; color: var(--inv-muted); margin: -0.25rem 0 0.6rem;
 }}
@@ -1052,11 +1066,15 @@ html, body {{
 }}
 .inv-mover-empty {{ font-size: 0.8125rem; color: var(--inv-muted); padding: 0.2rem 0; }}
 /* A compact badge on a holding card that topped today's movers leaderboard.
-   It sits on its own right-aligned row (``.inv-holding-badge-row``) just above
-   the daily-growth figures, so it never widens the topline and shifts the
-   freshness time. */
+   It is pinned (absolutely positioned) to the top-right of the figures row,
+   sitting just above the daily-change column, so it is taken out of the card's
+   vertical flow entirely: a long "Top % loser" badge can never add a line
+   break that pushes the headline value (or the rest of the card) down, and the
+   values stay aligned across neighbouring cards. */
 .inv-holding-badge-row {{
-  display: flex; justify-content: flex-end; margin-top: 0.3rem;
+  position: absolute; right: 0; bottom: 100%;
+  display: flex; justify-content: flex-end;
+  margin-bottom: 0.2rem; pointer-events: none;
 }}
 .inv-holding-badge {{
   display: inline-block; padding: 0.05rem 0.45rem;
