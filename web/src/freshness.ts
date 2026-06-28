@@ -181,6 +181,45 @@ export function gradedPull(input: FreshnessInputs): GradedPull {
   return { tier: "fresh", legs: noLegs() };
 }
 
+/**
+ * The default ceiling on a **targeted** settled-weekBar backfill (item 4a): a
+ * small handful of symbols — well under the free-tier per-minute budget
+ * ({@link ../quotes.FREE_TIER}.creditsPerMinute = 8) — so the overlay can never
+ * become a market-open storm. Downstream the reservation budget + per-series
+ * backoff still gate the real spend; this only bounds the overlay's ambition.
+ */
+export const MAX_TARGETED_WEEK_BACKFILL = 4;
+
+/**
+ * Targeted settled-weekBar backfill overlay (item 4a).
+ *
+ * The blanket `weekBars` leg is only lit on the `heavily-outdated` tier
+ * ({@link gradedPull}), so in the lighter market-open tiers a symbol missing a
+ * *settled* (already-closed) weekBar — a freshly added holding, or a one-session
+ * gap — would otherwise wait for a heavy reset or a closed-market round before it
+ * is primed. (The steady auto rounds already backfill the precise stale set
+ * whenever a clock-hour 1D-bar prime fires; this overlay closes the remaining
+ * window — chiefly the login warm-up — where the leg gate would otherwise discard
+ * the whole set.)
+ *
+ * Given the precise per-symbol settled-stale set (from
+ * {@link ../week.weekStaleSymbols}, keyed on the *settled* cutoff so today's
+ * not-yet-closed bar never counts), this returns the symbols worth a cheap
+ * one-credit daily-bar backfill: the whole set when the leg is already on,
+ * otherwise a small capped slice so the overlay stays genuinely *targeted*, never
+ * a bulk pull. A daily bar bills one credit per symbol regardless of range, so a
+ * handful of symbols is a negligible, bounded spend.
+ */
+export function targetedWeekBackfill(
+  legWeekBars: boolean,
+  weekStale: readonly string[],
+  maxTargeted: number = MAX_TARGETED_WEEK_BACKFILL,
+): string[] {
+  if (legWeekBars) return [...weekStale];
+  if (maxTargeted <= 0) return [];
+  return weekStale.slice(0, maxTargeted);
+}
+
 /** Inputs to {@link barClockHourDue}. */
 export interface BarGateInput {
   /** Decision instant, epoch ms. */

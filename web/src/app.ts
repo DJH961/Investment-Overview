@@ -90,8 +90,8 @@ import {
   MIN_BURST_RELIEF_MS,
 } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { fxFreshness, type FxFreshness } from "./freshness";
-import { isUsMarketOpen, isUsTradingDay, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, previousTradingSession, recentTradingSessions, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
+import { fxFreshness, targetedWeekBackfill, type FxFreshness } from "./freshness";
+import { isUsMarketOpen, isUsTradingDay, isUsMarketHoliday, isForexMarketOpen, latestSettledSessionDate, lastSessionDate, previousTradingSession, recentTradingSessions, exchangeDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -174,8 +174,22 @@ import {
   harvestDailyCloses,
   pruneValueHistory,
   loadValueHistory,
+  VALUE_HISTORY_STORE_KEY,
   type DailyClose,
 } from "./value-history";
+import {
+  loadOrBuildLongRangeHistory,
+  longRangeWindow,
+  longRangeWindowCalendarDays,
+} from "./long-range";
+import {
+  checkDataCoverage,
+  coverageLogLevel,
+  marketConditionFrom,
+  summarizeCoverage as summarizeDataCoverage,
+  type BlobPresence,
+  type DeviceFreshness,
+} from "./coverage-check";
 import { planPull, describePlan, deviceDaysMissing, type PullKind, type PullFreshness, type PullPlan } from "./data-orchestrator";
 import {
   describeFlag,
@@ -665,6 +679,22 @@ export class App {
   /** Guards against overlapping price refreshes. */
   private refreshing = false;
   /**
+   * Set when the long-range value history must be **rebuilt from scratch** on the
+   * next model render (the Settings "Regenerate long-range history" affordance and
+   * the hard reset wipe the store first, then set this so {@link
+   * regenerateLongRangeHistory} force-reconstructs from multi-month daily bars —
+   * it needs the live model's anchor, which is only available at render time).
+   */
+  private forceLongRangeRebuild = false;
+  /**
+   * Whether the opportunistic long-range reconstruction has already run this login
+   * session. It is bounded to **once per session** (re-armed on {@link lock}) so an
+   * empty/wiped store or a stale blob triggers exactly one rebuild attempt — the
+   * per-series backoff and reservation budget bound the cost within that attempt —
+   * rather than re-fetching daily bars on every refresh round.
+   */
+  private longRangeBuiltThisSession = false;
+  /**
    * Kind of the price refresh currently in flight (`null` when idle). Lets a
    * manual tap tell an automatic background pull apart from another manual one,
    * so {@link manualRefreshDecision} can hand an in-flight *auto* round the
@@ -936,7 +966,16 @@ export class App {
     if (!warmupPlan.legs.quotes) prefetch.symbols = [];
     if (!warmupPlan.legs.nav) prefetch.navSymbols = [];
     if (!warmupPlan.legs.dayBars) prefetch.graphSessionSymbols = [];
-    if (!warmupPlan.legs.weekBars) prefetch.graphWeekSymbols = [];
+    // Item 4a — targeted settled-weekBar backfill. The blanket weekBars leg is only
+    // lit on the heavily-outdated tier, so in a market-open lighter tier this gate
+    // would otherwise discard the *specific* symbols missing a settled (already
+    // closed) weekBar — a freshly added holding, a one-session gap — until a heavy
+    // reset. Keep a small, capped slice of that precise stale set so the gap is
+    // primed now; the reservation budget downstream still binds the spend.
+    prefetch.graphWeekSymbols = targetedWeekBackfill(
+      warmupPlan.legs.weekBars,
+      prefetch.graphWeekSymbols,
+    );
     const quoteTotal =
       prefetch.symbols.length +
       prefetch.navSymbols.length +
@@ -2730,6 +2769,15 @@ export class App {
         ["Regenerate 1W graph"],
       );
       regenWeek.addEventListener("click", () => this.regenerateGraph("week"));
+      // (1c) Regenerate the long-range history: wipe the stored whole-book value
+      // history and rebuild it from multi-month daily bars (sibling to the 1D/1W
+      // regenerators, but scoped to the 1M–1Y value graph's daily-close history).
+      const regenLong = h(
+        "button",
+        { class: "btn ghost", type: "button", "data-action": "regen-long" },
+        ["Regenerate long-range history"],
+      );
+      regenLong.addEventListener("click", () => this.regenerateLongRange());
       // (2) Reset everything: clear every cached price, re-check the data file,
       // then re-pull from scratch.
       const updateAll = h(
@@ -2786,8 +2834,8 @@ export class App {
         ),
         field(
           "Regenerate the live graphs",
-          h("div", { class: "row import-row" }, [regenDay, regenWeek]),
-          "Wipe and re-pull a single live curve from scratch: use \"Regenerate 1D graph\" or \"Regenerate 1W graph\" when only that line looks wrong or stuck. Leaves every other day and your price caches untouched. Waits for the next fully-available primary (Twelve Data) minute window before pulling, so the bars come from the plentiful primary budget instead of the scarce backup. Respects your daily free-tier budget.",
+          h("div", { class: "row import-row" }, [regenDay, regenWeek, regenLong]),
+          "Wipe and re-pull a single live curve from scratch: use \"Regenerate 1D graph\" or \"Regenerate 1W graph\" when only that line looks wrong or stuck, or \"Regenerate long-range history\" to rebuild the 1M–1Y value graph from multi-month daily bars when its older days look flat or wrong. Leaves every other day and your price caches untouched. Waits for the next fully-available primary (Twelve Data) minute window before pulling, so the bars come from the plentiful primary budget instead of the scarce backup. Respects your daily free-tier budget.",
         ),
         field(
           "Reset & re-pull everything",
@@ -4811,10 +4859,34 @@ export class App {
    */
   private async wipeGraphStoreThenRefresh(): Promise<void> {
     try {
-      await this.ensureTimeSeriesStore().clear();
+      // Consult the core-vs-bonus data registry as the store is wiped so the
+      // hard reset states its intent explicitly: every key it clears is a `core`
+      // series with a guaranteed reload path (1D/1W bars, long-range value
+      // history) or a `bonus` trail that may be lost — and any *unregistered*
+      // store is surfaced rather than silently wiped (long-range plan, item 2/3).
+      await this.ensureTimeSeriesStore().clear({
+        onSummary: (summary) => {
+          this.pollLog(
+            "cache",
+            `Hard reset: clearing ${summary.core.length} core series (reloadable) and ` +
+              `${summary.bonus.length} bonus trail(s) from the graph store.`,
+          );
+          if (summary.unregistered.length > 0) {
+            this.pollLog(
+              "cache",
+              `Hard reset: WARNING — ${summary.unregistered.length} unregistered store key(s) wiped without a declared core/bonus bucket: ${summary.unregistered.join(", ")}.`,
+              "warn",
+            );
+          }
+        },
+      });
     } catch {
       /* best-effort: leave the intraday store as-is if the wipe fails. */
     }
+    // The wipe emptied the long-range value history too; force its reconstruction
+    // from multi-month daily bars on the next render (item 1, Hard-reset path).
+    this.forceLongRangeRebuild = true;
+    this.longRangeBuiltThisSession = false;
     const session = this.sessionId;
     void this.maybeRefreshBlob(session, { force: true });
     if (this.refreshing) return; // a pull is already in flight; it will repaint
@@ -4944,6 +5016,58 @@ export class App {
     // bars. exitSettings returns to the dashboard; its render reuses the rebuilt
     // store (no second live pull) instead of fetching an overlapping set.
     this.exitSettings();
+  }
+
+  /**
+   * The Settings "Regenerate long-range history" escape hatch: wipe the stored
+   * whole-book value history and force it to be rebuilt from scratch on the next
+   * render (long-range plan, item 1). Sibling to the 1D/1W regenerators, but
+   * scoped to the 1M–1Y value graph's daily-close history rather than a live curve.
+   *
+   * The actual rebuild ({@link regenerateLongRangeHistory}) needs the live model's
+   * anchor, which only exists at render time, so this wipes the store, arms
+   * {@link forceLongRangeRebuild}, and triggers a refresh whose model build then
+   * reconstructs the history. Deferred into the next fully-available primary minute
+   * window so the daily-bar re-pull spends the plentiful Twelve Data budget.
+   */
+  private regenerateLongRange(immediate = false): void {
+    if (
+      this.deferSettingsRefreshIntoWindow(
+        "the long-range history regenerate",
+        () => this.regenerateLongRange(true),
+        immediate,
+      )
+    ) {
+      return;
+    }
+    this.toast("Regenerating the long-range history…");
+    clearAllSeriesBackoff();
+    this.forceLongRangeRebuild = true;
+    this.longRangeBuiltThisSession = false;
+    this.pollLog(
+      "note",
+      "Regenerate long-range history (Settings) — wiping the stored whole-book value history and rebuilding it from multi-month daily bars.",
+    );
+    void this.regenerateLongRangeNow();
+  }
+
+  /**
+   * Wipe the stored value history, then trigger a refresh so the model build's
+   * {@link syncValueHistory} reconstructs it from scratch (the force flag set by
+   * {@link regenerateLongRange} makes that build run unconditionally). Best-effort:
+   * a store failure must not strand the dashboard.
+   */
+  private async regenerateLongRangeNow(): Promise<void> {
+    const store = this.ensureTimeSeriesStore();
+    try {
+      await store.deleteSession(VALUE_HISTORY_STORE_KEY);
+    } catch {
+      /* best-effort: leave the stored history as-is if the wipe fails. */
+    }
+    this.exitSettings();
+    const session = this.sessionId;
+    if (this.refreshing) return; // a pull is already in flight; it will repaint
+    void this.runScheduledRefresh(session, "manual", { force: true });
   }
 
   /**
@@ -6910,7 +7034,178 @@ export class App {
       const cutoff = afterExport < weekStart ? afterExport : weekStart;
       await pruneValueHistory(store, cutoff);
     }
-    return loadValueHistory(store);
+    const existing = await loadValueHistory(store);
+    // **Long-range reload path (item 1).** The day-by-day recording above only
+    // fills the gap going forward, from days the app was actually opened. When the
+    // value-history store is empty/wiped *or* the blob is more than a session stale,
+    // the long-range chart would otherwise draw a flat diagonal across the missing
+    // span. Rebuild it from scratch — fetch multi-month daily bars for every market
+    // holding and reconstruct the whole-book closes — bounded to once per session
+    // (or forced by Regenerate / hard reset). The reconstruction itself is a no-op
+    // when the store already covers the window, so the trigger is cheap.
+    const blobStale = lastExport === null || settledSessionsSince(lastExport, now) > 1;
+    // **Data-coverage self-check (item 3).** Surface, in the readable polling log,
+    // a verdict that every core value still has at least one load path under the
+    // current market/freshness/blob world-state — so a missing path is
+    // *discoverable*, not silent. Best-effort; never blocks the sync.
+    this.logCoverageVerdict(lastExport, existing.length, now);
+    const force = this.forceLongRangeRebuild;
+    if (force || (!this.longRangeBuiltThisSession && (existing.length === 0 || blobStale))) {
+      this.longRangeBuiltThisSession = true;
+      this.forceLongRangeRebuild = false;
+      return this.regenerateLongRangeHistory(model, lastExport, force).catch(() => existing);
+    }
+    return existing;
+  }
+
+  /**
+   * Surface the **data-coverage self-check** (item 3) in the polling log: collapse
+   * the live clock + blob recency into a `(marketCondition, deviceFreshness,
+   * blobPresence)` world-state, assert via {@link checkDataCoverage} that every
+   * core value (prices, FX, 1D, 1W, long-range history) still has at least one
+   * load path, and log the one-line verdict. A complete brain says so; a gap names
+   * exactly which core value lost its last path. Best-effort and side-effect-free
+   * beyond the log line.
+   */
+  private logCoverageVerdict(lastExport: string | null, historyDays: number, now: Date): void {
+    try {
+      const market = marketConditionFrom({
+        isEquityTradingDay: isUsTradingDay(now),
+        // A non-trading day that is not a holiday is a weekend.
+        isWeekend: !isUsTradingDay(now) && !isUsMarketHoliday(now),
+        isHoliday: isUsMarketHoliday(now),
+        isMarketOpen: isUsMarketOpen(now),
+        isWarmingUp: sessionIsWarmingUp(now),
+        isAfterCloseNavPending:
+          isUsTradingDay(now) && !isUsMarketOpen(now) && now.getTime() >= sessionCloseMs(exchangeDate(now)),
+        isBeforeOpen:
+          isUsTradingDay(now) && !isUsMarketOpen(now) && now.getTime() < sessionOpenMs(exchangeDate(now)),
+      });
+      // By the time this runs a blob has been decrypted (the model exists), so the
+      // blob is present — fresh unless more than a session stale.
+      const blob: BlobPresence =
+        lastExport === null ? "stale" : settledSessionsSince(lastExport, now) > 1 ? "stale" : "fresh";
+      // Coarse on-device freshness from how far the blob trails: the value-history
+      // store + caches are kept in step with the blob, so its lag is a fair proxy.
+      const sessionsStale = lastExport === null ? 99 : settledSessionsSince(lastExport, now);
+      const freshness: DeviceFreshness =
+        historyDays === 0 && lastExport === null
+          ? "empty-device"
+          : sessionsStale <= 0
+            ? "fresh"
+            : sessionsStale === 1
+              ? "relatively-fresh"
+              : sessionsStale <= 3
+                ? "minorly-outdated"
+                : "heavily-outdated";
+      const inputs = { market, freshness, blob };
+      const verdict = checkDataCoverage(inputs);
+      this.pollLog("note", summarizeDataCoverage(inputs, verdict), coverageLogLevel(verdict));
+    } catch {
+      /* observability is best-effort */
+    }
+  }
+
+  /**
+   * Reconstruct the long-range whole-book value history from scratch and harvest
+   * it into the value-history store, returning the updated history.
+   *
+   * This is the load path that makes the 1M/3M/6M/1Y value graph reloadable on an
+   * empty device or after a wipe (long-range plan, item 1). It fetches each market
+   * holding's **daily-close** bars (and the matching daily EUR/USD FX) across the
+   * gap window — range-limited to the chart's ≤1Y horizon and starting after the
+   * blob's last export ({@link longRangeWindow}) — then rebuilds the whole-book
+   * daily closes with the pure reconstruction maths ({@link
+   * loadOrBuildLongRangeHistory}). NAV funds and cash ride flat in the anchor's
+   * constant base (no `navInSleeve`, no `graphFx` freeze — the long-range chart
+   * keeps the live after-hours rate, like {@link renderValueChart}).
+   *
+   * Every metered request flows through the **same reservation authority and
+   * per-series backoff** as every other graph pull (no new bypass), so the build
+   * cannot overshoot the free-tier budget; daily bars bill one credit per symbol
+   * regardless of the date range, so a whole year costs the same as a week. Fully
+   * best-effort: any failure falls back to whatever the store already held.
+   */
+  private async regenerateLongRangeHistory(
+    model: DashboardModel,
+    lastExportDay: string | null,
+    force: boolean,
+  ): Promise<DailyClose[]> {
+    const store = this.ensureTimeSeriesStore();
+    const o = model.overview;
+    const now = new Date();
+    const { config } = this.state;
+    const baseFx = o.fxRateEurUsd;
+    const cashEur = o.cashValueEur;
+    const cashUsd = baseFx !== null ? cashEur.times(baseFx) : cashEur;
+    // NAV + cash fold into the flat base (no navInSleeve); the long-range chart
+    // keeps the live after-hours FX, so no graphFx freeze.
+    const anchor = buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx, {});
+    const today = exchangeDate(now);
+    const window = longRangeWindow({ today, lastExportDay });
+    const proxyUrl = resolvePriceProxyUrl(config);
+    if (window === null || !config.apiKey || proxyUrl === null || anchor.holdings.length === 0) {
+      return loadValueHistory(store);
+    }
+    // Size the Twelve Data outputsize to span the whole window (with slack) so a
+    // worst-case year-long gap is delivered in one request per symbol; Tiingo's
+    // daily leg uses the start/end dates directly. Capped at the provider max.
+    const outputsize = Math.min(5000, longRangeWindowCalendarDays(window) + 10);
+    const reservation = ledgerReservation();
+    const spent = { credits: 0 };
+    const { tiingoMeter, twelveDataMeter } = instrumentedGraphRecorders({
+      range: "long-range regenerate",
+      bookTwelveData: () => undefined,
+      refundTwelveData: (n) => reservation.release("twelvedata", n, Date.now()),
+      bookTiingo: () => undefined,
+      refundTiingo: (n) => reservation.release("tiingo", n, Date.now()),
+      log: (message) => this.pollLog("graph", message),
+      spent,
+      onTwelveData429: () => this.armTwelveData429(),
+      onTwelveDataSuccess: () => recordTwelveDataSuccess(),
+      onTiingo429: () => this.armTiingo429(),
+    });
+    const fetchBars = makePriceBarFetcher({
+      apiKey: config.apiKey,
+      proxyUrl,
+      param: "daily",
+      startDate: window.startDate,
+      endDate: window.endDate,
+      tiingoMeter,
+      twelveDataMeter,
+      reservation,
+      backoff: { memo: cacheSeriesBackoff(), scope: "bars:long-range", now: () => Date.now() },
+      interval: "1day",
+      outputsize,
+    });
+    if (!fetchBars) return loadValueHistory(store);
+    const fetchFx = makeFxFetcher(fetchBars);
+    const result = await loadOrBuildLongRangeHistory({
+      anchor,
+      store,
+      fetchDailyBars: fetchBars,
+      fetchFx,
+      today,
+      lastExportDay,
+      force,
+      now: now.getTime(),
+    }).catch(() => null);
+    if (!result) return loadValueHistory(store);
+    if (result.fetched) {
+      this.pollLog(
+        "graph",
+        `Long-range history: rebuilt ${result.symbols.length} market series across the ` +
+          `${result.gapDays.length} missing day(s) of ${window.startDate}…${window.endDate}; ` +
+          `spent ${spent.credits} credit(s).`,
+        spent.credits > 0 ? "good" : "info",
+      );
+    } else if (force) {
+      this.pollLog(
+        "graph",
+        "Long-range history: nothing to rebuild — the stored history already covers the window.",
+      );
+    }
+    return result.history;
   }
 
   /**
@@ -6964,6 +7259,10 @@ export class App {
     this.refreshing = false;
     this.refreshingKind = null;
     this.promoteToManual = false;
+    // Re-arm the once-per-session long-range reconstruction so the next login
+    // re-checks whether the value history needs rebuilding from scratch.
+    this.longRangeBuiltThisSession = false;
+    this.forceLongRangeRebuild = false;
     this.state.passphrase = null;
     this.state.data = null;
     // Drop the prefetch warm-up state so its status never lingers on the unlock
