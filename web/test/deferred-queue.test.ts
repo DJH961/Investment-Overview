@@ -142,3 +142,51 @@ describe("DeferredQueue — force flag & clear (freshness-plan)", () => {
     expect(q.hasForced()).toBe(false);
   });
 });
+
+describe("DeferredQueue — snapshot/restore (long-term persistence)", () => {
+  it("snapshot emits entries in insertion order with reason/attempts/force", () => {
+    const q = new DeferredQueue();
+    q.enqueue(["AAA"], "outage", false);
+    q.enqueue(["BBB"], "force pull", true);
+    q.drain(() => false); // bump attempts to 1 each
+    const snap = q.snapshot();
+    expect(snap.map((e) => e.symbol)).toEqual(["AAA", "BBB"]);
+    expect(snap[0]).toMatchObject({ symbol: "AAA", reason: "outage", attempts: 1, force: false });
+    expect(snap[1]).toMatchObject({ symbol: "BBB", reason: "force pull", attempts: 1, force: true });
+  });
+
+  it("restore repopulates an empty queue preserving force and attempts", () => {
+    const q = new DeferredQueue(64, 2);
+    q.restore([
+      { symbol: "AAA", reason: "outage", attempts: 2, force: false },
+      { symbol: "BBB", reason: "force pull", attempts: 0, force: true },
+    ]);
+    expect(q.size).toBe(2);
+    expect(q.hasForced()).toBe(true);
+    // AAA restored at the retry cap (2): the next drain exceeds it and drops it.
+    expect(q.drain(() => false).exhausted).toContain("AAA");
+  });
+
+  it("restore is a no-op once anything is already queued", () => {
+    const q = new DeferredQueue();
+    q.enqueue(["LIVE"], "this session");
+    q.restore([{ symbol: "OLD", reason: "outage", attempts: 0, force: false }]);
+    expect(q.has("OLD")).toBe(false);
+    expect(q.size).toBe(1);
+  });
+
+  it("restore skips malformed and empty-symbol entries", () => {
+    const q = new DeferredQueue();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    q.restore([{ symbol: "", reason: "x", attempts: 0, force: false }, null as any]);
+    expect(q.size).toBe(0);
+  });
+
+  it("a snapshot round-trips through restore", () => {
+    const a = new DeferredQueue();
+    a.enqueue(["AAA", "BBB"], "outage", true);
+    const b = new DeferredQueue();
+    b.restore(a.snapshot());
+    expect(b.snapshot()).toEqual(a.snapshot());
+  });
+});
