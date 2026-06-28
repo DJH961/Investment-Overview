@@ -14,6 +14,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.16.3] — 2026-06-28
+
+### Fixed
+
+- **The currency panel no longer mislabels the frozen-weekend EUR/USD rate as a
+  live, "LIVE" overnight reading — and its total no longer disagrees in sign with
+  the headline.** Spot FX trades ~24/5, so over a US weekend the rate is paused at
+  Friday's 16:00-ET close while the rest of the UI still treated it as live: the
+  diverging market-hours/overnight split tagged the leading leg **"LIVE"** on a
+  Saturday, the rate stamp showed no honest "as of" at all, and the panel total
+  spanned Thursday→now so it could read *negative* while the headline's
+  "since last open" read positive. The fix teaches the FX box the
+  **weekend-overnight** and **weekend spill-over** regimes (`isWeekendOvernight`,
+  `fxBoxRegime`): the leading leg now reads **"paused"** on a shut market, the
+  frozen rate falls back to Friday's settled session-close instant for an honest
+  "as of" date, and the effect is re-anchored — to the session **open** on a
+  frozen weekend (matching "since last open") and to the last session's **close**
+  during the Sunday-evening spill-over (the genuine **"since Friday"** baseline,
+  also named consistently across the EUR and USD panels). The FX backfill window
+  reaches back the extra session so that Friday-close baseline is co-fetched in a
+  single request rather than missed (`web/src/ui.ts`, `web/src/market-hours.ts`,
+  `web/src/session-fx.ts`, `web/src/format.ts`, `web/src/app.ts`).
+
 ## [4.16.2] — 2026-06-28
 
 ### Fixed
