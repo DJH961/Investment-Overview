@@ -17,6 +17,7 @@
 
 import { Decimal } from "./decimal-config";
 import type { Bar, CurvePoint } from "./timeseries";
+import { summarizeClear, type ClearSummary } from "./data-registry";
 
 /** A bar serialised for storage: `[epochMs, decimalString]`. */
 type StoredBar = [number, string];
@@ -510,9 +511,19 @@ export class TimeSeriesStore {
    * here, so a "reset cache" that left this store intact would leave a stale or
    * malformed 1D/1W curve on screen even after the wipe. Clearing it forces the
    * next refresh to rebuild those curves from scratch.
+   *
+   * The wipe consults the **core-vs-bonus data registry** ({@link summarizeClear})
+   * so its intent is explicit rather than implicit: every key it touches is a
+   * `core` series with a guaranteed reload path (1D/1W bars, long-range value
+   * history) — losing them is safe by contract — or a `bonus` trail that may be
+   * lost. An `onSummary` reporter receives that classification (the app logs it),
+   * and an `unregistered` key is surfaced there so a *new, unclassified* store
+   * cannot slip through a hard reset unnoticed.
    */
-  async clear(): Promise<void> {
-    for (const key of await this.backend.keys()) {
+  async clear(options: { onSummary?: (summary: ClearSummary) => void } = {}): Promise<void> {
+    const keys = await this.backend.keys();
+    if (options.onSummary) options.onSummary(summarizeClear(keys));
+    for (const key of keys) {
       await this.backend.delete(key);
     }
   }

@@ -10,6 +10,8 @@ import {
   holdingFreshness,
   noLegs,
   quoteRefreshDue,
+  targetedWeekBackfill,
+  MAX_TARGETED_WEEK_BACKFILL,
   fxFreshness,
   type FreshnessInputs,
   type FxFreshnessInput,
@@ -291,5 +293,37 @@ describe("holdingCoversLatestClose — absolute up-to-date driver", () => {
     expect(
       holdingCoversLatestClose({ priceDateIso: SETTLED, latestSettledSessionIso: "" }),
     ).toBe(false);
+  });
+});
+
+describe("targetedWeekBackfill (item 4a)", () => {
+  const stale = ["AAA", "BBB", "CCC", "DDD", "EEE"];
+
+  it("returns the whole stale set when the weekBars leg is already on", () => {
+    expect(targetedWeekBackfill(true, stale)).toEqual(stale);
+  });
+
+  it("keeps a capped targeted slice when the leg is off (market-open lighter tiers)", () => {
+    expect(targetedWeekBackfill(false, stale)).toEqual(stale.slice(0, MAX_TARGETED_WEEK_BACKFILL));
+    expect(targetedWeekBackfill(false, stale).length).toBe(MAX_TARGETED_WEEK_BACKFILL);
+  });
+
+  it("returns everything when the stale set is within the cap", () => {
+    expect(targetedWeekBackfill(false, ["AAA", "BBB"])).toEqual(["AAA", "BBB"]);
+  });
+
+  it("returns nothing when there is no stale set", () => {
+    expect(targetedWeekBackfill(false, [])).toEqual([]);
+    expect(targetedWeekBackfill(true, [])).toEqual([]);
+  });
+
+  it("honours an explicit cap of 0 (overlay disabled)", () => {
+    expect(targetedWeekBackfill(false, stale, 0)).toEqual([]);
+  });
+
+  it("does not alias the input array", () => {
+    const result = targetedWeekBackfill(true, stale);
+    result.push("ZZZ");
+    expect(stale).toHaveLength(5);
   });
 });
