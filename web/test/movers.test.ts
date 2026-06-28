@@ -47,6 +47,8 @@ function holding(over: Over): HoldingView {
     todayMovePct: num(over.todayMovePct),
     todayMoveIsStale: over.todayMoveIsStale ?? false,
     todayFxMoveEur: null,
+    priorCloseValueEur: null,
+    priorCloseValueUsd: null,
     weight: null,
     unrealisedPlEur: null,
     totalGrowthPct: null,

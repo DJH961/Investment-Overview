@@ -13,6 +13,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.20.3] — 2026-06-28
+
+### Fixed
+
+- **The 1D graph's "Prev close" reference line is now a stable, session-constant
+  anchor.** The dashed previous-close baseline used to wobble during the session
+  because it was re-derived from the live overlay's shifting FX, so the EUR line
+  could appear to cross its own opening anchor even when nothing changed. It is
+  now pinned to the session-close FX (`graphAnchorFx`) for the duration of the
+  trading day, so the reference line stays put and the 1D curve reads against a
+  fixed prior-close datum. Adds `web/src/session-fx.ts` and covering tests.
+
+## [4.20.2] — 2026-06-28
+
+### Fixed
+
+- **The 1D / 1W graphs can now source their per-minute EUR/USD overlay from a
+  budget-gated Tiingo *secondary* when the keyless yfinance intraday feed serves
+  nothing — including over the weekend.** The graphs reprice each USD-booked
+  holding at the *actual* EUR/USD rate struck each minute (so the EUR line
+  genuinely diverges from the FX-free USD line). That overlay was sourced solely
+  from yfinance's intraday `EURUSD=X`; on a yfinance FX outage the curve silently
+  collapsed to the day's single settled rate. yfinance is still always tried
+  first, but when it returns nothing the reconstruction now falls back to Tiingo's
+  per-pair FX *prices* endpoint (`fetch_fx_intraday`) for the last market day's
+  settled intraday bars. Crucially this is a **historical** pull (an explicit
+  past-session date window), never a live weekend "projection", so — unlike the
+  live spot, which both providers still refuse to poll while the spot-FX market is
+  shut — it is valid even on Saturday/Sunday, when the 1D graph still shows
+  Friday's session. The fallback is token-gated (a vanilla install never touches
+  Tiingo) and charged against the shared desktop Tiingo budget, so a sustained
+  yfinance FX outage can't burn the cap.
+
 ## [4.20.1] — 2026-06-28
 
 ### Fixed

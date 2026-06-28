@@ -462,3 +462,115 @@ def fetch_fx_rate(
         as_of=as_of,
         value_date=value_date,
     )
+
+
+#: Tiingo FX historical/intraday OHLC endpoint (per-pair, resampled bars).
+_FX_PRICES_PATH = "/tiingo/fx/{ticker}/prices"
+
+#: yfinance-style bar widths (e.g. ``"15m"``) mapped to Tiingo's ``resampleFreq``
+#: vocabulary (``"15min"``). Anything already in Tiingo's form, or unrecognised,
+#: is passed through unchanged.
+_FX_RESAMPLE_FREQ: dict[str, str] = {
+    "1m": "1min",
+    "5m": "5min",
+    "15m": "15min",
+    "30m": "30min",
+    "1h": "1hour",
+    "1d": "1day",
+}
+
+
+def _fx_resample_freq(interval: str) -> str:
+    """Translate a yfinance-style bar width to Tiingo's ``resampleFreq`` token."""
+    text = interval.strip().lower()
+    return _FX_RESAMPLE_FREQ.get(text, text)
+
+
+def fetch_fx_intraday(
+    start_day: date,
+    end_day: date,
+    *,
+    base: str = "EUR",
+    quote: str = "USD",
+    interval: str = "15min",
+    token: str,
+    client: httpx.Client | None = None,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> dict[datetime, Decimal]:
+    """Return ``{bar_time_utc: close}`` of intraday ``base``→``quote`` bars.
+
+    The **historical-intraday** companion to :func:`fetch_fx_rate` (which is a
+    *live* top-of-book reading). It wraps Tiingo's per-pair FX prices endpoint at
+    a resampled bar width, returning the same ``{datetime: Decimal}`` shape as
+    :func:`investment_dashboard.adapters.yfinance_client.fetch_eur_usd_intraday`
+    / ``_range`` so it is a drop-in secondary for the graphs' per-minute EUR/USD
+    overlay when the keyless yfinance feed serves nothing.
+
+    Because it reads *settled* bars for completed sessions over an explicit
+    ``[start_day, end_day]`` window, it is a genuine historical pull — never a
+    weekend "live" projection — so it is safe to source the last market day's
+    intraday FX curve even while the spot-FX market is shut over the weekend.
+
+    Bar timestamps are naive UTC, matching the portfolio samples they align with.
+    Best-effort: an empty mapping (no data, unknown/non-quoted pair, 404) lets
+    callers forward-fill or fall back to the day's settled rate. The token rides
+    an ``Authorization`` header, never the URL.
+    """
+    if end_day < start_day:
+        raise ValueError(f"end_day ({end_day}) precedes start_day ({start_day})")
+    pair = f"{base.strip().lower()}{quote.strip().lower()}"
+    if len(pair) != 6 or not pair.isalpha():
+        raise ValueError("FX pair must be two 3-letter ISO currency codes")
+
+    url = f"{TIINGO_ROOT}{_FX_PRICES_PATH.format(ticker=pair)}"
+    params = {
+        "startDate": start_day.isoformat(),
+        "endDate": end_day.isoformat(),
+        "resampleFreq": _fx_resample_freq(interval),
+        "format": "json",
+    }
+    owns_client = client is None
+    http = client or httpx.Client(timeout=timeout)
+    try:
+        response = _get_with_retry(http, url, params=params, headers=_auth_headers(token))
+    finally:
+        if owns_client:
+            http.close()
+
+    if response.status_code == 404:
+        _record_status("error", f"Tiingo FX prices 404 for {pair}")
+        return {}
+    if response.status_code != 200:
+        msg = f"Tiingo FX prices returned HTTP {response.status_code}: {response.text[:200]}"
+        _record_status("error", msg)
+        raise TiingoError(msg)
+
+    try:
+        rows: Any = response.json()
+    except ValueError as exc:
+        raise TiingoError(f"Malformed Tiingo FX prices payload: {exc}") from exc
+    if not isinstance(rows, list):
+        raise TiingoError("Unexpected Tiingo FX prices payload (expected a list)")
+
+    bars = _parse_fx_price_rows(rows)
+    if bars:
+        _record_status(
+            "ok",
+            f"FX {base.upper()}/{quote.upper()} {len(bars)} intraday bar(s) {start_day}..{end_day}",
+        )
+    else:
+        _record_status("error", f"Tiingo FX prices returned no bars for {pair}")
+    return bars
+
+
+def _parse_fx_price_rows(rows: list[Any]) -> dict[datetime, Decimal]:
+    """Parse Tiingo FX price rows into ``{bar_time_utc: close}`` (positive closes only)."""
+    bars: dict[datetime, Decimal] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        at = _parse_timestamp(row.get("date"))
+        close = _to_decimal(row.get("close"))
+        if at is not None and close is not None and close > 0:
+            bars[at] = close
+    return bars

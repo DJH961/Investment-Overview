@@ -64,4 +64,14 @@ describe("liveCurveToChart previous-close reference line", () => {
     const chart = liveCurveToChart(intradayPoints(), { eur: null, usd: new Decimal("53800") });
     expect(chart!.referenceLine).toBeUndefined();
   });
+
+  it("marks a provisional anchor honestly in the label", () => {
+    setDisplayCurrency("EUR");
+    const chart = liveCurveToChart(intradayPoints(), { ...prevClose, provisional: true });
+    expect(chart!.referenceLine).toBeDefined();
+    expect(chart!.referenceLine!.label).toMatch(/^Prev close €49[.,]800[.,]00 \(provisional\)$/);
+    // A settled (non-provisional) anchor carries no qualifier.
+    const settled = liveCurveToChart(intradayPoints(), { ...prevClose, provisional: false });
+    expect(settled!.referenceLine!.label).not.toMatch(/provisional/);
+  });
 });

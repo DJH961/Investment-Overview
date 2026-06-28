@@ -774,6 +774,7 @@ def reconstruct_last_session(
     force: bool = False,
     fetcher: object | None = None,
     fx_fetcher: object | None = None,
+    fx_fallback_fetcher: object | None = None,
 ) -> int:
     """Backfill the most recent session's intraday curve from the price feed.
 
@@ -792,7 +793,9 @@ def reconstruct_last_session(
     Idempotent and guarded: it runs the network fetch at most once per session
     (tracked in ``app_config``) unless ``force`` is set. Best-effort — returns
     the number of points written (0 on any failure / no data), never raises.
-    ``fetcher`` / ``fx_fetcher`` override the intraday price / FX sources in tests.
+    ``fetcher`` / ``fx_fetcher`` override the intraday price / FX sources in tests;
+    ``fx_fallback_fetcher`` overrides the budget-gated Tiingo intraday-FX backup
+    consulted (yfinance-first) when the primary FX feed serves nothing.
     """
     now = now or datetime.now(UTC)
     session_date = last_session_date(now)
@@ -816,7 +819,11 @@ def reconstruct_last_session(
             return 0
         try:
             written = _reconstruct_session(
-                session, session_date, fetcher=fetcher, fx_fetcher=fx_fetcher
+                session,
+                session_date,
+                fetcher=fetcher,
+                fx_fetcher=fx_fetcher,
+                fx_fallback_fetcher=fx_fallback_fetcher,
             )
         except Exception:  # pragma: no cover - defensive: best-effort backfill
             log.warning("intraday session reconstruction failed", exc_info=True)
@@ -833,12 +840,46 @@ def reconstruct_last_session(
         return written
 
 
+def _intraday_fx_fallback(
+    start_day: date,
+    end_day: date,
+    *,
+    interval: str,
+    injected: object | None,
+    allow_default: bool,
+) -> dict[datetime, Decimal]:
+    """Best-effort secondary intraday EUR/USD bars to fill a yfinance FX gap.
+
+    Engaged only after the keyless yfinance intraday feed returned nothing, so
+    yfinance is always tried first. ``injected`` overrides the source in tests;
+    otherwise the real budget-gated Tiingo secondary
+    (:func:`fx_service.intraday_fx_bars_via_tiingo`) runs only on the production
+    path (``allow_default`` — i.e. the caller didn't inject its own FX fetcher),
+    so a test wiring a fake ``fx_fetcher`` never reaches for a token / keyring or
+    the network. These are *historical* last-session bars, never a live weekend
+    spot, so the fallback is valid even while the spot-FX market is shut.
+    """
+    if injected is not None:
+        try:
+            bars = injected(start_day, end_day, interval=interval)  # type: ignore[operator]
+        except Exception:  # pragma: no cover - defensive: best-effort overlay
+            log.warning("injected intraday FX fallback failed", exc_info=True)
+            return {}
+        return dict(bars) if bars else {}
+    if not allow_default:
+        return {}
+    from investment_dashboard.services import fx_service  # noqa: PLC0415
+
+    return fx_service.intraday_fx_bars_via_tiingo(start_day, end_day, interval=interval)
+
+
 def _reconstruct_session(
     session: Session,
     session_date: date,
     *,
     fetcher: object | None,
     fx_fetcher: object | None = None,
+    fx_fallback_fetcher: object | None = None,
 ) -> int:
     from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
     from investment_dashboard.db import cache_read_session, cache_write_session  # noqa: PLC0415
@@ -885,6 +926,17 @@ def _reconstruct_session(
         except Exception:  # pragma: no cover - defensive: FX overlay is best-effort
             log.warning("intraday EUR/USD reconstruction fetch failed", exc_info=True)
             fx_bars = {}
+        if not fx_bars:
+            # yfinance served no intraday FX (outage / a quiet weekend row): let the
+            # budget-gated Tiingo secondary fill the *historical* last-session rate.
+            # yfinance always runs first; this never fires a live weekend spot.
+            fx_bars = _intraday_fx_fallback(
+                session_date,
+                session_date,
+                interval=RECONSTRUCT_INTERVAL,
+                injected=fx_fallback_fetcher,
+                allow_default=fx_fetcher is None,
+            )
 
     # Backfill gaps only: keep every instant already captured live and skip any
     # reconstructed bar that falls inside a live sample's slot, so a live-watched
@@ -1088,6 +1140,7 @@ def week_series_with_fx(
     force: bool = False,
     fetcher: object | None = None,
     fx_fetcher: object | None = None,
+    fx_fallback_fetcher: object | None = None,
     interval: str = WEEK_INTERVAL,
 ) -> list[tuple[datetime, Decimal, Decimal | None]]:
     """All sourced 30-minute market-component samples over the week.
@@ -1125,6 +1178,10 @@ def week_series_with_fx(
     ``interval`` overrides the bar width used to reconstruct *gap* days (default
     :data:`WEEK_INTERVAL`); the centralized data export passes its configurable
     grid (e.g. ``"15m"``) so the blob's market-sleeve backbone can be denser.
+
+    ``fx_fetcher`` overrides the primary (yfinance) intraday EUR/USD source and
+    ``fx_fallback_fetcher`` the budget-gated Tiingo secondary consulted
+    (yfinance-first) when that primary serves nothing — both for tests.
     """
     from investment_dashboard.db import cache_read_session  # noqa: PLC0415
 
@@ -1174,6 +1231,7 @@ def week_series_with_fx(
             week_start,
             fetcher=fetcher,
             fx_fetcher=fx_fetcher,
+            fx_fallback_fetcher=fx_fallback_fetcher,
             interval=interval,
         )
 
@@ -1243,6 +1301,7 @@ def _fetch_and_persist_week_days(
     *,
     fetcher: object | None,
     fx_fetcher: object | None,
+    fx_fallback_fetcher: object | None = None,
     interval: str = WEEK_INTERVAL,
 ) -> list[tuple[datetime, Decimal, Decimal | None]]:
     """Fetch, build, persist and mark the uncovered week sessions in ``to_fetch``.
@@ -1278,6 +1337,17 @@ def _fetch_and_persist_week_days(
             except Exception:  # pragma: no cover - defensive: FX overlay is best-effort
                 log.warning("week curve EUR/USD fetch failed", exc_info=True)
                 fx_bars = {}
+            if not fx_bars:
+                # yfinance served no intraday FX over the window: let the budget-gated
+                # Tiingo secondary fill the *historical* per-minute rates (yfinance
+                # first; never a live weekend spot).
+                fx_bars = _intraday_fx_fallback(
+                    to_fetch[0],
+                    to_fetch[-1],
+                    interval=interval,
+                    injected=fx_fallback_fetcher,
+                    allow_default=fx_fetcher is None,
+                )
 
         for session_date in to_fetch:
             fetched.extend(
