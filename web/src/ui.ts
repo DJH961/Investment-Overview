@@ -258,15 +258,18 @@ function valueBasisLabel(o: OverviewView, now: Date = new Date()): string {
  *   - **marketOpen** — the live US session; the regular live view (a sessionView).
  *   - **weekendOvernight** — forex has reopened (Sun ≥17:00 ET) but no US session
  *     has opened since: Sunday evening through Monday's 09:30 open (extending past a
- *     Monday holiday to the next real open). The only honest move is the single
- *     overnight drift since Friday's close — no stale Friday market-hours leg.
+ *     Monday holiday to the next real open). The spot-FX weekend close is just a
+ *     *pause*, so Friday's session stays the previous session: this keeps the full
+ *     two-leg split (Friday's market-hours leg + the live overnight drift since its
+ *     close), re-anchored to Friday's open exactly like the frozen weekend. A
+ *     {@link sessionView}.
  *   - **holiday** — a US market holiday that is *not* an FX holiday (e.g. 4th of
- *     July): forex trades but the US session is shut, so likewise a single
- *     overnight number, kept under its "Market holiday" wording.
+ *     July): forex trades but the US session is shut, so a single overnight number,
+ *     kept under its "Market holiday" wording.
  *   - otherwise a **regular weekday post-close / pre-open** (a sessionView).
  *
- * `singleOvernight` (holiday ∨ weekendOvernight, with forex open and US shut) marks
- * the two one-number, no-split regimes; `sessionView` (its complement) marks the
+ * `singleOvernight` (holiday only, with forex open and US shut) marks the lone
+ * one-number, no-split regime; `sessionView` (its complement) marks the
  * three-stat, two-leg-split regimes.
  */
 export interface FxBoxRegime {
@@ -289,7 +292,7 @@ export function fxBoxRegime(now: Date = new Date()): FxBoxRegime {
     !marketOpen &&
     !holiday &&
     sessionOpenMs(lastSessionDate(now)) < lastForexReopenMs(now);
-  const singleOvernight = forexOpen && !marketOpen && (holiday || weekendOvernight);
+  const singleOvernight = forexOpen && !marketOpen && holiday;
   const sessionView = !singleOvernight;
   return {
     marketOpen,
@@ -322,23 +325,21 @@ export function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElemen
   // The rate + today's move. USD display shows the stored EUR/USD spot directly;
   // EUR display shows USD/EUR (its reciprocal). The % still follows the currency
   // strength convention used here (negated for the reciprocal).
-  const { marketOpen, forexFrozen, weekendOvernight, singleOvernight, sessionView } =
+  const { marketOpen, forexFrozen, singleOvernight, sessionView } =
     fxBoxRegime(now);
 
   // "Today" baseline. Live: since the *prior close* (overnight + intraday so far).
-  // Single-overnight: the lone drift since the last session close — Friday's FX
-  // close for the weekend spill-over (or the settled previous close as a holiday's
-  // overnight). Session view (open or shut): the full move since this — or Friday's
-  // frozen — session open, so it never just mirrors the "Since close" stat beside it.
+  // Single-overnight (a US-only holiday): the lone drift since the settled previous
+  // close. Session view (open or shut, including the frozen Friday weekend and the
+  // Sunday-evening spill-over): the full move since this — or Friday's — session
+  // open, so it never just mirrors the "Since close" stat beside it.
   let todayAnchor: Decimal | null;
   let todaySub: string;
   if (marketOpen) {
     todayAnchor = o.fxRateEurUsdPrev;
     todaySub = "since last close";
   } else if (singleOvernight) {
-    todayAnchor = weekendOvernight
-      ? (o.fxRateEurUsdSessionClose ?? o.fxRateEurUsdPrev)
-      : o.fxRateEurUsdPrev;
+    todayAnchor = o.fxRateEurUsdPrev;
     todaySub = "overnight";
   } else {
     todayAnchor = o.fxRateEurUsdSessionOpen;
@@ -389,9 +390,9 @@ export function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElemen
   // Third number: how far the rate has moved since the current session's reference
   // point — since the open while the market is live, since the close once shut.
   // Same strength convention as the "Today" move (negated for the EUR reciprocal).
-  // Dropped in the single-overnight regimes (weekend spill-over, US-only holiday):
-  // there is only one honest move to show, so a second stat would just echo the
-  // overnight "Today" figure beside it.
+  // Dropped only in the single-overnight regime (a US-only holiday): there is one
+  // honest move to show, so a second stat would just echo the overnight "Today"
+  // figure beside it. The Sunday-evening spill-over keeps it (Friday's session).
   const stats: HTMLElement[] = [rateStat, moveStat];
   if (sessionView) {
     const anchorFx = marketOpen ? o.fxRateEurUsdSessionOpen : o.fxRateEurUsdSessionClose;
@@ -620,9 +621,9 @@ function fxAnchorWarnBadge(reason: string): HTMLElement {
  * against and can never disagree:
  *   - **frozen weekend** — the effect is the *last completed session's* swing, so
  *     name that real settled day ("on Friday" / "yesterday").
- *   - **weekend spill-over** (forex reopened Sunday, US still shut) — the lone
- *     overnight drift traces back to that last session's close, so **"since
- *     Friday"** (the real settled weekday, "since Thursday" across a Friday holiday).
+ *   - **weekend spill-over** (forex reopened Sunday, US still shut) — Friday stays
+ *     the previous session (the weekend close is a pause), so name that real settled
+ *     day: **"since Friday"** ("since Thursday" across a Friday holiday).
  *   - otherwise the regular **"since yesterday"**.
  */
 export function effectSincePhrase(now: Date): string {
@@ -659,32 +660,29 @@ function eurEffectFromAnchor(o: OverviewView, anchorFx: Decimal | null): Decimal
  * move on the USD-booked book, with the diverging market-hours/overnight split
  * below.
  *
- * In the two **single-overnight** regimes there is no fresh session to split, so
- * one full-width bar carries the whole swing: a **US-only market holiday** (e.g.
- * 4th of July, FX still trading) keeps the "Market holiday" label, while the
- * **weekend spill-over** (Sunday evening through Monday's open) reads
- * "Overnight". The frozen Friday weekend keeps the full two-leg split, paused:
- * its total is re-anchored to the session **open** so it matches the headline's
- * "since last open" instead of disagreeing in sign with it (the v4.16.2 bug).
+ * In the **single-overnight** regime (a US-only market holiday, e.g. 4th of July
+ * with FX still trading) there is no fresh session to split, so one full-width bar
+ * carries the whole swing under the "Market holiday" label. The frozen Friday
+ * weekend and the Sunday-evening spill-over both keep the full two-leg split (the
+ * weekend close is just a pause, so Friday stays the previous session): their total
+ * is re-anchored to the session **open** so it matches the headline's "since last
+ * open" instead of disagreeing in sign with it (the v4.16.2 bug).
  */
 function renderEurFxEffect(o: OverviewView, now: Date): HTMLElement | null {
   const { marketOpen, holiday, singleOvernight, forexFrozen, weekendOvernight, forexOpen } =
     fxBoxRegime(now);
   // The euro currency effect. Normally `todayFxMoveEur` (anchored to the settled
-  // previous close). Two regimes re-anchor it so the panel total agrees with the
-  // headline rather than contradicting it:
-  //   - **frozen weekend** — to the session *open*, matching the card's
-  //     "since last open" stat (the panel total used to span Thursday→now and so
-  //     could read negative while the headline read positive);
-  //   - **weekend spill-over** — to the last session's *close*, the genuine
-  //     "since Friday" baseline (robust even when the settled previousClose
-  //     fell back a day on a cold start).
+  // previous close). Two regimes re-anchor it to the last session's *open* so the
+  // panel total agrees with the card's "since last open" stat rather than
+  // contradicting it (the v4.16.2 bug, where the total spanned Thursday→now and
+  // could read negative while the headline read positive):
+  //   - **frozen weekend** — the paused Friday session;
+  //   - **weekend spill-over** — Friday's session with the live overnight drift on
+  //     top, since the weekend close is just a pause and Friday stays the previous
+  //     session.
   let net = o.todayFxMoveEur;
-  if (forexFrozen) {
+  if (forexFrozen || weekendOvernight) {
     const reanchored = eurEffectFromAnchor(o, o.fxRateEurUsdSessionOpen);
-    if (reanchored !== null) net = reanchored;
-  } else if (weekendOvernight) {
-    const reanchored = eurEffectFromAnchor(o, o.fxRateEurUsdSessionClose);
     if (reanchored !== null) net = reanchored;
   }
   if (
@@ -766,18 +764,17 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
   // Prior-close anchor: the settled previous close, else the session close so the
   // panel survives a closed-market / frozen-FX round the same way the EUR effect
   // panel does — rather than disappearing while the card still shows a rate move.
-  // Re-anchored (mirroring the EUR panel) so the headline agrees with the card:
-  //   - **frozen weekend** — to the session *open* ("since last open");
-  //   - **weekend spill-over** — to the last session's *close* ("since Friday").
+  // Re-anchored (mirroring the EUR panel) to the last session's *open* so the
+  // headline agrees with the card — for the **frozen weekend** and the **weekend
+  // spill-over** alike (the weekend close is a pause; Friday stays the previous
+  // session, paused on Friday or with the live overnight drift on top).
   let fxPrev = fxEffectPriorFx(o);
-  if (forexFrozen && o.fxRateEurUsdSessionOpen !== null && o.fxRateEurUsdSessionOpen.greaterThan(0)) {
-    fxPrev = o.fxRateEurUsdSessionOpen;
-  } else if (
-    weekendOvernight &&
-    o.fxRateEurUsdSessionClose !== null &&
-    o.fxRateEurUsdSessionClose.greaterThan(0)
+  if (
+    (forexFrozen || weekendOvernight) &&
+    o.fxRateEurUsdSessionOpen !== null &&
+    o.fxRateEurUsdSessionOpen.greaterThan(0)
   ) {
-    fxPrev = o.fxRateEurUsdSessionClose;
+    fxPrev = o.fxRateEurUsdSessionOpen;
   }
   if (fxNow === null || fxPrev === null || !fxNow.greaterThan(0) || !fxPrev.greaterThan(0)) {
     return null;

@@ -243,34 +243,41 @@ class TestForexWeekendFreeze:
 
 class TestWeekendOvernight:
     """Once forex reopens Sunday 17:00 ET but no US session has opened yet (Sunday
-    evening through Monday's 09:30 open), the only honest move is the single overnight
-    drift since Friday's close: one number, no second stat, no two-leg split, and no
-    "Market closed" badge."""
+    evening through Monday's 09:30 open), the spot-FX weekend close is treated as a
+    *pause*: Friday's session stays the previous session, so the box keeps the whole
+    Friday session view — the two-leg split (Friday's market-hours leg + the live
+    overnight drift since its close), the "Since close" stat — with no "Market closed"
+    badge (forex is live again)."""
 
-    def test_sunday_evening_is_single_overnight(self, session: Session) -> None:
+    def test_sunday_evening_keeps_the_friday_session_view(self, session: Session) -> None:
         _seed_friday_fx_samples(session)
         html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_SUNDAY_EVENING)
         assert html is not None
         # Forex is live again: no "closed" badge.
         assert "Market closed" not in html
-        # A single "Overnight" bar, not the two-leg split, and not a holiday.
+        # Friday stays the previous session: the two-leg split survives (it is not a
+        # single-overnight collapse, and not a holiday).
+        assert "Market hours" in html
         assert "Overnight" in html
-        assert "Market hours" not in html
         assert "Market holiday" not in html
-        # The third "Since open/close" stat is dropped (clean two-stat row).
-        assert "Since close" not in html
-        assert "Since open" not in html
-        assert "inv-fx-box-stats-pair" in html
-        assert "overnight" in html
+        # Live overnight drift on top, Friday's frozen market-hours leg below.
+        assert html.index("Overnight") < html.index("Market hours")
+        assert ">live<" in html
+        assert ">last<" in html
+        # The third "Since close" stat is kept (full three-stat session view).
+        assert "Since close" in html
+        assert "since last open" in html
+        assert "inv-fx-box-stats-pair" not in html
 
-    def test_monday_preopen_is_single_overnight(self, session: Session) -> None:
+    def test_monday_preopen_keeps_the_friday_session_view(self, session: Session) -> None:
         _seed_friday_fx_samples(session)
         html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_MONDAY_PREOPEN)
         assert html is not None
         assert "Market closed" not in html
+        assert "Market hours" in html
         assert "Overnight" in html
-        assert "Market hours" not in html
-        assert "inv-fx-box-stats-pair" in html
+        assert "Since close" in html
+        assert "inv-fx-box-stats-pair" not in html
 
 
 class TestUsMarketHoliday:
@@ -361,7 +368,8 @@ class TestRegimeAwareTitles:
         _seed_friday_fx_samples(session)
         html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_SUNDAY_EVENING)
         assert html is not None
-        # The lone overnight drift traces back to Friday's close ⇒ "since Friday".
+        # Friday stays the previous session (the weekend close is a pause) ⇒ the
+        # currency effect is named "since Friday".
         assert "Currency effect since Friday" in html
         assert "Currency effect since yesterday" not in html
 
