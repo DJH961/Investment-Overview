@@ -1237,7 +1237,10 @@ function renderHoldingRow(
   // genuinely current (driver: `priceIsCurrent`); the laggards simply show no
   // check, so behind reads as the quiet absence of a mark — no extra noise. During
   // live hours the check is suppressed entirely (the live greying does that job).
-  const showCurrentCheck = !isUsMarketOpen(now) && holding.priceIsCurrent;
+  // Par-$1 money-market funds never move and are never fetched, so they would
+  // always read as "current": showing a check there is misleading (it implies a
+  // live update that never happens), so it is suppressed for them outright.
+  const showCurrentCheck = !isUsMarketOpen(now) && holding.priceIsCurrent && !holding.isMoneyMarket;
   const asOfChildren: Array<Node | string> = [asOf];
   if (showCurrentCheck) {
     asOfChildren.push(
