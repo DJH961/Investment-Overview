@@ -250,9 +250,97 @@ export function sessionFxAnchorMissing(opts: {
   sessionOpenMs: number;
   sessionCloseMs: number;
 }): boolean {
-  if (opts.marketClosed) return !sessionFxBarsComplete(opts.fxBars, opts.sessionCloseMs);
-  if (opts.warmingUp) return false;
-  return sessionOpenFxFromBars(opts.fxBars, opts.sessionOpenMs) === null;
+  // Back-compat thin wrapper over the unified {@link fxAnchorCompleteness}
+  // predicate: reports only the session open/close anchors, treating the
+  // prior-session baseline as already on hand so this legacy signal is unchanged.
+  // New callers should use {@link fxAnchorCompleteness} so the prevFx anchor and
+  // the consolidated backfill window are accounted for too.
+  return fxAnchorCompleteness({ ...opts, prevAnchorAvailable: true }).anyMissing;
+}
+
+/** Which of the hero currency KPI's FX anchors the device is missing this phase. */
+export interface FxAnchorNeeds {
+  /** The session **open** EUR→USD (live market-hours anchor) — open phase only. */
+  open: boolean;
+  /** The session **close** EUR→USD (frozen anchor) — closed phase only. */
+  close: boolean;
+  /**
+   * The **prior-session close** EUR→USD (the "since yesterday" baseline, prevFx) —
+   * closed phase only. Missing on a wiped, forex-frozen cold start where the live
+   * `previousClose` is `null` and nothing on the device carries Thursday's close.
+   */
+  prev: boolean;
+}
+
+/**
+ * The result of {@link fxAnchorCompleteness}: which anchors are missing, whether
+ * any backfill is due at all, and how far back the single consolidated FX pull
+ * must reach to recover them.
+ */
+export interface FxAnchorCompleteness {
+  /** Per-anchor missing flags for the current market phase. */
+  needs: FxAnchorNeeds;
+  /** Any anchor missing — the single signal the orchestrator's `fxBars` leg gates on. */
+  anyMissing: boolean;
+  /**
+   * Trading sessions the consolidated FX backfill must span to cover the missing
+   * anchors: `1` = the current session only (open/close anchors), `2` = reach back
+   * to also fetch the prior session's close (when prevFx is the gap).
+   */
+  sessionsBack: number;
+}
+
+/**
+ * The **single phase-aware predicate** for the hero currency KPI's FX-bar
+ * anchors — the one choke point that decides, for the current market phase, which
+ * of the four EUR→USD anchors (live spot, prior-session close, session open,
+ * session close) the device is still missing and drives one consolidated backfill
+ * (see `docs/fx_kpi_cold_start_regeneration_plan.md` §5 and
+ * `docs/tiingo_fx_settled_spot_plan.md` §6).
+ *
+ * It replaces the scattered per-leg gates (the old open/close-only
+ * {@link sessionFxAnchorMissing} plus the separately-handled prevFx baseline) with
+ * one decision, so the leg gates can never drift apart on what "fresh" means in a
+ * given phase. The anchor a phase needs differs:
+ *
+ *   - **closed** — the day's **close** must be captured (the track has not reached
+ *     16:00 ET ⇒ missing) *and* the **prior-session close** baseline must be on the
+ *     device. The live feed is frozen, so a wiped device with no persisted close
+ *     and no covering 1W FX bar (`prevAnchorAvailable === false`) cannot derive the
+ *     "since yesterday" anchor without reaching back one session.
+ *   - **open** — the session **open** anchors the live market-hours slice; missing
+ *     once enough of the session has elapsed (`warmingUp === false`) and no positive
+ *     bar has printed since 09:30 ET. The live forex feed supplies `previousClose`
+ *     while open, so prevFx is never the cold-start gap then.
+ *
+ * Pure and clock-injected (the caller resolves `prevAnchorAvailable` from the
+ * persisted close / 1W FX track), so the whole decision is unit-testable.
+ */
+export function fxAnchorCompleteness(opts: {
+  fxBars: Bar[];
+  marketClosed: boolean;
+  warmingUp: boolean;
+  sessionOpenMs: number;
+  sessionCloseMs: number;
+  /**
+   * Whether a prior-session close baseline is already on the device — a persisted
+   * `prevSessionCloseFx`, or a covering bar in the 1W FX track. When `true` the
+   * `prev` anchor never forces a (wider, +1-credit) pull.
+   */
+  prevAnchorAvailable: boolean;
+}): FxAnchorCompleteness {
+  const close = opts.marketClosed && !sessionFxBarsComplete(opts.fxBars, opts.sessionCloseMs);
+  const open =
+    !opts.marketClosed &&
+    !opts.warmingUp &&
+    sessionOpenFxFromBars(opts.fxBars, opts.sessionOpenMs) === null;
+  const prev = opts.marketClosed && !opts.prevAnchorAvailable;
+  const needs: FxAnchorNeeds = { open, close, prev };
+  const anyMissing = open || close || prev;
+  // Recovering the prior-session close needs a two-session window (Thursday→Friday);
+  // every other anchor lives in the current session, so one session suffices.
+  const sessionsBack = prev ? 2 : 1;
+  return { needs, anyMissing, sessionsBack };
 }
 
 /**

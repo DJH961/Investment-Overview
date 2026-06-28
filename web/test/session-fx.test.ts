@@ -20,6 +20,7 @@ import {
   sessionBarsComplete,
   sessionCloseFxFromBars,
   sessionFxAnchorMissing,
+  fxAnchorCompleteness,
   sessionFxBarsComplete,
   sessionOpenFxFromBars,
 } from "../src/session-fx";
@@ -543,6 +544,80 @@ describe("sessionFxAnchorMissing", () => {
     expect(
       sessionFxAnchorMissing({ fxBars: withOpen, marketClosed: false, warmingUp: false, sessionOpenMs: openMs, sessionCloseMs: closeMs }),
     ).toBe(false);
+  });
+});
+
+describe("fxAnchorCompleteness (unified phase-aware predicate, item 6)", () => {
+  const bar = (t: number, value: string) => ({ t, value: d(value) });
+  const openMs = Date.UTC(2026, 5, 25, 13, 30); // 09:30 ET
+  const closeMs = Date.UTC(2026, 5, 25, 20, 0); // 16:00 ET
+  const complete = [bar(closeMs - 3600_000, "1.0750"), bar(closeMs, "1.0775")];
+
+  it("closed: flags close until the track reaches the settle", () => {
+    const r = fxAnchorCompleteness({
+      fxBars: [bar(closeMs - 3600_000, "1.0750")],
+      marketClosed: true,
+      warmingUp: false,
+      sessionOpenMs: openMs,
+      sessionCloseMs: closeMs,
+      prevAnchorAvailable: true,
+    });
+    expect(r.needs).toEqual({ open: false, close: true, prev: false });
+    expect(r.anyMissing).toBe(true);
+    expect(r.sessionsBack).toBe(1);
+  });
+
+  it("closed: flags prev and widens to two sessions when the baseline is absent", () => {
+    const r = fxAnchorCompleteness({
+      fxBars: complete,
+      marketClosed: true,
+      warmingUp: false,
+      sessionOpenMs: openMs,
+      sessionCloseMs: closeMs,
+      prevAnchorAvailable: false,
+    });
+    expect(r.needs).toEqual({ open: false, close: false, prev: true });
+    expect(r.anyMissing).toBe(true);
+    expect(r.sessionsBack).toBe(2);
+  });
+
+  it("closed: nothing missing when close captured and prev baseline on hand", () => {
+    const r = fxAnchorCompleteness({
+      fxBars: complete,
+      marketClosed: true,
+      warmingUp: false,
+      sessionOpenMs: openMs,
+      sessionCloseMs: closeMs,
+      prevAnchorAvailable: true,
+    });
+    expect(r.needs).toEqual({ open: false, close: false, prev: false });
+    expect(r.anyMissing).toBe(false);
+    expect(r.sessionsBack).toBe(1);
+  });
+
+  it("open: prev is never the gap (the live feed supplies previousClose)", () => {
+    const r = fxAnchorCompleteness({
+      fxBars: [],
+      marketClosed: false,
+      warmingUp: false,
+      sessionOpenMs: openMs,
+      sessionCloseMs: closeMs,
+      prevAnchorAvailable: false,
+    });
+    expect(r.needs).toEqual({ open: true, close: false, prev: false });
+    expect(r.sessionsBack).toBe(1);
+  });
+
+  it("open & warming up: never missing", () => {
+    const r = fxAnchorCompleteness({
+      fxBars: [],
+      marketClosed: false,
+      warmingUp: true,
+      sessionOpenMs: openMs,
+      sessionCloseMs: closeMs,
+      prevAnchorAvailable: false,
+    });
+    expect(r.anyMissing).toBe(false);
   });
 });
 
