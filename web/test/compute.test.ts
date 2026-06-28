@@ -273,6 +273,64 @@ describe("buildDashboard", () => {
     expect(vmfxx.priceAsOf).toBeNull();
   });
 
+  it("keeps the movers band alive when a no-move money-market row is the freshest", () => {
+    // Regression: a par-NAV money-market fund always sits on the export's own
+    // "today" date but never has a daily move. It used to raise the freshest
+    // priced date above every blob-derived last-session move, flagging them all
+    // stale and wiping the whole Top-movers band (winners & losers both empty).
+    // The leaderboard must date itself off the moves themselves, so the genuine
+    // mover (VTI, last session's blob move) still shows.
+    const exp = makeExport();
+    exp.holdings = [
+      {
+        symbol: "VTI",
+        name: "Vanguard Total Market",
+        asset_class: "etf",
+        broker: "Broker",
+        account: "Taxable",
+        native_currency: "USD",
+        shares: "10",
+        cost_basis_native: "1000",
+        cumulative_dividends_cash_native: "0",
+        price_symbol: "VTI",
+        price_type: "market",
+        last_known_price_native: "100",
+        last_price_date: "2024-05-31",
+        previous_close_native: "90",
+        previous_close_date: "2024-05-30",
+        cashflows: [{ date: "2023-01-01", amount: "-900" }],
+      },
+      {
+        symbol: "VMFXX",
+        name: "Vanguard Federal Money Market",
+        asset_class: "money_market",
+        broker: "Broker",
+        account: "Settlement",
+        native_currency: "USD",
+        shares: "1000",
+        cost_basis_native: "1000",
+        cumulative_dividends_cash_native: "0",
+        price_symbol: "VMFXX",
+        price_type: "nav",
+        last_known_price_native: "1",
+        cashflows: [{ date: "2023-01-01", amount: "-1000" }],
+      },
+    ];
+    // No live quotes: a cold/stale load that relies on the export blob alone.
+    const m = buildDashboard(exp, new Map(), fx, new Date("2024-06-03T12:00:00Z"));
+    const vti = m.holdings.find((h) => h.symbol === "VTI")!;
+    const vmfxx = m.holdings.find((h) => h.symbol === "VMFXX")!;
+    // The money-market row is the freshest priced row but carries no move...
+    expect(vmfxx.priceFallbackDate).toBe("2024-06-01");
+    expect(vmfxx.todayMoveEur).toBeNull();
+    // ...and VTI's move, though older than that date, still leads the board.
+    expect(vti.todayMoveEur).not.toBeNull();
+    const movers = buildMovers(m.holdings);
+    expect(movers.winners.map((w) => w.symbol)).toContain("VTI");
+    expect(movers.basisDate).toBe("2024-05-31");
+    expect(movers.eligibleCount).toBe(1);
+  });
+
   it("produces a portfolio XIRR (sign change present)", () => {
     expect(model.overview.portfolioXirr).not.toBeNull();
   });

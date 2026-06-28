@@ -1709,15 +1709,33 @@ function pickMoverSide(pool: HoldingView[], sign: 1 | -1, currency: MoverCurrenc
  * printed today. Ranking in the display currency (rather than always EUR) keeps
  * the EUR and USD views — and the desktop and web apps — in agreement about who
  * the biggest mover was. See {@link MoversView}.
+ *
+ * The leaderboard's basis is the freshest date among holdings that *actually
+ * have a move* — not the freshest date anything was priced on. That distinction
+ * is what keeps the band alive in a stale/cold-start state: a holding that
+ * carries a fresh price but contributes no move (a par-NAV money-market fund
+ * always sits on "today", a just-fetched quote with no prior close, a brand-new
+ * position) must never raise the bar and strand every blob-derived last-session
+ * move behind it as "stale", which previously wiped the whole band. We therefore
+ * date the board off the moves themselves and ignore the global
+ * {@link HoldingView.todayMoveIsStale} flag (which is driven by the freshest
+ * priced row, no-move rows included).
  */
 export function buildMovers(holdings: HoldingView[], currency: MoverCurrency = "EUR"): MoversView {
-  const eligible = holdings.filter(
-    (h) => !h.todayMoveIsStale && h.todayMoveEur !== null && h.todayMovePct !== null,
+  // Every holding that carries a usable today's move, regardless of whether a
+  // fresher *price* (on a no-move row) made it look stale to the rest of the app.
+  const candidates = holdings.filter(
+    (h) => h.todayMoveEur !== null && h.todayMovePct !== null,
   );
-  const basisDate = eligible.reduce<string | null>(
+  // Measure the board on the freshest date that any holding actually moved on, so
+  // a genuinely-lagging fund (its move is an older session's) is still excluded
+  // once a peer prints a newer move — but an empty/cold book of last-session
+  // moves on one shared older date keeps all of them.
+  const basisDate = candidates.reduce<string | null>(
     (latest, h) => (latest === null || h.priceFallbackDate > latest ? h.priceFallbackDate : latest),
     null,
   );
+  const eligible = candidates.filter((h) => h.priceFallbackDate === basisDate);
   // Sign (winner vs loser) is FX-invariant, so the canonical EUR move decides
   // the side; the in-currency figures only reorder within a side.
   const winnersPool = eligible.filter((h) => (h.todayMoveEur as Decimal).greaterThan(0));
