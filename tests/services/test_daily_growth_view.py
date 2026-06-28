@@ -234,3 +234,25 @@ def test_combined_leads_with_live_only_when_live() -> None:
     closed = _caption(market_open=False)
     assert "live" not in closed.combined()
     assert closed.combined().startswith("today \u00b7 ")
+
+
+def test_title_reads_today_yesterday_or_date() -> None:
+    # Today's move titles the card "Today"…
+    assert _caption().title == "Today"
+    # …the prior calendar day reads "Yesterday"…
+    assert _caption(last_date=TODAY - timedelta(days=1), market_open=False).title == "Yesterday"
+    # …and an older settled close names the day it lands on.
+    assert _caption(last_date=date(2024, 6, 20), market_open=False).title == "Thu 20 Jun"
+    # With no data the card keeps the neutral "Today" title.
+    assert _caption(last_date=None).title == "Today"
+
+
+def test_corner_text_is_live_or_bare_clock_only_for_today() -> None:
+    # Live: the corner stamp is the single word "live".
+    assert _caption().corner_text == "live"
+    # Settled today: the bare clock the close settled at, with no "as of" label.
+    market = datetime(2024, 6, 24, 19, 59)  # 19:59 UTC == 21:59 CET
+    closed = _caption(market_open=False, tz=CET, price_market_at=market)
+    assert closed.corner_text == "21:59"
+    # An older close carries no corner stamp — its day already lives in the title.
+    assert _caption(last_date=date(2024, 6, 20), market_open=False).corner_text is None

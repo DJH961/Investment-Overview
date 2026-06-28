@@ -788,6 +788,34 @@ html, body {{
   font-variant-numeric: tabular-nums;
   color: var(--inv-muted);
 }}
+/* "Today" tile — title row carries a top-right live/clock stamp, and the
+   secondary-currency line shares its row with the absolute money move pushed
+   right, so the card sheds the old "as of …" caption row and reads tighter. */
+.inv-kpi-head {{
+  gap: 0.5rem;
+}}
+.inv-kpi-corner {{
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--inv-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}}
+.inv-kpi-secondary-row {{
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}}
+.inv-kpi-secondary-money {{
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--inv-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}}
 
 /* ------------------------------------------------------------------ */
 /* Calculator plan rows                                                */
