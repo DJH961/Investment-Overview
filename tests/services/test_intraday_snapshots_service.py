@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+import pytest
 from sqlalchemy.orm import Session
 
 from investment_dashboard.models import Transaction
@@ -1171,3 +1172,103 @@ class TestWeekSeries:
         from investment_dashboard.ui.pages._overview_query import build_week_value_series
 
         assert build_week_value_series(session, currency="EUR", now=_NOW) == []
+
+
+class TestAssessGraphCoverage:
+    """The read-only coverage probe that drives the Data Health flag."""
+
+    def _seed_full_week(self, session: Session) -> list[date]:
+        """Seed every *finished* session in the window with a full open→close span."""
+        _seed_eur_holding_for_week(session)
+        sessions = iss.recent_trading_sessions(_NOW)
+        for day in sessions[:-1]:  # finished sessions only
+            for hour, minute in ((13, 30), (15, 0), (16, 30), (18, 0), (19, 30)):
+                at = datetime(day.year, day.month, day.day, hour, minute)
+                intraday_repo.insert_sample(session, at, Decimal("1000.00"))
+        # The in-progress anchor is exempt, but seed a live point so it is real.
+        anchor = sessions[-1]
+        intraday_repo.insert_sample(
+            session, datetime(anchor.year, anchor.month, anchor.day, 14, 0), Decimal("1000.00")
+        )
+        session.flush()
+        return sessions
+
+    def test_empty_portfolio_has_no_gaps(self, session: Session) -> None:
+        # Nothing held intraday → nothing to plot → vacuously covered.
+        coverage = iss.assess_graph_coverage(session, now=_NOW)
+        assert not coverage.has_gaps
+        assert coverage.day_below_target is False
+        assert coverage.week_days_below_target == ()
+
+    def test_finished_uncovered_week_sessions_are_flagged(self, session: Session) -> None:
+        # Holding intraday-priced shares all week but no intraday samples cached:
+        # every *finished* session is below target; the in-progress anchor (which
+        # is still filling) is exempt.
+        _seed_eur_holding_for_week(session)
+        sessions = iss.recent_trading_sessions(_NOW)
+
+        coverage = iss.assess_graph_coverage(session, now=_NOW)
+
+        assert set(coverage.week_days_below_target) == set(sessions[:-1])
+        # At 16:00 ET the anchor session is exactly at its close, not yet past it,
+        # so the "1 Day" graph is not yet judged a permanent gap.
+        assert coverage.day_below_target is False
+        assert coverage.has_gaps
+
+    def test_fully_covered_week_has_no_gaps(self, session: Session) -> None:
+        self._seed_full_week(session)
+        coverage = iss.assess_graph_coverage(session, now=_NOW)
+        assert not coverage.has_gaps
+
+    def test_one_day_flagged_only_after_session_closes(self, session: Session) -> None:
+        # After the session has closed, a "1 Day" curve still riddled with holes
+        # (the 90-minute week bars leave gaps wider than the 1D tolerance) can no
+        # longer fill, so it is flagged — while the span-based week check passes.
+        self._seed_full_week(session)
+        after_close = datetime(2024, 6, 3, 21, 0, tzinfo=UTC)  # 17:00 ET
+
+        coverage = iss.assess_graph_coverage(session, now=after_close)
+
+        assert coverage.day_below_target is True
+        assert coverage.week_days_below_target == ()
+
+
+class TestBackfillGraphs:
+    """The every-tick orchestration that tops up both graphs regardless of market state."""
+
+    def test_runs_both_backfills_force_pulling_the_week(
+        self, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import contextlib
+        from collections.abc import Iterator
+        from typing import Any
+
+        from investment_dashboard import db as db_module
+
+        @contextlib.contextmanager
+        def _fake_scope() -> Iterator[Session]:
+            yield session
+
+        calls: dict[str, object] = {}
+
+        def _fake_reconstruct(sess: Session, **kwargs: Any) -> int:
+            calls["reconstruct"] = True
+            return 0
+
+        def _fake_week(sess: Session, **kwargs: Any) -> list[Any]:
+            calls["week_force"] = kwargs.get("force")
+            return []
+
+        sentinel = iss.GraphCoverage(day_below_target=False, week_days_below_target=())
+
+        monkeypatch.setattr(db_module, "ledger_session_scope", _fake_scope)
+        monkeypatch.setattr(iss, "reconstruct_last_session", _fake_reconstruct)
+        monkeypatch.setattr(iss, "week_series_with_fx", _fake_week)
+        monkeypatch.setattr(iss, "assess_graph_coverage", lambda sess, **kw: sentinel)
+
+        result = iss.backfill_graphs(now=_NOW)
+
+        # Both graphs are topped up, and the week is force-pulled so an uncovered
+        # day is re-attempted every tick rather than frozen by the render guard.
+        assert calls == {"reconstruct": True, "week_force": True}
+        assert result is sentinel
