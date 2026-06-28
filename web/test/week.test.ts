@@ -19,11 +19,12 @@ import {
   toDailyNavBars,
   weekStaleSymbols,
   wrapDailyNavFetcher,
+  capWeekToSessionClose,
 } from "../src/week";
-import type { Bar } from "../src/timeseries";
+import type { Bar, CurvePoint } from "../src/timeseries";
 import { memoryBackend, TimeSeriesStore, type StoredCloseProbe } from "../src/timeseries-store";
 import { FX_PROBE_KEY } from "../src/close-completeness";
-import { sessionOpenMs } from "../src/market-hours";
+import { sessionCloseMs, sessionOpenMs } from "../src/market-hours";
 
 const d = (v: string | number): Decimal => new Decimal(v);
 const bar = (t: number, value: string): Bar => ({ t, value: new Decimal(value) });
@@ -1284,5 +1285,42 @@ describe("loadOrBuildWeekCurve — FX-track completeness (C5 currency parity)", 
     fetchFx.mockClear();
     await loadOrBuildWeekCurve({ anchor: anchor(), store: s, fetchDailyBars, fetchFx, now: SAT_CLOSED });
     expect(fetchFx).not.toHaveBeenCalled();
+  });
+});
+
+describe("capWeekToSessionClose", () => {
+  const pt = (t: number, eur: string, usd: string): CurvePoint => ({
+    t,
+    valueEur: d(eur),
+    valueUsd: d(usd),
+  });
+  // Friday is the last session for both the closed and open reference instants.
+  const FRI = "2026-03-13";
+  const friClose = sessionCloseMs(FRI);
+
+  it("drops a trailing point past the last session close when the market is shut", () => {
+    // A spurious blob market_series sample stamped 30 min after the 16:00 ET close
+    // (with a low USD value + low FX, the divergent USD/EUR nosedive signature).
+    const points = [
+      pt(friClose - 60 * 60 * 1000, "53.50", "53.55"),
+      pt(friClose, "53.49", "53.52"),
+      pt(friClose + 30 * 60 * 1000, "53.33", "53.08"),
+    ];
+    const capped = capWeekToSessionClose(points, SAT_CLOSED);
+    expect(capped).toHaveLength(2);
+    expect(capped[capped.length - 1].t).toBe(friClose);
+    expect(capped.some((p) => p.t > friClose)).toBe(false);
+  });
+
+  it("leaves an in-session curve untouched while the market is open", () => {
+    const points = [pt(friClose - 2 * 60 * 60 * 1000, "53.5", "53.5"), pt(friClose - 60 * 60 * 1000, "53.6", "53.6")];
+    expect(capWeekToSessionClose(points, THU_OPEN)).toEqual(points);
+  });
+
+  it("keeps the curve rather than blanking it when every point is post-close", () => {
+    // capAtClose's safety net: a curve made only of post-close points is returned
+    // as-is rather than emptied (mirrors the 1D builder).
+    const points = [pt(friClose + 10 * 60 * 1000, "53.4", "53.4"), pt(friClose + 20 * 60 * 1000, "53.3", "53.0")];
+    expect(capWeekToSessionClose(points, SAT_CLOSED)).toEqual(points);
   });
 });

@@ -167,6 +167,7 @@ import {
   navTipCoveredSymbols,
   weekStaleSymbols,
   wrapDailyNavFetcher,
+  capWeekToSessionClose,
   DEFAULT_WEEK_SESSIONS,
 } from "./week";
 import {
@@ -6655,7 +6656,9 @@ export class App {
         const sprung = springboardWeekCurve({ exported, liveTip, todayCurve: todaySlice });
         if (sprung) {
           this.pollLog("graph", "1W graph: reused the exported week sleeve (no live pull, 0 credits).");
-          return this.harvestWeekCloses(this.enrichWeekWithBlobSleeve(sprung, exported, baseFx));
+          return this.harvestWeekCloses(
+            capWeekToSessionClose(this.enrichWeekWithBlobSleeve(sprung, exported, baseFx)),
+          );
         }
         const spent = { credits: 0 };
         try {
@@ -6684,7 +6687,9 @@ export class App {
             this.pollLog("graph", "1W graph: reused stored week bars (no live pull, 0 credits).");
           }
           if (curve.points.length < 2) return null;
-          return this.harvestWeekCloses(this.enrichWeekWithBlobSleeve(curve.points, exported, baseFx));
+          return this.harvestWeekCloses(
+            capWeekToSessionClose(this.enrichWeekWithBlobSleeve(curve.points, exported, baseFx)),
+          );
         } catch {
           this.pollLog("graph", "1W graph: live build failed — no curve drawn.", "warn");
           return null;
