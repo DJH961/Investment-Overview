@@ -12,7 +12,7 @@
 import { Decimal } from "./decimal-config";
 import type { AllocationSlice, DashboardModel, HoldingView, MoverEntry, OverviewView } from "./compute";
 import { buildMovers, fxSinceAnchorPct } from "./compute";
-import { fxEffectSplit, fxBuyingPowerSplit } from "./session-fx";
+import { fxEffectSplit, fxBuyingPowerSplit, readPrevCloseAnchor, recordPrevCloseAnchor } from "./session-fx";
 import { getInvestmentAmountEur } from "./investment-amount";
 import {
   isUsMarketOpen,
@@ -2706,7 +2706,7 @@ function renderDrawdownChart(curve: AnalyticsView["curve"]): HTMLElement | null 
  */
 export function liveCurveToChart(
   points: CurvePoint[],
-  prevClose?: { eur: Decimal | null; usd: Decimal | null } | null,
+  prevClose?: { eur: Decimal | null; usd: Decimal | null; provisional?: boolean } | null,
   coverage?: { covered: number; total: number } | null,
 ): LiveCurveChart | null {
   // Final safety net: heal any single-currency (typically USD-only) whole-book
@@ -2735,11 +2735,18 @@ export function liveCurveToChart(
   const yAxisLabel = (value: number, digits?: number): string =>
     formatCurrencyShortRaw(new Decimal(value), code, digits);
   // The previous-session close (display-currency value) as a dashed reference
-  // line, marked only when it is known for the active currency.
+  // line, marked only when it is known for the active currency. When the anchor is
+  // still provisional (the settled prior FX not yet recovered, and no cached
+  // non-provisional value to hold) the label says so rather than letting the figure
+  // twitch silently — the line stays put and the uncertainty is shown honestly.
   const prevCloseValue = prevClose ? (inUsd ? prevClose.usd : prevClose.eur) : null;
+  const prevCloseProvisional = prevClose?.provisional === true;
   const referenceLine =
     prevCloseValue !== null && prevCloseValue !== undefined
-      ? { value: prevCloseValue, label: `Prev close ${formatMoneyRaw(prevCloseValue, code)}` }
+      ? {
+          value: prevCloseValue,
+          label: `Prev close ${formatMoneyRaw(prevCloseValue, code)}${prevCloseProvisional ? " (provisional)" : ""}`,
+        }
       : undefined;
   // Honest coverage caption: when the curve was reconstructed from fewer than all
   // of the sleeve's holdings, the rest were carried flat for want of bars, so the
@@ -2916,24 +2923,40 @@ function renderValueChart(
   // Live 1D/1W are now always on: wire the builders so their presets fetch and
   // draw on demand whenever a live graph is available. The 1D curve marks the
   // previous session's settled close as a dashed reference line — the same cue
-  // the desktop "1 Day" chart draws. We anchor it on the live "today" baseline
-  // (`totalValue − todayMove`, in each currency) rather than the last exported
-  // settled point, so the rule lands exactly where the headline "% today" is
-  // measured from. The two can differ — the exported point may be an older
-  // session or carry a different FX snapshot — which left the line at the wrong
-  // height (e.g. hugging the live value while the day was clearly down). Fall
-  // back to the last exported point only when no live move is known.
+  // the desktop "1 Day" chart draws.
+  //
+  // The reference reads the compute layer's **session-stable** prior-close anchor
+  // (`prevCloseAnchorEur/Usd`) rather than `totalValue − todayMove`. The latter
+  // twitched on every poll: it inherits the live EUR/USD rate and re-classifies
+  // holdings as deferred free-tier quotes trickle in, so the flat line visibly
+  // walked between updates. The anchor instead sums each holding's own settled
+  // prior close, frozen at the settled prior FX and independent of the
+  // freshest-date flip, so it stays put while only the live tip moves.
+  //
+  // It is also cached per session (keyed by the last trading session): a
+  // mid-session reload restores the identical line, and while the anchor is still
+  // *provisional* (the settled prior FX not yet recovered) we hold the last
+  // non-provisional value rather than redraw on a moving rate.
   const lastPoint = points[points.length - 1];
-  const prevClose =
-    o.todayMovePct !== null
-      ? {
-          eur: o.totalValueEur.minus(o.todayMoveEur),
-          usd:
-            o.totalValueUsd !== null && o.todayMoveUsd !== null
-              ? o.totalValueUsd.minus(o.todayMoveUsd)
-              : null,
-        }
-      : { eur: lastPoint.portfolioValue, usd: lastPoint.portfolioValueUsd };
+  const anchorSessionKey = lastSessionDate(new Date());
+  let anchorEur: Decimal | null = o.prevCloseAnchorEur;
+  let anchorUsd: Decimal | null = o.prevCloseAnchorUsd;
+  if (o.prevCloseProvisional) {
+    const cached = readPrevCloseAnchor(anchorSessionKey);
+    if (cached !== null) {
+      anchorEur = cached.eur ?? anchorEur;
+      anchorUsd = cached.usd ?? anchorUsd;
+    }
+  } else {
+    recordPrevCloseAnchor(anchorSessionKey, { eur: anchorEur, usd: anchorUsd });
+  }
+  // Fall back to the last exported settled point only when the anchor is unknown
+  // (e.g. a book with no resolvable prior close at all).
+  const prevClose = {
+    eur: anchorEur ?? lastPoint.portfolioValue,
+    usd: anchorUsd ?? lastPoint.portfolioValueUsd,
+    provisional: o.prevCloseProvisional && readPrevCloseAnchor(anchorSessionKey) === null,
+  };
   const liveBuilder: LiveCurveBuilder | undefined =
     liveGraph
       ? async (range, opts) => {

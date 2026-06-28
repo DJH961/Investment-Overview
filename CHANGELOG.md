@@ -13,6 +13,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.20.3] — 2026-06-28
+
+### Fixed
+
+- **The 1D graph's "Prev close" reference line is now a stable, session-constant
+  anchor.** The dashed previous-close baseline used to wobble during the session
+  because it was re-derived from the live overlay's shifting FX, so the EUR line
+  could appear to cross its own opening anchor even when nothing changed. It is
+  now pinned to the session-close FX (`graphAnchorFx`) for the duration of the
+  trading day, so the reference line stays put and the 1D curve reads against a
+  fixed prior-close datum. Adds `web/src/session-fx.ts` and covering tests.
+
 ## [4.20.2] — 2026-06-28
 
 ### Fixed
