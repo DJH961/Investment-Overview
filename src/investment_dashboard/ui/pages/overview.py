@@ -31,7 +31,6 @@ from investment_dashboard.services.daily_growth_view import (
 )
 from investment_dashboard.ui import refresh_indicator
 from investment_dashboard.ui.components import (
-    collapsible_section,
     deferred,
     empty_state,
     kpi_card,
@@ -412,9 +411,9 @@ def _fx_diverge_row(
 ) -> str:
     """One leg of the diverging FX bar. Mirrors the web companion's ``fxDivergeRow``:
     the status label stands alone in its own column; the formatted value and the
-    live/last/paused tag are **stacked vertically in a value cell on the right**, so
-    the tag never sits inline with the status word — and "Market holiday", "Market
-    hours" and "Overnight" can't be pushed onto a second line by a crowding tag.
+    live/last/paused tag share a **value cell on the right, laid out horizontally**
+    (the tag beside the value, not stacked under it), so the row stays short and
+    "Market holiday", "Market hours" and "Overnight" still keep to one line.
     """
     stripe = " inv-fx-diverge-overnight" if overnight_leg else ""
     fill = (
@@ -967,7 +966,9 @@ def _currency_effect_html(
 def _render_currency_box(html: str | None) -> None:
     """Render the standalone currency box, or nothing when there is no rate."""
     if html is not None:
-        ui.html(html)
+        # ``w-full`` so the box stretches edge-to-edge like the KPI grid above it,
+        # rather than shrink-wrapping to its content width.
+        ui.html(html).classes("w-full")
 
 
 def _hero_total_value(
@@ -976,13 +977,16 @@ def _hero_total_value(
     *,
     display_ccy: str,
     daily_pct: Decimal | None,
+    daily_label: str = "today",
 ) -> None:  # pragma: no cover - UI
     """Render the header's big Total Value hero box.
 
     Leads the page with the headline money figure (neobroker style): the display
     currency large, the other currency just under it, and a small coloured
-    "today" badge with the latest single-day move so the number reads as *live*
-    rather than static.
+    badge with the latest single-day move so the number reads as *live* rather
+    than static. ``daily_label`` names *which* day that move lands on — "today"
+    when it is today's, otherwise the real settled day ("yesterday" / "Fri 26
+    Jun") so a frozen weekend/holiday figure is never mislabelled "today".
     """
     primary = display_ccy.upper()
     if primary == "EUR":
@@ -1005,7 +1009,8 @@ def _hero_total_value(
         arrow = arrow_for_signed(float(daily_pct))
         ui.html(
             f'<div class="inv-hero-change" style="color:{color}">{arrow} '
-            f'{fmt_pct(daily_pct)} <span style="opacity:0.7;font-weight:600">today</span></div>'
+            f'{fmt_pct(daily_pct)} <span style="opacity:0.7;font-weight:600">'
+            f"{escape(daily_label)}</span></div>"
         )
 
 
@@ -1357,28 +1362,34 @@ def _render_mover_block(
 
 
 def _render_movers(movers: MoversView, *, display_ccy: str) -> None:  # pragma: no cover - UI
-    """Render the "Today's movers" section — a distinct winners/losers notice band.
+    """Render the "Top movers" section — a distinct winners/losers notice band.
 
-    Laid out as up to four blocks across (two winners, two losers), each leading
-    with the stat it was ranked on. Measured on the freshest price date across
-    the book, so before the open it reflects last session and during the session
-    only what has printed today.
+    Laid out as up to four blocks across (two winners, two losers) that span the
+    full width side to side, each leading with the stat it was ranked on.
+    Measured on the freshest price date across the book, so before the open it
+    reflects last session and during the session only what has printed today.
+
+    The basis date (e.g. "last close · 26 Jun") rides on the headline row itself,
+    right-aligned beside the title, rather than on a separate line below it.
 
     The band is a collapsible section (starting open) so the leaderboard can be
-    folded away once glanced at, keeping the long Overview page tidy.
+    folded away once glanced at, keeping the long Overview page tidy. The Quasar
+    expansion appends its own toggle chevron after this custom header.
     """
-    with collapsible_section(
-        "Today's movers",
-        icon="star",
-        open=True,
-        classes="inv-movers-band",
+    expansion = ui.expansion(value=True).classes("inv-collapse w-full inv-movers-band")
+    with (
+        expansion.add_slot("header"),
+        ui.row().classes("inv-mover-header items-center w-full no-wrap"),
     ):
-        ui.html(f'<div class="inv-mover-sub">{escape(_mover_basis_label(movers.basis_date))}</div>')
-        with ui.element("div").classes("inv-mover-grid"):
-            for entry in movers.winners:
-                _render_mover_block(entry, "winner", display_ccy=display_ccy)
-            for entry in movers.losers:
-                _render_mover_block(entry, "loser", display_ccy=display_ccy)
+        ui.icon("star").classes("inv-mover-star")
+        ui.label("Top movers").classes("inv-mover-title")
+        ui.space()
+        ui.label(_mover_basis_label(movers.basis_date)).classes("inv-mover-sub")
+    with expansion, ui.element("div").classes("inv-mover-grid"):
+        for entry in movers.winners:
+            _render_mover_block(entry, "winner", display_ccy=display_ccy)
+        for entry in movers.losers:
+            _render_mover_block(entry, "loser", display_ccy=display_ccy)
 
 
 def _mover_badges(movers: MoversView) -> dict[str, str]:
@@ -1571,6 +1582,7 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
     week: bool = False,
     secondary=None,
     secondary_currency: str | None = None,
+    tz: tzinfo | None = None,
 ):
     """Classic portfolio-value area graph over the selected time range.
 
@@ -1610,10 +1622,19 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
     symbol = currency_symbol(currency)
     fig = go.Figure()
     has_secondary = False
+    # The intraday "Day" curve names the session it shows: "today" for today's
+    # session, otherwise the real day it is frozen at (e.g. a weekend showing
+    # Friday) so the title never misleads with "today" when it isn't.
+    intraday_day_label = "today"
     if points:
         points = downsample(points)
         dates = [p.date for p in points]
         values = [float(p.value) for p in points]
+        if intraday and dates and isinstance(dates[-1], datetime):
+            today = datetime.now(tz).date()
+            session_date = dates[-1].date()
+            if session_date != today:
+                intraday_day_label = f"\u00b7 {session_date:%a %d %b}"
         # The session-collapse treatment (break per day + rangebreaks +
         # separators) only applies to the *intraday* 1W curve, whose points are
         # datetimes within each session. When the week range falls back to the
@@ -1641,6 +1662,17 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
             hovertemplate = f"%{{x|%a %d %b %H:%M}}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"
         else:
             hovertemplate = f"%{{x|%d %b %Y}}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"
+        # The x-axis hover label (the bold header of the "x unified" tooltip) is
+        # formatted by ``hoverformat``, *not* the per-trace template — so without
+        # this the 1W tooltip header reads only the day ("Mon 23") and drops the
+        # time. Mirror each range's hovertemplate so the 1W (and 1D) read-out
+        # carries the timestamp, not just the date.
+        if intraday:
+            hoverformat = "%H:%M"
+        elif week:
+            hoverformat = "%a %d %b %H:%M"
+        else:
+            hoverformat = "%d %b %Y"
         # Tint the intraday curve by its position versus the previous close, so
         # the day's direction *relative to yesterday* is read at a glance. The
         # palette is the colourblind-safe Wong blue (up) / orange (down) — never
@@ -1678,6 +1710,7 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
         )
         fig.update_xaxes(
             tickformat=tickformat,
+            hoverformat=hoverformat,
             ticks="outside",
             ticklen=5,
             nticks=8,
@@ -1824,9 +1857,9 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
     fig.update_layout(
         title=(
             (
-                f"Portfolio value today — {currency} vs {secondary_currency}"
+                f"Portfolio value {intraday_day_label} — {currency} vs {secondary_currency}"
                 if has_secondary
-                else f"Portfolio value today ({currency})"
+                else f"Portfolio value {intraday_day_label} ({currency})"
             )
             if intraday
             else (
@@ -1906,6 +1939,7 @@ def _value_over_time_section(  # type: ignore[no-untyped-def]
                         prev_close=prev_close,
                         secondary=secondary,
                         secondary_currency=secondary_ccy,
+                        tz=display_tz,
                     )
                 )
                 .classes("w-full")
@@ -1960,6 +1994,7 @@ def _install_intraday_live_update(plot, *, display_ccy, tz, prev_close=None, sec
                         prev_close=prev_close,
                         secondary=secondary,
                         secondary_currency=secondary_ccy if secondary else None,
+                        tz=tz,
                     )
                 )
         except Exception:  # pragma: no cover - best-effort live redraw
@@ -2195,6 +2230,18 @@ def register() -> None:  # noqa: PLR0915
                 )
 
                 # Fill the header's Total Value hero box (created in register()).
+                # The badge names the day the move lands on — "today" for today's
+                # move, else the real settled day ("yesterday" / "Fri 26 Jun"),
+                # sharing the Daily Growth caption's title so the two never disagree.
+                # Only the relative words "Today"/"Yesterday" are lowercased to match
+                # the badge's quiet style; an absolute date ("Fri 26 Jun") keeps its
+                # natural capitalisation.
+                _caption_title = _caption.title
+                _hero_day_label = (
+                    _caption_title.lower()
+                    if _caption_title in {"Today", "Yesterday"}
+                    else _caption_title
+                )
                 hero_slot.clear()
                 with hero_slot:
                     _hero_total_value(
@@ -2204,6 +2251,7 @@ def register() -> None:  # noqa: PLR0915
                         daily_pct=_by_ccy(
                             metrics.daily_growth_pct, metrics.daily_growth_pct_usd, display_ccy
                         ),
+                        daily_label=_hero_day_label,
                     )
 
                 _render_kpi_grid(

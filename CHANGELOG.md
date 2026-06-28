@@ -13,6 +13,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.18.1] — 2026-06-28
+
+### Changed
+
+- **The Overview "Top movers" band is tidier and uses the full width.** The
+  basis date (e.g. "last close · 26 Jun") now rides on the headline row itself,
+  right-aligned beside the title at the same height, instead of sitting on a
+  separate line below it. The band's headline was renamed from "Today's movers"
+  to **"Top movers"** (it reflects the freshest settled session, which is not
+  always *today*), and the winners/losers blocks now line up side to side as a
+  single full-width row on a wider range of desktop widths (the four-up layout
+  kicks in from 768px rather than 1024px), using the whole band.
+
 ## [4.18.0] — 2026-06-28
 
 ### Added
