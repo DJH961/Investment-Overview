@@ -747,6 +747,14 @@ html, body {{
   font-size: 1.25rem;
   font-weight: 600;
 }}
+/* Compact word-headline variant (e.g. the Vs Market verdict) — smaller and
+   kept on a single line so "Beating/Trailing the market" never wraps to two
+   rows, saving vertical space. */
+.inv-kpi-verdict {{
+  font-size: clamp(0.95rem, 0.8rem + 0.45vw, 1.15rem);
+  line-height: 1.2;
+  white-space: nowrap;
+}}
 .inv-kpi-sub {{
   font-size: 0.8125rem;
   color: var(--inv-muted);
