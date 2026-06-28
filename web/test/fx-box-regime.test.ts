@@ -34,20 +34,23 @@ describe("fxBoxRegime", () => {
     expect(r.singleOvernight).toBe(false);
   });
 
-  it("is a single weekend-overnight on Sunday evening after the reopen", () => {
+  it("keeps the Friday session view on Sunday evening after the reopen (pause)", () => {
     const r = fxBoxRegime(new Date("2026-06-28T22:00:00Z")); // Sun 18:00 ET
     expect(r.forexFrozen).toBe(false);
     expect(r.marketOpen).toBe(false);
     expect(r.weekendOvernight).toBe(true);
-    expect(r.singleOvernight).toBe(true);
-    expect(r.sessionView).toBe(false);
+    // The weekend close is a pause: Friday stays the previous session, so the box
+    // keeps the two-leg session view rather than collapsing to a single overnight.
+    expect(r.singleOvernight).toBe(false);
+    expect(r.sessionView).toBe(true);
     expect(r.holiday).toBe(false);
   });
 
-  it("is a single weekend-overnight on Monday before the open", () => {
+  it("keeps the Friday session view on Monday before the open", () => {
     const r = fxBoxRegime(new Date("2026-06-29T12:00:00Z")); // Mon 08:00 ET
     expect(r.weekendOvernight).toBe(true);
-    expect(r.singleOvernight).toBe(true);
+    expect(r.singleOvernight).toBe(false);
+    expect(r.sessionView).toBe(true);
   });
 
   it("returns to a regular session view once Monday opens", () => {

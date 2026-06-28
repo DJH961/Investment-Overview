@@ -257,17 +257,19 @@ class _FxBoxRegime:
       closed". This is a ``session_view``.
     * **market_open** — the live US session; the regular live view (a session_view).
     * **weekend_overnight** — forex has reopened (Sun ≥17:00 ET) but no US session
-      has opened since: Sunday evening through Monday's 09:30 open. The only honest
-      move is the single overnight drift since Friday's close — no stale Friday
-      market-hours leg.
+      has opened since: Sunday evening through Monday's 09:30 open. The spot-FX
+      weekend close is just a *pause*, so Friday's session stays the previous
+      session: the box keeps the full two-leg split (Friday's market-hours leg + the
+      live overnight drift since its close), re-anchored to Friday's open exactly
+      like the frozen weekend. A ``session_view``.
     * **holiday** — a US market holiday that is *not* an FX holiday (e.g. 4th of
-      July): forex trades but the US session is shut, so likewise a single overnight
-      number, kept under its "Market holiday" wording.
+      July): forex trades but the US session is shut, so a single overnight number,
+      kept under its "Market holiday" wording.
     * otherwise a **regular weekday post-close / pre-open** (a session_view).
 
-    ``single_overnight`` (holiday ∨ weekend_overnight, with forex open and US shut)
-    marks the two one-number, no-split regimes; ``session_view`` (its complement)
-    marks the three-stat, two-leg-split regimes.
+    ``single_overnight`` (holiday only, with forex open and US shut) marks the lone
+    one-number, no-split regime; ``session_view`` (its complement) marks the
+    three-stat, two-leg-split regimes.
     """
 
     market_open: bool
@@ -292,7 +294,7 @@ def _fx_box_regime(now: datetime) -> _FxBoxRegime:
         and not holiday
         and market_hours.regular_session_open(last_session) < market_hours.last_forex_reopen(now)
     )
-    single_overnight = forex_open and not market_open and (holiday or weekend_overnight)
+    single_overnight = forex_open and not market_open and holiday
     session_view = not single_overnight
     return _FxBoxRegime(
         market_open=market_open,
@@ -350,8 +352,8 @@ def _effect_since_phrase(now: datetime, *, tz: tzinfo | None = None) -> str:
 
     * **frozen weekend** — the effect is the *last completed session's* swing, so
       name that real settled day ("on Friday" / "yesterday");
-    * **weekend spill-over** (forex reopened Sunday, US still shut) — the lone
-      overnight drift traces back to that last session's close, so "since Friday";
+    * **weekend spill-over** (forex reopened Sunday, US still shut) — Friday stays
+      the previous session (the weekend close is a pause), so "since Friday";
     * otherwise the regular "since yesterday".
     """
     regime = _fx_box_regime(now)
@@ -489,19 +491,18 @@ def _fx_effect_html(
     ``renderEurFxEffect``. Returns ``""`` when there is no euro swing to describe.
 
     The net is normally ``usd · (1/live_fx − 1/prev_fx)`` (anchored to the settled
-    previous close). Two regimes re-anchor it so the panel total agrees with the
-    headline rather than contradicting it: the **frozen weekend** to the session
-    *open* (matching the box's "since last open" stat) and the **weekend spill-over**
-    to the last session's *close* ("since Friday"). When the settled previous close is
-    missing entirely the net is re-anchored to the best prior anchor on hand (see
+    previous close). The frozen weekend and the weekend spill-over both re-anchor it
+    to the session *open* (matching the box's "since last open" stat) so the panel
+    total agrees with the headline rather than contradicting it — the weekend close
+    is a pause, so Friday stays the previous session. When the settled previous close
+    is missing entirely the net is re-anchored to the best prior anchor on hand (see
     :func:`_prior_fx`) so the panel survives a closed-market round.
 
     Below the net figure a *diverging* bar splits the move into its market-hours
     and overnight slices, with the **currently-live** slice on top and the frozen
-    last slice below. In the two **single-overnight** regimes there is no fresh
-    session to split, so one full-width bar carries the whole swing: a **US-only
-    market holiday** keeps the "Market holiday" label, while the **weekend
-    spill-over** reads "Overnight".
+    last slice below. In the single-overnight regime (a **US-only market holiday**)
+    there is no fresh session to split, so one full-width bar carries the whole swing
+    under the "Market holiday" label.
     """
     regime = _fx_box_regime(now)
     market_open = regime.market_open
@@ -512,14 +513,9 @@ def _fx_effect_html(
     net_eur = Decimal(0)
     if prev_fx is not None and prev_fx > 0 and usd is not None and live_fx > 0:
         net_eur = usd / live_fx - usd / prev_fx
-    if regime.forex_frozen:
+    if regime.forex_frozen or regime.weekend_overnight:
         open_fx = intraday_snapshots_service.session_open_fx(session, now=now)
         reanchored = _eur_effect_from_anchor(usd, live_fx, open_fx)
-        if reanchored is not None:
-            net_eur = reanchored
-    elif regime.weekend_overnight:
-        close_fx = intraday_snapshots_service.session_close_fx(session, now=now)
-        reanchored = _eur_effect_from_anchor(usd, live_fx, close_fx)
         if reanchored is not None:
             net_eur = reanchored
     if net_eur == 0 and (prev_fx is None or prev_fx <= 0):
@@ -540,9 +536,9 @@ def _fx_effect_html(
     value = f'<span class="inv-fx-effect-net {_fx_sign_class(net_eur)}">{_fx_signed_eur(net_eur)}</span>'
 
     if regime.single_overnight:
-        # No fresh session to split (US-only holiday, or the weekend spill-over): the
-        # whole swing is one overnight drift, so a market-hours leg would be a
-        # meaningless ~zero stub — drop it and show a single full-width bar instead.
+        # No fresh session to split (a US-only market holiday): the whole swing is one
+        # overnight drift, so a market-hours leg would be a meaningless ~zero stub —
+        # drop it and show a single full-width "Market holiday" bar instead.
         label = "Market holiday" if regime.holiday else "Overnight"
         row = _fx_diverge_row(
             label, net_eur, _fx_signed_eur(net_eur), overnight_leg=True, tag="live", width_pct=50
@@ -609,16 +605,16 @@ def _investing_power_html(
     The prior-close anchor is the settled previous close, else the session close so
     the panel survives a closed-market round (see :func:`_prior_fx`). Like the EUR
     panel it is re-anchored so the headline agrees with the box: the **frozen
-    weekend** to the session *open* ("since last open"), the **weekend spill-over**
-    to the last session's *close* ("since Friday"). Returns ``""`` when there is no
-    usable rate pair or no swing to show.
+    weekend** and the **weekend spill-over** both to the session *open* ("since last
+    open"), since the weekend close is a pause and Friday stays the previous session.
+    Returns ``""`` when there is no usable rate pair or no swing to show.
 
     Like :func:`_fx_effect_html` it carries a *diverging* market-hours/overnight bar
-    below the headline (and a single full-width bar in the single-overnight regimes),
-    with the currently-live leg on top. The lone formatting twist: the swing rides a
-    single regular contribution rather than the whole book, so it is tiny, and cents
-    are kept whenever the effect amount is two digits or less (``|net_usd| < 100``);
-    above that it renders in whole dollars like the EUR panel.
+    below the headline (and a single full-width bar in the single-overnight holiday
+    regime), with the currently-live leg on top. The lone formatting twist: the swing
+    rides a single regular contribution rather than the whole book, so it is tiny, and
+    cents are kept whenever the effect amount is two digits or less (``|net_usd| <
+    100``); above that it renders in whole dollars like the EUR panel.
     """
     regime = _fx_box_regime(now)
     market_open = regime.market_open
@@ -626,14 +622,10 @@ def _investing_power_html(
     # Prior-close anchor: the settled previous close, else the session close, then
     # re-anchored (mirroring the EUR panel) so the headline agrees with the box.
     prev_fx = _prior_fx(session, metrics, now)
-    if regime.forex_frozen:
+    if regime.forex_frozen or regime.weekend_overnight:
         open_fx = intraday_snapshots_service.session_open_fx(session, now=now)
         if open_fx is not None and open_fx > 0:
             prev_fx = open_fx
-    elif regime.weekend_overnight:
-        close_fx = intraday_snapshots_service.session_close_fx(session, now=now)
-        if close_fx is not None and close_fx > 0:
-            prev_fx = close_fx
     if prev_fx is None or live_fx <= 0 or prev_fx <= 0:
         return ""
     net_usd = amount_eur * (live_fx - prev_fx)
@@ -782,9 +774,11 @@ def _currency_box_html(
 
     The box is regime-aware (see :class:`_FxBoxRegime`): over the spot-FX weekend
     close it freezes to the *whole Friday session view* badged "Market closed ·
-    reopens Sun …"; on the Sunday-evening-through-Monday-open spill-over and on a
-    US-only market holiday it shows a single honest overnight number (no second
-    stat, no two-leg split); otherwise it is the regular live / settled view.
+    reopens Sun …"; on the Sunday-evening-through-Monday-open spill-over it keeps that
+    Friday session view (the weekend close is a pause, so Friday stays the previous
+    session) with the live overnight drift on top; on a US-only market holiday it
+    shows a single honest overnight number (no second stat, no two-leg split);
+    otherwise it is the regular live / settled view.
     """
     now = now or datetime.now(UTC)
     live_fx = metrics.daily_growth_fx_eur_usd
@@ -799,22 +793,18 @@ def _currency_box_html(
     rate = live_fx if in_usd else Decimal(1) / live_fx
     # "Today" uses a regime-dependent baseline so it never just mirrors the "Since
     # open/close" stat beside it. Live: the move since the *prior close* (overnight +
-    # intraday so far). Single-overnight: the lone drift since the last session close
-    # — Friday's FX close for the weekend spill-over (or the settled previous close as
-    # a holiday's overnight). Session view (settled weekday, or the frozen Friday
-    # weekend): the full move since this — or Friday's frozen — session open, so it
-    # stops collapsing onto "Since close" the moment the provider rolls previousClose.
-    # ``fx_move_pct`` already follows the display-currency strength convention
-    # (negated for the EUR-display reciprocal), matching the web box.
+    # intraday so far). Single-overnight (a US-only holiday): the lone drift since the
+    # settled previous close. Session view (settled weekday, the frozen Friday
+    # weekend, or the Sunday-evening spill-over): the full move since this — or
+    # Friday's — session open, so it stops collapsing onto "Since close" the moment
+    # the provider rolls previousClose. ``fx_move_pct`` already follows the
+    # display-currency strength convention (negated for the EUR-display reciprocal),
+    # matching the web box.
     if market_open:
         today_anchor = prev_fx
         today_sub = "since last close"
     elif regime.single_overnight:
-        if regime.weekend_overnight:
-            close_fx = intraday_snapshots_service.session_close_fx(session, now=now)
-            today_anchor = close_fx if close_fx is not None else prev_fx
-        else:
-            today_anchor = prev_fx
+        today_anchor = prev_fx
         today_sub = "overnight"
     else:
         today_anchor = intraday_snapshots_service.session_open_fx(session, now=now)
@@ -832,9 +822,10 @@ def _currency_box_html(
     # Third number: how far the rate has moved since the current session's
     # reference point — since the **open** while the market is live, since the
     # **close** once it has shut. Same strength convention as the "Today" move.
-    # Dropped in the single-overnight regimes (weekend spill-over, US-only holiday):
-    # there is only one honest move to show, so a second stat would just echo the
-    # overnight "Today" figure beside it. The frozen Friday weekend keeps it.
+    # Dropped only in the single-overnight regime (a US-only holiday): there is one
+    # honest move to show, so a second stat would just echo the overnight "Today"
+    # figure beside it. The frozen Friday weekend and the Sunday-evening spill-over
+    # both keep it (Friday's session stays the previous session).
     since_stat = ""
     stats_class = "inv-fx-box-stats inv-fx-box-stats-pair"
     if regime.session_view:

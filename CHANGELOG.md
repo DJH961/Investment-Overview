@@ -13,6 +13,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.20.1] — 2026-06-28
+
+### Fixed
+
+- **The currency panel now treats the spot-FX weekend close as a *pause*, so
+  Friday's session stays the previous session when forex reopens Sunday evening.**
+  Previously, the moment spot FX reopened (Sun 17:00 ET) the box collapsed the
+  Sunday-evening-through-Monday-open "weekend spill-over" into a single overnight
+  drift "since Friday" — the whole Friday market-hours leg (and the "Since close"
+  third stat) simply *disappeared*. Since the weekend close is just a pause, that
+  was wrong: Friday remains the previous session until the next US session opens.
+  The spill-over is now a full **session view**, identical to the frozen Friday
+  weekend but with the rate live again — the two-leg split keeps Friday's
+  market-hours leg ("last") with the live overnight drift since its close on top,
+  the "Since close" stat returns, and the currency-effect / investing-power panels
+  re-anchor to Friday's session **open** (matching the box's "since last open") so
+  the totals never disagree in sign with the headline. The single-overnight collapse
+  is now reserved for a genuine US-only market holiday (e.g. 4th of July, FX still
+  trading). Mirrored on web and Python (`web/src/ui.ts`,
+  `src/investment_dashboard/ui/pages/overview.py`).
+
 ## [4.20.0] — 2026-06-28
 
 ### Added
