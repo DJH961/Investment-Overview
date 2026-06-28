@@ -32,6 +32,8 @@ function holding(over: Partial<HoldingView> & { symbol: string }): HoldingView {
     todayMovePct: null,
     todayMoveIsStale: false,
     todayFxMoveEur: null,
+    priorCloseValueEur: null,
+    priorCloseValueUsd: null,
     weight: null,
     unrealisedPlEur: null,
     totalGrowthPct: null,

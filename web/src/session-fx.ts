@@ -694,3 +694,68 @@ export function readPrevSessionCloseFx(day: string): Decimal | null {
     return null;
   }
 }
+
+/** localStorage key holding the last settled whole-book prior-close anchor. */
+const PREV_CLOSE_ANCHOR_KEY = "iv.web.prevCloseAnchor";
+
+/** A persisted settled prior-close anchor (whole-book EUR + USD totals). */
+export interface PrevCloseAnchor {
+  eur: Decimal | null;
+  usd: Decimal | null;
+}
+
+/**
+ * Remember the settled whole-book **previous-session close** (the 1D graph's
+ * dashed reference line and the headline "since close" baseline), keyed by the
+ * trading session `day` it belongs to. Only the *non-provisional* anchor — valued
+ * once the settled prior FX is known — should be persisted, so a mid-session tab
+ * reload restores the identical line instead of re-deriving it from whichever
+ * deferred quotes happen to be warm. A no-op (swallowed) when storage is
+ * unavailable, or when neither leg carries a positive value to remember.
+ */
+export function recordPrevCloseAnchor(day: string, anchor: PrevCloseAnchor): void {
+  const eurOk = anchor.eur !== null && anchor.eur.greaterThan(0);
+  const usdOk = anchor.usd !== null && anchor.usd.greaterThan(0);
+  if (!eurOk && !usdOk) return;
+  try {
+    localStorage.setItem(
+      PREV_CLOSE_ANCHOR_KEY,
+      JSON.stringify({
+        day,
+        eur: eurOk ? anchor.eur!.toString() : null,
+        usd: usdOk ? anchor.usd!.toString() : null,
+      }),
+    );
+  } catch {
+    // Storage-less (private mode, disabled): the line simply uses the live anchor.
+  }
+}
+
+/**
+ * Read back the persisted settled prior-close anchor, but only when it was
+ * captured for the session `day` the caller is now drawing — an anchor from an
+ * older session is not the baseline for *this* one, so it is ignored. Returns null
+ * when nothing usable is stored.
+ */
+export function readPrevCloseAnchor(day: string): PrevCloseAnchor | null {
+  try {
+    const raw = localStorage.getItem(PREV_CLOSE_ANCHOR_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { day?: unknown; eur?: unknown; usd?: unknown };
+    if (parsed.day !== day) return null;
+    const toRate = (v: unknown): Decimal | null => {
+      if (typeof v !== "string") return null;
+      try {
+        const d = new Decimal(v);
+        return d.isFinite() && d.greaterThan(0) ? d : null;
+      } catch {
+        return null;
+      }
+    };
+    const eur = toRate(parsed.eur);
+    const usd = toRate(parsed.usd);
+    return eur === null && usd === null ? null : { eur, usd };
+  } catch {
+    return null;
+  }
+}
