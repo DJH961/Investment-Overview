@@ -123,6 +123,41 @@ def test_yfinance_failure_recovers_via_tiingo(
     assert "Tiingo" in note.message
 
 
+def test_rate_limit_exhausts_the_hourly_budget(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # When Tiingo answers HTTP 429, the account's hourly allowance is spent — the
+    # wiring must pin the hourly bucket to its cap (and stamp the 429) so no
+    # further call fires until the next :00, even though our own counter had room.
+    from investment_dashboard.adapters._retry import RateLimitedError
+    from investment_dashboard.repositories import tiingo_state_repo as state_repo
+
+    _due_etf(session)
+    state = state_repo.load(session, _NOW)
+    state.stale_since["VTI"] = _NOW - timedelta(hours=2)
+    state_repo.save(session, state)
+
+    def _rate_limited(symbols, start, end, *, token):
+        raise RateLimitedError("HTTP 429 (rate limited)")
+
+    with pytest.raises(RateLimitedError):
+        wiring.apply_desktop_fallback(
+            session,
+            session,
+            due=instruments_repo.list_instruments(session),
+            now_utc=_NOW,
+            today=_TODAY,
+            primary_closes={},
+            token="tok",
+            fetch_closes_impl=_rate_limited,
+        )
+
+    after = state_repo.load(session, _NOW)
+    assert after.hour_used == after.hourly_cap
+    assert after.budget().has_room() is False
+    assert after.rate_limited_at == _NOW
+
+
 def test_fallback_error_is_swallowed(session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     _due_etf(session)
     monkeypatch.setattr(prices_service, "_resolve_tiingo_token", lambda: "tok")

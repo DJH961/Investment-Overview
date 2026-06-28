@@ -110,6 +110,11 @@ def test_refresh_live_spot_only_sources_usd() -> None:
 
 # --- Tiingo secondary live-FX provider -------------------------------------
 
+#: A weekday instant well inside spot-FX trading hours (Wed 11:00 ET), so the
+#: forex-open gate lets the Tiingo *live* backup engage. The backup must never be
+#: consulted while the market is closed (see ``test_..._market_closed`` below).
+_FX_OPEN_NOW = datetime(2024, 6, 12, 15, 0, tzinfo=UTC)
+
 
 def _tiingo_fx(rate: str, value_date: date | None) -> object:
     from investment_dashboard.adapters.tiingo_client import TiingoFxQuote
@@ -123,6 +128,27 @@ def _tiingo_fx(rate: str, value_date: date | None) -> object:
     )
 
 
+def test_refresh_live_spot_skips_tiingo_when_forex_market_closed() -> None:
+    # Saturday: spot-FX is dark, so even a stale yfinance reading must not route
+    # to Tiingo — there is no live quote to fetch, the ECB rate simply stands.
+    called = False
+
+    def tiingo() -> object:
+        nonlocal called
+        called = True
+        return _tiingo_fx("1.1382", date.today())
+
+    rate = fx_service.refresh_live_spot(
+        fetcher=lambda: None,
+        now=datetime(2024, 6, 8, 15, 0, tzinfo=UTC),  # Saturday
+        tiingo_fetcher=tiingo,
+        tiingo_token="tok",
+        charge_budget=lambda: True,
+    )
+    assert rate is None
+    assert called is False  # forex closed ⇒ Tiingo never consulted
+
+
 def test_refresh_live_spot_falls_back_to_tiingo_when_yfinance_stale() -> None:
     yesterday = date.today() - timedelta(days=1)
 
@@ -131,6 +157,7 @@ def test_refresh_live_spot_falls_back_to_tiingo_when_yfinance_stale() -> None:
 
     rate = fx_service.refresh_live_spot(
         fetcher=stale_yf,
+        now=_FX_OPEN_NOW,
         tiingo_fetcher=lambda: _tiingo_fx("1.1382", date.today()),
         tiingo_token="tok",
         charge_budget=lambda: True,
@@ -170,6 +197,7 @@ def test_refresh_live_spot_skips_tiingo_without_token() -> None:
 
     rate = fx_service.refresh_live_spot(
         fetcher=lambda: None,
+        now=_FX_OPEN_NOW,
         tiingo_fetcher=tiingo,
         tiingo_token="",  # no token configured ⇒ no backup
         charge_budget=lambda: True,
@@ -188,6 +216,7 @@ def test_refresh_live_spot_skips_tiingo_when_budget_exhausted() -> None:
 
     rate = fx_service.refresh_live_spot(
         fetcher=lambda: None,
+        now=_FX_OPEN_NOW,
         tiingo_fetcher=tiingo,
         tiingo_token="tok",
         charge_budget=lambda: False,  # budget spent
@@ -200,6 +229,7 @@ def test_refresh_live_spot_rejects_stale_tiingo_reading() -> None:
     yesterday = date.today() - timedelta(days=1)
     rate = fx_service.refresh_live_spot(
         fetcher=lambda: None,
+        now=_FX_OPEN_NOW,
         tiingo_fetcher=lambda: _tiingo_fx("1.13", yesterday),
         tiingo_token="tok",
         charge_budget=lambda: True,
@@ -214,6 +244,7 @@ def test_refresh_live_spot_swallows_tiingo_errors() -> None:
 
     rate = fx_service.refresh_live_spot(
         fetcher=lambda: None,
+        now=_FX_OPEN_NOW,
         tiingo_fetcher=boom,
         tiingo_token="tok",
         charge_budget=lambda: True,
