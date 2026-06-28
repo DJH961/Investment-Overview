@@ -1265,9 +1265,18 @@ export function buildDashboard(
     (acc, h) => (h.costBasisEur !== null ? acc.plus(h.costBasisEur) : acc),
     new Decimal(0),
   );
+  // The freshness basis must be dated off rows that track the *market's* session,
+  // never a money-market fund. A par-NAV money market re-marks to its own "today"
+  // whenever it is re-fetched — it does not care whether the stock market is open —
+  // so a quote pulled on a weekend/holiday/after-hours would otherwise raise this
+  // bar above every equity's genuine last-session move, stranding them all as
+  // `todayMoveIsStale` and collapsing the prev-value/move math. Money-market funds
+  // never carry a today's move anyway, so they have no business defining the bar.
   const latestPriceDate = holdingContexts.reduce<string | null>(
     (latest, { view }) =>
-      view.priceNative !== null && (latest === null || view.priceFallbackDate > latest)
+      view.priceNative !== null &&
+      view.isMoneyMarket !== true &&
+      (latest === null || view.priceFallbackDate > latest)
         ? view.priceFallbackDate
         : latest,
     null,
