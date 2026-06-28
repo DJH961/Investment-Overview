@@ -405,6 +405,9 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   gap: 0.75rem;
 }
 .fx-box-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; }
+/* The stacked rate stats + reopen caption — the left column once the box splits
+   horizontally on wide screens (see ``.fx-box-split`` below). */
+.fx-box-main { display: grid; gap: 0.75rem; align-content: start; }
 .fx-box-title {
   font-size: 0.72rem;
   font-weight: 700;
@@ -528,6 +531,26 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   color: var(--muted);
 }
 .fx-effect-amount-value { font-weight: 700; color: var(--fg); }
+
+/* When a currency / investing-power panel is present, lay the box out as two
+   side-by-side columns on wide screens (rate stats left, panel right) so it
+   reads horizontally instead of stacking tall. The panel's divider flips from a
+   top border to a left border. Narrow (mobile) screens keep the stacked single
+   column. */
+@media (min-width: 48rem) {
+  .fx-box-split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: stretch;
+    column-gap: 1.5rem;
+  }
+  .fx-box-split .fx-effect {
+    padding-top: 0;
+    padding-left: 1.5rem;
+    border-top: 0;
+    border-left: 1px solid var(--border);
+    align-content: start;
+  }
+}
 
 /* The diverging bar: each leg grows from a shared centre line — right for a gain,
    left for a loss — so two legs pulling in opposite directions read clearly

@@ -391,6 +391,27 @@ html, body {{
   border: 1px solid var(--inv-hairline);
   border-radius: var(--inv-radius-lg);
 }}
+/* The stacked rate stats + reopen caption — the left column once the box splits
+ * horizontally on wide screens (see ``.inv-fx-box-split`` below). */
+.inv-fx-box-main {{ display: grid; gap: 0.75rem; align-content: start; }}
+/* When a currency / investing-power panel is present, lay the box out as two
+ * side-by-side columns on wide screens (rate stats left, panel right) so it
+ * reads horizontally instead of stacking tall. The panel's divider flips from a
+ * top border to a left border. Narrow screens keep the stacked single column. */
+@media (min-width: 48rem) {{
+  .inv-fx-box-split {{
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: stretch;
+    column-gap: 1.5rem;
+  }}
+  .inv-fx-box-split .inv-fx-effect {{
+    padding-top: 0;
+    padding-left: 1.5rem;
+    border-top: 0;
+    border-left: 1px solid var(--inv-hairline);
+    align-content: start;
+  }}
+}}
 .inv-fx-box-head {{
   display: flex;
   align-items: baseline;

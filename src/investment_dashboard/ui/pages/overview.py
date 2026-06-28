@@ -693,13 +693,23 @@ def _currency_box_html(
         session, metrics, in_usd=in_usd, live_fx=live_fx, prev_fx=prev_fx, now=now
     )
 
+    # When there is a currency panel, the box splits into two side-by-side
+    # columns on wide screens (the rate stats on the left, the currency /
+    # investing-power panel on the right) so it reads horizontally instead of
+    # stacking tall — the rate stats and the reopen caption are wrapped together
+    # so they stay the left column. Narrow screens collapse back to the stacked
+    # view via CSS. With no panel the box is the plain single-column stack.
+    split_class = " inv-fx-box-split" if effect else ""
     return (
-        '<section class="inv-fx-box" aria-label="Currency EUR to USD">'
+        f'<section class="inv-fx-box{split_class}" aria-label="Currency EUR to USD">'
+        '<div class="inv-fx-box-main">'
         '<div class="inv-fx-box-head">'
         '<span class="inv-fx-box-title">Currency · EUR \u2194 USD</span>'
         f"{head_extra}"
         "</div>"
-        f"{stats}{reopen_caption}{effect}</section>"
+        f"{stats}{reopen_caption}"
+        "</div>"
+        f"{effect}</section>"
     )
 
 

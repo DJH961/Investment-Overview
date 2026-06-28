@@ -427,9 +427,16 @@ export function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElemen
       ]),
     );
   }
+  // Wrap the rate stats + reopen caption together so they stay the left column
+  // once the box splits into two side-by-side columns on wide screens (the
+  // currency / investing-power panel becomes the right column). Narrow screens
+  // collapse back to the stacked single column via CSS.
+  const main = h("div", { class: "fx-box-main" }, children);
   const effect = renderFxEffect(o, now);
-  if (effect) children.push(effect);
-  return h("section", { class: "fx-box", "aria-label": "Currency EUR to USD" }, children);
+  const sectionClass = effect ? "fx-box fx-box-split" : "fx-box";
+  const sectionChildren: HTMLElement[] = [main];
+  if (effect) sectionChildren.push(effect);
+  return h("section", { class: sectionClass, "aria-label": "Currency EUR to USD" }, sectionChildren);
 }
 
 /** Half the diverging track: a full-magnitude leg spans this much, leaving the
