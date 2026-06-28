@@ -14,6 +14,8 @@ import {
   formatLastPull,
   formatSessionDayLabel,
   formatUpdatedAt,
+  frozenDayLabel,
+  frozenSincePhrase,
 } from "../src/format";
 
 describe("formatDailyGrowthAsOf", () => {
@@ -193,6 +195,36 @@ describe("formatForexReopen", () => {
 
   it("degrades to 'reopens soon' when the instant can't be parsed", () => {
     expect(formatForexReopen(Number.NaN, now)).toBe("reopens soon");
+  });
+});
+
+describe("frozenDayLabel", () => {
+  it("reads 'Yesterday' when the settled session was the day before", () => {
+    // Saturday looking back at Friday's settled session.
+    expect(frozenDayLabel("2024-06-07", new Date("2024-06-08T10:00:00"))).toBe("Yesterday");
+  });
+
+  it("names the weekday once the settled session is further removed", () => {
+    // Sunday looking back at Friday — two days, so the weekday is named.
+    expect(frozenDayLabel("2024-06-07", new Date("2024-06-09T10:00:00"))).toBe("Friday");
+  });
+
+  it("degrades to 'Today' on a malformed session date", () => {
+    expect(frozenDayLabel("not-a-date", new Date("2024-06-09T10:00:00"))).toBe("Today");
+  });
+});
+
+describe("frozenSincePhrase", () => {
+  it("reads 'yesterday' when the settled session was the day before", () => {
+    expect(frozenSincePhrase("2024-06-07", new Date("2024-06-08T10:00:00"))).toBe("yesterday");
+  });
+
+  it("reads 'on <weekday>' once the settled session is further removed", () => {
+    expect(frozenSincePhrase("2024-06-07", new Date("2024-06-09T10:00:00"))).toBe("on Friday");
+  });
+
+  it("degrades to 'since yesterday' on a malformed session date", () => {
+    expect(frozenSincePhrase("nope", new Date("2024-06-09T10:00:00"))).toBe("since yesterday");
   });
 });
 

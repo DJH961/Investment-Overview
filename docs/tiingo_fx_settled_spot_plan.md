@@ -1,8 +1,11 @@
 # Plan — stop Tiingo's out‑of‑session FX bar from masquerading as a live EUR/USD spot
 
-> Status: **plan only, not implemented.** This document captures the agreed
-> approach plus the answer to the "can we amend the API call to ask the specific
-> range that makes sense?" question. No code changes are made here.
+> Status: **implemented in v4.15.4.** Steps 0–8 are in `web/src/cache.ts`
+> (`primeEurUsdFromFxBars` close-clamp + settled `observedAt` + self-heal),
+> `web/src/quotes.ts` (`loadEurUsd` threads `observedAt` and a forced weekend
+> re-pull), and `web/src/app.ts` (display reads `observedAt`, TTL keeps `at`).
+> This document captures the agreed approach plus the answer to the "can we amend
+> the API call to ask the specific range that makes sense?" question.
 
 ## The bug (verified)
 
@@ -149,4 +152,7 @@ instead of being pinned.
 
 ## What this does **not** change
 
-No code is touched by this document. Implementation is deferred per request.
+The timestamp *semantics* change (a settled rate now carries no live instant), but
+no displayed value regresses: every regeneration path still fully populates from
+clamped, settled bars, and the weekend `loadEurUsd` freeze still prefers this
+cache so the clamped settled bar becomes the frozen Friday spot.

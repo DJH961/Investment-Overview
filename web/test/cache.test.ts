@@ -42,6 +42,7 @@ import {
 import type { Envelope } from "../src/crypto";
 import type { Quote } from "../src/prices";
 import type { Bar } from "../src/timeseries";
+import { lastSessionDate, sessionCloseMs } from "../src/market-hours";
 
 function memStorage(): StorageLike {
   const map = new Map<string, string>();
@@ -272,6 +273,59 @@ describe("primeEurUsdFromFxBars", () => {
     expect(primeEurUsdFromFxBars([], s)).toBe(false);
     expect(primeEurUsdFromFxBars([bar(2000, "0")], s)).toBe(false);
     expect(readCachedEurUsd(s)).toBeNull();
+  });
+
+  it("clamps to the session close — a post-close / weekend bar never becomes the spot", () => {
+    const s = memStorage();
+    // A Saturday: the last settled session is Friday, so its 16:00-ET close is the
+    // clamp. A Friday-close bar must win; a thin Saturday-evening indicative bar
+    // (later instant, same weekend) must be ignored rather than primed as "live".
+    const now = new Date("2026-06-27T12:00:00Z"); // Saturday
+    const closeMs = sessionCloseMs(lastSessionDate(now));
+    const settled = bar(closeMs - 60_000, "1.0700"); // just before Friday's close
+    const indicative = bar(closeMs + 6 * 3_600_000, "1.0750"); // hours after close
+    expect(primeEurUsdFromFxBars([settled, indicative], s, now)).toBe(true);
+    const got = readCachedEurUsd(s)!;
+    expect(got.now?.toString()).toBe("1.07"); // the settled close, not the indicative
+    expect(got.at).toBe(closeMs - 60_000);
+    // A settled close carries no live observation instant, so the UI shows a date.
+    expect(got.observedAt).toBeNull();
+  });
+
+  it("primes nothing when only post-close bars exist (keeps the prior cache)", () => {
+    const s = memStorage();
+    const now = new Date("2026-06-27T12:00:00Z"); // Saturday
+    const closeMs = sessionCloseMs(lastSessionDate(now));
+    expect(primeEurUsdFromFxBars([bar(closeMs + 3_600_000, "1.099")], s, now)).toBe(false);
+    expect(readCachedEurUsd(s)).toBeNull();
+  });
+
+  it("self-heals a previously bar-primed (settled) stamp from a later correct close", () => {
+    const s = memStorage();
+    const now = new Date("2026-06-27T12:00:00Z"); // Saturday
+    const closeMs = sessionCloseMs(lastSessionDate(now));
+    // Simulate a prior mis-stamped settled reading at a *later* (weekend) instant
+    // with no live observation time — the sticky bad stamp the old code pinned.
+    writeCachedEurUsd({ now: new Decimal("1.0750"), previousClose: new Decimal("1.06") }, closeMs + 6 * 3_600_000, s, { observedAt: null });
+    // A later correct pull clamps to Friday's close — earlier instant than the bad
+    // stamp — and must still repair it rather than being rejected as "older".
+    expect(primeEurUsdFromFxBars([bar(closeMs - 60_000, "1.0700")], s, now)).toBe(true);
+    const got = readCachedEurUsd(s)!;
+    expect(got.now?.toString()).toBe("1.07");
+    expect(got.observedAt).toBeNull();
+    // The "yesterday" baseline survives the self-heal.
+    expect(got.previousClose?.toString()).toBe("1.06");
+  });
+
+  it("never clobbers a genuinely newer live spot (observed instant) with an older settled close", () => {
+    const s = memStorage();
+    const now = new Date("2026-06-27T12:00:00Z"); // Saturday
+    const closeMs = sessionCloseMs(lastSessionDate(now));
+    // A live spot observed *after* Friday's close (e.g. a forced weekend re-pull
+    // earlier) must not be overwritten by an older settled bar.
+    writeCachedEurUsd({ now: new Decimal("1.09"), previousClose: new Decimal("1.08") }, closeMs + 60_000, s, { observedAt: closeMs + 60_000 });
+    expect(primeEurUsdFromFxBars([bar(closeMs - 60_000, "1.0700")], s, now)).toBe(false);
+    expect(readCachedEurUsd(s)!.now?.toString()).toBe("1.09");
   });
 });
 

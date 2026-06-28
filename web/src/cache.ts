@@ -18,6 +18,7 @@ import { Decimal } from "./decimal-config";
 import type { Envelope } from "./crypto";
 import type { FxRates, Quote } from "./prices";
 import type { Bar } from "./timeseries";
+import { lastSessionDate, sessionCloseMs } from "./market-hours";
 
 /** Subset of the Web Storage API we depend on (injectable for tests). */
 export type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -255,6 +256,15 @@ interface StoredEurUsd {
   now: string | null;
   previousClose: string | null;
   at: number;
+  /**
+   * The live observation instant of the `now` rate, or `null` when the reading is
+   * **settled / value-dated** (a session-close bar folded back in, with no live
+   * clock instant). Decoupled from `at` (the TTL freshness anchor) so a settled
+   * rate can stay "fresh enough to value the book" while the UI still labels it
+   * honestly as a settled close — never a misleading "as of HH:MM" live clock.
+   * Absent in caches written before this field existed → treated as live (`at`).
+   */
+  observedAt?: number | null;
 }
 
 /** A cached live EUR→USD reading (now + prior close) and when it was stored. */
@@ -262,6 +272,12 @@ export interface CachedEurUsd {
   now: Decimal | null;
   previousClose: Decimal | null;
   at: number;
+  /**
+   * The live observation instant of `now`, or `null` for a settled (bar-primed)
+   * reading. See {@link StoredEurUsd.observedAt}. Legacy caches with no stored
+   * value default to `at` so an existing live reading keeps its clock.
+   */
+  observedAt: number | null;
 }
 
 /** Read the last cached live EUR→USD reading, or null when none/corrupt. */
@@ -272,6 +288,7 @@ export function readCachedEurUsd(storage: StorageLike | null = defaultStorage())
     now: toDecimal(stored.now),
     previousClose: toDecimal(stored.previousClose),
     at: stored.at,
+    observedAt: stored.observedAt === null ? null : (stored.observedAt ?? stored.at),
   };
 }
 
@@ -279,17 +296,24 @@ export function readCachedEurUsd(storage: StorageLike | null = defaultStorage())
  * Persist a live EUR→USD reading stamped at `at` (best-effort). Only written
  * when a current spot is present, so a transient null never clobbers a good
  * earlier reading.
+ *
+ * `observedAt` is the live observation instant of the rate; pass `null` for a
+ * **settled** reading (one folded back from a session-close bar) so the UI never
+ * dresses it up as a live "as of HH:MM" clock. Defaults to `at` (a genuine live
+ * pull) when omitted.
  */
 export function writeCachedEurUsd(
   reading: { now: Decimal | null; previousClose: Decimal | null },
   at: number,
   storage: StorageLike | null = defaultStorage(),
+  opts: { observedAt?: number | null } = {},
 ): void {
   if (reading.now === null) return;
   writeJson(storage, EURUSD_KEY, {
     now: reading.now.toString(),
     previousClose: reading.previousClose ? reading.previousClose.toString() : null,
     at,
+    observedAt: opts.observedAt === undefined ? at : opts.observedAt,
   });
 }
 
@@ -308,23 +332,54 @@ export function writeCachedEurUsd(
  * overrides this seed.
  *
  * Like {@link primeQuotesFromBars} it only ever **extends** freshness, never
- * rewrites history: the spot is primed only when the newest bar is strictly newer
- * than the cached reading's instant (`at`), so a genuinely fresher live spot is
- * never clobbered by an older (e.g. hourly) bar. Bars carry no prior close, so the
- * cached `previousClose` (the KPI's "yesterday" baseline) is preserved untouched.
- * The reading is stamped at the bar's own strike instant. Returns whether a fresh
- * spot was written.
+ * rewrites history: the spot is primed only when the newest **settled** bar is
+ * strictly newer than the cached reading's instant (`at`) — so a genuinely
+ * fresher live spot is never clobbered by an older (e.g. hourly) bar. The one
+ * exception is **self-healing**: a reading that is itself bar-primed (settled,
+ * `observedAt === null`) is always re-written from the clamped close, so a prior
+ * mis-stamped weekend bar can be repaired by a later correct pull instead of
+ * being pinned for the rest of the weekend.
+ *
+ * **Close clamp (the value + label guard).** The spot-FX market trades ~24/5, so
+ * the provider keeps emitting thin, *indicative* EUR/USD bars long after the
+ * 16:00-ET equity close the book actually settles at. Those post-close prints
+ * carry a later instant than Friday's close, so the unclamped newest bar would
+ * (1) corrupt the EUR leg with a weekend indicative rate and (2) get stamped with
+ * a live clock instant, rendering as a misleading "as of HH:MM". This picks the
+ * newest bar **at or before** the last settled session's close (the FX analogue
+ * of the graph's `capAtClose`); post-close / weekend bars are ignored. If no bar
+ * survives the clamp it primes nothing and keeps the existing cache (no
+ * regression to a worse value). The surviving bar is Friday's genuine close, so
+ * it is stamped **settled** (`observedAt: null`) and the UI renders a date, not a
+ * clock. Bars carry no prior close, so the cached `previousClose` (the KPI's
+ * "yesterday" baseline) is preserved untouched. Returns whether a fresh spot was
+ * written.
  */
 export function primeEurUsdFromFxBars(
   fxBars: Bar[],
   storage: StorageLike | null = defaultStorage(),
+  now: Date = new Date(),
 ): boolean {
-  const latest = latestBar(fxBars);
+  // The FX analogue of the graph's `capAtClose`: keep only bars settled at or
+  // before the last session's 16:00-ET close, then take the newest of those.
+  const closeMs = sessionCloseMs(lastSessionDate(now));
+  const settledBars = fxBars.filter((bar) => bar.t <= closeMs);
+  const latest = latestBar(settledBars);
   if (latest === null || !latest.value.greaterThan(0)) return false;
   const cached = readCachedEurUsd(storage);
-  // Only ever move freshness forward — never overwrite a newer genuine spot.
-  if (cached && cached.now !== null && latest.t <= cached.at) return false;
-  writeCachedEurUsd({ now: latest.value, previousClose: cached?.previousClose ?? null }, latest.t, storage);
+  // Move freshness forward — never overwrite a newer *genuine live* spot. A cache
+  // that is itself settled (bar-primed, observedAt === null) is exempt, so a later
+  // correct pull self-heals a previously mis-stamped settled close instead of being
+  // pinned by it.
+  const cachedSettled = cached !== null && cached.observedAt === null;
+  if (cached && cached.now !== null && !cachedSettled && latest.t <= cached.at) return false;
+  // The surviving bar is a settled session close, so it carries no live instant.
+  writeCachedEurUsd(
+    { now: latest.value, previousClose: cached?.previousClose ?? null },
+    latest.t,
+    storage,
+    { observedAt: null },
+  );
   return true;
 }
 

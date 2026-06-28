@@ -73,6 +73,8 @@ import {
   formatSessionDayLabel,
   formatExportedAt,
   formatForexReopen,
+  frozenDayLabel,
+  frozenSincePhrase,
   signClass,
 } from "./format";
 import { computeCurrencyEffect } from "./currency-effect";
@@ -370,7 +372,7 @@ export function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElemen
     ...(stamps.length > 0 ? [h("span", { class: "fx-box-stat-sub" }, stamps)] : []),
   ]);
   const moveStat = h("div", { class: "fx-box-stat" }, [
-    h("span", { class: "fx-box-stat-label" }, ["Today"]),
+    h("span", { class: "fx-box-stat-label" }, [forexFrozen ? frozenDayLabel(lastSessionDate(now), now) : "Today"]),
     h("span", { class: `fx-box-stat-value ${signClass(dev)}` }, [
       dev !== null ? formatSignedPercent(dev) : "—",
     ]),
@@ -627,22 +629,25 @@ function renderEurFxEffect(o: OverviewView, now: Date): HTMLElement | null {
   // No euro swing at all today ⇒ nothing worth a panel (the rate line still shows).
   if (net.isZero()) return null;
 
+  const { marketOpen, holiday, singleOvernight, forexFrozen } = fxBoxRegime(now);
+  // Frozen at a settled session: name the real day the effect is measured over
+  // ("yesterday" / "on Friday") instead of an always-"yesterday" placeholder.
+  const sincePhrase = forexFrozen ? frozenSincePhrase(lastSessionDate(now), now) : "since yesterday";
   const wrap = (kids: HTMLElement[]): HTMLElement =>
     h(
       "div",
-      { class: "fx-effect", role: "group", "aria-label": "Currency effect since yesterday" },
+      { class: "fx-effect", role: "group", "aria-label": `Currency effect ${sincePhrase}` },
       kids,
     );
   const children: HTMLElement[] = [
     h("div", { class: "fx-effect-head" }, [
-      h("span", { class: "fx-effect-title" }, ["Currency effect since yesterday"]),
+      h("span", { class: "fx-effect-title" }, [`Currency effect ${sincePhrase}`]),
       h("span", { class: `fx-effect-net ${signClass(net)}` }, [formatSignedMoneyEur(net)]),
     ]),
   ];
   const eurWarn = fxAnchorWarning(o, now);
   if (eurWarn !== null) children[0].querySelector(".fx-effect-title")?.appendChild(fxAnchorWarnBadge(eurWarn));
 
-  const { marketOpen, holiday, singleOvernight } = fxBoxRegime(now);
   if (singleOvernight) {
     children.push(
       h("div", { class: "fx-diverge" }, [
@@ -706,15 +711,17 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
   const fractionDigits = net.abs().lessThan(100) ? 2 : 0;
   const fmt = (v: Decimal): string => formatSignedMoneyUsd(v, fractionDigits);
 
+  const { marketOpen, holiday, singleOvernight, forexFrozen } = fxBoxRegime(now);
+  const sincePhrase = forexFrozen ? frozenSincePhrase(lastSessionDate(now), now) : "since yesterday";
   const wrap = (kids: HTMLElement[]): HTMLElement =>
     h(
       "div",
-      { class: "fx-effect", role: "group", "aria-label": "Investing power since yesterday" },
+      { class: "fx-effect", role: "group", "aria-label": `Investing power ${sincePhrase}` },
       kids,
     );
   const children: HTMLElement[] = [
     h("div", { class: "fx-effect-head" }, [
-      h("span", { class: "fx-effect-title" }, ["Investing power since yesterday"]),
+      h("span", { class: "fx-effect-title" }, [`Investing power ${sincePhrase}`]),
       h("span", { class: `fx-effect-net ${signClass(net)}` }, [fmt(net)]),
     ]),
   ];
@@ -734,7 +741,6 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
     h("span", { class: "fx-effect-amount-value" }, [`${formatMoneyUsd(totalUsd, 2)} today`]),
   ]);
 
-  const { marketOpen, holiday, singleOvernight } = fxBoxRegime(now);
   if (singleOvernight) {
     children.push(
       h("div", { class: "fx-diverge" }, [
