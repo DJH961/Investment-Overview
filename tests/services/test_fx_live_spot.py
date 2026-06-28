@@ -178,6 +178,27 @@ def _tiingo_fx(rate: str, value_date: date | None) -> object:
     )
 
 
+def test_refresh_live_spot_skips_tiingo_when_forex_market_closed() -> None:
+    # Saturday: spot-FX is dark, so even a stale yfinance reading must not route
+    # to Tiingo — there is no live quote to fetch, the ECB rate simply stands.
+    called = False
+
+    def tiingo() -> object:
+        nonlocal called
+        called = True
+        return _tiingo_fx("1.1382", date.today())
+
+    rate = fx_service.refresh_live_spot(
+        fetcher=lambda: None,
+        now=datetime(2024, 6, 8, 15, 0, tzinfo=UTC),  # Saturday
+        tiingo_fetcher=tiingo,
+        tiingo_token="tok",
+        charge_budget=lambda: True,
+    )
+    assert rate is None
+    assert called is False  # forex closed ⇒ Tiingo never consulted
+
+
 def test_refresh_live_spot_falls_back_to_tiingo_when_yfinance_stale() -> None:
     yesterday = date.today() - timedelta(days=1)
 
