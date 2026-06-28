@@ -1,6 +1,6 @@
 # Plan — stop Tiingo's out‑of‑session FX bar from masquerading as a live EUR/USD spot
 
-> Status: **implemented in v4.15.4.** Steps 0–8 are in `web/src/cache.ts`
+> Status: **implemented in v4.16.2.** Steps 0–8 are in `web/src/cache.ts`
 > (`primeEurUsdFromFxBars` close-clamp + settled `observedAt` + self-heal),
 > `web/src/quotes.ts` (`loadEurUsd` threads `observedAt` and a forced weekend
 > re-pull), and `web/src/app.ts` (display reads `observedAt`, TTL keeps `at`).
