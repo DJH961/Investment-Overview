@@ -34,7 +34,7 @@ Pure and timezone-aware so it can be unit-tested without a NiceGUI context.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, tzinfo
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import Decimal
 
 from investment_dashboard.domain.market_hours import feed_is_fresh, regular_session_close
@@ -59,6 +59,15 @@ class DailyGrowthCaption:
     #: currency (e.g. ``"+€123.45"``), shown in the Overview "Today" square.
     #: ``None`` when no money move is available to show.
     money_text: str | None = None
+    #: The Overview "Today" card title, reflecting *which* trading day the move
+    #: lands on: ``"Today"`` when it is today's move, ``"Yesterday"`` for the
+    #: prior day, otherwise the short date (e.g. ``"Fri 26 Jun"``).
+    title: str = "Today"
+    #: A compact top-right corner stamp for the "Today" card, shown only when the
+    #: move is for *today*: ``"live"`` while the session tracks now, otherwise the
+    #: bare clock time the close settled at (e.g. ``"16:00"``, no "as of" label).
+    #: ``None`` for an older close (the date already lives in :attr:`title`).
+    corner_text: str | None = None
 
     def combined(self) -> str:
         """Single tight caption line: ``<live|today|as of …> · … · <money>``.
@@ -138,6 +147,21 @@ def _local_hhmm(moment: datetime, tz: tzinfo | None) -> str:
     return f"{local:%H:%M}"
 
 
+def _today_title(last_date: date | None, today: date) -> str:
+    """The "Today" card title for ``last_date`` relative to ``today``.
+
+    Reads ``"Today"`` for today's move, ``"Yesterday"`` for the prior calendar
+    day, otherwise the short trading-day date (e.g. ``"Fri 26 Jun"``) so a stale
+    weekend/holiday figure names the day it actually lands on instead of the
+    misleading word "Today".
+    """
+    if last_date is None or last_date == today:
+        return "Today"
+    if last_date == today - timedelta(days=1):
+        return "Yesterday"
+    return f"{last_date:%a %d %b}"
+
+
 def build_daily_growth_caption(
     *,
     last_date: date | None,
@@ -193,11 +217,16 @@ def build_daily_growth_caption(
     )
     is_live = market_open and last_date == today and feed_is_fresh(freshest_pull, now)
     updated_text: str | None = None
+    # The top-right corner stamp for the "Today" card: the bare clock the close
+    # settled at (no "as of" label), or "live" while the session tracks now.
+    # Only meaningful for today's move — an older close names its day in the title.
+    corner_text: str | None = None
     if is_live:
         # Live: the figure tracks the open session. The state is fully conveyed
         # by the single word "live" — a clock time or a redundant "today" next to
         # it would be the "both/multiple" the caption deliberately avoids.
         as_of_text = "live"
+        corner_text = "live"
     elif last_date == today:
         # Settled, but today's close is in: the state is "today". The precise
         # stamp(s) trail as a secondary detail (not a competing state token):
@@ -205,15 +234,19 @@ def build_daily_growth_caption(
         # trail our own pull time as "updated …"; fall back to the pull time,
         # then to the modelled regular-session close, when no market time exists.
         as_of_text = "today"
+        # The bare clock the close is stamped at, preferring the exchange market
+        # time, then our pull instant, then the modelled regular-session close.
         if price_market_at is not None:
-            detail = f"as of {_local_hhmm(price_market_at, tz)}"
-            if price_observed_at is not None:
-                detail += f" \u00b7 updated {_local_hhmm(price_observed_at, tz)}"
+            corner_text = _local_hhmm(price_market_at, tz)
         elif price_observed_at is not None:
-            detail = f"as of {_local_hhmm(price_observed_at, tz)}"
+            corner_text = _local_hhmm(price_observed_at, tz)
         else:
-            close_at = regular_session_close(last_date, tz=tz)
-            detail = f"as of {close_at:%H:%M}"
+            corner_text = f"{regular_session_close(last_date, tz=tz):%H:%M}"
+        detail = f"as of {corner_text}"
+        # Only a provider market time earns a trailing "updated …" pull stamp; the
+        # other branches would merely echo the "as of" clock.
+        if price_market_at is not None and price_observed_at is not None:
+            detail += f" \u00b7 updated {_local_hhmm(price_observed_at, tz)}"
         updated_text = detail
     else:
         as_of_text = f"as of {last_date:%a %d %b}"
@@ -222,5 +255,11 @@ def build_daily_growth_caption(
     if fx_eur_usd is not None and fx_eur_usd > 0:
         fx_text = _format_fx_tight(fx_eur_usd, fx_eur_usd_prev, display_ccy)
     return DailyGrowthCaption(
-        as_of_text, fx_text, is_live=is_live, updated_text=updated_text, money_text=money_text
+        as_of_text,
+        fx_text,
+        is_live=is_live,
+        updated_text=updated_text,
+        money_text=money_text,
+        title=_today_title(last_date, today),
+        corner_text=corner_text,
     )

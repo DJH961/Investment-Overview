@@ -24,6 +24,7 @@ from investment_dashboard.services import (
     timezone_service,
 )
 from investment_dashboard.services.daily_growth_view import (
+    DailyGrowthCaption,
     build_daily_growth_caption,
     fx_move_pct,
 )
@@ -34,7 +35,11 @@ from investment_dashboard.ui.components import (
     kpi_card,
     section,
 )
-from investment_dashboard.ui.components.kpi_card import dual_kpi_card, dual_pct_kpi_card
+from investment_dashboard.ui.components.kpi_card import (
+    dual_kpi_card,
+    dual_pct_kpi_card,
+    today_kpi_card,
+)
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import (
     currency_symbol,
@@ -796,7 +801,7 @@ def _render_kpi_grid(
     verdict: object,
     *,
     display_ccy: str,
-    today_sub: str,
+    today_caption: DailyGrowthCaption,
 ) -> None:  # pragma: no cover - UI
     """Render the 4×2 KPI grid beneath the hero.
 
@@ -848,14 +853,41 @@ def _render_kpi_grid(
             display_ccy=display_ccy,
             tooltip_key="mtd_growth",
         )
-        _pct_card(
-            "Today",
-            metrics.daily_growth_pct,
-            metrics.daily_growth_pct_usd,
-            display_ccy=display_ccy,
-            tooltip_key="daily_growth",
-            sub=today_sub,
-        )
+        _today_card(metrics, display_ccy=display_ccy, caption=today_caption)
+
+
+def _today_card(
+    metrics: PortfolioMetrics,
+    *,
+    display_ccy: str,
+    caption: DailyGrowthCaption,
+) -> None:  # pragma: no cover - UI
+    """Render the compact "Today" daily-move KPI tile.
+
+    Unlike the other return cards it titles itself by the trading day the move
+    lands on ("Today" / "Yesterday" / a date), floats the live/clock stamp to the
+    top-right corner, and tucks the absolute money move onto the secondary
+    currency's line — dropping the old "as of …" caption row for a tighter tile.
+    """
+    primary = display_ccy.upper()
+    if primary == "EUR":
+        primary_pct, primary_ccy = metrics.daily_growth_pct, "EUR"
+        secondary_pct, secondary_ccy = metrics.daily_growth_pct_usd, "USD"
+    else:
+        primary_pct, primary_ccy = metrics.daily_growth_pct_usd, "USD"
+        secondary_pct, secondary_ccy = metrics.daily_growth_pct, "EUR"
+    today_kpi_card(
+        caption.title,
+        fmt_pct(primary_pct),
+        fmt_pct(secondary_pct),
+        primary_ccy=primary_ccy,
+        secondary_ccy=secondary_ccy,
+        money=caption.money_text,
+        corner=caption.corner_text,
+        tooltip_key="daily_growth",
+        color=color_for_signed(float(primary_pct or 0)),
+        arrow=arrow_for_signed(float(primary_pct or 0)),
+    )
 
 
 def format_price_freshness(card: HoldingCard, *, tz: tzinfo | None = None) -> str:
@@ -1942,7 +1974,7 @@ def register() -> None:  # noqa: PLR0915
                     metrics,
                     verdict,
                     display_ccy=display_ccy,
-                    today_sub=_caption.combined(),
+                    today_caption=_caption,
                 )
                 # The standalone Currency · EUR ↔ USD box sits directly beneath the
                 # KPI grid (mirroring the web companion, which moved it out from a
