@@ -25,6 +25,7 @@ from investment_dashboard.adapters.frankfurter_client import (
     FrankfurterError,
     fetch_rates,
 )
+from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.repositories import fx_repo
 
@@ -138,13 +139,27 @@ def refresh_live_spot(
     KPI still reads its settled rate from the ECB history; it just isn't given a
     bogus "live" overlay outside trading hours.
 
-    Best-effort: returns the stored rate, or ``None`` when neither provider offers
-    a fresh today-dated reading. Only EUR→USD is sourced today; other quotes keep
-    the ECB daily rate. ``now`` (for the market-open check), ``fetcher``
-    (yfinance), ``tiingo_fetcher``, ``tiingo_token`` and ``charge_budget`` are
+    The spot-FX (forex) market trades only ~24×5, dark across the weekend (Friday
+    17:00 → Sunday 17:00 ET). While it is **closed** no provider is polled at all:
+    any EUR/USD a feed still hands back over the weekend is an indicative
+    *projection*, not a live traded price, so accepting it would slide the EUR view
+    on a rate that never actually printed. The last in-session spot is left in
+    place as the frozen Friday close (it stops overlaying as *today's* mark of its
+    own accord once the calendar rolls past its observation day). ``now`` (the
+    instant judged against the forex clock; defaults to the current UTC instant) is
     injectable for tests.
+
+    Best-effort: returns the stored rate, or ``None`` when neither provider offers
+    a fresh today-dated reading (or the forex market is closed). Only EUR→USD is
+    sourced today; other quotes keep the ECB daily rate. ``now`` (the instant
+    judged against the forex clock), ``fetcher`` (yfinance), ``tiingo_fetcher``,
+    ``tiingo_token`` and ``charge_budget`` are injectable for tests.
     """
     if quote.upper() != "USD":
+        return None
+    # Never poll a provider while the forex market is shut: a weekend EUR/USD is a
+    # projection, not a live print, so it must not overlay as today's live mark.
+    if not market_hours.is_forex_market_open(now):
         return None
     today = today or date.today()
     if fetcher is None:

@@ -13,7 +13,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.19.1] — 2026-06-28
+## [4.20.1] — 2026-06-28
 
 ### Fixed
 
@@ -33,6 +33,65 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is now reserved for a genuine US-only market holiday (e.g. 4th of July, FX still
   trading). Mirrored on web and Python (`web/src/ui.ts`,
   `src/investment_dashboard/ui/pages/overview.py`).
+
+## [4.20.0] — 2026-06-28
+
+### Added
+
+- **The web companion's Settings now offers a "Test price service" probe that
+  checks Twelve Data reachability without silently burning your free-tier
+  budget.** The probe (`web/src/probe.ts`) is budget-gated against the rolling
+  per-minute / per-day credit log, surfaces an explicit over-limit override for
+  when you knowingly want to spend a credit anyway, and meters every credit it
+  spends back into the shared credit ledger so the auto-refresh economy stays
+  honest (`web/src/app.ts`, `web/src/cache.ts`, `web/src/styles.css`,
+  `web/README.md`).
+
+### Fixed
+
+- **A price-service outage no longer pins the web companion in a non-stop
+  update loop.** When Twelve Data becomes unreachable the app now backs off,
+  persists a long-term deferred-symbol queue across reloads
+  (`web/src/deferred-queue.ts`), and records *why* the service was deemed
+  unreachable (`web/src/unreachable.ts`) so the UI can explain the degradation
+  instead of hammering a dead endpoint.
+
+## [4.19.2] — 2026-06-28
+
+### Fixed
+
+- **A freshly-fetched money-market NAV no longer strands every equity's daily
+  move as "stale" and wipes the Top-movers band on the web companion.** A
+  par-NAV money-market fund (e.g. VMFXX) re-marks to its own "today" whenever it
+  is re-fetched — it does not care whether the *stock* market is open — so a quote
+  pulled after-hours, over a weekend, or on a holiday carried a value-date newer
+  than every equity's genuine last-session move. That row defined the freshness
+  basis (`latestPriceDate` in `web/src/compute.ts`), which then flagged the real
+  equity moves `todayMoveIsStale` and collapsed the prev-value/move math, leaving
+  the Top-movers band empty. The freshness basis now ignores money-market
+  holdings — which never carry a today's move and so have no business dating it —
+  guarding the symptom at its source rather than only in `buildMovers`
+  (`web/src/compute.ts`).
+
+## [4.19.1] — 2026-06-28
+
+### Fixed
+
+- **The desktop no longer sources a "live" EUR/USD spot while the spot-FX
+  (forex) market is closed — a weekend quote is an indicative *projection*, not a
+  live traded price, so it never overlays as "today's" live rate.** Previously
+  the live-spot refresh polled yfinance's `EURUSD=X` (and the Tiingo FX backup) on
+  every tick regardless of the forex clock; over the weekend close (Friday 17:00 →
+  Sunday 17:00 ET) any reading a feed still returned could slide the EUR view on a
+  rate that never actually printed. `fx_service.refresh_live_spot` now short-
+  circuits while `market_hours.is_forex_market_open` is `False`: no provider is
+  polled and the last genuine in-session spot is left in place as the frozen
+  Friday close (it stops overlaying as *today's* mark on its own once the calendar
+  rolls past its observation day). As a result the **1M and longer** value graphs
+  — which legitimately re-mark at the live after-hours spot — only ever see an
+  open-market rate, and the **1D / 1W** live tip continues to stop at the session
+  close and freeze to that session's settled FX (unchanged `freeze_after_hours`
+  behaviour). Mirrors the web companion's forex-hours gating.
 
 ## [4.19.0] — 2026-06-28
 

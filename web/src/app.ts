@@ -46,6 +46,15 @@ import {
   type AppConfig,
 } from "./config";
 import { PriceError, type FxRates, type Quote } from "./prices";
+import {
+  decideProbeGate,
+  formatProbeReport,
+  probeLogLine,
+  probeProviderLabel,
+  probeQuote,
+  probeSucceeded,
+  type ProbeProvider,
+} from "./probe";
 import { Decimal } from "./decimal-config";
 import {
   readCachedEnvelope,
@@ -57,6 +66,10 @@ import {
   clearPriceCaches,
   clearAllSeriesBackoff,
   creditsSpentToday,
+  readDeferredQueue,
+  writeDeferredQueue,
+  recordCredits,
+  recordTiingoCredits,
   readLastPull,
   readSymbolPlan,
   type PlannedSymbol,
@@ -137,9 +150,15 @@ import {
   twelveDataFrozen,
   twelveDataFreezeUntil,
   tiingoFreezeUntil,
+  tiingoFrozen,
 } from "./provider-breaker";
 import { ledgerReservation, tiingoAvailable, twelveDataAvailable, twelveDataBudgetView, twelveDataMinuteReadyDelayMs } from "./reservation";
 import { DEFERRED_MAX_ATTEMPTS, DeferredQueue } from "./deferred-queue";
+import {
+  DEFAULT_UNREACHABLE_BASE_MS,
+  describeUnreachable,
+  unreachableBackoffMs,
+} from "./unreachable";
 import { planFanout, planTwelveDataSafetyNet, TIINGO_RESERVE_CREDITS } from "./provider-fanout";
 import { reconcileHandshake } from "./login-handshake";
 import { springboardSessionCurve, springboardWeekCurve, parseExportedPoints } from "./springboard";
@@ -676,6 +695,16 @@ export class App {
    * updating when nothing could actually be fetched.
    */
   private lastConnectivity: ConnectivityState = "online";
+  /**
+   * How many **consecutive** automatic rounds have ended `"unreachable"` (no
+   * price service answered). Drives {@link unreachableBackoffMs}: instead of
+   * re-bursting every ~60 s against a provider that has already said "no", the
+   * next automatic pull backs off exponentially (capped) — stopping the non-stop
+   * "Updating…" loop while still recovering promptly via the `online`/visibility
+   * listeners the instant a link genuinely returns. Reset to 0 the moment any
+   * service answers again.
+   */
+  private consecutiveUnreachableRounds = 0;
   /** Guards against overlapping price refreshes. */
   private refreshing = false;
   /**
@@ -760,6 +789,12 @@ export class App {
   private twelveDataWindowCountdownTimer: ReturnType<typeof setInterval> | null = null;
   /** The live "waiting for a Twelve Data window" pop-up element, if shown. */
   private twelveDataWindowEl: HTMLElement | null = null;
+  /** Interval ticking the inline Settings *probe* countdown, if one is running. */
+  private probeCountdownTimer: ReturnType<typeof setInterval> | null = null;
+  /** Pending timer that auto-fires the Settings probe once its window opens. */
+  private probeWindowTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Which provider's probe countdown is currently running, if any. */
+  private probeWaitingProvider: ProbeProvider | null = null;
   /** The configured idle-lock window in ms (0 = disabled). */
   private autoLockTimeoutMs = 0;
   /** Epoch-ms the idle-lock timers were last (re)armed, for the reset throttle. */
@@ -798,6 +833,10 @@ export class App {
     this.logVersionUpdate();
     this.state.config = await loadConfig();
     applyProviderLimits(this.state.config);
+    // Restore the long-term deferred work-queue: symbols left outstanding when the
+    // app was last closed (e.g. parked through a price-service outage) are
+    // re-attempted this session instead of being silently forgotten.
+    this.restoreDeferredQueue();
     const demoParams = this.demoParams();
     if (demoParams.requested) this.enterDemo(demoParams);
     else if (!this.isConfigured()) {
@@ -1389,6 +1428,48 @@ export class App {
    */
   private enqueueDeferred(symbols: Iterable<string>, reason: string, force = false): void {
     this.deferredQueue.enqueue(symbols, reason, force);
+    this.persistDeferredQueue();
+  }
+
+  /**
+   * Persist the deferred work-queue to localStorage so the "remember what still
+   * needs updating" promise survives a reload — the **long-term** queue. A symbol
+   * parked because no price service could be reached is then re-attempted on the
+   * next session too (drained → re-pulled, including via the Tiingo fallback when
+   * capacity reopens), rather than being silently forgotten when the tab closes.
+   * Best-effort: a storage failure never breaks a refresh.
+   */
+  private persistDeferredQueue(): void {
+    try {
+      writeDeferredQueue(this.deferredQueue.snapshot());
+    } catch {
+      /* persistence is best-effort */
+    }
+  }
+
+  /**
+   * Restore the persisted deferred work-queue at startup, so symbols left
+   * outstanding when the app was last closed (e.g. parked through a price-service
+   * outage) are re-attempted this session. A no-op once anything is already
+   * queued, so it can never clash with live deferrals. Logged when it actually
+   * restores work, so the trail explains why a symbol is being re-pulled at login.
+   */
+  private restoreDeferredQueue(): void {
+    try {
+      const stored = readDeferredQueue();
+      if (stored.length === 0) return;
+      this.deferredQueue.restore(stored);
+      if (this.deferredQueue.size > 0) {
+        this.pollLog(
+          "orchestrator",
+          `Deferred queue: restored ${this.deferredQueue.size} outstanding symbol(s) from the last session — ` +
+            "will re-attempt them (including via the backup when capacity reopens).",
+          "info",
+        );
+      }
+    } catch {
+      /* restore is best-effort */
+    }
   }
 
   /**
@@ -1441,6 +1522,9 @@ export class App {
         `Deferred queue: ${stillMissing.length} still missing (stale cache or explicit force pull), forcing a re-pull this round [${stillMissing.join(", ")}].`,
       );
     }
+    // The drain mutated the queue (cleared/exhausted entries) — persist so the
+    // long-term queue on disk reflects what genuinely still needs updating.
+    this.persistDeferredQueue();
     return stillMissing;
   }
 
@@ -2743,6 +2827,56 @@ export class App {
         ),
       );
     }
+    // Probe a price service: a one-shot diagnostic that fires a single quote for
+    // a user-chosen symbol at either provider and shows the FULL raw result —
+    // status, body, parsed price, and a plain verdict (bad key, rate-limited,
+    // proxy misconfigured, …). Available whenever Settings is open (even before
+    // data loads) so a wrong API key can be caught immediately. Spends nothing on
+    // the credit ledger and never touches the live refresh engine.
+    if (settingsMode) {
+      const prefill = this.probePrefillSymbol();
+      const probeSymbol = h("input", {
+        type: "text",
+        id: "f-probe-symbol",
+        autocomplete: "off",
+        autocapitalize: "characters",
+        spellcheck: "false",
+        placeholder: "e.g. AAPL",
+        value: prefill,
+      }) as HTMLInputElement;
+      probeSymbol.setAttribute("aria-label", "Symbol to probe");
+      const probeResult = h("pre", {
+        class: "probe-result",
+        hidden: "hidden",
+        "aria-live": "polite",
+        tabindex: "0",
+      }) as HTMLElement;
+      const probePrimary = h(
+        "button",
+        { class: "btn ghost", type: "button", "data-action": "probe-primary" },
+        ["Probe primary (Twelve Data)"],
+      ) as HTMLButtonElement;
+      probePrimary.addEventListener("click", () =>
+        this.onProbeClick("twelvedata", probeSymbol, [probePrimary, probeBackup], probeResult),
+      );
+      const probeBackup = h(
+        "button",
+        { class: "btn ghost", type: "button", "data-action": "probe-backup" },
+        ["Probe backup (Tiingo)"],
+      ) as HTMLButtonElement;
+      probeBackup.addEventListener("click", () =>
+        this.onProbeClick("tiingo", probeSymbol, [probePrimary, probeBackup], probeResult),
+      );
+      formChildren.push(
+        h("h2", { class: "settings-section" }, ["Probe a price service"]),
+        field(
+          "Test one symbol",
+          h("div", { class: "row import-row" }, [probeSymbol, probePrimary, probeBackup]),
+          "Fire a single live quote for this symbol at one provider and show the full raw result — the HTTP status, the verbatim response, the price it parsed, and a plain verdict (wrong API key, rate-limited, backup proxy misconfigured, unreachable, …). Counts as one call against that provider's budget (like a refresh) but doesn't touch the running dashboard. Use it to find out exactly why prices won't load.",
+        ),
+        probeResult,
+      );
+    }
     // Maintenance: two manual escape hatches for when prices look stuck. Both
     // only make sense once unlocked with data loaded — the dashboard they refresh
     // has to exist.
@@ -2938,6 +3072,7 @@ export class App {
 
   /** Leave Settings without saving: back to the dashboard, or the unlock screen. */
   private exitSettings(): void {
+    this.cancelProbeCountdown();
     if (this.state.data && this.model) this.renderDashboard(this.model);
     else this.showUnlock();
   }
@@ -4606,6 +4741,23 @@ export class App {
         quoteError: quoteLoad.report.error,
         tiingoError: this.lastTiingoError,
       });
+      // Track consecutive unreachable rounds (for the back-off cadence) and, the
+      // moment a round reaches nothing, log a loud, greppable line saying *why*
+      // and *what each provider reported* — the HTTP status, classification and
+      // verbatim message — so the polling log explains an outage instead of just
+      // noting it. Any answering round resets the streak.
+      if (this.lastConnectivity === "unreachable") {
+        this.consecutiveUnreachableRounds += 1;
+        const why = describeUnreachable(quoteLoad.report.error, this.lastTiingoError);
+        this.pollLog(
+          "primary",
+          (why ?? "No price service reachable this round.") +
+            ` (consecutive unreachable round ${this.consecutiveUnreachableRounds}; backing the auto-retry off so it stops bursting.)`,
+          "error",
+        );
+      } else {
+        this.consecutiveUnreachableRounds = 0;
+      }
     } else if (opts.connectivity !== undefined) {
       this.lastConnectivity = opts.connectivity;
     }
@@ -5101,6 +5253,214 @@ export class App {
     const session = this.sessionId;
     if (this.refreshing) return; // a pull is already in flight; it will repaint
     void this.runScheduledRefresh(session, "manual", { viaTiingo: true });
+  }
+
+  /**
+   * A sensible default symbol for the Settings probe: the first **market**
+   * (stock/ETF) symbol in the saved plan — the kind both providers can quote —
+   * else any planned symbol, else a well-known ticker. Prefilling means a tap on
+   * "Probe" works immediately without the user having to recall a symbol.
+   */
+  private probePrefillSymbol(): string {
+    let plan: PlannedSymbol[] = [];
+    try {
+      plan = readSymbolPlan();
+    } catch {
+      plan = [];
+    }
+    const market = plan.find((e) => e.priceType === "market")?.symbol;
+    if (market) return market;
+    if (plan.length > 0) return plan[0].symbol;
+    return "AAPL";
+  }
+
+  /**
+   * Handle a tap on a probe button: apply the metering gate, then either fire the
+   * probe now, start an inline countdown that auto-fires when the Twelve Data
+   * minute window clears, or — when over the limit — show an explicit warning with
+   * an "over the limit" override button (which calls {@link runProbe} directly).
+   */
+  private onProbeClick(
+    provider: ProbeProvider,
+    symbolInput: HTMLInputElement,
+    buttons: HTMLButtonElement[],
+    resultEl: HTMLElement,
+  ): void {
+    // A tap while the minute-window countdown is already running for this same
+    // provider means "don't wait — probe now anyway", so it fires over the limit.
+    const wasWaiting = this.probeWaitingProvider === provider;
+    this.cancelProbeCountdown();
+    const symbol = symbolInput.value.trim();
+    if (!symbol) {
+      resultEl.hidden = false;
+      resultEl.classList.remove("ok");
+      resultEl.classList.add("err");
+      resultEl.textContent = "Enter a symbol to probe.";
+      return;
+    }
+    if (wasWaiting) {
+      void this.runProbe(provider, symbol, buttons, resultEl, true);
+      return;
+    }
+    const now = Date.now();
+    const frozen = provider === "twelvedata" ? twelveDataFrozen(now) : tiingoFrozen(now);
+    const decision = decideProbeGate({
+      provider,
+      available: provider === "twelvedata" ? twelveDataAvailable(now) : tiingoAvailable(now),
+      minuteReadyDelayMs: provider === "twelvedata" ? twelveDataMinuteReadyDelayMs(now) : 0,
+      frozen,
+    });
+    if (decision.kind === "ready") {
+      void this.runProbe(provider, symbol, buttons, resultEl, false);
+      return;
+    }
+    if (decision.kind === "wait") {
+      this.startProbeCountdown(provider, symbol, buttons, resultEl, decision.delayMs);
+      return;
+    }
+    // Over the limit: never fire silently — make the cost explicit and require a
+    // second, deliberate tap on an "over the limit" override.
+    this.showProbeOverLimit(provider, symbol, buttons, resultEl, decision.reason);
+  }
+
+  /**
+   * Run the Settings price-service probe: fire a single diagnostic quote for
+   * `symbol` at `provider` and render the full raw result into `resultEl`. Counts
+   * the probe against the provider's own budget (so it shows up in the minute/day
+   * for Twelve Data, hour/day for Tiingo, exactly like a refresh), mirrors the
+   * finding into the polling log, and never throws — a transport failure is
+   * reported as an "unreachable" verdict. `overLimit` prepends an honest warning
+   * that the credit was spent past the cap.
+   */
+  private async runProbe(
+    provider: ProbeProvider,
+    symbol: string,
+    buttons: HTMLButtonElement[],
+    resultEl: HTMLElement,
+    overLimit: boolean,
+  ): Promise<void> {
+    const label = probeProviderLabel(provider);
+    resultEl.hidden = false;
+    resultEl.classList.remove("ok", "err");
+    resultEl.textContent = `Probing ${label} for ${symbol}…`;
+    for (const b of buttons) b.disabled = true;
+    try {
+      const { config } = this.state;
+      const outcome = await probeQuote({
+        provider,
+        symbol,
+        apiKey: config.apiKey,
+        proxyUrl: resolvePriceProxyUrl(config),
+      });
+      // Count the probe against the provider's budget when it actually reached the
+      // service (an unreachable attempt never hit the meter, so it costs nothing).
+      if (outcome.reached) this.countProbeCredit(provider);
+      const ok = probeSucceeded(outcome);
+      const warning = overLimit
+        ? "⚠ Fired over the limit — this probe spent a credit past the budget cap.\n\n"
+        : "";
+      resultEl.textContent = warning + formatProbeReport(outcome);
+      resultEl.classList.toggle("ok", ok && !overLimit);
+      resultEl.classList.toggle("err", !ok);
+      const line = overLimit ? `${probeLogLine(outcome)} (fired over the limit)` : probeLogLine(outcome);
+      this.pollLog("note", line, ok && !overLimit ? "good" : "warn");
+    } catch (err) {
+      // probeQuote is designed never to throw, but stay honest if it ever does.
+      resultEl.textContent = `Probe failed unexpectedly: ${(err as Error).message}`;
+      resultEl.classList.add("err");
+    } finally {
+      for (const b of buttons) b.disabled = false;
+    }
+  }
+
+  /** Debit one credit for a probe against the provider's shared budget ledger. */
+  private countProbeCredit(provider: ProbeProvider): void {
+    const now = Date.now();
+    try {
+      if (provider === "twelvedata") recordCredits(1, now);
+      else recordTiingoCredits(1, now);
+    } catch {
+      /* metering is best-effort; never let it break the probe UI */
+    }
+  }
+
+  /**
+   * Show a live, inline (no pop-up, no leaving Settings) countdown until the
+   * Twelve Data minute window is clear, then auto-fire the probe. Offers an
+   * immediate "Probe now anyway (over the limit)" override and a Cancel.
+   */
+  private startProbeCountdown(
+    provider: ProbeProvider,
+    symbol: string,
+    buttons: HTMLButtonElement[],
+    resultEl: HTMLElement,
+    delayMs: number,
+  ): void {
+    resultEl.hidden = false;
+    resultEl.classList.remove("ok", "err");
+    let remaining = Math.max(1, Math.ceil(delayMs / 1000));
+    const render = (secs: number): string =>
+      `Waiting for a clear Twelve Data minute window — probing ${symbol} automatically in ${secs}s…\n` +
+      "Tip: tap the button again to skip the wait and probe now (counts a call, exceeding the rate limit).";
+    resultEl.textContent = render(remaining);
+    this.probeWaitingProvider = provider;
+    this.probeCountdownTimer = setInterval(() => {
+      remaining -= 1;
+      if (remaining > 0) resultEl.textContent = render(remaining);
+      else resultEl.textContent = `Probing ${symbol}…`;
+    }, 1000);
+    this.probeWindowTimer = setTimeout(() => {
+      this.cancelProbeCountdown();
+      void this.runProbe(provider, symbol, buttons, resultEl, false);
+    }, delayMs);
+  }
+
+  /**
+   * Render the explicit "over the limit" warning for a probe with no spendable
+   * budget, plus an override button that fires it anyway (counting the credit).
+   */
+  private showProbeOverLimit(
+    provider: ProbeProvider,
+    symbol: string,
+    buttons: HTMLButtonElement[],
+    resultEl: HTMLElement,
+    reason: string,
+  ): void {
+    resultEl.hidden = false;
+    resultEl.classList.remove("ok");
+    resultEl.classList.add("err");
+    resultEl.replaceChildren();
+    resultEl.append(
+      h("div", { class: "probe-warn-text" }, [
+        `⚠ ${reason} Probing now would go over the limit and spend a credit anyway.`,
+      ]),
+      h(
+        "div",
+        { class: "row import-row probe-warn-actions" },
+        [
+          (() => {
+            const go = h("button", { class: "btn ghost", type: "button" }, [
+              "Probe anyway (over the limit)",
+            ]) as HTMLButtonElement;
+            go.addEventListener("click", () => void this.runProbe(provider, symbol, [...buttons, go], resultEl, true));
+            return go;
+          })(),
+        ],
+      ),
+    );
+  }
+
+  /** Stop any running inline probe countdown and its auto-fire timer. */
+  private cancelProbeCountdown(): void {
+    this.probeWaitingProvider = null;
+    if (this.probeCountdownTimer) {
+      clearInterval(this.probeCountdownTimer);
+      this.probeCountdownTimer = null;
+    }
+    if (this.probeWindowTimer) {
+      clearTimeout(this.probeWindowTimer);
+      this.probeWindowTimer = null;
+    }
   }
 
   /**
@@ -5704,6 +6064,10 @@ export class App {
     const explicitRound = (opts.force ?? false) || (opts.forceAll ?? false);
     if (report.deferred.length > 0)
       this.enqueueDeferred(report.deferred, `${effectiveKind} round over budget`, explicitRound);
+    else if (report.fetched.length > 0)
+      // The clear above mutated the queue but didn't enqueue — persist so disk
+      // reflects the now-fulfilled deferrals (enqueueDeferred persists its own).
+      this.persistDeferredQueue();
     let delayMs = nextRefreshDelayMs({
       deferred: report.deferred,
       // Pace auto-refresh out as the rolling daily free-tier budget runs low.
@@ -5740,6 +6104,31 @@ export class App {
         });
         if (relief !== null) delayMs = Math.min(delayMs, relief);
       }
+    }
+    // Unreachable back-off — the fix for the non-stop "Updating…" loop. When the
+    // round reached **no** price service, its symbols still land in `deferred`,
+    // which the burst logic above would otherwise treat as "fill me in next
+    // minute" and re-burst every ~60 s forever (flashing the spinner, burning
+    // wake-ups against a provider that has already said "no"). A deferral born of
+    // an *outage* is different from one born of the per-minute budget: retrying in
+    // a minute just repeats the failure. So once a round is unreachable we
+    // override the cadence with an exponential back-off (capped) keyed on the
+    // consecutive-unreachable streak — a one-off blip still retries in ~a minute,
+    // a sustained outage settles to the ceiling. The `online`/visibility listeners
+    // still pull immediately when the link or tab genuinely returns, so recovery
+    // is never gated behind this longer delay; it only bounds the idle poll.
+    if (!promoted && this.lastConnectivity === "unreachable") {
+      const backoff = unreachableBackoffMs(this.consecutiveUnreachableRounds, {
+        baseMs: Math.max(DEFAULT_UNREACHABLE_BASE_MS, this.state.config.updateMinutes * 60 * 1000),
+      });
+      delayMs = Math.max(delayMs, backoff);
+      this.pollLog(
+        "schedule",
+        `Unreachable back-off: no service answered (${this.consecutiveUnreachableRounds} in a row) — ` +
+          `next auto-retry in ~${Math.round(backoff / 60000)}min instead of a 1-min burst. ` +
+          "Will pull immediately if the link returns.",
+        "warn",
+      );
     }
     // Hard-limit retry routing: when a fallback was blocked because the target
     // provider's limits are exhausted, schedule a retry at the next hour boundary
