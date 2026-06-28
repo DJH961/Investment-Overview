@@ -873,23 +873,10 @@ function buildHolding(
       ? new Decimal(holding.cost_basis_eur)
       : convert(new Decimal(holding.cost_basis_native), currency, EUR, fx);
 
-  // Today's move is the change in the holding's *value* from the prior published
-  // close to the price we display, for any holding that carries a previous close:
-  //   - market rows (stocks / ETFs): the latest session's move from the `quote`
-  //     endpoint's `previous_close`, but only while that live quote is the one on
-  //     screen (`isLive`);
-  //   - NAV rows (mutual funds): the latest published NAV's move from the prior
-  //     daily `time_series` bar. A fund publishes ~once a day, so the export
-  //     usually already carries its newest NAV; we still want it to show the same
-  //     last-session move a stock does (e.g. last Friday's move over a weekend)
-  //     rather than a blank — even when the row stays on its exported price.
-  // The one quote we must never derive a move from is a *stale, older* NAV bar
-  // (its value-date is behind the price we display): then `previous_close` is two
-  // sessions back and would mislabel an old move as today's. We guard NAV moves
-  // on `valueDate >= asOfDate` (the bar is current with the displayed price) and
-  // take the fund's own session move (its daily bar vs that bar's prior close).
-  // Money-market NAVs are pinned at $1 and never fetched, so they have no
-  // previous close and correctly contribute no move.
+  // Today's move starts from the holding's own latest published session move.
+  // buildDashboard later normalizes laggards onto the whole-book two-date step:
+  // if a peer has a fresher print date, this row keeps only the FX revaluation
+  // of its forward-filled price and drops the stale price tick.
   //
   // The EUR move is **FX-aware**: it revalues the current mark at today's EUR→USD
   // (`fx`) and the prior mark at the prior session's EUR→USD (`fxPrev`), so for a
@@ -1125,6 +1112,40 @@ export interface BuildDashboardOptions {
   liveStalenessMs?: number;
 }
 
+
+function applyForwardFilledDailyMove(
+  view: HoldingView,
+  currentValueNative: Decimal,
+  fx: FxRates,
+  fxPrev: FxRates,
+): void {
+  const valueNowEur = convert(currentValueNative, view.nativeCurrency, EUR, fx);
+  const valuePrevEur = convert(currentValueNative, view.nativeCurrency, EUR, fxPrev);
+  if (valueNowEur !== null && valuePrevEur !== null) {
+    view.todayMoveEur = valueNowEur.minus(valuePrevEur);
+    view.todayMovePct = valuePrevEur.greaterThan(0)
+      ? view.todayMoveEur.dividedBy(valuePrevEur)
+      : null;
+    view.todayFxMoveEur = view.todayMoveEur;
+  } else {
+    view.todayMoveEur = null;
+    view.todayMovePct = null;
+    view.todayFxMoveEur = null;
+  }
+
+  const valueNowUsd = convert(currentValueNative, view.nativeCurrency, USD, fx);
+  const valuePrevUsd = convert(currentValueNative, view.nativeCurrency, USD, fxPrev);
+  if (valueNowUsd !== null && valuePrevUsd !== null) {
+    view.todayMoveUsd = valueNowUsd.minus(valuePrevUsd);
+    view.todayMovePctUsd = valuePrevUsd.greaterThan(0)
+      ? view.todayMoveUsd.dividedBy(valuePrevUsd)
+      : null;
+  } else {
+    view.todayMoveUsd = null;
+    view.todayMovePctUsd = null;
+  }
+}
+
 interface HoldingAggregationContext {
   view: HoldingView;
   /** Current native mark (`shares × displayed price`), when one exists. */
@@ -1272,12 +1293,17 @@ export function buildDashboard(
         : latest,
     null,
   );
-  // A holding whose today's move spans an older date than the freshest peer is
-  // lagging (e.g. a fund still on yesterday's NAV while ETFs printed today): its
-  // daily figure is last session's move, not today's, so flag it for greying.
-  for (const { view, moveDate } of holdingContexts) {
-    view.todayMoveIsStale =
-      moveDate !== null && latestPriceDate !== null && moveDate < latestPriceDate;
+  // A holding whose price date is older than the freshest peer is lagging (e.g. a
+  // fund still on yesterday's NAV while ETFs printed today). Its per-row daily
+  // figure follows the same whole-book convention as the headline: forward-fill
+  // its price, drop the stale price tick, and keep only the FX revaluation.
+  for (const { view, currentValueNative } of holdingContexts) {
+    const lagsFreshest =
+      latestPriceDate !== null && view.priceNative !== null && view.priceFallbackDate < latestPriceDate;
+    view.todayMoveIsStale = lagsFreshest && !view.isMoneyMarket;
+    if (lagsFreshest && !view.isMoneyMarket && currentValueNative !== null) {
+      applyForwardFilledDailyMove(view, currentValueNative, fx, fxPrev);
+    }
   }
   const prevHoldingsValueEur = holdingContexts.reduce(
     (acc, { view, currentValueNative, moveDate }) => {
