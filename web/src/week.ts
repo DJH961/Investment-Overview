@@ -25,6 +25,7 @@
 
 import {
   appendLiveTip,
+  capAtClose,
   intradaySymbols,
   rebaseBreadcrumbs,
   marketSleeveSymbols,
@@ -36,6 +37,7 @@ import {
   isUsMarketOpen,
   lastSessionDate,
   recentTradingSessions,
+  sessionCloseMs,
   sessionOpenMs,
 } from "./market-hours";
 import {
@@ -741,6 +743,31 @@ function spliceWeekBreadcrumbs(
   }
   if (extra.length === 0) return points;
   return [...points, ...extra].sort((a, b) => a.t - b.t);
+}
+
+/**
+ * Cap a *finished* 1W curve at the latest regular session's 16:00 ET close once
+ * the market is shut — the trailing-edge mirror of the 1D builder's
+ * {@link capAtClose} ({@link ./intraday}, applied at `intraday.ts`'s
+ * `!marketOpen` branch).
+ *
+ * The 1W curve is assembled from several sources that the 1D curve either does
+ * not use or trims itself: the springboarded blob `day.points`, the live
+ * reconstruction, the per-day breadcrumb splice, and — crucially — the web⇄blob
+ * **`market_series` merge** ({@link ../app}'s `enrichWeekWithBlobSleeve`), which
+ * the 1D graph never runs. Any of these can contribute a point *after* the last
+ * session's close: a blob sleeve sample captured past 16:00 ET, a breadcrumb
+ * whose instant slipped past the close, or a stray daily bar. Left in, that point
+ * draws a near-vertical drop at the right edge of 1W that the 1D curve — capped
+ * at the close — never shows, breaking the "1D fills 1W" invariant (issue:
+ * trailing nosedive that appears only after a newer blob, markets closed).
+ *
+ * A no-op while the market is open: the live tip legitimately sits at `now`,
+ * which precedes the (future) close, so nothing is trimmed.
+ */
+export function capWeekToSessionClose(points: CurvePoint[], now: Date = new Date()): CurvePoint[] {
+  if (isUsMarketOpen(now)) return points;
+  return capAtClose(points, sessionCloseMs(lastSessionDate(now)));
 }
 
 /** Whether trimming actually dropped any bar (so a re-save is worthwhile). */
