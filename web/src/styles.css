@@ -2136,6 +2136,30 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .import-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .import-row .btn { flex: 0 0 auto; }
 
+/* The diagnostic price-service probe's result block: a readable, scrollable
+ * monospace transcript of the full raw provider response, colour-keyed by
+ * outcome (green border = a usable quote, red = a failure/over-limit). */
+.probe-result {
+  margin: 0.6rem 0 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--muted);
+  border-radius: 0.5rem;
+  background: var(--card);
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+  max-height: 22rem;
+}
+.probe-result.ok { border-left-color: var(--pos); }
+.probe-result.err { border-left-color: var(--neg); }
+.probe-warn-text { color: var(--neg); font-weight: 600; margin-bottom: 0.5rem; white-space: pre-wrap; }
+.probe-warn-actions { margin-top: 0.2rem; }
+
 /* A small, non-blocking "Updating…" pill while a live refresh runs in the
  * background. Bottom-centred so it clears the fixed mobile tab bar. */
 .updating-pill {

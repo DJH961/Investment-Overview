@@ -160,6 +160,20 @@ export interface HoldingView {
    * for an EUR-native holding (FX cancels). See {@link buildHolding}.
    */
   todayFxMoveEur: Decimal | null;
+  /**
+   * The holding's **previous-session close** value, in EUR and USD, valued at the
+   * *settled* prior FX (`fxPrev`). Unlike `valueEur − todayMoveEur`, this is a
+   * session-stable anchor: it does **not** depend on whether this poll already
+   * fetched a fresh live quote, nor on the global freshest-date flip, nor on the
+   * live EUR/USD rate. The previous-close mark is the live quote's own
+   * `previous_close` when a genuine today's move applies, else the displayed price
+   * itself (which already *is* the last settled close when no fresh quote arrived).
+   * Drives the 1D graph's dashed "Prev close" reference line so it stays put as
+   * deferred quotes trickle in (free-tier) instead of twitching every poll. Null
+   * when the holding has no resolvable price (only a fallback value).
+   */
+  priorCloseValueEur: Decimal | null;
+  priorCloseValueUsd: Decimal | null;
   weight: Decimal | null;
   unrealisedPlEur: Decimal | null;
   /** Compounded total growth — (1+XIRR)^years over the holding's invested
@@ -238,6 +252,22 @@ export interface OverviewView {
   eurUsdSource: EurUsdSourceLabel;
   /** EUR→USD at the prior session close used for the FX-aware move; null when unknown. */
   fxRateEurUsdPrev: Decimal | null;
+  /**
+   * Settled previous-session close of the whole book, in EUR and USD, valued at
+   * the settled prior FX (`fxRateEurUsdPrev`). A session-stable anchor for the 1D
+   * graph's dashed "Prev close" reference line: unlike `totalValueEur −
+   * todayMoveEur` it does not twitch as deferred quotes arrive (free-tier) nor
+   * drift with the live EUR/USD rate between polls. The USD figure is null when any
+   * counted holding lacks a USD leg (mirrors `totalValueUsd`).
+   */
+  prevCloseAnchorEur: Decimal;
+  prevCloseAnchorUsd: Decimal | null;
+  /**
+   * True while the settled prior FX close is not yet known (`fxRateEurUsdPrev`
+   * null), so the anchor is provisional and may revalue once it settles. Callers
+   * hold the last non-provisional anchor rather than redraw on a moving rate.
+   */
+  prevCloseProvisional: boolean;
   /** Month-to-date growth on the start-of-month value + net flows since. */
   mtdGrowthPct: Decimal | null;
   /** Year-to-date growth on the start-of-year value + net flows since. */
@@ -964,6 +994,28 @@ function buildHolding(
     }
   }
 
+  // Stable settled prior-session close for the 1D graph anchor, decoupled from
+  // live-quote arrival and the global freshest-date flip. The previous-close mark
+  // is:
+  //   - the live quote's own `previous_close` when a genuine today's move applies
+  //     (the quote price is today's, so its prior close is yesterday's settle); else
+  //   - the displayed price itself, which already *is* the last settled close when
+  //     no fresh quote has arrived (forward-fill) — never the export's older
+  //     `previous_close_native`, which would anchor a session too far back and make
+  //     the dashed line jump a whole session once the first live quote lands.
+  // Always valued at the settled prior FX (`fxPrev`) so the anchor never drifts
+  // with the live EUR/USD rate between polls. Money-market par-NAVs (no live move)
+  // forward-fill their constant $1 value, contributing no spurious move.
+  let priorCloseValueEur: Decimal | null = null;
+  let priorCloseValueUsd: Decimal | null = null;
+  const stablePriorMark =
+    liveMoveApplies && quotePrice !== null && previousClose !== null ? previousClose : price;
+  if (stablePriorMark !== null) {
+    const priorNative = stablePriorMark.times(shares);
+    priorCloseValueEur = convert(priorNative, currency, EUR, fxPrev);
+    priorCloseValueUsd = convert(priorNative, currency, USD, fxPrev);
+  }
+
   const unrealisedPlEur =
     valueEur !== null && costBasisEur !== null ? valueEur.minus(costBasisEur) : null;
   const isMoneyMarket = isMoneyMarketHolding(holding);
@@ -1052,6 +1104,8 @@ function buildHolding(
     todayMovePct,
     todayMoveIsStale: false, // resolved in buildDashboard once the freshest peer date is known
     todayFxMoveEur,
+    priorCloseValueEur,
+    priorCloseValueUsd,
     weight: null, // filled once the portfolio total is known
     unrealisedPlEur,
     totalGrowthPct,
@@ -1286,9 +1340,18 @@ export function buildDashboard(
     (acc, h) => (h.costBasisEur !== null ? acc.plus(h.costBasisEur) : acc),
     new Decimal(0),
   );
+  // The freshness basis must be dated off rows that track the *market's* session,
+  // never a money-market fund. A par-NAV money market re-marks to its own "today"
+  // whenever it is re-fetched — it does not care whether the stock market is open —
+  // so a quote pulled on a weekend/holiday/after-hours would otherwise raise this
+  // bar above every equity's genuine last-session move, stranding them all as
+  // `todayMoveIsStale` and collapsing the prev-value/move math. Money-market funds
+  // never carry a today's move anyway, so they have no business defining the bar.
   const latestPriceDate = holdingContexts.reduce<string | null>(
     (latest, { view }) =>
-      view.priceNative !== null && (latest === null || view.priceFallbackDate > latest)
+      view.priceNative !== null &&
+      view.isMoneyMarket !== true &&
+      (latest === null || view.priceFallbackDate > latest)
         ? view.priceFallbackDate
         : latest,
     null,
@@ -1463,6 +1526,32 @@ export function buildDashboard(
     todayMoveUsd !== null && prevTotalUsd !== null
       ? prevTotalUsd.greaterThan(0) ? todayMoveUsd.dividedBy(prevTotalUsd) : null
       : null;
+
+  // Session-stable settled prior-close anchor for the 1D graph's dashed reference
+  // line. Unlike `prevTotal`/`todayMove` above (which gate on `latestPriceDate` and
+  // so re-classify holdings as deferred quotes arrive), this sums each holding's
+  // own settled prior-close value — frozen at the settled prior FX and independent
+  // of the freshest-date flip — so the line stays put between polls. Holdings with
+  // no resolvable prior close forward-fill to their current value (no move). Cash
+  // is carried at its settled prior-FX value, mirroring the headline baseline.
+  const prevCloseHoldingsEur = holdings.reduce(
+    (acc, h) => (h.valueEur === null ? acc : acc.plus(h.priorCloseValueEur ?? h.valueEur)),
+    new Decimal(0),
+  );
+  const prevCloseAnchorEur = prevCloseHoldingsEur.plus(cashPrevValueEur);
+  const prevCloseHoldingsUsd = holdings.reduce<Decimal | null>((acc, h) => {
+    if (acc === null || h.valueEur === null) return acc;
+    const usd = h.priorCloseValueUsd ?? h.valueUsd;
+    return usd === null ? null : acc.plus(usd);
+  }, holdingsValueUsd === null ? null : new Decimal(0));
+  const prevCloseAnchorUsd =
+    prevCloseHoldingsUsd === null || cashPrevValueUsd === null
+      ? null
+      : prevCloseHoldingsUsd.plus(cashPrevValueUsd);
+  // Provisional while the settled prior FX is not yet recovered: the anchor was
+  // valued at a non-settled (possibly live) rate, so callers hold the last
+  // non-provisional value rather than redraw the line on a moving rate.
+  const prevCloseProvisional = fxPrevEurUsd === null || !fxPrevEurUsd.greaterThan(0);
   const netContribUsd = decimalOrNull(pm?.net_contributions_usd);
   const dividendsCashUsd = decimalOrNull(pm?.dividends_cash_usd);
   const totalGainUsd =
@@ -1577,6 +1666,9 @@ export function buildDashboard(
     todayFxMoveEur,
     eurUsdSource: opts.fxEurUsdSource ?? "none",
     fxRateEurUsdPrev: fxPrevEurUsd,
+    prevCloseAnchorEur,
+    prevCloseAnchorUsd,
+    prevCloseProvisional,
     mtdGrowthPct,
     ytdGrowthPct,
     portfolioXirr,
@@ -1735,15 +1827,33 @@ function pickMoverSide(pool: HoldingView[], sign: 1 | -1, currency: MoverCurrenc
  * printed today. Ranking in the display currency (rather than always EUR) keeps
  * the EUR and USD views — and the desktop and web apps — in agreement about who
  * the biggest mover was. See {@link MoversView}.
+ *
+ * The leaderboard's basis is the freshest date among holdings that *actually
+ * have a move* — not the freshest date anything was priced on. That distinction
+ * is what keeps the band alive in a stale/cold-start state: a holding that
+ * carries a fresh price but contributes no move (a par-NAV money-market fund
+ * always sits on "today", a just-fetched quote with no prior close, a brand-new
+ * position) must never raise the bar and strand every blob-derived last-session
+ * move behind it as "stale", which previously wiped the whole band. We therefore
+ * date the board off the moves themselves and ignore the global
+ * {@link HoldingView.todayMoveIsStale} flag (which is driven by the freshest
+ * priced row, no-move rows included).
  */
 export function buildMovers(holdings: HoldingView[], currency: MoverCurrency = "EUR"): MoversView {
-  const eligible = holdings.filter(
-    (h) => !h.todayMoveIsStale && h.todayMoveEur !== null && h.todayMovePct !== null,
+  // Every holding that carries a usable today's move, regardless of whether a
+  // fresher *price* (on a no-move row) made it look stale to the rest of the app.
+  const candidates = holdings.filter(
+    (h) => h.todayMoveEur !== null && h.todayMovePct !== null,
   );
-  const basisDate = eligible.reduce<string | null>(
+  // Measure the board on the freshest date that any holding actually moved on, so
+  // a genuinely-lagging fund (its move is an older session's) is still excluded
+  // once a peer prints a newer move — but an empty/cold book of last-session
+  // moves on one shared older date keeps all of them.
+  const basisDate = candidates.reduce<string | null>(
     (latest, h) => (latest === null || h.priceFallbackDate > latest ? h.priceFallbackDate : latest),
     null,
   );
+  const eligible = candidates.filter((h) => h.priceFallbackDate === basisDate);
   // Sign (winner vs loser) is FX-invariant, so the canonical EUR move decides
   // the side; the in-currency figures only reorder within a side.
   const winnersPool = eligible.filter((h) => (h.todayMoveEur as Decimal).greaterThan(0));

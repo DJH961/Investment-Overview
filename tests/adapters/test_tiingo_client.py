@@ -13,6 +13,7 @@ from investment_dashboard.adapters.tiingo_client import (
     TIINGO_ROOT,
     TiingoError,
     fetch_closes,
+    fetch_fx_intraday,
     fetch_fx_rate,
     fetch_latest_close,
     fetch_quotes,
@@ -252,3 +253,69 @@ def test_fetch_fx_rate_raises_on_server_error() -> None:
 def test_fetch_fx_rate_rejects_malformed_pair() -> None:
     with pytest.raises(ValueError, match="ISO currency"):
         fetch_fx_rate(base="EU", quote="USD", token=_TOKEN)
+
+
+@respx.mock
+def test_fetch_fx_intraday_parses_bars_and_resamples_interval() -> None:
+    route = respx.get(f"{TIINGO_ROOT}/tiingo/fx/eurusd/prices").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"date": "2024-06-07T13:30:00.000Z", "ticker": "eurusd", "close": 1.10},
+                {"date": "2024-06-07T14:00:00.000Z", "ticker": "eurusd", "close": 1.12},
+            ],
+        )
+    )
+
+    bars = fetch_fx_intraday(date(2024, 6, 7), date(2024, 6, 7), interval="15m", token=_TOKEN)
+
+    assert bars == {
+        datetime(2024, 6, 7, 13, 30): Decimal("1.10"),
+        datetime(2024, 6, 7, 14, 0): Decimal("1.12"),
+    }
+    # yfinance-style "15m" is translated to Tiingo's resampleFreq vocabulary.
+    assert route.calls.last.request.url.params["resampleFreq"] == "15min"
+    assert route.calls.last.request.url.params["startDate"] == "2024-06-07"
+
+
+@respx.mock
+def test_fetch_fx_intraday_skips_nonpositive_and_unparseable_rows() -> None:
+    respx.get(f"{TIINGO_ROOT}/tiingo/fx/eurusd/prices").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"date": "2024-06-07T13:30:00.000Z", "close": 1.10},
+                {"date": "2024-06-07T14:00:00.000Z", "close": 0},  # non-positive
+                {"date": None, "close": 1.5},  # unparseable timestamp
+                "not-a-row",
+            ],
+        )
+    )
+
+    bars = fetch_fx_intraday(date(2024, 6, 7), date(2024, 6, 7), token=_TOKEN)
+    assert bars == {datetime(2024, 6, 7, 13, 30): Decimal("1.10")}
+
+
+@respx.mock
+def test_fetch_fx_intraday_404_is_empty_not_error() -> None:
+    respx.get(f"{TIINGO_ROOT}/tiingo/fx/eurusd/prices").mock(return_value=httpx.Response(404))
+    assert fetch_fx_intraday(date(2024, 6, 7), date(2024, 6, 7), token=_TOKEN) == {}
+
+
+@respx.mock
+def test_fetch_fx_intraday_raises_on_server_error() -> None:
+    respx.get(f"{TIINGO_ROOT}/tiingo/fx/eurusd/prices").mock(
+        return_value=httpx.Response(500, text="boom")
+    )
+    with pytest.raises(TiingoError):
+        fetch_fx_intraday(date(2024, 6, 7), date(2024, 6, 7), token=_TOKEN)
+
+
+def test_fetch_fx_intraday_rejects_reversed_range() -> None:
+    with pytest.raises(ValueError, match="precedes"):
+        fetch_fx_intraday(date(2024, 6, 8), date(2024, 6, 7), token=_TOKEN)
+
+
+def test_fetch_fx_intraday_rejects_malformed_pair() -> None:
+    with pytest.raises(ValueError, match="ISO currency"):
+        fetch_fx_intraday(date(2024, 6, 7), date(2024, 6, 7), base="EU", token=_TOKEN)

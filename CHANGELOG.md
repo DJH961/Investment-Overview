@@ -13,12 +13,116 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.19.2] — 2026-06-28
+## [4.20.5] — 2026-06-28
 
 ### Fixed
 
 - **Daily per-holding moves now use the same whole-book two-date convention as the headline in both desktop and web.** Lagging NAV/mutual-fund holdings are forward-filled when a fresher peer has printed, so their stale price tick is dropped and only the appropriate FX revaluation remains; money-market rows still show dashes.
 - **The web companion now keeps EUR/USD frozen while forex is closed, even for forced refreshes.** This matches the desktop rule: live spot while the forex market is open, then the last settled close once it shuts.
+
+## [4.20.4] — 2026-06-28
+
+### Fixed
+
+- **The 1W value graph no longer dips at its trailing edge.** The merged
+  intraday/historical 1W curve used to end on the historical close, which lagged
+  behind the live market and produced a spurious end-of-curve dip. The 1W
+  curve's trailing edge is now pinned to the trusted web/1D live tip so the most
+  recent point matches the current intraday value. Adds covering tests in
+  `web/test/market-sleeve.test.ts`. Merges `main` (4.20.3) conflict-free.
+
+## [4.20.3] — 2026-06-28
+
+### Fixed
+
+- **The 1D graph's "Prev close" reference line is now a stable, session-constant
+  anchor.** The dashed previous-close baseline used to wobble during the session
+  because it was re-derived from the live overlay's shifting FX, so the EUR line
+  could appear to cross its own opening anchor even when nothing changed. It is
+  now pinned to the session-close FX (`graphAnchorFx`) for the duration of the
+  trading day, so the reference line stays put and the 1D curve reads against a
+  fixed prior-close datum. Adds `web/src/session-fx.ts` and covering tests.
+
+## [4.20.2] — 2026-06-28
+
+### Fixed
+
+- **The 1D / 1W graphs can now source their per-minute EUR/USD overlay from a
+  budget-gated Tiingo *secondary* when the keyless yfinance intraday feed serves
+  nothing — including over the weekend.** The graphs reprice each USD-booked
+  holding at the *actual* EUR/USD rate struck each minute (so the EUR line
+  genuinely diverges from the FX-free USD line). That overlay was sourced solely
+  from yfinance's intraday `EURUSD=X`; on a yfinance FX outage the curve silently
+  collapsed to the day's single settled rate. yfinance is still always tried
+  first, but when it returns nothing the reconstruction now falls back to Tiingo's
+  per-pair FX *prices* endpoint (`fetch_fx_intraday`) for the last market day's
+  settled intraday bars. Crucially this is a **historical** pull (an explicit
+  past-session date window), never a live weekend "projection", so — unlike the
+  live spot, which both providers still refuse to poll while the spot-FX market is
+  shut — it is valid even on Saturday/Sunday, when the 1D graph still shows
+  Friday's session. The fallback is token-gated (a vanilla install never touches
+  Tiingo) and charged against the shared desktop Tiingo budget, so a sustained
+  yfinance FX outage can't burn the cap.
+
+## [4.20.1] — 2026-06-28
+
+### Fixed
+
+- **The currency panel now treats the spot-FX weekend close as a *pause*, so
+  Friday's session stays the previous session when forex reopens Sunday evening.**
+  Previously, the moment spot FX reopened (Sun 17:00 ET) the box collapsed the
+  Sunday-evening-through-Monday-open "weekend spill-over" into a single overnight
+  drift "since Friday" — the whole Friday market-hours leg (and the "Since close"
+  third stat) simply *disappeared*. Since the weekend close is just a pause, that
+  was wrong: Friday remains the previous session until the next US session opens.
+  The spill-over is now a full **session view**, identical to the frozen Friday
+  weekend but with the rate live again — the two-leg split keeps Friday's
+  market-hours leg ("last") with the live overnight drift since its close on top,
+  the "Since close" stat returns, and the currency-effect / investing-power panels
+  re-anchor to Friday's session **open** (matching the box's "since last open") so
+  the totals never disagree in sign with the headline. The single-overnight collapse
+  is now reserved for a genuine US-only market holiday (e.g. 4th of July, FX still
+  trading). Mirrored on web and Python (`web/src/ui.ts`,
+  `src/investment_dashboard/ui/pages/overview.py`).
+
+## [4.20.0] — 2026-06-28
+
+### Added
+
+- **The web companion's Settings now offers a "Test price service" probe that
+  checks Twelve Data reachability without silently burning your free-tier
+  budget.** The probe (`web/src/probe.ts`) is budget-gated against the rolling
+  per-minute / per-day credit log, surfaces an explicit over-limit override for
+  when you knowingly want to spend a credit anyway, and meters every credit it
+  spends back into the shared credit ledger so the auto-refresh economy stays
+  honest (`web/src/app.ts`, `web/src/cache.ts`, `web/src/styles.css`,
+  `web/README.md`).
+
+### Fixed
+
+- **A price-service outage no longer pins the web companion in a non-stop
+  update loop.** When Twelve Data becomes unreachable the app now backs off,
+  persists a long-term deferred-symbol queue across reloads
+  (`web/src/deferred-queue.ts`), and records *why* the service was deemed
+  unreachable (`web/src/unreachable.ts`) so the UI can explain the degradation
+  instead of hammering a dead endpoint.
+
+## [4.19.2] — 2026-06-28
+
+### Fixed
+
+- **A freshly-fetched money-market NAV no longer strands every equity's daily
+  move as "stale" and wipes the Top-movers band on the web companion.** A
+  par-NAV money-market fund (e.g. VMFXX) re-marks to its own "today" whenever it
+  is re-fetched — it does not care whether the *stock* market is open — so a quote
+  pulled after-hours, over a weekend, or on a holiday carried a value-date newer
+  than every equity's genuine last-session move. That row defined the freshness
+  basis (`latestPriceDate` in `web/src/compute.ts`), which then flagged the real
+  equity moves `todayMoveIsStale` and collapsed the prev-value/move math, leaving
+  the Top-movers band empty. The freshness basis now ignores money-market
+  holdings — which never carry a today's move and so have no business dating it —
+  guarding the symptom at its source rather than only in `buildMovers`
+  (`web/src/compute.ts`).
 
 ## [4.19.1] — 2026-06-28
 

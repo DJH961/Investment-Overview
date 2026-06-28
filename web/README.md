@@ -72,6 +72,22 @@ Concretely, that means:
   stuck. Tiingo's own hourly/daily budget still applies, so any overflow simply
   defers and symbols already on a fresh value are left untouched (`viaTiingo` in
   `src/app.ts`, `forceAll` in `src/tiingo-fallback.ts`).
+- **Probe a price service (diagnose a dead feed).** Settings → *Probe a price
+  service* → *Probe primary (Twelve Data)* / *Probe backup (Tiingo)* fires a
+  single, deliberate quote for one (prefilled, editable) symbol at the chosen
+  provider and shows the **full raw result** inline: the key-redacted request
+  URL, the HTTP status, the verbatim response body, the price it parsed, and a
+  plain verdict (`bad-key`, `rate-limited`, `unreachable`, `bad-response` for a
+  misconfigured proxy, …). It is the fastest way to tell *why* prices won't load
+  (a wrong API key vs. an un-redeployed Tiingo Worker vs. a dead network). The
+  probe is metered exactly like a refresh: the Twelve Data probe only fires on a
+  **clear 1-minute window** (an inline per-second countdown auto-fires it when the
+  window opens — no pop-up, never leaving Settings; tap again to probe *now*
+  anyway over the limit), probing with no spendable budget is still possible
+  behind an explicit "over the limit" warning, and every probe counts a credit
+  against the provider's own minute/day (Twelve Data) or hour/day (Tiingo) budget
+  (`src/probe.ts` `probeQuote`/`decideProbeGate`; `runProbe`/`onProbeClick` in
+  `src/app.ts`).
 - **Idle auto-lock.** After a configurable period of inactivity (default **5
   min**; Settings → Security → *Auto-lock (minutes)*, set `0` to disable) the
   session clears the in-memory passphrase and returns to the unlock screen, so an
@@ -241,6 +257,23 @@ game**. Everything slow happens *after* you're already looking at your numbers:
   paces itself instead of exhausting the free tier early; the footer shows how
   much of the daily budget is used, and a banner warns when you're close to — or
   over — the limit.
+- **No more non-stop "Updating…" loop when a feed is down.** A deferral caused by
+  an *outage* (no price service could be reached) is treated differently from one
+  caused by the per-minute budget: instead of re-bursting every ~60 s against a
+  provider that has already said "no", the auto-retry **backs off exponentially**
+  (`src/unreachable.ts` `unreachableBackoffMs`, capped at ~15 min) the longer the
+  outage lasts. The `online`/visibility listeners still pull **immediately** when
+  the link or tab genuinely returns, so recovery is prompt — only the idle poll is
+  slowed. The polling log says exactly **why** it was unreachable and **what each
+  provider reported** (`describeUnreachable`: HTTP status, classification and the
+  verbatim message), so an outage is explained rather than just noted.
+- **Long-term deferred work-queue (survives a reload).** Symbols left outstanding
+  when the app closes — e.g. parked through a price-service outage — are now
+  **persisted** (`src/cache.ts` `read/writeDeferredQueue`) and **restored on the
+  next session** (`DeferredQueue.snapshot`/`restore`), so what still needs updating
+  is remembered without holding everything live in memory. Once rate-limit capacity
+  reopens they are drained and re-pulled — **including via the Tiingo backup** —
+  rather than being silently forgotten.
 - **Live, rotating update animation.** Every refresh (manual *or* automatic)
   visibly **spins the Refresh glyph** while data loads — not just a silent
   pop-up. For a portfolio larger than the per-minute cap, which can only be

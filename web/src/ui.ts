@@ -12,7 +12,7 @@
 import { Decimal } from "./decimal-config";
 import type { AllocationSlice, DashboardModel, HoldingView, MoverEntry, OverviewView } from "./compute";
 import { buildMovers, fxSinceAnchorPct } from "./compute";
-import { fxEffectSplit, fxBuyingPowerSplit } from "./session-fx";
+import { fxEffectSplit, fxBuyingPowerSplit, readPrevCloseAnchor, recordPrevCloseAnchor } from "./session-fx";
 import { getInvestmentAmountEur } from "./investment-amount";
 import {
   isUsMarketOpen,
@@ -258,15 +258,18 @@ function valueBasisLabel(o: OverviewView, now: Date = new Date()): string {
  *   - **marketOpen** — the live US session; the regular live view (a sessionView).
  *   - **weekendOvernight** — forex has reopened (Sun ≥17:00 ET) but no US session
  *     has opened since: Sunday evening through Monday's 09:30 open (extending past a
- *     Monday holiday to the next real open). The only honest move is the single
- *     overnight drift since Friday's close — no stale Friday market-hours leg.
+ *     Monday holiday to the next real open). The spot-FX weekend close is just a
+ *     *pause*, so Friday's session stays the previous session: this keeps the full
+ *     two-leg split (Friday's market-hours leg + the live overnight drift since its
+ *     close), re-anchored to Friday's open exactly like the frozen weekend. A
+ *     {@link sessionView}.
  *   - **holiday** — a US market holiday that is *not* an FX holiday (e.g. 4th of
- *     July): forex trades but the US session is shut, so likewise a single
- *     overnight number, kept under its "Market holiday" wording.
+ *     July): forex trades but the US session is shut, so a single overnight number,
+ *     kept under its "Market holiday" wording.
  *   - otherwise a **regular weekday post-close / pre-open** (a sessionView).
  *
- * `singleOvernight` (holiday ∨ weekendOvernight, with forex open and US shut) marks
- * the two one-number, no-split regimes; `sessionView` (its complement) marks the
+ * `singleOvernight` (holiday only, with forex open and US shut) marks the lone
+ * one-number, no-split regime; `sessionView` (its complement) marks the
  * three-stat, two-leg-split regimes.
  */
 export interface FxBoxRegime {
@@ -289,7 +292,7 @@ export function fxBoxRegime(now: Date = new Date()): FxBoxRegime {
     !marketOpen &&
     !holiday &&
     sessionOpenMs(lastSessionDate(now)) < lastForexReopenMs(now);
-  const singleOvernight = forexOpen && !marketOpen && (holiday || weekendOvernight);
+  const singleOvernight = forexOpen && !marketOpen && holiday;
   const sessionView = !singleOvernight;
   return {
     marketOpen,
@@ -322,23 +325,21 @@ export function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElemen
   // The rate + today's move. USD display shows the stored EUR/USD spot directly;
   // EUR display shows USD/EUR (its reciprocal). The % still follows the currency
   // strength convention used here (negated for the reciprocal).
-  const { marketOpen, forexFrozen, weekendOvernight, singleOvernight, sessionView } =
+  const { marketOpen, forexFrozen, singleOvernight, sessionView } =
     fxBoxRegime(now);
 
   // "Today" baseline. Live: since the *prior close* (overnight + intraday so far).
-  // Single-overnight: the lone drift since the last session close — Friday's FX
-  // close for the weekend spill-over (or the settled previous close as a holiday's
-  // overnight). Session view (open or shut): the full move since this — or Friday's
-  // frozen — session open, so it never just mirrors the "Since close" stat beside it.
+  // Single-overnight (a US-only holiday): the lone drift since the settled previous
+  // close. Session view (open or shut, including the frozen Friday weekend and the
+  // Sunday-evening spill-over): the full move since this — or Friday's — session
+  // open, so it never just mirrors the "Since close" stat beside it.
   let todayAnchor: Decimal | null;
   let todaySub: string;
   if (marketOpen) {
     todayAnchor = o.fxRateEurUsdPrev;
     todaySub = "since last close";
   } else if (singleOvernight) {
-    todayAnchor = weekendOvernight
-      ? (o.fxRateEurUsdSessionClose ?? o.fxRateEurUsdPrev)
-      : o.fxRateEurUsdPrev;
+    todayAnchor = o.fxRateEurUsdPrev;
     todaySub = "overnight";
   } else {
     todayAnchor = o.fxRateEurUsdSessionOpen;
@@ -389,9 +390,9 @@ export function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElemen
   // Third number: how far the rate has moved since the current session's reference
   // point — since the open while the market is live, since the close once shut.
   // Same strength convention as the "Today" move (negated for the EUR reciprocal).
-  // Dropped in the single-overnight regimes (weekend spill-over, US-only holiday):
-  // there is only one honest move to show, so a second stat would just echo the
-  // overnight "Today" figure beside it.
+  // Dropped only in the single-overnight regime (a US-only holiday): there is one
+  // honest move to show, so a second stat would just echo the overnight "Today"
+  // figure beside it. The Sunday-evening spill-over keeps it (Friday's session).
   const stats: HTMLElement[] = [rateStat, moveStat];
   if (sessionView) {
     const anchorFx = marketOpen ? o.fxRateEurUsdSessionOpen : o.fxRateEurUsdSessionClose;
@@ -620,9 +621,9 @@ function fxAnchorWarnBadge(reason: string): HTMLElement {
  * against and can never disagree:
  *   - **frozen weekend** — the effect is the *last completed session's* swing, so
  *     name that real settled day ("on Friday" / "yesterday").
- *   - **weekend spill-over** (forex reopened Sunday, US still shut) — the lone
- *     overnight drift traces back to that last session's close, so **"since
- *     Friday"** (the real settled weekday, "since Thursday" across a Friday holiday).
+ *   - **weekend spill-over** (forex reopened Sunday, US still shut) — Friday stays
+ *     the previous session (the weekend close is a pause), so name that real settled
+ *     day: **"since Friday"** ("since Thursday" across a Friday holiday).
  *   - otherwise the regular **"since yesterday"**.
  */
 export function effectSincePhrase(now: Date): string {
@@ -659,32 +660,29 @@ function eurEffectFromAnchor(o: OverviewView, anchorFx: Decimal | null): Decimal
  * move on the USD-booked book, with the diverging market-hours/overnight split
  * below.
  *
- * In the two **single-overnight** regimes there is no fresh session to split, so
- * one full-width bar carries the whole swing: a **US-only market holiday** (e.g.
- * 4th of July, FX still trading) keeps the "Market holiday" label, while the
- * **weekend spill-over** (Sunday evening through Monday's open) reads
- * "Overnight". The frozen Friday weekend keeps the full two-leg split, paused:
- * its total is re-anchored to the session **open** so it matches the headline's
- * "since last open" instead of disagreeing in sign with it (the v4.16.2 bug).
+ * In the **single-overnight** regime (a US-only market holiday, e.g. 4th of July
+ * with FX still trading) there is no fresh session to split, so one full-width bar
+ * carries the whole swing under the "Market holiday" label. The frozen Friday
+ * weekend and the Sunday-evening spill-over both keep the full two-leg split (the
+ * weekend close is just a pause, so Friday stays the previous session): their total
+ * is re-anchored to the session **open** so it matches the headline's "since last
+ * open" instead of disagreeing in sign with it (the v4.16.2 bug).
  */
 function renderEurFxEffect(o: OverviewView, now: Date): HTMLElement | null {
   const { marketOpen, holiday, singleOvernight, forexFrozen, weekendOvernight, forexOpen } =
     fxBoxRegime(now);
   // The euro currency effect. Normally `todayFxMoveEur` (anchored to the settled
-  // previous close). Two regimes re-anchor it so the panel total agrees with the
-  // headline rather than contradicting it:
-  //   - **frozen weekend** — to the session *open*, matching the card's
-  //     "since last open" stat (the panel total used to span Thursday→now and so
-  //     could read negative while the headline read positive);
-  //   - **weekend spill-over** — to the last session's *close*, the genuine
-  //     "since Friday" baseline (robust even when the settled previousClose
-  //     fell back a day on a cold start).
+  // previous close). Two regimes re-anchor it to the last session's *open* so the
+  // panel total agrees with the card's "since last open" stat rather than
+  // contradicting it (the v4.16.2 bug, where the total spanned Thursday→now and
+  // could read negative while the headline read positive):
+  //   - **frozen weekend** — the paused Friday session;
+  //   - **weekend spill-over** — Friday's session with the live overnight drift on
+  //     top, since the weekend close is just a pause and Friday stays the previous
+  //     session.
   let net = o.todayFxMoveEur;
-  if (forexFrozen) {
+  if (forexFrozen || weekendOvernight) {
     const reanchored = eurEffectFromAnchor(o, o.fxRateEurUsdSessionOpen);
-    if (reanchored !== null) net = reanchored;
-  } else if (weekendOvernight) {
-    const reanchored = eurEffectFromAnchor(o, o.fxRateEurUsdSessionClose);
     if (reanchored !== null) net = reanchored;
   }
   if (
@@ -766,18 +764,17 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
   // Prior-close anchor: the settled previous close, else the session close so the
   // panel survives a closed-market / frozen-FX round the same way the EUR effect
   // panel does — rather than disappearing while the card still shows a rate move.
-  // Re-anchored (mirroring the EUR panel) so the headline agrees with the card:
-  //   - **frozen weekend** — to the session *open* ("since last open");
-  //   - **weekend spill-over** — to the last session's *close* ("since Friday").
+  // Re-anchored (mirroring the EUR panel) to the last session's *open* so the
+  // headline agrees with the card — for the **frozen weekend** and the **weekend
+  // spill-over** alike (the weekend close is a pause; Friday stays the previous
+  // session, paused on Friday or with the live overnight drift on top).
   let fxPrev = fxEffectPriorFx(o);
-  if (forexFrozen && o.fxRateEurUsdSessionOpen !== null && o.fxRateEurUsdSessionOpen.greaterThan(0)) {
-    fxPrev = o.fxRateEurUsdSessionOpen;
-  } else if (
-    weekendOvernight &&
-    o.fxRateEurUsdSessionClose !== null &&
-    o.fxRateEurUsdSessionClose.greaterThan(0)
+  if (
+    (forexFrozen || weekendOvernight) &&
+    o.fxRateEurUsdSessionOpen !== null &&
+    o.fxRateEurUsdSessionOpen.greaterThan(0)
   ) {
-    fxPrev = o.fxRateEurUsdSessionClose;
+    fxPrev = o.fxRateEurUsdSessionOpen;
   }
   if (fxNow === null || fxPrev === null || !fxNow.greaterThan(0) || !fxPrev.greaterThan(0)) {
     return null;
@@ -2709,7 +2706,7 @@ function renderDrawdownChart(curve: AnalyticsView["curve"]): HTMLElement | null 
  */
 export function liveCurveToChart(
   points: CurvePoint[],
-  prevClose?: { eur: Decimal | null; usd: Decimal | null } | null,
+  prevClose?: { eur: Decimal | null; usd: Decimal | null; provisional?: boolean } | null,
   coverage?: { covered: number; total: number } | null,
 ): LiveCurveChart | null {
   // Final safety net: heal any single-currency (typically USD-only) whole-book
@@ -2738,11 +2735,18 @@ export function liveCurveToChart(
   const yAxisLabel = (value: number, digits?: number): string =>
     formatCurrencyShortRaw(new Decimal(value), code, digits);
   // The previous-session close (display-currency value) as a dashed reference
-  // line, marked only when it is known for the active currency.
+  // line, marked only when it is known for the active currency. When the anchor is
+  // still provisional (the settled prior FX not yet recovered, and no cached
+  // non-provisional value to hold) the label says so rather than letting the figure
+  // twitch silently — the line stays put and the uncertainty is shown honestly.
   const prevCloseValue = prevClose ? (inUsd ? prevClose.usd : prevClose.eur) : null;
+  const prevCloseProvisional = prevClose?.provisional === true;
   const referenceLine =
     prevCloseValue !== null && prevCloseValue !== undefined
-      ? { value: prevCloseValue, label: `Prev close ${formatMoneyRaw(prevCloseValue, code)}` }
+      ? {
+          value: prevCloseValue,
+          label: `Prev close ${formatMoneyRaw(prevCloseValue, code)}${prevCloseProvisional ? " (provisional)" : ""}`,
+        }
       : undefined;
   // Honest coverage caption: when the curve was reconstructed from fewer than all
   // of the sleeve's holdings, the rest were carried flat for want of bars, so the
@@ -2919,24 +2923,40 @@ function renderValueChart(
   // Live 1D/1W are now always on: wire the builders so their presets fetch and
   // draw on demand whenever a live graph is available. The 1D curve marks the
   // previous session's settled close as a dashed reference line — the same cue
-  // the desktop "1 Day" chart draws. We anchor it on the live "today" baseline
-  // (`totalValue − todayMove`, in each currency) rather than the last exported
-  // settled point, so the rule lands exactly where the headline "% today" is
-  // measured from. The two can differ — the exported point may be an older
-  // session or carry a different FX snapshot — which left the line at the wrong
-  // height (e.g. hugging the live value while the day was clearly down). Fall
-  // back to the last exported point only when no live move is known.
+  // the desktop "1 Day" chart draws.
+  //
+  // The reference reads the compute layer's **session-stable** prior-close anchor
+  // (`prevCloseAnchorEur/Usd`) rather than `totalValue − todayMove`. The latter
+  // twitched on every poll: it inherits the live EUR/USD rate and re-classifies
+  // holdings as deferred free-tier quotes trickle in, so the flat line visibly
+  // walked between updates. The anchor instead sums each holding's own settled
+  // prior close, frozen at the settled prior FX and independent of the
+  // freshest-date flip, so it stays put while only the live tip moves.
+  //
+  // It is also cached per session (keyed by the last trading session): a
+  // mid-session reload restores the identical line, and while the anchor is still
+  // *provisional* (the settled prior FX not yet recovered) we hold the last
+  // non-provisional value rather than redraw on a moving rate.
   const lastPoint = points[points.length - 1];
-  const prevClose =
-    o.todayMovePct !== null
-      ? {
-          eur: o.totalValueEur.minus(o.todayMoveEur),
-          usd:
-            o.totalValueUsd !== null && o.todayMoveUsd !== null
-              ? o.totalValueUsd.minus(o.todayMoveUsd)
-              : null,
-        }
-      : { eur: lastPoint.portfolioValue, usd: lastPoint.portfolioValueUsd };
+  const anchorSessionKey = lastSessionDate(new Date());
+  let anchorEur: Decimal | null = o.prevCloseAnchorEur;
+  let anchorUsd: Decimal | null = o.prevCloseAnchorUsd;
+  if (o.prevCloseProvisional) {
+    const cached = readPrevCloseAnchor(anchorSessionKey);
+    if (cached !== null) {
+      anchorEur = cached.eur ?? anchorEur;
+      anchorUsd = cached.usd ?? anchorUsd;
+    }
+  } else {
+    recordPrevCloseAnchor(anchorSessionKey, { eur: anchorEur, usd: anchorUsd });
+  }
+  // Fall back to the last exported settled point only when the anchor is unknown
+  // (e.g. a book with no resolvable prior close at all).
+  const prevClose = {
+    eur: anchorEur ?? lastPoint.portfolioValue,
+    usd: anchorUsd ?? lastPoint.portfolioValueUsd,
+    provisional: o.prevCloseProvisional && readPrevCloseAnchor(anchorSessionKey) === null,
+  };
   const liveBuilder: LiveCurveBuilder | undefined =
     liveGraph
       ? async (range, opts) => {

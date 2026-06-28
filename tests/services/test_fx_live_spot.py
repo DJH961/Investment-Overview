@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -362,3 +363,111 @@ class TestEurQuoteAsOf:
         assert info is not None
         assert info.source == "eod"
         assert info.as_of == yesterday
+
+
+class TestIntradayFxViaTiingo:
+    """The Tiingo *secondary* for the graphs' per-minute EUR/USD overlay.
+
+    Unlike the live spot, these are settled historical bars for a completed/last
+    session, so they are sourced even when the spot-FX market is shut over the
+    weekend — yet still token-gated, budget-gated and only ever a *secondary*
+    (yfinance is consulted first by the caller).
+    """
+
+    _BARS: ClassVar[dict[datetime, Decimal]] = {
+        datetime(2024, 6, 7, 13, 30): Decimal("1.10"),
+        datetime(2024, 6, 7, 14, 0): Decimal("1.12"),
+    }
+    _DAY = date(2024, 6, 7)  # a Friday (the last session viewed over the weekend)
+
+    def test_returns_bars_on_a_budgeted_today_dated_pull(self) -> None:
+        captured: dict[str, object] = {}
+
+        def fetcher() -> dict[datetime, Decimal]:
+            captured["called"] = True
+            return dict(self._BARS)
+
+        bars = fx_service.intraday_fx_bars_via_tiingo(
+            self._DAY,
+            self._DAY,
+            interval="15m",
+            fetcher=fetcher,
+            token="tok",
+            charge_budget=lambda: True,
+        )
+        assert captured["called"] is True
+        assert bars == self._BARS
+
+    def test_is_sourced_even_over_the_weekend(self) -> None:
+        # The whole point: a historical last-session pull is valid while the
+        # spot-FX market is closed (the 1D graph still shows Friday).
+        bars = fx_service.intraday_fx_bars_via_tiingo(
+            self._DAY,
+            self._DAY,
+            fetcher=lambda: dict(self._BARS),
+            token="tok",
+            charge_budget=lambda: True,
+        )
+        assert bars == self._BARS
+
+    def test_skips_without_a_token(self) -> None:
+        called = False
+
+        def fetcher() -> dict[datetime, Decimal]:
+            nonlocal called
+            called = True
+            return dict(self._BARS)
+
+        bars = fx_service.intraday_fx_bars_via_tiingo(
+            self._DAY, self._DAY, fetcher=fetcher, token="", charge_budget=lambda: True
+        )
+        assert bars == {}
+        assert called is False
+
+    def test_skips_when_budget_exhausted(self) -> None:
+        called = False
+
+        def fetcher() -> dict[datetime, Decimal]:
+            nonlocal called
+            called = True
+            return dict(self._BARS)
+
+        bars = fx_service.intraday_fx_bars_via_tiingo(
+            self._DAY, self._DAY, fetcher=fetcher, token="tok", charge_budget=lambda: False
+        )
+        assert bars == {}
+        assert called is False
+
+    def test_swallows_fetch_errors(self) -> None:
+        def boom() -> dict[datetime, Decimal]:
+            raise RuntimeError("tiingo down")
+
+        bars = fx_service.intraday_fx_bars_via_tiingo(
+            self._DAY, self._DAY, fetcher=boom, token="tok", charge_budget=lambda: True
+        )
+        assert bars == {}
+
+    def test_only_sources_usd(self) -> None:
+        called = False
+
+        def fetcher() -> dict[datetime, Decimal]:
+            nonlocal called
+            called = True
+            return dict(self._BARS)
+
+        bars = fx_service.intraday_fx_bars_via_tiingo(
+            self._DAY,
+            self._DAY,
+            quote="DKK",
+            fetcher=fetcher,
+            token="tok",
+            charge_budget=lambda: True,
+        )
+        assert bars == {}
+        assert called is False
+
+    def test_empty_pull_returns_empty(self) -> None:
+        bars = fx_service.intraday_fx_bars_via_tiingo(
+            self._DAY, self._DAY, fetcher=lambda: {}, token="tok", charge_budget=lambda: True
+        )
+        assert bars == {}

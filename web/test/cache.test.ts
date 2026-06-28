@@ -37,6 +37,8 @@ import {
   writeSeriesBackoff,
   clearSeriesBackoff,
   clearAllSeriesBackoff,
+  readDeferredQueue,
+  writeDeferredQueue,
   type StorageLike,
 } from "../src/cache";
 import type { Envelope } from "../src/crypto";
@@ -681,5 +683,55 @@ describe("time-series backoff store", () => {
     s.setItem("iv.web.series_backoff", JSON.stringify({ "1W:AAPL": { fails: "x", armedAt: "y" } }));
     expect(readSeriesBackoff("1W:AAPL", s)).toEqual({ fails: 0, armedAt: null });
     expect(() => clearAllSeriesBackoff(null)).not.toThrow();
+  });
+});
+
+describe("deferred-queue persistence", () => {
+  it("returns an empty array when nothing is stored", () => {
+    expect(readDeferredQueue(memStorage())).toEqual([]);
+  });
+
+  it("round-trips entries through write/read", () => {
+    const s = memStorage();
+    const entries = [
+      { symbol: "AAA", reason: "outage", attempts: 1, force: false },
+      { symbol: "BBB", reason: "force pull", attempts: 0, force: true },
+    ];
+    writeDeferredQueue(entries, s);
+    expect(readDeferredQueue(s)).toEqual(entries);
+  });
+
+  it("writing an empty list clears the stored key", () => {
+    const s = memStorage();
+    writeDeferredQueue([{ symbol: "AAA", reason: "x", attempts: 0, force: false }], s);
+    expect(readDeferredQueue(s)).toHaveLength(1);
+    writeDeferredQueue([], s);
+    expect(readDeferredQueue(s)).toEqual([]);
+  });
+
+  it("sanitises malformed stored entries", () => {
+    const s = memStorage();
+    s.setItem(
+      "iv.web.deferred_queue",
+      JSON.stringify([
+        { symbol: "AAA", reason: "ok", attempts: 2, force: true },
+        { symbol: "", reason: "empty", attempts: 0, force: false },
+        { reason: "no symbol" },
+        { symbol: "BBB", attempts: "nope", force: "yes" },
+        null,
+        42,
+      ]),
+    );
+    const read = readDeferredQueue(s);
+    expect(read).toEqual([
+      { symbol: "AAA", reason: "ok", attempts: 2, force: true },
+      { symbol: "BBB", reason: "restored", attempts: 0, force: false },
+    ]);
+  });
+
+  it("tolerates a corrupt JSON blob", () => {
+    const s = memStorage();
+    s.setItem("iv.web.deferred_queue", "{not json");
+    expect(readDeferredQueue(s)).toEqual([]);
   });
 });
