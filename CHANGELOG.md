@@ -13,9 +13,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.21.0] — 2026-06-28
+## [4.20.2] — 2026-06-28
 
-### Added
+### Fixed
 
 - **The 1D / 1W graphs can now source their per-minute EUR/USD overlay from a
   budget-gated Tiingo *secondary* when the keyless yfinance intraday feed serves
