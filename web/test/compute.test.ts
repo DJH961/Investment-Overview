@@ -331,6 +331,81 @@ describe("buildDashboard", () => {
     expect(movers.eligibleCount).toBe(1);
   });
 
+  it("a freshly-quoted money-market NAV must not flag equity moves stale (market closed)", () => {
+    // Root cause of the vanishing Top-movers band: a money-market fund re-marks to
+    // its own "today" whenever it is re-fetched — it does not care whether the
+    // stock market is open. A quote pulled after-hours/over a weekend gave VMFXX a
+    // newer value-date than every equity's genuine last-session move, which used to
+    // raise the freshness basis and flag those real moves `todayMoveIsStale`. The
+    // money-market row must never define that basis.
+    const exp = makeExport();
+    exp.holdings = [
+      {
+        symbol: "VTI",
+        name: "Vanguard Total Market",
+        asset_class: "etf",
+        broker: "Broker",
+        account: "Taxable",
+        native_currency: "USD",
+        shares: "10",
+        cost_basis_native: "1000",
+        cumulative_dividends_cash_native: "0",
+        price_symbol: "VTI",
+        price_type: "market",
+        last_known_price_native: "100",
+        last_price_date: "2024-05-31",
+        previous_close_native: "90",
+        previous_close_date: "2024-05-30",
+        cashflows: [{ date: "2023-01-01", amount: "-900" }],
+      },
+      {
+        symbol: "VMFXX",
+        name: "Vanguard Federal Money Market",
+        asset_class: "money_market",
+        broker: "Broker",
+        account: "Settlement",
+        native_currency: "USD",
+        shares: "1000",
+        cost_basis_native: "1000",
+        cumulative_dividends_cash_native: "0",
+        price_symbol: "VMFXX",
+        price_type: "nav",
+        last_known_price_native: "1",
+        cashflows: [{ date: "2023-01-01", amount: "-1000" }],
+      },
+    ];
+    // VTI's live mark is last Friday's session; VMFXX gets a fresher NAV stamped on
+    // a *newer* trading day — the "new price that does not care about market open".
+    const liveQuotes = new Map<string, Quote>([
+      [
+        "VTI",
+        {
+          symbol: "VTI",
+          price: new Decimal("100"),
+          previousClose: new Decimal("90"),
+          currency: "USD",
+          valueDate: "2024-05-31",
+          priceTime: new Date("2024-05-31T20:00:00Z").getTime(),
+        },
+      ],
+      [
+        "VMFXX",
+        { symbol: "VMFXX", price: new Decimal("1"), previousClose: null, currency: "USD", valueDate: "2024-06-03" },
+      ],
+    ]);
+    const m = buildDashboard(exp, liveQuotes, fx, new Date("2024-06-03T22:00:00Z"));
+    const vti = m.holdings.find((h) => h.symbol === "VTI")!;
+    const vmfxx = m.holdings.find((h) => h.symbol === "VMFXX")!;
+    // The money-market row is genuinely the freshest priced row...
+    expect(vmfxx.priceFallbackDate).toBe("2024-06-03");
+    expect(vmfxx.todayMoveEur).toBeNull();
+    // ...but VTI's real last-session move is NOT stranded as stale by it.
+    expect(vti.todayMoveEur).not.toBeNull();
+    expect(vti.todayMoveIsStale).toBe(false);
+    const movers = buildMovers(m.holdings);
+    expect(movers.winners.map((w) => w.symbol)).toContain("VTI");
+  });
+
   it("produces a portfolio XIRR (sign change present)", () => {
     expect(model.overview.portfolioXirr).not.toBeNull();
   });
