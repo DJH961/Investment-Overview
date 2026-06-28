@@ -13,7 +13,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.17.0] — 2026-06-28
+## [4.18.0] — 2026-06-28
 
 ### Added
 
@@ -33,6 +33,49 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `src/investment_dashboard/ui/pages/overview.py`,
   `src/investment_dashboard/ui/pages/holdings.py`,
   `src/investment_dashboard/ui/style.py`).
+
+## [4.17.0] — 2026-06-28
+
+### Fixed
+
+- **The live "1 Day" / "1 Week" graphs now keep trying to fill themselves to
+  their coverage target on *every* auto-update — whether or not the US market is
+  open — and a graph that still can't be completed is flagged in Data Health.**
+  Previously the per-tick refresh only *appended* a live point while the market
+  traded; the gap-filling backfill ran only at startup, so a graph that came up
+  short (a blank start, a stalled feed, or a partial fetch) stayed gappy until the
+  next restart. Each auto-update now runs a cache-first backfill
+  (`intraday_snapshots_service.backfill_graphs`): the "1 Day" curve re-pulls its
+  15-minute grid while under-covered, and the "1 Week" sleeve re-attempts its
+  uncovered sessions (force-pulling past the once-per-anchor render guard) so an
+  under-filled day is topped up rather than frozen. When a finished session still
+  can't reach its target — usually because the price feed has no intraday history
+  for that day — the new **"Intraday graph coverage"** Data Health probe surfaces
+  it as a warning instead of silently drawing a short curve
+  (`investment_dashboard/services/intraday_snapshots_service.py`,
+  `investment_dashboard/services/auto_refresh.py`,
+  `investment_dashboard/services/diagnostics_service.py`).
+
+## [4.16.4] — 2026-06-28
+
+### Fixed
+
+- **The Overview's "Today" KPI card no longer sprawls or wraps awkwardly — the
+  Vs Market verdict, the card layout, and the movers badges are all tightened
+  into a compact, single-screen block.** The "Beating/Trailing the market"
+  verdict headline could wrap onto two lines and the day's movers badges spilled
+  into the card flow, pushing content around and wasting vertical space. The fix
+  keeps the verdict on a single line via a compact word-headline variant
+  (`.inv-kpi-verdict`: clamped font size, `white-space: nowrap`), tightens the
+  "Today" KPI card layout, and lifts the mover badges out of the card flow while
+  making the **Today's movers** list collapsible so it no longer crowds the
+  Overview (`src/investment_dashboard/ui/pages/overview.py`,
+  `src/investment_dashboard/ui/components/kpi_card.py`,
+  `src/investment_dashboard/ui/style.py`,
+  `src/investment_dashboard/services/daily_growth_view.py`). The all-time
+  (Yearly) growth chart now also plots **both EUR and USD** lines so the two
+  currencies genuinely diverge instead of showing a single rescaled curve
+  (`src/investment_dashboard/ui/pages/yearly.py`).
 
 ## [4.16.3] — 2026-06-28
 

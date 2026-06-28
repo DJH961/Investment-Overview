@@ -113,6 +113,14 @@ def tick_refresh(source: str = "Live price refresh", *, force: bool = False) -> 
         from investment_dashboard.services import intraday_snapshots_service  # noqa: PLC0415
 
         intraday_snapshots_service.record_if_market_open()
+        # Top up the "1 Day" / "1 Week" graphs to target on *every* auto-update,
+        # whether or not the market is open: the live capture above only appends a
+        # point while the market trades, so an under-filled graph (after a blank
+        # start, a stalled feed, or simply between restarts) would otherwise never
+        # recover. The backfill is cache-first and a no-op once a graph is fully
+        # covered; a graph it still can't fill is surfaced by the Data Health
+        # "Intraday graph coverage" probe (diagnostics_service).
+        intraday_snapshots_service.backfill_graphs()
         # The refresh completed without error: clear any lingering "outdated
         # prices"/refresh-failure notice from a previous tick so the Data Health
         # surface self-heals once prices are actually flowing again.

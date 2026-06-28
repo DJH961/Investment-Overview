@@ -31,6 +31,7 @@ from investment_dashboard.services.daily_growth_view import (
 )
 from investment_dashboard.ui import refresh_indicator
 from investment_dashboard.ui.components import (
+    collapsible_section,
     deferred,
     empty_state,
     kpi_card,
@@ -1151,6 +1152,23 @@ def _fmt_updated(value: datetime, *, tz: tzinfo | None = None) -> str:
     return value.strftime("%d %b %H:%M")
 
 
+def _holding_badge_html(badge: str | None) -> str:
+    """Return the HTML for a holding's movers badge, or "" when there is none.
+
+    The badge is wrapped in ``.inv-holding-badge-row``, which the stylesheet
+    pins to the top-right of the figures row (out of the card's vertical flow)
+    so it can never add a line break that pushes the headline value down.
+    """
+    if not badge:
+        return ""
+    badge_cls = "inv-holding-badge-loss" if "loser" in badge else "inv-holding-badge-gain"
+    return (
+        '<div class="inv-holding-badge-row">'
+        f'<span class="inv-holding-badge {badge_cls}">{escape(badge)}</span>'
+        "</div>"
+    )
+
+
 def _holding_card(
     card: HoldingCard, *, display_ccy: str, tz: tzinfo | None = None, badge: str | None = None
 ) -> None:  # pragma: no cover - UI
@@ -1187,10 +1205,6 @@ def _holding_card(
             pills += '<span class="inv-holding-pill inv-holding-pill-warn">stale value</span>'
         if card.price_data_warning:
             pills += '<span class="inv-holding-pill inv-holding-pill-warn">bad history</span>'
-        # A movers badge reminds the viewer this holding topped today's
-        # leaderboard. It is rendered on its own right-aligned line above the
-        # daily-growth figures (below) rather than inline beside the symbol, so a
-        # long "Top % loser" badge can never push the freshness time out of place.
         ui.html(
             '<div class="inv-holding-topline">'
             f'<span class="inv-holding-sym">{escape(card.symbol)}{pills}</span>'
@@ -1200,13 +1214,13 @@ def _holding_card(
         ui.html(
             f'<div class="inv-holding-name" title="{escape(card.name)}">{escape(card.name)}</div>'
         )
-        if badge:
-            badge_cls = "inv-holding-badge-loss" if "loser" in badge else "inv-holding-badge-gain"
-            ui.html(
-                '<div class="inv-holding-badge-row">'
-                f'<span class="inv-holding-badge {badge_cls}">{escape(badge)}</span>'
-                "</div>"
-            )
+        # A movers badge reminds the viewer this holding topped today's
+        # leaderboard. It is rendered as an absolutely-positioned chip pinned to
+        # the top-right of the figures row (see ``.inv-holding-badge-row`` in
+        # style.py) rather than as a flow element, so a long "Top % loser" badge
+        # never adds a line break that pushes the value (and the rest of the
+        # card) down — keeping the headline figures aligned across cards.
+        badge_html = _holding_badge_html(badge)
 
         daily_color = color_for_signed(float(daily)) if daily is not None else "var(--inv-muted)"
         daily_txt = (
@@ -1230,6 +1244,7 @@ def _holding_card(
             )
             ui.html(
                 '<div class="inv-holding-figures">'
+                f"{badge_html}"
                 f'<span class="inv-holding-value">{escape(fmt_money(value, ccy))}</span>'
                 '<span class="inv-holding-change-wrap">'
                 '<span class="inv-holding-change inv-holding-change-stale" '
@@ -1248,6 +1263,7 @@ def _holding_card(
             )
             ui.html(
                 '<div class="inv-holding-figures">'
+                f"{badge_html}"
                 f'<span class="inv-holding-value">{escape(fmt_money(value, ccy))}</span>'
                 '<span class="inv-holding-change-wrap">'
                 f'<span class="inv-holding-change" style="color:{daily_color}">'
@@ -1347,8 +1363,16 @@ def _render_movers(movers: MoversView, *, display_ccy: str) -> None:  # pragma: 
     with the stat it was ranked on. Measured on the freshest price date across
     the book, so before the open it reflects last session and during the session
     only what has printed today.
+
+    The band is a collapsible section (starting open) so the leaderboard can be
+    folded away once glanced at, keeping the long Overview page tidy.
     """
-    with section("Today's movers", classes="inv-movers-band"):
+    with collapsible_section(
+        "Today's movers",
+        icon="star",
+        open=True,
+        classes="inv-movers-band",
+    ):
         ui.html(f'<div class="inv-mover-sub">{escape(_mover_basis_label(movers.basis_date))}</div>')
         with ui.element("div").classes("inv-mover-grid"):
             for entry in movers.winners:

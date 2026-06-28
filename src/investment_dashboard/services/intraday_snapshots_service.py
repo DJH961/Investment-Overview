@@ -64,6 +64,7 @@ from __future__ import annotations
 import logging
 import threading
 from bisect import bisect_right
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from itertools import pairwise
@@ -1044,6 +1045,42 @@ def _pick_session_points(bar_times: list[datetime]) -> list[datetime]:
     return sorted(set(bar_times))
 
 
+def _week_day_is_covered(
+    session_date: date,
+    anchor: date,
+    now: datetime,
+    sample_times: list[datetime],
+) -> bool:
+    """Whether ``session_date``'s cached "1 Week" samples adequately cover it.
+
+    Pure predicate over the day's stored sample instants (``sample_times``), so
+    both the cache-first fetcher (:func:`week_series_with_fx`) and the read-only
+    data-health probe (:func:`assess_graph_coverage`) judge "below target" the
+    same way:
+
+    * the in-progress *anchor* session is exempt — its close hasn't happened yet
+      and it grows from today's dense live captures, so any sample counts; and
+    * a *finished* session must carry the full representative span: at least
+      :data:`WEEK_POINTS_PER_COMPLETE_SESSION` points *and* a first→last reach
+      across at least :data:`WEEK_COVERAGE_FRACTION` of the open→close session.
+
+    Too few points — or points all clustered in one stretch — means the day is
+    below target (data is missing), so it reports uncovered to trigger a re-pull.
+    """
+    if not sample_times:
+        return False
+    if session_date == anchor and _to_naive_utc(now) <= _session_close_utc(session_date):
+        return True
+    if len(sample_times) < WEEK_POINTS_PER_COMPLETE_SESSION:
+        return False
+    open_utc = _session_open_utc(session_date)
+    session_span = (_session_close_utc(session_date) - open_utc).total_seconds()
+    if session_span <= 0:
+        return True
+    actual_span = (sample_times[-1] - sample_times[0]).total_seconds()
+    return Decimal(actual_span) >= WEEK_COVERAGE_FRACTION * Decimal(session_span)
+
+
 def week_series_with_fx(
     session: Session,
     *,
@@ -1118,33 +1155,7 @@ def week_series_with_fx(
         start = _session_start_utc(session_date)
         end = _session_start_utc(session_date + timedelta(days=1))
         sample_times = sorted(at for at, _, _ in cached if start <= at < end)
-        if not sample_times:
-            return False
-        if session_date == anchor and _to_naive_utc(now) <= _session_close_utc(session_date):
-            # While the anchor session is still in progress it grows from today's
-            # dense live captures, so any sample counts and it is never
-            # re-downloaded (those live points are denser than a coarse re-fetch
-            # and must be preserved). Its midday gaps are filled by the "1 Day"
-            # reconstruction, which writes to this very cache. Once its close has
-            # passed it becomes a *finished* session like any other and must carry
-            # its full intraday span — so a day left with only a stray capture
-            # (live feed or reconstruction stalled) is re-pulled to fill its gaps
-            # rather than frozen at one point.
-            return True
-        # A finished session must carry the full representative span: at least
-        # :data:`WEEK_POINTS_PER_COMPLETE_SESSION` points *and* a first→last reach
-        # across at least :data:`WEEK_COVERAGE_FRACTION` of the open→close session.
-        # Too few points — or points all clustered in one stretch (the feed
-        # stalled before midday) — means data is missing, so report it uncovered
-        # to trigger a re-pull that lays the day's full set of 30-minute bars.
-        if len(sample_times) < WEEK_POINTS_PER_COMPLETE_SESSION:
-            return False
-        open_utc = _session_open_utc(session_date)
-        session_span = (_session_close_utc(session_date) - open_utc).total_seconds()
-        if session_span <= 0:
-            return True
-        actual_span = (sample_times[-1] - sample_times[0]).total_seconds()
-        return Decimal(actual_span) >= WEEK_COVERAGE_FRACTION * Decimal(session_span)
+        return _week_day_is_covered(session_date, anchor, now, sample_times)
 
     # 2. Fetch only the gaps, and only days not already attempted this session
     #    (``force`` re-pulls every uncovered day regardless of the marker).
@@ -1300,3 +1311,117 @@ def _mark_week_day_fetched(session: Session, day: date, anchor: date) -> None:
     app_config_repo.set_value(
         session, f"{_WEEK_FETCHED_PREFIX}{day.isoformat()}", anchor.isoformat()
     )
+
+
+@dataclass(frozen=True)
+class GraphCoverage:
+    """Read-only verdict on whether the live intraday graphs reached target.
+
+    ``day_below_target`` is set when the "1 Day" session has *finished* yet its
+    stored curve never reached the coverage target (so it can no longer fill).
+    ``week_days_below_target`` lists the finished "1 Week" sessions still short of
+    their representative span. Both ignore the *in-progress* session, which is
+    expected to still be filling, and any day on which nothing intraday is held
+    (there is nothing to plot, so it is vacuously covered).
+    """
+
+    day_below_target: bool
+    week_days_below_target: tuple[date, ...]
+
+    @property
+    def has_gaps(self) -> bool:
+        return self.day_below_target or bool(self.week_days_below_target)
+
+
+def assess_graph_coverage(session: Session, *, now: datetime | None = None) -> GraphCoverage:
+    """Report which live intraday graphs are below target — read-only, no network.
+
+    Mirrors the coverage predicates the backfill itself uses
+    (:func:`_session_is_covered` for "1 Day", :func:`_week_day_is_covered` for
+    "1 Week") so the Data Health surface flags exactly the days the backfill tried
+    yet could not fill. Only *finished* sessions on which intraday-priced holdings
+    were actually held are considered, so an in-progress (still-filling) session
+    or a day with nothing to plot never raises a false alarm. Performs no network
+    calls and writes nothing, so it is safe to call on every Data Health render.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    now = now or datetime.now(UTC)
+    now_naive = _to_naive_utc(now)
+
+    # "1 Day": flag only once the session has closed and still fell short — while
+    # it is open the reconstruction is expected to keep filling it.
+    day = last_session_date(now)
+    day_below_target = (
+        now_naive > _session_close_utc(day)
+        and bool(_priced_intraday_positions(session, day))
+        and not _session_is_covered(session, day, now)
+    )
+
+    # "1 Week": each finished, held session that never reached its span target.
+    # The in-progress *anchor* session is excluded here — it is still filling and
+    # its coverage is represented by the "1 Day" check above, so it is never
+    # double-flagged or flagged early.
+    sessions = recent_trading_sessions(now)
+    anchor = sessions[-1]
+    finished_sessions = sessions[:-1]
+    week_start = _session_start_utc(sessions[0])
+    window_end = min(now_naive, _session_start_utc(sessions[-1] + timedelta(days=1)))
+    with cache_read_session(session) as cache:
+        cached_times = [
+            r.captured_at for r in intraday_repo.list_in_range(cache, week_start, window_end)
+        ]
+
+    week_gaps: list[date] = []
+    for session_date in finished_sessions:
+        if not _priced_intraday_positions(session, session_date):
+            continue
+        start = _session_start_utc(session_date)
+        end = _session_start_utc(session_date + timedelta(days=1))
+        sample_times = sorted(t for t in cached_times if start <= t < end)
+        if not _week_day_is_covered(session_date, anchor, now, sample_times):
+            week_gaps.append(session_date)
+
+    return GraphCoverage(day_below_target=day_below_target, week_days_below_target=tuple(week_gaps))
+
+
+def backfill_graphs(*, now: datetime | None = None) -> GraphCoverage:
+    """Top up the live "1 Day" + "1 Week" graphs to target — every auto-update.
+
+    Run from the background refresh tick (see
+    :func:`investment_dashboard.services.auto_refresh.tick_refresh`) so an
+    under-filled graph keeps trying to complete on *every* auto-update,
+    regardless of whether the US market is currently open — unlike the live
+    capture, which only appends a point while the market trades. Both fills are
+    cache-first and self-limiting (a fully-covered graph is a no-op):
+
+    * **1 Day** — :func:`reconstruct_last_session` re-pulls the last session only
+      while it is under-covered, laying its 15-minute grid across any gap.
+    * **1 Week** — :func:`week_series_with_fx` with ``force=True`` re-attempts the
+      uncovered sessions each tick (bypassing the once-per-anchor render guard,
+      which exists only to keep page renders off the network), so a day that came
+      up short keeps being topped up rather than frozen until the next restart.
+
+    Returns the resulting :class:`GraphCoverage` so the caller can flag a graph
+    that still could not be filled. Best-effort: opens its own session and never
+    raises — a backfill failure must never break a price refresh.
+    """
+    from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+
+    now = now or datetime.now(UTC)
+    try:
+        with ledger_session_scope() as session:
+            reconstruct_last_session(session, now=now)
+            week_series_with_fx(session, now=now, force=True)
+            coverage = assess_graph_coverage(session, now=now)
+        if coverage.has_gaps:
+            log.info(
+                "intraday graph still below target after backfill "
+                "(1 Day=%s, 1 Week gaps=%s) — surfaced in Data Health",
+                coverage.day_below_target,
+                [d.isoformat() for d in coverage.week_days_below_target],
+            )
+        return coverage
+    except Exception:  # pragma: no cover - defensive: backfill is best-effort
+        log.warning("intraday graph backfill failed", exc_info=True)
+        return GraphCoverage(day_below_target=False, week_days_below_target=())
