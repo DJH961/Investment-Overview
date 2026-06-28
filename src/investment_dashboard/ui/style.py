@@ -1077,16 +1077,29 @@ html, body {{
 .inv-collapse.inv-movers-band :deep(.q-item__section--avatar .q-icon) {{
   color: var(--inv-accent);
 }}
+/* The headline row carries the title on the left and the basis date on the
+   right, at the same height — Quasar appends the expand chevron after it. */
+.inv-mover-header {{
+  gap: 0.5rem; min-width: 0;
+}}
+.inv-mover-star {{
+  color: var(--inv-accent); font-size: 1.15rem;
+}}
+.inv-mover-title {{
+  font-size: 0.875rem; font-weight: 600; color: var(--inv-ink); letter-spacing: -0.005em;
+}}
 .inv-mover-sub {{
-  font-size: 0.75rem; color: var(--inv-muted); margin: -0.25rem 0 0.6rem;
+  font-size: 0.75rem; color: var(--inv-muted); white-space: nowrap;
 }}
 .inv-mover-grid {{
-  display: grid; grid-template-columns: 1fr; gap: 0.55rem;
+  display: grid; grid-template-columns: 1fr; gap: 0.55rem; width: 100%;
 }}
 @media (min-width: 600px) {{
   .inv-mover-grid {{ grid-template-columns: repeat(2, 1fr); }}
 }}
-@media (min-width: 1024px) {{
+/* On any reasonably wide surface the four blocks line up side to side as a
+   single full-width row, using the whole band rather than wrapping to 2x2. */
+@media (min-width: 768px) {{
   .inv-mover-grid {{ grid-template-columns: repeat(4, 1fr); }}
 }}
 .inv-mover-block {{

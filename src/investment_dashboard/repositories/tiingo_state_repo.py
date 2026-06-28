@@ -28,11 +28,53 @@ from investment_dashboard.services.tiingo_fallback import (
 #: app_config key holding the desktop fallback's JSON state blob.
 STATE_KEY = "tiingo_desktop_state"
 
-#: A clock-hour window in seconds (the hourly budget bucket).
-_HOUR_SECONDS = 3600
+#: app_config keys holding the user-configurable per-side Tiingo caps. Stored
+#: separately from the (self-resetting) counter blob so a counter reset never
+#: clobbers the configured limits.
+HOURLY_CAP_KEY = "tiingo_hourly_cap"
+DAILY_CAP_KEY = "tiingo_daily_cap"
 
 #: Most recent per-fund NAV-publish samples to retain when learning the habit.
 _MAX_HABIT_SAMPLES = 10
+
+
+def _floor_to_hour(dt: datetime) -> datetime:
+    """The top-of-hour (:00) instant for ``dt`` — the hourly budget bucket key.
+
+    Tiingo's hourly allowance resets on the wall-clock hour (``:00``), not on a
+    rolling 60-minute window since the first call. Flooring both the stored stamp
+    and ``now`` to the hour means the bucket clears the instant the clock ticks
+    over to a new hour, matching the provider's real reset.
+    """
+    return dt.replace(minute=0, second=0, microsecond=0)
+
+
+def load_caps(session: Session) -> tuple[int, int]:
+    """Return the configured ``(hourly_cap, daily_cap)``, falling back to defaults.
+
+    A non-positive or unparseable stored value falls back to the built-in default
+    so a corrupt config can never silently disable (cap 0) or invert the budget.
+    """
+
+    def _read(key: str, default: int) -> int:
+        raw = app_config_repo.get(session, key)
+        if raw is None:
+            return default
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return default
+        return value if value > 0 else default
+
+    return _read(HOURLY_CAP_KEY, DESKTOP_HOURLY_CAP), _read(DAILY_CAP_KEY, DESKTOP_DAILY_CAP)
+
+
+def save_caps(session: Session, *, hourly_cap: int, daily_cap: int) -> None:
+    """Persist the user-configured per-side Tiingo caps (both must be positive)."""
+    if hourly_cap <= 0 or daily_cap <= 0:
+        raise ValueError("Tiingo caps must be positive integers")
+    app_config_repo.set_value(session, HOURLY_CAP_KEY, str(int(hourly_cap)))
+    app_config_repo.set_value(session, DAILY_CAP_KEY, str(int(daily_cap)))
 
 
 def _iso(dt: datetime | None) -> str | None:
@@ -65,6 +107,16 @@ class TiingoDesktopState:
     earliest_habit: time | None = None
     peer_nav_seen_at: datetime | None = None
     stale_since: dict[str, datetime] = field(default_factory=dict)
+    #: When the provider last returned HTTP 429 (rate-limited) this hour, if at
+    #: all. Set by :func:`mark_rate_limited` and surfaced in Settings; cleared at
+    #: the next hourly reset (the quota frees up then). Not charged itself — the
+    #: 429 handler also pins ``hour_used`` to the cap so no further call is made.
+    rate_limited_at: datetime | None = None
+    #: The user-configurable per-side caps. Loaded from app_config by :func:`load`
+    #: (defaulting to the built-in constants) so the live budget always honours the
+    #: limits the user set in Settings. Not persisted inside the counter blob.
+    hourly_cap: int = DESKTOP_HOURLY_CAP
+    daily_cap: int = DESKTOP_DAILY_CAP
     #: Per-fund observed NAV-publish times (Eastern), accumulated *across days*
     #: as a learned habit — capped to the most recent samples per fund. Drives
     #: the smart canary pick (earliest + most consistent publisher). Unlike the
@@ -75,20 +127,23 @@ class TiingoDesktopState:
         return Budget(
             hour_used=self.hour_used,
             day_used=self.day_used,
-            hourly_cap=DESKTOP_HOURLY_CAP,
-            daily_cap=DESKTOP_DAILY_CAP,
+            hourly_cap=self.hourly_cap,
+            daily_cap=self.daily_cap,
         )
 
     def normalize(self, now_utc: datetime) -> None:
         """Reset the hour/day buckets in place when their window has rolled over.
 
         Called on load so the gates never see a stale counter: the hourly bucket
-        clears once a clock-hour has elapsed since it opened, and the daily bucket
-        (plus the canary count and learned habit) clears at Eastern midnight.
+        clears the instant the wall-clock hour ticks over (Tiingo's quota resets
+        on the full hour, ``:00`` — not on a rolling 60-minute window), and the
+        daily bucket (plus the canary count and learned habit) clears at Eastern
+        midnight. A spent rate-limit flag is forgiven at the hourly reset too.
         """
-        if self.hour_stamp is None or (now_utc - self.hour_stamp).total_seconds() >= _HOUR_SECONDS:
+        if self.hour_stamp is None or _floor_to_hour(now_utc) > _floor_to_hour(self.hour_stamp):
             self.hour_stamp = now_utc
             self.hour_used = 0
+            self.rate_limited_at = None
         if is_new_budget_day(self.day_stamp, now_utc):
             self.day_stamp = now_utc
             self.day_used = 0
@@ -110,6 +165,7 @@ class TiingoDesktopState:
                 if self.earliest_habit
                 else None,
                 "peer_nav_seen_at": _iso(self.peer_nav_seen_at),
+                "rate_limited_at": _iso(self.rate_limited_at),
                 "stale_since": {sym: dt.isoformat() for sym, dt in self.stale_since.items()},
                 "publish_habits": {
                     sym: [t.strftime("%H:%M") for t in times]
@@ -135,6 +191,7 @@ class TiingoDesktopState:
             canary_count_today=int(data.get("canary_count_today", 0)),
             earliest_habit=time.fromisoformat(habit_raw) if habit_raw else None,
             peer_nav_seen_at=_parse_dt(data.get("peer_nav_seen_at")),
+            rate_limited_at=_parse_dt(data.get("rate_limited_at")),
             stale_since={
                 sym: dt
                 for sym, raw_dt in stale_raw.items()
@@ -150,8 +207,13 @@ class TiingoDesktopState:
 
 
 def load(session: Session, now_utc: datetime) -> TiingoDesktopState:
-    """Load the persisted state and apply hour/day resets for ``now_utc``."""
+    """Load the persisted state and apply hour/day resets for ``now_utc``.
+
+    The user-configurable per-side caps are read from app_config and bound onto
+    the state so every budget check honours the limits set in Settings.
+    """
     state = TiingoDesktopState.from_json(app_config_repo.get(session, STATE_KEY))
+    state.hourly_cap, state.daily_cap = load_caps(session)
     state.normalize(now_utc)
     return state
 
@@ -172,6 +234,30 @@ def record_canary(state: TiingoDesktopState, now_utc: datetime) -> None:
     state.last_canary_at = now_utc
     state.canary_count_today += 1
     record_spend(state, 1)
+
+
+def exhaust_hour(state: TiingoDesktopState, now_utc: datetime) -> None:
+    """Pin the hourly bucket to its cap — the quota is spent until the next ``:00``.
+
+    Used when the provider reports HTTP 429 (rate-limited): no matter *why* or how
+    many calls we personally counted, the account's hourly allowance is gone, so
+    we treat it as fully used and stop until the wall-clock hour rolls over. Also
+    stamps ``rate_limited_at`` so Settings can explain *why* the budget is maxed.
+    """
+    state.hour_used = max(state.hour_used, state.hourly_cap)
+    state.rate_limited_at = now_utc
+
+
+def mark_rate_limited(session: Session, now_utc: datetime) -> None:
+    """Load, exhaust the hourly bucket (429 handler), and persist — best-effort.
+
+    A standalone convenience for the price/FX 429 catch sites: it self-heals the
+    next hour via :func:`normalize`, so a single persisted "hour is spent" stamp
+    is all that's needed to stop hammering a rate-limited account.
+    """
+    state = load(session, now_utc)
+    exhaust_hour(state, now_utc)
+    save(session, state)
 
 
 def note_publish_habit(state: TiingoDesktopState, observed_et: time) -> None:

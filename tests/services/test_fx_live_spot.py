@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy.orm import Session
@@ -17,6 +18,13 @@ from sqlalchemy.orm import Session
 from investment_dashboard.adapters.yfinance_client import PriceRecord
 from investment_dashboard.repositories import fx_repo
 from investment_dashboard.services import fx_service
+
+#: A forex-open instant (Wednesday 12:00 America/New_York) so ``refresh_live_spot``
+#: polls regardless of when the suite runs — the live spot is only sourced while
+#: the spot-FX market is trading (a weekend reading is a projection, not a print).
+FOREX_OPEN = datetime(2024, 6, 5, 12, 0, tzinfo=ZoneInfo("America/New_York"))
+#: A forex-closed instant (Saturday 10:00 America/New_York) for the weekend guard.
+FOREX_CLOSED = datetime(2024, 6, 8, 10, 0, tzinfo=ZoneInfo("America/New_York"))
 
 
 @pytest.fixture(autouse=True)
@@ -64,7 +72,7 @@ def test_refresh_live_spot_stores_a_today_dated_reading() -> None:
     def fake_fetch() -> PriceRecord:
         return PriceRecord(symbol="EURUSD=X", date=date.today(), close=Decimal("1.0825"))
 
-    rate = fx_service.refresh_live_spot(fetcher=fake_fetch)
+    rate = fx_service.refresh_live_spot(now=FOREX_OPEN, fetcher=fake_fetch)
     assert rate == Decimal("1.0825")
     spot = fx_service.get_live_spot("USD")
     assert spot is not None
@@ -79,12 +87,12 @@ def test_refresh_live_spot_ignores_a_stale_reading() -> None:
         return PriceRecord(symbol="EURUSD=X", date=yesterday, close=Decimal("1.07"))
 
     # A pre-today close (weekend/holiday) must not masquerade as a live spot.
-    assert fx_service.refresh_live_spot(fetcher=fake_fetch) is None
+    assert fx_service.refresh_live_spot(now=FOREX_OPEN, fetcher=fake_fetch) is None
     assert fx_service.get_live_spot("USD") is None
 
 
 def test_refresh_live_spot_handles_missing_feed() -> None:
-    assert fx_service.refresh_live_spot(fetcher=lambda: None) is None
+    assert fx_service.refresh_live_spot(now=FOREX_OPEN, fetcher=lambda: None) is None
     assert fx_service.get_live_spot("USD") is None
 
 
@@ -92,7 +100,7 @@ def test_refresh_live_spot_swallows_fetch_errors() -> None:
     def boom() -> PriceRecord:
         raise RuntimeError("network down")
 
-    assert fx_service.refresh_live_spot(fetcher=boom) is None
+    assert fx_service.refresh_live_spot(now=FOREX_OPEN, fetcher=boom) is None
     assert fx_service.get_live_spot("USD") is None
 
 
@@ -104,8 +112,55 @@ def test_refresh_live_spot_only_sources_usd() -> None:
         called = True
         return PriceRecord(symbol="EURUSD=X", date=date.today(), close=Decimal("1.08"))
 
-    assert fx_service.refresh_live_spot(quote="DKK", fetcher=fake_fetch) is None
+    assert fx_service.refresh_live_spot(now=FOREX_OPEN, quote="DKK", fetcher=fake_fetch) is None
     assert called is False
+
+
+def test_refresh_live_spot_skips_fetch_when_forex_closed() -> None:
+    yf_called = False
+    tiingo_called = False
+
+    def fake_yf() -> PriceRecord:
+        nonlocal yf_called
+        yf_called = True
+        return PriceRecord(symbol="EURUSD=X", date=date.today(), close=Decimal("1.08"))
+
+    def fake_tiingo() -> object:
+        nonlocal tiingo_called
+        tiingo_called = True
+        return _tiingo_fx("1.08", date.today())
+
+    # Over the weekend the spot-FX market is shut: no provider is polled and no
+    # projection is stored as a live mark.
+    rate = fx_service.refresh_live_spot(
+        now=FOREX_CLOSED,
+        fetcher=fake_yf,
+        tiingo_fetcher=fake_tiingo,
+        tiingo_token="tok",
+        charge_budget=lambda: True,
+    )
+    assert rate is None
+    assert yf_called is False
+    assert tiingo_called is False
+    assert fx_service.get_live_spot("USD") is None
+
+
+def test_refresh_live_spot_keeps_prior_spot_when_forex_closes() -> None:
+    # A genuine in-session spot was captured while the market traded …
+    fx_service.set_live_spot("USD", Decimal("1.0900"), observed_on=date.today())
+    # … and a later weekend tick must not overwrite or clear it with a projection.
+    assert (
+        fx_service.refresh_live_spot(
+            now=FOREX_CLOSED,
+            fetcher=lambda: PriceRecord(
+                symbol="EURUSD=X", date=date.today(), close=Decimal("9.99")
+            ),
+        )
+        is None
+    )
+    spot = fx_service.get_live_spot("USD")
+    assert spot is not None
+    assert spot.rate == Decimal("1.0900")
 
 
 # --- Tiingo secondary live-FX provider -------------------------------------
@@ -123,6 +178,27 @@ def _tiingo_fx(rate: str, value_date: date | None) -> object:
     )
 
 
+def test_refresh_live_spot_skips_tiingo_when_forex_market_closed() -> None:
+    # Saturday: spot-FX is dark, so even a stale yfinance reading must not route
+    # to Tiingo — there is no live quote to fetch, the ECB rate simply stands.
+    called = False
+
+    def tiingo() -> object:
+        nonlocal called
+        called = True
+        return _tiingo_fx("1.1382", date.today())
+
+    rate = fx_service.refresh_live_spot(
+        fetcher=lambda: None,
+        now=datetime(2024, 6, 8, 15, 0, tzinfo=UTC),  # Saturday
+        tiingo_fetcher=tiingo,
+        tiingo_token="tok",
+        charge_budget=lambda: True,
+    )
+    assert rate is None
+    assert called is False  # forex closed ⇒ Tiingo never consulted
+
+
 def test_refresh_live_spot_falls_back_to_tiingo_when_yfinance_stale() -> None:
     yesterday = date.today() - timedelta(days=1)
 
@@ -130,6 +206,7 @@ def test_refresh_live_spot_falls_back_to_tiingo_when_yfinance_stale() -> None:
         return PriceRecord(symbol="EURUSD=X", date=yesterday, close=Decimal("1.07"))
 
     rate = fx_service.refresh_live_spot(
+        now=FOREX_OPEN,
         fetcher=stale_yf,
         tiingo_fetcher=lambda: _tiingo_fx("1.1382", date.today()),
         tiingo_token="tok",
@@ -151,6 +228,7 @@ def test_refresh_live_spot_prefers_yfinance_over_tiingo() -> None:
         return _tiingo_fx("9.99", date.today())
 
     rate = fx_service.refresh_live_spot(
+        now=FOREX_OPEN,
         fetcher=lambda: PriceRecord(symbol="EURUSD=X", date=date.today(), close=Decimal("1.08")),
         tiingo_fetcher=tiingo,
         tiingo_token="tok",
@@ -169,6 +247,7 @@ def test_refresh_live_spot_skips_tiingo_without_token() -> None:
         return _tiingo_fx("1.13", date.today())
 
     rate = fx_service.refresh_live_spot(
+        now=FOREX_OPEN,
         fetcher=lambda: None,
         tiingo_fetcher=tiingo,
         tiingo_token="",  # no token configured ⇒ no backup
@@ -187,6 +266,7 @@ def test_refresh_live_spot_skips_tiingo_when_budget_exhausted() -> None:
         return _tiingo_fx("1.13", date.today())
 
     rate = fx_service.refresh_live_spot(
+        now=FOREX_OPEN,
         fetcher=lambda: None,
         tiingo_fetcher=tiingo,
         tiingo_token="tok",
@@ -199,6 +279,7 @@ def test_refresh_live_spot_skips_tiingo_when_budget_exhausted() -> None:
 def test_refresh_live_spot_rejects_stale_tiingo_reading() -> None:
     yesterday = date.today() - timedelta(days=1)
     rate = fx_service.refresh_live_spot(
+        now=FOREX_OPEN,
         fetcher=lambda: None,
         tiingo_fetcher=lambda: _tiingo_fx("1.13", yesterday),
         tiingo_token="tok",
@@ -213,6 +294,7 @@ def test_refresh_live_spot_swallows_tiingo_errors() -> None:
         raise RuntimeError("tiingo down")
 
     rate = fx_service.refresh_live_spot(
+        now=FOREX_OPEN,
         fetcher=lambda: None,
         tiingo_fetcher=boom,
         tiingo_token="tok",
