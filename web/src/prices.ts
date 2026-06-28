@@ -460,9 +460,15 @@ export type TimeSeriesBar = Bar;
 export async function fetchTimeSeries(
   symbols: string[],
   apiKey: string,
-  options: { interval?: string; outputsize?: number; fetchImpl?: FetchLike } = {},
+  options: {
+    interval?: string;
+    outputsize?: number;
+    startDate?: string;
+    endDate?: string;
+    fetchImpl?: FetchLike;
+  } = {},
 ): Promise<Map<string, TimeSeriesBar[]>> {
-  const { interval = "5min", outputsize = 78, fetchImpl = fetch } = options;
+  const { interval = "5min", outputsize = 78, startDate, endDate, fetchImpl = fetch } = options;
   const result = new Map<string, TimeSeriesBar[]>();
   const unique = [...new Set(symbols.filter((s) => s.length > 0))];
   if (unique.length === 0) return result;
@@ -472,6 +478,18 @@ export async function fetchTimeSeries(
   url.searchParams.set("interval", interval);
   url.searchParams.set("outputsize", String(outputsize));
   url.searchParams.set("order", "desc");
+  // Bound the request to the settled-session window (the FX-settled-spot plan's
+  // step 0), exactly as the Tiingo pipe already does — so on a weekend Twelve Data
+  // returns *Friday's* session, not the 78 most-recent bars (which would be all
+  // thin weekend indicative prints after Friday's close, leaving nothing once the
+  // client-side close-clamp runs). `start_date`/`end_date` are inclusive. Twelve
+  // Data reads a date-only bound at 00:00:00, so for an **intraday** interval the
+  // end bound is widened to the end of that day to keep the whole session's bars
+  // (the post-close shavings are then trimmed authoritatively client-side by
+  // `primeEurUsdFromFxBars`/`capAtClose`); a daily (`1day`) bound stays date-only.
+  const isDaily = /^1(day|week|month)$/.test(interval);
+  if (startDate) url.searchParams.set("start_date", startDate);
+  if (endDate) url.searchParams.set("end_date", isDaily ? endDate : `${endDate} 23:59:59`);
   // Ask Twelve Data for UTC datetimes explicitly. By default it stamps intraday
   // bars in the *exchange-local* zone (e.g. America/New_York), which `parseBarTime`
   // would then mis-read as UTC and shift every instant by the ET offset — pushing

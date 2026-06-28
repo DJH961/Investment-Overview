@@ -14,6 +14,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.16.2] — 2026-06-28
+
+### Fixed
+
+- **Twelve Data now requests the settled-session FX/price window, not "the most
+  recent bars" — closing the weekend data-loss gap the v4.16.1 close-clamp could
+  not.** The v4.16.1 fix correctly *clamps* a primed EUR/USD bar to the last
+  session's 16:00-ET close, but Twelve Data's Pipe A (`fetchTimeSeries`) was still
+  asking for the newest `outputsize` bars **ending now**, with no date bound. Over
+  a weekend those bars are all thin post-close indicative prints, so the clamp
+  discarded the whole batch and Friday's genuine session was never even
+  requested — the Tiingo pipe already bounded its request to the session window,
+  but Twelve Data did not, so the two providers behaved differently. The fix
+  *shifts* the request window (start **and** end) back to the settled session for
+  Twelve Data too: `fetchTimeSeries` now honours `start_date`/`end_date` (threaded
+  through `makeTwelveDataBarFetcher`), exactly matching the window the Tiingo pipe
+  already received. The provider returns the full open→close session, and the
+  client-side close-clamp degrades to a pure safety net instead of the load-bearing
+  guard that could starve the curve of in-session data. An intraday end bound is
+  widened to end-of-day (Twelve Data reads a date-only bound at 00:00:00) so the
+  whole session is captured; daily requests stay date-only
+  (`web/src/prices.ts`, `web/src/live-graph.ts`; implements step 0 of
+  `docs/tiingo_fx_settled_spot_plan.md` symmetrically across both providers, and
+  records the deliberate decision to drop step 7's indicative-bar sanity band).
+
 ## [4.16.1] — 2026-06-28
 
 ### Fixed

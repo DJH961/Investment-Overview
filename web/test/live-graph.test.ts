@@ -205,6 +205,29 @@ describe("makeFxFetcher (EUR/USD rides the unified price pipe)", () => {
     expect(calls[0]).toContain("resampleFreq=1hour");
   });
 
+  it("bounds the Twelve Data (Pipe A) request to the session window, not just outputsize", async () => {
+    const { calls, fetchImpl } = recordingFetch({ values: [{ datetime: "2026-06-26 16:00:00", close: "1.1" }] });
+    // Twelve-Data-only intraday pipe over Friday's session. The window must reach
+    // the wire (start_date/end_date), matching the Tiingo pipe — otherwise a
+    // weekend pull would ask for the most-recent bars (all post-close indicative)
+    // and the client-side clamp would be left with nothing.
+    const fetchFx = makeFxFetcher(
+      makePriceBarFetcher({
+        apiKey: "KEY",
+        proxyUrl: null,
+        param: "intraday",
+        startDate: "2026-06-26",
+        endDate: "2026-06-26",
+        fetchImpl,
+      }),
+    );
+    await fetchFx!();
+    const tdCall = calls.find((u) => u.includes("/time_series"))!;
+    expect(tdCall).toContain("start_date=2026-06-26");
+    // Intraday end bound widened to end-of-day so the full session is returned.
+    expect(tdCall).toContain("end_date=2026-06-26+23%3A59%3A59");
+  });
+
   it("pulls EUR/USD browser-direct from Twelve Data when there is no proxy but a key is held", async () => {
     const { calls, fetchImpl } = recordingFetch({ values: [{ datetime: "2026-06-23", close: "1.1" }] });
     const fetchFx = makeFxFetcher(
