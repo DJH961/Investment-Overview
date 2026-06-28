@@ -175,4 +175,3 @@ def test_rate_limit_flag_clears_on_the_next_hour(session: Session) -> None:
     next_hour = repo.load(session, _NOW + timedelta(hours=1))
     assert next_hour.hour_used == 0
     assert next_hour.rate_limited_at is None
-
