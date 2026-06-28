@@ -18,6 +18,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import Decimal, InvalidOperation
+from typing import NamedTuple
 
 from nicegui import run, ui
 
@@ -1670,7 +1671,17 @@ def _render_tiingo_fallback_controls() -> None:  # pragma: no cover - UI
         tiingo_refresh_btn.on_click(lambda: _refresh_via_tiingo_clicked(tiingo_refresh_btn))
 
 
-def _tiingo_budget_snapshot() -> dict[str, object]:  # pragma: no cover - UI
+class _TiingoBudgetSnapshot(NamedTuple):
+    """Display-ready Tiingo budget figures for the Settings panel."""
+
+    hour_used: int
+    hourly_cap: int
+    day_used: int
+    daily_cap: int
+    rate_limited_at: datetime | None
+
+
+def _tiingo_budget_snapshot() -> _TiingoBudgetSnapshot:  # pragma: no cover - UI
     """Load the current Tiingo budget usage + configured caps for display."""
     from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
     from investment_dashboard.repositories import tiingo_state_repo  # noqa: PLC0415
@@ -1680,13 +1691,13 @@ def _tiingo_budget_snapshot() -> dict[str, object]:  # pragma: no cover - UI
         state = tiingo_state_repo.load(session, now_utc)
         # ``load`` self-heals the windows; persist so the reset is durable.
         tiingo_state_repo.save(session, state)
-        return {
-            "hour_used": state.hour_used,
-            "hourly_cap": state.hourly_cap,
-            "day_used": state.day_used,
-            "daily_cap": state.daily_cap,
-            "rate_limited_at": state.rate_limited_at,
-        }
+        return _TiingoBudgetSnapshot(
+            hour_used=state.hour_used,
+            hourly_cap=state.hourly_cap,
+            day_used=state.day_used,
+            daily_cap=state.daily_cap,
+            rate_limited_at=state.rate_limited_at,
+        )
 
 
 def _render_tiingo_budget_panel() -> None:  # pragma: no cover - UI
@@ -1697,11 +1708,11 @@ def _render_tiingo_budget_panel() -> None:  # pragma: no cover - UI
         log.warning("Could not load Tiingo budget snapshot", exc_info=True)
         return
 
-    hour_used = int(snap["hour_used"])  # type: ignore[arg-type]
-    hourly_cap = int(snap["hourly_cap"])  # type: ignore[arg-type]
-    day_used = int(snap["day_used"])  # type: ignore[arg-type]
-    daily_cap = int(snap["daily_cap"])  # type: ignore[arg-type]
-    rate_limited_at = snap["rate_limited_at"]
+    hour_used = snap.hour_used
+    hourly_cap = snap.hourly_cap
+    day_used = snap.day_used
+    daily_cap = snap.daily_cap
+    rate_limited_at = snap.rate_limited_at
     hour_full = hour_used >= hourly_cap
     day_full = day_used >= daily_cap
 
