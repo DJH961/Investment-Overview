@@ -31,7 +31,6 @@ from investment_dashboard.services.daily_growth_view import (
 )
 from investment_dashboard.ui import refresh_indicator
 from investment_dashboard.ui.components import (
-    collapsible_section,
     deferred,
     empty_state,
     kpi_card,
@@ -1357,28 +1356,34 @@ def _render_mover_block(
 
 
 def _render_movers(movers: MoversView, *, display_ccy: str) -> None:  # pragma: no cover - UI
-    """Render the "Today's movers" section — a distinct winners/losers notice band.
+    """Render the "Top movers" section — a distinct winners/losers notice band.
 
-    Laid out as up to four blocks across (two winners, two losers), each leading
-    with the stat it was ranked on. Measured on the freshest price date across
-    the book, so before the open it reflects last session and during the session
-    only what has printed today.
+    Laid out as up to four blocks across (two winners, two losers) that span the
+    full width side to side, each leading with the stat it was ranked on.
+    Measured on the freshest price date across the book, so before the open it
+    reflects last session and during the session only what has printed today.
+
+    The basis date (e.g. "last close · 26 Jun") rides on the headline row itself,
+    right-aligned beside the title, rather than on a separate line below it.
 
     The band is a collapsible section (starting open) so the leaderboard can be
-    folded away once glanced at, keeping the long Overview page tidy.
+    folded away once glanced at, keeping the long Overview page tidy. The Quasar
+    expansion appends its own toggle chevron after this custom header.
     """
-    with collapsible_section(
-        "Today's movers",
-        icon="star",
-        open=True,
-        classes="inv-movers-band",
+    expansion = ui.expansion(value=True).classes("inv-collapse w-full inv-movers-band")
+    with (
+        expansion.add_slot("header"),
+        ui.row().classes("inv-mover-header items-center w-full no-wrap"),
     ):
-        ui.html(f'<div class="inv-mover-sub">{escape(_mover_basis_label(movers.basis_date))}</div>')
-        with ui.element("div").classes("inv-mover-grid"):
-            for entry in movers.winners:
-                _render_mover_block(entry, "winner", display_ccy=display_ccy)
-            for entry in movers.losers:
-                _render_mover_block(entry, "loser", display_ccy=display_ccy)
+        ui.icon("star").classes("inv-mover-star")
+        ui.label("Top movers").classes("inv-mover-title")
+        ui.space()
+        ui.label(_mover_basis_label(movers.basis_date)).classes("inv-mover-sub")
+    with expansion, ui.element("div").classes("inv-mover-grid"):
+        for entry in movers.winners:
+            _render_mover_block(entry, "winner", display_ccy=display_ccy)
+        for entry in movers.losers:
+            _render_mover_block(entry, "loser", display_ccy=display_ccy)
 
 
 def _mover_badges(movers: MoversView) -> dict[str, str]:
