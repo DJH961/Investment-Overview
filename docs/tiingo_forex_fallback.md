@@ -20,8 +20,12 @@
 >   end‑of‑day rate; charged to the same 40/hr·800/day web Tiingo budget. New
 >   `tiingo` FX source labelled “FX live (backup)”.
 > - **Desktop** (`adapters/tiingo_client.py` `fetch_fx_rate`, `fx_service`
->   `refresh_live_spot`): yfinance primary, Tiingo FX backup when yfinance is
->   unavailable/stale; budget‑gated against the desktop 10/hr·200/day Tiingo cap.
+>   `refresh_live_spot`): yfinance primary, Tiingo FX backup **only while the
+>   spot‑FX market is open** and yfinance is unavailable/stale; budget‑gated against
+>   the (configurable, default 10/hr·200/day) desktop Tiingo cap. While the forex
+>   market is closed (the weekend / Fri‑eve→Sun‑eve ET) the backup is skipped
+>   entirely — there is no live quote to fetch, so the settled ECB rate stands and
+>   no Tiingo call is wasted (the most common false‑routing this guards against).
 >
 > Written 2026‑06‑23. All API responses below were captured **live** on that date
 > against the real account token.

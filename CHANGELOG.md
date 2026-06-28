@@ -13,6 +13,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.19.0] — 2026-06-28
+
+### Changed
+
+- **Desktop Tiingo is now a strict, budgeted, and visible last resort instead of
+  a fallback in name only.** Its caps are no longer hardcoded with a misleading
+  rolling-hour window, its usage is no longer invisible, FX is no longer routed
+  to it while the market is closed, and a `429` now actually stops further calls:
+  - **Configurable caps with correct reset windows.** The hourly and daily caps
+    are persisted config (`tiingo_hourly_cap` / `tiingo_daily_cap` in
+    `app_config`; defaults 10/hr · 200/day) and are bound onto the budget on load
+    so every gate honours them. The hourly bucket now resets on the **wall-clock
+    hour (`:00`)** rather than a rolling 60-minute window, matching how Tiingo
+    itself resets; the daily bucket still resets at midnight ET.
+  - **Settings visibility.** A new budget panel shows live `hour_used/cap` and
+    `day_used/cap`, "limit reached" badges, reset-timing captions, an editable
+    caps form, and a timestamped `429` notice.
+  - **FX no longer falsely routed.** `fx_service.refresh_live_spot` only escalates
+    to the Tiingo live-FX backup when the forex market is actually open; while it
+    is closed there is no live quote to fetch, so the settled ECB rate stands and
+    no call is spent. yfinance remains the primary source throughout.
+  - **`429` backstop.** An HTTP `429` from Tiingo pins `hour_used` to the cap and
+    stamps `rate_limited_at`, so the quota is treated as spent (regardless of the
+    local counter) until the next `:00` — wired into both the price path and the
+    FX paths.
+
 ## [4.18.1] — 2026-06-28
 
 ### Changed

@@ -18,6 +18,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import Decimal, InvalidOperation
+from typing import NamedTuple
 
 from nicegui import run, ui
 
@@ -1635,13 +1636,15 @@ def _render_connectivity_section() -> None:  # pragma: no cover - UI
 
 
 def _render_tiingo_fallback_controls() -> None:  # pragma: no cover - UI
-    """Token entry for the Tiingo secondary-provider fallback (keychain-stored)."""
+    """Token entry, budget display and configurable caps for the Tiingo fallback."""
     with ui.expansion("Tiingo fallback (secondary price source)", icon="backup").classes("w-full"):
         ui.label(
             "When yfinance can't deliver fresh prices or NAVs, the dashboard "
-            "quietly falls back to Tiingo within heavy rate-limit guards. Paste "
-            "your Tiingo API token below; it's stored in the OS keychain, never "
-            "in the repo or a config file. Leave blank to disable the fallback."
+            "quietly falls back to Tiingo within heavy rate-limit guards. It is "
+            "always a last resort — yfinance is tried first for every price and FX "
+            "rate. Paste your Tiingo API token below; it's stored in the OS "
+            "keychain, never in the repo or a config file. Leave blank to disable "
+            "the fallback."
         ).classes("text-caption opacity-70").style("max-width:34rem")
         tiingo_in = (
             ui.input("Tiingo API token")
@@ -1653,6 +1656,9 @@ def _render_tiingo_fallback_controls() -> None:  # pragma: no cover - UI
             icon="vpn_key",
             on_click=lambda: _save_tiingo_token(tiingo_in.value or ""),
         ).props("flat no-caps")
+
+        _render_tiingo_budget_panel()
+
         ui.label(
             "Already have a token? Pull live data through Tiingo right now — this "
             "skips the wait-for-yfinance timing, but still only spends a call when "
@@ -1663,6 +1669,96 @@ def _render_tiingo_fallback_controls() -> None:  # pragma: no cover - UI
             icon="cloud_sync",
         ).props("flat no-caps")
         tiingo_refresh_btn.on_click(lambda: _refresh_via_tiingo_clicked(tiingo_refresh_btn))
+
+
+class _TiingoBudgetSnapshot(NamedTuple):
+    """Display-ready Tiingo budget figures for the Settings panel."""
+
+    hour_used: int
+    hourly_cap: int
+    day_used: int
+    daily_cap: int
+    rate_limited_at: datetime | None
+
+
+def _tiingo_budget_snapshot() -> _TiingoBudgetSnapshot:  # pragma: no cover - UI
+    """Load the current Tiingo budget usage + configured caps for display."""
+    from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+    from investment_dashboard.repositories import tiingo_state_repo  # noqa: PLC0415
+
+    now_utc = datetime.now(UTC).replace(tzinfo=None)
+    with ledger_session_scope() as session:
+        state = tiingo_state_repo.load(session, now_utc)
+        # ``load`` self-heals the windows; persist so the reset is durable.
+        tiingo_state_repo.save(session, state)
+        return _TiingoBudgetSnapshot(
+            hour_used=state.hour_used,
+            hourly_cap=state.hourly_cap,
+            day_used=state.day_used,
+            daily_cap=state.daily_cap,
+            rate_limited_at=state.rate_limited_at,
+        )
+
+
+def _render_tiingo_budget_panel() -> None:  # pragma: no cover - UI
+    """Show live Tiingo usage (hour/day), reset timing, caps editor + 429 notice."""
+    try:
+        snap = _tiingo_budget_snapshot()
+    except Exception:  # defensive: a fresh/locked DB shouldn't break Settings
+        log.warning("Could not load Tiingo budget snapshot", exc_info=True)
+        return
+
+    hour_used = snap.hour_used
+    hourly_cap = snap.hourly_cap
+    day_used = snap.day_used
+    daily_cap = snap.daily_cap
+    rate_limited_at = snap.rate_limited_at
+    hour_full = hour_used >= hourly_cap
+    day_full = day_used >= daily_cap
+
+    with ui.card().classes("w-full q-my-sm").style("max-width:34rem"):
+        ui.label("Usage this period").classes("text-subtitle2")
+        with ui.row().classes("items-center gap-sm"):
+            ui.label(f"Hourly: {hour_used}/{hourly_cap}").classes("text-body2")
+            if hour_full:
+                ui.badge("limit reached", color="negative")
+        ui.label("Resets at the top of every hour (:00).").classes("text-caption opacity-70")
+        with ui.row().classes("items-center gap-sm q-mt-xs"):
+            ui.label(f"Daily: {day_used}/{daily_cap}").classes("text-body2")
+            if day_full:
+                ui.badge("limit reached", color="negative")
+        ui.label("Resets at midnight US/Eastern.").classes("text-caption opacity-70")
+
+        if rate_limited_at is not None:
+            stamp = rate_limited_at.replace(tzinfo=UTC).astimezone()
+            ui.label(
+                "Tiingo returned a rate-limit (HTTP 429) at "
+                f"{stamp.strftime('%H:%M')} — the hourly quota is treated as fully "
+                "used until the next hourly reset."
+            ).classes("text-caption text-negative q-mt-xs").style("max-width:32rem")
+
+        ui.separator().classes("q-my-sm")
+        ui.label("Configure limits").classes("text-subtitle2")
+        ui.label(
+            "Match these to your Tiingo plan's hourly and daily request limits. "
+            "The fallback never exceeds them."
+        ).classes("text-caption opacity-70").style("max-width:32rem")
+        with ui.row().classes("items-center gap-sm"):
+            hourly_in = (
+                ui.number("Hourly limit", value=hourly_cap, min=1, precision=0)
+                .props("outlined dense")
+                .classes("w-40")
+            )
+            daily_in = (
+                ui.number("Daily limit", value=daily_cap, min=1, precision=0)
+                .props("outlined dense")
+                .classes("w-40")
+            )
+        ui.button(
+            "Save limits",
+            icon="save",
+            on_click=lambda: _save_tiingo_caps(hourly_in.value, daily_in.value),
+        ).props("flat no-caps")
 
 
 def _live_web_config(session) -> dict[str, str | None]:  # pragma: no cover - UI
@@ -1741,7 +1837,37 @@ def _save_tiingo_token(token: str) -> None:  # pragma: no cover - UI
         )
 
 
-def _save_live_web_prefs(
+def _save_tiingo_caps(hourly: object, daily: object) -> None:  # pragma: no cover - UI
+    """Persist the user-configured per-side Tiingo caps from the Settings form."""
+    from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+    from investment_dashboard.repositories import tiingo_state_repo  # noqa: PLC0415
+
+    try:
+        hourly_cap = int(hourly)  # type: ignore[arg-type]
+        daily_cap = int(daily)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        ui.notify("Enter whole-number limits.", type="warning")
+        return
+    if hourly_cap <= 0 or daily_cap <= 0:
+        ui.notify("Limits must be at least 1.", type="warning")
+        return
+    if hourly_cap > daily_cap:
+        ui.notify("The hourly limit can't exceed the daily limit.", type="warning")
+        return
+    try:
+        with ledger_session_scope() as session:
+            tiingo_state_repo.save_caps(session, hourly_cap=hourly_cap, daily_cap=daily_cap)
+    except Exception as exc:  # defensive: surface, don't crash Settings
+        log.warning("Failed to save Tiingo caps", exc_info=True)
+        ui.notify(f"Could not save limits: {exc}", type="negative")
+        return
+    ui.notify(
+        f"Tiingo limits saved: {hourly_cap}/hour, {daily_cap}/day.",
+        type="positive",
+    )
+
+
+def _save_live_web_prefs(  # pragma: no cover - UI
     repo: str,
     enabled: bool,
     include_transactions: bool,
@@ -1749,7 +1875,6 @@ def _save_live_web_prefs(
     publish_on_shutdown: bool,
     publish_on_manual_edit: bool,
 ) -> None:
-    # pragma: no cover - UI
     """Persist the non-secret live-web preferences to app_config."""
     try:
         with session_scope() as session:
