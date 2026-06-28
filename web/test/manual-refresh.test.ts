@@ -30,6 +30,8 @@ function report(overrides: Partial<QuoteLoadReport> = {}): QuoteLoadReport {
     error: null,
     minuteRemaining: 8,
     dayRemaining: 800,
+    apiCalls: 0,
+    creditsSpent: 0,
     ...overrides,
   };
 }

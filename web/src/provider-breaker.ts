@@ -20,6 +20,15 @@
  *    until its hourly bucket resets, so the freeze auto-clears at `:00` like the
  *    normal counter — no separate timer.
  *
+ * **A 429 freezes only the provider that said no — per provider, not global.**
+ * Because the local credit ledger is only an optimistic guess on a shared key, a
+ * provider's `429` is the one hard, authoritative "stop" we get for *that*
+ * provider — so it freezes *every* call to that provider (no matter which caller
+ * issued it) until its freeze lifts, but it leaves the other provider untouched.
+ * That way a call to an over-quota provider is never silently lost: it is
+ * correctly rerouted to the other provider, or made to wait when both are frozen.
+ * Twelve Data's `429` therefore never stands Tiingo down (and vice versa).
+ *
  * The freeze is consulted at the bar-fetch chokepoint: it zeroes Twelve Data's
  * live per-minute budget (so the capacity split routes nothing to it) and gates
  * the Tiingo overflow leg. State is persisted (survives reload) and pure over an
@@ -82,23 +91,45 @@ function writeState(storage: StorageLike | null, state: BreakerState): void {
 }
 
 /**
+ * The outcome of recording a provider `429`, returned so the caller can log a
+ * precise, reconcilable line (the user must always be able to see in the log
+ * *why* a provider's budget jumped to "full"):
+ *  - `frozenUntil` — epoch-ms the freeze now lifts.
+ *  - `alreadyFrozen` — whether a freeze was *already* armed before this 429 (so a
+ *    caller can avoid logging the same freeze twice).
+ *  - `escalated` — Twelve Data only: whether this was the second consecutive
+ *    strike that escalated to the longer freeze.
+ */
+export interface Breaker429Result {
+  frozenUntil: number;
+  alreadyFrozen: boolean;
+  escalated: boolean;
+}
+
+/**
  * Record a Twelve Data `429` (over-quota). Arms a 60s freeze on the first strike
  * and a 2-minute freeze on a second consecutive strike, then resets the cycle.
+ * Returns the resulting freeze so the caller can log it (see
+ * {@link Breaker429Result}).
  */
 export function recordTwelveData429(
   now: number,
   storage: StorageLike | null = defaultStorage(),
-): void {
+): Breaker429Result {
   const state = readState(storage);
+  const alreadyFrozen = (state.td?.frozenUntil ?? 0) > now;
   const prevStreak = state.td?.streak ?? 0;
   const newStreak = prevStreak + 1;
+  let escalated = false;
   if (newStreak >= 2) {
     // Escalate, then reset the cycle: the *next* 429 starts fresh at 60s.
     state.td = { frozenUntil: now + TD_ESCALATED_FREEZE_MS, streak: 0 };
+    escalated = true;
   } else {
     state.td = { frozenUntil: now + TD_FREEZE_MS, streak: newStreak };
   }
   writeState(storage, state);
+  return { frozenUntil: state.td.frozenUntil, alreadyFrozen, escalated };
 }
 
 /** A successful Twelve Data call clears the consecutive-429 streak. */
@@ -111,35 +142,66 @@ export function recordTwelveDataSuccess(
   writeState(storage, state);
 }
 
-/** Whether Twelve Data is in an armed freeze at `now`. */
+/** Whether Twelve Data is in an armed freeze at `now` (its own 429 freeze). */
 export function twelveDataFrozen(
   now: number,
   storage: StorageLike | null = defaultStorage(),
 ): boolean {
-  return (readState(storage).td?.frozenUntil ?? 0) > now;
+  const state = readState(storage);
+  return (state.td?.frozenUntil ?? 0) > now;
+}
+
+/**
+ * Epoch-ms a Twelve Data freeze lifts, or `null` when it is not frozen at `now`.
+ * Lets a caller log *how long* the breaker will keep the provider at 0/min.
+ */
+export function twelveDataFreezeUntil(
+  now: number,
+  storage: StorageLike | null = defaultStorage(),
+): number | null {
+  const state = readState(storage);
+  const until = state.td?.frozenUntil ?? 0;
+  return until > now ? until : null;
 }
 
 /**
  * Record a Tiingo `429` (hourly reserve spent). Freezes Tiingo until the next
  * clock hour, mirroring Tiingo's own `:00` reset — no further attempt fires until
- * then because each one is pure waste.
+ * then because each one is pure waste. Returns the resulting freeze so the caller
+ * can log *why* Tiingo's hourly budget jumped to full (see {@link Breaker429Result}).
  */
 export function recordTiingo429(
   now: number,
   storage: StorageLike | null = defaultStorage(),
-): void {
+): Breaker429Result {
   const state = readState(storage);
+  const alreadyFrozen = (state.tiingo?.frozenUntil ?? 0) > now;
   const HOUR_MS = 60 * 60 * 1000;
   state.tiingo = { frozenUntil: startOfHour(now) + HOUR_MS };
   writeState(storage, state);
+  return { frozenUntil: state.tiingo.frozenUntil, alreadyFrozen, escalated: false };
 }
 
-/** Whether Tiingo is frozen at `now` (until the next clock `:00`). */
+/** Whether Tiingo is frozen at `now` (its own freeze until the next clock `:00`). */
 export function tiingoFrozen(
   now: number,
   storage: StorageLike | null = defaultStorage(),
 ): boolean {
-  return (readState(storage).tiingo?.frozenUntil ?? 0) > now;
+  const state = readState(storage);
+  return (state.tiingo?.frozenUntil ?? 0) > now;
+}
+
+/**
+ * Epoch-ms a Tiingo freeze lifts (its own `:00` reset), or `null` when not frozen
+ * at `now`. Lets a caller log the exact reset time alongside a "reads as full" line.
+ */
+export function tiingoFreezeUntil(
+  now: number,
+  storage: StorageLike | null = defaultStorage(),
+): number | null {
+  const state = readState(storage);
+  const until = state.tiingo?.frozenUntil ?? 0;
+  return until > now ? until : null;
 }
 
 /**
