@@ -149,6 +149,15 @@ describe("FX windows", () => {
     // Five trading sessions back from Tue 23rd reaches into the prior week.
     expect(Date.parse(w.startDate)).toBeLessThan(Date.parse(w.endDate));
   });
+
+  it("the 1D window widens back a session to recover the prior close (item 5b)", () => {
+    // Sun 2026-06-28: last session is Fri 26th, prior session Thu 25th.
+    const now = new Date("2026-06-28T20:00:00Z");
+    expect(sessionFxWindow(now)).toEqual({ startDate: "2026-06-26", endDate: "2026-06-26" });
+    expect(sessionFxWindow(now, 2)).toEqual({ startDate: "2026-06-25", endDate: "2026-06-26" });
+    // sessionsBack <= 1 always collapses to the single current session.
+    expect(sessionFxWindow(now, 1)).toEqual({ startDate: "2026-06-26", endDate: "2026-06-26" });
+  });
 });
 
 describe("makeFxFetcher (EUR/USD rides the unified price pipe)", () => {
