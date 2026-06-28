@@ -10,9 +10,11 @@ import {
   hasMarketSleeve,
   mergeSleeveSeries,
   parseMarketSeries,
+  pinMergedTipToWebTip,
   rebaseSleeveToWholeBook,
   type SleevePoint,
 } from "../src/market-sleeve";
+import type { CurvePoint } from "../src/timeseries";
 import type { ExportLiveGraphs, ExportMarketSeries } from "../src/types";
 
 const T0 = Date.parse("2026-06-22T13:30:00Z");
@@ -165,6 +167,55 @@ describe("rebaseSleeveToWholeBook", () => {
     );
     expect(p.valueUsd.toString()).toBe("10000");
     expect(p.valueEur.toString()).toBe("10000");
+  });
+});
+
+describe("pinMergedTipToWebTip", () => {
+  const curve = (t: number, usd: string, eur: string): CurvePoint => ({
+    t,
+    valueUsd: new Decimal(usd),
+    valueEur: new Decimal(eur),
+  });
+  const webTip = curve(T0 + 5 * STEP, "10500", "9800");
+
+  it("drops a blob sample stamped past the web tip and pins the tip (no nosedive)", () => {
+    const merged = [
+      curve(T0 + 4 * STEP, "10400", "9700"),
+      webTip,
+      // A stale/partial blob sleeve sample captured a minute past the tip — the
+      // exact "final-minute nosedive" the guard exists to stop.
+      curve(T0 + 5 * STEP + 60_000, "9800", "9750"),
+    ];
+    const pinned = pinMergedTipToWebTip(merged, webTip);
+    expect(pinned).toHaveLength(2);
+    const last = pinned[pinned.length - 1];
+    expect(last).toBe(webTip);
+    expect(last.valueUsd.toString()).toBe("10500"); // trusted tip, not the dip
+  });
+
+  it("replaces a diving blob sample sharing the tip's instant with the trusted tip", () => {
+    const merged = [
+      curve(T0 + 4 * STEP, "10400", "9700"),
+      // Same instant as the web tip but a low blob value — dropped by `< t`.
+      curve(T0 + 5 * STEP, "9800", "9750"),
+    ];
+    const pinned = pinMergedTipToWebTip(merged, webTip);
+    expect(pinned[pinned.length - 1]).toBe(webTip);
+    expect(pinned.map((p) => p.t)).toEqual([T0 + 4 * STEP, T0 + 5 * STEP]);
+  });
+
+  it("is a no-op when the merged curve already ends at the web tip", () => {
+    const body = curve(T0 + 4 * STEP, "10400", "9700");
+    const pinned = pinMergedTipToWebTip([body, webTip], webTip);
+    expect(pinned).toEqual([body, webTip]);
+  });
+
+  it("preserves the densified body before the tip", () => {
+    const a = curve(T0 + 2 * STEP, "10200", "9500");
+    const b = curve(T0 + 3 * STEP, "10300", "9600");
+    const c = curve(T0 + 4 * STEP, "10400", "9700");
+    const pinned = pinMergedTipToWebTip([a, b, c], webTip);
+    expect(pinned).toEqual([a, b, c, webTip]);
   });
 });
 

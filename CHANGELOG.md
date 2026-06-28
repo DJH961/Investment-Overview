@@ -13,6 +13,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.20.4] — 2026-06-28
+
+### Fixed
+
+- **The 1W value graph no longer dips at its trailing edge.** The merged
+  intraday/historical 1W curve used to end on the historical close, which lagged
+  behind the live market and produced a spurious end-of-curve dip. The 1W
+  curve's trailing edge is now pinned to the trusted web/1D live tip so the most
+  recent point matches the current intraday value. Adds covering tests in
+  `web/test/market-sleeve.test.ts`. Merges `main` (4.20.3) conflict-free.
+
 ## [4.20.3] — 2026-06-28
 
 ### Fixed

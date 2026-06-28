@@ -217,6 +217,7 @@ import {
   hasMarketSleeve,
   mergeSleeveSeries,
   parseMarketSeries,
+  pinMergedTipToWebTip,
   rebaseSleeveToWholeBook,
   type SleevePoint,
 } from "./market-sleeve";
@@ -7201,8 +7202,16 @@ export class App {
       return webCurve;
     }
     const merged = rebaseSleeveToWholeBook(merge.points, { baseUsd, baseEur }, fallbackFx);
-    this.pollLog("graph", `1W merge: rendered the richer merged curve (${merged.length} points, was ${webCurve.length}).`);
-    return merged;
+    // "Live tip stays sane": pin the merged curve's trailing edge to the web
+    // curve's trusted live tip (the same point 1D ends on) so a blob sleeve
+    // sample — captured on the desktop's own cadence and able to land just past
+    // the tip or dive away from it — can never be the rightmost rendered point.
+    // Without this the richer merged curve draws the "final-minute" nosedive on
+    // 1W that 1D never shows (capWeekToSessionClose only trims past the *close*,
+    // a no-op while the market is open and blind to a pre-close stale sample).
+    const pinned = pinMergedTipToWebTip(merged, webCurve[webCurve.length - 1]);
+    this.pollLog("graph", `1W merge: rendered the richer merged curve (${pinned.length} points, was ${webCurve.length}).`);
+    return pinned;
   }
 
   /**
