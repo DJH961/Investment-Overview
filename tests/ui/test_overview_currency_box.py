@@ -20,7 +20,7 @@ Exercises the behaviours the box guarantees:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -304,3 +304,170 @@ class TestUsMarketHoliday:
         assert "Market holiday" in html
         assert "Market hours" not in html
         assert "+$10.00" in html
+
+
+class TestHorizontalLayout:
+    """The box lays out horizontally: a two-column body with the rate stats on the
+    left (``inv-fx-box-main``) and the currency-effect / investing-power panel on
+    the right, so it fills the full width instead of stacking into a tall column."""
+
+    def test_body_is_two_column_when_effect_present(self, session: Session) -> None:
+        _seed_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_CLOSED)
+        assert html is not None
+        assert "inv-fx-box-body" in html
+        assert "inv-fx-box-main" in html
+        # With an effect panel the body is the full two-column layout (not the
+        # single-column fallback).
+        assert "inv-fx-box-body-single" not in html
+        # The stats (left) precede the effect panel (right) in source order.
+        assert html.index("inv-fx-box-main") < html.index("inv-fx-effect")
+
+    def test_body_single_column_when_no_effect(self, session: Session) -> None:
+        # No USD book value ⇒ no effect panel ⇒ the body stays full-width single
+        # column rather than reserving an empty right-hand column.
+        _seed_fx_samples(session)
+        metrics = SimpleNamespace(
+            daily_growth_fx_eur_usd=Decimal("1.30"),
+            daily_growth_fx_eur_usd_prev=Decimal("1.20"),
+            total_value_usd=None,
+        )
+        html = _currency_box_html(session, metrics, display_ccy="EUR", now=_CLOSED)
+        assert html is not None
+        assert "inv-fx-box-body-single" in html
+        assert "inv-fx-effect" not in html
+
+
+class TestDivergeTagPlacement:
+    """The live/last/paused tag rides under the value in a right-hand value cell
+    (``inv-fx-diverge-valcell``), never inline with the status label — so a long
+    status word ("Market hours") can't be pushed onto a second line by the tag."""
+
+    def test_tag_in_value_cell_not_in_label(self, session: Session) -> None:
+        _seed_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_CLOSED)
+        assert html is not None
+        assert "inv-fx-diverge-valcell" in html
+        # The tag follows the value inside the value cell, not the label span.
+        assert "inv-fx-diverge-value" in html
+        assert html.index("inv-fx-diverge-value") < html.index("inv-fx-diverge-tag")
+
+
+class TestRegimeAwareTitles:
+    """The currency-effect / investing-power panel titles name the real reference
+    they measure against, mirroring the web companion's ``effectSincePhrase``."""
+
+    def test_weekend_overnight_title_says_since_friday(self, session: Session) -> None:
+        _seed_friday_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_SUNDAY_EVENING)
+        assert html is not None
+        # The lone overnight drift traces back to Friday's close ⇒ "since Friday".
+        assert "Currency effect since Friday" in html
+        assert "Currency effect since yesterday" not in html
+
+    def test_frozen_weekend_title_and_today_label_name_the_settled_day(
+        self, session: Session
+    ) -> None:
+        _seed_friday_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_SUNDAY_MORNING)
+        assert html is not None
+        # Sunday looking back at Friday: the effect is "on Friday", and the "Today"
+        # stat is relabelled to the settled weekday rather than reading "Today".
+        assert "Currency effect on Friday" in html
+        assert ">Friday<" in html
+
+
+class TestPausedTag:
+    """While spot FX is frozen at the weekend close the leading leg is tagged
+    "paused", never "live" — it is not trading."""
+
+    def test_frozen_weekend_leading_leg_is_paused(self, session: Session) -> None:
+        _seed_friday_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_SATURDAY)
+        assert html is not None
+        assert ">paused<" in html
+        assert ">live<" not in html
+        # The frozen "last" leg still survives below.
+        assert ">last<" in html
+
+
+class TestAsOfStamp:
+    """The rate stat carries an honest "as of …" / "EOD FX" provenance stamp so the
+    desktop is as transparent as the web companion about which day's EUR/USD rate
+    it is showing (transparency / correctness)."""
+
+    def test_eod_rate_stamps_as_of_date_and_eod_tag(self, session: Session) -> None:
+        from investment_dashboard.repositories import fx_repo
+        from investment_dashboard.services import fx_service
+
+        fx_service.clear_live_spot()
+        # A settled ECB fixing on Friday 2024-05-31; no live spot ⇒ the displayed
+        # rate is the keyless end-of-day reference, so the box says so.
+        fx_repo.upsert_rates(
+            session, {date(2024, 5, 31): Decimal("1.0845")}, base="EUR", quote="USD"
+        )
+        session.flush()
+        _seed_fx_samples(session)
+
+        html = _currency_box_html(session, _metrics(), display_ccy="USD", now=_CLOSED)
+        assert html is not None
+        assert "inv-fx-box-asof" in html
+        assert "as of 31 May 2024" in html
+        assert ">EOD FX<" in html
+
+    def test_live_spot_stamps_as_of_today_without_eod_tag(self, session: Session) -> None:
+        from investment_dashboard.repositories import fx_repo
+        from investment_dashboard.services import fx_service
+
+        fx_service.clear_live_spot()
+        today = _CLOSED.date()
+        fx_repo.upsert_rates(session, {today: Decimal("1.30")}, base="EUR", quote="USD")
+        session.flush()
+        # A legacy spot without a capture instant falls back to the day label.
+        fx_service.set_live_spot("USD", Decimal("1.30"), observed_on=today, observed_at=None)
+        # Force the timestampless legacy shape (set_live_spot defaults to now()).
+        fx_service._LIVE_SPOT["USD"] = fx_service.LiveSpot(
+            observed_on=today, rate=Decimal("1.30"), observed_at=None
+        )
+        _seed_fx_samples(session)
+
+        try:
+            html = _currency_box_html(session, _metrics(), display_ccy="USD", now=_CLOSED)
+        finally:
+            fx_service.clear_live_spot()
+        assert html is not None
+        assert "as of Today" in html
+        assert ">EOD FX<" not in html
+
+    def test_live_spot_stamps_the_live_time(self, session: Session) -> None:
+        from datetime import timedelta
+
+        from investment_dashboard.repositories import fx_repo
+        from investment_dashboard.services import fx_service
+
+        fx_service.clear_live_spot()
+        today = _CLOSED.date()
+        fx_repo.upsert_rates(session, {today: Decimal("1.30")}, base="EUR", quote="USD")
+        session.flush()
+        # Observed at 18:42 UTC — the box stamps that live time, just like the web.
+        observed = datetime(2024, 6, 3, 18, 42, tzinfo=UTC)
+        fx_service.set_live_spot("USD", Decimal("1.30"), observed_on=today, observed_at=observed)
+        _seed_fx_samples(session)
+
+        try:
+            html = _currency_box_html(session, _metrics(), display_ccy="USD", now=_CLOSED)
+            # On a +2h viewer clock the same instant reads 20:42.
+            html_tz = _currency_box_html(
+                session,
+                _metrics(),
+                display_ccy="USD",
+                now=_CLOSED,
+                tz=timezone(timedelta(hours=2)),
+            )
+        finally:
+            fx_service.clear_live_spot()
+        assert html is not None
+        assert html_tz is not None
+        assert "as of 18:42" in html
+        assert ">EOD FX<" not in html
+        assert "as of 20:42" in html_tz

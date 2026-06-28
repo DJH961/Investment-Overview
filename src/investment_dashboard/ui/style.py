@@ -404,6 +404,18 @@ html, body {{
   letter-spacing: 0.05em;
   color: var(--inv-muted);
 }}
+/* Horizontal body: the rate stats sit on the left, the currency-effect /
+ * investing-power panel on the right, so the box fills the full width instead of
+ * stacking tall. Collapses to a single column on narrow viewports (media query
+ * below); a one-child body (no effect panel) stays full-width too. */
+.inv-fx-box-body {{
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: 0.75rem 1.25rem;
+  align-items: start;
+}}
+.inv-fx-box-body-single {{ grid-template-columns: minmax(0, 1fr); }}
+.inv-fx-box-main {{ display: grid; gap: 0.75rem; align-content: start; min-width: 0; }}
 .inv-fx-box-stats {{
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -432,6 +444,24 @@ html, body {{
   color: var(--inv-muted);
   font-weight: 500;
 }}
+.inv-fx-box-asof-row {{
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}}
+.inv-fx-box-asof {{ white-space: nowrap; }}
+.inv-fx-box-eod {{
+  color: var(--inv-muted);
+  background: color-mix(in srgb, var(--inv-muted) 16%, transparent);
+  border-radius: 999px;
+  padding: 0.02rem 0.4rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}}
 .inv-fx-box-closed {{
   color: var(--inv-loss);
   background: color-mix(in srgb, var(--inv-loss) 14%, transparent);
@@ -458,7 +488,21 @@ html, body {{
 .inv-fx-effect {{
   display: grid;
   gap: 0.55rem;
+  min-width: 0;
+  align-content: start;
+}}
+/* In the horizontal (two-column) body the effect panel sits to the RIGHT of the
+ * rate stats, separated by a vertical hairline. When the body collapses to a
+ * single column (one-child body, or a narrow viewport) it drops below the stats
+ * with the familiar stacked top border instead. */
+.inv-fx-box-body .inv-fx-effect {{
+  padding-left: 1.25rem;
+  border-left: 1px solid var(--inv-hairline);
+}}
+.inv-fx-box-body-single .inv-fx-effect {{
+  padding-left: 0;
   padding-top: 0.75rem;
+  border-left: 0;
   border-top: 1px solid var(--inv-hairline);
 }}
 .inv-fx-effect-head {{
@@ -514,7 +558,16 @@ html, body {{
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }}
-.inv-fx-diverge-label {{ color: var(--inv-muted); display: flex; align-items: baseline; gap: 0.35rem; }}
+.inv-fx-diverge-label {{ color: var(--inv-muted); white-space: nowrap; }}
+/* The live/last/paused tag rides under the value on the right, never inline with
+ * the status word — so "Market holiday" / "Market hours" / "Overnight" can't be
+ * bumped onto a second line by the tag crowding the narrow label column. */
+.inv-fx-diverge-valcell {{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.1;
+}}
 .inv-fx-diverge-tag {{
   font-size: 0.6rem;
   font-weight: 700;
@@ -570,6 +623,18 @@ html, body {{
 .inv-fx-diverge-value.pos {{ color: var(--inv-gain); }}
 .inv-fx-diverge-value.neg {{ color: var(--inv-loss); }}
 .inv-fx-diverge-value.flat {{ color: var(--inv-ink); }}
+/* On a narrow viewport the horizontal currency box collapses back to a single
+ * stacked column, with the effect panel below the rate stats (top border, not a
+ * left one) so nothing is crushed into too little width. */
+@media (max-width: 48rem) {{
+  .inv-fx-box-body {{ grid-template-columns: minmax(0, 1fr); }}
+  .inv-fx-box-body .inv-fx-effect {{
+    padding-left: 0;
+    padding-top: 0.75rem;
+    border-left: 0;
+    border-top: 1px solid var(--inv-hairline);
+  }}
+}}
 
 .inv-section {{
   background: var(--inv-surface) !important;

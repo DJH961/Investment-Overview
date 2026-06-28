@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -57,10 +57,16 @@ class LiveSpot:
     ``observed_on`` lets :func:`get_rates` decide whether the spot is fresh
     enough to overlay as *today's* mark — a weekend/stale reading (dated before
     the real today) is ignored so we never pass off an old rate as live.
+
+    ``observed_at`` is the *instant* the spot was captured (the refresh tick's
+    clock), so the UI can surface the **live time** — "as of HH:MM" — exactly
+    like the web companion, instead of a vaguer "as of today". ``None`` for a
+    legacy reading recorded without a timestamp.
     """
 
     observed_on: date
     rate: Decimal
+    observed_at: datetime | None = None
 
 
 #: In-memory live FX spots keyed by quote currency (e.g. ``"USD"``). Populated
@@ -73,9 +79,24 @@ class LiveSpot:
 _LIVE_SPOT: dict[str, LiveSpot] = {}
 
 
-def set_live_spot(quote: str, rate: Decimal, *, observed_on: date) -> None:
-    """Record a live FX spot for ``quote`` (units of ``quote`` per 1 EUR)."""
-    _LIVE_SPOT[quote.upper()] = LiveSpot(observed_on=observed_on, rate=rate)
+def set_live_spot(
+    quote: str,
+    rate: Decimal,
+    *,
+    observed_on: date,
+    observed_at: datetime | None = None,
+) -> None:
+    """Record a live FX spot for ``quote`` (units of ``quote`` per 1 EUR).
+
+    ``observed_at`` is the capture instant for the UI's live "as of HH:MM" stamp;
+    when omitted it defaults to *now* (UTC) so a freshly-fetched spot always
+    carries an honest live time.
+    """
+    _LIVE_SPOT[quote.upper()] = LiveSpot(
+        observed_on=observed_on,
+        rate=rate,
+        observed_at=observed_at or datetime.now(UTC),
+    )
 
 
 def get_live_spot(quote: str = "USD") -> LiveSpot | None:
@@ -525,3 +546,64 @@ def get_rate_eur_to_quote(
     """
     rates = get_rates(session, base=base, quote=quote)
     return lookup_rate_with_forward_fill(rates, target)
+
+
+@dataclass(frozen=True)
+class FxAsOf:
+    """Provenance of the EUR→``quote`` rate currently driving the UI.
+
+    Mirrors the web companion's FX "as of" / "EOD FX" stamps so the desktop is
+    just as transparent about *which day's rate* it is showing:
+
+    * ``as_of`` — the calendar date the displayed rate genuinely belongs to.
+      For a ``"live"`` reading that is today; for an ``"eod"`` reading it is the
+      most recent settled ECB/Frankfurter fixing at or before today (forward-fill
+      means a Friday rate is what values a Saturday).
+    * ``source`` — ``"live"`` when a today-dated intraday spot is overlaid (see
+      :func:`get_rates`), else ``"eod"`` for the keyless end-of-day reference
+      rate that carries no intraday observation instant.
+    * ``observed_at`` — the *instant* a live spot was captured, so the UI can
+      stamp the **live time** ("as of HH:MM") just like the web. ``None`` for an
+      end-of-day reading (which has no intraday observation) or a legacy spot.
+    """
+
+    as_of: date
+    source: str  # "live" | "eod"
+    observed_at: datetime | None = None
+
+    @property
+    def is_live(self) -> bool:
+        return self.source == "live"
+
+
+def eur_quote_as_of(
+    session: Session,
+    *,
+    base: str = "EUR",
+    quote: str = "USD",
+    today: date | None = None,
+) -> FxAsOf | None:
+    """Describe *which day's* EUR→``quote`` rate the UI is currently showing.
+
+    Resolves the same way :func:`get_rate_eur_to_quote` resolves *today's* mark,
+    then reports its provenance for an honest "as of" / "EOD FX" stamp:
+
+    * a today-dated live intraday spot (when overlaid by :func:`get_rates`) →
+      :class:`FxAsOf` ``source="live"``, ``as_of`` = today, ``observed_at`` = the
+      spot's capture instant (for a live "as of HH:MM" clock);
+    * otherwise the most recent settled ECB fixing at or before today →
+      ``source="eod"``, ``as_of`` = that fixing's date.
+
+    Returns ``None`` only when no rate is available at all (an empty history with
+    no live overlay), so the caller can simply omit the stamp.
+    """
+    today = today or date.today()
+    if base == "EUR":
+        live = _LIVE_SPOT.get(quote.upper())
+        if live is not None and live.observed_on == today:
+            return FxAsOf(as_of=today, source="live", observed_at=live.observed_at)
+    rates = get_rates(session, base=base, quote=quote)
+    prior = [d for d in rates if d <= today]
+    if not prior:
+        return None
+    return FxAsOf(as_of=max(prior), source="eod")
