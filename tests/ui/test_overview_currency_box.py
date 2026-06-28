@@ -304,3 +304,88 @@ class TestUsMarketHoliday:
         assert "Market holiday" in html
         assert "Market hours" not in html
         assert "+$10.00" in html
+
+
+class TestHorizontalLayout:
+    """The box lays out horizontally: a two-column body with the rate stats on the
+    left (``inv-fx-box-main``) and the currency-effect / investing-power panel on
+    the right, so it fills the full width instead of stacking into a tall column."""
+
+    def test_body_is_two_column_when_effect_present(self, session: Session) -> None:
+        _seed_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_CLOSED)
+        assert html is not None
+        assert "inv-fx-box-body" in html
+        assert "inv-fx-box-main" in html
+        # With an effect panel the body is the full two-column layout (not the
+        # single-column fallback).
+        assert "inv-fx-box-body-single" not in html
+        # The stats (left) precede the effect panel (right) in source order.
+        assert html.index("inv-fx-box-main") < html.index("inv-fx-effect")
+
+    def test_body_single_column_when_no_effect(self, session: Session) -> None:
+        # No USD book value ⇒ no effect panel ⇒ the body stays full-width single
+        # column rather than reserving an empty right-hand column.
+        _seed_fx_samples(session)
+        metrics = SimpleNamespace(
+            daily_growth_fx_eur_usd=Decimal("1.30"),
+            daily_growth_fx_eur_usd_prev=Decimal("1.20"),
+            total_value_usd=None,
+        )
+        html = _currency_box_html(session, metrics, display_ccy="EUR", now=_CLOSED)
+        assert html is not None
+        assert "inv-fx-box-body-single" in html
+        assert "inv-fx-effect" not in html
+
+
+class TestDivergeTagPlacement:
+    """The live/last/paused tag rides under the value in a right-hand value cell
+    (``inv-fx-diverge-valcell``), never inline with the status label — so a long
+    status word ("Market hours") can't be pushed onto a second line by the tag."""
+
+    def test_tag_in_value_cell_not_in_label(self, session: Session) -> None:
+        _seed_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_CLOSED)
+        assert html is not None
+        assert "inv-fx-diverge-valcell" in html
+        # The tag follows the value inside the value cell, not the label span.
+        assert "inv-fx-diverge-value" in html
+        assert html.index("inv-fx-diverge-value") < html.index("inv-fx-diverge-tag")
+
+
+class TestRegimeAwareTitles:
+    """The currency-effect / investing-power panel titles name the real reference
+    they measure against, mirroring the web companion's ``effectSincePhrase``."""
+
+    def test_weekend_overnight_title_says_since_friday(self, session: Session) -> None:
+        _seed_friday_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_SUNDAY_EVENING)
+        assert html is not None
+        # The lone overnight drift traces back to Friday's close ⇒ "since Friday".
+        assert "Currency effect since Friday" in html
+        assert "Currency effect since yesterday" not in html
+
+    def test_frozen_weekend_title_and_today_label_name_the_settled_day(
+        self, session: Session
+    ) -> None:
+        _seed_friday_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_SUNDAY_MORNING)
+        assert html is not None
+        # Sunday looking back at Friday: the effect is "on Friday", and the "Today"
+        # stat is relabelled to the settled weekday rather than reading "Today".
+        assert "Currency effect on Friday" in html
+        assert ">Friday<" in html
+
+
+class TestPausedTag:
+    """While spot FX is frozen at the weekend close the leading leg is tagged
+    "paused", never "live" — it is not trading."""
+
+    def test_frozen_weekend_leading_leg_is_paused(self, session: Session) -> None:
+        _seed_friday_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_SATURDAY)
+        assert html is not None
+        assert ">paused<" in html
+        assert ">live<" not in html
+        # The frozen "last" leg still survives below.
+        assert ">last<" in html
