@@ -200,10 +200,22 @@ export function ledgerMeter(record: SpendRecorder, refund: SpendRecorder): Backf
  * Build the Twelve Data **Pipe A** price {@link BarFetcher} (browser-direct
  * `time_series`, 1 credit/symbol). Returns `null` when no API key is held, so the
  * caller can decide whether a Tiingo-only pipe is still usable.
+ *
+ * When `startDate`/`endDate` are supplied the request is bounded to that
+ * settled-session window (the FX-settled-spot plan's step 0) — the same window the
+ * Tiingo pipe receives — instead of "the most recent `outputsize` bars ending
+ * now". This keeps the two providers symmetric and stops a weekend pull from
+ * returning only post-close indicative bars.
  */
 export function makeTwelveDataBarFetcher(
   apiKey: string,
-  options: { interval?: string; outputsize?: number; fetchImpl?: FetchLike } = {},
+  options: {
+    interval?: string;
+    outputsize?: number;
+    startDate?: string;
+    endDate?: string;
+    fetchImpl?: FetchLike;
+  } = {},
 ): BarFetcher | null {
   const key = apiKey.trim();
   if (!key) return null;
@@ -264,7 +276,7 @@ export function makePriceBarFetcher(opts: {
     now,
     backoff,
   } = opts;
-  let pipeA = makeTwelveDataBarFetcher(apiKey, { interval, outputsize, fetchImpl });
+  let pipeA = makeTwelveDataBarFetcher(apiKey, { interval, outputsize, startDate, endDate, fetchImpl });
   let pipeB = proxyUrl
     ? makeTiingoBarFetcher(proxyUrl, { param, startDate, endDate, fetchImpl })
     : null;

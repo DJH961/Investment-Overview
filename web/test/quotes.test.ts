@@ -8,6 +8,7 @@ import {
   recordCredits,
   recordTiingoCredits,
   releaseCredits,
+  readCachedEurUsd,
   writeCachedEurUsd,
   writeCachedFx,
   writeCachedQuotes,
@@ -771,10 +772,55 @@ describe("loadEurUsd", () => {
     expect(res.now?.toString()).toBe("1.09");
     expect(res.previousClose?.toString()).toBe("1.075");
     expect(res.at).toBe(0); // mock clock starts at 0, so the fetch moment is 0
+    // A genuine live pull carries an observation instant (renders as a clock).
+    expect(res.observedAt).toBe(0);
     // Cached for the next call.
     const again = await loadEurUsd("key", { fetchImpl, storage, now: clock(1000), ttlMs: 60_000 });
     expect(again.source).toBe("cache");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-pulls FX over the weekend freeze on a forced tap, returning a settled close (no live instant)", async () => {
+    const storage = memStorage();
+    // Hold a prior "yesterday" baseline so we can assert it survives the re-pull.
+    writeCachedEurUsd({ now: new Decimal("1.084"), previousClose: new Decimal("1.071") }, 1000, storage);
+    const fetchImpl = vi.fn<FetchLike>(async () =>
+      // A weekend quote: a thin indicative `close` plus Friday's settled close.
+      jsonResponse({ symbol: "EUR/USD", close: "1.0930", previous_close: "1.0850", currency: "USD" }),
+    );
+    const res = await loadEurUsd("key", {
+      fetchImpl,
+      storage,
+      now: clock(5000),
+      ttlMs: 0,
+      forexOpen: false,
+      force: true,
+    });
+    // The forced tap genuinely hits the wire even though the forex market is shut.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(res.source).toBe("live");
+    // The settled close (previous_close) is the frozen mark — never the indicative.
+    expect(res.now?.toString()).toBe("1.085");
+    // The reading is settled: no live observation instant, so the UI shows a date.
+    expect(res.observedAt).toBeNull();
+    // Stored settled too, so a follow-up cache read stays date-labelled.
+    expect(readCachedEurUsd(storage)!.observedAt).toBeNull();
+  });
+
+  it("does not re-pull FX over the weekend freeze on an ordinary (non-forced) round", async () => {
+    const storage = memStorage();
+    writeCachedEurUsd({ now: new Decimal("1.084"), previousClose: new Decimal("1.071") }, 1000, storage);
+    const fetchImpl = vi.fn<FetchLike>();
+    const res = await loadEurUsd("key", {
+      fetchImpl,
+      storage,
+      now: clock(5000),
+      ttlMs: 0,
+      forexOpen: false,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(res.source).toBe("cache");
+    expect(res.now?.toString()).toBe("1.084");
   });
 
   it("falls back to the end-of-day ECB rate (no prior close) when over budget", async () => {

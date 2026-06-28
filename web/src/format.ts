@@ -298,6 +298,46 @@ export function formatForexReopen(reopenAt: number, now: Date = new Date()): str
   return `reopens ${day} ${time}`;
 }
 
+/** Parse a `YYYY-MM-DD` date string at **local** midnight (never UTC-shifted), or
+ *  null when malformed. Local so the weekday label matches the viewer's calendar. */
+function parseLocalIsoDate(iso: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * The frozen-state day label for the currency card's "Today" stat. While the FX
+ * market is frozen at a settled session (the weekend), that figure is no longer
+ * "today" — it is the last trading day. So it reads **"Yesterday"** when the
+ * settled session was the day before, else the **weekday name** ("Friday") once it
+ * is further removed (e.g. Sunday looking back at Friday). `sessionDate` is the
+ * settled session (`YYYY-MM-DD`); a malformed date degrades to a plain "Today".
+ */
+export function frozenDayLabel(sessionDate: string, now: Date = new Date()): string {
+  const parsed = parseLocalIsoDate(sessionDate);
+  if (parsed === null) return "Today";
+  const diff = calendarDayDiff(parsed, now);
+  if (diff <= 1) return "Yesterday";
+  return parsed.toLocaleDateString(undefined, { weekday: "long" });
+}
+
+/**
+ * The frozen-state "since …" phrase for the currency-effect panel title. The
+ * panel normally reads "Currency effect since yesterday"; once the FX market is
+ * frozen at a settled session that becomes just **"yesterday"** (the day before)
+ * or **"on Friday"** when further removed — so the title names the real settled
+ * day the effect is measured over rather than an always-"yesterday" placeholder.
+ */
+export function frozenSincePhrase(sessionDate: string, now: Date = new Date()): string {
+  const parsed = parseLocalIsoDate(sessionDate);
+  if (parsed === null) return "since yesterday";
+  const diff = calendarDayDiff(parsed, now);
+  if (diff <= 1) return "yesterday";
+  return `on ${parsed.toLocaleDateString(undefined, { weekday: "long" })}`;
+}
+
 /**
  * The market-situation-aware "as of" caption for the hero's total value and
  * today's move — the browser mirror of the desktop's Daily Growth caption

@@ -2009,7 +2009,7 @@ export class App {
       // into the spot cache so the currency KPI / book valuation reuses the rate we
       // just bought instead of spending a separate spot request — when the market
       // is shut loadEurUsd freezes on this cache, so the bar *is* the settled spot.
-      if (fx && fx.length > 0) primeEurUsdFromFxBars(fx);
+      if (fx && fx.length > 0) primeEurUsdFromFxBars(fx, undefined, now);
       // Seed close-probes for 1D session bars that are incomplete after close.
       // Without this, the first graph build after a reset sees "no probe + bars
       // short of close" → closeProbeReady(undefined) = true → immediate re-fetch,
@@ -2239,7 +2239,7 @@ export class App {
       // The freshly settled EUR/USD bar doubles as the live spot: fold it into the
       // spot cache so the currency KPI reads this genuine settle rather than spending
       // a separate spot request for the rate we just pulled (the bar is the price).
-      primeEurUsdFromFxBars(todayFx);
+      primeEurUsdFromFxBars(todayFx, undefined, now);
     }
     if (sessionsBack > 1) {
       // Item 5b: recover & persist the prior-session close (the KPI's "yesterday"
@@ -4312,7 +4312,10 @@ export class App {
     let eurUsdPrev: Decimal | null = null;
     let eurUsdSource: EurUsdSource = "none";
     let eurUsdError: PriceError | null = null;
-    let eurUsdAt: number | null = null;
+    // The user-facing observation instant (null for a settled close); the cache's
+    // own `at` remains the internal TTL anchor inside loadEurUsd, decoupled so a
+    // frozen/settled rate is never labelled with a misleading live "as of HH:MM".
+    let eurUsdObservedAt: number | null = null;
     if (network && fetchFx) {
       const fxLoad = await loadFxRates();
       fx = fxLoad.fx;
@@ -4332,12 +4335,16 @@ export class App {
         // Over the weekend forex close, freeze on the last cached spot instead of
         // spending a credit to re-confirm Friday's unchanged close.
         forexOpen: isForexMarketOpen(),
+        // A manual tap (cache-distrust) re-pulls FX even while the weekend freeze
+        // is on, so the user's explicit refresh genuinely re-confirms the settled
+        // close instead of doing nothing on the FX leg.
+        force: opts.force ?? false,
       });
       eurUsdNow = eurUsd.now;
       eurUsdPrev = eurUsd.previousClose;
       eurUsdSource = eurUsd.source;
       eurUsdError = eurUsd.error;
-      eurUsdAt = eurUsd.at;
+      eurUsdObservedAt = eurUsd.observedAt;
     } else {
       // Cache-only paint (or FX leg suppressed by orchestrator): reuse the last
       // cached pair so the dashboard values the book off the most recent spot.
@@ -4349,7 +4356,7 @@ export class App {
         eurUsdNow = cachedEurUsd.now;
         eurUsdPrev = cachedEurUsd.previousClose;
         eurUsdSource = "cache";
-        eurUsdAt = cachedEurUsd.at;
+        eurUsdObservedAt = cachedEurUsd.observedAt;
       }
     }
     // Persist / restore the prior-session EUR→USD close — the hero currency KPI's
@@ -4630,7 +4637,7 @@ export class App {
     const model = buildDashboard(data, quoteLoad.quotes, fx, new Date(), degradedReason, {
       fxPrevEurUsd: eurUsdPrev,
       fxEurUsdSource: eurUsdSource,
-      fxObservedAt: eurUsdAt,
+      fxObservedAt: eurUsdObservedAt,
       // Tie the "live" freshness window to the user-set auto-refresh interval.
       liveStalenessMs: this.state.config.updateMinutes * 60 * 1000,
     });
@@ -4690,7 +4697,7 @@ export class App {
     // just as live as the market prices — only a genuinely aged cache reads "recent".
     const fxDisplayFreshness = displayFxFreshness(
       eurUsdSource,
-      eurUsdAt,
+      eurUsdObservedAt,
       new Date(),
       this.state.config.updateMinutes * 60 * 1000,
     );

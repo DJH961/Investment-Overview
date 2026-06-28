@@ -699,8 +699,22 @@ export interface LoadEurUsdResult {
    * Epoch-ms the `now` rate was observed (a live/Tiingo pull's moment, or when a
    * cached reading was originally stored). Null for the keyless end-of-day ECB
    * rate, which carries no intraday timestamp, and when no rate is available.
+   *
+   * This is the **TTL freshness anchor** — how recently the figure was captured,
+   * which governs whether it is still fresh enough to value the book. It is *not*
+   * the right thing to surface as a user-facing "as of" instant when the reading
+   * is a settled close (see {@link observedAt}).
    */
   at: number | null;
+  /**
+   * The **display** observation instant: the live clock moment of `now`, or
+   * `null` when the reading is **settled / value-dated** (frozen at a session
+   * close with no live instant — a bar-primed weekend rate, or a forced
+   * weekend re-pull). Decoupled from {@link at} so a settled rate stays fresh
+   * enough to value the book while the UI labels it honestly as a settled close
+   * (a date / "EOD FX") rather than a misleading "as of HH:MM" live clock.
+   */
+  observedAt: number | null;
   cached: boolean;
   error: PriceError | null;
 }
@@ -738,6 +752,17 @@ export interface LoadEurUsdOptions {
    * collapsing to the flat end-of-day rate.
    */
   forexOpen?: boolean;
+  /**
+   * A **manual / cache-distrust** pull (the user tapped Refresh). When `true` the
+   * live legs are attempted *even while the forex market is shut* — the user has
+   * explicitly asked to re-pull, so the normal weekend freeze (which skips the
+   * wire to save a credit) is overridden to re-confirm the settled close and
+   * refresh the cache. The forex market still has no genuine live spot over the
+   * weekend, so a forced off-hours pull is folded back as a **settled** reading
+   * (the provider's settled close, stamped with no live instant), never a live
+   * "as of HH:MM" clock. Defaults to `false`.
+   */
+  force?: boolean;
   /**
    * The single reservation authority (`reservation.ts`, audit Rec 4) both FX
    * legs book through — Twelve Data (primary) and the Tiingo backup. Defaults to
@@ -795,16 +820,21 @@ export async function loadEurUsd(
     tiingoProxyUrl = null,
     tiingoFetchImpl,
     forexOpen = true,
+    force = false,
     reservation = ledgerReservation(storage ?? null),
   } = options;
+  // A manual tap may re-pull the live legs even while the forex weekend freeze is
+  // on; the result is then settled (no live instant), not a live spot.
+  const liveLegsAllowed = forexOpen || force;
+  const settledPull = force && !forexOpen;
 
   const cached = readCachedEurUsd(storage ?? undefined);
   if (cached && cached.now !== null && now() - cached.at < ttlMs) {
-    return { now: cached.now, previousClose: cached.previousClose, source: "cache", at: cached.at, cached: true, error: null };
+    return { now: cached.now, previousClose: cached.previousClose, source: "cache", at: cached.at, observedAt: cached.observedAt, cached: true, error: null };
   }
 
   let liveError: PriceError | null = null;
-  if (forexOpen && apiKey.length > 0) {
+  if (liveLegsAllowed && apiKey.length > 0) {
     // Reserve the credit up-front through the single reservation authority (same
     // rationale as loadQuotes): the grant atomically reads-and-debits the shared
     // ledger, so two overlapping loads can't both fire and 429, and the FX leg
@@ -814,8 +844,20 @@ export async function loadEurUsd(
         const reading: EurUsdQuote = await fetchEurUsd(apiKey, fetchImpl);
         if (reading.now !== null) {
           const at = now();
+          if (settledPull) {
+            // A forced off-hours re-pull: the forex market has no live spot, so the
+            // settled close (the quote's `previous_close`, the genuine Friday close)
+            // is the frozen mark — the thin indicative `now` is discarded so it can
+            // never masquerade as a live value. Stamp settled (no live instant), and
+            // keep the cached "yesterday" baseline since a quote's prior close is the
+            // settle we are now showing, not the baseline behind it.
+            const settledNow = reading.previousClose ?? reading.now;
+            const prevBaseline = cached?.previousClose ?? null;
+            writeCachedEurUsd({ now: settledNow, previousClose: prevBaseline }, at, storage ?? undefined, { observedAt: null });
+            return { now: settledNow, previousClose: prevBaseline, source: "live", at, observedAt: null, cached: false, error: null };
+          }
           writeCachedEurUsd(reading, at, storage ?? undefined);
-          return { now: reading.now, previousClose: reading.previousClose, source: "live", at, cached: false, error: null };
+          return { now: reading.now, previousClose: reading.previousClose, source: "live", at, observedAt: at, cached: false, error: null };
         }
       } catch (err) {
         liveError = err instanceof PriceError ? err : new PriceError((err as Error).message, { retryable: true });
@@ -833,7 +875,7 @@ export async function loadEurUsd(
   // a single `reserve("tiingo", 1)` atomically folds in the 429 breaker AND the
   // hourly/daily caps and debits the grant, replacing both a separate frozen
   // guard and a read-then-record budget check.
-  if (tiingoProxyUrl && forexOpen && reservation.reserve("tiingo", 1, now()) > 0) {
+  if (tiingoProxyUrl && liveLegsAllowed && reservation.reserve("tiingo", 1, now()) > 0) {
     try {
       const reading = await fetchTiingoEurUsd(tiingoProxyUrl, {
         fetchImpl: tiingoFetchImpl ?? fetchImpl,
@@ -842,8 +884,12 @@ export async function loadEurUsd(
         const at = now();
         const prevClose = cached && isSameUtcDay(cached.at, at) ? cached.previousClose : null;
         const observedAt = reading.at ?? at;
-        writeCachedEurUsd({ now: reading.now, previousClose: prevClose }, observedAt, storage ?? undefined);
-        return { now: reading.now, previousClose: prevClose, source: "tiingo", at: observedAt, cached: false, error: liveError };
+        // A forced off-hours re-pull is settled: the weekend Tiingo mid simply
+        // repeats the last settled rate, so carry no live instant (observedAt:null)
+        // rather than dressing it up as a fresh "as of HH:MM" clock.
+        const displayObservedAt = settledPull ? null : observedAt;
+        writeCachedEurUsd({ now: reading.now, previousClose: prevClose }, observedAt, storage ?? undefined, { observedAt: displayObservedAt });
+        return { now: reading.now, previousClose: prevClose, source: "tiingo", at: observedAt, observedAt: displayObservedAt, cached: false, error: liveError };
       }
     } catch (err) {
       // A transient backup failure is non-fatal: record it on `error` and keep
@@ -858,7 +904,7 @@ export async function loadEurUsd(
   // end-of-day fallback (which has no prior close). Only drop to end-of-day
   // when we have nothing from today at all.
   if (cached && cached.now !== null && isSameUtcDay(cached.at, now())) {
-    return { now: cached.now, previousClose: cached.previousClose, source: "cache", at: cached.at, cached: true, error: liveError };
+    return { now: cached.now, previousClose: cached.previousClose, source: "cache", at: cached.at, observedAt: cached.observedAt, cached: true, error: liveError };
   }
 
   // Forex weekend close: freeze on the last cached spot (Friday's close) in
@@ -866,18 +912,18 @@ export async function loadEurUsd(
   // prior close and FX-effect split intact rather than re-basing onto a rate with
   // no prior close.
   if (!forexOpen && cached && cached.now !== null) {
-    return { now: cached.now, previousClose: cached.previousClose, source: "cache", at: cached.at, cached: true, error: liveError };
+    return { now: cached.now, previousClose: cached.previousClose, source: "cache", at: cached.at, observedAt: cached.observedAt, cached: true, error: liveError };
   }
 
   // Fall back to the end-of-day ECB rate (keyless, no prior close).
   if (eodFallback !== null && eodFallback.greaterThan(0)) {
-    return { now: eodFallback, previousClose: null, source: "eod", at: null, cached: false, error: liveError };
+    return { now: eodFallback, previousClose: null, source: "eod", at: null, observedAt: null, cached: false, error: liveError };
   }
   // Last resort: a stale (pre-today) cached reading keeps the spot populated.
   if (cached && cached.now !== null) {
-    return { now: cached.now, previousClose: cached.previousClose, source: "cache", at: cached.at, cached: true, error: liveError };
+    return { now: cached.now, previousClose: cached.previousClose, source: "cache", at: cached.at, observedAt: cached.observedAt, cached: true, error: liveError };
   }
-  return { now: null, previousClose: null, source: "none", at: null, cached: false, error: liveError };
+  return { now: null, previousClose: null, source: "none", at: null, observedAt: null, cached: false, error: liveError };
 }
 
 /** Fetch one batch, retrying a transient failure with capped exponential backoff. */

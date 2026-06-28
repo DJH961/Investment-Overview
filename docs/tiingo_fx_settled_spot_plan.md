@@ -1,8 +1,18 @@
 # Plan — stop Tiingo's out‑of‑session FX bar from masquerading as a live EUR/USD spot
 
-> Status: **plan only, not implemented.** This document captures the agreed
-> approach plus the answer to the "can we amend the API call to ask the specific
-> range that makes sense?" question. No code changes are made here.
+> Status: **implemented in v4.16.1; step 0 extended to both providers in
+> v4.16.2.** Steps 0–6 + 8 are in `web/src/cache.ts`
+> (`primeEurUsdFromFxBars` close-clamp + settled `observedAt` + self-heal),
+> `web/src/quotes.ts` (`loadEurUsd` threads `observedAt` and a forced weekend
+> re-pull), `web/src/app.ts` (display reads `observedAt`, TTL keeps `at`), and —
+> for step 0's request-window narrowing — `web/src/prices.ts` (`fetchTimeSeries`
+> now honours `start_date`/`end_date`) and `web/src/live-graph.ts`
+> (`makeTwelveDataBarFetcher` threads the same settled-session window the Tiingo
+> pipe already used). **Step 7 (the indicative-bar sanity band) was deliberately
+> dropped** — a thin-liquidity FX print mistimed to *before* the close instant is
+> vanishingly unlikely, so the close-clamp alone is the guard. This document
+> captures the agreed approach plus the answer to the "can we amend the API call to
+> ask the specific range that makes sense?" question.
 
 ## The bug (verified)
 
@@ -33,43 +43,56 @@ single fix covers them all.
 not the whole fix.** Here is the honest picture.
 
 - The FX‑history request already supports `startDate`/`endDate`
-  (`fetchTiingoFxBars`, `web/src/tiingo.ts:288`), and every FX prime path already
-  bounds the window to the **last settled equity session** rather than the live
-  calendar day: `sessionFxWindow` / `weekFxWindow` (`web/src/live-graph.ts:73‑85`)
-  derive both edges from `lastSessionDate(now)`. So on a Saturday we already ask
-  for *Friday*, not *today*. Good — and we should keep an audit guarantee that
-  **no** prime path ever passes the live calendar day.
+  (`fetchTiingoFxBars`, `web/src/tiingo.ts:288`; and **now** Twelve Data's
+  `time_series` via `fetchTimeSeries`, `web/src/prices.ts`), and every FX prime
+  path already bounds the window to the **last settled equity session** rather than
+  the live calendar day: `sessionFxWindow` / `weekFxWindow`
+  (`web/src/live-graph.ts:73‑85`) derive both edges from `lastSessionDate(now)`. So
+  on a Saturday we already ask for *Friday*, not *today*. Good — and we keep an
+  audit guarantee that **no** prime path ever passes the live calendar day.
 
-- **The limitation:** `endDate` is **day‑granular** (`YYYY-MM-DD`). It can fence
-  off whole weekend/holiday calendar days, but it **cannot** exclude the
+- **Why this is a *shift*, not just a clamp (v4.16.2).** Twelve Data's Pipe A used
+  to fetch "the most recent `outputsize` bars ending now" with **no** date bound,
+  so on a weekend it returned only thin post‑close indicative prints — the
+  client‑side clamp then discarded *all* of them and Friday's genuine session was
+  never even requested. The fix is to **shift the requested window's start *and*
+  end** back to the settled session (the same `start_date`/`end_date` the Tiingo
+  pipe already received), so the provider returns the *full* Friday session from
+  open to close. The clamp then degrades to a pure safety net rather than the load‑
+  bearing mechanism that could starve the curve of in‑session data.
+
+- **The residual limitation:** a date bound is **day‑granular**. It fences off
+  whole weekend/holiday calendar days, but it cannot by itself exclude the
   Friday‑evening / post‑16:00‑ET indicative intraday bars that share Friday's
-  calendar day yet print hours after the equity book settled. Tiingo's FX history
-  endpoint has no intraday end‑*time* parameter, so the API alone cannot cut the
-  request precisely at the 16:00‑ET close instant.
+  calendar day yet print after the equity book settled. (Twelve Data accepts a
+  `HH:MM:SS` end bound, but we widen the intraday end to end‑of‑day for symmetry
+  with Tiingo and let the client clamp own the exact 16:00‑ET cut.)
 
 - **Conclusion:** amending the request range tightens the payload and removes the
-  pure weekend/holiday calendar‑day leak cheaply and upstream, but the
-  **authoritative time‑bound guard must stay client‑side** — clamp the primed bar
-  to the session close, the FX analogue of the graph's `capAtClose`. The two
-  guards are layered, not redundant: range‑bound the request *and* close‑clamp the
-  result.
+  pure weekend/holiday calendar‑day leak cheaply and upstream **on both
+  providers**, but the **authoritative time‑bound guard stays client‑side** — clamp
+  the primed bar to the session close, the FX analogue of the graph's `capAtClose`.
+  The two guards are layered, not redundant: range‑bound the request *and*
+  close‑clamp the result.
 
 This is why the plan below keeps the client‑side clamp as the core, and folds the
 API‑range request in as step 0 (a cheap upstream narrowing + an invariant that the
-live day is never requested).
+live day is never requested), now applied symmetrically to **both** Tiingo and
+Twelve Data.
 
 ## Plan
 
-**0. Amend / harden the API call's range (cheap upstream guard).**
-Make every FX‑history request explicitly bounded to the last settled equity
-session and assert that invariant in one place, so no path can quietly request the
-live calendar day (which on a weekend would invite a Saturday‑dated indicative
-bar). Concretely: route all FX prime fetches through the existing
-`sessionFxWindow` / `weekFxWindow` helpers (audit `app.ts` call sites at 2012,
-2069, 2142 to confirm none drifts to "today"), and document at the
-`fetchTiingoFxBars` boundary that the window must end on a settled session. Accept
-the documented limit that this cannot fence off intraday post‑close bars — that is
-step 1's job.
+**0. Amend / harden the API call's range (cheap upstream guard) — both providers.**
+Make every FX‑history / price‑bar request explicitly bounded to the last settled
+equity session and assert that invariant in one place, so no path can quietly
+request the live calendar day (which on a weekend would invite a Saturday‑dated
+indicative bar). Concretely: route all FX prime fetches through the existing
+`sessionFxWindow` / `weekFxWindow` helpers, document at the `fetchTiingoFxBars`
+boundary that the window must end on a settled session, **and thread the same
+window into Twelve Data's `time_series` (`fetchTimeSeries` `start_date`/`end_date`,
+wired through `makeTwelveDataBarFetcher`)** so the formerly count‑only Pipe A is
+window‑bounded too. Accept the documented day‑granular limit that this cannot
+fence off intraday post‑close bars — that is step 1's job.
 
 **1. Clamp the primed bar to the session close (value guard).**
 Change `primeEurUsdFromFxBars` to pick the newest bar **at or before**
@@ -119,10 +142,12 @@ anchors — they simply stop being advertised as live.
 duplicating it at each call site, so there is one authority and no parallel leak
 can reopen.
 
-**7. Sanity band on indicative bars.** Beyond the close clamp, reject a primed bar
-whose value deviates beyond a small tolerance (e.g. a few percent) from the
-existing cached close, so a thin‑liquidity weekend indicative print can't corrupt
-the EUR leg even if it somehow slips through.
+**7. Sanity band on indicative bars — _dropped (v4.16.2)._** ~~Beyond the close
+clamp, reject a primed bar whose value deviates beyond a small tolerance (e.g. a
+few percent) from the existing cached close.~~ Deliberately **not** implemented: a
+thin‑liquidity weekend print would have to be mistimed to *before* the 16:00‑ET
+close instant to slip past the clamp at all, which is vanishingly unlikely, so the
+close‑clamp alone is the guard and a value band is not worth the added complexity.
 
 **8. Self‑heal the sticky bad stamp.** Today the "only move freshness forward"
 rule (`latest.t <= cached.at` → skip) means a once‑cached bad late stamp *rejects*
@@ -149,4 +174,7 @@ instead of being pinned.
 
 ## What this does **not** change
 
-No code is touched by this document. Implementation is deferred per request.
+The timestamp *semantics* change (a settled rate now carries no live instant), but
+no displayed value regresses: every regeneration path still fully populates from
+clamped, settled bars, and the weekend `loadEurUsd` freeze still prefers this
+cache so the clamped settled bar becomes the frozen Friday spot.

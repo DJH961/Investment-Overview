@@ -14,6 +14,70 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.16.2] — 2026-06-28
+
+### Fixed
+
+- **Twelve Data now requests the settled-session FX/price window, not "the most
+  recent bars" — closing the weekend data-loss gap the v4.16.1 close-clamp could
+  not.** The v4.16.1 fix correctly *clamps* a primed EUR/USD bar to the last
+  session's 16:00-ET close, but Twelve Data's Pipe A (`fetchTimeSeries`) was still
+  asking for the newest `outputsize` bars **ending now**, with no date bound. Over
+  a weekend those bars are all thin post-close indicative prints, so the clamp
+  discarded the whole batch and Friday's genuine session was never even
+  requested — the Tiingo pipe already bounded its request to the session window,
+  but Twelve Data did not, so the two providers behaved differently. The fix
+  *shifts* the request window (start **and** end) back to the settled session for
+  Twelve Data too: `fetchTimeSeries` now honours `start_date`/`end_date` (threaded
+  through `makeTwelveDataBarFetcher`), exactly matching the window the Tiingo pipe
+  already received. The provider returns the full open→close session, and the
+  client-side close-clamp degrades to a pure safety net instead of the load-bearing
+  guard that could starve the curve of in-session data. An intraday end bound is
+  widened to end-of-day (Twelve Data reads a date-only bound at 00:00:00) so the
+  whole session is captured; daily requests stay date-only
+  (`web/src/prices.ts`, `web/src/live-graph.ts`; implements step 0 of
+  `docs/tiingo_fx_settled_spot_plan.md` symmetrically across both providers, and
+  records the deliberate decision to drop step 7's indicative-bar sanity band).
+
+## [4.16.1] — 2026-06-28
+
+### Fixed
+
+- **The weekend EUR/USD rate no longer masquerades as a live "as of HH:MM" spot.**
+  The spot-FX market trades ~24/5, so the provider keeps emitting thin *indicative*
+  EUR/USD bars long after Friday's 16:00-ET equity close. `primeEurUsdFromFxBars`
+  folded the **newest** such bar back into the live spot cache with no upper time
+  bound, stamped at its (Saturday/Sunday) instant — so over a weekend a thin
+  indicative print both corrupted the EUR leg of the book and rendered as a
+  misleading live clock ("as of 11:30" on a Sunday). The prime now **clamps to the
+  last settled session's close** (the FX analogue of the graph's `capAtClose`):
+  post-close / weekend bars are ignored, and the surviving Friday-close bar is
+  stamped **settled** (no live observation instant) so the UI shows an honest date,
+  not a clock. A cached reading's TTL anchor (`at`) is decoupled from its displayed
+  observation instant (`observedAt`) so a frozen rate stays fresh enough to value
+  the book while still being labelled truthfully, and a previously mis-stamped
+  settled rate now **self-heals** from the next correct pull instead of staying
+  pinned for the rest of the weekend (`web/src/cache.ts`, `web/src/quotes.ts`,
+  `web/src/app.ts`; implements `docs/tiingo_fx_settled_spot_plan.md`).
+- **A manual refresh while the FX market is frozen now actually re-pulls EUR/USD.**
+  The weekend freeze skipped the wire entirely to save a credit, so a manual
+  ("cache-distrust") tap did nothing for FX. A forced tap now re-pulls even while
+  the forex weekend close is on, re-confirming the settled close — and because the
+  market still has no genuine live spot, the result is folded back as a **settled**
+  reading (the provider's settled close, no live instant), never a live clock
+  (`web/src/quotes.ts` `loadEurUsd` `force`; `web/src/app.ts` refresh wiring).
+
+### Changed
+
+- **The currency card's frozen-state titles now name the real settled day.** While
+  the FX market is frozen at a settled session, the "Today" stat is no longer
+  "today": it reads **"Yesterday"** when the settled session was the day before,
+  else the **weekday name** ("Friday") once further removed (e.g. Sunday looking
+  back at Friday). The currency-effect / investing-power panels likewise switch
+  their "since yesterday" title to just **"yesterday"** or **"on Friday"** by time
+  distance, so a Sunday view stops mislabelling Friday's frozen figures as today's
+  (`web/src/format.ts` `frozenDayLabel`/`frozenSincePhrase`, `web/src/ui.ts`).
+
 ## [4.16.0] — 2026-06-28
 
 ### Added

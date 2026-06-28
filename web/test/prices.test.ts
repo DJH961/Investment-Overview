@@ -291,6 +291,53 @@ describe("fetchTimeSeries", () => {
     expect(err.fatal).toBe(true);
   });
 
+  it("bounds an intraday request to the session window (end widened to end-of-day)", async () => {
+    const calls: string[] = [];
+    const fetchImpl: FetchLike = async (url) => {
+      calls.push(url as string);
+      return jsonResponse({ meta: { symbol: "VTI" }, values: [{ datetime: "2024-01-10 16:00:00", close: "55" }] });
+    };
+    await fetchTimeSeries(["VTI"], "key", {
+      interval: "5min",
+      startDate: "2024-01-10",
+      endDate: "2024-01-10",
+      fetchImpl,
+    });
+    // start_date is date-only; end_date is widened to the day's end so the whole
+    // intraday session is returned (a date-only end would land at 00:00:00 and
+    // exclude every 09:30–16:00 bar).
+    expect(calls[0]).toContain("start_date=2024-01-10");
+    expect(calls[0]).toContain("end_date=2024-01-10+23%3A59%3A59");
+  });
+
+  it("keeps a daily request's end bound date-only", async () => {
+    const calls: string[] = [];
+    const fetchImpl: FetchLike = async (url) => {
+      calls.push(url as string);
+      return jsonResponse({ meta: { symbol: "VTI" }, values: [{ datetime: "2024-01-10", close: "55" }] });
+    };
+    await fetchTimeSeries(["VTI"], "key", {
+      interval: "1day",
+      startDate: "2024-01-06",
+      endDate: "2024-01-10",
+      fetchImpl,
+    });
+    expect(calls[0]).toContain("start_date=2024-01-06");
+    expect(calls[0]).toContain("end_date=2024-01-10");
+    expect(calls[0]).not.toContain("23%3A59%3A59");
+  });
+
+  it("omits date bounds entirely when no window is given (legacy outputsize behaviour)", async () => {
+    const calls: string[] = [];
+    const fetchImpl: FetchLike = async (url) => {
+      calls.push(url as string);
+      return jsonResponse({ meta: { symbol: "VTI" }, values: [{ datetime: "2024-01-10 09:30:00", close: "50" }] });
+    };
+    await fetchTimeSeries(["VTI"], "key", { fetchImpl });
+    expect(calls[0]).not.toContain("start_date=");
+    expect(calls[0]).not.toContain("end_date=");
+  });
+
   it("returns an empty map for no symbols without calling the network", async () => {
     let called = false;
     const fetchImpl: FetchLike = async () => {
