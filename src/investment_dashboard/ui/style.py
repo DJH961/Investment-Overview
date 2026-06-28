@@ -444,6 +444,24 @@ html, body {{
   color: var(--inv-muted);
   font-weight: 500;
 }}
+.inv-fx-box-asof-row {{
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}}
+.inv-fx-box-asof {{ white-space: nowrap; }}
+.inv-fx-box-eod {{
+  color: var(--inv-muted);
+  background: color-mix(in srgb, var(--inv-muted) 16%, transparent);
+  border-radius: 999px;
+  padding: 0.02rem 0.4rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}}
 .inv-fx-box-closed {{
   color: var(--inv-loss);
   background: color-mix(in srgb, var(--inv-loss) 14%, transparent);

@@ -20,7 +20,7 @@ Exercises the behaviours the box guarantees:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -389,3 +389,85 @@ class TestPausedTag:
         assert ">live<" not in html
         # The frozen "last" leg still survives below.
         assert ">last<" in html
+
+
+class TestAsOfStamp:
+    """The rate stat carries an honest "as of …" / "EOD FX" provenance stamp so the
+    desktop is as transparent as the web companion about which day's EUR/USD rate
+    it is showing (transparency / correctness)."""
+
+    def test_eod_rate_stamps_as_of_date_and_eod_tag(self, session: Session) -> None:
+        from investment_dashboard.repositories import fx_repo
+        from investment_dashboard.services import fx_service
+
+        fx_service.clear_live_spot()
+        # A settled ECB fixing on Friday 2024-05-31; no live spot ⇒ the displayed
+        # rate is the keyless end-of-day reference, so the box says so.
+        fx_repo.upsert_rates(
+            session, {date(2024, 5, 31): Decimal("1.0845")}, base="EUR", quote="USD"
+        )
+        session.flush()
+        _seed_fx_samples(session)
+
+        html = _currency_box_html(session, _metrics(), display_ccy="USD", now=_CLOSED)
+        assert html is not None
+        assert "inv-fx-box-asof" in html
+        assert "as of 31 May 2024" in html
+        assert ">EOD FX<" in html
+
+    def test_live_spot_stamps_as_of_today_without_eod_tag(self, session: Session) -> None:
+        from investment_dashboard.repositories import fx_repo
+        from investment_dashboard.services import fx_service
+
+        fx_service.clear_live_spot()
+        today = _CLOSED.date()
+        fx_repo.upsert_rates(session, {today: Decimal("1.30")}, base="EUR", quote="USD")
+        session.flush()
+        # A legacy spot without a capture instant falls back to the day label.
+        fx_service.set_live_spot("USD", Decimal("1.30"), observed_on=today, observed_at=None)
+        # Force the timestampless legacy shape (set_live_spot defaults to now()).
+        fx_service._LIVE_SPOT["USD"] = fx_service.LiveSpot(
+            observed_on=today, rate=Decimal("1.30"), observed_at=None
+        )
+        _seed_fx_samples(session)
+
+        try:
+            html = _currency_box_html(session, _metrics(), display_ccy="USD", now=_CLOSED)
+        finally:
+            fx_service.clear_live_spot()
+        assert html is not None
+        assert "as of Today" in html
+        assert ">EOD FX<" not in html
+
+    def test_live_spot_stamps_the_live_time(self, session: Session) -> None:
+        from datetime import timedelta
+
+        from investment_dashboard.repositories import fx_repo
+        from investment_dashboard.services import fx_service
+
+        fx_service.clear_live_spot()
+        today = _CLOSED.date()
+        fx_repo.upsert_rates(session, {today: Decimal("1.30")}, base="EUR", quote="USD")
+        session.flush()
+        # Observed at 18:42 UTC — the box stamps that live time, just like the web.
+        observed = datetime(2024, 6, 3, 18, 42, tzinfo=UTC)
+        fx_service.set_live_spot("USD", Decimal("1.30"), observed_on=today, observed_at=observed)
+        _seed_fx_samples(session)
+
+        try:
+            html = _currency_box_html(session, _metrics(), display_ccy="USD", now=_CLOSED)
+            # On a +2h viewer clock the same instant reads 20:42.
+            html_tz = _currency_box_html(
+                session,
+                _metrics(),
+                display_ccy="USD",
+                now=_CLOSED,
+                tz=timezone(timedelta(hours=2)),
+            )
+        finally:
+            fx_service.clear_live_spot()
+        assert html is not None
+        assert html_tz is not None
+        assert "as of 18:42" in html
+        assert ">EOD FX<" not in html
+        assert "as of 20:42" in html_tz

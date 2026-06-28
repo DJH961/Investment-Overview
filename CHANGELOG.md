@@ -5,7 +5,6 @@ All notable changes to this project are documented here. The format follows
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Versioning policy
-
 - **0.x** — pre-UI scaffolding milestones. The app does **not** yet present a
   usable web UI.
 - **1.0.0** — first release with a runnable UI: end-to-end flow from CSV
@@ -13,6 +12,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
+
+## [4.17.0] — 2026-06-28
+
+### Added
+
+- **The desktop now stamps the EUR/USD rate with an honest "as of …" /
+  "EOD FX" provenance — and the live capture time when it is live — matching the
+  web companion for transparency and correctness.** The Overview "Currency ·
+  EUR ↔ USD" box and the Holdings "Current FX" tile previously showed a bare rate
+  with no indication of *which day's* (or minute's) FX it was: a settled
+  end-of-day ECB reference rate looked identical to a fresh live spot. A new
+  `fx_service.eur_quote_as_of` resolves the displayed rate's provenance — a
+  today-dated live intraday spot vs the forward-filled ECB end-of-day fixing — and
+  the live spot now carries its capture instant (`LiveSpot.observed_at`). The FX
+  box stamps **"as of HH:MM"** on the viewer's clock for a live reading (just like
+  the web), **"as of <date>"** plus an explicit **"EOD FX"** tag for the settled
+  end-of-day rate; the Holdings tile mirrors this in a compact line
+  (`src/investment_dashboard/services/fx_service.py`,
+  `src/investment_dashboard/ui/pages/overview.py`,
+  `src/investment_dashboard/ui/pages/holdings.py`,
+  `src/investment_dashboard/ui/style.py`).
 
 ## [4.16.3] — 2026-06-28
 

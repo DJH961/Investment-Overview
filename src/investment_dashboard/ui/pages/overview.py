@@ -17,6 +17,7 @@ from investment_dashboard.domain.returns import years_between
 from investment_dashboard.domain.session_fx import fx_buying_power_split, fx_effect_split
 from investment_dashboard.services import (
     display_currency_service,
+    fx_service,
     intraday_snapshots_service,
     investing_power_service,
     prices_service,
@@ -717,6 +718,50 @@ def _investing_power_html(
     )
 
 
+def _fx_as_of_stamp(
+    session,  # type: ignore[no-untyped-def]
+    *,
+    today: date,
+    tz: tzinfo | None = None,
+) -> str:
+    """The FX "as of …" / "EOD FX" provenance stamp for the rate stat.
+
+    Mirrors the web companion's FX-box stamps so the desktop is just as honest
+    about *which day's* — and, when live, *which minute's* — EUR/USD rate it is
+    showing (transparency / correctness):
+
+    * a today-dated live intraday spot → ``as of HH:MM`` on the viewer's clock
+      (the live capture time), exactly like the web; a legacy spot without a
+      timestamp falls back to ``as of Today``;
+    * the settled ECB/Frankfurter end-of-day rate → ``as of <date>`` plus an
+      explicit ``EOD FX`` tag, since that rate carries no intraday observation.
+
+    Returns an empty string when no rate is available at all (the caller already
+    bails out in that case), so the stamp simply doesn't render.
+    """
+    info = fx_service.eur_quote_as_of(session, quote="USD", today=today)
+    if info is None:
+        return ""
+    if info.is_live and info.observed_at is not None:
+        observed = info.observed_at.astimezone(tz) if tz is not None else info.observed_at
+        label = observed.strftime("%H:%M")
+        title = f"EUR/USD spot observed {observed.strftime('%d %b %Y %H:%M')}"
+    elif info.is_live or info.as_of == today:
+        label = "Today"
+        title = f"EUR/USD rate as of {info.as_of.strftime('%d %b %Y')}"
+    else:
+        label = info.as_of.strftime("%d %b %Y")
+        title = f"EUR/USD rate as of {info.as_of.strftime('%d %b %Y')}"
+    stamp = f'<span class="inv-fx-box-asof" title="{escape(title)}">as of {escape(label)}</span>'
+    if info.source == "eod":
+        stamp += (
+            '<span class="inv-fx-box-eod"'
+            ' title="End-of-day ECB reference rate (no intraday observation)">'
+            "EOD FX</span>"
+        )
+    return f'<span class="inv-fx-box-stat-sub inv-fx-box-asof-row">{stamp}</span>'
+
+
 def _currency_box_html(
     session,  # type: ignore[no-untyped-def]
     metrics: PortfolioMetrics,
@@ -809,11 +854,18 @@ def _currency_box_html(
         )
         stats_class = "inv-fx-box-stats"
 
+    # The "as of …" / "EOD FX" provenance stamp under the rate value — mirrors the
+    # web companion so the desktop is just as transparent about which day's rate it
+    # is showing. ``now``'s calendar date (on the viewer's clock) is the reference
+    # "today" the live overlay and ECB forward-fill resolve against.
+    as_of_stamp = _fx_as_of_stamp(session, today=_local_date(now, tz), tz=tz)
+
     stats = (
         f'<div class="{stats_class}">'
         '<div class="inv-fx-box-stat">'
         f'<span class="inv-fx-box-stat-label">{pair}</span>'
         f'<span class="inv-fx-box-stat-value">{rate:,.4f}</span>'
+        f"{as_of_stamp}"
         "</div>"
         '<div class="inv-fx-box-stat">'
         f'<span class="inv-fx-box-stat-label">{escape(today_label)}</span>'

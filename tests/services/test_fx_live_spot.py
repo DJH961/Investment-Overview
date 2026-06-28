@@ -8,7 +8,7 @@ historical mark (and therefore the golden-master daily figures) stays put.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -219,3 +219,64 @@ def test_refresh_live_spot_swallows_tiingo_errors() -> None:
         charge_budget=lambda: True,
     )
     assert rate is None
+
+
+class TestEurQuoteAsOf:
+    """``eur_quote_as_of`` reports *which day's* EUR/USD rate the UI is showing —
+    a live today-dated spot vs the settled ECB end-of-day reference rate — so the
+    desktop can stamp an honest "as of …" / "EOD FX" provenance label."""
+
+    def test_none_when_no_rate_at_all(self, session: Session) -> None:
+        assert fx_service.eur_quote_as_of(session, today=date.today()) is None
+
+    def test_live_spot_reports_live_as_of_today(self, session: Session) -> None:
+        today = date.today()
+        fx_repo.upsert_rates(
+            session, {today - timedelta(days=1): Decimal("1.10")}, base="EUR", quote="USD"
+        )
+        session.flush()
+        observed = datetime(today.year, today.month, today.day, 18, 42, tzinfo=UTC)
+        fx_service.set_live_spot("USD", Decimal("1.15"), observed_on=today, observed_at=observed)
+
+        info = fx_service.eur_quote_as_of(session, today=today)
+        assert info is not None
+        assert info.source == "live"
+        assert info.is_live is True
+        assert info.as_of == today
+        # The capture instant rides along for the UI's live "as of HH:MM" clock.
+        assert info.observed_at == observed
+
+    def test_set_live_spot_defaults_observed_at_to_now(self, session: Session) -> None:
+        today = date.today()
+        before = datetime.now(UTC)
+        fx_service.set_live_spot("USD", Decimal("1.15"), observed_on=today)
+        spot = fx_service.get_live_spot("USD")
+        assert spot is not None
+        assert spot.observed_at is not None
+        assert spot.observed_at >= before
+
+    def test_eod_reports_latest_settled_date(self, session: Session) -> None:
+        today = date.today()
+        friday = today - timedelta(days=3)
+        fx_repo.upsert_rates(session, {friday: Decimal("1.08")}, base="EUR", quote="USD")
+        session.flush()
+        # No live spot ⇒ the displayed rate forward-fills from Friday's ECB fixing.
+
+        info = fx_service.eur_quote_as_of(session, today=today)
+        assert info is not None
+        assert info.source == "eod"
+        assert info.is_live is False
+        assert info.as_of == friday
+
+    def test_stale_live_spot_falls_back_to_eod(self, session: Session) -> None:
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+        fx_repo.upsert_rates(session, {yesterday: Decimal("1.09")}, base="EUR", quote="USD")
+        session.flush()
+        # A spot observed yesterday is not today's live overlay (see get_rates).
+        fx_service.set_live_spot("USD", Decimal("1.20"), observed_on=yesterday)
+
+        info = fx_service.eur_quote_as_of(session, today=today)
+        assert info is not None
+        assert info.source == "eod"
+        assert info.as_of == yesterday
