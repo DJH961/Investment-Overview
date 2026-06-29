@@ -758,6 +758,13 @@ export class App {
    */
   private onlineHandler: (() => void) | null = null;
   /**
+   * Installed `pagehide` listener, kept so it can be removed on teardown. On many
+   * mobile browsers locking the screen / switching apps fires `pagehide` (or only
+   * an unreliable `visibilitychange`); this is the belt-and-braces counterpart to
+   * the visibility handler that guarantees the in-flight round is aborted on lock.
+   */
+  private pageHideHandler: ((event: PageTransitionEvent) => void) | null = null;
+  /**
    * Connectivity verdict from the last refresh round (see {@link classifyConnectivity}):
    * `offline` (the device has no link), `unreachable` (online, but no price
    * service responded), or `online` (a service answered). Drives the honest
@@ -5998,18 +6005,10 @@ export class App {
       // round is {@link roundIsStale stale}, abandon it (bump the generation so
       // its eventual continuation bails) and fall through to a fresh pull.
       if (!roundIsStale(this.refreshStartedAt, Date.now(), this.upToDateWindowMs())) return;
-      this.pollLog(
-        "refresh",
-        `Stale round abandoned — the ${this.refreshingKind ?? "refresh"} round had been in flight over ` +
-          `${Math.round(staleRoundAbortMs(this.upToDateWindowMs()) / 60000)} min ` +
+      this.abortInFlightRound(
+        `it had been in flight over ${Math.round(staleRoundAbortMs(this.upToDateWindowMs()) / 60000)} min ` +
           "(device likely slept mid-round). Starting a fresh pull instead of completing hour-old work.",
-        "warn",
       );
-      this.refreshGeneration++;
-      this.refreshing = false;
-      this.refreshingKind = null;
-      this.refreshStartedAt = null;
-      this.setUpdating(false);
     }
     // No *automatic* price pull once the book is fully up to date — the market is
     // closed and every settled close *and* today's NAV is already in hand. There
@@ -6578,6 +6577,31 @@ export class App {
     void this.runScheduledRefresh(session, kind);
   }
 
+  /**
+   * Abandon the in-flight refresh round, if any, right now. Bumps the generation
+   * so the abandoned round's eventual continuation bails ({@link superseded}),
+   * clears the shared refresh state, and tears the update pill down. Used both by
+   * the stale-round watchdog and by the lock/hide path — when the device locks or
+   * the tab is backgrounded we always abort the current round (auto *and* manual)
+   * rather than leaving it hanging to "complete" stale work an hour later when the
+   * device wakes (the exact log-44 duplication). Returns true if a round was
+   * actually aborted.
+   */
+  private abortInFlightRound(reason: string): boolean {
+    if (!this.refreshing) return false;
+    this.pollLog(
+      "refresh",
+      `${this.refreshingKind ?? "refresh"} round aborted — ${reason}`,
+      "warn",
+    );
+    this.refreshGeneration++;
+    this.refreshing = false;
+    this.refreshingKind = null;
+    this.refreshStartedAt = null;
+    this.setUpdating(false);
+    return true;
+  }
+
   /** Arm the next auto-refresh tick, replacing any pending one. */
   private scheduleNext(session: number, delayMs: number): void {
     this.clearRefreshTimer();
@@ -6601,8 +6625,14 @@ export class App {
     if (typeof document === "undefined") return;
     const handler = (): void => {
       if (session !== this.sessionId) return;
-      if (document.hidden) this.clearRefreshTimer();
-      else this.wakeRefresh(session, "auto", null);
+      if (document.hidden) {
+        // Locking / backgrounding always aborts the current round (auto and
+        // manual). A round left in flight on a sleeping device is what froze for
+        // ~59 min in log 44 and then "completed" stale-as-fresh on wake; abort it
+        // here so the next wake starts clean instead of resuming hour-old work.
+        this.abortInFlightRound("device locked / tab hidden mid-round.");
+        this.clearRefreshTimer();
+      } else this.wakeRefresh(session, "auto", null);
     };
     document.addEventListener("visibilitychange", handler);
     this.visibilityHandler = handler;
@@ -6634,6 +6664,16 @@ export class App {
       };
       window.addEventListener("online", onOnline);
       this.onlineHandler = onOnline;
+      // Lock / app-switch on mobile often surfaces as `pagehide` (sometimes the
+      // only reliable signal). Abort the in-flight round here too so a round can
+      // never freeze across a lock and resume hour-old work on the next wake.
+      const onHide = (): void => {
+        if (session !== this.sessionId) return;
+        this.abortInFlightRound("device locked / page hidden mid-round (pagehide).");
+        this.clearRefreshTimer();
+      };
+      window.addEventListener("pagehide", onHide);
+      this.pageHideHandler = onHide;
     }
   }
 
@@ -6650,6 +6690,10 @@ export class App {
       window.removeEventListener("online", this.onlineHandler);
     }
     this.onlineHandler = null;
+    if (this.pageHideHandler && typeof window !== "undefined") {
+      window.removeEventListener("pagehide", this.pageHideHandler);
+    }
+    this.pageHideHandler = null;
   }
 
   /**

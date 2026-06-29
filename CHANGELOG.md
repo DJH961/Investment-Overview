@@ -28,6 +28,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     interval (threshold `max(90s, interval × 3)`) is now abandoned on the next
     tick instead of resurfacing stale, with a generation guard so the resurrected
     hung round can no longer clobber the fresh one's state, verdict, or schedule.
+  - Locking the device / backgrounding the tab now **always aborts** the in-flight
+    update round (auto *and* manual), via both `visibilitychange` and `pagehide`,
+    so a round can never freeze across a lock and "complete" hour-old work as
+    fresh on the next wake.
   - Wake triggers (visibility / pageshow / online) are funnelled through a single
     coalescing entry point, so one physical wake no longer fans out three times;
     duplicate fan-outs that re-fetch already-pulled symbols are now flagged in the
