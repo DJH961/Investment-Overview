@@ -338,6 +338,8 @@ describe("loadQuotes — free-tier budget", () => {
     expect(resolved.fetching.length).toBe(8);
     expect(resolved.deferred.length).toBe(4);
   });
+
+  it("reports an attempted-but-unpriced symbol as failed, not deferred", async () => {
     // The provider returns a node for VTI but a null/empty one for FAIL (the
     // FSKAX case): both were attempted, VTI prices, FAIL doesn't. FAIL must be
     // reported as failed (genuinely stuck) rather than deferred (waiting its turn).
