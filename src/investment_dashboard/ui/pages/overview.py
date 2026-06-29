@@ -1529,6 +1529,16 @@ def _week_session_opens(dates: list[datetime]) -> list[datetime]:
     return opens
 
 
+def _time_of_day_hours(when: datetime) -> float:
+    """Wall-clock time-of-day of ``when`` as fractional hours (e.g. 15.5 = 15:30).
+
+    The 1W axis helpers position and bound sessions by their displayed time-of-day,
+    so a single shared converter keeps :func:`_week_rangebreaks` and
+    :func:`_week_xaxis_range` in lock-step.
+    """
+    return when.hour + when.minute / 60 + when.second / 3600
+
+
 def _week_rangebreaks(dates: list[datetime]) -> list[dict[str, object]]:
     """Plotly x-axis ``rangebreaks`` that collapse the 1W curve's dead time.
 
@@ -1547,7 +1557,7 @@ def _week_rangebreaks(dates: list[datetime]) -> list[dict[str, object]]:
     breaks: list[dict[str, object]] = [{"bounds": ["sat", "mon"]}]
     if not dates:
         return breaks
-    tods = [d.hour + d.minute / 60 + d.second / 3600 for d in dates]
+    tods = [_time_of_day_hours(d) for d in dates]
     open_h, close_h = min(tods), max(tods)
     # Only collapse the overnight gap when the session stays within one local day
     # (close later than open); a session that wraps past local midnight is left
@@ -1587,14 +1597,14 @@ def _week_xaxis_range(dates: list[datetime]) -> list[datetime] | None:
     """
     if len(dates) < 2 or not isinstance(dates[0], datetime):
         return None
-    tods = [d.hour + d.minute / 60 + d.second / 3600 for d in dates]
+    tods = [_time_of_day_hours(d) for d in dates]
     open_h, close_h = min(tods), max(tods)
     if not close_h > open_h:
         return None
     # The data point sitting at the session close (latest time-of-day), rebased
     # onto the most recent session's calendar date — that is where a full day-plane
     # should end. Keeps the close instant's exact h:m:s and tzinfo.
-    close_point = max(dates, key=lambda d: d.hour + d.minute / 60 + d.second / 3600)
+    close_point = max(dates, key=_time_of_day_hours)
     last_day = dates[-1].date()
     end = close_point.replace(year=last_day.year, month=last_day.month, day=last_day.day)
     start = dates[0]

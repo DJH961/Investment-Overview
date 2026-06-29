@@ -13,7 +13,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.21.5] — 2026-06-29
+## [4.21.6] — 2026-06-29
 
 ### Fixed
 
@@ -29,6 +29,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`_value_curve_figure`) the x-axis end is reserved at the close time-of-day on the
   latest session's date so today gets a full-width day-plane instead of a narrow
   right-hand sliver.
+
+## [4.21.5] — 2026-06-29
+
+### Fixed
+
+- **Locked the market-closed FX-freeze contract for the live 1D/1W value graphs
+  with a regression test.** Confirmed and pinned the intended behaviour: once the
+  US equity session has shut but FX still trades, the **1D** and **1W** curves stay
+  put on the **session-close** EUR/USD rate (`graphFx`), while the headline total,
+  the per-holding growth rates and the **1M and longer** history graphs keep
+  re-marking at the **live** spot. Because the USD leg is FX-free, the 1D graph's
+  USD growth equals the overview's "today" USD move by construction; in EUR the two
+  diverge once the overnight rate drifts from the close, and reconcile only while
+  the rate is unchanged. No behavioural change — the freeze (`graphAnchorFx` /
+  `buildModelAnchor`) and live history paths were already correct; this adds a
+  `value-graph` test that asserts the USD legs match and the EUR legs part exactly
+  as specified, so the invariant cannot silently regress.
 
 ## [4.21.4] — 2026-06-29
 

@@ -190,9 +190,12 @@ const SESSION_DAY_MS = 86_400_000;
 
 /**
  * Time-of-day (ms past UTC midnight) of an ISO instant, or `NaN` when it does not
- * parse. UTC carries no DST, so within a 1W window every session shares one
- * stable open/close offset — exactly what the collapsed-session layout needs to
- * place each point at its true wall-clock position.
+ * parse. `Date.parse` yields an absolute epoch, and the modulo is taken in UTC, so
+ * the result is the instant's *UTC* time-of-day independent of how the string was
+ * parsed. Callers feed UTC-terminated ISO strings (the curve's `new Date(t)
+ * .toISOString()`, always `…Z`); UTC carries no DST, so within a 1W window every
+ * session shares one stable open/close offset — exactly what the collapsed-session
+ * layout needs to place each point at its true wall-clock position.
  */
 function sessionTimeOfDayMs(iso: string): number {
   const t = Date.parse(iso);
