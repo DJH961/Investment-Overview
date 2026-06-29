@@ -385,6 +385,29 @@ export function sessionOpenMs(day: string): number {
 }
 
 /**
+ * Absolute UTC epoch-ms of 00:00 ET (exchange-local midnight) on `day`
+ * (`YYYY-MM-DD`, New-York calendar). This is the single canonical "start of a
+ * trading day" instant the whole app buckets by, mirroring the desktop's
+ * `_session_start_utc` (00:00 America/New_York). DST-aware: the underlying
+ * offset is resolved from the instant itself, so it is correct on either side of
+ * a daylight-saving change. Use this — never UTC or viewer-local midnight — so
+ * the web and Python agree on which calendar day a bar belongs to.
+ */
+export function exchangeDayStartMs(day: string): number {
+  return exchangeWallToUtcMs(day, 0);
+}
+
+/**
+ * The exchange-local (New York) calendar date (`YYYY-MM-DD`) that the absolute
+ * instant `t` (UTC epoch-ms) falls on. The ET counterpart of a UTC/viewer-local
+ * "day of" bucket key: two instants share a key iff they sit on the same NYSE
+ * trading day, regardless of the viewer's own timezone.
+ */
+export function exchangeDayOf(t: number): string {
+  return exchangeDate(new Date(t));
+}
+
+/**
  * Absolute UTC epoch-ms of the **next** regular NYSE session close strictly
  * after `now`. If `now` falls on a trading day before its 16:00 ET close that is
  * today's close; otherwise (after today's close, overnight, on a weekend, or a
