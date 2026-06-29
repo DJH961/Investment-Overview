@@ -7201,13 +7201,14 @@ export class App {
     }
     const merged = rebaseSleeveToWholeBook(merge.points, { baseUsd, baseEur }, fallbackFx);
     // "Live tip stays sane": pin the merged curve's trailing edge to the web
-    // curve's trusted live tip (the same point 1D ends on) so a blob sleeve
-    // sample — captured on the desktop's own cadence and able to land just past
-    // the tip or dive away from it — can never be the rightmost rendered point.
-    // Without this the richer merged curve draws the "final-minute" nosedive on
-    // 1W that 1D never shows (capWeekToSessionClose only trims past the *close*,
-    // a no-op while the market is open and blind to a pre-close stale sample).
-    const pinned = pinMergedTipToWebTip(merged, webCurve[webCurve.length - 1]);
+    // curve's trusted tail (the same dense bars+tip 1D ends on) so a blob sleeve
+    // sample — captured on the desktop's own coarse cadence and able to land just
+    // past the tip *or* in the gap before it — can never dent or overrun the final
+    // segment. Without this the richer merged curve draws a "final-minute" nosedive
+    // on 1W that 1D never shows: pinning only the very last point still left a
+    // stale blob sample as the *penultimate* point, a notch right before the tip
+    // (capWeekToSessionClose only trims past the *close*, blind to that pre-tip dip).
+    const pinned = pinMergedTipToWebTip(merged, webCurve);
     this.pollLog("graph", `1W merge: rendered the richer merged curve (${pinned.length} points, was ${webCurve.length}).`);
     return pinned;
   }
