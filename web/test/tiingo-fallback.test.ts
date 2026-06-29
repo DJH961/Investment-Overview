@@ -441,6 +441,72 @@ describe("runTiingoFallback", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("loginPriority: a small login round fills its deferred overflow on Tiingo immediately", async () => {
+    const storage = memStorage();
+    // Only 3 symbols requested — well under the spill threshold — and each already
+    // holds the settled close, so neither the size nor the "behind" gate would
+    // normally fire. On a login / start round Twelve Data's deferral must still
+    // spill to Tiingo at once: login is never left waiting on the per-minute cap.
+    const quotes = new Map<string, Quote>();
+    for (const symbol of ["AAPL", "MSFT", "GOOG"]) {
+      quotes.set(symbol, {
+        symbol,
+        price: new Decimal(100),
+        previousClose: null,
+        currency: "USD",
+        at: NOW,
+        priceTime: NOW,
+        valueDate: EXPECTED,
+        marketOpen: null,
+      });
+    }
+    const fetchImpl = stubFetch([iexRow("AAPL", 123, new Date(NOW).toISOString())]);
+    const out = await runTiingoFallback({
+      symbols: ["AAPL", "MSFT", "GOOG"],
+      navSymbols: new Set(),
+      quotes,
+      report: emptyReport(["AAPL"]),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl,
+      loginPriority: true,
+    });
+    expect(out.tiingoSymbols).toEqual(["AAPL"]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("loginPriority: still defers when Tiingo has no credits left (the only thing that defers a login pull)", async () => {
+    const storage = memStorage();
+    // Drain the entire Tiingo hourly budget so no fallback credit remains.
+    recordTiingoCredits(WEB_HOURLY_CAP, NOW, storage);
+    const quotes = new Map<string, Quote>();
+    quotes.set("AAPL", {
+      symbol: "AAPL",
+      price: new Decimal(100),
+      previousClose: null,
+      currency: "USD",
+      at: NOW,
+      priceTime: NOW,
+      valueDate: EXPECTED,
+      marketOpen: null,
+    });
+    const fetchImpl = stubFetch([]);
+    const out = await runTiingoFallback({
+      symbols: ["AAPL"],
+      navSymbols: new Set(),
+      quotes,
+      report: emptyReport(["AAPL"]),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl,
+      loginPriority: true,
+    });
+    expect(out.tiingoSymbols).toEqual([]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("efficiency spill: a deferred NAV in a big market-open round is spilled too (NAVs ride the same sleeve)", async () => {
     const storage = memStorage();
     const all = Array.from({ length: 17 }, (_, i) => `SYM${i}`);
