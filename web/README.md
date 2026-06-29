@@ -1,7 +1,5 @@
 # web/ — Live Web Companion (static front-end)
 
-> 💵 **Currency:** USD is the source of truth; EUR is a display toggle (`usd ÷ fx`) and the default preset. web↔blob reconciliation is in USD. Never treat EUR as base.
-
 This directory holds the **public**, read-only GitHub Pages front-end described
 in [`docs/v3.0_live_web_companion_proposal.md`](../docs/v3.0_live_web_companion_proposal.md).
 
@@ -57,6 +55,8 @@ Concretely, that means:
   blob URL override), and a **Maintenance** section with an **Update all data
   now** button. The modern **Inter** typeface is bundled
   (self-hosted — no third-party font requests).
+- Currency presentation is a dashboard preference only: backend/blob source data
+  and web↔blob reconciliation remain USD-native, with EUR derived for display.
 - **Update all (repoll from scratch).** Settings → Maintenance → *Update all data
   now* throws away every cached price (quotes, FX, EUR/USD), drops the in-memory
   data-file version stamp, and runs a forced full re-fetch of all quotes and FX
@@ -500,7 +500,7 @@ real data — so the links are safe to share or screen-share.
 | Default ("Global ETF saver") | `?demo` |
 | US tech-heavy book (with a deliberate loser) | `?demo=tech` |
 | Euro investor, mostly USD assets (FX divergence) | `?demo=fx` |
-| Open straight to a tab | `?demo&tab=risk` (also `overview`, `periods`, `calculator`) |
+| Open straight to a tab | `?demo&tab=risk` (also `overview`, `periods`, `plan`) |
 | Combine persona + tab | `?demo=tech&tab=risk` |
 | Auto-running guided tour | `?demo&tour=1` |
 | Boot into the live-sim motion | `?demo&sim=1` |

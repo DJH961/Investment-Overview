@@ -3,8 +3,6 @@
 This is a single-author private project, but future-me deserves clean
 ground rules.
 
-> 💵 **Currency:** USD is the canonical backend currency (computation, storage, reconciliation, exports); EUR is presentation-only (`usd ÷ fx`) and the default frontend toggle. Never code EUR as the base.
-
 ## Dev setup
 
 Requires Python 3.12+ and [`uv`](https://docs.astral.sh/uv/) (`pip install
@@ -50,6 +48,9 @@ uv run pre-commit install
   Never call `prices_repo` / `fx_repo` / `snapshots_repo` directly on a ledger
   session — it silently returns empty under a split-DB layout. See
   "Storage tiers" in [`docs/architecture.md`](docs/architecture.md).
+- **Currency rule:** backend computation/storage/reconciliation are USD-native.
+  EUR is derived presentation (`usd ÷ fx`) and must not become a backend source
+  of truth.
 
 ## Tests
 

@@ -14,3 +14,11 @@ USD/EUR switch, and nothing more.
   AI agent keeps getting this wrong — do not be the next one.
 
 That's the rule. Default frontend = EUR; canonical backend = USD.
+
+## Workflow requirements
+
+- Always add a `CHANGELOG.md` entry that follows repository convention.
+- Treat smaller UI updates and patch-sized changes as **Fixed** bug-fix entries.
+- On completion, open/update the PR that contains the work.
+- At the very end, check whether the branch conflicts with `main` and resolve
+  conflicts before final handoff.
