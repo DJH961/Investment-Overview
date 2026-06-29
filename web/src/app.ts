@@ -129,7 +129,7 @@ import { setEurUsdRate } from "./currency";
 import { setInvestmentAmountEur } from "./investment-amount";
 import { formatLastPull } from "./format";
 import { appendPollLog, clearPollLog, formatPollLog, readPollLog, type PollLogCategory, type PollLogLevel } from "./polling-log";
-import { clearConsumptionLog, formatConsumptionLog, readConsumptionLog, recordConsumption } from "./consumption-log";
+import { clearConsumptionLog, formatConsumptionLog, readConsumptionLog, recordConsumption, recordReconciliation } from "./consumption-log";
 import { APP_VERSION } from "./version";
 import type { CloseResolveLog } from "./close-completeness";
 import {
@@ -6440,6 +6440,20 @@ export class App {
     }
   }
 
+  /**
+   * Log a **data-fixing** repair (NAV-collapse heal, currency-divergence rebuild)
+   * to the data-loading (consumption) log. The snapshot de-dup gives the
+   * detailed-first / collapse-on-repeat policy: a fix that re-fires every render
+   * is spelled out once and then folds to a repeat count. Best-effort.
+   */
+  private repairLog(message: string): void {
+    try {
+      recordReconciliation(message);
+    } catch {
+      /* logging is best-effort */
+    }
+  }
+
   /** A short local `HH:MM` stamp for a freeze-reset time in a log line. */
   private static clockHM(at: number): string {
     const d = new Date(at);
@@ -7023,7 +7037,7 @@ export class App {
         const liveTip = makeLiveTip(frozenFx);
         // Springboard off the exported session first — instant paint, no fetch —
         // and only build live when the export is absent or too stale.
-        const sprung = springboardSessionCurve({ exported, liveTip });
+        const sprung = springboardSessionCurve({ exported, liveTip, onRepair: (m) => this.repairLog(m) });
         if (sprung) {
           this.pollLog("graph", "1D graph: reused the exported session (no live pull, 0 credits).");
           // Persist the sprung session's dense points as today's breadcrumb trail
@@ -7073,7 +7087,7 @@ export class App {
         // path too. The live `buildLiveWeekCurve` already enriches today from the
         // store, so it only needs this slice on the springboard branch.
         const todaySlice =
-          springboardSessionCurve({ exported, liveTip }) ??
+          springboardSessionCurve({ exported, liveTip, onRepair: (m) => this.repairLog(m) }) ??
           (await buildLiveSessionCurve(
             { anchor: anchor(frozenFx), store, liveTip, regenerateOnly: true },
             loggingProviders("1D", { credits: 0 }),
@@ -7086,7 +7100,12 @@ export class App {
               this.pollLog("graph", "1W graph: could not build today's 1D slice — using the live tip for today.");
               return null;
             }));
-        const sprung = springboardWeekCurve({ exported, liveTip, todayCurve: todaySlice });
+        const sprung = springboardWeekCurve({
+          exported,
+          liveTip,
+          todayCurve: todaySlice,
+          onRepair: (m) => this.repairLog(m),
+        });
         if (sprung) {
           this.pollLog("graph", "1W graph: reused the exported week sleeve (no live pull, 0 credits).");
           return this.harvestWeekCloses(
@@ -7213,7 +7232,7 @@ export class App {
     // NAV-in-sleeve vs NAV-in-base ambiguity entirely and align the two series.
     const overlap = this.calibrateSleeveBase(webCurve, blobSleeve);
     if (!overlap) {
-      this.pollLog("graph", "1W merge: no web↔blob time overlap to calibrate the base — kept the web curve.");
+      recordReconciliation("1W reconciliation: no web↔blob time overlap to calibrate the base — kept the web curve", "info");
       return webCurve;
     }
     const { baseUsd, baseEur } = overlap;
@@ -7233,16 +7252,19 @@ export class App {
 
     const gridMs = exported?.grid === "15m" ? 15 * 60 * 1000 : 30 * 60 * 1000;
     const merge = mergeSleeveSeries(webSleeve, blobSleeve, { gridMs });
-    this.pollLog("graph", `1W merge: ${describeMerge(merge)}.`);
+    // The merge is a reconciliation against already-loaded data (not a live pull),
+    // so it belongs in the data-loading log. The snapshot de-dup spells it out in
+    // full once and collapses identical reloads to a repeat count.
+    recordReconciliation(`1W reconciliation: ${describeMerge(merge)}`, "info");
     for (const flag of merge.flags) {
-      this.pollLog("graph", `1W reconciliation: ${describeFlag(flag)}.`);
+      recordReconciliation(`1W reconciliation: ${describeFlag(flag)}`, "info");
     }
 
     // Render the merged curve only when it is genuinely richer (more points) than
     // the web curve — never coarsen the carefully-built week line (Pillar 3 + the
     // WS8 regression guard). Reapply the calibrated base + per-instant FX.
     if (merge.points.length <= webCurve.length) {
-      this.pollLog("graph", "1W merge: web curve already as dense — kept it (no coarsening).");
+      recordReconciliation("1W reconciliation: web curve already as dense — kept it (no coarsening)", "info");
       return webCurve;
     }
     const merged = rebaseSleeveToWholeBook(merge.points, { baseUsd, baseEur }, fallbackFx);
@@ -7255,7 +7277,10 @@ export class App {
     // stale blob sample as the *penultimate* point, a notch right before the tip
     // (capWeekToSessionClose only trims past the *close*, blind to that pre-tip dip).
     const pinned = pinMergedTipToWebTip(merged, webCurve);
-    this.pollLog("graph", `1W merge: rendered the richer merged curve (${pinned.length} points, was ${webCurve.length}).`);
+    recordReconciliation(
+      `1W reconciliation: rendered the richer merged curve (${pinned.length} points, was ${webCurve.length})`,
+      "info",
+    );
     return pinned;
   }
 

@@ -137,6 +137,13 @@ export interface SpringboardInput {
    * When absent, today is bridged with the single live tip (the legacy behaviour).
    */
   todayCurve?: CurvePoint[] | null;
+  /**
+   * Optional sink for **data-fixing** notes: when a NAV-collapse heal lifts a
+   * stale blob's collapsed curve, this is called with a one-line description so
+   * the caller can fold it into the data-loading log. Silent (never called) when
+   * the curve is healthy and no repair is applied.
+   */
+  onRepair?: (msg: string) => void;
 }
 
 /**
@@ -203,6 +210,7 @@ export function springboardSessionCurve(input: SpringboardInput): CurvePoint[] |
   points = repairSessionNavCollapse(
     points,
     input.liveTip ? { eur: input.liveTip.valueEur, usd: input.liveTip.valueUsd } : null,
+    input.onRepair,
   );
 
   return points.length >= 2 ? points : null;
@@ -268,6 +276,7 @@ export function springboardWeekCurve(input: SpringboardInput): CurvePoint[] | nu
   let points = repairWeekNavCollapse(
     windowPoints.filter((p) => p.t < todayStartMs),
     healthyHint,
+    input.onRepair,
   );
 
   // Completeness gate over the *settled* sessions only (today is supplied live): a

@@ -134,6 +134,7 @@ def import_csv(
     inserted = 0
     duplicates = 0
     fx_missing: set[date] = set()
+    fx_missing_rows = 0
     inserted_dates: set[date] = set()
     # Symbols the data provider couldn't resolve during enrichment (audit D2).
     unresolved: set[str] = set()
@@ -166,6 +167,7 @@ def import_csv(
         )
         if not legs.complete:
             fx_missing.add(prow.date)
+            fx_missing_rows += 1
 
         txn = Transaction(
             account_id=account_id,
@@ -197,6 +199,15 @@ def import_csv(
     # the equity curve recomputes lazily against the imported history.
     if inserted_dates:
         snapshots_service.invalidate_for_trade_dates(session, inserted_dates)
+
+    if fx_missing:
+        log.info(
+            "FX-history gap on import: %d transaction(s) on %d date(s) written with NULL legs "
+            "for later backfill (%s)",
+            fx_missing_rows,
+            len(fx_missing),
+            ", ".join(d.isoformat() for d in sorted(fx_missing)),
+        )
 
     return ImportResult(
         inserted=inserted,

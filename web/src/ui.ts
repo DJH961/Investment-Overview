@@ -95,6 +95,7 @@ import { buildLineChart, type ChartSeries } from "./chart";
 import { curveColumns } from "./value-graph";
 import type { CurvePoint } from "./timeseries";
 import { repairCurrencyDivergence } from "./week-repair";
+import { recordReconciliation } from "./consumption-log";
 import type { DailyClose } from "./value-history";
 import { APP_VERSION } from "./version";
 import {
@@ -2704,6 +2705,11 @@ function renderDrawdownChart(curve: AnalyticsView["curve"]): HTMLElement | null 
  * marks it so the user reads whether the live value sits above or below where the
  * portfolio last *closed* — exactly as the desktop "1 Day" chart does.
  */
+/**
+ * The draw-time currency-divergence heal runs on every chart render; queueing its
+ * note through the de-duplicated data-loading log keeps it spelled out once and
+ * collapsed thereafter, so repaints never flood the trail.
+ */
 export function liveCurveToChart(
   points: CurvePoint[],
   prevClose?: { eur: Decimal | null; usd: Decimal | null; provisional?: boolean } | null,
@@ -2714,7 +2720,13 @@ export function liveCurveToChart(
   // drawn. Covers every build path (springboard / live / blob merge) and any
   // already-published blob, in whichever currency the user is viewing. A no-op on
   // a healthy curve (returns the same array).
-  points = repairCurrencyDivergence(points);
+  points = repairCurrencyDivergence(points, undefined, (msg) => {
+    try {
+      recordReconciliation(msg);
+    } catch {
+      /* logging is best-effort */
+    }
+  });
   const cols = curveColumns(points);
   if (cols.dates.length < 2) return null;
   const inUsd = getDisplayCurrency() === "USD" && canConvertToUsd();

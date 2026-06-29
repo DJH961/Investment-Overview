@@ -13,6 +13,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.20.10] — 2026-06-29
+
+### Fixed
+
+- **Web data-fixing / reconciliation messages now go to the data-loading log.**
+  Curve reconciliation and other data-repair notes (e.g. the 1W blob↔web merge
+  and NAV-collapse repairs) are reconciliations against already-loaded data, not
+  live pulls, so they are routed through `recordReconciliation` into the
+  data-loading log instead of leaking into other polling streams — keeping the
+  log coherent and making the 1W merge outcome discoverable. Strengthened the 1W
+  NAV-collapse repair-log test assertion accordingly.
+
 ## [4.20.9] — 2026-06-29
 
 ### Added
