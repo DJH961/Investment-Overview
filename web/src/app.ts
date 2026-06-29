@@ -104,6 +104,7 @@ import {
   prefetchDebounceActive,
   nextRefreshDelayMs,
   MIN_BURST_RELIEF_MS,
+  DEFAULT_BURST_INTERVAL_MS,
 } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
 import { fxFreshness, targetedWeekBackfill, type FxFreshness } from "./freshness";
@@ -257,6 +258,7 @@ import {
 } from "./ui";
 import {
   HOLDING_UPDATED_FLASH_MS,
+  computeQueueEtas,
   emptyHoldingStatusModel,
   type HoldingLivePhase,
   type HoldingStatusModel,
@@ -669,6 +671,13 @@ export class App {
    */
   private holdingUpdatedAt = new Map<string, number>();
   private holdingQueued = new Set<string>();
+  /**
+   * Per queued symbol, the epoch ms it is expected to update next — its place in
+   * the free-tier pull queue turned into a wall-clock ETA (see
+   * {@link computeQueueEtas}). Drives the live "ready in m:ss" countdown the
+   * queued holding caption shows instead of an open-ended "…".
+   */
+  private holdingQueueReadyAt = new Map<string, number>();
   /**
    * Whether the login prefetch actually fetched *new* data (≥1 quote or a live
    * FX pull). Drives the one-off login spin of the Refresh glyph: it spins only
@@ -5078,6 +5087,17 @@ export class App {
         this.holdingUpdatedAt.set(symbol, landedAt);
       }
       this.holdingQueued = new Set(quoteLoad.report.deferred);
+      // Resolve each deferred symbol's place in the free-tier queue into a
+      // wall-clock ETA so its caption can count down to its turn rather than
+      // showing an open-ended "…". Anchored at this round's completion; the
+      // cadence is the burst (~one-minute) interval the scheduler actually uses.
+      this.holdingQueueReadyAt = computeQueueEtas({
+        fetched: quoteLoad.report.fetched,
+        deferred: quoteLoad.report.deferred,
+        capacityPerRound: FREE_TIER.creditsPerMinute,
+        anchorMs: landedAt,
+        roundIntervalMs: DEFAULT_BURST_INTERVAL_MS,
+      });
     }
     this.renderDashboard(model);
     return quoteLoad.report;
@@ -7009,6 +7029,8 @@ export class App {
     }
     for (const symbol of this.holdingQueued) {
       status.phases.set(symbol, "queued" satisfies HoldingLivePhase);
+      const readyAt = this.holdingQueueReadyAt.get(symbol);
+      if (readyAt !== undefined) status.queueReadyAt.set(symbol, readyAt);
     }
     return status;
   }

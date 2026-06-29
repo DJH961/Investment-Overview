@@ -13,6 +13,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.21.6] — 2026-06-29
+
+### Fixed
+
+- **The live graph's loading box now matches the graph it stands in for, so it no
+  longer nudges the page into a tiny horizontal overflow on desktop.** The
+  "Loading live data…" placeholder carried the shared `.note` class's small
+  horizontal margin, so the full-width box spilled a few pixels past its wrapper
+  and gave the page a faint sideways scroll. The margin is zeroed, and the
+  placeholder now *remembers* the chart's last rendered height (persisted per
+  chart across reloads) and copies it verbatim — a pixel match for the graph on
+  every viewport instead of an aspect-ratio guess that could mis-size.
+- **A deferred holding now shows a live seconds countdown to its turn instead of an
+  open-ended "…".** When the free-tier per-minute budget parks a holding, its
+  status caption counts down — `120`, `119`, `118`, … — to when it is expected to
+  update. The estimate is queue-aware: a holding tenth in line waits for the eight
+  ahead of it to clear the current round *and* rides the next one (~2 min, not a
+  flat one), and a deeper queue fans out across as many rounds as the per-minute
+  capacity demands.
+
 ## [4.21.5] — 2026-06-29
 
 ### Fixed
