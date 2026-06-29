@@ -14,6 +14,7 @@ import {
   loadValueHistory,
   harvestDailyCloses,
   pruneValueHistory,
+  diffBlobHistory,
 } from "../src/value-history";
 
 // Local midnight of a `YYYY-MM-DD` — mirrors value-history's own day stamping, which
@@ -179,6 +180,30 @@ describe("value-history", () => {
       const store = new TimeSeriesStore(memoryBackend());
       await pruneValueHistory(store, "2024-03-03");
       expect(await loadValueHistory(store)).toEqual([]);
+    });
+  });
+
+  describe("diffBlobHistory", () => {
+    const close = (date: string, eur: string) => ({
+      date,
+      valueEur: new Decimal(eur),
+      valueUsd: null,
+    });
+
+    it("flags only overlapping days whose value the blob revised", () => {
+      const local = [close("2024-03-01", "100"), close("2024-03-02", "200")];
+      const incoming = [close("2024-03-01", "100"), close("2024-03-02", "250")];
+      const revised = diffBlobHistory(local, incoming);
+      expect(revised.map((r) => r.date)).toEqual(["2024-03-02"]);
+      expect(revised[0].localEur.toString()).toBe("200");
+      expect(revised[0].blobEur.toString()).toBe("250");
+    });
+
+    it("is silent on cent-level jitter and on non-overlapping (extended) days", () => {
+      const local = [close("2024-03-01", "100.20"), close("2024-03-02", "200")];
+      // 2024-03-01 within a unit; 2024-03-03 only in blob (an extension, not a revision).
+      const incoming = [close("2024-03-01", "100.40"), close("2024-03-03", "300")];
+      expect(diffBlobHistory(local, incoming)).toEqual([]);
     });
   });
 });

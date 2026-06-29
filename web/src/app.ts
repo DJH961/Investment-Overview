@@ -194,6 +194,7 @@ import {
   harvestDailyCloses,
   pruneValueHistory,
   loadValueHistory,
+  diffBlobHistory,
   VALUE_HISTORY_STORE_KEY,
   type DailyClose,
 } from "./value-history";
@@ -223,6 +224,7 @@ import {
 } from "./market-sleeve";
 import type { Bar, CurvePoint } from "./timeseries";
 import type { MobileExport } from "./types";
+import type { EquityPoint } from "./phase4";
 import {
   clearResumeToken,
   isReloadNavigation,
@@ -7468,6 +7470,11 @@ export class App {
     // Prune redundant pre-export closes once a blob is in hand, never touching the
     // trailing week the 1W graph needs.
     const exportedCurve = model.analytics?.curve ?? [];
+    // **History-revision fingerprint.** Before the blob's curve supersedes any
+    // overlapping local close, flag any day whose value the desktop has rewritten
+    // (a late import / correction) so it lands in the polling log instead of being
+    // silently overwritten — invaluable when debugging "where did my history go?".
+    this.logHistoryRevision(store, exportedCurve);
     const lastExport = exportedCurve.length > 0 ? exportedCurve[exportedCurve.length - 1].date : null;
     const weekStart = recentTradingSessions(DEFAULT_WEEK_SESSIONS, now)[0] ?? o.asOf;
     if (lastExport !== null) {
@@ -7497,6 +7504,40 @@ export class App {
       return this.regenerateLongRangeHistory(model, lastExport, force).catch(() => existing);
     }
     return existing;
+  }
+
+  /**
+   * **History-revision fingerprint (web companion debugging aid).** Compares the
+   * incoming blob's daily curve against the closes this device already persisted
+   * and, for any day the two disagree on, emits a polling-log note. The store is
+   * about to be pruned/overwritten by the fresher blob, so without this a late
+   * desktop import that rewrites old history vanishes without a trace; the log
+   * line keeps a breadcrumb of exactly which days (and by how much) were revised.
+   * Best-effort and read-only: never blocks the sync.
+   */
+  private async logHistoryRevision(store: TimeSeriesStore, exported: readonly EquityPoint[]): Promise<void> {
+    try {
+      if (exported.length === 0) return;
+      const existing = await loadValueHistory(store);
+      if (existing.length === 0) return;
+      const incoming: DailyClose[] = exported
+        .filter((p) => p.portfolioValue !== null)
+        .map((p) => ({
+          date: p.date,
+          valueEur: p.portfolioValue as Decimal,
+          valueUsd: p.portfolioValueUsd,
+        }));
+      const revised = diffBlobHistory(existing, incoming);
+      if (revised.length === 0) return;
+      const head = revised
+        .slice(0, 3)
+        .map((r) => `${r.date} €${r.localEur.toDecimalPlaces(0)}→€${r.blobEur.toDecimalPlaces(0)}`)
+        .join(", ");
+      const more = revised.length > 3 ? ` (+${revised.length - 3} more)` : "";
+      this.pollLog("blob", `History revised: ${revised.length} day(s) rewritten by latest blob — ${head}${more}`, "warn");
+    } catch {
+      /* observability is best-effort */
+    }
   }
 
   /**

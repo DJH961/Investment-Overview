@@ -13,6 +13,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.20.8] — 2026-06-29
+
+### Fixed
+
+- **Editing the ledger now actually rebuilds the affected history.** Cached
+  daily portfolio closes power `/monthly`, `/yearly` and the equity curve, but
+  nothing dropped them when a *past-dated* transaction was imported, added,
+  edited, or deleted — so a late import or correction left those periods showing
+  stale, pre-edit numbers until the whole cache happened to be cleared. Every
+  ledger mutation now calls `snapshots_service.invalidate_for_trade_dates`, which
+  drops every cached daily close on/after the earliest affected past trade date
+  so that window recomputes lazily on next read; same-day-only entries are
+  skipped because today is always recomputed live. Wired into the importer batch
+  insert and the manual add/edit/delete paths (edits cover both the old and new
+  trade date in case the date moved), with covering tests in
+  `tests/services/test_snapshots_service.py` and `test_importer_service.py`.
+- **The web companion now flags "history revised" instead of silently
+  overwriting late-import corrections.** The exporter emits a cheap per-day
+  `history_fingerprint` (count, last date, short digest), and on each sync the
+  companion compares the incoming blob's daily curve against its own persisted
+  closes — when a previously-stored day's whole-book value is rewritten (a late
+  desktop import / correction), a polling-log `blob` note records exactly which
+  days changed and by how much, so revised history is discoverable when
+  debugging rather than vanishing. Adds `diffBlobHistory` + covering tests.
+
 ## [4.20.7] — 2026-06-29
 
 ### Changed
