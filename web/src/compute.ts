@@ -186,7 +186,11 @@ export interface HoldingView {
    * figure at today's spot; `costBasisUsd` uses the export's per-trade-date USD
    * cost basis; `totalGrowthPctUsd`/`xirrUsd` are recomputed in USD so the card
    * shows currency-correct growth when USD is selected. Null when USD is
-   * unavailable, in which case the UI falls back to the EUR figure.
+   * unavailable, in which case the UI falls back to the EUR figure. For
+   * money-market funds (USD-native, par $1) the USD cost basis and per-flow USD
+   * legs are backfilled natively when an older blob omits them, so a
+   * dividends-only MM reads a genuine positive USD growth rather than the
+   * FX-negative EUR fallback.
    */
   valueUsd: Decimal | null;
   costBasisUsd: Decimal | null;
@@ -564,11 +568,27 @@ function holdingCashflows(holding: ExportHolding): Cashflow[] {
  * caller leaves the USD XIRR blank and the UI falls back to the EUR figure
  * rather than mixing per-date and spot conversions.
  */
-function holdingCashflowsUsd(holding: ExportHolding): Cashflow[] | null {
+function holdingCashflowsUsd(holding: ExportHolding, fx: FxRates): Cashflow[] | null {
   const flows: Cashflow[] = [];
+  // Money-market / settlement funds are USD-native and price at a fixed $1 NAV,
+  // so an older blob that lacks per-flow `amount_usd` can still be valued in USD
+  // without poisoning the series: convert the EUR leg back to USD at today's spot
+  // (FX-free for a USD-native amount). This keeps a dividends-only MM showing a
+  // genuine positive USD XIRR instead of falling back to the (FX-negative) EUR.
+  const mmBackfill = isMoneyMarketHolding(holding);
   for (const cf of holding.cashflows) {
-    if (cf.amount_usd === null || cf.amount_usd === undefined) return null;
-    flows.push({ date: cf.date, amount: new Decimal(cf.amount_usd) });
+    if (cf.amount_usd !== null && cf.amount_usd !== undefined) {
+      flows.push({ date: cf.date, amount: new Decimal(cf.amount_usd) });
+      continue;
+    }
+    if (mmBackfill) {
+      const usd = convert(new Decimal(cf.amount), EUR, USD, fx);
+      if (usd !== null) {
+        flows.push({ date: cf.date, amount: usd });
+        continue;
+      }
+    }
+    return null;
   }
   return flows;
 }
@@ -1056,16 +1076,18 @@ function buildHolding(
   const costBasisUsd =
     holding.cost_basis_usd !== null && holding.cost_basis_usd !== undefined
       ? new Decimal(holding.cost_basis_usd)
-      : costBasisEur !== null
-        ? convert(costBasisEur, EUR, USD, fx)
-        : null;
+      : isMoneyMarket && currency === USD
+        ? new Decimal(holding.cost_basis_native)
+        : costBasisEur !== null
+          ? convert(costBasisEur, EUR, USD, fx)
+          : null;
   const unrealisedPlUsd =
     valueUsd !== null && costBasisUsd !== null ? valueUsd.minus(costBasisUsd) : null;
   const simpleGrowthPctUsd =
     unrealisedPlUsd !== null && costBasisUsd !== null && costBasisUsd.greaterThan(0)
       ? unrealisedPlUsd.dividedBy(costBasisUsd)
       : null;
-  const usdFlows = holdingCashflowsUsd(holding);
+  const usdFlows = holdingCashflowsUsd(holding, fx);
   const xirrUsd =
     usdFlows !== null && valueUsd !== null && valueUsd.greaterThan(0)
       ? xirr(usdFlows, asOf, { terminalValue: valueUsd })

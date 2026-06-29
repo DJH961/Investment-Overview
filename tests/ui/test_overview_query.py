@@ -225,6 +225,65 @@ def test_money_market_reinvested_dividends_count_as_gain(session: Session) -> No
     assert im.capital_gain_native > Decimal("0")
 
 
+def test_money_market_dividends_only_growth_xirr_non_negative(session: Session) -> None:
+    """A USD money-market that only ever received dividends (no drawdowns) must
+    show non-negative growth/XIRR in *both* wallets — never a negative figure
+    (the web bug was a negative USD from an FX-negative fallback)."""
+    from investment_dashboard.models import Transaction
+    from investment_dashboard.models.transaction import TransactionSource
+    from investment_dashboard.ui.pages._overview_query import (
+        compute_instrument_metrics,
+        get_positions,
+    )
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Fidelity",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    spaxx = instruments_repo.get_or_create(session, symbol="SPAXX")
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2020, 1, 1),
+            kind="buy",
+            instrument_id=spaxx.id,
+            quantity=Decimal("1000"),
+            price_native=Decimal("1"),
+            net_native=Decimal("-1000"),
+            source=TransactionSource.MANUAL,
+        )
+    )
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2022, 1, 1),
+            kind="dividend_reinvest",
+            instrument_id=spaxx.id,
+            quantity=Decimal("100"),
+            price_native=Decimal("1"),
+            net_native=Decimal("0"),
+            source=TransactionSource.MANUAL,
+        )
+    )
+    session.flush()
+
+    positions = get_positions(session)
+    im = compute_instrument_metrics(session, positions)[spaxx.id]
+    assert im.total_growth_pct is not None
+    assert im.total_growth_pct >= Decimal("0")
+    if im.total_growth_eur is not None:
+        assert im.total_growth_eur >= Decimal("0")
+    if im.total_growth_usd is not None:
+        assert im.total_growth_usd >= Decimal("0")
+    if im.xirr_eur is not None:
+        assert im.xirr_eur >= Decimal("0")
+    if im.xirr_usd is not None:
+        assert im.xirr_usd >= Decimal("0")
+
+
 def test_positions_table_has_growth_pct(session: Session, seeded: None) -> None:
     from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
 

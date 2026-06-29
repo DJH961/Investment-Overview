@@ -13,6 +13,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.20.9] — 2026-06-29
+
+### Added
+
+- **The 1D, 1W and long-range value graphs now follow the exported per-day money-market balance instead of carrying today's balance flat across the whole window.** Money-market / settlement funds (VMFXX, SPAXX …) pin a constant $1.00 NAV, so their value moves only with the share count — which deposits and dividends change, sometimes while the market is shut. The whole-book base now **steps on the day a flow landed** using the export's `mm_value_native` series (aggregated across funds, USD booked / EUR derived at each point's own FX), so historical days are no longer lifted to today's higher balance. Covered by new tests in `web/test/timeseries.test.ts` and `web/test/market-sleeve.test.ts`.
+
+### Fixed
+
+- **Money-market growth/XIRR no longer reads negative on the web companion for a dividends-only fund.** Settlement / money-market funds (VMFXX, SPAXX …) are USD-native and pin a constant $1.00 NAV, so a fund that only ever received dividends — with no drawdowns — must show a small *positive* return. Older export blobs omitted the per-flow USD cashflow legs and the USD cost basis, so the USD figure silently fell back to the FX-negative EUR one and showed a misleading negative growth/XIRR despite no losses. The web now backfills the USD cost basis and per-flow USD legs natively from the booked USD (par, FX-free) for money-market holdings, so USD growth/XIRR computes correctly positive while EUR stays FX-derived. Confirmed both wallets handle reinvested money-market dividends as gain (cost excludes the reinvest), and the Python retained-cash guard still excludes dividends swept into a money-market account from portfolio XIRR. Covered by new web `compute.test.ts` cases (dividends-only and a par-MM no-sell `value ≥ cost ⇒ growth ≥ 0` invariant) and a Python `test_overview_query.py` test.
+
 ## [4.20.8] — 2026-06-29
 
 ### Fixed

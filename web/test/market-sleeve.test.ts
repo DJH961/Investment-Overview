@@ -10,6 +10,9 @@ import {
   hasMarketSleeve,
   mergeSleeveSeries,
   parseMarketSeries,
+  parseMoneyMarketValue,
+  moneyMarketValueOnDate,
+  aggregateMoneyMarketValue,
   pinMergedTipToWebTip,
   rebaseSleeveToWholeBook,
   type SleevePoint,
@@ -269,5 +272,54 @@ describe("hasMarketSleeve / describers", () => {
 
   it("exposes the documented default tolerance", () => {
     expect(DEFAULT_RECON_TAU).toBe(0.0025);
+  });
+
+  it("parses per-fund money-market value, ascending and gap-tolerant", () => {
+    const exported = {
+      mm_value_native: {
+        VMFXX: [
+          ["2026-06-23", "6000.00"],
+          ["2026-06-22", "5000.00"],
+          ["2026-06-21", null],
+        ],
+      },
+    } as unknown as ExportLiveGraphs;
+    const parsed = parseMoneyMarketValue(exported);
+    const days = parsed.get("VMFXX");
+    expect(days?.map((d) => d.date)).toEqual(["2026-06-22", "2026-06-23"]);
+    expect(days?.[1].valueNativeUsd.toFixed(0)).toBe("6000");
+  });
+
+  it("money-market value on a date is the latest balance at or before it (never a future deposit)", () => {
+    const days = parseMoneyMarketValue({
+      mm_value_native: { VMFXX: [["2026-06-22", "5000"], ["2026-06-23", "9000"]] },
+    } as unknown as ExportLiveGraphs).get("VMFXX")!;
+    expect(moneyMarketValueOnDate(days, "2026-06-22")?.toFixed(0)).toBe("5000");
+    expect(moneyMarketValueOnDate(days, "2026-06-23")?.toFixed(0)).toBe("9000");
+    expect(moneyMarketValueOnDate(days, "2026-06-20")).toBeNull();
+  });
+
+  it("money-market parse is absent-tolerant for legacy/v2 exports", () => {
+    expect(parseMoneyMarketValue(undefined).size).toBe(0);
+    expect(parseMoneyMarketValue({} as ExportLiveGraphs).size).toBe(0);
+  });
+
+  it("aggregates per-fund money-market value into one whole-book USD/day, carrying funds flat", () => {
+    const series = parseMoneyMarketValue({
+      mm_value_native: {
+        VMFXX: [["2026-06-22", "5000"], ["2026-06-24", "9000"]],
+        SPAXX: [["2026-06-23", "1000"]],
+      },
+    } as unknown as ExportLiveGraphs);
+    const agg = aggregateMoneyMarketValue(series);
+    // Union of dates; each absent fund contributes its last known balance (or 0).
+    expect(agg.map((d) => d.date)).toEqual(["2026-06-22", "2026-06-23", "2026-06-24"]);
+    expect(agg[0].valueNativeUsd.toFixed(0)).toBe("5000"); // VMFXX only
+    expect(agg[1].valueNativeUsd.toFixed(0)).toBe("6000"); // VMFXX 5000 + SPAXX 1000
+    expect(agg[2].valueNativeUsd.toFixed(0)).toBe("10000"); // VMFXX 9000 + SPAXX 1000
+  });
+
+  it("aggregate is empty for an export without money-market funds", () => {
+    expect(aggregateMoneyMarketValue(parseMoneyMarketValue(undefined))).toEqual([]);
   });
 });
