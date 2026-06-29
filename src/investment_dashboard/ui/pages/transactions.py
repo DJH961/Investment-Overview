@@ -27,6 +27,7 @@ from investment_dashboard.services import (
     auto_publish,
     display_currency_service,
     manual_entry,
+    snapshots_service,
     transaction_fx_service,
 )
 from investment_dashboard.services.importer_service import Broker, ImportResult, import_csv
@@ -469,6 +470,14 @@ def _open_txn_modal(  # noqa: PLR0915  # pragma: no cover - UI
                             txn_date=txn_date,
                         )
                     ui.notify("Saved", type="positive")
+                # A past-dated add/edit invalidates the cached daily closes from
+                # the earliest affected date on, so /monthly, /yearly and the
+                # equity curve recompute that window lazily (edits cover both the
+                # old and new trade date in case the date moved).
+                affected = {txn_date}
+                if is_edit:
+                    affected.add(existing["date"])
+                snapshots_service.invalidate_for_trade_dates(session, affected)
             # v3.0 §5.4: a manual ledger edit republishes the live-web blob, but
             # debounced — a burst of edits coalesces into one upload ~2 min after
             # the last change (gated by Settings → Live web companion).
@@ -636,7 +645,12 @@ def _confirm_delete(txn_id: int, dlg: Any) -> None:  # pragma: no cover - UI
                 if leg is not None and leg.id != parent.id:
                     session.delete(leg)
                     session.flush()
+            parent_date = parent.date if parent is not None else None
             transactions_repo.delete_transaction(session, txn_id)
+            # Deleting a past-dated row changes every roll-up from its trade
+            # date on, so drop the now-stale cached daily closes.
+            if parent_date is not None:
+                snapshots_service.invalidate_for_trade_dates(session, [parent_date])
         ui.notify("Deleted", type="positive")
         # Republish (debounced) after a manual deletion, like add/edit above.
         auto_publish.schedule_publish_after_edit()
