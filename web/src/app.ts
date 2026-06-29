@@ -6227,7 +6227,18 @@ export class App {
     // oldest value ≈now, so this naturally equals the steady interval (no change).
     if (report.deferred.length === 0 && !promoted) {
       const jumpMs = this.msUntilOldestFreshExpires(new Date());
-      if (jumpMs !== null) delayMs = Math.min(delayMs, jumpMs);
+      if (jumpMs !== null && jumpMs < delayMs) {
+        // Report it: the jumpstart used to run silently, so a regression that
+        // collapsed it toward ~0 (the old non-stop-update bug) or never fired it
+        // both looked identical in the trail. Logging the shortened delay makes
+        // each jumpstart visible, with the floor that prevents a hot loop.
+        this.pollLog(
+          "schedule",
+          `Jumpstart: oldest held value ages out before the full interval — bringing the next auto-refresh forward to ~${Math.round(jumpMs / 1000)}s.`,
+          "info",
+        );
+        delayMs = jumpMs;
+      }
     }
     // Idea A — near-free freshness polling: piggy-back the cheap meta/304 blob
     // check so a fresh desktop publish is picked up automatically within a few

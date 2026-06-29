@@ -13,6 +13,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.21.1] — 2026-06-29
+
+### Fixed
+
+- **The web companion's "jumpstart" auto-refresh now reports when it fires.**
+  After a refresh round that pulls nothing because every held quote/FX value is
+  still fresh, the scheduler brings the next automatic update forward to land
+  exactly when the *oldest* value ages out (rather than waiting a full interval).
+  This shortening previously ran silently, so a regression that once collapsed it
+  toward ~0 — the old non-stop-update bug — and a jumpstart never firing both
+  looked identical in the trail. It now logs the brought-forward delay to the
+  schedule log, confirming the burst floor that keeps it from spinning hot, so the
+  cadence is visible and verifiable.
+
 ## [4.21.0] — 2026-06-29
 
 ### Changed
