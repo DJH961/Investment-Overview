@@ -2511,6 +2511,9 @@ function loadRememberedChartHeight(persistKey: string): number | null {
  */
 function rememberChartHeight(el: Element, persistKey?: string): void {
   if (!persistKey || typeof requestAnimationFrame !== "function") return;
+  // Measure on the next animation frame: it fires after the browser has applied
+  // the just-inserted chart's styles and laid it out, so getBoundingClientRect
+  // reads the settled rendered height rather than a pre-layout zero.
   requestAnimationFrame(() => {
     const height = (el as HTMLElement).getBoundingClientRect?.().height ?? 0;
     if (height > 0) saveStringPref(`${CHART_HEIGHT_KEY_PREFIX}${persistKey}`, String(Math.round(height)));
