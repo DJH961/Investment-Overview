@@ -161,9 +161,9 @@ describe("FX windows", () => {
 
   it("both windows shift to the prior session 5 min before the open after a long holiday weekend", () => {
     // Independence Day fell Sat 2026-07-04, observed Fri 2026-07-03 (market shut),
-    // so the long weekend is Thu 2/7 close → Mon 6/7 open. At 09:25 ET Monday the
+    // so the long weekend is Thu 7/2 close → Mon 7/6 open. At 09:25 ET Monday the
     // session has not opened, so both bars must still request *last week's* sessions
-    // ending Thu 2026-07-02, never the empty 3rd/4th/5th gap.
+    // ending Thu 2026-07-02, never the empty 7/3, 7/4, 7/5 gap.
     const preOpen = new Date("2026-07-06T13:25:00Z"); // 09:25 ET
     expect(sessionFxWindow(preOpen)).toEqual({ startDate: "2026-07-02", endDate: "2026-07-02" });
     expect(weekFxWindow(preOpen, 5)).toEqual({
