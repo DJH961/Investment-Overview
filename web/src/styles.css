@@ -1818,8 +1818,11 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .content { padding-bottom: 3.5rem; order: 2; }
 
   /* The tab bar is no longer a fixed bottom overlay here, so the build-version
-     line needs no bottom clearance for it. */
-  .app-version { padding-bottom: 1.4rem; }
+     line needs no bottom clearance for it. The flex order must keep it last —
+     topbar (0) → tabbar (1) → content (2) → version (3) — otherwise it falls
+     back to order 0 and floats up beside the topbar instead of sitting at the
+     bottom. */
+  .app-version { padding-bottom: 1.4rem; order: 3; }
 
   /* Reflow the nav from a fixed bottom bar to a top tab strip. */
   .tabbar {
