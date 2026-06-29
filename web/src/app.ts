@@ -446,6 +446,23 @@ export function regenerateSummary(
   );
 }
 
+/**
+ * The set of TimeSeriesStore keys a Settings "Regenerate 1D / 1W graph" wipes
+ * before re-pulling from scratch. Kept pure so the wipe scope is unit-testable.
+ *
+ * - **1D** — just today's session day; that one record holds the dense bars,
+ *   breadcrumbs and close-probe the 1D curve rebuilds from.
+ * - **1W** — the daily-close sleeve ({@link WEEK_STORE_KEY}) *and* every per-day
+ *   session key in the rolling window. Those dense per-day records enrich the
+ *   week via "1D fills 1W", so a single corrupt day would otherwise survive a
+ *   week regenerate; wiping the whole window leaves the truly-empty slate a new
+ *   login starts from, so the blob re-springboard rebuilds it cleanly.
+ */
+export function regenerateStoreKeys(range: "day" | "week", now: Date = new Date()): string[] {
+  if (range === "day") return [lastSessionDate(now)];
+  return [WEEK_STORE_KEY, ...recentTradingSessions(DEFAULT_WEEK_SESSIONS, now)];
+}
+
 /** What a scheduled refresh tick should do — see {@link refreshTickAction}. */
 export type RefreshTickAction = "run" | "defer" | "stop";
 
@@ -2972,7 +2989,7 @@ export class App {
         field(
           "Regenerate the live graphs",
           h("div", { class: "row import-row" }, [regenDay, regenWeek, regenLong]),
-          "Wipe and re-pull a single live curve from scratch: use \"Regenerate 1D graph\" or \"Regenerate 1W graph\" when only that line looks wrong or stuck, or \"Regenerate long-range history\" to rebuild the 1M–1Y value graph from multi-month daily bars when its older days look flat or wrong. Leaves every other day and your price caches untouched. Waits for the next fully-available primary (Twelve Data) minute window before pulling, so the bars come from the plentiful primary budget instead of the scarce backup. Respects your daily free-tier budget.",
+          "Wipe and rebuild a live graph completely from scratch — exactly the empty state a brand-new login starts from, so any latent bad data is dropped: \"Regenerate 1D graph\" wipes today's bars; \"Regenerate 1W graph\" wipes the whole rolling week (its daily sleeve and every day's bars); use \"Regenerate long-range history\" to rebuild the 1M–1Y value graph from multi-month daily bars when its older days look flat or wrong. Leaves your other graphs and price caches untouched. Waits for the next fully-available primary (Twelve Data) minute window before pulling, so the bars come from the plentiful primary budget instead of the scarce backup. Respects your daily free-tier budget.",
         ),
         field(
           "Reset & re-pull everything",
@@ -5118,29 +5135,42 @@ export class App {
     clearAllSeriesBackoff();
     this.pollLog(
       "note",
-      `Regenerate ${label} graph (Settings) — wiping the stored ${label} bars and re-pulling them from scratch.`,
+      range === "day"
+        ? "Regenerate 1D graph (Settings) — wiping the stored 1D bars and re-pulling them from scratch."
+        : "Regenerate 1W graph (Settings) — wiping the stored week sleeve and every day's bars, then re-pulling them from scratch.",
     );
     void this.regenerateGraphNow(range);
   }
 
   /**
-   * Wipe the one curve's stored bars, force a fresh re-pull of just that curve's
-   * bars, then return to the dashboard (which repaints network-free off the fresh
-   * bars). The settings screen is held until the wipe+re-pull completes so the
-   * dashboard never renders — and triggers a *competing* on-demand fetch — against
-   * the about-to-be-wiped bars (the old double-pull). Best-effort throughout: a
-   * store or network failure must not strand the dashboard.
+   * Wipe **all** of one range's stored bars, force a fresh re-pull of that
+   * range's bars, then return to the dashboard (which repaints network-free off
+   * the fresh bars). The wipe is total: the dashboard is left in the same
+   * zero-data state a brand-new user logs in with, then rebuilt from the blob +
+   * re-pull, so any latent corrupt sample is dropped instead of spliced back in.
+   * The settings screen is held until the wipe+re-pull completes so the dashboard
+   * never renders — and triggers a *competing* on-demand fetch — against the
+   * about-to-be-wiped bars (the old double-pull). Best-effort throughout: a store
+   * or network failure must not strand the dashboard.
    */
   private async regenerateGraphNow(range: "day" | "week"): Promise<void> {
     const now = new Date();
     const label = range === "day" ? "1D" : "1W";
     const { config } = this.state;
     const store = this.ensureTimeSeriesStore();
-    const storeKey = range === "day" ? lastSessionDate(now) : WEEK_STORE_KEY;
-    try {
-      await store.deleteSession(storeKey);
-    } catch {
-      /* best-effort: leave the stored bars as-is if the wipe fails. */
+    // Wipe *every* store key that feeds this range so the re-pull starts from a
+    // truly empty slate — exactly the state a brand-new user logs in with — and
+    // any latent corrupt sample is dropped rather than spliced back in. 1D is its
+    // session day; 1W is the daily-close sleeve **and** every per-day key in the
+    // rolling window (those dense 1D breadcrumbs enrich the week via "1D fills
+    // 1W", so a single bad day would otherwise survive a week regenerate).
+    const storeKeys = regenerateStoreKeys(range, now);
+    for (const key of storeKeys) {
+      try {
+        await store.deleteSession(key);
+      } catch {
+        /* best-effort: leave the stored bars as-is if the wipe fails. */
+      }
     }
     const marketSymbols = readSymbolPlan()
       .filter((e) => e.priceType === "market")
