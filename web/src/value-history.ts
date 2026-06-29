@@ -90,6 +90,48 @@ function localDayOf(t: number): string {
 }
 
 /**
+ * One day whose persisted local close disagrees with the value the freshly
+ * arrived blob now reports for the same day — i.e. desktop history was revised
+ * (typically a late import / correction) since this device last saw it.
+ */
+export interface RevisedDay {
+  /** `YYYY-MM-DD` (local calendar) the revision lands on. */
+  date: string;
+  /** EUR close this device had stored before the blob arrived. */
+  localEur: Decimal;
+  /** EUR close the incoming blob now reports for that day. */
+  blobEur: Decimal;
+}
+
+/**
+ * Cheap per-day fingerprint: which already-persisted local closes the incoming
+ * blob history *changes* rather than merely extends. We only compare the days
+ * present in **both** sets (an overlap), so a stale blob that simply ends early,
+ * or a fresh blob that adds new days, is silent — only a genuine *revision* of a
+ * day's value (a late import backfilling old history, a corrected trade) shows.
+ *
+ * The fingerprint is the EUR close rounded to whole units: brokers re-mark spot
+ * to the cent so sub-unit drift is noise, while a real history rewrite moves the
+ * whole-book total by far more. Pure and allocation-light — safe to run every
+ * sync purely for the observability the polling log gives. The caller flags
+ * "history revised" instead of overwriting silently, so a debugging session can
+ * see exactly which days a late desktop import rewrote.
+ */
+export function diffBlobHistory(local: DailyClose[], incoming: DailyClose[]): RevisedDay[] {
+  const blobByDay = new Map<string, Decimal>();
+  for (const c of incoming) blobByDay.set(c.date, c.valueEur);
+  const revised: RevisedDay[] = [];
+  for (const c of local) {
+    const blobEur = blobByDay.get(c.date);
+    if (blobEur === undefined) continue;
+    if (c.valueEur.toDecimalPlaces(0).equals(blobEur.toDecimalPlaces(0))) continue;
+    revised.push({ date: c.date, localEur: c.valueEur, blobEur });
+  }
+  revised.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  return revised;
+}
+
+/**
  * Record (or update) one day's whole-book close. Re-recording the same day
  * overwrites it (instant-deduped by {@link TimeSeriesStore.mergeSession}), so a
  * day's not-yet-settled total keeps refining until it settles. Best-effort: the

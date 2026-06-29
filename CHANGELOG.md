@@ -29,6 +29,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   insert and the manual add/edit/delete paths (edits cover both the old and new
   trade date in case the date moved), with covering tests in
   `tests/services/test_snapshots_service.py` and `test_importer_service.py`.
+- **The web companion now flags "history revised" instead of silently
+  overwriting late-import corrections.** The exporter emits a cheap per-day
+  `history_fingerprint` (count, last date, short digest), and on each sync the
+  companion compares the incoming blob's daily curve against its own persisted
+  closes — when a previously-stored day's whole-book value is rewritten (a late
+  desktop import / correction), a polling-log `blob` note records exactly which
+  days changed and by how much, so revised history is discoverable when
+  debugging rather than vanishing. Adds `diffBlobHistory` + covering tests.
 
 ## [4.20.7] — 2026-06-29
 
