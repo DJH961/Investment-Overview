@@ -1195,39 +1195,6 @@ export interface BuildDashboardOptions {
 }
 
 
-function applyForwardFilledDailyMove(
-  view: HoldingView,
-  currentValueNative: Decimal,
-  fx: FxRates,
-  fxPrev: FxRates,
-): void {
-  const valueNowEur = convert(currentValueNative, view.nativeCurrency, EUR, fx);
-  const valuePrevEur = convert(currentValueNative, view.nativeCurrency, EUR, fxPrev);
-  if (valueNowEur !== null && valuePrevEur !== null) {
-    view.todayMoveEur = valueNowEur.minus(valuePrevEur);
-    view.todayMovePct = valuePrevEur.greaterThan(0)
-      ? view.todayMoveEur.dividedBy(valuePrevEur)
-      : null;
-    view.todayFxMoveEur = view.todayMoveEur;
-  } else {
-    view.todayMoveEur = null;
-    view.todayMovePct = null;
-    view.todayFxMoveEur = null;
-  }
-
-  const valueNowUsd = convert(currentValueNative, view.nativeCurrency, USD, fx);
-  const valuePrevUsd = convert(currentValueNative, view.nativeCurrency, USD, fxPrev);
-  if (valueNowUsd !== null && valuePrevUsd !== null) {
-    view.todayMoveUsd = valueNowUsd.minus(valuePrevUsd);
-    view.todayMovePctUsd = valuePrevUsd.greaterThan(0)
-      ? view.todayMoveUsd.dividedBy(valuePrevUsd)
-      : null;
-  } else {
-    view.todayMoveUsd = null;
-    view.todayMovePctUsd = null;
-  }
-}
-
 interface HoldingAggregationContext {
   view: HoldingView;
   /** Current native mark (`shares × displayed price`), when one exists. */
@@ -1385,16 +1352,19 @@ export function buildDashboard(
     null,
   );
   // A holding whose price date is older than the freshest peer is lagging (e.g. a
-  // fund still on yesterday's NAV while ETFs printed today). Its per-row daily
-  // figure follows the same whole-book convention as the headline: forward-fill
-  // its price, drop the stale price tick, and keep only the FX revaluation.
-  for (const { view, currentValueNative } of holdingContexts) {
+  // fund still on yesterday's NAV while ETFs printed today). We *flag* it stale —
+  // so the UI greys it and the headline total below excludes its price tick (the
+  // `moveDate === latestPriceDate` gate in the prev-value reduction forward-fills
+  // it to an FX-only contribution) — but we deliberately keep the row's own
+  // genuine last-session move intact rather than zeroing it. The stale *flag* and
+  // the per-row move *figure* are decoupled: a NAV fund still on Friday's close on
+  // a Monday open shows its real Thursday→Friday growth (greyed, "an earlier
+  // session's move"), instead of collapsing to ~0. Money-market par-NAVs never
+  // carry a move, so they are never flagged.
+  for (const { view } of holdingContexts) {
     const lagsFreshest =
       latestPriceDate !== null && view.priceNative !== null && view.priceFallbackDate < latestPriceDate;
     view.todayMoveIsStale = lagsFreshest && !view.isMoneyMarket;
-    if (lagsFreshest && !view.isMoneyMarket && currentValueNative !== null) {
-      applyForwardFilledDailyMove(view, currentValueNative, fx, fxPrev);
-    }
   }
   const prevHoldingsValueEur = holdingContexts.reduce(
     (acc, { view, currentValueNative, moveDate }) => {

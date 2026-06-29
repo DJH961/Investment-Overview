@@ -13,6 +13,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.21.7] — 2026-06-29
+
+### Fixed
+
+- **A NAV fund no longer loses its day-over-day growth the moment the market opens
+  on a new session.** Mutual-fund / money-market NAVs publish only once a day, so
+  on a Monday open a fund still carries Friday's close while equities have already
+  printed Monday's price. The book flags that fund's move "stale" (it is last
+  session's move, not today's) — but it was *also* zeroing the fund's own per-row
+  figure, so its genuine Thursday→Friday growth suddenly vanished into ~0 every
+  session open. The stale **flag** and the per-row move **figure** are now
+  decoupled: a lagging holding keeps and shows its real last-session move (greyed,
+  "an earlier session's move"), while the headline / overall totals still exclude
+  its stale price tick — the whole-book "today" number counts only holdings that
+  repriced on the freshest session, exactly as before.
+
 ## [4.21.6] — 2026-06-29
 
 ### Fixed
