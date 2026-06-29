@@ -13,6 +13,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.21.12] — 2026-06-29
+
+### Fixed
+
+- **Back-to-back auto-update bursts after the device wakes are coalesced and the
+  stalled-round duplication is gone.** Investigating the 5 pm window in polling
+  log 44 showed an auto-update round that started before the device slept, froze
+  for ~59 minutes, then completed as if fresh the instant the app woke — while a
+  resumed warm-up, the unlock session-start warm-up, and a forced kickoff all
+  re-fetched the same book within seconds, exhausting the per-minute free-tier
+  budget and forcing the "real" pull to defer every symbol. As a result:
+  - A round that has been in flight longer than the configured auto-update
+    interval (threshold `max(90s, interval × 3)`) is now abandoned on the next
+    tick instead of resurfacing stale, with a generation guard so the resurrected
+    hung round can no longer clobber the fresh one's state, verdict, or schedule.
+  - Locking the device / backgrounding the tab now **always aborts** the in-flight
+    update round (auto *and* manual), via both `visibilitychange` and `pagehide`,
+    so a round can never freeze across a lock and "complete" hour-old work as
+    fresh on the next wake.
+  - Wake triggers (visibility / pageshow / online) are funnelled through a single
+    coalescing entry point, so one physical wake no longer fans out three times;
+    duplicate fan-outs that re-fetch already-pulled symbols are now flagged in the
+    poll trail.
+  - A multi-round catch-up burst shows **one** continuous update pill (with an
+    "N holdings still filling in" detail) instead of re-triggering the update
+    animation every ~2 seconds.
+  - Per-holding "updating" countdowns are anchored on the burst's real
+    credit-paced delay rather than a flat 60 s assumption, so the timers stop
+    being wildly wrong, and the round-complete verdict now names a catch-up burst
+    explicitly instead of implying the steady cadence.
+
 ## [4.21.11] — 2026-06-29
 
 ### Fixed
