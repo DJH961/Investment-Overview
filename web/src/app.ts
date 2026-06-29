@@ -99,10 +99,14 @@ import {
 } from "./quotes";
 import {
   burstReliefMs,
+  burstFillDetail,
   dailyBudgetSlowdown,
   jumpstartDelayMs,
   prefetchDebounceActive,
   nextRefreshDelayMs,
+  roundIsStale,
+  staleRoundAbortMs,
+  wakeCoalesceActive,
   MIN_BURST_RELIEF_MS,
   DEFAULT_BURST_INTERVAL_MS,
 } from "./refresh-policy";
@@ -679,6 +683,15 @@ export class App {
    */
   private holdingQueueReadyAt = new Map<string, number>();
   /**
+   * The actual scheduled gap (ms) to the next round of the most recent round that
+   * left symbols deferred (`null` once nothing is deferred). The per-holding queue
+   * countdown ({@link computeQueueEtas}) anchors the *next* round's ETA on this so
+   * it reflects the scheduler's real, credit-paced burst spacing — fixing the
+   * "vastly incorrect" timers that a flat one-minute assumption produced when the
+   * credit-aware relief actually fired the next burst seconds later.
+   */
+  private lastBurstDelayMs: number | null = null;
+  /**
    * Whether the login prefetch actually fetched *new* data (≥1 quote or a live
    * FX pull). Drives the one-off login spin of the Refresh glyph: it spins only
    * when the prefetch genuinely got something newer, and stays still when the
@@ -764,6 +777,39 @@ export class App {
   private consecutiveUnreachableRounds = 0;
   /** Guards against overlapping price refreshes. */
   private refreshing = false;
+  /**
+   * Epoch ms the in-flight refresh round began (`null` when idle). Lets the
+   * scheduler tell a genuinely-running round from one a sleeping device froze
+   * mid-flight: {@link roundIsStale} compares this against the configured
+   * auto-update interval so a hung round can be abandoned and replaced by a fresh
+   * pull rather than completed an hour late (the log-44 case).
+   */
+  private refreshStartedAt: number | null = null;
+  /**
+   * Monotonic "which round owns the shared refresh state" token. Bumped whenever
+   * a round begins *and* whenever a stale round is abandoned, so the continuation
+   * of an abandoned/superseded round (its awaits resolve when the device wakes)
+   * can tell it no longer owns {@link refreshing} and bail without clobbering the
+   * fresh round that replaced it, double-logging a verdict, or re-arming a
+   * duplicate timer.
+   */
+  private refreshGeneration = 0;
+  /**
+   * Epoch ms of the last "the app woke up" auto-refresh trigger (visibility /
+   * pageshow / online), used by {@link wakeCoalesceActive} to collapse the burst
+   * of resume events a single return commonly fires into one pull instead of
+   * three near-simultaneous rounds racing the same per-minute budget.
+   */
+  private lastAutoWakeAt: number | null = null;
+  /**
+   * Epoch ms and symbol set of the last provider fan-out (login / manual / kickoff
+   * pull), used by {@link noteFanout} to flag when a *second* fan-out re-fetches
+   * the same symbols within a few seconds — the duplicate-wake double-spend that
+   * log 44 showed (three warm-ups/kickoffs over one wake). Observability only: it
+   * does not block the pull, just makes the pattern visible in the trail.
+   */
+  private lastFanoutAt: number | null = null;
+  private lastFanoutSymbols: Set<string> = new Set();
   /**
    * Set when the long-range value history must be **rebuilt from scratch** on the
    * next model render (the Settings "Regenerate long-range history" affordance and
@@ -1199,6 +1245,7 @@ export class App {
       twelveDataBatch: FREE_TIER.creditsPerMinute,
     });
     this.pollLog("login", `Login fan-out (${prefetch.symbols.length} mkt symbol(s)): ${fanout.reason}`);
+    this.noteFanout([...fanout.twelveData, ...fanout.navTwelveData, ...fanout.tiingo, ...fanout.navTiingo], "login fan-out");
     // Execute the fan-out the planner decided: the Twelve Data lead (≤8) runs
     // alongside any Tiingo overflow for an instant first paint. C8: NAV funds ride
     // the planner's split too, so when Twelve Data's minute is already spent (e.g.
@@ -5115,13 +5162,16 @@ export class App {
       // Resolve each deferred symbol's place in the free-tier queue into a
       // wall-clock ETA so its caption can count down to its turn rather than
       // showing an open-ended "…". Anchored at this round's completion; the
-      // cadence is the burst (~one-minute) interval the scheduler actually uses.
+      // cadence is the scheduler's *actual* last burst spacing when known (it can
+      // be far shorter than a blind minute once the credit-aware relief kicks in
+      // — using a flat minute is what made the per-row timers wrong), else the
+      // nominal one-minute burst on the very first deferring round.
       this.holdingQueueReadyAt = computeQueueEtas({
         fetched: quoteLoad.report.fetched,
         deferred: quoteLoad.report.deferred,
         capacityPerRound: FREE_TIER.creditsPerMinute,
         anchorMs: landedAt,
-        roundIntervalMs: DEFAULT_BURST_INTERVAL_MS,
+        roundIntervalMs: this.lastBurstDelayMs ?? DEFAULT_BURST_INTERVAL_MS,
       });
     }
     this.renderDashboard(model);
@@ -5939,7 +5989,28 @@ export class App {
       this.scheduleNext(session, this.state.config.updateMinutes * 60 * 1000);
       return;
     }
-    if (this.refreshing) return;
+    if (this.refreshing) {
+      // Normally an in-flight round means "leave it be" — but a round that has
+      // been running for several auto-update intervals is almost always one a
+      // sleeping device froze mid-flight (log 44: a 16:37 round resumed and
+      // *completed* an hour later, stamping stale work fresh and kicking off a
+      // duplicate burst). Tie the watchdog to the user's own setting: once the
+      // round is {@link roundIsStale stale}, abandon it (bump the generation so
+      // its eventual continuation bails) and fall through to a fresh pull.
+      if (!roundIsStale(this.refreshStartedAt, Date.now(), this.upToDateWindowMs())) return;
+      this.pollLog(
+        "refresh",
+        `Stale round abandoned — the ${this.refreshingKind ?? "refresh"} round had been in flight over ` +
+          `${Math.round(staleRoundAbortMs(this.upToDateWindowMs()) / 60000)} min ` +
+          "(device likely slept mid-round). Starting a fresh pull instead of completing hour-old work.",
+        "warn",
+      );
+      this.refreshGeneration++;
+      this.refreshing = false;
+      this.refreshingKind = null;
+      this.refreshStartedAt = null;
+      this.setUpdating(false);
+    }
     // No *automatic* price pull once the book is fully up to date — the market is
     // closed and every settled close *and* today's NAV is already in hand. There
     // is nothing new to fetch, so spending credits (and re-polling FX) would be
@@ -5995,6 +6066,21 @@ export class App {
     }
     this.refreshing = true;
     this.refreshingKind = kind;
+    this.refreshStartedAt = Date.now();
+    // Claim ownership of the shared refresh state for this round. Every await
+    // below re-checks this (via {@link superseded}) so that if the device slept
+    // and this round was abandoned/replaced while a fetch hung, its late-resolving
+    // continuation bails instead of clobbering the round that took over.
+    const myGeneration = ++this.refreshGeneration;
+    const superseded = (): boolean => session !== this.sessionId || myGeneration !== this.refreshGeneration;
+    // Release the shared refresh flags, but only while this round still owns them
+    // — a superseding round must keep its own `refreshing` state intact.
+    const releaseIfOwned = (): void => {
+      if (myGeneration !== this.refreshGeneration) return;
+      this.refreshing = false;
+      this.refreshingKind = null;
+      this.refreshStartedAt = null;
+    };
     // A fresh round clears any stale promotion request from a prior round; a tap
     // landing *during* this round will re-set it below.
     if (kind === "manual") this.promoteToManual = false;
@@ -6007,9 +6093,8 @@ export class App {
     // ordinary auto ticks see an already-settled promise (a no-op).
     if ((opts.kickoff ?? false) && this.prefetchPromise) {
       await this.prefetchPromise.catch(() => undefined);
-      if (session !== this.sessionId) {
-        this.refreshing = false;
-        this.refreshingKind = null;
+      if (superseded()) {
+        releaseIfOwned();
         return;
       }
       // Pillar 2 (WS5) — the **post-decrypt reconcile**. Step 1 (the prefetch) ran
@@ -6074,9 +6159,8 @@ export class App {
     // latency every cadence).
     if (opts.kickoff ?? false) {
       await this.refreshBlobMeta(session);
-      if (session !== this.sessionId) {
-        this.refreshing = false;
-        this.refreshingKind = null;
+      if (superseded()) {
+        releaseIfOwned();
         return;
       }
     }
@@ -6085,9 +6169,8 @@ export class App {
     // resolve it once here and feed it into the single orchestrator plan — the KPI's
     // FX-bar pull is then a first-class `fxBars` leg, not an ad-hoc side decision.
     const fxBarsAnchorMissing = await this.sessionFxBarsAnchorMissing(now);
-    if (session !== this.sessionId) {
-      this.refreshing = false;
-      this.refreshingKind = null;
+    if (superseded()) {
+      releaseIfOwned();
       return;
     }
     const roundPlan = this.planRoundPull(kind, opts, now, fxBarsAnchorMissing);
@@ -6116,9 +6199,8 @@ export class App {
           () => undefined,
         );
         fxBarsHandled = true;
-        if (session !== this.sessionId) {
-          this.refreshing = false;
-          this.refreshingKind = null;
+        if (superseded()) {
+          releaseIfOwned();
           return;
         }
         // Stamp the clock-hour gate only when a market-hours prime actually pulled
@@ -6132,9 +6214,8 @@ export class App {
       // run a graph prime this round (no session-bar pull to grab the FX alongside).
       if (roundPlan.legs.fxBars && !fxBarsHandled) {
         await this.prefetchSessionFx(this.state.config, now).catch(() => undefined);
-        if (session !== this.sessionId) {
-          this.refreshing = false;
-          this.refreshingKind = null;
+        if (superseded()) {
+          releaseIfOwned();
           return;
         }
       }
@@ -6178,12 +6259,15 @@ export class App {
         loginPriority: opts.kickoff ?? false,
       });
     } finally {
-      this.refreshing = false;
-      this.refreshingKind = null;
+      releaseIfOwned();
     }
-    if (session !== this.sessionId || report === null) {
-      this.promoteToManual = false;
-      this.setUpdating(false, feedbackKind);
+    if (superseded() || report === null) {
+      // Only the round that still owns the shared state should clear the
+      // promotion flag / take the pill down; a superseding round owns those now.
+      if (myGeneration === this.refreshGeneration) {
+        this.promoteToManual = false;
+        this.setUpdating(false, feedbackKind);
+      }
       return;
     }
     // A manual tap that landed while this (automatic) round was in flight promotes
@@ -6194,14 +6278,22 @@ export class App {
     const promoted = this.promoteToManual;
     this.promoteToManual = false;
     const effectiveKind: RefreshKind = promoted ? "manual" : kind;
-    // The live refresh for this round is done: take the status pill down. While
-    // a >per-minute-cap portfolio is still filling in we used to keep the pill
-    // (with a live "N of M" count) up *between* burst rounds, but that left it
-    // hovering on screen for seconds at a time — too much. The Refresh glyph
-    // still spins during each actual fetch, and the per-row "as of" chips show
-    // which holdings are still on last-known values, so the staged fill stays
-    // visible without a persistent floating banner.
-    this.setUpdating(false, effectiveKind);
+    // The live fetch for this round is done. When a portfolio larger than the
+    // per-minute budget is still filling in over catch-up rounds, keep ONE
+    // continuous "Auto-updating… N still filling in" pill (its text updated in
+    // place) rather than tearing the pill down and rebuilding it each round —
+    // which restarted the spinner animation on every burst (the "multiple auto
+    // update animations" the user flagged). The pill comes down only once nothing
+    // is deferred, or for a user-driven tap (which has its own min-feedback floor
+    // and completion toast). The per-row "as of" chips still show which holdings
+    // remain on last-known values, so the staged fill stays legible either way.
+    const stillFillingIn =
+      report.deferred.length > 0 && !promoted && !isUserRefresh(effectiveKind);
+    if (stillFillingIn) {
+      this.setUpdating(true, effectiveKind, burstFillDetail(report.deferred.length));
+    } else {
+      this.setUpdating(false, effectiveKind);
+    }
     // Confirm the outcome of a manual tap so the user understands what happened
     // (fresh prices pulled, already up to date, or some deferred by the budget).
     if (isUserRefresh(effectiveKind)) {
@@ -6376,6 +6468,12 @@ export class App {
       void this.maybeRefreshBlob(session);
     }
     this.scheduleNext(session, delayMs);
+    // Remember this round's real spacing so the *next* round's per-holding queue
+    // countdown anchors on the scheduler's actual (credit-paced) burst cadence
+    // rather than a flat minute — keeping the "updating in Ns" timers honest.
+    // Cleared once nothing is deferred so a settled book reverts to the nominal
+    // burst estimate on its next overflow.
+    this.lastBurstDelayMs = report.deferred.length > 0 && !promoted ? delayMs : null;
     // The round's closing verdict — the single line that answers, at a glance,
     // "what settled, what failed, did we back off, and how much budget is left?".
     // The renderer lifts this into each round's footer banner, so it doubles as
@@ -6404,7 +6502,11 @@ export class App {
       `Round complete (${effectiveKind}${promoted ? ", promoted from auto" : ""}): ${settledParts.join(", ")}. ` +
         `Budget left ${report.minuteRemaining}/min · ${report.dayRemaining}/day${this.twelveDataFreezeSuffix()}${tiingoTail}. ` +
         `Next auto-refresh in ~${Math.round(delayMs / 1000)}s` +
-        `${report.deferred.length > 0 && !promoted ? " (burst to catch up)" : ""}.`,
+        `${
+          report.deferred.length > 0 && !promoted
+            ? ` (catch-up burst, ${report.deferred.length} still filling in — not the steady cadence)`
+            : ""
+        }.`,
       finishLevel,
     );
   }
@@ -6424,6 +6526,56 @@ export class App {
       this.state.config.updateMinutes * 60 * 1000,
     );
     return Date.now() - this.lastBlobCheckAt >= intervalMs;
+  }
+
+  /**
+   * Flag a provider fan-out that re-fetches symbols a previous fan-out already
+   * pulled within {@link DEFAULT_WAKE_COALESCE_MS} — the wasteful duplicate-wake
+   * fan-out from log 44, where a resumed round's warm-up, the unlock session-start
+   * warm-up, and the forced kickoff each fetched the same book over ~4 seconds,
+   * burning the per-minute budget and forcing the "real" pull to defer everything.
+   * Observability only: logs a warning so the pattern is obvious at a glance
+   * instead of having to be reconstructed by hand, then records this fan-out as
+   * the new baseline.
+   */
+  private noteFanout(symbols: readonly string[], label: string): void {
+    const nowMs = Date.now();
+    if (this.lastFanoutAt !== null && wakeCoalesceActive(this.lastFanoutAt, nowMs)) {
+      const overlap = symbols.filter((s) => this.lastFanoutSymbols.has(s));
+      if (overlap.length > 0) {
+        this.pollLog(
+          "orchestrator",
+          `Duplicate wake fan-out — ${label} re-fetches ${overlap.length} symbol(s) a fan-out already pulled ` +
+            `${Math.round((nowMs - this.lastFanoutAt) / 1000)}s ago [${overlap.join(", ")}]. ` +
+            "Wake triggers should coalesce; this round is spending budget on already-pulled prices.",
+          "warn",
+        );
+      }
+    }
+    this.lastFanoutAt = nowMs;
+    this.lastFanoutSymbols = new Set(symbols);
+  }
+
+  /**
+   * Funnel a "the app woke up" trigger (visibility / pageshow / online) into the
+   * auto-refresh loop, collapsing the storm of resume events a single return
+   * commonly fires (in log 44 three back-to-back warm-ups/kickoffs fanned out
+   * over the same ~4-second wake, double-spending the per-minute budget and
+   * forcing the "real" pull to defer everything). The first wake of a return
+   * pulls; any others within {@link wakeCoalesceActive}'s window are dropped (the
+   * pull already in flight covers them). A `reason` is logged when supplied.
+   */
+  private wakeRefresh(session: number, kind: RefreshKind, reason: string | null): void {
+    if (session !== this.sessionId) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    const nowMs = Date.now();
+    if (wakeCoalesceActive(this.lastAutoWakeAt, nowMs)) {
+      if (reason) this.pollLog("refresh", `${reason} — coalesced into the wake refresh already in flight.`, "info");
+      return;
+    }
+    this.lastAutoWakeAt = nowMs;
+    if (reason) this.pollLog("refresh", reason);
+    void this.runScheduledRefresh(session, kind);
   }
 
   /** Arm the next auto-refresh tick, replacing any pending one. */
@@ -6450,7 +6602,7 @@ export class App {
     const handler = (): void => {
       if (session !== this.sessionId) return;
       if (document.hidden) this.clearRefreshTimer();
-      else void this.runScheduledRefresh(session);
+      else this.wakeRefresh(session, "auto", null);
     };
     document.addEventListener("visibilitychange", handler);
     this.visibilityHandler = handler;
@@ -6464,7 +6616,7 @@ export class App {
       const onShow = (): void => {
         if (session !== this.sessionId) return;
         if (typeof document !== "undefined" && document.hidden) return;
-        void this.runScheduledRefresh(session);
+        this.wakeRefresh(session, "auto", null);
       };
       window.addEventListener("pageshow", onShow);
       this.pageShowHandler = onShow;
@@ -6478,8 +6630,7 @@ export class App {
       const onOnline = (): void => {
         if (session !== this.sessionId) return;
         if (typeof document !== "undefined" && document.hidden) return;
-        this.pollLog("refresh", "Network link returned → auto refresh (online listener).");
-        void this.runScheduledRefresh(session, "auto");
+        this.wakeRefresh(session, "auto", "Network link returned → auto refresh (online listener).");
       };
       window.addEventListener("online", onOnline);
       this.onlineHandler = onOnline;
