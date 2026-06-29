@@ -13,6 +13,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.20.6] — 2026-06-29
+
+### Fixed
+
+- **1W graph final-dot dip safeguard verified and pinned.** Confirmed the web⇄blob market-sleeve merge applies `pinMergedTipToWebTip` on both 1W return paths (springboard and live), so a blob breadcrumb captured just past the trusted live tip can never become the rightmost rendered point and reintroduce the divergent final-minute nosedive 1D never shows.
+
 ## [4.20.5] — 2026-06-28
 
 ### Fixed
