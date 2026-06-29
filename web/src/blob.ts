@@ -126,6 +126,13 @@ export interface BlobMeta {
   size?: number;
   /** ISO-8601 publish time, if published. */
   publishedAt?: string;
+  /**
+   * Meta-sidecar schema (`publish_service.py` `_META_SCHEMA`) — the legacy↔ET
+   * cutover gate (`time_alignment_plan.md`). `<= 1`: the desktop still stamps
+   * `analytics.curve` dates the legacy (publisher-local) way; `>= 2`: those dates
+   * are ET. Absent on an older sidecar ⇒ the reader treats it as legacy (`1`).
+   */
+  schema?: number;
 }
 
 /**
@@ -156,5 +163,6 @@ export async function fetchBlobMeta(url: string, fetchImpl: typeof fetch = fetch
     version: obj.version,
     size: typeof obj.size === "number" ? obj.size : undefined,
     publishedAt: typeof obj.published_at === "string" ? obj.published_at : undefined,
+    schema: typeof obj.schema === "number" ? obj.schema : undefined,
   };
 }

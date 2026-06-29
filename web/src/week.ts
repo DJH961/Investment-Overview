@@ -34,6 +34,8 @@ import {
   type BarFetcher,
 } from "./intraday";
 import {
+  exchangeDayOf,
+  exchangeDayStartMs,
   isUsMarketOpen,
   lastSessionDate,
   recentTradingSessions,
@@ -80,17 +82,17 @@ function toReconHoldings(holdings: IntradayAnchor["holdings"]): ReconHolding[] {
   }));
 }
 
-/** Epoch-ms of `YYYY-MM-DD` at UTC midnight — the instant a daily-close bar is stamped at. */
+/** Epoch-ms of `YYYY-MM-DD` at 00:00 ET — the instant a daily-close bar is stamped at. */
 function dayStartMs(day: string): number {
-  return Date.parse(`${day}T00:00:00Z`);
+  return exchangeDayStartMs(day);
 }
 
 /** Milliseconds in a calendar day — the span a single trading day's bars/crumbs occupy. */
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** The `YYYY-MM-DD` UTC calendar day an epoch-ms instant falls on. */
+/** The `YYYY-MM-DD` New-York calendar day an epoch-ms instant falls on. */
 function utcDayOf(t: number): string {
-  return new Date(t).toISOString().slice(0, 10);
+  return exchangeDayOf(t);
 }
 
 /**

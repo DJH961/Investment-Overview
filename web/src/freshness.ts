@@ -15,7 +15,7 @@
  * truth-table".
  */
 
-import { isForexMarketOpen, lastForexReopenMs } from "./market-hours";
+import { exchangeDayOf, isForexMarketOpen, lastForexReopenMs } from "./market-hours";
 
 /** One clock hour, in ms — the Twelve Data / Tiingo hourly reset cadence. */
 export const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -314,15 +314,9 @@ export interface RowFreshnessInput {
   lastSettledCloseMs?: number;
 }
 
-/** Whether two epoch-ms instants fall on the same local calendar day. */
+/** Whether two epoch-ms instants fall on the same New-York trading day. */
 function sameLocalDay(aMs: number, bMs: number): boolean {
-  const a = new Date(aMs);
-  const b = new Date(bMs);
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
+  return exchangeDayOf(aMs) === exchangeDayOf(bMs);
 }
 
 /** Classify a holding's displayed price into a {@link RowFreshness} tier. */

@@ -24,11 +24,13 @@ import {
 import type { Bar, CurvePoint } from "../src/timeseries";
 import { memoryBackend, TimeSeriesStore, type StoredCloseProbe } from "../src/timeseries-store";
 import { FX_PROBE_KEY } from "../src/close-completeness";
-import { sessionCloseMs, sessionOpenMs } from "../src/market-hours";
+import { exchangeDayStartMs, sessionCloseMs, sessionOpenMs } from "../src/market-hours";
 
 const d = (v: string | number): Decimal => new Decimal(v);
 const bar = (t: number, value: string): Bar => ({ t, value: new Decimal(value) });
-const dayMs = (day: string): number => Date.parse(`${day}T00:00:00Z`);
+// Daily-close bars and the window grid are bucketed at 00:00 ET (the exchange
+// trading-day start), matching production (`week.ts` dayStartMs / `parseBarTime`).
+const dayMs = (day: string): number => exchangeDayStartMs(day);
 
 function holding(over: Partial<AnchorHoldingInput> = {}): AnchorHoldingInput {
   return {

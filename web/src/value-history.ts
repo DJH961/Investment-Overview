@@ -16,19 +16,20 @@
  * session key), so a session prune never sweeps them, a cache reset (`clear`)
  * does, and the IndexedDB plumbing / Decimal (de)serialisation are reused as-is.
  * The two currency legs ride as two pseudo-symbol bar tracks (`EUR`/`USD`) keyed
- * by each day's **local-midnight** instant, which gives free instant-dedup
+ * by each day's **00:00-ET** instant, which gives free instant-dedup
  * (re-recording today overwrites today) via {@link TimeSeriesStore.mergeSession}.
  *
- * **Why local-midnight, not UTC?** The blob carries no time-of-day at all: the
- * Python desktop stamps each `analytics.curve` point with a bare calendar date
- * (`date.isoformat()`) and derives "today" (`as_of`) from `date.today()` — i.e.
- * the desktop's *local* calendar, never UTC. To file each close under the same day
- * the blob would, the bucket boundary here must be local midnight too. Bucketing by
- * UTC instead would, for any viewer west of UTC, roll an evening live close onto the
- * *next* UTC day — so a live tip recorded under {@link OverviewView.asOf} (a local
- * date) and the same day harvested from the 1W curve would split across two buckets
- * and the chart's date-string splice would misalign. Local-day bucketing keeps the
- * web and the Python blob on one shared calendar.
+ * **Why 00:00 ET, not UTC or viewer-local?** The whole app now buckets days on the
+ * New-York exchange calendar (`time_alignment_plan.md`). A live tip recorded under
+ * {@link OverviewView.asOf} ({@link todayIso}, ET) and the same day harvested from
+ * the 1W curve (web bars stamped at the ET trading-day start) therefore share one
+ * key. The blob's `analytics.curve` still carries a bare publisher-local date
+ * (`date.isoformat()`) until the Python desktop ships ET stamping (meta schema 2);
+ * its closes are routed through {@link blobCurveDayMs} — the one schema-gated
+ * adapter at the ingest edge — which files that bare date at the same ET boundary,
+ * so the legacy-local and ET legs never split across two buckets for a viewer west
+ * of UTC. Bucketing by UTC instead would roll an evening live close onto the next
+ * UTC day and misalign the chart's date-string splice.
  *
  * ### Pruning (keeping the store small)
  * Persisted closes only exist to bridge the gap between the blob's last exported day
@@ -43,6 +44,7 @@
  */
 
 import { Decimal } from "./decimal-config";
+import { exchangeDayOf, exchangeDayStartMs } from "./market-hours";
 import type { Bar, CurvePoint } from "./timeseries";
 import type { TimeSeriesStore } from "./timeseries-store";
 
@@ -70,23 +72,38 @@ export interface DailyClose {
 }
 
 /**
- * Epoch-ms of `YYYY-MM-DD` at **local** midnight — the instant a daily close is
- * stamped at. Local (not UTC) so the bucket boundary matches the Python blob's
- * `date.today()` / bare-date calendar (see the module docstring). `NaN` for a
- * malformed date, which callers guard with {@link Number.isFinite}.
+ * Epoch-ms of `YYYY-MM-DD` at **00:00 ET** (the exchange trading-day start) — the
+ * instant a daily close is stamped at. The whole app now buckets days on the
+ * New-York exchange calendar, so a web-recorded close (stamped from
+ * {@link todayIso}, ET) and a blob-harvested close (its bare publisher-local date
+ * routed through {@link blobCurveDayMs}) land on the *same* key for the same day —
+ * no split into two buckets for a viewer west of UTC. `NaN` for a malformed date,
+ * which callers guard with {@link Number.isFinite}.
  */
 function dayStartMs(date: string): number {
-  const [y, m, d] = date.split("-").map(Number);
-  return new Date(y, m - 1, d).getTime();
+  return exchangeDayStartMs(date);
 }
 
-/** The `YYYY-MM-DD` (local calendar) a stamped instant falls on. */
+/**
+ * Map a blob `analytics.curve` bare date to its ET day-start bucket — the single
+ * schema-gated adapter at the blob-ingest edge. The blob curve dates are
+ * publisher-local until Python ships ET (schema 2): for a legacy blob
+ * (`schema <= 1`) the bare date is the publisher's *local* calendar day, for an
+ * ET blob (`schema >= 2`) it is already the NYSE session date. Either way a bare
+ * date has no time-of-day, so the faithful, lossless mapping is to file the date
+ * string itself at the ET trading-day boundary — keeping the blob leg on the very
+ * same bucket grid as the web-recorded leg. When Python bumps `_META_SCHEMA` to 2
+ * this stays correct unchanged; the gate exists so the seam is explicit.
+ */
+export function blobCurveDayMs(date: string, schema: number | undefined): number {
+  // blob curve dates are publisher-local until Python ships ET (schema 2)
+  void schema;
+  return exchangeDayStartMs(date);
+}
+
+/** The `YYYY-MM-DD` (New-York exchange calendar) a stamped instant falls on. */
 function localDayOf(t: number): string {
-  const d = new Date(t);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return exchangeDayOf(t);
 }
 
 /**
@@ -215,10 +232,18 @@ export async function harvestDailyCloses(
  * cutoff; the record is only rewritten when something actually rolls out, so a prune
  * with nothing older than `oldestDay` — or with no history at all — is a cheap no-op.
  */
-export async function pruneValueHistory(store: TimeSeriesStore, oldestDay: string): Promise<void> {
+export async function pruneValueHistory(
+  store: TimeSeriesStore,
+  oldestDay: string,
+  blobSchema?: number,
+): Promise<void> {
   const stored = await store.loadSession(VALUE_HISTORY_STORE_KEY);
   if (!stored) return;
-  const cutoff = dayStartMs(oldestDay);
+  // `oldestDay` is derived from the blob's last-export day (a publisher-local bare
+  // date until Python ships ET / schema 2), so resolve its bucket through the one
+  // schema-gated adapter — the same ET boundary the stored closes sit on, so the
+  // cutoff never lands half a day off the legs it filters.
+  const cutoff = blobCurveDayMs(oldestDay, blobSchema);
   if (!Number.isFinite(cutoff)) return;
   const keep = (bars: Bar[] | undefined): Bar[] => (bars ?? []).filter((b) => b.t >= cutoff);
   const eur = keep(stored.bars[EUR_SERIES]);

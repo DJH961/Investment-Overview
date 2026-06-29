@@ -594,6 +594,16 @@ export class App {
    */
   private blobPublishedAt: string | null = null;
   /**
+   * Meta-sidecar **schema** of the best-available blob (`portfolio.meta.json`
+   * `schema`, `publish_service.py` `_META_SCHEMA`). The legacy/ET cutover gate
+   * (`time_alignment_plan.md`): `<= 1` ⇒ the desktop still stamps `analytics.curve`
+   * dates the legacy (publisher-local) way; `>= 2` ⇒ those dates are ET. The web
+   * runs on ET internally regardless and adapts blob curve dates at the ingest
+   * edge ({@link blobCurveDayMs}) behind this gate; the flip to ET-stamped is the
+   * only switch. Defaults to legacy (`1`) until a sidecar carrying `schema` is read.
+   */
+  private blobMetaSchema = 1;
+  /**
    * Epoch ms of the last successful network data pull (fresh quotes or FX),
    * loaded from persistent storage at startup so the very first cache-only
    * paint can already show when the data was last pulled.
@@ -4149,6 +4159,8 @@ export class App {
       const meta = await withTimeout(fetchBlobMeta(metaUrl), BLOB_META_PROBE_TIMEOUT_MS);
       if (session !== this.sessionId) return;
       if (meta?.publishedAt) this.blobPublishedAt = meta.publishedAt;
+      // Legacy↔ET cutover gate: a sidecar without `schema` is a legacy (≤1) blob.
+      if (meta) this.blobMetaSchema = meta.schema ?? 1;
     } catch {
       /* time-boxed best-effort: keep the current blobDaysOld, never block the kickoff. */
     }
@@ -4183,6 +4195,8 @@ export class App {
       // `blobDaysOld` freshness on the *remote* recency — post-decrypt this value
       // is unused (only on-device freshness drives the tier).
       if (meta?.publishedAt) this.blobPublishedAt = meta.publishedAt;
+      // Legacy↔ET cutover gate: a sidecar without `schema` is a legacy (≤1) blob.
+      if (meta) this.blobMetaSchema = meta.schema ?? 1;
       if (!force && meta && this.metaVersion !== null && meta.version === this.metaVersion) {
         this.pollLog("blob", `Data-file check: unchanged (meta version ${meta.version}).`);
         return;
@@ -7604,7 +7618,7 @@ export class App {
     if (lastExport !== null) {
       const afterExport = isoPlusDays(lastExport, 1);
       const cutoff = afterExport < weekStart ? afterExport : weekStart;
-      await pruneValueHistory(store, cutoff);
+      await pruneValueHistory(store, cutoff, this.blobMetaSchema);
     }
     const existing = await loadValueHistory(store);
     // **Long-range reload path (item 1).** The day-by-day recording above only

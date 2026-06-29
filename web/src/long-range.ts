@@ -53,7 +53,7 @@
  */
 
 import { intradaySymbols, marketSleeveSymbols, type BarFetcher, type IntradayAnchor } from "./intraday";
-import { isUsTradingDay, previousTradingSession } from "./market-hours";
+import { exchangeDayOf, isUsTradingDay, previousTradingSession } from "./market-hours";
 import { reconstructSessionCurve, type Bar, type CurvePoint, type ReconHolding } from "./timeseries";
 import type { Decimal } from "./decimal-config";
 import { harvestDailyCloses, loadValueHistory, type DailyClose } from "./value-history";
@@ -174,15 +174,11 @@ function toReconHoldings(holdings: IntradayAnchor["holdings"]): ReconHolding[] {
   }));
 }
 
-/** The `YYYY-MM-DD` (local calendar) a stamped instant falls on — mirrors the
+/** The `YYYY-MM-DD` (New-York calendar) a stamped instant falls on — mirrors the
  * value-history harvest's own bucketing so the window clamp lines up with how a
  * point is later stored. */
 function localDayOfInstant(t: number): string {
-  const d = new Date(t);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return exchangeDayOf(t);
 }
 
 /** Inputs to {@link reconstructLongRangeCloses}. */

@@ -49,6 +49,8 @@
 import { Decimal } from "./decimal-config";
 import { appendLiveTip, capAtClose, type LiveTip } from "./intraday";
 import {
+  exchangeDayOf,
+  exchangeDayStartMs,
   isUsMarketOpen,
   lastSessionDate,
   previousTradingSession,
@@ -78,20 +80,19 @@ export const MIN_WEEK_DAY_COVERAGE = 0.9;
  */
 export const MIN_SESSION_COVERAGE = 0.9;
 
-/** Epoch-ms of a `YYYY-MM-DD` New-York session at UTC midnight (window floor). */
+/** Epoch-ms of a `YYYY-MM-DD` New-York session at 00:00 ET (window floor). */
 function dayStartMs(day: string): number {
-  return Date.parse(`${day}T00:00:00Z`);
+  return exchangeDayStartMs(day);
 }
 
 /**
- * The number of distinct trading days the points fall on. US regular-session
- * instants (and daily closes at 16:00 ET = 20:00Z) share the UTC calendar date of
- * their New-York session, so a UTC-date bucket counts sessions without needing the
- * exchange-offset maths.
+ * The number of distinct trading days the points fall on, bucketed by the
+ * New-York calendar date so US regular-session instants and daily closes land on
+ * their own session day regardless of the viewer's timezone.
  */
 function distinctSessionDays(points: CurvePoint[]): number {
   const days = new Set<string>();
-  for (const p of points) days.add(new Date(p.t).toISOString().slice(0, 10));
+  for (const p of points) days.add(exchangeDayOf(p.t));
   return days.size;
 }
 
