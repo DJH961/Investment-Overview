@@ -54,6 +54,35 @@ def test_invalidate_from_drops_subsequent_snapshots(session: Session) -> None:
     assert snapshots_repo.get_snapshot(session, date(2025, 1, 1)) is None
 
 
+def test_invalidate_for_trade_dates_drops_from_earliest_past_date(session: Session) -> None:
+    snapshots_repo.upsert_snapshot(session, date(2023, 1, 1), Decimal("100"))
+    snapshots_repo.upsert_snapshot(session, date(2024, 1, 1), Decimal("200"))
+    snapshots_repo.upsert_snapshot(session, date(2025, 1, 1), Decimal("300"))
+    session.flush()
+
+    # A batch of past trade dates ⇒ window drops from the earliest one on.
+    dropped = snapshots_service.invalidate_for_trade_dates(
+        session,
+        [date(2025, 1, 1), date(2024, 1, 1)],
+        today=date(2025, 6, 1),
+    )
+    session.flush()
+    assert dropped == 2
+    assert snapshots_repo.get_snapshot(session, date(2023, 1, 1)) is not None
+    assert snapshots_repo.get_snapshot(session, date(2024, 1, 1)) is None
+    assert snapshots_repo.get_snapshot(session, date(2025, 1, 1)) is None
+
+
+def test_invalidate_for_trade_dates_ignores_today_only_entries(session: Session) -> None:
+    today = date.today()
+    snapshots_repo.upsert_snapshot(session, date(2024, 1, 1), Decimal("200"))
+    session.flush()
+    # A same-day entry never touches a cached close (today recomputes live).
+    dropped = snapshots_service.invalidate_for_trade_dates(session, [today], today=today)
+    assert dropped == 0
+    assert snapshots_repo.get_snapshot(session, date(2024, 1, 1)) is not None
+
+
 def test_invalidate_all_drops_every_snapshot(session: Session) -> None:
     """v2.9.1 — clearing the whole cache after a FX/price backfill so the
     stale ``0`` closing values computed before the deferred refresh are

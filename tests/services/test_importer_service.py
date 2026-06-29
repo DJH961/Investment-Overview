@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.adapters.frankfurter_client import FrankfurterError
 from investment_dashboard.models import Transaction
-from investment_dashboard.repositories import accounts_repo, fx_repo
+from investment_dashboard.repositories import accounts_repo, fx_repo, snapshots_repo
 from investment_dashboard.services import fx_service, instrument_enrichment_service
 from investment_dashboard.services.importer_service import Broker, import_csv
 
@@ -65,6 +65,24 @@ class TestImportFidelity:
         )
         assert result.inserted == 6
         assert result.duplicates == 0
+
+    def test_import_invalidates_cached_snapshots_from_earliest_trade(
+        self, session: Session, usd_account: int, fx_seeded: None
+    ) -> None:
+        # A past-dated import must drop cached daily closes on/after the earliest
+        # imported trade so /monthly, /yearly and the equity curve recompute that
+        # window against the fresh history instead of stale cached values.
+        snapshots_repo.upsert_snapshot(session, date(2024, 1, 10), Decimal("100"))
+        snapshots_repo.upsert_snapshot(session, date(2024, 6, 1), Decimal("200"))
+        session.flush()
+        content = (FIXTURE_DIR / "fidelity_sample.csv").read_text()
+        result = import_csv(
+            session, broker=Broker.FIDELITY, account_id=usd_account, content=content
+        )
+        assert result.inserted == 6
+        # Sample's earliest trade is 2024-01-05, so both later snapshots are gone.
+        assert snapshots_repo.get_snapshot(session, date(2024, 1, 10)) is None
+        assert snapshots_repo.get_snapshot(session, date(2024, 6, 1)) is None
 
     def test_reimport_dedupes(self, session: Session, usd_account: int, fx_seeded: None) -> None:
         content = (FIXTURE_DIR / "fidelity_sample.csv").read_text()

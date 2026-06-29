@@ -261,28 +261,31 @@ export function rebaseSleeveToWholeBook(
 }
 
 /**
- * Pin a merged 1W curve's **trailing edge** to the trusted web curve's live tip,
- * so a blob sleeve sample can never become the rightmost rendered point.
+ * Pin a merged 1W curve's **trailing edge** to the trusted web curve's tail, so a
+ * blob sleeve sample can never dent or overrun the rightmost rendered segment.
  *
- * The web curve already ends at the authoritative "now" value — the very same
- * point the 1D curve ends on (a live tip while the market is open, or the capped
- * 16:00 close once it has shut). The blob's market-sleeve backbone is a *denser
- * historical* second source, but its trailing samples are captured on the
- * desktop's own cadence: the last one can land a minute or two *after* the web's
- * tip (a capture-instant skew) or dive away from it (a partial / stale sleeve
- * reconstruction). Rendered as the final point, that draws the near-vertical
- * "final-minute" nosedive on 1W that 1D — anchored to the same live tip — never
- * shows, breaking the "1D fills 1W" invariant.
+ * The web curve ends on the dense, authoritative "today" slice the 1D graph also
+ * draws — its final point is the live tip (market open) or capped 16:00 close, and
+ * its last bars before that lead smoothly up to it. The blob's market-sleeve
+ * backbone is a *denser historical* second source, but its trailing samples are
+ * captured on the desktop's own coarse (30-min) cadence and can land *after* the
+ * web tip (a capture-instant skew) **or** in the gap *between* the web tail and
+ * the tip with a stale/low value. Pinning only the last point fixes the former
+ * but leaves the latter as the *penultimate* point — a near-vertical nosedive
+ * notch right before the tip that 1D (no blob, dense web bars) never shows,
+ * breaking the "1D fills 1W" invariant for both currency legs.
  *
- * This is the "live tip stays sane" guard the merge promises: drop every merged
- * point at or after the web tip's instant and append the web tip itself, so the
- * densified body is kept while the right edge is the trusted value. A no-op when
- * the merged curve already ends exactly at the web tip.
+ * The web tail (its second-to-last real bar through the tip) therefore owns the
+ * trailing edge: keep every merged point strictly before that bar — the densified
+ * historical body — then append the web tail, so no blob sample renders inside the
+ * final segment. A no-op when the merged curve already ends within the web tail.
  */
-export function pinMergedTipToWebTip(merged: CurvePoint[], webTip: CurvePoint): CurvePoint[] {
-  const kept = merged.filter((p) => p.t < webTip.t);
-  kept.push(webTip);
-  return kept;
+export function pinMergedTipToWebTip(merged: CurvePoint[], web: CurvePoint[]): CurvePoint[] {
+  if (web.length === 0) return merged;
+  const tail = web.slice(-2);
+  const cutoff = tail[0].t;
+  const kept = merged.filter((p) => p.t < cutoff);
+  return [...kept, ...tail];
 }
 
 /** Whether an export carries a usable v3 market-sleeve backbone (else: degrade). */

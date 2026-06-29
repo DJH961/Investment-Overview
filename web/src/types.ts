@@ -313,7 +313,21 @@ export interface MobileExport {
    * off (instant paint, no re-fetch). Absent on exports predating schema v2 or
    * when no intraday history had been captured. */
   live_graphs?: ExportLiveGraphs;
+  /** Cheap per-day history fingerprint (count, last date, short digest) so the
+   * web can flag "history revised" when a late desktop import rewrote old days.
+   * Absent on exports predating this field. */
+  history_fingerprint?: ExportHistoryFingerprint;
   transactions?: unknown;
+}
+
+/** Summary of the exported equity-curve history, for revision detection. */
+export interface ExportHistoryFingerprint {
+  /** Number of daily points in the exported curve. */
+  days: number;
+  /** Last `YYYY-MM-DD` covered, or null when the curve is empty. */
+  last_date: string | null;
+  /** Short stable digest over each day's `(date, whole-unit value)`. */
+  digest: string;
 }
 
 /** One whole-book point of an exported live curve, in both currencies. */

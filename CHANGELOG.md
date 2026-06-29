@@ -13,11 +13,68 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.21.1] — 2026-06-29
+
+### Fixed
+
+- **Money-market growth/XIRR no longer reads negative on the web companion for a dividends-only fund.** Settlement / money-market funds (VMFXX, SPAXX …) are USD-native and pin a constant $1.00 NAV, so a fund that only ever received dividends — with no drawdowns — must show a small *positive* return. Older export blobs omitted the per-flow USD cashflow legs and the USD cost basis, so the USD figure silently fell back to the FX-negative EUR one and showed a misleading negative growth/XIRR despite no losses. The web now backfills the USD cost basis and per-flow USD legs natively from the booked USD (par, FX-free) for money-market holdings, so USD growth/XIRR computes correctly positive while EUR stays FX-derived. Confirmed both wallets handle reinvested money-market dividends as gain (cost excludes the reinvest), and the Python retained-cash guard still excludes dividends swept into a money-market account from portfolio XIRR. Covered by new web `compute.test.ts` cases (dividends-only and a par-MM no-sell `value ≥ cost ⇒ growth ≥ 0` invariant) and a Python `test_overview_query.py` test.
+
 ## [4.21.0] — 2026-06-29
 
 ### Added
 
 - **The 1D, 1W and long-range value graphs now follow the exported per-day money-market balance instead of carrying today's balance flat across the whole window.** Money-market / settlement funds (VMFXX, SPAXX …) pin a constant $1.00 NAV, so their value moves only with the share count — which deposits and dividends change, sometimes while the market is shut. The whole-book base now **steps on the day a flow landed** using the export's `mm_value_native` series (aggregated across funds, USD booked / EUR derived at each point's own FX), so historical days are no longer lifted to today's higher balance. Covered by new tests in `web/test/timeseries.test.ts` and `web/test/market-sleeve.test.ts`.
+
+## [4.20.8] — 2026-06-29
+
+### Fixed
+
+- **Editing the ledger now actually rebuilds the affected history.** Cached
+  daily portfolio closes power `/monthly`, `/yearly` and the equity curve, but
+  nothing dropped them when a *past-dated* transaction was imported, added,
+  edited, or deleted — so a late import or correction left those periods showing
+  stale, pre-edit numbers until the whole cache happened to be cleared. Every
+  ledger mutation now calls `snapshots_service.invalidate_for_trade_dates`, which
+  drops every cached daily close on/after the earliest affected past trade date
+  so that window recomputes lazily on next read; same-day-only entries are
+  skipped because today is always recomputed live. Wired into the importer batch
+  insert and the manual add/edit/delete paths (edits cover both the old and new
+  trade date in case the date moved), with covering tests in
+  `tests/services/test_snapshots_service.py` and `test_importer_service.py`.
+- **The web companion now flags "history revised" instead of silently
+  overwriting late-import corrections.** The exporter emits a cheap per-day
+  `history_fingerprint` (count, last date, short digest), and on each sync the
+  companion compares the incoming blob's daily curve against its own persisted
+  closes — when a previously-stored day's whole-book value is rewritten (a late
+  desktop import / correction), a polling-log `blob` note records exactly which
+  days changed and by how much, so revised history is discoverable when
+  debugging rather than vanishing. Adds `diffBlobHistory` + covering tests.
+
+## [4.20.7] — 2026-06-29
+
+### Changed
+
+- **Settings "Regenerate 1D / 1W graph" now wipes the curve completely before
+  re-pulling, so any latent corrupt data is dropped rather than spliced back in.**
+  Previously the 1W regenerate only deleted the daily-close sleeve
+  (`1W-daily`), leaving each rolling-week day's dense `YYYY-MM-DD` bars in the
+  store — so a single bad day survived because "1D fills 1W" re-enriched the
+  curve from it. Both regenerators now clear *every* store key feeding their
+  range (1D: today's session; 1W: the sleeve **and** every day in the window) so
+  the curve rebuilds from the truly-empty slate a brand-new login starts from,
+  blob-springboard first. Adds `regenerateStoreKeys` + covering tests.
+
+## [4.20.6] — 2026-06-29
+
+### Fixed
+
+- **The 1W value graph no longer dips at its final dot (PR #249/#252 follow-up).**
+  Pinning only the very last point still left a stale, coarse blob market-sleeve
+  sample as the *penultimate* point — a near-vertical nosedive notch right before
+  the live tip that 1D (dense web bars, no blob) never shows, for both EUR and
+  USD. `pinMergedTipToWebTip` now hands the entire trailing edge to the dense
+  web/1D tail (its last bar through the tip), dropping any blob sample inside the
+  final segment. Adds covering tests in `web/test/market-sleeve.test.ts`.
 
 ## [4.20.5] — 2026-06-28
 

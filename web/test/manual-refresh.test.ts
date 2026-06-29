@@ -14,10 +14,13 @@ import {
   manualRefreshDecision,
   manualRefreshSummary,
   refreshTickAction,
+  regenerateStoreKeys,
   regenerateSummary,
   summarizeCoverage,
   type CoverageFacts,
 } from "../src/app";
+import { WEEK_STORE_KEY, DEFAULT_WEEK_SESSIONS } from "../src/week";
+import { lastSessionDate, recentTradingSessions } from "../src/market-hours";
 import type { QuoteLoadReport } from "../src/quotes";
 import { PriceError } from "../src/prices";
 
@@ -894,5 +897,24 @@ describe("regenerateSummary", () => {
     expect(line).toContain("no live pull (reused stored bars, 0 credits)");
     expect(line).not.toContain("backup");
     expect(line).toContain("Budget left 8/min · 599/day");
+  });
+});
+
+describe("regenerateStoreKeys (full from-scratch wipe scope)", () => {
+  const now = new Date("2026-06-29T15:00:00Z");
+
+  it("1D wipes only today's session day", () => {
+    expect(regenerateStoreKeys("day", now)).toEqual([lastSessionDate(now)]);
+  });
+
+  it("1W wipes the daily sleeve AND every per-day key in the rolling window", () => {
+    const keys = regenerateStoreKeys("week", now);
+    expect(keys[0]).toBe(WEEK_STORE_KEY);
+    const days = recentTradingSessions(DEFAULT_WEEK_SESSIONS, now);
+    expect(keys.slice(1)).toEqual(days);
+    // The dense 1D bars feeding "1D fills 1W" are dropped too, so a corrupt day
+    // cannot survive a week regenerate.
+    expect(keys).toContain(lastSessionDate(now));
+    expect(keys.length).toBe(DEFAULT_WEEK_SESSIONS + 1);
   });
 });

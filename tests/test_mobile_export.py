@@ -180,6 +180,7 @@ def test_mobile_export_shape_and_default_sensitivity(session: Session) -> None:
         "deposits",
         "target_allocations",
         "portfolio_metrics",
+        "history_fingerprint",
     }
     # `live_graphs` is an optional, absent-tolerant springboard section: it is
     # only emitted when intraday history is available to capture, so it must not
@@ -370,3 +371,23 @@ def test_mobile_export_periods_carry_per_date_usd_regardless_of_display_currency
     yearly = {r["label"]: r for r in export["yearly"]["rows"]}
     assert yearly["2024"]["contributions_eur"] == "1500.000000"
     assert yearly["2024"]["contributions_display"] == "1650.000000"
+
+
+def test_mobile_export_history_fingerprint(session: Session) -> None:
+    """The export carries a cheap history fingerprint (count, last date, digest)
+    so the web companion can flag a revised history rather than overwriting
+    silently. The digest must change when an old day's value is rewritten."""
+    _seed_mobile_portfolio(session)
+    export = build_mobile_export(session, as_of=AS_OF)
+    fp = export["history_fingerprint"]
+    curve = export["analytics"]["curve"]
+    assert fp["days"] == len(curve)
+    assert fp["last_date"] == curve[-1]["date"]
+    assert isinstance(fp["digest"], str)
+    assert len(fp["digest"]) == 16
+    # Same data ⇒ same digest; a rewritten value ⇒ different digest.
+    from investment_dashboard.readmodels.mobile_export import _history_fingerprint
+
+    assert _history_fingerprint(export["analytics"]) == fp
+    bumped = {"curve": [{**p, "portfolio_value": "999999"} for p in curve[:1]] + curve[1:]}
+    assert _history_fingerprint(bumped)["digest"] != fp["digest"]

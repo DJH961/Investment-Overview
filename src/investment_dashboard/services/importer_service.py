@@ -34,6 +34,7 @@ from investment_dashboard.repositories import (
 )
 from investment_dashboard.services import (
     instrument_enrichment_service,
+    snapshots_service,
     transaction_fx_service,
 )
 
@@ -133,6 +134,7 @@ def import_csv(
     inserted = 0
     duplicates = 0
     fx_missing: set[date] = set()
+    inserted_dates: set[date] = set()
     # Symbols the data provider couldn't resolve during enrichment (audit D2).
     unresolved: set[str] = set()
     for prow in parsed_rows:
@@ -188,6 +190,13 @@ def import_csv(
             duplicates += 1
         else:
             inserted += 1
+            inserted_dates.add(prow.date)
+
+    # Any newly-inserted past-dated row invalidates every cached daily close on
+    # or after the earliest one, so the affected window of /monthly, /yearly and
+    # the equity curve recomputes lazily against the imported history.
+    if inserted_dates:
+        snapshots_service.invalidate_for_trade_dates(session, inserted_dates)
 
     return ImportResult(
         inserted=inserted,
