@@ -13,6 +13,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.21.5] — 2026-06-29
+
+### Fixed
+
+- **The 1W live tooltip now sits at its true time-of-day within today's session,
+  on both the web companion and the Python desktop.** The "1 Week" graph packs each
+  trading day into an equal-width band, but a still-forming *today* was scaled to its
+  own open→`now` span, so the live tip was pinned to the far right of today's band
+  from the very first print — out of step with the settled days beside it. Both
+  renderers now anchor every band to the window's shared session **open→close** span:
+  the live tip starts hard left at the open and slides right as the session wears on,
+  matching the scaling of the days displayed before. On the web (`sessionFractions`)
+  each point is placed by its fraction of that shared span; on Python
+  (`_value_curve_figure`) the x-axis end is reserved at the close time-of-day on the
+  latest session's date so today gets a full-width day-plane instead of a narrow
+  right-hand sliver.
+
 ## [4.21.4] — 2026-06-29
 
 ### Fixed

@@ -185,18 +185,41 @@ export interface SessionLayout {
   bands: SessionBand[];
 }
 
+/** Milliseconds in a calendar day, for time-of-day maths. */
+const SESSION_DAY_MS = 86_400_000;
+
+/**
+ * Time-of-day (ms past UTC midnight) of an ISO instant, or `NaN` when it does not
+ * parse. UTC carries no DST, so within a 1W window every session shares one
+ * stable open/close offset — exactly what the collapsed-session layout needs to
+ * place each point at its true wall-clock position.
+ */
+function sessionTimeOfDayMs(iso: string): number {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return NaN;
+  return ((t % SESSION_DAY_MS) + SESSION_DAY_MS) % SESSION_DAY_MS;
+}
+
 /**
  * Lay points out on a **collapsed session** x-axis (the "1W" view): group
  * consecutive points by calendar day, give every session an equal-width band,
- * and within a band place each point by its fraction of that session's own
- * first→last elapsed span — so the dead air between sessions (nights, weekends,
- * holidays) is dropped instead of eating ~80% of the width. Bands are drawn
- * directly adjacent (no gutter) so a sparse week still fills the plot; the curve
- * is one continuous line across them and a thin separator rule at each day
- * boundary keeps the change of day legible. Returns the per-point fractions, the
- * boundary positions (for separators), and the band list (for day labels).
- * Returns `null` when there are too few points or the labels don't carry a
- * parseable calendar day.
+ * and within a band place each point by its fraction of the window's shared
+ * session **open→close** span — so the dead air between sessions (nights,
+ * weekends, holidays) is dropped instead of eating ~80% of the width. Bands are
+ * drawn directly adjacent (no gutter) so a sparse week still fills the plot; the
+ * curve is one continuous line across them and a thin separator rule at each day
+ * boundary keeps the change of day legible.
+ *
+ * Anchoring every band to the *shared* open→close span (rather than each day's
+ * own first→last instants) is what keeps a still-forming **today** honest: at the
+ * open its single live tip sits at the far left of its band, then slides right
+ * through the session as time passes, so its plane scales identically to the
+ * settled days beside it — instead of a half-built day being stretched to fill
+ * its whole band and pinning the live tip to the right edge.
+ *
+ * Returns the per-point fractions, the boundary positions (for separators), and
+ * the band list (for day labels). Returns `null` when there are too few points or
+ * the labels don't carry a parseable calendar day.
  */
 export function sessionFractions(dates: string[]): SessionLayout | null {
   const n = dates.length;
@@ -212,6 +235,29 @@ export function sessionFractions(dates: string[]): SessionLayout | null {
   }
   const g = groups.length;
   if (g < 1) return null;
+  // The window's shared session span: the earliest open and latest close
+  // time-of-day across every plotted point. A still-open today only reaches
+  // `now`, so its tip stays left of `closeTod` and lands at its true fraction of
+  // the day rather than the band's right edge.
+  let openTod = Infinity;
+  let closeTod = -Infinity;
+  for (const d of dates) {
+    const v = sessionTimeOfDayMs(d);
+    if (Number.isNaN(v)) continue;
+    if (v < openTod) openTod = v;
+    if (v > closeTod) closeTod = v;
+  }
+  const sessionSpan = closeTod - openTod;
+  // A point's fraction of the shared session span, or `null` when it carries no
+  // usable intraday time (no span, unparseable, or a coarse close stamped outside
+  // regular hours) — those fall back to the lone-close / even-by-index rules so a
+  // daily-close-only week still reads cleanly.
+  const sessionFractionOf = (iso: string): number | null => {
+    if (!(sessionSpan > 0)) return null;
+    const ti = sessionTimeOfDayMs(iso);
+    if (Number.isNaN(ti) || ti < openTod || ti > closeTod) return null;
+    return (ti - openTod) / sessionSpan;
+  };
   const bandWidth = 1 / g;
   const fractions = new Array<number>(n).fill(0);
   const separators: number[] = [];
@@ -220,17 +266,14 @@ export function sessionFractions(dates: string[]): SessionLayout | null {
     const grp = groups[k];
     const bandStart = k * bandWidth;
     if (k > 0) separators.push(bandStart);
-    const t0 = Date.parse(dates[grp.start]);
-    const tEnd = Date.parse(dates[grp.end]);
-    const span = tEnd - t0;
     const count = grp.end - grp.start;
     for (let i = grp.start; i <= grp.end; i += 1) {
+      const sf = sessionFractionOf(dates[i]);
       let f: number;
-      if (count === 0) {
-        f = 0.5; // a lone close sits mid-band
-      } else if (span > 0) {
-        const ti = Date.parse(dates[i]);
-        f = Number.isNaN(ti) ? (i - grp.start) / count : (ti - t0) / span;
+      if (sf !== null) {
+        f = sf; // true wall-clock position within the shared session span
+      } else if (count === 0) {
+        f = 0.5; // a lone close with no intraday time sits mid-band
       } else {
         f = (i - grp.start) / count; // unparseable / zero-span: even by index
       }
