@@ -563,6 +563,14 @@ export class App {
   /** The last computed model, kept so the currency toggle can re-render it. */
   private model: DashboardModel | null = null;
   /**
+   * One-shot: a hard Settings "Regenerate 1D/1W graph" sets this so the *next*
+   * consumption snapshot is written as a brand-new row even if its signature is
+   * unchanged — re-emitting the full reconciliation detail instead of folding it
+   * into a repeat count. The owner explicitly regenerated to see the merge spelled
+   * out. Cleared the moment it is consumed by {@link renderDashboard}.
+   */
+  private forceFullReconNextRender = false;
+  /**
    * Persistent IndexedDB-backed store for the live 1D/1W graphs'
    * intraday/daily bars (smart-backfill across re-opens). Created lazily on the
    * first live-graph build so the default chart path never touches IndexedDB.
@@ -5219,7 +5227,11 @@ export class App {
     );
     // Repaint so the (just re-pulled) curve rebuilds network-free from the fresh
     // bars. exitSettings returns to the dashboard; its render reuses the rebuilt
-    // store (no second live pull) instead of fetching an overlapping set.
+    // store (no second live pull) instead of fetching an overlapping set. Force
+    // the full reconciliation detail into the next consumption snapshot so a hard
+    // regenerate always shows the merge spelled out — not just when a new blob
+    // arrives (the owner regenerated specifically to see it).
+    this.forceFullReconNextRender = true;
     this.exitSettings();
   }
 
@@ -6860,7 +6872,11 @@ export class App {
     // polling log. De-duplicated downstream, so an unchanging picture collapses
     // to one row and a new row only marks a genuine change. Best-effort.
     try {
-      recordConsumption(model);
+      // A hard regenerate asked for the merge spelled out: force a fresh snapshot
+      // row this once so the full reconciliation detail re-emits rather than
+      // collapsing into the prior identical state's repeat count.
+      recordConsumption(model, { forceNewRow: this.forceFullReconNextRender });
+      this.forceFullReconNextRender = false;
     } catch {
       /* consumption logging is best-effort and must never break a render */
     }

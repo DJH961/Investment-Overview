@@ -1,5 +1,10 @@
 """Live 1D / 1W graph **springboard** export for the v3.0 browser companion.
 
+💵 CURRENCY: USD is the PRIMARY/canonical currency across the backend. ~100% of
+holdings and 100% of market funds are USD-denominated. EUR is a frontend display
+preset only (default toggle). ``value_native`` is native USD; the EUR pivot is a
+display convenience, never the base currency. Never treat EUR as primary.
+
 The desktop already captures (and reconstructs) the within-day intraday "1 Day"
 curve and the multi-day "1 Week" sleeve
 (:mod:`investment_dashboard.services.intraday_snapshots_service`). Re-deriving

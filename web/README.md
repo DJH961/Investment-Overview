@@ -1,5 +1,7 @@
 # web/ — Live Web Companion (static front-end)
 
+> 💵 **Currency:** USD is the source of truth; EUR is a display toggle (`usd ÷ fx`) and the default preset. web↔blob reconciliation is in USD. Never treat EUR as base.
+
 This directory holds the **public**, read-only GitHub Pages front-end described
 in [`docs/v3.0_live_web_companion_proposal.md`](../docs/v3.0_live_web_companion_proposal.md).
 

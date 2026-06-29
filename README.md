@@ -1,5 +1,7 @@
 # Investment Dashboard
 
+> 💵 **Currency:** USD is the canonical backend currency; EUR is a frontend display toggle only. Never treat EUR as the base.
+
 A single-user, locally-hosted Python investment-tracking dashboard that unifies
 brokerage positions at **Vanguard** and **Fidelity** with a German savings
 account (**Direct Savings (Tagesgeld)**). It computes a rich set of

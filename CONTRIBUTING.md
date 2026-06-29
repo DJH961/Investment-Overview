@@ -3,6 +3,8 @@
 This is a single-author private project, but future-me deserves clean
 ground rules.
 
+> 💵 **Currency:** USD is the canonical backend currency (computation, storage, reconciliation, exports); EUR is presentation-only (`usd ÷ fx`) and the default frontend toggle. Never code EUR as the base.
+
 ## Dev setup
 
 Requires Python 3.12+ and [`uv`](https://docs.astral.sh/uv/) (`pip install
