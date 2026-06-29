@@ -383,7 +383,8 @@ def test_mobile_export_history_fingerprint(session: Session) -> None:
     curve = export["analytics"]["curve"]
     assert fp["days"] == len(curve)
     assert fp["last_date"] == curve[-1]["date"]
-    assert isinstance(fp["digest"], str) and len(fp["digest"]) == 16
+    assert isinstance(fp["digest"], str)
+    assert len(fp["digest"]) == 16
     # Same data ⇒ same digest; a rewritten value ⇒ different digest.
     from investment_dashboard.readmodels.mobile_export import _history_fingerprint
 
