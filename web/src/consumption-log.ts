@@ -111,6 +111,13 @@ export interface AppendConsumptionOptions {
   at?: number;
   /** Storage to persist into (defaults to localStorage). */
   storage?: StorageLike | null;
+  /**
+   * Force a brand-new snapshot row even when the signature matches the last one,
+   * so the full reconciliation detail is re-emitted verbatim instead of folding
+   * into a repeat count. Set by a hard Settings "Regenerate 1D/1W graph": the
+   * owner explicitly asked to see the merge spelled out, not collapsed.
+   */
+  forceNewRow?: boolean;
 }
 
 function defaultStorage(): StorageLike | null {
@@ -601,7 +608,7 @@ export function appendConsumptionSnapshot(summary: ConsumptionSummary, opts: App
   const existing = pickFreshest(readRaw(storage));
   let next: ConsumptionSnapshot[];
   const last = existing[existing.length - 1];
-  if (last && last.signature === summary.signature) {
+  if (last && last.signature === summary.signature && !opts.forceNewRow) {
     // Same flagged state: merge in place, refreshing the headline figures and the
     // last-seen stamp, and bumping the repeat count.
     const merged: ConsumptionSnapshot = {

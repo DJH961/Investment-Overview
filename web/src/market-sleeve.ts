@@ -3,6 +3,10 @@
  * backbone (`docs/centralized_data_pull_plan.md` §"Pillar 3 — 1D fills 1W, and
  * web⇄blob merge"; the matching desktop export is `live_graphs.py` schema_v3).
  *
+ * 💵 CURRENCY: USD is the PRIMARY/canonical currency (backend). ~100% of holdings
+ * and 100% of market funds are USD. EUR is a frontend display preset only. This
+ * merge reconciles in **native USD** — never EUR. Do not "fix" it to EUR.
+ *
  * The desktop now ships, per the owner's decision, **not** per-symbol bars but
  * its own aggregate representation: the value of the intraday-priced sleeve over
  * the whole week, at true capture instants, with a per-instant FX rate. The web
@@ -69,7 +73,14 @@ export interface ReconciliationFlag {
   webValueUsd: Decimal;
   /** The blob's representative sleeve value for the bucket. */
   blobValueUsd: Decimal;
-  /** Signed relative gap `(web − blob) / |blob|`, as a fraction. */
+  /** The web's representative sleeve value re-expressed in booked EUR. */
+  webValueEur: Decimal;
+  /** The blob's representative sleeve value re-expressed in booked EUR. */
+  blobValueEur: Decimal;
+  /** EUR→USD rate used to recover each EUR value, or `null` when none was on hand. */
+  webFx: Decimal | null;
+  blobFx: Decimal | null;
+  /** Signed relative gap `(web − blob) / |blob|`, measured in EUR. */
   deltaFraction: number;
 }
 
@@ -196,8 +207,10 @@ export function mergeSleeveSeries(
     }
     if (!w || !b) continue; // unreachable (key came from one of the maps)
 
-    const wv = representative(w).valueNativeUsd;
-    const bv = representative(b).valueNativeUsd;
+    const wp = representative(w);
+    const bp = representative(b);
+    const wv = wp.valueNativeUsd;
+    const bv = bp.valueNativeUsd;
     const denom = bv.abs();
     const deltaFraction = denom.isZero()
       ? wv.isZero()
@@ -213,7 +226,16 @@ export function mergeSleeveSeries(
       // Disagree — keep the blob (authoritative) and raise a flag, never a spike.
       points.push(...tag(b, "blob"));
       counts.blob += 1;
-      flags.push({ bucketStartMs: key, webValueUsd: wv, blobValueUsd: bv, deltaFraction });
+      flags.push({
+        bucketStartMs: key,
+        webValueUsd: wv,
+        blobValueUsd: bv,
+        webValueEur: wp.fxEurUsd && wp.fxEurUsd.gt(0) ? wv.div(wp.fxEurUsd) : wv,
+        blobValueEur: bp.fxEurUsd && bp.fxEurUsd.gt(0) ? bv.div(bp.fxEurUsd) : bv,
+        webFx: wp.fxEurUsd,
+        blobFx: bp.fxEurUsd,
+        deltaFraction,
+      });
     }
   }
 
@@ -397,5 +419,11 @@ export function describeFlag(flag: ReconciliationFlag): string {
   // A zero blob value makes deltaFraction non-finite (±Infinity); render it as
   // "∞" rather than the bare "Infinity%" the default formatter would emit.
   const pct = Number.isFinite(flag.deltaFraction) ? `${(flag.deltaFraction * 100).toFixed(2)}%` : "∞";
-  return `${when}Z web ${flag.webValueUsd.toFixed(2)} vs blob ${flag.blobValueUsd.toFixed(2)} (Δ ${pct})`;
+  const webFx = flag.webFx ? flag.webFx.toFixed(4) : "—";
+  const blobFx = flag.blobFx ? flag.blobFx.toFixed(4) : "—";
+  const eurPct =
+    flag.blobValueEur.isZero()
+      ? "∞"
+      : `${flag.webValueEur.minus(flag.blobValueEur).div(flag.blobValueEur.abs()).times(100).toFixed(2)}%`;
+  return `${when}Z web ${flag.webValueUsd.toFixed(2)} vs blob ${flag.blobValueUsd.toFixed(2)} (Δ ${pct}) · EUR web ${flag.webValueEur.toFixed(2)} vs blob ${flag.blobValueEur.toFixed(2)} (Δ ${eurPct}) · fx web ${webFx} vs blob ${blobFx}`;
 }
