@@ -1529,6 +1529,16 @@ def _week_session_opens(dates: list[datetime]) -> list[datetime]:
     return opens
 
 
+def _time_of_day_hours(when: datetime) -> float:
+    """Wall-clock time-of-day of ``when`` as fractional hours (e.g. 15.5 = 15:30).
+
+    The 1W axis helpers position and bound sessions by their displayed time-of-day,
+    so a single shared converter keeps :func:`_week_rangebreaks` and
+    :func:`_week_xaxis_range` in lock-step.
+    """
+    return when.hour + when.minute / 60 + when.second / 3600
+
+
 def _week_rangebreaks(dates: list[datetime]) -> list[dict[str, object]]:
     """Plotly x-axis ``rangebreaks`` that collapse the 1W curve's dead time.
 
@@ -1547,7 +1557,7 @@ def _week_rangebreaks(dates: list[datetime]) -> list[dict[str, object]]:
     breaks: list[dict[str, object]] = [{"bounds": ["sat", "mon"]}]
     if not dates:
         return breaks
-    tods = [d.hour + d.minute / 60 + d.second / 3600 for d in dates]
+    tods = [_time_of_day_hours(d) for d in dates]
     open_h, close_h = min(tods), max(tods)
     # Only collapse the overnight gap when the session stays within one local day
     # (close later than open); a session that wraps past local midnight is left
@@ -1562,6 +1572,45 @@ def _week_rangebreaks(dates: list[datetime]) -> list[dict[str, object]]:
     if holiday_values:
         breaks.append({"values": holiday_values})
     return breaks
+
+
+def _week_xaxis_range(dates: list[datetime]) -> list[datetime] | None:
+    """Explicit x-axis ``[start, end]`` so the *latest* 1W session gets a full
+    day-plane, even while it is still forming.
+
+    Plotly auto-ranges to the last data point. During a live session that point is
+    the current value at ``now``, so today's band would be a narrow sliver pinned
+    to the right while every settled day fills a full open→close band — and the
+    live tip would sit at the band's right edge regardless of the time of day.
+
+    Anchoring the axis end to the *close* time-of-day on the last session's date
+    instead reserves today a full-width band: the live tip then lands at its true
+    fraction of the session (hard left at the open, sliding right as the day wears
+    on), matching the scaling of the days beside it. The empty space to its right
+    is the rest of today, yet to happen. A no-op once the market has closed (the
+    tip is already capped to the session close), and skipped when the session
+    wraps past local midnight (mirrors the :func:`_week_rangebreaks` guard) so a
+    wrapping session is never mis-bounded.
+
+    Returns ``None`` (keep Plotly's autorange) when there are too few points, the
+    labels aren't datetimes, or the session wraps midnight.
+    """
+    if len(dates) < 2 or not isinstance(dates[0], datetime):
+        return None
+    tods = [_time_of_day_hours(d) for d in dates]
+    open_h, close_h = min(tods), max(tods)
+    if not close_h > open_h:
+        return None
+    # The data point sitting at the session close (latest time-of-day), rebased
+    # onto the most recent session's calendar date — that is where a full day-plane
+    # should end. Keeps the close instant's exact h:m:s and tzinfo.
+    close_point = max(dates, key=_time_of_day_hours)
+    last_day = dates[-1].date()
+    end = close_point.replace(year=last_day.year, month=last_day.month, day=last_day.day)
+    start = dates[0]
+    if not end > start:
+        return None
+    return [start, end]
 
 
 def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR0912
@@ -1714,6 +1763,10 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
             spikecolor="rgba(91,107,124,0.5)",
             # Collapse nights/weekends/holidays on the 1W axis only.
             rangebreaks=_week_rangebreaks(dates) if week_sessions else None,
+            # Reserve the latest session a full-width day-plane so a still-forming
+            # today's live tip sits at its true time-of-day (left at the open,
+            # sliding right) rather than pinned to the band's right edge.
+            range=_week_xaxis_range(dates) if week_sessions else None,
         )
         # Thin separators between trading days on the 1W axis (each session's
         # open), so the collapsed bands read as distinct sessions.

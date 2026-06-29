@@ -53,7 +53,7 @@ describe("sessionFractions", () => {
     }
   });
 
-  it("places points within a band by their own session's elapsed fraction", () => {
+  it("places points within a band by the shared session's elapsed fraction", () => {
     // A day whose points are NOT evenly spaced: a dense cluster late in the day
     // must sit late in the band, not be spread across it by point count.
     const dates = [
@@ -69,6 +69,39 @@ describe("sessionFractions", () => {
     expect(layout.fractions[3]).toBeCloseTo(1, 6);
     // The 19:00 point is ~85% through the 13:30->20:00 span, so it sits far right.
     expect(layout.fractions[1]).toBeGreaterThan(0.8);
+  });
+
+  it("keeps a still-forming today's live tip at its true time-of-day, not the band edge", () => {
+    // Two settled full sessions (13:30->20:00) followed by a third day that has
+    // only just opened: a single live point a quarter-hour past the open. Anchored
+    // to the shared open->close span, that tip must sit at the very LEFT of its
+    // band (near the open), not be stretched to the band's right edge.
+    const dayA = instants("2026-06-22T13:30:00Z", 7, 65); // ~6.5h settled
+    const dayB = instants("2026-06-23T13:30:00Z", 7, 65); // ~6.5h settled
+    const today = ["2026-06-24T13:45:00Z"]; // 15 min after the 13:30 open
+    const layout = sessionFractions([...dayA, ...dayB, ...today])!;
+    expect(layout.bands).toHaveLength(3);
+    const bandWidth = 1 / 3;
+    const tipIdx = layout.fractions.length - 1;
+    const todayBandStart = 2 * bandWidth;
+    // The tip sits just inside today's band, hugging its left edge (the open),
+    // far from the band's right edge.
+    expect(layout.fractions[tipIdx]).toBeGreaterThan(todayBandStart);
+    expect(layout.fractions[tipIdx]).toBeLessThan(todayBandStart + bandWidth * 0.1);
+    // The settled days still fill their full bands open->close.
+    expect(layout.fractions[0]).toBeCloseTo(0, 6);
+    expect(layout.fractions[6]).toBeCloseTo(bandWidth, 6);
+    expect(layout.fractions[13]).toBeCloseTo(2 * bandWidth, 6);
+  });
+
+  it("slides the live tip rightward as the session progresses", () => {
+    const dayA = instants("2026-06-22T13:30:00Z", 7, 65); // settled, sets the close
+    const early = sessionFractions([...dayA, "2026-06-23T14:30:00Z"])!; // ~1h in
+    const late = sessionFractions([...dayA, "2026-06-23T19:00:00Z"])!; // ~5.5h in
+    const earlyTip = early.fractions[early.fractions.length - 1];
+    const lateTip = late.fractions[late.fractions.length - 1];
+    // Later in the day ⇒ the tip is further right within today's (second) band.
+    expect(lateTip).toBeGreaterThan(earlyTip);
   });
 
   it("centres a lone close-only day in its band", () => {
