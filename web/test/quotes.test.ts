@@ -304,7 +304,40 @@ describe("loadQuotes — free-tier budget", () => {
     expect(report.deferred.length).toBe(4);
   });
 
-  it("reports an attempted-but-unpriced symbol as failed, not deferred", async () => {
+  it("onPlan reports the deferred-from-last (forced) symbols in `fetching`, never bumped to a later round", async () => {
+    // Regression for the auto-update animation bug: a round must pull the symbols
+    // deferred from last time *first* and only push genuinely-ordinary overflow to
+    // a later round — it must never do "its own" symbols and re-defer the forced
+    // ones while there was budget for them. `onPlan` is the single source of truth
+    // the row animation paints from, so we assert it splits forced-first.
+    const storage = memStorage();
+    const symbols = Array.from({ length: 12 }, (_, i) => `S${i}`);
+    // S8..S11 are drained from the deferred queue this round (forced). They trail
+    // the incoming order, yet there is budget (8/min) for all four plus four
+    // ordinary symbols — so all four forced symbols belong in `fetching`.
+    const forced = new Set(["S8", "S9", "S10", "S11"]);
+    const fetchImpl = vi.fn<FetchLike>(async (url) => quoteResponse(url));
+    let plan: { fetching: string[]; deferred: string[] } | null = null;
+    await loadQuotes(symbols, "key", {
+      fetchImpl,
+      storage,
+      now: clock(0),
+      sleep: noSleep,
+      creditsPerMinute: 8,
+      forceFetch: (s) => forced.has(s),
+      onPlan: (p) => {
+        plan = p;
+      },
+    });
+    expect(plan).not.toBeNull();
+    const resolved = plan as unknown as { fetching: string[]; deferred: string[] };
+    // Every deferred-from-last (forced) symbol is fetched this round…
+    for (const s of forced) expect(resolved.fetching).toContain(s);
+    // …and the overflow pushed to a later round is purely ordinary stale symbols.
+    for (const s of forced) expect(resolved.deferred).not.toContain(s);
+    expect(resolved.fetching.length).toBe(8);
+    expect(resolved.deferred.length).toBe(4);
+  });
     // The provider returns a node for VTI but a null/empty one for FAIL (the
     // FSKAX case): both were attempted, VTI prices, FAIL doesn't. FAIL must be
     // reported as failed (genuinely stuck) rather than deferred (waiting its turn).

@@ -13,7 +13,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.21.6] — 2026-06-29
+## [4.21.7] — 2026-06-29
+
+### Fixed
+
+- **The deferred-holding countdown now reads "Updating in XXs" and the coverage
+  line says "N updating (XXs)" — no more bare numbers or open-ended "…".** A
+  queued holding's caption spells the wait out as `Updating in 120s` rather than a
+  lone `120`, and the dashboard coverage summary swaps the vague `5 updating…` for
+  a concrete `5 updating (90s)` (the soonest deferred holding's queue ETA, sharing
+  the same cadence as the per-row countdown). When no ETA is known it reads a plain
+  `updating` — never a trailing "…".
+- **An auto-update round now paints an honest "updating vs. still-queued" split, so
+  the symbols deferred from last time are shown being pulled first instead of
+  appearing to be bumped to another round.** The round used to flash *every* stale
+  symbol as "Updating" the instant it began — including the budget overflow — which
+  then snapped back to "queued", making it look as if the round did its own symbols
+  and re-deferred the carried-over ones even when there was budget for them. The
+  fetch layer already prioritised the deferred-from-last (forced) symbols
+  correctly; now the animation tells the truth too: `loadQuotes` reports its
+  budget-resolved plan (`onPlan`) the moment it is fixed — forced/deferred-from-last
+  first — and only those symbols read as "updating", with the genuine overflow
+  staying "queued".
+
+
 
 ### Fixed
 

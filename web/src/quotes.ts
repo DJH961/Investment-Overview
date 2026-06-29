@@ -370,6 +370,18 @@ export interface LoadQuotesOptions {
    * inject a fake to assert grants without touching storage.
    */
   reservation?: Reservation;
+  /**
+   * Fired **synchronously the instant the budget-resolved fetch plan is fixed**
+   * (after the per-minute reservation, before the network request). Reports which
+   * stale symbols will actually be fetched this round (`fetching`, forced /
+   * deferred-from-last first) versus which overflow the per-minute cap and are
+   * held for a later round (`deferred`). Lets a caller paint an honest "updating
+   * now vs. still-queued" status without re-deriving the budget split or flashing
+   * every stale symbol as "updating" and then re-queuing the overflow. Symbols
+   * served fresh from cache are not reported (they aren't being pulled). Not fired
+   * on the cache-only path (no API key / nothing stale).
+   */
+  onPlan?: (plan: { fetching: string[]; deferred: string[] }) => void;
 }
 
 /** What {@link loadQuotes} actually did, for an honest staleness banner. */
@@ -438,6 +450,7 @@ export async function loadQuotes(
     backoffBaseMs = 1000,
     backoffCapMs = 8000,
     reservation = ledgerReservation(storage ?? null),
+    onPlan,
   } = options;
 
   const unique = [...new Set(symbols.filter((s) => s.length > 0))];
@@ -523,6 +536,14 @@ export async function loadQuotes(
     const granted = reservation.reserve("twelvedata", stale.length, reservedAt);
     const toFetch = stale.slice(0, granted);
     for (const symbol of toFetch) attempted.add(symbol);
+    // Announce the budget-resolved split the moment it is fixed — before the
+    // network call — so a caller can paint an honest "updating now vs. still
+    // queued" status. `toFetch` is forced-first (deferred-from-last symbols lead),
+    // and the overflow this round's per-minute cap can't fund is `stale.slice
+    // (granted)`. This is the single source of truth for the row animation: it
+    // guarantees deferred-from-last symbols show as updating (they are pulled
+    // first), never mislabelled as queued while there is budget for them.
+    onPlan?.({ fetching: [...toFetch], deferred: stale.slice(granted) });
 
     if (toFetch.length > 0) {
       try {
