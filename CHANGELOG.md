@@ -13,6 +13,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.21.3] — 2026-06-29
+
+### Fixed
+
+- **The web companion now keeps one clock — New-York exchange time (ET) — so its
+  graphs line up with the desktop instead of sliding ~4–5 hours past them.** Daily
+  closes and every day-boundary bucket (1W, 5Y/MAX, value-history, springboard,
+  week-repair, freshness) were computed at UTC- or viewer-local midnight, while the
+  Python desktop stamps each trading day at 00:00 ET. That mismatch calibrated the
+  weekly overlay on points that did not truly coincide and read as a fake ~1% gap,
+  and left some backup-provider funds looking "incomplete" forever so they were
+  re-pulled on every login. A bare-date daily bar is now stamped at the ET
+  trading-day start (matching the desktop's `_session_start_utc` to the
+  millisecond), and all internal day bucketing runs on the New-York calendar;
+  intraday instants and the display layer are unchanged.
+- **Legacy-blob coexistence.** The desktop still publishes `analytics.curve` dates
+  the old (publisher-local) way until it ships ET stamping, so the cutover is gated
+  on the meta sidecar's `schema` (legacy `≤ 1`, ET `≥ 2`) — never a calendar date —
+  and a single adapter at the blob-ingest edge files those dates on the same ET
+  bucket as web-recorded closes, so a viewer west of UTC never sees a day split into
+  two points. While the desktop remains on the legacy schema a small 1W USD/FX
+  reconciliation offset is expected; it is not a regression and is intentionally
+  left in place until the desktop ships ET.
+
 ## [4.21.2] — 2026-06-29
 
 ### Changed

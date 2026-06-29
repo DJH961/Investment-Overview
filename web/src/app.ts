@@ -2426,6 +2426,14 @@ export class App {
       // baseline) from the widened track, and keep the full track in the 1W store so
       // barsPrevSessionCloseFx finds it on the next paint without re-fetching.
       await store.mergeSession(WEEK_STORE_KEY, { fx }, now.getTime());
+      // prevFx anchor (Fault 2). The "yesterday" baseline stays
+      // `previousTradingSession(today)` — the close before the session the 1D curve
+      // draws (Saturday ⇒ Thursday, deliberately, see the prevFx restore block).
+      // The plan's Fault-2 re-anchoring and the web↔Python prev-close picker
+      // agreement are intentionally deferred: the desktop still selects the old way
+      // until it ships ET (meta schema 2), so moving the web alone would *widen* the
+      // disagreement during the coexistence window. The residual ~0.4% FX Δ this
+      // leaves is expected and must not be "fixed" web-side until Python ships ET.
       const prevDay = previousTradingSession(today);
       const prevClose = sessionCloseFxFromBars(fx, sessionCloseMs(prevDay));
       if (prevClose !== null) recordPrevSessionCloseFx(prevDay, prevClose);
