@@ -13,6 +13,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.21.4] — 2026-06-29
+
+### Fixed
+
+- **The Python desktop exporter now keeps the same one clock as the web companion —
+  New-York exchange time (ET) — completing the both-sides time alignment.** The
+  exported `analytics.curve` stamped each daily close on the publisher's *local*
+  calendar (`date.today()`), so a desktop run east/west of New York around the date
+  roll filed a close under the wrong trading day and the web's ET buckets could not
+  line up — souring the value graph and the 1W reconciliation regardless of the web
+  fix. The read-model `as_of` (and therefore the equity curve's last day) now
+  defaults to the New-York exchange date via a new `market_hours.exchange_today()`
+  helper, so every daily close is filed under its NYSE session. The 1W sleeve session
+  dates were already ET and are confirmed unchanged.
+- **Blob meta schema bumped `1 → 2` (ET curve contract).** The `portfolio.meta.json`
+  sidecar's `schema` is the marker the web companion gates on to read legacy
+  (publisher-local, `≤ 1`) vs ET (`≥ 2`) curve dates — never a calendar date. The web
+  ships before the desktop and its single ingest adapter (`blobCurveDayMs`) is
+  forward-tolerant, filing both legacy-local and ET bare dates on the same ET bucket
+  grid as web-recorded closes, so no client mis-buckets during the staggered ~3-week
+  desktop rollout. A small 1W USD/FX reconciliation offset is expected only while a
+  desktop remains on schema ≤ 1; it collapses to ~0 once that desktop ships the ET
+  exporter, not before.
+
 ## [4.21.3] — 2026-06-29
 
 ### Fixed

@@ -128,9 +128,13 @@ export interface BlobMeta {
   publishedAt?: string;
   /**
    * Meta-sidecar schema (`publish_service.py` `_META_SCHEMA`) — the legacy↔ET
-   * cutover gate (`time_alignment_plan.md`). `<= 1`: the desktop still stamps
+   * cutover gate (`time_alignment_plan.md`). `<= 1`: the desktop stamps
    * `analytics.curve` dates the legacy (publisher-local) way; `>= 2`: those dates
-   * are ET. Absent on an older sidecar ⇒ the reader treats it as legacy (`1`).
+   * are ET. The desktop now publishes `2` (ET-stamped); `<= 1` blobs are the
+   * not-yet-updated desktops during the staggered ~3-week rollout. Absent on an
+   * older sidecar ⇒ the reader treats it as legacy (`1`). The reader is
+   * forward-tolerant (it already handles `>= 2`), so the web ships before the
+   * desktop and renders both schemas correctly throughout the rollout.
    */
   schema?: number;
 }

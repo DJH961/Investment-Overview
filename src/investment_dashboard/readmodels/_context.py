@@ -14,6 +14,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain import market_hours
 from investment_dashboard.services import display_currency_service
 
 
@@ -32,8 +33,16 @@ class ReadModelContext:
 
 
 def build_context(session: Session, *, as_of: date | None = None) -> ReadModelContext:
-    """Resolve the display currency + FX rates for ``as_of`` (today by default)."""
-    as_of = as_of or date.today()
+    """Resolve the display currency + FX rates for ``as_of``.
+
+    ``as_of`` defaults to **today on the New-York exchange calendar**
+    (:func:`market_hours.exchange_today`), not the publisher's local
+    ``date.today()`` — the whole app derives every day boundary from one ET clock
+    (``docs/time_alignment_plan.md``), so the exported read-model (and its
+    ``analytics.curve`` daily closes) lands on the trading day the web companion
+    buckets by rather than the desktop owner's local calendar.
+    """
+    as_of = as_of or market_hours.exchange_today()
     display_currency = display_currency_service.get_display_currency(session)
     if display_currency == "EUR":
         fx_display: Decimal | None = None

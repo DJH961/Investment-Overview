@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from investment_dashboard.domain.market_hours import (
+    exchange_today,
     feed_is_fresh,
     forex_market_reopen,
     is_forex_market_open,
@@ -236,6 +237,33 @@ class TestLatestSettledSessionDate:
 
     def test_default_now_returns_a_date(self) -> None:
         assert isinstance(latest_settled_session_date(), date)
+
+
+class TestExchangeToday:
+    """The one ET clock the export stamps daily closes on (Fault-2 / schema 2)."""
+
+    def test_converts_utc_evening_to_the_same_ny_session(self) -> None:
+        # 2026-06-26 23:30 UTC is still 19:30 ET on the 26th: a publisher's local
+        # calendar (UTC here) and the NY exchange date agree.
+        assert exchange_today(datetime(2026, 6, 26, 23, 30, tzinfo=UTC)) == date(2026, 6, 26)
+
+    def test_rolls_back_when_local_calendar_is_already_tomorrow(self) -> None:
+        # 02:00 UTC on the 27th is 22:00 ET on the 26th — the publisher's local
+        # `date.today()` would be the 27th, but the NYSE trading day is the 26th.
+        assert exchange_today(datetime(2026, 6, 27, 2, 0, tzinfo=UTC)) == date(2026, 6, 26)
+
+    def test_european_after_midnight_local_is_prior_ny_day(self) -> None:
+        # 00:30 Europe/Berlin on the 27th (== 18:30 ET on the 26th): local says the
+        # 27th, the exchange day is the 26th — exactly the publisher-local skew the
+        # ET stamp removes.
+        berlin = ZoneInfo("Europe/Berlin")
+        assert exchange_today(datetime(2026, 6, 27, 0, 30, tzinfo=berlin)) == date(2026, 6, 26)
+
+    def test_naive_datetime_treated_as_exchange_local(self) -> None:
+        assert exchange_today(datetime(2026, 6, 26, 19, 0)) == date(2026, 6, 26)
+
+    def test_default_now_returns_a_date(self) -> None:
+        assert isinstance(exchange_today(), date)
 
 
 class TestForexMarketHours:

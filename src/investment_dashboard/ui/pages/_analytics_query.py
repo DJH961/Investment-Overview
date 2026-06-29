@@ -21,6 +21,7 @@ from itertools import pairwise
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.attribution import (
     AttributionRow,
     InstrumentReturn,
@@ -309,7 +310,11 @@ def build_bundle(
     as_of: date | None = None,
 ) -> AnalyticsBundle:
     """Compose every analytics figure into a single :class:`AnalyticsBundle`."""
-    as_of = as_of or date.today()
+    # Default the as-of (and therefore the equity curve's last day stamp) to the
+    # New-York exchange date, not the publisher's local `date.today()`: a daily
+    # close must be filed under its NYSE trading day so the exported curve sits on
+    # the same ET grid the web companion buckets by (`docs/time_alignment_plan.md`).
+    as_of = as_of or market_hours.exchange_today()
     start = as_of - timedelta(days=lookback_days)
 
     benchmark_series = benchmark_service.get_series(session, start=start, end=as_of)

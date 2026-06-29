@@ -61,7 +61,15 @@ ASSET_NAME = "portfolio.enc"
 META_ASSET_NAME = "portfolio.meta.json"
 
 #: Schema version of the meta sidecar, so the companion can evolve it safely.
-_META_SCHEMA = 1
+#:
+#: **1 → 2 (ET curve semantics).** Schema ``1`` blobs stamped ``analytics.curve``
+#: daily closes on the publisher's *local* calendar (``date.today()``); schema
+#: ``2`` stamps them on the **New-York exchange date** (one ET clock —
+#: ``domain.market_hours.exchange_today``, ``docs/time_alignment_plan.md``). This
+#: is the contract marker the web companion gates on to read legacy-local vs ET
+#: blobs correctly throughout the staggered desktop rollout — never a calendar
+#: date. Bump deliberately whenever the blob's day-boundary semantics change.
+_META_SCHEMA = 2
 
 #: GitHub REST API roots.
 _API_ROOT = "https://api.github.com"

@@ -158,6 +158,46 @@ deliberately *not* ET and must be left alone.
 - Python `publish_service.py` / `live_graphs.py:150-200` — blob daily curve uses bare
   local dates; stamp closes at ET so the web counterpart can match without local fudge.
 
+---
+
+## Both-sides cutover: Python ET exporter + staggered rollout (implemented)
+
+The web fix above lands first; the Python desktop exporter is the second half of the
+same migration. Leaving the desktop on local dates sours the value graph and the 1W
+reconciliation regardless of the web fix, so the exporter moves to ET too — but the
+two ship at different times (web first; desktops self-update over ~3 weeks), so a
+schema-gated bridge carries the skew window.
+
+**Python (now ET):**
+- `analytics.curve` no longer stamps bare local dates: the read-model `as_of` (and so
+  the equity curve's last day) defaults to `market_hours.exchange_today()` — the
+  New-York exchange date — via `_context.build_context` and
+  `_analytics_query.build_bundle`. A daily close is filed under its NYSE trading day,
+  not the publisher's local calendar.
+- The 1W sleeve session dates (`live_graphs.py`, `intraday_snapshots_service.py`'s
+  `recent_trading_sessions` / `last_session_date` / `sessions[0]` prev-close anchor)
+  were already ET — confirmed and pinned, not regressed.
+- `_META_SCHEMA` bumped `1 → 2` (`publish_service.py`): the contract marker telling the
+  web companion the blob's curve dates are now ET-stamped.
+
+**Bridge for the skew window (gate strictly on `meta.schema`, never a calendar date):**
+- **New web ↔ old blob (schema ≤ 1).** The web keeps the one schema-gated ingest
+  adapter (`web/src/value-history.ts` `blobCurveDayMs`) that files a bare
+  publisher-local curve date on the same ET bucket grid as web-recorded closes — so
+  the legacy and ET legs never split west of UTC. Required until the last desktop
+  updates.
+- **Old web ↔ new blob (schema 2).** `blobCurveDayMs` is *forward-tolerant*: a bare
+  ET date already resolves to the correct ET bucket, so a web build reads schema-2
+  blobs correctly. Combined with the deliberate **web-first rollout order** (ship the
+  ET-aware web before the desktop bumps schema), no client mis-buckets during the
+  rollout.
+- **value-history bucket unity.** A web-recorded close (ET) and a blob-harvested close
+  share one ET key per day via the adapter — no west-of-UTC duplicate points.
+
+**Residual.** A small 1W USD/FX reconciliation offset is expected *only* while a
+desktop is still on schema ≤ 1; it collapses to ~0 once that desktop ships the ET
+exporter (schema 2), not before.
+
 **Display only — convert at render, leave logic ET (no change needed):**
 - `web/src/chart.ts:127-155`, `web/src/format.ts`; Python `overview.py`,
   `daily_growth_view.py:46-80`, `refresh_indicator.py`. Verify these are the *only*

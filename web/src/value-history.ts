@@ -23,13 +23,14 @@
  * New-York exchange calendar (`time_alignment_plan.md`). A live tip recorded under
  * {@link OverviewView.asOf} ({@link todayIso}, ET) and the same day harvested from
  * the 1W curve (web bars stamped at the ET trading-day start) therefore share one
- * key. The blob's `analytics.curve` still carries a bare publisher-local date
- * (`date.isoformat()`) until the Python desktop ships ET stamping (meta schema 2);
- * its closes are routed through {@link blobCurveDayMs} — the one schema-gated
- * adapter at the ingest edge — which files that bare date at the same ET boundary,
- * so the legacy-local and ET legs never split across two buckets for a viewer west
- * of UTC. Bucketing by UTC instead would roll an evening live close onto the next
- * UTC day and misalign the chart's date-string splice.
+ * key. The blob's `analytics.curve` carries a bare date string — ET-stamped once
+ * the desktop ships schema 2, publisher-local (`date.isoformat()`) on a not-yet-
+ * updated desktop (schema ≤ 1) during the staggered rollout; either way its closes
+ * are routed through {@link blobCurveDayMs} — the one schema-gated adapter at the
+ * ingest edge — which files that bare date at the same ET boundary, so the blob and
+ * ET legs never split across two buckets for a viewer west of UTC. Bucketing by UTC
+ * instead would roll an evening live close onto the next UTC day and misalign the
+ * chart's date-string splice.
  *
  * ### Pruning (keeping the store small)
  * Persisted closes only exist to bridge the gap between the blob's last exported day
@@ -87,16 +88,21 @@ function dayStartMs(date: string): number {
 /**
  * Map a blob `analytics.curve` bare date to its ET day-start bucket — the single
  * schema-gated adapter at the blob-ingest edge. The blob curve dates are
- * publisher-local until Python ships ET (schema 2): for a legacy blob
- * (`schema <= 1`) the bare date is the publisher's *local* calendar day, for an
- * ET blob (`schema >= 2`) it is already the NYSE session date. Either way a bare
- * date has no time-of-day, so the faithful, lossless mapping is to file the date
- * string itself at the ET trading-day boundary — keeping the blob leg on the very
- * same bucket grid as the web-recorded leg. When Python bumps `_META_SCHEMA` to 2
- * this stays correct unchanged; the gate exists so the seam is explicit.
+ * ET-stamped once the desktop ships schema 2, publisher-local on a not-yet-updated
+ * desktop (`schema <= 1`) during the staggered rollout: for a legacy blob the bare
+ * date is the publisher's *local* calendar day, for an ET blob (`schema >= 2`) it
+ * is already the NYSE session date. Either way a bare date has no time-of-day, so
+ * the faithful, lossless mapping is to file the date string itself at the ET
+ * trading-day boundary — keeping the blob leg on the very same bucket grid as the
+ * web-recorded leg. This is forward-tolerant: it already returns the correct ET
+ * bucket for schema 2, so the web can ship before the desktop and read both legacy
+ * and ET blobs throughout the rollout. The gate stays explicit so the seam is
+ * visible and a future schema can diverge here without touching callers.
  */
 export function blobCurveDayMs(date: string, schema: number | undefined): number {
-  // blob curve dates are publisher-local until Python ships ET (schema 2)
+  // A bare curve date is a label with no time-of-day, so both legacy-local
+  // (schema <= 1) and ET (schema >= 2) resolve to the same ET day-start grid the
+  // web-recorded leg uses — forward-tolerant across the staggered rollout.
   void schema;
   return exchangeDayStartMs(date);
 }

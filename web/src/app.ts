@@ -596,11 +596,14 @@ export class App {
   /**
    * Meta-sidecar **schema** of the best-available blob (`portfolio.meta.json`
    * `schema`, `publish_service.py` `_META_SCHEMA`). The legacy/ET cutover gate
-   * (`time_alignment_plan.md`): `<= 1` ⇒ the desktop still stamps `analytics.curve`
-   * dates the legacy (publisher-local) way; `>= 2` ⇒ those dates are ET. The web
-   * runs on ET internally regardless and adapts blob curve dates at the ingest
-   * edge ({@link blobCurveDayMs}) behind this gate; the flip to ET-stamped is the
-   * only switch. Defaults to legacy (`1`) until a sidecar carrying `schema` is read.
+   * (`time_alignment_plan.md`): `<= 1` ⇒ the desktop stamped `analytics.curve`
+   * dates the legacy (publisher-local) way; `>= 2` ⇒ those dates are ET. The
+   * desktop now publishes `2` (ET-stamped); `<= 1` is a not-yet-updated desktop
+   * during the staggered ~3-week rollout. The web runs on ET internally regardless
+   * and adapts blob curve dates at the ingest edge ({@link blobCurveDayMs}) behind
+   * this gate — forward-tolerant for both schemas — so it ships before the desktop
+   * and renders both correctly. Defaults to legacy (`1`) until a sidecar carrying
+   * `schema` is read.
    */
   private blobMetaSchema = 1;
   /**
@@ -2429,11 +2432,13 @@ export class App {
       // prevFx anchor (Fault 2). The "yesterday" baseline stays
       // `previousTradingSession(today)` — the close before the session the 1D curve
       // draws (Saturday ⇒ Thursday, deliberately, see the prevFx restore block).
-      // The plan's Fault-2 re-anchoring and the web↔Python prev-close picker
-      // agreement are intentionally deferred: the desktop still selects the old way
-      // until it ships ET (meta schema 2), so moving the web alone would *widen* the
-      // disagreement during the coexistence window. The residual ~0.4% FX Δ this
-      // leaves is expected and must not be "fixed" web-side until Python ships ET.
+      // This FX baseline is computed purely from the live EUR/USD bars and is
+      // independent of the blob's curve schema, so it is deliberately left as-is:
+      // the desktop's intraday session picker was already ET. The curve-date ET
+      // flip (schema 2) the desktop now ships collapses the 1W USD market-sleeve
+      // reconciliation Δ via the value-history bridge ({@link blobCurveDayMs}) once
+      // a schema-2 blob is read; any small residual FX Δ on a not-yet-updated
+      // (schema ≤ 1) desktop is the expected coexistence offset, not a regression.
       const prevDay = previousTradingSession(today);
       const prevClose = sessionCloseFxFromBars(fx, sessionCloseMs(prevDay));
       if (prevClose !== null) recordPrevSessionCloseFx(prevDay, prevClose);

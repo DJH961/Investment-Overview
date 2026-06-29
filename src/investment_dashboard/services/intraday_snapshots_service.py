@@ -1186,6 +1186,12 @@ def week_series_with_fx(
     from investment_dashboard.db import cache_read_session  # noqa: PLC0415
 
     now = now or datetime.now(UTC)
+    # `sessions` are NYSE session dates (ET) from `recent_trading_sessions` →
+    # `last_session_date`, which resolves "today" in exchange time and rolls back
+    # over weekends/holidays. So the week window — `sessions[0]` (oldest, the
+    # prev-close/start anchor) through `sessions[-1]` (the live anchor) — is
+    # already on the one ET clock the export and web companion share
+    # (`docs/time_alignment_plan.md`); do not regress it to a local-date picker.
     sessions = recent_trading_sessions(now)
     if not sessions:
         return []
