@@ -7,11 +7,9 @@ return metrics — XIRR, TWR, CAGR, YTD variants, drawdown, Sharpe, Sortino —
 in both **USD** and **EUR**, and serves them over a NiceGUI web UI accessible
 from the host laptop and any device on the same Wi-Fi network.
 
-> **Status: v3.0.0 — split storage, cloud-aware paths, optional SQLCipher,
-> intraday price refresh, bulk/background snapshot performance, SQLite
-> file-safety tooling, an equity-curve performance pass, structured per-row
-> broker imports, and the v3.0 live-web companion (encrypted publish + an
-> in-browser dashboard, see [`web/`](web/)).** The app remains a
+> **Status: v4.21.0 — active v4 series with split storage, cloud-aware paths,
+> optional SQLCipher, intraday refresh, snapshot/curve refinements, and the
+> encrypted live-web companion (see [`web/`](web/)).** The app remains a
 > local-first, single-user dashboard with onboarding, EUR/USD display switching,
 > CSV/XLSX imports, live overview/deposits/transactions/monthly/yearly/calculator
 > pages, a standalone projection page, and editable settings. It runs separate
@@ -36,6 +34,9 @@ from the host laptop and any device on the same Wi-Fi network.
   guards against stray `-wal`/`-shm` sidecars and takes rolling backups.
 - **FX-aware** — every USD cashflow stored with the EUR rate of its trade
   date, so EUR returns reflect when the money actually moved.
+- **Currency model is explicit** — backend computation/storage/reconciliation are
+  USD-native; EUR is derived presentation (`usd ÷ fx`) and a frontend display
+  toggle.
 - **Modern colorblind-safe UI** with light/dark chrome and a Settings →
   Storage panel showing each tier path/source.
 - **Private deployment**, single-user, $0 hosting. Runs on `0.0.0.0:8080` and is
@@ -137,7 +138,7 @@ launcher also stops any previous instance first.
 pip install --user uv
 
 # From the repo root:
-uv sync                          # install all deps + dev extras
+uv sync                          # install app deps (add --extra dev for lint/test tooling)
 uv run alembic upgrade head      # create the SQLite schema
 uv run investment-dashboard      # launches NiceGUI on http://0.0.0.0:8080
 ```
