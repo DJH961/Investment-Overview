@@ -370,6 +370,7 @@ describe("repair log callbacks", () => {
     ];
     const weekMsgs: string[] = [];
     repairWeekNavCollapse(week, null, (m) => weekMsgs.push(m));
+    expect(weekMsgs).toHaveLength(1);
     expect(weekMsgs[0]).toMatch(/1W NAV-collapse heal/);
   });
 });
