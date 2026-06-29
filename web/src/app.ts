@@ -553,6 +553,14 @@ export class App {
   /** Last `portfolio.meta.json` version stamp seen, for the cheap freshness probe. */
   private metaVersion: string | null = null;
   /**
+   * The blob (envelope) for which the 1W reconciliation was last logged **in
+   * full detail**. The merge runs on every 1W (re)build, so once a blob's
+   * web⇄blob reconciliation has been spelled out we fold subsequent reloads down
+   * to a single summary line — and reset to full detail the moment a new blob
+   * (new ciphertext/nonce) lands, so each fresh data file gets one detailed pass.
+   */
+  private reconciledDetailBlobKey: string | null = null;
+  /**
    * ISO publish time of the **best-available** blob, read from the
    * `portfolio.meta.json` sidecar (`published_at`). This is the Pillar-1
    * "will a fresh blob save a token?" signal (assumption 8) — the orchestrator
@@ -7187,9 +7195,24 @@ export class App {
 
     const gridMs = exported?.grid === "15m" ? 15 * 60 * 1000 : 30 * 60 * 1000;
     const merge = mergeSleeveSeries(webSleeve, blobSleeve, { gridMs });
-    this.pollLog("graph", `1W merge: ${describeMerge(merge)}.`);
-    for (const flag of merge.flags) {
-      this.pollLog("graph", `1W reconciliation: ${describeFlag(flag)}.`);
+    // The merge runs on every 1W (re)build — a reconciliation against data that
+    // is already loaded, not a live pull. So spell it out in full **once per
+    // blob** (the merge summary + every reconciliation flag) and fold every
+    // later reload of the same data file down to one summary line. The detail
+    // resets the moment a new blob lands, so each fresh data file gets one
+    // detailed pass.
+    const blobKey = this.envelope?.nonce ?? this.metaVersion ?? "anon";
+    if (this.reconciledDetailBlobKey !== blobKey) {
+      this.reconciledDetailBlobKey = blobKey;
+      this.pollLog("graph", `1W reconciliation (data load): ${describeMerge(merge)}.`);
+      for (const flag of merge.flags) {
+        this.pollLog("graph", `1W reconciliation (data load): ${describeFlag(flag)}.`);
+      }
+    } else {
+      this.pollLog(
+        "graph",
+        `1W reconciliation: data reloaded — ${describeMerge(merge)} (detail logged once per data file).`,
+      );
     }
 
     // Render the merged curve only when it is genuinely richer (more points) than
