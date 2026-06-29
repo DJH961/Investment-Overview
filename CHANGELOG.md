@@ -44,6 +44,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pushed otherwise-fittable symbols into the deferred queue. `loadEurUsd` now hands
   the reserved credit back on a transient failure (mirroring `loadQuotes`), so the
   freed slot is available to the deferred drain in the same round.
+- **The Tiingo EUR/USD backup leg now also refunds its reserved credit on a
+  transient failure, so a failed FX backup never burns a slot of the scarce 40/hr
+  web Tiingo budget.** The same phantom-credit bug as the primary FX leg lived one
+  branch below it: when the Tiingo `/price` fallback reserved its single credit and
+  then threw (a 429/5xx/transport reject the provider never billed), the reservation
+  was kept before degrading to the cached spot — quietly eating into the much
+  tighter Tiingo hourly cap. `loadEurUsd` now hands that credit back on a transient
+  Tiingo failure too (mirroring `loadQuotes`, the primary FX leg, and the
+  `tiingo-fallback` quote path), keeping the Tiingo ledger truthful.
 
 ## [4.21.7] — 2026-06-29
 

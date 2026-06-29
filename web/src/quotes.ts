@@ -889,7 +889,8 @@ export async function loadEurUsd(
   // a single `reserve("tiingo", 1)` atomically folds in the 429 breaker AND the
   // hourly/daily caps and debits the grant, replacing both a separate frozen
   // guard and a read-then-record budget check.
-  if (tiingoProxyUrl && liveLegsAllowed && reservation.reserve("tiingo", 1, now()) > 0) {
+  const tiingoGranted = tiingoProxyUrl && liveLegsAllowed ? reservation.reserve("tiingo", 1, now()) : 0;
+  if (tiingoProxyUrl && tiingoGranted > 0) {
     try {
       const reading = await fetchTiingoEurUsd(tiingoProxyUrl, {
         fetchImpl: tiingoFetchImpl ?? fetchImpl,
@@ -902,8 +903,15 @@ export async function loadEurUsd(
         return { now: reading.now, previousClose: prevClose, source: "tiingo", at: observedAt, observedAt, cached: false, error: liveError };
       }
     } catch (err) {
-      // A transient backup failure is non-fatal: record it on `error` and keep
-      // degrading to the cache / EOD rate below, never dead-ending the screen.
+      // The backup call was rejected (over-quota 429, a 5xx, or a transport
+      // throw): the provider never billed it, so hand the reserved Tiingo credit
+      // back before degrading to the cache / EOD rate below. Otherwise a transient
+      // Tiingo miss leaves a phantom credit booked against the *scarce* 40/hr web
+      // budget — the same phantom-credit bug just fixed for the primary FX leg and
+      // the Twelve Data quote pass, but on the much tighter Tiingo ledger. The 429
+      // breaker (armed by the caller) is what stops further attempts; the ledger
+      // must stay truthful. Mirrors loadQuotes / the primary leg / tiingo-fallback.
+      reservation.release("tiingo", tiingoGranted, now());
       liveError = err instanceof PriceError ? err : new PriceError((err as Error).message, { retryable: true });
     }
   }

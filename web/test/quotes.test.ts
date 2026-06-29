@@ -9,6 +9,8 @@ import {
   recordTiingoCredits,
   releaseCredits,
   readCreditLog,
+  readTiingoCreditLog,
+  tiingoCreditsSpentToday,
   creditsSpentWithin,
   writeCachedEurUsd,
   writeCachedFx,
@@ -913,6 +915,36 @@ describe("loadEurUsd", () => {
     // …and the reserved-but-unbilled credit is handed back, so it does not eat
     // into the same minute's quote budget (which would needlessly defer symbols).
     const spent = creditsSpentWithin(readCreditLog(3_600_000, 24 * 3600 * 1000, storage), 3_600_000, 60 * 1000);
+    expect(spent).toBe(0);
+  });
+
+  it("releases the reserved Tiingo credit when the FX backup transiently fails", async () => {
+    const storage = memStorage();
+    // Exhaust the Twelve Data per-minute budget so the primary leg is skipped and
+    // we reach the Tiingo FX backup.
+    recordCredits(8, 1000, storage);
+    // A same-day cached intraday reading (past its TTL) so a degrade lands on the
+    // cached spot rather than the flat EOD rate — proving we fell back, not billed.
+    writeCachedEurUsd({ now: new Decimal("1.10"), previousClose: new Decimal("1.095") }, 1000, storage);
+    // The Tiingo backup is rejected (429): the provider never billed the credit.
+    const tiingoFetchImpl = vi.fn<FetchLike>(async () => {
+      throw new PriceError("rate limited", { retryable: true, status: 429 });
+    });
+    const res = await loadEurUsd("key", {
+      fetchImpl: vi.fn<FetchLike>(),
+      tiingoFetchImpl,
+      storage,
+      now: clock(120_000), // same UTC day, past the TTL
+      ttlMs: 60_000,
+      tiingoProxyUrl: "https://worker.example.dev/price",
+      eodFallback: new Decimal("1.07"),
+    });
+    expect(tiingoFetchImpl).toHaveBeenCalledTimes(1);
+    // We degrade to today's cached spot…
+    expect(res.source).toBe("cache");
+    // …and the reserved-but-unbilled Tiingo credit is handed back, so it does not
+    // eat into the scarce hourly/daily Tiingo budget.
+    const spent = tiingoCreditsSpentToday(readTiingoCreditLog(120_000, 24 * 3600 * 1000, storage), 120_000);
     expect(spent).toBe(0);
   });
 
