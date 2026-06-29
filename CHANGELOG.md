@@ -13,6 +13,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.21.0] — 2026-06-29
+
+### Changed
+
+- **The web companion's Settings screen is now organised and far less
+  cluttered.** Returning users see most controls folded into collapsible
+  groups — *Data source*, *Appearance*, *Security*, *Backup* and *Graphs* — so
+  the screen opens compact and you expand only what you need; first-run setup
+  stays flat so the data-source fields are immediately visible. The app version
+  is pulled out of the body and pinned to the bottom of the screen as a quiet
+  footer (with the desktop footer ordering fixed) instead of competing for space
+  with the settings themselves, keeping the mobile-first layout clean.
+
 ## [4.20.10] — 2026-06-29
 
 ### Fixed

@@ -2686,7 +2686,7 @@ export class App {
     }
 
     const intro = settingsMode
-      ? "Update where the companion looks for your data and how it behaves. Changes stay on this device."
+      ? "Tap a section to expand it. Changes stay on this device."
       : "These stay on this device. The API key powers live quotes; the data-source URL is where the app finds your encrypted portfolio.";
 
     const formChildren: Array<Node | string> = [
@@ -2726,33 +2726,30 @@ export class App {
 
     // Core data source: the two things that genuinely must be set, plus the
     // single refresh interval that replaced the old cache/auto-refresh pair.
-    if (settingsMode) formChildren.push(h("h2", { class: "settings-section" }, ["Data source"]));
-    formChildren.push(
-      field("Price API key", apiKey, "Free key from twelvedata.com — never leaves this device."),
-      field(
-        "Data source URL",
-        blobUrl,
-        "The CORS-enabled URL that serves your encrypted portfolio — usually your Cloudflare Worker (…/portfolio.enc).",
-      ),
+    // In Settings they live in an expandable group; on first run they stay flat.
+    const dataSourceFields: Array<Node | string> = [
+      field("Price API key", apiKey, "Free key from twelvedata.com — stays on this device."),
+      field("Data source URL", blobUrl, "URL serving your encrypted portfolio (…/portfolio.enc)."),
       field(
         "Update prices every (minutes)",
         updateMinutes,
-        `How often live prices refresh. Lower is fresher but spends more of the Twelve Data budget (${config.twelveDataPerMinute}/min, ${config.twelveDataPerDay}/day). Default is ${DEFAULT_UPDATE_MINUTES}.`,
+        `How often live prices refresh. Default ${DEFAULT_UPDATE_MINUTES}.`,
       ),
-    );
-
+    ];
     // Advanced (Settings only): the Tiingo price-fallback proxy override. It is
-    // derived from the data-source URL's origin by default, so this stays out of
-    // the streamlined first-run setup and is offered only for the rare case where
-    // the price proxy lives somewhere the derivation can't guess.
+    // derived from the data-source URL's origin by default, so it stays out of
+    // first-run setup and is offered only when the proxy lives elsewhere.
     if (settingsMode) {
-      formChildren.push(
+      dataSourceFields.push(
         field(
           "Price proxy URL override",
           priceProxyUrl,
-          "Advanced: the web/proxy Worker /price route for the price fallback. Leave blank to derive it from the data-source URL. The provider token stays in the Worker — never in the browser.",
+          "Advanced: leave blank to derive from the data-source URL.",
         ),
       );
+      formChildren.push(settingsGroup("Data source", dataSourceFields, true));
+    } else {
+      formChildren.push(...dataSourceFields);
     }
 
     // Data providers (Settings only): editable per-provider rate caps. They
@@ -2761,29 +2758,16 @@ export class App {
     // several devices, or raise them above the free tier on a paid plan.
     if (settingsMode) {
       formChildren.push(
-        h("h2", { class: "settings-section" }, ["Data providers"]),
-        h("p", { class: "field-hint" }, [
-          "These cap how many API calls each price provider may spend. The defaults match each provider's free-tier limit — the recommended values for a free account. Lower them to share one account across more devices, or raise them above the free tier if you're on a paid plan.",
-        ]),
-        field(
-          "Twelve Data — per minute",
-          tdPerMinute,
-          `Primary-provider credits allowed each minute. Recommended ${DEFAULT_TWELVE_DATA_PER_MINUTE} for the free tier; raise it on a paid plan.`,
-        ),
-        field(
-          "Twelve Data — per day",
-          tdPerDay,
-          `Primary-provider credits allowed each day. Recommended ${DEFAULT_TWELVE_DATA_PER_DAY} for the free tier; raise it on a paid plan.`,
-        ),
-        field(
-          "Tiingo — per hour",
-          tiingoPerHour,
-          `Backup-provider credits allowed each clock hour. Recommended ${DEFAULT_TIINGO_PER_HOUR} for the free tier (the web share); raise it on a paid plan.`,
-        ),
-        field(
-          "Tiingo — per day",
-          tiingoPerDay,
-          `Backup-provider credits allowed each day. Recommended ${DEFAULT_TIINGO_PER_DAY} for the free tier (the web share); raise it on a paid plan.`,
+        settingsGroup(
+          "Data providers",
+          [
+            field("Twelve Data — per minute", tdPerMinute, `Free tier ${DEFAULT_TWELVE_DATA_PER_MINUTE}; raise on a paid plan.`),
+            field("Twelve Data — per day", tdPerDay, `Free tier ${DEFAULT_TWELVE_DATA_PER_DAY}; raise on a paid plan.`),
+            field("Tiingo — per hour", tiingoPerHour, `Free tier ${DEFAULT_TIINGO_PER_HOUR}; raise on a paid plan.`),
+            field("Tiingo — per day", tiingoPerDay, `Free tier ${DEFAULT_TIINGO_PER_DAY}; raise on a paid plan.`),
+          ],
+          false,
+          "Cap how many API calls each provider may spend. Defaults match the free tier.",
         ),
       );
     }
@@ -2791,35 +2775,48 @@ export class App {
     // Preferences: appearance + security. Shown on first-run setup too (not just
     // Settings) so the user can pick dark mode, clock format and auto-lock once,
     // before ever typing the passphrase — and never has to revisit them.
-    formChildren.push(
-      h("h2", { class: "settings-section" }, ["Appearance"]),
-      field("Theme", renderThemeToggle(), "Switch between system, light and dark themes."),
-      field("Clock format", renderTimeFormatToggle(), "Show times as 12-hour (AM/PM) or 24-hour. Auto follows your device locale."),
+    const appearanceFields: Array<Node | string> = [
+      field("Theme", renderThemeToggle(), "System, light or dark."),
+      field("Clock format", renderTimeFormatToggle(), "12-hour, 24-hour, or auto."),
       field(
         "Regular investment amount (€)",
         investmentAmount,
-        `The euros you wire over on a recurring basis to keep investing. In USD display the currency panel shows how many more or fewer dollars this buys as EUR/USD moves — your "bang for the buck". Default is €${DEFAULT_INVESTMENT_AMOUNT_EUR}.`,
+        `Recurring euros you invest; powers the "bang for the buck" panel. Default €${DEFAULT_INVESTMENT_AMOUNT_EUR}.`,
       ),
-      h("h2", { class: "settings-section" }, ["Security"]),
+    ];
+    const securityFields: Array<Node | string> = [
       field(
         "Auto-lock (minutes)",
         autoLock,
-        `Lock the dashboard after this many minutes of inactivity. Set 0 to never auto-lock. Default is ${DEFAULT_AUTO_LOCK_MINUTES}. A dismissable warning appears ~15s before locking.`,
+        `Lock after this much idle time; 0 never locks. Default ${DEFAULT_AUTO_LOCK_MINUTES}.`,
       ),
       field(
         "Stay unlocked across a page refresh",
         resumeOnRefresh,
-        "When on, reloading the whole page (F5) in this tab resumes your session instead of asking for the passphrase again — like the refresh button. Closing the tab, or being idle past the auto-lock window, still locks. The passphrase is never stored in the clear, only ever this tab. Off by default.",
+        "Resume this tab on reload instead of re-entering the passphrase. Off by default.",
       ),
-    );
+    ];
     // Fingerprint unlock toggle — only meaningful while unlocked (we need the
     // in-memory passphrase to enrol) and on a device with a platform
     // authenticator, so it's revealed asynchronously below. Only reachable from
     // Settings, where a passphrase is already in memory.
     if (settingsMode && this.state.passphrase) {
       const fingerprintSlot = h("div", { class: "settings-slot", hidden: "hidden" });
-      formChildren.push(fingerprintSlot);
+      securityFields.push(fingerprintSlot);
       void this.addFingerprintSetting(fingerprintSlot);
+    }
+    if (settingsMode) {
+      formChildren.push(
+        settingsGroup("Appearance", appearanceFields, true),
+        settingsGroup("Security", securityFields, true),
+      );
+    } else {
+      formChildren.push(
+        h("h2", { class: "settings-section" }, ["Appearance"]),
+        ...appearanceFields,
+        h("h2", { class: "settings-section" }, ["Security"]),
+        ...securityFields,
+      );
     }
 
     // Backup: export the current config to a portable file (Settings only — on
@@ -2829,25 +2826,27 @@ export class App {
       const exportBtn = h("button", { class: "btn ghost", type: "button" }, ["Export config file"]);
       exportBtn.addEventListener("click", () => this.exportConfig());
       formChildren.push(
-        h("h2", { class: "settings-section" }, ["Backup"]),
-        importInput,
-        field(
-          "Portable config",
-          h("div", { class: "row import-row" }, [exportBtn, importBtn]),
-          "Export saves your API key, data-source URL, update interval, and auto-lock setting to a JSON file you can import on another device. Keep the file private — it contains your API key.",
-        ),
+        settingsGroup("Backup", [
+          importInput,
+          field(
+            "Portable config",
+            h("div", { class: "row import-row" }, [exportBtn, importBtn]),
+            "Save/restore your config to another device. Keep the file private — it holds your API key.",
+          ),
+        ]),
       );
     }
     // Graphs: the live 1D/1W curves are always on now; this opt-in only adds the
     // longer 3M / 6M history ranges back for anyone who wants them (Settings only).
     if (settingsMode) {
       formChildren.push(
-        h("h2", { class: "settings-section" }, ["Graphs"]),
-        field(
-          "Extra ranges",
-          renderExtendedGraphsToggle(),
-          "Add the longer 3M and 6M history ranges to the value chart. Off by default for a cleaner look; the live 1D and 1W curves are always shown. Takes effect when you return to the dashboard.",
-        ),
+        settingsGroup("Graphs", [
+          field(
+            "Extra ranges",
+            renderExtendedGraphsToggle(),
+            "Add 3M and 6M ranges to the value chart. 1D and 1W are always shown.",
+          ),
+        ]),
       );
     }
     // Probe a price service: a one-shot diagnostic that fires a single quote for
@@ -2891,13 +2890,19 @@ export class App {
         this.onProbeClick("tiingo", probeSymbol, [probePrimary, probeBackup], probeResult),
       );
       formChildren.push(
-        h("h2", { class: "settings-section" }, ["Probe a price service"]),
-        field(
-          "Test one symbol",
-          h("div", { class: "row import-row" }, [probeSymbol, probePrimary, probeBackup]),
-          "Fire a single live quote for this symbol at one provider and show the full raw result — the HTTP status, the verbatim response, the price it parsed, and a plain verdict (wrong API key, rate-limited, backup proxy misconfigured, unreachable, …). Counts as one call against that provider's budget (like a refresh) but doesn't touch the running dashboard. Use it to find out exactly why prices won't load.",
+        settingsGroup(
+          "Probe a price service",
+          [
+            field(
+              "Test one symbol",
+              h("div", { class: "row import-row" }, [probeSymbol, probePrimary, probeBackup]),
+              "Fire one live quote and show the raw result + verdict. Counts as one call; doesn't touch the dashboard.",
+            ),
+            probeResult,
+          ],
+          false,
+          "Diagnose why prices won't load.",
         ),
-        probeResult,
       );
     }
     // Maintenance: two manual escape hatches for when prices look stuck. Both
@@ -2984,36 +2989,42 @@ export class App {
       );
       clearConsumption.addEventListener("click", () => this.clearConsumptionLogNow());
       formChildren.push(
-        h("h2", { class: "settings-section" }, ["Maintenance"]),
-        field(
-          "Force-fetch every price",
-          forceAll,
-          "Re-pull every quote now, ignoring NAV close-await skips and market-closed skips — as if all prices were expected to update. Includes the mutual-fund NAVs. Leaves the 1D/1W graphs alone (use the Regenerate buttons for those). Keeps your caches. Waits for the next fully-available primary (Twelve Data) minute window before pulling, so it spends the plentiful primary budget instead of the scarce backup. Respects your daily free-tier budget.",
-        ),
-        field(
-          "Regenerate the live graphs",
-          h("div", { class: "row import-row" }, [regenDay, regenWeek, regenLong]),
-          "Wipe and rebuild a live graph completely from scratch — exactly the empty state a brand-new login starts from, so any latent bad data is dropped: \"Regenerate 1D graph\" wipes today's bars; \"Regenerate 1W graph\" wipes the whole rolling week (its daily sleeve and every day's bars); use \"Regenerate long-range history\" to rebuild the 1M–1Y value graph from multi-month daily bars when its older days look flat or wrong. Leaves your other graphs and price caches untouched. Waits for the next fully-available primary (Twelve Data) minute window before pulling, so the bars come from the plentiful primary budget instead of the scarce backup. Respects your daily free-tier budget.",
-        ),
-        field(
-          "Reset & re-pull everything",
-          updateAll,
-          "Clear every cached price, re-check the data file, and re-fetch all quotes and FX from scratch. Use this if a price ever looks stuck. Waits for the next fully-available primary (Twelve Data) minute window before pulling, so it spends the plentiful primary budget instead of the scarce backup. Respects your daily free-tier budget.",
-        ),
-        field(
-          "Try the backup data provider",
-          viaBackup,
-          "Route the whole book through the secondary provider for one pull, skipping the primary — but only for holdings whose value isn't already recent. Use it for a second opinion when the primary looks wrong or stuck. Respects the backup provider's own budget.",
-        ),
-        field(
-          "Data polling log",
-          h("div", { class: "row import-row" }, [downloadLog, clearLog]),
-          "Download a detailed, timestamped trail of exactly what each refresh did: which holdings were served from cache, fetched live, or filled from the backup provider (and why), the free-tier budgets at each step, and the data-file checks. Useful for debugging when prices look wrong or stuck. The log stays on this device.",
-        ),
-        field(
-          "Data loading log",
-          h("div", { class: "row import-row" }, [downloadConsumption, clearConsumption]),
-          "Download a summarised trail of what the main overview actually read from the available data — the holdings, the value graph and the currency KPIs — flagging the moments where a view had to fall back to alternative data because the perfect data was missing (a holding dropped from totals, a USD KPI shown in EUR, a chart tip it couldn't draw). Use it to see what data the views would have needed to be perfect. The log stays on this device.",
+        settingsGroup(
+          "Maintenance",
+          [
+            field(
+              "Force-fetch every price",
+              forceAll,
+              "Re-pull every quote now, including NAVs; leaves the graphs and caches alone.",
+            ),
+            field(
+              "Regenerate the live graphs",
+              h("div", { class: "row import-row" }, [regenDay, regenWeek, regenLong]),
+              "Wipe and rebuild a graph from scratch. Other graphs and caches untouched.",
+            ),
+            field(
+              "Reset & re-pull everything",
+              updateAll,
+              "Clear all caches and re-fetch quotes and FX. Use if a price looks stuck.",
+            ),
+            field(
+              "Try the backup data provider",
+              viaBackup,
+              "Re-price the book through the backup provider for a second opinion.",
+            ),
+            field(
+              "Data polling log",
+              h("div", { class: "row import-row" }, [downloadLog, clearLog]),
+              "Timestamped trail of what each refresh did. Stays on this device.",
+            ),
+            field(
+              "Data loading log",
+              h("div", { class: "row import-row" }, [downloadConsumption, clearConsumption]),
+              "What the overview read, and where it fell back to alternative data. Stays on this device.",
+            ),
+          ],
+          false,
+          "Escape hatches for when prices look stuck.",
         ),
       );
     }
@@ -8389,6 +8400,49 @@ function field(label: string, input: HTMLElement, hint?: string): HTMLElement {
   const children: Array<Node | string> = [h("span", { class: "field-label" }, [label]), input];
   if (hint) children.push(h("span", { class: "field-hint" }, [hint]));
   return h("label", { class: "field" }, children);
+}
+
+const SETTINGS_GROUP_KEY = "iv.web.settings.group.";
+
+/**
+ * A collapsible Settings section: a tappable title over a folded body. Keeps the
+ * long settings screen scannable — advanced/diagnostic groups start collapsed so
+ * the menu reads as a short list of headers, and each group's open state is
+ * remembered per device. `sub` is an optional one-line description, shown only
+ * while the group is open so closed headers stay terse.
+ */
+function settingsGroup(
+  title: string,
+  items: Array<Node | string>,
+  open = false,
+  sub?: string,
+): HTMLElement {
+  const id = title.trim().replace(/\s+/g, "-").toLowerCase();
+  let remembered = open;
+  try {
+    const v = localStorage.getItem(SETTINGS_GROUP_KEY + id);
+    if (v === "open") remembered = true;
+    else if (v === "closed") remembered = false;
+  } catch {
+    /* No storage access; use the default open state. */
+  }
+  const body: Array<Node | string> = [];
+  if (sub) body.push(h("p", { class: "field-hint settings-group-sub" }, [sub]));
+  body.push(...items);
+  const attrs: Record<string, string> = { class: "collapsible settings-group" };
+  if (remembered) attrs.open = "open";
+  const details = h("details", attrs, [
+    h("summary", { class: "collapsible-summary" }, [h("h2", {}, [title])]),
+    h("div", { class: "settings-group-body" }, body),
+  ]) as HTMLDetailsElement;
+  details.addEventListener("toggle", () => {
+    try {
+      localStorage.setItem(SETTINGS_GROUP_KEY + id, details.open ? "open" : "closed");
+    } catch {
+      /* Preference just won't persist. */
+    }
+  });
+  return details;
 }
 
 /**
