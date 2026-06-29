@@ -340,3 +340,36 @@ describe("repairCurrencyDivergence", () => {
     expect(repairCurrencyDivergence(withZero)).toBe(withZero);
   });
 });
+
+describe("repair log callbacks", () => {
+  it("repairSessionNavCollapse logs once when it heals, stays silent on a healthy curve", () => {
+    const collapsed = [
+      p("2024-06-03T19:55:00Z", 600, 660),
+      p("2024-06-03T20:00:00Z", 1000, 1100),
+      p("2024-06-03T20:30:00Z", 1010, 1110),
+    ];
+    const msgs: string[] = [];
+    repairSessionNavCollapse(collapsed, null, (m) => msgs.push(m));
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toMatch(/1D NAV-collapse heal/);
+
+    const healthy = [
+      p("2024-06-03T19:55:00Z", 1000, 1100),
+      p("2024-06-03T20:00:00Z", 1005, 1105),
+    ];
+    const none: string[] = [];
+    repairSessionNavCollapse(healthy, null, (m) => none.push(m));
+    expect(none).toHaveLength(0);
+  });
+
+  it("repairWeekNavCollapse and repairCurrencyDivergence emit a note only when they fix", () => {
+    const week = [
+      p("2024-06-03T20:00:00Z", 620, 680),
+      p("2024-06-04T20:00:00Z", 1000, 1100),
+      p("2024-06-05T20:00:00Z", 1010, 1110),
+    ];
+    const weekMsgs: string[] = [];
+    repairWeekNavCollapse(week, null, (m) => weekMsgs.push(m));
+    expect(weekMsgs[0]).toMatch(/1W NAV-collapse heal/);
+  });
+});
