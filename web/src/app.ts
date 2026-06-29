@@ -188,6 +188,7 @@ import {
   navSafeBarsForPriming,
   navTipCoveredSymbols,
   weekStaleSymbols,
+  weekCoverageGap,
   wrapDailyNavFetcher,
   capWeekToSessionClose,
   DEFAULT_WEEK_SESSIONS,
@@ -1245,7 +1246,12 @@ export class App {
     planSize: number,
     marketOpen: boolean,
     prefetch: ReturnType<typeof planPrefetch>,
-    graphStale: { session: string[]; week: string[] },
+    graphStale: {
+      session: string[];
+      week: string[];
+      fxNeeds: { open: boolean; close: boolean; prev: boolean };
+      weekGap: { cutoffMs: number; latestMs: number | null } | null;
+    },
   ): string {
     const prior = readSessionStatus();
     const priorBit = prior
@@ -1254,8 +1260,24 @@ export class App {
       : "";
     const graphBits: string[] = [];
     if (graphStale.session.length > 0) graphBits.push(`1D bars ×${prefetch.graphSessionSymbols.length}`);
-    if (graphStale.week.length > 0) graphBits.push(`1W bars ×${prefetch.graphWeekSymbols.length}`);
+    if (graphStale.week.length > 0) {
+      // Why: bars are present but end short of the settled cutoff (timestamp
+      // coverage, not absence) — codeword + the shortfall so a re-pull of the same
+      // bars that can never advance `t` is visible, not silent.
+      const g = graphStale.weekGap;
+      const fmt = (t: number): string => new Date(t).toISOString().slice(5, 16).replace("T", " ") + "Z";
+      const why =
+        g && g.latestMs !== null
+          ? ` [short-coverage: latest ${fmt(g.latestMs)} < cutoff ${fmt(g.cutoffMs)}]`
+          : g
+            ? " [no stored week bars]"
+            : "";
+      graphBits.push(`1W bars ×${prefetch.graphWeekSymbols.length}${why}`);
+    }
     const graphClause = graphBits.length > 0 ? ` Graph backfill via Tiingo: ${graphBits.join(", ")}.` : "";
+    const fxNeed = graphStale.fxNeeds;
+    const fxWhy = [fxNeed.open && "open", fxNeed.close && "close", fxNeed.prev && "prevFx"].filter(Boolean).join("+");
+    const fxClause = fxWhy ? ` FX-bar anchor due: ${fxWhy}.` : "";
     const quoteClause =
       prefetch.symbols.length > 0
         ? `${prefetch.symbols.length} quote(s) via ${prefetch.route === "tiingo" ? "Tiingo rapid-fire" : "Twelve Data"}`
@@ -1264,7 +1286,7 @@ export class App {
       prefetch.navSymbols.length > 0 ? `, ${prefetch.navSymbols.length} NAV fund(s) via Twelve Data` : "";
     return (
       `Login warm-up route — market ${marketOpen ? "open" : "closed"} (plan of ${planSize}). ` +
-      `${quoteClause}${navClause}.${graphClause}${priorBit}`
+      `${quoteClause}${navClause}.${graphClause}${fxClause}${priorBit}`
     );
   }
 
@@ -1358,9 +1380,15 @@ export class App {
   private async prefetchGraphStaleness(
     marketSymbols: string[],
     now: Date,
-  ): Promise<{ session: string[]; week: string[]; fxBarsAnchorMissing: boolean }> {
+  ): Promise<{
+    session: string[];
+    week: string[];
+    fxBarsAnchorMissing: boolean;
+    fxNeeds: { open: boolean; close: boolean; prev: boolean };
+    weekGap: { cutoffMs: number; latestMs: number | null } | null;
+  }> {
     if (marketSymbols.length === 0) {
-      return { session: [], week: [], fxBarsAnchorMissing: false };
+      return { session: [], week: [], fxBarsAnchorMissing: false, fxNeeds: { open: false, close: false, prev: false }, weekGap: null };
     }
     const store = this.ensureTimeSeriesStore();
     const day = lastSessionDate(now);
@@ -1404,7 +1432,7 @@ export class App {
       readPrevSessionCloseFx(prevSessionDay) !== null ||
       ((weekStored?.fx?.length ?? 0) > 0 &&
         sessionCloseFxFromBars(weekStored!.fx, sessionCloseMs(prevSessionDay)) !== null);
-    const fxBarsAnchorMissing = fxAnchorCompleteness({
+    const completeness = fxAnchorCompleteness({
       fxBars: today?.fx ?? [],
       marketClosed,
       warmingUp: sessionIsWarmingUp(now),
@@ -1412,8 +1440,12 @@ export class App {
       sessionCloseMs: close,
       prevAnchorAvailable,
       weekendGap: isWeekendOvernight(now),
-    }).anyMissing;
-    return { session, week, fxBarsAnchorMissing };
+    });
+    const fxBarsAnchorMissing = completeness.anyMissing;
+    // Diagnostics: the cutoff `week` was judged against + how short stored bars
+    // fall, so the route log can explain *why* the pull fired (item: "why pulled").
+    const weekGap = week.length > 0 ? weekCoverageGap(weekStored, marketSymbols, now) : null;
+    return { session, week, fxBarsAnchorMissing, fxNeeds: completeness.needs, weekGap };
   }
 
   /**
@@ -2387,11 +2419,15 @@ export class App {
       const prevDay = previousTradingSession(today);
       const prevClose = sessionCloseFxFromBars(fx, sessionCloseMs(prevDay));
       if (prevClose !== null) recordPrevSessionCloseFx(prevDay, prevClose);
+      const latest = fx.reduce((m, b) => (b.t > m ? b.t : m), 0);
+      const shortBy = latest > 0 ? Math.round((sessionCloseMs(prevDay) - latest) / 60000) : null;
       this.pollLog(
         "graph",
         `Cold-start FX backfill stored ${fx.length} EUR/USD bar(s) over ${window.startDate}…${window.endDate} ` +
           `to recover the prior-session close baseline (prevFx)` +
-          (prevClose !== null ? "." : "; prior close not yet settled in the pulled bars."),
+          (prevClose !== null
+            ? "."
+            : `; prior close not yet settled — newest bar still ${shortBy ?? "?"}m short of the ${prevDay} close.`),
       );
       return true;
     }

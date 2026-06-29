@@ -13,6 +13,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.21.2] — 2026-06-29
+
+### Changed
+
+- **The polling log now explains *why* the orchestrator re-pulls graph bars, not
+  just that it did.** Login warm-up bars/FX re-fetches now carry a short reason
+  codeword: 1W bars show a `short-coverage` tag with the latest stored bar vs the
+  settled cutoff, the FX-bar anchor names which anchor is due (`open`/`close`/
+  `prevFx`), and the cold-start FX backfill reports how many minutes short of the
+  prior close the newest bar lands. This surfaces the case where stored bars are
+  re-pulled because they don't *reach* the required close timestamp — bars that
+  re-fetching can't advance — which was previously silent.
+
 ## [4.21.1] — 2026-06-29
 
 ### Fixed
