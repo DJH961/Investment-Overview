@@ -927,7 +927,7 @@ function freshnessLegend(): HTMLElement {
     h("summary", { class: "freshness-legend-toggle", "aria-label": "What do these freshness terms mean?" }, ["?"]),
     h("ul", { class: "freshness-legend-list" }, [
       entry("live", "freshly confirmed within your refresh window while the market is open."),
-      entry("updating (XXs)", "held from cache and re-pulling now — the countdown is its turn under the free-tier per-minute cap."),
+      entry("updating", "held from cache and re-pulling now under the free-tier per-minute cap."),
       entry("cached", "a recent confirmed price, just not re-checked this round."),
       entry("at last close", "the market is shut; this is the latest settled closing price."),
       entry("awaiting", "no value yet — still being fetched (a price, or a fund's once-a-day NAV)."),

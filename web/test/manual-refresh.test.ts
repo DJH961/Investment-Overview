@@ -102,8 +102,8 @@ describe("summarizeCoverage", () => {
         facts({ marketOpen: true, marketTotal: 5, marketHeld: 5, marketFresh: 0, marketUpdating: 5 }),
       ),
     ).toBe("5/5 updating · FX live");
-    // When a queue ETA is known, the bucket appends a concrete "(XXs)" countdown
-    // instead of the old open-ended "…".
+    // The deferred bucket always reads a plain "updating" — no countdown, since the
+    // coverage line does not auto-tick the seconds down.
     expect(
       summarizeCoverage(
         facts({
@@ -115,7 +115,7 @@ describe("summarizeCoverage", () => {
           updatingEtaSeconds: 90,
         }),
       ),
-    ).toBe("8 live, 4 updating (90s), 1 cached · FX live");
+    ).toBe("8 live, 4 updating, 1 cached · FX live");
   });
 
   it("market open: never says 0/N when everything is held from cache", () => {
@@ -466,10 +466,10 @@ describe("buildCoverageFacts", () => {
     expect(f.marketHeld).toBe(2);
     expect(f.marketFresh).toBe(1);
     expect(f.marketUpdating).toBe(1);
-    // The single deferred holding rides the next burst round (~60s), so its bucket
-    // appends a concrete "(60s)" countdown rather than a vague "…".
+    // The single deferred holding rides the next burst round; its bucket reads a
+    // plain "updating" with no countdown.
     expect(f.updatingEtaSeconds).toBe(60);
-    expect(summarizeCoverage({ ...f, fx: "live" })).toBe("1 live, 1 updating (60s) · FX live");
+    expect(summarizeCoverage({ ...f, fx: "live" })).toBe("1 live, 1 updating · FX live");
   });
 
   it("does not promote a fresh cache to live while the market is closed", () => {
