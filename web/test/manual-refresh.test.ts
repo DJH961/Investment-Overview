@@ -46,6 +46,7 @@ function facts(overrides: Partial<CoverageFacts> = {}): CoverageFacts {
     marketHeld: 0,
     marketFresh: 0,
     marketUpdating: 0,
+    updatingEtaSeconds: null,
     marketAtClose: 0,
     navTotal: 0,
     navExpectedTonight: 0,
@@ -86,20 +87,35 @@ describe("summarizeCoverage", () => {
     ).toBe("8 live, 5 cached · FX live");
   });
 
-  it("market open: surfaces budget-deferred holdings as their own 'updating…' bucket", () => {
+  it("market open: surfaces budget-deferred holdings as their own 'updating' bucket", () => {
     // freshness-plan §4.2: a still-draining holding (held from cache, deferred this
     // round) reads as actively catching up, not folded silently into "cached".
+    // With no resolved ETA the bucket is a plain "updating" (no trailing "…").
     expect(
       summarizeCoverage(
         facts({ marketOpen: true, marketTotal: 13, marketHeld: 13, marketFresh: 8, marketUpdating: 4 }),
       ),
-    ).toBe("8 live, 4 updating…, 1 cached · FX live");
-    // When every still-held holding is updating, it reads as N/N updating….
+    ).toBe("8 live, 4 updating, 1 cached · FX live");
+    // When every still-held holding is updating, it reads as N/N updating.
     expect(
       summarizeCoverage(
         facts({ marketOpen: true, marketTotal: 5, marketHeld: 5, marketFresh: 0, marketUpdating: 5 }),
       ),
-    ).toBe("5/5 updating… · FX live");
+    ).toBe("5/5 updating · FX live");
+    // When a queue ETA is known, the bucket appends a concrete "(XXs)" countdown
+    // instead of the old open-ended "…".
+    expect(
+      summarizeCoverage(
+        facts({
+          marketOpen: true,
+          marketTotal: 13,
+          marketHeld: 13,
+          marketFresh: 8,
+          marketUpdating: 4,
+          updatingEtaSeconds: 90,
+        }),
+      ),
+    ).toBe("8 live, 4 updating (90s), 1 cached · FX live");
   });
 
   it("market open: never says 0/N when everything is held from cache", () => {
@@ -431,7 +447,7 @@ describe("buildCoverageFacts", () => {
     expect(summarizeCoverage({ ...f, fx: "live" })).toBe("1/1 cached · FX live");
   });
 
-  it("counts a budget-deferred, not-yet-live holding as 'updating…', not cached", () => {
+  it("counts a budget-deferred, not-yet-live holding as 'updating', not cached", () => {
     // freshness-plan §4.2: a holding parked this round (deferred) but still held
     // from cache is actively catching up — its own honest bucket. A second holding
     // freshly fetched keeps the split visible.
@@ -450,7 +466,10 @@ describe("buildCoverageFacts", () => {
     expect(f.marketHeld).toBe(2);
     expect(f.marketFresh).toBe(1);
     expect(f.marketUpdating).toBe(1);
-    expect(summarizeCoverage({ ...f, fx: "live" })).toBe("1 live, 1 updating… · FX live");
+    // The single deferred holding rides the next burst round (~60s), so its bucket
+    // appends a concrete "(60s)" countdown rather than a vague "…".
+    expect(f.updatingEtaSeconds).toBe(60);
+    expect(summarizeCoverage({ ...f, fx: "live" })).toBe("1 live, 1 updating (60s) · FX live");
   });
 
   it("does not promote a fresh cache to live while the market is closed", () => {
