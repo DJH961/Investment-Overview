@@ -214,6 +214,69 @@ describe("buildDashboard", () => {
     approx(vmfxx.totalGrowthPct, 0.005, 1e-3);
   });
 
+  it("USD growth/XIRR for a dividends-only money-market stays non-negative (no negative-EUR fallback)", () => {
+    // Reproduces the web bug: a USD-native money-market fund that only ever
+    // received dividends (no drawdowns) showed a *negative* USD growth/XIRR
+    // because old blobs lacked per-flow USD legs and the figure fell back to the
+    // FX-negative EUR. MM is par/$1 USD-native, so USD must compute natively as a
+    // small positive return. EUR may still be negative from FX drift; USD must not.
+    const exp = makeExport();
+    exp.holdings = [
+      {
+        symbol: "VMFXX",
+        name: "Vanguard Federal Money Market",
+        asset_class: "money_market",
+        broker: "Broker",
+        account: "Settlement",
+        native_currency: "USD",
+        shares: "1100",
+        cost_basis_native: "1000",
+        cumulative_dividends_cash_native: "100",
+        price_symbol: "VMFXX",
+        price_type: "nav",
+        last_known_price_native: "1",
+        is_money_market: true,
+        // Old-blob cashflows: EUR-only, no `amount_usd`.
+        cashflows: [{ date: "2020-01-01", amount: "-909.09" }],
+      },
+    ];
+    const m = buildDashboard(exp, new Map(), fx, new Date("2024-06-01T12:00:00Z"));
+    const vmfxx = m.holdings.find((h) => h.symbol === "VMFXX")!;
+    expect(vmfxx.xirrUsd).not.toBeNull();
+    expect(vmfxx.totalGrowthPctUsd).not.toBeNull();
+    expect(vmfxx.xirrUsd!.toNumber()).toBeGreaterThanOrEqual(0);
+    expect(vmfxx.totalGrowthPctUsd!.toNumber()).toBeGreaterThanOrEqual(0);
+  });
+
+  it("invariant: a par money-market with no sells has growth ≥ 0 in both currencies", () => {
+    // Value (shares × $1) ≥ cost ⇒ growth must never read negative for either
+    // wallet. Guards against the sign bug recurring via either FX leg.
+    const exp = makeExport();
+    exp.holdings = [
+      {
+        symbol: "SPAXX",
+        name: "Fidelity Money Market",
+        asset_class: "money_market",
+        broker: "Broker",
+        account: "Settlement",
+        native_currency: "USD",
+        shares: "1005",
+        cost_basis_native: "1000",
+        cumulative_dividends_cash_native: "5",
+        price_symbol: "SPAXX",
+        price_type: "nav",
+        last_known_price_native: "1",
+        is_money_market: true,
+        cost_basis_eur: "909.09",
+        cost_basis_usd: "1000",
+        cashflows: [{ date: "2023-01-01", amount: "-909.09", amount_usd: "-1000" }],
+      },
+    ];
+    const m = buildDashboard(exp, new Map(), fx, new Date("2024-06-01T12:00:00Z"));
+    const mm = m.holdings.find((h) => h.symbol === "SPAXX")!;
+    expect(mm.totalGrowthPct!.toNumber()).toBeGreaterThanOrEqual(0);
+    expect(mm.totalGrowthPctUsd!.toNumber()).toBeGreaterThanOrEqual(0);
+  });
   it("never shows a daily move for a money-market fund (par NAV)", () => {
     // Even when the export carries a previous close (a repeated $1.00 bar), a
     // money-market fund holds a constant $1.00 NAV and genuinely does not move
