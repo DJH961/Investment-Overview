@@ -2134,6 +2134,30 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .settings-section:first-of-type { margin-top: 1rem; }
 .settings-slot[hidden] { display: none; }
 
+/* Collapsible Settings sections: each is a tappable header over a folded body
+ * so the menu reads as a short, scannable list. Reuses the shared .collapsible
+ * chevron. The header uppercase styling matches the old .settings-section. */
+.settings-group {
+  border-bottom: 1px solid var(--border);
+  margin: 0;
+}
+.settings-group > .collapsible-summary { margin: 0.9rem 0.1rem; }
+.settings-group > .collapsible-summary h2 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.settings-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding-bottom: 1rem;
+}
+.settings-group-sub { margin: 0 0 0.2rem; }
+
 /* Export/Import config button row — keeps the portable-config buttons on one
  * line, wrapping on narrow screens. */
 .import-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
