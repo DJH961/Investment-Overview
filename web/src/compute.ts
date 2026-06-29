@@ -30,7 +30,7 @@ import type { ExportCashflow, ExportHolding, MobileExport } from "./types";
 import { buildCalculatorData, type CalcData } from "./calculator";
 import type { DailyClose } from "./value-history";
 import { isMoneyMarketHolding } from "./money-market";
-import { LIVE_PRICE_MAX_STALENESS_MS, isUsMarketOpen, latestSettledSessionDate, sessionCloseMs } from "./market-hours";
+import { LIVE_PRICE_MAX_STALENESS_MS, exchangeDate, isUsMarketOpen, latestSettledSessionDate, sessionCloseMs } from "./market-hours";
 import { holdingCoversLatestClose, holdingFreshness, type RowFreshness } from "./freshness";
 import { providerLimits } from "./provider-limits";
 
@@ -459,9 +459,15 @@ export interface DashboardModel {
   valueBackfill?: DailyClose[];
 }
 
-/** Today's date as an ISO `YYYY-MM-DD` string in UTC (the live XIRR "now"). */
+/**
+ * Today's date as an ISO `YYYY-MM-DD` string on the **New-York exchange
+ * calendar** (the live XIRR "now" and the day a recorded whole-book close is
+ * filed under). ET — not UTC or viewer-local — so the web files "today" under the
+ * same trading day the desktop and the value-history store bucket by, no matter
+ * where the viewer sits.
+ */
 export function todayIso(now: Date = new Date()): string {
-  return now.toISOString().slice(0, 10);
+  return exchangeDate(now);
 }
 
 /**

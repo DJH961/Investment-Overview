@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 
 import { Decimal } from "../src/decimal-config";
+import { exchangeDayStartMs } from "../src/market-hours";
 import type { CurvePoint } from "../src/timeseries";
 import { memoryBackend, TimeSeriesStore } from "../src/timeseries-store";
 import {
@@ -17,12 +18,10 @@ import {
   diffBlobHistory,
 } from "../src/value-history";
 
-// Local midnight of a `YYYY-MM-DD` — mirrors value-history's own day stamping, which
-// is local (not UTC) to match the Python blob's bare-date `date.today()` calendar.
-const dayMs = (date: string): number => {
-  const [y, m, d] = date.split("-").map(Number);
-  return new Date(y, m - 1, d).getTime();
-};
+// 00:00 ET of a `YYYY-MM-DD` — mirrors value-history's own day stamping, which is
+// the New-York exchange calendar so the web-recorded and blob-harvested legs share
+// one bucket (see value-history.ts `dayStartMs` / `blobCurveDayMs`).
+const dayMs = (date: string): number => exchangeDayStartMs(date);
 
 function point(t: number, eur: string, usd: string): CurvePoint {
   return { t, valueEur: new Decimal(eur), valueUsd: new Decimal(usd) };
@@ -124,11 +123,12 @@ describe("value-history", () => {
       ]);
     });
 
-    it("files a wall-clock evening instant under its local calendar day", async () => {
+    it("files a wall-clock evening instant under its exchange calendar day", async () => {
       const store = new TimeSeriesStore(memoryBackend());
-      // 2024-03-01 22:30 local — unambiguously the 1st in every timezone, the day a
-      // UTC bucket could mis-roll for viewers west of UTC. Matches the blob's calendar.
-      const eveningLocal = new Date(2024, 2, 1, 22, 30).getTime();
+      // 2024-03-01 around midday ET — unambiguously the 1st on the NYSE calendar, the
+      // day a UTC bucket could mis-roll for viewers west of UTC. Matches the blob's
+      // (ET) calendar so the live tip and harvested close never split.
+      const eveningLocal = dayMs("2024-03-01") + 12 * 60 * 60 * 1000;
       await harvestDailyCloses(store, [point(eveningLocal, "42", "45")]);
       const history = await loadValueHistory(store);
       expect(history[0].date).toBe("2024-03-01");

@@ -125,6 +125,9 @@ def test_build_meta_stamps_blob_hash() -> None:
     assert meta["size"] == len(blob)
     assert meta["asset"] == publish_service.ASSET_NAME
     assert meta["published_at"] == "2026-01-02T03:04:05+00:00"
+    # ET-curve contract marker: schema 2 tells the web companion the blob's
+    # `analytics.curve` dates are NYSE-session (ET) stamped, not publisher-local.
+    assert meta["schema"] == 2
     # The sidecar must never carry decrypted data — only the stamp fields.
     assert set(meta) == {"schema", "version", "size", "published_at", "asset"}
 

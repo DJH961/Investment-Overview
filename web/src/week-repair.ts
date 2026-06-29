@@ -54,6 +54,7 @@
  */
 
 import { Decimal } from "./decimal-config";
+import { exchangeDayOf } from "./market-hours";
 import type { CurvePoint } from "./timeseries";
 
 /**
@@ -73,9 +74,9 @@ export const MIN_COLLAPSE_DROP = 0.15;
  */
 export const MIN_RECOVERY_STEP = 0.08;
 
-/** The `YYYY-MM-DD` UTC calendar day an epoch-ms instant falls on. */
+/** The `YYYY-MM-DD` New-York calendar day an epoch-ms instant falls on. */
 function utcDayOf(t: number): string {
-  return new Date(t).toISOString().slice(0, 10);
+  return exchangeDayOf(t);
 }
 
 /**

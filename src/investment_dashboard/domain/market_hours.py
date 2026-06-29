@@ -265,6 +265,28 @@ def latest_settled_session_date(now: datetime | None = None) -> date:
     return day
 
 
+def exchange_today(now: datetime | None = None) -> date:
+    """Today's **New-York exchange calendar** date — the one internal clock.
+
+    The desktop's source of truth for "what trading day is it?" so a daily close
+    is filed under the NYSE session date rather than the publisher's *local*
+    calendar (``date.today()``). Those differ for a publisher far enough east/west
+    of New York around the date roll: someone exporting at 01:00 in Europe is on
+    the next local calendar day while New York is still on the prior session.
+    Stamping the export on this date keeps the blob's ``analytics.curve`` on the
+    same ET day grid the web companion buckets by (``web/src/compute.ts``
+    ``todayIso`` / ``exchangeDate``), so the two never split a close across two
+    days (``docs/time_alignment_plan.md``).
+
+    ``now`` defaults to the current instant (UTC). It may be naive (interpreted as
+    exchange time already) or timezone-aware (converted to exchange time first).
+    """
+    if now is None:
+        now = datetime.now(UTC)
+    local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
+    return local.date()
+
+
 def previous_trading_day(today: date) -> date:
     """The most recent weekday strictly *before* ``today``.
 

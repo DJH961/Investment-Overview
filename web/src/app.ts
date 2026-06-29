@@ -594,6 +594,19 @@ export class App {
    */
   private blobPublishedAt: string | null = null;
   /**
+   * Meta-sidecar **schema** of the best-available blob (`portfolio.meta.json`
+   * `schema`, `publish_service.py` `_META_SCHEMA`). The legacy/ET cutover gate
+   * (`time_alignment_plan.md`): `<= 1` ⇒ the desktop stamped `analytics.curve`
+   * dates the legacy (publisher-local) way; `>= 2` ⇒ those dates are ET. The
+   * desktop now publishes `2` (ET-stamped); `<= 1` is a not-yet-updated desktop
+   * during the staggered ~3-week rollout. The web runs on ET internally regardless
+   * and adapts blob curve dates at the ingest edge ({@link blobCurveDayMs}) behind
+   * this gate — forward-tolerant for both schemas — so it ships before the desktop
+   * and renders both correctly. Defaults to legacy (`1`) until a sidecar carrying
+   * `schema` is read.
+   */
+  private blobMetaSchema = 1;
+  /**
    * Epoch ms of the last successful network data pull (fresh quotes or FX),
    * loaded from persistent storage at startup so the very first cache-only
    * paint can already show when the data was last pulled.
@@ -2416,6 +2429,16 @@ export class App {
       // baseline) from the widened track, and keep the full track in the 1W store so
       // barsPrevSessionCloseFx finds it on the next paint without re-fetching.
       await store.mergeSession(WEEK_STORE_KEY, { fx }, now.getTime());
+      // prevFx anchor (Fault 2). The "yesterday" baseline stays
+      // `previousTradingSession(today)` — the close before the session the 1D curve
+      // draws (Saturday ⇒ Thursday, deliberately, see the prevFx restore block).
+      // This FX baseline is computed purely from the live EUR/USD bars and is
+      // independent of the blob's curve schema, so it is deliberately left as-is:
+      // the desktop's intraday session picker was already ET. The curve-date ET
+      // flip (schema 2) the desktop now ships collapses the 1W USD market-sleeve
+      // reconciliation Δ via the value-history bridge ({@link blobCurveDayMs}) once
+      // a schema-2 blob is read; any small residual FX Δ on a not-yet-updated
+      // (schema ≤ 1) desktop is the expected coexistence offset, not a regression.
       const prevDay = previousTradingSession(today);
       const prevClose = sessionCloseFxFromBars(fx, sessionCloseMs(prevDay));
       if (prevClose !== null) recordPrevSessionCloseFx(prevDay, prevClose);
@@ -4149,6 +4172,8 @@ export class App {
       const meta = await withTimeout(fetchBlobMeta(metaUrl), BLOB_META_PROBE_TIMEOUT_MS);
       if (session !== this.sessionId) return;
       if (meta?.publishedAt) this.blobPublishedAt = meta.publishedAt;
+      // Legacy↔ET cutover gate: a sidecar without `schema` is a legacy (≤1) blob.
+      if (meta) this.blobMetaSchema = meta.schema ?? 1;
     } catch {
       /* time-boxed best-effort: keep the current blobDaysOld, never block the kickoff. */
     }
@@ -4183,6 +4208,8 @@ export class App {
       // `blobDaysOld` freshness on the *remote* recency — post-decrypt this value
       // is unused (only on-device freshness drives the tier).
       if (meta?.publishedAt) this.blobPublishedAt = meta.publishedAt;
+      // Legacy↔ET cutover gate: a sidecar without `schema` is a legacy (≤1) blob.
+      if (meta) this.blobMetaSchema = meta.schema ?? 1;
       if (!force && meta && this.metaVersion !== null && meta.version === this.metaVersion) {
         this.pollLog("blob", `Data-file check: unchanged (meta version ${meta.version}).`);
         return;
@@ -7604,7 +7631,7 @@ export class App {
     if (lastExport !== null) {
       const afterExport = isoPlusDays(lastExport, 1);
       const cutoff = afterExport < weekStart ? afterExport : weekStart;
-      await pruneValueHistory(store, cutoff);
+      await pruneValueHistory(store, cutoff, this.blobMetaSchema);
     }
     const existing = await loadValueHistory(store);
     // **Long-range reload path (item 1).** The day-by-day recording above only
