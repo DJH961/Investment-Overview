@@ -147,6 +147,18 @@ RECONSTRUCT_MAX_GAP_SECONDS = 45 * 60  # 45 minutes
 #: (it grows from today's dense live captures, gap-filled by the 1D reconstruction).
 WEEK_COVERAGE_FRACTION = Decimal("0.6")
 
+#: Largest tolerated hole (seconds) inside a *finished* week session — between the
+#: open and the first cached sample, or between any two consecutive samples —
+#: before the day is judged gappy and re-pulled. Mirrors
+#: :data:`RECONSTRUCT_MAX_GAP_SECONDS` for the "1 Week" curve: the count + span
+#: tests only see "too few points" and the first→last reach, so they miss an
+#: *internal hole* — a missing morning (a late first sample with a still-wide
+#: overall span) or a midday stall (captures stopped and later resumed, leaving a
+#: flat straight line across the gap). A day sourced at :data:`WEEK_INTERVAL`
+#: (30-minute) bars normally spaces points 30 min apart, so a 1-hour hole means at
+#: least one bar is missing and the day is re-pulled to supplement it.
+WEEK_MAX_GAP_SECONDS = 60 * 60  # 1 hour
+
 #: ``app_config`` key recording the last session date we reconstructed, so we
 #: fetch intraday bars at most once per session instead of on every page load.
 _RECONSTRUCTED_KEY = "intraday_reconstructed_day"
@@ -1113,11 +1125,15 @@ def _week_day_is_covered(
     * the in-progress *anchor* session is exempt — its close hasn't happened yet
       and it grows from today's dense live captures, so any sample counts; and
     * a *finished* session must carry the full representative span: at least
-      :data:`WEEK_POINTS_PER_COMPLETE_SESSION` points *and* a first→last reach
-      across at least :data:`WEEK_COVERAGE_FRACTION` of the open→close session.
+      :data:`WEEK_POINTS_PER_COMPLETE_SESSION` points, a first→last reach across
+      at least :data:`WEEK_COVERAGE_FRACTION` of the open→close session, *and* no
+      internal hole — neither the open→first gap nor any gap between consecutive
+      samples may exceed :data:`WEEK_MAX_GAP_SECONDS` (catches a missing morning
+      or a midday stall the count + span tests cannot see).
 
-    Too few points — or points all clustered in one stretch — means the day is
-    below target (data is missing), so it reports uncovered to trigger a re-pull.
+    Too few points, points all clustered in one stretch, or a wide hole mid-day —
+    means the day is below target (data is missing), so it reports uncovered to
+    trigger a re-pull that supplements the gap.
     """
     if not sample_times:
         return False
@@ -1130,7 +1146,12 @@ def _week_day_is_covered(
     if session_span <= 0:
         return True
     actual_span = (sample_times[-1] - sample_times[0]).total_seconds()
-    return Decimal(actual_span) >= WEEK_COVERAGE_FRACTION * Decimal(session_span)
+    if Decimal(actual_span) < WEEK_COVERAGE_FRACTION * Decimal(session_span):
+        return False
+    # No internal hole: measure the open→first gap and every consecutive gap, so a
+    # missing morning or a midday stall (which the span test cannot see) re-pulls
+    # to fill it. A gap of 1 hour or larger means a 30-minute bar is missing.
+    return _max_gap_seconds([open_utc, *sample_times]) < WEEK_MAX_GAP_SECONDS
 
 
 def week_series_with_fx(
