@@ -71,6 +71,8 @@ import {
   recordCredits,
   recordTiingoCredits,
   readLastPull,
+  readLastPrefetch,
+  writeLastPrefetch,
   readSymbolPlan,
   type PlannedSymbol,
   primeQuotesFromBars,
@@ -99,6 +101,7 @@ import {
   burstReliefMs,
   dailyBudgetSlowdown,
   jumpstartDelayMs,
+  prefetchDebounceActive,
   nextRefreshDelayMs,
   MIN_BURST_RELIEF_MS,
 } from "./refresh-policy";
@@ -937,9 +940,28 @@ export class App {
    * whether its status line may surface on the unlock screen: true for the fresh
    * page-load warm-up, false for the silent re-warm fired by an unlock
    * interaction after a lock — so a stale status never reappears on the login.
+   *
+   * **Reload debounce.** A login prefetch that ran within the last half
+   * auto-update cycle (persisted across reloads, see {@link writeLastPrefetch})
+   * is skipped: a fingerprint fumble, a wrong-passphrase retry, or the constant
+   * reload-to-grab-a-new-version dance must not re-spend credits warming what is
+   * still fresh. The shortened first auto-update survives untouched — the jumpstart
+   * cadence ({@link msUntilOldestFreshExpires}) on the post-unlock kickoff still
+   * lands the next pull exactly when the oldest still-fresh value is about to age
+   * out, so a debounced reload loses nothing but the duplicate warm-up.
    */
   private startPrefetch(options: { shownOnLogin: boolean }): void {
     if (this.prefetchPromise) return;
+    const intervalMs = this.state.config.updateMinutes * 60 * 1000;
+    if (prefetchDebounceActive(readLastPrefetch(), Date.now(), intervalMs)) {
+      this.pollLog(
+        "login",
+        "Login warm-up skipped — prefetched within the last half auto-update cycle (reload debounce). " +
+          "Jumpstart still shortens the first auto-update to when data ages out.",
+      );
+      return;
+    }
+    writeLastPrefetch(Date.now());
     this.prefetchShownOnLogin = options.shownOnLogin;
     this.prefetchPromise = this.prefetchLiveData();
   }

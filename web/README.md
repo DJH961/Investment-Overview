@@ -217,6 +217,13 @@ game**. Everything slow happens *after* you're already looking at your numbers:
   big closed-market catch-up rapid-fires through Tiingo in one batched request
   rather than trickling through the per-minute primary. By the time you're in, the
   dashboard paints live instead of starting the rate-limit clock from zero.
+- **Reload debounce (half the auto-update cycle).** A login warm-up is skipped if
+  one already ran within the last *half* of your auto-update interval — persisted
+  across reloads — so fingerprint fumbles, wrong-passphrase retries, and the
+  reload-to-grab-a-new-version dance never re-spend credits warming what's still
+  fresh. The shortened first auto-update is untouched: the **jumpstart** cadence
+  still lands the next pull exactly when the oldest still-fresh value is about to
+  age out, so a debounced reload loses nothing but the duplicate warm-up.
 - **FX weekend close — frozen, never auto-dated silently.** The spot-FX (forex)
   market trades ~24×5, shutting Friday 17:00 ET and reopening Sunday 17:00 ET
   (`isForexMarketOpen` / `forexMarketReopenMs` in `src/market-hours.ts`). While it
