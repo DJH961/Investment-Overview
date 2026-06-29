@@ -13,6 +13,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.21.13] — 2026-06-29
+
+### Fixed
+
+- **The "1 Week" graph now re-pulls a day that is too *spaced out*, not just one
+  with too few points.** The week coverage check already re-fetched a finished
+  session that fell below the point-count floor or whose first→last reach spanned
+  too little of the day, but it could not see an *internal hole*: a missing
+  morning (a late first sample with a still-wide overall span) or a midday stall
+  where live captures stopped and later resumed left a flat straight line across
+  the gap yet still passed both tests. Such a day is now judged uncovered when any
+  hole — between the session open and the first sample, or between two consecutive
+  samples — reaches an hour or more (at the 30-minute sourcing grid that means at
+  least one bar is missing), so it is re-pulled to supplement the gap. This
+  mirrors the "1 Day" curve's existing internal-gap guard, which already re-pulls
+  on holes wider than 45 minutes.
+
 ## [4.21.12] — 2026-06-29
 
 ### Fixed
