@@ -7,7 +7,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   HOLDING_UPDATED_FLASH_MS,
+  computeQueueEtas,
   emptyHoldingStatusModel,
+  formatQueueCountdown,
   resolveHoldingStatus,
 } from "../src/holding-status";
 import { formatLastPull, formatUpdatedAt } from "../src/format";
@@ -56,7 +58,38 @@ describe("resolveHoldingStatus", () => {
     expect(view.kind).toBe("queued");
     expect(view.label).toBe("Updating");
     expect(view.dots).toBe(true);
+    expect(view.countdown).toBeNull();
     expect(view.title).toMatch(/queued/i);
+  });
+
+  it("counts a queued symbol down in whole seconds when an ETA is known", () => {
+    const view = resolveHoldingStatus({
+      livePhase: "queued",
+      queueReadyAt: NOW_MS + 120_000,
+      asOf: null,
+      fallbackDate: "",
+      nowMs: NOW_MS,
+      now: NOW,
+    });
+    expect(view.kind).toBe("queued");
+    // Seconds-only, even past a minute (120, not "2:00") and dots give way to it.
+    expect(view.countdown).toBe("120");
+    expect(view.dots).toBe(false);
+    expect(view.title).toMatch(/120s/);
+  });
+
+  it("drops the countdown (back to dots) once a queued ETA has elapsed", () => {
+    const view = resolveHoldingStatus({
+      livePhase: "queued",
+      queueReadyAt: NOW_MS - 1,
+      asOf: null,
+      fallbackDate: "",
+      nowMs: NOW_MS,
+      now: NOW,
+    });
+    expect(view.kind).toBe("queued");
+    expect(view.countdown).toBeNull();
+    expect(view.dots).toBe(true);
   });
 
   it("flashes 'Updated ✓' for a symbol pulled within the flash window", () => {
@@ -150,9 +183,72 @@ describe("resolveHoldingStatus", () => {
 });
 
 describe("emptyHoldingStatusModel", () => {
-  it("starts with no phases and no recent updates", () => {
+  it("starts with no phases, no recent updates, and no queue ETAs", () => {
     const model = emptyHoldingStatusModel();
     expect(model.phases.size).toBe(0);
     expect(model.updatedAt.size).toBe(0);
+    expect(model.queueReadyAt.size).toBe(0);
+  });
+});
+
+describe("formatQueueCountdown", () => {
+  it("renders whole seconds, rounding up, never below zero", () => {
+    expect(formatQueueCountdown(120_000)).toBe("120");
+    expect(formatQueueCountdown(118_400)).toBe("119"); // rounds up
+    expect(formatQueueCountdown(900)).toBe("1"); // final sub-second tick
+    expect(formatQueueCountdown(0)).toBe("0");
+    expect(formatQueueCountdown(-5_000)).toBe("0");
+  });
+});
+
+describe("computeQueueEtas", () => {
+  const ANCHOR = 1_000_000;
+  const ROUND = 60_000;
+
+  it("places later queue positions in later rounds (the user's 13/#10 case)", () => {
+    // 13 symbols, capacity 8: the first 8 fetched, the rest deferred. The tenth
+    // overall (second deferred) waits for the current round to clear *and* the
+    // next — so ~2 rounds out, not a flat one.
+    const fetched = Array.from({ length: 8 }, (_, i) => `F${i}`);
+    const deferred = ["D9", "D10", "D11", "D12", "D13"]; // overall positions 9–13
+    const etas = computeQueueEtas({
+      fetched,
+      deferred,
+      capacityPerRound: 8,
+      anchorMs: ANCHOR,
+      roundIntervalMs: ROUND,
+    });
+    // Overall index 8 (D9) → round floor(8/8)+1 = 2; index 9 (D10) → round 2.
+    expect(etas.get("D9")).toBe(ANCHOR + 2 * ROUND);
+    expect(etas.get("D10")).toBe(ANCHOR + 2 * ROUND);
+  });
+
+  it("fans a deep queue across as many rounds as the capacity demands", () => {
+    const fetched: string[] = []; // nothing fetched yet this round
+    const deferred = Array.from({ length: 20 }, (_, i) => `S${i}`);
+    const etas = computeQueueEtas({
+      fetched,
+      deferred,
+      capacityPerRound: 8,
+      anchorMs: ANCHOR,
+      roundIntervalMs: ROUND,
+    });
+    expect(etas.get("S0")).toBe(ANCHOR + 1 * ROUND); // first round
+    expect(etas.get("S7")).toBe(ANCHOR + 1 * ROUND);
+    expect(etas.get("S8")).toBe(ANCHOR + 2 * ROUND); // second round
+    expect(etas.get("S16")).toBe(ANCHOR + 3 * ROUND); // third round
+  });
+
+  it("guards against a non-positive capacity", () => {
+    const etas = computeQueueEtas({
+      fetched: [],
+      deferred: ["A", "B"],
+      capacityPerRound: 0,
+      anchorMs: ANCHOR,
+      roundIntervalMs: ROUND,
+    });
+    // Capacity floored to 1: one symbol per round.
+    expect(etas.get("A")).toBe(ANCHOR + 1 * ROUND);
+    expect(etas.get("B")).toBe(ANCHOR + 2 * ROUND);
   });
 });

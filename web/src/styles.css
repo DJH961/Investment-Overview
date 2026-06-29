@@ -873,7 +873,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    line that narrates the price-pull cycle — a quiet "Updated <time>" stamp, an
    "Updating…" state with lit dots while a pull is live or queued, and a brief
    "Updated ✓" success flash that settles back to the stamp once a price lands. */
-.holding-status-row { display: flex; justify-content: flex-end; margin-top: -0.1rem; }
+.holding-status-row { display: flex; justify-content: flex-end; margin-top: -0.1rem; min-width: 0; }
 .holding-status {
   display: inline-flex;
   align-items: center;
@@ -883,8 +883,18 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   font-variant-numeric: tabular-nums;
   color: var(--faint);
   line-height: 1.2;
+  /* Stay within the card on the narrowest layouts (mobile, two-column desktop):
+     never let the caption push past its row — the label ellipsises first while
+     the seconds countdown (the part that matters) is always kept whole. */
+  max-width: 100%;
+  min-width: 0;
 }
-.holding-status-text { white-space: nowrap; }
+.holding-status-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
 /* The "Updating…" state (live pull or queued) reads in the muted accent so a
    glance across the list separates the cards in motion from the settled ones. */
 .holding-status--updating,
@@ -905,6 +915,13 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .holding-status-dot:nth-child(3) { animation-delay: 0.36s; }
 /* Queued dots breathe slower, reinforcing the "parked, not pulling" feel. */
 .holding-status--queued .holding-status-dot { animation-duration: 1.8s; }
+/* The queued ETA countdown ("120", "119", … seconds to this holding's turn).
+   Tabular figures so the single digit ticking down doesn't shuffle the layout. */
+.holding-status-eta {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  flex: none;
+}
 @keyframes holding-dot-pulse {
   0%, 100% { opacity: 0.25; transform: translateY(0); }
   40% { opacity: 1; transform: translateY(-0.06rem); }
@@ -1413,6 +1430,18 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   min-height: 8rem;
   text-align: center;
   padding: 0 1rem;
+  /* The `.note` class this also carries adds a small horizontal margin; zero it
+     so the full-width box can never spill past its wrapper and nudge the page
+     into a tiny horizontal overflow (it must match the graph's width exactly). */
+  margin: 0;
+}
+/* Once the real chart's height has been remembered, the placeholder copies it
+   verbatim (inline `height`), so the loading box is a pixel match for the graph
+   on every viewport — drop the aspect-ratio/min-height estimate that the inline
+   height supersedes. */
+.chart-live-status--measured {
+  aspect-ratio: auto;
+  min-height: 0;
 }
 /* Time-range presets above a chart (mobile-first: a small wrapping button row). */
 .chart-block { display: grid; gap: 0.5rem; }
