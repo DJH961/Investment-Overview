@@ -13,7 +13,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.21.8] — 2026-06-29
+## [4.21.9] — 2026-06-29
 
 ### Fixed
 
@@ -30,6 +30,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   knew about) is priced on Tiingo at once instead of waiting on the next Twelve
   Data minute. Steady-state auto rounds are unchanged: they keep the >16-symbol
   efficiency-spill threshold and the reserve.
+
+## [4.21.8] — 2026-06-29
+
+### Fixed
+
+- **The deferred-holding countdown now reads "Updating in XXs" and the coverage
+  line says "N updating (XXs)" — no more bare numbers or open-ended "…".** A
+  queued holding's caption spells the wait out as `Updating in 120s` rather than a
+  lone `120`, and the dashboard coverage summary swaps the vague `5 updating…` for
+  a concrete `5 updating (90s)` (the soonest deferred holding's queue ETA, sharing
+  the same cadence as the per-row countdown). When no ETA is known it reads a plain
+  `updating` — never a trailing "…".
+- **An auto-update round now paints an honest "updating vs. still-queued" split, so
+  the symbols deferred from last time are shown being pulled first instead of
+  appearing to be bumped to another round.** The round used to flash *every* stale
+  symbol as "Updating" the instant it began — including the budget overflow — which
+  then snapped back to "queued", making it look as if the round did its own symbols
+  and re-deferred the carried-over ones even when there was budget for them. The
+  fetch layer already prioritised the deferred-from-last (forced) symbols
+  correctly; now the animation tells the truth too: `loadQuotes` reports its
+  budget-resolved plan (`onPlan`) the moment it is fixed — forced/deferred-from-last
+  first — and only those symbols read as "updating", with the genuine overflow
+  staying "queued".
+- **A transient live FX miss no longer leaves a phantom Twelve Data credit booked,
+  so an auto-update round stops starving its own quote budget and needlessly
+  deferring symbols there was room for.** When the EUR/USD live leg reserved a
+  credit and then failed (a 429/5xx/transport throw) before degrading to today's
+  cached spot, the reservation was kept — burning a per-minute credit on a fetch
+  that never billed. That phantom credit shrank the same minute's quote budget and
+  pushed otherwise-fittable symbols into the deferred queue. `loadEurUsd` now hands
+  the reserved credit back on a transient failure (mirroring `loadQuotes`), so the
+  freed slot is available to the deferred drain in the same round.
+- **The Tiingo EUR/USD backup leg now also refunds its reserved credit on a
+  transient failure, so a failed FX backup never burns a slot of the scarce 40/hr
+  web Tiingo budget.** The same phantom-credit bug as the primary FX leg lived one
+  branch below it: when the Tiingo `/price` fallback reserved its single credit and
+  then threw (a 429/5xx/transport reject the provider never billed), the reservation
+  was kept before degrading to the cached spot — quietly eating into the much
+  tighter Tiingo hourly cap. `loadEurUsd` now hands that credit back on a transient
+  Tiingo failure too (mirroring `loadQuotes`, the primary FX leg, and the
+  `tiingo-fallback` quote path), keeping the Tiingo ledger truthful.
 
 ## [4.21.7] — 2026-06-29
 

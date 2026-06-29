@@ -911,7 +911,7 @@ function renderStats(o: OverviewView): HTMLElement {
 
 /**
  * The freshness-legend affordance (freshness-plan §4.1): one small `?` that
- * expands to explain every term the coverage line uses ("live", "updating…",
+ * expands to explain every term the coverage line uses ("live", "updating",
  * "cached", "at last close", "awaiting", and the FX clauses). The status line is
  * honest but dense, so this defuses the "why does it say cached?" confusion at
  * the source. A native `<details>`/`<summary>` keeps it zero-JS, accessible and
@@ -927,7 +927,7 @@ function freshnessLegend(): HTMLElement {
     h("summary", { class: "freshness-legend-toggle", "aria-label": "What do these freshness terms mean?" }, ["?"]),
     h("ul", { class: "freshness-legend-list" }, [
       entry("live", "freshly confirmed within your refresh window while the market is open."),
-      entry("updating…", "held from cache and re-pulling now — waiting its turn under the free-tier per-minute cap."),
+      entry("updating (XXs)", "held from cache and re-pulling now — the countdown is its turn under the free-tier per-minute cap."),
       entry("cached", "a recent confirmed price, just not re-checked this round."),
       entry("at last close", "the market is shut; this is the latest settled closing price."),
       entry("awaiting", "no value yet — still being fetched (a price, or a fund's once-a-day NAV)."),
@@ -1192,10 +1192,13 @@ function renderStatusContent(span: HTMLElement, view: HoldingStatusView): void {
   const text = view.stamp ? `${view.label} ${view.stamp}` : view.label;
   children.push(h("span", { class: "holding-status-text" }, [text]));
   if (view.countdown) {
-    // A live "ready in m:ss" estimate for a queued holding — replaces the dots so
-    // the wait reads as a real countdown. `aria-live` announces the final state,
-    // not every tick (the per-second updates are decorative).
-    children.push(h("span", { class: "holding-status-eta", "aria-hidden": "true" }, [view.countdown]));
+    // A live "in XXs" estimate for a queued holding — replaces the dots so the
+    // wait reads as a real countdown ("Updating in 120s") rather than a bare
+    // number. `aria-hidden` keeps the per-second ticks decorative; the final
+    // state is what gets announced.
+    children.push(
+      h("span", { class: "holding-status-eta", "aria-hidden": "true" }, [`in ${view.countdown}s`]),
+    );
   }
   if (view.dots) children.push(statusDots());
   span.replaceChildren(...children);

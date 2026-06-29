@@ -4564,12 +4564,22 @@ export class App {
         })
       : symbols;
 
-    // Flip the on-screen status caption of every holding about to be pulled to a
-    // live "Updating…" (lit dots) the instant the round begins — straight to the
-    // DOM, so the motion shows immediately rather than only when the round lands.
-    // Cache-only paints don't pull, so they never claim to be updating.
-    if (network && symbolsToFetch.length > 0) {
-      markHoldingsUpdating(this.root, symbolsToFetch);
+    // Flip the on-screen status caption to a live "Updating…" the instant the
+    // round begins — straight to the DOM, so motion shows immediately rather than
+    // only when the round lands. Cache-only paints don't pull, so they never claim
+    // to be updating.
+    //
+    // Mark **only the deferred-from-last (forced) symbols** here: those are drained
+    // from the deferred queue and jump the budget queue, so they are genuinely
+    // pulled first this round. Marking the *whole* stale plan up front was the bug
+    // behind the new animation — budget-overflow holdings would flash "Updating"
+    // and then snap back to "queued", making it look as if the round did "its own"
+    // symbols and pushed the deferred ones to another round. The honest, budget-
+    // resolved split (which symbols actually fetch now vs. stay queued) is applied
+    // by loadQuotes' `onPlan` callback below, the moment the plan is fixed.
+    if (network && forceSymbols.size > 0) {
+      const forcedNow = symbolsToFetch.filter((s) => forceSymbols.has(s));
+      if (forcedNow.length > 0) markHoldingsUpdating(this.root, forcedNow);
     }
 
     // Pull the live currency (FX + EUR/USD spot) FIRST — before any stock, ETF or
@@ -4664,7 +4674,16 @@ export class App {
 
     // Now fetch the stock / ETF / fund quotes with whatever budget remains.
     // `symbolsToFetch` is already filtered by the orchestrator's leg gates.
-    const quotePromise = loadQuotes(symbolsToFetch, quotesApiKey, options);
+    // `onPlan` fires the instant loadQuotes fixes its budget-resolved split, so the
+    // status captions paint an honest "updating now vs. still-queued" — the
+    // deferred-from-last symbols (forced-first) land in `fetching`, never bumped to
+    // a later round while there is budget for them this round.
+    const quotePromise = loadQuotes(symbolsToFetch, quotesApiKey, {
+      ...options,
+      onPlan: network
+        ? (plan) => markHoldingsUpdating(this.root, plan.fetching, plan.deferred)
+        : undefined,
+    });
 
     const quoteLoad = await quotePromise;
     // A superseded session (lock, or a newer unlock) must not paint over the UI.
@@ -8059,6 +8078,15 @@ export interface CoverageFacts {
    */
   marketUpdating: number;
   /**
+   * Seconds until the *soonest* budget-deferred holding is expected to update
+   * (its place in the free-tier burst queue, via {@link computeQueueEtas}). Lets
+   * the coverage line append a concrete "(XXs)" to the "updating" bucket instead
+   * of a vague "…", matching the per-holding "Updating in XXs" countdown. `null`
+   * when nothing is deferred or no ETA can be resolved — the bucket then reads as
+   * a plain "updating" with no parenthetical.
+   */
+  updatingEtaSeconds: number | null;
+  /**
    * Market holdings that hold the latest *settled close* (see `holdsSettledClose`)
    * — i.e. the freshest value that exists while the exchange is shut. Drives the
    * "market closed · at closing prices, no need to update" messaging.
@@ -8150,6 +8178,33 @@ function fxClause(fx: FxFreshness, fxMarketClosed = false): string {
 /** Capitalise the first character of a status line (NAV/FX acronyms stay intact). */
 function capitalizeFirst(text: string): string {
   return text.length === 0 ? text : text[0].toUpperCase() + text.slice(1);
+}
+
+/**
+ * Seconds until the *soonest* budget-deferred holding is expected to update,
+ * resolved from its place in the free-tier burst queue (the same
+ * {@link computeQueueEtas} cadence the per-holding "Updating in XXs" countdown
+ * uses, so the coverage line and the row captions agree). Returns `null` when
+ * nothing is deferred or no positive ETA resolves.
+ */
+function coverageUpdatingEtaSeconds(report: QuoteLoadReport, nowMs: number): number | null {
+  if (report.deferred.length === 0) return null;
+  const etas = computeQueueEtas({
+    fetched: report.fetched,
+    deferred: report.deferred,
+    capacityPerRound: FREE_TIER.creditsPerMinute,
+    anchorMs: nowMs,
+    roundIntervalMs: DEFAULT_BURST_INTERVAL_MS,
+  });
+  let soonest: number | null = null;
+  for (const symbol of report.deferred) {
+    const readyAt = etas.get(symbol);
+    if (readyAt === undefined) continue;
+    if (soonest === null || readyAt < soonest) soonest = readyAt;
+  }
+  if (soonest === null) return null;
+  const seconds = Math.ceil((soonest - nowMs) / 1000);
+  return seconds > 0 ? seconds : null;
 }
 
 /**
@@ -8265,6 +8320,7 @@ export function buildCoverageFacts(
     marketHeld,
     marketFresh,
     marketUpdating,
+    updatingEtaSeconds: coverageUpdatingEtaSeconds(report, nowMs),
     marketAtClose,
     navTotal,
     navExpectedTonight,
@@ -8341,16 +8397,20 @@ export function summarizeCoverage(f: CoverageFacts): string {
   const missing = Math.max(0, f.marketTotal - f.marketHeld);
 
   if (f.marketOpen) {
-    // Session live: split freshly-pulled ("live") from still-draining ("updating…")
-    // and genuinely idle cached holdings, and flag any holding we have no value for
-    // at all as "awaiting".
+    // Session live: split freshly-pulled ("live") from still-draining
+    // ("updating (XXs)") and genuinely idle cached holdings, and flag any holding
+    // we have no value for at all as "awaiting".
     const parts: string[] = [];
+    // The deferred bucket reads "updating (XXs)" when we can resolve a queue ETA,
+    // else a plain "updating" — never the old open-ended "…".
+    const updatingLabel =
+      f.updatingEtaSeconds != null ? `updating (${f.updatingEtaSeconds}s)` : "updating";
     if (f.marketTotal > 0) {
       parts.push(
         joinBuckets(
           [
             { n: f.marketFresh, label: "live" },
-            { n: updating, label: "updating…" },
+            { n: updating, label: updatingLabel },
             { n: cached, label: "cached" },
             { n: missing, label: "awaiting prices" },
           ],
