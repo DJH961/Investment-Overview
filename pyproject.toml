@@ -1,6 +1,6 @@
 [project]
 name = "investment-dashboard"
-version = "4.21.11"
+version = "4.21.12"
 description = "Single-user, locally-hosted investment tracking dashboard unifying Vanguard, Fidelity, and Savings Bank with XIRR/TWR/CAGR analytics in USD and EUR."
 readme = "README.md"
 requires-python = ">=3.12"

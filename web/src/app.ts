@@ -8274,11 +8274,10 @@ export interface CoverageFacts {
   marketUpdating: number;
   /**
    * Seconds until the *soonest* budget-deferred holding is expected to update
-   * (its place in the free-tier burst queue, via {@link computeQueueEtas}). Lets
-   * the coverage line append a concrete "(XXs)" to the "updating" bucket instead
-   * of a vague "…", matching the per-holding "Updating in XXs" countdown. `null`
-   * when nothing is deferred or no ETA can be resolved — the bucket then reads as
-   * a plain "updating" with no parenthetical.
+   * (its place in the free-tier burst queue, via {@link computeQueueEtas}).
+   * Retained for the per-holding "Updating in XXs" countdown; the coverage line's
+   * "updating" bucket no longer appends this as a parenthetical. `null` when
+   * nothing is deferred or no ETA can be resolved.
    */
   updatingEtaSeconds: number | null;
   /**
@@ -8593,13 +8592,12 @@ export function summarizeCoverage(f: CoverageFacts): string {
 
   if (f.marketOpen) {
     // Session live: split freshly-pulled ("live") from still-draining
-    // ("updating (XXs)") and genuinely idle cached holdings, and flag any holding
+    // ("updating") and genuinely idle cached holdings, and flag any holding
     // we have no value for at all as "awaiting".
     const parts: string[] = [];
-    // The deferred bucket reads "updating (XXs)" when we can resolve a queue ETA,
-    // else a plain "updating" — never the old open-ended "…".
-    const updatingLabel =
-      f.updatingEtaSeconds != null ? `updating (${f.updatingEtaSeconds}s)` : "updating";
+    // The deferred bucket always reads a plain "updating" — no countdown, since the
+    // coverage line does not auto-tick the seconds down.
+    const updatingLabel = "updating";
     if (f.marketTotal > 0) {
       parts.push(
         joinBuckets(

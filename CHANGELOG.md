@@ -13,7 +13,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.21.11] — 2026-06-29
+## [4.21.12] — 2026-06-29
 
 ### Fixed
 
@@ -43,6 +43,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     credit-paced delay rather than a flat 60 s assumption, so the timers stop
     being wildly wrong, and the round-complete verdict now names a catch-up burst
     explicitly instead of implying the steady cadence.
+
+## [4.21.11] — 2026-06-29
+
+### Fixed
+
+- **The live coverage caption now reads a plain "updating" with no "(60s)"
+  countdown.** The market-open coverage line (e.g. "12/12 live, 4 updating … ")
+  appended a parenthetical "(XXs)" queue ETA to the "updating" bucket, but that
+  caption never ticks down on its own, so the stale number was misleading. The
+  bucket now always renders as a plain "updating" — no seconds and no ellipsis.
+  The per-holding "Updating in XXs" countdown and the underlying
+  `updatingEtaSeconds` fact are unaffected.
+
+## [4.21.10] — 2026-06-29
 
 ### Fixed
 
