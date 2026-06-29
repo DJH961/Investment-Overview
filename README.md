@@ -138,7 +138,7 @@ launcher also stops any previous instance first.
 pip install --user uv
 
 # From the repo root:
-uv sync --extra dev              # install app + dev extras
+uv sync                          # install app deps (add --extra dev for lint/test tooling)
 uv run alembic upgrade head      # create the SQLite schema
 uv run investment-dashboard      # launches NiceGUI on http://0.0.0.0:8080
 ```
