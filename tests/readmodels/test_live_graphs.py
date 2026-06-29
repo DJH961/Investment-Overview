@@ -264,12 +264,6 @@ def test_live_graphs_v3_trail_is_downsampled_and_display_only(session: Session) 
 
     assert out is not None
     trail = out["trail"]
-    _seed_usd_holding_with_intraday(session)
-
-    out = live_graphs.build(session, context=build_context(session, as_of=_SESSION_DAY), now=_NOW)
-
-    assert out is not None
-    trail = out["trail"]
     assert trail["display_only"] is True
     assert 2 <= len(trail["points"]) <= live_graphs.MAX_DAY_POINTS
     for p in trail["points"]:
