@@ -369,6 +369,12 @@ export interface WeekCurveOptions {
   onCloseResolve?: (event: CloseResolveLog) => void;
   /** Render a bar instant for the close-resolution log (defaults to raw ms). */
   formatInstant?: (t: number) => string;
+  /**
+   * Per-day whole-book money-market value (USD) so the 1W base steps on the day
+   * a flow landed instead of carrying today's balance flat across the week. Omit
+   * to keep the MM portion flat (legacy behaviour). See {@link ReconstructInput.mmDaysUsd}.
+   */
+  mmDaysUsd?: { date: string; valueNativeUsd: Decimal }[];
 }
 
 /** A built 1W curve plus the window it covers. */
@@ -697,6 +703,7 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
     baseFx: anchor.baseFx,
     baseEur: anchor.baseEur,
     baseUsd: anchor.baseUsd,
+    mmDaysUsd: options.mmDaysUsd,
   });
 
   // Splice each window day's rebased breadcrumb trail into the gaps so the line

@@ -212,11 +212,13 @@ import {
 } from "./coverage-check";
 import { planPull, describePlan, deviceDaysMissing, type PullKind, type PullFreshness, type PullPlan } from "./data-orchestrator";
 import {
+  aggregateMoneyMarketValue,
   describeFlag,
   describeMerge,
   hasMarketSleeve,
   mergeSleeveSeries,
   parseMarketSeries,
+  parseMoneyMarketValue,
   pinMergedTipToWebTip,
   rebaseSleeveToWholeBook,
   type SleevePoint,
@@ -7068,6 +7070,7 @@ export class App {
                 ),
               onCloseResolve,
               formatInstant,
+              mmDaysUsd: aggregateMoneyMarketValue(parseMoneyMarketValue(exported)),
             },
             loggingProviders("1W", spent),
           );
@@ -7599,6 +7602,7 @@ export class App {
       lastExportDay,
       force,
       now: now.getTime(),
+      mmDaysUsd: aggregateMoneyMarketValue(parseMoneyMarketValue(this.state.data?.live_graphs ?? undefined)),
     }).catch(() => null);
     if (!result) return loadValueHistory(store);
     if (result.fetched) {

@@ -97,6 +97,39 @@ describe("reconstructSessionCurve", () => {
     expect(curve[1].valueUsd.toString()).toBe("1210");
   });
 
+  it("steps the money-market base per day instead of carrying today's balance flat", () => {
+    const t1 = Date.UTC(2026, 5, 22, 12, 0); // earlier day: MM was 5000
+    const t2 = Date.UTC(2026, 5, 24, 12, 0); // latest day: MM is 9000 (in base)
+    const curve = reconstructSessionCurve({
+      holdings: [holding],
+      barsBySymbol: new Map([["VTI", [bar(t1, "50"), bar(t2, "50")]]]),
+      fxBars: [bar(t1, "1.0"), bar(t2, "1.0")],
+      baseFx: new Decimal("1.0"),
+      baseEur: new Decimal("9000"),
+      baseUsd: new Decimal("9000"),
+      mmDaysUsd: [
+        { date: "2026-06-22", valueNativeUsd: new Decimal("5000") },
+        { date: "2026-06-24", valueNativeUsd: new Decimal("9000") },
+      ],
+    });
+    // Earlier day steps the base down by (5000 − 9000): 9000 + 1000 − 4000 = 6000.
+    expect(curve[0].valueUsd.toString()).toBe("6000");
+    expect(curve[0].valueEur.toString()).toBe("5900"); // 9000 + 900 − 4000 at fx 1.0
+    // Latest day uses today's balance (no step): 9000 + 1000 = 10000.
+    expect(curve[1].valueUsd.toString()).toBe("10000");
+  });
+
+  it("leaves the base flat when no money-market day series is supplied", () => {
+    const curve = reconstructSessionCurve({
+      holdings: [holding],
+      barsBySymbol: new Map([["VTI", [bar(100, "50"), bar(200, "50")]]]),
+      baseFx: new Decimal("1.1"),
+      baseEur: new Decimal("100"),
+      baseUsd: new Decimal("110"),
+    });
+    expect(curve[0].valueUsd.toString()).toBe(curve[1].valueUsd.toString());
+  });
+
   it("EUR and USD genuinely diverge under per-bar FX (not a uniform rescale)", () => {
     const curve = reconstructSessionCurve({
       holdings: [holding],

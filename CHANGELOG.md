@@ -13,6 +13,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.21.0] — 2026-06-29
+
+### Added
+
+- **The 1D, 1W and long-range value graphs now follow the exported per-day money-market balance instead of carrying today's balance flat across the whole window.** Money-market / settlement funds (VMFXX, SPAXX …) pin a constant $1.00 NAV, so their value moves only with the share count — which deposits and dividends change, sometimes while the market is shut. The whole-book base now **steps on the day a flow landed** using the export's `mm_value_native` series (aggregated across funds, USD booked / EUR derived at each point's own FX), so historical days are no longer lifted to today's higher balance. Covered by new tests in `web/test/timeseries.test.ts` and `web/test/market-sleeve.test.ts`.
+
 ## [4.20.5] — 2026-06-28
 
 ### Fixed

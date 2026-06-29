@@ -352,6 +352,29 @@ export function moneyMarketValueOnDate(
 }
 
 /**
+ * Collapse the per-fund {@link MoneyMarketValueSeries} into one **whole-book**
+ * money-market value (USD) per session date: on each date that any fund moved,
+ * sum every fund's value-as-of that date ({@link moneyMarketValueOnDate}), so a
+ * fund that did not change still contributes its last balance. The result is the
+ * single MM total a curve adds at each day, ascending and ready to step the base.
+ */
+export function aggregateMoneyMarketValue(series: MoneyMarketValueSeries): MoneyMarketDayValue[] {
+  const dates = new Set<string>();
+  for (const days of series.values()) {
+    for (const d of days) dates.add(d.date);
+  }
+  const sorted = [...dates].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return sorted.map((date) => {
+    let total = new Decimal(0);
+    for (const days of series.values()) {
+      const v = moneyMarketValueOnDate(days, date);
+      if (v) total = total.plus(v);
+    }
+    return { date, valueNativeUsd: total };
+  });
+}
+
+/**
  * One-line, log-ready summary of a merge for the polling trail, e.g.
  * `merged sleeve: 36 web-only, 80 both, 2 blob-only; 1 reconciliation flag`. Every
  * merge writes one of these so a divergence is never undiscoverable.
