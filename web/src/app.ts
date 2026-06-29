@@ -194,6 +194,7 @@ import {
   harvestDailyCloses,
   pruneValueHistory,
   loadValueHistory,
+  diffBlobHistory,
   VALUE_HISTORY_STORE_KEY,
   type DailyClose,
 } from "./value-history";
@@ -223,6 +224,7 @@ import {
 } from "./market-sleeve";
 import type { Bar, CurvePoint } from "./timeseries";
 import type { MobileExport } from "./types";
+import type { EquityPoint } from "./phase4";
 import {
   clearResumeToken,
   isReloadNavigation,
@@ -444,6 +446,23 @@ export function regenerateSummary(
     `Round complete (regenerate ${label}): ${body}. ` +
     `Budget left ${budget.minuteRemaining}/min · ${budget.dayRemaining}/day${tiingoTail}.`
   );
+}
+
+/**
+ * The set of TimeSeriesStore keys a Settings "Regenerate 1D / 1W graph" wipes
+ * before re-pulling from scratch. Kept pure so the wipe scope is unit-testable.
+ *
+ * - **1D** — just today's session day; that one record holds the dense bars,
+ *   breadcrumbs and close-probe the 1D curve rebuilds from.
+ * - **1W** — the daily-close sleeve ({@link WEEK_STORE_KEY}) *and* every per-day
+ *   session key in the rolling window. Those dense per-day records enrich the
+ *   week via "1D fills 1W", so a single corrupt day would otherwise survive a
+ *   week regenerate; wiping the whole window leaves the truly-empty slate a new
+ *   login starts from, so the blob re-springboard rebuilds it cleanly.
+ */
+export function regenerateStoreKeys(range: "day" | "week", now: Date = new Date()): string[] {
+  if (range === "day") return [lastSessionDate(now)];
+  return [WEEK_STORE_KEY, ...recentTradingSessions(DEFAULT_WEEK_SESSIONS, now)];
 }
 
 /** What a scheduled refresh tick should do — see {@link refreshTickAction}. */
@@ -2972,7 +2991,7 @@ export class App {
         field(
           "Regenerate the live graphs",
           h("div", { class: "row import-row" }, [regenDay, regenWeek, regenLong]),
-          "Wipe and re-pull a single live curve from scratch: use \"Regenerate 1D graph\" or \"Regenerate 1W graph\" when only that line looks wrong or stuck, or \"Regenerate long-range history\" to rebuild the 1M–1Y value graph from multi-month daily bars when its older days look flat or wrong. Leaves every other day and your price caches untouched. Waits for the next fully-available primary (Twelve Data) minute window before pulling, so the bars come from the plentiful primary budget instead of the scarce backup. Respects your daily free-tier budget.",
+          "Wipe and rebuild a live graph completely from scratch — exactly the empty state a brand-new login starts from, so any latent bad data is dropped: \"Regenerate 1D graph\" wipes today's bars; \"Regenerate 1W graph\" wipes the whole rolling week (its daily sleeve and every day's bars); use \"Regenerate long-range history\" to rebuild the 1M–1Y value graph from multi-month daily bars when its older days look flat or wrong. Leaves your other graphs and price caches untouched. Waits for the next fully-available primary (Twelve Data) minute window before pulling, so the bars come from the plentiful primary budget instead of the scarce backup. Respects your daily free-tier budget.",
         ),
         field(
           "Reset & re-pull everything",
@@ -5118,29 +5137,42 @@ export class App {
     clearAllSeriesBackoff();
     this.pollLog(
       "note",
-      `Regenerate ${label} graph (Settings) — wiping the stored ${label} bars and re-pulling them from scratch.`,
+      range === "day"
+        ? "Regenerate 1D graph (Settings) — wiping the stored 1D bars and re-pulling them from scratch."
+        : "Regenerate 1W graph (Settings) — wiping the stored week sleeve and every day's bars, then re-pulling them from scratch.",
     );
     void this.regenerateGraphNow(range);
   }
 
   /**
-   * Wipe the one curve's stored bars, force a fresh re-pull of just that curve's
-   * bars, then return to the dashboard (which repaints network-free off the fresh
-   * bars). The settings screen is held until the wipe+re-pull completes so the
-   * dashboard never renders — and triggers a *competing* on-demand fetch — against
-   * the about-to-be-wiped bars (the old double-pull). Best-effort throughout: a
-   * store or network failure must not strand the dashboard.
+   * Wipe **all** of one range's stored bars, force a fresh re-pull of that
+   * range's bars, then return to the dashboard (which repaints network-free off
+   * the fresh bars). The wipe is total: the dashboard is left in the same
+   * zero-data state a brand-new user logs in with, then rebuilt from the blob +
+   * re-pull, so any latent corrupt sample is dropped instead of spliced back in.
+   * The settings screen is held until the wipe+re-pull completes so the dashboard
+   * never renders — and triggers a *competing* on-demand fetch — against the
+   * about-to-be-wiped bars (the old double-pull). Best-effort throughout: a store
+   * or network failure must not strand the dashboard.
    */
   private async regenerateGraphNow(range: "day" | "week"): Promise<void> {
     const now = new Date();
     const label = range === "day" ? "1D" : "1W";
     const { config } = this.state;
     const store = this.ensureTimeSeriesStore();
-    const storeKey = range === "day" ? lastSessionDate(now) : WEEK_STORE_KEY;
-    try {
-      await store.deleteSession(storeKey);
-    } catch {
-      /* best-effort: leave the stored bars as-is if the wipe fails. */
+    // Wipe *every* store key that feeds this range so the re-pull starts from a
+    // truly empty slate — exactly the state a brand-new user logs in with — and
+    // any latent corrupt sample is dropped rather than spliced back in. 1D is its
+    // session day; 1W is the daily-close sleeve **and** every per-day key in the
+    // rolling window (those dense 1D breadcrumbs enrich the week via "1D fills
+    // 1W", so a single bad day would otherwise survive a week regenerate).
+    const storeKeys = regenerateStoreKeys(range, now);
+    for (const key of storeKeys) {
+      try {
+        await store.deleteSession(key);
+      } catch {
+        /* best-effort: leave the stored bars as-is if the wipe fails. */
+      }
     }
     const marketSymbols = readSymbolPlan()
       .filter((e) => e.priceType === "market")
@@ -7223,13 +7255,14 @@ export class App {
     }
     const merged = rebaseSleeveToWholeBook(merge.points, { baseUsd, baseEur }, fallbackFx);
     // "Live tip stays sane": pin the merged curve's trailing edge to the web
-    // curve's trusted live tip (the same point 1D ends on) so a blob sleeve
-    // sample — captured on the desktop's own cadence and able to land just past
-    // the tip or dive away from it — can never be the rightmost rendered point.
-    // Without this the richer merged curve draws the "final-minute" nosedive on
-    // 1W that 1D never shows (capWeekToSessionClose only trims past the *close*,
-    // a no-op while the market is open and blind to a pre-close stale sample).
-    const pinned = pinMergedTipToWebTip(merged, webCurve[webCurve.length - 1]);
+    // curve's trusted tail (the same dense bars+tip 1D ends on) so a blob sleeve
+    // sample — captured on the desktop's own coarse cadence and able to land just
+    // past the tip *or* in the gap before it — can never dent or overrun the final
+    // segment. Without this the richer merged curve draws a "final-minute" nosedive
+    // on 1W that 1D never shows: pinning only the very last point still left a
+    // stale blob sample as the *penultimate* point, a notch right before the tip
+    // (capWeekToSessionClose only trims past the *close*, blind to that pre-tip dip).
+    const pinned = pinMergedTipToWebTip(merged, webCurve);
     recordReconciliation(
       `1W reconciliation: rendered the richer merged curve (${pinned.length} points, was ${webCurve.length})`,
       "info",
@@ -7462,6 +7495,11 @@ export class App {
     // Prune redundant pre-export closes once a blob is in hand, never touching the
     // trailing week the 1W graph needs.
     const exportedCurve = model.analytics?.curve ?? [];
+    // **History-revision fingerprint.** Before the blob's curve supersedes any
+    // overlapping local close, flag any day whose value the desktop has rewritten
+    // (a late import / correction) so it lands in the polling log instead of being
+    // silently overwritten — invaluable when debugging "where did my history go?".
+    this.logHistoryRevision(store, exportedCurve);
     const lastExport = exportedCurve.length > 0 ? exportedCurve[exportedCurve.length - 1].date : null;
     const weekStart = recentTradingSessions(DEFAULT_WEEK_SESSIONS, now)[0] ?? o.asOf;
     if (lastExport !== null) {
@@ -7491,6 +7529,40 @@ export class App {
       return this.regenerateLongRangeHistory(model, lastExport, force).catch(() => existing);
     }
     return existing;
+  }
+
+  /**
+   * **History-revision fingerprint (web companion debugging aid).** Compares the
+   * incoming blob's daily curve against the closes this device already persisted
+   * and, for any day the two disagree on, emits a polling-log note. The store is
+   * about to be pruned/overwritten by the fresher blob, so without this a late
+   * desktop import that rewrites old history vanishes without a trace; the log
+   * line keeps a breadcrumb of exactly which days (and by how much) were revised.
+   * Best-effort and read-only: never blocks the sync.
+   */
+  private async logHistoryRevision(store: TimeSeriesStore, exported: readonly EquityPoint[]): Promise<void> {
+    try {
+      if (exported.length === 0) return;
+      const existing = await loadValueHistory(store);
+      if (existing.length === 0) return;
+      const incoming: DailyClose[] = exported
+        .filter((p) => p.portfolioValue !== null)
+        .map((p) => ({
+          date: p.date,
+          valueEur: p.portfolioValue as Decimal,
+          valueUsd: p.portfolioValueUsd,
+        }));
+      const revised = diffBlobHistory(existing, incoming);
+      if (revised.length === 0) return;
+      const head = revised
+        .slice(0, 3)
+        .map((r) => `${r.date} €${r.localEur.toDecimalPlaces(0)}→€${r.blobEur.toDecimalPlaces(0)}`)
+        .join(", ");
+      const more = revised.length > 3 ? ` (+${revised.length - 3} more)` : "";
+      this.pollLog("blob", `History revised: ${revised.length} day(s) rewritten by latest blob — ${head}${more}`, "warn");
+    } catch {
+      /* observability is best-effort */
+    }
   }
 
   /**

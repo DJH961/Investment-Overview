@@ -13,6 +13,69 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.20.10] — 2026-06-29
+
+### Fixed
+
+- **Web data-fixing / reconciliation messages now go to the data-loading log.**
+  Curve reconciliation and other data-repair notes (e.g. the 1W blob↔web merge
+  and NAV-collapse repairs) are reconciliations against already-loaded data, not
+  live pulls, so they are routed through `recordReconciliation` into the
+  data-loading log instead of leaking into other polling streams — keeping the
+  log coherent and making the 1W merge outcome discoverable. Strengthened the 1W
+  NAV-collapse repair-log test assertion accordingly.
+
+## [4.20.8] — 2026-06-29
+
+### Fixed
+
+- **Editing the ledger now actually rebuilds the affected history.** Cached
+  daily portfolio closes power `/monthly`, `/yearly` and the equity curve, but
+  nothing dropped them when a *past-dated* transaction was imported, added,
+  edited, or deleted — so a late import or correction left those periods showing
+  stale, pre-edit numbers until the whole cache happened to be cleared. Every
+  ledger mutation now calls `snapshots_service.invalidate_for_trade_dates`, which
+  drops every cached daily close on/after the earliest affected past trade date
+  so that window recomputes lazily on next read; same-day-only entries are
+  skipped because today is always recomputed live. Wired into the importer batch
+  insert and the manual add/edit/delete paths (edits cover both the old and new
+  trade date in case the date moved), with covering tests in
+  `tests/services/test_snapshots_service.py` and `test_importer_service.py`.
+- **The web companion now flags "history revised" instead of silently
+  overwriting late-import corrections.** The exporter emits a cheap per-day
+  `history_fingerprint` (count, last date, short digest), and on each sync the
+  companion compares the incoming blob's daily curve against its own persisted
+  closes — when a previously-stored day's whole-book value is rewritten (a late
+  desktop import / correction), a polling-log `blob` note records exactly which
+  days changed and by how much, so revised history is discoverable when
+  debugging rather than vanishing. Adds `diffBlobHistory` + covering tests.
+
+## [4.20.7] — 2026-06-29
+
+### Changed
+
+- **Settings "Regenerate 1D / 1W graph" now wipes the curve completely before
+  re-pulling, so any latent corrupt data is dropped rather than spliced back in.**
+  Previously the 1W regenerate only deleted the daily-close sleeve
+  (`1W-daily`), leaving each rolling-week day's dense `YYYY-MM-DD` bars in the
+  store — so a single bad day survived because "1D fills 1W" re-enriched the
+  curve from it. Both regenerators now clear *every* store key feeding their
+  range (1D: today's session; 1W: the sleeve **and** every day in the window) so
+  the curve rebuilds from the truly-empty slate a brand-new login starts from,
+  blob-springboard first. Adds `regenerateStoreKeys` + covering tests.
+
+## [4.20.6] — 2026-06-29
+
+### Fixed
+
+- **The 1W value graph no longer dips at its final dot (PR #249/#252 follow-up).**
+  Pinning only the very last point still left a stale, coarse blob market-sleeve
+  sample as the *penultimate* point — a near-vertical nosedive notch right before
+  the live tip that 1D (dense web bars, no blob) never shows, for both EUR and
+  USD. `pinMergedTipToWebTip` now hands the entire trailing edge to the dense
+  web/1D tail (its last bar through the tip), dropping any blob sample inside the
+  final segment. Adds covering tests in `web/test/market-sleeve.test.ts`.
+
 ## [4.20.5] — 2026-06-28
 
 ### Fixed

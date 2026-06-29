@@ -16,6 +16,7 @@ contents, and never add tokens or passphrases to it.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal
@@ -54,6 +55,31 @@ _CASH_ACCOUNT_TYPES = {"savings", "cash"}
 
 def _cashflow_dict(flow: Cashflow) -> dict[str, str | None]:
     return {"date": iso(flow.date), "amount": dec(flow.amount)}
+
+
+def _history_fingerprint(analytics_block: dict[str, Any]) -> dict[str, Any]:
+    """Summarise the exported equity curve so the web companion can detect a
+    *revised* history (a late import / correction rewriting old days) cheaply.
+
+    Returns the day count, the last covered date, and a short stable digest over
+    each day's ``(date, portfolio_value)`` — so two exports whose history
+    differs anywhere (a backfilled/edited old day) yield a different digest, even
+    when the last date is unchanged. Whole-unit rounded values match the web's
+    own per-day comparison tolerance, keeping cent-level FX jitter out of it.
+    """
+    curve = analytics_block.get("curve") or []
+    days = [str(p.get("date")) for p in curve if p.get("date")]
+    parts = [
+        f"{p.get('date')}:{Decimal(str(p['portfolio_value'])).quantize(Decimal(1))}"
+        for p in curve
+        if p.get("date") and p.get("portfolio_value") is not None
+    ]
+    digest = hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
+    return {
+        "days": len(days),
+        "last_date": days[-1] if days else None,
+        "digest": digest,
+    }
 
 
 def _paired_cashflows(
@@ -438,6 +464,10 @@ def build_mobile_export(
         "deposits": deposits.build(session, context=context),
         "target_allocations": _target_allocations(session),
     }
+    # Cheap per-day history fingerprint so the web companion can flag "history
+    # revised" (a late import / correction rewrote an old day) rather than
+    # silently overwriting its local store — useful when debugging late imports.
+    export["history_fingerprint"] = _history_fingerprint(export["analytics"])
     if include_transactions:
         export["transactions"] = transactions.build(session, context=context)
     # The desktop's already-captured 1D session + 1W sleeve, so the web can
