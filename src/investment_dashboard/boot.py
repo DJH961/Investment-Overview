@@ -793,7 +793,8 @@ def _run_cache_janitor() -> None:
         )
 
         with ledger_session_scope() as ledger, cache_session_scope() as cache:
-            cleanup_orphan_cache_rows(ledger, cache)
+            deleted = cleanup_orphan_cache_rows(ledger, cache)
+        log.info("cache-orphan janitor: %s", deleted)
     except Exception:
         log.warning("cache-orphan janitor failed; continuing", exc_info=True)
 

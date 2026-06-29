@@ -7,6 +7,7 @@ import {
   formatConsumptionLog,
   readConsumptionLog,
   recordConsumption,
+  recordReconciliation,
   summariseConsumption,
   MAX_CONSUMPTION_SNAPSHOTS,
 } from "../src/consumption-log";
@@ -277,5 +278,23 @@ describe("consumption-log report", () => {
     expect(text).toContain("PERFECT");
     expect(text).toContain("DEGRADED");
     expect(text).toContain("Needed to be perfect:");
+  });
+});
+
+describe("recordReconciliation", () => {
+  let storage: StorageLike;
+  beforeEach(() => {
+    storage = memoryStorage();
+    clearConsumptionLog(storage);
+  });
+
+  it("folds a queued data-fixing note into the next snapshot's graph flags", () => {
+    recordReconciliation("1W NAV-collapse heal: lifted 2 collapsed session day(s)");
+    const s = summariseConsumption(model({}, [holding("AAPL")]));
+    expect(s.graph.flags.some((f) => f.message.includes("NAV-collapse heal"))).toBe(true);
+    expect(s.perfect).toBe(false);
+    // Drains once: a second snapshot with no new note carries no repair flag.
+    const s2 = summariseConsumption(model({}, [holding("AAPL")]));
+    expect(s2.graph.flags.some((f) => f.message.includes("NAV-collapse heal"))).toBe(false);
   });
 });

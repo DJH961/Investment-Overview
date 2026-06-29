@@ -114,6 +114,7 @@ function utcDayOf(t: number): string {
 export function repairSessionNavCollapse(
   points: CurvePoint[],
   healthyHint?: RepairHealthyHint | null,
+  log?: (msg: string) => void,
 ): CurvePoint[] {
   if (points.length < 2) return points;
 
@@ -166,6 +167,10 @@ export function repairSessionNavCollapse(
   // collapse signature, so leave the curve alone.
   if (offsetEur.lessThanOrEqualTo(healthyEur.times(MIN_RECOVERY_STEP))) return points;
 
+  log?.(
+    `1D NAV-collapse heal: lifted ${firstHealthy} collapsed point(s) by +€${offsetEur.toFixed(0)} ` +
+      `onto the session's healthy NAV level`,
+  );
   return points.map((p, i) =>
     i < firstHealthy
       ? { t: p.t, valueEur: p.valueEur.plus(offsetEur), valueUsd: p.valueUsd.plus(offsetUsd) }
@@ -242,6 +247,7 @@ function groupByDay(points: CurvePoint[]): DayGroup[] {
 export function repairWeekNavCollapse(
   points: CurvePoint[],
   healthyHint?: RepairHealthyHint | null,
+  log?: (msg: string) => void,
 ): CurvePoint[] {
   if (points.length < 2) return points;
   const groups = groupByDay(points);
@@ -275,7 +281,7 @@ export function repairWeekNavCollapse(
     // the live level by more than the collapse threshold — a uniform depression,
     // not ordinary single-week drift.
     if (!healthyEur.lessThan(hintFloor)) return points;
-    return liftLeading(points, groups, groups.length, hint.eur, hint.usd, healthyEur);
+    return liftLeading(points, groups, groups.length, hint.eur, hint.usd, healthyEur, log);
   }
 
   // A partial leading collapse: the depression must recover *and stay* recovered —
@@ -285,7 +291,7 @@ export function repairWeekNavCollapse(
     if (groups[i].lastEur.lessThan(collapseFloor)) return points;
   }
   const donor = groups[firstHealthy];
-  return liftLeading(points, groups, firstHealthy, donor.firstEur, donor.firstUsd, healthyEur);
+  return liftLeading(points, groups, firstHealthy, donor.firstEur, donor.firstUsd, healthyEur, log);
 }
 
 /**
@@ -301,6 +307,7 @@ function liftLeading(
   donorEur: Decimal,
   donorUsd: Decimal,
   healthyEur: Decimal,
+  log?: (msg: string) => void,
 ): CurvePoint[] {
   const lastCollapsed = groups[runLength - 1];
   const offsetEur = donorEur.minus(lastCollapsed.lastEur);
@@ -313,6 +320,10 @@ function liftLeading(
   const collapsedDays = new Set<string>();
   for (let i = 0; i < runLength; i += 1) collapsedDays.add(groups[i].day);
 
+  log?.(
+    `1W NAV-collapse heal: lifted ${runLength} collapsed session day(s) by +€${offsetEur.toFixed(0)} ` +
+      `onto the week's healthy NAV level`,
+  );
   return points.map((p) =>
     collapsedDays.has(utcDayOf(p.t))
       ? { t: p.t, valueEur: p.valueEur.plus(offsetEur), valueUsd: p.valueUsd.plus(offsetUsd) }
@@ -377,6 +388,7 @@ function medianDecimal(values: Decimal[]): Decimal {
 export function repairCurrencyDivergence(
   points: CurvePoint[],
   maxDrift: number = MAX_FX_RATIO_DRIFT,
+  log?: (msg: string) => void,
 ): CurvePoint[] {
   if (points.length < 3) return points;
 
@@ -416,6 +428,12 @@ export function repairCurrencyDivergence(
   // anchors; the rest are FX-inconsistent and need one leg rebuilt.
   const consistent = ratios.map((r) => r !== null && !r.lessThan(lo) && !r.greaterThan(hi));
   if (consistent.every((ok, i) => ok || ratios[i] === null)) return points;
+
+  const repaired = consistent.filter((ok, i) => !ok && ratios[i] !== null).length;
+  log?.(
+    `currency-divergence repair: rebuilt the FX-inconsistent leg of ${repaired} point(s) ` +
+      `to the prevailing EUR→USD rate`,
+  );
 
   // Nearest consistent neighbour value (per leg) on a given side, for deciding
   // which leg jumped. Returns null when there is no consistent point that way.
