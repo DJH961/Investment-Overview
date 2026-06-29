@@ -820,7 +820,7 @@ describe("buildDashboard", () => {
     approx(m.overview.todayMovePct, (50 / 1.1) / (950 / 1.1 + 550 / 1.1 + 200), 1e-4);
   });
 
-  it("forward-fills a lagging holding's daily move to FX-only when a peer has repriced", () => {
+  it("keeps a lagging holding's own last-session move while flagging it stale", () => {
     const exp = makeExport();
     exp.meta.as_of = "2024-05-31";
     const mixedQuotes = new Map<string, Quote>([
@@ -848,13 +848,19 @@ describe("buildDashboard", () => {
     const m = buildDashboard(exp, mixedQuotes, fx, new Date("2024-06-03T12:00:00Z"));
     const vti = m.holdings.find((h) => h.symbol === "VTI")!;
     const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
-    // VTI printed on the freshest date; FXAIX still sits on the older NAV, so its
-    // daily price move is forward-filled to zero instead of showing 108→110 green.
+    // VTI printed on the freshest date; FXAIX still sits on the older NAV. The
+    // stale *flag* and the per-row move *figure* are decoupled: FXAIX is flagged
+    // stale (greyed in the UI, excluded from the headline total) yet keeps its
+    // genuine last-session 108→110 move instead of collapsing to ~0.
     expect(vti.todayMoveIsStale).toBe(false);
     expect(fxaix.todayMoveIsStale).toBe(true);
-    approx(fxaix.todayMoveEur, 0, 1e-6);
-    approx(fxaix.todayMoveUsd, 0, 1e-6);
-    approx(fxaix.todayMovePct, 0, 1e-6);
+    // (110 − 108) × 5 = 10 USD; FX cancels on the USD side.
+    approx(fxaix.todayMoveUsd, 10, 1e-6);
+    approx(fxaix.todayMovePctUsd, 10 / 540, 1e-6);
+    // EUR side at the (here unchanged) FX 1.10: 10 / 1.10 ≈ 9.0909.
+    approx(fxaix.todayMoveEur, 10 / 1.1, 1e-6);
+    approx(fxaix.todayMovePct, (10 / 1.1) / (540 / 1.1), 1e-6);
+    // USD-native, so none of the move is FX (the prices, not the rate, moved).
     approx(fxaix.todayFxMoveEur, 0, 1e-6);
   });
 
@@ -887,7 +893,7 @@ describe("buildDashboard", () => {
     expect(m.holdings.every((h) => !h.todayMoveIsStale)).toBe(true);
   });
 
-  it("keeps FX revaluation on lagged holdings while dropping their stale price move from the overview", () => {
+  it("drops a lagged holding's stale price move from the overview but keeps it on the row", () => {
     const exp = makeExport();
     exp.meta.as_of = "2024-05-31";
     exp.cash = [];
@@ -918,14 +924,19 @@ describe("buildDashboard", () => {
     });
     // On the 2024-06-03 global step, both holdings keep their current native
     // prices in USD. EUR still feels the FX swing on the whole 1550 USD book, but
-    // FXAIX's older 108→110 price move must not be counted again.
+    // FXAIX's older 108→110 price move must not be counted again in the headline.
     approx(m.overview.todayMoveUsd, 0, 1e-6);
     approx(m.overview.todayMoveEur, 1550 / 1.1 - 1550 / 1.05, 1e-3);
     approx(m.overview.todayFxMoveEur, 1550 / 1.1 - 1550 / 1.05, 1e-3);
+    // The row itself, however, keeps its genuine last-session move (decoupled from
+    // the stale flag): USD 540→550 = 10, with the EUR figure also feeling the FX
+    // swing between the prior (1.05) and current (1.10) rate.
     const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
-    approx(fxaix.todayMoveUsd, 0, 1e-6);
-    approx(fxaix.todayMoveEur, 550 / 1.1 - 550 / 1.05, 1e-3);
-    approx(fxaix.todayFxMoveEur, 550 / 1.1 - 550 / 1.05, 1e-3);
+    expect(fxaix.todayMoveIsStale).toBe(true);
+    approx(fxaix.todayMoveUsd, 10, 1e-6);
+    approx(fxaix.todayMoveEur, 550 / 1.1 - 540 / 1.05, 1e-3);
+    // FX part = full EUR move minus the price-only slice (10 USD at today's 1.10).
+    approx(fxaix.todayFxMoveEur, 550 / 1.1 - 540 / 1.05 - 10 / 1.1, 1e-3);
   });
 
   it("shows a fallback NAV's real last-update date (last_price_date), not the export date", () => {
