@@ -13,6 +13,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.21.9] — 2026-06-29
+
+### Fixed
+
+- **Logging in never parks a holding in the queue while the backup provider still
+  has credits — login always serves the data immediately.** The orchestrator had
+  regressed so that when Twelve Data was over its per-minute budget (or frozen in a
+  cooldown), the post-decrypt login round left the overflow holdings deferred to
+  the work-queue — showing "Updating…" — even though Tiingo had credits free to
+  fill them instantly. The login fast-track now spills *any* Twelve-Data-deferred
+  symbol to Tiingo regardless of sleeve size and even into the fan-out reserve
+  (login may use it), so the only thing that ever defers a login pull is Tiingo
+  itself running out of fallback credits. This applies to the post-decrypt
+  reconcile loop too, so a blob surprise (a newly-bought holding the prefetch never
+  knew about) is priced on Tiingo at once instead of waiting on the next Twelve
+  Data minute. Steady-state auto rounds are unchanged: they keep the >16-symbol
+  efficiency-spill threshold and the reserve.
+
 ## [4.21.8] — 2026-06-29
 
 ### Fixed

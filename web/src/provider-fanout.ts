@@ -177,23 +177,41 @@ export function efficiencySpillEligible(params: {
   tiingoCreditsAvailable?: number;
   /** The fan-out reserve to leave untouched; defaults to {@link TIINGO_RESERVE_CREDITS}. */
   tiingoReserve?: number;
+  /**
+   * **Login / start (or the post-decrypt kickoff) is top priority** (Pillar 5.3):
+   * everything must be ready the instant the dashboard opens. When `true` the
+   * size threshold is **waived** — *any* Twelve-Data-deferred symbol spills to
+   * Tiingo, even a single-symbol sleeve — and the fan-out reserve is **waived**
+   * too (login may consume even the last {@link TIINGO_RESERVE_CREDITS}, invariant
+   * 3/4), so the only remaining gate is that Tiingo genuinely has a credit free.
+   * This is the policy "on log in, never defer to the queue unless there are no
+   * more fallback credits — otherwise serve the data immediately from Tiingo".
+   * Defaults to `false` (the steady-state size/reserve gates apply).
+   */
+  loginPriority?: boolean;
 }): boolean {
   const threshold = params.instantThreshold ?? FANOUT_INSTANT_THRESHOLD;
-  if (params.requestedCount <= threshold) return false;
+  const priority = params.loginPriority ?? false;
+  // Steady state: only a big sleeve (>16) spills. Login / start waives the size
+  // gate so it never trickles the deferred overflow through the per-minute cap.
+  if (!priority && params.requestedCount <= threshold) return false;
   if (!params.deferred.has(params.symbol)) return false;
   // A non-login efficiency spill must leave the fan-out reserve untouched
   // (invariant 4). If the caller tells us how many credits are live, only spill
   // when fanning out is genuinely possible — at least one credit free beyond the
-  // reserve. Otherwise the overflow is left on Twelve Data (which clears it over
-  // the next per-minute windows) rather than earmarked for a Tiingo leg that
-  // cannot run, the case that used to strand a big round on "Updating…".
+  // reserve. Login / start may consume even the reserve (invariant 3/4), so its
+  // gate is simply "≥1 credit free". Otherwise the overflow is left on Twelve
+  // Data (which clears it over the next per-minute windows) rather than earmarked
+  // for a Tiingo leg that cannot run, the case that used to strand a big round on
+  // "Updating…".
   if (params.tiingoCreditsAvailable !== undefined) {
-    const reserve = params.tiingoReserve ?? TIINGO_RESERVE_CREDITS;
+    const reserve = priority ? 0 : (params.tiingoReserve ?? TIINGO_RESERVE_CREDITS);
     if (params.tiingoCreditsAvailable - reserve < 1) return false;
   }
   // Size + deferred-this-round (and, when given, spendable Tiingo headroom) are
-  // the *only* gates: a big sleeve spills on the backup regardless of market
-  // hours or whether the round was manual or auto.
+  // the *only* gates for a steady-state spill; a login / start round spills any
+  // deferred symbol while a Tiingo credit remains. Either way the decision is
+  // independent of market hours or whether the round was manual or auto.
   return true;
 }
 

@@ -4516,7 +4516,7 @@ export class App {
   private async refreshPrices(
     session: number,
     network: boolean,
-    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean; tiingoReserve?: number; connectivity?: ConnectivityState; plan?: PullPlan; forceSymbols?: ReadonlyArray<string> } = {},
+    opts: { force?: boolean; forceAll?: boolean; viaTiingo?: boolean; tiingoReserve?: number; connectivity?: ConnectivityState; plan?: PullPlan; forceSymbols?: ReadonlyArray<string>; loginPriority?: boolean } = {},
   ): Promise<QuoteLoadReport | null> {
     const { data, config } = this.state;
     if (!data) return null;
@@ -4776,6 +4776,12 @@ export class App {
         // parallel instead of trickling through the per-minute cap over minutes.
         manualForce: isManualReload,
         reserveCredits,
+        // Login / start (the post-decrypt kickoff): never defer to the queue while
+        // Tiingo still has credits. Any symbol Twelve Data deferred this round —
+        // including a blob-surprise the reconcile only just discovered — spills to
+        // the backup immediately, regardless of sleeve size, so the dashboard is
+        // ready the instant it opens.
+        loginPriority: opts.loginPriority ?? false,
         sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
       });
       if (session !== this.sessionId) return quoteLoad.report;
@@ -6166,6 +6172,10 @@ export class App {
         tiingoReserve: opts.tiingoReserve ?? 0,
         plan: roundPlan,
         forceSymbols: drainedStale,
+        // The post-decrypt kickoff is the login round: it must never leave a
+        // symbol deferred to the queue while Tiingo has credits to serve it now
+        // (Pillar 5.3 — "on log in, everything should always be ready").
+        loginPriority: opts.kickoff ?? false,
       });
     } finally {
       this.refreshing = false;
