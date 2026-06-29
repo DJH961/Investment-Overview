@@ -158,6 +158,23 @@ describe("FX windows", () => {
     // sessionsBack <= 1 always collapses to the single current session.
     expect(sessionFxWindow(now, 1)).toEqual({ startDate: "2026-06-26", endDate: "2026-06-26" });
   });
+
+  it("both windows shift to the prior session 5 min before the open after a long holiday weekend", () => {
+    // Independence Day fell Sat 2026-07-04, observed Fri 2026-07-03 (market shut),
+    // so the long weekend is Thu 2/7 close → Mon 6/7 open. At 09:25 ET Monday the
+    // session has not opened, so both bars must still request *last week's* sessions
+    // ending Thu 2026-07-02, never the empty 3rd/4th/5th gap.
+    const preOpen = new Date("2026-07-06T13:25:00Z"); // 09:25 ET
+    expect(sessionFxWindow(preOpen)).toEqual({ startDate: "2026-07-02", endDate: "2026-07-02" });
+    expect(weekFxWindow(preOpen, 5)).toEqual({
+      startDate: "2026-06-26",
+      endDate: "2026-07-02",
+    });
+    // Five minutes after the open both shift forward to the live Monday session.
+    const open = new Date("2026-07-06T13:35:00Z"); // 09:35 ET
+    expect(sessionFxWindow(open)).toEqual({ startDate: "2026-07-06", endDate: "2026-07-06" });
+    expect(weekFxWindow(open, 5).endDate).toBe("2026-07-06");
+  });
 });
 
 describe("makeFxFetcher (EUR/USD rides the unified price pipe)", () => {

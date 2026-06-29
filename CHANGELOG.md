@@ -13,6 +13,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.21.2] — 2026-06-29
+
+### Fixed
+
+- **The web companion's 1D and 1W bars provably request the right sessions after
+  long weekends and holidays.** The live 1-day and 1-week fetch windows already
+  walk back over weekends and full-day NYSE holidays — five minutes before
+  Monday's open after a Friday market holiday they request *last week's*
+  sessions (ending the prior Thursday close), then shift forward to the live
+  Monday session once 09:30 ET passes. This is now locked down with regression
+  tests so the window cannot silently regress into requesting an empty holiday
+  gap.
+
 ## [4.21.1] — 2026-06-29
 
 ### Fixed
