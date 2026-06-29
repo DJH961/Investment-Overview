@@ -1191,6 +1191,12 @@ function renderStatusContent(span: HTMLElement, view: HoldingStatusView): void {
   }
   const text = view.stamp ? `${view.label} ${view.stamp}` : view.label;
   children.push(h("span", { class: "holding-status-text" }, [text]));
+  if (view.countdown) {
+    // A live "ready in m:ss" estimate for a queued holding — replaces the dots so
+    // the wait reads as a real countdown. `aria-live` announces the final state,
+    // not every tick (the per-second updates are decorative).
+    children.push(h("span", { class: "holding-status-eta", "aria-hidden": "true" }, [view.countdown]));
+  }
   if (view.dots) children.push(statusDots());
   span.replaceChildren(...children);
 }
@@ -1208,6 +1214,7 @@ function renderHoldingStatus(
 ): HTMLElement {
   const view = resolveHoldingStatus({
     livePhase: status.phases.get(holding.symbol) ?? null,
+    queueReadyAt: status.queueReadyAt.get(holding.symbol) ?? null,
     asOf: holding.priceAsOf,
     pulledAt: holding.pricePulledAt,
     fallbackDate: holding.priceFallbackDate,
@@ -1217,6 +1224,34 @@ function renderHoldingStatus(
   });
   const span = h("span", { class: "holding-status", "data-symbol": holding.symbol });
   renderStatusContent(span, view);
+  // A queued holding with a known ETA counts down once a second to its expected
+  // turn, re-resolving the caption in place so the "m:ss" estimate ticks without a
+  // full re-render. The interval is a one-shot per row: it stops the moment the
+  // row leaves the DOM (a refresh re-renders it) or the countdown reaches zero.
+  if (view.kind === "queued" && view.countdown !== null) {
+    const readyAt = status.queueReadyAt.get(holding.symbol);
+    if (readyAt !== undefined && typeof setInterval === "function") {
+      const timer = setInterval(() => {
+        if (!span.isConnected) {
+          clearInterval(timer);
+          return;
+        }
+        const ticked = resolveHoldingStatus({
+          livePhase: "queued",
+          queueReadyAt: readyAt,
+          asOf: holding.priceAsOf,
+          pulledAt: holding.pricePulledAt,
+          fallbackDate: holding.priceFallbackDate,
+          nowMs: Date.now(),
+          now: new Date(),
+        });
+        renderStatusContent(span, ticked);
+        // Once the estimate elapses the countdown falls back to the dots — the
+        // pull is imminent — so stop ticking and let the next round take over.
+        if (ticked.countdown === null) clearInterval(timer);
+      }, 1000);
+    }
+  }
   // When a row mounts mid-flash, let the "Updated ✓" success state play out then
   // settle back into the quiet "Updated <time>" stamp on its own — so the cycle
   // completes even without a further re-render. The settle is a one-shot timer;
@@ -2305,7 +2340,24 @@ function chartWithTimeframe(
   // Monotonic token so a slow live fetch never overwrites a newer selection.
   let activeToken = 0;
 
-  const liveStatus = (text: string): HTMLElement => h("div", { class: "chart-live-status note muted" }, [text]);
+  const liveStatus = (text: string): HTMLElement => {
+    const el = h("div", { class: "chart-live-status note muted" }, [text]);
+    // Copy the exact height the chart last rendered at (remembered across reloads)
+    // so the loading box matches the graph it stands in for — instead of an
+    // aspect-ratio guess that can mis-size and nudge the page into a tiny
+    // horizontal overflow. Falls back to the CSS aspect-ratio on a cold first run.
+    const remembered = persistKey ? loadRememberedChartHeight(persistKey) : null;
+    if (remembered !== null) {
+      el.style.height = `${remembered}px`;
+      el.classList.add("chart-live-status--measured");
+    }
+    return el;
+  };
+
+  // After a real chart is drawn, remember the wrapper's rendered height so the
+  // next loading placeholder can copy it exactly (no collapse, no overflow).
+  const rememberSize = (): void => rememberChartHeight(wrap, persistKey);
+  rememberSize();
 
   // Mark a freshly drawn chart so the stylesheet can fade it in (a gentle
   // cross-fade keeps re-toggling 1D/1W/… calm instead of snapping). Purely
@@ -2327,7 +2379,10 @@ function chartWithTimeframe(
     const slicedDates = dates.slice(start);
     const slicedSeries = rebaseWindowOverlays(series.map((s) => ({ ...s, values: s.values.slice(start) })));
     const chart = buildLineChart({ dates: slicedDates, series: slicedSeries, ...chartOpts });
-    if (chart) wrap.replaceChildren(...withLegend(enter(chart) as unknown as HTMLElement, baseLegend));
+    if (chart) {
+      wrap.replaceChildren(...withLegend(enter(chart) as unknown as HTMLElement, baseLegend));
+      rememberSize();
+    }
   };
 
   const applyLive = async (option: RangeOption & { kind: "live" }, token: number, regenerateOnly: boolean): Promise<void> => {
@@ -2383,6 +2438,7 @@ function chartWithTimeframe(
     const children = withLegend(enter(chart) as unknown as HTMLElement, built.legend);
     if (built.note) children.push(liveStatus(built.note));
     wrap.replaceChildren(...children);
+    rememberSize();
     // Now that the live curve is drawn, refine the headline to the growth the
     // line itself shows (1D from its previous-close reference, 1W from its first
     // session) so the percentage is identical to the plotted line — superseding
@@ -2431,6 +2487,35 @@ function chartWithTimeframe(
 }
 
 const CHART_RANGE_KEY_PREFIX = "iv.web.chartRange.";
+
+/** localStorage prefix for the remembered rendered height of each persisted chart. */
+const CHART_HEIGHT_KEY_PREFIX = "iv.web.chartHeight.";
+
+/**
+ * Read the last rendered height (px) remembered for a persisted chart, so its
+ * loading placeholder can copy the graph's exact size. Returns null when nothing
+ * sensible is stored (cold start, or a corrupt/zero value).
+ */
+function loadRememberedChartHeight(persistKey: string): number | null {
+  const raw = loadStringPref(`${CHART_HEIGHT_KEY_PREFIX}${persistKey}`);
+  if (raw === null) return null;
+  const value = Number.parseFloat(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/**
+ * Remember a freshly-drawn chart wrapper's rendered height (measured after layout
+ * settles) so the next loading placeholder for the same chart can reproduce it
+ * exactly. A no-op without a persist key or when the element isn't measurable
+ * (e.g. detached / jsdom), and it never persists a zero height.
+ */
+function rememberChartHeight(el: Element, persistKey?: string): void {
+  if (!persistKey || typeof requestAnimationFrame !== "function") return;
+  requestAnimationFrame(() => {
+    const height = (el as HTMLElement).getBoundingClientRect?.().height ?? 0;
+    if (height > 0) saveStringPref(`${CHART_HEIGHT_KEY_PREFIX}${persistKey}`, String(Math.round(height)));
+  });
+}
 
 /**
  * Grace period before a live (1D/1W) curve shows its "Loading…" placeholder.
