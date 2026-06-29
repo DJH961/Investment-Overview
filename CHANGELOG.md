@@ -17,7 +17,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **1W graph final-dot dip safeguard verified and pinned.** Confirmed the web⇄blob market-sleeve merge applies `pinMergedTipToWebTip` on both 1W return paths (springboard and live), so a blob breadcrumb captured just past the trusted live tip can never become the rightmost rendered point and reintroduce the divergent final-minute nosedive 1D never shows.
+- **Editing the ledger now actually rebuilds the affected history.** Cached
+  daily portfolio closes power `/monthly`, `/yearly` and the equity curve, but
+  nothing dropped them when a *past-dated* transaction was imported, added,
+  edited, or deleted — so a late import or correction left those periods showing
+  stale, pre-edit numbers until the whole cache happened to be cleared. Every
+  ledger mutation now calls `snapshots_service.invalidate_for_trade_dates`, which
+  drops every cached daily close on/after the earliest affected past trade date
+  so that window recomputes lazily on next read; same-day-only entries are
+  skipped because today is always recomputed live. Wired into the importer batch
+  insert and the manual add/edit/delete paths (edits cover both the old and new
+  trade date in case the date moved), with covering tests in
+  `tests/services/test_snapshots_service.py` and `test_importer_service.py`.
 
 ## [4.20.5] — 2026-06-28
 
