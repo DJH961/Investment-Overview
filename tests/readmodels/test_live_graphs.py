@@ -204,7 +204,66 @@ def test_live_graphs_v3_nav_prices_present_for_nav_holdings(session: Session) ->
     assert nav["TG-CASH"] == [["2024-06-03", "500.000000"]]
 
 
+def _add_vmfxx(session: Session) -> None:
+    """A VMFXX money-market settlement leg: 5000 shares bought on the session day."""
+    acct = accounts_repo.create_account(
+        session,
+        broker="vanguard",
+        account_label="Vanguard Brokerage",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    vmfxx = instruments_repo.get_or_create(
+        session, symbol="VMFXX", asset_class="mutual_fund", native_currency="USD"
+    )
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            instrument_id=vmfxx.id,
+            date=_SESSION_DAY,
+            kind="buy",
+            quantity=Decimal("5000"),
+            price_native=Decimal("1"),
+            net_native=Decimal("-5000.00"),
+            net_eur=Decimal("-4545.45"),
+            net_usd=Decimal("-5000.00"),
+            source="manual",
+        )
+    )
+    session.flush()
+
+
+def test_live_graphs_v3_mm_value_native_ships_per_day_par_value(session: Session) -> None:
+    _seed_usd_holding_with_intraday(session)
+    _add_vmfxx(session)
+
+    out = live_graphs.build(session, context=build_context(session, as_of=_SESSION_DAY), now=_NOW)
+
+    assert out is not None
+    mm = out["mm_value_native"]
+    # The money-market fund ships its value-as-of each session date (shares × $1
+    # par), so the latest settled close is the 5000-share balance.
+    assert "VMFXX" in mm
+    assert mm["VMFXX"][-1][0] == "2024-06-03"
+    assert Decimal(mm["VMFXX"][-1][1]) == Decimal("5000")
+
+
+def test_live_graphs_v3_mm_value_native_absent_without_money_market(session: Session) -> None:
+    _seed_usd_holding_with_intraday(session)
+
+    out = live_graphs.build(session, context=build_context(session, as_of=_SESSION_DAY), now=_NOW)
+
+    assert out is not None
+    assert "mm_value_native" not in out
+
+
 def test_live_graphs_v3_trail_is_downsampled_and_display_only(session: Session) -> None:
+    _seed_usd_holding_with_intraday(session)
+
+    out = live_graphs.build(session, context=build_context(session, as_of=_SESSION_DAY), now=_NOW)
+
+    assert out is not None
+    trail = out["trail"]
     _seed_usd_holding_with_intraday(session)
 
     out = live_graphs.build(session, context=build_context(session, as_of=_SESSION_DAY), now=_NOW)

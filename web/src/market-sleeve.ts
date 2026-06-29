@@ -290,6 +290,67 @@ export function hasMarketSleeve(exported: ExportLiveGraphs | undefined): boolean
   return parseMarketSeries(exported?.market_series).length >= 2;
 }
 
+/** One money-market fund's value-as-of a session date (`YYYY-MM-DD` → USD). */
+export interface MoneyMarketDayValue {
+  date: string;
+  valueNativeUsd: Decimal;
+}
+
+/**
+ * Per-day money-market value series keyed by fund symbol, ascending by date.
+ *
+ * Money-market settlement funds (VMFXX, SPAXX …) pin a constant $1.00 NAV, so
+ * their *price* never moves and a NAV-price line is uninformative. Their value
+ * moves with the **share count**, which deposits/dividends change — sometimes
+ * while the US market is shut, so the freshest balance is genuinely **newer**
+ * than the last market close. The export ships {@link ExportLiveGraphs.mm_value_native}
+ * (value-as-of each session date) so the base can **step on the day a flow
+ * landed** instead of shifting the whole 1D/1W curve up by today's balance.
+ */
+export type MoneyMarketValueSeries = Map<string, MoneyMarketDayValue[]>;
+
+/** Parse {@link ExportLiveGraphs.mm_value_native} into ascending per-fund days. */
+export function parseMoneyMarketValue(
+  exported: ExportLiveGraphs | undefined,
+): MoneyMarketValueSeries {
+  const out: MoneyMarketValueSeries = new Map();
+  const raw = exported?.mm_value_native;
+  if (!raw) return out;
+  for (const [symbol, rows] of Object.entries(raw)) {
+    if (!Array.isArray(rows)) continue;
+    const days: MoneyMarketDayValue[] = [];
+    for (const row of rows) {
+      const [date, value] = row;
+      if (typeof date !== "string" || value === null || value === undefined) continue;
+      try {
+        days.push({ date, valueNativeUsd: new Decimal(value) });
+      } catch {
+        continue;
+      }
+    }
+    days.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    if (days.length > 0) out.set(symbol, days);
+  }
+  return out;
+}
+
+/**
+ * The money-market value (USD) as of a session date: the latest day on or before
+ * `date`, so a graph point lands on the balance actually settled by then (never
+ * today's post-close deposit). `null` when the fund has no day at/under `date`.
+ */
+export function moneyMarketValueOnDate(
+  days: MoneyMarketDayValue[],
+  date: string,
+): Decimal | null {
+  let picked: Decimal | null = null;
+  for (const d of days) {
+    if (d.date <= date) picked = d.valueNativeUsd;
+    else break;
+  }
+  return picked;
+}
+
 /**
  * One-line, log-ready summary of a merge for the polling trail, e.g.
  * `merged sleeve: 36 web-only, 80 both, 2 blob-only; 1 reconciliation flag`. Every

@@ -381,9 +381,10 @@ export interface ExportLiveTrail {
  * stale session as the live one.
  *
  * Schema v3 adds the **market-sleeve backbone** ({@link market_series} +
- * {@link daily_close_native} + {@link nav_prices} + {@link trail}); these are all
- * optional so a reader stays tolerant of older v1/v2 exports that omit them
- * (graceful degradation — the legacy `day`/`week` curves still drive the render).
+ * {@link daily_close_native} + {@link nav_prices} + {@link mm_value_native} +
+ * {@link trail}); these are all optional so a reader stays tolerant of older
+ * v1/v2 exports that omit them (graceful degradation — the legacy `day`/`week`
+ * curves still drive the render).
  */
 export interface ExportLiveGraphs {
   /** ISO-8601 UTC instant the export was captured (the freshness stamp). */
@@ -398,6 +399,16 @@ export interface ExportLiveGraphs {
   daily_close_native?: Record<string, DecimalString | null>;
   /** v3 per-day published NAV per NAV/cash holding: `{ symbol: [[date, price], …] }`. */
   nav_prices?: Record<string, [string, DecimalString | null][]>;
+  /**
+   * v3 per-day money-market / settlement **value** (native USD) per fund:
+   * `{ "VMFXX": [[date, value], …] }`. Money-market funds pin a constant $1.00
+   * NAV, so a NAV *price* line is flat and uninformative; their value moves with
+   * the share count, which transactions (deposits/dividends) change — sometimes
+   * while the market is shut, so the freshest balance is *newer* than the last
+   * market close. This ships the value-as-of each session date so the base can
+   * step on the day a flow landed instead of shifting the whole curve up by
+   * today's balance. `[-1]` is the latest settled close per fund. */
+  mm_value_native?: Record<string, [string, DecimalString | null][]>;
   /** v3 display-only dense whole-book trail (never merged/cross-checked). */
   trail?: ExportLiveTrail | null;
   /** The intraday 1D session, if the desktop had one to ship. */
