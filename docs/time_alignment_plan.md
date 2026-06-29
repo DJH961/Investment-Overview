@@ -135,9 +135,45 @@ truly coincide. This is most of the flat ~1%.
 - Test the `-1675m` case resolves to 0; a paired ET/UTC day-start equality test
   (web vs python); a DST-transition date; a US/EU forex-gap week.
 
+### Phase 6 — Full-coverage sweep (no other area lags behind)
+The three faults are not the only places a day boundary is computed. Every site
+below derives a "day" and must move to the **same ET clock** so a fix here doesn't
+just shift the mismatch into another graph. Three flavours exist today — ET (keep),
+UTC-midnight (migrate), local-midnight (migrate) — plus provider gates that are
+deliberately *not* ET and must be left alone.
+
+**Migrate → ET day boundary (currently UTC-midnight):**
+- `web/src/week.ts:8,30` — `dayStartMs` / `DAY_MS` daily-bar buckets (Fault 1 core).
+- `web/src/long-range.ts:42,89-94,126-135` — `isoPlusDays` + window floor/ceil parse
+  `T00:00:00Z`; 5Y/MAX graph day count must use ET dates.
+- `web/src/springboard.ts:25-30` — backbone intraday + daily closes bucketed UTC-day.
+- `web/src/week-repair.ts:153-165` — `getUTCDay()` grouping must match the ET window.
+- `web/src/prices.ts:180` — date-only request bounds; align to ET session edges.
+
+**Migrate → ET day boundary (currently LOCAL-midnight — worst, off ±4–5h by TZ):**
+- `web/src/value-history.ts:18-31,73-80` — buckets to *local* midnight to match Python
+  blob `date.today()`; both sides move to ET, not the user's clock.
+- `web/src/long-range.ts:262-273` — `localDayOfInstant()`.
+- `web/src/freshness.ts:295-330` — `sameLocalDay()` "aged" gate fires on local calendar.
+- Python `publish_service.py` / `live_graphs.py:150-200` — blob daily curve uses bare
+  local dates; stamp closes at ET so the web counterpart can match without local fudge.
+
+**Display only — convert at render, leave logic ET (no change needed):**
+- `web/src/chart.ts:127-155`, `web/src/format.ts`; Python `overview.py`,
+  `daily_growth_view.py:46-80`, `refresh_indicator.py`. Verify these are the *only*
+  local-time conversions and they all sit at the display edge.
+
+**Provider-pinned, deliberately NOT ET — do not touch:**
+- `web/src/cache.ts:558-575` Twelve Data credit window = UTC midnight (provider reset).
+- `web/src/cache.ts:603-671` Tiingo window/canary = ET midnight (provider reset).
+- `web/src/tiingo-gate.ts`, `web/src/tiingo.ts` ET NAV windows. `projection.ts:96-110`
+  year/month simulation math (calendar, not session) stays UTC.
+
 ---
 
 ## Acceptance
 - 1W reconciliation USD Δ collapses from ~1% toward ~0; FX Δ from ~0.4% toward ~0.
 - No `short-coverage` re-pull on an already-complete settled book.
 - prevFx settles on the first login after close (no perpetual "not yet settled").
+- 1D, 1W, 5Y/MAX, value-history and springboard all bucket on the same ET boundary —
+  no graph keeps a UTC- or local-midnight boundary except the provider credit gates.
