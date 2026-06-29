@@ -13,7 +13,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.20.6] — 2026-06-29
+## [4.20.8] — 2026-06-29
 
 ### Fixed
 
@@ -29,6 +29,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   insert and the manual add/edit/delete paths (edits cover both the old and new
   trade date in case the date moved), with covering tests in
   `tests/services/test_snapshots_service.py` and `test_importer_service.py`.
+
+## [4.20.7] — 2026-06-29
+
+### Changed
+
+- **Settings "Regenerate 1D / 1W graph" now wipes the curve completely before
+  re-pulling, so any latent corrupt data is dropped rather than spliced back in.**
+  Previously the 1W regenerate only deleted the daily-close sleeve
+  (`1W-daily`), leaving each rolling-week day's dense `YYYY-MM-DD` bars in the
+  store — so a single bad day survived because "1D fills 1W" re-enriched the
+  curve from it. Both regenerators now clear *every* store key feeding their
+  range (1D: today's session; 1W: the sleeve **and** every day in the window) so
+  the curve rebuilds from the truly-empty slate a brand-new login starts from,
+  blob-springboard first. Adds `regenerateStoreKeys` + covering tests.
+
+## [4.20.6] — 2026-06-29
+
+### Fixed
+
+- **The 1W value graph no longer dips at its final dot (PR #249/#252 follow-up).**
+  Pinning only the very last point still left a stale, coarse blob market-sleeve
+  sample as the *penultimate* point — a near-vertical nosedive notch right before
+  the live tip that 1D (dense web bars, no blob) never shows, for both EUR and
+  USD. `pinMergedTipToWebTip` now hands the entire trailing edge to the dense
+  web/1D tail (its last bar through the tip), dropping any blob sample inside the
+  final segment. Adds covering tests in `web/test/market-sleeve.test.ts`.
 
 ## [4.20.5] — 2026-06-28
 
