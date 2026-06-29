@@ -17,6 +17,8 @@ import {
   jumpstartDelayMs,
   minuteBudgetReliefMs,
   nextRefreshDelayMs,
+  prefetchDebounceMs,
+  prefetchDebounceActive,
 } from "../src/refresh-policy";
 
 describe("nextRefreshDelayMs", () => {
@@ -176,5 +178,38 @@ describe("dailyBudgetSlowdown", () => {
 
   it("disables pacing when the remaining budget is unknown", () => {
     expect(dailyBudgetSlowdown(undefined)).toBe(1);
+  });
+});
+
+describe("prefetchDebounceMs", () => {
+  it("is half the auto-update cycle", () => {
+    expect(prefetchDebounceMs(20 * 60 * 1000)).toBe(10 * 60 * 1000);
+    expect(prefetchDebounceMs(8 * 60 * 1000)).toBe(4 * 60 * 1000);
+  });
+
+  it("floors a tiny interval at the burst floor so the gate is never disabled", () => {
+    expect(prefetchDebounceMs(30 * 1000)).toBe(MIN_JUMPSTART_DELAY_MS);
+  });
+});
+
+describe("prefetchDebounceActive", () => {
+  const now = 1_700_000_000_000;
+  const interval = 20 * 60 * 1000; // half = 10 min
+
+  it("debounces a reload within half the cycle (skip the duplicate warm-up)", () => {
+    expect(prefetchDebounceActive(now - 5 * 60 * 1000, now, interval)).toBe(true);
+  });
+
+  it("warms again once half the cycle has elapsed", () => {
+    expect(prefetchDebounceActive(now - 10 * 60 * 1000, now, interval)).toBe(false);
+    expect(prefetchDebounceActive(now - 15 * 60 * 1000, now, interval)).toBe(false);
+  });
+
+  it("warms on a first-ever load (no prior prefetch)", () => {
+    expect(prefetchDebounceActive(null, now, interval)).toBe(false);
+  });
+
+  it("warms when the stamp is in the future (clock skew)", () => {
+    expect(prefetchDebounceActive(now + 5 * 60 * 1000, now, interval)).toBe(false);
   });
 });

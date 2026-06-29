@@ -143,6 +143,38 @@ export function jumpstartDelayMs(
 }
 
 /**
+ * Reload-debounce window: how recently a login prefetch must have run for the
+ * next page-load to skip warming again. Set to **half the auto-update cycle**, so
+ * a fingerprint fumble, a wrong-passphrase retry, or the constant
+ * reload-to-bust-the-cache-for-a-new-version dance never re-spends credits — yet
+ * a deliberate return after a real gap still warms. Clamped to the burst floor so
+ * a sub-minute interval can't disable the gate entirely.
+ */
+export function prefetchDebounceMs(intervalMs: number): number {
+  return Math.max(MIN_JUMPSTART_DELAY_MS, Math.round(intervalMs / 2));
+}
+
+/**
+ * Whether a fresh login prefetch should be **skipped** because one already ran
+ * within {@link prefetchDebounceMs half the auto-update cycle}. The shortened
+ * first auto-update is preserved by the jumpstart cadence ({@link jumpstartDelayMs}),
+ * which anchors on the oldest still-fresh value — so a debounced reload still
+ * refreshes exactly when that value is about to age out, just without a duplicate
+ * warm-up. Returns false (warm now) when no prior prefetch is recorded or the
+ * stamp is in the future (clock skew).
+ */
+export function prefetchDebounceActive(
+  lastPrefetchAtMs: number | null,
+  nowMs: number,
+  intervalMs: number,
+): boolean {
+  if (lastPrefetchAtMs === null) return false;
+  const since = nowMs - lastPrefetchAtMs;
+  if (since < 0) return false;
+  return since < prefetchDebounceMs(intervalMs);
+}
+
+/**
  * Credit-aware burst relief — how long until the Twelve Data per-minute window
  * frees its **next** credit, given the timestamps (epoch-ms) of the credits
  * spent so far.

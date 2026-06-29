@@ -882,6 +882,27 @@ export function writeLastPull(at: number, storage: StorageLike | null = defaultS
   writeJson(storage, LAST_PULL_KEY, { at });
 }
 
+// --- Last login prefetch (reload debounce) ---------------------------------
+
+const LAST_PREFETCH_KEY = "iv.web.last_prefetch";
+
+/**
+ * Read the epoch-ms timestamp of the last time the login-time prefetch *started*,
+ * or null when none has been recorded. Persisted (unlike {@link readLastPull},
+ * which only stamps a *successful* network pull) so it survives a full-page
+ * reload and lets the next boot debounce a duplicate warm-up — the human
+ * fingerprint-fumble / cache-busting reload spam the prefetch is gated against.
+ */
+export function readLastPrefetch(storage: StorageLike | null = defaultStorage()): number | null {
+  const raw = readJson<{ at?: unknown }>(storage, LAST_PREFETCH_KEY);
+  return raw && typeof raw.at === "number" ? raw.at : null;
+}
+
+/** Persist the last-prefetch-start timestamp (epoch ms). */
+export function writeLastPrefetch(at: number, storage: StorageLike | null = defaultStorage()): void {
+  writeJson(storage, LAST_PREFETCH_KEY, { at });
+}
+
 // --- Live-data prefetch plan ------------------------------------------------
 
 const SYMBOL_PLAN_KEY = "iv.web.symbol_plan";
