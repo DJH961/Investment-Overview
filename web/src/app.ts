@@ -6006,7 +6006,7 @@ export class App {
       // its eventual continuation bails) and fall through to a fresh pull.
       if (!roundIsStale(this.refreshStartedAt, Date.now(), this.upToDateWindowMs())) return;
       this.abortInFlightRound(
-        `it had been in flight over ${Math.round(staleRoundAbortMs(this.upToDateWindowMs()) / 60000)} min ` +
+        `it had been in flight over ${Math.round(staleRoundAbortMs(this.upToDateWindowMs()) / 60000)} minutes ` +
           "(device likely slept mid-round). Starting a fresh pull instead of completing hour-old work.",
       );
     }
@@ -6545,7 +6545,7 @@ export class App {
         this.pollLog(
           "orchestrator",
           `Duplicate wake fan-out — ${label} re-fetches ${overlap.length} symbol(s) a fan-out already pulled ` +
-            `${Math.round((nowMs - this.lastFanoutAt) / 1000)}s ago [${overlap.join(", ")}]. ` +
+            `${Math.round((nowMs - this.lastFanoutAt) / 1000)} seconds ago [${overlap.join(", ")}]. ` +
             "Wake triggers should coalesce; this round is spending budget on already-pulled prices.",
           "warn",
         );

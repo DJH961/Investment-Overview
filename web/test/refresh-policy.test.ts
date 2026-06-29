@@ -240,7 +240,7 @@ describe("staleRoundAbortMs", () => {
 
 describe("roundIsStale", () => {
   const now = 1_700_000_000_000;
-  const interval = 2 * 60 * 1000; // abort threshold = max(90s, 6min) = 6min
+  const interval = 2 * 60 * 1000; // abort threshold = max(90s, 6 minutes) = 6 minutes
 
   it("is false when no round is in flight", () => {
     expect(roundIsStale(null, now, interval)).toBe(false);
