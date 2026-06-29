@@ -35,6 +35,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   budget-resolved plan (`onPlan`) the moment it is fixed — forced/deferred-from-last
   first — and only those symbols read as "updating", with the genuine overflow
   staying "queued".
+- **A transient live FX miss no longer leaves a phantom Twelve Data credit booked,
+  so an auto-update round stops starving its own quote budget and needlessly
+  deferring symbols there was room for.** When the EUR/USD live leg reserved a
+  credit and then failed (a 429/5xx/transport throw) before degrading to today's
+  cached spot, the reservation was kept — burning a per-minute credit on a fetch
+  that never billed. That phantom credit shrank the same minute's quote budget and
+  pushed otherwise-fittable symbols into the deferred queue. `loadEurUsd` now hands
+  the reserved credit back on a transient failure (mirroring `loadQuotes`), so the
+  freed slot is available to the deferred drain in the same round.
 
 ## [4.21.7] — 2026-06-29
 

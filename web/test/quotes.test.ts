@@ -8,6 +8,8 @@ import {
   recordCredits,
   recordTiingoCredits,
   releaseCredits,
+  readCreditLog,
+  creditsSpentWithin,
   writeCachedEurUsd,
   writeCachedFx,
   writeCachedQuotes,
@@ -889,6 +891,29 @@ describe("loadEurUsd", () => {
     expect(res.source).toBe("cache");
     expect(res.now?.toString()).toBe("1.084");
     expect(res.previousClose?.toString()).toBe("1.071");
+  });
+
+  it("releases the reserved credit when a transient FX failure falls back to cache", async () => {
+    const storage = memStorage();
+    // A cached intraday reading from earlier today, now past its TTL so a live
+    // tap is attempted.
+    writeCachedEurUsd({ now: new Decimal("1.10"), previousClose: new Decimal("1.09") }, 1000, storage);
+    // The live leg is rejected (429): the provider never billed the credit.
+    const fetchImpl = vi.fn<FetchLike>(async () => {
+      throw new PriceError("rate limited", { retryable: true, status: 429 });
+    });
+    const res = await loadEurUsd("key", {
+      fetchImpl,
+      storage,
+      now: clock(3_600_000),
+      ttlMs: 15 * 60 * 1000,
+    });
+    // We degrade to today's cached spot…
+    expect(res.source).toBe("cache");
+    // …and the reserved-but-unbilled credit is handed back, so it does not eat
+    // into the same minute's quote budget (which would needlessly defer symbols).
+    const spent = creditsSpentWithin(readCreditLog(3_600_000, 24 * 3600 * 1000, storage), 3_600_000, 60 * 1000);
+    expect(spent).toBe(0);
   });
 
   it("drops to the end-of-day rate when the cache is from before today", async () => {

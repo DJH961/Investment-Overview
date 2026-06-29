@@ -858,7 +858,8 @@ export async function loadEurUsd(
     // rationale as loadQuotes): the grant atomically reads-and-debits the shared
     // ledger, so two overlapping loads can't both fire and 429, and the FX leg
     // no longer reads-and-debits the budget itself.
-    if (reservation.reserve("twelvedata", FREE_TIER.creditsPerSymbol, now()) >= FREE_TIER.creditsPerSymbol) {
+    const granted = reservation.reserve("twelvedata", FREE_TIER.creditsPerSymbol, now());
+    if (granted >= FREE_TIER.creditsPerSymbol) {
       try {
         const reading: EurUsdQuote = await fetchEurUsd(apiKey, fetchImpl);
         if (reading.now !== null) {
@@ -867,6 +868,12 @@ export async function loadEurUsd(
           return { now: reading.now, previousClose: reading.previousClose, source: "live", at, observedAt: at, cached: false, error: null };
         }
       } catch (err) {
+        // The call was rejected (over-quota 429, a 5xx, or a transport throw): the
+        // provider never billed it, so hand the reserved credit back — otherwise a
+        // transient FX miss that falls through to the cached spot below leaves a
+        // phantom credit booked, shrinking the same minute's quote budget and
+        // needlessly deferring symbols there was room for. Mirrors loadQuotes.
+        reservation.release("twelvedata", granted, now());
         liveError = err instanceof PriceError ? err : new PriceError((err as Error).message, { retryable: true });
       }
     }
