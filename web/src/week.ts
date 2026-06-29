@@ -170,6 +170,30 @@ export function weekStaleSymbols(
 }
 
 /**
+ * Coverage diagnostics for the stale set: the settled cutoff `now` requires and
+ * the latest stored bar across `symbols`, so the log can explain *why* a 1W
+ * re-pull fired — "bars present but end before the cutoff" — rather than just
+ * "stale". Returns `null` when nothing is stored. `latestMs` is the freshest
+ * `bar.t` seen; a value below `cutoffMs` is the short-coverage smoking gun.
+ */
+export function weekCoverageGap(
+  stored: { bars: Record<string, Bar[]> } | null,
+  symbols: string[],
+  now: Date = new Date(),
+  sessions = DEFAULT_WEEK_SESSIONS,
+): { cutoffMs: number; latestMs: number | null } {
+  const cutoffMs = weekCoverageCutoffMs(now, sessions);
+  const bars = stored?.bars ?? {};
+  let latestMs: number | null = null;
+  for (const s of symbols) {
+    for (const b of bars[s] ?? []) {
+      if (latestMs === null || b.t > latestMs) latestMs = b.t;
+    }
+  }
+  return { cutoffMs, latestMs };
+}
+
+/**
  * The settled session day-start instants the week window expects a NAV bar at:
  * every trading day in the window except today while the market is still open
  * (today's NAV has not published yet — the live tip carries it). Used to judge
